@@ -3,7 +3,7 @@
  * places one (R4): a unique slug, the definition cached under the new folder, the endpoints the
  * WSDL's ports name, and a `Request 1` per operation; or the mapped API with its documents cached.
  */
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -337,7 +337,7 @@ type MappedCollections = Pick<MappedClientImport, 'collections' | 'variables' | 
  * Saves an importer's scripts as text under `imported-scripts/`, never overwriting a file and never
  * leaving that folder. Returns what could not be written, for the report.
  */
-async function writeScripts(
+export async function writeScripts(
   projectDir: string,
   scripts: readonly { readonly path: string; readonly source: string }[],
 ): Promise<ImportProblemView[]> {
@@ -354,6 +354,15 @@ async function writeScripts(
     }
     try {
       await mkdir(dirname(target), { recursive: true });
+      // A symlinked imported-scripts/ (or subfolder) must not carry the write out of the project.
+      const [real, projectReal] = await Promise.all([realpath(dirname(target)), realpath(projectDir)]);
+      if (real !== projectReal && !real.startsWith(projectReal + sep)) {
+        problems.push({
+          code: 'script-not-saved',
+          message: `The script ${script.path} would have been saved outside the project through a link and was not written.`,
+        });
+        continue;
+      }
       await writeFile(target, script.source, { encoding: 'utf8', flag: 'wx' });
     } catch (error) {
       const exists = (error as NodeJS.ErrnoException).code === 'EEXIST';
@@ -506,7 +515,7 @@ export const importOp = defineOp({
     if (detected.kind.endsWith('-environment')) {
       throw new OpsError(
         'environments-not-imported',
-        `${value.source} reads as ${detected.label}; the command line has no workspace for environments. Import it in the desktop.`,
+        `${value.source} reads as ${detected.label}; 1 environment file was not imported: the command line has no workspace. Import the file in the desktop to bring it across.`,
         { format: detected.kind },
       );
     }
@@ -514,7 +523,7 @@ export const importOp = defineOp({
       'unsupported-format',
       detected.kind === 'postman-v3'
         ? `${value.source} is one file of a folder collection; import its folder or its .resources/definition.yaml`
-        : `${value.source} reads as ${detected.label}; import takes a WSDL or an OpenAPI document, or an Insomnia export, or a folder collection`,
+        : `${value.source} reads as ${detected.label}; import takes a WSDL or an OpenAPI document, an Insomnia export, or a folder collection`,
       { format: detected.kind },
     );
   },

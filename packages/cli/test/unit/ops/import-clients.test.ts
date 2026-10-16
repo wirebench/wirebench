@@ -1,9 +1,10 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { grpcApisOf, loadProject, restApisOf, wsApisOf } from '@wirebench/engine';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runOp } from '../../../src/ops/context.js';
-import { importOp } from '../../../src/ops/import.js';
+import { importOp, writeScripts } from '../../../src/ops/import.js';
 import { emptyProject, removeTempDirs, tempDir, updateProject } from './helpers.js';
 
 afterEach(removeTempDirs);
@@ -115,5 +116,56 @@ describe('op import: an Insomnia export', () => {
       runOp(importOp, { source: resolve(INSOMNIA, 'v5-environment.yaml') }, fixture.base()),
     );
     expect(error).toMatchObject({ code: 'environments-not-imported' });
+  });
+
+  it('refuses a Postman environment file with environments-not-imported', async () => {
+    const fixture = await emptyProject();
+    const path = join(await tempDir(), 'env.json');
+    await writeFile(
+      path,
+      JSON.stringify({
+        id: 'e1',
+        name: 'Local',
+        values: [{ key: 'a', value: 'b', enabled: true }],
+        _postman_variable_scope: 'environment',
+      }),
+      'utf8',
+    );
+    const error = await readError(runOp(importOp, { source: path }, fixture.base()));
+    expect(error).toMatchObject({ code: 'environments-not-imported' });
+  });
+
+  it('does not overwrite a script on a second import (EEXIST reported)', async () => {
+    const fixture = await emptyProject();
+    const source = resolve(INSOMNIA, 'v4.json');
+    await runOp(importOp, { source }, fixture.base());
+    const script = join(fixture.dir, 'imported-scripts', 'orders api', 'create order.pre.js');
+    await writeFile(script, 'edited', 'utf8');
+    const again = await runOp(importOp, { source }, fixture.base());
+    expect(await readFile(script, 'utf8')).toBe('edited');
+    expect(again.problems.find((p) => p.code === 'script-not-saved')?.message).toContain('already exists');
+  });
+});
+
+describe('writeScripts guard', () => {
+  it('refuses a path that leaves imported-scripts', async () => {
+    const outer = await tempDir();
+    const project = join(outer, 'project');
+    await mkdir(project);
+    const problems = await writeScripts(project, [{ path: '../escape.js', source: 'x' }]);
+    expect(problems.map((p) => p.code)).toEqual(['script-not-saved']);
+    expect(existsSync(join(outer, 'escape.js'))).toBe(false);
+  });
+
+  it('refuses to write through a symlinked imported-scripts', async () => {
+    const outer = await tempDir();
+    const project = join(outer, 'project');
+    const elsewhere = join(outer, 'elsewhere');
+    await mkdir(project);
+    await mkdir(elsewhere);
+    await symlink(elsewhere, join(project, 'imported-scripts'));
+    const problems = await writeScripts(project, [{ path: 'imported-scripts/api/a.pre.js', source: 'x' }]);
+    expect(problems.map((p) => p.code)).toEqual(['script-not-saved']);
+    expect(existsSync(join(elsewhere, 'api', 'a.pre.js'))).toBe(false);
   });
 });
