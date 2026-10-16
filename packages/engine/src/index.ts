@@ -179,6 +179,7 @@ export {
   HttpFileError,
   OpenCollectionError,
   BrunoError,
+  HoppscotchError,
   InsomniaError,
   ExportError,
   LegacyProjectError,
@@ -2376,3 +2377,6 @@ export { importInsomnia, readInsomniaFile } from './import/insomnia/import.js';
 export type { InsomniaSource } from './import/insomnia/import.js';
 export { importBruno, readBrunoFolder } from './import/bruno/import.js';
 export type { BrunoSource } from './import/bruno/import.js';
+export * from './import/hoppscotch/index.js';
+export { importHoppscotch, importHoppscotchEnvironments } from './import/hoppscotch/import.js';
+export type { HoppscotchSource } from './import/hoppscotch/import.js';
