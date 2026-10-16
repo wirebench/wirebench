@@ -136,19 +136,29 @@ type VariablesPorts = ReturnType<ApiChannelDeps['variablesPorts']>;
  */
 function fakeVariablesPorts(withProject?: { readonly fail?: boolean }): {
   readonly ports: VariablesPorts;
-  readonly environments: { name: string; properties: Record<string, string>; disabled: readonly string[] }[];
+  readonly environments: {
+    name: string;
+    properties: Record<string, string>;
+    disabled: readonly string[];
+    color?: string;
+  }[];
   readonly projectMerges: { properties: Record<string, string>; disabled: readonly string[] }[];
   readonly deletedSecrets: string[];
 } {
-  const environments: { name: string; properties: Record<string, string>; disabled: readonly string[] }[] = [];
+  const environments: {
+    name: string;
+    properties: Record<string, string>;
+    disabled: readonly string[];
+    color?: string;
+  }[] = [];
   const projectMerges: { properties: Record<string, string>; disabled: readonly string[] }[] = [];
   const deletedSecrets: string[] = [];
   let secrets = 0;
   const ports: VariablesPorts = {
     workspace: {
       environmentNames: () => environments.map((environment) => environment.name),
-      addEnvironment: (name, properties, disabled) => {
-        environments.push({ name, properties, disabled });
+      addEnvironment: (name, properties, disabled, color) => {
+        environments.push({ name, properties, disabled, ...(color !== undefined ? { color } : {}) });
         return Promise.resolve();
       },
       removeEnvironment: (name) => {
@@ -1633,6 +1643,117 @@ describe('api.importPostmanFolder', () => {
     } finally {
       await rm(outside, { recursive: true, force: true });
     }
+  });
+});
+
+const INSOMNIA = resolve(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/insomnia/crafted');
+
+describe('api.importInsomnia and api.importClientEnvironments', () => {
+  type ClientResponse = {
+    projectId: string;
+    apiIds: string[];
+    counts: Record<string, number>;
+    variables?: { secretsStored: number; environments: { name: string }[] };
+    warnings: string[];
+    notes: string[];
+    reportText: string;
+  };
+
+  const setupPicked = (picked?: string) => {
+    const picks = new DialogPicks();
+    if (picked !== undefined) picks.rememberRead(picked);
+    const fake = fakeVariablesPorts({});
+    const variablesPorts = vi.fn().mockReturnValue(fake.ports);
+    const stubs = setup({ picks, variablesPorts });
+    vi.mocked(stubs.deps.router.addGrpcApi).mockResolvedValue({ project: PROJECT, apiId: 'grpc-1' });
+    return { ...stubs, fake, variablesPorts };
+  };
+
+  it('places a v5 export as REST, gRPC and WebSocket APIs, its scripts as text, its environments unactivated', async () => {
+    const file = join(INSOMNIA, 'v5-collection.yaml');
+    const { addApi, deps, fake } = setupPicked(file);
+    vi.mocked(deps.router.writeImportedScripts).mockImplementationOnce((_projectId, scripts) =>
+      Promise.resolve({ written: scripts.map((script) => script.path), renamed: [], skipped: [] }),
+    );
+
+    const response = await value<ClientResponse>('api.importInsomnia', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: file },
+    });
+
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({
+      api: { name: 'Orders API' },
+      source: file,
+      declaredVersion: 'insomnia',
+      cache: false,
+    });
+    expect(vi.mocked(deps.router.importWsApi).mock.calls[0]?.[1].api.name).toBe('Orders API (WebSocket)');
+    expect(response.apiIds).toContain('api-1');
+    expect(response.apiIds).toContain('ws-1');
+    expect(response.counts.scripts).toBeGreaterThan(0);
+    expect(response.counts.scripts).toBe(vi.mocked(deps.router.writeImportedScripts).mock.calls[0]?.[1].length);
+    expect(fake.environments.length).toBeGreaterThan(0);
+    expect(response.variables?.environments.map((environment) => environment.name)).toEqual(
+      fake.environments.map((environment) => environment.name),
+    );
+  });
+
+  it('places pasted v4 JSON under the given name in a new project', async () => {
+    const { addApi, deps } = setupPicked();
+    const response = await value<ClientResponse>('api.importInsomnia', {
+      target: { newProjectName: 'Fresh' },
+      source: { kind: 'text', text: readFileSync(join(INSOMNIA, 'v4.json'), 'utf8') },
+      name: 'Renamed',
+    });
+    expect(deps.addProject).toHaveBeenCalledWith('Fresh');
+    expect(response.projectId).toBe('p-new');
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({ api: { name: 'Renamed' }, source: 'inline:insomnia' });
+  });
+
+  it('takes back a project it created when placing fails', async () => {
+    const { addApi, deps } = setupPicked();
+    addApi.mockRejectedValueOnce(new WirebenchError('disk-full', 'disk full'));
+    await failure('api.importInsomnia', {
+      target: { newProjectName: 'Fresh' },
+      source: { kind: 'text', text: readFileSync(join(INSOMNIA, 'v4.json'), 'utf8') },
+    });
+    expect(deps.removeProject).toHaveBeenCalledWith('p-new', { deleteFiles: true });
+  });
+
+  it('sends an environments-only file to the environments import, before creating anything', async () => {
+    const { addApi, deps } = setupPicked();
+    const text = readFileSync(join(INSOMNIA, 'v5-environment.yaml'), 'utf8');
+    expect(
+      (await failure('api.importInsomnia', { target: { newProjectName: 'X' }, source: { kind: 'text', text } })).code,
+    ).toBe('insomnia-environments-only');
+    expect(deps.addProject).not.toHaveBeenCalled();
+    expect(addApi).not.toHaveBeenCalled();
+  });
+
+  it('adds the sub-environments of an environments file to the workspace, with their #rrggbb colours', async () => {
+    const file = join(INSOMNIA, 'v5-environment.yaml');
+    const { fake, variablesPorts } = setupPicked(file);
+    const response = await value<{ summary: { environments: { name: string }[] }; reportText: string }>(
+      'api.importClientEnvironments',
+      { format: 'insomnia', source: { kind: 'file', path: file } },
+    );
+    expect(variablesPorts).toHaveBeenCalledWith(undefined);
+    expect(fake.environments.map(({ name, color }) => ({ name, color }))).toEqual([
+      // A named colour is not a #rrggbb value, so it is left out.
+      { name: 'Development', color: undefined },
+      { name: 'Production', color: '#cc0000' },
+    ]);
+    expect(fake.environments[0]?.properties).toEqual({ host: 'localhost:8080' });
+    expect(response.summary.environments.map((environment) => environment.name)).toEqual(['Development', 'Production']);
+  });
+
+  it('refuses an export holding a collection as an environments file', async () => {
+    const { fake } = setupPicked();
+    const text = readFileSync(join(INSOMNIA, 'v4.json'), 'utf8');
+    expect(
+      (await failure('api.importClientEnvironments', { format: 'insomnia', source: { kind: 'text', text } })).code,
+    ).toBe('insomnia-not-environments');
+    expect(fake.environments).toEqual([]);
   });
 });
 

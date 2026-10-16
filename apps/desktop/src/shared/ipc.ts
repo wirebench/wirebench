@@ -377,6 +377,9 @@ import {
   workspaceTeamWorkspacesResponseWireSchema,
 } from './wire-base.js';
 import {
+  apiImportClientEnvironmentsRequestSchema,
+  apiImportClientRequestSchema,
+  apiImportClientResponseSchema,
   apiImportOpenCollectionRequestSchema,
   apiImportOpenCollectionResponseSchema,
   apiImportPostmanFolderRequestSchema,
@@ -414,6 +417,7 @@ import {
   runnerStateSchema,
   runnerTargetRequestSchema,
 } from './runner-wire.js';
+import { apiImportPostmanVariablesResponseSchema } from './kinds/rest/wire.js';
 import { soapChannels } from './kinds/soap/channels.js';
 import { restChannels, restEvents } from './kinds/rest/channels.js';
 import { grpcChannels, grpcEvents } from './kinds/grpc/channels.js';
@@ -673,6 +677,12 @@ export const channels = {
       'api.importPostmanFolder',
       apiImportPostmanFolderRequestSchema,
       apiImportPostmanFolderResponseSchema,
+    ),
+    importInsomnia: defineChannel('api.importInsomnia', apiImportClientRequestSchema, apiImportClientResponseSchema),
+    importClientEnvironments: defineChannel(
+      'api.importClientEnvironments',
+      apiImportClientEnvironmentsRequestSchema,
+      apiImportPostmanVariablesResponseSchema,
     ),
     cancelImport: defineChannel('api.cancelImport', apiCancelImportRequestSchema, apiCancelImportResponseSchema),
     definitionDocuments: defineChannel(

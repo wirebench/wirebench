@@ -969,6 +969,75 @@ export type ApiImportPostmanFolderResponseInSync = AssertTrue<
   TypesEqual<z.infer<typeof apiImportPostmanFolderResponseObject>, ApiImportPostmanFolderResponse>
 >;
 
+/**
+ * Request payload for `api.importInsomnia` (and the other request clients' importers that follow):
+ * an export as a picked file or as text. `name` names the API(s) of an export holding one
+ * collection. An export holding only environments is refused: it is imported with
+ * `api.importClientEnvironments`.
+ */
+export const apiImportClientRequestSchema = z.object({
+  target: projectAddInterfaceTargetSchema,
+  source: postmanSourceSchema,
+  name: z.string().max(200).optional(),
+});
+export type ApiImportClientRequest = z.infer<typeof apiImportClientRequestSchema>;
+
+const apiImportClientResponseObject = z.object({
+  projectId: z.string(),
+  /** Absent when the export held only project properties, so no API was placed in the project. */
+  project: projectWireSchema.optional(),
+  /** Each collection's REST, gRPC and WebSocket API, in that order, each only when it had requests of its kind. */
+  apiIds: z.array(z.string()).readonly(),
+  counts: z.object({
+    collections: z.number(),
+    requests: z.number(),
+    folders: z.number(),
+    examples: z.number(),
+    assertions: z.number(),
+    /** Scripts written under `imported-scripts/`, never run. */
+    scripts: z.number(),
+  }),
+  /** What became of the environments and variables; absent when there were none. Never a value. */
+  variables: importVariablesSummarySchema.optional(),
+  warnings: z.array(z.string()).readonly(),
+  notes: z.array(z.string()).readonly(),
+  /** The import report as plain text, for the copy button; empty when there is nothing to say. */
+  reportText: z.string(),
+});
+/** Spelled out as an interface for the same reason as {@link ApiImportHarResponse}. */
+export interface ApiImportClientResponse {
+  projectId: string;
+  project?: ProjectWire | undefined;
+  apiIds: readonly string[];
+  counts: {
+    collections: number;
+    requests: number;
+    folders: number;
+    examples: number;
+    assertions: number;
+    scripts: number;
+  };
+  variables?: ImportVariablesSummaryWire | undefined;
+  warnings: readonly string[];
+  notes: readonly string[];
+  reportText: string;
+}
+/** Response payload for `api.importInsomnia`. */
+export const apiImportClientResponseSchema: z.ZodType<ApiImportClientResponse> = apiImportClientResponseObject;
+export type ApiImportClientResponseInSync = AssertTrue<
+  TypesEqual<z.infer<typeof apiImportClientResponseObject>, ApiImportClientResponse>
+>;
+
+/**
+ * Request payload for `api.importClientEnvironments`: another request client's environments file,
+ * applied to the open workspace. An export holding requests is refused.
+ */
+export const apiImportClientEnvironmentsRequestSchema = z.object({
+  format: z.enum(['insomnia']),
+  source: postmanSourceSchema,
+});
+export type ApiImportClientEnvironmentsRequest = z.infer<typeof apiImportClientEnvironmentsRequestSchema>;
+
 export const apiImportProtoResponseSchema = z.object({
   projectId: z.string(),
   project: projectWireSchema,

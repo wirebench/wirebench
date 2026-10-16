@@ -25,6 +25,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { X, Sparkles } from 'lucide-react';
 import { detectImportFormat, type DetectedImportFormat, type ImportFormatKind } from '@wirebench/engine/detect';
 import type {
+  ApiImportClientResponse,
   ApiImportHarResponse,
   ApiImportHttpFileResponse,
   ApiImportOpenApiResponse,
@@ -167,7 +168,8 @@ export type UnifiedImportResult =
   | { readonly kind: 'har'; readonly value: ApiImportHarResponse; readonly responses: HarResponses }
   | { readonly kind: 'http-file'; readonly value: ApiImportHttpFileResponse }
   | { readonly kind: 'opencollection'; readonly value: ApiImportOpenCollectionResponse }
-  | { readonly kind: 'postman-v3'; readonly value: ApiImportPostmanFolderResponse };
+  | { readonly kind: 'postman-v3'; readonly value: ApiImportPostmanFolderResponse }
+  | { readonly kind: 'client'; readonly value: ApiImportClientResponse };
 
 /** The formats read from a Postman export file. */
 const POSTMAN_FORMATS = new Set<ImportDialogFormat | ImportFormatKind>([
@@ -721,18 +723,18 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   }
 
   /**
-   * A Postman environment or globals export, or a `.http` client environment file, lands in the
-   * workspace: main reads it, stores its secrets and answers with what it made. There is no project
-   * to pick and nothing to cancel.
+   * A Postman environment or globals export, a `.http` client environment file or another client's
+   * environments file lands in the workspace: main reads it, stores its secrets and answers with
+   * what it made. There is no project to pick and nothing to cancel.
    */
   async function importVariables(
-    kind: 'postman-environment' | 'postman-globals' | 'http-env',
+    kind: 'postman-environment' | 'postman-globals' | 'http-env' | 'insomnia-environment',
     source: ImportSourceWire,
   ): Promise<void> {
     if (source.kind === 'url') {
       setImportError(
-        kind === 'http-env'
-          ? 'Import from a URL is not supported for environment files. Pick the file or paste its JSON.'
+        kind === 'http-env' || kind === 'insomnia-environment'
+          ? 'Import from a URL is not supported for environment files. Pick the file or paste its contents.'
           : 'Import from a URL is not supported for Postman exports. Pick the file or paste its JSON.',
       );
       return;
@@ -740,11 +742,14 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setImporting(true);
     try {
       const call =
-        kind === 'http-env'
-          ? ipc().api.importHttpEnv
-          : kind === 'postman-environment'
-            ? ipc().api.importPostmanEnvironment
-            : ipc().api.importPostmanGlobals;
+        kind === 'insomnia-environment'
+          ? (request: { source: PostmanSourceWire }) =>
+              ipc().api.importClientEnvironments({ format: 'insomnia', source: request.source })
+          : kind === 'http-env'
+            ? ipc().api.importHttpEnv
+            : kind === 'postman-environment'
+              ? ipc().api.importPostmanEnvironment
+              : ipc().api.importPostmanGlobals;
       const res = await call({
         source:
           source.kind === 'file'
@@ -873,6 +878,37 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   }
 
   /**
+   * Another request client's export: main converts each collection into a REST, a gRPC and a
+   * WebSocket API in the chosen project, writes its scripts under `imported-scripts/` as text, and
+   * adds its environments to the workspace without making one active.
+   */
+  async function importClient(source: ImportSourceWire): Promise<void> {
+    if (source.kind === 'url') {
+      setImportError('Import from a URL is not supported for this export. Pick the file or paste its contents.');
+      return;
+    }
+    setImporting(true);
+    const chosen = openProjects.some((project) => project.id === target) ? target : NEW_PROJECT;
+    try {
+      const res = await ipc().api.importInsomnia({
+        target: chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen },
+        source: source.kind === 'file' ? { kind: 'file', path: source.path } : { kind: 'text', text: source.text },
+        ...(name.trim().length > 0 ? { name: name.trim() } : {}),
+      });
+      if (!res.ok) {
+        setImportError(res.error.message);
+        return;
+      }
+      getExplorerTree()?.open(`proj:${res.value.projectId}`);
+      setResult({ kind: 'client', value: res.value });
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  /**
    * A folder (v3) collection: main reads the picked folder — or the folder a picked
    * `.resources/definition.yaml` stands for — and places each collection's REST, gRPC and WebSocket
    * API; a workspace folder brings its environments and globals too. Only a path main can check is
@@ -947,13 +983,15 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
               ? 'Pick a .har file to import'
               : kind === 'http-file'
                 ? 'Pick a .http file to import'
-                : kind === 'http-env'
+                : kind === 'http-env' || kind === 'insomnia-environment'
                   ? 'Pick an environment file to import'
                   : kind === 'opencollection'
                     ? 'Pick a collection .yml file, or the opencollection.yml of a collection folder'
                     : kind === 'postman-v3'
                       ? 'Pick the collection folder with Folder…'
-                      : 'Pick a file to import',
+                      : kind === 'insomnia'
+                        ? 'Pick an exported .json or .yaml file to import'
+                        : 'Pick a file to import',
         );
       } else {
         setImportError(
@@ -971,13 +1009,22 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       ? 'Paste the collection YAML to import'
                       : kind === 'postman-v3'
                         ? 'A folder collection is imported from its folder: use the File tab'
-                        : 'Paste a definition to import',
+                        : kind === 'insomnia'
+                          ? 'Paste the exported JSON or YAML to import'
+                          : kind === 'insomnia-environment'
+                            ? 'Paste the environments file to import'
+                            : 'Paste a definition to import',
         );
       }
       return;
     }
 
-    if (kind === 'postman-environment' || kind === 'postman-globals' || kind === 'http-env') {
+    if (
+      kind === 'postman-environment' ||
+      kind === 'postman-globals' ||
+      kind === 'http-env' ||
+      kind === 'insomnia-environment'
+    ) {
       await importVariables(kind, source);
       return;
     }
@@ -1004,6 +1051,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
     if (kind === 'postman-v3') {
       await importPostmanFolder(source);
+      return;
+    }
+
+    if (kind === 'insomnia') {
+      await importClient(source);
       return;
     }
 
@@ -1938,7 +1990,9 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
                           ? 'import-opencollection-summary'
                           : result.kind === 'postman-v3'
                             ? 'import-postman-v3-summary'
-                            : 'import-summary'
+                            : result.kind === 'client'
+                              ? 'import-client-summary'
+                              : 'import-summary'
       }
       className="mt-3 flex flex-col gap-3"
     >
@@ -2113,6 +2167,7 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
 
       {result.kind === 'opencollection' && <OpenCollectionSummary value={result.value} />}
       {result.kind === 'postman-v3' && <PostmanFolderSummary value={result.value} />}
+      {result.kind === 'client' && <ClientImportSummary value={result.value} />}
 
       {result.kind === 'wsdl' && (
         <div className="rounded border border-hairline-strong p-2">
@@ -2401,6 +2456,47 @@ function PostmanFolderSummary({ value }: { readonly value: ApiImportPostmanFolde
         notes={value.notes}
         reportText={value.reportText}
         testId="import-postman-v3-report"
+      />
+    </>
+  );
+}
+
+/**
+ * What another client's export made: the APIs, requests and folders (and collections, when the
+ * export held several), the examples and assertions kept, the scripts saved as text; then the
+ * environments and properties it added, and the report.
+ */
+function ClientImportSummary({ value }: { readonly value: ApiImportClientResponse }) {
+  const { counts, variables } = value;
+  return (
+    <>
+      <div className="rounded border border-hairline-strong p-3 text-sm text-fg-default">
+        <p data-testid="import-client-counts">
+          {counts.collections > 1 ? `${plural(counts.collections, 'collection')}: ` : ''}
+          {plural(value.apiIds.length, 'API')}, {plural(counts.requests, 'request')}, {plural(counts.folders, 'folder')}
+        </p>
+        {counts.examples > 0 && (
+          <p data-testid="import-client-examples" className="mt-1 text-xs text-fg-subtle">
+            {plural(counts.examples, 'example')} kept
+          </p>
+        )}
+        {counts.assertions > 0 && (
+          <p data-testid="import-client-assertions" className="mt-1 text-xs text-fg-subtle">
+            {plural(counts.assertions, 'assertion')} mapped
+          </p>
+        )}
+        {counts.scripts > 0 && (
+          <p data-testid="import-client-scripts" className="mt-1 text-xs text-fg-subtle">
+            {plural(counts.scripts, 'script')} kept as text, never run
+          </p>
+        )}
+        {variables !== undefined && <VariablesLines summary={variables} testId="import-client" />}
+      </div>
+      <ImportReportView
+        warnings={value.warnings}
+        notes={value.notes}
+        reportText={value.reportText}
+        testId="import-client-report"
       />
     </>
   );

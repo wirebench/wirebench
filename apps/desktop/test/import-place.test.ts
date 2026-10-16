@@ -86,6 +86,21 @@ describe('placeMappedImport', () => {
     expect(router.addGrpcApi.mock.calls[0]?.[1]).toMatchObject({ kind: 'proto', roots: ['a.proto'] });
   });
 
+  it('places a gRPC API with no definition, and says why, when its protos do not load', async () => {
+    const { deps, router } = stubs();
+    const grpcProtos = { sources: new Map([['a.proto', 'syntax = "proto3"; message {']]), roots: ['a.proto'] };
+    const placed = await placeMappedImport(
+      deps,
+      'p1',
+      mapped({ collections: [{ name: 'G', grpc: createGrpcApi('G'), grpcProtos }] }),
+      { source: '/x.json', declaredVersion: 'insomnia' },
+    );
+    expect(router.addGrpcApi).not.toHaveBeenCalled();
+    expect(placed.apiIds).toEqual(['grpc-1']);
+    expect(placed.warnings.some((warning) => warning.startsWith('G: its .proto files did not load'))).toBe(true);
+    expect(placed.notes).toContain('G: needs a definition: import its .proto or use server reflection.');
+  });
+
   it('applies variables only when the plan has some', async () => {
     const quiet = stubs();
     const none = await placeMappedImport(quiet.deps, 'p1', mapped(), { source: 's', declaredVersion: 'v' });

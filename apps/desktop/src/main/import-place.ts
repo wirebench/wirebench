@@ -5,8 +5,14 @@
  * never overwriting a name. One path for the folder (v3) importer and every other client's format.
  */
 
-import { formatImportReport } from '@wirebench/engine';
-import type { ImportedScriptFile, ImportedVariables, ImportReport, MappedClientEntry } from '@wirebench/engine';
+import { formatImportReport, loadProtoSet } from '@wirebench/engine';
+import type {
+  ImportedScriptFile,
+  ImportedVariables,
+  ImportReport,
+  MappedClientEntry,
+  MappedProtoSet,
+} from '@wirebench/engine';
 import type { ProjectWire } from '../shared/wire-types.js';
 import type { ImportVariablesSummaryWire } from '../shared/kinds/rest/wire.js';
 import type { ApiChannelDeps } from './ipc/api.js';
@@ -33,6 +39,29 @@ export interface MappedForPlacing {
 }
 
 /**
+ * `protos` when they load as a definition; otherwise `undefined`, with a warning naming why and the
+ * note that the API needs a definition, so a broken `.proto` costs the API its definition only.
+ */
+function loadable(
+  protos: MappedProtoSet | undefined,
+  apiName: string,
+  warnings: string[],
+  notes: string[],
+): MappedProtoSet | undefined {
+  if (protos === undefined || protos.roots.length === 0) return undefined;
+  try {
+    loadProtoSet(new Map(protos.sources), { roots: [...protos.roots] });
+    return protos;
+  } catch (error) {
+    warnings.push(
+      `${apiName}: its .proto files did not load: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    notes.push(`${apiName}: needs a definition: import its .proto or use server reflection.`);
+    return undefined;
+  }
+}
+
+/**
  * Places `mapped` in `projectId`. `meta.source` is recorded on each REST API as where it came from,
  * `meta.declaredVersion` as the format it was read as.
  */
@@ -43,6 +72,8 @@ export async function placeMappedImport(
   meta: { readonly source: string; readonly declaredVersion: string },
 ): Promise<PlacedImport> {
   const { router } = deps;
+  const warnings: string[] = [...mapped.report.warnings];
+  const notes: string[] = [...mapped.report.notes];
   let project: ProjectWire | undefined;
   const apiIds: string[] = [];
   const placed = (added: { readonly project: ProjectWire; readonly apiId: string }): void => {
@@ -62,9 +93,9 @@ export async function placeMappedImport(
       );
     }
     if (collection.grpc !== undefined) {
-      const protos = collection.grpcProtos;
+      const protos = loadable(collection.grpcProtos, collection.grpc.name, warnings, notes);
       placed(
-        protos !== undefined && protos.roots.length > 0
+        protos !== undefined
           ? await router.addGrpcApi(projectId, {
               api: collection.grpc,
               roots: protos.roots,
@@ -78,8 +109,6 @@ export async function placeMappedImport(
     if (collection.websocket !== undefined) placed(await router.importWsApi(projectId, { api: collection.websocket }));
   }
 
-  const warnings: string[] = [...mapped.report.warnings];
-  const notes: string[] = [...mapped.report.notes];
   let scripts = 0;
   if (mapped.scripts !== undefined && mapped.scripts.length > 0) {
     const { written, renamed, skipped } = await router.writeImportedScripts(projectId, mapped.scripts);

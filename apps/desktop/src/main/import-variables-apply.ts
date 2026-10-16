@@ -16,7 +16,13 @@ import { uniqueName } from '@wirebench/engine';
 export interface VariablesApplyPorts {
   readonly workspace: {
     environmentNames(): readonly string[];
-    addEnvironment(name: string, properties: Record<string, string>, disabled: readonly string[]): Promise<void>;
+    /** `color` is the source's `#rrggbb` environment colour, when it gave one. */
+    addEnvironment(
+      name: string,
+      properties: Record<string, string>,
+      disabled: readonly string[],
+      color?: string,
+    ): Promise<void>;
     removeEnvironment(name: string): Promise<void>;
     propertyNames(): readonly string[];
     mergeProperties(properties: Record<string, string>, disabled: readonly string[]): Promise<void>;
@@ -109,7 +115,7 @@ export async function applyImportedVariables(
         notes.push(`An environment named "${env.name}" already exists, so this one was imported as "${name}".`);
       }
       const { properties, disabled } = await resolveSet(name, env.variables);
-      await ports.workspace.addEnvironment(name, properties, disabled);
+      await ports.workspace.addEnvironment(name, properties, disabled, env.color);
       addedEnvironments.push(name);
       environments.push({
         name,

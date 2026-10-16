@@ -21,6 +21,7 @@ import {
   collectionV3Root,
   importHar,
   importHttpFile,
+  importInsomnia,
   importOpenCollection,
   importPostmanCollection,
   importPostmanVariables,
@@ -801,6 +802,76 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
       throw error;
     }
+  });
+
+  /**
+   * An Insomnia export (spec 2026-10-15 §4): each workspace's REST, gRPC and WebSocket API in the
+   * chosen project, its scripts under `imported-scripts/` (never run), its base and folder
+   * environments as project properties and its sub-environments as workspace environments (never
+   * activated). Everything is read and mapped before a project is created, so a refusal changes
+   * nothing; a project created for the import is taken back when anything after it fails. An export
+   * holding only environments goes to `api.importClientEnvironments` instead.
+   */
+  registerHandler(channels.api.importInsomnia, async (request) => {
+    const checkedSource = await checkedPostmanSource(request.source);
+    const mapped = await importInsomnia(checkedSource, {
+      ...(request.name !== undefined && request.name.trim() !== '' ? { name: request.name } : {}),
+    });
+    if (mapped.collections.length === 0 && mapped.variables.projectProperties === undefined) {
+      throw new WirebenchError(
+        'insomnia-environments-only',
+        'This Insomnia file holds only environments: import it as Insomnia environments.',
+      );
+    }
+    const source = checkedSource.kind === 'file' ? checkedSource.path : 'inline:insomnia';
+
+    const placeIn = async (projectId: string) => {
+      const placed = await placeMappedImport(deps, projectId, mapped, { source, declaredVersion: 'insomnia' });
+      return {
+        projectId: placed.projectId,
+        ...(placed.project !== undefined ? { project: placed.project } : {}),
+        apiIds: placed.apiIds,
+        counts: { ...mapped.counts, scripts: placed.scripts },
+        ...(placed.variables !== undefined ? { variables: placed.variables } : {}),
+        warnings: placed.warnings,
+        notes: placed.notes,
+        reportText: placed.reportText,
+      };
+    };
+
+    if ('projectId' in request.target) {
+      return await placeIn(request.target.projectId);
+    }
+
+    const { projectId } = await deps.addProject(request.target.newProjectName);
+    try {
+      return await placeIn(projectId);
+    } catch (error) {
+      await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
+      throw error;
+    }
+  });
+
+  /**
+   * Another request client's environments file, applied to the open workspace: its base merged into
+   * Globals, each sub-environment a workspace environment under a free name (never activated). An
+   * export holding requests is refused rather than half imported.
+   */
+  registerHandler(channels.api.importClientEnvironments, async (request) => {
+    const checkedSource = await checkedPostmanSource(request.source);
+    const mapped = await importInsomnia(checkedSource);
+    if (mapped.collections.length > 0 || mapped.variables.projectProperties !== undefined) {
+      throw new WirebenchError(
+        'insomnia-not-environments',
+        'This Insomnia export holds a collection: import it as an Insomnia export.',
+      );
+    }
+    const summary = await applyImportedVariables(mapped.variables, deps.variablesPorts(undefined));
+    const report = {
+      warnings: [...mapped.report.warnings, ...summary.warnings],
+      notes: [...mapped.report.notes, ...summary.notes],
+    };
+    return { summary: { ...summary, ...report }, reportText: formatImportReport(report) };
   });
 
   /**

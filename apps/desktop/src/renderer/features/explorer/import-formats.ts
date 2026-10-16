@@ -153,6 +153,23 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
     dialogTitle: 'Import OpenCollection',
   }),
   row({
+    kind: 'insomnia',
+    label: 'Insomnia export',
+    tabs: NO_URL_TABS,
+    fileFirst: true,
+    defaultName: 'Imported collection',
+    fileFilters: [{ name: 'Insomnia export', extensions: ['json', 'yaml', 'yml'] }],
+    pickerTitle: 'Import Insomnia Export',
+    dialogTitle: 'Import Insomnia Export',
+  }),
+  variablesRow({
+    kind: 'insomnia-environment',
+    label: 'Insomnia environments',
+    fileFilters: [{ name: 'Insomnia environments', extensions: ['yaml', 'yml', 'json'] }],
+    pickerTitle: 'Import Insomnia Environments',
+    dialogTitle: 'Import Insomnia Environments',
+  }),
+  row({
     kind: 'wsdl',
     label: 'WSDL (SOAP)',
     defaultName: 'Imported service',
