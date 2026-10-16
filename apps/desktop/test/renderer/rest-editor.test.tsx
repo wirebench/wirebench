@@ -218,11 +218,22 @@ describe('RestEditor', () => {
     });
   });
 
+  it('dots the Body tab while the request has a body, and clears it with None (#637)', () => {
+    seed(restRequestWire({ body: { kind: 'raw', language: 'json', text: '{"a":1}' } }));
+    mount();
+
+    const body = screen.getByRole('tab', { name: /^Body/ });
+    expect(body.textContent).toBe('Body●');
+    fireEvent.click(body);
+    fireEvent.change(screen.getByTestId('rest-body-kind'), { target: { value: 'none' } });
+    expect(screen.getByRole('tab', { name: /^Body/ }).textContent).toBe('Body');
+  });
+
   it('keeps each body kind draft while the switch moves between them', () => {
     seed(restRequestWire({ body: { kind: 'raw', language: 'json', text: '{"a":1}' } }));
     mount();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Body' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Body/ }));
     fireEvent.change(screen.getByTestId('rest-body-kind'), { target: { value: 'none' } });
     expect(staged()?.['body']).toEqual({ kind: 'none' });
 
@@ -584,7 +595,7 @@ describe('RestEditor Mod+S in the body editor', () => {
     const saveRestRequest = vi.fn().mockResolvedValue(undefined);
     useProjectStore.setState({ saveRestRequest });
     mount();
-    fireEvent.click(screen.getByRole('tab', { name: 'Body' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Body/ }));
 
     fireEvent.keyDown(screen.getByLabelText('Request body'), { key: 's', ctrlKey: true });
 

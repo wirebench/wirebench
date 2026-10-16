@@ -100,6 +100,11 @@ test.describe('REST editor at small window sizes', () => {
           await page.getByTestId('rail-code').click();
         }
         await expect(page.getByTestId('code-panel')).toBeVisible({ visible: codePanel });
+        // Shrinking to 1024×700 collapses the console (#636); open it again, as a user would, to check it fits.
+        if (!(await page.getByTestId('console').isVisible())) {
+          await page.getByTestId('status-bar-console').click();
+        }
+        await expect(page.getByTestId('console')).toBeVisible();
 
         // The tabs that used to push the pane sideways, each picked from wherever it now sits.
         for (const tab of ['Assertions', 'Snapshot', 'Body']) {
@@ -112,11 +117,8 @@ test.describe('REST editor at small window sizes', () => {
         expect(await sidewaysOverflow(page), `${where}, request Headers tab`).toEqual([]);
         await openRequestTab(page, 'Params');
 
-        // The HTTP Log's toolbar fits on its line: search, Filters, Reset and Preserve log all in view.
-        // Only with the code panel closed: open, it takes its width out of the console's column.
-        if (codePanel) {
-          continue;
-        }
+        // The HTTP Log's toolbar never scrolls sideways: search, Filters, Reset and Preserve log all in
+        // view. With the code panel open the console is narrower, and the bar wraps instead (#636).
         const bar = page.getByTestId('http-log-filter');
         expect(
           await bar.evaluate((element) => element.scrollWidth > element.clientWidth + 1),
@@ -156,5 +158,19 @@ test.describe('REST editor at small window sizes', () => {
     await page.waitForSelector(SHELL_READY_SELECTOR);
     await expect(page.getByTestId('activity-bar')).toBeVisible();
     await expect(page.getByTestId('console')).toBeHidden();
+  });
+
+  test('shrinking the window collapses the console, and growing it back reopens it (#636)', async () => {
+    launched = await launchApp({ adaptiveLayout: true });
+    const page = launched.window;
+    await createWorkspace(page, 'Resize');
+    test.skip(!(await setWindowSize(launched, SIZES[0])), 'The screen is smaller than 1440×900');
+    await page.getByTestId('status-bar-console').click();
+    await expect(page.getByTestId('console')).toBeVisible();
+
+    await setWindowSize(launched, SIZES[1]);
+    await expect(page.getByTestId('console')).toBeHidden();
+    await setWindowSize(launched, SIZES[0]);
+    await expect(page.getByTestId('console')).toBeVisible();
   });
 });
