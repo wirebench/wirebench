@@ -89,6 +89,17 @@ describe('RestResponsePane', () => {
     expect(status).toContain('body');
   });
 
+  it('wraps the status line between whole parts instead of truncating the last (#636)', () => {
+    mount(makeRestExchange());
+
+    const status = screen.getByTestId('rest-response-status');
+    expect(status.className).not.toContain('truncate');
+    const parts = [...status.children].map((part) => part.textContent);
+    expect(parts[0]).toBe('200 OK');
+    expect(parts.slice(1).every((part) => part?.startsWith('· '))).toBe(true);
+    expect([...status.children].every((part) => part.classList.contains('whitespace-nowrap'))).toBe(true);
+  });
+
   it('pins a failing Assertions tab in red and counts the failures on the status line (N01)', () => {
     mount({
       ...makeRestExchange(),
@@ -98,7 +109,7 @@ describe('RestResponsePane', () => {
       ],
     });
 
-    expect(screen.getByTestId('rest-response-assertions-failed').textContent).toBe(' · 1 assertion failed');
+    expect(screen.getByTestId('rest-response-assertions-failed').textContent).toBe('1 assertion failed');
     const tab = screen.getByRole('tab', { name: /Assertions ✕/ });
     expect(tab.querySelector('.text-status-danger')?.textContent).toBe('1/2');
   });

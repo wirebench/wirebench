@@ -14,6 +14,7 @@ import {
   SettingsGroup,
 } from '../../components/settings-grid.js';
 import { useHistoryStore } from '../../state/history.js';
+import { sendProblemText } from '../request-editor/send-error.js';
 import { useRunnerStore } from '../../state/runner.js';
 import { useUiStore } from '../../state/ui.js';
 import { useProjectStore } from '../../state/project.js';
@@ -72,8 +73,11 @@ function showInHistory(runId: string): void {
   useHistoryStore.getState().search(`run:${runId}`);
 }
 
-function summaryText(summary: RunnerSummary, cancelled: boolean): string {
-  const parts = [`${summary.passed} passed`, `${summary.failed} failed`, `${summary.errored} errored`];
+export function summaryText(summary: RunnerSummary, cancelled: boolean): string {
+  // A pass with nothing checked is counted on its own, as its row's neutral mark shows it (#637).
+  const unchecked = summary.unchecked ?? 0;
+  const parts = [`${summary.passed - unchecked} passed`, `${summary.failed} failed`, `${summary.errored} errored`];
+  if (unchecked > 0) parts.push(`${unchecked} without checks`);
   if (summary.skipped > 0) parts.push(`${summary.skipped} skipped`);
   if (summary.iterations !== undefined) {
     parts.push(
@@ -195,7 +199,10 @@ function ResultRow({ result }: { readonly result: RunnerRequestResult }) {
           <div className="mt-1 ml-6 flex flex-col gap-0.5">
             {result.error !== undefined && (
               <p data-testid="runner-result-error" className="text-status-danger">
-                {result.error.code}: {result.error.message}
+                {sendProblemText(result.error)}{' '}
+                <span data-testid="runner-result-error-code" className="font-mono text-xs text-fg-subtle">
+                  {result.error.code}
+                </span>
               </p>
             )}
             {[...failedChecks, ...passedChecks].map((assertion, index) => (

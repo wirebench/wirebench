@@ -96,6 +96,11 @@ export const runnerSummarySchema = z.object({
   failed: z.number().int(),
   errored: z.number().int(),
   skipped: z.number().int(),
+  /**
+   * How many of `passed` had no checks: sent and answered, nothing tested (#637). Absent on a run
+   * saved before it was counted, which then reads as every pass having been checked.
+   */
+  unchecked: z.number().int().optional(),
   durationMs: z.number(),
   iterations: z.object({ planned: z.number().int(), run: z.number().int() }).optional(),
 });
