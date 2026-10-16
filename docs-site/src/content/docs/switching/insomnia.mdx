@@ -73,7 +73,7 @@ plain text. The import summary lists everything that was left out or changed.
 | Bearer | Bearer. A custom prefix is kept as the scheme. A token sent with no prefix becomes an API key named `Authorization`, with a note |
 | API key in a header or the query | API key, with its name and placement |
 | API key in a cookie | Auth **none**, with a warning |
-| OAuth 2 | OAuth 2, with each grant Wirebench has, its URLs, client ID and scopes |
+| OAuth 2 | OAuth 2 with the authorization code (PKCE included), client credentials or password grant, its URLs, client ID and scopes. Any other grant becomes **none**, with a warning naming it |
 | AWS IAM | AWS Signature v4, with the region and service |
 | OAuth 1, Hawk, ASAP, Netrc and any other type | Auth **none**, with a warning naming the type |
 
