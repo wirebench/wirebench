@@ -385,7 +385,9 @@ exports[`mapInsomnia golden > maps the crafted v5 collection 1`] = `
       "notes": [
         "Project properties: "tenant" is defined more than once (folder "Orders"); the first value was kept.",
       ],
-      "warnings": [],
+      "warnings": [
+        "Vault secrets are not in the export; set a value for: svcPassword (Staging)",
+      ],
     },
   },
 }

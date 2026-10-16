@@ -442,8 +442,9 @@ describe('mapInsomnia: environments', () => {
       { name: 'svcPassword', value: '', enabled: true, secret: true, awaitsValue: true },
     ]);
     expect(JSON.stringify(mapped)).not.toContain('c2VhbGVk');
-    // Each vault secret is reported once, by the desktop's per-secret "needs a value" line.
-    expect(mapped.variables.report.warnings.join('\n')).not.toContain('svcPassword');
+    expect(mapped.variables.report.warnings).toContain(
+      'Vault secrets are not in the export; set a value for: svcPassword (Staging)',
+    );
     // `{{ _.vault.svcPassword }}` points at that secret by name.
     const text = JSON.stringify(mapped.collections[0]!.rest);
     expect(text).not.toContain('_.vault');

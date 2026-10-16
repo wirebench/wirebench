@@ -527,6 +527,9 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
       `Kept as written, with no Wirebench equivalent: the template tag "${tag}" in ${[...users].join(', ')}.`,
     );
   }
+  if (mapper.vault.length > 0) {
+    variableReport.warn(`Vault secrets are not in the export; set a value for: ${mapper.vault.join(', ')}`);
+  }
   if (mapper.variableDynamic.size > 0) {
     variableReport.warn(
       `Dynamic variables are kept as written and not expanded: ${[...mapper.variableDynamic].sort().join(', ')}`,

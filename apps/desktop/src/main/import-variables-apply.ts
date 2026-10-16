@@ -71,8 +71,11 @@ export async function applyImportedVariables(
   const valueOf = async (owner: string, v: ImportedVariable): Promise<string> => {
     if (!v.secret) return v.value;
     if (v.secretValue === undefined || v.secretValue === '') {
-      warnings.push(`${owner}: the secret "${v.name}" had no value in the file; set it in Environments.`);
-      if (v.awaitsValue !== true) return '';
+      // A vault secret is already listed by the importer's own warning; any other empty secret is listed here.
+      if (v.awaitsValue !== true) {
+        warnings.push(`${owner}: the secret "${v.name}" had no value in the file; set it in Environments.`);
+        return '';
+      }
       // A named secret waiting for its value: its own reference, so the property is never a plain ''.
       // Not counted as stored, and still deleted again if a later save fails.
       const ref = await ports.secrets.set('', { label: `${owner}/${v.name}` });

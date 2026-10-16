@@ -104,6 +104,10 @@ describe('applyImportedVariables', () => {
     const { ports, added, store } = fakePorts();
     const result = await applyImportedVariables(
       plan({
+        report: {
+          warnings: ['Vault secrets are not in the export; set a value for: svcPassword (Staging)'],
+          notes: [],
+        },
         environments: [
           {
             name: 'Staging',
@@ -120,9 +124,8 @@ describe('applyImportedVariables', () => {
     expect(added[0]?.properties).toEqual({ svcPassword: '${secret:sec_1}', host: 'h' });
     expect(store.get('sec_1')).toEqual({ value: '', label: 'Staging/svcPassword' });
     expect(result.secretsStored).toBe(0);
-    expect(result.warnings).toContain(
-      'Staging: the secret "svcPassword" had no value in the file; set it in Environments.',
-    );
+    // The importer's own vault line lists it; the generic "had no value" line is not repeated.
+    expect(result.warnings).toEqual(['Vault secrets are not in the export; set a value for: svcPassword (Staging)']);
   });
 
   it('gives a new environment the colour its source carried', async () => {
