@@ -214,6 +214,32 @@ describe('RestResponsePane', () => {
     expect(screen.getByTestId('send-error-title').className).not.toContain('danger');
   });
 
+  it('keeps the response a cancel left on screen, under a "Cancelled after" bar with Retry', () => {
+    const onRetry = vi.fn();
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{
+            status: 'error',
+            sendId: 's2',
+            error: { code: 'aborted', message: 'The request was aborted.' },
+            previous: makeRestExchange(),
+            cancelledAfterMs: 818,
+          }}
+          onRetry={onRetry}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.queryByTestId('send-error-panel')).toBeNull();
+    expect(screen.getByTestId('rest-response-cancelled').textContent).toBe('Cancelled after 818 ms · Retry');
+    // The kept response reads as it did, not dimmed and not as an error.
+    expect(screen.getByTestId('rest-response-view').hasAttribute('data-stale')).toBe(false);
+    expect(screen.getByTestId('rest-response-status').textContent).toMatch(/^200/);
+    fireEvent.click(screen.getByTestId('rest-response-cancelled-retry'));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
   it('names the timeout and links its setting, and links each unresolved reference', () => {
     const onOpenTimeoutSetting = vi.fn();
     const onRevealReference = vi.fn();
