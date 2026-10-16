@@ -59,9 +59,12 @@ test('an API runs once per data row from its Runner tab', async () => {
   await expect(tab.getByTestId('runner-data')).toHaveText('users.csv — 2 rows: user');
 
   await tab.getByTestId('runner-run').click();
-  await expect(tab.getByTestId('runner-status')).toContainText('2 passed, 0 failed, 0 errored, 2 iterations', {
-    timeout: 30_000,
-  });
+  await expect(tab.getByTestId('runner-status')).toContainText(
+    '0 passed, 0 failed, 0 errored, 2 without checks, 2 iterations',
+    {
+      timeout: 30_000,
+    },
+  );
   await expect(tab.getByTestId('runner-iteration')).toHaveCount(2);
   await expect(tab.getByTestId('runner-history-entry')).toHaveCount(1);
   await expect(tab).not.toContainText(dataDir);

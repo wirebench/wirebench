@@ -53,8 +53,25 @@ All notable changes to this project are documented here. The format follows
   beside the requests, so a request stays in view while you browse its history or edit its variables.
   SSH keeps its own strip. The right rail shows an environment's details while its tab is in front
   (#607).
+- **A send the network failed is not a Problem.** A refused connection, an unknown host, a timeout, a
+  failed TLS handshake, a proxy or network failure no longer adds a red Problem: the response pane
+  already says what happened, with a hint and Retry, and the status bar's `last:` shows it. Failures
+  the project can fix (unresolved variables, an incomplete URL, an untrusted certificate, script type
+  errors) stay in Problems, now worded by their title ("Incomplete URL: …") rather than their code
+  (#635).
 
 ### Fixed
+
+- **The Body tab shows when there is a body.** Like Scripts, the REST request's Body tab carries a dot
+  while the request would send a body (#637).
+- **The Runner counts requests without checks apart.** Its summary and Past runs now say "3 passed,
+  9 without checks" instead of counting a request that tested nothing as passed, and a request that
+  errored reads like the send error panel ("Incomplete URL: …", the code in small text) (#637).
+- **REST fits a 1024×700 window better.** Shrinking the window below 720px collapses an open console,
+  and growing it back reopens it; the first send in a short window leaves the console collapsed. The
+  HTTP Log toolbar wraps instead of scrolling sideways when the code panel narrows the console, and
+  **Preserve log** is now a pin icon beside the other actions. The response's status line wraps
+  between its parts instead of cutting the last one short (#636).
 
 - **WSDL import goes through your proxy and CA bundle.** Importing a WSDL by URL, re-fetching it when a
   project reopens, and fetching a definition a legacy SOAP project file holds no copy of now use the

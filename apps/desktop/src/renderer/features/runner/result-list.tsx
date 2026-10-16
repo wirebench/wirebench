@@ -4,6 +4,7 @@
  */
 import type { ReactNode } from 'react';
 import type { RunnerRequestResult } from '../../../shared/runner-wire.js';
+import { sendProblemText } from '../request-editor/send-error.js';
 
 export const OUTCOME_TONE: Record<RunnerRequestResult['outcome'], string> = {
   passed: 'text-status-success',
@@ -81,7 +82,10 @@ export function ResultRow<T extends RunnerRequestResult>({ result, extra }: Resu
           <div className="mt-1 ml-6 flex flex-col gap-0.5">
             {result.error !== undefined && (
               <p data-testid="runner-result-error" className="text-status-danger">
-                {result.error.code}: {result.error.message}
+                {sendProblemText(result.error)}{' '}
+                <span data-testid="runner-result-error-code" className="font-mono text-xs text-fg-subtle">
+                  {result.error.code}
+                </span>
               </p>
             )}
             {[...failedChecks, ...passedChecks].map((assertion, index) => (
