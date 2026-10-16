@@ -74,6 +74,9 @@ All notable changes to this project are documented here. The format follows
   "No body (204 No Content)" in the Body tab, with the response's own status, instead of an empty
   editor showing line 1. A saved example and a captured webhook request with no body say the same
   (#632).
+- **Override sits on the row in the generated headers.** In a REST request's **Generated** headers,
+  **Override** is now a small text-sized control on the row's baseline instead of a full-height
+  button standing off it, and the row checkboxes use the accent colour (#632).
 
 ## [6.1.0] - 2026-10-16
 
