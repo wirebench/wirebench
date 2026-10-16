@@ -410,7 +410,7 @@ From the keyboard:
   screen. **Save as host…**, in the list or on a failed connection screen, opens **New host** filled in
   from it.
 - Quick-open (<kbd>⌘P</kbd>) lists hosts alongside operations and requests, recent ones first.
-- The palette also has **Hosts: New Host…**, **Hosts: New Group…**, **Hosts: Edit Host…** and
+- The palette also has **Hosts: New Host…**, **Hosts: New Host Group…**, **Hosts: Edit Host…** and
   **Hosts: Import Hosts…**. Typing `ssh` in the palette lists every command of the SSH area first.
 
 The terminal opens in an editor tab named after the host. It is a full terminal (colour, editors,
@@ -784,7 +784,8 @@ terminals, so a terminal closing or reconnecting never drops a forward. Switchin
 window stops that window's forwards, and they are not restored on restart.
 
 The **Port forwarding** view lists every rule of every host with its state, type (Local, Remote or
-Dynamic), `bind:port → target`, its host and where it came from (this host, or a group), a search box and
+Dynamic), `bind:port → target`, its host and where it is defined (**defined on this host**, or **defined on
+host group Production**: a host group, never a forwarding group), a search box and
 **All**, **Running** and **Failed**
 chips. Rules that are off show greyed with where they were switched off. A rule's menu has **Start on
 another port…**, **Copy address**, **Edit rule** and **Stop**. If you edit a running rule, it keeps running
@@ -817,7 +818,9 @@ sit in different forwarding groups on different hosts. A file holds `forwardGrou
 Wirebench writes version 2 while the file has a group, and version 1 again once the last group is gone. A
 version 1 file loads unchanged, and an older Wirebench refuses a version 2 file rather than dropping its
 groups. Renaming or removing a rule leaves its entry in the group, shown as **removed from hosts.yaml**
-with **Remove from group**, so the file still loads.
+with **Remove from group**, so the file still loads; such an entry is never counted as failed. Deleting a
+host takes its rules out of their forwarding groups, and the delete confirm names them first (**Its rule
+redis leaves forwarding group Backend.**).
 
 In the **Port forwarding** view:
 
@@ -835,9 +838,11 @@ In the **Port forwarding** view:
   rule still has its own **Start** and **Stop**.
 - The group's menu has **Rename…** and **Delete group**. Deleting a group keeps its rules, which move to
   **Ungrouped**, and doesn't stop them.
-- Clicking a rule opens its details on the right, in place of the host details: where it listens and
-  forwards to, where the rule is set, what runs of it now, its error if it failed, and its group, which you
-  can change there. The panel icon in the right rail shows and hides them.
+- Clicking a rule opens its details on the right, in place of the host details: one list of where it
+  listens and forwards to, how it starts (or how it started while it runs: by hand, with the host's
+  terminals, or **with group Dev** after **Start group**), where the rule is set and its host, with a live
+  value shown only where it differs from the rule's, such as a port for this run. Then its error if it
+  failed, and its forwarding group, which you can change there. The panel icon in the right rail shows and hides them.
 
 The palette has **Forwarding: Start Forwarding Group…** and **Forwarding: Stop Forwarding Group…**.
 

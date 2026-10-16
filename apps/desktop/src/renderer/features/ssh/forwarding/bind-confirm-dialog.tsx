@@ -43,6 +43,7 @@ export function BindConfirmDialog() {
         void startForward(prompt.hostId, prompt.ruleId, {
           confirmBind: true,
           ...(prompt.port === undefined ? {} : { port: prompt.port }),
+          ...(prompt.group === undefined ? {} : { group: prompt.group }),
         });
       }}
     />

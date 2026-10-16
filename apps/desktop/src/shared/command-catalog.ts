@@ -116,7 +116,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   },
   'ssh.newGroup': {
     id: 'ssh.newGroup',
-    label: 'Hosts: New Group…',
+    label: 'Hosts: New Host Group…',
     category: 'Hosts',
   },
   'ssh.editHost': {

@@ -135,7 +135,7 @@ describe('the Port forwarding view', () => {
     const pg = rowOf('db-1/pg');
     expect(pg.textContent).toContain('Local');
     expect(pg.textContent).toContain('127.0.0.1:5432 → localhost:5432');
-    expect(pg.textContent).toContain('from this host');
+    expect(pg.textContent).toContain('defined on this host');
     expect(within(pg).getByText('auto')).toBeDefined();
     expect(within(pg).queryByText('network')).toBeNull();
     expect(within(rowOf('db-1/admin')).getByText('network')).toBeDefined();
@@ -154,12 +154,12 @@ describe('the Port forwarding view', () => {
     expect(within(grafana).queryAllByRole('button')).toHaveLength(0);
   });
 
-  it('names a group a rule came from', () => {
+  it('names the host group a rule came from as a host group', () => {
     useHostsStore.setState({
       resolved: [host('db-2', 'db-2', [rule('grafana', { port: 3000 }, { from: { group: 'prod' } })])],
     });
     render(<ForwardingPanel />);
-    expect(rowOf('db-2/grafana').textContent).toContain('from group Production');
+    expect(rowOf('db-2/grafana').textContent).toContain('defined on host group Production');
   });
 
   it('the Running and Failed chips filter the rows; the box filters by port', () => {
@@ -376,6 +376,15 @@ describe('the SSH status item', () => {
     expect(useHostsStore.getState().homeView).toBe('forwarding');
     expect(useEditorsStore.getState().displayedSet).toBe('ssh');
     expect(useUiStore.getState().sidebar.view).toBe('ssh');
+  });
+
+  it('does not count a failed forward whose rule or host has gone', () => {
+    act(() => {
+      useForwardsStore.getState().apply(running('db-1', 'pg', 5432));
+      useForwardsStore.getState().apply({ ...failed('gone', 'x', 9000), removed: true });
+    });
+    render(<SshStatusItem />);
+    expect(screen.getByTestId('status-bar-forwards').textContent).toBe('⇄ 1');
   });
 
   it('the status bar renders it while the SSH area is on, and nothing when it is off', () => {

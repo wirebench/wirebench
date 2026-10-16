@@ -35,6 +35,8 @@ export const forwardStateWireSchema = z.object({
   hostId: z.string(),
   ruleId: z.string(),
   origin: forwardOriginWireSchema,
+  /** The forwarding group whose Start group started it (by its id); absent for any other start. */
+  group: z.string().optional(),
   /** The port it runs on (a one-run override shows here). */
   port: z.number().int(),
   status: forwardStatusWireSchema,
@@ -54,6 +56,8 @@ export const forwardStartRequestSchema = z.strictObject({
   port: portSchema.optional(),
   /** The user confirmed a network bind; recorded per machine. */
   confirmBind: z.literal(true).optional(),
+  /** Started by this forwarding group's Start group: recorded on the forward's state as where it came from. */
+  group: idSchema.optional(),
 });
 export type ForwardStartRequest = z.infer<typeof forwardStartRequestSchema>;
 export const forwardStopRequestSchema = z.strictObject({ hostId: idSchema, ruleId: idSchema });

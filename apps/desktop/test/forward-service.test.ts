@@ -543,6 +543,18 @@ describe('ForwardService auto-start with terminals', () => {
     expect(service.list(as(one)).map((f) => f.ruleId)).toEqual(['auto']);
   });
 
+  it("records the forwarding group that started a rule, and an auto rule a group adopts takes the group's name", async () => {
+    const { service } = make();
+    const one = sender(1);
+    await service.start(as(one), { hostId: 'a', ruleId: 'pg', group: 'dev' });
+    expect(service.list(as(one)).find((f) => f.ruleId === 'pg')?.group).toBe('dev');
+    service.sessionsChanged(as(one), 'a', 1);
+    await settle();
+    expect(service.list(as(one)).find((f) => f.ruleId === 'auto')?.group).toBeUndefined();
+    await service.start(as(one), { hostId: 'a', ruleId: 'auto', group: 'dev' });
+    expect(service.list(as(one)).find((f) => f.ruleId === 'auto')).toMatchObject({ origin: 'manual', group: 'dev' });
+  });
+
   it('an auto rule stopped by hand stays stopped until the next first session', async () => {
     const { service } = make();
     const one = sender(1);

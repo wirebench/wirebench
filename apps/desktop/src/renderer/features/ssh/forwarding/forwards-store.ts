@@ -18,6 +18,8 @@ export interface BindPrompt {
   /** `0.0.0.0:5432`. */
   address: string;
   port?: number;
+  /** The forwarding group whose start raised it. */
+  group?: string;
 }
 
 /** "Start on another port…", pre-filled from `forward.freePort`. */
@@ -152,7 +154,10 @@ export function shownForwards(
   return shown;
 }
 
-/** How many forwards are live and how many failed (one waiting on its prompt is not). */
+/**
+ * How many forwards are live and how many failed (one waiting on its prompt is not, nor one whose rule or host
+ * has gone from `hosts.yaml`: there is nothing left to retry).
+ */
 export function forwardCounts(
   byKey: Readonly<Record<string, ForwardStateWire>>,
   waiting: Readonly<Record<string, true>> = {},
@@ -160,7 +165,7 @@ export function forwardCounts(
   const states = Object.values(shownForwards(byKey, waiting));
   return {
     running: states.filter((state) => isLive(state)).length,
-    failed: states.filter((state) => state.status.state === 'failed').length,
+    failed: states.filter((state) => state.status.state === 'failed' && state.removed !== true).length,
   };
 }
 

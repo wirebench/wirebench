@@ -38,6 +38,8 @@ interface Instance {
   /** The port it runs on: the rule's, or a one-run override. */
   readonly port: number;
   origin: ForwardOriginWire;
+  /** The forwarding group that started it, while it runs as that group's start. */
+  group?: string | undefined;
   status: ForwardStatus;
   changed?: true;
   removed?: true;
@@ -139,17 +141,17 @@ export class ForwardService {
     }
     if (!found.enabled) {
       const offBy = found.offBy ?? found.from;
-      const level = offBy === 'host' ? 'the host' : `the group ${offBy.group}`;
+      const level = offBy === 'host' ? 'the host' : `the host group ${offBy.group}`;
       throw new WirebenchError('ssh-forward-off', `${request.ruleId} is switched off by ${level}`, {
         details: { hostId: host.id, ruleId: request.ruleId, offBy: offByWire(offBy) },
       });
     }
     const rule = found.rule;
     const key = keyOf(sender.id, host.id, rule.id);
-    if (this.adopt(key, origin)) return;
+    if (this.adopt(key, origin, request.group)) return;
     if (isNetworkBind(rule.bind)) await this.requireConfirmedBind(sender, host.id, rule, request.confirmBind);
     // From here to the table entry nothing awaits, so two starts cannot both pass the clash check.
-    if (this.adopt(key, origin)) return;
+    if (this.adopt(key, origin, request.group)) return;
     const port = request.port ?? rule.port;
     this.refuseClash(rule, port);
     const instance: Instance = {
@@ -159,6 +161,7 @@ export class ForwardService {
       rule,
       port,
       origin,
+      ...(origin === 'manual' && request.group !== undefined ? { group: request.group } : {}),
       status: { state: 'starting' },
       lastEmitAt: 0,
     };
@@ -336,12 +339,16 @@ export class ForwardService {
     return instance !== undefined && isLive(instance);
   }
 
-  /** A live instance under `key` answers the start: by hand, an `auto` one becomes `manual`. */
-  private adopt(key: string, origin: ForwardOriginWire): boolean {
+  /**
+   * A live instance under `key` answers the start: by hand (or by a group's start, recorded as its origin), an
+   * `auto` one becomes `manual`.
+   */
+  private adopt(key: string, origin: ForwardOriginWire, group: string | undefined): boolean {
     const existing = this.instances.get(key);
     if (!existing || !isLive(existing)) return false;
     if (origin === 'manual' && existing.origin === 'auto') {
       existing.origin = 'manual';
+      existing.group = group;
       this.emitNow(existing);
     }
     return true;
@@ -490,6 +497,7 @@ export class ForwardService {
       hostId: instance.hostId,
       ruleId: instance.rule.id,
       origin: instance.origin,
+      ...(instance.group === undefined ? {} : { group: instance.group }),
       port: instance.port,
       status: instance.status,
       ...(instance.changed ? { changed: true } : {}),
