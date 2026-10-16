@@ -5,6 +5,7 @@ import { SecretReviewDialog } from '../components/secret-review-dialog.js';
 import { SignInDialog } from '../features/account/sign-in-dialog.js';
 import { TeamDialog } from '../features/team/team-dialog.js';
 import { WebhooksDialogs } from '../features/webhooks/webhooks-dialogs.js';
+import { SchedulesDialogs } from '../features/schedules/schedules-dialogs.js';
 import { ImportWebhooksDialog } from '../features/webhook-items/import-webhooks-dialog.js';
 import { SaveAsWebhookDialog } from '../features/webhook-items/save-as-webhook-dialog.js';
 import { WebhookSettingsDialog } from '../features/webhook-items/webhook-settings-dialog.js';
@@ -58,6 +59,7 @@ import { ForwardPrompts } from '../features/ssh/forwarding/bind-confirm-dialog.j
 import { subscribeToForwards } from '../features/ssh/forwarding/forwards-store.js';
 import { subscribeToTeamSecrets } from '../state/team-secrets.js';
 import { subscribeToWebhooks } from '../state/webhooks.js';
+import { subscribeToSchedules } from '../state/schedules.js';
 import { WorkspacePicker } from '../features/workspace/picker-screen.js';
 import { NewProjectDialog } from '../features/workspace/new-project-dialog.js';
 import { CreateWorkspaceDialog } from '../features/workspace/create-workspace-dialog.js';
@@ -358,6 +360,7 @@ export function AppShell() {
   useEffect(() => subscribeToSnippets(), []);
   useEffect(() => subscribeToSshEvents(), []);
   useEffect(() => subscribeToWebhooks(), []);
+  useEffect(() => subscribeToSchedules(), []);
   useEffect(() => subscribeToAccounts(), []);
   useEffect(() => {
     void useAccountStore.getState().load();
@@ -630,6 +633,7 @@ export function AppShell() {
       <SignInDialog />
       <TeamDialog />
       <WebhooksDialogs />
+      <SchedulesDialogs />
       <WebhookSettingsDialog />
       <ImportWebhooksDialog />
       <SaveAsWebhookDialog />

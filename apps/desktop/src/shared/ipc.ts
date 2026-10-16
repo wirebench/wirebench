@@ -419,6 +419,10 @@ import {
 } from './runner-wire.js';
 import {
   scheduleAlertTestResponseWireSchema,
+  scheduleChoicesRequestWireSchema,
+  scheduleChoicesResponseWireSchema,
+  scheduleTargetForRequestWireSchema,
+  scheduleTargetForResponseWireSchema,
   scheduleCreateRequestWireSchema,
   scheduleRefRequestWireSchema,
   scheduleResponseWireSchema,
@@ -664,6 +668,14 @@ export const channels = {
     runs: defineChannel('schedules.runs', scheduleRunsRequestWireSchema, scheduleRunPageResponseWireSchema),
     run: defineChannel('schedules.run', scheduleRunRequestWireSchema, scheduleRunDetailResponseWireSchema),
     cancelRun: defineChannel('schedules.cancelRun', scheduleRunRequestWireSchema, schedulesDoneResponseWireSchema),
+    /** The dialog's pickers: one project's APIs, folders, requests, sequences and environments. */
+    choices: defineChannel('schedules.choices', scheduleChoicesRequestWireSchema, scheduleChoicesResponseWireSchema),
+    /** **Schedule…** on an explorer row: what that row runs, or `null` for nothing a run covers. */
+    targetFor: defineChannel(
+      'schedules.targetFor',
+      scheduleTargetForRequestWireSchema,
+      scheduleTargetForResponseWireSchema,
+    ),
     /** Follow the workspace's `schedule-run` messages while the Schedules view shows. */
     watch: defineChannel('schedules.watch', schedulesWorkspaceRequestWireSchema, schedulesDoneResponseWireSchema),
     unwatch: defineChannel('schedules.unwatch', schedulesWorkspaceRequestWireSchema, schedulesDoneResponseWireSchema),

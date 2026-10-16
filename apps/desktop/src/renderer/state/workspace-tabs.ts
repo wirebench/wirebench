@@ -34,6 +34,7 @@ function titleFor(contribution: TabContribution, id: string): string | undefined
     project: useProjectStore.getState(),
     workspaceEnvironments: useWorkspaceStore.getState().workspace?.environments ?? [],
     hookNames: {},
+    scheduleNames: {},
   });
 }
 

@@ -71,6 +71,12 @@ export interface FakeServerOptions {
    */
   readonly hooks?: boolean;
   /**
+   * Serve scheduled runs (scheduled-runs spec §3): `/meta` lists `scheduled-runs` and reports an
+   * Enterprise edition, and the schedule routes answer. Nothing fires on a clock: **Run now** finishes
+   * its run at once, as {@link FakeServer.setScheduleOutcome} says, and announces it over `/live`.
+   */
+  readonly schedules?: boolean;
+  /**
    * Offer SAML sign-in (saml-scim spec §3.2). The fake IdP signs `email` in at once: the authorization URL
    * redirects straight to the app's loopback with a grant, so whatever opens it plays the browser.
    */
@@ -157,6 +163,8 @@ export interface FakeServer {
   liveConnections(): FakeLiveConnection[];
   /** The full catch URL of the workspace's catch URL called `name`. @throws when there is none. */
   catchUrlOf(workspaceId: string, name: string): string;
+  /** How the next **Run now** of a schedule ends; `failed` until set. */
+  setScheduleOutcome(outcome: 'passed' | 'failed'): void;
   close(): Promise<void>;
 }
 
@@ -377,7 +385,10 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     (options.users ?? []).map((user) => [user.email.toLowerCase(), { ...user, id: `u-${user.email}` }]),
   );
   const invitations = new Map<string, FakeInvitation>(Object.entries(options.invitations ?? {}));
-  const capabilities = [...(options.capabilities ?? ['sync', LIVE_CAPABILITY])];
+  const capabilities = [
+    ...(options.capabilities ?? ['sync', LIVE_CAPABILITY]),
+    ...(options.schedules === true ? ['scheduled-runs'] : []),
+  ];
   const sessions = new Map<string, string>(); // token → email
   const issued: { readonly token: string; readonly email: string }[] = [];
   const tokens: string[] = [];
@@ -1087,6 +1098,214 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     problem(response, 404, 'not-found');
   };
 
+  /*
+   * Scheduled runs (scheduled-runs spec §3.1), with `schedules: true`: enough of the API for
+   * `server-schedules.spec.ts`. Run now finishes its run at once with one request's result, so the run
+   * detail has something to show; the real routes are covered by `packages/server`'s integration suite.
+   */
+  interface FakeSchedule {
+    readonly id: string;
+    readonly workspaceId: string;
+    body: Record<string, unknown>;
+    secrets: Map<string, string>;
+    alertTargets: unknown[];
+    alertState: 'ok' | 'failing';
+    failureStreak: number;
+    readonly createdAt: string;
+    updatedAt: string;
+    readonly runs: { run: Record<string, unknown>; results: unknown[] }[];
+  }
+  const schedules = new Map<string, FakeSchedule>();
+  let scheduleOutcome: 'passed' | 'failed' = 'failed';
+  const alertTargetOf = (target: { kind: string; to?: string[]; url?: string; secret?: string }): unknown => {
+    if (target.kind === 'email') return { kind: 'email', to: target.to ?? [] };
+    const parsed = new URL(target.url ?? '');
+    const hint = (target.url ?? '').slice(-4);
+    return target.kind === 'webhook'
+      ? { kind: 'webhook', host: parsed.host, hint, signed: target.secret !== undefined }
+      : { kind: target.kind, host: parsed.host, hint };
+  };
+  const toSchedule = (schedule: FakeSchedule) => {
+    const body = schedule.body as { name: string; schedule: string; timeZone?: string; enabled?: boolean };
+    return {
+      id: schedule.id,
+      workspaceId: schedule.workspaceId,
+      name: body.name,
+      cron: body.schedule === 'every 5m' ? '*/5 * * * *' : body.schedule,
+      timeZone: body.timeZone ?? 'UTC',
+      target: schedule.body.target,
+      options: {
+        timeoutMinutes: 15,
+        allowProtected: false,
+        insecureTls: false,
+        bail: false,
+        ...(schedule.body.options as object | undefined),
+      },
+      alerts: {
+        targets: schedule.alertTargets,
+        muteAfter: (schedule.body.alerts as { muteAfter?: number } | undefined)?.muteAfter ?? 3,
+      },
+      secrets: [...schedule.secrets].map(([name, value]) => ({
+        name,
+        hint: value.length >= 8 ? value.slice(-4) : null,
+      })),
+      enabled: body.enabled ?? true,
+      nextRunAt: body.enabled === false ? null : new Date(Date.now() + 300_000).toISOString(),
+      alertState: schedule.alertState,
+      failureStreak: schedule.failureStreak,
+      createdBy: null,
+      createdAt: schedule.createdAt,
+      updatedAt: schedule.updatedAt,
+      lastRun: schedule.runs.at(-1)?.run ?? null,
+    };
+  };
+  const setAlerts = (schedule: FakeSchedule, alerts: unknown): void => {
+    if (alerts === undefined) return;
+    const targets = (alerts as { targets?: { kind: string }[] }).targets ?? [];
+    schedule.alertTargets = targets.map(alertTargetOf);
+  };
+
+  const schedulesApi = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    ws: WorkspaceRow,
+    role: WorkspaceRole,
+    segments: readonly string[],
+  ): Promise<void> => {
+    const method = request.method ?? 'GET';
+    // workspaces / :workspaceId / schedules / :scheduleId / (secrets | alerts/test | runs / :runId)
+    const [, , , scheduleId, sub, runId] = segments;
+    const admin = role === 'admin';
+    if (scheduleId === undefined && method === 'GET') {
+      const mine = [...schedules.values()].filter((schedule) => schedule.workspaceId === ws.id);
+      return send(response, 200, mine.map(toSchedule));
+    }
+    if (scheduleId === undefined && method === 'POST') {
+      if (!admin) return problem(response, 403, 'teams-forbidden');
+      const body = (await readJson(request)) as Record<string, unknown>;
+      const schedule: FakeSchedule = {
+        id: generateId(),
+        workspaceId: ws.id,
+        body,
+        secrets: new Map(),
+        alertTargets: [],
+        alertState: 'ok',
+        failureStreak: 0,
+        createdAt: at(),
+        updatedAt: at(),
+        runs: [],
+      };
+      setAlerts(schedule, body.alerts);
+      schedules.set(schedule.id, schedule);
+      return send(response, 201, toSchedule(schedule));
+    }
+    const schedule = scheduleId === undefined ? undefined : schedules.get(scheduleId);
+    if (schedule === undefined || schedule.workspaceId !== ws.id) return problem(response, 404, 'schedules-not-found');
+    if (sub === undefined && method === 'GET') return send(response, 200, toSchedule(schedule));
+    if (sub === undefined && method === 'PATCH') {
+      if (!admin) return problem(response, 403, 'teams-forbidden');
+      const patch = (await readJson(request)) as Record<string, unknown>;
+      schedule.body = { ...schedule.body, ...patch };
+      setAlerts(schedule, patch.alerts);
+      schedule.updatedAt = at();
+      return send(response, 200, toSchedule(schedule));
+    }
+    if (sub === undefined && method === 'DELETE') {
+      if (!admin) return problem(response, 403, 'teams-forbidden');
+      schedules.delete(schedule.id);
+      return send(response, 204);
+    }
+    if (sub === 'secrets' && method === 'PUT') {
+      if (!admin) return problem(response, 403, 'teams-forbidden');
+      const body = (await readJson(request)) as Record<string, string | null>;
+      for (const [name, value] of Object.entries(body)) {
+        if (value === null) schedule.secrets.delete(name);
+        else schedule.secrets.set(name, value);
+      }
+      return send(response, 200, toSchedule(schedule));
+    }
+    if (sub === 'alerts' && method === 'POST') {
+      if (!admin) return problem(response, 403, 'teams-forbidden');
+      return send(response, 200, {
+        results: schedule.alertTargets.map((target, index) => ({
+          index,
+          kind: (target as { kind: string }).kind,
+          ok: true,
+        })),
+      });
+    }
+    if (sub === 'runs' && runId === undefined && method === 'POST') {
+      if (!admin) return problem(response, 403, 'teams-forbidden');
+      const queuedAt = at();
+      const id = generateId();
+      const queued = {
+        id,
+        scheduleId: schedule.id,
+        trigger: 'manual',
+        status: 'queued',
+        reason: null,
+        commit: null,
+        environment: null,
+        queuedAt,
+        startedAt: null,
+        finishedAt: null,
+        summary: null,
+      };
+      const failed = scheduleOutcome === 'failed';
+      const finished = {
+        ...queued,
+        status: scheduleOutcome,
+        startedAt: queuedAt,
+        finishedAt: at(),
+        summary: { total: 1, passed: failed ? 0 : 1, failed: failed ? 1 : 0, errored: 0, skipped: 0, durationMs: 42 },
+      };
+      const results = [
+        {
+          path: 'Demo/check.yaml',
+          group: 'Demo',
+          name: 'Health check',
+          protocol: 'rest',
+          outcome: scheduleOutcome,
+          status: failed ? 500 : 200,
+          durationMs: 42,
+          assertions: [
+            {
+              type: 'status',
+              outcome: scheduleOutcome,
+              expected: '200',
+              actual: failed ? '500' : '200',
+              ...(failed ? { message: 'expected status 200, got 500' } : {}),
+            },
+          ],
+        },
+      ];
+      schedule.runs.push({ run: finished, results });
+      schedule.failureStreak = failed ? schedule.failureStreak + 1 : 0;
+      schedule.alertState = failed ? 'failing' : 'ok';
+      send(response, 201, queued);
+      // After the answer, as a worker finishing the run would announce it (§3.5).
+      setTimeout(() => {
+        liveSendTo(subscribersOf(ws.id), {
+          type: 'schedule-run',
+          workspaceId: ws.id,
+          scheduleId: schedule.id,
+          runId: id,
+          status: scheduleOutcome,
+        });
+      }, 100);
+      return;
+    }
+    if (sub === 'runs' && runId === undefined && method === 'GET') {
+      return send(response, 200, { runs: [...schedule.runs].reverse().map((entry) => entry.run) });
+    }
+    const entry = schedule.runs.find((candidate) => candidate.run.id === runId);
+    if (entry === undefined) return problem(response, 404, 'schedules-run-not-found');
+    if (sub === 'runs' && method === 'GET')
+      return send(response, 200, { ...entry.run, results: entry.results, alerts: [] });
+    if (sub === 'runs' && method === 'DELETE') return problem(response, 409, 'schedules-run-finished');
+    problem(response, 404, 'not-found');
+  };
+
   /**
    * `ANY /hooks/<secret>[/<subpath>]` (§3.3): verify the signature when a scheme is set, store, nudge the
    * workspace, and answer the configured response — or 401 for an unverified one the catch URL rejects.
@@ -1180,7 +1399,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
               : {}),
           },
           capabilities,
-          edition: installedLicense?.edition ?? 'community',
+          edition: installedLicense?.edition ?? (options.schedules === true ? 'enterprise' : 'community'),
           ...(options.hooks === true ? { hooks: HOOKS_META } : {}),
         });
         return;
@@ -1407,6 +1626,13 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
           if (ws === undefined || access === undefined) return problem(response, 404, 'teams-workspace-not-found');
           return await syncApi(request, response, ws, access.role, segments[3], path.searchParams, email, token);
         }
+        if (segments[0] === 'workspaces' && segments[2] === 'schedules') {
+          if (options.schedules !== true) return problem(response, 404, 'not-found');
+          const ws = workspaces.get(segments[1] ?? '');
+          const access = ws === undefined ? undefined : effective(ws, email);
+          if (ws === undefined || access === undefined) return problem(response, 404, 'teams-workspace-not-found');
+          return await schedulesApi(request, response, ws, access.role, segments);
+        }
         if (segments[0] === 'workspaces' && segments[2] === 'hooks') {
           if (options.hooks !== true) return problem(response, 404, 'not-found');
           const ws = workspaces.get(segments[1] ?? '');
@@ -1496,6 +1722,9 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         email: connection.email,
         workspaces: [...connection.subscriptions],
       })),
+    setScheduleOutcome: (outcome) => {
+      scheduleOutcome = outcome;
+    },
     catchUrlOf: (workspaceId, name) => {
       const hook = [...catchUrls.values()].find(
         (candidate) => candidate.workspaceId === workspaceId && candidate.name === name,
