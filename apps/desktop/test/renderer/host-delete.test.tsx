@@ -10,8 +10,8 @@ import {
   ownPasswordSecret,
   sessionCount,
   sessionsOf,
-  useHostDelete,
 } from '../../src/renderer/features/ssh/host-delete.js';
+import { useHostDelete } from '../../src/renderer/features/ssh/host-delete-store.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import type { HostsFileWire } from '../../src/shared/ssh-wire.js';

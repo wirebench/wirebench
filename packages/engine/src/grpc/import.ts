@@ -6,7 +6,7 @@
  */
 
 import type { IdGenerator } from '../project/model.js';
-import { uniqueSlug } from '../project/paths.js';
+import { SlugSet, uniqueSlug } from '../project/paths.js';
 import type { GrpcApi, GrpcDefinitionRef, GrpcFolder, GrpcRequestDef } from './model.js';
 import { createGrpcApi, createGrpcFolder, createGrpcRequest } from './model.js';
 import { describeServices } from './proto/describe.js';
@@ -54,7 +54,7 @@ function requestDescription(method: GrpcMethodDescriptor): string | undefined {
 
 /** One request per method, slugs unique within the folder. */
 function requestsFor(set: ProtoSet, service: GrpcServiceDescriptor, options: ImportProtoOptions): GrpcRequestDef[] {
-  const taken = new Set<string>();
+  const taken = new SlugSet();
   return service.methods.map((method, index) => {
     const slug = uniqueSlug(method.name, taken);
     taken.add(slug.toLowerCase());
@@ -78,7 +78,7 @@ function requestsFor(set: ProtoSet, service: GrpcServiceDescriptor, options: Imp
  */
 export function apiFromProtoSet(set: ProtoSet, options: ImportProtoOptions = {}): ImportedProto {
   const services = describeServices(set);
-  const folderSlugs = new Set<string>();
+  const folderSlugs = new SlugSet();
   const folders: GrpcFolder[] = services.map((service, index) => {
     const slug = uniqueSlug(service.name, folderSlugs);
     folderSlugs.add(slug.toLowerCase());

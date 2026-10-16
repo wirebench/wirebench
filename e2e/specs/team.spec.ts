@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { copyAndRead } from '../helpers/clipboard.js';
 import { startFakeServer, type FakeServer, type FakeUser } from '../helpers/fake-server.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { runCommand } from '../helpers/palette.js';
@@ -91,10 +92,8 @@ test.describe('teams and workspace roles', () => {
     await invite.getByTestId('invite-submit').click();
     const link = await invite.getByTestId('invite-link').inputValue();
     expect(link.startsWith(`${server.url}/invite/`)).toBe(true);
-    await invite.getByTestId('invite-copy').click();
-    await expect
-      .poll(async () => launched!.app.evaluate(({ clipboard }) => clipboard.readText()), { timeout: 10_000 })
-      .toBe(link);
+    const copied = await copyAndRead(launched.app, () => invite.getByTestId('invite-copy').click(), link);
+    expect(copied).toBe(link);
     await invite.getByRole('button', { name: 'Done' }).click();
     await dialog.getByRole('tab', { name: 'Invitations' }).click();
     await expect(dialog.locator('[data-testid^="invitation-row-"]')).toContainText('carol@example.com');

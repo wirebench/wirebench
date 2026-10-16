@@ -1,0 +1,11 @@
+{
+  "clientName": "Thunder Client",
+  "environmentId": "410b4444-5876-44f9-9451-acfed6db415e",
+  "environmentName": "(Global Env)",
+  "dateExported": "2025-03-02T10:20:00.000Z",
+  "version": "1.2",
+  "ref": "IGNORED",
+  "global": true,
+  "local": true,
+  "variables": [{ "name": "tenant", "value": "acme" }]
+}

@@ -1,0 +1,897 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Thunder Client golden > maps collection-1.0.json 1`] = `
+{
+  "collections": [
+    {
+      "name": "Legacy",
+      "rest": {
+        "baseUrl": "https://api.example.com",
+        "folders": [],
+        "id": "id-2",
+        "kind": "rest",
+        "name": "Legacy",
+        "order": 0,
+        "requests": [
+          {
+            "assertions": [],
+            "auth": {
+              "type": "inherit",
+            },
+            "body": {
+              "kind": "raw",
+              "language": "text",
+              "text": "hello",
+            },
+            "description": "Pings.",
+            "headers": [
+              {
+                "enabled": true,
+                "name": "Content-Type",
+                "value": "text/plain",
+              },
+            ],
+            "id": "id-1",
+            "kind": "rest",
+            "method": "GET",
+            "name": "Ping",
+            "order": 0,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "Ping",
+            "url": "/ping",
+          },
+        ],
+        "servers": [
+          {
+            "description": "Collection Base URL",
+            "url": "https://api.example.com",
+          },
+        ],
+        "slug": "Legacy",
+      },
+    },
+  ],
+  "counts": {
+    "assertions": 0,
+    "collections": 1,
+    "examples": 0,
+    "folders": 0,
+    "requests": 1,
+    "scripts": 0,
+  },
+  "report": {
+    "notes": [],
+    "warnings": [],
+  },
+  "scripts": [],
+  "variables": {
+    "environments": [],
+    "report": {
+      "notes": [],
+      "warnings": [],
+    },
+  },
+}
+`;
+
+exports[`Thunder Client golden > maps collection-1.2.json 1`] = `
+{
+  "collections": [
+    {
+      "name": "Shop API",
+      "rest": {
+        "auth": {
+          "type": "bearer",
+        },
+        "baseUrl": "\${baseUrl}/api",
+        "folders": [
+          {
+            "folders": [],
+            "id": "id-4",
+            "name": "lost",
+            "order": 0,
+            "requests": [
+              {
+                "assertions": [],
+                "auth": {
+                  "clientAuth": "basic",
+                  "clientId": "app",
+                  "grant": "client-credentials",
+                  "pkce": false,
+                  "scopes": [
+                    "read",
+                  ],
+                  "tokenUrl": "https://auth.example.com/token",
+                  "type": "oauth2",
+                },
+                "body": {
+                  "fields": [
+                    {
+                      "enabled": true,
+                      "name": "a",
+                      "value": "1",
+                    },
+                    {
+                      "enabled": false,
+                      "name": "b",
+                      "value": "2",
+                    },
+                  ],
+                  "kind": "form",
+                },
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "Accept",
+                    "value": "application/json",
+                  },
+                ],
+                "id": "id-1",
+                "kind": "rest",
+                "method": "GET",
+                "name": "Token",
+                "order": 0,
+                "pathParams": [],
+                "query": [],
+                "settings": {},
+                "slug": "Token",
+                "url": "/me",
+              },
+              {
+                "assertions": [],
+                "auth": {
+                  "region": "eu-west-1",
+                  "service": "s3",
+                  "type": "aws-sigv4",
+                },
+                "body": {
+                  "contentType": "application/octet-stream",
+                  "kind": "binary",
+                  "source": {
+                    "kind": "path",
+                    "path": "../input/file.zip",
+                  },
+                },
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "Accept",
+                    "value": "application/json",
+                  },
+                ],
+                "id": "id-2",
+                "kind": "rest",
+                "method": "PUT",
+                "name": "Bucket",
+                "order": 1,
+                "pathParams": [],
+                "query": [],
+                "settings": {},
+                "slug": "Bucket",
+                "url": "/bucket",
+              },
+              {
+                "assertions": [],
+                "auth": {
+                  "type": "none",
+                },
+                "body": {
+                  "kind": "raw",
+                  "language": "xml",
+                  "text": "<a/>",
+                },
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "Accept",
+                    "value": "application/json",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "Content-Type",
+                    "value": "application/xml",
+                  },
+                ],
+                "id": "id-3",
+                "kind": "rest",
+                "method": "GET",
+                "name": "Odd auth",
+                "order": 2,
+                "pathParams": [],
+                "query": [],
+                "settings": {},
+                "slug": "Odd auth",
+                "url": "/odd",
+              },
+            ],
+            "slug": "lost",
+          },
+          {
+            "auth": {
+              "type": "bearer",
+            },
+            "folders": [
+              {
+                "folders": [],
+                "id": "id-8",
+                "name": "orders",
+                "order": 0,
+                "requests": [
+                  {
+                    "assertions": [
+                      {
+                        "maxMs": 800,
+                        "type": "sla",
+                      },
+                      {
+                        "equals": 201,
+                        "type": "status",
+                      },
+                      {
+                        "equals": 7,
+                        "expression": "$.items[0].id",
+                        "language": "jsonpath",
+                        "type": "match",
+                      },
+                    ],
+                    "auth": {
+                      "type": "inherit",
+                    },
+                    "body": {
+                      "kind": "raw",
+                      "language": "json",
+                      "text": "{
+  "sku": "\${$guid}",
+  "qty": \${$randomInt(1,5)}
+}
+",
+                    },
+                    "description": "# Create
+Adds an order.",
+                    "headers": [
+                      {
+                        "enabled": true,
+                        "name": "Accept",
+                        "value": "application/json",
+                      },
+                      {
+                        "enabled": false,
+                        "name": "X-Debug",
+                        "value": "1",
+                      },
+                      {
+                        "enabled": true,
+                        "name": "X-Scope",
+                        "value": "admin",
+                      },
+                      {
+                        "enabled": true,
+                        "name": "Content-Type",
+                        "value": "application/json",
+                      },
+                    ],
+                    "id": "id-5",
+                    "kind": "rest",
+                    "method": "POST",
+                    "name": "Create order",
+                    "order": 0,
+                    "pathParams": [
+                      {
+                        "enabled": true,
+                        "name": "orderId",
+                        "value": "42",
+                      },
+                    ],
+                    "query": [
+                      {
+                        "enabled": false,
+                        "name": "dryRun",
+                        "value": "true",
+                      },
+                    ],
+                    "settings": {},
+                    "slug": "Create order",
+                    "url": "/orders/{orderId}/items",
+                  },
+                  {
+                    "assertions": [
+                      {
+                        "maxMs": 800,
+                        "type": "sla",
+                      },
+                      {
+                        "equals": 200,
+                        "type": "status",
+                      },
+                    ],
+                    "auth": {
+                      "type": "inherit",
+                    },
+                    "body": {
+                      "kind": "none",
+                    },
+                    "headers": [
+                      {
+                        "enabled": true,
+                        "name": "Accept",
+                        "value": "application/json",
+                      },
+                      {
+                        "enabled": true,
+                        "name": "X-Scope",
+                        "value": "admin",
+                      },
+                    ],
+                    "id": "id-6",
+                    "kind": "rest",
+                    "method": "GET",
+                    "name": "List",
+                    "order": 1,
+                    "pathParams": [],
+                    "query": [],
+                    "settings": {},
+                    "slug": "List",
+                    "url": "https://other.example.com/list",
+                  },
+                  {
+                    "assertions": [
+                      {
+                        "maxMs": 800,
+                        "type": "sla",
+                      },
+                      {
+                        "equals": 404,
+                        "type": "status",
+                      },
+                    ],
+                    "auth": {
+                      "type": "inherit",
+                    },
+                    "body": {
+                      "kind": "none",
+                    },
+                    "headers": [
+                      {
+                        "enabled": true,
+                        "name": "Accept",
+                        "value": "application/json",
+                      },
+                      {
+                        "enabled": true,
+                        "name": "X-Scope",
+                        "value": "admin",
+                      },
+                    ],
+                    "id": "id-7",
+                    "kind": "rest",
+                    "method": "GET",
+                    "name": "List",
+                    "order": 2,
+                    "pathParams": [],
+                    "query": [],
+                    "settings": {},
+                    "slug": "List-2",
+                    "url": "/list",
+                  },
+                ],
+                "slug": "orders",
+              },
+            ],
+            "id": "id-9",
+            "name": "admin",
+            "order": 1,
+            "requests": [],
+            "slug": "admin",
+          },
+        ],
+        "id": "id-13",
+        "kind": "rest",
+        "name": "Shop API",
+        "order": 0,
+        "requests": [
+          {
+            "assertions": [],
+            "auth": {
+              "type": "basic",
+              "username": "svc",
+            },
+            "body": {
+              "kind": "multipart",
+              "parts": [
+                {
+                  "enabled": true,
+                  "kind": "text",
+                  "name": "caption",
+                  "value": "front view",
+                },
+                {
+                  "enabled": true,
+                  "kind": "file",
+                  "name": "picture",
+                  "source": {
+                    "kind": "path",
+                    "path": "../assets/front.webp",
+                  },
+                },
+              ],
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "Accept",
+                "value": "application/json",
+              },
+            ],
+            "id": "id-10",
+            "kind": "rest",
+            "method": "POST",
+            "name": "Upload picture",
+            "order": 0,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "Upload picture",
+            "url": "/products/\${productId}/picture",
+          },
+          {
+            "assertions": [],
+            "auth": {
+              "type": "inherit",
+            },
+            "body": {
+              "kind": "graphql",
+              "query": "query($id: ID!) { product(id: $id) { name } }",
+              "variables": "{ "id": "\${productId}" }",
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "Accept",
+                "value": "application/json",
+              },
+              {
+                "enabled": true,
+                "name": "Content-Type",
+                "value": "application/json",
+              },
+            ],
+            "id": "id-11",
+            "kind": "rest",
+            "method": "POST",
+            "name": "Product by id",
+            "order": 1,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "Product by id",
+            "url": "/graphql",
+          },
+          {
+            "assertions": [],
+            "auth": {
+              "scheme": "Sanctum",
+              "type": "bearer",
+            },
+            "body": {
+              "kind": "none",
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "Accept",
+                "value": "application/json",
+              },
+            ],
+            "id": "id-12",
+            "kind": "rest",
+            "method": "GET",
+            "name": "Events",
+            "order": 2,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "Events",
+            "url": "/sse",
+          },
+        ],
+        "servers": [
+          {
+            "description": "Collection Base URL",
+            "url": "\${baseUrl}/api",
+          },
+        ],
+        "slug": "Shop API",
+      },
+    },
+  ],
+  "counts": {
+    "assertions": 7,
+    "collections": 1,
+    "examples": 0,
+    "folders": 3,
+    "requests": 9,
+    "scripts": 1,
+  },
+  "report": {
+    "notes": [
+      "The environment attached to the collection was not imported with it; import it on its own.",
+      "The collection's headers were copied onto each request that does not set them.",
+      "lost / Bucket: its body is the file ../input/file.zip, a path on the machine it was exported from.",
+      "admin: its headers were copied onto the requests below it that do not set them.",
+      "Upload picture: the file part "picture" points at ../assets/front.webp, a path on the machine it was exported from.",
+      "Product by id: its after-response script was saved to imported-scripts/shop api/product by id.post.js and is never run.",
+    ],
+    "warnings": [
+      "Shop API: the test "Content-Type contains json" has no Wirebench equivalent and was not imported.",
+      "lost / Odd auth: its "hawk" auth has no Wirebench equivalent, so it was set to "none".",
+      "admin / orders / Create order: the test "json-query json.id istype string" has no Wirebench equivalent and was not imported.",
+      "admin / orders / Create order: the test "set-env-var json.id setto {{lastItemId}}" sets a variable from the response, which was not imported; use a capture or a script.",
+      "Product by id: it runs other requests first (request chaining), which was not imported; build the chain as a sequence.",
+      "Socket: its request type "ws" has no published file shape, so it was not imported.",
+      "The saved scripts call tc.; Wirebench does not run them. Port what they do to Wirebench scripts by hand.",
+      "Credentials are not copied from the collection; re-enter them for 6 auth configurations",
+    ],
+  },
+  "scripts": [
+    {
+      "path": "imported-scripts/shop api/product by id.post.js",
+      "source": "var json = tc.response.json;
+tc.setVar("firstName", json.data.product.name);",
+    },
+  ],
+  "variables": {
+    "environments": [],
+    "report": {
+      "notes": [],
+      "warnings": [],
+    },
+  },
+}
+`;
+
+exports[`Thunder Client golden > maps environment-1.0.json 1`] = `
+{
+  "collections": [],
+  "counts": {
+    "assertions": 0,
+    "collections": 0,
+    "examples": 0,
+    "folders": 0,
+    "requests": 0,
+    "scripts": 0,
+  },
+  "report": {
+    "notes": [],
+    "warnings": [],
+  },
+  "scripts": [],
+  "variables": {
+    "environments": [
+      {
+        "name": "Staging",
+        "variables": [
+          {
+            "enabled": true,
+            "name": "baseUrl",
+            "secret": false,
+            "value": "https://staging.example.com",
+          },
+          {
+            "enabled": true,
+            "name": "client_id",
+            "secret": true,
+            "secretValue": "env-secret-123",
+            "value": "",
+          },
+          {
+            "enabled": true,
+            "name": "emptySecret",
+            "secret": true,
+            "value": "",
+          },
+        ],
+      },
+    ],
+    "report": {
+      "notes": [],
+      "warnings": [],
+    },
+  },
+}
+`;
+
+exports[`Thunder Client golden > maps environment-1.2-global.json 1`] = `
+{
+  "collections": [],
+  "counts": {
+    "assertions": 0,
+    "collections": 0,
+    "examples": 0,
+    "folders": 0,
+    "requests": 0,
+    "scripts": 0,
+  },
+  "report": {
+    "notes": [],
+    "warnings": [],
+  },
+  "scripts": [],
+  "variables": {
+    "environments": [],
+    "globals": {
+      "name": "Globals",
+      "variables": [
+        {
+          "enabled": true,
+          "name": "tenant",
+          "secret": false,
+          "value": "acme",
+        },
+      ],
+    },
+    "report": {
+      "notes": [
+        "Globals: it was marked local in Thunder Client; an import never makes an environment active.",
+      ],
+      "warnings": [],
+    },
+  },
+}
+`;
+
+exports[`Thunder Client golden > maps the folder-legacy folder 1`] = `
+{
+  "collections": [
+    {
+      "name": "Legacy items",
+      "rest": {
+        "baseUrl": "https://legacy.example.com",
+        "folders": [
+          {
+            "folders": [],
+            "id": "id-2",
+            "name": "items",
+            "order": 0,
+            "requests": [
+              {
+                "assertions": [],
+                "auth": {
+                  "type": "inherit",
+                },
+                "body": {
+                  "kind": "none",
+                },
+                "headers": [],
+                "id": "id-1",
+                "kind": "rest",
+                "method": "GET",
+                "name": "Get item",
+                "order": 0,
+                "pathParams": [],
+                "query": [],
+                "settings": {},
+                "slug": "Get item",
+                "url": "/items/1",
+              },
+            ],
+            "slug": "items",
+          },
+        ],
+        "id": "id-4",
+        "kind": "rest",
+        "name": "Legacy items",
+        "order": 0,
+        "requests": [
+          {
+            "assertions": [],
+            "auth": {
+              "type": "inherit",
+            },
+            "body": {
+              "kind": "none",
+            },
+            "headers": [],
+            "id": "id-3",
+            "kind": "rest",
+            "method": "GET",
+            "name": "Health",
+            "order": 0,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "Health",
+            "url": "/health",
+          },
+        ],
+        "servers": [
+          {
+            "description": "Collection Base URL",
+            "url": "https://legacy.example.com",
+          },
+        ],
+        "slug": "Legacy items",
+      },
+    },
+    {
+      "name": "Legacy other",
+      "rest": {
+        "baseUrl": "https://other.example.com",
+        "folders": [],
+        "id": "id-6",
+        "kind": "rest",
+        "name": "Legacy other",
+        "order": 1,
+        "requests": [
+          {
+            "assertions": [],
+            "auth": {
+              "type": "inherit",
+            },
+            "body": {
+              "kind": "none",
+            },
+            "headers": [],
+            "id": "id-5",
+            "kind": "rest",
+            "method": "GET",
+            "name": "Other",
+            "order": 0,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "Other",
+            "url": "/",
+          },
+        ],
+        "servers": [
+          {
+            "description": "Collection Base URL",
+            "url": "https://other.example.com",
+          },
+        ],
+        "slug": "Legacy other",
+      },
+    },
+  ],
+  "counts": {
+    "assertions": 0,
+    "collections": 2,
+    "examples": 0,
+    "folders": 1,
+    "requests": 3,
+    "scripts": 0,
+  },
+  "report": {
+    "notes": [],
+    "warnings": [],
+  },
+  "scripts": [],
+  "variables": {
+    "environments": [
+      {
+        "name": "Legacy env",
+        "variables": [
+          {
+            "enabled": true,
+            "name": "a",
+            "secret": false,
+            "value": "1",
+          },
+        ],
+      },
+    ],
+    "report": {
+      "notes": [],
+      "warnings": [],
+    },
+  },
+}
+`;
+
+exports[`Thunder Client golden > maps the folder-v3 folder 1`] = `
+{
+  "collections": [
+    {
+      "name": "Auth",
+      "rest": {
+        "baseUrl": "http://localhost:5000/api",
+        "folders": [],
+        "id": "id-2",
+        "kind": "rest",
+        "name": "Auth",
+        "order": 0,
+        "requests": [
+          {
+            "assertions": [],
+            "auth": {
+              "type": "inherit",
+            },
+            "body": {
+              "kind": "multipart",
+              "parts": [
+                {
+                  "enabled": true,
+                  "kind": "text",
+                  "name": "email",
+                  "value": "a@b.c",
+                },
+              ],
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "Accept",
+                "value": "application/json",
+              },
+            ],
+            "id": "id-1",
+            "kind": "rest",
+            "method": "POST",
+            "name": "login",
+            "order": 0,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "login",
+            "url": "/login",
+          },
+        ],
+        "servers": [
+          {
+            "description": "Collection Base URL",
+            "url": "http://localhost:5000/api",
+          },
+        ],
+        "slug": "Auth",
+      },
+    },
+  ],
+  "counts": {
+    "assertions": 0,
+    "collections": 1,
+    "examples": 0,
+    "folders": 0,
+    "requests": 1,
+    "scripts": 0,
+  },
+  "report": {
+    "notes": [],
+    "warnings": [
+      "login: the test "set-env-var json.data.token setto {{token}}" sets a variable from the response, which was not imported; use a capture or a script.",
+    ],
+  },
+  "scripts": [],
+  "variables": {
+    "environments": [
+      {
+        "name": "Dev",
+        "variables": [
+          {
+            "enabled": true,
+            "name": "host",
+            "secret": false,
+            "value": "http://localhost:5000",
+          },
+          {
+            "enabled": true,
+            "name": "color",
+            "secret": true,
+            "value": "",
+          },
+        ],
+      },
+    ],
+    "report": {
+      "notes": [
+        "Environment "Dev": it was marked default in Thunder Client; an import never makes an environment active.",
+      ],
+      "warnings": [
+        "Environment "Dev": its values come from the file ..\\server\\.env, which is not read; set them in Environments.",
+        "Environment "Dev": color is encrypted and cannot be read, so it was imported with no value.",
+      ],
+    },
+  },
+}
+`;

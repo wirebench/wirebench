@@ -10,7 +10,7 @@ import { nodeFs } from '../project/fs.js';
 import type { FsLike } from '../project/fs.js';
 import type { CreateOptions, Project } from '../project/model.js';
 import { generateId } from '../project/model.js';
-import { uniqueSlug } from '../project/paths.js';
+import { SlugSet, uniqueSlug } from '../project/paths.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
 import type { ProtocolMocking } from './contract.js';
 import { createMock, createMockOperation, createMockResponse } from './model.js';
@@ -72,7 +72,7 @@ export async function generateMock(
     ...(options.binding !== undefined ? { binding: options.binding } : {}),
   });
   const newId = options.newId ?? generateId;
-  const operationSlugs = new Set<string>();
+  const operationSlugs = new SlugSet();
   const operations = generated.operations.map((operation, index) => {
     const slug = uniqueSlug(operation.name, operationSlugs);
     operationSlugs.add(slug);

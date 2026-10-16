@@ -288,8 +288,10 @@ export class LiveClient {
       case 'access':
       case 'capture':
       case 'hooks':
-        // `capture` and `hooks` (webhook-capture §3.6) reach the hooks service, which subscribes the
-        // workspace on the same client; `ServerBackend` ignores them.
+      case 'schedule-run':
+        // `capture` and `hooks` (webhook-capture §3.6) reach the hooks service, and `schedule-run`
+        // (scheduled-runs §3.5) the schedules service; each subscribes the workspace on the same
+        // client, and `ServerBackend` ignores them.
         this.deliver(message.workspaceId, { kind: 'message', message });
         return;
     }

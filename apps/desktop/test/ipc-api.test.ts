@@ -1887,6 +1887,90 @@ describe('api.importHoppscotch', () => {
   });
 });
 
+const THUNDER = resolve(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/thunder-client/crafted');
+
+describe('api.importThunderClient', () => {
+  type ClientResponse = {
+    projectId: string;
+    apiIds: string[];
+    counts: Record<string, number>;
+    warnings: string[];
+  };
+
+  const setupPicked = (picked?: string) => {
+    const picks = new DialogPicks();
+    if (picked !== undefined) picks.rememberRead(picked);
+    const fake = fakeVariablesPorts({});
+    const variablesPorts = vi.fn().mockReturnValue(fake.ports);
+    return { ...setup({ picks, variablesPorts }), fake, variablesPorts };
+  };
+
+  it('imports a pasted collection export, its tests as assertions', async () => {
+    const { addApi, fake } = setupPicked();
+    const response = await value<ClientResponse>('api.importThunderClient', {
+      target: { projectId: 'p1' },
+      source: { kind: 'text', text: readFileSync(join(THUNDER, 'collection-1.2.json'), 'utf8') },
+    });
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({
+      api: { name: 'Shop API', baseUrl: '${baseUrl}/api' },
+      source: 'inline:thunder-client',
+      declaredVersion: 'thunder-client',
+    });
+    expect(response.counts).toMatchObject({ requests: 9, assertions: 7 });
+    expect(fake.environments).toEqual([]);
+  });
+
+  it('imports a picked thunder-tests folder: its collection and its environment unactivated', async () => {
+    const folder = join(THUNDER, 'folder-v3');
+    const { addApi, fake } = setupPicked(folder);
+    const response = await value<ClientResponse>('api.importThunderClient', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: folder },
+    });
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({ api: { name: 'Auth' }, source: folder });
+    expect(fake.environments.map((environment) => environment.name)).toEqual(['Dev']);
+    expect(response.warnings.join('\n')).not.toContain('Backup must be skipped');
+  });
+
+  it('refuses a folder that keeps one file per request, before creating anything', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'wb-thunder-'));
+    try {
+      await mkdir(join(folder, 'requests'));
+      await writeFile(join(folder, 'requests', 'r1.json'), '{}');
+      const { deps } = setupPicked(folder);
+      expect(
+        (
+          await failure('api.importThunderClient', {
+            target: { newProjectName: 'X' },
+            source: { kind: 'file', path: folder },
+          })
+        ).code,
+      ).toBe('thunder-unsupported-layout');
+      expect(deps.addProject).not.toHaveBeenCalled();
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('sends an environment export to the workspace, and refuses a collection there', async () => {
+    const { fake, variablesPorts } = setupPicked();
+    await value('api.importClientEnvironments', {
+      format: 'thunder-client',
+      source: { kind: 'text', text: readFileSync(join(THUNDER, 'environment-1.0.json'), 'utf8') },
+    });
+    expect(variablesPorts).toHaveBeenCalledWith(undefined);
+    expect(fake.environments.map((environment) => environment.name)).toEqual(['Staging']);
+    const refused = await failure('api.importClientEnvironments', {
+      format: 'thunder-client',
+      source: { kind: 'text', text: readFileSync(join(THUNDER, 'collection-1.0.json'), 'utf8') },
+    });
+    expect(refused).toMatchObject({
+      code: 'insomnia-not-environments',
+      message: 'This Thunder Client export holds a collection: import it as a Thunder Client collection.',
+    });
+  });
+});
+
 describe('api.detectImportSource', () => {
   let dir = '';
   beforeEach(async () => {

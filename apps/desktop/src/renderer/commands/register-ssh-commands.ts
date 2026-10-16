@@ -11,7 +11,7 @@ import {
 import { startGroup, stopGroup } from '../features/ssh/forwarding/forward-groups.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import { openLocalTerminal } from '../features/ssh/local-terminal.js';
-import { showSessionLogs } from '../features/ssh/session-logs.js';
+import { showSessionLogs } from '../features/ssh/session-logs-store.js';
 import {
   activeTerminal,
   closePane,

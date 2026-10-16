@@ -12,7 +12,7 @@ import type { GroupEntryWire, HostEntryWire } from '../../../shared/ssh-wire.js'
 import { editHost, openInNewTab, openTerminalFor } from './connect.js';
 import { takeSecondPress } from './double-press.js';
 import { openFiles } from './files/open-files.js';
-import { useHostDelete } from './host-delete.js';
+import { useHostDelete } from './host-delete-store.js';
 import {
   ancestorsOf,
   findHost,

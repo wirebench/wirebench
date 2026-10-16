@@ -189,3 +189,36 @@ describe('op import: a Hoppscotch collection', () => {
     ).rejects.toMatchObject({ code: 'environments-not-imported' });
   });
 });
+
+const THUNDER = resolve(import.meta.dirname, '..', '..', '..', '..', '..', 'fixtures', 'thunder-client', 'crafted');
+
+describe('op import: a Thunder Client collection', () => {
+  it('imports a collection export with its tests as assertions, its scripts and secrets left out', async () => {
+    const fixture = await emptyProject();
+    const result = await runOp(importOp, { source: join(THUNDER, 'collection-1.2.json') }, fixture.base());
+
+    expect(result.format).toBe('thunder-client');
+    expect(result.added).toEqual([expect.objectContaining({ kind: 'rest', name: 'Shop API', requests: 9 })]);
+    expect(result.problems.map((problem) => problem.code)).toContain('scripts-not-saved');
+    expect(JSON.stringify(result)).not.toMatch(/basic-pass-123|oauth-secret-123|aws-secret-123/);
+    const { project } = await loadProject(fixture.dir);
+    expect(restApisOf(project)[0]?.baseUrl).toBe('${baseUrl}/api');
+  });
+
+  it('imports a thunder-tests folder, not as a folder collection, and reports its environments', async () => {
+    const fixture = await emptyProject();
+    const result = await runOp(importOp, { source: join(THUNDER, 'folder-v3') }, fixture.base());
+    expect(result.format).toBe('thunder-client');
+    expect(result.added).toEqual([expect.objectContaining({ kind: 'rest', name: 'Auth' })]);
+    expect(result.problems.map((problem) => problem.code)).toContain('environments-not-imported');
+    const legacy = await runOp(importOp, { source: join(THUNDER, 'folder-legacy') }, fixture.base());
+    expect(legacy.added.map((item) => item.name)).toEqual(['Legacy items', 'Legacy other']);
+  });
+
+  it('refuses an environment export', async () => {
+    const fixture = await emptyProject();
+    await expect(
+      runOp(importOp, { source: join(THUNDER, 'environment-1.0.json') }, fixture.base()),
+    ).rejects.toMatchObject({ code: 'environments-not-imported' });
+  });
+});
