@@ -591,7 +591,7 @@ describe('importInsomnia: size', () => {
 });
 
 describe('mapInsomnia: .proto files at one path', () => {
-  it('keeps the first file at a clashing path and warns', () => {
+  it('keeps the first file at a clashing path no request uses, and warns', () => {
     const mapped = mapText(
       JSON.stringify({
         __export_format: 4,
@@ -614,6 +614,120 @@ describe('mapInsomnia: .proto files at one path', () => {
             protoText: 'syntax = "proto3"; package b; service B {}',
           },
           {
+            _id: 'pf_3',
+            parentId: 'wrk_1',
+            _type: 'proto_file',
+            name: 'other.proto',
+            metaSortKey: 3,
+            protoText: 'syntax = "proto3"; package c; service C {}',
+          },
+          {
+            _id: 'greq_1',
+            parentId: 'wrk_1',
+            _type: 'grpc_request',
+            name: 'G',
+            url: 'grpc://h:1',
+            protoFileId: 'pf_3',
+            protoMethodName: '/b.B/M',
+          },
+        ],
+      }),
+    );
+    const protos = mapped.collections[0]!.grpcProtos!;
+    expect([...protos.sources.keys()]).toEqual(['svc.proto', 'other.proto']);
+    expect(protos.sources.get('svc.proto')).toContain('package a');
+    expect(mapped.report.warnings).toContain('W: two .proto files share the path svc.proto; the first was kept.');
+  });
+});
+
+describe('mapInsomnia: credentials in WebSocket and gRPC URLs', () => {
+  it('cuts WebSocket user info and blanks literal credential query values, counting each', () => {
+    const mapped = v5([
+      {
+        name: 'Echo',
+        meta: { id: 'ws-req_1' },
+        url: 'wss://u:LEAK-userinfo@ws.example.com/p?access_token=LEAK-query&q=1&key={{ _.k }}',
+        parameters: [
+          { name: 'api_key', value: 'LEAK-param' },
+          { name: 'page', value: '2' },
+        ],
+      },
+    ]);
+    const entry = mapped.collections[0]!;
+    const request = entry.websocket!.requests[0]!;
+    expect(request.url).toBe('wss://ws.example.com/p');
+    expect(entry.websocket!.url).toBe('wss://ws.example.com/p');
+    expect(request.query.map((q) => [q.name, q.value])).toEqual([
+      ['access_token', ''],
+      ['q', '1'],
+      ['key', '${k}'],
+      ['api_key', ''],
+      ['page', '2'],
+    ]);
+    expect(JSON.stringify(mapped)).not.toContain('LEAK');
+    expect(mapped.report.notes).toContain('Echo: the credential in the URL was not imported.');
+    expect(mapped.report.notes).toContain('Echo: the value of "access_token" is a credential and was not imported.');
+    expect(mapped.report.notes).toContain('Echo: the value of "api_key" is a credential and was not imported.');
+    expect(mapped.report.warnings).toContain(
+      'Credentials are not copied from the export; re-enter them for 3 auth configurations',
+    );
+  });
+
+  it('cuts user info from a gRPC URL, with or without a scheme', () => {
+    for (const url of ['grpcs://u:LEAK-grpc@grpc.example.com:8443', 'u:LEAK-grpc@grpc.example.com:8443']) {
+      const mapped = v5([
+        {
+          name: 'Get',
+          meta: { id: 'greq_1' },
+          url,
+          protoMethodName: '/pkg.Svc/M',
+          reflectionApi: { enabled: false },
+        },
+      ]);
+      expect(mapped.collections[0]!.grpc!.target).toBe('grpc.example.com:8443');
+      expect(JSON.stringify(mapped)).not.toContain('LEAK');
+      expect(mapped.report.notes).toContain('Get: the credential in the URL was not imported.');
+    }
+  });
+});
+
+describe('mapInsomnia: credential header names', () => {
+  const headersOf = (name: string): string[] =>
+    v5([
+      {
+        name: 'Echo',
+        meta: { id: 'ws-req_1' },
+        url: 'wss://echo.example.com/ws',
+        headers: [
+          { name, value: 'LEAK-literal' },
+          { name: 'X-Trace', value: 't' },
+        ],
+      },
+    ]).collections[0]!.websocket!.requests[0]!.headers.map((h) => h.name);
+
+  it('drops any credential-looking name, as the other importers judge it', () => {
+    for (const name of ['X-Auth-Token', 'Api-Key', 'Authorization '])
+      expect(headersOf(name), name).toEqual(['X-Trace']);
+  });
+});
+
+describe('mapInsomnia: .proto clash and a referenced file', () => {
+  it('keeps the file a request references over the earlier one, and warns', () => {
+    const mapped = mapText(
+      JSON.stringify({
+        __export_format: 4,
+        resources: [
+          { _id: 'wrk_1', parentId: null, name: 'W', scope: 'collection', _type: 'workspace' },
+          {
+            _id: 'pf_1',
+            parentId: 'wrk_1',
+            _type: 'proto_file',
+            name: 'svc.proto',
+            metaSortKey: 1,
+            protoText: 'package a;',
+          },
+          { _id: 'pf_2', parentId: 'wrk_1', _type: 'proto_file', name: 'svc', metaSortKey: 2, protoText: 'package b;' },
+          {
             _id: 'greq_1',
             parentId: 'wrk_1',
             _type: 'grpc_request',
@@ -625,9 +739,33 @@ describe('mapInsomnia: .proto files at one path', () => {
         ],
       }),
     );
-    const protos = mapped.collections[0]!.grpcProtos!;
-    expect([...protos.sources.keys()]).toEqual(['svc.proto']);
-    expect(protos.sources.get('svc.proto')).toContain('package a');
-    expect(mapped.report.warnings).toContain('W: two .proto files share the path svc.proto; the first was kept.');
+    expect(mapped.collections[0]!.grpcProtos!.sources.get('svc.proto')).toBe('package b;');
+    expect(mapped.report.warnings).toContain(
+      'W: two .proto files share the path svc.proto; the one a request uses was kept.',
+    );
   });
+});
+
+describe('mapInsomnia: hostile environment data', () => {
+  it('refuses a self-referencing YAML anchor in environment data as insomnia-malformed', () => {
+    const source = [
+      'type: collection.insomnia.rest/5.0',
+      'name: W',
+      'collection: []',
+      'environments:',
+      '  name: Base',
+      '  data: &d',
+      '    a: 1',
+      '    self: *d',
+      '',
+    ].join('\n');
+    let code: string | undefined;
+    try {
+      mapText(source);
+    } catch (error) {
+      expect(error).toBeInstanceOf(InsomniaError);
+      code = (error as InsomniaError).code;
+    }
+    expect(code).toBe('insomnia-malformed');
+  }, 10000);
 });

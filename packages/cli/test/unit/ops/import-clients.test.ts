@@ -102,6 +102,18 @@ describe('op import: an Insomnia export', () => {
   });
 });
 
+describe('op import: vault secrets', () => {
+  it('names a vault secret once, under secret-not-imported', async () => {
+    const fixture = await emptyProject();
+    const file = join(await tempDir(), 'mini.yaml');
+    await writeFile(file, WITH_VAULT);
+    const result = await runOp(importOp, { source: file }, fixture.base());
+
+    const naming = result.problems.filter((problem) => problem.message.includes('token'));
+    expect(naming.map((problem) => problem.code)).toEqual(['secret-not-imported']);
+  });
+});
+
 describe('op import: environment files', () => {
   it('refuses a Postman environment with environments-not-imported, before writing anything', async () => {
     const fixture = await emptyProject();

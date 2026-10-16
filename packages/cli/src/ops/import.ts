@@ -30,6 +30,7 @@ import {
   soapInterfacesOf,
   takenContainerSlugs,
   uniqueSlug,
+  VAULT_SECRETS_LINE,
   writeApiDefinitionCache,
   withContainersOf,
   writeDefinitionCache,
@@ -419,8 +420,10 @@ async function addMappedCollections(
     });
   }
   // The variable plan's own report (a credential cut from a URL, credential-looking names) joins
-  // the import's: the properties it speaks of were written above.
-  const warnings = [...mapped.report.warnings, ...mapped.variables.report.warnings];
+  // the import's: the properties it speaks of were written above. Its vault line asks for values
+  // in a secret store this command does not write; secret-not-imported already names those.
+  const variableWarnings = mapped.variables.report.warnings.filter((line) => !line.includes(VAULT_SECRETS_LINE));
+  const warnings = [...mapped.report.warnings, ...variableWarnings];
   const notes = [...mapped.report.notes, ...mapped.variables.report.notes];
   problems.push(
     ...warnings.map((message) => ({ code: 'import-warning', message: redactUrlsInText(message) })),

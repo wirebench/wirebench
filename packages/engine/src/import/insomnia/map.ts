@@ -22,7 +22,10 @@ import { createWsApi, createWsFolder, createWsRequest, createWsSavedMessage } fr
 import type { MappedClientEntry, MappedClientImport, MappedProtoSet } from '../client-import.js';
 import { flattenValue, ScriptCollector } from '../client-import.js';
 import { GRPC_METHOD, grpcTarget } from '../collection-v3/map.js';
+import { blankIfLiteral, blankUrlCredentials } from '../credential-values.js';
+import { isCredentialName } from '../credentials.js';
 import { ReportBuilder } from '../report.js';
+import { stripUserinfo } from '../values.js';
 import type { ImportedScriptFile } from '../scripts.js';
 import { insomniaTemplates, unshieldTemplates } from '../template-dialects.js';
 import { rewriteMustache } from '../templates.js';
@@ -51,8 +54,8 @@ export interface MapInsomniaOptions {
 }
 
 const HEX_COLOUR = /^#[0-9a-f]{6}$/i;
-/** Header and metadata names whose literal value is a credential, never copied (lower case). */
-const CREDENTIAL_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'x-api-key']);
+/** The vault line of the variable report, which a caller with no secret store may leave out. */
+export const VAULT_SECRETS_LINE = 'Vault secrets are not in the export; set a value for:';
 /** Auth scheme words a credential header may hold beside its references (lower case). */
 const AUTH_SCHEMES = new Set(['bearer', 'basic', 'digest', 'token', 'negotiate', 'apikey']);
 
@@ -92,7 +95,17 @@ export function flattenEnvironment(data: InsRec, order?: InsRec): [string, strin
     }
     out.push(...flattenValue(name, value));
   };
-  for (const [key, value] of entriesInOrder(data, order?.['&'])) walk(key, value, [key]);
+  try {
+    for (const [key, value] of entriesInOrder(data, order?.['&'])) walk(key, value, [key]);
+  } catch (cause) {
+    // A YAML anchor that holds itself makes a circular value, which no text form can hold.
+    if (cause instanceof TypeError) {
+      throw new InsomniaError('insomnia-malformed', 'An Insomnia environment refers to itself (a YAML alias loop).', {
+        cause,
+      });
+    }
+    throw cause;
+  }
   return out;
 }
 
@@ -161,7 +174,7 @@ class WorkspaceMapper {
     return rows.flatMap((row) => {
       const name = this.value(row.name, label);
       const value = this.value(row.value, label);
-      if (dropCredentials && CREDENTIAL_HEADERS.has(name.toLowerCase()) && !credentialSafe(value)) {
+      if (dropCredentials && isCredentialName(name.trim()) && !credentialSafe(value)) {
         this.credentials += 1;
         this.report.note(`${label}: the value of "${name}" is a credential and was not imported.`);
         return [];
@@ -172,6 +185,30 @@ class WorkspaceMapper {
           ...(row.description !== undefined ? { description: row.description } : {}),
         }),
       ];
+    });
+  }
+
+  /** `url` without literal user info, with or without a scheme; a cut is noted and counted. */
+  private withoutUserinfo(url: string, label: string): string {
+    const schemed = stripUserinfo(url);
+    const cut = schemed.stripped || url.includes('://') ? schemed : stripUserinfo(url, true);
+    if (cut.stripped) this.credentialNote(label, 'the credential in the URL was not imported.');
+    return cut.url;
+  }
+
+  private credentialNote(label: string, what: string): void {
+    this.credentials += 1;
+    this.report.note(`${label}: ${what}`);
+  }
+
+  /** Query rows with each literal credential value blanked (the rule every importer applies), noted and counted. */
+  private blankQuery(rows: readonly KeyValueEntry[], label: string): KeyValueEntry[] {
+    return rows.map((row) => {
+      const blanked = new Set<string>();
+      const value = blankIfLiteral(row.name, row.value, blanked);
+      if (blanked.size === 0) return row;
+      this.credentialNote(label, `the value of "${row.name}" is a credential and was not imported.`);
+      return { ...row, value };
     });
   }
 
@@ -188,7 +225,7 @@ class WorkspaceMapper {
       );
     }
     if (node.protoFileId !== undefined) this.protoIds.add(node.protoFileId);
-    const target = grpcTarget(this.value(node.url, label));
+    const target = grpcTarget(this.withoutUserinfo(this.value(node.url, label), label));
     if (target !== undefined) {
       if (this.grpcApiTarget === undefined) this.grpcApiTarget = target;
       else if (target.target !== this.grpcApiTarget.target || target.tls !== this.grpcApiTarget.tls) {
@@ -221,7 +258,10 @@ class WorkspaceMapper {
   ): WsRequestDef {
     const label = this.label([...trail, node.name]);
     const { base, rows: inline } = inlineQuery(node.url);
-    const split = splitQueryKeepingReferences(this.value(base, label));
+    // The base has no query left (inlineQuery took it), so this cuts only the user info.
+    const { url: safeBase, stripped } = blankUrlCredentials(this.value(base, label), new Set());
+    if (stripped) this.credentialNote(label, 'the credential in the URL was not imported.');
+    const split = splitQueryKeepingReferences(safeBase);
     if (this.wsApiUrl === undefined) this.wsApiUrl = split.path;
     const messages =
       node.payload !== undefined && node.payload.text !== ''
@@ -240,7 +280,7 @@ class WorkspaceMapper {
       order,
       ...(node.description !== undefined ? { description: node.description } : {}),
       url: split.path,
-      query: [...split.query, ...this.rows([...inline, ...node.parameters], label)],
+      query: this.blankQuery([...split.query, ...this.rows([...inline, ...node.parameters], label)], label),
       headers: this.rows(withInherited(node.headers, inherited), label, true),
       auth: this.auth(node.auth, label, true) ?? { type: 'inherit' },
       settings: {},
@@ -347,16 +387,28 @@ class WorkspaceMapper {
       return parts.join('/');
     };
     const sources = new Map<string, string>();
-    const clashes = new Set<string>();
+    const usedAt = new Set<string>();
+    const warned = new Map<string, string>();
     const roots: string[] = [];
     for (const proto of protos) {
       const path = pathOf(proto.dirId, proto.name);
-      if (!sources.has(path)) sources.set(path, proto.text);
-      else if (!clashes.has(path)) {
-        clashes.add(path);
-        this.report.warn(`${api}: two .proto files share the path ${path}; the first was kept.`);
+      const used = this.protoIds.has(proto.id);
+      if (!sources.has(path)) {
+        sources.set(path, proto.text);
+        if (used) usedAt.add(path);
+      } else {
+        // The file a request points at wins the path over one only beside it; else the first stays.
+        const replace = used && !usedAt.has(path);
+        if (replace) {
+          sources.set(path, proto.text);
+          usedAt.add(path);
+        }
+        warned.set(path, replace || usedAt.has(path) ? 'the one a request uses' : 'the first');
       }
       if (this.protoIds.has(proto.id) && !roots.includes(path)) roots.push(path);
+    }
+    for (const [path, kept] of warned) {
+      this.report.warn(`${api}: two .proto files share the path ${path}; ${kept} was kept.`);
     }
     return roots.length > 0 ? { sources, roots } : undefined;
   }
@@ -511,9 +563,7 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
       });
     }
     if (mapper.vaultNames.length > 0) {
-      variableReport.warn(
-        `${mapper.prefix}Vault secrets are not in the export; set a value for: ${mapper.vaultNames.join(', ')}`,
-      );
+      variableReport.warn(`${mapper.prefix}${VAULT_SECRETS_LINE} ${mapper.vaultNames.join(', ')}`);
     }
 
     const collector = new ScriptCollector(slugify(name).toLowerCase(), report);

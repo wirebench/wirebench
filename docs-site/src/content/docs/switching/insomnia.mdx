@@ -98,9 +98,11 @@ Format 5 does not export `.proto` files, so its gRPC API has no definition, and 
 
 Format 5 does not export WebSocket messages, and a note says so.
 
-In gRPC metadata and WebSocket headers, a credential header (`Authorization`, `Proxy-Authorization`,
-`Cookie` or `X-API-Key`) holding a literal value is left out, and a note names it. A value that is
-only references, or an auth scheme word followed by references (`Bearer ${token}`), is kept.
+In gRPC metadata and WebSocket headers, a header whose name looks like a credential (such as
+`Authorization`, `Cookie`, `X-Auth-Token` or `Api-Key`) holding a literal value is left out, and a
+note names it. A value that is only references, or an auth scheme word followed by references
+(`Bearer ${token}`), is kept. User info in a WebSocket or gRPC URL is cut, and a literal value of a
+credential-looking WebSocket query parameter is blanked, each with a note.
 
 ### Environments
 
