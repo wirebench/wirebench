@@ -29,7 +29,7 @@ import { ForwardingPanel } from './forwarding/forwarding-view.js';
 import { LayoutsPanel } from './panes/layouts-view.js';
 import { SnippetsPanel } from './snippets/snippets-panel.js';
 import { useHostsPrefs, type HostsSort } from './hosts-prefs.js';
-import { flattenGroups, useHostsStore } from './hosts-store.js';
+import { flattenGroups, osKeyOf, useHostsStore } from './hosts-store.js';
 import { IdentitiesSection } from './identities-section.js';
 import { RecentSection } from './recent-section.js';
 import { SshEmptyState, SshNoMatches, SshView, SshViewHeader } from './ssh-view-frame.js';
@@ -583,6 +583,14 @@ function KeychainPanel() {
   );
 }
 
+/** The saved hosts that connect to a known host's `address:port`, as its row says: "Used by box, cache +3". */
+export function usedByText(entry: SshKnownHostWire, hosts: readonly ResolvedHostWire[]): string | undefined {
+  const names = hosts.filter((host) => osKeyOf(host) === entry.host).map((host) => host.name);
+  if (names.length === 0) return undefined;
+  const more = names.length - 2;
+  return `Used by ${names.slice(0, 2).join(', ')}${more > 0 ? ` +${String(more)}` : ''}`;
+}
+
 function KnownHostsPanel() {
   const [entries, setEntries] = useState<readonly SshKnownHostWire[]>();
   const [error, setError] = useState<string>();
@@ -605,10 +613,30 @@ function KnownHostsPanel() {
     void load();
   }, [revision]);
 
+  const resolved = useHostsStore((s) => s.resolved);
+
   const forget = async (entry: SshKnownHostWire): Promise<void> => {
     const result = await ipc().ssh.forgetHostKey({ host: entry.host, keyType: entry.keyType });
     setError(result.ok ? undefined : result.error.message);
     await load();
+    if (!result.ok) return;
+    // Trusting the same fingerprint again puts the key back as it was (#594).
+    showToast(`Forgot the ${entry.keyType} key of ${entry.host}`, {
+      label: 'Undo',
+      onClick: () => {
+        void ipc()
+          .ssh.trustHostKey({
+            host: entry.host,
+            keyType: entry.keyType,
+            fingerprint: entry.fingerprint,
+            replace: false,
+          })
+          .then(async (undone) => {
+            setError(undone.ok ? undefined : undone.error.message);
+            await load();
+          });
+      },
+    });
   };
 
   const needle = filter.trim().toLowerCase();
@@ -672,6 +700,9 @@ function KnownHostsPanel() {
                 <span className="truncate font-mono text-xs text-fg-subtle">
                   {entry.keyType} {entry.fingerprint}
                 </span>
+                {usedByText(entry, resolved) !== undefined && (
+                  <span className="truncate text-xs text-fg-subtle">{usedByText(entry, resolved)}</span>
+                )}
               </span>
               <Button
                 onClick={() => {

@@ -8,6 +8,7 @@ const secretNames = vi.fn();
 const setSecret = vi.fn();
 const knownHosts = vi.fn();
 const forgetHostKey = vi.fn();
+const trustHostKey = vi.fn();
 const setHostOs = vi.fn();
 const sshKeys = vi.fn(() => Promise.resolve({ ok: true, value: { keys: [] } }));
 const localUser = vi.fn(() => Promise.resolve({ ok: true, value: { name: 'me' } }));
@@ -20,12 +21,14 @@ vi.mock('../../src/renderer/state/ipc-client.js', () => ({
       setSecret,
       knownHosts,
       forgetHostKey,
+      trustHostKey,
       setHostOs,
       keys: sshKeys,
       localUser,
     },
   }),
 }));
+import { ToastViewport } from '../../src/renderer/components/toast.js';
 import { HostsView } from '../../src/renderer/features/ssh/hosts-view.js';
 import { openTerminalFor } from '../../src/renderer/features/ssh/connect.js';
 import { HostDetails, sshCommandOf, useHostDetailsShown } from '../../src/renderer/features/ssh/host-details.js';
@@ -283,6 +286,28 @@ describe('Known hosts', () => {
     expect(forgetHostKey).toHaveBeenCalledWith({ host: '10.0.0.1:22', keyType: 'ssh-ed25519' });
     await vi.waitFor(() => {
       expect(knownHosts).toHaveBeenCalledTimes(2);
+    });
+  });
+  it('says which saved hosts use a key, and Undo trusts a forgotten key again', async () => {
+    trustHostKey.mockResolvedValue({ ok: true, value: {} });
+    useHostsStore.setState({ homeView: 'known-hosts' });
+    render(
+      <>
+        <SshHome />
+        <ToastViewport />
+      </>,
+    );
+    const row = await screen.findByTestId('known-host-10.0.0.1:22');
+    expect(row.textContent).toContain('Used by alpha');
+    await userEvent.click(within(row).getByRole('button', { name: 'Forget' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Forget' }));
+    // The earlier test's toast may still be up: this Forget's is the last one.
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Undo' })).at(-1)!);
+    expect(trustHostKey).toHaveBeenCalledWith({
+      host: '10.0.0.1:22',
+      keyType: 'ssh-ed25519',
+      fingerprint: 'SHA256:abc',
+      replace: false,
     });
   });
   it('says so when nothing is trusted yet', async () => {
