@@ -16,6 +16,7 @@ import {
   groupStatus,
   groupStatusText,
   renameGroup,
+  restoreGroup,
   saveGroups,
   startGroup,
   stopGroup,
@@ -297,9 +298,23 @@ function GroupSection({
                 <DropdownMenu.Item
                   className={ITEM_CLASS}
                   onSelect={() => {
-                    // Its rules stay in hosts.yaml, under Ungrouped; nothing running is stopped.
-                    void saveGroups(deleteGroup(useHostsStore.getState().file, group.id)).then((problem) => {
-                      showToast(problem ?? `Group ${group.name} removed; its rules are under Ungrouped`);
+                    // Its rules stay in hosts.yaml, under Ungrouped; nothing running is stopped. Undo puts the
+                    // group back where it was (#594).
+                    const { file } = useHostsStore.getState();
+                    const index = (file.forwardGroups ?? []).findIndex((g) => g.id === group.id);
+                    void saveGroups(deleteGroup(file, group.id)).then((problem) => {
+                      if (problem !== undefined) {
+                        showToast(problem);
+                        return;
+                      }
+                      showToast(`Group ${group.name} removed; its rules are under Ungrouped`, {
+                        label: 'Undo',
+                        onClick: () => {
+                          void saveGroups(restoreGroup(useHostsStore.getState().file, group, index)).then((again) => {
+                            if (again !== undefined) showToast(again);
+                          });
+                        },
+                      });
                     });
                   }}
                 >

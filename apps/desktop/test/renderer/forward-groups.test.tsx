@@ -10,9 +10,11 @@ import {
   groupStatusText,
   moveRule,
   renameGroup,
+  restoreGroup,
   startGroup,
   stopGroup,
 } from '../../src/renderer/features/ssh/forwarding/forward-groups.js';
+import { ToastViewport } from '../../src/renderer/components/toast.js';
 import { ForwardDetails, useForwardDetailsShown } from '../../src/renderer/features/ssh/forwarding/forward-details.js';
 import { ForwardingPanel } from '../../src/renderer/features/ssh/forwarding/forwarding-view.js';
 import { useForwardsStore } from '../../src/renderer/features/ssh/forwarding/forwards-store.js';
@@ -148,6 +150,17 @@ describe('forwarding group edits', () => {
     const without = deleteGroup(FILE, 'dev');
     expect(without.forwardGroups?.map((g) => g.id)).toEqual(['old']);
     expect(without.hosts).toBe(FILE.hosts);
+  });
+
+  it('Undo puts a deleted group back where it was, leaving a rule moved since where it went', () => {
+    const dev = FILE.forwardGroups![0]!;
+    const without = deleteGroup(FILE, 'dev');
+    expect(restoreGroup(without, dev, 0).forwardGroups).toEqual(FILE.forwardGroups);
+    const [member] = dev.rules;
+    const moved = moveRule(without, member!.host, member!.rule, 'old');
+    const back = restoreGroup(moved, dev, 0);
+    expect(back.forwardGroups?.[0]?.rules).toEqual(dev.rules.slice(1));
+    expect(groupOfRule(back, member!.host, member!.rule)?.id).toBe('old');
   });
 
   it('counts the rules that can run, those running and those failed', () => {
@@ -302,6 +315,21 @@ describe('the Port forwarding view with groups', () => {
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete group' }));
     await waitFor(() => {
       expect(saved().forwardGroups?.map((g) => g.id)).toEqual(['old']);
+    });
+  });
+
+  it('Delete group offers Undo, which brings the group back (#594)', async () => {
+    render(
+      <>
+        <ForwardingPanel />
+        <ToastViewport />
+      </>,
+    );
+    await userEvent.click(within(section('dev')).getByRole('button', { name: 'More actions for group Dev' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete group' }));
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Undo' })).at(-1)!);
+    await waitFor(() => {
+      expect(saved().forwardGroups?.map((g) => g.id)).toEqual(['dev', 'old']);
     });
   });
 
