@@ -32,6 +32,7 @@ import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { MethodBadge } from '../rest-api/method-badge.js';
+import { requestDisplayName } from '../rest-api/request-display-name.js';
 import { EXPLORER_DIALOGS, TAB_KINDS, entityIdOf, explorerDeletion, explorerRole } from '../../kinds/index.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { kindLabel } from '../../kinds/placeholders.js';
@@ -166,6 +167,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   const Icon = role?.icon ?? NODE_ICON[node.data.kind];
   const indent = typeof style.paddingLeft === 'number' ? style.paddingLeft : 0;
   const rowStyle = { ...style, paddingLeft: indent + ROW_PADDING_LEFT };
+  const label = requestDisplayName(node.data.label, node.data.method);
   return (
     <ExplorerContextMenu node={node.data}>
       <div
@@ -236,18 +238,14 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             ))}
         </span>
         {/* One gutter of fixed width carries whatever marks the row — a kind icon or the method —
-            hard against the name. Right-aligning it lines the method labels up with each other and
-            every name in the tree with every other, however wide GET, DELETE or PROPFIND is. */}
+            hard against the name, so every name in the tree lines up with every other. A method
+            badge fills the gutter at a fixed width, left-aligned, so GET, POST and DEL start in one
+            column too. */}
         <span className="flex w-6 shrink-0 items-center justify-end overflow-hidden" data-testid="explorer-row-gutter">
           {role?.Gutter !== undefined ? (
             <role.Gutter node={node.data} />
           ) : node.data.kind === 'webhook-request' && node.data.method !== undefined ? (
-            <MethodBadge
-              method={node.data.method}
-              title={`${node.data.method} ${node.data.label}`}
-              compact
-              className="w-auto"
-            />
+            <MethodBadge method={node.data.method} title={`${node.data.method} ${label}`} compact />
           ) : node.data.kind === 'schedule' && node.data.scheduleState !== undefined ? (
             <span
               role="img"
@@ -288,14 +286,18 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
                   ? 'text-fg-faint'
                   : ''
             }`}
-            {...(node.data.kind === 'placeholder' ? { title: node.data.message } : {})}
+            title={node.data.kind === 'placeholder' ? node.data.message : label}
           >
-            {node.data.label}
+            {label}
           </span>
         )}
         {node.data.kind === 'mock' && node.data.mockId !== undefined && <MockRunningBadge mockId={node.data.mockId} />}
         {node.data.suffix !== undefined && (
-          <span className="shrink-0 truncate pl-1 text-xs text-fg-subtle" data-testid="explorer-row-suffix">
+          <span
+            className="min-w-0 max-w-[50%] shrink truncate pl-1 text-xs text-fg-subtle"
+            data-testid="explorer-row-suffix"
+            title={node.data.suffix}
+          >
             · {node.data.suffix}
           </span>
         )}
@@ -647,6 +649,12 @@ export function ExplorerView() {
               // folder › request — marching a request off to the right.
               indent={12}
               outerElementType={FocusableListOuter}
+              // The tree never scrolls sideways: react-arborist lets a row grow to its content
+              // (`min-width: max-content`), which at a narrow sidebar pushed a long name such as
+              // "DELETE /pets/{id}" past the edge behind a horizontal scrollbar. Held to the
+              // tree's width, a row's name truncates with an ellipsis and its title says it in full.
+              className="overflow-x-hidden!"
+              rowClassName="min-w-0!"
               openByDefault={false}
               initialOpenState={{ ...Object.fromEntries(data.map((root) => [root.id, true])), ...storedOpen() }}
               onToggle={(id) => {

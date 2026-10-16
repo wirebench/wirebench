@@ -103,6 +103,23 @@ All notable changes to this project are documented here. The format follows
 - **A refused proxy tunnel no longer reads as Cancelled.** When an HTTPS request goes through a proxy
   that refuses the tunnel (a 407 for a wrong or missing proxy password), the send now fails with
   "Proxy connection failed" and the proxy's status, instead of showing as if you had cancelled it.
+- **Imported requests no longer show their method twice.** An OpenAPI operation with no summary or
+  operation id, and a request from **Import cURL…**, is now named by its path alone (`/pets/{id}`), since
+  the method badge beside it already says GET or POST. A request imported earlier as `GET /pets/{id}`
+  shows without the repeated method in the explorer, the Runner's list and History; its stored name is
+  unchanged (#633).
+- **Method badges in the explorer line up.** Every method badge in the tree has the same width and
+  starts in the same column, so POST no longer sits further left than GET and DEL (#633).
+- **The explorer no longer scrolls sideways.** In a narrow sidebar a long name such as
+  `DELETE /pets/{id}` is cut with an ellipsis instead of running past the edge behind a horizontal
+  scrollbar; hover it to read it in full (#633).
+- **The command palette lists what you can run first.** Within each group, commands that cannot run
+  here (greyed, with the reason) now come after the ones that can, so typing "REST" no longer puts
+  **REST: Lint Definition** and **REST: Update Definition…** above the commands you can use (#633).
+- **History's Compare… shows what it is waiting for.** After **Compare…**, the picked row is tinted
+  and a banner names it ("Comparing with List pets · 22:06:50 — pick another entry") with **Cancel**;
+  a click on another row then opens the comparison. A right-click on a History row now opens the same
+  menu as its **⋯** button (#633).
 - **The "Method changed to POST" toast goes when it stops being true.** Switching a REST body to
   GraphQL and back, or to another kind, now takes the toast and its **Undo** down at once instead of
   leaving it up for its full eight seconds (#632).
