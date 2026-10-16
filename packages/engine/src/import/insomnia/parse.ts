@@ -26,6 +26,8 @@ import { MAX_INSOMNIA_BYTES } from './model.js';
 
 /** Deeper nesting than any real collection; stops a hostile document from exhausting the stack. */
 const MAX_DEPTH = 64;
+/** Most items and folders one export may hold; bounds wide trees and shared YAML aliases. */
+const MAX_NODES = 100_000;
 const VAULT_KEY = '__insomnia_vault';
 const V5_SUFFIXES = ['.insomnia.rest/5.0', '.insomnia/5.0'];
 /** The workspace that resources with no workspace above them share. */
@@ -190,6 +192,19 @@ function grpcNode(id: string, name: string, raw: Rec): InsNode {
   };
 }
 
+/** The item count both walkers share, so neither a wide tree nor aliased lists can run unbounded. */
+interface Budget {
+  nodes: number;
+}
+
+/** Counts one visited item against the shared budget. */
+function spend(budget: Budget): void {
+  budget.nodes += 1;
+  if (budget.nodes > MAX_NODES) {
+    throw insomniaError('insomnia-malformed', `The Insomnia export holds more than ${MAX_NODES} items.`);
+  }
+}
+
 function tooDeep(report: ReportBuilder, name: string): InsNode[] {
   report.warn(`The folder "${name}" is nested more than ${MAX_DEPTH} deep; what is below it was not imported.`);
   return [];
@@ -207,6 +222,7 @@ interface V4Context {
   /** The workspace each resource belongs to. */
   readonly owner: ReadonlyMap<Rec, string>;
   readonly report: ReportBuilder;
+  readonly budget: Budget;
 }
 
 function v4Id(resource: Rec): string {
@@ -232,7 +248,7 @@ function v4Node(context: V4Context, resource: Rec, depth: number): InsNode | und
         kind: 'folder',
         id,
         name,
-        children: depth >= MAX_DEPTH ? tooDeep(context.report, name) : v4Nodes(context, id, depth + 1),
+        children: v4FolderChildren(context, id, name, depth),
         headers: rows(resource['headers']),
         ...(folderAuth !== undefined ? { auth: folderAuth } : {}),
         ...(isRecord(resource['environment']) ? { environment: resource['environment'] } : {}),
@@ -299,8 +315,18 @@ function v4Node(context: V4Context, resource: Rec, depth: number): InsNode | und
   }
 }
 
+/** A folder with no id cannot be told apart from the resources with no parent, so it stays empty. */
+function v4FolderChildren(context: V4Context, id: string, name: string, depth: number): InsNode[] {
+  if (id === '') {
+    context.report.warn(`The folder "${name}" has no id; its contents were skipped.`);
+    return [];
+  }
+  return depth >= MAX_DEPTH ? tooDeep(context.report, name) : v4Nodes(context, id, depth + 1);
+}
+
 function v4Nodes(context: V4Context, parentId: string, depth: number): InsNode[] {
   return v4Children(context, parentId).flatMap((child) => {
+    spend(context.budget);
     const node = v4Node(context, child, depth);
     return node !== undefined ? [node] : [];
   });
@@ -325,6 +351,12 @@ const V4_KNOWN = new Set([
   'unit_test',
   'api_spec',
 ]);
+
+/** v4 workspace scopes that hold no requests to import. */
+const NOT_COLLECTION_SCOPES: Readonly<Record<string, string>> = {
+  'mock-server': 'a mock server',
+  mcp: 'an MCP client',
+};
 
 const V4_EXTRA_NAMES: Readonly<Record<string, string>> = { mock: 'mock server', mock_route: 'mock server' };
 
@@ -393,14 +425,25 @@ function parseV4(root: Rec): InsDocument {
   const report = new ReportBuilder();
   const resources = records(root['resources']).filter((r) => typeof r['_type'] === 'string');
   const byId = new Map<string, Rec>();
-  for (const resource of resources) byId.set(v4Id(resource), resource);
+  // A resource with no id is nobody's parent: keyed under '', it would collide with the parentless ones.
+  for (const resource of resources) if (v4Id(resource) !== '') byId.set(v4Id(resource), resource);
   const workspaces = resources.filter((r) => r['_type'] === 'workspace' && v4Id(r) !== SHARED);
   const workspaceIds = new Set(workspaces.map(v4Id));
+  const first = workspaces.find((w) => NOT_COLLECTION_SCOPES[text(w['scope'])] === undefined);
 
   // Each resource's workspace, found by walking its parents; with none above it, the shared one.
   const owner = new Map<Rec, string>();
   for (const resource of resources) {
     if (resource['_type'] === 'workspace') continue;
+    // Old exports parent sub-environments to a placeholder base; they belong to the first workspace.
+    if (
+      first !== undefined &&
+      resource['_type'] === 'environment' &&
+      text(resource['parentId']).startsWith('__BASE_ENVIRONMENT_ID__')
+    ) {
+      owner.set(resource, v4Id(first));
+      continue;
+    }
     let current: Rec | undefined = resource;
     const seen = new Set<Rec>();
     let found = SHARED;
@@ -431,9 +474,22 @@ function parseV4(root: Rec): InsDocument {
     byParent.set(key, list);
   }
 
-  const context: V4Context = { byParent, owner, report };
-  const roots: Rec[] = [...workspaces];
+  const context: V4Context = { byParent, owner, report, budget: { nodes: 0 } };
+  const skipped: string[] = [];
+  const roots: Rec[] = workspaces.filter((workspace) => {
+    const what = NOT_COLLECTION_SCOPES[text(workspace['scope'])];
+    if (what === undefined) return true;
+    skipped.push(what);
+    report.warn(`"${nonEmpty(workspace['name']) ?? 'Imported workspace'}" is ${what} and was skipped.`);
+    return false;
+  });
   if ([...owner.values()].includes(SHARED)) roots.push({ _id: SHARED, _type: 'workspace' });
+  if (roots.length === 0 && skipped.length > 0) {
+    throw insomniaError(
+      'insomnia-not-collection',
+      `This Insomnia file holds only ${skipped[0]}, not a collection or environments, so it has nothing to import.`,
+    );
+  }
   const parsed = roots.map((workspace) => v4Workspace(context, workspace, resources));
   const kind = parsed.length > 0 && parsed.every((w) => w.scope === 'environment') ? 'environment' : 'collection';
   return { format: 4, kind, workspaces: parsed, report: report.build() };
@@ -468,7 +524,15 @@ function v5Scripts(raw: unknown): InsScripts {
 }
 
 /** v5 tells items apart as Insomnia does: `method` is HTTP, `reflectionApi` gRPC, no `url` a folder. */
-function v5Node(item: Rec, report: ReportBuilder, depth: number): InsNode {
+interface V5Context {
+  readonly report: ReportBuilder;
+  readonly budget: Budget;
+  /** Lists and items already walked: YAML aliases can make the tree reuse one, even in a loop. */
+  readonly visited: WeakSet<object>;
+}
+
+function v5Node(context: V5Context, item: Rec, depth: number): InsNode {
+  const { report } = context;
   const id = v5Id(item);
   const name = text(item['name']);
   const description = v5Meta(item)['description'];
@@ -499,7 +563,7 @@ function v5Node(item: Rec, report: ReportBuilder, depth: number): InsNode {
       kind: 'folder',
       id,
       name,
-      children: depth >= MAX_DEPTH ? tooDeep(report, name) : v5Nodes(item['children'], report, depth + 1),
+      children: depth >= MAX_DEPTH ? tooDeep(report, name) : v5Nodes(context, item['children'], depth + 1),
       headers: rows(item['headers']),
       ...(folderAuth !== undefined ? { auth: folderAuth } : {}),
       ...(isRecord(item['environment']) ? { environment: item['environment'] } : {}),
@@ -531,9 +595,23 @@ function v5Node(item: Rec, report: ReportBuilder, depth: number): InsNode {
   );
 }
 
-function v5Nodes(value: unknown, report: ReportBuilder, depth: number): InsNode[] {
-  const items = insomniaOrder(records(value), (item) => sortKey(v5Meta(item)['sortKey']), v5Id);
-  return items.map((item) => v5Node(item, report, depth));
+function v5Nodes(context: V5Context, value: unknown, depth: number): InsNode[] {
+  if (Array.isArray(value)) {
+    if (context.visited.has(value)) {
+      throw insomniaError('insomnia-malformed', 'The Insomnia export reuses a list of items (a YAML alias loop).');
+    }
+    context.visited.add(value);
+  }
+  const listed = records(value);
+  for (const item of listed) {
+    if (context.visited.has(item)) {
+      throw insomniaError('insomnia-malformed', 'The Insomnia export reuses an item (a YAML alias loop).');
+    }
+    context.visited.add(item);
+    spend(context.budget);
+  }
+  const items = insomniaOrder(listed, (item) => sortKey(v5Meta(item)['sortKey']), v5Id);
+  return items.map((item) => v5Node(context, item, depth));
 }
 
 function parseV5(root: Rec, kind: string): InsDocument {
@@ -547,7 +625,7 @@ function parseV5(root: Rec, kind: string): InsDocument {
     {
       id: v5Id(root),
       name: nonEmpty(root['name']) ?? 'Imported workspace',
-      items: v5Nodes(root['collection'], report, 0),
+      items: v5Nodes({ report, budget: { nodes: 0 }, visited: new WeakSet() }, root['collection'], 0),
       ...(isRecord(envs) ? { baseEnv: environment(envs, v5Meta(envs)['isPrivate'], 'Base Environment') } : {}),
       subEnvs: subs.map((env) => environment(env, v5Meta(env)['isPrivate'], 'Environment')),
       protos: [],
@@ -582,8 +660,9 @@ const NOT_COLLECTION: Readonly<Record<string, string>> = { mock: 'a mock server'
  * Reads an Insomnia v4 or v5 export. v5 is told by its `type` value, wherever it sits in the file.
  *
  * @throws InsomniaError `insomnia-too-large` past 50 MB, `insomnia-malformed` when the text is not
- *   JSON or YAML or not an Insomnia export, `insomnia-old-format` for `__export_format` 1 to 3, and
- *   `insomnia-not-collection` for a mock server or MCP client file.
+ *   JSON or YAML, is not an Insomnia export, reuses a list or item (a YAML alias loop) or holds more
+ *   than 100000 items, `insomnia-old-format` for `__export_format` 1 to 3, and
+ *   `insomnia-not-collection` for a mock server or MCP client file (or a v4 file holding only those).
  */
 export function parseInsomnia(source: string): InsDocument {
   if (source.length > MAX_INSOMNIA_BYTES) {
@@ -594,9 +673,14 @@ export function parseInsomnia(source: string): InsDocument {
   }
   let root: unknown;
   try {
-    root = parseYaml(source);
-  } catch (cause) {
-    throw insomniaError('insomnia-malformed', 'The Insomnia export is not valid JSON or YAML.', cause);
+    // JSON goes through the JSON parser, which is far faster than the YAML one on a large export.
+    root = JSON.parse(source);
+  } catch {
+    try {
+      root = parseYaml(source);
+    } catch (cause) {
+      throw insomniaError('insomnia-malformed', 'The Insomnia export is not valid JSON or YAML.', cause);
+    }
   }
   if (!isRecord(root)) throw insomniaError('insomnia-malformed', 'This is not an Insomnia export.');
   const exportFormat = root['__export_format'];

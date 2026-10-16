@@ -1,7 +1,12 @@
+import { mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { InsomniaError } from '../../../../src/errors.js';
 import type { MappedClientImport } from '../../../../src/import/client-import.js';
 import { flattenEnvironment, mapInsomnia } from '../../../../src/import/insomnia/map.js';
+import { importInsomnia } from '../../../../src/import/insomnia/import.js';
+import { MAX_INSOMNIA_BYTES } from '../../../../src/import/insomnia/model.js';
 import { parseInsomnia } from '../../../../src/import/insomnia/parse.js';
 import type { RestRequestDef } from '../../../../src/rest/model.js';
 import { apiRequests } from '../../../../src/rest/model.js';
@@ -352,7 +357,13 @@ describe('mapInsomnia: environments', () => {
 
   it('brings a vault secret as a named secret with no value, never a plain property', () => {
     const [staging] = mapText(insomniaFixture('v5-collection.yaml')).variables.environments;
-    expect(staging?.variables).toContainEqual({ name: 'svcPassword', value: '', enabled: true, secret: true });
+    expect(staging?.variables).toContainEqual({
+      name: 'svcPassword',
+      value: '',
+      enabled: true,
+      secret: true,
+      awaitsValue: true,
+    });
     expect(staging?.variables.some((v) => v.name === '__insomnia_vault' || v.value.includes('••'))).toBe(false);
   });
 
@@ -362,7 +373,21 @@ describe('mapInsomnia: environments', () => {
     });
     expect(onlyRequest(mapped).headers).toEqual([{ name: 'X-Key', value: '${apiKey}', enabled: true }]);
     expect(mapped.variables.projectProperties?.variables).toEqual([
-      { name: 'apiKey', value: '', enabled: true, secret: true },
+      { name: 'apiKey', value: '', enabled: true, secret: true, awaitsValue: true },
+    ]);
+  });
+
+  it('lists the vault secrets once, each with its environment', () => {
+    const mapped = v5([req({})], {
+      environments: {
+        name: 'Base',
+        data: { __insomnia_vault: { apiKey: 'sealed' } },
+        subEnvironments: [{ name: 'Staging', meta: { id: 'env_s' }, data: { __insomnia_vault: { pw: 'sealed' } } }],
+      },
+    });
+    const { warnings, notes } = mapped.variables.report;
+    expect([...warnings, ...notes, ...all(mapped)].filter((line) => line.includes('Vault secrets'))).toEqual([
+      'Vault secrets are not in the export; set a value for: apiKey (Base), pw (Staging)',
     ]);
   });
 
@@ -449,4 +474,298 @@ describe('mapInsomnia: scripts and the report', () => {
       expect((error as InsomniaError).code).toBe('insomnia-nothing-to-import');
     }
   });
+});
+
+describe('mapInsomnia: credentials outside REST', () => {
+  const socket = (over: Record<string, unknown>): Record<string, unknown> => ({
+    name: 'Echo',
+    meta: { id: 'ws-req_1' },
+    url: 'wss://echo.example.com/ws',
+    ...over,
+  });
+  const grpcCall = (over: Record<string, unknown>): Record<string, unknown> => ({
+    name: 'Get',
+    meta: { id: 'greq_1' },
+    url: 'grpc.example.com:443',
+    protoMethodName: '/pkg.Svc/M',
+    reflectionApi: { enabled: false },
+    ...over,
+  });
+
+  it('warns about a WebSocket bearer token beside REST requests, and copies no token', () => {
+    const mapped = v5([req({}), socket({ authentication: { type: 'bearer', token: 's3cr3t-ws-token' } })]);
+    expect(mapped.collections[0]!.rest).toBeDefined();
+    expect(mapped.report.warnings).toContain(
+      'Credentials are not copied from gRPC and WebSocket requests; re-enter them for 1 auth configuration',
+    );
+    expect(JSON.stringify(mapped)).not.toContain('s3cr3t-ws-token');
+  });
+
+  it('drops literal credential headers and metadata with the warning, and keeps references', () => {
+    const mapped = v5([
+      socket({
+        headers: [
+          { name: 'Authorization', value: 'Bearer LEAK-ws-auth' },
+          { name: 'Cookie', value: 'session=LEAK-cookie' },
+          { name: 'X-API-Key', value: '{{ _.key }}' },
+          { name: 'X-Trace', value: 't' },
+        ],
+      }),
+      grpcCall({
+        metadata: [
+          { name: 'authorization', value: 'Bearer LEAK-grpc-token' },
+          { name: 'Proxy-Authorization', value: 'Basic LEAK-proxy' },
+        ],
+      }),
+    ]);
+    const entry = mapped.collections[0]!;
+    expect(entry.websocket!.requests[0]!.headers.map((h) => [h.name, h.value])).toEqual([
+      ['X-API-Key', '${key}'],
+      ['X-Trace', 't'],
+    ]);
+    expect(entry.grpc!.requests[0]!.metadata).toEqual([]);
+    expect(mapped.report.warnings).toContain(
+      'Credentials are not copied from the export; re-enter them for 4 auth configurations',
+    );
+    expect(mapped.report.notes).toContain('Echo: the value of "Cookie" is a credential and was not imported.');
+    expect(mapped.report.notes).toContain('Get: the value of "authorization" is a credential and was not imported.');
+    expect(JSON.stringify(mapped)).not.toContain('LEAK');
+  });
+
+  it('drops a credential header a folder passes down to its WebSocket requests', () => {
+    const mapped = v5([
+      {
+        name: 'F',
+        meta: { id: 'fld_1' },
+        headers: [{ name: 'Authorization', value: 'Bearer LEAK-folder' }],
+        children: [socket({})],
+      },
+    ]);
+    expect(JSON.stringify(mapped)).not.toContain('LEAK');
+  });
+});
+
+describe('mapInsomnia: credential header values (R8)', () => {
+  const kept = (value: string): boolean => {
+    const mapped = v5([
+      {
+        name: 'Echo',
+        meta: { id: 'ws-req_1' },
+        url: 'wss://echo.example.com/ws',
+        headers: [{ name: 'Authorization', value }],
+      },
+    ]);
+    return mapped.collections[0]!.websocket!.requests[0]!.headers.length === 1;
+  };
+
+  it('keeps references alone, or one scheme word beside references, in any case', () => {
+    expect(kept('{{ _.token }}')).toBe(true);
+    expect(kept('Bearer {{ _.token }}')).toBe(true);
+    expect(kept('basic {{ _.creds }}')).toBe(true);
+    expect(kept('Bearer')).toBe(true);
+  });
+
+  it('drops a literal token after the scheme word', () => {
+    expect(kept('Bearer abc')).toBe(false);
+  });
+
+  it('drops literal text joined to a reference', () => {
+    expect(kept('{{ _.token }}x')).toBe(false);
+  });
+});
+
+describe('importInsomnia: size', () => {
+  it('refuses a file past the size cap with insomnia-too-large, before reading it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'insomnia-'));
+    const path = join(dir, 'big.json');
+    writeFileSync(path, '');
+    truncateSync(path, MAX_INSOMNIA_BYTES + 1);
+    try {
+      await expect(importInsomnia({ kind: 'file', path }, { newId: () => 'id' })).rejects.toMatchObject({
+        code: 'insomnia-too-large',
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('mapInsomnia: .proto files at one path', () => {
+  it('keeps the first file at a clashing path no request uses, and warns', () => {
+    const mapped = mapText(
+      JSON.stringify({
+        __export_format: 4,
+        resources: [
+          { _id: 'wrk_1', parentId: null, name: 'W', scope: 'collection', _type: 'workspace' },
+          {
+            _id: 'pf_1',
+            parentId: 'wrk_1',
+            _type: 'proto_file',
+            name: 'svc.proto',
+            metaSortKey: 1,
+            protoText: 'syntax = "proto3"; package a; service A {}',
+          },
+          {
+            _id: 'pf_2',
+            parentId: 'wrk_1',
+            _type: 'proto_file',
+            name: 'svc',
+            metaSortKey: 2,
+            protoText: 'syntax = "proto3"; package b; service B {}',
+          },
+          {
+            _id: 'pf_3',
+            parentId: 'wrk_1',
+            _type: 'proto_file',
+            name: 'other.proto',
+            metaSortKey: 3,
+            protoText: 'syntax = "proto3"; package c; service C {}',
+          },
+          {
+            _id: 'greq_1',
+            parentId: 'wrk_1',
+            _type: 'grpc_request',
+            name: 'G',
+            url: 'grpc://h:1',
+            protoFileId: 'pf_3',
+            protoMethodName: '/b.B/M',
+          },
+        ],
+      }),
+    );
+    const protos = mapped.collections[0]!.grpcProtos!;
+    expect([...protos.sources.keys()]).toEqual(['svc.proto', 'other.proto']);
+    expect(protos.sources.get('svc.proto')).toContain('package a');
+    expect(mapped.report.warnings).toContain('W: two .proto files share the path svc.proto; the first was kept.');
+  });
+});
+
+describe('mapInsomnia: credentials in WebSocket and gRPC URLs', () => {
+  it('cuts WebSocket user info and blanks literal credential query values, counting each', () => {
+    const mapped = v5([
+      {
+        name: 'Echo',
+        meta: { id: 'ws-req_1' },
+        url: 'wss://u:LEAK-userinfo@ws.example.com/p?access_token=LEAK-query&q=1&key={{ _.k }}',
+        parameters: [
+          { name: 'api_key', value: 'LEAK-param' },
+          { name: 'page', value: '2' },
+        ],
+      },
+    ]);
+    const entry = mapped.collections[0]!;
+    const request = entry.websocket!.requests[0]!;
+    expect(request.url).toBe('wss://ws.example.com/p');
+    expect(entry.websocket!.url).toBe('wss://ws.example.com/p');
+    expect(request.query.map((q) => [q.name, q.value])).toEqual([
+      ['access_token', ''],
+      ['q', '1'],
+      ['key', '${k}'],
+      ['api_key', ''],
+      ['page', '2'],
+    ]);
+    expect(JSON.stringify(mapped)).not.toContain('LEAK');
+    expect(mapped.report.notes).toContain('Echo: the credential in the URL was not imported.');
+    expect(mapped.report.notes).toContain('Echo: the value of "access_token" is a credential and was not imported.');
+    expect(mapped.report.notes).toContain('Echo: the value of "api_key" is a credential and was not imported.');
+    expect(mapped.report.warnings).toContain(
+      'Credentials are not copied from the export; re-enter them for 3 auth configurations',
+    );
+  });
+
+  it('cuts user info from a gRPC URL, with or without a scheme', () => {
+    for (const url of ['grpcs://u:LEAK-grpc@grpc.example.com:8443', 'u:LEAK-grpc@grpc.example.com:8443']) {
+      const mapped = v5([
+        {
+          name: 'Get',
+          meta: { id: 'greq_1' },
+          url,
+          protoMethodName: '/pkg.Svc/M',
+          reflectionApi: { enabled: false },
+        },
+      ]);
+      expect(mapped.collections[0]!.grpc!.target).toBe('grpc.example.com:8443');
+      expect(JSON.stringify(mapped)).not.toContain('LEAK');
+      expect(mapped.report.notes).toContain('Get: the credential in the URL was not imported.');
+    }
+  });
+});
+
+describe('mapInsomnia: credential header names', () => {
+  const headersOf = (name: string): string[] =>
+    v5([
+      {
+        name: 'Echo',
+        meta: { id: 'ws-req_1' },
+        url: 'wss://echo.example.com/ws',
+        headers: [
+          { name, value: 'LEAK-literal' },
+          { name: 'X-Trace', value: 't' },
+        ],
+      },
+    ]).collections[0]!.websocket!.requests[0]!.headers.map((h) => h.name);
+
+  it('drops any credential-looking name, as the other importers judge it', () => {
+    for (const name of ['X-Auth-Token', 'Api-Key', 'Authorization '])
+      expect(headersOf(name), name).toEqual(['X-Trace']);
+  });
+});
+
+describe('mapInsomnia: .proto clash and a referenced file', () => {
+  it('keeps the file a request references over the earlier one, and warns', () => {
+    const mapped = mapText(
+      JSON.stringify({
+        __export_format: 4,
+        resources: [
+          { _id: 'wrk_1', parentId: null, name: 'W', scope: 'collection', _type: 'workspace' },
+          {
+            _id: 'pf_1',
+            parentId: 'wrk_1',
+            _type: 'proto_file',
+            name: 'svc.proto',
+            metaSortKey: 1,
+            protoText: 'package a;',
+          },
+          { _id: 'pf_2', parentId: 'wrk_1', _type: 'proto_file', name: 'svc', metaSortKey: 2, protoText: 'package b;' },
+          {
+            _id: 'greq_1',
+            parentId: 'wrk_1',
+            _type: 'grpc_request',
+            name: 'G',
+            url: 'grpc://h:1',
+            protoFileId: 'pf_2',
+            protoMethodName: '/b.B/M',
+          },
+        ],
+      }),
+    );
+    expect(mapped.collections[0]!.grpcProtos!.sources.get('svc.proto')).toBe('package b;');
+    expect(mapped.report.warnings).toContain(
+      'W: two .proto files share the path svc.proto; the one a request uses was kept.',
+    );
+  });
+});
+
+describe('mapInsomnia: hostile environment data', () => {
+  it('refuses a self-referencing YAML anchor in environment data as insomnia-malformed', () => {
+    const source = [
+      'type: collection.insomnia.rest/5.0',
+      'name: W',
+      'collection: []',
+      'environments:',
+      '  name: Base',
+      '  data: &d',
+      '    a: 1',
+      '    self: *d',
+      '',
+    ].join('\n');
+    let code: string | undefined;
+    try {
+      mapText(source);
+    } catch (error) {
+      expect(error).toBeInstanceOf(InsomniaError);
+      code = (error as InsomniaError).code;
+    }
+    expect(code).toBe('insomnia-malformed');
+  }, 10000);
 });

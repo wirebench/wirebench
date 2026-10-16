@@ -2,8 +2,9 @@
 /**
  * Applies an importer's variable plan (engine `ImportedVariables`, spec §3.5): workspace
  * environments under a free name; Globals, workspace and project properties without touching an
- * existing name; secret values into the secret store behind a fresh `${secret:ref}`. The
- * active environment is never changed.
+ * existing name; secret values into the secret store behind a fresh `${secret:ref}`, and a secret
+ * the source names but cannot carry (`awaitsValue`) behind an empty entry of its own. The active
+ * environment is never changed.
  *
  * When a save fails, this call undoes what it can before rethrowing: every environment it added
  * is removed and every secret it wrote is deleted (both best effort). Globals, workspace
@@ -63,6 +64,8 @@ export async function applyImportedVariables(
   ports: VariablesApplyPorts,
 ): Promise<VariablesApplyResult> {
   const written: string[] = [];
+  /** Entries made empty for a secret the source could not carry: in `written`, not counted as stored. */
+  let awaiting = 0;
   const addedEnvironments: string[] = [];
   const warnings: string[] = [...plan.report.warnings];
   const notes: string[] = [...plan.report.notes];
@@ -70,8 +73,16 @@ export async function applyImportedVariables(
   const valueOf = async (owner: string, v: ImportedVariable): Promise<string> => {
     if (!v.secret) return v.value;
     if (v.secretValue === undefined || v.secretValue === '') {
-      warnings.push(`${owner}: the secret "${v.name}" had no value in the file; set it in Environments.`);
-      return '';
+      if (v.awaitsValue !== true) {
+        warnings.push(`${owner}: the secret "${v.name}" had no value in the file; set it in Environments.`);
+        return '';
+      }
+      // A vault secret (ruling R9): its own empty entry, so the value typed later never lands in a
+      // workspace or project file. The importer's report already lists it; deleted again on failure.
+      const ref = await ports.secrets.set('', { label: `${owner}/${v.name}` });
+      written.push(ref);
+      awaiting += 1;
+      return `\${secret:${ref}}`;
     }
     const ref = await ports.secrets.set(v.secretValue, { label: `${owner}/${v.name}` });
     written.push(ref);
@@ -149,7 +160,7 @@ export async function applyImportedVariables(
       ...(globals !== undefined ? { globals } : {}),
       ...(workspaceProperties !== undefined ? { workspaceProperties } : {}),
       ...(projectProperties !== undefined ? { projectProperties } : {}),
-      secretsStored: written.length,
+      secretsStored: written.length - awaiting,
       warnings,
       notes,
     };

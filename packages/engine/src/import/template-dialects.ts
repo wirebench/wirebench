@@ -40,16 +40,30 @@ export function unshieldTemplates<T>(value: T): T {
   return value;
 }
 
+/** How many more `{` than `}` `text` holds; 0 when it closes all it opens. */
+function unclosedBraces(text: string): number {
+  let depth = 0;
+  for (const c of text) {
+    if (c === '{') depth += 1;
+    else if (c === '}' && depth > 0) depth -= 1;
+  }
+  return depth;
+}
+
 /**
  * Calls `each` for every `open … close` construct in `text` and joins what it returns with the text
  * between them. `each` gets the inner text and the whole construct and returns the replacement, or
  * `undefined` to keep the construct's first character as text and go on scanning after it.
+ *
+ * When `balanced` says so for an inner text that opens more `{` than it closes, and those `}` follow
+ * the close at once, the construct runs on to take them (`{{#date, {year: -1}}}` is one construct).
  */
 function scan(
   text: string,
   open: string,
   close: string,
   each: (inner: string, whole: string) => string | undefined,
+  balanced?: (inner: string) => boolean,
 ): string {
   let out = '';
   let at = 0;
@@ -59,8 +73,16 @@ function scan(
     if (start === -1) break;
     if (closeAt < start + open.length) closeAt = text.indexOf(close, start + open.length);
     if (closeAt === -1) break;
-    const end = closeAt + close.length;
-    const replaced = each(text.slice(start + open.length, closeAt), text.slice(start, end));
+    let innerEnd = closeAt;
+    // Only when a `}` follows and no opening sits inside: the next opening is then past this close,
+    // so counting the braces reads each character once over the whole scan.
+    const candidate = text.slice(start + open.length, closeAt);
+    if (text[closeAt + close.length] === '}' && !candidate.includes(open) && balanced?.(candidate) === true) {
+      const extra = unclosedBraces(candidate);
+      if (extra > 0 && text.startsWith('}'.repeat(extra), closeAt + close.length)) innerEnd = closeAt + extra;
+    }
+    const end = innerEnd + close.length;
+    const replaced = each(text.slice(start + open.length, innerEnd), text.slice(start, end));
     if (replaced === undefined) {
       out += text.slice(at, start + 1);
       at = start + 1;
@@ -118,7 +140,8 @@ function insomniaPath(inner: string): string[] | undefined {
       const close = inner.indexOf(`${quote}]`, at + 2);
       if (close === -1) return undefined;
       const key = inner.slice(at + 2, close);
-      if (key === '' || key.includes(quote)) return undefined;
+      // A key with whitespace makes no usable reference name, so the construct is kept and reported.
+      if (key === '' || key.includes(quote) || /\s/.test(key)) return undefined;
       segments.push(key);
       at = close + 2;
       continue;
@@ -183,9 +206,37 @@ export function insomniaTemplates(text: string, kept: Set<string>, vaultNames?: 
 /** A Hoppscotch variable name: letters, digits, `_`, `.`, `-`, and a leading `$` for a predefined one. */
 const HOPPSCOTCH_NAME = /^\$?[\w.-]+$/;
 
-/** Hoppscotch: `<<name>>` becomes `{{name}}`; a predefined `<<$guid>>` becomes `{{$guid}}`. */
-export function hoppscotchTemplates(text: string): string {
-  return scan(text, '<<', '>>', (inner) => (HOPPSCOTCH_NAME.test(inner) ? `{{${inner}}}` : undefined));
+function isNameChar(c: string): boolean {
+  return (
+    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c === '_' || c === '.' || c === '-'
+  );
+}
+
+/**
+ * True for name characters with whitespace between them and none at either end (`a b`). It stops at
+ * the first other character, so a run of openers costs a step each, not a pass over the rest.
+ */
+function spacedName(inner: string): boolean {
+  if (inner === '' || !isNameChar(inner[0]!) || !isNameChar(inner[inner.length - 1]!)) return false;
+  let spaced = false;
+  for (const c of inner) {
+    if (c === ' ' || c === '\t') spaced = true;
+    else if (!isNameChar(c)) return false;
+  }
+  return spaced;
+}
+
+/**
+ * Hoppscotch: `<<name>>` becomes `{{name}}`; a predefined `<<$guid>>` becomes `{{$guid}}`. A name
+ * with whitespace inside (`<<a b>>`) makes no reference: it is kept as written and added to `kept`.
+ * Text spaced out from its angles (`a << b >> c`) is not a reference and is left alone.
+ */
+export function hoppscotchTemplates(text: string, kept?: Set<string>): string {
+  return scan(text, '<<', '>>', (inner, whole) => {
+    if (HOPPSCOTCH_NAME.test(inner)) return `{{${inner}}}`;
+    if (spacedName(inner)) kept?.add(whole);
+    return undefined;
+  });
 }
 
 /** The arguments of a `{{#name, a, b}}` system variable, split at commas outside quotes and braces. */
@@ -231,6 +282,8 @@ function thunderDynamic(name: string, args: readonly string[]): string | undefin
         return fits('randomBoolean');
       case 'dateISO':
         return fits('isoTimestamp');
+      case 'timestamp':
+        return fits('timestamp');
       default:
         return undefined;
     }
@@ -248,23 +301,32 @@ function thunderDynamic(name: string, args: readonly string[]): string | undefin
  * is left as it is.
  */
 export function thunderTemplates(text: string, kept: Set<string>): string {
-  return scan(text, '{{', '}}', (raw, whole) => {
-    const inner = raw.trim();
-    if (inner.startsWith('#')) {
-      const comma = inner.indexOf(',');
-      const name = (comma === -1 ? inner.slice(1) : inner.slice(1, comma)).trim();
-      const mapped = thunderDynamic(name, comma === -1 ? [] : systemArguments(inner.slice(comma + 1)));
-      if (mapped !== undefined) return mapped;
-      kept.add(whole);
-      return shield(whole);
-    }
-    if (raw.includes('{')) return undefined;
-    if (inner.includes('|') || inner.startsWith('@')) {
-      kept.add(whole);
-      return shield(whole);
-    }
-    return whole;
-  });
+  const isCall = (raw: string): boolean => raw.trim().startsWith('#');
+  return scan(
+    text,
+    '{{',
+    '}}',
+    (raw, whole) => {
+      const inner = raw.trim();
+      if (inner.startsWith('#')) {
+        // An opening inside: this one never closed, so scanning resumes at the inner one.
+        if (inner.includes('{{')) return undefined;
+        const comma = inner.indexOf(',');
+        const name = (comma === -1 ? inner.slice(1) : inner.slice(1, comma)).trim();
+        const mapped = thunderDynamic(name, comma === -1 ? [] : systemArguments(inner.slice(comma + 1)));
+        if (mapped !== undefined) return mapped;
+        kept.add(whole);
+        return shield(whole);
+      }
+      if (raw.includes('{')) return undefined;
+      if (inner.includes('|') || inner.startsWith('@')) {
+        kept.add(whole);
+        return shield(whole);
+      }
+      return whole;
+    },
+    isCall,
+  );
 }
 
 const PROCESS_ENV_PREFIX = 'process.env.';

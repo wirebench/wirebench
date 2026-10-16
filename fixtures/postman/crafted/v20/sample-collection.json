@@ -39,7 +39,7 @@
           }
         },
         {
-          "name": "Unsupported Digest Request",
+          "name": "Digest Request",
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/digest-protected",

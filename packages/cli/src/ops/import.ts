@@ -32,6 +32,7 @@ import {
   soapInterfacesOf,
   takenContainerSlugs,
   uniqueSlug,
+  VAULT_SECRETS_LINE,
   writeApiDefinitionCache,
   withContainersOf,
   writeDefinitionCache,
@@ -434,9 +435,15 @@ async function addMappedCollections(
       message: `${noDefinition.join(', ')}: the export's .proto files were not imported from the command line; import them with the API, or use server reflection.`,
     });
   }
+  // The variable plan's own report (a credential cut from a URL, credential-looking names) joins
+  // the import's: the properties it speaks of were written above. Its vault line asks for values
+  // in a secret store this command does not write; secret-not-imported already names those.
+  const variableWarnings = mapped.variables.report.warnings.filter((line) => !line.includes(VAULT_SECRETS_LINE));
+  const warnings = [...mapped.report.warnings, ...variableWarnings];
+  const notes = [...mapped.report.notes, ...mapped.variables.report.notes];
   problems.push(
-    ...mapped.report.warnings.map((message) => ({ code: 'import-warning', message: redactUrlsInText(message) })),
-    ...mapped.report.notes.map((message) => ({ code: 'import-note', message: redactUrlsInText(message) })),
+    ...warnings.map((message) => ({ code: 'import-warning', message: redactUrlsInText(message) })),
+    ...notes.map((message) => ({ code: 'import-note', message: redactUrlsInText(message) })),
   );
   return { format, added, problems };
 }

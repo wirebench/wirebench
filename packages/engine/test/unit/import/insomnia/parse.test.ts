@@ -227,3 +227,104 @@ describe('parseInsomnia: refusals', () => {
     expect(() => parseInsomnia('type: mcpClient.insomnia/5.0\nname: M\n')).toThrow(/an MCP client/);
   });
 });
+
+describe('parseInsomnia: hostile exports and v4 workspace kinds', () => {
+  const ws = { _id: 'wrk_1', parentId: null, name: 'W', scope: 'collection', _type: 'workspace' };
+  const v4 = (resources: unknown[]): string => JSON.stringify({ _type: 'export', __export_format: 4, resources });
+
+  it('keeps a v4 folder with no id empty, with a warning, and finishes fast', () => {
+    const idless = Array.from({ length: 5 }, () => ({ parentId: 'wrk_1', _type: 'request_group', name: 'f' }));
+    const started = Date.now();
+    const doc = parseInsomnia(v4([ws, ...idless]));
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(doc.workspaces[0]?.items).toHaveLength(5);
+    expect(doc.workspaces[0]?.items.every((n) => n.kind === 'folder' && n.children.length === 0)).toBe(true);
+    expect(doc.report.warnings.join('\n')).toContain('has no id; its contents were skipped');
+  }, 5000);
+
+  it('does not recurse into parentless v4 folders with no id', () => {
+    const idless = Array.from({ length: 2 }, () => ({ _type: 'request_group', name: 'f' }));
+    const started = Date.now();
+    const doc = parseInsomnia(v4([ws, ...idless]));
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(doc.report.warnings.join('\n')).toContain('has no id');
+  }, 5000);
+
+  it('does not let a v4 folder with no id adopt resources that have no parent', () => {
+    const doc = parseInsomnia(
+      v4([
+        ws,
+        { _type: 'request_group', parentId: 'wrk_1', name: 'f' },
+        { _id: 'req_x', _type: 'request', name: 'orphan', url: 'u', method: 'GET' },
+      ]),
+    );
+    const f = folder(doc.workspaces[0]!.items, 'f');
+    expect(f.children).toEqual([]);
+  });
+
+  it('refuses a v5 YAML alias loop as malformed', () => {
+    const source = [
+      'type: collection.insomnia.rest/5.0',
+      'name: S',
+      'collection: &c',
+      '  - {name: a, meta: {id: fld_a}, children: *c}',
+      '  - {name: b, meta: {id: fld_b}, children: *c}',
+      '',
+    ].join('\n');
+    expect(codeOf(() => parseInsomnia(source))).toBe('insomnia-malformed');
+  }, 10000);
+
+  it('refuses an export past 100000 items as malformed, naming the limit', () => {
+    const items = Array.from({ length: 100_001 }, (_, i) => ({
+      name: `r${i}`,
+      method: 'GET',
+      url: 'u',
+      meta: { id: `req_${i}` },
+    }));
+    const source = JSON.stringify({ type: 'collection.insomnia.rest/5.0', name: 'S', collection: items });
+    expect(codeOf(() => parseInsomnia(source))).toBe('insomnia-malformed');
+    expect(() => parseInsomnia(source)).toThrow(/100000/);
+  }, 20000);
+
+  it('spends the same budget on v4 items', () => {
+    const items = Array.from({ length: 100_001 }, (_, i) => ({
+      _id: `req_${i}`,
+      parentId: 'wrk_1',
+      _type: 'request',
+      name: `r${i}`,
+      url: 'u',
+      method: 'GET',
+    }));
+    expect(() => parseInsomnia(v4([ws, ...items]))).toThrow(/100000/);
+  }, 20000);
+
+  it('reads valid JSON with the JSON parser, so a repeated key does not fail it', () => {
+    const source = `{"__export_format": 4, "resources": [], "resources": [${JSON.stringify(ws)}]}`;
+    expect(parseInsomnia(source).workspaces.map((w) => w.name)).toEqual(['W']);
+  });
+
+  it('gives legacy base-environment sub-environments to the first workspace only', () => {
+    const second = { _id: 'wrk_2', parentId: null, name: 'W2', scope: 'collection', _type: 'workspace' };
+    const sub = { _id: 'env_s', parentId: '__BASE_ENVIRONMENT_ID__', name: 'Legacy', data: {}, _type: 'environment' };
+    const doc = parseInsomnia(v4([ws, second, sub]));
+    expect(doc.workspaces.map((w) => `${w.name}:${w.subEnvs.map((e) => e.name).join(',')}`)).toEqual([
+      'W:Legacy',
+      'W2:',
+    ]);
+  });
+
+  it('skips a v4 mock-server workspace beside a collection, with a warning', () => {
+    const doc = parseInsomnia(
+      v4([ws, { _id: 'wrk_2', parentId: null, name: 'Mocks', scope: 'mock-server', _type: 'workspace' }]),
+    );
+    expect(doc.workspaces.map((w) => w.name)).toEqual(['W']);
+    expect(doc.report.warnings.join('\n')).toContain('"Mocks" is a mock server and was skipped');
+  });
+
+  it('refuses a v4 file holding only mock-server or MCP workspaces as not a collection', () => {
+    for (const scope of ['mock-server', 'mcp']) {
+      const source = v4([{ _id: 'wrk_2', parentId: null, name: 'M', scope, _type: 'workspace' }]);
+      expect(codeOf(() => parseInsomnia(source))).toBe('insomnia-not-collection');
+    }
+  });
+});
