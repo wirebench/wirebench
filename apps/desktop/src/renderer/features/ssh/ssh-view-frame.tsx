@@ -77,7 +77,7 @@ export function SshViewHeader({ title, count, search, actions, description }: Ss
               type="search"
               aria-label={search.label}
               placeholder={search.placeholder}
-              className={`${INPUT_CLASS} pr-12 pl-7`}
+              className={`${INPUT_CLASS} pl-7 ${search.value === '' ? 'pr-12' : 'pr-2'}`}
               value={search.value}
               onChange={(e) => {
                 search.onChange(e.target.value);
@@ -89,9 +89,15 @@ export function SshViewHeader({ title, count, search, actions, description }: Ss
                 }
               }}
             />
-            <kbd className="pointer-events-none absolute right-2 rounded border border-hairline px-1 font-sans text-xs text-fg-subtle">
-              {formatKeybinding('Mod+F', platform)}
-            </kbd>
+            {/* With a value the field's own clear button takes the right edge, so the hint gives way. */}
+            {search.value === '' && (
+              <kbd
+                data-testid="ssh-view-search-hint"
+                className="pointer-events-none absolute right-2 rounded border border-hairline px-1 font-sans text-xs text-fg-subtle"
+              >
+                {formatKeybinding('Mod+F', platform)}
+              </kbd>
+            )}
           </label>
         )}
         {actions !== undefined && <div className="ml-auto flex items-center gap-2">{actions}</div>}

@@ -11,6 +11,7 @@ import type { SshCertificateWire, SshKeyAlgorithmWire, SshKeyWire } from '../../
 import type { ResolvedHostWire } from '../../../shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
 import { findHost, upsertHost, useHostsStore } from './hosts-store.js';
+import { attachSshCertificate, generateSshKey } from './secret-writes.js';
 
 const INPUT_CLASS =
   'w-full rounded-md border border-hairline-strong bg-surface-base px-2 py-1 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent';
@@ -126,7 +127,7 @@ export function AttachCertificateDialog({
   const [busy, setBusy] = useState(false);
   const attach = async (): Promise<void> => {
     setBusy(true);
-    const result = await ipc().ssh.attachCertificate({ secret, certificate: text });
+    const result = await attachSshCertificate({ secret, certificate: text });
     setBusy(false);
     if (result.ok) onAttached(result.value);
     else setError(result.error.message);
@@ -184,43 +185,49 @@ export function AttachCertificateDialog({
   );
 }
 
+/**
+ * The name a new key of `algorithm` starts with: OpenSSH's file name for it (`id_ed25519`), or the first
+ * `id_ed25519_2`, `_3`… that no secret in `taken` has.
+ */
+export function defaultKeyName(algorithm: SshKeyAlgorithmWire, taken: readonly string[] = []): string {
+  const base = `id_${algorithm.replace('-', '_')}`;
+  const used = new Set(taken);
+  if (!used.has(base)) return base;
+  let n = 2;
+  while (used.has(`${base}_${String(n)}`)) n += 1;
+  return `${base}_${String(n)}`;
+}
+
 export function GenerateKeyDialog({
   open,
   onClose,
   onGenerated,
+  taken = [],
 }: {
   readonly open: boolean;
   readonly onClose: () => void;
   readonly onGenerated: (key: SshKeyWire) => void;
+  /** The secrets already stored, so the name it starts with is a free one. */
+  readonly taken?: readonly string[];
 }) {
-  // Keyed per opening, so a reopened dialog starts empty.
-  const [opening, setOpening] = useState(0);
-  return (
-    <GenerateKeyBody
-      key={opening}
-      open={open}
-      onClose={() => {
-        setOpening((n) => n + 1);
-        onClose();
-      }}
-      onGenerated={(key) => {
-        setOpening((n) => n + 1);
-        onGenerated(key);
-      }}
-    />
-  );
+  // Mounted per opening, so a reopened dialog starts afresh, its name picked against the secrets stored then.
+  if (!open) return null;
+  return <GenerateKeyBody open={open} taken={taken} onClose={onClose} onGenerated={onGenerated} />;
 }
 
 function GenerateKeyBody({
   open,
   onClose,
   onGenerated,
+  taken,
 }: {
   readonly open: boolean;
+  readonly taken: readonly string[];
   readonly onClose: () => void;
   readonly onGenerated: (key: SshKeyWire) => void;
 }) {
-  const [name, setName] = useState('');
+  // Starts filled in (and selected) with a real name, so Generate works at once and typing replaces it.
+  const [name, setName] = useState(() => defaultKeyName('ed25519', taken));
   const [algorithm, setAlgorithm] = useState<SshKeyAlgorithmWire>('ed25519');
   const [bits, setBits] = useState<number>();
   const [comment, setComment] = useState('');
@@ -235,6 +242,9 @@ function GenerateKeyBody({
   const chosenBits = bits ?? sizes[0];
   const trimmed = name.trim();
   const nameOk = NAME_PATTERN.test(trimmed);
+  // Why Generate is off, said beside it rather than left to guess.
+  const nameProblem =
+    trimmed === '' ? 'Name is required' : nameOk ? undefined : 'Use letters, digits and _, not starting with a digit';
   const mismatch = passphrase !== repeat;
   const securityKey = isSecurityKey(algorithm);
   // A key that asks for the PIN at every sign-in is made with it.
@@ -243,7 +253,7 @@ function GenerateKeyBody({
   const generate = async (): Promise<void> => {
     setBusy(true);
     setError(undefined);
-    const result = await ipc().ssh.generateKey({
+    const result = await generateSshKey({
       name: trimmed,
       algorithm,
       ...(chosenBits === undefined ? {} : { bits: chosenBits }),
@@ -287,8 +297,11 @@ function GenerateKeyBody({
               <input
                 className={`${INPUT_CLASS} font-mono`}
                 value={name}
-                placeholder="deploy_key"
                 autoFocus
+                aria-invalid={nameProblem !== undefined}
+                onFocus={(e) => {
+                  e.currentTarget.select();
+                }}
                 onChange={(e) => {
                   setName(e.target.value);
                 }}
@@ -304,6 +317,8 @@ function GenerateKeyBody({
                       name="key-type"
                       checked={algorithm === a.id}
                       onChange={() => {
+                        // A name still as it started follows the type (id_ed25519 → id_rsa); one typed stays.
+                        if (name === defaultKeyName(algorithm, taken)) setName(defaultKeyName(a.id, taken));
                         setAlgorithm(a.id);
                         setBits(undefined);
                       }}
@@ -417,7 +432,12 @@ function GenerateKeyBody({
                 {error}
               </p>
             )}
-            <div className="flex justify-end gap-2">
+            <div className="flex items-center justify-end gap-2">
+              {nameProblem !== undefined && (
+                <p data-testid="generate-key-name-problem" className="mr-auto text-sm text-status-danger">
+                  {nameProblem}
+                </p>
+              )}
               <Button onClick={onClose} disabled={busy}>
                 Cancel
               </Button>

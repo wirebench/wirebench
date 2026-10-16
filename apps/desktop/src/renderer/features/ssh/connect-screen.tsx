@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, RefObject } from 'react';
 import { Check, ChevronDown, ChevronRight, Circle, CircleDot, KeyRound, Laptop, Loader2, X } from 'lucide-react';
 import { Button } from '../../components/button.js';
-import { ipc } from '../../state/ipc-client.js';
 import { findHost, osKeyOf, upsertHost, useHostsStore } from './hosts-store.js';
 import { findIdentity, upsertIdentity } from './identities.js';
 import type { IdentityWire } from '../../../shared/ssh-wire.js';
@@ -15,6 +14,7 @@ import { isQuickHostId, useQuickHostsStore } from './quick-hosts.js';
 import { formatDuration, inTimeOrder, stepDuration, stepLabel } from './connect-progress.js';
 import type { ConnectLogLine, ConnectPurpose, ConnectStep, ConnectView } from './connect-progress.js';
 import { TYPE_AHEAD_LIMIT, type TypeAheadState } from './type-ahead.js';
+import { storeSshSecret } from './secret-writes.js';
 
 /** How long "Connected in N ms" shows before the screen fades, and how long the fade takes. */
 export const CONNECTED_HOLD_MS = 600;
@@ -357,7 +357,7 @@ function PasswordForm({
     event.preventDefault();
     if (value === '') return;
     setBusy(true);
-    const stored = await ipc().ssh.setSecret({ name: secret, value });
+    const stored = await storeSshSecret({ name: secret, value });
     setValue('');
     setBusy(false);
     if (!stored.ok) {
