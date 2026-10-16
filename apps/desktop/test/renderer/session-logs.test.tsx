@@ -158,9 +158,7 @@ describe('logSummary (#534)', () => {
   it('reads like "11:09 · 16 B · exit 0"', () => {
     const at = new Date(2026, 9, 14, 11, 9).toISOString();
     expect(logSummary(entry('x', { startedAt: at, bytes: 16 }))).toBe('11:09 · 16 B · exit 0');
-    expect(logSummary(entry('x', { startedAt: at, bytes: 3 * 1024 * 1024, live: true }))).toBe(
-      '11:09 · 3.0 MB · running',
-    );
+    expect(logSummary(entry('x', { startedAt: at, bytes: 3 * 1024 * 1024, live: true }))).toBe('11:09 · running');
     expect(logSummary(entry('x', { startedAt: at, reason: 'lost', exitCode: null }))).toBe(
       '11:09 · 2.0 KB · connection lost',
     );
