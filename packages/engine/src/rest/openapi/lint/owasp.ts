@@ -182,7 +182,9 @@ const OAUTH_URLS = 'authorizationUrl,tokenUrl,refreshUrl';
 export const OWASP_RULES: readonly LintRule[] = [
   {
     id: 'owasp-security-defined',
-    severity: 'error',
+    // A warning, not an error: most public and internal specs define no scheme by design, and an
+    // import should not turn the status bar red before anything was sent.
+    severity: 'warning',
     ruleset: RULESET,
     description: 'The API defines at least one security scheme (OWASP API2: broken authentication).',
     body: { given: '$', then: { function: securityDefined } },
