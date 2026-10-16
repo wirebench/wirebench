@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Make secret on credential-like variables.** A variable named like a credential (`token`,
+  `password`, `apiKey`…) with a plain value now offers **Make secret** in its row: the value is stored
+  as a project secret on this machine and the row keeps `${secret:name}`. On a workspace scope it is
+  stored for every project the scope applies to. A name the project already has is refused, never
+  overwritten (#634).
 - **Import Insomnia exports.** **Import…** reads Insomnia's export formats 4 (JSON or YAML) and 5
   (YAML), and detects a picked file by its content. Each workspace becomes a REST, a gRPC and a
   WebSocket API in the chosen project, in Insomnia's order, with folder headers and auth. The base and

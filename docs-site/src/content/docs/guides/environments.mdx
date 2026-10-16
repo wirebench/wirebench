@@ -121,14 +121,16 @@ on `protected` too:
 
 ## Set variables
 
-Each scope's page (Globals, Workspace, or an environment) has its own table: name, value, and a
-**Secret** flag.
+Each scope's page (Globals, Workspace, or an environment) has its own table: an enabled checkbox,
+name and value.
 
 <Steps>
 
 1. Add a row and type a name and value.
-2. Turn on **Secret** for anything sensitive — a token, a password, an API key. See
-   [Secrets](/wirebench/docs/guides/secrets/) for how secret values are stored and masked.
+2. For anything sensitive — a token, a password, an API key — choose **Make secret** in its row: the
+   value moves to the secret store and the row keeps a `${secret:name}` token. See
+   [Secrets](/wirebench/docs/guides/secrets/#the-secretname-token) for how secret values are stored
+   and masked.
 3. Reference it anywhere property expansion is read — the address bar, headers, a JSON body, a
    SOAP envelope — with `${#Env#name}`, `${#Workspace#name}`, `${#Global#name}`, or the shorthand
    `${name}`.
