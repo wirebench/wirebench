@@ -39,6 +39,9 @@ All notable changes to this project are documented here. The format follows
   beside the requests, so a request stays in view while you browse its history or edit its variables.
   SSH keeps its own strip. The right rail shows an environment's details while its tab is in front
   (#607).
+- **Copy as cURL and Generate code… under Send ▾.** The menu under a SOAP or REST request's Send
+  button, which offered only **Send to environments…**, now also has **Copy as cURL** (the same as
+  the request's palette command) and **Generate code…**, which opens the Code panel (#632).
 
 ### Fixed
 
