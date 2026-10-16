@@ -51,7 +51,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Command | macOS | Windows and Linux |
 | --- | --- | --- |
 | Hosts: New Host… | — | — |
-| Hosts: New Group… | — | — |
+| Hosts: New Host Group… | — | — |
 | Hosts: Edit Host… | — | — |
 | Hosts: Import Hosts… | — | — |
 | Hosts: Import Known Hosts… | — | — |

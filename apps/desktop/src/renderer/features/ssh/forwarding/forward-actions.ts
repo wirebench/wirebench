@@ -7,10 +7,14 @@ import { useHostsStore } from '../hosts-store.js';
 import { forwardKey, listenAddress } from './forward-format.js';
 import { useForwardsStore } from './forwards-store.js';
 
-/** What a start may carry beyond the rule: a port for this run only, and a confirmed network bind. */
+/**
+ * What a start may carry beyond the rule: a port for this run only, a confirmed network bind, and the
+ * forwarding group whose Start group asked for it.
+ */
 export interface StartOptions {
   readonly port?: number;
   readonly confirmBind?: true;
+  readonly group?: string;
 }
 
 function ruleOf(hostId: string, ruleId: string) {
@@ -69,6 +73,7 @@ export async function startForward(hostId: string, ruleId: string, options: Star
       label: forwardLabel(hostId, ruleId),
       address,
       ...(options.port === undefined ? {} : { port: options.port }),
+      ...(options.group === undefined ? {} : { group: options.group }),
     });
     return;
   }
