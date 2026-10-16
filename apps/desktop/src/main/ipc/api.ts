@@ -47,6 +47,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { HistoryService, ImportedHistoryOutcome } from '../history-service.js';
 import type { ProjectRouter } from '../project-router.js';
 import { applyImportedVariables } from '../import-variables-apply.js';
+import { placeMappedImport, writeScriptsReported as writeScriptsReportedTo } from '../import-place.js';
 import type { VariablesApplyPorts } from '../import-variables-apply.js';
 import { registerHandler } from './register.js';
 
@@ -269,24 +270,10 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     return { kind: 'file', path: checked.path };
   };
 
-  /**
-   * Writes an importer's scripts under `imported-scripts/`, never overwriting one: how many were
-   * written, a note for each saved under another name, and a warning for each that was not written.
-   */
-  const writeScriptsReported = async (
+  const writeScriptsReported = (
     projectId: string,
     scripts: readonly { readonly path: string; readonly source: string }[],
-  ): Promise<{ readonly written: number; readonly notes: string[]; readonly warnings: string[] }> => {
-    if (scripts.length === 0) return { written: 0, notes: [], warnings: [] };
-    const { written, renamed, skipped } = await router.writeImportedScripts(projectId, scripts);
-    return {
-      written: written.length,
-      notes: renamed.map(({ from, to }) => `A script already existed at ${from}, so this one was saved as ${to}.`),
-      warnings: skipped.map(
-        (path) => `The script ${path} would have been saved outside imported-scripts/ and was not written.`,
-      ),
-    };
-  };
+  ) => writeScriptsReportedTo(router, projectId, scripts);
 
   registerHandler(channels.api.importPostman, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
@@ -732,48 +719,12 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     });
 
     const placeIn = async (projectId: string) => {
-      let project: Awaited<ReturnType<typeof router.addApi>>['project'] | undefined;
-      const apiIds: string[] = [];
-      const placed = (added: Awaited<ReturnType<typeof router.addApi>>) => {
-        project = added.project;
-        apiIds.push(added.apiId);
-      };
-      for (const collection of mapped.collections) {
-        if (collection.rest !== undefined) {
-          placed(
-            await router.addApi(projectId, {
-              api: collection.rest,
-              documents: [],
-              source: root,
-              declaredVersion: 'postman-collection-v3',
-              cache: false,
-            }),
-          );
-        }
-        if (collection.grpc !== undefined) placed(await router.importGrpcApi(projectId, { api: collection.grpc }));
-        if (collection.websocket !== undefined)
-          placed(await router.importWsApi(projectId, { api: collection.websocket }));
-      }
-      const plan = mapped.variables;
-      const variables =
-        plan.environments.length > 0 || plan.globals !== undefined || plan.projectProperties !== undefined
-          ? await applyImportedVariables(plan, deps.variablesPorts(projectId))
-          : undefined;
-      // The apply result repeats the plan's own report; with nothing applied, the plan's report stands.
-      const variableReport = variables ?? plan.report;
-      const report = {
-        warnings: [...mapped.report.warnings, ...variableReport.warnings],
-        notes: [...mapped.report.notes, ...variableReport.notes],
-      };
-      return {
-        projectId,
-        ...(project !== undefined ? { project } : {}),
-        apiIds,
-        counts: mapped.counts,
-        ...(variables !== undefined ? { variables } : {}),
-        ...report,
-        reportText: formatImportReport(report),
-      };
+      const { scripts, ...placed } = await placeMappedImport(deps, projectId, mapped, {
+        source: root,
+        declaredVersion: 'postman-collection-v3',
+      });
+      void scripts; // this channel's response has never carried a script count
+      return { ...placed, counts: mapped.counts };
     };
 
     if ('projectId' in request.target) {

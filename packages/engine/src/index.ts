@@ -1008,18 +1008,22 @@ export {
   importedScriptPath,
   isCredentialName,
   credentialLookingNames,
+  flattenValue,
   ReportBuilder,
+  ScriptCollector,
   rewriteMustache,
   uniqueName,
   VariableSetBuilder,
   warnCredentialLookingNames,
 } from './import/index.js';
 export type {
+  ClientFormat,
   ImportedScriptFile,
   ImportedVariable,
   ImportedVariableSet,
   ImportedVariables,
   ImportReport,
+  MappedClientImport,
 } from './import/index.js';
 export type {
   ImportPostmanOptions,
