@@ -188,6 +188,21 @@ describe('connecting to a server that is not saved (#537)', () => {
     expect(useHostsStore.getState().file.hosts).toEqual([]);
   });
 
+  it('lists the saved hosts a typed server matches above the one-off Connect (#594)', () => {
+    const saved = { ...HOST, ssh: { port: { value: 22 }, user: { value: 'ops' } } as never };
+    useHostsStore.setState({ resolved: [saved] });
+    render(<CommandPalette open onOpenChange={() => undefined} context={context} mode="hosts" />);
+    const input = screen.getByPlaceholderText('Connect to host');
+    fireEvent.change(input, { target: { value: 'ops@10.0.1.5' } });
+    const row = screen.getByTestId('quick-open-host');
+    expect(row.textContent).toContain('api-1');
+    expect(
+      row.compareDocumentPosition(screen.getByTestId('quick-connect')) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    fireEvent.change(input, { target: { value: 'root@10.0.1.5' } });
+    expect(screen.queryByTestId('quick-open-host')).toBeNull();
+  });
+
   it('Save as host… opens New host filled in from the server', () => {
     render(<CommandPalette open onOpenChange={() => undefined} context={context} mode="hosts" />);
     fireEvent.change(screen.getByPlaceholderText('Connect to host'), { target: { value: 'ops@db.example:2222' } });
