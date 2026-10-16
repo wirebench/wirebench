@@ -66,8 +66,8 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
   });
   registerCommand({
     ...catalogEntry('view.toggleCode'),
-    // The areas without requests (SSH, Environments) hold another panel there instead.
-    when: () => rightPanelFor(useEditorsStore.getState().displayedSet) === 'code',
+    // SSH and an environment tab hold another panel there instead.
+    when: () => rightPanelFor(useEditorsStore.getState()) === 'code',
     whenScope: 'area.code',
     run: () => {
       ui().toggleCode();

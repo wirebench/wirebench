@@ -173,7 +173,7 @@ export function AppShell() {
   // On the Hosts tab the slide-over holds the picked host instead of a request's code.
   const hostDetailsShown = useHostDetailsShown();
   // Code is only for the areas with requests (`right-panel.ts`).
-  const codeArea = useEditorsStore((state) => rightPanelFor(state.displayedSet) === 'code');
+  const codeArea = useEditorsStore((state) => rightPanelFor(state) === 'code');
   const settingsOpen = useUiStore((state) => state.preferences.open);
   const toggleHostDetails = useCallback(() => {
     useHostsStore.getState().setDetailsOpen(useUiStore.getState().slideOver.hostDetailsOpen !== true);

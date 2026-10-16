@@ -152,7 +152,7 @@ test.describe('secret sources', () => {
       readFileSync(file).includes(VAULT_VALUE),
     );
     expect(leaks).toEqual([]);
-    // The REST request's tab is Explorer's; History shows its own tabs, so go back to send again.
+    // Back to the Explorer for the HTTP Log and the next send.
     await page.getByTestId('activity-bar').getByRole('button', { name: 'Explorer', exact: true }).click();
 
     // The HTTP Log row for the send carries the request headers: the secret is masked there too.
