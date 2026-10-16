@@ -81,6 +81,7 @@ export default defineConfig({
             { label: 'Kerberos from a Mac to Windows', slug: 'solutions/kerberos-spnego-mac-to-windows' },
             { label: 'SAML token from a WS-Trust STS', slug: 'solutions/ws-trust-saml-token-from-sts' },
             { label: 'Mutual TLS with a corporate CA', slug: 'solutions/mutual-tls-corporate-ca' },
+            { label: 'gRPC with server reflection', slug: 'solutions/grpc-server-reflection' },
           ],
         },
         {
