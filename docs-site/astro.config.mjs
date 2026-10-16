@@ -93,6 +93,7 @@ export default defineConfig({
             { label: 'From .http files', slug: 'switching/http-files' },
             { label: 'From OpenCollection', slug: 'switching/opencollection' },
             { label: 'From Insomnia', slug: 'switching/insomnia' },
+            { label: 'From Bruno', slug: 'switching/bruno' },
           ],
         },
         {

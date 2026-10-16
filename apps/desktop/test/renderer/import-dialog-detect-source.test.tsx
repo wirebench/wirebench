@@ -40,14 +40,14 @@ describe('Import dialog — a picked source detected in main', () => {
   });
 
   it('asks main about a picked folder instead of assuming a folder collection', async () => {
-    detectImportSource.mockResolvedValue(answer('bruno', 'Bruno collection'));
-    openFolder.mockResolvedValue({ ok: true, value: { path: '/work/bruno' } });
+    detectImportSource.mockResolvedValue(answer('thunder-client', 'Thunder Client collection'));
+    openFolder.mockResolvedValue({ ok: true, value: { path: '/work/thunder-tests' } });
     await openOnFileTab();
     fireEvent.click(screen.getByTestId('import-browse-folder'));
-    expect(await screen.findByText('Bruno collection')).toBeTruthy();
-    expect(detectImportSource).toHaveBeenCalledWith({ path: '/work/bruno', folder: true });
+    expect(await screen.findByText('Thunder Client collection')).toBeTruthy();
+    expect(detectImportSource).toHaveBeenCalledWith({ path: '/work/thunder-tests', folder: true });
     fireEvent.click(screen.getByTestId('import-submit'));
-    expect(await screen.findByText(/Bruno collection cannot be imported yet/)).toBeTruthy();
+    expect(await screen.findByText(/Thunder Client collection cannot be imported yet/)).toBeTruthy();
   });
 
   it('drops an answer for a path that has since changed', async () => {

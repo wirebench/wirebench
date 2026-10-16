@@ -24,6 +24,7 @@
     "api.grpcRefresh",
     "api.grpcSample",
     "api.importAsyncApi",
+    "api.importBruno",
     "api.importClientEnvironments",
     "api.importGraphqlSchema",
     "api.importHar",

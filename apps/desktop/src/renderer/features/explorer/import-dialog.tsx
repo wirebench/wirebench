@@ -198,7 +198,6 @@ const FOLDER_FALLBACK: DetectedImportFormat = {
 
 /** Formats detection knows that this build does not import yet. */
 const NOT_IMPORTED_YET = new Set<ImportFormatKind>([
-  'bruno',
   'hoppscotch',
   'hoppscotch-environment',
   'thunder-client',
@@ -882,7 +881,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
    * WebSocket API in the chosen project, writes its scripts under `imported-scripts/` as text, and
    * adds its environments to the workspace without making one active.
    */
-  async function importClient(source: ImportSourceWire): Promise<void> {
+  async function importClient(kind: 'insomnia' | 'bruno', source: ImportSourceWire): Promise<void> {
     if (source.kind === 'url') {
       setImportError('Import from a URL is not supported for this export. Pick the file or paste its contents.');
       return;
@@ -890,11 +889,15 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setImporting(true);
     const chosen = openProjects.some((project) => project.id === target) ? target : NEW_PROJECT;
     try {
-      const res = await ipc().api.importInsomnia({
+      const request = {
         target: chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen },
-        source: source.kind === 'file' ? { kind: 'file', path: source.path } : { kind: 'text', text: source.text },
+        source:
+          source.kind === 'file'
+            ? { kind: 'file' as const, path: source.path }
+            : { kind: 'text' as const, text: source.text },
         ...(name.trim().length > 0 ? { name: name.trim() } : {}),
-      });
+      };
+      const res = kind === 'bruno' ? await ipc().api.importBruno(request) : await ipc().api.importInsomnia(request);
       if (!res.ok) {
         setImportError(res.error.message);
         return;
@@ -991,7 +994,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       ? 'Pick the collection folder with Folder…'
                       : kind === 'insomnia'
                         ? 'Pick an exported .json or .yaml file to import'
-                        : 'Pick a file to import',
+                        : kind === 'bruno'
+                          ? 'Pick the collection folder with Folder…, its bruno.json, or an exported .json file'
+                          : 'Pick a file to import',
         );
       } else {
         setImportError(
@@ -1013,7 +1018,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                           ? 'Paste the exported JSON or YAML to import'
                           : kind === 'insomnia-environment'
                             ? 'Paste the environments file to import'
-                            : 'Paste a definition to import',
+                            : kind === 'bruno'
+                              ? 'Paste the exported collection JSON to import'
+                              : 'Paste a definition to import',
         );
       }
       return;
@@ -1054,8 +1061,8 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       return;
     }
 
-    if (kind === 'insomnia') {
-      await importClient(source);
+    if (kind === 'insomnia' || kind === 'bruno') {
+      await importClient(kind, source);
       return;
     }
 
@@ -1558,6 +1565,12 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       <p data-testid="import-postman-v3-help" className="text-xs text-fg-subtle">
                         Pick the collection's folder with Folder…, or its .resources/definition.yaml. A workspace folder
                         holding collections/ imports every collection, with its environments and globals.
+                      </p>
+                    )}
+                    {effectiveFormat === 'bruno' && (
+                      <p data-testid="import-bruno-help" className="text-xs text-fg-subtle">
+                        Pick the collection's folder with Folder…, or its bruno.json. An exported collection .json is
+                        read on its own. .env files are never read.
                       </p>
                     )}
                     {effectiveFormat === 'opencollection' && (

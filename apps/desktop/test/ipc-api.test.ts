@@ -1757,6 +1757,85 @@ describe('api.importInsomnia and api.importClientEnvironments', () => {
   });
 });
 
+const BRUNO = resolve(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/bruno/crafted');
+
+describe('api.importBruno', () => {
+  type ClientResponse = {
+    projectId: string;
+    apiIds: string[];
+    counts: Record<string, number>;
+    variables?: { environments: { name: string }[] };
+    warnings: string[];
+    notes: string[];
+  };
+
+  const setupPicked = (picked?: string) => {
+    const picks = new DialogPicks();
+    if (picked !== undefined) picks.rememberRead(picked);
+    const fake = fakeVariablesPorts({});
+    const variablesPorts = vi.fn().mockReturnValue(fake.ports);
+    const stubs = setup({ picks, variablesPorts });
+    vi.mocked(stubs.deps.router.addGrpcApi).mockResolvedValue({ project: PROJECT, apiId: 'grpc-1' });
+    return { ...stubs, fake };
+  };
+
+  it('imports a picked Bruno folder: its APIs, its .proto, its environments unactivated', async () => {
+    const folder = join(BRUNO, 'basic');
+    const { addApi, deps, fake } = setupPicked(folder);
+    const response = await value<ClientResponse>('api.importBruno', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: folder },
+    });
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({
+      api: { name: 'demo-collection' },
+      source: folder,
+      declaredVersion: 'bruno',
+    });
+    expect(vi.mocked(deps.router.addGrpcApi).mock.calls[0]?.[1]).toMatchObject({ roots: ['protos/hello.proto'] });
+    expect(vi.mocked(deps.router.importWsApi)).toHaveBeenCalled();
+    expect(response.apiIds).toEqual(['api-1', 'grpc-1', 'ws-1']);
+    expect(fake.environments.map((environment) => environment.name)).toEqual(['Local', 'Prod']);
+    expect(response.warnings.join('\n')).toContain('broken.bru, line 7');
+  });
+
+  it('reads a picked bruno.json as the folder it stands for', async () => {
+    const file = join(BRUNO, 'basic', 'bruno.json');
+    const { addApi } = setupPicked(file);
+    await value<ClientResponse>('api.importBruno', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: file },
+    });
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({ api: { name: 'demo-collection' }, source: file });
+    expect(vi.mocked(addApi).mock.calls[0]?.[1].api.folders.length).toBeGreaterThan(0);
+  });
+
+  it('reads any other picked file, or pasted text, as a JSON export under the given name', async () => {
+    const { addApi, deps } = setupPicked();
+    const response = await value<ClientResponse>('api.importBruno', {
+      target: { newProjectName: 'Fresh' },
+      source: { kind: 'text', text: readFileSync(join(BRUNO, 'export.json'), 'utf8') },
+      name: 'Renamed',
+    });
+    expect(deps.addProject).toHaveBeenCalledWith('Fresh');
+    expect(response.projectId).toBe('p-new');
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({ api: { name: 'Renamed' }, source: 'inline:bruno' });
+    expect(JSON.stringify(response)).not.toContain('proxy-pass-123');
+  });
+
+  it('refuses a folder it was not given, before creating anything', async () => {
+    const { deps } = setupPicked();
+    expect(
+      (
+        await failure('api.importBruno', {
+          target: { newProjectName: 'X' },
+          source: { kind: 'file', path: join(BRUNO, 'basic') },
+        })
+      ).code,
+    ).toBe('import-path-refused');
+    expect(deps.addProject).not.toHaveBeenCalled();
+  });
+});
+
 describe('api.detectImportSource', () => {
   let dir = '';
   beforeEach(async () => {
@@ -1789,6 +1868,13 @@ describe('api.detectImportSource', () => {
     await mkdir(join(dir, 'users'));
     picked(dir);
     expect((await value<Detected>('api.detectImportSource', { path: dir, folder: true })).kind).toBe('bruno');
+  });
+
+  it('sends a folder holding an opencollection.yml beside its bruno.json to the OpenCollection import', async () => {
+    await writeFile(join(dir, 'bruno.json'), '{"version":"1","name":"B","type":"collection"}');
+    await writeFile(join(dir, 'opencollection.yml'), 'opencollection: 1.0.0\ninfo:\n  name: B\n');
+    picked(dir);
+    expect((await value<Detected>('api.detectImportSource', { path: dir, folder: true })).kind).toBe('opencollection');
   });
 
   it('classifies a thunder-tests folder, and one whose collections/ holds tc_col_ files', async () => {
