@@ -10,7 +10,7 @@ import { useState } from 'react';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
-vi.mock('../../src/renderer/components/toast.js', () => ({ showToast: vi.fn() }));
+vi.mock('../../src/renderer/components/toast.js', () => ({ showToast: vi.fn(() => 41), dismissToast: vi.fn() }));
 
 import {
   fakeMonaco,
@@ -34,7 +34,7 @@ import {
   forgetGraphqlMethodChange,
   methodForBodySwitch,
 } from '../../src/renderer/features/rest-editor/graphql-method.js';
-import { showToast } from '../../src/renderer/components/toast.js';
+import { dismissToast, showToast } from '../../src/renderer/components/toast.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import type { RestBodyWire, RestRequestPatchWire } from '../../src/shared/kinds/rest/wire.js';
 
@@ -276,6 +276,27 @@ describe('the GraphQL body kind', () => {
     await userEvent.selectOptions(screen.getByTestId('rest-body-kind'), 'none');
 
     expect(patches.at(-1)).toEqual({ body: { kind: 'none' }, method: 'GET' });
+  });
+
+  it('takes the toast down when leaving GraphQL puts the method back', async () => {
+    render(<Host initial={{ kind: 'none' }} />);
+    vi.mocked(dismissToast).mockClear();
+
+    await userEvent.selectOptions(screen.getByTestId('rest-body-kind'), 'graphql');
+    expect(dismissToast).not.toHaveBeenCalled();
+    await userEvent.selectOptions(screen.getByTestId('rest-body-kind'), 'none');
+
+    expect(dismissToast).toHaveBeenCalledWith(41);
+  });
+
+  it('takes the toast down when the body kind changes again', async () => {
+    render(<Host initial={{ kind: 'none' }} />);
+    vi.mocked(dismissToast).mockClear();
+
+    await userEvent.selectOptions(screen.getByTestId('rest-body-kind'), 'graphql');
+    await userEvent.selectOptions(screen.getByTestId('rest-body-kind'), 'raw');
+
+    expect(dismissToast).toHaveBeenCalledWith(41);
   });
 
   it('keeps a method the user picked after the automatic change', () => {

@@ -22,6 +22,7 @@ import {
   preferencesPatchProblems,
   resetPreferences,
   WirebenchError,
+  withAppUserAgent,
 } from '@wirebench/engine';
 import type { findGit, Preferences, PreferencesPatch, PreferencesSection } from '@wirebench/engine';
 
@@ -149,6 +150,11 @@ async function writeAtomic(path: string, data: string): Promise<void> {
 export interface PreferencesServiceOptions {
   /** The managed-preferences policy file (see `policy.ts`); no policy applies without one. */
   readonly policyFile?: string;
+  /**
+   * The running app's version. A default `User-Agent` in the document is moved to it on load and
+   * on every write, so it names the release that sends it; without one the default is left as is.
+   */
+  readonly appVersion?: string;
 }
 
 /**
@@ -164,6 +170,7 @@ export interface PreferencesServiceOptions {
 export class PreferencesService {
   private readonly file: string;
   private readonly policyFile: string | undefined;
+  private readonly appVersion: string | undefined;
   private policyValue: Policy;
   /** The user's own document, without the policy. */
   private user: Preferences = DEFAULT_PREFERENCES;
@@ -178,6 +185,7 @@ export class PreferencesService {
   constructor(userDataDir: string, options: PreferencesServiceOptions = {}) {
     this.file = join(userDataDir, PREFERENCES_FILE);
     this.policyFile = options.policyFile;
+    this.appVersion = options.appVersion;
     this.policyValue = noPolicy(options.policyFile ?? '');
   }
 
@@ -197,8 +205,8 @@ export class PreferencesService {
     if (this.policyFile !== undefined) {
       this.policyValue = await loadPolicy(this.policyFile);
     }
-    this.user = mergePreferences(document);
-    this.preferences = applyPolicy(this.user, this.policyValue);
+    this.user = this.versioned(mergePreferences(document));
+    this.preferences = this.versioned(applyPolicy(this.user, this.policyValue));
     this.loaded = true;
     return this.preferences;
   }
@@ -231,12 +239,18 @@ export class PreferencesService {
     };
   }
 
+  /** `preferences` with a default `User-Agent` naming this release, when the version is known. */
+  private versioned(preferences: Preferences): Preferences {
+    return this.appVersion === undefined ? preferences : withAppUserAgent(preferences, this.appVersion);
+  }
+
   /** Writes the user's document `user` and makes it, with the policy applied, the one in force. */
-  private async persist(user: Preferences): Promise<Preferences> {
+  private async persist(written: Preferences): Promise<Preferences> {
+    const user = this.versioned(written);
     await mkdir(join(this.file, '..'), { recursive: true });
     await writeAtomic(this.file, stringifyYaml({ version: 1, ...user }, { lineWidth: 0 }));
     this.user = user;
-    this.preferences = applyPolicy(user, this.policyValue);
+    this.preferences = this.versioned(applyPolicy(user, this.policyValue));
     this.loaded = true;
     for (const listener of this.listeners) {
       listener(this.preferences);

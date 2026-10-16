@@ -41,7 +41,13 @@ export interface BodyViewExchange {
   readonly decodeNote?: string | undefined;
   readonly contract?: RestExchangeSummary['contract'];
   readonly graphql?: RestExchangeSummary['graphql'];
-  readonly http: { readonly bodyBase64: string; readonly headers: Readonly<Record<string, string>> };
+  readonly http: {
+    readonly bodyBase64: string;
+    readonly headers: Readonly<Record<string, string>>;
+    /** The response's status, when there is one: a captured request has none. */
+    readonly status?: number;
+    readonly statusText?: string;
+  };
 }
 
 /** The languages `CodeEditor` can colour; anything else is shown as plain text. */
@@ -78,6 +84,23 @@ export function prettyText(text: string, language: RestExchangeSummary['language
   }
   const result = formatRawBody(text, formattableAs, indent);
   return 'text' in result ? result.text : text;
+}
+
+/**
+ * What the body area says in place of an empty editor when there is no body at all (a 204, a HEAD,
+ * a redirect), naming the status when there is one; `undefined` when there is a body to show.
+ */
+export function emptyBodyMessage(exchange: BodyViewExchange): string | undefined {
+  if (exchange.text !== '' || exchange.http.bodyBase64 !== '') {
+    return undefined;
+  }
+  const { status, statusText } = exchange.http;
+  if (status === undefined) {
+    return 'No body';
+  }
+  return statusText === undefined || statusText === ''
+    ? `No body (${String(status)})`
+    : `No body (${String(status)} ${statusText})`;
 }
 
 /** Whether this response is an image the Preview tab can render. */
@@ -151,6 +174,7 @@ export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
   const maxPretty = usePreferencesStore((state) => state.preferences.rest.prettyPrintMaxBytes);
   const indent = usePreferencesStore((state) => state.preferences.editor.tabSize);
   const tooLargeToPretty = exchange.text.length > maxPretty;
+  const empty = emptyBodyMessage(exchange);
   const modes = bodyViewModes(exchange);
   const [chosen, setMode] = useState<BodyViewMode>(() => initialBodyViewMode(exchange, tooLargeToPretty));
   // A view kept from an earlier response that this one does not offer (Preview, after an HTML
@@ -285,7 +309,13 @@ export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
       </div>
 
       <div data-testid={`rest-response-view-${mode}-panel`} className="min-h-0 flex-1">
-        {mode === 'preview' ? (
+        {empty !== undefined ? (
+          // Every view of nothing is blank; an editor showing line 1 reads as a body that is empty
+          // text, or one still loading.
+          <p data-testid="rest-response-no-body" className="p-3 text-sm text-fg-muted">
+            {empty}
+          </p>
+        ) : mode === 'preview' ? (
           <PreviewView exchange={exchange} tooLarge={tooLargeToPretty} />
         ) : mode === 'hex' ? (
           <HexView base64={exchange.http.bodyBase64} />
