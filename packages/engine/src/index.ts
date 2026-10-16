@@ -2374,3 +2374,5 @@ export * from './import/bruno/index.js';
 export * from './import/insomnia/index.js';
 export { importInsomnia, readInsomniaFile } from './import/insomnia/import.js';
 export type { InsomniaSource } from './import/insomnia/import.js';
+export { importBruno, readBrunoFolder } from './import/bruno/import.js';
+export type { BrunoSource } from './import/bruno/import.js';

@@ -1,0 +1,137 @@
+{
+  "version": "1",
+  "name": "demo-collection",
+  "exportedAt": "2026-10-15T10:00:00.000Z",
+  "exportedUsing": "Bruno/v4.2.1",
+  "root": {
+    "request": {
+      "headers": [{ "name": "X-Client", "value": "wirebench-demo", "enabled": true }],
+      "auth": { "mode": "bearer", "bearer": { "token": "{{process.env.TOKEN}}" } },
+      "vars": {
+        "req": [
+          { "name": "tenant", "value": "acme", "enabled": true },
+          { "name": "legacy", "value": "on", "enabled": false }
+        ]
+      },
+      "script": { "req": "bru.setVar(\"startedAt\", Date.now());" }
+    }
+  },
+  "items": [
+    {
+      "type": "folder",
+      "name": "users",
+      "root": {
+        "meta": { "name": "Users", "seq": 2 },
+        "request": {
+          "headers": [{ "name": "X-Area", "value": "users", "enabled": true }],
+          "auth": { "mode": "inherit" }
+        }
+      },
+      "items": [
+        {
+          "type": "http",
+          "name": "Get user",
+          "seq": 4,
+          "request": {
+            "url": "{{baseUrl}}/users/:id?verbose=true",
+            "method": "GET",
+            "headers": [],
+            "params": [
+              { "name": "verbose", "value": "true", "type": "query", "enabled": true },
+              { "name": "trace", "value": "1", "type": "query", "enabled": false },
+              { "name": "id", "value": "{{userId}}", "type": "path", "enabled": true }
+            ],
+            "body": { "mode": "none" },
+            "auth": { "mode": "digest", "digest": { "username": "admin", "password": "literal-digest-pass" } }
+          },
+          "settings": { "encodeUrl": false, "timeout": 5000, "followRedirects": false, "maxRedirects": 3, "omitHeaders": ["User-Agent"] }
+        },
+        {
+          "type": "http",
+          "name": "Create user",
+          "seq": 1,
+          "request": {
+            "url": "{{baseUrl}}/orgs/:orgId/users",
+            "method": "POST",
+            "headers": [
+              { "name": "Content-Type", "value": "application/json", "enabled": true },
+              { "name": "X-Debug", "value": "1", "enabled": false }
+            ],
+            "params": [{ "name": "orgId", "value": "42", "type": "path", "enabled": true }],
+            "body": { "mode": "json", "json": "{\n  \"name\": \"Ada\",\n  \"email\": \"ada@example.com\"\n}" },
+            "auth": { "mode": "inherit" },
+            "script": { "res": "bru.setVar(\"userId\", res.body.id);" },
+            "vars": { "res": [{ "name": "userId", "value": "res.body.id", "enabled": true }] },
+            "assertions": [
+              { "name": "res.status", "value": "eq 201", "enabled": true },
+              { "name": "res.body.name", "value": "Ada", "enabled": true },
+              { "name": "res.body.id", "value": "isDefined", "enabled": false },
+              { "name": "res.body.age", "value": "between 1, 10", "enabled": true }
+            ],
+            "tests": "test(\"returns the created user\", function() {\n  expect(res.getStatus()).to.equal(201);\n});",
+            "docs": "Creates a user in the given org."
+          }
+        }
+      ]
+    },
+    {
+      "type": "http",
+      "name": "Legacy search",
+      "seq": 1,
+      "request": {
+        "url": "{{baseUrl}}/search?q=x",
+        "method": "get",
+        "headers": [],
+        "query": [{ "name": "q", "value": "x", "enabled": true }],
+        "body": { "mode": "none" },
+        "auth": { "mode": "none" }
+      }
+    },
+    {
+      "type": "http",
+      "name": "Token",
+      "seq": 3,
+      "request": {
+        "url": "https://idp.example.com/token",
+        "method": "POST",
+        "params": [],
+        "headers": [],
+        "body": { "mode": "formUrlEncoded", "formUrlEncoded": [{ "name": "grant_type", "value": "client_credentials", "enabled": true }] },
+        "auth": {
+          "mode": "oauth2",
+          "oauth2": {
+            "grantType": "client_credentials",
+            "accessTokenUrl": "https://idp.example.com/token",
+            "clientId": "app",
+            "clientSecret": "export-client-secret",
+            "scope": "read",
+            "pkce": false
+          }
+        }
+      }
+    }
+  ],
+  "environments": [
+    {
+      "name": "Local",
+      "variables": [
+        { "name": "baseUrl", "value": "http://localhost:8080", "enabled": true, "secret": false, "type": "text" },
+        { "name": "debugFlag", "value": "true", "enabled": false, "secret": false, "type": "text" },
+        { "name": "apiToken", "value": "{{process.env.TOKEN}}", "enabled": true, "secret": false, "type": "text" },
+        { "name": "clientSecret", "value": "", "enabled": true, "secret": true, "type": "text" }
+      ]
+    }
+  ],
+  "brunoConfig": {
+    "version": "1",
+    "name": "demo-collection",
+    "type": "collection",
+    "proxy": {
+      "enabled": true,
+      "protocol": "http",
+      "hostname": "proxy.local",
+      "port": 3128,
+      "auth": { "enabled": true, "username": "proxyuser", "password": "proxy-pass-123" }
+    }
+  }
+}

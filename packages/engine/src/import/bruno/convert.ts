@@ -156,7 +156,7 @@ function booleanOf(value: string | undefined): boolean | undefined {
 }
 
 /** A URL without its query string, which Bruno also keeps in `params:query`. */
-function withoutQuery(url: string): string {
+export function withoutQuery(url: string): string {
   const query = url.indexOf('?');
   if (query === -1) return url;
   const hash = url.indexOf('#', query);
@@ -174,7 +174,7 @@ interface Folder {
   readonly items: OcItem[];
 }
 
-class Converter {
+export class Converter {
   readonly report = new ReportBuilder();
   private readonly kept = new Set<string>();
 
@@ -204,7 +204,11 @@ class Converter {
 
   /** A level's or request's auth for `mode`, from its `auth:<mode>` block. */
   auth(file: BruFile, mode: string): unknown {
-    const f = fields(block(file, `auth:${mode}`));
+    return this.authFrom(mode, fields(block(file, `auth:${mode}`)));
+  }
+
+  /** The auth for `mode` from its fields, by the names a `.bru` file gives them. */
+  authFrom(mode: string, f: Readonly<Record<string, string>>): unknown {
     const t = (key: string): string => this.t(f[key] ?? '');
     switch (mode) {
       case '':
@@ -284,9 +288,14 @@ class Converter {
 
   /** A report line for `vars:post-response`, which are read from the response, not set. */
   postResponse(file: BruFile, owner: string): void {
-    const names = pairsOf(block(file, 'vars:post-response')).map((pair) =>
-      pair.key.startsWith('@') ? pair.key.slice(1) : pair.key,
+    this.postResponseNames(
+      pairsOf(block(file, 'vars:post-response')).map((pair) => pair.key),
+      owner,
     );
+  }
+
+  postResponseNames(keys: readonly string[], owner: string): void {
+    const names = keys.map((key) => (key.startsWith('@') ? key.slice(1) : key));
     if (names.length > 0) {
       this.report.warn(
         `${owner}: the post-response variables ${names.join(', ')} were not imported; they are read from the response, so set them with a script or a capture.`,
@@ -310,19 +319,21 @@ class Converter {
   }
 
   assertions(file: BruFile): OcAssertion[] {
-    return pairsOf(block(file, 'assert')).map((pair) => {
-      const raw = pair.value;
-      const space = raw.indexOf(' ');
-      const first = space === -1 ? raw : raw.slice(0, space);
-      const known = OPERATORS.has(first);
-      const value = known ? (space === -1 ? undefined : raw.slice(space + 1).trim()) : raw;
-      return {
-        expression: pair.key,
-        operator: known ? first : 'eq',
-        ...(value !== undefined && value !== '' ? { value: unquoted(this.t(value)) } : {}),
-        ...(pair.enabled ? {} : { disabled: true }),
-      };
-    });
+    return pairsOf(block(file, 'assert')).map((pair) => this.assertion(pair.key, pair.value, pair.enabled));
+  }
+
+  /** One `expression: <operator> <value>` line; a value with no known operator first means `eq`. */
+  assertion(expression: string, raw: string, enabled: boolean): OcAssertion {
+    const space = raw.indexOf(' ');
+    const first = space === -1 ? raw : raw.slice(0, space);
+    const known = OPERATORS.has(first);
+    const value = known ? (space === -1 ? undefined : raw.slice(space + 1).trim()) : raw;
+    return {
+      expression,
+      operator: known ? first : 'eq',
+      ...(value !== undefined && value !== '' ? { value: unquoted(this.t(value)) } : {}),
+      ...(enabled ? {} : { disabled: true }),
+    };
   }
 
   settings(file: BruFile): Rec | undefined {
@@ -547,7 +558,7 @@ class Converter {
   }
 }
 
-function sortItems(items: OcItem[]): OcItem[] {
+export function sortItems(items: OcItem[]): OcItem[] {
   return items.sort((a, b) => {
     const bySeq = (a.info.seq ?? 1) - (b.info.seq ?? 1);
     if (bySeq !== 0) return bySeq;
