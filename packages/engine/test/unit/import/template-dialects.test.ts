@@ -159,18 +159,22 @@ describe('unshieldTemplates', () => {
 });
 
 describe('hostile input', () => {
+  // A backtracking pattern on these inputs runs for seconds or never ends; the linear one takes about a
+  // tenth of a second, and several times that under coverage instrumentation. The limit sits between.
+  const LIMIT_MS = 2_000;
+
   it('a long run of unclosed # calls returns quickly (thunder)', () => {
     const started = performance.now();
     thunderTemplates(`${'{{#'.repeat(300_000)}}}}`, new Set());
     thunderTemplates(`${'{{#{'.repeat(250_000)}}}}`, new Set());
     thunderTemplates(`${'{{#date, {'.repeat(100_000)}}}}`, new Set());
-    expect(performance.now() - started).toBeLessThan(500);
+    expect(performance.now() - started).toBeLessThan(LIMIT_MS);
   });
 
   it('a long run of << with spaced names returns quickly (hoppscotch)', () => {
     const started = performance.now();
     hoppscotchTemplates(`${'<<a b'.repeat(200_000)}>>`, new Set());
-    expect(performance.now() - started).toBeLessThan(500);
+    expect(performance.now() - started).toBeLessThan(LIMIT_MS);
   });
 
   const run = '{'.repeat(1024 * 1024);
@@ -186,9 +190,7 @@ describe('hostile input', () => {
       dialect(run);
       dialect(`${run}}}`);
       dialect('<'.repeat(1024 * 1024) + '>>');
-      // A linear scan of 1 MB takes well under this even with coverage instrumentation (about 580 ms on
-      // CI); a quadratic one would take minutes, so the margin does not hide the regression.
-      expect(performance.now() - started).toBeLessThan(2000);
+      expect(performance.now() - started).toBeLessThan(LIMIT_MS);
     });
   }
 });
