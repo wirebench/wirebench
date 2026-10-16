@@ -83,6 +83,7 @@ export default defineConfig({
             { label: 'Mutual TLS with a corporate CA', slug: 'solutions/mutual-tls-corporate-ca' },
             { label: 'SOAP through a corporate proxy', slug: 'solutions/soap-through-corporate-proxy' },
             { label: 'gRPC with server reflection', slug: 'solutions/grpc-server-reflection' },
+            { label: 'SSH agent forwarding', slug: 'solutions/ssh-agent-forwarding' },
           ],
         },
         {
