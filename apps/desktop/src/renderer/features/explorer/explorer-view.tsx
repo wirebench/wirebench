@@ -229,8 +229,9 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             ))}
         </span>
         {/* One gutter of fixed width carries whatever marks the row — a kind icon or the method —
-            hard against the name. Right-aligning it lines the method labels up with each other and
-            every name in the tree with every other, however wide GET, DELETE or PROPFIND is. */}
+            hard against the name, so every name in the tree lines up with every other. A method
+            badge fills the gutter at a fixed width, left-aligned, so GET, POST and DEL start in one
+            column too. */}
         <span className="flex w-6 shrink-0 items-center justify-end overflow-hidden" data-testid="explorer-row-gutter">
           {role?.Gutter !== undefined ? (
             <role.Gutter node={node.data} />
@@ -239,7 +240,6 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
               method={node.data.method}
               title={`${node.data.method} ${requestDisplayName(node.data.label, node.data.method)}`}
               compact
-              className="w-auto"
             />
           ) : (
             Icon !== undefined && <Icon size={13} />

@@ -55,6 +55,8 @@ All notable changes to this project are documented here. The format follows
   the method badge beside it already says GET or POST. A request imported earlier as `GET /pets/{id}`
   shows without the repeated method in the explorer, the Runner's list and History; its stored name is
   unchanged (#633).
+- **Method badges in the explorer line up.** Every method badge in the tree has the same width and
+  starts in the same column, so POST no longer sits further left than GET and DEL (#633).
 
 ## [6.1.0] - 2026-10-16
 

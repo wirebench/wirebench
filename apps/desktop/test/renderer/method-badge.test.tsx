@@ -81,6 +81,20 @@ describe('MethodBadge', () => {
     }
   });
 
+  it('gives every compact badge one fixed width, left-aligned, so GET, POST and DEL line up (#633)', () => {
+    const classes = ['GET', 'POST', 'DELETE'].map((method) => {
+      render(<MethodBadge method={method} compact />);
+      const className = screen.getByTestId('method-badge').className;
+      cleanup();
+      return className;
+    });
+    for (const className of classes) {
+      expect(className).toContain('w-[4ch]');
+      expect(className).toContain('text-left');
+      expect(className).not.toContain('w-auto');
+    }
+  });
+
   it('renders a filled chip when variant="chip" is requested', () => {
     render(<MethodBadge method="post" variant="chip" />);
 

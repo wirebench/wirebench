@@ -25,15 +25,9 @@ function RestGutter({ node }: { readonly node: ExplorerNode }) {
       method="GQL"
       title={`GraphQL (${node.method}) ${requestDisplayName(node.label, node.method)}`}
       compact
-      className="w-auto"
     />
   ) : (
-    <MethodBadge
-      method={node.method}
-      title={`${node.method} ${requestDisplayName(node.label, node.method)}`}
-      compact
-      className="w-auto"
-    />
+    <MethodBadge method={node.method} title={`${node.method} ${requestDisplayName(node.label, node.method)}`} compact />
   );
 }
 
