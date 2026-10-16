@@ -60,6 +60,9 @@ All notable changes to this project are documented here. The format follows
 - **The explorer no longer scrolls sideways.** In a narrow sidebar a long name such as
   `DELETE /pets/{id}` is cut with an ellipsis instead of running past the edge behind a horizontal
   scrollbar; hover it to read it in full (#633).
+- **The command palette lists what you can run first.** Within each group, commands that cannot run
+  here (greyed, with the reason) now come after the ones that can, so typing "REST" no longer puts
+  **REST: Lint Definition** and **REST: Update Definition…** above the commands you can use (#633).
 
 ## [6.1.0] - 2026-10-16
 
