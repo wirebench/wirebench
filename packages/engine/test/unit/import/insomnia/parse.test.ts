@@ -359,3 +359,66 @@ describe('parseInsomnia errors', () => {
     }
   });
 });
+
+describe('parseInsomnia bounds and v4 workspace kinds', () => {
+  it('v4 folders without an id are kept empty and finish fast', () => {
+    const nested = (n: number): unknown[] =>
+      Array.from({ length: n }, () => ({ parentId: 'wrk_1', _type: 'request_group', name: 'f' }));
+    const started = Date.now();
+    const doc = parseInsomnia(v4([ws, ...nested(5)]));
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(doc.workspaces[0]?.items).toHaveLength(5);
+    expect(doc.report.warnings.join('\n')).toContain('no id');
+  }, 5000);
+
+  it('a v5 alias cycle is refused as malformed', () => {
+    const text = [
+      'type: collection.insomnia.rest/5.0',
+      'name: S',
+      'collection: &c',
+      '  - {name: a, meta: {id: fld_a}, children: *c}',
+      '  - {name: b, meta: {id: fld_b}, children: *c}',
+      '',
+    ].join('\n');
+    expect(codeOf(() => parseInsomnia(text))).toBe('insomnia-malformed');
+  }, 5000);
+
+  it('a budget overrun is refused as malformed', () => {
+    const items = Array.from({ length: 100_001 }, (_, i) => ({
+      name: `r${i}`,
+      method: 'GET',
+      url: 'u',
+      meta: { id: `req_${i}` },
+    }));
+    const text = JSON.stringify({ type: 'collection.insomnia.rest/5.0', name: 'S', collection: items });
+    try {
+      parseInsomnia(text);
+      expect.unreachable();
+    } catch (error) {
+      expect((error as InsomniaError).code).toBe('insomnia-malformed');
+      expect((error as InsomniaError).message).toContain('100000');
+    }
+  }, 10000);
+
+  it('a v4 mock-server workspace beside a collection is skipped with a warning', () => {
+    const doc = parseInsomnia(
+      v4([ws, { _id: 'wrk_2', parentId: null, name: 'Mocks', scope: 'mock-server', _type: 'workspace' }]),
+    );
+    expect(doc.workspaces.map((w) => w.name)).toEqual(['W']);
+    expect(doc.report.warnings.join('\n')).toContain('Mocks');
+  });
+
+  it('a v4 file with only mock or MCP workspaces is not a collection', () => {
+    for (const scope of ['mock-server', 'mcp']) {
+      const text = v4([{ _id: 'wrk_2', parentId: null, name: 'M', scope, _type: 'workspace' }]);
+      expect(codeOf(() => parseInsomnia(text))).toBe('insomnia-not-collection');
+    }
+  });
+
+  it('legacy base-environment sub-environments go to the first workspace only', () => {
+    const second = { _id: 'wrk_2', parentId: null, name: 'W2', scope: 'collection', _type: 'workspace' };
+    const sub = { _id: 'env_s', parentId: '__BASE_ENVIRONMENT_ID__', name: 'Legacy', data: {}, _type: 'environment' };
+    const doc = parseInsomnia(v4([ws, second, sub]));
+    expect(doc.workspaces.map((w) => w.subEnvs.length)).toEqual([1, 0]);
+  });
+});

@@ -12,6 +12,8 @@ import type { InsDocument, InsEnv, InsNode, InsRow, InsScripts, InsSettings, Ins
 /** Deeper nesting than any real collection; stops a hostile export from exhausting the stack. */
 const MAX_DEPTH = 64;
 const MAX_ALIAS_COUNT = 100;
+/** Most items and folders one export may hold; bounds wide trees and shared YAML aliases. */
+const MAX_NODES = 100_000;
 const V5_TYPE = /\.insomnia(\.rest)?\/5\.\d+$/;
 
 function isRec(value: unknown): value is Rec {
@@ -124,6 +126,15 @@ function addExtra(extras: string[], label: string): void {
 
 interface Context {
   report: ReportBuilder;
+  nodes: number;
+}
+
+/** Counts one visited item against the shared budget. */
+function spend(ctx: Context): void {
+  ctx.nodes += 1;
+  if (ctx.nodes > MAX_NODES) {
+    throw malformed(`The Insomnia export holds more than ${MAX_NODES} items.`);
+  }
 }
 
 function skipped(ctx: Context, name: string, what: string): InsNode {
@@ -160,7 +171,7 @@ function readV4(root: Rec): InsDocument {
   const resources = root['resources'];
   if (!Array.isArray(resources)) throw malformed('The Insomnia export has no resources list.');
   const report = new ReportBuilder();
-  const ctx: Context = { report };
+  const ctx: Context = { report, nodes: 0 };
   const all = resources.filter(isRec);
   const children = new Map<string, Rec[]>();
   for (const r of all) {
@@ -189,7 +200,7 @@ function readV4(root: Rec): InsDocument {
       continue;
     }
     if (scope !== 'environment') environmentOnly = false;
-    out.push(readV4Workspace(ctx, w, wid, name, children, typed));
+    out.push(readV4Workspace(ctx, w, wid, name, children, typed, out.length === 0));
   }
   if (out.length === 0) {
     throw new InsomniaError(
@@ -207,6 +218,7 @@ function readV4Workspace(
   name: string,
   children: Map<string, Rec[]>,
   typed: (parent: string, type: string) => Rec[],
+  first: boolean,
 ): InsWorkspace {
   const extras: string[] = [];
   const seen = new Set<string>();
@@ -214,6 +226,7 @@ function readV4Workspace(
   const walk = (parentId: string, depth: number): InsNode[] => {
     const entries: { key: number; id: string; node: InsNode }[] = [];
     for (const r of children.get(parentId) ?? []) {
+      spend(ctx);
       const id = str(r['_id']) ?? '';
       const type = str(r['_type']);
       if (seen.has(id) && id !== '') continue;
@@ -222,7 +235,8 @@ function readV4Workspace(
         seen.add(id);
         const folderName = nonEmpty(r['name']) ?? 'Imported Folder';
         let kids: InsNode[] = [];
-        if (depth >= MAX_DEPTH)
+        if (id === '') ctx.report.warn(`The folder "${folderName}" has no id; its contents were skipped.`);
+        else if (depth >= MAX_DEPTH)
           ctx.report.warn(`The folder "${folderName}" is nested too deeply; its contents were skipped.`);
         else kids = walk(id, depth + 1);
         const description = nonEmpty(r['description']);
@@ -300,7 +314,7 @@ function readV4Workspace(
   const bases = typed(wid, 'environment');
   const base = bases[0];
   const baseId = base === undefined ? undefined : str(base['_id']);
-  const subs = subEnvironmentsOf(children, baseId);
+  const subs = subEnvironmentsOf(children, baseId, first);
   const protos: InsWorkspace['protos'] = [];
   const dirs = new Set(typed(wid, 'proto_directory').map((d) => str(d['_id']) ?? ''));
   const protoParents = [wid, ...dirs];
@@ -325,12 +339,12 @@ function readV4Workspace(
   };
 }
 
-function subEnvironmentsOf(children: Map<string, Rec[]>, baseId: string | undefined): Rec[] {
+function subEnvironmentsOf(children: Map<string, Rec[]>, baseId: string | undefined, legacy: boolean): Rec[] {
   const subs: Rec[] = [];
   if (baseId !== undefined) {
     for (const r of children.get(baseId) ?? []) if (r['_type'] === 'environment') subs.push(r);
   }
-  for (const [parent, list] of children) {
+  for (const [parent, list] of legacy ? children : []) {
     if (!parent.startsWith('__BASE_ENVIRONMENT_ID__')) continue;
     for (const r of list) if (r['_type'] === 'environment') subs.push(r);
   }
@@ -400,17 +414,23 @@ function readV5(root: Rec, type: string): InsDocument {
     throw malformed(`Unknown Insomnia file type "${type}".`);
   }
   const report = new ReportBuilder();
-  const ctx: Context = { report };
+  const ctx: Context = { report, nodes: 0 };
   const schema = scalar(root['schema_version']);
   const dropUnnamed = schema === '' || schema.startsWith('5.0');
   const name = nonEmpty(root['name']) ?? 'Insomnia';
   const extras: string[] = [];
 
+  const visited = new WeakSet<object>();
   const walk = (value: unknown, depth: number): InsNode[] => {
     const entries: { key: number; id: string; node: InsNode }[] = [];
     if (!Array.isArray(value)) return [];
+    if (visited.has(value)) throw malformed('The Insomnia export reuses a list of items (a YAML alias loop).');
+    visited.add(value);
     for (const item of value) {
       if (!isRec(item)) continue;
+      if (visited.has(item)) throw malformed('The Insomnia export reuses an item (a YAML alias loop).');
+      visited.add(item);
+      spend(ctx);
       const meta = metaOf(item);
       const id = str(meta['id']) ?? '';
       const itemName = nonEmpty(item['name']);
@@ -535,10 +555,17 @@ export function parseInsomnia(text: string): InsDocument {
   }
   let root: unknown;
   try {
-    root = parseYaml(text, { maxAliasCount: MAX_ALIAS_COUNT, logLevel: 'error' });
-  } catch (error) {
-    throw malformed('The file is not valid JSON or YAML.', error);
+    // JSON is read by the much faster JSON parser; anything else (or invalid JSON) is read as YAML.
+    root = JSON.parse(text);
+  } catch {
+    root = undefined;
   }
+  if (root === undefined)
+    try {
+      root = parseYaml(text, { maxAliasCount: MAX_ALIAS_COUNT, logLevel: 'error' });
+    } catch (error) {
+      throw malformed('The file is not valid JSON or YAML.', error);
+    }
   if (!isRec(root)) throw malformed('The file is not an Insomnia export.');
 
   const format = root['__export_format'];
