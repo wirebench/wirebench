@@ -10,7 +10,6 @@ import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { showToast } from '../../components/toast.js';
 import type { HostsFileWire, SshAuthWire } from '../../../shared/ssh-wire.js';
 import { useEditorsStore } from '../../state/editors.js';
-import { ipc } from '../../state/ipc-client.js';
 import { findHost, flattenGroups, removeHost, useHostsStore } from './hosts-store.js';
 import { filesTabId } from './files/open-files.js';
 import { stopForward } from './forwarding/forward-actions.js';
@@ -18,6 +17,7 @@ import { groupsWithHost, withoutHostRules } from './forwarding/forward-groups.js
 import { isLive, useForwardsStore } from './forwarding/forwards-store.js';
 import { closePane } from './panes/pane-actions.js';
 import { leaves } from './panes/pane-tree.js';
+import { deleteSshSecret } from './secret-writes.js';
 
 /** A host's open sessions: each terminal pane on it, by tab, and its Files tab if open. */
 export interface HostSessions {
@@ -102,7 +102,7 @@ export async function deleteHost(hostId: string, secret?: string): Promise<void>
   );
   for (const state of failed) void stopForward(hostId, state.ruleId);
   if (secret !== undefined) {
-    const deleted = await ipc().ssh.deleteSecret({ name: secret });
+    const deleted = await deleteSshSecret({ name: secret });
     if (!deleted.ok) showToast(`The secret ${secret} was not deleted: ${deleted.error.message}`);
   }
 }
