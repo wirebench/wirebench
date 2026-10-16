@@ -53,6 +53,9 @@ All notable changes to this project are documented here. The format follows
 - **The "Method changed to POST" toast goes when it stops being true.** Switching a REST body to
   GraphQL and back, or to another kind, now takes the toast and its **Undo** down at once instead of
   leaving it up for its full eight seconds (#632).
+- **Query examples match the language picked.** The example chips in an empty Query view now follow
+  the query language: JSONPath offers only JSONPath expressions, XPath and XQuery their own, instead
+  of mixing XPath 3.1 map lookups in with JSONPath (#632).
 
 ## [6.1.0] - 2026-10-16
 
