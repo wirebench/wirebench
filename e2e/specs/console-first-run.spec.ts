@@ -29,6 +29,9 @@ test.describe('the console in a fresh REST workspace', () => {
     await createWorkspace(page, 'Fresh');
     await createProject(page, 'Pets');
     await expect(page.getByTestId('console')).toBeHidden();
+    // A window shorter than 720px keeps the console collapsed on the first send too (#636), and a
+    // runner whose screen clamps the window that short has nothing to show here.
+    test.skip((await page.evaluate(() => window.innerHeight)) < 720, 'The screen clamps the window below 720px');
 
     await createApi(page, 'Petstore', server.url);
     await createRestRequest(page, 'Petstore', 'Echo');
