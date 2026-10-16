@@ -1,0 +1,334 @@
+_type: export
+__export_format: 4
+__export_date: 2026-10-15T12:00:00.000Z
+__export_source: insomnia.desktop.app:v10.3.1
+resources:
+  - _id: wrk_0a1b2c3d4e5f60718293a4b5c6d7e8f9
+    parentId: null
+    modified: 1760000100000
+    created: 1760000000000
+    name: Orders API
+    description: Sample collection
+    scope: collection
+    _type: workspace
+  - _id: fld_1111111111111111111111111111aaaa
+    parentId: wrk_0a1b2c3d4e5f60718293a4b5c6d7e8f9
+    modified: 1760000001000
+    created: 1760000001000
+    name: Orders
+    description: Everything under /orders
+    environment:
+      tenant: acme
+    environmentPropertyOrder:
+      "&":
+        - tenant
+    metaSortKey: -1760000001000
+    authentication:
+      type: bearer
+      token: "{{ _.token }}"
+      prefix: ""
+      disabled: false
+    headers:
+      - name: X-Tenant
+        value: "{{ _.tenant }}"
+    preRequestScript: console.log('folder pre-request');
+    afterResponseScript: ""
+    _type: request_group
+  - _id: req_2222222222222222222222222222aaaa
+    parentId: fld_1111111111111111111111111111aaaa
+    modified: 1760000000000
+    created: 1760000000000
+    url: "{{ _.baseUrl }}/orders"
+    name: Create order
+    description: ""
+    method: POST
+    body:
+      mimeType: application/json
+      text: |-
+        {
+          "sku": "ABC-1",
+          "qty": 2
+        }
+    parameters:
+      - name: dryRun
+        value: "true"
+        disabled: true
+      - name: expand
+        value: items
+    headers:
+      - name: Content-Type
+        value: application/json
+      - name: X-Debug
+        value: "1"
+        disabled: true
+    authentication:
+      type: basic
+      useISO88591: false
+      username: svc
+      password: "{{ _.svcPassword }}"
+      disabled: false
+    metaSortKey: -1760000002000
+    isPrivate: false
+    pathParameters: []
+    settingStoreCookies: true
+    settingSendCookies: true
+    settingDisableRenderRequestBody: false
+    settingEncodeUrl: true
+    settingRebuildPath: true
+    settingFollowRedirects: global
+    preRequestScript: insomnia.variables.set('requestedAt', Date.now());
+    afterResponseScript: insomnia.test('201', () =>
+      insomnia.expect(insomnia.response.code).to.eql(201));
+    _type: request
+  - _id: req_3333333333333333333333333333aaaa
+    parentId: fld_1111111111111111111111111111aaaa
+    modified: 1760000000000
+    created: 1760000000000
+    url: "{{ _.baseUrl }}/orders/:id/attachments"
+    name: Upload attachment
+    description: ""
+    method: POST
+    body:
+      mimeType: multipart/form-data
+      params:
+        - name: note
+          value: scanned copy
+          disabled: false
+          multiline: text/plain
+          type: text
+        - name: file
+          value: ""
+          disabled: false
+          fileName: /Users/dev/invoice.pdf
+          type: file
+    parameters: []
+    headers: []
+    authentication: {}
+    metaSortKey: -1760000003000
+    isPrivate: false
+    pathParameters:
+      - name: id
+        value: "42"
+    settingStoreCookies: false
+    settingSendCookies: true
+    settingDisableRenderRequestBody: false
+    settingEncodeUrl: true
+    settingRebuildPath: true
+    settingFollowRedirects: off
+    _type: request
+  - _id: req_4444444444444444444444444444aaaa
+    parentId: fld_1111111111111111111111111111aaaa
+    modified: 1760000000000
+    created: 1760000000000
+    url: "{{ _.baseUrl }}/graphql"
+    name: Order by id (GraphQL)
+    description: ""
+    method: POST
+    body:
+      mimeType: application/graphql
+      text: '{"query":"query($id: ID!) { order(id: $id) { id total }
+        }","variables":{"id":"42"}}'
+    parameters: []
+    headers:
+      - name: Content-Type
+        value: application/json
+    authentication: {}
+    metaSortKey: -1760000004000
+    isPrivate: false
+    pathParameters: []
+    settingStoreCookies: true
+    settingSendCookies: true
+    settingDisableRenderRequestBody: false
+    settingEncodeUrl: true
+    settingRebuildPath: true
+    settingFollowRedirects: global
+    _type: request
+  - _id: req_5555555555555555555555555555aaaa
+    parentId: fld_1111111111111111111111111111aaaa
+    modified: 1760000000000
+    created: 1760000000000
+    url: "{{ _.baseUrl }}/orders/latest"
+    name: Latest order (chained)
+    description: ""
+    method: GET
+    body: {}
+    parameters: []
+    headers:
+      - name: X-Order-Id
+        value: "{% response 'body', 'req_2222222222222222222222222222aaaa',
+          'b64::JC5pZA==::46b', 'when-expired', 60 %}"
+    authentication: {}
+    metaSortKey: -1760000005000
+    isPrivate: false
+    pathParameters: []
+    settingStoreCookies: true
+    settingSendCookies: true
+    settingDisableRenderRequestBody: false
+    settingEncodeUrl: true
+    settingRebuildPath: true
+    settingFollowRedirects: global
+    _type: request
+    type: Request
+  - _id: pd_7777777777777777777777777777aaaa
+    parentId: wrk_0a1b2c3d4e5f60718293a4b5c6d7e8f9
+    modified: 1760000000000
+    created: 1760000000000
+    name: protos
+    _type: proto_directory
+  - _id: pf_7777777777777777777777777777aaaa
+    parentId: pd_7777777777777777777777777777aaaa
+    modified: 1760000000000
+    created: 1760000000000
+    name: orders.proto
+    protoText: |
+      syntax = "proto3";
+      package orders.v1;
+      service Orders { rpc GetOrder (GetOrderRequest) returns (Order); }
+      message GetOrderRequest { string id = 1; }
+      message Order { string id = 1; }
+    isPrivate: false
+    _type: proto_file
+  - _id: greq_6666666666666666666666666666aaaa
+    parentId: fld_1111111111111111111111111111aaaa
+    modified: 1760000000000
+    created: 1760000000000
+    url: grpc.example.com:443
+    name: GetOrder (gRPC)
+    description: ""
+    protoFileId: pf_7777777777777777777777777777aaaa
+    protoMethodName: /orders.v1.Orders/GetOrder
+    body:
+      text: '{"id": "42"}'
+    metadata:
+      - name: authorization
+        value: Bearer {{ _.token }}
+    metaSortKey: -1760000006000
+    isPrivate: false
+    reflectionApi:
+      enabled: false
+      url: https://buf.build
+      apiKey: ""
+      module: buf.build/connectrpc/eliza
+    _type: grpc_request
+  - _id: ws-req_8888888888888888888888888888aaaa
+    parentId: wrk_0a1b2c3d4e5f60718293a4b5c6d7e8f9
+    modified: 1760000000000
+    created: 1760000000000
+    url: wss://echo.example.com/ws
+    name: Echo (WebSocket)
+    description: ""
+    headers:
+      - name: X-Token
+        value: "{{ _.token }}"
+    authentication: {}
+    parameters: []
+    metaSortKey: -1760000008000
+    isPrivate: false
+    settingEncodeUrl: true
+    settingStoreCookies: true
+    settingSendCookies: true
+    settingFollowRedirects: global
+    _type: websocket_request
+  - _id: ws-payload_8888888888888888888888888888bbbb
+    parentId: ws-req_8888888888888888888888888888aaaa
+    modified: 1760000000000
+    created: 1760000000000
+    name: New Payload
+    value: '{"hello":"world"}'
+    mode: application/json
+    isPrivate: false
+    _type: websocket_payload
+  - _id: jar_9999999999999999999999999999aaaa
+    parentId: wrk_0a1b2c3d4e5f60718293a4b5c6d7e8f9
+    modified: 1760000000000
+    created: 1760000000000
+    name: Default Jar
+    cookies:
+      - id: c1
+        key: session
+        value: abc
+        domain: api.example.com
+        path: /
+        secure: true
+        httpOnly: true
+        expires: null
+    _type: cookie_jar
+  - _id: env_aaaaaaaaaaaaaaaaaaaaaaaaaaaa0001
+    parentId: wrk_0a1b2c3d4e5f60718293a4b5c6d7e8f9
+    modified: 1760000000000
+    created: 1760000000000
+    name: Base Environment
+    data:
+      baseUrl: https://api.example.com
+      tenant: base
+      db:
+        host: localhost
+        port: 5432
+    dataPropertyOrder:
+      "&":
+        - baseUrl
+        - tenant
+        - db
+      "&~|db":
+        - host
+        - port
+    color: "#00aa88"
+    isPrivate: false
+    metaSortKey: 1760000000000
+    _type: environment
+  - _id: env_bbbbbbbbbbbbbbbbbbbbbbbbbbbb0002
+    parentId: env_aaaaaaaaaaaaaaaaaaaaaaaaaaaa0001
+    modified: 1760000000000
+    created: 1760000000000
+    name: Staging
+    data:
+      baseUrl: https://staging.example.com
+      __insomnia_vault:
+        svcPassword: <sealed base64 JSON {iv,t,ad,d} blob>
+    dataPropertyOrder:
+      "&":
+        - baseUrl
+        - __insomnia_vault
+      "&~|__insomnia_vault":
+        - svcPassword
+    color: "#ff8800"
+    isPrivate: true
+    metaSortKey: 1760000000001
+    environmentType: kv
+    kvPairData:
+      - id: envPair_1
+        name: baseUrl
+        value: https://staging.example.com
+        type: str
+        enabled: true
+      - id: envPair_2
+        name: svcPassword
+        value: <sealed base64 JSON {iv,t,ad,d} blob>
+        type: secret
+        enabled: true
+    _type: environment
+  - _id: socketio-req_aaaa
+    parentId: wrk_0a1b2c3d4e5f60718293a4b5c6d7e8f9
+    modified: 1760000000000
+    created: 1760000000000
+    url: https://io.example.com
+    name: Live feed
+    metaSortKey: -1760000009000
+    eventListeners: []
+    _type: socketio_request
+  - _id: uts_1
+    parentId: wrk_0a1b2c3d4e5f60718293a4b5c6d7e8f9
+    modified: 1760000000000
+    created: 1760000000000
+    name: Smoke
+    metaSortKey: 0
+    _type: unit_test_suite
+  - _id: ut_1
+    parentId: uts_1
+    modified: 1760000000000
+    created: 1760000000000
+    name: creates an order
+    requestId: req_2222222222222222222222222222aaaa
+    code: expect(1).to.equal(1);
+    metaSortKey: 0
+    _type: unit_test

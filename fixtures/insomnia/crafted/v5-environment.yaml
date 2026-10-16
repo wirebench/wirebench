@@ -1,0 +1,27 @@
+type: environment.insomnia.rest/5.0
+schema_version: "5.1"
+name: Shared settings
+meta:
+  id: wrk_env00000000000000000000000000001
+environments:
+  name: Base Environment
+  meta:
+    id: env_env00000000000000000000000000001
+  data:
+    region: eu-west-1
+    retries: 3
+  subEnvironments:
+    - name: Production
+      meta:
+        id: env_env00000000000000000000000000003
+        sortKey: 2
+      data:
+        host: api.example.com
+      color: "#cc0000"
+    - name: Development
+      meta:
+        id: env_env00000000000000000000000000002
+        sortKey: 1
+      data:
+        host: localhost:8080
+      color: green

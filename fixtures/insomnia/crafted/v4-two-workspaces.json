@@ -1,0 +1,71 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-10-15T12:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v10.3.1",
+  "resources": [
+    {
+      "_id": "wrk_a",
+      "parentId": null,
+      "name": "Billing",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "req_a1",
+      "parentId": "wrk_a",
+      "name": "List invoices",
+      "method": "GET",
+      "url": "https://billing.example.com/invoices",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -2,
+      "_type": "request"
+    },
+    {
+      "_id": "wrk_b",
+      "parentId": null,
+      "name": "Shipping",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "fld_b1",
+      "parentId": "wrk_b",
+      "name": "Parcels",
+      "environment": {},
+      "metaSortKey": -1,
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_b1",
+      "parentId": "fld_b1",
+      "name": "Track parcel",
+      "method": "GET",
+      "url": "https://ship.example.com/parcels/:id",
+      "pathParameters": [
+        {
+          "name": "id",
+          "value": "7"
+        }
+      ],
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1,
+      "_type": "request"
+    },
+    {
+      "_id": "env_b",
+      "parentId": "wrk_b",
+      "name": "Base Environment",
+      "data": {
+        "region": "eu"
+      },
+      "_type": "environment"
+    }
+  ]
+}

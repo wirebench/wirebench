@@ -178,6 +178,7 @@ export {
   HarError,
   HttpFileError,
   OpenCollectionError,
+  InsomniaError,
   ExportError,
   LegacyProjectError,
   ProtoError,
@@ -2368,3 +2369,4 @@ export { LINT_CHECKS, LINT_TARGETS } from './rest/openapi/lint/ruleset.js';
 export { LINT_FOLDER, readProjectLintRulesets } from './rest/openapi/lint/project.js';
 export { lintReportJson, lintReportSarif } from './rest/openapi/lint/report.js';
 export type { LintJsonReport, LintReportOptions, LintTool } from './rest/openapi/lint/report.js';
+export * from './import/insomnia/index.js';
