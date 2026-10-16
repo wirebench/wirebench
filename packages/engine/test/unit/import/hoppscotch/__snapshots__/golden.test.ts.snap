@@ -1,0 +1,861 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Hoppscotch golden > maps gql.json 1`] = `
+{
+  "collections": [
+    {
+      "name": "GraphQL Only",
+      "rest": {
+        "baseUrl": "https://api.example.test",
+        "folders": [],
+        "id": "id-2",
+        "kind": "rest",
+        "name": "GraphQL Only",
+        "order": 0,
+        "requests": [
+          {
+            "assertions": [],
+            "auth": {
+              "type": "inherit",
+            },
+            "body": {
+              "kind": "graphql",
+              "query": "query User($id: ID!) { user(id: $id) { id name } }",
+              "variables": "{
+  "id": "1"
+}",
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "Authorization",
+                "value": "Bearer \${token}",
+              },
+              {
+                "enabled": true,
+                "name": "Content-Type",
+                "value": "application/json",
+              },
+            ],
+            "id": "id-1",
+            "kind": "rest",
+            "method": "POST",
+            "name": "Get user",
+            "order": 0,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "Get user",
+            "url": "/graphql",
+          },
+        ],
+        "servers": [
+          {
+            "description": "Collection Base URL",
+            "url": "https://api.example.test",
+          },
+        ],
+        "slug": "GraphQL Only",
+      },
+    },
+  ],
+  "counts": {
+    "assertions": 0,
+    "collections": 1,
+    "examples": 0,
+    "folders": 0,
+    "requests": 1,
+    "scripts": 0,
+  },
+  "report": {
+    "notes": [],
+    "warnings": [],
+  },
+  "scripts": [],
+  "variables": {
+    "environments": [],
+    "report": {
+      "notes": [],
+      "warnings": [],
+    },
+  },
+}
+`;
+
+exports[`Hoppscotch golden > maps legacy-v0.json 1`] = `
+{
+  "collections": [
+    {
+      "name": "Legacy API",
+      "rest": {
+        "baseUrl": "https://echo.example.test",
+        "folders": [],
+        "id": "id-2",
+        "kind": "rest",
+        "name": "Legacy API",
+        "order": 0,
+        "requests": [
+          {
+            "assertions": [],
+            "auth": {
+              "type": "basic",
+              "username": "alice",
+            },
+            "body": {
+              "kind": "raw",
+              "language": "json",
+              "text": "{"a":1}",
+            },
+            "headers": [
+              {
+                "enabled": false,
+                "name": "X-Old",
+                "value": "1",
+              },
+              {
+                "enabled": true,
+                "name": "Accept",
+                "value": "application/json",
+              },
+              {
+                "enabled": true,
+                "name": "Content-Type",
+                "value": "application/json",
+              },
+            ],
+            "id": "id-1",
+            "kind": "rest",
+            "method": "GET",
+            "name": "get-thing",
+            "order": 0,
+            "pathParams": [],
+            "query": [
+              {
+                "enabled": true,
+                "name": "q",
+                "value": "x",
+              },
+            ],
+            "settings": {},
+            "slug": "get-thing",
+            "url": "/get",
+          },
+        ],
+        "servers": [
+          {
+            "description": "Collection Base URL",
+            "url": "https://echo.example.test",
+          },
+        ],
+        "slug": "Legacy API",
+      },
+    },
+  ],
+  "counts": {
+    "assertions": 0,
+    "collections": 1,
+    "examples": 0,
+    "folders": 0,
+    "requests": 1,
+    "scripts": 1,
+  },
+  "report": {
+    "notes": [
+      "Legacy API / get-thing: its tests script was saved to imported-scripts/legacy api/legacy api-get-thing.tests.js and is never run.",
+    ],
+    "warnings": [
+      "The saved scripts call pw.; Wirebench does not run them. Port what they do to Wirebench scripts by hand.",
+      "Credentials are not copied from the collection; re-enter them for 1 auth configuration",
+    ],
+  },
+  "scripts": [
+    {
+      "path": "imported-scripts/legacy api/legacy api-get-thing.tests.js",
+      "source": "pw.test("ok", () => { pw.expect(pw.response.status).toBe(200) })",
+    },
+  ],
+  "variables": {
+    "environments": [],
+    "report": {
+      "notes": [],
+      "warnings": [],
+    },
+  },
+}
+`;
+
+exports[`Hoppscotch golden > maps mixed-versions.json 1`] = `
+{
+  "collections": [
+    {
+      "name": "Mixed",
+      "rest": {
+        "auth": {
+          "type": "none",
+        },
+        "baseUrl": "https://api.example.test",
+        "folders": [
+          {
+            "folders": [],
+            "id": "id-3",
+            "name": "Old folder",
+            "order": 0,
+            "requests": [
+              {
+                "assertions": [],
+                "auth": {
+                  "authorizationUrl": "https://auth.example.test/authorize",
+                  "clientAuth": "body",
+                  "clientId": "old-client",
+                  "grant": "authorization-code",
+                  "pkce": true,
+                  "scopes": [
+                    "read",
+                  ],
+                  "tokenUrl": "https://auth.example.test/token",
+                  "type": "oauth2",
+                },
+                "body": {
+                  "kind": "none",
+                },
+                "headers": [],
+                "id": "id-1",
+                "kind": "rest",
+                "method": "GET",
+                "name": "Old OAuth",
+                "order": 0,
+                "pathParams": [],
+                "query": [],
+                "settings": {},
+                "slug": "Old OAuth",
+                "url": "/old",
+              },
+              {
+                "assertions": [],
+                "auth": {
+                  "in": "query",
+                  "name": "k",
+                  "type": "api-key",
+                },
+                "body": {
+                  "kind": "none",
+                },
+                "headers": [],
+                "id": "id-2",
+                "kind": "rest",
+                "method": "GET",
+                "name": "Old key",
+                "order": 1,
+                "pathParams": [],
+                "query": [],
+                "settings": {},
+                "slug": "Old key",
+                "url": "/key",
+              },
+            ],
+            "slug": "Old folder",
+          },
+        ],
+        "id": "id-5",
+        "kind": "rest",
+        "name": "Mixed",
+        "order": 0,
+        "requests": [
+          {
+            "assertions": [],
+            "auth": {
+              "type": "inherit",
+            },
+            "body": {
+              "kind": "raw",
+              "language": "text",
+              "text": "hi",
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "Content-Type",
+                "value": "text/plain",
+              },
+            ],
+            "id": "id-4",
+            "kind": "rest",
+            "method": "PATCH",
+            "name": "Future",
+            "order": 0,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "Future",
+            "url": "/future",
+          },
+        ],
+        "servers": [
+          {
+            "description": "Collection Base URL",
+            "url": "https://api.example.test",
+          },
+        ],
+        "slug": "Mixed",
+      },
+    },
+  ],
+  "counts": {
+    "assertions": 0,
+    "collections": 1,
+    "examples": 0,
+    "folders": 1,
+    "requests": 3,
+    "scripts": 0,
+  },
+  "report": {
+    "notes": [
+      "The export holds a collection at version 13, newer than the 12 this build knows; it was read as that.",
+      "The export holds a REST request at version 18, newer than the 17 this build knows; it was read as that.",
+    ],
+    "warnings": [
+      "Credentials are not copied from the collection; re-enter them for 1 auth configuration",
+    ],
+  },
+  "scripts": [],
+  "variables": {
+    "environments": [],
+    "report": {
+      "notes": [],
+      "warnings": [],
+    },
+  },
+}
+`;
+
+exports[`Hoppscotch golden > maps the environments fixture 1`] = `
+{
+  "environments": [
+    {
+      "name": "Staging",
+      "variables": [
+        {
+          "enabled": true,
+          "name": "baseUrl",
+          "secret": false,
+          "value": "https://staging.example.test",
+        },
+        {
+          "enabled": true,
+          "name": "region",
+          "secret": false,
+          "value": "us",
+        },
+        {
+          "enabled": true,
+          "name": "apiKey",
+          "secret": true,
+          "value": "",
+        },
+      ],
+    },
+    {
+      "name": "Old",
+      "variables": [
+        {
+          "enabled": true,
+          "name": "a",
+          "secret": false,
+          "value": "1",
+        },
+        {
+          "enabled": true,
+          "name": "s",
+          "secret": true,
+          "value": "",
+        },
+      ],
+    },
+  ],
+  "globals": {
+    "name": "Globals",
+    "variables": [
+      {
+        "enabled": true,
+        "name": "tenant",
+        "secret": false,
+        "value": "acme",
+      },
+    ],
+  },
+  "report": {
+    "notes": [],
+    "warnings": [],
+  },
+}
+`;
+
+exports[`Hoppscotch golden > maps v12-r17.json 1`] = `
+{
+  "collections": [
+    {
+      "name": "Shop API",
+      "rest": {
+        "auth": {
+          "type": "bearer",
+        },
+        "baseUrl": "\${baseUrl}",
+        "description": "Root collection",
+        "folders": [
+          {
+            "folders": [],
+            "id": "id-4",
+            "name": "Orders",
+            "order": 0,
+            "requests": [
+              {
+                "assertions": [],
+                "auth": {
+                  "type": "inherit",
+                },
+                "body": {
+                  "kind": "raw",
+                  "language": "json",
+                  "text": "{
+  "sku": "X-1",
+  "qty": 2
+}",
+                },
+                "description": "Creates an order",
+                "examples": [
+                  {
+                    "body": "{"id":42}",
+                    "contentType": "application/json",
+                    "headers": [
+                      {
+                        "enabled": true,
+                        "name": "content-type",
+                        "value": "application/json",
+                      },
+                    ],
+                    "id": "id-2",
+                    "name": "Created",
+                    "status": 201,
+                    "statusText": "Created",
+                  },
+                ],
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "Content-Type",
+                    "value": "application/json",
+                  },
+                  {
+                    "description": "disabled",
+                    "enabled": false,
+                    "name": "X-Debug",
+                    "value": "1",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "X-Team",
+                    "value": "web",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "X-Area",
+                    "value": "orders",
+                  },
+                ],
+                "id": "id-1",
+                "kind": "rest",
+                "method": "POST",
+                "name": "Create order",
+                "order": 0,
+                "pathParams": [],
+                "query": [
+                  {
+                    "enabled": true,
+                    "name": "dry_run",
+                    "value": "true",
+                  },
+                  {
+                    "enabled": false,
+                    "name": "trace",
+                    "value": "1",
+                  },
+                ],
+                "settings": {},
+                "slug": "Create order",
+                "url": "/orders",
+              },
+              {
+                "assertions": [],
+                "auth": {
+                  "type": "none",
+                },
+                "body": {
+                  "fields": [
+                    {
+                      "enabled": true,
+                      "name": "user",
+                      "value": "alice",
+                    },
+                    {
+                      "enabled": false,
+                      "name": "debug",
+                      "value": "1",
+                    },
+                    {
+                      "enabled": true,
+                      "name": "pass",
+                      "value": "\${password}",
+                    },
+                  ],
+                  "kind": "form",
+                },
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "X-Team",
+                    "value": "web",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "X-Area",
+                    "value": "orders",
+                  },
+                ],
+                "id": "id-3",
+                "kind": "rest",
+                "method": "POST",
+                "name": "Login form",
+                "order": 1,
+                "pathParams": [],
+                "query": [],
+                "settings": {},
+                "slug": "Login form",
+                "url": "/login",
+              },
+            ],
+            "slug": "Orders",
+          },
+        ],
+        "id": "id-12",
+        "kind": "rest",
+        "name": "Shop API",
+        "order": 0,
+        "requests": [
+          {
+            "assertions": [],
+            "auth": {
+              "in": "header",
+              "name": "X-API-Key",
+              "type": "api-key",
+            },
+            "body": {
+              "kind": "multipart",
+              "parts": [
+                {
+                  "enabled": true,
+                  "kind": "text",
+                  "name": "caption",
+                  "value": "me",
+                },
+                {
+                  "enabled": false,
+                  "kind": "text",
+                  "name": "file",
+                  "value": "",
+                },
+              ],
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "X-Team",
+                "value": "web",
+              },
+            ],
+            "id": "id-5",
+            "kind": "rest",
+            "method": "POST",
+            "name": "Upload avatar",
+            "order": 0,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "Upload avatar",
+            "url": "/avatar",
+          },
+          {
+            "assertions": [],
+            "auth": {
+              "clientAuth": "body",
+              "clientId": "client-1",
+              "grant": "client-credentials",
+              "pkce": false,
+              "scopes": [
+                "read",
+                "write",
+              ],
+              "tokenUrl": "https://auth.example.test/oauth/token",
+              "type": "oauth2",
+            },
+            "body": {
+              "kind": "none",
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "X-Team",
+                "value": "web",
+              },
+            ],
+            "id": "id-6",
+            "kind": "rest",
+            "method": "GET",
+            "name": "Token via client credentials",
+            "order": 1,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "Token via client credentials",
+            "url": "/me",
+          },
+          {
+            "assertions": [],
+            "auth": {
+              "type": "digest",
+              "username": "admin",
+            },
+            "body": {
+              "kind": "raw",
+              "language": "xml",
+              "text": "<a><%= x %></a>",
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "X-Team",
+                "value": "web",
+              },
+              {
+                "enabled": true,
+                "name": "Content-Type",
+                "value": "application/xml",
+              },
+            ],
+            "id": "id-7",
+            "kind": "rest",
+            "method": "GET",
+            "name": "Digest",
+            "order": 2,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "Digest",
+            "url": "/digest",
+          },
+          {
+            "assertions": [],
+            "auth": {
+              "algorithm": "HS256",
+              "claims": "{"sub":"me"}",
+              "in": "header",
+              "issuedAt": false,
+              "jwtId": false,
+              "prefix": "Bearer",
+              "type": "jwt",
+            },
+            "body": {
+              "kind": "none",
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "X-Team",
+                "value": "web",
+              },
+            ],
+            "id": "id-8",
+            "kind": "rest",
+            "method": "GET",
+            "name": "Signed",
+            "order": 3,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "Signed",
+            "url": "/signed",
+          },
+          {
+            "assertions": [],
+            "auth": {
+              "type": "none",
+            },
+            "body": {
+              "kind": "none",
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "X-Team",
+                "value": "web",
+              },
+            ],
+            "id": "id-9",
+            "kind": "rest",
+            "method": "GET",
+            "name": "Hawk",
+            "order": 4,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "Hawk",
+            "url": "/hawk",
+          },
+          {
+            "assertions": [],
+            "auth": {
+              "type": "none",
+            },
+            "body": {
+              "kind": "none",
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "X-Team",
+                "value": "web",
+              },
+            ],
+            "id": "id-10",
+            "kind": "rest",
+            "method": "GET",
+            "name": "AWS off",
+            "order": 5,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "AWS off",
+            "url": "/aws",
+          },
+          {
+            "assertions": [],
+            "auth": {
+              "type": "inherit",
+            },
+            "body": {
+              "kind": "graphql",
+              "query": "query User($id: ID!) { user(id: $id) { id name } }",
+              "variables": "{
+  "id": "1"
+}",
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "X-Team",
+                "value": "web",
+              },
+              {
+                "enabled": true,
+                "name": "Content-Type",
+                "value": "application/json",
+              },
+            ],
+            "id": "id-11",
+            "kind": "rest",
+            "method": "POST",
+            "name": "Get user (GraphQL)",
+            "order": 6,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "Get user (GraphQL)",
+            "url": "/graphql",
+          },
+        ],
+        "servers": [
+          {
+            "description": "Collection Base URL",
+            "url": "\${baseUrl}",
+          },
+        ],
+        "slug": "Shop API",
+      },
+    },
+  ],
+  "counts": {
+    "assertions": 0,
+    "collections": 1,
+    "examples": 1,
+    "folders": 1,
+    "requests": 9,
+    "scripts": 4,
+  },
+  "report": {
+    "notes": [
+      "Shop API: its pre-request script was saved to imported-scripts/shop api/shop api.pre.js and is never run.",
+      "Shop API / Orders / Create order: its pre-request script was saved to imported-scripts/shop api/shop api-orders-create order.pre.js and is never run.",
+      "Shop API / Orders / Create order: its tests script was saved to imported-scripts/shop api/shop api-orders-create order.tests.js and is never run.",
+      "Shop API / Get user (GraphQL): its tests script was saved to imported-scripts/shop api/shop api-get user (graphql).tests.js and is never run.",
+      "The collection's headers were copied onto each request that does not set them.",
+      "Shop API / Orders: its headers were copied onto the requests below it that do not set them.",
+      "Shop API / Upload avatar: the file part "file" has no file in the export, so it was kept switched off as a text part; pick its file on the Body tab.",
+      "Shop API / Token via client credentials: its OAuth 2 extra request parameters were not imported.",
+      "Shop API / Signed: its body is a file, which is not in the export, so it has no body; pick the file on the Body tab.",
+    ],
+    "warnings": [
+      "The saved scripts call pw., hopp.; Wirebench does not run them. Port what they do to Wirebench scripts by hand.",
+      "Shop API / Orders / Create order: request-level variables (sku) were not imported; Wirebench has no request scope.",
+      "Shop API / Hawk: Hawk auth has no Wirebench equivalent, so it was set to "none".",
+      "Credentials are not copied from the collection; re-enter them for 5 auth configurations",
+    ],
+  },
+  "scripts": [
+    {
+      "path": "imported-scripts/shop api/shop api.pre.js",
+      "source": "hopp.env.set('ts', String(Date.now()))",
+    },
+    {
+      "path": "imported-scripts/shop api/shop api-orders-create order.pre.js",
+      "source": "hopp.env.set('orderRef', 'A-1')",
+    },
+    {
+      "path": "imported-scripts/shop api/shop api-orders-create order.tests.js",
+      "source": "hopp.test('created', () => { hopp.expect(hopp.response.statusCode).toBe(201) })",
+    },
+    {
+      "path": "imported-scripts/shop api/shop api-get user (graphql).tests.js",
+      "source": "pw.test('ok', () => {})",
+    },
+  ],
+  "variables": {
+    "environments": [],
+    "projectProperties": {
+      "name": "Project properties",
+      "variables": [
+        {
+          "enabled": true,
+          "name": "baseUrl",
+          "secret": false,
+          "value": "https://api.example.test",
+        },
+        {
+          "enabled": true,
+          "name": "apiKey",
+          "secret": true,
+          "value": "",
+        },
+        {
+          "enabled": true,
+          "name": "region",
+          "secret": false,
+          "value": "eu",
+        },
+      ],
+    },
+    "report": {
+      "notes": [],
+      "warnings": [],
+    },
+  },
+}
+`;

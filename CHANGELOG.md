@@ -16,6 +16,21 @@ All notable changes to this project are documented here. The format follows
   become secrets with no value, scripts are saved as text under `imported-scripts/` and never run, and
   template tags Wirebench cannot run are kept and listed. `wirebench import` reads the same files.
   Postman collections now bring Digest, AWS Signature and JWT auth across as well (#588).
+- **Import Bruno collections.** **Import…** reads a Bruno collection from its folder (**Folder…**),
+  its `bruno.json` or a JSON export, in Bruno's order. Its requests become a REST, a gRPC and a
+  WebSocket API in the chosen project, with collection and folder headers, auth and variables; each
+  environment becomes a workspace environment, never made active, its `vars:secret` names secrets
+  with no value. `assert` lines become assertions where they fit, scripts and tests are saved as text
+  and never run, and a `.env` file is never read. `wirebench import` reads the same sources. The
+  OpenCollection import now also maps Digest and AWS Signature v4 auth, `omitHeaders`, descriptions
+  and lists of WebSocket messages (#588).
+- **Import Hoppscotch exports.** **Import…** reads Hoppscotch collections and environments files at
+  every schema version, each collection, folder and request at its own. Each top-level collection
+  becomes a REST API in the chosen project, GraphQL requests with a GraphQL body, saved responses as
+  examples; collection and folder variables become project properties, a secret one with no value.
+  An environments file goes to the workspace, never made active, its `Global` environment into
+  Globals. Scripts are saved as text and never run. `wirebench import` reads collections files
+  (#588).
 
 ### Changed
 

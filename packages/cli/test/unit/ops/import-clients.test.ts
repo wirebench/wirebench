@@ -134,3 +134,58 @@ describe('op import: environment files', () => {
     expect(restApisOf(project)).toEqual([]);
   });
 });
+
+const BRUNO = resolve(import.meta.dirname, '..', '..', '..', '..', '..', 'fixtures', 'bruno', 'crafted');
+
+describe('op import: a Bruno collection', () => {
+  it('imports a Bruno folder with environments, secrets and scripts left out and named', async () => {
+    const fixture = await emptyProject();
+    const result = await runOp(importOp, { source: join(BRUNO, 'basic') }, fixture.base());
+
+    expect(result.format).toBe('bruno');
+    expect(result.added.map((item) => item.kind)).toEqual(['rest', 'grpc', 'websocket']);
+    const codes = result.problems.map((problem) => problem.code);
+    expect(codes).toContain('environments-not-imported');
+    expect(codes).toContain('scripts-not-saved');
+    expect(JSON.stringify(result)).not.toContain('proxy-pass-123');
+    expect(JSON.stringify(result)).not.toContain('literal-digest-pass');
+    const { project } = await loadProject(fixture.dir);
+    expect(restApisOf(project)[0]?.name).toBe('demo-collection');
+    expect(project.properties).toMatchObject({ tenant: 'acme' });
+    expect(project.disabledProperties).toContain('legacy');
+  });
+
+  it('reads a bruno.json as its folder, and any other file as a JSON export', async () => {
+    const fixture = await emptyProject();
+    const viaJson = await runOp(importOp, { source: join(BRUNO, 'basic', 'bruno.json') }, fixture.base());
+    expect(viaJson.added.map((item) => item.kind)).toEqual(['rest', 'grpc', 'websocket']);
+    const exported = await runOp(importOp, { source: join(BRUNO, 'export.json'), name: 'Exported' }, fixture.base());
+    expect(exported.format).toBe('bruno');
+    expect(exported.added).toEqual([expect.objectContaining({ kind: 'rest', name: 'Exported' })]);
+  });
+});
+
+const HOPPSCOTCH = resolve(import.meta.dirname, '..', '..', '..', '..', '..', 'fixtures', 'hoppscotch', 'crafted');
+
+describe('op import: a Hoppscotch collection', () => {
+  it('imports a Hoppscotch collection, its plain variables as project properties and its secret left out', async () => {
+    const fixture = await emptyProject();
+    const result = await runOp(importOp, { source: join(HOPPSCOTCH, 'v12-r17.json') }, fixture.base());
+
+    expect(result.format).toBe('hoppscotch');
+    expect(result.added).toEqual([expect.objectContaining({ kind: 'rest', name: 'Shop API', requests: 9 })]);
+    const codes = result.problems.map((problem) => problem.code);
+    expect(codes).toContain('secret-not-imported');
+    expect(codes).toContain('scripts-not-saved');
+    const { project } = await loadProject(fixture.dir);
+    expect(project.properties).toMatchObject({ baseUrl: 'https://api.example.test', region: 'eu' });
+    expect(project.properties).not.toHaveProperty('apiKey');
+  });
+
+  it('refuses an environments file', async () => {
+    const fixture = await emptyProject();
+    await expect(
+      runOp(importOp, { source: join(HOPPSCOTCH, 'environments-v2.json') }, fixture.base()),
+    ).rejects.toMatchObject({ code: 'environments-not-imported' });
+  });
+});

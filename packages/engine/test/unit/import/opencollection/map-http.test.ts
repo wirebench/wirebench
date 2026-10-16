@@ -134,8 +134,8 @@ describe('mapOpenCollection — HTTP', () => {
 
   it('maps unsupported auth to none with a warning', () => {
     const report = new ReportBuilder();
-    expect(mapOcAuth({ type: 'digest', username: 'u' }, 'X', report).auth).toEqual({ type: 'none' });
-    expect(report.build().warnings).toEqual(['X: digest authentication is not supported and was imported as none.']);
+    expect(mapOcAuth({ type: 'wsse', username: 'u' }, 'X', report).auth).toEqual({ type: 'none' });
+    expect(report.build().warnings).toEqual(['X: wsse authentication is not supported and was imported as none.']);
   });
 });
 
@@ -513,13 +513,16 @@ describe('mapOpenCollection — bodies and settings', () => {
     const { request, mapped } = only(
       collection(`  - info: { name: Slow, type: http }
     http: { method: GET, url: "https://h" }
-    settings: { timeout: 5000, followRedirects: false, maxRedirects: inherit, encodeUrl: true, omitHeaders: [X] }
+    settings: { timeout: 5000, followRedirects: false, maxRedirects: inherit, encodeUrl: true, omitHeaders: [User-Agent], proxy: x }
 `),
     );
-    expect(request.settings).toEqual({ timeoutMs: 5000, followRedirects: false, encodeUrl: true });
-    expect(mapped.report.notes).toContain(
-      'Slow: the settings omitHeaders have no Wirebench equivalent and were ignored.',
-    );
+    expect(request.settings).toEqual({
+      timeoutMs: 5000,
+      followRedirects: false,
+      encodeUrl: true,
+      omitHeaders: ['User-Agent'],
+    });
+    expect(mapped.report.notes).toContain('Slow: the settings proxy have no Wirebench equivalent and were ignored.');
   });
 
   it('keeps unparsable GraphQL variables as a string and blanks credential variables', () => {

@@ -1,0 +1,240 @@
+---
+title: Calling a gRPC service with server reflection
+description: Call a gRPC service without its .proto files by asking the server to describe itself, and fix each way discovery and the call can fail.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+You have a gRPC service's address and nothing else: no `.proto` files, no generated client, maybe a
+method name from a colleague. If the server has gRPC server reflection turned on, that is enough.
+The server can describe its own services and message types, and a client that asks can build
+requests from the answer.
+
+This guide discovers a service by reflection in Wirebench, calls it, and then goes through what
+goes wrong: a server without reflection, the wrong reflection version, TLS on one side and not the
+other, a message the schema rejects, a status that is not `OK`, and a deadline. The output and
+messages below come from Wirebench's engine, run against the gRPC test server in its own test
+suite.
+
+## The service
+
+The test server exposes one service, `wirebench.greet.Greeter`, with a method in every streaming
+shape: `SayHello` (unary), `LotsOfReplies` (server streaming), `LotsOfGreetings` (client
+streaming), `Chat` (bidirectional), plus `Fail`, `Slow` and a deprecated method. Its request
+message, `HelloRequest`, uses nested messages, maps, enums, a `oneof` and well-known types, so it
+is a fair stand-in for a real service.
+
+## Step 1: discover it
+
+<Steps>
+
+1. Right-click a project in the explorer and choose **Import…**, then the
+   **Protocol Buffers (gRPC)** format.
+2. Open the **Server** tab and type the **Server address** as `host:port`. The hint says what
+   happens next: "The server is asked to describe itself over gRPC server reflection. No .proto
+   files are needed."
+3. Leave **Reflection version** at **Automatic (v1, then v1alpha)**.
+4. Tick **The target speaks TLS (grpcs)** if the server uses TLS. For a server whose certificate
+   does not verify, such as a development server with a self-signed certificate, also tick
+   **Ask even if the certificate does not verify**.
+5. Choose **Import**.
+
+</Steps>
+
+Wirebench reports its progress as `Asking <host:port> to describe itself`, then shows a summary.
+For the test server, reflection answered over `v1` with one service and three descriptor files,
+and the summary counts 7 methods, one of them deprecated. The **Target** of the new API defaults to
+the address you asked, so the requests are ready to send.
+
+What happens on the wire is three rounds over one reflection call. Wirebench lists the services,
+asks for the file that defines each one, then asks by name for every file those files import
+(here, the file defining `wirebench.common.Address`) until nothing is missing. It gives up after
+eight rounds. The descriptors are stored with the project under the API's `definition` folder, so
+the requests keep working when the server is down or reflection is turned off later. They are
+binary descriptors, not `.proto` text; **Export…** on the API's **Definition** card saves them.
+
+## Step 2: call a method
+
+Open the `SayHello` request. The method picker shows `SayHello — unary`, and the **Message** tab
+holds a sample message the engine generated from the descriptor: every field with an empty value,
+nested messages filled in, the first enum value, the first member of each `oneof`, and well-known
+types in their JSON form.
+
+```json
+{
+  "name": "",
+  "big_number": "0",
+  "tags": [""],
+  "counts": { "key": 0 },
+  "mood": "MOOD_UNSPECIFIED",
+  "at": "1970-01-01T00:00:00Z",
+  "address": { "city": "", "country": "" },
+  "note": "",
+  "blob": "",
+  "nickname": "",
+  "patience": "0s",
+  "details": {},
+  "label": "",
+  "payload": { "@type": "" },
+  "mask": ""
+}
+```
+
+64-bit integers are strings (`"0"`), because JSON numbers cannot hold every 64-bit value. Delete
+what you do not need: an absent field is sent as its default. **Reset to sample** brings the full
+sample back. Typing a field name inside a message's braces offers the fields the schema defines.
+
+Set the message to `{"name":"Ada"}` and choose **Send**. The status line reads `OK (0)`, followed by
+the time, the message count and the size, and the **Messages** tab shows the reply:
+
+```json
+{ "message": "Hello, Ada", "echo": { "name": "Ada" } }
+```
+
+![The SayHello request sent with the name Ada, and its reply Hello, Ada in the response messages](/wirebench/docs/images/grpc/unary-response.png)
+
+The **Metadata** tab lists the response **Headers** (here `content-type: application/grpc+proto`
+and the test server's own `x-served-by: test-grpc-server`) and the **Trailers**, where the
+`grpc-status` arrived. Streaming methods work from the same definition: **Open stream** opens the
+call, **Send** pushes each message into it, and **Half-close** tells the server you are done.
+
+## What each failure looks like
+
+A call that never completed shows its error code and message in the response pane, for example
+`connection-refused · Connection refused.`. A call that completed with a status other than `OK` is
+a result, not a failure: its status line shows the status name, number and message in red.
+
+### The server does not serve reflection
+
+```text
+127.0.0.1:50358 does not serve grpc.reflection.v1alpha.ServerReflection: unknown method /grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo
+```
+
+The code is `grpc-reflection-unsupported`. Wirebench tried `v1`, the server refused, it tried
+`v1alpha`, and the server refused that too; the message reports the last refusal, with the
+server's own text after the colon. Reflection is a separate service that the server's developers
+register on purpose, and many production servers leave it off. Your options:
+
+- Ask for reflection on a development or staging instance, which is where it is usually allowed.
+- Import the `.proto` files instead: the same **Import…** dialog, on the **File**, **URL** or
+  **Paste** tab. A file import reads every file the root imports from disk, and the resulting API
+  works exactly like a discovered one.
+
+### Only the older reflection version answers
+
+Some servers only implement `grpc.reflection.v1alpha`, the version that came before `v1`. The
+**Automatic** setting handles that on its own: against a test server that serves only `v1alpha`,
+discovery succeeds and records `v1alpha` as the version used. If you pin **Reflection version** to
+`v1` for such a server, discovery fails with `grpc-reflection-unsupported`, because a pinned
+version is the only one Wirebench tries.
+
+### The server leaves out a file
+
+```text
+<host:port> did not describe <files>, which the files it did describe import
+```
+
+That is `grpc-reflection-incomplete`. The server described a service but would not hand over a file
+that service depends on. It is a server-side gap, usually a dependency that was compiled into the
+server without its descriptor. Import the `.proto` files instead, or ask the server's owners to
+register the missing file.
+
+### TLS on one side only
+
+The **The target speaks TLS (grpcs)** setting has to match the server. Asking a plaintext server
+over TLS fails during the handshake, before any gRPC is spoken:
+
+```text
+tls · TLS/certificate error.
+```
+
+A `grpcs://` or `grpc://` prefix on the target decides TLS by itself and overrides the switch, which
+makes the choice visible in the address. A server whose TLS certificate does not verify fails with
+`tls-untrusted` and names the server; **Trust an invalid certificate** in the request's
+**Settings** tab, or the CA bundle under **Settings → SSL / TLS**, gets you past it.
+
+### Nothing listens there
+
+```text
+connection-refused · Connection refused.
+```
+
+Check the port. gRPC servers often listen on a different port from the HTTP API of the same
+service.
+
+### The message does not fit the schema
+
+A misspelled field is caught before anything is sent, with the path to it:
+
+```text
+wirebench.greet.HelloRequest.nmae: wirebench.greet.HelloRequest has no field "nmae"
+```
+
+The code is `grpc-message-invalid`. Because the schema came from the server, this check matches what
+the server expects. If a field you know exists is reported missing, the server's descriptors are
+newer than the ones you stored: choose **Refresh from server** (below).
+
+### A status other than OK
+
+The test server's `Fail` method answers with whatever status it is asked for. Asked for status 5, the
+status line reads `NOT_FOUND (5) · no such café`, and the trailers hold `grpc-status: 5` and
+`grpc-message: no such caf%C3%A9`. Wirebench decodes the percent-encoded message for the status line
+and keeps the raw trailer as it arrived. Status names follow the gRPC standard, from
+`CANCELLED (1)` to `UNAUTHENTICATED (16)`; a code outside that range reads `UNKNOWN (n)`.
+
+A server that rejects a call before running it often answers with headers only and no body. The
+status line then marks the source as `trailers-only`. A proxy or load balancer that answers with
+plain HTTP instead of gRPC gives a status mapped from the HTTP code, marked
+`from the HTTP status`: 401 becomes `UNAUTHENTICATED`, 403 `PERMISSION_DENIED`, 404
+`UNIMPLEMENTED`, and 502, 503 and 504 `UNAVAILABLE`.
+
+### The deadline passed
+
+Every call carries a deadline, sent as the `grpc-timeout` header and enforced locally as well. With a
+200 ms deadline against a method that takes two seconds:
+
+```text
+DEADLINE_EXCEEDED (4) · Deadline of 200m exceeded before the server answered
+```
+
+The status line marks it `deadline enforced locally`, in amber rather than red, because the client
+gave up rather than the server failing. `200m` is the `grpc-timeout` wire format, in milliseconds.
+Raise **Deadline (ms)** in the request's **Settings** tab.
+
+## Keep the definition current
+
+Servers change. On the API's tab, the **Definition** card shows the origin `server reflection` and
+a **Refresh from server** button with an **Ask with** version choice. Refreshing asks the server
+again at the API's target and reconciles the requests: new methods get new requests, and a method
+the server no longer declares keeps its request, badged orphaned. Nothing you edited is deleted.
+The card reports the outcome as `Nothing changed.` or a count such as `Requests: 2 added, 1 orphaned.`
+
+<Aside>
+Discovery and **Refresh from server** send no metadata and no authentication. A server whose
+reflection service requires a token cannot be discovered from the app; import its `.proto` files
+instead. Calls themselves send the API's and the request's metadata and auth as usual.
+</Aside>
+
+`wirebench run` sends gRPC requests from the definition stored in the project and never asks the
+server for reflection, so a pipeline keeps working against servers that turn reflection off.
+
+## Checklist
+
+- [ ] The **Server address** is the gRPC port, as `host:port`.
+- [ ] **The target speaks TLS (grpcs)** matches the server, or the target carries `grpcs://` or
+      `grpc://`.
+- [ ] `grpc-reflection-unsupported`: the server has no reflection; ask for it on a test instance or
+      import the `.proto` files.
+- [ ] Reflection pinned to `v1` or `v1alpha`: switch back to **Automatic (v1, then v1alpha)**.
+- [ ] `grpc-reflection-incomplete`: the server withholds a dependency; import the files instead.
+- [ ] `grpc-message-invalid`: compare the field names with the generated sample, or refresh the
+      definition.
+- [ ] A non-OK status is the server's answer: read its message and the **Trailers**.
+- [ ] `DEADLINE_EXCEEDED` marked `deadline enforced locally`: raise **Deadline (ms)**.
+- [ ] Reflection behind authentication: import the `.proto` files; discovery sends no credentials.
+
+## Related
+
+- [gRPC](/wirebench/docs/guides/grpc/): importing, streaming calls and definition storage.
+- [Importers](/wirebench/docs/guides/importers/): every format the Import dialog reads.
+- [History](/wirebench/docs/guides/history/#re-send-a-grpc-call): re-sending a gRPC call.

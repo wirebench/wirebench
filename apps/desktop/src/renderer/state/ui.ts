@@ -104,6 +104,9 @@ export type ImportDialogFormat =
   | 'postman-v3'
   | 'insomnia'
   | 'insomnia-environment'
+  | 'bruno'
+  | 'hoppscotch'
+  | 'hoppscotch-environment'
   | 'wsdl'
   | 'proto'
   | 'legacy-soap-project';

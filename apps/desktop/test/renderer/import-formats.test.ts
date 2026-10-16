@@ -17,6 +17,9 @@ describe('import formats table', () => {
       'opencollection',
       'insomnia',
       'insomnia-environment',
+      'hoppscotch',
+      'hoppscotch-environment',
+      'bruno',
       'wsdl',
       'proto',
       'legacy-soap-project',
@@ -38,6 +41,9 @@ describe('import formats table', () => {
       opencollection: 'Imported collection',
       insomnia: 'Imported collection',
       'insomnia-environment': 'Imported API',
+      hoppscotch: 'Imported collection',
+      'hoppscotch-environment': 'Imported API',
+      bruno: 'Imported collection',
       wsdl: 'Imported service',
       proto: 'Imported gRPC API',
       'legacy-soap-project': 'Imported API',
@@ -53,6 +59,7 @@ describe('import formats table', () => {
       'postman-globals',
       'http-env',
       'insomnia-environment',
+      'hoppscotch-environment',
     ]);
     expect(where((row) => row.fileFirst)).toEqual([
       'postman',
@@ -65,6 +72,9 @@ describe('import formats table', () => {
       'opencollection',
       'insomnia',
       'insomnia-environment',
+      'hoppscotch',
+      'hoppscotch-environment',
+      'bruno',
       'legacy-soap-project',
     ]);
     expect(where((row) => !row.tabs.includes('url'))).toEqual([
@@ -77,8 +87,11 @@ describe('import formats table', () => {
       'opencollection',
       'insomnia',
       'insomnia-environment',
+      'hoppscotch',
+      'hoppscotch-environment',
+      'bruno',
     ]);
-    expect(where((row) => row.folder)).toEqual(['postman-v3']);
+    expect(where((row) => row.folder)).toEqual(['postman-v3', 'bruno']);
   });
 
   it('keeps each picker its filters and title', () => {
@@ -91,6 +104,11 @@ describe('import formats table', () => {
     expect(importFormatRow('insomnia').fileFilters).toEqual([
       { name: 'Insomnia export', extensions: ['json', 'yaml', 'yml'] },
     ]);
+    expect(importFormatRow('bruno')).toMatchObject({
+      tabs: ['file', 'paste'],
+      folder: true,
+      fileFilters: [{ name: 'Bruno collection (bruno.json) or export', extensions: ['json'] }],
+    });
     expect(importFormatRow('postman-v3').pickerTitle).toBe('Import Collection Definition');
     expect(importFormatRow('wsdl')).toMatchObject({ pickerTitle: 'Import Definition', dialogTitle: 'Import WSDL' });
     expect(importFormatRow('unknown').fileFilters[0]?.extensions).toEqual(['json', 'yaml', 'yml', 'wsdl', 'xml']);

@@ -1,0 +1,909 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Bruno golden > maps the JSON export fixture 1`] = `
+{
+  "collections": [
+    {
+      "name": "demo-collection",
+      "rest": {
+        "auth": {
+          "type": "bearer",
+        },
+        "baseUrl": "",
+        "folders": [
+          {
+            "folders": [],
+            "id": "id-4",
+            "name": "Users",
+            "order": 0,
+            "requests": [
+              {
+                "assertions": [
+                  {
+                    "equals": 201,
+                    "type": "status",
+                  },
+                  {
+                    "equals": "Ada",
+                    "expression": "$.name",
+                    "language": "jsonpath",
+                    "type": "match",
+                  },
+                ],
+                "auth": {
+                  "type": "inherit",
+                },
+                "body": {
+                  "kind": "raw",
+                  "language": "json",
+                  "text": "{
+  "name": "Ada",
+  "email": "ada@example.com"
+}",
+                },
+                "description": "Creates a user in the given org.",
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "Content-Type",
+                    "value": "application/json",
+                  },
+                  {
+                    "enabled": false,
+                    "name": "X-Debug",
+                    "value": "1",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "X-Area",
+                    "value": "users",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "X-Client",
+                    "value": "wirebench-demo",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "Authorization",
+                    "value": "Bearer \${#System#TOKEN}",
+                  },
+                ],
+                "id": "id-2",
+                "kind": "rest",
+                "method": "POST",
+                "name": "Create user",
+                "order": 0,
+                "pathParams": [
+                  {
+                    "enabled": true,
+                    "name": "orgId",
+                    "value": "42",
+                  },
+                ],
+                "query": [],
+                "settings": {},
+                "slug": "Create user",
+                "url": "\${baseUrl}/orgs/{orgId}/users",
+              },
+              {
+                "assertions": [],
+                "auth": {
+                  "type": "digest",
+                  "username": "admin",
+                },
+                "body": {
+                  "kind": "none",
+                },
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "X-Area",
+                    "value": "users",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "X-Client",
+                    "value": "wirebench-demo",
+                  },
+                ],
+                "id": "id-3",
+                "kind": "rest",
+                "method": "GET",
+                "name": "Get user",
+                "order": 1,
+                "pathParams": [
+                  {
+                    "enabled": true,
+                    "name": "id",
+                    "value": "\${userId}",
+                  },
+                ],
+                "query": [
+                  {
+                    "enabled": true,
+                    "name": "verbose",
+                    "value": "true",
+                  },
+                  {
+                    "enabled": false,
+                    "name": "trace",
+                    "value": "1",
+                  },
+                ],
+                "settings": {
+                  "encodeUrl": false,
+                  "followRedirects": false,
+                  "maxRedirects": 3,
+                  "omitHeaders": [
+                    "User-Agent",
+                  ],
+                  "timeoutMs": 5000,
+                },
+                "slug": "Get user",
+                "url": "\${baseUrl}/users/{id}",
+              },
+            ],
+            "slug": "Users",
+          },
+        ],
+        "id": "id-6",
+        "kind": "rest",
+        "name": "demo-collection",
+        "order": 0,
+        "requests": [
+          {
+            "assertions": [],
+            "auth": {
+              "type": "none",
+            },
+            "body": {
+              "kind": "none",
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "X-Client",
+                "value": "wirebench-demo",
+              },
+            ],
+            "id": "id-1",
+            "kind": "rest",
+            "method": "GET",
+            "name": "Legacy search",
+            "order": 0,
+            "pathParams": [],
+            "query": [
+              {
+                "enabled": true,
+                "name": "q",
+                "value": "x",
+              },
+            ],
+            "settings": {},
+            "slug": "Legacy search",
+            "url": "\${baseUrl}/search",
+          },
+          {
+            "assertions": [],
+            "auth": {
+              "clientAuth": "basic",
+              "clientId": "app",
+              "grant": "client-credentials",
+              "pkce": false,
+              "scopes": [
+                "read",
+              ],
+              "tokenUrl": "https://idp.example.com/token",
+              "type": "oauth2",
+            },
+            "body": {
+              "fields": [
+                {
+                  "enabled": true,
+                  "name": "grant_type",
+                  "value": "client_credentials",
+                },
+              ],
+              "kind": "form",
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "X-Client",
+                "value": "wirebench-demo",
+              },
+            ],
+            "id": "id-5",
+            "kind": "rest",
+            "method": "POST",
+            "name": "Token",
+            "order": 1,
+            "pathParams": [],
+            "query": [],
+            "settings": {},
+            "slug": "Token",
+            "url": "https://idp.example.com/token",
+          },
+        ],
+        "servers": [],
+        "slug": "demo-collection",
+      },
+    },
+  ],
+  "counts": {
+    "assertions": 2,
+    "collections": 1,
+    "examples": 0,
+    "folders": 1,
+    "requests": 4,
+    "scripts": 3,
+  },
+  "report": {
+    "notes": [
+      "demo-collection: the credential reference was added as Authorization on each request below it.",
+      "Legacy search: folder and collection default headers were added.",
+      "Create user: folder and collection default headers were added.",
+      "Create user: a disabled assertion was skipped.",
+      "Get user: folder and collection default headers were added.",
+      "Token: folder and collection default headers were added.",
+      "demo-collection: the before-request script was saved to imported-scripts/demo-collection/demo-collection.before-request.js and is never run.",
+      "Create user: the after-response script was saved to imported-scripts/demo-collection/create user.after-response.js and is never run.",
+      "Create user: the tests script was saved to imported-scripts/demo-collection/create user.tests.js and is never run.",
+    ],
+    "warnings": [
+      "Create user: the post-response variables userId were not imported; they are read from the response, so set them with a script or a capture.",
+      "Create user: the assertion "res.body.age between 1, 10" has no Wirebench equivalent and was not imported.",
+      "Get user: the digest credential was not imported; set it on the request or API.",
+      "Token: the oauth2 credential was not imported; set it on the request or API.",
+      "The collection's proxy setting is not supported and was not imported.",
+    ],
+  },
+  "scripts": [
+    {
+      "path": "imported-scripts/demo-collection/demo-collection.before-request.js",
+      "source": "bru.setVar("startedAt", Date.now());",
+    },
+    {
+      "path": "imported-scripts/demo-collection/create user.after-response.js",
+      "source": "bru.setVar("userId", res.body.id);",
+    },
+    {
+      "path": "imported-scripts/demo-collection/create user.tests.js",
+      "source": "test("returns the created user", function() {
+  expect(res.getStatus()).to.equal(201);
+});",
+    },
+  ],
+  "variables": {
+    "environments": [
+      {
+        "name": "Local",
+        "variables": [
+          {
+            "enabled": true,
+            "name": "baseUrl",
+            "secret": false,
+            "value": "http://localhost:8080",
+          },
+          {
+            "enabled": false,
+            "name": "debugFlag",
+            "secret": false,
+            "value": "true",
+          },
+          {
+            "enabled": true,
+            "name": "apiToken",
+            "secret": false,
+            "value": "\${#System#TOKEN}",
+          },
+          {
+            "enabled": true,
+            "name": "clientSecret",
+            "secret": true,
+            "value": "",
+          },
+        ],
+      },
+    ],
+    "projectProperties": {
+      "name": "Project properties",
+      "variables": [
+        {
+          "enabled": true,
+          "name": "tenant",
+          "secret": false,
+          "value": "acme",
+        },
+        {
+          "enabled": false,
+          "name": "legacy",
+          "secret": false,
+          "value": "on",
+        },
+      ],
+    },
+    "report": {
+      "notes": [],
+      "warnings": [
+        "These variables look like credentials but are not marked secret, so their values were imported as plain text: apiToken. Mark them Secret in Environments.",
+      ],
+    },
+  },
+}
+`;
+
+exports[`Bruno golden > maps the folder fixture 1`] = `
+{
+  "collections": [
+    {
+      "grpc": {
+        "auth": {
+          "type": "bearer",
+        },
+        "folders": [
+          {
+            "folders": [],
+            "id": "id-10",
+            "name": "grpc",
+            "order": 0,
+            "requests": [
+              {
+                "auth": {
+                  "type": "inherit",
+                },
+                "id": "id-9",
+                "kind": "grpc",
+                "message": "{ "greeting": "hi" }",
+                "metadata": [
+                  {
+                    "enabled": true,
+                    "name": "x-request-id",
+                    "value": "7",
+                  },
+                ],
+                "method": "SayHello",
+                "methodKind": "unary",
+                "name": "SayHello",
+                "order": 0,
+                "service": "hello.HelloService",
+                "settings": {},
+                "slug": "SayHello",
+              },
+            ],
+            "slug": "grpc",
+          },
+        ],
+        "id": "id-16",
+        "kind": "grpc",
+        "metadata": [],
+        "name": "demo-collection (gRPC)",
+        "order": 1,
+        "requests": [],
+        "slug": "demo-collection (gRPC)",
+        "target": "\${grpcHost}:80",
+        "tls": false,
+      },
+      "name": "demo-collection",
+      "rest": {
+        "auth": {
+          "type": "bearer",
+        },
+        "baseUrl": "",
+        "folders": [
+          {
+            "folders": [],
+            "id": "id-3",
+            "name": "misc",
+            "order": 0,
+            "requests": [
+              {
+                "assertions": [],
+                "auth": {
+                  "type": "none",
+                },
+                "body": {
+                  "kind": "none",
+                },
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "X-Client",
+                    "value": "wirebench-demo",
+                  },
+                ],
+                "id": "id-1",
+                "kind": "rest",
+                "method": "GET",
+                "name": "Alpha",
+                "order": 0,
+                "pathParams": [],
+                "query": [],
+                "settings": {},
+                "slug": "Alpha",
+                "url": "\${baseUrl}/a",
+              },
+              {
+                "assertions": [],
+                "auth": {
+                  "type": "none",
+                },
+                "body": {
+                  "kind": "none",
+                },
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "X-Client",
+                    "value": "wirebench-demo",
+                  },
+                ],
+                "id": "id-2",
+                "kind": "rest",
+                "method": "PURGE",
+                "name": "Purge cache",
+                "order": 1,
+                "pathParams": [],
+                "query": [
+                  {
+                    "enabled": true,
+                    "name": "prompt",
+                    "value": "{{?Which key}}",
+                  },
+                ],
+                "settings": {},
+                "slug": "Purge cache",
+                "url": "\${baseUrl}/cache",
+              },
+            ],
+            "slug": "misc",
+          },
+          {
+            "folders": [],
+            "id": "id-8",
+            "name": "Users",
+            "order": 1,
+            "requests": [
+              {
+                "assertions": [
+                  {
+                    "equals": 201,
+                    "type": "status",
+                  },
+                  {
+                    "equals": "Ada",
+                    "expression": "$.name",
+                    "language": "jsonpath",
+                    "type": "match",
+                  },
+                ],
+                "auth": {
+                  "type": "inherit",
+                },
+                "body": {
+                  "kind": "raw",
+                  "language": "json",
+                  "text": "{
+  "name": "Ada",
+  "email": "ada@example.com"
+}",
+                },
+                "description": "Creates a user in the given org.",
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "Content-Type",
+                    "value": "application/json",
+                  },
+                  {
+                    "enabled": false,
+                    "name": "X-Debug",
+                    "value": "1",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "X-Area",
+                    "value": "users",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "X-Client",
+                    "value": "wirebench-demo",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "Authorization",
+                    "value": "Bearer \${#System#TOKEN}",
+                  },
+                ],
+                "id": "id-4",
+                "kind": "rest",
+                "method": "POST",
+                "name": "Create user",
+                "order": 0,
+                "pathParams": [
+                  {
+                    "enabled": true,
+                    "name": "orgId",
+                    "value": "42",
+                  },
+                ],
+                "query": [],
+                "settings": {},
+                "slug": "Create user",
+                "url": "\${baseUrl}/orgs/{orgId}/users",
+              },
+              {
+                "assertions": [],
+                "auth": {
+                  "type": "inherit",
+                },
+                "body": {
+                  "kind": "multipart",
+                  "parts": [
+                    {
+                      "contentType": "text/plain",
+                      "enabled": true,
+                      "kind": "text",
+                      "name": "caption",
+                      "value": "Profile photo",
+                    },
+                    {
+                      "contentType": "image/png",
+                      "enabled": true,
+                      "kind": "file",
+                      "name": "avatar",
+                      "source": {
+                        "kind": "path",
+                        "path": "assets/avatar.png",
+                      },
+                    },
+                    {
+                      "enabled": false,
+                      "kind": "file",
+                      "name": "backup",
+                      "source": {
+                        "kind": "path",
+                        "path": "assets/a.png",
+                      },
+                    },
+                  ],
+                },
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "X-Area",
+                    "value": "users",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "X-Client",
+                    "value": "wirebench-demo",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "Authorization",
+                    "value": "Bearer \${#System#TOKEN}",
+                  },
+                ],
+                "id": "id-5",
+                "kind": "rest",
+                "method": "POST",
+                "name": "Upload avatar",
+                "order": 1,
+                "pathParams": [],
+                "query": [],
+                "settings": {},
+                "slug": "Upload avatar",
+                "url": "\${baseUrl}/users/\${userId}/avatar",
+              },
+              {
+                "assertions": [],
+                "auth": {
+                  "type": "inherit",
+                },
+                "body": {
+                  "kind": "graphql",
+                  "query": "query User($id: ID!) {
+  user(id: $id) {
+    id
+  }
+}",
+                  "variables": "{
+  "id": "\${userId}"
+}",
+                },
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "X-Area",
+                    "value": "users",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "X-Client",
+                    "value": "wirebench-demo",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "Authorization",
+                    "value": "Bearer \${#System#TOKEN}",
+                  },
+                ],
+                "id": "id-6",
+                "kind": "rest",
+                "method": "POST",
+                "name": "User via GraphQL",
+                "order": 2,
+                "pathParams": [],
+                "query": [],
+                "settings": {},
+                "slug": "User via GraphQL",
+                "url": "\${baseUrl}/graphql",
+              },
+              {
+                "assertions": [],
+                "auth": {
+                  "type": "digest",
+                  "username": "admin",
+                },
+                "body": {
+                  "kind": "none",
+                },
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "X-Area",
+                    "value": "users",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "X-Client",
+                    "value": "wirebench-demo",
+                  },
+                ],
+                "id": "id-7",
+                "kind": "rest",
+                "method": "GET",
+                "name": "Get user",
+                "order": 3,
+                "pathParams": [
+                  {
+                    "enabled": true,
+                    "name": "id",
+                    "value": "\${userId}",
+                  },
+                ],
+                "query": [
+                  {
+                    "enabled": true,
+                    "name": "verbose",
+                    "value": "true",
+                  },
+                  {
+                    "enabled": false,
+                    "name": "trace",
+                    "value": "1",
+                  },
+                ],
+                "settings": {
+                  "encodeUrl": false,
+                  "followRedirects": false,
+                  "maxRedirects": 3,
+                  "omitHeaders": [
+                    "User-Agent",
+                  ],
+                  "timeoutMs": 5000,
+                },
+                "slug": "Get user",
+                "url": "\${baseUrl}/users/{id}",
+              },
+            ],
+            "slug": "Users",
+          },
+        ],
+        "id": "id-15",
+        "kind": "rest",
+        "name": "demo-collection",
+        "order": 0,
+        "requests": [],
+        "servers": [],
+        "slug": "demo-collection",
+      },
+      "websocket": {
+        "auth": {
+          "type": "bearer",
+        },
+        "folders": [
+          {
+            "folders": [],
+            "id": "id-14",
+            "name": "ws",
+            "order": 0,
+            "requests": [
+              {
+                "assertions": [],
+                "auth": {
+                  "type": "none",
+                },
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "X-Socket",
+                    "value": "1",
+                  },
+                ],
+                "id": "id-13",
+                "kind": "websocket",
+                "messages": [
+                  {
+                    "content": "{"say": "hello"}",
+                    "format": "text",
+                    "id": "id-11",
+                    "name": "hello",
+                    "slug": "hello",
+                  },
+                  {
+                    "content": "bye",
+                    "format": "text",
+                    "id": "id-12",
+                    "name": "bye",
+                    "slug": "bye",
+                  },
+                ],
+                "name": "Echo socket",
+                "order": 0,
+                "query": [],
+                "settings": {},
+                "slug": "Echo socket",
+                "subprotocols": [],
+                "url": "wss://echo.example.com/socket",
+              },
+            ],
+            "slug": "ws",
+          },
+        ],
+        "headers": [],
+        "id": "id-17",
+        "kind": "websocket",
+        "name": "demo-collection (WebSocket)",
+        "order": 2,
+        "requests": [],
+        "slug": "demo-collection (WebSocket)",
+        "url": "wss://echo.example.com/socket",
+      },
+    },
+  ],
+  "counts": {
+    "assertions": 2,
+    "collections": 1,
+    "examples": 0,
+    "folders": 4,
+    "requests": 8,
+    "scripts": 4,
+  },
+  "report": {
+    "notes": [
+      "SayHello: only the first of its 2 gRPC messages was imported.",
+      "Create user: its body:text block was left out; the request sends its json body.",
+      "demo-collection: the credential reference was added as Authorization on each request below it.",
+      "Alpha: folder and collection default headers were added.",
+      "Purge cache: folder and collection default headers were added.",
+      "Create user: folder and collection default headers were added.",
+      "Create user: a disabled assertion was skipped.",
+      "Upload avatar: folder and collection default headers were added.",
+      "Upload avatar: the file part "backup" lists 2 files; only the first was imported.",
+      "User via GraphQL: folder and collection default headers were added.",
+      "Get user: folder and collection default headers were added.",
+      "Echo socket: keepAliveInterval has no Wirebench equivalent and was ignored.",
+      "demo-collection: the before-request script was saved to imported-scripts/demo-collection/demo-collection.before-request.js and is never run.",
+      "lib.js: the module script was saved to imported-scripts/demo-collection/lib.js.module.js and is never run.",
+      "Create user: the after-response script was saved to imported-scripts/demo-collection/create user.after-response.js and is never run.",
+      "Create user: the tests script was saved to imported-scripts/demo-collection/create user.tests.js and is never run.",
+    ],
+    "warnings": [
+      "broken.bru, line 7: expected "key: value"; the format has no comments. The file was skipped.",
+      "Create user: the post-response variables userId were not imported; they are read from the response, so set them with a script or a capture.",
+      "The prompt variables {{?Which key}} were kept as written; Wirebench does not ask for a value when it sends.",
+      "Dashboard: app items are not supported and were skipped.",
+      "Purge cache: wsse authentication is not supported and was imported as none.",
+      "Create user: the assertion "res.body.age between 1, 10" has no Wirebench equivalent and was not imported.",
+      "Upload avatar: the body file assets/avatar.png is relative to the collection; check its path on the request.",
+      "Upload avatar: the body file assets/a.png is relative to the collection; check its path on the request.",
+      "Get user: the digest credential was not imported; set it on the request or API.",
+      "The collection's proxy setting is not supported and was not imported.",
+    ],
+  },
+  "scripts": [
+    {
+      "path": "imported-scripts/demo-collection/demo-collection.before-request.js",
+      "source": "bru.setVar("startedAt", Date.now());",
+    },
+    {
+      "path": "imported-scripts/demo-collection/lib.js.module.js",
+      "source": "module.exports = { greet: (name) => \`hello \${name}\` };
+",
+    },
+    {
+      "path": "imported-scripts/demo-collection/create user.after-response.js",
+      "source": "bru.setVar("userId", res.body.id);",
+    },
+    {
+      "path": "imported-scripts/demo-collection/create user.tests.js",
+      "source": "test("returns the created user", function() {
+  expect(res.getStatus()).to.equal(201);
+});",
+    },
+  ],
+  "variables": {
+    "environments": [
+      {
+        "name": "Local",
+        "variables": [
+          {
+            "enabled": true,
+            "name": "baseUrl",
+            "secret": false,
+            "value": "http://localhost:8080",
+          },
+          {
+            "enabled": false,
+            "name": "debugFlag",
+            "secret": false,
+            "value": "true",
+          },
+          {
+            "enabled": true,
+            "name": "apiToken",
+            "secret": false,
+            "value": "\${#System#TOKEN}",
+          },
+          {
+            "enabled": true,
+            "name": "clientSecret",
+            "secret": true,
+            "value": "",
+          },
+        ],
+      },
+      {
+        "name": "Prod",
+        "variables": [
+          {
+            "enabled": true,
+            "name": "baseUrl",
+            "secret": false,
+            "value": "https://api.example.com",
+          },
+        ],
+      },
+    ],
+    "projectProperties": {
+      "name": "Project properties",
+      "variables": [
+        {
+          "enabled": true,
+          "name": "tenant",
+          "secret": false,
+          "value": "acme",
+        },
+        {
+          "enabled": false,
+          "name": "legacy",
+          "secret": false,
+          "value": "on",
+        },
+      ],
+    },
+    "report": {
+      "notes": [],
+      "warnings": [
+        "Prod: color is not supported and was not imported.",
+        "Prod: extends is not supported and was not imported.",
+        "These variables look like credentials but are not marked secret, so their values were imported as plain text: apiToken. Mark them Secret in Environments.",
+      ],
+    },
+  },
+}
+`;

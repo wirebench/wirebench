@@ -3,8 +3,8 @@
  * places one (R4): a unique slug, the definition cached under the new folder, the endpoints the
  * WSDL's ports name, and a `Request 1` per operation; or the mapped API with its documents cached.
  */
-import { readFile, stat } from 'node:fs/promises';
-import { basename, resolve } from 'node:path';
+import { readdir, readFile, stat } from 'node:fs/promises';
+import { basename, dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   apiDefinitionDir,
@@ -19,7 +19,9 @@ import {
   endpointsFromContract,
   generateId,
   generateSoapRequest,
+  importBruno,
   importCollectionV3Folder,
+  importHoppscotch,
   importInsomnia,
   importOpenApi,
   importWsdl,
@@ -72,7 +74,7 @@ export interface ImportProblemView {
 }
 
 export interface ImportOutput {
-  readonly format: 'wsdl' | 'openapi' | 'postman-v3' | 'insomnia';
+  readonly format: 'wsdl' | 'openapi' | 'postman-v3' | 'insomnia' | 'bruno' | 'hoppscotch';
   readonly added: readonly ImportedItem[];
   /** What the importer reported it could not map. */
   readonly problems: readonly ImportProblemView[];
@@ -93,7 +95,7 @@ const input = z.object({
     .string()
     .min(1)
     .describe(
-      'A WSDL or OpenAPI file (an absolute path is safest), an http(s) URL, an Insomnia export, or a folder collection (v3): its folder, its .resources/definition.yaml, or a workspace folder holding collections/',
+      'A WSDL or OpenAPI file (an absolute path is safest), an http(s) URL, an Insomnia or Hoppscotch export, a Bruno collection (its folder, its bruno.json or a JSON export), or a folder collection (v3): its folder, its .resources/definition.yaml, or a workspace folder holding collections/',
     ),
   name: z
     .string()
@@ -317,6 +319,20 @@ async function isCollectionFolder(source: string): Promise<boolean> {
   }
 }
 
+/**
+ * Whether `source` is a Bruno collection's folder: a folder holding a `bruno.json`, and no
+ * `opencollection.yml`, which would make it an OpenCollection folder instead.
+ */
+async function isBrunoFolder(source: string): Promise<boolean> {
+  if (/^https?:\/\//i.test(source)) return false;
+  try {
+    const names = new Set((await readdir(resolve(source))).map((name) => name.toLowerCase()));
+    return names.has('bruno.json') && !names.has('opencollection.yml') && !names.has('opencollection.yaml');
+  } catch {
+    return false;
+  }
+}
+
 /** Requests in a container of any kind, its folders' included. */
 function requestCount(container: {
   readonly folders: readonly unknown[];
@@ -354,7 +370,7 @@ async function addMappedCollections(
   context: OpsContext,
   project: Project,
   mapped: MappedCollections,
-  format: 'postman-v3' | 'insomnia',
+  format: 'postman-v3' | 'insomnia' | 'bruno' | 'hoppscotch',
 ): Promise<ImportOutput> {
   const taken = new Set([...takenContainerSlugs(project, 'apis'), ...takenContainerSlugs(project, 'interfaces')]);
   const added: ImportedItem[] = [];
@@ -452,13 +468,27 @@ async function addInsomnia(
   return addMappedCollections(context, project, mapped, 'insomnia');
 }
 
+/** A Bruno collection, from its folder or a JSON export's text. */
+async function addBruno(
+  context: OpsContext,
+  project: Project,
+  source: { readonly kind: 'folder'; readonly path: string } | { readonly kind: 'text'; readonly text: string },
+  name: string | undefined,
+): Promise<ImportOutput> {
+  const mapped = await importBruno(source, {
+    firstOrder: nextApiOrder(project),
+    ...(name !== undefined ? { name } : {}),
+  });
+  return addMappedCollections(context, project, mapped, 'bruno');
+}
+
 export const importOp = defineOp({
   name: 'import',
   title: 'Import a definition',
   description:
     'Imports a WSDL or OpenAPI definition (a file path or an http(s) URL) into the project as a new SOAP ' +
     'interface or REST API, with its definition cached and one sample request per operation; or a folder ' +
-    'collection (v3) or an Insomnia export as its REST, gRPC and WebSocket APIs with its plain variables as ' +
+    'collection (v3), an Insomnia or Hoppscotch export or a Bruno collection as its REST, gRPC and WebSocket APIs with its plain variables as ' +
     'project properties. ' +
     'Writes the project folder. Needs the server started with --allow-write.',
   input,
@@ -470,6 +500,9 @@ export const importOp = defineOp({
       );
     }
     const { project } = await openProject(context);
+    if (await isBrunoFolder(value.source)) {
+      return addBruno(context, project, { kind: 'folder', path: resolve(value.source) }, value.name);
+    }
     if (await isCollectionFolder(value.source)) {
       const path = resolve(value.source);
       const mapped = await importCollectionV3Folder(path, {
@@ -490,6 +523,23 @@ export const importOp = defineOp({
     if (detected.kind === 'insomnia') {
       return addInsomnia(context, project, read.text, value.name);
     }
+    if (detected.kind === 'hoppscotch') {
+      const mapped = await importHoppscotch(
+        { kind: 'text', text: read.text },
+        { firstOrder: nextApiOrder(project), ...(value.name !== undefined ? { name: value.name } : {}) },
+      );
+      return addMappedCollections(context, project, mapped, 'hoppscotch');
+    }
+    if (detected.kind === 'bruno') {
+      // A collection's bruno.json stands for its folder; any other file is a JSON export.
+      const folder = read.url === undefined && read.filename?.toLowerCase() === 'bruno.json';
+      return addBruno(
+        context,
+        project,
+        folder ? { kind: 'folder', path: dirname(read.source) } : { kind: 'text', text: read.text },
+        value.name,
+      );
+    }
     if (detected.kind.endsWith('-environment')) {
       throw new OpsError(
         'environments-not-imported',
@@ -501,7 +551,7 @@ export const importOp = defineOp({
       'unsupported-format',
       detected.kind === 'postman-v3'
         ? `${value.source} is one file of a folder collection; import its folder or its .resources/definition.yaml`
-        : `${value.source} reads as ${detected.label}; import takes a WSDL or an OpenAPI document, an Insomnia export, or a folder collection`,
+        : `${value.source} reads as ${detected.label}; import takes a WSDL or an OpenAPI document, an Insomnia, Hoppscotch or Bruno export, or a folder collection`,
       { format: detected.kind },
     );
   },

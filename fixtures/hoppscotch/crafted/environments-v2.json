@@ -1,0 +1,19 @@
+[
+  {
+    "id": "cm0abc123",
+    "v": 2,
+    "name": "Staging",
+    "variables": [
+      { "key": "baseUrl", "initialValue": "https://staging.example.test", "currentValue": "", "secret": false },
+      { "key": "region", "initialValue": "eu", "currentValue": "us", "secret": false },
+      { "key": "apiKey", "initialValue": "", "currentValue": "", "secret": true }
+    ]
+  },
+  {
+    "id": "Global",
+    "v": 2,
+    "name": "Global",
+    "variables": [{ "key": "tenant", "initialValue": "acme", "currentValue": "", "secret": false }]
+  },
+  { "v": 1, "id": "x", "name": "Old", "variables": [{ "key": "a", "value": "1", "secret": false }, { "key": "s", "secret": true }] }
+]

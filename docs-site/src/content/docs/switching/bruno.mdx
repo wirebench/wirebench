@@ -1,0 +1,186 @@
+---
+title: From Bruno
+description: What a Bruno collection brings into Wirebench, from its folder of .bru files or a JSON export, what it leaves behind, and where each part lives once imported.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Bruno keeps a collection as a folder: a `bruno.json`, a `collection.bru` with the collection's
+defaults, a `folder.bru` in each folder, one `.bru` file per request, and an `environments/` folder.
+It can also export a collection as one JSON file. Wirebench reads both, and turns the collection
+into up to three APIs in the project you choose:
+
+- HTTP and GraphQL requests become a **REST API**;
+- gRPC requests become a **gRPC API**;
+- WebSocket requests become a **WebSocket API**.
+
+Collection and folder variables become project properties, and each environment becomes a
+workspace environment. Scripts and tests are kept as text and never run. Credentials do not come
+across as plain text. The import summary lists everything that was left out or changed.
+
+## Steps
+
+<Steps>
+
+1. Open **Import…**; it detects the format, or pick **Bruno collection (folder)** yourself.
+
+2. On the **File** tab, choose **Folder…** and pick the collection's folder, or pick its
+   `bruno.json` with **Browse…**: it stands for the folder. For a JSON export, pick the file, or
+   paste its text on the **Paste** tab. There is no URL tab.
+
+3. Choose the target project.
+
+4. Choose **Import**, then read the summary.
+
+</Steps>
+
+A folder that holds an `opencollection.yml` is read as an [OpenCollection](/wirebench/docs/switching/opencollection/)
+instead, even with a `bruno.json` beside it.
+
+## What carries over
+
+### The collection
+
+| In the collection | In Wirebench | More |
+| --- | --- | --- |
+| `bruno.json` `name` | The name of each API. Without it, the folder's name. When the collection has more than one kind of request, the gRPC and WebSocket APIs add " (gRPC)" and " (WebSocket)" | |
+| A folder | A folder in each API that has requests of its kind below it, named by its `folder.bru`, else by its directory | |
+| Order | Bruno's own: `meta.seq`, then the name. A missing `seq` counts as 1 | |
+| `collection.bru` and `folder.bru` headers | Copied onto each request below that does not set the same header, and a note says so | |
+| `collection.bru` and `folder.bru` auth | The auth of the API and the folder. A request with `auth: inherit` takes it | [Auth](/wirebench/docs/guides/auth/) |
+| `vars:pre-request` on the collection and folders | Project properties, the collection's first. A `~` entry comes across switched off. A name the project already has keeps its value | [Environments and properties](/wirebench/docs/guides/environments/) |
+| `{{name}}` | `${name}` | [Property syntax](/wirebench/docs/reference/property-syntax/) |
+| `{{process.env.NAME}}` | `${#System#NAME}`, read from the environment Wirebench runs in | |
+| `{{?Prompt text}}` | Kept as written, with a warning: Wirebench does not ask for a value when it sends | |
+| `bruno.json` `ignore` paths, and the `mocks/` folder | Skipped | |
+
+### HTTP requests
+
+| In the `.bru` file | In Wirebench | More |
+| --- | --- | --- |
+| The verb block (`get`, `post` and so on), or `http { method }` | The request's method and URL. A `:name` path segment becomes `{name}`, with its value from `params:path` | [REST](/wirebench/docs/guides/rest-client/) |
+| `params:query` | Rows in the **Params** table, `~` rows switched off. They replace the URL's own query string, so none is counted twice | |
+| `headers` | Rows in the **Headers** table | |
+| The body the verb block names: `json`, `text`, `xml`, `sparql`, `formUrlEncoded`, `multipartForm`, `file` | The matching body. A multipart file part and a `file` body point at their file, resolved against the collection folder | [Request body](/wirebench/docs/guides/rest-client/#request-body) |
+| `body:graphql` and `body:graphql:vars` | A [GraphQL body](/wirebench/docs/guides/graphql/) | |
+| Another body block left in the file | Left out, with a note | |
+| `settings` `timeout`, `followRedirects`, `maxRedirects`, `encodeUrl` | The matching request settings | |
+| `settings` `omitHeaders` | The generated headers the request leaves out | |
+| `docs` | The request's description | |
+| `assert` | Request assertions; see [Assertions](#assertions) | [Assertions](/wirebench/docs/guides/assertions/) |
+| `script:pre-request`, `script:post-response`, `tests` | See [Scripts](#scripts) | |
+
+### Auth
+
+| In the collection | In Wirebench |
+| --- | --- |
+| `inherit`, `none` | The same |
+| Basic, Digest, NTLM | The same type, with the user name (and NTLM's domain) |
+| Bearer | Bearer |
+| API key in a header or the query | API key, with its name and placement |
+| AWS Signature v4 | AWS Signature v4, with the region and service |
+| OAuth 2 | OAuth 2, with each grant Wirebench has, its URLs, client ID and scopes |
+| WSSE, OAuth 1, Akamai EdgeGrid | Auth **none**, with a warning naming the type |
+
+### Assertions
+
+Each `assert` line is `<expression>: <operator> <value>`; a value with no operator means `eq`.
+`res.status`, `res.body.<path>` and `res.responseTime` with an operator Wirebench has become request
+assertions, a `~` line switched off. The others, such as `between`, are listed in the summary.
+
+### gRPC requests
+
+| In the `.bru` file | In Wirebench | More |
+| --- | --- | --- |
+| `grpc { url }` | The API's target, from the first gRPC request | [gRPC](/wirebench/docs/guides/grpc/) |
+| `grpc { method }` | The request's service and method | |
+| `metadata` | The request's metadata | |
+| The first `body:grpc` | The request's message. The others are noted | |
+| `protoPath`, a `.proto` file inside the collection folder | The API's definition. A file outside the folder is not read, and a note says so | |
+
+### WebSocket requests
+
+| In the `.bru` file | In Wirebench | More |
+| --- | --- | --- |
+| `ws { url }`, headers and auth | The request's | [WebSocket](/wirebench/docs/guides/websocket/) |
+| Each `body:ws` | One saved message | |
+
+### Environments
+
+- **Each file in `environments/`** becomes a workspace environment named after the file, renamed
+  when the name is taken and **never made active**. A `~` entry comes across switched off.
+- **`vars:secret`** lists names only: each becomes a secret with no value, listed in the summary so
+  you can set it.
+- **`.env` files are never read.** Bruno keeps secrets in them, out of the repository; Wirebench
+  leaves them where they are. Set those values in Environments, or read them with
+  `${#System#NAME}`.
+- **`color`, `extends` and `vars:externalsecrets:*`** are not imported, with a warning.
+
+A variable whose name looks like a credential and whose value is a literal becomes a secret, with a
+note.
+
+### Scripts
+
+Every `script:pre-request`, `script:post-response` and `tests` block, on the collection, a folder
+or a request, and every `.js` file in the collection, is written as it is to `imported-scripts/` in
+the project folder, and never read back or run. An existing file is never overwritten: a second
+import adds a number to the name. The notes list where each script went.
+
+## The JSON export
+
+An exported collection holds the same requests, folders and environments as the folder, and
+converts the same way. Its secrets are empty in the file, so each is listed as needing a value. Its
+proxy and client certificate settings are not imported, with a warning, and a proxy password in it
+is never copied.
+
+## Credentials
+
+No literal credential is written into a project or workspace file. Passwords, tokens, API key
+values and client secrets are not copied, and the summary counts the auth configurations that need
+one. Enter each on its **Auth** tab; Wirebench stores it encrypted outside the project.
+
+## What does not carry over
+
+| In the collection | What happens | What to do |
+| --- | --- | --- |
+| `vars:pre-request` on a single request | Not imported, with a warning: Wirebench has no request-level property scope | Add them as project properties, or set them from a script |
+| `vars:post-response` | Not imported, with a warning: they read the response | Use a script or a capture |
+| Saved examples | Not imported, with a note | |
+| `app` items | Skipped, with a warning | |
+| A `.bru` file that does not parse | Skipped, with a warning giving its line; the rest imports | Fix the file and import again |
+| `bruno.json` `proxy` and `clientCertificates` | Not imported, with a warning | Set the equivalent up by hand |
+| A Bruno collection by URL | Not supported | Clone or download it, and pick its folder |
+
+## The command line
+
+`wirebench import <folder>` reads a Bruno collection from its folder, its `bruno.json` or a JSON
+export, and adds its APIs and its plain collection and folder variables as project properties. It
+has no secret store, workspace or script folder, so it lists secret variables, environments,
+scripts and `.proto` files as not imported.
+
+## Limits
+
+- A folder is refused past 5,000 files, 64 levels of folders, 50,000 entries or 50 MB in total.
+  Links are not followed, and `node_modules` and `.git` are skipped.
+- A JSON export larger than 50 MB is refused, picked or pasted.
+
+## After importing
+
+<Steps>
+
+1. Read the summary, or choose **Copy report** to keep it as a checklist.
+
+2. Enter the passwords, tokens and keys it counts, on each **Auth** tab, and the values of the
+   secrets it lists. See [Secrets](/wirebench/docs/guides/secrets/).
+
+3. Pick one of the imported environments to make it active. Import never switches environments for
+   you. See [Environments and properties](/wirebench/docs/guides/environments/).
+
+4. For a gRPC API with no definition, import its `.proto` or turn on server reflection.
+
+</Steps>
+
+<Aside type="note" title="Scripts are kept, not translated">
+An imported script is text written against another client's scripting API. Wirebench never runs it;
+rewrite what you need as a Wirebench script or as assertions.
+</Aside>

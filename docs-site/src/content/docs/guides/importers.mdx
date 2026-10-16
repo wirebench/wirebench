@@ -1,12 +1,12 @@
 ---
 title: Importing APIs
-description: Bring a WSDL, OpenAPI document, Postman collection, HAR capture, .http file, OpenCollection, Insomnia export, cURL command, .proto file, gRPC server or legacy SOAP project into Wirebench.
+description: Bring a WSDL, OpenAPI document, Postman collection, HAR capture, .http file, OpenCollection, Insomnia export, Bruno collection, Hoppscotch export, cURL command, .proto file, gRPC server or legacy SOAP project into Wirebench.
 ---
 
 import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
 Importing turns something you already have — a WSDL, an OpenAPI document, a Postman collection, a
-HAR capture of recorded traffic, a `.http` request file, an OpenCollection, an Insomnia export, a `curl` command, a `.proto` file, a running gRPC server, or a whole legacy SOAP project — into
+HAR capture of recorded traffic, a `.http` request file, an OpenCollection, an Insomnia export, a Bruno collection, a Hoppscotch export, a `curl` command, a `.proto` file, a running gRPC server, or a whole legacy SOAP project — into
 requests you can run and edit in Wirebench. Most formats share one dialog; cURL has its own,
 smaller one.
 
@@ -22,6 +22,8 @@ smaller one.
 | HTTP client environment file | Import dialog | File or pasted JSON |
 | OpenCollection | Import dialog | File (a document, or a folder's `opencollection.yml`) or pasted YAML |
 | Insomnia export or environments | Import dialog | File or pasted JSON/YAML |
+| Hoppscotch collection or environments | Import dialog | File or pasted JSON |
+| Bruno collection | Import dialog | A folder (**Folder…**), its `bruno.json`, or an exported or pasted JSON collection |
 | .proto (gRPC) | Import dialog | URL, file, pasted text, or a running server |
 | Legacy SOAP project | Import dialog | File only |
 | cURL command | Import cURL dialog | Pasted command |
@@ -39,11 +41,11 @@ smaller one.
 
 3. Leave **Format** on **Auto-detect**, or pick one explicitly: **OpenAPI / Swagger**, **Postman
    Collection**, **Postman Collection v3 (folder)**, **Postman environment**, **Postman globals**, **HAR (recorded traffic)**, **.http file**, **HTTP client
-   environment file**, **OpenCollection**, **Insomnia export**, **Insomnia environments**, **WSDL (SOAP)**, **Protocol Buffers (gRPC)**, or **Legacy SOAP project**. With
+   environment file**, **OpenCollection**, **Insomnia export**, **Insomnia environments**, **Hoppscotch collection**, **Hoppscotch environments**, **Bruno collection (folder)**, **WSDL (SOAP)**, **Protocol Buffers (gRPC)**, or **Legacy SOAP project**. With
    auto-detect, a badge shows what was recognized, for example "WSDL / SOAP" or "OpenAPI 3.1.0".
 
 4. Pick **Into project** — an open project, or **New project "…"**. Postman environments and
-   globals, HTTP client environment files and Insomnia environments land in the workspace, so the
+   globals, HTTP client environment files and Insomnia and Hoppscotch environments land in the workspace, so the
    dialog does not ask.
 
 5. Choose **Import**.
@@ -425,6 +427,81 @@ environments and project properties added and the secrets stored.
 From the command line, `wirebench import <file>` adds the same APIs and the plain variables, and
 lists secrets, environments, scripts and `.proto` files as not imported. See
 [From Insomnia](/wirebench/docs/switching/insomnia/) for every rule, and what does not come across.
+
+## Bruno collections
+
+Wirebench reads a Bruno collection from its folder of `.bru` files, or from a collection exported as
+JSON. Its HTTP and GraphQL requests become a REST API, its gRPC requests a gRPC API and its
+WebSocket requests a WebSocket API, each only when it has requests of that kind. Auto-detect
+recognizes a folder by its `bruno.json`, and an export by its content.
+
+<Steps>
+
+1. Open **Import…**; it detects the format, or pick **Bruno collection (folder)** yourself.
+
+2. On the **File** tab, choose **Folder…** and pick the collection's folder, or pick its
+   `bruno.json` with **Browse…**. For an exported collection, pick the `.json` file or paste its
+   text on the **Paste** tab.
+
+3. Choose the target project and **Import**.
+
+</Steps>
+
+- **Order.** Requests and folders keep Bruno's order: `seq`, then the name.
+- **Collection and folder variables** (`vars:pre-request`) become project properties; a name the
+  project already has keeps its value.
+- **Environments.** Each file in `environments/` becomes a workspace environment, renamed when the
+  name is taken and **never made active**. A `vars:secret` name becomes a secret with no value,
+  listed so you can set it. `{{process.env.NAME}}` becomes `${#System#NAME}`.
+- **`.env` files are never read**: they hold secrets and are kept out of repositories.
+- **Assertions.** `assert` lines become request assertions where Wirebench has the operator.
+- **Scripts and tests** are saved as text under `imported-scripts/` and never run.
+- **Credentials** are never imported as plain text, and a proxy password in an export is never
+  copied.
+- **gRPC definitions.** A `.proto` file inside the collection folder becomes the gRPC API's
+  definition.
+- **Limits.** A folder is refused past 5,000 files, 64 levels of folders or 50 MB in total, and an
+  export over 50 MB. Links are not followed, and `mocks/`, `node_modules` and `.git` are skipped.
+
+From the command line, `wirebench import <folder>` (or its `bruno.json`, or an export) adds the same
+APIs and the plain collection and folder variables, and lists secrets, environments and scripts as
+not imported. See [From Bruno](/wirebench/docs/switching/bruno/) for every rule, and what does not
+come across.
+
+## Hoppscotch exports
+
+Wirebench reads Hoppscotch's collections and environments exports at every schema version; each
+collection, folder and request is read at its own. Each top-level collection becomes a REST API, its
+GraphQL requests with a GraphQL body. Auto-detect recognizes either file by its content.
+
+<Steps>
+
+1. Open **Import…**; it detects the format, or pick **Hoppscotch collection** or **Hoppscotch
+   environments** yourself.
+
+2. On the **File** tab, pick or drop the exported `.json` file, or paste its text on the **Paste**
+   tab. There is no URL tab.
+
+3. For a collection, choose the target project. Then **Import**.
+
+</Steps>
+
+- **Variables.** Collection and folder variables become project properties; a secret one becomes a
+  secret with no value, listed so you can set it. `<<name>>` becomes `${name}`.
+- **Environments files.** Each environment becomes a workspace environment, **never made active**;
+  the one named `Global` merges into Globals. No project is asked for.
+- **Bodies.** A URL-encoded body's `key: value` lines become a form. Files are not in the export,
+  so a file part is kept switched off and a file body is left out, each with a note.
+- **Auth.** Every type but Hawk and Akamai EdgeGrid comes across; those two are set to **none**,
+  with a warning.
+- **Saved responses** become response examples. **Request variables** are reported.
+- **Scripts** are saved as text under `imported-scripts/` and never run.
+- **Credentials** are never imported as plain text.
+
+From the command line, `wirebench import <file>` adds the same APIs and the plain variables, and
+lists secrets and scripts as not imported; an environments file is refused. See
+[From Hoppscotch](/wirebench/docs/switching/hoppscotch/) for every rule, and what does not come
+across.
 
 ## cURL commands
 

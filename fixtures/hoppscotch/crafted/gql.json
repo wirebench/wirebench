@@ -1,0 +1,22 @@
+[
+  {
+    "v": 1,
+    "name": "GraphQL Only",
+    "folders": [],
+    "requests": [
+      {
+        "v": 10,
+        "name": "Get user",
+        "url": "https://api.example.test/graphql",
+        "headers": [{ "key": "Authorization", "value": "Bearer <<token>>", "active": true, "description": "" }],
+        "query": "query User($id: ID!) { user(id: $id) { id name } }",
+        "variables": "{\n  \"id\": \"1\"\n}",
+        "auth": { "authType": "inherit", "authActive": true },
+        "description": null,
+        "responses": {},
+        "preRequestScript": "",
+        "testScript": ""
+      }
+    ]
+  }
+]

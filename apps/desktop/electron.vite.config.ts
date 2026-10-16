@@ -56,8 +56,15 @@ export default defineConfig({
            * the window parses before it can paint — carried all ~9 MB of Monaco, so "lazy"
            * bought nothing at startup. Naming it here makes it a sibling chunk that loads when
            * the first editor does instead.
+           *
+           * Vite's preload helper (the `__vitePreload` every lazy `import()` goes through) gets a
+           * chunk of its own for the same reason: left to Rollup it landed inside `monaco`, and the
+           * entry's import of the helper loaded all of Monaco before the first paint anyway.
            */
           manualChunks(id: string): string | undefined {
+            if (id.includes('vite/preload-helper')) {
+              return 'preload-helper';
+            }
             return id.includes('node_modules/monaco-editor/') ? 'monaco' : undefined;
           },
         },

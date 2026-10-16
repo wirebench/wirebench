@@ -8,7 +8,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { readdir } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import {
@@ -19,7 +19,10 @@ import {
   HTTP_PRIVATE_ENV_FILE,
   HttpFileError,
   collectionV3Root,
+  importBruno,
   importHar,
+  importHoppscotch,
+  importHoppscotchEnvironments,
   importHttpFile,
   importInsomnia,
   importOpenCollection,
@@ -36,7 +39,13 @@ import {
   VariableSetBuilder,
   WirebenchError,
 } from '@wirebench/engine';
-import type { ImportedVariables, DefinitionAuth, MappedOpenCollection, OpenApiSource } from '@wirebench/engine';
+import type {
+  ImportedVariables,
+  DefinitionAuth,
+  MappedClientImport,
+  MappedOpenCollection,
+  OpenApiSource,
+} from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { PostmanSourceWire } from '../../shared/kinds/rest/wire.js';
 import type { DefinitionAuthWire, OpenApiSourceWire } from '../../shared/wire-base.js';
@@ -275,6 +284,38 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       throw new WirebenchError('invalid-argument', 'Expected a file source');
     }
     return { kind: 'file', path: checked.path };
+  };
+
+  /**
+   * Places another request client's mapped import in the target project: an existing one, or one
+   * created for it and taken back when anything after it fails, so a refusal changes nothing.
+   */
+  const placeClientImport = async (
+    target: { readonly projectId: string } | { readonly newProjectName: string },
+    mapped: MappedClientImport,
+    meta: { readonly source: string; readonly declaredVersion: string },
+  ) => {
+    const placeIn = async (projectId: string) => {
+      const placed = await placeMappedImport(deps, projectId, mapped, meta);
+      return {
+        projectId: placed.projectId,
+        ...(placed.project !== undefined ? { project: placed.project } : {}),
+        apiIds: placed.apiIds,
+        counts: { ...mapped.counts, scripts: placed.scripts },
+        ...(placed.variables !== undefined ? { variables: placed.variables } : {}),
+        warnings: placed.warnings,
+        notes: placed.notes,
+        reportText: placed.reportText,
+      };
+    };
+    if ('projectId' in target) return await placeIn(target.projectId);
+    const { projectId } = await deps.addProject(target.newProjectName);
+    try {
+      return await placeIn(projectId);
+    } catch (error) {
+      await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
+      throw error;
+    }
   };
 
   /**
@@ -824,32 +865,43 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       );
     }
     const source = checkedSource.kind === 'file' ? checkedSource.path : 'inline:insomnia';
+    return await placeClientImport(request.target, mapped, { source, declaredVersion: 'insomnia' });
+  });
 
-    const placeIn = async (projectId: string) => {
-      const placed = await placeMappedImport(deps, projectId, mapped, { source, declaredVersion: 'insomnia' });
-      return {
-        projectId: placed.projectId,
-        ...(placed.project !== undefined ? { project: placed.project } : {}),
-        apiIds: placed.apiIds,
-        counts: { ...mapped.counts, scripts: placed.scripts },
-        ...(placed.variables !== undefined ? { variables: placed.variables } : {}),
-        warnings: placed.warnings,
-        notes: placed.notes,
-        reportText: placed.reportText,
-      };
-    };
+  /**
+   * A Bruno collection (spec 2026-10-15 §5): a picked folder, or its `bruno.json`, is walked for its
+   * `.bru`, `.js` and `.proto` files (a `.env` file is never opened); any other file, or text, is
+   * read as a JSON export. Its REST, gRPC and WebSocket APIs land in the chosen project as an
+   * Insomnia export's do, its scripts as text, its environments in the workspace, never activated.
+   */
+  registerHandler(channels.api.importBruno, async (request) => {
+    const checkedSource = await checkedPostmanSource(request.source);
+    const isFolder =
+      checkedSource.kind === 'file' &&
+      (await stat(checkedSource.path).then(
+        (info) => info.isDirectory(),
+        () => false,
+      ));
+    const mapped = await importBruno(
+      isFolder && checkedSource.kind === 'file' ? { kind: 'folder', path: checkedSource.path } : checkedSource,
+      { ...(request.name !== undefined && request.name.trim() !== '' ? { name: request.name } : {}) },
+    );
+    const source = checkedSource.kind === 'file' ? checkedSource.path : 'inline:bruno';
+    return await placeClientImport(request.target, mapped, { source, declaredVersion: 'bruno' });
+  });
 
-    if ('projectId' in request.target) {
-      return await placeIn(request.target.projectId);
-    }
-
-    const { projectId } = await deps.addProject(request.target.newProjectName);
-    try {
-      return await placeIn(projectId);
-    } catch (error) {
-      await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
-      throw error;
-    }
+  /**
+   * A Hoppscotch collections export (spec 2026-10-15 §6): each top-level collection's REST API in the
+   * chosen project, its collection and folder variables as project properties, its scripts as text
+   * (never run). An environments file is refused by the reader: it goes to `api.importClientEnvironments`.
+   */
+  registerHandler(channels.api.importHoppscotch, async (request) => {
+    const checkedSource = await checkedPostmanSource(request.source);
+    const mapped = await importHoppscotch(checkedSource, {
+      ...(request.name !== undefined && request.name.trim() !== '' ? { name: request.name } : {}),
+    });
+    const source = checkedSource.kind === 'file' ? checkedSource.path : 'inline:hoppscotch';
+    return await placeClientImport(request.target, mapped, { source, declaredVersion: 'hoppscotch' });
   });
 
   /**
@@ -859,7 +911,11 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
    */
   registerHandler(channels.api.importClientEnvironments, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
-    const mapped = await importInsomnia(checkedSource);
+    // A Hoppscotch environments file is its own format, refused by the reader when it holds collections.
+    const mapped =
+      request.format === 'hoppscotch'
+        ? await importHoppscotchEnvironments(checkedSource)
+        : await importInsomnia(checkedSource);
     if (mapped.collections.length > 0 || mapped.variables.projectProperties !== undefined) {
       throw new WirebenchError(
         'insomnia-not-environments',
