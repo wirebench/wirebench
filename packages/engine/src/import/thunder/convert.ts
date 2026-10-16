@@ -324,7 +324,7 @@ class CollectionMapper {
     return this.folderIds.has(id) ? id : '';
   }
 
-  private reportSettings(settings: TcRec, label: string): void {
+  reportSettings(settings: TcRec, label: string): void {
     const preReq = isRecord(settings['preReq']) ? settings['preReq'] : undefined;
     if (Array.isArray(preReq?.['runRequests']) && preReq['runRequests'].length > 0) {
       this.mapper.report.warn(
@@ -513,12 +513,7 @@ export function mapThunderClient(
     }
     const label = `${prefix}${collection.name}`;
     const auth = mapper.auth(isRecord(settings['auth']) ? settings['auth'] : undefined, label);
-    const preReq = isRecord(settings['preReq']) ? settings['preReq'] : undefined;
-    if (Array.isArray(preReq?.['runRequests']) && preReq['runRequests'].length > 0) {
-      mapper.report.warn(
-        `${label}: it runs other requests first (request chaining), which was not imported; build the chain as a sequence.`,
-      );
-    }
+    collectionMapper.reportSettings(settings, label);
     const docs = lines(settings['docs']);
     collector.add(slugify(collection.name).toLowerCase(), 'pre', inlineScripts(settings['preReq']), label);
     const items = collectionMapper.items(

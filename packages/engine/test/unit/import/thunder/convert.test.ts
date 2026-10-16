@@ -160,6 +160,19 @@ describe('mapThunderClient: tests and scripts', () => {
     expect(warnings().some((line) => line.includes('tc.'))).toBe(true);
   });
 
+  it("reports the collection's run options without importing them", () => {
+    const text = JSON.stringify({
+      clientName: 'Thunder Client',
+      collectionName: 'Runs',
+      folders: [],
+      requests: [{ _id: 'r1', name: 'Ping', url: 'https://a.test/ping', method: 'GET' }],
+      settings: { runOptions: { delay: 100, iterations: 2 } },
+    });
+    expect(mapThunderClient(parseThunderExport(text)).report.notes).toContain(
+      'Runs: its run options (delay, iterations, data file) were not imported.',
+    );
+  });
+
   it('reports request chaining without importing it', () => {
     expect(warnings()).toContain(
       'Product by id: it runs other requests first (request chaining), which was not imported; build the chain as a sequence.',
