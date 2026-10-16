@@ -418,9 +418,13 @@ async function addMappedCollections(
       message: `${noDefinition.join(', ')}: the export's .proto files were not imported from the command line; import them with the API, or use server reflection.`,
     });
   }
+  // The variable plan's own report (a credential cut from a URL, credential-looking names) joins
+  // the import's: the properties it speaks of were written above.
+  const warnings = [...mapped.report.warnings, ...mapped.variables.report.warnings];
+  const notes = [...mapped.report.notes, ...mapped.variables.report.notes];
   problems.push(
-    ...mapped.report.warnings.map((message) => ({ code: 'import-warning', message: redactUrlsInText(message) })),
-    ...mapped.report.notes.map((message) => ({ code: 'import-note', message: redactUrlsInText(message) })),
+    ...warnings.map((message) => ({ code: 'import-warning', message: redactUrlsInText(message) })),
+    ...notes.map((message) => ({ code: 'import-note', message: redactUrlsInText(message) })),
   );
   return { format, added, problems };
 }
