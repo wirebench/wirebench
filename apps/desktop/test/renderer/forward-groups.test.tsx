@@ -17,7 +17,8 @@ import {
   withoutHostRules,
 } from '../../src/renderer/features/ssh/forwarding/forward-groups.js';
 import { ToastViewport } from '../../src/renderer/components/toast.js';
-import { ForwardDetails, useForwardDetailsShown } from '../../src/renderer/features/ssh/forwarding/forward-details.js';
+import { useForwardDetailsShown } from '../../src/renderer/features/ssh/details-shown.js';
+import { ForwardDetails } from '../../src/renderer/features/ssh/forwarding/forward-details.js';
 import { ForwardingPanel } from '../../src/renderer/features/ssh/forwarding/forwarding-view.js';
 import { useForwardsStore } from '../../src/renderer/features/ssh/forwarding/forwards-store.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';

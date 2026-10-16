@@ -9,8 +9,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Copy, FolderOpen, Pencil, TriangleAlert } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import type { ResolvedHostWire, SshKnownHostWire, SshSecretNameWire } from '../../../shared/ssh-wire.js';
-import { useEditorsStore } from '../../state/editors.js';
-import { useUiStore } from '../../state/ui.js';
 import { ipc } from '../../state/ipc-client.js';
 import { editHost, openTerminalFor } from './connect.js';
 import { openFiles } from './files/open-files.js';
@@ -25,17 +23,6 @@ import { proxyText } from './proxy-section.js';
 import { HostSessionLogs } from './session-logs.js';
 import { sessionStatus } from './session-status.js';
 import { schemeLabel } from './terminal-schemes.js';
-
-/**
- * Whether the details slide-over is in front: the Hosts tab is showing and the panel was not put away.
- * With no host picked (after a restart, say) it still shows, and asks for one.
- */
-export function useHostDetailsShown(): boolean {
-  const homeInFront = useEditorsStore((s) => s.displayedSet === 'ssh' && s.activeId === undefined);
-  const onHosts = useHostsStore((s) => s.homeView === 'hosts');
-  const open = useUiStore((s) => s.slideOver.hostDetailsOpen === true);
-  return homeInFront && onHosts && open;
-}
 
 type Provenance = ResolvedHostWire['ssh']['port']['from'];
 

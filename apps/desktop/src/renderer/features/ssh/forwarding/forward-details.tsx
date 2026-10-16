@@ -6,41 +6,17 @@
  */
 import { Pencil, Server } from 'lucide-react';
 import { Button } from '../../../components/button.js';
-import { useEditorsStore } from '../../../state/editors.js';
+import { usePickedForward } from '../details-shown.js';
 import { CopyButton, Row, Section } from '../host-details.js';
 import { flattenGroups, useHostsStore } from '../hosts-store.js';
 import { isNetworkBind, listenAddress, typeWord } from './forward-format.js';
 import { askForPort, restartForward, startForward, stopForward } from './forward-actions.js';
 import { groupOfRule } from './forward-groups.js';
 import { editRule, move, stateOf, whereFrom } from './forward-row.js';
-import { isLive, useForwardsStore } from './forwards-store.js';
-
-/** The picked row: its host and rule as `hosts.yaml` resolves them, and what runs of it. */
-function usePicked() {
-  const key = useForwardsStore((s) => s.selectedKey);
-  const state = useForwardsStore((s) => (key === undefined ? undefined : s.byKey[key]));
-  const startError = useForwardsStore((s) => (key === undefined ? undefined : s.startErrors[key]));
-  const resolved = useHostsStore((s) => s.resolved);
-  if (key === undefined) return undefined;
-  const [hostId = '', ruleId = ''] = key.split('/');
-  const host = resolved.find((h) => h.id === hostId);
-  const forward = host?.forwards.find((f) => f.rule.id === ruleId);
-  // A forward still running after its rule (or host) left the file stays pickable, so it can be stopped.
-  if (forward === undefined && state === undefined) return undefined;
-  return { hostId, ruleId, host, forward, state, startError };
-}
-
-/** Whether the forward details are in front: the Port forwarding view shows, a row is picked, not put away. */
-export function useForwardDetailsShown(): boolean {
-  const homeInFront = useEditorsStore((s) => s.displayedSet === 'ssh' && s.activeId === undefined);
-  const onForwarding = useHostsStore((s) => s.homeView === 'forwarding');
-  const open = useForwardsStore((s) => s.detailsOpen);
-  const exists = usePicked() !== undefined;
-  return homeInFront && onForwarding && open && exists;
-}
+import { isLive } from './forwards-store.js';
 
 export function ForwardDetails() {
-  const picked = usePicked();
+  const picked = usePickedForward();
   const file = useHostsStore((s) => s.file);
   if (picked === undefined) return null;
   const { hostId, ruleId, host, forward, state, startError } = picked;

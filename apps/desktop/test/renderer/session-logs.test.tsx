@@ -1,13 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { groupLogged, useLogSwitchesStore } from '../../src/renderer/features/ssh/session-log-switches.js';
-import {
-  hideSessionLogs,
-  HostSessionLogs,
-  logSummary,
-  SessionLogsDialog,
-  showSessionLogs,
-} from '../../src/renderer/features/ssh/session-logs.js';
+import { HostSessionLogs, logSummary, SessionLogsDialog } from '../../src/renderer/features/ssh/session-logs.js';
+import { hideSessionLogs, showSessionLogs } from '../../src/renderer/features/ssh/session-logs-store.js';
 import type { SessionLogEntryWire } from '../../src/shared/session-log-wire.js';
 import type { HostsFileWire } from '../../src/shared/ssh-wire.js';
 
