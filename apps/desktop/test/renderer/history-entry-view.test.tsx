@@ -217,3 +217,62 @@ describe('a REST entry with no request body', () => {
     expect(screen.queryByTestId('history-no-request-body')).toBeNull();
   });
 });
+
+describe('a plain REST entry (N04)', () => {
+  function restEntry(): HistoryEntryWire {
+    return {
+      id: 'h-rest',
+      kind: 'rest',
+      method: 'GET',
+      at: '2026-10-15T20:06:46.000Z',
+      projectId: 'p1',
+      requestName: 'List pets',
+      interfaceName: '',
+      operationName: '',
+      endpoint: 'https://api.test/pets',
+      soapVersion: 'none',
+      durationMs: 3,
+      ok: false,
+      status: 404,
+      request: {
+        envelopeXml: '',
+        headers: [
+          { name: 'Accept', value: 'application/json' },
+          { name: 'X-Off', value: 'no', enabled: false },
+        ],
+      },
+      response: {
+        envelopeXml: '{"error":"not found"}',
+        rawHeaders: [
+          ['content-type', 'application/json'],
+          ['x-request-id', 'abc'],
+        ],
+        status: 404,
+        statusText: 'Not Found',
+      },
+      sizeBytes: 21,
+    };
+  }
+
+  it('leads the meta line with the status, coloured by class', () => {
+    useHistoryStore.setState({ entries: [restEntry()], total: 1 });
+    render(<HistoryEntryView historyId="h-rest" />);
+
+    const status = screen.getByTestId('history-entry-status');
+    expect(status.textContent).toBe('404 Not Found');
+    expect(status.className).toContain('text-status-warning');
+  });
+
+  it("lists both sides' headers under Headers, leaving out disabled request headers", async () => {
+    useHistoryStore.setState({ entries: [restEntry()], total: 1 });
+    render(<HistoryEntryView historyId="h-rest" />);
+
+    await userEvent.click(screen.getByRole('tab', { name: /Headers/ }));
+    const response = screen.getByTestId('history-response-headers');
+    expect(response.textContent).toContain('content-type');
+    expect(response.textContent).toContain('x-request-id');
+    const request = screen.getByTestId('history-request-headers');
+    expect(request.textContent).toContain('Accept');
+    expect(request.textContent).not.toContain('X-Off');
+  });
+});

@@ -50,6 +50,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A failing assertion is never hidden.** Once a send has run assertions, the response's
+  **Assertions** tab stays in the strip however narrow it is, with its count in red when one failed, and
+  the status line adds "· 1 assertion failed". Any other tab with a failure that moves into **More** puts
+  a red dot and count on the More button (#606).
+- **Search finds REST requests by name.** The Search view matches a REST request's name and the folders
+  it sits in ("Sales › Orders › List orders"), as it already did for WebSocket requests (#611).
+- **History's search box keeps its width.** Search sits on its own row above the project filter and
+  **Delete all**, so a narrow sidebar no longer crushes it or clips **Delete all**; the project filter
+  shows only when more than one project is open (#608).
+- **A History entry shows what came back.** Its meta line leads with the status ("404 Not Found",
+  coloured by class), and a **Headers** tab lists the response's headers and the request's, as History
+  recorded them (#609).
+- **A fresh OpenAPI import no longer turns the status bar red.** The built-in rule
+  `owasp-security-defined` (no security scheme defined) is a warning instead of an error, so the Console
+  and Problems counters read amber unless a real error is found (#610).
 - **SSH small fixes.** Typing "ssh" in the command palette lists every SSH-area command (hosts,
   terminals, files, forwarding, snippets) above anything that only matches the letters. The SSH menu's
   Keychain count updates as soon as a key is generated or a secret stored, wherever that happens.

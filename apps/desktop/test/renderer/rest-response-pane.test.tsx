@@ -89,6 +89,25 @@ describe('RestResponsePane', () => {
     expect(status).toContain('body');
   });
 
+  it('pins a failing Assertions tab in red and counts the failures on the status line (N01)', () => {
+    mount({
+      ...makeRestExchange(),
+      assertions: [
+        { type: 'status', label: 'status is 200', outcome: 'failed', expected: '200', actual: '404' },
+        { type: 'status', label: 'has a body', outcome: 'passed' },
+      ],
+    });
+
+    expect(screen.getByTestId('rest-response-assertions-failed').textContent).toBe(' · 1 assertion failed');
+    const tab = screen.getByRole('tab', { name: /Assertions ✕/ });
+    expect(tab.querySelector('.text-status-danger')?.textContent).toBe('1/2');
+  });
+
+  it('adds nothing to the status line when every assertion passed', () => {
+    mount({ ...makeRestExchange(), assertions: [{ type: 'status', label: 'status is 200', outcome: 'passed' }] });
+    expect(screen.queryByTestId('rest-response-assertions-failed')).toBeNull();
+  });
+
   it('shows a send failure instead of a status', () => {
     render(
       <TooltipPrimitive.Provider>
