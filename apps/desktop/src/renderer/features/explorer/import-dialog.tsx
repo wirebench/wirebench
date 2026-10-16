@@ -184,12 +184,24 @@ function pickedRow(format: ImportDialogFormat): ImportFormatRow | undefined {
 /** The definition file of a folder (v3) collection, which stands for the folder above `.resources`. */
 const V3_DEFINITION_FILE = /[\\/]\.resources[\\/]definition\.ya?ml$/i;
 
-/** What a picked folder is read as: a folder (v3) collection, the one format kept as a folder. */
-const FOLDER_FORMAT: DetectedImportFormat = {
+/**
+ * What a picked folder is read as until main says what it holds, or when it cannot: a folder (v3)
+ * collection, which main's folder walk also takes a workspace folder for.
+ */
+const FOLDER_FALLBACK: DetectedImportFormat = {
   kind: 'postman-v3',
   label: 'Postman Collection v3 (folder)',
-  confidence: 'definite',
+  confidence: 'probable',
 };
+
+/** Formats detection knows that this build does not import yet. */
+const NOT_IMPORTED_YET = new Set<ImportFormatKind>([
+  'bruno',
+  'hoppscotch',
+  'hoppscotch-environment',
+  'thunder-client',
+  'thunder-client-environment',
+]);
 
 /** The root document of an OpenCollection saved as a folder, which names nothing: the folder does. */
 const OC_ROOT_FILE = /(^|[\\/])opencollection\.ya?ml$/i;
@@ -317,15 +329,59 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     }) as (payload: unknown) => void);
   }, [open]);
 
+  /*
+   * A picked file's content never reaches the renderer, so its name is all detection here can read.
+   * When the name does not settle it, and for every picked folder, main is asked what the file or
+   * folder holds (`api.detectImportSource`); an answer for a path that has since changed is dropped.
+   */
+  const pickedKey =
+    tab === 'file' && dropped === undefined && filePath.length > 0 ? JSON.stringify([filePath, folderPicked]) : '';
+  const nameOnly = pickedKey !== '' && !folderPicked ? detectImportFormat({ filename: filePath }) : undefined;
+  const detectKey = open && pickedKey !== '' && (folderPicked || nameOnly?.confidence !== 'definite') ? pickedKey : '';
+  const [sourceDetection, setSourceDetection] = useState<
+    { readonly key: string; readonly detected: DetectedImportFormat } | undefined
+  >(undefined);
+  const detectionRef = useRef<{ key: string; answer: Promise<DetectedImportFormat | undefined> } | undefined>(
+    undefined,
+  );
+
+  useEffect(() => {
+    if (detectKey === '') {
+      detectionRef.current = undefined;
+      return;
+    }
+    const [path, folder] = JSON.parse(detectKey) as [string, boolean];
+    const answer = Promise.resolve()
+      .then(() => ipc().api.detectImportSource({ path, folder }))
+      .then((res): DetectedImportFormat | undefined =>
+        // Main answers with the engine's own detection, so its kind is one of the engine's kinds.
+        res.ok ? { ...res.value, kind: res.value.kind as ImportFormatKind } : undefined,
+      )
+      .catch(() => undefined);
+    detectionRef.current = { key: detectKey, answer };
+    let current = true;
+    void answer.then((detected) => {
+      if (current && detected !== undefined) setSourceDetection({ key: detectKey, detected });
+    });
+    return () => {
+      current = false;
+    };
+  }, [detectKey]);
+
   // Real-time format detection
   const detected: DetectedImportFormat = useMemo(() => {
+    if (pickedKey !== '') {
+      if (sourceDetection?.key === pickedKey && sourceDetection.detected.kind !== 'unknown') {
+        return sourceDetection.detected;
+      }
+      if (folderPicked) return FOLDER_FALLBACK;
+    }
     const currentText = tab === 'paste' ? pasted : tab === 'file' ? dropped?.text : undefined;
     const currentFilename =
       tab === 'file' ? (dropped?.name ?? (filePath.length > 0 ? filePath : undefined)) : undefined;
     const currentUrl = tab === 'url' && url.length > 0 ? url : undefined;
-    if (tab === 'file' && folderPicked && dropped === undefined && filePath.length > 0) return FOLDER_FORMAT;
     return detectImportFormat({ text: currentText, filename: currentFilename, url: currentUrl });
-  }, [tab, pasted, dropped, filePath, url, folderPicked]);
+  }, [tab, pasted, dropped, filePath, url, folderPicked, pickedKey, sourceDetection]);
 
   const effectiveFormat: ImportFormatKind = format !== 'auto' ? format : detected.kind;
 
@@ -848,6 +904,21 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     }
   }
 
+  /**
+   * The format to import as: the picked one, or the detected one. A picked file or folder main has
+   * not answered for yet is waited for, so an Import pressed straight after a pick reads what the
+   * file holds rather than its name.
+   */
+  async function importKind(): Promise<ImportFormatKind> {
+    if (format !== 'auto') return format;
+    const pending = detectionRef.current;
+    if (pending !== undefined && pending.key === detectKey && sourceDetection?.key !== detectKey) {
+      const answer = await pending.answer;
+      if (answer !== undefined && answer.kind !== 'unknown') return answer.kind;
+    }
+    return effectiveFormat;
+  }
+
   async function onImport(): Promise<void> {
     if (importing) {
       return;
@@ -857,41 +928,48 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       await importFromServer();
       return;
     }
+    const kind = await importKind();
+    if (NOT_IMPORTED_YET.has(kind)) {
+      setImportError(
+        `${kind === detected.kind ? detected.label : 'This format'} cannot be imported yet. Export it in another format Wirebench reads.`,
+      );
+      return;
+    }
     const source = buildSource();
     if (source === undefined) {
       if (tab === 'url') {
         setUrlError('Enter a valid URL');
       } else if (tab === 'file') {
         setImportError(
-          POSTMAN_FORMATS.has(effectiveFormat)
+          POSTMAN_FORMATS.has(kind)
             ? 'Pick a .json file to import'
-            : effectiveFormat === 'har'
+            : kind === 'har'
               ? 'Pick a .har file to import'
-              : effectiveFormat === 'http-file'
+              : kind === 'http-file'
                 ? 'Pick a .http file to import'
-                : effectiveFormat === 'http-env'
+                : kind === 'http-env'
                   ? 'Pick an environment file to import'
-                  : effectiveFormat === 'opencollection'
+                  : kind === 'opencollection'
                     ? 'Pick a collection .yml file, or the opencollection.yml of a collection folder'
-                    : effectiveFormat === 'postman-v3'
+                    : kind === 'postman-v3'
                       ? 'Pick the collection folder with Folder…'
                       : 'Pick a file to import',
         );
       } else {
         setImportError(
-          effectiveFormat === 'postman'
+          kind === 'postman'
             ? 'Paste a .json collection to import'
-            : POSTMAN_FORMATS.has(effectiveFormat)
+            : POSTMAN_FORMATS.has(kind)
               ? 'Paste the exported .json to import'
-              : effectiveFormat === 'har'
+              : kind === 'har'
                 ? 'Paste the HAR JSON to import'
-                : effectiveFormat === 'http-file'
+                : kind === 'http-file'
                   ? 'Paste the .http requests to import'
-                  : effectiveFormat === 'http-env'
+                  : kind === 'http-env'
                     ? 'Paste the environment JSON to import'
-                    : effectiveFormat === 'opencollection'
+                    : kind === 'opencollection'
                       ? 'Paste the collection YAML to import'
-                      : effectiveFormat === 'postman-v3'
+                      : kind === 'postman-v3'
                         ? 'A folder collection is imported from its folder: use the File tab'
                         : 'Paste a definition to import',
         );
@@ -899,51 +977,47 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       return;
     }
 
-    if (
-      effectiveFormat === 'postman-environment' ||
-      effectiveFormat === 'postman-globals' ||
-      effectiveFormat === 'http-env'
-    ) {
-      await importVariables(effectiveFormat, source);
+    if (kind === 'postman-environment' || kind === 'postman-globals' || kind === 'http-env') {
+      await importVariables(kind, source);
       return;
     }
 
-    if (effectiveFormat === 'legacy-soap-project') {
+    if (kind === 'legacy-soap-project') {
       await importLegacyProject(source);
       return;
     }
 
-    if (effectiveFormat === 'har') {
+    if (kind === 'har') {
       await importHar(source);
       return;
     }
 
-    if (effectiveFormat === 'http-file') {
+    if (kind === 'http-file') {
       await importHttp(source);
       return;
     }
 
-    if (effectiveFormat === 'opencollection') {
+    if (kind === 'opencollection') {
       await importOpenCollection(source);
       return;
     }
 
-    if (effectiveFormat === 'postman-v3') {
+    if (kind === 'postman-v3') {
       await importPostmanFolder(source);
       return;
     }
 
     // Determine target format
     let targetFormat: 'wsdl' | 'openapi' | 'asyncapi' | 'postman' | 'proto';
-    if (effectiveFormat === 'wsdl') {
+    if (kind === 'wsdl') {
       targetFormat = 'wsdl';
-    } else if (effectiveFormat === 'proto') {
+    } else if (kind === 'proto') {
       targetFormat = 'proto';
-    } else if (effectiveFormat === 'postman') {
+    } else if (kind === 'postman') {
       targetFormat = 'postman';
-    } else if (effectiveFormat === 'openapi') {
+    } else if (kind === 'openapi') {
       targetFormat = 'openapi';
-    } else if (effectiveFormat === 'asyncapi') {
+    } else if (kind === 'asyncapi') {
       targetFormat = 'asyncapi';
     } else {
       // Unknown format: check hints

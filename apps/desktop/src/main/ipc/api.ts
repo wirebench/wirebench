@@ -8,9 +8,12 @@
  */
 
 import { createHash } from 'node:crypto';
+import { readdir } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import {
+  detectImportFolder,
+  detectImportFormat,
   formatImportReport,
   HTTP_ENV_FILE,
   HTTP_PRIVATE_ENV_FILE,
@@ -41,7 +44,7 @@ import type { ReadPicks } from '../dialog-picks.js';
 import { pickFolder } from '../native-dialogs.js';
 import type { OpenApiImportService } from '../openapi-import.js';
 import type { ProtoImportService } from '../proto-import.js';
-import { checkedCompanionPaths, checkedImportSource, readCompanionFile } from '../path-access.js';
+import { checkedCompanionPaths, checkedImportSource, readCompanionFile, readNoFollow } from '../path-access.js';
 import { checkedOpenCollectionRoot, readCompanionProtos, readOpenCollectionTree } from '../opencollection-tree.js';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { HistoryService, ImportedHistoryOutcome } from '../history-service.js';
@@ -217,6 +220,9 @@ function sharedNamesOf(text: string): string[] {
   const shared = (JSON.parse(text) as Record<string, unknown>)['$shared'];
   return typeof shared === 'object' && shared !== null && !Array.isArray(shared) ? Object.keys(shared) : [];
 }
+
+/** The most of a picked file read to detect its format: the import's own file limit. */
+const DETECT_MAX_BYTES = 50 * 1024 * 1024;
 
 /** The root document of an OpenCollection directory, in any case. */
 const OC_ROOT_FILE = /^opencollection\.ya?ml$/i;
@@ -437,6 +443,41 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     return {
       environments: parseHttpEnvFiles(publicText, privateText, 'project').environments.map((set) => set.name),
     };
+  });
+
+  /**
+   * What a picked file or folder holds, for the Import dialog, which can read neither (spec
+   * 2026-10-15 §3.3). A file is read without following a link, up to {@link DETECT_MAX_BYTES}, and
+   * detected by its content and name; a larger one by its name alone. A folder is detected by the
+   * names directly in it, a folder's name ending in `/`; a Thunder Client `thunder-tests` folder, or
+   * one whose `collections/` holds its `tc_col_*.json` files, is told apart from a folder collection
+   * here. The path must pass {@link checkedImportSource} first.
+   */
+  registerHandler(channels.api.detectImportSource, async (request) => {
+    const checked = await checkedPostmanSource({ kind: 'file', path: request.path });
+    if (checked.kind !== 'file') throw new WirebenchError('invalid-argument', 'Expected a path');
+    if (!request.folder) {
+      const bytes = await readNoFollow(checked.path, DETECT_MAX_BYTES, () => new Error('too large')).catch(
+        () => undefined,
+      );
+      return detectImportFormat({
+        ...(bytes !== undefined ? { text: bytes.toString('utf8') } : {}),
+        filename: checked.path,
+      });
+    }
+    const entries = await readdir(checked.path, { withFileTypes: true });
+    const children = entries.map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name));
+    if (basename(checked.path).toLowerCase() === 'thunder-tests') {
+      return { kind: 'thunder-client', label: 'Thunder Client collection', confidence: 'definite' as const };
+    }
+    if (entries.some((entry) => entry.isDirectory() && entry.name === 'collections')) {
+      const inner = await readdir(join(checked.path, 'collections')).catch(() => [] as string[]);
+      const lower = inner.map((name) => name.toLowerCase());
+      if (lower.some((name) => name.startsWith('tc_col_') && name.endsWith('.json'))) {
+        return { kind: 'thunder-client', label: 'Thunder Client collection', confidence: 'definite' as const };
+      }
+    }
+    return detectImportFolder(children);
   });
 
   /**

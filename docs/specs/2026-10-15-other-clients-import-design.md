@@ -127,6 +127,13 @@ Client both use the key names `folders` and `requests`.
 A folder that holds `opencollection.yml` stays OpenCollection even when `bruno.json` is beside it,
 which is how Bruno itself decides.
 
+The Import dialog cannot read a picked file or folder itself, so it asks main with
+`api.detectImportSource` (`{ path, folder }`). Main checks the path with `checkedImportSource`, reads a
+file without following a link up to 50 MB and runs `detectImportFormat` on its text and name, or lists
+a folder's direct children for `detectImportFolder`. A renamed export (`export.json`) is therefore
+detected by what it holds. The dialog asks after every folder pick and after a file pick whose name
+does not settle the format; an Import pressed before the answer waits for it.
+
 A file whose `type` is `mock.insomnia.rest/5.0` or `mcpClient.insomnia/5.0` is refused with
 `insomnia-not-collection`, naming the kind. Thunder Client's `thunderActivity.json` (History) is
 ignored.

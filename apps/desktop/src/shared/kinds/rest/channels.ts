@@ -18,6 +18,8 @@ import {
   apiImportHttpFileRequestSchema,
   apiImportOpenApiRequestSchema,
   apiImportPostmanRequestSchema,
+  apiDetectImportSourceRequestSchema,
+  apiDetectImportSourceResponseSchema,
   apiImportPostmanVariablesRequestSchema,
   apiImportPostmanVariablesResponseSchema,
   apiImportWebhooksRequestSchema,
@@ -135,6 +137,11 @@ export const restChannels = {
       'api.inspectHttpFile',
       apiInspectHttpFileRequestSchema,
       apiInspectHttpFileResponseSchema,
+    ),
+    detectImportSource: defineChannel(
+      'api.detectImportSource',
+      apiDetectImportSourceRequestSchema,
+      apiDetectImportSourceResponseSchema,
     ),
     importHttpFile: defineChannel(
       'api.importHttpFile',

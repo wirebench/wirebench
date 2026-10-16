@@ -1635,3 +1635,69 @@ describe('api.importPostmanFolder', () => {
     }
   });
 });
+
+describe('api.detectImportSource', () => {
+  let dir = '';
+  beforeEach(async () => {
+    dir = await realpath(await mkdtemp(join(tmpdir(), 'wirebench-detect-')));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  type Detected = { kind: string; label: string; confidence: string };
+
+  const picked = (path: string) => {
+    const picks = new DialogPicks();
+    picks.rememberRead(path);
+    setup({ picks });
+  };
+
+  it('reads a renamed export by its content', async () => {
+    const file = join(dir, 'export.json');
+    await writeFile(file, 'type: collection.insomnia.rest/5.0\nname: Orders\ncollection: []\n');
+    picked(file);
+    expect(await value<Detected>('api.detectImportSource', { path: file, folder: false })).toMatchObject({
+      kind: 'insomnia',
+      confidence: 'definite',
+    });
+  });
+
+  it('classifies a Bruno folder by its bruno.json', async () => {
+    await writeFile(join(dir, 'bruno.json'), '{"version":"1","name":"B","type":"collection"}');
+    await mkdir(join(dir, 'users'));
+    picked(dir);
+    expect((await value<Detected>('api.detectImportSource', { path: dir, folder: true })).kind).toBe('bruno');
+  });
+
+  it('classifies a thunder-tests folder, and one whose collections/ holds tc_col_ files', async () => {
+    const thunder = join(dir, 'thunder-tests');
+    await mkdir(join(thunder, 'collections'), { recursive: true });
+    picked(thunder);
+    expect((await value<Detected>('api.detectImportSource', { path: thunder, folder: true })).kind).toBe(
+      'thunder-client',
+    );
+
+    handlers.clear();
+    const other = join(dir, 'tc');
+    await mkdir(join(other, 'collections'), { recursive: true });
+    await writeFile(join(other, 'collections', 'tc_col_api.json'), '{}');
+    picked(other);
+    expect((await value<Detected>('api.detectImportSource', { path: other, folder: true })).kind).toBe(
+      'thunder-client',
+    );
+  });
+
+  it('falls back to a folder collection for any other folder', async () => {
+    await mkdir(join(dir, 'collections'));
+    picked(dir);
+    expect((await value<Detected>('api.detectImportSource', { path: dir, folder: true })).kind).toBe('postman-v3');
+  });
+
+  it('refuses a path that was neither picked nor inside a project', async () => {
+    const file = join(dir, 'export.json');
+    await writeFile(file, '{}');
+    picked(join(dir, 'elsewhere.json'));
+    expect((await failure('api.detectImportSource', { path: file, folder: false })).code).toBe('import-path-refused');
+  });
+});

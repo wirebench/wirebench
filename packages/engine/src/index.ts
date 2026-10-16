@@ -1574,7 +1574,7 @@ export type {
 export { renderWsiAssertionsMarkdown, WSI_PLANNED_ASSERTIONS } from './validate/wsi/index.js';
 export type { PlannedAssertion } from './validate/wsi/index.js';
 
-export { detectImportFormat } from './import-detect.js';
+export { detectImportFolder, detectImportFormat } from './import-detect.js';
 export type { ImportFormatKind, DetectedImportFormat, ImportDetectInput } from './import-detect.js';
 
 // gRPC: the third protocol, a sibling container to a SOAP interface and a REST API (ADR-0007).
