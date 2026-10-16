@@ -47,6 +47,9 @@ All notable changes to this project are documented here. The format follows
   proxy and CA bundle from Settings, as sends and OpenAPI imports already did, with Basic or Kerberos
   definition authentication too. On a corporate network, a WSDL reachable only through the proxy, or
   served with a corporate-CA certificate, now imports.
+- **A refused proxy tunnel no longer reads as Cancelled.** When an HTTPS request goes through a proxy
+  that refuses the tunnel (a 407 for a wrong or missing proxy password), the send now fails with
+  "Proxy connection failed" and the proxy's status, instead of showing as if you had cancelled it.
 
 ## [6.1.0] - 2026-10-16
 

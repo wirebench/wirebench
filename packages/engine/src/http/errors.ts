@@ -93,6 +93,27 @@ function looksLikeProxyError(err: unknown): boolean {
 }
 
 /**
+ * The status the proxy answered a CONNECT with, when undici refused the tunnel
+ * (`Proxy response (407) !== 200 when HTTP Tunneling`). `undefined` for any other error.
+ */
+function proxyStatusOf(err: unknown): number | undefined {
+  if (!(err instanceof Error)) return undefined;
+  const match = /Proxy response \((\d{3})\)/i.exec(err.message);
+  return match?.[1] === undefined ? undefined : Number(match[1]);
+}
+
+/** The `proxy` HttpError, carrying the proxy's CONNECT status as `details.proxyStatus` when known. */
+function proxyError(err: unknown, code: string | undefined): HttpError {
+  const base = optionsFor(err, code);
+  const proxyStatus = proxyStatusOf(err);
+  return new HttpError(
+    'proxy' satisfies HttpErrorCode,
+    'Proxy connection failed.',
+    proxyStatus === undefined ? base : { ...base, details: { ...base.details, proxyStatus } },
+  );
+}
+
+/**
  * Maps a raw error thrown by undici/Node's networking stack (or our own deadline
  * timer) into a stable {@link HttpError} with an {@link HttpErrorCode}. `userAborted`
  * distinguishes a caller-triggered abort from the deadline timer firing so we can
@@ -124,6 +145,12 @@ export function toHttpError(
       options.timeoutMs === undefined ? base : { ...base, details: { ...base.details, timeoutMs: options.timeoutMs } },
     );
   }
+  // undici refuses a CONNECT tunnel the proxy did not answer with 200 (a 407 for wrong or missing
+  // credentials, say) by aborting the request, so the error is an AbortError the user never caused.
+  // It is a proxy failure, and must not read as the user's own Cancel.
+  if (options.hadProxy === true && !options.userAborted && looksLikeProxyError(err)) {
+    return proxyError(err, code);
+  }
   if (options.userAborted || isAbortError(err)) {
     return new HttpError('aborted' satisfies HttpErrorCode, 'The request was aborted.', optionsFor(err, code));
   }
@@ -131,7 +158,7 @@ export function toHttpError(
     options.hadProxy === true &&
     ((code !== undefined && CONNECT_FAILURE_CODES.has(code)) || looksLikeProxyError(err))
   ) {
-    return new HttpError('proxy' satisfies HttpErrorCode, 'Proxy connection failed.', optionsFor(err, code));
+    return proxyError(err, code);
   }
   if (code === 'ECONNREFUSED') {
     return new HttpError('connection-refused' satisfies HttpErrorCode, 'Connection refused.', optionsFor(err, code));
