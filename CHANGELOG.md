@@ -56,6 +56,9 @@ All notable changes to this project are documented here. The format follows
   a red dot and count on the More button (#606).
 - **Search finds REST requests by name.** The Search view matches a REST request's name and the folders
   it sits in ("Sales › Orders › List orders"), as it already did for WebSocket requests (#611).
+- **History's search box keeps its width.** Search sits on its own row above the project filter and
+  **Delete all**, so a narrow sidebar no longer crushes it or clips **Delete all**; the project filter
+  shows only when more than one project is open (#608).
 - **A fresh OpenAPI import no longer turns the status bar red.** The built-in rule
   `owasp-security-defined` (no security scheme defined) is a warning instead of an error, so the Console
   and Problems counters read amber unless a real error is found (#610).
