@@ -74,6 +74,13 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Problems solved',
+          items: [
+            { label: 'WS-Security signature failure', slug: 'solutions/ws-security-signature-failure' },
+            { label: 'Kerberos from a Mac to Windows', slug: 'solutions/kerberos-spnego-mac-to-windows' },
+          ],
+        },
+        {
           label: 'Switching',
           items: [
             { label: 'From Postman collections', slug: 'switching/postman' },

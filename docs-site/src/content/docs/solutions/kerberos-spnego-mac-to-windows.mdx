@@ -1,0 +1,294 @@
+---
+title: Kerberos SPNEGO from a Mac to a Windows service
+description: Call a Windows service that uses Windows authentication from a Mac, with a Kerberos ticket from kinit. The SPN to use, what a good exchange looks like, and how to read each common failure.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+A SOAP or REST service on IIS with Windows authentication turned on answers every anonymous
+request with `401` and `WWW-Authenticate: Negotiate`. From a Windows machine on the domain, any
+client gets in with your sign-in. From a Mac, most tools give up, fall back to NTLM, or ask for a
+password the service will never accept. Wirebench sends a real Kerberos ticket from the Mac's own
+Kerberos, the same ticket `kinit` gets for every other program on the machine.
+
+This guide takes one call from a Mac to such a service: getting the ticket, choosing the service
+principal name (SPN), what Wirebench sends, and how each common failure reads.
+
+## What has to be true first
+
+- **The Mac can reach a domain controller.** On a company network that is usually automatic; from
+  home it usually means the VPN is up. The domain controller is the Kerberos key distribution
+  centre (KDC) that issues tickets.
+- **`kinit` works from Terminal.** If it does not, no Kerberos client on the Mac will work,
+  Wirebench included. Fix that first.
+- **The service accepts Kerberos.** Windows authentication must offer the `Negotiate` provider,
+  not only `NTLM`. Wirebench uses Kerberos only and never falls back to NTLM.
+
+## Step 1: get a ticket
+
+Wirebench never asks for your domain password on a Mac. It uses the ticket already in the Mac's
+credentials cache, so the first step happens in Terminal:
+
+```bash
+kinit alice@CORP.EXAMPLE.COM
+```
+
+Type the realm in capitals, as Kerberos expects. Then check what you have:
+
+```bash
+klist
+```
+
+`klist` lists your ticket-granting ticket, `krbtgt/CORP.EXAMPLE.COM@CORP.EXAMPLE.COM`, and when it
+expires: ten hours later on a Windows domain with default settings.
+
+**Keychain.** The macOS `kinit` has a `--keychain` option that saves your password in the keychain
+when the sign-in succeeds:
+
+```bash
+kinit --keychain alice@CORP.EXAMPLE.COM
+```
+
+The **Ticket Viewer** app, in `/System/Library/CoreServices/Applications`, gets a ticket from a
+window instead, and can also keep the password in your keychain. Either way, Wirebench only reads
+the resulting ticket. It never reads the keychain for Kerberos, and it has nowhere to type a
+Kerberos password on a Mac.
+
+**More than one ticket.** If you hold tickets for two accounts, `klist --list-all` shows every
+cache. Wirebench uses the default one unless you name a principal (see Step 3).
+
+## Step 2: find the SPN
+
+The SPN is the name the service is registered under in Active Directory. Your Mac asks the KDC for
+a ticket *for that name*, and the service must be able to open the ticket with its own key. A
+mismatch here causes most failures.
+
+Leave the SPN blank and Wirebench asks for `HTTP` plus the host name in the request URL, without
+the port. For `https://web01.corp.example.com:8443/CalculatorService.svc` that is
+`HTTP/web01.corp.example.com`. Set it yourself when:
+
+- **The URL is an alias**, such as a load-balancer name or a DNS alias that points at `web01`. Use
+  the name the service is registered under, not the alias.
+- **The URL uses an IP address.** No SPN in Active Directory is an address, so the default cannot
+  work.
+- **The service runs as a domain user**, such as an IIS application pool running as
+  `CORP\svc-calc`. The SPN must then be registered on that account, and your administrator can tell
+  you which name it is.
+
+Write it as `HTTP/host`. Wirebench converts it for the Mac: macOS wants the host-based form
+`HTTP@host`, so `HTTP/web01.corp.example.com` becomes `HTTP@web01.corp.example.com`, and
+`HTTP/web01.corp.example.com@CORP.EXAMPLE.COM` loses its `@CORP.EXAMPLE.COM`.
+
+To check that the KDC knows the name before involving Wirebench at all, ask for the service ticket
+from Terminal:
+
+```bash
+kgetcred HTTP/web01.corp.example.com@CORP.EXAMPLE.COM
+```
+
+If that fails, Wirebench will fail the same way. A Windows administrator can confirm which account
+holds the SPN with `setspn -Q HTTP/web01.corp.example.com`.
+
+## Step 3: set up the request
+
+<Steps>
+
+1. Open the request's **Auth** tab, or the **Auth** inspector of a SOAP request, and choose
+   **Kerberos**.
+2. Leave **SPN** empty unless Step 2 told you otherwise. Its placeholder reads
+   `HTTP/<host of the request>`.
+3. Leave **Principal** empty to use your default ticket. To use another ticket from the cache, type
+   its principal, such as `alice@CORP.EXAMPLE.COM`.
+4. Make sure the request has no `Authorization` header of its own. A header you set wins, and
+   Wirebench then sends no Kerberos token.
+5. Send.
+
+</Steps>
+
+If the configuration was made on Windows with an explicit account, the Mac shows **This
+configuration names a Windows account, which macOS and Linux refuse.** Choose **Clear account**.
+Otherwise every send fails with `kerberos-explicit-credentials-unsupported`.
+
+{/* TODO(screenshot): Auth tab with Kerberos selected on macOS, SPN and Principal fields visible. Save as docs-site/public/images/solutions/kerberos-auth-mac.png and cite it here. */}
+
+## How Wirebench negotiates
+
+Wirebench makes the token only after the service asks for it, and uses one connection, over
+HTTP/1.1, for both attempts. IIS ties the authenticated session to the connection, which HTTP/2
+does not allow, so Wirebench uses HTTP/1.1 here even when **Offer HTTP/2** is on. This is the
+exchange from Wirebench's own test suite. Real tokens are long base64 strings, often a few
+kilobytes; the test's stand-ins are short:
+
+```http
+POST /svc HTTP/1.1
+content-type: text/xml
+
+<Envelope/>
+
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Negotiate
+Content-Length: 0
+
+POST /svc HTTP/1.1
+content-type: text/xml
+Authorization: Negotiate YXAtcmVx
+
+<Envelope/>
+
+HTTP/1.1 200 OK
+Content-Type: text/plain
+WWW-Authenticate: Negotiate YXAtcmVw
+
+ok
+```
+
+Three things happen here:
+
+- **The first attempt goes out bare.** If the answer is anything other than a `401` that offers
+  `Negotiate`, that answer is the result, and Kerberos is never touched. A service that offers only
+  `NTLM` returns its `401` to you as is.
+- **The body is sent twice**, once per attempt, on the same connection.
+- **The reply is checked.** When the final answer carries a `Negotiate` token of its own, Wirebench
+  verifies it, which proves the server holds the SPN's key (mutual authentication). A failed check
+  is `kerberos-mutual-auth-failed`. A server that sends no reply token is not checked.
+
+When the first attempt follows a redirect before the challenge, the token is made for the host
+that challenged. That host must be on the request's own origin, or the send fails with
+`kerberos-cross-origin`.
+
+## What success looks like
+
+For a SOAP request, the response status line adds a note after the status, time and size:
+
+```text
+· Authenticated with Kerberos as HTTP@web01.corp.example.com
+```
+
+The SPN is shown in the form macOS used, with `@`. A REST response's status line does not change.
+
+The HTTP Log has one row for the call, with the final status. Its **Headers** tab shows the
+`Authorization` header that carried the token, masked like every other credential; the lock
+button in the log toolbar reveals it.
+
+{/* TODO(screenshot): SOAP response status line reading "Authenticated with Kerberos as HTTP@…", with the HTTP Log row below. Save as docs-site/public/images/solutions/kerberos-success.png and cite it here. */}
+
+## What each failure looks like
+
+A failed send shows its error code and message in red where the status line would be, and the
+HTTP Log row shows the code in its status column. These are the codes and messages Wirebench 6.1.0
+uses. Where the cause comes from the Mac's Kerberos library, Wirebench matches the library's text
+to a code. Anything it does not recognise arrives as `kerberos-failed`, with the library's own text
+after the SPN.
+
+### No ticket
+
+```text
+kerberos-no-credentials · No Kerberos ticket. Sign in to the domain, or run `kinit`.
+```
+
+`klist` shows nothing, or only an expired ticket. Run `kinit` again and resend. An expired ticket
+can also arrive as `kerberos-failed` with the library's own wording; `klist` shows the expiry
+either way.
+
+### Wrong SPN
+
+```text
+kerberos-unknown-spn · The KDC does not know HTTP@api.corp.example.com. Set the SPN to the name the service is registered under.
+```
+
+The KDC has no account with that SPN, so it issued no ticket. The usual cause is an alias or an IP
+address in the URL. Set **SPN** to the registered name from Step 2.
+
+A subtler version gets past the KDC and fails at the service:
+
+```text
+kerberos-rejected · The server at https://web01.corp.example.com/CalculatorService.svc refused the Kerberos token for HTTP@web01.corp.example.com (HTTP 401).
+```
+
+The KDC issued a ticket, but the service did not accept it. That happens when the SPN is
+registered on a different account from the one the service runs as, or on two accounts at once.
+It also happens when your account is not allowed to use the service. Send the administrator the
+SPN from the message.
+
+### Clock skew
+
+```text
+kerberos-clock-skew · This machine's clock differs from the domain's by more than allowed.
+```
+
+Kerberos tickets carry timestamps, and an Active Directory domain accepts five minutes of
+difference by default. Turn on **Set time and date automatically** in the Mac's **Date & Time**
+settings, then run `kinit` again.
+
+This code means the Mac's Kerberos library reported the skew while getting the ticket. When it is
+the *service's* clock that is off, the KDC is satisfied, the service turns the ticket down, and
+you see `kerberos-rejected` instead.
+
+### Deadline exceeded
+
+```text
+timeout · Timed out waiting for a Kerberos ticket for HTTP@web01.corp.example.com.
+```
+
+Wirebench asked the Mac's Kerberos for a ticket, and the KDC did not answer within the request's
+time budget. The first attempt had already gone out and been challenged. The usual cause is a
+domain controller you cannot reach, such as a VPN that has dropped. **Cancel** stops the wait at
+once, with:
+
+```text
+aborted · The request was aborted.
+```
+
+The Mac's Kerberos library cannot be interrupted, so Wirebench abandons a call that runs out of
+time and lets it finish in the background. While two such calls are still running, a new send
+fails at once instead of piling up:
+
+```text
+kerberos-failed · Kerberos is still waiting on earlier requests to the Kerberos server; try again shortly.
+```
+
+### A plain 401
+
+A `401` response with no Kerberos error means no token was sent. Either the service did not offer
+`Negotiate`, or the time budget ran out before the second attempt (see below). Open the HTTP Log
+row and read `WWW-Authenticate` on its **Headers** tab. If it says `NTLM` only, the service has
+Kerberos turned off, and the fix is on the server. Wirebench offers NTLM as a separate auth type.
+
+## The deadline setting
+
+There is no separate Kerberos timeout. Waiting for the ticket spends the same budget as the two
+attempts, so the request's own timeout governs all three. Wirebench takes the first of these that
+is set:
+
+1. The request's own timeout: **Timeout (ms)** in a SOAP request's **Request properties**, or the
+   timeout on a REST request's **Settings** tab.
+2. The project's **Default timeout**.
+3. **Socket timeout** under **Preferences → HTTP**, 60 seconds unless you change it.
+
+If the ticket arrives but leaves no time for the second attempt, Wirebench returns the first
+attempt's `401` rather than sending a request it cannot wait for. Checking the server's reply token
+always gets at least one second, so a reply that has already arrived is never failed by the timer.
+
+Raise the timeout when the KDC is slow to answer over a VPN. Do not raise it to wait out a KDC you
+cannot reach: the `timeout` message is telling you about the network, not the budget.
+
+## Checklist
+
+- [ ] `kinit alice@CORP.EXAMPLE.COM` succeeds and `klist` shows an unexpired ticket.
+- [ ] `kgetcred HTTP/<host>@<REALM>` succeeds for the SPN the request uses.
+- [ ] **SPN** is blank for a registered host name, and set for an alias, an IP address or a
+      service running as a domain user.
+- [ ] **Principal** is blank, or names a ticket that `klist --list-all` shows.
+- [ ] The request carries no `Authorization` header of its own and no Windows account.
+- [ ] The service offers `Negotiate`, not only `NTLM`.
+- [ ] The Mac sets its clock automatically.
+- [ ] The request's timeout leaves room for the KDC to answer over your network.
+- [ ] On success, a SOAP response reads **Authenticated with Kerberos as** the SPN.
+
+## Related
+
+- [Authentication: Kerberos](/wirebench/docs/guides/auth/#kerberos): every Kerberos option and
+  error code, including Windows and Linux.
+- [WS-Trust tokens](/wirebench/docs/guides/ws-trust/): asking a token service for a SAML token with
+  a Kerberos ticket.
+- [HTTP Log](/wirebench/docs/guides/http-log/): reading a failed send.
