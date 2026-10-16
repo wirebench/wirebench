@@ -79,6 +79,10 @@ docker compose -f packages/server/compose.yaml up
 Both ports are published on `127.0.0.1` only: the server on `WIREBENCH_HTTP_PORT` (default `8080`) and the
 database on `WIREBENCH_DB_PORT` (default `5432`). Set either when the default is taken.
 
+For a team, the `docker-compose.yml` at the root of the repository runs the published image instead.
+[Run your team's API workbench behind your firewall](/wirebench/docs/getting-started/team-server/) walks
+through it.
+
 ## Configuration
 
 The server reads `WIREBENCH_SERVER_*` environment variables. A value it cannot use stops the start-up
