@@ -1,12 +1,12 @@
 ---
 title: Importing APIs
-description: Bring a WSDL, OpenAPI document, Postman collection, HAR capture, .http file, OpenCollection, Insomnia export, Bruno collection, Hoppscotch export, cURL command, .proto file, gRPC server or legacy SOAP project into Wirebench.
+description: Bring a WSDL, OpenAPI document, Postman collection, HAR capture, .http file, OpenCollection, Insomnia export, Bruno collection, Hoppscotch export, Thunder Client export, cURL command, .proto file, gRPC server or legacy SOAP project into Wirebench.
 ---
 
 import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
 Importing turns something you already have — a WSDL, an OpenAPI document, a Postman collection, a
-HAR capture of recorded traffic, a `.http` request file, an OpenCollection, an Insomnia export, a Bruno collection, a Hoppscotch export, a `curl` command, a `.proto` file, a running gRPC server, or a whole legacy SOAP project — into
+HAR capture of recorded traffic, a `.http` request file, an OpenCollection, an Insomnia export, a Bruno collection, a Hoppscotch export, a Thunder Client export, a `curl` command, a `.proto` file, a running gRPC server, or a whole legacy SOAP project — into
 requests you can run and edit in Wirebench. Most formats share one dialog; cURL has its own,
 smaller one.
 
@@ -24,6 +24,7 @@ smaller one.
 | Insomnia export or environments | Import dialog | File or pasted JSON/YAML |
 | Hoppscotch collection or environments | Import dialog | File or pasted JSON |
 | Bruno collection | Import dialog | A folder (**Folder…**), its `bruno.json`, or an exported or pasted JSON collection |
+| Thunder Client collection or environment | Import dialog | A `thunder-tests` folder (**Folder…**), or an exported or pasted JSON file |
 | .proto (gRPC) | Import dialog | URL, file, pasted text, or a running server |
 | Legacy SOAP project | Import dialog | File only |
 | cURL command | Import cURL dialog | Pasted command |
@@ -41,11 +42,11 @@ smaller one.
 
 3. Leave **Format** on **Auto-detect**, or pick one explicitly: **OpenAPI / Swagger**, **Postman
    Collection**, **Postman Collection v3 (folder)**, **Postman environment**, **Postman globals**, **HAR (recorded traffic)**, **.http file**, **HTTP client
-   environment file**, **OpenCollection**, **Insomnia export**, **Insomnia environments**, **Hoppscotch collection**, **Hoppscotch environments**, **Bruno collection (folder)**, **WSDL (SOAP)**, **Protocol Buffers (gRPC)**, or **Legacy SOAP project**. With
+   environment file**, **OpenCollection**, **Insomnia export**, **Insomnia environments**, **Hoppscotch collection**, **Hoppscotch environments**, **Bruno collection (folder)**, **Thunder Client collection**, **Thunder Client environment**, **WSDL (SOAP)**, **Protocol Buffers (gRPC)**, or **Legacy SOAP project**. With
    auto-detect, a badge shows what was recognized, for example "WSDL / SOAP" or "OpenAPI 3.1.0".
 
 4. Pick **Into project** — an open project, or **New project "…"**. Postman environments and
-   globals, HTTP client environment files and Insomnia and Hoppscotch environments land in the workspace, so the
+   globals, HTTP client environment files and Insomnia, Hoppscotch and Thunder Client environments land in the workspace, so the
    dialog does not ask.
 
 5. Choose **Import**.
@@ -502,6 +503,39 @@ From the command line, `wirebench import <file>` adds the same APIs and the plai
 lists secrets and scripts as not imported; an environments file is refused. See
 [From Hoppscotch](/wirebench/docs/switching/hoppscotch/) for every rule, and what does not come
 across.
+
+## Thunder Client exports
+
+Wirebench reads Thunder Client's collection and environment exports, a `thunder-tests` folder that
+keeps one file per collection, and the older folder of four files. Each collection becomes a REST
+API with its base URL as the server. Auto-detect recognizes an export by its content, and a folder
+by its files.
+
+<Steps>
+
+1. Open **Import…**; it detects the format, or pick **Thunder Client collection** or **Thunder
+   Client environment** yourself.
+
+2. On the **File** tab, pick or drop the exported `.json` file, or choose **Folder…** and pick the
+   `thunder-tests` folder. Or paste an export on the **Paste** tab. There is no URL tab.
+
+3. For a collection, choose the target project. Then **Import**.
+
+</Steps>
+
+- **Tests.** Status-code, response-time and plain JSON-path tests become assertions, on the request
+  and below the folder or collection that has them. Every other test is listed.
+- **Environments.** Each becomes a workspace environment, **never made active**; the global one
+  merges into Globals. Encrypted values and `.env` files cannot be read, and are listed.
+- **Request chaining** and run options are reported, not imported.
+- **Scripts** are saved as text under `imported-scripts/` and never run.
+- **Credentials** are never imported as plain text.
+- **A folder that keeps one file per request** is refused: export the collection instead.
+
+From the command line, `wirebench import <file-or-folder>` adds the same APIs, and lists
+environments and scripts as not imported; an environment export is refused. See
+[From Thunder Client](/wirebench/docs/switching/thunder-client/) for every rule, and what does not
+come across.
 
 ## cURL commands
 

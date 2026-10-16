@@ -95,6 +95,7 @@ export default defineConfig({
             { label: 'From Insomnia', slug: 'switching/insomnia' },
             { label: 'From Bruno', slug: 'switching/bruno' },
             { label: 'From Hoppscotch', slug: 'switching/hoppscotch' },
+            { label: 'From Thunder Client', slug: 'switching/thunder-client' },
           ],
         },
         {

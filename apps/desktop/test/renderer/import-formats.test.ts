@@ -19,6 +19,8 @@ describe('import formats table', () => {
       'hoppscotch',
       'hoppscotch-environment',
       'bruno',
+      'thunder-client',
+      'thunder-client-environment',
       'wsdl',
       'proto',
       'legacy-soap-project',
@@ -43,6 +45,8 @@ describe('import formats table', () => {
       hoppscotch: 'Imported collection',
       'hoppscotch-environment': 'Imported API',
       bruno: 'Imported collection',
+      'thunder-client': 'Imported collection',
+      'thunder-client-environment': 'Imported API',
       wsdl: 'Imported service',
       proto: 'Imported gRPC API',
       'legacy-soap-project': 'Imported API',
@@ -59,6 +63,7 @@ describe('import formats table', () => {
       'http-env',
       'insomnia-environment',
       'hoppscotch-environment',
+      'thunder-client-environment',
     ]);
     expect(where((row) => row.fileFirst)).toEqual([
       'postman',
@@ -74,6 +79,8 @@ describe('import formats table', () => {
       'hoppscotch',
       'hoppscotch-environment',
       'bruno',
+      'thunder-client',
+      'thunder-client-environment',
       'legacy-soap-project',
     ]);
     expect(where((row) => !row.tabs.includes('url'))).toEqual([
@@ -89,8 +96,10 @@ describe('import formats table', () => {
       'hoppscotch',
       'hoppscotch-environment',
       'bruno',
+      'thunder-client',
+      'thunder-client-environment',
     ]);
-    expect(where((row) => row.folder)).toEqual(['postman-v3', 'bruno']);
+    expect(where((row) => row.folder)).toEqual(['postman-v3', 'bruno', 'thunder-client']);
   });
 
   it('keeps each picker its filters and title', () => {

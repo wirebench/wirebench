@@ -1,0 +1,164 @@
+---
+title: From Thunder Client
+description: What a Thunder Client collection or environment export, or a thunder-tests folder, brings into Wirebench, what it leaves behind, and where each part lives once imported.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Thunder Client exports a collection or an environment as one JSON file, and can also save a
+workspace as a `thunder-tests` folder. Wirebench reads the exports, the folder that keeps one file
+per collection, and the older folder of four files. Each collection becomes a **REST API** in the
+project you choose. Its folders and requests keep their order. Its tests become assertions where
+Wirebench has the same check.
+
+Environments become workspace environments, and the global one merges into Globals. Scripts are
+kept as text and never run. Credentials do not come across as plain text. The import summary lists
+everything that was left out or changed.
+
+<Aside type="caution" title="An unpublished format">
+Thunder Client does not publish its file format. Wirebench reads it from exported files and the
+behaviour it documents. A file from a newer version may hold fields it does not know yet: those
+are left out, and anything it cannot read is named in the summary.
+</Aside>
+
+## Steps
+
+<Steps>
+
+1. Open **Import…**; it detects the format, or pick **Thunder Client collection** or **Thunder
+   Client environment** yourself.
+
+2. On the **File** tab, pick or drop the exported `.json` file, or choose **Folder…** and pick the
+   `thunder-tests` folder. Or paste an export's text on the **Paste** tab. There is no URL tab.
+
+3. For a collection, choose the target project. An environment export lands in the workspace, so
+   the dialog does not ask.
+
+4. Choose **Import**, then read the summary.
+
+</Steps>
+
+## What carries over
+
+### Collections
+
+| In the export | In Wirebench | More |
+| --- | --- | --- |
+| A collection | A REST API with its name. A folder of several collections gives each its own | |
+| The collection's base URL | The API's server. Each request's relative URL is joined to it | |
+| A folder | A folder in the API, ordered as Thunder Client orders it. A folder whose parent is missing goes to the top level | |
+| Collection and folder headers | Copied onto each request below that does not set the same header, and a note says so | |
+| Collection and folder auth | The auth of the API and the folder. A request with auth **inherit** takes it | [Auth](/wirebench/docs/guides/auth/) |
+| `{{name}}` | `${name}` | [Property syntax](/wirebench/docs/reference/property-syntax/) |
+| `{{#guid}}`, `{{#email}}`, `{{#number, 1, 5}}` and the other system variables | The matching dynamic variable, where Wirebench has one. Any other, and a `{{name \| filter}}`, is kept as written, with a warning | [Dynamic values](/wirebench/docs/reference/property-syntax/#dynamic-values) |
+
+### Requests
+
+| In the request | In Wirebench | More |
+| --- | --- | --- |
+| Method and URL | The request's method and URL | [REST](/wirebench/docs/guides/rest-client/) |
+| Query and path parameters | Rows in the **Params** table, a disabled one switched off | |
+| Headers | Rows in the **Headers** table, a disabled one switched off | |
+| A JSON, XML or text body | A raw body. When no `Content-Type` header is set, one is added from the body's type | [Request body](/wirebench/docs/guides/rest-client/#request-body) |
+| A form-encoded body | A form body | |
+| A multipart body | A multipart body. A file part keeps its path, with a note: the path is on the machine the export came from | |
+| A GraphQL body | A [GraphQL body](/wirebench/docs/guides/graphql/), with its query and variables | |
+| A binary body | A file body with its path, with a note | |
+| An SSE request | A plain HTTP request | |
+| The docs | The request's description | |
+| Tests | See [Tests](#tests) | |
+| Scripts | See [Scripts](#scripts) | |
+
+### Auth
+
+| In the export | In Wirebench |
+| --- | --- |
+| None, inherit | The same |
+| Basic | Basic, with the user name |
+| Bearer | Bearer. A custom prefix becomes the scheme |
+| OAuth 2 | OAuth 2 with its grant, URLs, client ID and scopes |
+| AWS | AWS Signature v4, with the region and service |
+| NTLM | NTLM, with the user name |
+| Any other type | Auth **none**, with a warning |
+
+### Tests
+
+Thunder Client's test rows on a request, its folders and its collection become
+[assertions](/wirebench/docs/guides/assertions/) on each request they apply to:
+
+| Test row | Assertion |
+| --- | --- |
+| Response code equal to a status | Status equals |
+| Response time less than a number | Response time (SLA) |
+| JSON query equal to a value, on a plain path such as `json.items[0].id` | A JSONPath match on `$.items[0].id`, the value read as a number, boolean or text |
+| JSON query contains a value | A JSONPath match on that text |
+
+Every other row is listed in the summary, once for the request, folder or collection that has it.
+A row that sets a variable from the response is listed with a pointer to captures and scripts.
+
+### Environments
+
+- **Each environment** becomes a workspace environment, renamed when the name is taken and **never
+  made active**. Being the default or local environment in Thunder Client does not change that,
+  and a note says so.
+- **The global environment** merges into Globals instead.
+- **Secret variables** become secrets: the value goes to the secret store, never to a file.
+- **Encrypted values** cannot be read. Each becomes a secret with no value, listed so you can set it.
+- **An environment that reads its values from a `.env` file** comes across without them: the file
+  is never read, and a warning names it.
+
+A variable whose name looks like a credential and whose value is a literal becomes a secret, with a
+note.
+
+### Scripts
+
+Every pre-request and post-request script, on a request or a collection, is written as it is to
+`imported-scripts/` in the project folder, and never read back or run. An existing file is never
+overwritten: a second import adds a number to the name. The notes list where each script went, and
+a warning names the script API they call.
+
+## Credentials
+
+No literal credential is written into a project or workspace file. Passwords, tokens, keys and
+client secrets are not copied, and the summary counts the auth configurations that need one. Enter
+each on its **Auth** tab; Wirebench stores it encrypted outside the project.
+
+## What does not carry over
+
+| In the export | What happens | What to do |
+| --- | --- | --- |
+| Requests that run other requests first | Reported, not imported | Build the chain as a [sequence](/wirebench/docs/guides/sequences/) |
+| Run options (delay, iterations, data file) | Reported, not imported | Set them on the run |
+| The environment a collection is attached to | Not imported with it, with a note | Import the environment on its own |
+| WebSocket and other non-HTTP requests | Skipped, with a warning | |
+| A folder that keeps one file per request | Refused, with a message | Export the collection from Thunder Client and import that file |
+| The `_db-backup` folders an upgrade leaves | Never read | |
+
+## The command line
+
+`wirebench import <file-or-folder>` reads a collection export or a `thunder-tests` folder and adds
+its APIs. It has no secret store, workspace or script folder, so it lists environments and scripts
+as not imported. An environment export is refused.
+
+## Limits
+
+- A file larger than 50 MB is refused, picked or pasted.
+
+## After importing
+
+<Steps>
+
+1. Read the summary, or choose **Copy report** to keep it as a checklist.
+
+2. Enter the passwords, tokens and keys it counts, on each **Auth** tab, and the values of the
+   secrets it lists. See [Secrets](/wirebench/docs/guides/secrets/).
+
+3. Pick one of the imported environments to make it active. Import never switches environments for
+   you. See [Environments and properties](/wirebench/docs/guides/environments/).
+
+</Steps>
+
+<Aside type="note" title="Scripts are kept, not translated">
+An imported script is text written against another client's scripting API. Wirebench never runs it;
+rewrite what you need as a Wirebench script or as assertions.
+</Aside>

@@ -44,10 +44,9 @@ describe('Import dialog — a picked source detected in main', () => {
     openFolder.mockResolvedValue({ ok: true, value: { path: '/work/thunder-tests' } });
     await openOnFileTab();
     fireEvent.click(screen.getByTestId('import-browse-folder'));
-    expect(await screen.findByText('Thunder Client collection')).toBeTruthy();
+    expect((await screen.findByTestId('detected-format-badge')).textContent).toBe('Thunder Client collection');
     expect(detectImportSource).toHaveBeenCalledWith({ path: '/work/thunder-tests', folder: true });
-    fireEvent.click(screen.getByTestId('import-submit'));
-    expect(await screen.findByText(/Thunder Client collection cannot be imported yet/)).toBeTruthy();
+    expect(await screen.findByTestId('import-thunder-client-help')).toBeTruthy();
   });
 
   it('drops an answer for a path that has since changed', async () => {
