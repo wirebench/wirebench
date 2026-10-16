@@ -50,6 +50,9 @@ All notable changes to this project are documented here. The format follows
 - **A refused proxy tunnel no longer reads as Cancelled.** When an HTTPS request goes through a proxy
   that refuses the tunnel (a 407 for a wrong or missing proxy password), the send now fails with
   "Proxy connection failed" and the proxy's status, instead of showing as if you had cancelled it.
+- **The "Method changed to POST" toast goes when it stops being true.** Switching a REST body to
+  GraphQL and back, or to another kind, now takes the toast and its **Undo** down at once instead of
+  leaving it up for its full eight seconds (#632).
 
 ## [6.1.0] - 2026-10-16
 
