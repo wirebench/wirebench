@@ -114,8 +114,8 @@ describe('parseInsomnia v4', () => {
     ]);
     const [w] = parseInsomnia(text).workspaces;
     expect(w?.protos).toEqual([
-      { id: 'pf_1', name: 'orders.proto', text: 'syntax = "proto3";', dirId: 'pd_1' },
-      { id: 'pf_2', name: 'top.proto', text: 'syntax = "proto3";' },
+      { id: 'pf_1', name: 'orders.proto', text: 'syntax = "proto3";', dirId: 'pd_1', path: 'protos/orders.proto' },
+      { id: 'pf_2', name: 'top.proto', text: 'syntax = "proto3";', path: 'top.proto' },
     ]);
   });
 

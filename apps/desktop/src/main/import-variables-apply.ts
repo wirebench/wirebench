@@ -12,6 +12,7 @@
  */
 import type { ImportedVariable, ImportedVariables, ImportedVariableSet } from '@wirebench/engine';
 import { uniqueName } from '@wirebench/engine';
+import { isEnvironmentColor } from '../shared/environment-colors.js';
 
 export interface VariablesApplyPorts {
   readonly workspace: {
@@ -121,7 +122,12 @@ export async function applyImportedVariables(
         notes.push(`An environment named "${env.name}" already exists, so this one was imported as "${name}".`);
       }
       const { properties, disabled } = await resolveSet(name, env.variables);
-      await ports.workspace.addEnvironment(name, properties, disabled, env.color);
+      let color = env.color;
+      if (color !== undefined && !isEnvironmentColor(color)) {
+        warnings.push(`${name}: its colour "${color}" is not a palette name or #rrggbb and was not kept.`);
+        color = undefined;
+      }
+      await ports.workspace.addEnvironment(name, properties, disabled, color);
       addedEnvironments.push(name);
       environments.push({
         name,

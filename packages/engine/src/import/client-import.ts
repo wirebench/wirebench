@@ -18,7 +18,14 @@ export interface MappedClientImport {
   readonly variables: ImportedVariables;
   readonly scripts: readonly ImportedScriptFile[];
   /** Root-relative `.proto` paths gRPC requests name (Bruno), or proto texts by name (Insomnia v4). */
-  readonly protos: readonly { readonly name: string; readonly text: string }[];
+  readonly protos: readonly {
+    readonly name: string;
+    readonly text: string;
+    /** Insomnia: the path inside its workspace (directory names, then the file name). */
+    readonly path?: string;
+    /** Insomnia: the index into `collections` of the workspace that holds it. */
+    readonly collection?: number;
+  }[];
   readonly counts: {
     readonly collections: number;
     readonly requests: number;

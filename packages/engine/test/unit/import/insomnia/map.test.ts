@@ -261,8 +261,8 @@ describe('mapInsomnia: gRPC', () => {
       grpc({ protoFileId: 'pf_1' }),
     ]);
     expect(mapped.protos).toEqual([
-      { name: 'orders.proto', text: 'syntax = "proto3";' },
-      { name: 'common.proto', text: 'syntax = "proto3"; // c' },
+      { name: 'orders.proto', text: 'syntax = "proto3";', path: 'protos/orders.proto', collection: 0 },
+      { name: 'common.proto', text: 'syntax = "proto3"; // c', path: 'protos/common.proto', collection: 0 },
     ]);
     expect(allLines(mapped).some((l) => l.includes('needs a definition'))).toBe(false);
   });
@@ -442,9 +442,8 @@ describe('mapInsomnia: environments', () => {
       { name: 'svcPassword', value: '', enabled: true, secret: true, awaitsValue: true },
     ]);
     expect(JSON.stringify(mapped)).not.toContain('c2VhbGVk');
-    expect(mapped.variables.report.warnings).toContain(
-      'Vault secrets cannot be read from an export: svcPassword (Staging). Each was imported as a secret with no value; set it in Environments.',
-    );
+    // Each vault secret is reported once, by the desktop's per-secret "needs a value" line.
+    expect(mapped.variables.report.warnings.join('\n')).not.toContain('svcPassword');
     // `{{ _.vault.svcPassword }}` points at that secret by name.
     const text = JSON.stringify(mapped.collections[0]!.rest);
     expect(text).not.toContain('_.vault');

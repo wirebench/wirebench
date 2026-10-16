@@ -385,7 +385,7 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
   const collections: MappedCollectionV3Entry[] = [];
   const scripts: ImportedScriptFile[] = [];
   const protoIds = new Set<string>();
-  const protos: { name: string; text: string }[] = [];
+  const protos: { name: string; text: string; path: string; collection: number }[] = [];
   let order = options.firstOrder ?? 0;
   let requests = 0;
   let folders = 0;
@@ -509,7 +509,7 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
     for (const p of ws.protos) {
       if (grpcState.protos.has(p.id) && !protoIds.has(p.id)) {
         protoIds.add(p.id);
-        protos.push({ name: p.name, text: p.text });
+        protos.push({ name: p.name, text: p.text, path: p.path, collection: collections.length });
       }
     }
     requests += http.summary.requests + grpcWalk.count + wsWalk.count;
@@ -525,11 +525,6 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
   for (const [tag, users] of mapper.kept) {
     report.warn(
       `Kept as written, with no Wirebench equivalent: the template tag "${tag}" in ${[...users].join(', ')}.`,
-    );
-  }
-  if (mapper.vault.length > 0) {
-    variableReport.warn(
-      `Vault secrets cannot be read from an export: ${mapper.vault.join(', ')}. Each was imported as a secret with no value; set it in Environments.`,
     );
   }
   if (mapper.variableDynamic.size > 0) {

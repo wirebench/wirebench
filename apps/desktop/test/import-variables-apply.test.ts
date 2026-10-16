@@ -139,6 +139,16 @@ describe('applyImportedVariables', () => {
     expect(added.map((env) => env.color)).toEqual(['#ff8800', undefined]);
   });
 
+  it('drops a colour that is not a palette name or #rrggbb and says so', async () => {
+    const { ports, added } = fakePorts();
+    const result = await applyImportedVariables(
+      plan({ environments: [{ name: 'Odd', color: 'chartreuse-ish', variables: [] }] }),
+      ports,
+    );
+    expect(added[0]?.color).toBeUndefined();
+    expect(result.warnings.join('\n')).toContain('"chartreuse-ish"');
+  });
+
   it('keeps existing globals and reports the names it skipped', async () => {
     const { ports, globals } = fakePorts({ globals: { tenant: 'mine' } });
     const result = await applyImportedVariables(
@@ -165,7 +175,13 @@ describe('applyImportedVariables', () => {
       applyImportedVariables(
         plan({
           environments: [
-            { name: 'E', variables: [{ name: 'token', value: '', enabled: true, secret: true, secretValue: 'x' }] },
+            {
+              name: 'E',
+              variables: [
+                { name: 'token', value: '', enabled: true, secret: true, secretValue: 'x' },
+                { name: 'vault', value: '', enabled: true, secret: true, awaitsValue: true },
+              ],
+            },
           ],
         }),
         ports,

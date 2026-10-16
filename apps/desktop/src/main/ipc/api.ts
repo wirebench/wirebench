@@ -773,18 +773,32 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       ...(request.name !== undefined && request.name.trim() !== '' ? { name: request.name } : {}),
     });
 
-    // The `.proto` texts the gRPC requests name load as one set, or the APIs have no definition.
-    let protos: { readonly roots: readonly string[]; readonly sources: Map<string, string> } | undefined;
+    // Each collection's `.proto` files load as a set of their own; a set that does not load costs
+    // only that collection's gRPC API its definition.
+    const protos = new Map<number, { readonly roots: readonly string[]; readonly sources: Map<string, string> }>();
     const protoWarnings: string[] = [];
-    if (mapped.protos.length > 0 && mapped.collections.some((collection) => collection.grpc !== undefined)) {
-      const sources = new Map(mapped.protos.map((proto) => [proto.name, proto.text]));
+    const byCollection = new Map<number, Map<string, string>>();
+    for (const proto of mapped.protos) {
+      const index = proto.collection ?? 0;
+      const path = proto.path ?? proto.name;
+      const sources = byCollection.get(index) ?? new Map<string, string>();
+      byCollection.set(index, sources);
+      if (sources.has(path)) {
+        protoWarnings.push(`Two .proto files are both at "${path}"; the first was kept.`);
+      } else {
+        sources.set(path, proto.text);
+      }
+    }
+    for (const [index, sources] of byCollection) {
+      const collection = mapped.collections[index];
+      if (collection?.grpc === undefined) continue;
       const roots = [...sources.keys()];
       try {
         loadProtoSet(sources, { roots });
-        protos = { roots, sources };
+        protos.set(index, { roots, sources });
       } catch (error) {
         protoWarnings.push(
-          `The .proto files could not be loaded, so the gRPC APIs have no definition: ${error instanceof Error ? error.message : String(error)}`,
+          `${collection.grpc.name}: the .proto files could not be loaded, so it has no definition: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
@@ -797,7 +811,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       const { scripts, ...placed } = await placeMappedImport(deps, projectId, placing, {
         source: checkedSource.kind === 'file' ? checkedSource.path : 'inline:insomnia',
         declaredVersion: 'insomnia',
-        ...(protos !== undefined ? { protos } : {}),
+        ...(protos.size > 0 ? { protos } : {}),
       });
       return { ...placed, counts: { ...mapped.counts, scripts } };
     };

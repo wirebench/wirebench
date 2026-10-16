@@ -319,13 +319,17 @@ function readV4Workspace(
   const baseId = base === undefined ? undefined : str(base['_id']);
   const subs = subEnvironmentsOf(children, baseId, first);
   const protos: InsWorkspace['protos'] = [];
-  const dirs = new Set(typed(wid, 'proto_directory').map((d) => str(d['_id']) ?? ''));
-  const protoParents = [wid, ...dirs];
+  const dirNames = new Map(
+    typed(wid, 'proto_directory').map((d) => [str(d['_id']) ?? '', nonEmpty(d['name']) ?? 'protos']),
+  );
+  const protoParents = [wid, ...dirNames.keys()];
   for (const parent of protoParents) {
     for (const p of typed(parent, 'proto_file')) {
+      const fileName = nonEmpty(p['name']) ?? 'Imported proto';
       protos.push({
         id: str(p['_id']) ?? '',
-        name: nonEmpty(p['name']) ?? 'Imported proto',
+        name: fileName,
+        path: parent === wid ? fileName : `${dirNames.get(parent) ?? 'protos'}/${fileName}`,
         text: scalar(p['protoText']),
         ...(parent !== wid ? { dirId: parent } : {}),
       });

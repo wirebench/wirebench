@@ -211,6 +211,88 @@ describe('api.importInsomnia', () => {
   });
 });
 
+describe('api.importInsomnia: protos', () => {
+  beforeEach(() => {
+    handlers.clear();
+  });
+
+  const GOOD = 'syntax = "proto3"; package a; message M { string id = 1; }';
+  const proto = (id: string, parent: string, name: string, protoText: string) => ({
+    _id: id,
+    parentId: parent,
+    _type: 'proto_file',
+    name,
+    protoText,
+  });
+  const grpcReq = (id: string, parent: string, protoFileId: string) => ({
+    _id: id,
+    parentId: parent,
+    _type: 'grpc_request',
+    name: 'Get',
+    url: 'grpc://localhost:50051',
+    protoFileId,
+    protoMethodName: '/a.S/Get',
+    body: { text: '{}' },
+    metadata: [],
+  });
+  const workspace = (id: string, name: string) => ({ _id: id, parentId: null, _type: 'workspace', name });
+  const exportOf = (...resources: unknown[]) =>
+    JSON.stringify({ _type: 'export', __export_format: 4, __export_date: '2026-01-01', resources });
+  const run = (text: string) =>
+    value<Response>('api.importInsomnia', { target: { projectId: 'p1' }, source: { kind: 'text', text } });
+
+  it('places a gRPC API with the proto set its requests name', async () => {
+    const { deps } = setup();
+    await run(
+      exportOf(
+        workspace('wrk_1', 'W'),
+        { _id: 'pd_1', parentId: 'wrk_1', _type: 'proto_directory', name: 'protos' },
+        proto('pf_1', 'pd_1', 'a.proto', GOOD),
+        grpcReq('greq_1', 'wrk_1', 'pf_1'),
+      ),
+    );
+    const call = vi.mocked(deps.router.addGrpcApi).mock.calls[0];
+    expect(call?.[1]).toMatchObject({ kind: 'proto', roots: ['protos/a.proto'] });
+    expect(deps.router.importGrpcApi).not.toHaveBeenCalled();
+  });
+
+  it('an unparsable proto warns and leaves that API without a definition', async () => {
+    const { deps } = setup();
+    const response = await run(
+      exportOf(
+        workspace('wrk_1', 'W'),
+        proto('pf_1', 'wrk_1', 'a.proto', 'this is not proto {{'),
+        grpcReq('g', 'wrk_1', 'pf_1'),
+      ),
+    );
+    expect(deps.router.addGrpcApi).not.toHaveBeenCalled();
+    expect(deps.router.importGrpcApi).toHaveBeenCalledTimes(1);
+    expect(response.warnings.join('\n')).toContain('could not be loaded');
+  });
+
+  it('two workspaces each holding service.proto keep their own contents', async () => {
+    const { deps } = setup();
+    await run(
+      exportOf(
+        workspace('wrk_1', 'One'),
+        workspace('wrk_2', 'Two'),
+        proto('pf_1', 'wrk_1', 'service.proto', 'syntax = "proto3"; package one; message M {}'),
+        proto('pf_2', 'wrk_2', 'service.proto', 'syntax = "proto3"; package two; message M {}'),
+        grpcReq('g1', 'wrk_1', 'pf_1'),
+        grpcReq('g2', 'wrk_2', 'pf_2'),
+      ),
+    );
+    const calls = vi.mocked(deps.router.addGrpcApi).mock.calls;
+    expect(calls).toHaveLength(2);
+    const texts = calls.map((call) => {
+      const input = call[1];
+      return input.kind === 'proto' ? [...input.sources.values()] : [];
+    });
+    expect(texts[0]).toEqual(['syntax = "proto3"; package one; message M {}']);
+    expect(texts[1]).toEqual(['syntax = "proto3"; package two; message M {}']);
+  });
+});
+
 describe('api.importClientEnvironments', () => {
   beforeEach(() => {
     handlers.clear();

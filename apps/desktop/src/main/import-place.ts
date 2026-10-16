@@ -49,8 +49,8 @@ export async function placeMappedImport(
   meta: {
     readonly source: string;
     readonly declaredVersion: string;
-    /** `.proto` files that load together: each gRPC API is placed with them as its definition. */
-    readonly protos?: { readonly roots: readonly string[]; readonly sources: Map<string, string> };
+    /** Per collection index, `.proto` files that load together: that collection's gRPC API is placed with them. */
+    readonly protos?: ReadonlyMap<number, { readonly roots: readonly string[]; readonly sources: Map<string, string> }>;
   },
 ): Promise<PlacedImport> {
   const { router } = deps;
@@ -60,7 +60,7 @@ export async function placeMappedImport(
     project = added.project;
     apiIds.push(added.apiId);
   };
-  for (const collection of mapped.collections) {
+  for (const [index, collection] of mapped.collections.entries()) {
     if (collection.rest !== undefined) {
       placed(
         await router.addApi(projectId, {
@@ -73,15 +73,16 @@ export async function placeMappedImport(
       );
     }
     if (collection.grpc !== undefined) {
+      const protos = meta.protos?.get(index);
       placed(
-        meta.protos === undefined
+        protos === undefined
           ? await router.importGrpcApi(projectId, { api: collection.grpc })
           : await router.addGrpcApi(projectId, {
               api: collection.grpc,
-              roots: meta.protos.roots,
+              roots: protos.roots,
               source: meta.source,
               kind: 'proto',
-              sources: meta.protos.sources,
+              sources: protos.sources,
             }),
       );
     }

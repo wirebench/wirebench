@@ -95,7 +95,7 @@ export interface InsWorkspace {
   items: InsNode[];
   baseEnv?: InsEnv;
   subEnvs: InsEnv[];
-  protos: { id: string; name: string; text: string; dirId?: string }[];
+  protos: { id: string; name: string; text: string; dirId?: string; path: string }[];
   /** What the file held that is not read: `cookie jar`, `unit tests`, `API spec`. */
   extras: string[];
   /** The unit test suites, which are reported, not imported: each test's name and the request it checks. */
