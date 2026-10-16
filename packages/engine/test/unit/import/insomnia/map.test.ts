@@ -611,6 +611,35 @@ describe('mapInsomnia: credentials outside REST', () => {
   });
 });
 
+describe('mapInsomnia: credential header values', () => {
+  const kept = (value: string): boolean => {
+    const mapped = mapV4([
+      {
+        _id: 'ws-req_1',
+        parentId: 'wrk_1',
+        _type: 'websocket_request',
+        name: 'Echo',
+        url: 'wss://echo.example.com/ws',
+        headers: [{ name: 'Authorization', value }],
+      },
+    ]);
+    return mapped.collections[0]!.websocket!.requests[0]!.headers.length === 1;
+  };
+
+  it('keeps a scheme word beside references', () => {
+    expect(kept('Bearer {{ _.token }}')).toBe(true);
+    expect(kept('basic {{ _.creds }}')).toBe(true);
+  });
+
+  it('drops a literal token after the scheme', () => {
+    expect(kept('Bearer abc')).toBe(false);
+  });
+
+  it('drops literal text joined to a reference', () => {
+    expect(kept('{{ _.token }}x')).toBe(false);
+  });
+});
+
 describe('mapInsomnia: several workspaces', () => {
   it('prefixes request-labelled lines with the workspace name', () => {
     const mapped = mapInsomnia(

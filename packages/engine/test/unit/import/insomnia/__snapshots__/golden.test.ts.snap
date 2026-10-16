@@ -20,7 +20,13 @@ exports[`mapInsomnia golden > maps the crafted v5 collection 1`] = `
                 "id": "id-1",
                 "kind": "grpc",
                 "message": "{"id": "42"}",
-                "metadata": [],
+                "metadata": [
+                  {
+                    "enabled": true,
+                    "name": "authorization",
+                    "value": "Bearer \${token}",
+                  },
+                ],
                 "method": "GetOrder",
                 "methodKind": "unary",
                 "name": "GetOrder (gRPC)",
@@ -298,7 +304,6 @@ exports[`mapInsomnia golden > maps the crafted v5 collection 1`] = `
       "Orders: pre-request script saved as imported-scripts/orders api/orders.pre.js.",
       "Orders / Create order: pre-request script saved as imported-scripts/orders api/create order.pre.js.",
       "Orders / Create order: post-response script saved as imported-scripts/orders api/create order.post.js.",
-      "Orders / GetOrder (gRPC): the value of "authorization" is a credential and was not imported.",
       "Orders / Upload attachment: the file part "file" points at /Users/dev/invoice.pdf, which is not in the export; check the path before sending.",
       "Orders / Upload attachment: the "store cookies" setting has no Wirebench equivalent and was not imported.",
       "Orders: its headers (X-Tenant) were copied onto each request below it that does not set them.",
@@ -308,7 +313,6 @@ exports[`mapInsomnia golden > maps the crafted v5 collection 1`] = `
     "warnings": [
       "Imported scripts use insomnia. calls from another client; they are kept as text and do not run in Wirebench.",
       "Credentials are not copied from the collection; re-enter them for 2 auth configurations",
-      "Credentials are not copied from gRPC and WebSocket requests; re-enter them for 1 auth configuration",
       "Kept as written, with no Wirebench equivalent: the template tag "response" in Orders / Latest order (chained).",
     ],
   },

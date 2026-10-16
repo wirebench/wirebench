@@ -27,7 +27,7 @@ import { importedVariable } from '../opencollection/variables.js';
 import { ReportBuilder, uniqueName } from '../report.js';
 import type { ImportedScriptFile } from '../scripts.js';
 import { rewriteMustache } from '../templates.js';
-import { referencesOnly, stripUserinfo } from '../values.js';
+import { stripUserinfo } from '../values.js';
 import type { ImportedVariable, ImportedVariableSet } from '../variables.js';
 import { VariableSetBuilder, warnCredentialLookingNames } from '../variables.js';
 import type { KeptTags, Trail } from './convert.js';
@@ -51,6 +51,14 @@ function isRec(value: unknown): value is Rec {
 
 /** Header and metadata names whose literal value is a credential, never copied (lower case). */
 const CREDENTIAL_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'x-api-key']);
+/** Auth scheme words a credential header may hold beside its references (lower case). */
+const AUTH_SCHEMES = new Set(['bearer', 'basic', 'digest', 'token', 'negotiate', 'apikey']);
+
+/** True when `value` holds no literal credential: only references, optionally after one scheme word. */
+function credentialSafe(value: string): boolean {
+  const rest = value.replace(/\$\{[^{}]*\}/g, '').trim();
+  return rest === '' || AUTH_SCHEMES.has(rest.toLowerCase());
+}
 
 /**
  * `data` with its keys in `dataPropertyOrder` order (`"&"` for the root, `"&~|key"` below it); keys
@@ -98,7 +106,8 @@ class Mapper {
 
   /**
    * Rows as entries. With `dropCredentials` (headers, gRPC metadata), a credential-named row whose
-   * value is not references alone is left out and counted for the credential warning.
+   * value holds a literal credential (more than references after one scheme word) is left out and
+   * counted for the credential warning.
    */
   rows(list: readonly InsRow[], label: string, dropCredentials = false): KeyValueEntry[] {
     const out: KeyValueEntry[] = [];
@@ -106,7 +115,7 @@ class Mapper {
       if (row.name === '') continue;
       const name = this.text(row.name, label);
       const value = this.text(row.value, label);
-      if (dropCredentials && CREDENTIAL_HEADERS.has(name.toLowerCase()) && value !== '' && !referencesOnly(value)) {
+      if (dropCredentials && CREDENTIAL_HEADERS.has(name.toLowerCase()) && !credentialSafe(value)) {
         this.credentials += 1;
         this.report.note(`${label}: the value of "${name}" is a credential and was not imported.`);
         continue;

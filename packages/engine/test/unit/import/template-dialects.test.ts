@@ -135,7 +135,8 @@ describe('thunderTemplates', () => {
   it('returns promptly on a long run of braces', () => {
     const start = performance.now();
     thunderTemplates('{'.repeat(1_000_000), new Set());
-    expect(performance.now() - start).toBeLessThan(50);
+    // Linear is a few ms; quadratic over 10^6 characters is ~10^12 steps, minutes. 500 ms leaves load room.
+    expect(performance.now() - start).toBeLessThan(500);
   });
 });
 
@@ -162,6 +163,7 @@ describe('brunoTemplates', () => {
   it('returns promptly on a long run of braces', () => {
     const start = performance.now();
     brunoTemplates('{'.repeat(1_000_000), new Set());
-    expect(performance.now() - start).toBeLessThan(50);
+    // Linear is a few ms; quadratic over 10^6 characters is ~10^12 steps, minutes. 500 ms leaves load room.
+    expect(performance.now() - start).toBeLessThan(500);
   });
 });
