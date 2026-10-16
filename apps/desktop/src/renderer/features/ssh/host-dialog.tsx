@@ -49,6 +49,7 @@ import {
 } from './host-form-model.js';
 import { useSecretNames } from './secret-fields.js';
 import { findIdentity, identitiesOf } from './identities.js';
+import { storeSshSecret } from './secret-writes.js';
 
 type Inheritable = 'user' | 'port' | 'jump' | 'keepAlive' | 'connectTimeout';
 
@@ -218,7 +219,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
               id,
               secretNames.map((n) => n.name),
             );
-      const stored = await ipc().ssh.setSecret({ name: secret, value: password });
+      const stored = await storeSshSecret({ name: secret, value: password });
       if (!stored.ok) {
         setSecretError(stored.error.message);
         return;
@@ -240,7 +241,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
           secretNames.map((n) => n.name),
           'proxy_password',
         );
-      const stored = await ipc().ssh.setSecret({ name: secret, value: proxyPassword });
+      const stored = await storeSshSecret({ name: secret, value: proxyPassword });
       if (!stored.ok) {
         setSecretError(stored.error.message);
         return;

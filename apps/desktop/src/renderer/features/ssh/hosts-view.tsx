@@ -21,11 +21,20 @@ import { openLocalTerminal } from './local-terminal.js';
 import { refreshLayouts, useLayoutsStore } from './panes/layouts-store.js';
 import { useSnippetsStore } from './snippets/snippets-store.js';
 
-const ENTRIES: readonly { readonly id: SshHomeView; readonly label: string; readonly icon: LucideIcon }[] = [
+/*
+ * `label` is the menu's; the view's own title (`ssh-views.ts`) may be longer. "Forwarding" with its running
+ * count fits the default sidebar width, where "Port forwarding" was cut short (#593).
+ */
+const ENTRIES: readonly {
+  readonly id: SshHomeView;
+  readonly label: string;
+  readonly title?: string;
+  readonly icon: LucideIcon;
+}[] = [
   { id: 'hosts', label: 'Hosts', icon: Server },
   { id: 'snippets', label: 'Snippets', icon: SquareTerminal },
   { id: 'layouts', label: 'Layouts', icon: LayoutPanelLeft },
-  { id: 'forwarding', label: 'Port forwarding', icon: ArrowLeftRight },
+  { id: 'forwarding', label: 'Forwarding', title: 'Port forwarding', icon: ArrowLeftRight },
   { id: 'keychain', label: 'Keychain', icon: KeyRound },
   { id: 'known-hosts', label: 'Known hosts', icon: ShieldCheck },
 ];
@@ -56,6 +65,7 @@ export function HostsView() {
   // Whether the fixed tab is the one in front: the entry only reads as current while it is.
   const homeShown = useEditorsStore((s) => s.displayedSet === 'ssh' && s.activeId === undefined);
   const knownHostsRevision = useHostsStore((s) => s.knownHostsRevision);
+  const secretsRevision = useHostsStore((s) => s.secretsRevision);
   const [counts, setCounts] = useState<{ keychain?: number; knownHosts?: number }>({});
   const localTerminal = useUiStore((s) => s.localTerminalEnabled);
 
@@ -68,8 +78,8 @@ export function HostsView() {
     refreshLayouts(); // likewise the Layouts count
   }, [refresh]);
 
-  // Counted again when the menu is picked from or the hosts are saved (a host's dialog can store a
-  // secret), so a key trusted or a secret stored since shows.
+  // Counted again when the menu is picked from, the hosts are saved, keys are imported or anything writes
+  // to the keychain (a key generated, a secret stored anywhere), so the counts never lag the views.
   useEffect(() => {
     void (async () => {
       const [names, known] = await Promise.all([ipc().ssh.secretNames(undefined), ipc().ssh.knownHosts(undefined)]);
@@ -78,7 +88,7 @@ export function HostsView() {
         ...(known.ok ? { knownHosts: known.value.entries.length } : {}),
       });
     })();
-  }, [homeView, homeShown, resolved, knownHostsRevision]);
+  }, [homeView, homeShown, resolved, knownHostsRevision, secretsRevision]);
 
   const countOf = (id: SshHomeView): number | undefined =>
     id === 'hosts'
@@ -104,7 +114,7 @@ export function HostsView() {
     <div className="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto p-2">
       <nav aria-label="SSH">
         <ul className="flex flex-col gap-0.5">
-          {ENTRIES.map(({ id, label, icon: Icon }) => {
+          {ENTRIES.map(({ id, label, title: name = label, icon: Icon }) => {
             const current = homeShown && homeView === id;
             // A zero says nothing on a first run, so it is left out; forwards count only the running ones.
             const count = countOf(id) || undefined;
@@ -115,7 +125,7 @@ export function HostsView() {
                   type="button"
                   data-testid={`ssh-nav-${id}`}
                   aria-current={current ? 'page' : undefined}
-                  title={count === undefined ? label : `${label} (${String(count)}${running ? ' running' : ''})`}
+                  title={count === undefined ? name : `${name} (${String(count)}${running ? ' running' : ''})`}
                   onClick={() => {
                     open(id);
                   }}
@@ -128,7 +138,7 @@ export function HostsView() {
                   {count !== undefined &&
                     (running ? (
                       <span data-testid="ssh-nav-forwarding-running" className={`${COUNT_CLASS} items-center gap-1`}>
-                        <span aria-hidden="true" className="inline-block size-1.5 rounded-full bg-status-success" />{' '}
+                        <span aria-hidden="true" className="inline-block size-1.5 rounded-full bg-status-success" />
                         {count}
                       </span>
                     ) : (

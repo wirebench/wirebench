@@ -4,17 +4,24 @@
  * commands before a fuzzy hit such as Close Tab, and "history" lists the History commands first.
  */
 import { defaultFilter } from 'cmdk';
+import { areaKeywords } from '@shared/command-catalog.js';
 
 /** A fuzzy match never outranks a group match: cmdk's score is at most 1, so it is scaled under it. */
 const FUZZY_CEILING = 0.9;
 
 /**
- * The names a search can pick a command's group by: its category, and the prefix its label leads with
- * (`REST` in `REST: New Request`, `History` in `History: Clear`). These are the item's cmdk keywords.
+ * The names a search can pick a command's group by: its category, the prefix its label leads with
+ * (`REST` in `REST: New Request`, `History` in `History: Clear`), and its area's name (`ssh` for the
+ * SSH area's commands, given an `id`). These are the item's cmdk keywords.
  */
-export function paletteKeywords(command: { readonly category: string; readonly label: string }): string[] {
+export function paletteKeywords(command: {
+  readonly id?: string;
+  readonly category: string;
+  readonly label: string;
+}): string[] {
   const prefix = /^([^:]+):\s/.exec(command.label)?.[1];
-  return prefix === undefined || prefix === command.category ? [command.category] : [command.category, prefix];
+  const names = prefix === undefined || prefix === command.category ? [command.category] : [command.category, prefix];
+  return command.id === undefined ? names : [...names, ...areaKeywords(command.id)];
 }
 
 /**

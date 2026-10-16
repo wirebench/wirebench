@@ -17,6 +17,7 @@ import { INPUT_CLASS } from '../inherited-field.js';
 import { startRun } from './run.js';
 import { addPackage, freeSnippetId, scriptTokens, undeclaredTokens, upsertSnippet } from './snippet-edit.js';
 import { useSnippetsStore } from './snippets-store.js';
+import { storeSshSecret } from '../secret-writes.js';
 
 /** The package picker's choices that are not a package id. */
 const NO_PACKAGE = '';
@@ -194,7 +195,7 @@ function SnippetForm(props: {
     const secret = newSecret.name.trim();
     if (secret === '') return;
     // Write-only: the value goes to main and is never read back; the script only ever gets the name.
-    const result = await ipc().ssh.setSecret({ name: secret, value: newSecret.value });
+    const result = await storeSshSecret({ name: secret, value: newSecret.value });
     if (!result.ok) {
       setNewSecret({ name: newSecret.name, value: '', error: result.error.message });
       return;

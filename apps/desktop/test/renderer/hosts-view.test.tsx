@@ -27,6 +27,7 @@ vi.mock('../../src/renderer/state/ipc-client.js', () => ({
   }),
 }));
 import { HostsView } from '../../src/renderer/features/ssh/hosts-view.js';
+import { storeSshSecret } from '../../src/renderer/features/ssh/secret-writes.js';
 import { openTerminalFor } from '../../src/renderer/features/ssh/connect.js';
 import { HostDetails, sshCommandOf, useHostDetailsShown } from '../../src/renderer/features/ssh/host-details.js';
 import { SshHome } from '../../src/renderer/features/ssh/ssh-home.js';
@@ -174,7 +175,7 @@ describe('SSH menu', () => {
     });
     // No snippets, layouts or running forwards: the entries show their label only.
     expect(screen.getByTestId('ssh-nav-snippets').textContent).toBe('Snippets');
-    expect(screen.getByTestId('ssh-nav-forwarding').textContent).toBe('Port forwarding');
+    expect(screen.getByTestId('ssh-nav-forwarding').textContent).toBe('Forwarding');
     act(() => {
       useForwardsStore.setState({
         byKey: {
@@ -182,10 +183,32 @@ describe('SSH menu', () => {
         } as never,
       });
     });
-    expect(screen.getByTestId('ssh-nav-forwarding-running').textContent).toBe(' 1');
+    expect(screen.getByTestId('ssh-nav-forwarding-running').textContent).toBe('1');
     expect(screen.getByTestId('ssh-nav-forwarding').title).toBe('Port forwarding (1 running)');
     act(() => {
       useForwardsStore.setState({ byKey: {} });
+    });
+  });
+  it('counts the keychain again after any keychain write, without the menu being used', async () => {
+    render(<HostsView />);
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('ssh-nav-keychain').textContent).toBe('Keychain2');
+    });
+    secretNames.mockResolvedValue({
+      ok: true,
+      value: {
+        names: [
+          { name: 'DEPLOY_KEY', local: true, external: false },
+          { name: 'UNSET', local: false, external: false },
+          { name: 'id_ed25519', local: true, external: false },
+        ],
+      },
+    });
+    await act(async () => {
+      await storeSshSecret({ name: 'id_ed25519', value: 'x' });
+    });
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('ssh-nav-keychain').textContent).toBe('Keychain3');
     });
   });
   it('picking an entry brings the fixed tab of the SSH set to the front', async () => {

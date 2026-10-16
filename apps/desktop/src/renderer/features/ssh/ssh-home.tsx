@@ -43,6 +43,7 @@ import {
   useKeyInstall,
   useSshKeys,
 } from './ssh-keys.js';
+import { storeSshSecret } from './secret-writes.js';
 
 const INPUT_CLASS =
   'w-full rounded-md border border-hairline-strong bg-surface-base px-2 py-1 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent';
@@ -321,7 +322,7 @@ function KeychainPanel() {
   const store = async (current: SecretForm): Promise<void> => {
     const name = current.name.trim();
     if (name === '') return;
-    const result = await ipc().ssh.setSecret({ name, value: current.value });
+    const result = await storeSshSecret({ name, value: current.value });
     if (!result.ok) {
       setForm({ ...current, value: '', error: result.error.message });
       return;
@@ -571,6 +572,7 @@ function KeychainPanel() {
       )}
       <GenerateKeyDialog
         open={generating}
+        taken={(names ?? []).map((secret) => secret.name)}
         onClose={() => {
           setGenerating(false);
         }}

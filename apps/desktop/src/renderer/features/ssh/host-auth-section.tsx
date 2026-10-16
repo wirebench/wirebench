@@ -1,9 +1,9 @@
 import { useId, useState } from 'react';
 import { Button } from '../../components/button.js';
-import { ipc } from '../../state/ipc-client.js';
 import type { SshAuthWire } from '../../../shared/ssh-wire.js';
 import { INPUT_CLASS, sourceName, type Provenance } from './inherited-field.js';
 import { SecretSelect, useSecretNames } from './secret-fields.js';
+import { storeSshSecret } from './secret-writes.js';
 
 type Kind = 'inherit' | 'password' | 'key' | 'agent';
 
@@ -43,7 +43,7 @@ export function HostAuthSection(props: {
   // Write-only: the value goes to main and is never read back; the file only ever gets the name.
   const storeValue = async (): Promise<void> => {
     if (setting === undefined) return;
-    const result = await ipc().ssh.setSecret({ name: setting.name, value: setting.value });
+    const result = await storeSshSecret({ name: setting.name, value: setting.value });
     if (!result.ok) {
       setSetting({ ...setting, value: '', error: result.error.message });
       return;

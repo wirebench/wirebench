@@ -57,6 +57,16 @@ describe('SshViewHeader', () => {
     expect(input.value).toBe('');
     expect(onChange).toHaveBeenLastCalledWith('');
   });
+
+  it('hides the key hint while the search has a value, so the clear button does not draw over it', async () => {
+    render(<Searchable />);
+    const input = screen.getByRole<HTMLInputElement>('searchbox', { name: 'Filter hosts' });
+    expect(screen.getByTestId('ssh-view-search-hint')).toBeDefined();
+    await userEvent.type(input, 'db');
+    expect(screen.queryByTestId('ssh-view-search-hint')).toBeNull();
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.getByTestId('ssh-view-search-hint')).toBeDefined();
+  });
 });
 
 describe('SshEmptyState and SshNoMatches', () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { paletteFilter, paletteKeywords } from '../../src/renderer/shell/palette-filter.js';
+import { COMMAND_CATALOG } from '../../src/shared/command-catalog.js';
 
 describe('paletteKeywords', () => {
   it('names the category and the label prefix', () => {
@@ -40,5 +41,35 @@ describe('paletteFilter', () => {
 
   it('drops a command that does not match at all', () => {
     expect(score('Editor', 'Close Tab', 'zzzz')).toBe(0);
+  });
+});
+
+describe('the ssh keyword', () => {
+  const entries = Object.values(COMMAND_CATALOG);
+  const scoreOf = (entry: (typeof entries)[number], search: string): number =>
+    paletteFilter(`${entry.category} ${entry.label}`, search, paletteKeywords(entry));
+
+  it('belongs to every SSH-area command, and to no other', () => {
+    const ssh = entries.filter((entry) => paletteKeywords(entry).includes('ssh')).map((entry) => entry.id);
+    expect(ssh).toContain('view.showHosts');
+    expect(ssh).toContain('view.showForwarding');
+    expect(ssh).toContain('view.showSnippets');
+    expect(ssh).toContain('sftp.refresh');
+    expect(ssh).toContain('ssh.startForwardGroup');
+    expect(ssh).toContain('ssh.newLocalTerminal');
+    for (const id of ssh) {
+      expect(/^(?:ssh|sftp)\./.test(id) || id.startsWith('view.show')).toBe(true);
+    }
+    expect(ssh).not.toContain('view.showHttpLog');
+    expect(ssh).not.toContain('secrets.toggleShowSecrets');
+  });
+
+  it('ranks every SSH command above any subsequence hit for "ssh"', () => {
+    const sshScores = entries.filter((entry) => paletteKeywords(entry).includes('ssh')).map((e) => scoreOf(e, 'ssh'));
+    const others = entries.filter((entry) => !paletteKeywords(entry).includes('ssh')).map((e) => scoreOf(e, 'ssh'));
+    expect(Math.min(...sshScores)).toBe(1);
+    // "Secrets: Toggle Show Secrets" and the like still match as a subsequence, but below.
+    expect(Math.max(...others)).toBeGreaterThan(0);
+    expect(Math.max(...others)).toBeLessThan(1);
   });
 });
