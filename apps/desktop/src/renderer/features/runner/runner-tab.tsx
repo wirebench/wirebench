@@ -18,6 +18,8 @@ import { useRunnerStore } from '../../state/runner.js';
 import { useUiStore } from '../../state/ui.js';
 import { useProjectStore } from '../../state/project.js';
 import { useActiveEnvironment } from '../../state/workspace.js';
+import { MethodBadge } from '../rest-api/method-badge.js';
+import { pathDisplayName } from '../rest-api/request-display-name.js';
 import type { RunnerRequestResult, RunnerSettings, RunnerState, RunnerSummary } from '../../../shared/runner-wire.js';
 
 const OUTCOME_TONE: Record<RunnerRequestResult['outcome'], string> = {
@@ -130,10 +132,12 @@ function RequestOrder({
             checked={!excluded.has(request.id)}
             onChange={(event) => toggle(request.id, event.target.checked)}
           />
+          {/* The name below leaves out a method it starts with, so the badge is what says it. */}
+          {request.method !== undefined && <MethodBadge method={request.method} className="w-12 text-left" />}
           <span
             className={`min-w-0 flex-1 truncate ${excluded.has(request.id) ? 'text-fg-subtle line-through' : 'text-fg-default'}`}
           >
-            {request.path}
+            {pathDisplayName(request.path, request.name, request.method)}
           </span>
           <span className="text-xs text-fg-subtle uppercase">{request.protocol}</span>
           <button

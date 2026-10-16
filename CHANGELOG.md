@@ -50,6 +50,11 @@ All notable changes to this project are documented here. The format follows
 - **A refused proxy tunnel no longer reads as Cancelled.** When an HTTPS request goes through a proxy
   that refuses the tunnel (a 407 for a wrong or missing proxy password), the send now fails with
   "Proxy connection failed" and the proxy's status, instead of showing as if you had cancelled it.
+- **Imported requests no longer show their method twice.** An OpenAPI operation with no summary or
+  operation id, and a request from **Import cURL…**, is now named by its path alone (`/pets/{id}`), since
+  the method badge beside it already says GET or POST. A request imported earlier as `GET /pets/{id}`
+  shows without the repeated method in the explorer, the Runner's list and History; its stored name is
+  unchanged (#633).
 
 ## [6.1.0] - 2026-10-16
 

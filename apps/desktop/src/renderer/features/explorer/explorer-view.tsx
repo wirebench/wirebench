@@ -31,6 +31,7 @@ import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { MethodBadge } from '../rest-api/method-badge.js';
+import { requestDisplayName } from '../rest-api/request-display-name.js';
 import { EXPLORER_DIALOGS, TAB_KINDS, entityIdOf, explorerDeletion, explorerRole } from '../../kinds/index.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { kindLabel } from '../../kinds/placeholders.js';
@@ -236,7 +237,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           ) : node.data.kind === 'webhook-request' && node.data.method !== undefined ? (
             <MethodBadge
               method={node.data.method}
-              title={`${node.data.method} ${node.data.label}`}
+              title={`${node.data.method} ${requestDisplayName(node.data.label, node.data.method)}`}
               compact
               className="w-auto"
             />
@@ -273,7 +274,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             }`}
             {...(node.data.kind === 'placeholder' ? { title: node.data.message } : {})}
           >
-            {node.data.label}
+            {requestDisplayName(node.data.label, node.data.method)}
           </span>
         )}
         {node.data.kind === 'mock' && node.data.mockId !== undefined && <MockRunningBadge mockId={node.data.mockId} />}

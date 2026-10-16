@@ -11,6 +11,7 @@ import { useEditorsStore } from '../../state/editors.js';
 import { useHistoryStore } from '../../state/history.js';
 import { canResendHistoryEntry, entrySide, openCompareTab, resendHistoryEntry } from './history-actions.js';
 import { historyCountLabel, historyTabTitle, hostOf } from './history-row-text.js';
+import { requestDisplayName } from '../rest-api/request-display-name.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { HistoryEntryWire } from '../../../shared/wire-types.js';
 import type { WorkspaceProjectWire } from '../../../shared/wire-base.js';
@@ -77,6 +78,7 @@ function Row({
 }: RowProps) {
   const Badge = rendererKindOf(entry.kind)?.history.Badge;
   const details = [formatClockTime(entry.at), projectName, hostOf(entry.endpoint), formatDuration(entry.durationMs)];
+  const name = requestDisplayName(entry.requestName, entry.method);
   return (
     <div
       role="row"
@@ -102,14 +104,14 @@ function Row({
           tabIndex={-1}
           onClick={onOpen}
           className="flex w-full min-w-0 flex-col justify-center gap-0.5 px-2 text-left"
-          aria-label={`Open ${entry.requestName}`}
+          aria-label={`Open ${name}`}
         >
           <span className="flex w-full min-w-0 items-center gap-2">
             {/* A REST row carries its method; a SOAP row its version. Both are the one thing that
                 says what kind of send this was, so the badge is never empty. */}
             {Badge !== undefined && <Badge entry={entry} place="row" />}
             <span className="min-w-0 flex-1 truncate">
-              <span className="text-fg-default">{entry.requestName}</span>
+              <span className="text-fg-default">{name}</span>
               {entry.operationName.length > 0 && <span className="text-fg-subtle"> · {entry.operationName}</span>}
             </span>
             <span className={`shrink-0 rounded-sm px-1 font-mono ${TONE_CLASS[toneOf(entry)]}`}>
@@ -127,7 +129,7 @@ function Row({
             <button
               type="button"
               data-testid="history-row-actions"
-              aria-label={`Actions for ${entry.requestName}`}
+              aria-label={`Actions for ${name}`}
               title="Actions"
               className="inline-flex size-6 items-center justify-center rounded text-fg-subtle hover:bg-surface-hover hover:text-fg-default"
             >

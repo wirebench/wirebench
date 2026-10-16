@@ -44,6 +44,8 @@ export const runnerRequestSchema = z.object({
   /** Where it sits: `Api/Folder/Request`, or `n. Step` for a sequence step. */
   path: z.string(),
   protocol: z.string(),
+  /** A REST request's method, so the list can leave it out of a name that starts with it. */
+  method: z.string().optional(),
 });
 export type RunnerRequest = z.infer<typeof runnerRequestSchema>;
 

@@ -11,6 +11,7 @@ import { explorerActions } from '../../features/explorer/explorer-actions.js';
 import { exportItems, groups, reportRenameFailure } from '../../features/explorer/menu-items.js';
 import type { ExplorerNode } from '../../features/explorer/tree-nodes.js';
 import { MethodBadge } from '../../features/rest-api/method-badge.js';
+import { requestDisplayName } from '../../features/rest-api/request-display-name.js';
 import { useProjectStore } from '../../state/project.js';
 import type { KindExplorer } from '../renderer-kind.js';
 
@@ -20,9 +21,19 @@ function RestGutter({ node }: { readonly node: ExplorerNode }) {
   }
   // A GraphQL request reads `GQL`; its title still names the method it goes out with.
   return node.graphql === true ? (
-    <MethodBadge method="GQL" title={`GraphQL (${node.method}) ${node.label}`} compact className="w-auto" />
+    <MethodBadge
+      method="GQL"
+      title={`GraphQL (${node.method}) ${requestDisplayName(node.label, node.method)}`}
+      compact
+      className="w-auto"
+    />
   ) : (
-    <MethodBadge method={node.method} title={`${node.method} ${node.label}`} compact className="w-auto" />
+    <MethodBadge
+      method={node.method}
+      title={`${node.method} ${requestDisplayName(node.label, node.method)}`}
+      compact
+      className="w-auto"
+    />
   );
 }
 
