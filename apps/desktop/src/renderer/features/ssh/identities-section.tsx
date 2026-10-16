@@ -3,7 +3,6 @@ import { Plus, UserRound } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import type { IdentityWire, SshAuthWire } from '../../../shared/ssh-wire.js';
-import { ipc } from '../../state/ipc-client.js';
 import { HostAuthSection } from './host-auth-section.js';
 import { passwordSecretName, slug } from './host-form-model.js';
 import { useHostsStore } from './hosts-store.js';
@@ -19,6 +18,7 @@ import {
 import { INPUT_CLASS } from './inherited-field.js';
 import { useSecretNames } from './secret-fields.js';
 import { useRevealMissing } from './reveal-missing.js';
+import { storeSshSecret } from './secret-writes.js';
 
 const NO_PROVENANCE = { value: undefined, from: 'default' } as const;
 
@@ -57,7 +57,7 @@ function IdentityForm({ identity, onDone }: { readonly identity?: IdentityWire; 
               id,
               names.map((n) => n.name),
             );
-      const stored = await ipc().ssh.setSecret({ name: secret, value: password });
+      const stored = await storeSshSecret({ name: secret, value: password });
       if (!stored.ok) {
         setError(`The password was not stored: ${stored.error.message}`);
         return;

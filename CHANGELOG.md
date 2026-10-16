@@ -50,6 +50,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **SSH small fixes.** Typing "ssh" in the command palette lists every SSH-area command (hosts,
+  terminals, files, forwarding, snippets) above anything that only matches the letters. The SSH menu's
+  Keychain count updates as soon as a key is generated or a secret stored, wherever that happens.
+  **Generate key** starts with a real, selected name (`id_ed25519`, or the next free `id_ed25519_2`) that
+  follows the key type until you type your own, and says "Name is required" beside Generate when the
+  field is empty. The menu entry is now **Forwarding**, so it fits with its running count at the default
+  sidebar width. A view's search hides its <kbd>Ctrl+F</kbd> hint while it holds text, so the field's
+  clear button no longer draws over it (#593).
 - **Nothing in an SSH side panel is cut off at the right.** In the Snippet panel, a variable's row puts
   its name and remove button on one line and Label and Default below them when the panel is under 360px,
   so every field can be reached at 1024×700. Edit host's password field says "•••• stored · type to

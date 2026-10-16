@@ -146,6 +146,7 @@ function groupByCategory(rows: readonly PaletteCommand[]): readonly (readonly [C
 
 /** What {@link rankGroups} scores an item by. */
 interface PaletteNamed {
+  readonly id?: string;
   readonly category: string;
   readonly label: string;
 }

@@ -143,6 +143,7 @@ describe('Keychain keys', () => {
     const dialog = await screen.findByTestId('generate-key-dialog');
     // Ed25519 has one size: no size picker until another type is chosen.
     expect(within(dialog).queryByLabelText('Key size')).toBeNull();
+    await userEvent.clear(within(dialog).getByLabelText('Secret name'));
     await userEvent.type(within(dialog).getByLabelText('Secret name'), 'ci');
     await userEvent.click(within(dialog).getByRole('radio', { name: 'RSA' }));
     await userEvent.selectOptions(within(dialog).getByLabelText('Key size'), '3072');
@@ -171,6 +172,7 @@ describe('Keychain keys', () => {
     await userEvent.click(screen.getByRole('button', { name: /Generate key/ }));
     const dialog = await screen.findByTestId('generate-key-dialog');
     expect(within(dialog).queryByTestId('generate-key-security')).toBeNull();
+    await userEvent.clear(within(dialog).getByLabelText('Secret name'));
     await userEvent.type(within(dialog).getByLabelText('Secret name'), 'yubi');
     await userEvent.click(within(dialog).getByRole('radio', { name: 'Security key (ECDSA)' }));
     expect(within(dialog).getByTestId('generate-key-security')).toBeDefined();
@@ -191,6 +193,38 @@ describe('Keychain keys', () => {
     });
   });
 
+  it('Generate key… starts with a free OpenSSH name that follows the type, and says why Generate is off', async () => {
+    generateKey.mockResolvedValue({ ok: true, value: { ...KEY, name: 'id_rsa' } });
+    secretNames.mockResolvedValue({
+      ok: true,
+      value: { names: [{ name: 'id_ed25519', local: true, external: false }] },
+    });
+    render(<SshHome />);
+    await screen.findByTestId('secret-row-id_ed25519');
+    await userEvent.click(screen.getByRole('button', { name: /Generate key/ }));
+    const dialog = await screen.findByTestId('generate-key-dialog');
+    const name = within(dialog).getByLabelText<HTMLInputElement>('Secret name');
+    // id_ed25519 is taken, so the next free one; selected, so typing replaces it.
+    expect(name.value).toBe('id_ed25519_2');
+    expect(name.selectionStart).toBe(0);
+    expect(name.selectionEnd).toBe('id_ed25519_2'.length);
+    expect(within(dialog).queryByTestId('generate-key-name-problem')).toBeNull();
+    await userEvent.click(within(dialog).getByRole('radio', { name: 'RSA' }));
+    expect(name.value).toBe('id_rsa');
+    await userEvent.clear(name);
+    expect(within(dialog).getByRole('button', { name: 'Generate' })).toHaveProperty('disabled', true);
+    expect(within(dialog).getByTestId('generate-key-name-problem').textContent).toBe('Name is required');
+    await userEvent.type(name, '9x');
+    expect(within(dialog).getByTestId('generate-key-name-problem').textContent).toContain('not starting with a digit');
+    // A typed name stays when the type changes.
+    await userEvent.clear(name);
+    await userEvent.type(name, 'ci');
+    await userEvent.click(within(dialog).getByRole('radio', { name: 'Ed25519' }));
+    expect(name.value).toBe('ci');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Generate' }));
+    expect(generateKey).toHaveBeenCalledWith({ name: 'ci', algorithm: 'ed25519' });
+  });
+
   it('Generate key… shows main refusing a taken name and keeps the dialog open', async () => {
     generateKey.mockResolvedValue({
       ok: false,
@@ -199,6 +233,7 @@ describe('Keychain keys', () => {
     render(<SshHome />);
     await userEvent.click(screen.getByRole('button', { name: /Generate key/ }));
     const dialog = await screen.findByTestId('generate-key-dialog');
+    await userEvent.clear(within(dialog).getByLabelText('Secret name'));
     await userEvent.type(within(dialog).getByLabelText('Secret name'), 'deploy');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Generate' }));
     expect(generateKey).toHaveBeenCalledWith({ name: 'deploy', algorithm: 'ed25519' });

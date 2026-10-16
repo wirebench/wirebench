@@ -1052,3 +1052,14 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
 export function catalogEntry(id: CommandId): CommandCatalogEntry {
   return COMMAND_CATALOG[id];
 }
+
+/** The SSH area's own views; every `ssh.*` and `sftp.*` command belongs to the area too. */
+const SSH_AREA_VIEWS: ReadonlySet<string> = new Set(['view.showHosts', 'view.showForwarding', 'view.showSnippets']);
+
+/**
+ * Names a search can find a command by beyond its category and label: "ssh" for each command of the SSH
+ * area, whose categories (Hosts, Forwarding, Terminal, Snippets) never say so.
+ */
+export function areaKeywords(id: string): readonly string[] {
+  return /^(?:ssh|sftp)\./.test(id) || SSH_AREA_VIEWS.has(id) ? ['ssh'] : [];
+}
