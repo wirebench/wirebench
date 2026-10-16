@@ -11,6 +11,7 @@ import { useEditorsStore } from '../../state/editors.js';
 import { useHistoryStore } from '../../state/history.js';
 import { canResendHistoryEntry, entrySide, openCompareTab, resendHistoryEntry } from './history-actions.js';
 import { historyCountLabel, historyTabTitle, hostOf } from './history-row-text.js';
+import { compareBannerText, compareStep } from './history-compare.js';
 import { requestDisplayName } from '../rest-api/request-display-name.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { HistoryEntryWire } from '../../../shared/wire-types.js';
@@ -79,6 +80,8 @@ function Row({
   const Badge = rendererKindOf(entry.kind)?.history.Badge;
   const details = [formatClockTime(entry.at), projectName, hostOf(entry.endpoint), formatDuration(entry.durationMs)];
   const name = requestDisplayName(entry.requestName, entry.method);
+  // A right-click opens the same menu as ⋯, so the row's actions are where a right-click looks first.
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
     <div
       role="row"
@@ -92,9 +95,13 @@ function Row({
           onOpen();
         }
       }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setMenuOpen(true);
+      }}
       data-compare-armed={compareArmed ? 'true' : undefined}
       className={`flex h-full items-stretch border-b border-hairline text-xs ${
-        compareArmed ? 'bg-surface-selected' : 'hover:bg-surface-hover'
+        compareArmed ? 'bg-accent-muted shadow-[inset_2px_0_0_var(--color-accent)]' : 'hover:bg-surface-hover'
       }`}
     >
       <div role="gridcell" aria-colindex={1} className="flex min-w-0 flex-1">
@@ -124,7 +131,7 @@ function Row({
         </button>
       </div>
       <div role="gridcell" aria-colindex={2} className="flex shrink-0 items-center pr-1">
-        <DropdownMenu.Root>
+        <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenu.Trigger asChild>
             <button
               type="button"
@@ -205,20 +212,30 @@ export function HistoryView() {
     openCompareTab(entrySide(a), entrySide(b));
   };
 
+  // The first side, while it is still listed: a search or a delete that drops it ends the compare.
+  const compareEntry =
+    compareFirst === undefined ? undefined : entries.find((candidate) => candidate.id === compareFirst);
+  const armed = compareEntry?.id;
+
   const compare = (entry: HistoryEntryWire) => {
-    if (compareFirst === undefined) {
-      setCompareFirst(entry.id);
+    const step = compareStep(armed, entry.id);
+    if (step.kind === 'arm') {
+      setCompareFirst(step.first);
       return;
     }
-    if (compareFirst === entry.id) {
-      setCompareFirst(undefined);
-      return;
-    }
-    const first = entries.find((candidate) => candidate.id === compareFirst);
     setCompareFirst(undefined);
-    if (first !== undefined) {
-      openDiff(first, entry);
+    if (step.kind === 'compare' && compareEntry !== undefined) {
+      openDiff(compareEntry, entry);
     }
+  };
+
+  // While a first side is picked, a click on another row picks the second, as the banner says.
+  const openOrPick = (entry: HistoryEntryWire) => {
+    if (armed !== undefined && armed !== entry.id) {
+      compare(entry);
+      return;
+    }
+    openEntry(entry);
   };
 
   // Compares with the request's latest response: a REST request's from its own exchange map, since
@@ -291,6 +308,22 @@ export function HistoryView() {
         </div>
       </div>
 
+      {compareEntry !== undefined && (
+        <div
+          role="status"
+          data-testid="history-compare-banner"
+          className="flex shrink-0 items-center gap-2 border-b border-hairline bg-accent-muted px-2 py-1.5 text-xs text-fg-default"
+        >
+          <span className="min-w-0 flex-1 truncate">
+            {compareBannerText(compareEntry)}
+            <span className="text-fg-subtle"> — pick another entry</span>
+          </span>
+          <Button variant="ghost" onClick={() => setCompareFirst(undefined)}>
+            Cancel
+          </Button>
+        </div>
+      )}
+
       {entries.length === 0 ? (
         <p className="p-3 text-sm text-fg-subtle">
           {query.length > 0 ? 'No history entries match your search.' : 'Sent requests appear here.'}
@@ -326,8 +359,8 @@ export function HistoryView() {
                       projectName={projectNameOf(entry.projectId)}
                       rowIndex={item.index + 1}
                       rowProps={rowProps(item.index)}
-                      compareArmed={compareFirst === entry.id}
-                      onOpen={() => openEntry(entry)}
+                      compareArmed={armed === entry.id}
+                      onOpen={() => openOrPick(entry)}
                       onResend={() => resend(entry)}
                       onCompare={() => compare(entry)}
                       onCompareWithCurrent={() => compareWithCurrent(entry)}
@@ -345,8 +378,8 @@ export function HistoryView() {
                   projectName={projectNameOf(entry.projectId)}
                   rowIndex={index + 1}
                   rowProps={rowProps(index)}
-                  compareArmed={compareFirst === entry.id}
-                  onOpen={() => openEntry(entry)}
+                  compareArmed={armed === entry.id}
+                  onOpen={() => openOrPick(entry)}
                   onResend={() => resend(entry)}
                   onCompare={() => compare(entry)}
                   onCompareWithCurrent={() => compareWithCurrent(entry)}

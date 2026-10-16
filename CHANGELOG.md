@@ -63,6 +63,10 @@ All notable changes to this project are documented here. The format follows
 - **The command palette lists what you can run first.** Within each group, commands that cannot run
   here (greyed, with the reason) now come after the ones that can, so typing "REST" no longer puts
   **REST: Lint Definition** and **REST: Update Definition…** above the commands you can use (#633).
+- **History's Compare… shows what it is waiting for.** After **Compare…**, the picked row is tinted
+  and a banner names it ("Comparing with List pets · 22:06:50 — pick another entry") with **Cancel**;
+  a click on another row then opens the comparison. A right-click on a History row now opens the same
+  menu as its **⋯** button (#633).
 
 ## [6.1.0] - 2026-10-16
 
