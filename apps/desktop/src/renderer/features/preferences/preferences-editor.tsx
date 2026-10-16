@@ -55,7 +55,7 @@ import { TokensSection } from './sections/tokens-section.js';
 import type { SectionProps } from './sections/section-props.js';
 import {
   SETTINGS_NAV,
-  SETTINGS_SECTIONS,
+  sectionsForSearch,
   canReset,
   isModified,
   resetPatch,
@@ -471,7 +471,7 @@ function SearchResults({
       </p>
       <div ref={resultsRef} className={count === 0 ? 'hidden' : ''}>
         <SettingsCard testId="settings-search-results">
-          {SETTINGS_SECTIONS.map((section) => (
+          {sectionsForSearch(query).map((section) => (
             <SettingsSearchProvider
               key={section.id}
               search={{

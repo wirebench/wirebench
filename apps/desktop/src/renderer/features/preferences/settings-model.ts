@@ -222,6 +222,21 @@ export const SETTINGS_SECTIONS: readonly (SettingsSection & { readonly group: st
   (group) => group.sections.map((section) => ({ ...section, group: group.title })),
 );
 
+/**
+ * The sections in the order search lists their rows: a section named by the query comes first, then one
+ * whose name starts with it, then the rest in nav order. "ssh" lists the SSH page before Terminal, which
+ * only has it as a keyword (#594). `query` is already trimmed and lower case.
+ */
+export function sectionsForSearch(query: string): readonly (SettingsSection & { readonly group: string })[] {
+  const rank = (section: SettingsSection): number => {
+    const label = section.label.toLowerCase();
+    if (label === query) return 0;
+    return label.startsWith(query) ? 1 : 2;
+  };
+  // Array.prototype.sort is stable, so equal ranks keep nav order.
+  return [...SETTINGS_SECTIONS].sort((a, b) => rank(a) - rank(b));
+}
+
 /** The section Settings opens on when the caller names none. */
 export const DEFAULT_SECTION: SettingsSectionId = 'appearance';
 
