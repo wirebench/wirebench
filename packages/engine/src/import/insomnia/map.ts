@@ -101,6 +101,8 @@ class WorkspaceMapper {
   readonly dynamic = new Set<string>();
   readonly kept = new Map<string, string[]>();
   readonly vault: ReadonlySet<string>;
+  /** The vault secrets made so far, as `name (environment)`, listed once in the variable report. */
+  readonly vaultNames: string[] = [];
   grpcRequests = 0;
   grpcFolders = 0;
   wsRequests = 0;
@@ -318,7 +320,10 @@ class WorkspaceMapper {
       if (userinfoCut) report.warn(`${owner}: the credential in the URL of "${name}" was not imported.`);
       out.push(variable);
     }
-    for (const name of env.vault) out.push({ name, value: '', enabled: true, secret: true });
+    for (const name of env.vault) {
+      out.push({ name, value: '', enabled: true, secret: true, awaitsValue: true });
+      this.vaultNames.push(`${name} (${env.name})`);
+    }
     return out;
   }
 
@@ -504,6 +509,11 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
         variables: mapper.variables(env, `Environment "${envName}"`, variableReport),
         ...(colour !== undefined ? { color: colour } : {}),
       });
+    }
+    if (mapper.vaultNames.length > 0) {
+      variableReport.warn(
+        `${mapper.prefix}Vault secrets are not in the export; set a value for: ${mapper.vaultNames.join(', ')}`,
+      );
     }
 
     const collector = new ScriptCollector(slugify(name).toLowerCase(), report);

@@ -114,8 +114,9 @@ only references, or an auth scheme word followed by references (`Bearer ${token}
   array element becomes `name.0`. Numbers and booleans become text.
 - **Private environments** import like the others. They are in the file only when you chose to
   export them.
-- **Vault secrets** are sealed or masked in the export and cannot be read. Each becomes a secret
-  with no value, listed in the summary so you can set it. `{{ _.vault.name }}` points at it.
+- **Vault secrets** are sealed or masked in the export and cannot be read. Each becomes an empty
+  entry in the secret store, referenced as `${secret:…}`, and the summary lists it so you can set
+  its value. `{{ _.vault.name }}` points at it.
 - **An environments file** (format 5 `environment` file, or a format 4 export of environments
   only): pick **Insomnia environments**. Its base environment merges into Globals, and each
   sub-environment becomes a workspace environment.

@@ -357,7 +357,13 @@ describe('mapInsomnia: environments', () => {
 
   it('brings a vault secret as a named secret with no value, never a plain property', () => {
     const [staging] = mapText(insomniaFixture('v5-collection.yaml')).variables.environments;
-    expect(staging?.variables).toContainEqual({ name: 'svcPassword', value: '', enabled: true, secret: true });
+    expect(staging?.variables).toContainEqual({
+      name: 'svcPassword',
+      value: '',
+      enabled: true,
+      secret: true,
+      awaitsValue: true,
+    });
     expect(staging?.variables.some((v) => v.name === '__insomnia_vault' || v.value.includes('••'))).toBe(false);
   });
 
@@ -367,7 +373,21 @@ describe('mapInsomnia: environments', () => {
     });
     expect(onlyRequest(mapped).headers).toEqual([{ name: 'X-Key', value: '${apiKey}', enabled: true }]);
     expect(mapped.variables.projectProperties?.variables).toEqual([
-      { name: 'apiKey', value: '', enabled: true, secret: true },
+      { name: 'apiKey', value: '', enabled: true, secret: true, awaitsValue: true },
+    ]);
+  });
+
+  it('lists the vault secrets once, each with its environment', () => {
+    const mapped = v5([req({})], {
+      environments: {
+        name: 'Base',
+        data: { __insomnia_vault: { apiKey: 'sealed' } },
+        subEnvironments: [{ name: 'Staging', meta: { id: 'env_s' }, data: { __insomnia_vault: { pw: 'sealed' } } }],
+      },
+    });
+    const { warnings, notes } = mapped.variables.report;
+    expect([...warnings, ...notes, ...all(mapped)].filter((line) => line.includes('Vault secrets'))).toEqual([
+      'Vault secrets are not in the export; set a value for: apiKey (Base), pw (Staging)',
     ]);
   });
 

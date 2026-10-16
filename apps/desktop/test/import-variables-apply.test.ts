@@ -135,6 +135,60 @@ describe('applyImportedVariables', () => {
     expect(store.size).toBe(0);
   });
 
+  it('gives a vault secret its own empty store entry and a ${secret:ref}, never a plain property (R9)', async () => {
+    const { ports, added, store } = fakePorts();
+    const result = await applyImportedVariables(
+      plan({
+        report: {
+          warnings: ['Vault secrets are not in the export; set a value for: svcPassword (Staging)'],
+          notes: [],
+        },
+        environments: [
+          {
+            name: 'Staging',
+            variables: [
+              { name: 'svcPassword', value: '', enabled: true, secret: true, awaitsValue: true },
+              { name: 'host', value: 'h', enabled: true, secret: false },
+            ],
+          },
+        ],
+      }),
+      ports,
+    );
+    expect(added[0]?.properties).toEqual({ svcPassword: '${secret:sec_1}', host: 'h' });
+    expect(store.get('sec_1')).toEqual({ value: '', label: 'Staging/svcPassword' });
+    // Nothing was stored with a value; the importer's own line lists the name, so no second line.
+    expect(result.secretsStored).toBe(0);
+    expect(result.warnings).toEqual(['Vault secrets are not in the export; set a value for: svcPassword (Staging)']);
+  });
+
+  it('keeps an empty secret that is not a vault one as an empty property, with its line', async () => {
+    const { ports, added, store } = fakePorts();
+    const result = await applyImportedVariables(
+      plan({ environments: [{ name: 'E', variables: [{ name: 'token', value: '', enabled: true, secret: true }] }] }),
+      ports,
+    );
+    expect(added[0]?.properties).toEqual({ token: '' });
+    expect(store.size).toBe(0);
+    expect(result.warnings).toEqual(['E: the secret "token" had no value in the file; set it in Environments.']);
+  });
+
+  it('deletes the empty vault entries too when a save fails', async () => {
+    const { ports, store } = fakePorts({ failGlobals: true });
+    await expect(
+      applyImportedVariables(
+        plan({
+          environments: [
+            { name: 'E', variables: [{ name: 'vault', value: '', enabled: true, secret: true, awaitsValue: true }] },
+          ],
+          globals: { name: 'Globals', variables: [{ name: 'g', value: '1', enabled: true, secret: false }] },
+        }),
+        ports,
+      ),
+    ).rejects.toThrow('globals unwritable');
+    expect(store.size).toBe(0);
+  });
+
   it('removes the environments it added and their secrets when a later save fails', async () => {
     const { ports, added, store } = fakePorts({ failGlobals: true });
     await expect(

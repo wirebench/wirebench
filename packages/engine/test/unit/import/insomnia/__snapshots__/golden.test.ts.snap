@@ -367,6 +367,7 @@ message Order { string id = 1; }
             "value": "https://staging.example.com",
           },
           {
+            "awaitsValue": true,
             "enabled": true,
             "name": "svcPassword",
             "secret": true,
@@ -408,7 +409,9 @@ message Order { string id = 1; }
       "notes": [
         "Project properties: "tenant" is defined more than once (folder "Orders"); the first value was kept.",
       ],
-      "warnings": [],
+      "warnings": [
+        "Vault secrets are not in the export; set a value for: svcPassword (Staging)",
+      ],
     },
   },
 }
@@ -761,6 +764,7 @@ exports[`Insomnia golden > maps v5-collection.yaml 1`] = `
             "value": "https://staging.example.com",
           },
           {
+            "awaitsValue": true,
             "enabled": true,
             "name": "svcPassword",
             "secret": true,
@@ -802,7 +806,9 @@ exports[`Insomnia golden > maps v5-collection.yaml 1`] = `
       "notes": [
         "Project properties: "tenant" is defined more than once (folder "Orders"); the first value was kept.",
       ],
-      "warnings": [],
+      "warnings": [
+        "Vault secrets are not in the export; set a value for: svcPassword (Staging)",
+      ],
     },
   },
 }
