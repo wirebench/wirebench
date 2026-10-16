@@ -25,6 +25,7 @@ import {
   protocolOf,
   startedAtOf,
   statusLabelOf,
+  statusTooltipOf,
   urlOf,
 } from './log-filter.js';
 
@@ -109,7 +110,7 @@ function LogRow({ entry, selected, onSelect, onMenu, compact, names, bar }: RowP
       </span>
       <span
         data-testid="http-log-status"
-        title={statusLabelOf(entry)}
+        title={statusTooltipOf(entry)}
         className={`truncate ${bad ? 'text-status-danger' : 'text-status-success'}`}
       >
         {statusLabelOf(entry)}
