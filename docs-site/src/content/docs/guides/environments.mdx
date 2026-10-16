@@ -92,11 +92,13 @@ applying to every project, and if they edit it the scope is lost.
 Production should look different from local, and should be hard to hit by accident. Both settings
 are in the **Environment details** panel, on the right of an environment's page. The panel also
 shows the environment's name, where it lives and how many variables it sets. The right rail's
-icon opens and closes it, and <kbd>Escape</kbd> puts it away. There is no Code panel in the
+icon opens and closes it, and <kbd>Escape</kbd> puts it away. It stays as you left it, open or put
+away, when you come back to an environment, and after a restart. There is no Code panel in the
 Environments area.
 
 - **Colour** — pick one of the eight swatches, type a custom `#rrggbb`, or choose **None**. The
-  environment switcher shows the colour as a dot beside each environment's name. The active
+  environment switcher and the Environments list show the colour as a dot beside each environment's
+  name. The active
   environment's colour also runs along the top of the editor tab strip, so it stays in view while
   you work.
 - **Protected** — tick it, and every send under this environment asks first. A warning box
@@ -104,7 +106,7 @@ Environments area.
   This covers a send from the editor, a History re-send and an HTTP Log resend. A sequence run asks
   once, before its first step. **Send to environments…** asks once for all the protected
   environments in the batch; if you cancel, the other environments are still sent. The switcher
-  shows a lock beside a protected environment.
+  and the Environments list show a lock beside a protected environment.
 
 Inside a workspace, a workspace environment also counts as protected when the linked project
 environment of the same name is protected. Duplicating an environment keeps its colour and its

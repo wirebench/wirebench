@@ -47,6 +47,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Environment rows show colour and protection.** The Environments list now shows each
+  environment's colour dot and, for a protected one, its lock, as the title-bar switcher does. The
+  Environment details panel stays as you left it, open or put away, when you come back to an
+  environment and after a restart (#634).
 - **The mock tab explains port 0 and shows methods uppercase.** A mock on port 0 now shows an empty
   Port field reading *any free port*, and clearing the field asks for one. An operation's header reads
   `GET /json` rather than `get /json` (#634).

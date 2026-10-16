@@ -116,6 +116,12 @@ export interface UiSnapshot {
      * live in different areas and each keeps its own shown/hidden state. Absent reads as hidden.
      */
     readonly hostDetailsOpen?: boolean;
+    /**
+     * Whether Environment details shows beside an open environment, kept like
+     * {@link hostDetailsOpen} so putting it away or bringing it back holds when you come back.
+     * Absent reads as shown, so an environment's colour is in view the first time one opens.
+     */
+    readonly environmentDetailsOpen?: boolean;
     /** The Code panel's POSIX/PowerShell choice; carried here since the panel now lives in the slide-over. */
     readonly codeShell: CodeShell;
     /** The language the Code panel shows, picked last; `curl` uses {@link codeShell}. */
@@ -216,9 +222,11 @@ function mergeSlideOver(stored: unknown, legacyCodeShell: unknown): UiSnapshot['
   const codeShell = record?.['codeShell'] ?? legacyCodeShell;
   const widthByView = widthsByView(record?.['widthByView']);
   const hostDetailsOpen = record?.['hostDetailsOpen'];
+  const environmentDetailsOpen = record?.['environmentDetailsOpen'];
   return {
     ...(widthByView === undefined ? {} : { widthByView }),
     ...(typeof hostDetailsOpen === 'boolean' ? { hostDetailsOpen } : {}),
+    ...(typeof environmentDetailsOpen === 'boolean' ? { environmentDetailsOpen } : {}),
     open: typeof open === 'boolean' ? open : DEFAULT_UI_STATE.slideOver.open,
     width: typeof width === 'number' && width !== PREVIOUS_SLIDE_OVER_WIDTH ? width : DEFAULT_UI_STATE.slideOver.width,
     codeShell: codeShell === 'posix' || codeShell === 'powershell' ? codeShell : DEFAULT_UI_STATE.slideOver.codeShell,

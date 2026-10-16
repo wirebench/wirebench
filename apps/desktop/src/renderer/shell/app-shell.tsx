@@ -96,8 +96,9 @@ import { ImportCurlFromTarget } from '../features/request-editor/import-curl-fro
 import { PanelHandle } from './panel-handle.js';
 import {
   EnvironmentDetailsPanel,
+  environmentDetailsOpen,
+  setEnvironmentDetailsOpen,
   useEnvironmentDetailsShown,
-  useEnvironmentDetailsStore,
 } from '../features/environments/environment-details.js';
 import { rightPanelFor } from './right-panel.js';
 import { RightRail } from './right-rail.js';
@@ -189,11 +190,10 @@ export function AppShell() {
   // In the Environments area it holds the open environment's colour and Applies to.
   const environmentDetailsShown = useEnvironmentDetailsShown();
   const closeEnvironmentDetails = useCallback(() => {
-    useEnvironmentDetailsStore.getState().setOpen(false);
+    setEnvironmentDetailsOpen(false);
   }, []);
   const toggleEnvironmentDetails = useCallback(() => {
-    const details = useEnvironmentDetailsStore.getState();
-    details.setOpen(!details.open);
+    setEnvironmentDetailsOpen(!environmentDetailsOpen());
   }, []);
   // On the Snippets view it holds the snippet being edited.
   const snippetEditorShown = useSnippetEditorShown();
