@@ -42,6 +42,18 @@ export function isChosenOutcome(code: string): boolean {
   return CHOSEN.has(code);
 }
 
+/**
+ * Codes for a send the network could not complete: nothing in the project is wrong, and the panel
+ * already explains it with a hint and Retry, so it is never a Problem (owner ruling, #635). An
+ * untrusted certificate is not one of them: its fix is the project's trust setting.
+ */
+const TRANSPORT = new Set(['connection-refused', 'dns', 'timeout', 'tls', 'proxy', 'network']);
+
+/** Whether a failed send belongs in Problems: not the person's own choice, and not the network's doing. */
+export function isProblemOutcome(code: string): boolean {
+  return !CHOSEN.has(code) && !TRANSPORT.has(code);
+}
+
 const TEXT_HINTS: Readonly<Record<string, { readonly title: string; readonly hint?: string }>> = {
   aborted: { title: 'Cancelled' },
   'send-declined': { title: 'Not sent' },
@@ -122,4 +134,14 @@ export function formatLimit(ms: number): string {
   }
   const seconds = ms / 1000;
   return `${Number.isInteger(seconds) ? String(seconds) : seconds.toFixed(1)} s`;
+}
+
+/** A failed send as Problems words it: the plain title, then the message, never the bare code first. */
+export function sendProblemText(error: SendErrorLike): string {
+  const { title } = describeSendError(error);
+  const message = error.message.trim();
+  if (message === '' || message.replace(/\.$/, '').toLowerCase() === title.toLowerCase()) {
+    return title;
+  }
+  return `${title}: ${message}`;
 }
