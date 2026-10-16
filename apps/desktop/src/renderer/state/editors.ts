@@ -83,11 +83,6 @@ export interface EditorTab {
     | 'ssh-files'
     | 'local-terminal';
   readonly title: string;
-  /**
-   * Which area's tab set this tab joins, when its kind alone does not say (see `tab-sets.ts`):
-   * History's Compare is a `diff` like a snapshot comparison, but it belongs with History.
-   */
-  readonly set?: TabSet;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;
   /** Set when `kind` is `'interface'`: the imported interface this viewer tab shows. */

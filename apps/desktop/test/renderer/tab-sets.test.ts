@@ -1,5 +1,5 @@
 /**
- * Editor tabs in sets, one per activity-bar area: which set a tab joins, what each area shows,
+ * Editor tabs in two sets, Explorer's and SSH's: which set a tab joins, what each area shows,
  * how each set keeps its own active tab, and how the sidebar and the strip follow each other.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -25,18 +25,19 @@ beforeEach(() => {
 describe('tab sets', () => {
   it('puts a tab in a set by what it is', () => {
     expect(tabSetOf(terminal('t'))).toBe('ssh');
-    expect(tabSetOf(environment('e'))).toBe('environments');
-    expect(tabSetOf({ kind: 'history' })).toBe('history');
     expect(tabSetOf(request('r'))).toBe('explorer');
     expect(tabSetOf({ kind: 'grpc-request' })).toBe('explorer');
     expect(tabSetOf({ kind: 'diff' })).toBe('explorer');
-    // History's Compare is a diff too, but it says where it belongs.
-    expect(tabSetOf({ kind: 'diff', set: 'history' })).toBe('history');
+    // Environments and History entries share the request strip (#607).
+    expect(tabSetOf(environment('e'))).toBe('explorer');
+    expect(tabSetOf({ kind: 'history' })).toBe('explorer');
   });
 
   it("shows Explorer's set in the areas that open nothing of their own", () => {
     expect(tabSetForView('search')).toBe('explorer');
     expect(tabSetForView('wss')).toBe('explorer');
+    expect(tabSetForView('history')).toBe('explorer');
+    expect(tabSetForView('environments')).toBe('explorer');
     expect(tabSetForView('ssh')).toBe('ssh');
     expect(viewForTabSet('explorer', 'search')).toBe('search');
     expect(viewForTabSet('explorer', 'ssh')).toBe('explorer');
@@ -60,8 +61,8 @@ describe('the editors store, in sets', () => {
 
   it('shows a set with nothing open as no active tab', () => {
     useEditorsStore.getState().open(request('a'));
-    useEditorsStore.getState().showSet('environments');
-    expect(useEditorsStore.getState()).toMatchObject({ displayedSet: 'environments', activeId: undefined });
+    useEditorsStore.getState().showSet('ssh');
+    expect(useEditorsStore.getState()).toMatchObject({ displayedSet: 'ssh', activeId: undefined });
   });
 
   it("closing the active tab falls back to a neighbour in its own set, never another set's tab", () => {
@@ -136,7 +137,21 @@ describe('the sidebar and the strip, in step', () => {
     expect(useUiStore.getState().sidebar.view).toBe('ssh');
 
     useEditorsStore.getState().open(environment('e'));
+    expect(useUiStore.getState().sidebar.view).toBe('explorer');
+  });
+
+  it('keeps the request tabs on the strip while History or Environments is in the sidebar (#607)', () => {
+    useEditorsStore.getState().open(request('a'));
+    useUiStore.getState().setSidebarView('history');
+    expect(useEditorsStore.getState()).toMatchObject({ displayedSet: 'explorer', activeId: 'a' });
+
+    useEditorsStore.getState().open({ id: 'h', kind: 'history', title: 'h' });
+    expect(useUiStore.getState().sidebar.view).toBe('history');
+
+    useUiStore.getState().setSidebarView('environments');
+    useEditorsStore.getState().open(environment('e'));
     expect(useUiStore.getState().sidebar.view).toBe('environments');
+    expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['a', 'h', 'e']);
   });
 
   it("stays in Search when a request opens, since Search shows Explorer's tabs", () => {

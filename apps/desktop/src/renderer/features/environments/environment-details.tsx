@@ -27,12 +27,12 @@ export const useEnvironmentDetailsStore = create<{
 }));
 
 /**
- * The real environment the Environments area's tab in front edits: `undefined` on Globals,
- * Workspace, another area, or no tab. Opening a row is what opens its tab, so this covers both.
+ * The real environment the tab in front edits: `undefined` on Globals, Workspace, the SSH area,
+ * another kind of tab, or no tab. Opening a row is what opens its tab, so this covers both.
  */
 export function useOpenEnvironmentId(): string | undefined {
   return useEditorsStore((state) => {
-    if (state.displayedSet !== 'environments') return undefined;
+    if (state.displayedSet !== 'explorer') return undefined;
     const tab = state.tabs.find((candidate) => candidate.id === state.activeId);
     if (tab?.kind !== 'environment') return undefined;
     const id = tab.environmentId;
