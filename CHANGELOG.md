@@ -48,6 +48,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The Body tab shows when there is a body.** Like Scripts, the REST request's Body tab carries a dot
+  while the request would send a body (#637).
+- **The Runner counts requests without checks apart.** Its summary and Past runs now say "3 passed,
+  9 without checks" instead of counting a request that tested nothing as passed, and a request that
+  errored reads like the send error panel ("Incomplete URL: …", the code in small text) (#637).
+
 - **WSDL import goes through your proxy and CA bundle.** Importing a WSDL by URL, re-fetching it when a
   project reopens, and fetching a definition a legacy SOAP project file holds no copy of now use the
   proxy and CA bundle from Settings, as sends and OpenAPI imports already did, with Basic or Kerberos
