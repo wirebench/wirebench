@@ -372,13 +372,25 @@ describe('Hosts tab', () => {
     expect(sent.file.hosts[1]?.ssh).toEqual({ user: 'me', auth: { kind: 'password', secret: 'gamma_password' } });
     expect(JSON.stringify(sent.file)).not.toContain('"pw"');
   });
-  it('a disabled Save lists what is missing', async () => {
+  it('a blank form names nothing until a required field is left empty', async () => {
+    render(<SshArea />);
+    await userEvent.click(screen.getByRole('button', { name: /New host/ }));
+    expect(screen.queryByRole('list', { name: 'Needed to save' })).toBeNull();
+    await userEvent.click(screen.getByLabelText('Name'));
+    await userEvent.tab();
+    expect(screen.getByRole('list', { name: 'Needed to save' }).textContent).toContain('Name is required');
+  });
+  it('Save on an incomplete form lists what is missing and stays off until it is filled in', async () => {
     render(<SshArea />);
     await userEvent.click(screen.getByRole('button', { name: /New host/ }));
     const missing = () => screen.getByRole('list', { name: 'Needed to save' }).textContent;
     await vi.waitFor(() => {
       expect(screen.getByLabelText<HTMLInputElement>('User').value).toBe('me');
     });
+    expect(screen.queryByRole('list', { name: 'Needed to save' })).toBeNull();
+    const saves = saveHosts.mock.calls.length;
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(saveHosts.mock.calls.length).toBe(saves);
     expect(missing()).toContain('Name is required');
     expect(missing()).toContain('Address is required');
     expect(missing()).toContain('Password is required');
@@ -546,6 +558,17 @@ describe('Hosts tab view', () => {
     expect(screen.queryByText('alpha')).toBeNull();
     await userEvent.type(screen.getByLabelText('Filter hosts'), 'alp');
     expect(screen.getByText('alpha')).toBeDefined();
+  });
+  it('shows up to two tags on a grid card and three in a row', async () => {
+    const tags = ['db', 'eu', 'prod', 'blue'];
+    useHostsStore.setState({
+      file: { ...STATE.file, groups: [], hosts: [{ id: 'z', name: 'zed', address: '10.0.0.1', tags, ssh: {} }] },
+    });
+    render(<SshHome />);
+    const shown = (): string | null => screen.getByTestId('host-tags-z').textContent;
+    expect(shown()).toBe('dbeu+2');
+    await userEvent.click(screen.getByRole('button', { name: 'List' }));
+    expect(shown()).toBe('dbeuprod+1');
   });
   it('sorts within a section and switches to the list layout', async () => {
     useHostsStore.setState({
