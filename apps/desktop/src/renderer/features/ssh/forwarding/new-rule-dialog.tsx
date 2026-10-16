@@ -15,7 +15,8 @@ const blank = (id: string): ForwardFullEntry => ({ id, type: 'local', port: Numb
 
 /**
  * The Port forwarding view's New rule…: pick a host, fill in the rule as the host form does, and it is added
- * to that host's own rules in `hosts.yaml`. A rule for a whole group is still set in the group's settings.
+ * to that host's own rules in `hosts.yaml`. A rule for every host of a host group is still set in that host
+ * group's settings.
  */
 export function NewRuleDialog({
   open,
@@ -85,7 +86,8 @@ export function NewRuleDialog({
         <Dialog.Content className={CONTENT_CLASS} data-testid="new-rule-dialog">
           <Dialog.Title className="text-md font-medium text-fg-default">New forwarding rule</Dialog.Title>
           <Dialog.Description className="text-sm text-fg-subtle">
-            Added to the host&apos;s own rules. A rule for a whole group is set in the group&apos;s settings.
+            Added to the host&apos;s own rules. A rule for every host of a host group is set in that host group&apos;s
+            settings.
           </Dialog.Description>
           {resolved.length === 0 ? (
             <div className="flex flex-col items-start gap-2">

@@ -85,6 +85,20 @@ describe("a host's open sessions", () => {
     expect(deleteHostDescription(3)).toBe('3 open sessions will close.');
     expect(deleteHostDescription(0)).toContain('No sessions are open on it.');
   });
+
+  it('names the rules that leave each forwarding group', () => {
+    expect(deleteHostDescription(1, [{ name: 'Backend', rules: ['redis'] }])).toBe(
+      '1 open session will close. Its rule redis leaves forwarding group Backend.',
+    );
+    expect(
+      deleteHostDescription(0, [
+        { name: 'Dev', rules: ['pg', 'grafana', 'api'] },
+        { name: 'Ops', rules: ['ssh', 'web'] },
+      ]),
+    ).toBe(
+      'It is removed from hosts.yaml. No sessions are open on it. Its rules pg, grafana and api leave forwarding group Dev. Its rules ssh and web leave forwarding group Ops.',
+    );
+  });
 });
 
 describe('deleteHost', () => {
@@ -96,6 +110,28 @@ describe('deleteHost', () => {
     // The one-pane tab and the Files tab close; the split keeps its db pane.
     expect(tabs.map((t) => t.id)).toEqual(['ssh-terminal:two']);
     expect(tabs[0]?.panes).toEqual({ kind: 'pane', paneId: 'p3', hostId: 'db' });
+  });
+
+  it('takes its rules out of their forwarding groups in the same save', async () => {
+    useHostsStore.setState({
+      file: {
+        ...FILE,
+        forwardGroups: [
+          {
+            id: 'backend',
+            name: 'Backend',
+            rules: [
+              { host: 'web-1', rule: 'redis' },
+              { host: 'db', rule: 'pg' },
+            ],
+          },
+        ],
+      },
+    });
+    await deleteHost('web-1');
+    expect(save.mock.calls[0]?.[0].forwardGroups).toEqual([
+      { id: 'backend', name: 'Backend', rules: [{ host: 'db', rule: 'pg' }] },
+    ]);
   });
 
   it('closes nothing when the save fails', async () => {
@@ -118,6 +154,19 @@ describe('HostDeleteDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(useHostDelete.getState().hostId).toBeNull();
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it('names the forwarding groups its rules leave', () => {
+    useHostsStore.setState({
+      file: { ...FILE, forwardGroups: [{ id: 'backend', name: 'Backend', rules: [{ host: 'db', rule: 'redis' }] }] },
+    });
+    render(<HostDeleteDialog />);
+    act(() => {
+      useHostDelete.getState().ask('db');
+    });
+    expect(screen.getByTestId('host-delete-dialog').textContent).toContain(
+      'Its rule redis leaves forwarding group Backend.',
+    );
   });
 
   it("deletes on confirm and closes the host's tabs", async () => {

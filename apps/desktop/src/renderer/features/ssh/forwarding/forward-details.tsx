@@ -1,6 +1,7 @@
 /**
  * The forward picked in the Port forwarding view, in the right slide-over (where the host details show on the
- * Hosts view): what it runs and where its rule is set, what it is doing now, and its forwarding group.
+ * Hosts view): one list of what it runs, where its rule is set and how it started, with the live value shown
+ * only where it differs from the rule's, then its forwarding group.
  * Picking a row opens it; the right rail's icon and its close icon put it away.
  */
 import { Pencil, Server } from 'lucide-react';
@@ -51,11 +52,26 @@ export function ForwardDetails() {
   const removed = forward === undefined || !forward.enabled || state?.removed === true;
   const shown = stateOf(state);
   const overridePort = state !== undefined && rule !== undefined && state.port !== rule.port ? state.port : undefined;
-  const address = rule === undefined ? undefined : listenAddress(rule.bind, overridePort ?? rule.port);
+  // What it listens on now: where it runs, else the address this run asked for.
+  const address =
+    state?.status.state === 'running'
+      ? listenAddress(state.status.listening.address, state.status.listening.port)
+      : rule === undefined
+        ? undefined
+        : listenAddress(rule.bind, overridePort ?? rule.port);
   const error = state?.status.state === 'failed' ? state.status.error.message : startError?.message;
   const groups = flattenGroups(file);
   const groupName = (id: string): string => groups.find(({ group }) => group.id === id)?.group.name ?? id;
   const inGroup = groupOfRule(file, hostId, ruleId);
+  const forwardGroupName = (id: string): string => file.forwardGroups?.find((g) => g.id === id)?.name ?? id;
+  const started =
+    state === undefined
+      ? undefined
+      : state.group !== undefined
+        ? `with group ${forwardGroupName(state.group)}`
+        : state.origin === 'auto'
+          ? "with the host's terminals"
+          : 'by hand';
   const muted = (text: string) => <span className="truncate text-xs text-fg-subtle">{text}</span>;
 
   const openHost = (): void => {
@@ -137,7 +153,7 @@ export function ForwardDetails() {
           {error}
         </p>
       )}
-      <Section title="Rule">
+      <Section title="Forward">
         {rule === undefined ? (
           <Row label="Rule">{muted('removed from hosts.yaml since it started')}</Row>
         ) : (
@@ -149,10 +165,8 @@ export function ForwardDetails() {
             <Row label="Listens on">
               <span className="truncate font-mono">{address}</span>
               {address !== undefined && <CopyButton text={address} label="Copy address" />}
+              {overridePort !== undefined && muted(`this run; the rule says ${String(rule.port)}`)}
             </Row>
-            {overridePort !== undefined && (
-              <Row label="Port">{muted(`${String(overridePort)} this run; the rule says ${String(rule.port)}`)}</Row>
-            )}
             <Row label="Target">
               {rule.target === undefined ? (
                 <span className="text-fg-subtle">SOCKS5, any destination through the host</span>
@@ -160,15 +174,25 @@ export function ForwardDetails() {
                 <span className="truncate font-mono">{listenAddress(rule.target.host, rule.target.port)}</span>
               )}
             </Row>
-            <Row label="Starts">
-              <span>{rule.autoStart ? "with the host's terminals" : 'by hand'}</span>
-            </Row>
+            {started === undefined ? (
+              <Row label="Starts">
+                <span>{rule.autoStart ? "with the host's terminals" : 'by hand'}</span>
+              </Row>
+            ) : (
+              <Row label="Started">
+                <span data-testid="forward-details-started">{started}</span>
+                {rule.autoStart && state?.origin !== 'auto' && muted("the rule starts with the host's terminals")}
+              </Row>
+            )}
             {isNetworkBind(rule.bind) && (
               <Row label="Reach">
                 <span className="text-status-danger">other machines can connect</span>
               </Row>
             )}
           </>
+        )}
+        {state?.changed === true && (
+          <Row label="Changed">{muted('since it started: Restart runs it as the rule now is')}</Row>
         )}
         <Row label="Host">
           <span className="truncate">{hostName}</span>
@@ -188,26 +212,6 @@ export function ForwardDetails() {
           </Row>
         )}
       </Section>
-      {state !== undefined && (
-        <Section title="Now">
-          <Row label="State">
-            <span className={shown.color}>{shown.label}</span>
-          </Row>
-          {state.status.state === 'running' && (
-            <Row label="Listening">
-              <span className="truncate font-mono">
-                {listenAddress(state.status.listening.address, state.status.listening.port)}
-              </span>
-            </Row>
-          )}
-          <Row label="Started">
-            <span>{state.origin === 'auto' ? "with the host's terminals" : 'by hand'}</span>
-          </Row>
-          {state.changed === true && (
-            <Row label="Rule">{muted('changed since it started: Restart runs it as it now is')}</Row>
-          )}
-        </Section>
-      )}
       {forward !== undefined && (
         <Section title="Forwarding group">
           <Row label="Group">

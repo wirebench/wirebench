@@ -1,7 +1,8 @@
 /**
- * Deleting a host: the menus ask first, naming how many open sessions will close, and on confirm the host
- * leaves `hosts.yaml` and its terminal panes and Files tab close with it, so no tab is left on a host that
- * no longer exists.
+ * Deleting a host: the menus ask first, naming how many open sessions will close and which of its rules leave
+ * which forwarding groups, and on confirm the host leaves `hosts.yaml` (its rules leave their forwarding
+ * groups in the same save) and its terminal panes and Files tab close with it, so no tab is left on a host
+ * that no longer exists. A failed forward of it is cleared; one still running stays, stoppable.
  */
 import { useEffect, useState } from 'react';
 import { create } from 'zustand';
@@ -12,6 +13,9 @@ import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { findHost, flattenGroups, removeHost, useHostsStore } from './hosts-store.js';
 import { filesTabId } from './files/open-files.js';
+import { stopForward } from './forwarding/forward-actions.js';
+import { groupsWithHost, withoutHostRules } from './forwarding/forward-groups.js';
+import { isLive, useForwardsStore } from './forwarding/forwards-store.js';
 import { closePane } from './panes/pane-actions.js';
 import { leaves } from './panes/pane-tree.js';
 
@@ -38,10 +42,28 @@ export function sessionCount(sessions: HostSessions): number {
   return sessions.panes.length + (sessions.filesTab === undefined ? 0 : 1);
 }
 
-/** "1 open session will close." / "3 open sessions will close." / nothing to close. */
-export function deleteHostDescription(count: number): string {
-  if (count === 0) return 'It is removed from hosts.yaml. No sessions are open on it.';
-  return `${String(count)} open ${count === 1 ? 'session' : 'sessions'} will close.`;
+/** "redis" / "redis and pg" / "redis, pg and api". */
+function listed(names: readonly string[]): string {
+  return names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''}`;
+}
+
+/**
+ * "1 open session will close." / "3 open sessions will close." / nothing to close; then, per forwarding group
+ * holding its rules, "Its rule redis leaves forwarding group Backend."
+ */
+export function deleteHostDescription(
+  count: number,
+  groups: readonly { readonly name: string; readonly rules: readonly string[] }[] = [],
+): string {
+  const sessions =
+    count === 0
+      ? 'It is removed from hosts.yaml. No sessions are open on it.'
+      : `${String(count)} open ${count === 1 ? 'session' : 'sessions'} will close.`;
+  const leaving = groups.map(
+    ({ name, rules }) =>
+      `Its ${rules.length === 1 ? 'rule' : 'rules'} ${listed(rules)} ${rules.length === 1 ? 'leaves' : 'leave'} forwarding group ${name}.`,
+  );
+  return [sessions, ...leaving].join(' ');
 }
 
 /**
@@ -65,15 +87,20 @@ export function ownPasswordSecret(file: HostsFileWire, hostId: string): string |
 }
 
 /**
- * Removes the host from `hosts.yaml`, then closes its panes (a tab whose last pane goes closes) and Files tab.
- * With `secret`, its password's value on this machine goes too.
+ * Removes the host from `hosts.yaml` and its rules from the forwarding groups, then closes its panes (a tab
+ * whose last pane goes closes) and Files tab, and clears its failed forwards. With `secret`, its password's
+ * value on this machine goes too.
  */
 export async function deleteHost(hostId: string, secret?: string): Promise<void> {
   const { file, save } = useHostsStore.getState();
-  if (!(await save(removeHost(file, hostId)))) return;
+  if (!(await save(withoutHostRules(removeHost(file, hostId), hostId)))) return;
   const { panes, filesTab } = sessionsOf(hostId);
   for (const { tabId, paneId } of panes) closePane(tabId, paneId);
   if (filesTab !== undefined) useEditorsStore.getState().close(filesTab);
+  const failed = Object.values(useForwardsStore.getState().byKey).filter(
+    (state) => state.hostId === hostId && !isLive(state),
+  );
+  for (const state of failed) void stopForward(hostId, state.ruleId);
   if (secret !== undefined) {
     const deleted = await ipc().ssh.deleteSecret({ name: secret });
     if (!deleted.ok) showToast(`The secret ${secret} was not deleted: ${deleted.error.message}`);
@@ -105,13 +132,14 @@ export function HostDeleteDialog() {
   useEditorsStore((s) => s.tabs);
   const name = hostId === null ? '' : (findHost(file, hostId)?.name ?? hostId);
   const count = hostId === null ? 0 : sessionCount(sessionsOf(hostId));
+  const groups = hostId === null ? [] : groupsWithHost(file, hostId);
   const secret = hostId === null ? undefined : ownPasswordSecret(file, hostId);
   // Off each time the confirm opens: deleting a secret is never the default.
   const [alsoSecret, setAlsoSecret] = useState(false);
   useEffect(() => {
     setAlsoSecret(false);
   }, [hostId]);
-  const description = deleteHostDescription(count);
+  const description = deleteHostDescription(count, groups);
   return (
     <ConfirmDialog
       open={hostId !== null}

@@ -219,7 +219,7 @@ function HostsPanel() {
                         openDialog({ mode: 'new-group' });
                       }}
                     >
-                      <FolderPlus size={13} aria-hidden="true" /> New group
+                      <FolderPlus size={13} aria-hidden="true" /> New host group
                     </DropdownMenu.Item>
                     <DropdownMenu.Item
                       className={MENU_ITEM_CLASS}

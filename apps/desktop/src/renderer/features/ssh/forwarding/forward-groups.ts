@@ -18,6 +18,25 @@ export function groupOfRule(file: HostsFileWire, hostId: string, ruleId: string)
   return groupsOf(file).find((group) => group.rules.some((m) => m.host === hostId && m.rule === ruleId));
 }
 
+/** The forwarding groups holding rules of a host, each with those rules' ids (for the host's delete confirm). */
+export function groupsWithHost(
+  file: HostsFileWire,
+  hostId: string,
+): { readonly name: string; readonly rules: readonly string[] }[] {
+  return groupsOf(file)
+    .map((group) => ({ name: group.name, rules: group.rules.filter((m) => m.host === hostId).map((m) => m.rule) }))
+    .filter((group) => group.rules.length > 0);
+}
+
+/** Takes every rule of a host out of the forwarding groups (the host is being deleted). */
+export function withoutHostRules(file: HostsFileWire, hostId: string): HostsFileWire {
+  if (groupsWithHost(file, hostId).length === 0) return file;
+  return withGroups(
+    file,
+    groupsOf(file).map((group) => ({ ...group, rules: group.rules.filter((m) => m.host !== hostId) })),
+  );
+}
+
 /** An id for a new group, from its name: lower-case words joined by dashes, numbered when taken. */
 export function freeGroupId(file: HostsFileWire, name: string): string {
   const base =
@@ -126,7 +145,7 @@ function resolvedRule(resolved: readonly ResolvedHostWire[], hostId: string, rul
 /**
  * What a group's rules are doing in this window. `members` counts its rules, `total` those that can run
  * (present and on). Pass the forwards as shown (`shownForwards`): a start waiting on its prompt is
- * not failed.
+ * not failed, and neither is a member whose rule (or host) has gone: it can only leave the group.
  */
 export interface GroupStatus {
   readonly members: number;
@@ -147,9 +166,10 @@ export function groupStatus(
   for (const member of group.rules) {
     const key = forwardKey(member.host, member.rule);
     const state = byKey[key];
-    if (resolvedRule(resolved, member.host, member.rule)?.enabled === true) total++;
+    const rule = resolvedRule(resolved, member.host, member.rule);
+    if (rule?.enabled === true) total++;
     if (isLive(state)) running++;
-    else if (state?.status.state === 'failed' || startErrors[key] !== undefined) failed++;
+    else if (rule !== undefined && (state?.status.state === 'failed' || startErrors[key] !== undefined)) failed++;
   }
   return { members: group.rules.length, total, running, failed };
 }
@@ -175,7 +195,7 @@ export async function startGroup(id: string): Promise<void> {
     const key = forwardKey(m.host, m.rule);
     return resolvedRule(resolved, m.host, m.rule)?.enabled === true && !isLive(byKey[key]) && !waiting[key];
   });
-  await Promise.allSettled(startable.map((m) => startForward(m.host, m.rule)));
+  await Promise.allSettled(startable.map((m) => startForward(m.host, m.rule, { group: id })));
 }
 
 /** Stops every rule of a group this window runs, and clears the failed ones and refused starts. */
