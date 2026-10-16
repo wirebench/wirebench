@@ -77,10 +77,12 @@ See [Authentication](/wirebench/docs/guides/auth/) for each scheme's fields.
 | A saved response without a status code | Skipped. The summary counts them | Nothing |
 | Collections by URL | Not supported | Download the file, or paste its JSON |
 
-<Aside type="caution" title="Credentials typed as headers">
-A token written straight into a header, such as `Authorization: Bearer …`, is an ordinary header to
-the importer, so it arrives as plain text in the project files. Before you share the project, move it
-to the **Auth** tab, where it is stored as a secret.
+<Aside type="note" title="Credentials typed as headers">
+A token written straight into a header never reaches the project files. A literal
+`Authorization: Bearer …` or `Basic …` header becomes the request's bearer or basic auth, with the
+user name only, and is dropped; any other credential-looking header with a literal value, such as
+`X-Api-Key` or `Cookie`, is dropped. The summary names each one: enter the value on the **Auth** tab,
+where it is stored as a secret. A header made only of variables, such as `Bearer {{token}}`, is kept.
 </Aside>
 
 ## Collection v3 folders

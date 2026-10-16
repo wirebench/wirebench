@@ -64,6 +64,12 @@ All notable changes to this project are documented here. The format follows
 - **A refused proxy tunnel no longer reads as Cancelled.** When an HTTPS request goes through a proxy
   that refuses the tunnel (a 407 for a wrong or missing proxy password), the send now fails with
   "Proxy connection failed" and the proxy's status, instead of showing as if you had cancelled it.
+- **Credential headers stay out of imported Postman requests.** A literal `Authorization` header in a
+  Postman collection becomes the request's bearer or basic auth (the user name only) and is dropped;
+  any other credential-looking header with a literal value, such as `X-Api-Key` or `Cookie`, is
+  dropped and named in the import report. A value made only of variables stays. The Insomnia,
+  Hoppscotch and Thunder Client imports, which share this mapper, follow the same rule, as the
+  `.http`, OpenCollection and HAR imports already did (#588).
 
 ## [6.1.0] - 2026-10-16
 
