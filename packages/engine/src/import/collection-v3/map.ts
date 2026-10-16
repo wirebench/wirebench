@@ -12,7 +12,7 @@ import type { GrpcApi, GrpcFolder, GrpcMethodKind, GrpcRequestDef } from '../../
 import { createGrpcApi, createGrpcFolder, createGrpcRequest, defaultTlsFor } from '../../grpc/model.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
-import { uniqueSlug } from '../../project/paths.js';
+import { SlugSet, uniqueSlug } from '../../project/paths.js';
 import type { RestApi } from '../../rest/model.js';
 import { folderRequests } from '../../rest/model.js';
 import { hasCredentials, mapPostmanAuth, apiFromPostmanCollection } from '../../rest/postman/map.js';
@@ -296,8 +296,8 @@ class ProtocolMapper {
   ): { folders: F[]; requests: R[]; count: number } {
     const folders: F[] = [];
     const requests: R[] = [];
-    const folderSlugs = new Set<string>();
-    const requestSlugs = new Set<string>();
+    const folderSlugs = new SlugSet();
+    const requestSlugs = new SlugSet();
     let count = 0;
     for (const child of folder.children) {
       if (child.type === 'request') {

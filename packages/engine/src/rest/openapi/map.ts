@@ -14,7 +14,7 @@
 
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
-import { slugify, uniqueSlug } from '../../project/paths.js';
+import { slugify, SlugSet, uniqueSlug } from '../../project/paths.js';
 import type { HookLink } from '../../webhooks/model.js';
 import { createWebhookFolder, hookKey, type WebhookFolder } from '../../webhooks/model.js';
 import type {
@@ -574,7 +574,7 @@ interface RequestOverrides {
 function requestFromOperation(
   operation: OpenApiOperation,
   order: number,
-  taken: Set<string>,
+  taken: SlugSet,
   context: MapContext,
   overrides?: RequestOverrides,
 ): RestRequestDef {
@@ -705,7 +705,7 @@ export function webhooksFromDocument(
   if (chosen.length === 0) return undefined;
   const newId = options.newId ?? generateId;
   const context: MapContext = { document, options, newId, skipped: [], counts: { requests: 0, deprecated: 0 } };
-  const taken = new Set<string>();
+  const taken = new SlugSet();
   const requests = chosen.map((source, index) => {
     const request = requestFromOperation(source.operation, index, taken, context, {
       name: source.displayName,
@@ -756,8 +756,8 @@ export function apiFromDocument(document: OpenApiDocument, options: MapApiOption
 
   const rootRequests: RestRequestDef[] = [];
   const folders: RestFolder[] = [];
-  const folderSlugs = new Set<string>();
-  const rootSlugs = new Set<string>();
+  const folderSlugs = new SlugSet();
+  const rootSlugs = new SlugSet();
   const context: MapContext = {
     document,
     options,
@@ -776,7 +776,7 @@ export function apiFromDocument(document: OpenApiDocument, options: MapApiOption
       });
       continue;
     }
-    const taken = new Set<string>();
+    const taken = new SlugSet();
     const inside = operations.map((operation, index) => {
       const request = requestFromOperation(operation, index, taken, context);
       taken.add(request.slug);
