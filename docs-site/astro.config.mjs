@@ -84,6 +84,7 @@ export default defineConfig({
             { label: 'SOAP through a corporate proxy', slug: 'solutions/soap-through-corporate-proxy' },
             { label: 'gRPC with server reflection', slug: 'solutions/grpc-server-reflection' },
             { label: 'SSH agent forwarding', slug: 'solutions/ssh-agent-forwarding' },
+            { label: 'SSH with a security key', slug: 'solutions/ssh-security-key-sign-in' },
           ],
         },
         {
