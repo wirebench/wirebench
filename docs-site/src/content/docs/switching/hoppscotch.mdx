@@ -1,0 +1,146 @@
+---
+title: From Hoppscotch
+description: What a Hoppscotch collections or environments export brings into Wirebench, from any schema version, what it leaves behind, and where each part lives once imported.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Hoppscotch exports collections and environments as separate JSON files. Wirebench reads both, at
+every schema version Hoppscotch has written: each collection, folder and request is read at its
+own version, so a file that mixes old and new objects imports whole. Each top-level collection
+becomes a **REST API** in the project you choose; its GraphQL requests come along as requests with
+a GraphQL body.
+
+Collection and folder variables become project properties. Environments become workspace
+environments. Scripts are kept as text and never run. Credentials do not come across as plain
+text. The import summary lists everything that was left out or changed.
+
+## Steps
+
+<Steps>
+
+1. Open **Import…**; it detects the format, or pick **Hoppscotch collection** or **Hoppscotch
+   environments** yourself.
+
+2. On the **File** tab, pick or drop the exported `.json` file. Or paste its text on the **Paste**
+   tab. There is no URL tab.
+
+3. For a collection, choose the target project. An environments file lands in the workspace, so the
+   dialog does not ask.
+
+4. Choose **Import**, then read the summary.
+
+</Steps>
+
+## What carries over
+
+### Collections
+
+| In the export | In Wirebench | More |
+| --- | --- | --- |
+| A top-level collection | A REST API with its name. A file of several collections gives each its own | |
+| A folder | A folder in the API, in the export's order | |
+| Collection and folder headers | Copied onto each request below that does not set the same header, and a note says so | |
+| Collection and folder auth | The auth of the API and the folder. A request with auth **inherit** takes it | [Auth](/wirebench/docs/guides/auth/) |
+| Collection and folder variables | Project properties, outermost first. A secret variable becomes a secret with no value, listed so you can set it | [Environments and properties](/wirebench/docs/guides/environments/) |
+| `<<name>>` | `${name}` | [Property syntax](/wirebench/docs/reference/property-syntax/) |
+| `<<$guid>>` and the other predefined variables | The matching dynamic variable, where Wirebench has one | [Dynamic values](/wirebench/docs/reference/property-syntax/#dynamic-values) |
+
+### REST requests
+
+| In the request | In Wirebench | More |
+| --- | --- | --- |
+| Method and endpoint | The request's method and URL. The endpoint's own query string becomes **Params** rows | [REST](/wirebench/docs/guides/rest-client/) |
+| Parameters | Rows in the **Params** table, an inactive one switched off. A name the endpoint's query already has is not added twice | |
+| Headers | Rows in the **Headers** table, with their descriptions | |
+| A JSON, XML, HTML or text body | A raw body. When no `Content-Type` header is set, one is added from the body's type | [Request body](/wirebench/docs/guides/rest-client/#request-body) |
+| A URL-encoded body | A form body, one field per `key: value` line; a line starting with `#` is switched off | |
+| A multipart body | A multipart body. A file part has no file in the export, so it is kept as a switched-off text part, with a note | |
+| A file body | Left out, with a note: the file is not in the export | |
+| Saved responses | [Response examples](/wirebench/docs/guides/rest-client/#examples), masked as every import masks a recorded response | |
+| The description | The request's description | |
+| Scripts | See [Scripts](#scripts) | |
+
+### GraphQL requests
+
+A GraphQL request becomes a `POST` request with a [GraphQL body](/wirebench/docs/guides/graphql/):
+its query and its variables. Its headers and auth come across as for a REST request.
+
+### Auth
+
+| In the export | In Wirebench |
+| --- | --- |
+| None, inherit | The same |
+| Basic, Digest | The same type, with the user name |
+| Bearer | Bearer |
+| API key in a header or the query | API key, with its name and placement |
+| OAuth 2 | OAuth 2 with the authorization code, client credentials or password grant, its URLs, client ID and scopes. Extra request parameters are noted |
+| AWS Signature | AWS Signature v4, with the region and service |
+| JWT | JWT, with the algorithm, claims and where the token goes |
+| Hawk, Akamai EdgeGrid | Auth **none**, with a warning |
+| Auth switched off | Auth **none** |
+
+### Environments
+
+- **Each environment** becomes a workspace environment, renamed when the name is taken and **never
+  made active**.
+- **The global environment** (named `Global`) merges into Globals instead.
+- **Values.** A variable's current value, else its initial value. Current exports leave every
+  current value empty, so the initial value is what usually arrives.
+- **Secret variables** never carry a value in an export. Each becomes a secret with no value,
+  listed in the summary so you can set it.
+
+A variable whose name looks like a credential and whose value is a literal becomes a secret, with a
+note.
+
+### Scripts
+
+Every pre-request and test script, on a request, a folder or a collection, is written as it is to
+`imported-scripts/` in the project folder, and never read back or run. An existing file is never
+overwritten: a second import adds a number to the name. The notes list where each script went, and
+a warning names the script APIs they call (`pw.`, `hopp.` or `pm.`).
+
+## Credentials
+
+No literal credential is written into a project or workspace file. Passwords, tokens, API key
+values and client secrets are not copied, and the summary counts the auth configurations that need
+one. Enter each on its **Auth** tab; Wirebench stores it encrypted outside the project.
+
+## What does not carry over
+
+| In the export | What happens | What to do |
+| --- | --- | --- |
+| Request variables | Not imported, with a warning: Wirebench has no request-level property scope | Add them as project properties, or set them from a script |
+| A version newer than this build knows | Read as the newest one, with a note naming it | |
+| An environments file picked as **Hoppscotch collection**, or the other way round | Refused, with a message saying which to pick | |
+| WebSocket, SSE, Socket.IO and MQTT requests | Hoppscotch does not export them | |
+
+## The command line
+
+`wirebench import <file>` reads a Hoppscotch collections export and adds its APIs and its plain
+collection and folder variables as project properties. It has no secret store, workspace or script
+folder, so it lists secret variables and scripts as not imported. An environments file is refused.
+
+## Limits
+
+- A file larger than 50 MB is refused, picked or pasted.
+- Folders nested more than 64 levels deep are cut at that depth, with a warning.
+
+## After importing
+
+<Steps>
+
+1. Read the summary, or choose **Copy report** to keep it as a checklist.
+
+2. Enter the passwords, tokens and keys it counts, on each **Auth** tab, and the values of the
+   secrets it lists. See [Secrets](/wirebench/docs/guides/secrets/).
+
+3. Pick one of the imported environments to make it active. Import never switches environments for
+   you. See [Environments and properties](/wirebench/docs/guides/environments/).
+
+</Steps>
+
+<Aside type="note" title="Scripts are kept, not translated">
+An imported script is text written against another client's scripting API. Wirebench never runs it;
+rewrite what you need as a Wirebench script or as assertions.
+</Aside>

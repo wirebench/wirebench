@@ -1033,7 +1033,7 @@ export type ApiImportClientResponseInSync = AssertTrue<
  * applied to the open workspace. An export holding requests is refused.
  */
 export const apiImportClientEnvironmentsRequestSchema = z.object({
-  format: z.enum(['insomnia']),
+  format: z.enum(['insomnia', 'hoppscotch']),
   source: postmanSourceSchema,
 });
 export type ApiImportClientEnvironmentsRequest = z.infer<typeof apiImportClientEnvironmentsRequestSchema>;

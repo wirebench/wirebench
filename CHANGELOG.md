@@ -24,6 +24,13 @@ All notable changes to this project are documented here. The format follows
   and never run, and a `.env` file is never read. `wirebench import` reads the same sources. The
   OpenCollection import now also maps Digest and AWS Signature v4 auth, `omitHeaders`, descriptions
   and lists of WebSocket messages (#588).
+- **Import Hoppscotch exports.** **Import…** reads Hoppscotch collections and environments files at
+  every schema version, each collection, folder and request at its own. Each top-level collection
+  becomes a REST API in the chosen project, GraphQL requests with a GraphQL body, saved responses as
+  examples; collection and folder variables become project properties, a secret one with no value.
+  An environments file goes to the workspace, never made active, its `Global` environment into
+  Globals. Scripts are saved as text and never run. `wirebench import` reads collections files
+  (#588).
 
 ## [6.1.0] - 2026-10-16
 
