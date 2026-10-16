@@ -28,7 +28,7 @@ function invokeAs(sender: object, channel: string, payload?: unknown): Promise<u
   return handler({ sender }, payload);
 }
 
-const NO_SECRETS = { names: vi.fn(), set: vi.fn() };
+const NO_SECRETS = { names: vi.fn(), set: vi.fn(), delete: vi.fn() };
 const NO_SSH = {
   connect: vi.fn(),
   write: vi.fn(),
@@ -198,7 +198,7 @@ describe('ssh channels', () => {
     const names = vi.fn().mockResolvedValue([{ name: 'DEPLOY_KEY', local: true, external: false }]);
     registerSshChannels({
       hosts: { list: vi.fn(), save: vi.fn() },
-      secrets: { names, set: vi.fn() },
+      secrets: { names, set: vi.fn(), delete: vi.fn() },
       ssh: NO_SSH,
       importer: NO_IMPORT,
       knownHostsImporter: NO_IMPORT,
@@ -220,7 +220,7 @@ describe('ssh channels', () => {
     const set = vi.fn().mockResolvedValue(undefined);
     registerSshChannels({
       hosts: { list: vi.fn(), save: vi.fn() },
-      secrets: { names: vi.fn(), set },
+      secrets: { names: vi.fn(), set, delete: vi.fn() },
       ssh: NO_SSH,
       importer: NO_IMPORT,
       knownHostsImporter: NO_IMPORT,
@@ -241,7 +241,7 @@ describe('ssh channels', () => {
   it('a refused ssh.setSecret answers its code and does not echo the name or value', async () => {
     const { SshSecretsService } = await import('../src/main/ssh-secrets.js');
     const service = new SshSecretsService({
-      store: { set: vi.fn(), replace: vi.fn(), findByLabel: vi.fn(), list: vi.fn() },
+      store: { set: vi.fn(), replace: vi.fn(), findByLabel: vi.fn(), list: vi.fn(), delete: vi.fn() },
       workspaceId: () => 'ws',
       mappedNames: () => [],
     });

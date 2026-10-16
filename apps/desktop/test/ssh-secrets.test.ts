@@ -22,6 +22,7 @@ function fakeStore() {
       if (entry) entry.value = value;
       return Promise.resolve(ref);
     }),
+    delete: vi.fn((ref: string) => Promise.resolve(entries.delete(ref))),
     get: (ref: string) => Promise.resolve(entries.get(ref)?.value),
     findByLabel: (label: string) => Promise.resolve([...entries].find(([, e]) => e.label === label)?.[0]),
     list: () =>
@@ -72,6 +73,15 @@ describe('SshSecretsService', () => {
     await expect(make('ws1').service.set('bad name!', 'v')).rejects.toMatchObject({ code: 'ssh-literal-secret' });
     await expect(make('ws1').service.set('bad name!', 'v')).rejects.not.toThrow(/bad name/);
     await expect(make(undefined).service.set('KEY', 'v')).rejects.toMatchObject({ code: 'workspace-not-open' });
+  });
+  it("delete removes this workspace's value only, and is no error when there is none (#594)", async () => {
+    const { store, service } = make('ws1');
+    await store.set('x', { label: workspaceSecretLabel('ws1', 'KEY') });
+    await store.set('y', { label: workspaceSecretLabel('ws2', 'KEY') });
+    await service.delete('KEY');
+    await service.delete('NONE');
+    expect([...store.entries.values()]).toEqual([{ value: 'y', label: workspaceSecretLabel('ws2', 'KEY') }]);
+    await expect(make(undefined).service.delete('KEY')).rejects.toMatchObject({ code: 'workspace-not-open' });
   });
   it('names lists local and mapped names, sorted, only for the open workspace', async () => {
     const { store, service } = make('ws1', ['ZED', 'KEY']);

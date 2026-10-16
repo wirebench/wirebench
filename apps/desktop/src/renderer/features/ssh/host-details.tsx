@@ -15,6 +15,7 @@ import { ipc } from '../../state/ipc-client.js';
 import { editHost, openTerminalFor } from './connect.js';
 import { openFiles } from './files/open-files.js';
 import { HostForwards } from './forwarding/forwarding-view.js';
+import { isLive, useForwardsStore } from './forwarding/forwards-store.js';
 import { HostForm } from './host-dialog.js';
 import { HostActionsButton } from './host-menus.js';
 import { findHost, flattenGroups, hostStatusOf, osKeyOf, useHostsStore } from './hosts-store.js';
@@ -102,6 +103,12 @@ export function HostDetails() {
     selectedHostId === undefined ? undefined : hostStatusOf(s.panes, selectedHostId),
   );
   const osByHost = useHostsStore((s) => s.osByHost);
+  // The live forwards through the host, so a host with no terminal open still says it is in use (#594).
+  const forwardsRunning = useForwardsStore((s) =>
+    selectedHostId === undefined
+      ? 0
+      : Object.entries(s.byKey).filter(([key, state]) => key.startsWith(`${selectedHostId}/`) && isLive(state)).length,
+  );
   const [knownHosts, setKnownHosts] = useState<readonly SshKnownHostWire[]>([]);
   const [secrets, setSecrets] = useState<readonly SshSecretNameWire[]>([]);
 
@@ -160,6 +167,22 @@ export function HostDetails() {
         <p className="flex items-center gap-1.5 text-xs text-fg-subtle">
           <span className={`size-2 shrink-0 rounded-full bg-current ${status.color}`} aria-hidden="true" />
           <span>{status.label}</span>
+          {forwardsRunning > 0 && (
+            <>
+              <span>·</span>
+              <button
+                type="button"
+                data-testid="host-details-forwards"
+                title="Show Port forwarding"
+                className="shrink-0 rounded text-accent hover:underline focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+                onClick={() => {
+                  useHostsStore.getState().setHomeView('forwarding');
+                }}
+              >
+                {`${String(forwardsRunning)} forward${forwardsRunning === 1 ? '' : 's'} running`}
+              </button>
+            </>
+          )}
           {path !== undefined && path !== '' && <span className="truncate">· {path}</span>}
         </p>
       </div>

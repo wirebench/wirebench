@@ -62,7 +62,7 @@ export function TerminalPicker({ onClose }: { readonly onClose: () => void }) {
               <span>No snippets yet. Add one under Snippets in the SSH menu.</span>
               <button
                 type="button"
-                className="rounded border border-hairline px-2 py-0.5 text-sm text-fg-default hover:bg-surface-raised"
+                className="shrink-0 rounded border border-hairline px-2 py-0.5 text-sm whitespace-nowrap text-fg-default hover:bg-surface-raised"
                 onClick={() => {
                   onClose();
                   showSnippets();

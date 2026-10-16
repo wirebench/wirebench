@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { SshQuickTarget } from '../../../shared/ssh-wire.js';
+import type { ResolvedHostWire, SshQuickTarget } from '../../../shared/ssh-wire.js';
 
 /**
  * One-off servers (#537): typed as `[user@]host[:port]` in Connect to host and connected to with the SSH
@@ -30,6 +30,23 @@ export function parseQuickTarget(text: string): SshQuickTarget | undefined {
   const address = bracketed ? host.slice(1, -1) : host;
   if (address === '' || address.length > 253) return undefined;
   return { address, port, ...(user === undefined ? {} : { user }) };
+}
+
+/**
+ * The saved hosts a typed server is (#594): the same address and port, and the same user when one was typed.
+ * The palette lists them above the one-off Connect, so a known server opens as its saved host.
+ */
+export function savedHostsFor<T extends Pick<ResolvedHostWire, 'address' | 'ssh'>>(
+  target: SshQuickTarget,
+  hosts: readonly T[],
+): T[] {
+  const address = target.address.toLowerCase();
+  return hosts.filter(
+    (host) =>
+      host.address.toLowerCase() === address &&
+      host.ssh.port.value === target.port &&
+      (target.user === undefined || host.ssh.user.value === target.user),
+  );
 }
 
 /** `user@host`, with `:port` when it is not 22. */

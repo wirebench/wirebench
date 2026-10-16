@@ -89,6 +89,19 @@ export function deleteGroup(file: HostsFileWire, id: string): HostsFileWire {
   );
 }
 
+/**
+ * Puts a deleted group back at `index` (#594): Delete group's Undo. A rule moved into another group since keeps
+ * its new place, and an id taken since gets a free one.
+ */
+export function restoreGroup(file: HostsFileWire, group: ForwardGroupWire, index: number): HostsFileWire {
+  const groups = [...groupsOf(file)];
+  const taken = new Set(groups.flatMap((g) => g.rules.map((m) => `${m.host}/${m.rule}`)));
+  const id = groups.some((g) => g.id === group.id) ? freeGroupId(file, group.name) : group.id;
+  const rules = group.rules.filter((m) => !taken.has(`${m.host}/${m.rule}`));
+  groups.splice(Math.min(index, groups.length), 0, { ...group, id, rules });
+  return withGroups(file, groups);
+}
+
 /** Moves a rule into a group (last), or out of every group with `undefined`. */
 export function moveRule(
   file: HostsFileWire,

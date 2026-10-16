@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { LayoutPanelLeft, Server } from 'lucide-react';
 import { Button } from '../../../components/button.js';
 import { ConfirmDialog } from '../../../components/confirm-dialog.js';
+import { showToast } from '../../../components/toast.js';
 import type { LayoutWire } from '../../../../shared/layout-wire.js';
 import { useHostsStore } from '../hosts-store.js';
 import { useLayoutsStore } from './layouts-store.js';
@@ -147,6 +148,19 @@ export function LayoutsPanel() {
             .remove(layout.id)
             .then((result) => {
               setError(result.ok ? undefined : result.error.message);
+              if (!result.ok) return;
+              // Saving it again under its name brings it back, last in the list (#594).
+              showToast(`Deleted layout “${layout.name}”`, {
+                label: 'Undo',
+                onClick: () => {
+                  void useLayoutsStore
+                    .getState()
+                    .save({ name: layout.name, root: layout.root })
+                    .then((saved) => {
+                      setError(saved.ok ? undefined : saved.error.message);
+                    });
+                },
+              });
             })
             .catch(() => {
               setError('The layout could not be deleted');

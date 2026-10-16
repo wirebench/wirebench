@@ -59,8 +59,12 @@ function ending(entry: SessionLogEntryWire): string {
   return 'closed';
 }
 
-/** A log's row, short enough not to be cut off in a narrow panel: "11:09 · 16 B · exit 0". */
+/**
+ * A log's row, short enough not to be cut off in a narrow panel: "11:09 · 16 B · exit 0". A running log
+ * has no size, since the listing's size is only read when the list is (#594): "11:09 · running".
+ */
 export function logSummary(entry: SessionLogEntryWire): string {
+  if (entry.live) return `${clock(entry.startedAt)} · ${ending(entry)}`;
   return `${clock(entry.startedAt)} · ${size(entry.bytes)} · ${ending(entry)}`;
 }
 
@@ -519,7 +523,8 @@ function LogViewerBody({
         {entry.hostName} · {when(entry.startedAt)}
       </Dialog.Title>
       <Dialog.Description className="text-xs text-fg-subtle">
-        {entry.user}@{entry.address}:{String(entry.port)} · {ending(entry)} · {size(entry.bytes)}
+        {entry.user}@{entry.address}:{String(entry.port)} · {ending(entry)}
+        {entry.live ? null : ` · ${size(entry.bytes)}`}
         {text !== undefined && 'truncated' in text && text.truncated && ' · showing the end of a longer log'}
       </Dialog.Description>
       <input

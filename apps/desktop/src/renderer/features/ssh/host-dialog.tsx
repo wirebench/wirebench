@@ -34,6 +34,7 @@ import {
   useHostsStore,
 } from './hosts-store.js';
 import { INPUT_CLASS, InheritedField, InheritedSwitch, sourceText } from './inherited-field.js';
+import { useRevealMissing } from './reveal-missing.js';
 import {
   chainOf,
   dropEmpty,
@@ -206,6 +207,10 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
     sectionProblems,
   });
   const valid = missing.length === 0;
+  // A blank new form names no required field until Save or a required field left empty; a section's own
+  // problem (a proxy without a host) shows at once, since only an edit can cause it (#594).
+  const { revealed, reveal, onBlur } = useRevealMissing();
+  const shown = revealed ? missing : sectionProblems;
 
   const submit = async (): Promise<void> => {
     const id = existing?.id ?? freeId(file, slug(name));
@@ -308,9 +313,11 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   return (
     <form
       className="flex flex-col gap-3"
+      onBlur={onBlur}
       onSubmit={(e) => {
         e.preventDefault();
         if (valid) void submit();
+        else reveal();
       }}
     >
       {embedded ? (
@@ -324,6 +331,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
       <label className={FIELD_CLASS}>
         <span className="text-fg-subtle">Name</span>
         <input
+          aria-required="true"
           className={INPUT_CLASS}
           value={name}
           onChange={(e) => {
@@ -335,6 +343,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
         <label className={FIELD_CLASS}>
           <span className="text-fg-subtle">Address</span>
           <input
+            aria-required="true"
             className={INPUT_CLASS}
             value={address}
             placeholder="host.example.com or 10.0.0.5"
@@ -535,17 +544,22 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
         </p>
       )}
       <div className="flex items-start gap-2">
-        {valid ? (
+        {shown.length === 0 ? (
           <span className="flex-1" />
         ) : (
           <ul id={missingId} aria-label="Needed to save" className="flex-1 text-xs text-fg-subtle">
-            {missing.map((m) => (
+            {shown.map((m) => (
               <li key={m}>{m}</li>
             ))}
           </ul>
         )}
         <Button onClick={closeDialog}>Cancel</Button>
-        <Button type="submit" variant="primary" disabled={!valid} aria-describedby={valid ? undefined : missingId}>
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={shown.length > 0}
+          aria-describedby={shown.length === 0 ? undefined : missingId}
+        >
           Save
         </Button>
       </div>

@@ -17,6 +17,7 @@ import {
 } from './identities.js';
 import { INPUT_CLASS } from './inherited-field.js';
 import { useSecretNames } from './secret-fields.js';
+import { useRevealMissing } from './reveal-missing.js';
 import { storeSshSecret } from './secret-writes.js';
 
 const NO_PROVENANCE = { value: undefined, from: 'default' } as const;
@@ -41,6 +42,8 @@ function IdentityForm({ identity, onDone }: { readonly identity?: IdentityWire; 
   const [error, setError] = useState<string>();
   const { names } = useSecretNames();
   const problem = identityProblem(name, auth, password);
+  const { revealed, reveal, onBlur } = useRevealMissing();
+  const shown = revealed ? problem : undefined;
 
   const submit = async (): Promise<void> => {
     const hosts = useHostsStore.getState();
@@ -81,15 +84,18 @@ function IdentityForm({ identity, onDone }: { readonly identity?: IdentityWire; 
       aria-label={identity === undefined ? 'New identity' : `Edit identity ${identity.name}`}
       data-testid="identity-form"
       className="flex flex-col gap-3 rounded-md border border-hairline p-3"
+      onBlur={onBlur}
       onSubmit={(e) => {
         e.preventDefault();
         if (problem === undefined) void submit();
+        else reveal();
       }}
     >
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1 text-xs">
           <span className="text-fg-subtle">Identity name</span>
           <input
+            aria-required="true"
             className={INPUT_CLASS}
             value={name}
             autoFocus
@@ -125,9 +131,9 @@ function IdentityForm({ identity, onDone }: { readonly identity?: IdentityWire; 
         </p>
       )}
       <div className="flex items-center gap-2">
-        <span className="flex-1 text-xs text-fg-subtle">{problem}</span>
+        <span className="flex-1 text-xs text-fg-subtle">{shown}</span>
         <Button onClick={onDone}>Cancel</Button>
-        <Button type="submit" variant="primary" disabled={problem !== undefined}>
+        <Button type="submit" variant="primary" disabled={shown !== undefined}>
           {identity === undefined ? 'Add identity' : 'Update identity'}
         </Button>
       </div>

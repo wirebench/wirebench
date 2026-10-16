@@ -4,16 +4,20 @@
  * groups in the same save) and its terminal panes and Files tab close with it, so no tab is left on a host
  * that no longer exists. A failed forward of it is cleared; one still running stays, stoppable.
  */
+import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
+import { showToast } from '../../components/toast.js';
+import type { HostsFileWire, SshAuthWire } from '../../../shared/ssh-wire.js';
 import { useEditorsStore } from '../../state/editors.js';
-import { findHost, removeHost, useHostsStore } from './hosts-store.js';
+import { findHost, flattenGroups, removeHost, useHostsStore } from './hosts-store.js';
 import { filesTabId } from './files/open-files.js';
 import { stopForward } from './forwarding/forward-actions.js';
 import { groupsWithHost, withoutHostRules } from './forwarding/forward-groups.js';
 import { isLive, useForwardsStore } from './forwarding/forwards-store.js';
 import { closePane } from './panes/pane-actions.js';
 import { leaves } from './panes/pane-tree.js';
+import { deleteSshSecret } from './secret-writes.js';
 
 /** A host's open sessions: each terminal pane on it, by tab, and its Files tab if open. */
 export interface HostSessions {
@@ -63,10 +67,31 @@ export function deleteHostDescription(
 }
 
 /**
- * Removes the host from `hosts.yaml` and its rules from the forwarding groups, then closes its panes (a tab
- * whose last pane goes closes) and Files tab, and clears its failed forwards.
+ * The password secret only this host signs in with, which its delete can take along (#594): the host's own
+ * password auth, named by no other host, group or identity. `undefined` when there is none to offer.
  */
-export async function deleteHost(hostId: string): Promise<void> {
+export function ownPasswordSecret(file: HostsFileWire, hostId: string): string | undefined {
+  const auth = findHost(file, hostId)?.ssh.auth;
+  if (auth?.kind !== 'password' || auth.secret === '') return undefined;
+  const named = (other: SshAuthWire | undefined): boolean =>
+    other !== undefined &&
+    other.kind !== 'agent' &&
+    (other.secret === auth.secret || (other.kind === 'key' && other.passphraseSecret === auth.secret));
+  const groups = flattenGroups(file).map(({ group }) => group);
+  const hosts = [...file.hosts, ...groups.flatMap((group) => group.hosts)];
+  const elsewhere =
+    hosts.some((host) => host.id !== hostId && named(host.ssh.auth)) ||
+    groups.some((group) => named(group.ssh.auth)) ||
+    (file.identities ?? []).some((identity) => named(identity.auth));
+  return elsewhere ? undefined : auth.secret;
+}
+
+/**
+ * Removes the host from `hosts.yaml` and its rules from the forwarding groups, then closes its panes (a tab
+ * whose last pane goes closes) and Files tab, and clears its failed forwards. With `secret`, its password's
+ * value on this machine goes too.
+ */
+export async function deleteHost(hostId: string, secret?: string): Promise<void> {
   const { file, save } = useHostsStore.getState();
   if (!(await save(withoutHostRules(removeHost(file, hostId), hostId)))) return;
   const { panes, filesTab } = sessionsOf(hostId);
@@ -76,6 +101,10 @@ export async function deleteHost(hostId: string): Promise<void> {
     (state) => state.hostId === hostId && !isLive(state),
   );
   for (const state of failed) void stopForward(hostId, state.ruleId);
+  if (secret !== undefined) {
+    const deleted = await deleteSshSecret({ name: secret });
+    if (!deleted.ok) showToast(`The secret ${secret} was not deleted: ${deleted.error.message}`);
+  }
 }
 
 interface HostDeleteState {
@@ -104,6 +133,13 @@ export function HostDeleteDialog() {
   const name = hostId === null ? '' : (findHost(file, hostId)?.name ?? hostId);
   const count = hostId === null ? 0 : sessionCount(sessionsOf(hostId));
   const groups = hostId === null ? [] : groupsWithHost(file, hostId);
+  const secret = hostId === null ? undefined : ownPasswordSecret(file, hostId);
+  // Off each time the confirm opens: deleting a secret is never the default.
+  const [alsoSecret, setAlsoSecret] = useState(false);
+  useEffect(() => {
+    setAlsoSecret(false);
+  }, [hostId]);
+  const description = deleteHostDescription(count, groups);
   return (
     <ConfirmDialog
       open={hostId !== null}
@@ -111,13 +147,32 @@ export function HostDeleteDialog() {
         if (!open) useHostDelete.getState().cancel();
       }}
       title={`Delete ${name}?`}
-      description={deleteHostDescription(count, groups)}
+      description={
+        secret === undefined ? (
+          description
+        ) : (
+          <div className="flex flex-col gap-2">
+            <p>{description}</p>
+            <label className="flex items-center gap-2 text-fg-default">
+              <input
+                type="checkbox"
+                data-testid="host-delete-secret"
+                checked={alsoSecret}
+                onChange={(e) => {
+                  setAlsoSecret(e.target.checked);
+                }}
+              />
+              {`Also delete its password secret ${secret}`}
+            </label>
+          </div>
+        )
+      }
       confirmLabel="Delete"
       destructive
       testId="host-delete-dialog"
       confirmTestId="host-delete-confirm"
       onConfirm={() => {
-        if (hostId !== null) void deleteHost(hostId);
+        if (hostId !== null) void deleteHost(hostId, alsoSecret ? secret : undefined);
         useHostDelete.getState().cancel();
       }}
     />

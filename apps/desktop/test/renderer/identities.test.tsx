@@ -259,6 +259,15 @@ describe('Keychain: identities', () => {
     });
     expect(sentFile().hosts).toEqual(FILE.hosts);
   });
+  it('a new identity says what it needs only once Add is pressed', async () => {
+    render(<SshHome />);
+    await userEvent.click(await screen.findByRole('button', { name: /New identity/ }));
+    const form = screen.getByRole('form', { name: 'New identity' });
+    expect(form.textContent).not.toContain('Name is required');
+    await userEvent.click(within(form).getByRole('button', { name: 'Add identity' }));
+    expect(form.textContent).toContain('Name is required');
+    expect(within(form).getByRole<HTMLButtonElement>('button', { name: 'Add identity' }).disabled).toBe(true);
+  });
   it('a new identity stores its typed password as a secret and writes only the name', async () => {
     render(<SshHome />);
     await userEvent.click(await screen.findByRole('button', { name: /New identity/ }));

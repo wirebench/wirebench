@@ -11,10 +11,12 @@ import {
   moveRule,
   groupsWithHost,
   renameGroup,
+  restoreGroup,
   startGroup,
   stopGroup,
   withoutHostRules,
 } from '../../src/renderer/features/ssh/forwarding/forward-groups.js';
+import { ToastViewport } from '../../src/renderer/components/toast.js';
 import { ForwardDetails, useForwardDetailsShown } from '../../src/renderer/features/ssh/forwarding/forward-details.js';
 import { ForwardingPanel } from '../../src/renderer/features/ssh/forwarding/forwarding-view.js';
 import { useForwardsStore } from '../../src/renderer/features/ssh/forwarding/forwards-store.js';
@@ -152,6 +154,17 @@ describe('forwarding group edits', () => {
     const without = deleteGroup(FILE, 'dev');
     expect(without.forwardGroups?.map((g) => g.id)).toEqual(['old']);
     expect(without.hosts).toBe(FILE.hosts);
+  });
+
+  it('Undo puts a deleted group back where it was, leaving a rule moved since where it went', () => {
+    const dev = FILE.forwardGroups![0]!;
+    const without = deleteGroup(FILE, 'dev');
+    expect(restoreGroup(without, dev, 0).forwardGroups).toEqual(FILE.forwardGroups);
+    const [member] = dev.rules;
+    const moved = moveRule(without, member!.host, member!.rule, 'old');
+    const back = restoreGroup(moved, dev, 0);
+    expect(back.forwardGroups?.[0]?.rules).toEqual(dev.rules.slice(1));
+    expect(groupOfRule(back, member!.host, member!.rule)?.id).toBe('old');
   });
 
   it('counts the rules that can run, those running and those failed', () => {
@@ -332,6 +345,46 @@ describe('the Port forwarding view with groups', () => {
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete group' }));
     await waitFor(() => {
       expect(saved().forwardGroups?.map((g) => g.id)).toEqual(['old']);
+    });
+  });
+
+  it("a group's New rule… heads the form Rule and adds the rule to that group in the same save (#594)", async () => {
+    render(<ForwardingPanel />);
+    await userEvent.click(within(section('dev')).getByRole('button', { name: 'More actions for group Dev' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'New rule…' }));
+    const dialog = screen.getByTestId('new-rule-dialog');
+    expect(within(dialog).getByLabelText<HTMLSelectElement>('Forwarding group').value).toBe('dev');
+    expect(within(dialog).getByTestId('forward-form').textContent).toContain('Rule');
+    // No port typed yet is no error: the hint shows only for a wrong one.
+    expect(dialog.textContent).not.toContain('A port is 1–65535');
+    fireEvent.change(within(dialog).getByLabelText('Port'), { target: { value: '0' } });
+    expect(dialog.textContent).toContain('A port is 1–65535');
+    fireEvent.change(within(dialog).getByLabelText('Port'), { target: { value: '6000' } });
+    fireEvent.change(within(dialog).getByLabelText('Target (as the host sees it)'), {
+      target: { value: 'localhost:6000' },
+    });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add rule' }));
+    await waitFor(() => {
+      expect(saveHosts).toHaveBeenCalledOnce();
+    });
+    expect(saved().hosts.find((h) => h.id === 'db-1')?.forwards).toEqual([
+      { id: 'forward', type: 'local', port: 6000, target: 'localhost:6000' },
+    ]);
+    expect(saved().forwardGroups?.[0]?.rules.at(-1)).toEqual({ host: 'db-1', rule: 'forward' });
+  });
+
+  it('Delete group offers Undo, which brings the group back (#594)', async () => {
+    render(
+      <>
+        <ForwardingPanel />
+        <ToastViewport />
+      </>,
+    );
+    await userEvent.click(within(section('dev')).getByRole('button', { name: 'More actions for group Dev' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete group' }));
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Undo' })).at(-1)!);
+    await waitFor(() => {
+      expect(saved().forwardGroups?.map((g) => g.id)).toEqual(['dev', 'old']);
     });
   });
 

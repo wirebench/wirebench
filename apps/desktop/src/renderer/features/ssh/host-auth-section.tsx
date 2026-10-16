@@ -99,6 +99,7 @@ export function HostAuthSection(props: {
             <input
               type="password"
               autoComplete="new-password"
+              aria-required={value.secret === ''}
               className={INPUT_CLASS}
               value={password}
               placeholder={value.secret === '' ? undefined : '•••• stored · type to replace'}

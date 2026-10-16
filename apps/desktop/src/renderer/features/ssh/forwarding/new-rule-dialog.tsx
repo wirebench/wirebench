@@ -5,6 +5,7 @@ import { showToast } from '../../../components/toast.js';
 import { findHost, upsertHost, useHostsStore } from '../hosts-store.js';
 import { INPUT_CLASS } from '../inherited-field.js';
 import { ForwardForm, forwardProblem, type ForwardFullEntry } from './forward-form.js';
+import { moveRule } from './forward-groups.js';
 import { freeRuleId } from './forwards-section.js';
 
 const CONTENT_CLASS =
@@ -19,12 +20,18 @@ const blank = (id: string): ForwardFullEntry => ({ id, type: 'local', port: Numb
  */
 export function NewRuleDialog({
   open,
+  groupId: openedFrom,
   onOpenChange,
 }: {
   readonly open: boolean;
+  /** The forwarding group it was opened from: its Forwarding group select starts there (#594). */
+  readonly groupId?: string;
   readonly onOpenChange: (open: boolean) => void;
 }) {
   const resolved = useHostsStore((s) => s.resolved);
+  const forwardGroups = useHostsStore((s) => s.file.forwardGroups) ?? [];
+  const [groupId, setGroupId] = useState('');
+  const groupPickerId = useId();
   const [hostId, setHostId] = useState('');
   const [entry, setEntry] = useState<ForwardFullEntry>(blank('forward'));
   const [error, setError] = useState<string>();
@@ -40,6 +47,7 @@ export function NewRuleDialog({
     const first = useHostsStore.getState().resolved[0]?.id ?? '';
     setHostId(first);
     setEntry(blank(freeRuleId(takenOn(first))));
+    setGroupId(openedFrom ?? '');
     setError(undefined);
     // Only on opening: the form keeps what is typed while hosts.yaml changes underneath.
   }, [open]);
@@ -56,9 +64,13 @@ export function NewRuleDialog({
     }
     setBusy(true);
     try {
-      if (await save(upsertHost(file, { ...host, forwards: [...(host.forwards ?? []), entry] }))) {
+      const added = upsertHost(file, { ...host, forwards: [...(host.forwards ?? []), entry] });
+      // The rule and its group membership go in one save.
+      const grouped = groupId === '' ? added : moveRule(added, hostId, entry.id, groupId);
+      if (await save(grouped)) {
         onOpenChange(false);
-        showToast(`Rule ${entry.id} added to ${host.name}`);
+        const group = forwardGroups.find((g) => g.id === groupId);
+        showToast(`Rule ${entry.id} added to ${host.name}${group === undefined ? '' : `, in group ${group.name}`}`);
       } else {
         setError(useHostsStore.getState().problems[0]?.message ?? 'The rule could not be saved');
       }
@@ -122,7 +134,28 @@ export function NewRuleDialog({
                   ))}
                 </select>
               </label>
+              {forwardGroups.length > 0 && (
+                <label htmlFor={groupPickerId} className="flex flex-col gap-1 text-xs text-fg-subtle">
+                  Forwarding group
+                  <select
+                    id={groupPickerId}
+                    className={INPUT_CLASS}
+                    value={groupId}
+                    onChange={(event) => {
+                      setGroupId(event.target.value);
+                    }}
+                  >
+                    <option value="">None</option>
+                    {forwardGroups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <ForwardForm
+                heading="Rule"
                 entry={entry}
                 onChange={(next) => {
                   setEntry(next);

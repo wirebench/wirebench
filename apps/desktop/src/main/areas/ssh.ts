@@ -16,7 +16,7 @@ import { registerSftpChannels } from './sftp-channels.js';
 
 export function registerSshChannels(deps: {
   hosts: Pick<HostsService, 'list' | 'save'>;
-  secrets: Pick<SshSecretsService, 'names' | 'set'>;
+  secrets: Pick<SshSecretsService, 'names' | 'set' | 'delete'>;
   ssh: Pick<
     SshService,
     | 'connect'
@@ -61,6 +61,10 @@ export function registerSshChannels(deps: {
   });
   registerHandler(channels.ssh.setSecret, async (request) => {
     await deps.secrets.set(request.name, request.value);
+    return {};
+  });
+  registerHandler(channels.ssh.deleteSecret, async (request) => {
+    await deps.secrets.delete(request.name);
     return {};
   });
   // Sessions belong to the window that opened them: the sender is the owner on every call.

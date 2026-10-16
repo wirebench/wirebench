@@ -100,5 +100,6 @@ test('right-click → Find docks the find bar above the pane; a logged session s
   const logs = page.getByTestId('session-logs-dialog');
   await expect(logs).toBeVisible();
   await expect(logs.getByTestId('session-log-row')).toHaveCount(1);
-  await expect(logs.getByTestId('session-log-row')).toContainText(/^box\d\d:\d\d · \d+(\.\d)? (B|KB) · running$/);
+  // A running log shows no size: it would only be read when the list is (#594).
+  await expect(logs.getByTestId('session-log-row')).toContainText(/^box\d\d:\d\d · running$/);
 });

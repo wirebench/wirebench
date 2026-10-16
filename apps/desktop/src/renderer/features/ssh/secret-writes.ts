@@ -20,6 +20,11 @@ export function storeSshSecret(request: Parameters<SshApi['setSecret']>[0]): Ret
   return written(ipc().ssh.setSecret(request));
 }
 
+/** Deletes this machine's value of a secret by name (a deleted host's password, #594). */
+export function deleteSshSecret(request: Parameters<SshApi['deleteSecret']>[0]): ReturnType<SshApi['deleteSecret']> {
+  return written(ipc().ssh.deleteSecret(request));
+}
+
 /** Generates a key into the keychain (its passphrase too, when it has one). */
 export function generateSshKey(request: Parameters<SshApi['generateKey']>[0]): ReturnType<SshApi['generateKey']> {
   return written(ipc().ssh.generateKey(request));

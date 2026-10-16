@@ -44,8 +44,11 @@ test('connect to a host, trust its key, type, see the echo, end the session', as
   await page.getByRole('button', { name: 'New host' }).click();
   const dialog = page.getByTestId('host-dialog');
   await expect(dialog).toBeVisible();
-  // Essentials first: the rest waits under a closed Advanced, and a disabled Save says what it needs.
+  // Essentials first: the rest waits under a closed Advanced. A blank form names nothing; Save says what it
+  // needs and stays off until it is there.
   await expect(dialog.getByLabel('Tags (comma separated)')).toBeHidden();
+  await expect(dialog.getByRole('list', { name: 'Needed to save' })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog.getByRole('button', { name: 'Save' })).toBeDisabled();
   await expect(dialog.getByRole('list', { name: 'Needed to save' })).toContainText('Address is required');
   // No group supplies a user, so User is a plain field (no Override switch), prefilled with the login name.

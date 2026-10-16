@@ -11,6 +11,7 @@ import { Button } from '../../components/button.js';
 import { SELECTED_CLASS } from '../../components/selection.js';
 import type { GroupEntryWire, HostEntryWire, HostsFileWire, ResolvedHostWire } from '../../../shared/ssh-wire.js';
 import { openTerminalFor } from './connect.js';
+import { hintDetailsOnce } from './details-hint.js';
 import { noteFirstPress, swallowsClick, takeSecondPress } from './double-press.js';
 import { GroupActionsButton, GroupMenu, HostActionsButton, HostMenu } from './host-menus.js';
 import { TOP_LEVEL, type HostsLayout, type HostsPrefs, type HostsSort } from './hosts-prefs.js';
@@ -79,7 +80,8 @@ function hueOf(key: string): number {
   return hue;
 }
 
-const MAX_TAGS = 3;
+/** Tags a card shows before "+n": a grid card has less room than a row (#594). */
+const MAX_TAGS = { rows: 3, grid: 2 } as const;
 
 interface CardProps {
   readonly host: HostEntryWire;
@@ -107,7 +109,8 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
         ? undefined
         : `needs ${resolved.incomplete.field}`;
   const grid = layout === 'grid';
-  const extraTags = host.tags.length - MAX_TAGS;
+  const maxTags = grid ? MAX_TAGS.grid : MAX_TAGS.rows;
+  const extraTags = host.tags.length - maxTags;
   const actions = (
     <span
       className={`flex shrink-0 items-center gap-1 transition-opacity ${
@@ -118,8 +121,11 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
     </span>
   );
   const tags = host.tags.length > 0 && (
-    <span className="flex min-w-0 flex-wrap gap-1">
-      {host.tags.slice(0, MAX_TAGS).map((tag) => (
+    <span
+      data-testid={`host-tags-${host.id}`}
+      className={`flex min-w-0 gap-1 ${grid ? 'mt-0.5 overflow-hidden' : 'flex-wrap'}`}
+    >
+      {host.tags.slice(0, maxTags).map((tag) => (
         <span key={tag} className="rounded-full border border-hairline px-1.5 text-xs leading-4 text-fg-subtle">
           {tag}
         </span>
@@ -150,6 +156,7 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
           // Picking a card only changes the host the details show; it never opens or closes the panel.
           if (e.detail > 1) return;
           onSelect();
+          hintDetailsOnce();
         }}
         onFocus={(e) => {
           if (e.target === e.currentTarget) onSelect();
@@ -196,6 +203,7 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
               {osText !== undefined && <span>{osText} · </span>}
               <span className="font-mono">{targetOf(host, resolved)}</span>
             </span>
+            {grid && tags}
           </span>
           {!grid && tags}
           {actions}

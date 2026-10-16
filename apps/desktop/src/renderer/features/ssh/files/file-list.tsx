@@ -5,7 +5,7 @@ import { ChevronDown, ChevronUp, File, FileSymlink, Folder } from 'lucide-react'
 import { selectionClass } from '../../../components/selection.js';
 import type { SftpEntryWire } from '../../../../shared/sftp-wire.js';
 import type { PaneSort, SortColumn } from './files-store.js';
-import { formatModified, formatSize, isFolderLike, modeString } from './format.js';
+import { formatModified, formatModifiedShort, formatSize, isFolderLike, modeString } from './format.js';
 
 const ROW_HEIGHT = 26;
 /**
@@ -14,10 +14,10 @@ const ROW_HEIGHT = 26;
  * sideways. A hidden cell takes no track, so a row still fills the grid in order.
  */
 const GRID =
-  'grid grid-cols-[minmax(10rem,1fr)_6rem] @min-[440px]:grid-cols-[minmax(10rem,1fr)_6rem_7rem] @min-[560px]:grid-cols-[minmax(10rem,1fr)_6rem_11rem_7rem] items-center gap-3 px-3';
+  'grid grid-cols-[minmax(10rem,1fr)_6rem] @min-[440px]:grid-cols-[minmax(10rem,1fr)_6rem_7rem] @min-[560px]:grid-cols-[minmax(10rem,1fr)_6rem_7rem_7rem] items-center gap-3 px-3';
 /** The same without Permissions: this machine's pane, whose permissions are not shown or changed here. */
 const GRID_NO_MODE =
-  'grid grid-cols-[minmax(10rem,1fr)_6rem] @min-[560px]:grid-cols-[minmax(10rem,1fr)_6rem_11rem] items-center gap-3 px-3';
+  'grid grid-cols-[minmax(10rem,1fr)_6rem] @min-[560px]:grid-cols-[minmax(10rem,1fr)_6rem_7rem] items-center gap-3 px-3';
 
 /** Per column: the classes that show its header button and its cells only from the column's width. */
 const SHOWN: Partial<Record<SortColumn, { readonly header: string; readonly cell: string }>> = {
@@ -244,11 +244,18 @@ export function FileList({
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <EntryIcon entry={entry} />
-                  {renderName?.(entry) ?? <span className="truncate text-fg-default">{entry.name}</span>}
+                  {renderName?.(entry) ?? (
+                    <span title={entry.name} className="truncate text-fg-default">
+                      {entry.name}
+                    </span>
+                  )}
                 </span>
                 <span className="text-right tabular-nums">{isFolderLike(entry) ? '—' : formatSize(entry.size)}</span>
-                <span className={`${SHOWN.mtime?.cell ?? ''} truncate tabular-nums`}>
-                  {formatModified(entry.mtime)}
+                <span
+                  title={formatModified(entry.mtime)}
+                  className={`${SHOWN.mtime?.cell ?? ''} truncate tabular-nums`}
+                >
+                  {formatModifiedShort(entry.mtime)}
                 </span>
                 {permissions && (
                   <span className={`${SHOWN.mode?.cell ?? ''} font-mono text-xs`}>

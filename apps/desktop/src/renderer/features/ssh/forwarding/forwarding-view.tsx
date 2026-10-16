@@ -16,6 +16,7 @@ import {
   groupStatus,
   groupStatusText,
   renameGroup,
+  restoreGroup,
   saveGroups,
   startGroup,
   stopGroup,
@@ -207,6 +208,7 @@ function GroupSection({
   filtered,
   onShowFailed,
   onRename,
+  onNewRule,
   onNewGroup,
   onDragChange,
 }: {
@@ -216,6 +218,8 @@ function GroupSection({
   filtered: boolean;
   onShowFailed: () => void;
   onRename: () => void;
+  /** New rule… with this group picked in its Forwarding group select. */
+  onNewRule: () => void;
   onNewGroup: (hostId: string, ruleId: string) => void;
   onDragChange: (key: string | undefined) => void;
 }) {
@@ -291,15 +295,32 @@ function GroupSection({
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content align="end" className={CONTENT_CLASS}>
+                <DropdownMenu.Item className={ITEM_CLASS} onSelect={onNewRule}>
+                  New rule…
+                </DropdownMenu.Item>
                 <DropdownMenu.Item className={ITEM_CLASS} onSelect={onRename}>
                   Rename…
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
                   className={ITEM_CLASS}
                   onSelect={() => {
-                    // Its rules stay in hosts.yaml, under Ungrouped; nothing running is stopped.
-                    void saveGroups(deleteGroup(useHostsStore.getState().file, group.id)).then((problem) => {
-                      showToast(problem ?? `Group ${group.name} removed; its rules are under Ungrouped`);
+                    // Its rules stay in hosts.yaml, under Ungrouped; nothing running is stopped. Undo puts the
+                    // group back where it was (#594).
+                    const { file } = useHostsStore.getState();
+                    const index = (file.forwardGroups ?? []).findIndex((g) => g.id === group.id);
+                    void saveGroups(deleteGroup(file, group.id)).then((problem) => {
+                      if (problem !== undefined) {
+                        showToast(problem);
+                        return;
+                      }
+                      showToast(`Group ${group.name} removed; its rules are under Ungrouped`, {
+                        label: 'Undo',
+                        onClick: () => {
+                          void saveGroups(restoreGroup(useHostsStore.getState().file, group, index)).then((again) => {
+                            if (again !== undefined) showToast(again);
+                          });
+                        },
+                      });
                     });
                   }}
                 >
@@ -391,7 +412,8 @@ export function ForwardingPanel() {
   const byKey = useShownForwards();
   const [filter, setFilter] = useState('');
   const [chip, setChip] = useState<Chip>('all');
-  const [adding, setAdding] = useState(false);
+  // New rule…: closed, or open with the forwarding group it was opened from (none from the header).
+  const [adding, setAdding] = useState<{ readonly groupId?: string } | undefined>();
   const [naming, setNaming] = useState<Naming>();
   // The row being dragged onto another group, if any.
   const [dragging, setDragging] = useState<string>();
@@ -413,7 +435,7 @@ export function ForwardingPanel() {
     <Button
       variant="primary"
       onClick={() => {
-        setAdding(true);
+        setAdding({});
       }}
     >
       <Plus size={13} aria-hidden /> New rule…
@@ -505,6 +527,9 @@ export function ForwardingPanel() {
                 onRename={() => {
                   setNaming({ mode: 'rename', id: group.id, name: group.name });
                 }}
+                onNewRule={() => {
+                  setAdding({ groupId: group.id });
+                }}
                 onNewGroup={newGroupFor}
                 onDragChange={setDragging}
               />
@@ -518,7 +543,13 @@ export function ForwardingPanel() {
           />
         </div>
       )}
-      <NewRuleDialog open={adding} onOpenChange={setAdding} />
+      <NewRuleDialog
+        open={adding !== undefined}
+        {...(adding?.groupId === undefined ? {} : { groupId: adding.groupId })}
+        onOpenChange={(open) => {
+          if (!open) setAdding(undefined);
+        }}
+      />
       <GroupNameDialog
         open={naming !== undefined}
         title={naming?.mode === 'rename' ? 'Rename forwarding group' : 'New forwarding group'}

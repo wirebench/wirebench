@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   crumbsOf,
+  formatModified,
+  formatModifiedShort,
   formatSize,
   joinPath,
   modeString,
@@ -108,5 +110,20 @@ describe('format', () => {
     const sort = { column: 'name', descending: false } as const;
     expect(visibleEntries(entries, false, sort).map((e) => e.name)).toEqual(['app']);
     expect(visibleEntries(entries, true, sort).map((e) => e.name)).toEqual(['app', '.env']);
+  });
+});
+
+describe('formatModifiedShort', () => {
+  const at = (y: number, m: number, d: number): number => new Date(y, m, d, 21, 21).getTime();
+  it('drops the year this year and the time before it, so it fits the 7rem column', () => {
+    const now = at(2026, 9, 16);
+    const thisYear = formatModifiedShort(at(2026, 9, 15), now);
+    const lastYear = formatModifiedShort(at(2024, 9, 15), now);
+    expect(thisYear).not.toContain('2026');
+    expect(thisYear).toMatch(/21/);
+    expect(lastYear).toContain('2024');
+    for (const text of [thisYear, lastYear]) {
+      expect(text.length).toBeLessThan(formatModified(at(2026, 9, 15)).length);
+    }
   });
 });

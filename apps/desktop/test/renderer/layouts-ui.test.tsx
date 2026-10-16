@@ -9,6 +9,7 @@ const remove = vi.fn();
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({
   ipc: () => ({ layout: { list, save, rename, delete: remove }, ssh: { connect: vi.fn() } }),
 }));
+import { ToastViewport } from '../../src/renderer/components/toast.js';
 import { registerSshCommands } from '../../src/renderer/commands/register-ssh-commands.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { LayoutsPanel } from '../../src/renderer/features/ssh/panes/layouts-view.js';
@@ -169,6 +170,23 @@ describe('the Layouts view', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await waitFor(() => {
       expect(remove).toHaveBeenCalledWith({ id: 'L1' });
+    });
+  });
+
+  it('Delete offers Undo, which saves the layout again under its name', async () => {
+    remove.mockResolvedValue({ ok: true, value: {} });
+    save.mockResolvedValue({ ok: true, value: { layout: { ...PROD, id: 'L2' } } });
+    render(
+      <>
+        <LayoutsPanel />
+        <ToastViewport />
+      </>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+    await waitFor(() => {
+      expect(save).toHaveBeenCalledWith({ name: PROD.name, root: PROD.root });
     });
   });
 });
