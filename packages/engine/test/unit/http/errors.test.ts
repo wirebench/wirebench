@@ -111,6 +111,31 @@ describe('toHttpError', () => {
     expect(err.code).toBe('connection-refused');
   });
 
+  it('names the host and port a refused connection was aimed at', () => {
+    const refused = (host: string, port?: number) =>
+      toHttpError(codedError('ECONNREFUSED'), {
+        userAborted: false,
+        deadlineHit: false,
+        host,
+        ...(port !== undefined ? { port } : {}),
+      }).details;
+    expect(refused('127.0.0.1:9', 9)).toEqual({ code: 'ECONNREFUSED', target: '127.0.0.1:9' });
+    // A URL's host leaves a default port out; the port puts it back.
+    expect(refused('api.example.com', 443)).toEqual({ code: 'ECONNREFUSED', target: 'api.example.com:443' });
+    expect(refused('[::1]', 80)).toEqual({ code: 'ECONNREFUSED', target: '[::1]:80' });
+    expect(refused('[::1]:8080')).toEqual({ code: 'ECONNREFUSED', target: '[::1]:8080' });
+  });
+
+  it('names the host a failed lookup was for, without its port', () => {
+    const err = toHttpError(codedError('ENOTFOUND'), {
+      userAborted: false,
+      deadlineHit: false,
+      host: 'no-such-host.invalid:8443',
+      port: 8443,
+    });
+    expect(err.details).toEqual({ code: 'ENOTFOUND', host: 'no-such-host.invalid' });
+  });
+
   it('maps an undici proxy-named error to proxy when the request used a proxy', () => {
     const proxyErr = new Error('Proxy connection failed');
     proxyErr.name = 'ProxyError';

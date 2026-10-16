@@ -1,6 +1,6 @@
 /**
- * What a response pane shows when a send produced no response: what happened in plain words, the
- * whole message, the one hint that points at the fix, and Retry. The code is kept, small, for
+ * What a response pane shows when a send produced no response: what happened in plain words (naming
+ * the host and port to check when the error says), the message when it adds to that, the one hint that points at the fix, and Retry. The code is kept, small, for
  * searching and for bug reports, but it is no longer the headline.
  *
  * Protocol-neutral: the hint's links are callbacks, so each request kind wires them to its own
@@ -43,11 +43,13 @@ export function SendErrorPanel({
         data-testid="send-error-title"
         className={`text-md font-medium ${view.tone === 'danger' ? 'text-status-danger' : 'text-fg-default'}`}
       >
-        {view.title}
+        {view.headline}
       </h3>
-      <p data-testid="send-error-message" className="text-sm break-words whitespace-pre-wrap text-fg-default">
-        {error.message}
-      </p>
+      {view.detail !== undefined && (
+        <p data-testid="send-error-message" className="text-sm break-words whitespace-pre-wrap text-fg-default">
+          {view.detail}
+        </p>
+      )}
       {view.hint !== undefined && (
         <div data-testid="send-error-hint" className="text-sm text-fg-muted">
           <Hint hint={view.hint} onOpenTimeoutSetting={onOpenTimeoutSetting} onRevealReference={onRevealReference} />

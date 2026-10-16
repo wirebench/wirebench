@@ -25,7 +25,12 @@ export type SendErrorHint =
   | { readonly kind: 'unresolved'; readonly refs: readonly string[] };
 
 export interface SendErrorView {
+  /** Short, for a status row or a log cell: "Connection refused". */
   readonly title: string;
+  /** The panel's heading: the title with the target in it when the error names one ("Couldn't connect to 127.0.0.1:9"). */
+  readonly headline: string;
+  /** The message, when it says more than the headline; undefined when it only restates it. */
+  readonly detail: string | undefined;
   /** `neutral` for the person's own choice (a cancel, a declined prompt), never a failure colour. */
   readonly tone: 'danger' | 'neutral';
   readonly hint: SendErrorHint | undefined;
@@ -67,6 +72,48 @@ const TEXT_HINTS: Readonly<Record<string, { readonly title: string; readonly hin
   'script-type-error': { title: 'Script type errors' },
 };
 
+/** The messages the engine gives a failure that say nothing its title does not. */
+const STOCK_MESSAGES: Readonly<Record<string, string>> = {
+  aborted: 'The request was aborted.',
+  'connection-refused': 'Connection refused.',
+  dns: 'DNS lookup failed.',
+  timeout: 'The request timed out.',
+  tls: 'TLS/certificate error.',
+  proxy: 'Proxy connection failed.',
+};
+
+/** The message without what the title already says: nothing when it is stock, else less a leading `Title: `. */
+function detailOf(error: SendErrorLike, title: string): string | undefined {
+  const message = error.message.trim();
+  if (message === '' || message === STOCK_MESSAGES[error.code]) {
+    return undefined;
+  }
+  const prefix = `${title}: `;
+  if (message.toLowerCase().startsWith(prefix.toLowerCase())) {
+    return message.slice(prefix.length);
+  }
+  return message.replace(/\.$/, '').toLowerCase() === title.toLowerCase() ? undefined : message;
+}
+
+/** A detail the engine attached, when it is a non-empty string. */
+function detailText(error: SendErrorLike, key: string): string | undefined {
+  const value = error.details?.[key];
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+/** The heading that names what to check: the host and port refused, the host that did not resolve. */
+function headlineOf(error: SendErrorLike, title: string): string {
+  const target = detailText(error, 'target');
+  if (error.code === 'connection-refused' && target !== undefined) {
+    return `Couldn't connect to ${target}`;
+  }
+  const host = detailText(error, 'host');
+  if (error.code === 'dns' && host !== undefined) {
+    return `Host ${host} not found`;
+  }
+  return title;
+}
+
 /** `${name}` for a reference, whether it arrived with its braces or without them. */
 export function referenceText(ref: string): string {
   return ref.startsWith('${') ? ref : `\${${ref}}`;
@@ -90,8 +137,13 @@ function unresolvedRefs(error: SendErrorLike): readonly string[] {
   return [...new Set(error.message.match(/\$\{[^}]*\}/g) ?? [])];
 }
 
-/** The title, tone and hint for one failed send. */
+/** The title, headline, detail, tone and hint for one failed send. */
 export function describeSendError(error: SendErrorLike): SendErrorView {
+  const view = describeBare(error);
+  return { ...view, headline: headlineOf(error, view.title), detail: detailOf(error, view.title) };
+}
+
+function describeBare(error: SendErrorLike): Omit<SendErrorView, 'headline' | 'detail'> {
   if (error.code.endsWith('-unresolved-properties')) {
     return {
       title: 'Unresolved variables',

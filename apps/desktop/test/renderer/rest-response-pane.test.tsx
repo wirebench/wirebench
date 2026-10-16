@@ -128,6 +128,25 @@ describe('RestResponsePane', () => {
     expect(screen.queryByTestId('send-error-retry')).toBeNull();
   });
 
+  it('names the host and port refused, and says "Connection refused" once in the panel', () => {
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{
+            status: 'error',
+            sendId: 's1',
+            error: { code: 'connection-refused', message: 'Connection refused.', details: { target: '127.0.0.1:9' } },
+          }}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByTestId('rest-response-status').textContent).toBe('Connection refused');
+    expect(screen.getByTestId('send-error-title').textContent).toBe("Couldn't connect to 127.0.0.1:9");
+    // The engine's "Connection refused." says nothing the title does not.
+    expect(screen.queryByTestId('send-error-message')).toBeNull();
+  });
+
   it('retries from the panel, and holds Retry back for the reason Send is held', () => {
     const onRetry = vi.fn();
     const state = {

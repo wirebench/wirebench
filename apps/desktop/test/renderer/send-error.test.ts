@@ -54,6 +54,8 @@ describe('describeSendError', () => {
   it('reads a cancel and a declined prompt as neutral, with no hint', () => {
     expect(describeSendError({ code: 'aborted', message: 'The request was aborted.' })).toEqual({
       title: 'Cancelled',
+      headline: 'Cancelled',
+      detail: undefined,
       tone: 'neutral',
       hint: undefined,
     });
@@ -63,9 +65,48 @@ describe('describeSendError', () => {
   it('falls back to a plain title for a code it does not know', () => {
     expect(describeSendError({ code: 'secret-missing', message: 'x' })).toEqual({
       title: 'Send failed',
+      headline: 'Send failed',
+      detail: 'x',
       tone: 'danger',
       hint: undefined,
     });
+  });
+
+  it('puts the host and port to check in the headline, and keeps the title short', () => {
+    const refused = describeSendError({
+      code: 'connection-refused',
+      message: 'Connection refused.',
+      details: { code: 'ECONNREFUSED', target: '127.0.0.1:9' },
+    });
+    expect(refused.title).toBe('Connection refused');
+    expect(refused.headline).toBe("Couldn't connect to 127.0.0.1:9");
+    const dns = describeSendError({
+      code: 'dns',
+      message: 'DNS lookup failed.',
+      details: { host: 'no-such-host.invalid' },
+    });
+    expect(dns.headline).toBe('Host no-such-host.invalid not found');
+    // Without a target the headline is the title.
+    expect(describeSendError({ code: 'connection-refused', message: 'x' }).headline).toBe('Connection refused');
+  });
+
+  it('drops a message that only restates the title, and the title it repeats', () => {
+    for (const [code, message] of [
+      ['connection-refused', 'Connection refused.'],
+      ['dns', 'DNS lookup failed.'],
+      ['timeout', 'The request timed out.'],
+      ['aborted', 'The request was aborted.'],
+      ['incomplete', 'Send failed.'],
+    ] as const) {
+      expect(describeSendError({ code, message }).detail).toBeUndefined();
+    }
+    expect(
+      describeSendError({
+        code: 'send-declined',
+        message: 'Not sent: "production" is protected and the send was not confirmed',
+      }).detail,
+    ).toBe('"production" is protected and the send was not confirmed');
+    expect(describeSendError({ code: 'network', message: 'socket hang up' }).detail).toBe('socket hang up');
   });
 });
 
