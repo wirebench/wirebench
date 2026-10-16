@@ -1,0 +1,23 @@
+{
+  "_id": "a5036bd1-cef7-436a-9e09-dd470ffd7f93",
+  "colName": "Auth",
+  "created": "2023-07-14T02:55:20.471Z",
+  "sortNum": 5000,
+  "folders": [],
+  "requests": [
+    {
+      "_id": "ce1013c0-0000-0000-0000-000000000000",
+      "colId": "a5036bd1-cef7-436a-9e09-dd470ffd7f93",
+      "containerId": "",
+      "name": "login",
+      "url": "/login",
+      "method": "POST",
+      "sortNum": 20000,
+      "headers": [{ "name": "Accept", "value": "application/json" }],
+      "params": [],
+      "body": { "type": "formdata", "raw": "", "form": [{ "name": "email", "value": "a@b.c" }] },
+      "tests": [{ "type": "set-env-var", "custom": "json.data.token", "action": "setto", "value": "{{token}}" }]
+    }
+  ],
+  "settings": { "options": { "baseUrl": "http://localhost:5000/api" } }
+}
