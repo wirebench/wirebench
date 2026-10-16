@@ -160,6 +160,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   const Icon = role?.icon ?? NODE_ICON[node.data.kind];
   const indent = typeof style.paddingLeft === 'number' ? style.paddingLeft : 0;
   const rowStyle = { ...style, paddingLeft: indent + ROW_PADDING_LEFT };
+  const label = requestDisplayName(node.data.label, node.data.method);
   return (
     <ExplorerContextMenu node={node.data}>
       <div
@@ -236,11 +237,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           {role?.Gutter !== undefined ? (
             <role.Gutter node={node.data} />
           ) : node.data.kind === 'webhook-request' && node.data.method !== undefined ? (
-            <MethodBadge
-              method={node.data.method}
-              title={`${node.data.method} ${requestDisplayName(node.data.label, node.data.method)}`}
-              compact
-            />
+            <MethodBadge method={node.data.method} title={`${node.data.method} ${label}`} compact />
           ) : (
             Icon !== undefined && <Icon size={13} />
           )}
@@ -272,14 +269,18 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
                   ? 'text-fg-faint'
                   : ''
             }`}
-            {...(node.data.kind === 'placeholder' ? { title: node.data.message } : {})}
+            title={node.data.kind === 'placeholder' ? node.data.message : label}
           >
-            {requestDisplayName(node.data.label, node.data.method)}
+            {label}
           </span>
         )}
         {node.data.kind === 'mock' && node.data.mockId !== undefined && <MockRunningBadge mockId={node.data.mockId} />}
         {node.data.suffix !== undefined && (
-          <span className="shrink-0 truncate pl-1 text-xs text-fg-subtle" data-testid="explorer-row-suffix">
+          <span
+            className="min-w-0 max-w-[50%] shrink truncate pl-1 text-xs text-fg-subtle"
+            data-testid="explorer-row-suffix"
+            title={node.data.suffix}
+          >
             · {node.data.suffix}
           </span>
         )}
@@ -599,6 +600,12 @@ export function ExplorerView() {
               // folder › request — marching a request off to the right.
               indent={12}
               outerElementType={FocusableListOuter}
+              // The tree never scrolls sideways: react-arborist lets a row grow to its content
+              // (`min-width: max-content`), which at a narrow sidebar pushed a long name such as
+              // "DELETE /pets/{id}" past the edge behind a horizontal scrollbar. Held to the
+              // tree's width, a row's name truncates with an ellipsis and its title says it in full.
+              className="overflow-x-hidden!"
+              rowClassName="min-w-0!"
               openByDefault={false}
               initialOpenState={{ ...Object.fromEntries(data.map((root) => [root.id, true])), ...storedOpen() }}
               onToggle={(id) => {

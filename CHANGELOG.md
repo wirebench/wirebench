@@ -57,6 +57,9 @@ All notable changes to this project are documented here. The format follows
   unchanged (#633).
 - **Method badges in the explorer line up.** Every method badge in the tree has the same width and
   starts in the same column, so POST no longer sits further left than GET and DEL (#633).
+- **The explorer no longer scrolls sideways.** In a narrow sidebar a long name such as
+  `DELETE /pets/{id}` is cut with an ellipsis instead of running past the edge behind a horizontal
+  scrollbar; hover it to read it in full (#633).
 
 ## [6.1.0] - 2026-10-16
 
