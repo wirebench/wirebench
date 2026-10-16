@@ -105,6 +105,8 @@ export type ImportDialogFormat =
   | 'insomnia'
   | 'insomnia-environment'
   | 'bruno'
+  | 'hoppscotch'
+  | 'hoppscotch-environment'
   | 'wsdl'
   | 'proto'
   | 'legacy-soap-project';

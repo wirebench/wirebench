@@ -22,7 +22,10 @@ import { createWsApi, createWsFolder, createWsRequest, createWsSavedMessage } fr
 import type { MappedClientEntry, MappedClientImport, MappedProtoSet } from '../client-import.js';
 import { flattenValue, ScriptCollector } from '../client-import.js';
 import { GRPC_METHOD, grpcTarget } from '../collection-v3/map.js';
+import { blankIfLiteral, blankUrlCredentials } from '../credential-values.js';
+import { isCredentialName } from '../credentials.js';
 import { ReportBuilder } from '../report.js';
+import { stripUserinfo } from '../values.js';
 import type { ImportedScriptFile } from '../scripts.js';
 import { insomniaTemplates, unshieldTemplates } from '../template-dialects.js';
 import { rewriteMustache } from '../templates.js';
@@ -51,6 +54,16 @@ export interface MapInsomniaOptions {
 }
 
 const HEX_COLOUR = /^#[0-9a-f]{6}$/i;
+/** The vault line of the variable report, which a caller with no secret store may leave out. */
+export const VAULT_SECRETS_LINE = 'Vault secrets are not in the export; set a value for:';
+/** Auth scheme words a credential header may hold beside its references (lower case). */
+const AUTH_SCHEMES = new Set(['bearer', 'basic', 'digest', 'token', 'negotiate', 'apikey']);
+
+/** True when `value` holds no literal credential: only references, optionally beside one scheme word. */
+function credentialSafe(value: string): boolean {
+  const rest = value.replace(/\$\{[^{}]*\}/g, '').trim();
+  return rest === '' || AUTH_SCHEMES.has(rest.toLowerCase());
+}
 /** Deeper nesting is kept as JSON text under its name rather than flattened further. */
 const MAX_FLATTEN_DEPTH = 32;
 
@@ -82,7 +95,17 @@ export function flattenEnvironment(data: InsRec, order?: InsRec): [string, strin
     }
     out.push(...flattenValue(name, value));
   };
-  for (const [key, value] of entriesInOrder(data, order?.['&'])) walk(key, value, [key]);
+  try {
+    for (const [key, value] of entriesInOrder(data, order?.['&'])) walk(key, value, [key]);
+  } catch (cause) {
+    // A YAML anchor that holds itself makes a circular value, which no text form can hold.
+    if (cause instanceof TypeError) {
+      throw new InsomniaError('insomnia-malformed', 'An Insomnia environment refers to itself (a YAML alias loop).', {
+        cause,
+      });
+    }
+    throw cause;
+  }
   return out;
 }
 
@@ -91,6 +114,8 @@ class WorkspaceMapper {
   readonly dynamic = new Set<string>();
   readonly kept = new Map<string, string[]>();
   readonly vault: ReadonlySet<string>;
+  /** The vault secrets made so far, as `name (environment)`, listed once in the variable report. */
+  readonly vaultNames: string[] = [];
   grpcRequests = 0;
   grpcFolders = 0;
   wsRequests = 0;
@@ -140,13 +165,51 @@ class WorkspaceMapper {
     return mapped;
   }
 
-  private rows(rows: readonly InsRow[], label: string): KeyValueEntry[] {
-    return rows.map((row) =>
-      entry(this.value(row.name, label), this.value(row.value, label), {
-        enabled: !row.disabled,
-        ...(row.description !== undefined ? { description: row.description } : {}),
-      }),
-    );
+  /**
+   * Rows as entries. With `dropCredentials` (headers, gRPC metadata), a credential-named row whose
+   * value holds a literal credential (more than references, or one scheme word and references) is
+   * left out and counted for the credential warning (ruling R8).
+   */
+  private rows(rows: readonly InsRow[], label: string, dropCredentials = false): KeyValueEntry[] {
+    return rows.flatMap((row) => {
+      const name = this.value(row.name, label);
+      const value = this.value(row.value, label);
+      if (dropCredentials && isCredentialName(name.trim()) && !credentialSafe(value)) {
+        this.credentials += 1;
+        this.report.note(`${label}: the value of "${name}" is a credential and was not imported.`);
+        return [];
+      }
+      return [
+        entry(name, value, {
+          enabled: !row.disabled,
+          ...(row.description !== undefined ? { description: row.description } : {}),
+        }),
+      ];
+    });
+  }
+
+  /** `url` without literal user info, with or without a scheme; a cut is noted and counted. */
+  private withoutUserinfo(url: string, label: string): string {
+    const schemed = stripUserinfo(url);
+    const cut = schemed.stripped || url.includes('://') ? schemed : stripUserinfo(url, true);
+    if (cut.stripped) this.credentialNote(label, 'the credential in the URL was not imported.');
+    return cut.url;
+  }
+
+  private credentialNote(label: string, what: string): void {
+    this.credentials += 1;
+    this.report.note(`${label}: ${what}`);
+  }
+
+  /** Query rows with each literal credential value blanked (the rule every importer applies), noted and counted. */
+  private blankQuery(rows: readonly KeyValueEntry[], label: string): KeyValueEntry[] {
+    return rows.map((row) => {
+      const blanked = new Set<string>();
+      const value = blankIfLiteral(row.name, row.value, blanked);
+      if (blanked.size === 0) return row;
+      this.credentialNote(label, `the value of "${row.name}" is a credential and was not imported.`);
+      return { ...row, value };
+    });
   }
 
   grpcRequest(node: InsGrpc, trail: readonly string[], slug: string, order: number): GrpcRequestDef | undefined {
@@ -162,7 +225,7 @@ class WorkspaceMapper {
       );
     }
     if (node.protoFileId !== undefined) this.protoIds.add(node.protoFileId);
-    const target = grpcTarget(this.value(node.url, label));
+    const target = grpcTarget(this.withoutUserinfo(this.value(node.url, label), label));
     if (target !== undefined) {
       if (this.grpcApiTarget === undefined) this.grpcApiTarget = target;
       else if (target.target !== this.grpcApiTarget.target || target.tls !== this.grpcApiTarget.tls) {
@@ -180,7 +243,7 @@ class WorkspaceMapper {
       service: method[1]!,
       method: method[2]!,
       methodKind: 'unary',
-      metadata: this.rows(node.metadata, label),
+      metadata: this.rows(node.metadata, label, true),
       ...(node.message !== '' ? { message: this.value(node.message, label) } : {}),
       auth: { type: 'inherit' },
     });
@@ -195,7 +258,10 @@ class WorkspaceMapper {
   ): WsRequestDef {
     const label = this.label([...trail, node.name]);
     const { base, rows: inline } = inlineQuery(node.url);
-    const split = splitQueryKeepingReferences(this.value(base, label));
+    // The base has no query left (inlineQuery took it), so this cuts only the user info.
+    const { url: safeBase, stripped } = blankUrlCredentials(this.value(base, label), new Set());
+    if (stripped) this.credentialNote(label, 'the credential in the URL was not imported.');
+    const split = splitQueryKeepingReferences(safeBase);
     if (this.wsApiUrl === undefined) this.wsApiUrl = split.path;
     const messages =
       node.payload !== undefined && node.payload.text !== ''
@@ -214,8 +280,8 @@ class WorkspaceMapper {
       order,
       ...(node.description !== undefined ? { description: node.description } : {}),
       url: split.path,
-      query: [...split.query, ...this.rows([...inline, ...node.parameters], label)],
-      headers: this.rows(withInherited(node.headers, inherited), label),
+      query: this.blankQuery([...split.query, ...this.rows([...inline, ...node.parameters], label)], label),
+      headers: this.rows(withInherited(node.headers, inherited), label, true),
       auth: this.auth(node.auth, label, true) ?? { type: 'inherit' },
       settings: {},
       messages,
@@ -294,12 +360,18 @@ class WorkspaceMapper {
       if (userinfoCut) report.warn(`${owner}: the credential in the URL of "${name}" was not imported.`);
       out.push(variable);
     }
-    for (const name of env.vault) out.push({ name, value: '', enabled: true, secret: true });
+    for (const name of env.vault) {
+      out.push({ name, value: '', enabled: true, secret: true, awaitsValue: true });
+      this.vaultNames.push(`${name} (${env.name})`);
+    }
     return out;
   }
 
-  /** The proto texts by path, rooted at the files the gRPC requests point at. */
-  protos(): MappedProtoSet | undefined {
+  /**
+   * The proto texts by path, rooted at the files the gRPC requests point at. Two files at one path
+   * (`svc` and `svc.proto`, or one name twice in a directory) keep the first, with a warning on `api`.
+   */
+  protos(api: string): MappedProtoSet | undefined {
     const { protos, protoDirs } = this.workspace;
     if (protos.length === 0 || this.protoIds.size === 0) return undefined;
     const dirs = new Map(protoDirs.map((dir) => [dir.id, dir]));
@@ -315,11 +387,28 @@ class WorkspaceMapper {
       return parts.join('/');
     };
     const sources = new Map<string, string>();
+    const usedAt = new Set<string>();
+    const warned = new Map<string, string>();
     const roots: string[] = [];
     for (const proto of protos) {
       const path = pathOf(proto.dirId, proto.name);
-      sources.set(path, proto.text);
+      const used = this.protoIds.has(proto.id);
+      if (!sources.has(path)) {
+        sources.set(path, proto.text);
+        if (used) usedAt.add(path);
+      } else {
+        // The file a request points at wins the path over one only beside it; else the first stays.
+        const replace = used && !usedAt.has(path);
+        if (replace) {
+          sources.set(path, proto.text);
+          usedAt.add(path);
+        }
+        warned.set(path, replace || usedAt.has(path) ? 'the one a request uses' : 'the first');
+      }
       if (this.protoIds.has(proto.id) && !roots.includes(path)) roots.push(path);
+    }
+    for (const [path, kept] of warned) {
+      this.report.warn(`${api}: two .proto files share the path ${path}; ${kept} was kept.`);
     }
     return roots.length > 0 ? { sources, roots } : undefined;
   }
@@ -473,6 +562,9 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
         ...(colour !== undefined ? { color: colour } : {}),
       });
     }
+    if (mapper.vaultNames.length > 0) {
+      variableReport.warn(`${mapper.prefix}${VAULT_SECRETS_LINE} ${mapper.vaultNames.join(', ')}`);
+    }
 
     const collector = new ScriptCollector(slugify(name).toLowerCase(), report);
     collectScripts(workspace.items, [], mapper, collector);
@@ -503,9 +595,11 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
       { newId, name },
     );
     for (const warning of http.summary.warnings ?? []) report.warn(`${mapper.prefix}${warning}`);
-    if (mapper.credentials > 0 && http.summary.requests === 0) {
+    if (mapper.credentials > 0) {
+      // With REST requests, the REST mapper's line counts only theirs: this one counts the rest.
+      const from = http.summary.requests === 0 ? 'the export' : 'gRPC and WebSocket requests';
       report.warn(
-        `${mapper.prefix}Credentials are not copied from the export; re-enter them for ${String(mapper.credentials)} auth ${mapper.credentials === 1 ? 'configuration' : 'configurations'}`,
+        `${mapper.prefix}Credentials are not copied from ${from}; re-enter them for ${String(mapper.credentials)} auth ${mapper.credentials === 1 ? 'configuration' : 'configurations'}`,
       );
     }
 
@@ -533,7 +627,7 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
             requests: wsWalk.requests,
           })
         : undefined;
-    const grpcProtos = grpc !== undefined ? mapper.protos() : undefined;
+    const grpcProtos = grpc !== undefined ? mapper.protos(grpc.name) : undefined;
     if (grpc !== undefined && grpcProtos === undefined) {
       report.note(
         `${grpc.name}: needs a definition: ${doc.format === 5 ? 'Insomnia does not export .proto files, so ' : ''}import its .proto or use server reflection.`,

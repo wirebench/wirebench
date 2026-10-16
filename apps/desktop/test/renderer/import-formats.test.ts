@@ -1,3 +1,4 @@
+import type { ImportFormatKind } from '@wirebench/engine/detect';
 import { describe, expect, it } from 'vitest';
 import { IMPORT_FORMATS, importFormatRow } from '../../src/renderer/features/explorer/import-formats.js';
 
@@ -16,6 +17,8 @@ describe('import formats table', () => {
       'opencollection',
       'insomnia',
       'insomnia-environment',
+      'hoppscotch',
+      'hoppscotch-environment',
       'bruno',
       'wsdl',
       'proto',
@@ -38,6 +41,8 @@ describe('import formats table', () => {
       opencollection: 'Imported collection',
       insomnia: 'Imported collection',
       'insomnia-environment': 'Imported API',
+      hoppscotch: 'Imported collection',
+      'hoppscotch-environment': 'Imported API',
       bruno: 'Imported collection',
       wsdl: 'Imported service',
       proto: 'Imported gRPC API',
@@ -54,6 +59,7 @@ describe('import formats table', () => {
       'postman-globals',
       'http-env',
       'insomnia-environment',
+      'hoppscotch-environment',
     ]);
     expect(where((row) => row.fileFirst)).toEqual([
       'postman',
@@ -66,6 +72,8 @@ describe('import formats table', () => {
       'opencollection',
       'insomnia',
       'insomnia-environment',
+      'hoppscotch',
+      'hoppscotch-environment',
       'bruno',
       'legacy-soap-project',
     ]);
@@ -79,6 +87,8 @@ describe('import formats table', () => {
       'opencollection',
       'insomnia',
       'insomnia-environment',
+      'hoppscotch',
+      'hoppscotch-environment',
       'bruno',
     ]);
     expect(where((row) => row.folder)).toEqual(['postman-v3', 'bruno']);
@@ -102,5 +112,37 @@ describe('import formats table', () => {
     expect(importFormatRow('postman-v3').pickerTitle).toBe('Import Collection Definition');
     expect(importFormatRow('wsdl')).toMatchObject({ pickerTitle: 'Import Definition', dialogTitle: 'Import WSDL' });
     expect(importFormatRow('unknown').fileFilters[0]?.extensions).toEqual(['json', 'yaml', 'yml', 'wsdl', 'xml']);
+  });
+
+  it('places every format kind: a row, not imported yet, or the unknown fallback', () => {
+    // `satisfies` makes a new ImportFormatKind fail to compile here until it is placed.
+    const placed = {
+      openapi: 'row',
+      asyncapi: 'row',
+      postman: 'row',
+      'postman-v3': 'row',
+      'postman-environment': 'row',
+      'postman-globals': 'row',
+      har: 'row',
+      'http-file': 'row',
+      'http-env': 'row',
+      opencollection: 'row',
+      insomnia: 'row',
+      'insomnia-environment': 'row',
+      bruno: 'row',
+      hoppscotch: 'row',
+      'hoppscotch-environment': 'row',
+      'thunder-client': 'not-yet',
+      'thunder-client-environment': 'not-yet',
+      wsdl: 'row',
+      proto: 'row',
+      'legacy-soap-project': 'row',
+      unknown: 'fallback',
+    } satisfies Record<ImportFormatKind, 'row' | 'not-yet' | 'fallback'>;
+    const kinds = Object.keys(placed) as ImportFormatKind[];
+    expect(IMPORT_FORMATS.map((row) => row.kind).sort()).toEqual(kinds.filter((k) => placed[k] === 'row').sort());
+    for (const kind of kinds.filter((k) => placed[k] !== 'row')) {
+      expect(importFormatRow(kind).kind, kind).toBe('unknown');
+    }
   });
 });

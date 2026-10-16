@@ -95,6 +95,7 @@ export default defineConfig({
             { label: 'From OpenCollection', slug: 'switching/opencollection' },
             { label: 'From Insomnia', slug: 'switching/insomnia' },
             { label: 'From Bruno', slug: 'switching/bruno' },
+            { label: 'From Hoppscotch', slug: 'switching/hoppscotch' },
           ],
         },
         {

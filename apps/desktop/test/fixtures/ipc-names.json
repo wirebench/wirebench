@@ -28,6 +28,7 @@
     "api.importClientEnvironments",
     "api.importGraphqlSchema",
     "api.importHar",
+    "api.importHoppscotch",
     "api.importHttpEnv",
     "api.importHttpFile",
     "api.importInsomnia",

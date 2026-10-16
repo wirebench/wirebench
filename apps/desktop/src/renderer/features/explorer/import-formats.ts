@@ -170,6 +170,23 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
     dialogTitle: 'Import Insomnia Environments',
   }),
   row({
+    kind: 'hoppscotch',
+    label: 'Hoppscotch collection',
+    tabs: NO_URL_TABS,
+    fileFirst: true,
+    defaultName: 'Imported collection',
+    fileFilters: [{ name: 'Hoppscotch export', extensions: ['json'] }],
+    pickerTitle: 'Import Hoppscotch Collection',
+    dialogTitle: 'Import Hoppscotch Collection',
+  }),
+  variablesRow({
+    kind: 'hoppscotch-environment',
+    label: 'Hoppscotch environments',
+    fileFilters: [{ name: 'Hoppscotch environments', extensions: ['json'] }],
+    pickerTitle: 'Import Hoppscotch Environments',
+    dialogTitle: 'Import Hoppscotch Environments',
+  }),
+  row({
     kind: 'bruno',
     label: 'Bruno collection (folder)',
     tabs: NO_URL_TABS,

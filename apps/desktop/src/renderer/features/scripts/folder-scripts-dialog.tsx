@@ -5,12 +5,19 @@
  * editor is the same {@link ScriptsTab} a request, an API and an interface use; the folder's scripts
  * run around every request inside it, after its API's and any outer folder's.
  */
+import { Suspense, lazy } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
-import { ScriptsTab } from './scripts-tab.js';
+
+// Split out: the shell mounts this dialog at startup, and the scripts editor is Monaco, which only
+// ever loads with an editor.
+const ScriptsTab = lazy(async () => {
+  const module = await import('./scripts-tab.js');
+  return { default: module.ScriptsTab };
+});
 
 /** The dialog, mounted once by the shell and driven by the UI store's `folderScriptsId`. */
 export function FolderScriptsDialog() {
@@ -49,7 +56,9 @@ export function FolderScriptsDialog() {
 
           <div className="flex min-h-0 flex-1 flex-col">
             {folder !== undefined && folderId !== undefined && (
-              <ScriptsTab requestId={folderId} scripts={folder.scripts} level="folder" />
+              <Suspense fallback={null}>
+                <ScriptsTab requestId={folderId} scripts={folder.scripts} level="folder" />
+              </Suspense>
             )}
           </div>
 

@@ -7,12 +7,21 @@
  */
 
 import {
+  createDefaultFetchDocument,
+  createHttpFetchDocument,
   generateEmptySoapRequest,
   generateSoapRequest,
   importWsdl as engineImportDefinition,
   WirebenchError,
 } from '@wirebench/engine';
-import type { GenerateOptions, WsdlImportProgress, WsdlImportResult, WsdlImportSource, QName } from '@wirebench/engine';
+import type {
+  GenerateOptions,
+  WsdlImportOptions,
+  WsdlImportProgress,
+  WsdlImportResult,
+  WsdlImportSource,
+  QName,
+} from '@wirebench/engine';
 import { kerberosImportAuth } from './kerberos-import-auth.js';
 import { secretMissingMessage } from './secret-resolver.js';
 import type { FetchDocument, KerberosSendAuth } from '@wirebench/engine';
@@ -122,10 +131,30 @@ export class EngineService {
   readonly exchanges = new ExchangeCache();
 
   /**
-   * Resolves a `secretRef` for {@link importDefinition}'s Basic-auth fetch credentials. Omitted
-   * in tests that never import with auth; `main/index.ts` wires it to `SecretStore.get`.
+   * `getSecret` resolves a `secretRef` for {@link importDefinition}'s Basic-auth fetch credentials;
+   * omitted in tests that never import with auth, `main/index.ts` wires it to `SecretStore.get`.
+   * `network` is the TLS and proxy for one URL, as a project-free send resolves them
+   * (`mainHttpOptions`): every WSDL read goes through the configured CA bundle and proxy.
    */
-  constructor(private readonly getSecret?: (ref: string) => Promise<string | undefined>) {}
+  constructor(
+    private readonly getSecret?: (ref: string) => Promise<string | undefined>,
+    private readonly network?: WsdlImportOptions['network'],
+  ) {}
+
+  /**
+   * The fetcher a main-side caller wraps around the network (a legacy project import's fallback for
+   * a document the file holds no copy of): the same CA bundle and proxy as every other WSDL read.
+   */
+  networkFetchDocument(): FetchDocument {
+    return this.network !== undefined
+      ? createHttpFetchDocument({ network: this.network })
+      : createDefaultFetchDocument();
+  }
+
+  /** The `network` option every WSDL import here passes, when the app wired one. */
+  private networkOption(): Pick<WsdlImportOptions, 'network'> {
+    return this.network !== undefined ? { network: this.network } : {};
+  }
 
   /** Imports a WSDL definition and stores the full `WsdlImportResult` under a new id. */
   async importDefinition(request: DefinitionImportRequest, hooks: EngineServiceHooks = {}): Promise<InterfaceSummary> {
@@ -151,6 +180,7 @@ export class EngineService {
     try {
       result = await engineImportDefinition(toEngineSource(request.source), {
         ...(auth !== undefined ? { auth } : {}),
+        ...this.networkOption(),
         signal: controller.signal,
         onProgress: (progress) => {
           // The final 'done' event is re-emitted below once the interface id is known, so the
@@ -197,6 +227,7 @@ export class EngineService {
   ): Promise<WsdlImportResult> {
     return engineImportDefinition(toEngineSource(source), {
       ...(auth !== undefined ? { auth } : {}),
+      ...this.networkOption(),
       ...(signal !== undefined ? { signal } : {}),
     });
   }
@@ -231,6 +262,7 @@ export class EngineService {
       result = await engineImportDefinition(toEngineSource(input.source), {
         ...(input.auth !== undefined ? { auth: input.auth } : {}),
         ...(input.fetchDocument !== undefined ? { fetchDocument: input.fetchDocument } : {}),
+        ...this.networkOption(),
         cache: input.cache,
         signal: controller.signal,
         onProgress: (progress) => {

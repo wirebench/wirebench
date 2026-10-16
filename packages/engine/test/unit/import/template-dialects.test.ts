@@ -62,11 +62,32 @@ describe('insomniaTemplates', () => {
   });
 });
 
+describe('insomniaTemplates: names with whitespace', () => {
+  it('keeps a key with whitespace as written and reports it', () => {
+    const kept = new Set<string>();
+    expect(through((t) => insomniaTemplates(t, kept), "{{ _['my key'] }}")).toBe("{{ _['my key'] }}");
+    expect([...kept]).toEqual(["{{ _['my key'] }}"]);
+  });
+
+  it('still maps a key with a hyphen', () => {
+    const kept = new Set<string>();
+    expect(insomniaTemplates("{{ _['my-key'] }}", kept)).toBe('{{my-key}}');
+    expect(kept.size).toBe(0);
+  });
+});
+
 describe('hoppscotchTemplates', () => {
   it('rewrites <<name>> and predefined names', () => {
     expect(hoppscotchTemplates('<<base>>/a/<<$guid>>')).toBe('{{base}}/a/{{$guid}}');
     expect(hoppscotchTemplates('a << b >> c')).toBe('a << b >> c');
     expect(through(hoppscotchTemplates, '<<base>>/x')).toBe('${base}/x');
+  });
+
+  it('keeps a name with whitespace as written and reports it, but not a spaced-out << >>', () => {
+    const kept = new Set<string>();
+    expect(hoppscotchTemplates('<<a b>>/<<base>>', kept)).toBe('<<a b>>/{{base}}');
+    expect(hoppscotchTemplates('a << b >> c', kept)).toBe('a << b >> c');
+    expect([...kept]).toEqual(['<<a b>>']);
   });
 });
 
@@ -77,6 +98,7 @@ describe('thunderTemplates', () => {
     expect(thunderTemplates('{{#number, 1, 5}}', kept)).toBe('{{$randomInt 1 5}}');
     expect(thunderTemplates("{{#date, 'X'}}", kept)).toBe('{{$timestamp}}');
     expect(thunderTemplates('{{#dateISO}}', kept)).toBe('{{$isoTimestamp}}');
+    expect(thunderTemplates('{{#timestamp}}', kept)).toBe('{{$timestamp}}');
     expect(through((t) => thunderTemplates(t, kept), '{{#guid}}')).toBe('${$guid}');
     expect(kept.size).toBe(0);
   });
@@ -88,6 +110,21 @@ describe('thunderTemplates', () => {
     expect(through((t) => thunderTemplates(t, kept), '{{#date}}')).toBe('{{#date}}');
     expect(kept).toContain('{{tok | upper}}');
     expect(kept).toContain('{{#date}}');
+  });
+
+  it('keeps scanning after a # call that never closes', () => {
+    const kept = new Set<string>();
+    expect(thunderTemplates('{{#date, {{#guid}}', kept)).toBe('{{#date, {{$guid}}');
+    expect(thunderTemplates('{{ x {{#guid}}', kept)).toBe('{{ x {{$guid}}');
+    expect(kept.size).toBe(0);
+  });
+
+  it('reports a # call with an object argument whole, closing on balanced braces', () => {
+    const kept = new Set<string>();
+    expect(through((t) => thunderTemplates(t, kept), 'a{{#date, {year: -1}}}b{{base}}')).toBe(
+      'a{{#date, {year: -1}}}b${base}',
+    );
+    expect([...kept]).toEqual(['{{#date, {year: -1}}}']);
   });
 
   it('leaves a plain variable for the shared rewrite', () => {
@@ -122,6 +159,20 @@ describe('unshieldTemplates', () => {
 });
 
 describe('hostile input', () => {
+  it('a long run of unclosed # calls returns quickly (thunder)', () => {
+    const started = performance.now();
+    thunderTemplates(`${'{{#'.repeat(300_000)}}}}`, new Set());
+    thunderTemplates(`${'{{#{'.repeat(250_000)}}}}`, new Set());
+    thunderTemplates(`${'{{#date, {'.repeat(100_000)}}}}`, new Set());
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  it('a long run of << with spaced names returns quickly (hoppscotch)', () => {
+    const started = performance.now();
+    hoppscotchTemplates(`${'<<a b'.repeat(200_000)}>>`, new Set());
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   const run = '{'.repeat(1024 * 1024);
   const cases: [string, (text: string) => string][] = [
     ['insomnia', (t) => insomniaTemplates(t, new Set())],

@@ -562,7 +562,7 @@ const SECRET_KEYS: Readonly<Record<string, readonly string[]>> = {
   ntlm: ['password'],
   digest: ['password'],
   awsv4: ['accessKey', 'secretKey', 'sessionToken'],
-  jwt: ['secret', 'privateKey'],
+  // No `jwt`: every JWT gets its own line (mapJwtAuth), whether or not the file held a secret.
 };
 
 /** Whether `auth` carries a secret the import does not copy. */
@@ -683,7 +683,12 @@ export function mapPostmanAuth(
     case 'awsv4': {
       // Region and service only: the keys and the session token are never imported.
       const attr = (key: string): string => asText(auth.awsv4?.find((a) => a.key === key)?.value) ?? '';
-      return { type: 'aws-sigv4', region: attr('region'), service: attr('service') };
+      const region = attr('region');
+      const service = attr('service');
+      // Without them the request cannot be signed; say so rather than fail at the first send.
+      if (region === '') warnings?.push('AWS Signature: region is not set');
+      if (service === '') warnings?.push('AWS Signature: service is not set');
+      return { type: 'aws-sigv4', region, service };
     }
     case 'jwt':
       return mapJwtAuth(auth.jwt ?? [], warnings);
@@ -716,6 +721,8 @@ function mapJwtAuth(
     warnings?.push(`JWT algorithm "${algorithm}" is not supported; set to "none"`);
     return { type: 'none' };
   }
+  // The token cannot be signed until the user sets what the file never carries across.
+  warnings?.push('JWT: the secret or key is not copied; set the secret (HS*) or key (RS*/ES*/PS*) before sending');
   const header = jsonText(attr('header'));
   const toQuery = asText(attr('addTokenTo')) === 'queryParam';
   const queryKey = asText(attr('queryParamKey'));

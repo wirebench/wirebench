@@ -18,7 +18,7 @@ import type {
 } from './types.js';
 import { readDefinitionCache, writeDefinitionCache } from '../wsdl/cache.js';
 import type { KerberosSendAuth } from '../http/auth/kerberos-token.js';
-import { createHttpFetchDocument } from '../http/document-fetch.js';
+import { createHttpFetchDocument, type DocumentFetchOptions } from '../http/document-fetch.js';
 import { createDefaultFetchDocument } from '../http/fetch-document.js';
 import { parseWsdlBundle } from '../wsdl/merge.js';
 import type { DefinitionBundle, DefinitionSource, FetchDocument } from '../wsdl/resolver.js';
@@ -75,12 +75,39 @@ function isKerberos(
 /**
  * Kerberos for a WSDL fetch goes through the origin-scoped document fetcher, so a token reaches only
  * the WSDL's own origin; `file:` locations and inline sources fall back to `base`. http(s) targets
- * bypass `options.fetchDocument`, so a host fetcher's proxy and TLS do not apply under Kerberos.
+ * bypass `base` (the token is made per hop), so they reach the network through `network`: the host's
+ * proxy and CA bundle, the same as an anonymous or Basic fetch.
  */
-function kerberosFetch(base: FetchDocument, auth: KerberosSendAuth, location: string): FetchDocument {
+function kerberosFetch(
+  base: FetchDocument,
+  auth: KerberosSendAuth,
+  location: string,
+  network: DocumentFetchOptions['network'],
+): FetchDocument {
   if (!/^https?:/i.test(location)) return base;
-  const web = createHttpFetchDocument({ auth, authOrigin: new URL(location).origin });
+  const web = createHttpFetchDocument({
+    auth,
+    authOrigin: new URL(location).origin,
+    ...(network !== undefined ? { network } : {}),
+  });
   return (target, signal) => (/^https?:/i.test(target) ? web(target, signal) : base(target, signal));
+}
+
+/**
+ * Basic auth through the host's network: every http(s) document gets the credentials, as
+ * {@link withBasicAuth} sends them, but over the host's proxy and CA bundle. Each fetch scopes the
+ * credentials to its own origin, so a redirect to another origin drops them.
+ */
+function basicThroughNetwork(
+  base: FetchDocument,
+  auth: { readonly username: string; readonly password: string },
+  network: NonNullable<DocumentFetchOptions['network']>,
+): FetchDocument {
+  const basic = { type: 'basic', username: auth.username, password: auth.password, preemptive: true } as const;
+  return (target, signal) =>
+    /^https?:/i.test(target)
+      ? createHttpFetchDocument({ auth: basic, authOrigin: new URL(target).origin, network })(target, signal)
+      : base(target, signal);
 }
 
 /** Resolves from the network, honoring the optional abort signal. */
@@ -182,15 +209,20 @@ async function resolveWithCache(
  */
 export async function importWsdl(source: WsdlImportSource, options?: WsdlImportOptions): Promise<WsdlImportResult> {
   const signal = options?.signal;
-  const baseFetch = options?.fetchDocument ?? createDefaultFetchDocument();
+  const network = options?.network;
+  const baseFetch =
+    options?.fetchDocument ??
+    (network !== undefined ? createHttpFetchDocument({ network }) : createDefaultFetchDocument());
   const definitionSource = toDefinitionSource(source);
   const auth = options?.auth;
   const fetchDocument =
     auth === undefined
       ? baseFetch
       : isKerberos(auth)
-        ? kerberosFetch(baseFetch, auth, definitionSource.location)
-        : withBasicAuth(baseFetch, auth);
+        ? kerberosFetch(baseFetch, auth, definitionSource.location, network)
+        : network !== undefined
+          ? basicThroughNetwork(baseFetch, auth, network)
+          : withBasicAuth(baseFetch, auth);
 
   options?.onProgress?.({ phase: 'fetch', location: definitionSource.location });
   const cacheProblems: WsdlImportProblem[] = [];

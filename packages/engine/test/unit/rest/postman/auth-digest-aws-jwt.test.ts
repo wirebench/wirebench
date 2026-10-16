@@ -10,6 +10,9 @@ function importAuth(auth: Record<string, unknown>) {
   );
 }
 
+const jwtWarning = 'JWT: the secret or key is not copied; set the secret (HS*) or key (RS*/ES*/PS*) before sending';
+const credentialWarning = 'Credentials are not copied from the collection; re-enter them for 1 auth configuration';
+
 const attrs = (values: Record<string, unknown>) => Object.entries(values).map(([key, value]) => ({ key, value }));
 
 describe('Postman digest, AWS and JWT auth', () => {
@@ -58,5 +61,29 @@ describe('Postman digest, AWS and JWT auth', () => {
     const { api, summary } = importAuth({ type: 'jwt', jwt: attrs({ algorithm: 'XX999' }) });
     expect(api.auth).toEqual({ type: 'none' });
     expect(summary.warnings).toContain('JWT algorithm "XX999" is not supported; set to "none"');
+  });
+
+  it('warns about a missing AWS region and service', () => {
+    const { api, summary } = importAuth({ type: 'awsv4', awsv4: attrs({ accessKey: 'K' }) });
+    expect(api.auth).toEqual({ type: 'aws-sigv4', region: '', service: '' });
+    expect(summary.warnings).toContain('AWS Signature: region is not set');
+    expect(summary.warnings).toContain('AWS Signature: service is not set');
+  });
+
+  it('does not warn about a region and service that are set', () => {
+    const { summary } = importAuth({ type: 'awsv4', awsv4: attrs({ region: 'eu-west-1', service: 's3' }) });
+    expect(summary.warnings?.some((w) => w.startsWith('AWS Signature')) ?? false).toBe(false);
+  });
+
+  it('gives a JWT with a secret one line, not the credential count too', () => {
+    const { summary } = importAuth({ type: 'jwt', jwt: attrs({ algorithm: 'HS256', secret: 'topsecret' }) });
+    expect(summary.warnings).toContain(jwtWarning);
+    expect(summary.warnings).not.toContain(credentialWarning);
+  });
+
+  it('warns that a JWT needs its secret even when the file had none', () => {
+    const { api, summary } = importAuth({ type: 'jwt', jwt: attrs({ algorithm: 'HS256' }) });
+    expect(api.auth).toMatchObject({ type: 'jwt', algorithm: 'HS256' });
+    expect(summary.warnings).toContain(jwtWarning);
   });
 });

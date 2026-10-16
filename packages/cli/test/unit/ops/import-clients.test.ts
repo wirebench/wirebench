@@ -85,6 +85,54 @@ describe('op import: an Insomnia export', () => {
     const { project } = await loadProject(fixture.dir);
     expect(restApisOf(project)).toEqual([]);
   });
+
+  it('passes the variable report through: a credential in a URL and credential-looking names', async () => {
+    const fixture = await emptyProject();
+    const file = join(await tempDir(), 'vars.yaml');
+    await writeFile(
+      file,
+      WITH_VAULT.replace('    host: example.com\n', '    host: https://user:LEAKPW@example.com\n    apiToken: plain\n'),
+    );
+    const result = await runOp(importOp, { source: file }, fixture.base());
+
+    const messages = result.problems.map((problem) => problem.message);
+    expect(messages.some((m) => m.includes('the credential in the URL of "host" was not imported'))).toBe(true);
+    expect(messages.some((m) => m.includes('apiToken'))).toBe(true);
+    expect(JSON.stringify(result)).not.toContain('LEAKPW');
+  });
+});
+
+describe('op import: vault secrets', () => {
+  it('names a vault secret once, under secret-not-imported', async () => {
+    const fixture = await emptyProject();
+    const file = join(await tempDir(), 'mini.yaml');
+    await writeFile(file, WITH_VAULT);
+    const result = await runOp(importOp, { source: file }, fixture.base());
+
+    const naming = result.problems.filter((problem) => problem.message.includes('token'));
+    expect(naming.map((problem) => problem.code)).toEqual(['secret-not-imported']);
+  });
+});
+
+describe('op import: environment files', () => {
+  it('refuses a Postman environment with environments-not-imported, before writing anything', async () => {
+    const fixture = await emptyProject();
+    const file = join(await tempDir(), 'staging.postman_environment.json');
+    await writeFile(
+      file,
+      JSON.stringify({
+        id: 'e1',
+        name: 'Staging',
+        values: [{ key: 'baseUrl', value: 'https://staging.example.com', enabled: true }],
+        _postman_variable_scope: 'environment',
+      }),
+    );
+    await expect(runOp(importOp, { source: file }, fixture.base())).rejects.toMatchObject({
+      code: 'environments-not-imported',
+    });
+    const { project } = await loadProject(fixture.dir);
+    expect(restApisOf(project)).toEqual([]);
+  });
 });
 
 const BRUNO = resolve(import.meta.dirname, '..', '..', '..', '..', '..', 'fixtures', 'bruno', 'crafted');
@@ -114,5 +162,30 @@ describe('op import: a Bruno collection', () => {
     const exported = await runOp(importOp, { source: join(BRUNO, 'export.json'), name: 'Exported' }, fixture.base());
     expect(exported.format).toBe('bruno');
     expect(exported.added).toEqual([expect.objectContaining({ kind: 'rest', name: 'Exported' })]);
+  });
+});
+
+const HOPPSCOTCH = resolve(import.meta.dirname, '..', '..', '..', '..', '..', 'fixtures', 'hoppscotch', 'crafted');
+
+describe('op import: a Hoppscotch collection', () => {
+  it('imports a Hoppscotch collection, its plain variables as project properties and its secret left out', async () => {
+    const fixture = await emptyProject();
+    const result = await runOp(importOp, { source: join(HOPPSCOTCH, 'v12-r17.json') }, fixture.base());
+
+    expect(result.format).toBe('hoppscotch');
+    expect(result.added).toEqual([expect.objectContaining({ kind: 'rest', name: 'Shop API', requests: 9 })]);
+    const codes = result.problems.map((problem) => problem.code);
+    expect(codes).toContain('secret-not-imported');
+    expect(codes).toContain('scripts-not-saved');
+    const { project } = await loadProject(fixture.dir);
+    expect(project.properties).toMatchObject({ baseUrl: 'https://api.example.test', region: 'eu' });
+    expect(project.properties).not.toHaveProperty('apiKey');
+  });
+
+  it('refuses an environments file', async () => {
+    const fixture = await emptyProject();
+    await expect(
+      runOp(importOp, { source: join(HOPPSCOTCH, 'environments-v2.json') }, fixture.base()),
+    ).rejects.toMatchObject({ code: 'environments-not-imported' });
   });
 });

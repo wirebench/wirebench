@@ -1,0 +1,60 @@
+{
+  "v": 13,
+  "name": "Mixed",
+  "auth": { "authType": "none", "authActive": true },
+  "headers": [],
+  "folders": [
+    {
+      "v": 1,
+      "name": "Old folder",
+      "folders": [],
+      "requests": [
+        {
+          "v": "3",
+          "name": "Old OAuth",
+          "method": "GET",
+          "endpoint": "https://api.example.test/old",
+          "params": [],
+          "headers": [],
+          "preRequestScript": "",
+          "testScript": "",
+          "auth": {
+            "authType": "oauth-2",
+            "authActive": true,
+            "authURL": "https://auth.example.test/authorize",
+            "accessTokenURL": "https://auth.example.test/token",
+            "clientID": "old-client",
+            "scope": "read"
+          },
+          "body": { "contentType": null, "body": null }
+        },
+        {
+          "v": "3",
+          "name": "Old key",
+          "method": "GET",
+          "endpoint": "https://api.example.test/key",
+          "params": [],
+          "headers": [],
+          "preRequestScript": "",
+          "testScript": "",
+          "auth": { "authType": "api-key", "authActive": true, "key": "k", "value": "<<k>>", "addTo": "Query params" },
+          "body": { "contentType": null, "body": null }
+        }
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "v": "18",
+      "name": "Future",
+      "method": "PATCH",
+      "endpoint": "https://api.example.test/future",
+      "params": [],
+      "headers": [],
+      "preRequestScript": "",
+      "testScript": "",
+      "auth": { "authType": "inherit", "authActive": true },
+      "body": { "contentType": "text/plain", "body": "hi" }
+    }
+  ]
+}

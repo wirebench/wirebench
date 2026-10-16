@@ -35,6 +35,14 @@ describe.skipIf(!built)('renderer build output', () => {
     expect(totalJsBytes).toBeLessThan(RENDERER_JS_BUDGET_BYTES);
   });
 
+  it('loads Monaco only with the first editor, never before the first paint', () => {
+    const { files, startup, startupMonaco } = inspectRendererAssets();
+    expect(startup.some((file) => file.endsWith('.js'))).toBe(true);
+    expect(startupMonaco, `startup files: ${startup.join(', ')}`).toEqual([]);
+    // Monaco is still in the build, as a chunk of its own; otherwise the check above is vacuous.
+    expect(files.some((file) => /(^|\/)monaco-[^/]*\.js$/.test(file))).toBe(true);
+  });
+
   it('names every worker it forbids', () => {
     // Guards the list itself against an accidental empty/typo'd entry, which would make the
     // assertion above vacuously true.
