@@ -66,6 +66,23 @@ describe('PreferencesService', () => {
     expect(reset.http.userAgent).toBe('Keep/1');
   });
 
+  it('sends a default User-Agent as the running version, on load and after a reset', async () => {
+    writeFileSync(file(), 'version: 1\nhttp:\n  userAgent: Wirebench/0.1\n', 'utf8');
+    const service = new PreferencesService(dir, { appVersion: '6.1.0' });
+    expect((await service.ready()).http.userAgent).toBe('Wirebench/6.1.0');
+
+    await service.update({ http: { userAgent: 'Custom/1' } });
+    expect(service.get().http.userAgent).toBe('Custom/1');
+    // Settings' per-row reset sends the renderer's default, which names no version.
+    await service.update({ http: { userAgent: 'Wirebench' } });
+    expect(service.get().http.userAgent).toBe('Wirebench/6.1.0');
+    const written = parseYaml(readFileSync(file(), 'utf8')) as { http: { userAgent: string } };
+    expect(written.http.userAgent).toBe('Wirebench/6.1.0');
+
+    expect((await service.reset('http')).http.userAgent).toBe('Wirebench/6.1.0');
+    expect((await new PreferencesService(dir, { appVersion: '6.2.0' }).ready()).http.userAgent).toBe('Wirebench/6.2.0');
+  });
+
   it('resets everything when no section is named', async () => {
     const service = new PreferencesService(dir);
     await service.update({ editor: { tabSize: 8 } });

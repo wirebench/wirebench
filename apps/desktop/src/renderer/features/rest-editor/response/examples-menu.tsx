@@ -133,9 +133,11 @@ export function ExampleResponse({ example, onDelete, onClose }: ExampleResponseP
       http: {
         bodyBase64: utf8Base64(body),
         headers: example.contentType !== undefined ? { 'content-type': example.contentType } : {},
+        status: example.status,
+        statusText: example.statusText,
       },
     }),
-    [body, example.contentType],
+    [body, example.contentType, example.status, example.statusText],
   );
   const pairs = useMemo(() => example.headers.map((header) => [header.name, header.value] as const), [example.headers]);
 

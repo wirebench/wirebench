@@ -368,6 +368,12 @@ export { isSoapFault, parseFault } from './soap/fault.js';
 export type { FaultReason, SoapFault } from './soap/fault.js';
 export { recreateRequest } from './soap/recreate.js';
 export type { RecreateOptions, RecreateResult } from './soap/recreate.js';
+export {
+  defaultUserAgent,
+  isDefaultUserAgent,
+  REST_ACCEPT_ENCODING,
+  SOAP_ACCEPT_ENCODING,
+} from './http/default-headers.js';
 export { quoteForShell, toCurl } from './http/curl.js';
 export type { CurlBody, CurlCommand, CurlHeader, CurlPart, ToCurlOptions } from './http/curl.js';
 export {
@@ -1183,6 +1189,7 @@ export {
   preferencesPatchProblems,
   preferencesSchema,
   resetPreferences,
+  withAppUserAgent,
 } from './project/preferences.js';
 export type {
   EditorPreferences,

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { KeyRound, RotateCcw, Trash2 } from 'lucide-react';
 import { IconButton } from '../../components/icon-button.js';
-import { KV_INPUT_CLASS, useCommittedDraft } from '../../components/kv-table.js';
+import { KV_CHECKBOX_CLASS, KV_INPUT_CLASS, useCommittedDraft } from '../../components/kv-table.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { useGridNavigation, type GridRowProps } from '../../lib/grid-navigation.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
@@ -345,6 +345,7 @@ function VariableRow({
       <td role="gridcell" className="px-2 py-1 text-center">
         <input
           type="checkbox"
+          className={KV_CHECKBOX_CLASS}
           aria-label={`Enable ${name}`}
           data-testid="env-variable-enabled"
           checked={enabled}
@@ -451,6 +452,7 @@ function InheritedVariableRow({
       <td role="gridcell" className="px-2 py-1 text-center">
         <input
           type="checkbox"
+          className={KV_CHECKBOX_CLASS}
           aria-label={`Enable ${name}`}
           data-testid="env-variable-enabled"
           checked={enabled}
@@ -877,7 +879,13 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
               <td role="gridcell" className="px-2 py-1 text-center">
                 {/* Neutral until a name exists — a variable that isn't there yet can't be disabled — then
                   checked the moment one is typed. Never interactive: there's nothing to toggle yet. */}
-                <input type="checkbox" aria-label="New variable enabled" checked={trimmedNewName.length > 0} disabled />
+                <input
+                  type="checkbox"
+                  className={KV_CHECKBOX_CLASS}
+                  aria-label="New variable enabled"
+                  checked={trimmedNewName.length > 0}
+                  disabled
+                />
               </td>
               <td role="gridcell" className="px-2 py-1">
                 <input
