@@ -1,0 +1,257 @@
+---
+title: Mutual TLS with a corporate CA
+description: An internal service uses a certificate from your company's own CA and wants a client certificate from you. Trust the CA, present the certificate, and fix each handshake failure.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Internal services often sit behind two kinds of certificate at once. The server's certificate is
+issued by your company's own certificate authority, which no operating system or runtime trusts out
+of the box. And the server asks for a certificate from you, the client, before it lets any request
+through. That is mutual TLS. Each half fails in its own way, both fail before a single HTTP byte is
+exchanged, and the error you get often names neither.
+
+This guide sets up both halves in Wirebench, shows what a working connection looks like, then goes
+through the failures one by one: an untrusted server certificate, no client certificate presented,
+a wrong keystore password, and an expired certificate on either side. The messages are the exact
+text Wirebench reports, and the connection details come from running its HTTP client against a
+mutual-TLS test server.
+
+## Step 1: trust the corporate CA
+
+Ask for the CA certificate as a PEM file: text that starts with `-----BEGIN CERTIFICATE-----`. If the
+company has a root CA and one or more intermediate CAs, put them all in one file, one block after
+another. Wirebench reads every certificate block in the file and ignores anything around them, so a
+bundle exported with comments or `Bag Attributes` lines works as it is.
+
+<Steps>
+
+1. Open **Settings → SSL / TLS**.
+2. Next to **Choose a CA bundle**, press **Browse…** and pick the PEM file. The **CA bundle** field
+   shows its path.
+3. Send the request again.
+
+</Steps>
+
+The bundle is added to the trusted roots Wirebench already has. Nothing is replaced, so public
+services keep working, and it applies to every send from every project, token requests such as a
+WS-Trust STS call included.
+
+<Aside type="caution">
+A file that holds no PEM certificate block adds nothing, and Wirebench says nothing about it: the
+sends simply keep failing as untrusted. A certificate exported in binary DER form (often a `.cer`
+or `.crt` file that does not open as text) is the usual cause. Convert it with
+`openssl x509 -inform der -in corp-root.cer -out corp-root.pem` and pick the `.pem`.
+</Aside>
+
+There is no switch to trust every certificate. If you need to reach one server whose certificate
+you cannot fix, open the request's **Endpoints** dialog and turn on **Trust invalid certificates**
+for that one endpoint. It is a debugging shortcut, and Wirebench treats it as one: a red
+**Trust invalid** badge stays on the endpoint's row, in the request toolbar and in the status bar
+for as long as the flag is on.
+
+## Step 2: add the client certificate as a keystore
+
+Your client certificate and its private key usually arrive as a PKCS#12 file (`.p12` or `.pfx`) with
+a password, or as PEM files.
+
+<Steps>
+
+1. Open the **WS-Security** view in the activity bar, then **Keystores**.
+2. Press **Add keystore**, pick the file, and type the **Keystore password**. It goes into the
+   secret store; the project only keeps a reference to it.
+3. Check the keystore's row. It reads **Loaded** and lists the certificate aliases inside.
+
+</Steps>
+
+Other row states tell you what to fix before you send anything: **Wrong password**, **Unreadable**
+for a file that is not a keystore, and **File missing**. A wrong password can be corrected in place,
+in the row's password field. A PEM file with only a private key loads, but it lists a key with no
+certificate, and that cannot be presented as a TLS client certificate: put the certificate and the
+key in the same file.
+
+## Step 3: present it
+
+Wirebench presents a client certificate only when the server asks for one, and it picks the
+keystore in this order:
+
+- **Per request.** On a SOAP request, open the **Properties** inspector and set **SSL Keystore**,
+  "The client certificate this request presents." This always wins.
+- **By default.** In **Settings → SSL / TLS**, set **Client keystore**. It is presented when a request
+  selects no keystore of its own.
+
+Use the per-request setting when different services want different identities, for example a test
+certificate for staging and another for production. Use the default when one personal certificate
+opens every internal service.
+
+A keystore is only a client identity. Choosing one never changes which servers Wirebench trusts:
+server trust always comes from the built-in roots plus your CA bundle.
+
+## What a working connection looks like
+
+Send the request and open the **SSL** inspector on the request pane, or **SSL Info** on the response.
+Both show the same connection. This is what Wirebench's HTTP client reported against a test server
+that requires a client certificate, laid out as the inspector shows it (fingerprint shortened; the
+test certificates live for one day):
+
+```text
+● Trusted
+Protocol            TLSv1.3
+Cipher              TLS_AES_256_GCM_SHA384
+ALPN                http/1.1
+SNI                 localhost
+Client certificate  CN=wirebench-client, O=Wirebench Tests, C=ZZ
+
+CN=localhost, O=Wirebench Tests, C=ZZ
+  Issuer   CN=Wirebench Test CA, O=Wirebench Tests, C=ZZ
+  Valid    2026-10-16 06:18:59 → 2026-10-17 07:18:59   expires in 1 day
+  Serial   010000000000000002
+  SANs     localhost, 127.0.0.1
+  SHA-256  705560cd4a99b7be…
+CN=Wirebench Test CA, O=Wirebench Tests, C=ZZ   CA
+```
+
+{/* TODO(screenshot): SSL Info inspector on a successful mutual-TLS response, showing "● Trusted", the Client certificate line and the two-certificate chain. Save as docs-site/public/images/solutions/mtls-ssl-info.png and cite it here. */}
+
+Read it from the top:
+
+- **● Trusted** means the server's chain verified against your trust store, the CA bundle included.
+- **Client certificate** names the certificate you presented. It is the quickest answer to "did my
+  keystore get used at all?". When the line is missing, Wirebench presented nothing.
+- **The chain** runs from the server's own certificate up to the root it sent. Each card shows
+  validity with a countdown, which turns amber inside the **Expiry warning** window
+  (30 days by default) and red once the certificate has expired. The SHA-256 fingerprint has a copy
+  button, handy when the service owner asks which certificate you saw.
+
+The HTTP Log keeps the same record. Open the row and its **Connection** tab: under **TLS peer** it
+shows the same summary and chain for that exchange, so you can compare a working send with a
+failing one later.
+
+## What each failure looks like
+
+A handshake failure means no response at all. The response pane shows a title, the message and the
+error code, and the HTTP Log row shows the code in its status column.
+
+### The server certificate is not trusted
+
+```text
+The server certificate for localhost:57035 is not trusted. Add its CA to the CA bundle, or turn on "Trust invalid certificates" for this endpoint.
+```
+
+The title reads **Certificate not trusted** and the code is `tls-untrusted`. The message names the
+peer: the server's subject when the TLS stack hands Wirebench the certificate, otherwise the host
+and port, as here. The failed row's **Connection** tab in the HTTP Log repeats it as **Peer**.
+
+This code covers every case where the chain did not lead to a root you trust: a self-signed
+certificate, a certificate from your corporate CA before you added the bundle, or a server that
+sends its own certificate without the intermediate CA. Work through them:
+
+1. No CA bundle yet: add one (Step 1).
+2. A bundle is set and the error stays: the file probably holds no PEM block (see the caution
+   above), or holds the wrong CA. Ask which CA issued the server's certificate, and check that the
+   bundle contains that CA and every CA above it.
+3. The bundle holds only the root: if the server does not send its intermediate certificate, add
+   the intermediate to the bundle too.
+
+### No client certificate was presented
+
+What you see depends on the TLS version the server negotiates. Against a server that requires a
+client certificate and receives none, Wirebench's HTTP client reports one of two errors:
+
+```text
+network · other side closed
+tls · TLS/certificate error.
+```
+
+The first is TLS 1.3. The handshake completes on the client's side before the server checks for a
+certificate, so the server's refusal arrives as a closed connection, under the title
+**Network error**. The second is TLS 1.2, where the server aborts the handshake itself, under the
+title **TLS handshake failed**. Neither mentions a certificate, which is why this failure is so
+often blamed on the network.
+
+Check that the request's **SSL Keystore** or the default **Client keystore** is set, that the
+keystore row reads **Loaded**, and that its alias holds both a certificate and a private key. Once
+a send gets through, the **Client certificate** line in the **SSL** inspector confirms it.
+
+A keystore the request names but the project no longer has stops the send before any connection,
+with `keystore-missing` and one of:
+
+```text
+This request selects a keystore the project no longer has.
+The keystore selected in Preferences is not in this project.
+```
+
+### The keystore password is wrong
+
+```text
+The keystore password is incorrect.
+The keystore password is incorrect or missing.
+```
+
+The code is `keystore-bad-password`; the first message is for a PKCS#12 file, the second for an
+encrypted PEM key. The **Keystores** list shows the same keystore as **Wrong password**. Type the
+right password into the row's password field: the next send uses it, with no need to remove and
+re-add the keystore.
+
+### A certificate has expired
+
+When it is the **server's** certificate, the handshake fails with the generic TLS error, which is
+what Wirebench's client reports for a server certificate past its end date:
+
+```text
+tls · TLS/certificate error.
+```
+
+The message does not say why. To find out, run **Check Certificate Expiry** from the command
+palette. Wirebench opens a TLS connection to every endpoint your open projects name, verifies each
+chain the way a send would (CA bundle included), and lists every one that fails in **Problems**:
+
+```text
+The certificate <host:port> presents has expired.
+```
+
+The fix is on the server's side. **Trust invalid certificates** on the endpoint gets you past it
+for testing, and the red badge reminds you to turn it off.
+
+When it is **your** certificate, the server refuses it the same way it refuses a missing one: a
+closed connection under TLS 1.3, a handshake failure under TLS 1.2. Expiry of your own keystores
+does not need a check, though. Wirebench reads every keystore and the CA bundle when a workspace
+opens and when a keystore changes, and lists each certificate that has expired, or that expires
+within the **Expiry warning** window, in **Problems**:
+
+```text
+Certificate <subject> expired <n> days ago (<date>).
+Certificate <subject> expires in <n> days (<date>).
+```
+
+An expired certificate is an error and an expiring one is a warning, so the problem count in the
+status bar shows it wherever you are. Ask for a renewal while the row is still a warning.
+
+<Aside>
+**Check Certificate Expiry** does not present a client certificate, so a server that refuses every
+handshake without one may not be checkable. Such an endpoint is listed in the check's summary as
+one it could not check, rather than in Problems.
+</Aside>
+
+## Checklist
+
+- [ ] The CA bundle is a **PEM** file holding the corporate root and every intermediate, chosen
+      with **Browse…** under **Settings → SSL / TLS**.
+- [ ] `tls-untrusted`: the bundle is missing, holds no PEM block, or lacks the CA that issued this
+      server's certificate.
+- [ ] The keystore row reads **Loaded**, and its alias holds a certificate and a private key.
+- [ ] The request's **SSL Keystore**, or the default **Client keystore**, names that keystore.
+- [ ] After a send that got through, the **SSL** inspector shows a **Client certificate** line.
+- [ ] `other side closed` or `TLS/certificate error.` against a mutual-TLS server: suspect the
+      client certificate first, missing or expired, before the network.
+- [ ] `keystore-bad-password`: correct the password in the keystore row.
+- [ ] A `tls` error with no explanation: run **Check Certificate Expiry** and read **Problems**.
+- [ ] **Trust invalid certificates** is off again once you are done testing; no red badge remains.
+
+## Related
+
+- [Authentication](/wirebench/docs/guides/auth/#client-certificates-and-keystores): keystores,
+  client certificates and expiry warnings.
+- [HTTP Log](/wirebench/docs/guides/http-log/): reading a failed send.
+- [Troubleshooting](/wirebench/docs/help/troubleshooting/#tls-certificates-and-proxies): the TLS
+  and proxy settings at a glance.

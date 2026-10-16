@@ -1,0 +1,376 @@
+---
+title: Requesting a SAML token from a WS-Trust STS
+description: A SOAP service wants a SAML token from a security token service. Ask the STS, read its answer, send the token, and fix each way the exchange can fail.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Some SOAP services never see your password. They accept a SAML assertion issued by a security token
+service (STS), and the STS is the one that checks who you are. So every call is really two calls:
+a WS-Trust `RequestSecurityToken` (RST) to the STS, then the business request with the token the STS
+returned in its `wsse:Security` header. When the second call fails, the cause can sit in either one,
+and the error rarely says which.
+
+This guide walks one exchange end to end in Wirebench, then every failure the engine reports. The
+envelopes come from Wirebench's own test suite, and the messages are the exact text it produces.
+
+## The setup
+
+The example asks a WS-Trust 1.3 STS over SOAP 1.2 for a SAML 2.0 bearer token, with a username and
+password. That is the shape of an STS endpoint ending in `/trust/13/usernamemixed`.
+
+<Steps>
+
+1. Open the **WS-Security** view in the activity bar and add an outgoing configuration.
+2. In **Add entry…**, choose **Issued Token (WS-Trust)**.
+3. Under **Token service**, set **URL** to the STS endpoint, **SOAP version** to 1.2 and
+   **WS-Trust** to 1.3. Leave **Applies to** empty: the token is then requested for the request's
+   own endpoint.
+4. Under **Token**, set **SAML version** to 2.0 and **Key type** to **Bearer**. Leave
+   **Lifetime (s)** at `0` to let the STS choose.
+5. Under **Credential**, choose **Username**, type the user name, and set **STS password** through
+   the masked field. The project file only holds a reference to it.
+6. On the SOAP request's **Auth** inspector tab, select the configuration as **Outgoing WSS**, and
+   send.
+
+</Steps>
+
+## Step 1: the token request
+
+Before the business request goes anywhere, Wirebench builds the RST and posts it to the STS. This
+is the envelope its test suite records for that configuration (formatted here for reading; on the
+wire it is one line):
+
+```xml
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:wsa="http://www.w3.org/2005/08/addressing"
+            xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512"
+            xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/policy"
+            xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
+            xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
+  <s:Header>
+    <wsa:Action s:mustUnderstand="true">http://docs.oasis-open.org/ws-sx/ws-trust/200512/RST/Issue</wsa:Action>
+    <wsa:MessageID>urn:uuid:u1</wsa:MessageID>
+    <wsa:ReplyTo><wsa:Address>http://www.w3.org/2005/08/addressing/anonymous</wsa:Address></wsa:ReplyTo>
+    <wsa:To s:mustUnderstand="true">https://sts.test/trust/13/usernamemixed</wsa:To>
+    <wsse:Security s:mustUnderstand="true">
+      <wsu:Timestamp wsu:Id="TS-u2">
+        <wsu:Created>2026-10-05T10:00:00.000Z</wsu:Created>
+        <wsu:Expires>2026-10-05T10:05:00.000Z</wsu:Expires>
+      </wsu:Timestamp>
+      <wsse:UsernameToken wsu:Id="UsernameToken-u3">
+        <wsse:Username>alice</wsse:Username>
+        <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">hunter2</wsse:Password>
+      </wsse:UsernameToken>
+    </wsse:Security>
+  </s:Header>
+  <s:Body>
+    <wst:RequestSecurityToken>
+      <wst:TokenType>http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV2.0</wst:TokenType>
+      <wst:RequestType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue</wst:RequestType>
+      <wsp:AppliesTo>
+        <wsa:EndpointReference><wsa:Address>https://service.test/</wsa:Address></wsa:EndpointReference>
+      </wsp:AppliesTo>
+      <wst:KeyType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/Bearer</wst:KeyType>
+    </wst:RequestSecurityToken>
+  </s:Body>
+</s:Envelope>
+```
+
+Four details decide whether an STS accepts it:
+
+- **Addressing.** The STS routes on `wsa:Action` and checks `wsa:To`. Both are marked
+  `mustUnderstand`. Over SOAP 1.2 the action also travels in the `Content-Type` header; over SOAP
+  1.1 Wirebench sends it as a `SOAPAction` header instead.
+- **The credential.** The password is sent as text, inside a five-minute timestamp. That is why
+  Wirebench only sends a username credential over `https:`.
+- **AppliesTo.** This is the audience the STS writes into the token. With **Applies to** left empty
+  it is the request's endpoint, as above. An STS that knows the service under another name, such
+  as a realm URN or the address without a trailing slash, usually answers an unknown address with
+  a fault. Copy the value the STS administrator gives you.
+- **KeyType.** `Bearer` here. The February 2005 edition of WS-Trust calls the same thing
+  `http://schemas.xmlsoap.org/ws/2005/05/identity/NoProofKey`, and Wirebench sends that when you
+  pick that edition.
+
+A **Certificate** credential replaces the `UsernameToken` with a `BinarySecurityToken` and a
+signature made with the keystore's key, so the STS knows the key is yours. A **Kerberos**
+credential replaces it with the operating system's Kerberos ticket for the STS, sent as a
+`GSS_Kerberosv5_AP_REQ` `BinarySecurityToken`.
+
+## Step 2: the token response
+
+The STS answers with a `RequestSecurityTokenResponseCollection`. This is the fixture the engine's
+tests read (namespace URIs and the signature are cut short):
+
+```xml
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512" xmlns:wsu="…" xmlns:wsse="…">
+  <s:Body>
+    <wst:RequestSecurityTokenResponseCollection>
+      <wst:RequestSecurityTokenResponse>
+        <wst:Lifetime>
+          <wsu:Created>2026-10-05T10:00:00.000Z</wsu:Created>
+          <wsu:Expires>2026-10-05T11:00:00.000Z</wsu:Expires>
+        </wst:Lifetime>
+        <wst:RequestedSecurityToken>
+          <saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion"
+                           ID="_fixture-2.0" Version="2.0" IssueInstant="2026-10-05T10:00:00.000Z">
+            <saml2:Issuer>urn:sts:fixture</saml2:Issuer>
+            <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">…</ds:Signature>
+            <saml2:Subject>
+              <saml2:NameID>alice</saml2:NameID>
+              <saml2:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
+                <saml2:SubjectConfirmationData NotOnOrAfter="2026-10-05T11:00:00.000Z"/>
+              </saml2:SubjectConfirmation>
+            </saml2:Subject>
+            <saml2:Conditions NotBefore="2026-10-05T09:59:00.000Z" NotOnOrAfter="2026-10-05T11:00:00.000Z"/>
+            <saml2:AuthnStatement AuthnInstant="2026-10-05T10:00:00.000Z">…</saml2:AuthnStatement>
+          </saml2:Assertion>
+        </wst:RequestedSecurityToken>
+        <wst:RequestedAttachedReference>
+          <wsse:SecurityTokenReference>
+            <wsse:KeyIdentifier ValueType="http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLID">_fixture-2.0</wsse:KeyIdentifier>
+          </wsse:SecurityTokenReference>
+        </wst:RequestedAttachedReference>
+      </wst:RequestSecurityTokenResponse>
+    </wst:RequestSecurityTokenResponseCollection>
+  </s:Body>
+</s:Envelope>
+```
+
+Wirebench takes three things from it. The **token** is the single element inside
+`RequestedSecurityToken`, here a SAML 2.0 assertion; an `EncryptedAssertion` is accepted too and
+kept unopened. The **expiry** is the `Expires` of `wst:Lifetime`, or, when the response gives no
+lifetime, the assertion's own `Conditions NotOnOrAfter`. The **attached reference** is kept for a
+signature that has to point at the token.
+
+The assertion is signed by the STS, and Wirebench never rewrites it in a way that would break that
+signature. It does copy onto the assertion the namespace declarations it inherited from the
+response envelope, so a prefix used only inside an attribute value still resolves once the
+assertion stands on its own. Exclusive canonicalisation ignores those declarations, so the STS's
+signature still verifies.
+
+## Step 3: the token on the wire
+
+The business request then goes out with the assertion in its header. This is what the engine sent
+to the service in a test run with the same fixture (assertion shortened):
+
+```xml
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Header>
+    <wsse:Security xmlns:wsu="…" xmlns:wsse="…">
+      <saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion" ID="_fixture-2.0" Version="2.0" …>
+        <saml2:Issuer>urn:sts:fixture</saml2:Issuer>
+        …
+      </saml2:Assertion>
+    </wsse:Security>
+  </soapenv:Header>
+  <soapenv:Body><Op/></soapenv:Body>
+</soapenv:Envelope>
+```
+
+The entry places the assertion in entry order, like any WS-Security entry, so a Signature entry
+that should cover the token goes after it. In the HTTP Log the token request is its own row, named
+`STS · <request name>`, next to the row of the send it served. The assertion's signature values
+are masked there unless you choose to show secrets; the issuer, subject and conditions stay
+readable, because they are usually why a service refuses a token.
+
+{/* TODO(screenshot): HTTP Log with an "STS · <request name>" row beside the SOAP send row, the STS row open on its Response tab. Save as docs-site/public/images/solutions/ws-trust-sts-row.png and cite it here. */}
+
+## Step 4: the cache
+
+Send the request again and no second STS row appears. The token is cached in memory for its
+lifetime, less a minute, under a key built from everything that would change the token: the STS
+URL (after `${…}` expansion, so each environment gets its own token), the SOAP and WS-Trust
+versions, the token and key types, **Applies to**, the proof keystore, the credential's identity
+and the claims. The password is not part of the key.
+
+Under the entry's fields, a status line reads the cache: `Valid until 14:32 · SAML 2.0 · bearer`
+followed by the STS host, or `Expired`, or `No token cached`. A response with neither a lifetime
+nor a `NotOnOrAfter` cannot be cached; the token is used for one send and the line says
+`Used once — the token service gave no expiry`.
+
+{/* TODO(screenshot): Issued Token entry with its status line reading "Valid until … · SAML 2.0 · bearer" and the Fetch now and Clear buttons. Save as docs-site/public/images/solutions/ws-trust-status-line.png and cite it here. */}
+
+- **Fetch now** asks the STS immediately, for the request you are editing.
+- **Clear** drops the cached token. Use it after changing a password or a keystore: since secrets
+  are not in the cache key, the old token would otherwise stay in use until it expires.
+
+Two sends that need the same token at once share one STS call; a failure is never cached. `wirebench run` keeps one cache per run, so a suite of many requests asks the STS once.
+
+## Holder-of-key instead of bearer
+
+A bearer token works for whoever holds it. A **Public key** token is bound to a key you hold, and
+the service checks that you can sign with it. Set **Key type** to **Public key** and choose a
+**Proof keystore** (and alias). The RST then names your certificate in `UseKey`. This fragment is
+engine output for that case, with **Lifetime (s)** set to 3600:
+
+```xml
+<wst:KeyType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/PublicKey</wst:KeyType>
+<wst:UseKey>
+  <wsse:BinarySecurityToken
+      ValueType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-x509-token-profile-1.0#X509v3"
+      EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">MIIDRzCCAi+gAwIBAgIJ…</wsse:BinarySecurityToken>
+</wst:UseKey>
+<wst:Lifetime>
+  <wsu:Created>2026-10-05T10:00:00.000Z</wsu:Created>
+  <wsu:Expires>2026-10-05T11:00:00.000Z</wsu:Expires>
+</wst:Lifetime>
+```
+
+The token alone is not enough. Add a **Signature** entry after the Issued Token entry, with
+**Key identifier: SAML token reference**, and pick the same keystore and alias as the proof key.
+If they differ, Wirebench refuses before sending, with `wss-proof-key-mismatch`:
+
+```text
+A holder-of-key SAML token must be signed with its proof key.
+```
+
+A public-key entry without a proof keystore stops even earlier, with `wss-proof-key-missing`:
+`A public-key token needs a proof certificate.` An STS that answers with a symmetric proof key is
+refused with `ws-trust-symmetric-key-unsupported`, because Wirebench supports bearer and
+public-key tokens only:
+
+```text
+The token service issued a symmetric proof key; only bearer and public-key tokens are supported.
+```
+
+The [SOAP guide](/wirebench/docs/guides/soap-wsdl/#holder-of-key-and-signing-over-a-token) has the
+signature options in full.
+
+## What each failure looks like
+
+When the token cannot be obtained, the business request is never sent. The response pane shows the
+failure with its message and the error code under it. **Fetch now** shows the same message as a
+toast and keeps it on the status line, followed by `See the STS row in the HTTP Log.`
+
+### The STS refused the credential
+
+The commonest failure: a wrong password, a locked account, or a certificate the STS does not
+know. The STS answers with a SOAP fault, and Wirebench reports `ws-trust-sts-fault` with the
+fault's reason. With the fault fixture from the test suite, the message is:
+
+```text
+The token service refused: ID3242: The security token could not be authenticated or authorized.
+```
+
+The fault itself is in the STS row's **Response** tab. Its code is `s:Sender` with the subcode
+`a:FailedAuthentication`:
+
+```xml
+<s:Fault>
+  <s:Code>
+    <s:Value>s:Sender</s:Value>
+    <s:Subcode><s:Value>a:FailedAuthentication</s:Value></s:Subcode>
+  </s:Code>
+  <s:Reason><s:Text xml:lang="en-US">ID3242: The security token could not be authenticated or authorized.</s:Text></s:Reason>
+</s:Fault>
+```
+
+Check the cheap causes first: the password in the
+secret store (set it again, then press **Clear**), whether the account signs in elsewhere, and
+whether the URL is the endpoint meant for your credential type.
+
+The same code covers an STS that answers without a fault:
+
+```text
+The token service answered 500.
+The token service answered 502 with a body that is not XML.
+The token service redirected (302); redirects are not followed.
+```
+
+The second usually means something in front of the STS, such as a proxy or a load balancer,
+answered for it. The third is deliberate: following a redirect would send your credential to an
+address you did not configure. Put the final address in **URL** instead.
+
+### The answer holds no token
+
+The STS answered 200, but not with something Wirebench can send. The code is
+`ws-trust-response-invalid`, and the message names what is missing:
+
+```text
+The token service's answer is not a token: the body is not XML.
+The token service's answer is not a token: it has no RequestSecurityTokenResponse.
+The token service's answer is not a token: RequestedSecurityToken does not hold exactly one token.
+The token service's answer is not a token: the token is not a SAML assertion.
+```
+
+The last one means the STS issued a token of another kind. Check **SAML version**.
+
+### The service refused the token
+
+Now the STS was satisfied and the business service was not. When the service answers with a fault
+whose code or subcode ends in `InvalidSecurityToken`, `FailedAuthentication`,
+`SecurityTokenUnavailable` or `MessageExpired`, Wirebench drops the token from the cache and the
+next send asks the STS again. It never re-sends on its own: the response you see is the service's
+refusal, and the decision to retry is yours.
+
+A token refused straight after it was issued is rarely about its age. Compare the assertion's
+`Conditions` and `Issuer` in the STS row with what the service expects: the audience (your
+**Applies to**), the issuer it trusts, and, for a holder-of-key token, the signature over it.
+
+### The credential could not be used
+
+Some failures stop before anything reaches the STS:
+
+```text
+A username and password are only sent to a token service over https.
+```
+
+That is `ws-trust-insecure-transport`: the **URL** starts with `http:`. Change it to `https:`.
+The certificate credential fails with the keystore's own errors, such as `wss-keystore-missing`
+(`The keystore this entry needs is not available.`).
+
+A Kerberos credential fails with the codes Kerberos request authentication uses:
+
+```text
+kerberos-no-credentials · No Kerberos ticket. Sign in to the domain, or run `kinit`.
+kerberos-unknown-spn · The KDC does not know HTTP@sts.corp. Set the SPN to the name the service is registered under.
+kerberos-clock-skew · This machine's clock differs from the domain's by more than allowed.
+kerberos-explicit-credentials-unsupported · Explicit Kerberos credentials are Windows-only. Run `kinit user@REALM` and leave username and password empty.
+```
+
+The last one is a **Username** or **Password** set outside Windows. Where the Kerberos component cannot load, the code is `kerberos-unavailable` with the
+reason, and the STS is never asked.
+[Kerberos from a Mac to Windows](/wirebench/docs/solutions/kerberos-spnego-mac-to-windows/) walks
+through each of these.
+
+### The STS could not be reached
+
+A connection refused, a TLS failure or a timeout leaves no answer to log, so there is no STS row:
+the failure shows as the send's own failed row. If the STS wants a client certificate at the TLS
+level, set **Mutual TLS keystore** on the entry. The token request never uses the client keystore
+from **Settings**, so a certificate presented to the service is not presented to the STS unless
+you name it here. The STS's server certificate is checked against the same CA bundle as every
+other send.
+
+<Aside>
+Nothing about a fetched token is written to the project, to History or to a report. The cache and
+the STS row last only as long as the app or the run.
+</Aside>
+
+## Checklist
+
+- [ ] The **URL** is the STS endpoint for your credential type (`usernamemixed`,
+      `certificatemixed`, `windowstransport`), over `https:` for a username.
+- [ ] **SOAP version** and **WS-Trust** match what that endpoint speaks.
+- [ ] **Applies to** is empty, or exactly the audience the STS knows the service by.
+- [ ] `ws-trust-sts-fault`: read the fault in the STS row's **Response** tab, set the password
+      again and press **Clear** before you resend.
+- [ ] `ws-trust-response-invalid`: the STS issued something other than one SAML assertion; check
+      **SAML version**.
+- [ ] Public key: a **Proof keystore** is set, and a Signature entry with
+      **Key identifier: SAML token reference** signs with the same key.
+- [ ] The service refuses the token: compare the assertion's audience and issuer with what the
+      service trusts; the next send fetches a fresh token by itself.
+- [ ] Kerberos: `klist` shows a ticket, the **SPN** is the STS's registered name, and Username and
+      Password are empty outside Windows.
+- [ ] No STS row at all: the STS was not reachable; check the network, the CA bundle and
+      **Mutual TLS keystore**.
+
+## Related
+
+- [WS-Trust tokens](/wirebench/docs/guides/ws-trust/): every field of the Issued Token entry.
+- [SOAP and WSDL](/wirebench/docs/guides/soap-wsdl/#holder-of-key-and-signing-over-a-token):
+  signing over a token.
+- [HTTP Log](/wirebench/docs/guides/http-log/): reading the STS row.
