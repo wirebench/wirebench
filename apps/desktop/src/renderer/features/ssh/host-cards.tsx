@@ -11,6 +11,7 @@ import { Button } from '../../components/button.js';
 import { SELECTED_CLASS } from '../../components/selection.js';
 import type { GroupEntryWire, HostEntryWire, HostsFileWire, ResolvedHostWire } from '../../../shared/ssh-wire.js';
 import { openTerminalFor } from './connect.js';
+import { hintDetailsOnce } from './details-hint.js';
 import { noteFirstPress, swallowsClick, takeSecondPress } from './double-press.js';
 import { GroupActionsButton, GroupMenu, HostActionsButton, HostMenu } from './host-menus.js';
 import { TOP_LEVEL, type HostsLayout, type HostsPrefs, type HostsSort } from './hosts-prefs.js';
@@ -155,6 +156,7 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
           // Picking a card only changes the host the details show; it never opens or closes the panel.
           if (e.detail > 1) return;
           onSelect();
+          hintDetailsOnce();
         }}
         onFocus={(e) => {
           if (e.target === e.currentTarget) onSelect();
