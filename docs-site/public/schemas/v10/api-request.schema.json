@@ -143,7 +143,7 @@
                                 "type": "object",
                                 "properties": {
                                   "kind": { "type": "string", "const": "path" },
-                                  "path": { "type": "string", "minLength": 1 }
+                                  "path": { "type": "string" }
                                 },
                                 "required": ["kind", "path"],
                                 "additionalProperties": {}
@@ -181,10 +181,7 @@
                     },
                     {
                       "type": "object",
-                      "properties": {
-                        "kind": { "type": "string", "const": "path" },
-                        "path": { "type": "string", "minLength": 1 }
-                      },
+                      "properties": { "kind": { "type": "string", "const": "path" }, "path": { "type": "string" } },
                       "required": ["kind", "path"],
                       "additionalProperties": {}
                     }

@@ -55,6 +55,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A file part with no file yet no longer breaks the project.** Importing an OpenAPI document with a
+  multipart upload (the petstore's "Uploads an image"), or saving a file part or binary body before
+  picking its file, wrote `path: ""`, and the project then refused to load. It now loads.
 - **The Body tab shows when there is a body.** Like Scripts, the REST request's Body tab carries a dot
   while the request would send a body (#637).
 - **The Runner counts requests without checks apart.** Its summary and Past runs now say "3 passed,
