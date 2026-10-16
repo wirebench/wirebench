@@ -20,6 +20,7 @@
 
 import { lintRestDefinition } from '../rest-api/lint-actions.js';
 import { importUrlCopy } from './import-url-copy.js';
+import { dropdownFormats, importFormatRow, type ImportTab } from './import-formats.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X, Sparkles } from 'lucide-react';
@@ -68,24 +69,12 @@ export type SourceTab = 'url' | 'file' | 'paste' | 'server';
 /** The `import-target-project` value standing for *New project "<name>"*. Never a project id. */
 export const NEW_PROJECT = '';
 
-const TABS = [
-  { id: 'url', label: 'URL' },
-  { id: 'file', label: 'File' },
-  { id: 'paste', label: 'Paste' },
-] as const satisfies readonly { id: SourceTab; label: string }[];
-
-/** A Postman environment or globals export is a file or pasted JSON; there is no URL to fetch. */
-const FILE_TABS = TABS.filter((item) => item.id !== 'url');
-
-/**
- * gRPC has a fifth way in that the other formats do not: a running server, asked to describe itself
- * over server reflection. It is offered only when the format is gRPC — auto-detection reads a
- * document, and there is no document here.
- */
-const PROTO_TABS = [...TABS, { id: 'server', label: 'Server' }] as const satisfies readonly {
-  id: SourceTab;
-  label: string;
-}[];
+const TAB_LABELS = {
+  url: 'URL',
+  file: 'File',
+  paste: 'Paste',
+  server: 'Server',
+} as const satisfies Partial<Record<ImportTab, string>>;
 
 /**
  * Derives a project/API name from the given source or file path.
@@ -386,6 +375,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   }, [open, sourceKey, pickedPath, folderPicked, byName]);
 
   const effectiveFormat: ImportFormatKind = format !== 'auto' ? format : detected.kind;
+  const formatRow = importFormatRow(effectiveFormat);
 
   /*
    * An AsyncAPI document's servers are alternative addresses for one application, so the import
@@ -565,48 +555,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   }
 
   async function browseForFile(): Promise<void> {
-    const filters =
-      effectiveFormat === 'legacy-soap-project'
-        ? [
-            { name: 'Legacy SOAP project', extensions: ['xml'] },
-            { name: 'All Files', extensions: ['*'] },
-          ]
-        : effectiveFormat === 'postman'
-          ? [{ name: 'Postman Collection', extensions: ['json'] }]
-          : effectiveFormat === 'http-file'
-            ? [{ name: '.http file', extensions: ['http', 'rest'] }]
-            : effectiveFormat === 'http-env'
-              ? [{ name: 'HTTP client environment file', extensions: ['json'] }]
-              : effectiveFormat === 'opencollection'
-                ? [{ name: 'OpenCollection', extensions: ['yml', 'yaml'] }]
-                : effectiveFormat === 'postman-v3'
-                  ? [{ name: 'Collection definition (.resources/definition.yaml)', extensions: ['yaml', 'yml'] }]
-                  : WORKSPACE_ONLY.has(effectiveFormat)
-                    ? [{ name: 'Postman export', extensions: ['json'] }]
-                    : effectiveFormat === 'har'
-                      ? [{ name: 'HAR', extensions: ['har', 'json'] }]
-                      : effectiveFormat === 'proto'
-                        ? [
-                            { name: 'Protocol Buffers', extensions: ['proto'] },
-                            { name: 'All Files', extensions: ['*'] },
-                          ]
-                        : effectiveFormat === 'openapi'
-                          ? [
-                              { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
-                              { name: 'All Files', extensions: ['*'] },
-                            ]
-                          : effectiveFormat === 'asyncapi'
-                            ? [
-                                { name: 'AsyncAPI Document', extensions: ['json', 'yaml', 'yml'] },
-                                { name: 'All Files', extensions: ['*'] },
-                              ]
-                            : [
-                                {
-                                  name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
-                                  extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
-                                },
-                                { name: 'All Files', extensions: ['*'] },
-                              ];
+    const filters = formatRow.fileFilters.map((filter) => ({ name: filter.name, extensions: [...filter.extensions] }));
     const title =
       effectiveFormat === 'legacy-soap-project'
         ? 'Import Legacy SOAP Project'
@@ -681,23 +630,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
             : undefined
         : undefined;
 
-  const defaultName =
-    format === 'wsdl' || (format === 'auto' && (effectiveFormat === 'wsdl' || effectiveFormat === 'unknown'))
-      ? 'Imported service'
-      : format === 'postman' || effectiveFormat === 'postman'
-        ? 'Imported Collection'
-        : format === 'proto' || effectiveFormat === 'proto'
-          ? 'Imported gRPC API'
-          : format === 'har' || effectiveFormat === 'har'
-            ? 'Imported traffic'
-            : format === 'http-file' || effectiveFormat === 'http-file'
-              ? 'Imported requests'
-              : format === 'opencollection' ||
-                  effectiveFormat === 'opencollection' ||
-                  format === 'postman-v3' ||
-                  effectiveFormat === 'postman-v3'
-                ? 'Imported collection'
-                : 'Imported API';
+  const defaultName = formatRow.defaultName;
 
   // A collection saved as a folder is picked by its `opencollection.yml`, so the folder names it.
   const sourceName =
@@ -1296,6 +1229,14 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
   const isRest = effectiveFormat === 'openapi' || effectiveFormat === 'postman';
   const isProto = effectiveFormat === 'proto';
+  /*
+   * The Server tab keeps the strip while its own panel is up: under Auto-detect the Server tab has no
+   * input to detect from, so `effectiveFormat` falls back to `unknown` and would otherwise drop it.
+   * A folder tab has no panel yet: the folder importers add it when they turn their formats on.
+   */
+  const tabItems = (tab === 'server' ? importFormatRow('proto') : formatRow).tabs.flatMap((id) =>
+    id in TAB_LABELS ? [{ id: id as keyof typeof TAB_LABELS, label: TAB_LABELS[id as keyof typeof TAB_LABELS] }] : [],
+  );
   const isAsyncApi = effectiveFormat === 'asyncapi';
   const urlCopy = importUrlCopy(format);
 
@@ -1389,19 +1330,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     className="rounded border border-hairline-strong bg-surface-base px-2 py-1 text-xs text-fg-default outline-none focus:ring-1 focus:ring-accent"
                   >
                     <option value="auto">Auto-detect</option>
-                    <option value="openapi">OpenAPI / Swagger</option>
-                    <option value="asyncapi">AsyncAPI (WebSocket)</option>
-                    <option value="postman">Postman Collection</option>
-                    <option value="postman-v3">Postman Collection v3 (folder)</option>
-                    <option value="postman-environment">Postman environment</option>
-                    <option value="postman-globals">Postman globals</option>
-                    <option value="har">HAR (recorded traffic)</option>
-                    <option value="http-file">.http file</option>
-                    <option value="http-env">HTTP client environment file</option>
-                    <option value="opencollection">OpenCollection</option>
-                    <option value="wsdl">WSDL (SOAP)</option>
-                    <option value="proto">Protocol Buffers (gRPC)</option>
-                    <option value="legacy-soap-project">Legacy SOAP project</option>
+                    {dropdownFormats().map((item) => (
+                      <option key={item.kind} value={item.kind}>
+                        {item.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -1416,6 +1349,12 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 )}
               </div>
 
+              {!formatRow.available && (
+                <p data-testid="import-format-unavailable" role="status" className="mt-2 text-xs text-fg-subtle">
+                  {detected.label} import is not available yet
+                </p>
+              )}
+
               {/* Source tabs */}
               <div className="mt-3">
                 {/*
@@ -1425,12 +1364,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                   very tab the user just picked and leave the strip with nothing selected above a
                   Server panel.
                 */}
-                <Tabs
-                  label="Import source"
-                  items={isProto || tab === 'server' ? PROTO_TABS : NO_URL.has(effectiveFormat) ? FILE_TABS : TABS}
-                  active={tab}
-                  onSelect={setTab}
-                />
+                <Tabs label="Import source" items={tabItems} active={tab} onSelect={setTab} />
               </div>
 
               <div className="mt-3 flex flex-col gap-2">
@@ -1678,7 +1612,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
               </div>
 
               {/* Target Project Selection: a workspace-only format has no project to land in */}
-              {!WORKSPACE_ONLY.has(effectiveFormat) && (
+              {!formatRow.workspaceOnly && (
                 <div className="mt-3 flex items-center gap-2">
                   <label className="text-sm text-fg-subtle" htmlFor="import-target-project">
                     Into project
@@ -1965,7 +1899,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                             : 'import-submit'
                       }
                       variant="primary"
-                      disabled={effectiveFormat === 'asyncapi' && previewPending}
+                      disabled={(effectiveFormat === 'asyncapi' && previewPending) || !formatRow.available}
                       onClick={() => void onImport()}
                     >
                       Import

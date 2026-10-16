@@ -73,3 +73,37 @@ describe('Import dialog: detection by content in main', () => {
     expect(detectImportSource).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('Import dialog: a format whose importer is not wired yet', () => {
+  it('the format dropdown does not list a client format', () => {
+    installWirebenchApi({ api: { detectImportSource }, dialogs: { openFile, openFolder } });
+    render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="auto" />);
+    const values = Array.from(screen.getByTestId('import-format-select').querySelectorAll('option')).map((option) =>
+      option.getAttribute('value'),
+    );
+    expect(values).toContain('openapi');
+    for (const kind of [
+      'insomnia',
+      'insomnia-environment',
+      'bruno',
+      'hoppscotch',
+      'hoppscotch-environment',
+      'thunder-client',
+      'thunder-client-environment',
+    ]) {
+      expect(values).not.toContain(kind);
+    }
+  });
+
+  it('detecting one says so and keeps Import disabled', async () => {
+    detectImportSource.mockResolvedValue(answer('insomnia', 'Insomnia export'));
+    await openFileTab();
+    fireEvent.click(screen.getByTestId('import-browse'));
+    await waitFor(() =>
+      expect(screen.getByTestId('import-format-unavailable').textContent).toBe(
+        'Insomnia export import is not available yet',
+      ),
+    );
+    expect(screen.getByTestId('import-submit')).toHaveProperty('disabled', true);
+  });
+});
