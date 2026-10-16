@@ -3,7 +3,7 @@
  * table shows no count at all, as the Assertions tab does.
  */
 import { describe, expect, it } from 'vitest';
-import { responseHeadersBadge, rowsBadge } from '../../src/renderer/features/rest-editor/tab-counts.js';
+import { bodyBadge, responseHeadersBadge, rowsBadge } from '../../src/renderer/features/rest-editor/tab-counts.js';
 
 describe('rowsBadge', () => {
   it('counts the switched-on, named rows', () => {
@@ -39,5 +39,24 @@ describe('responseHeadersBadge', () => {
   it('falls back to the joined map, and shows nothing for none', () => {
     expect(responseHeadersBadge({ headers: { a: '1', b: '2', c: '3' } })).toBe('3');
     expect(responseHeadersBadge({ headers: {} })).toBeUndefined();
+  });
+});
+
+describe('bodyBadge (#637)', () => {
+  it('dots a body that would be sent', () => {
+    expect(bodyBadge({ kind: 'raw', language: 'json', text: '{"a":1}' })).toBe('●');
+    expect(bodyBadge({ kind: 'form', fields: [{ name: 'a', value: '1', enabled: true }] })).toBe('●');
+    expect(bodyBadge({ kind: 'multipart', parts: [{ kind: 'text', name: 'a', value: '1', enabled: true }] })).toBe('●');
+    expect(bodyBadge({ kind: 'binary', source: { kind: 'path', path: '/tmp/a.bin' }, contentType: 'x/y' })).toBe('●');
+    expect(bodyBadge({ kind: 'graphql', query: '{ pets { id } }', variables: '' })).toBe('●');
+  });
+
+  it('shows nothing for no body, or one with nothing in it', () => {
+    expect(bodyBadge({ kind: 'none' })).toBeUndefined();
+    expect(bodyBadge({ kind: 'raw', language: 'json', text: '  \n' })).toBeUndefined();
+    expect(bodyBadge({ kind: 'form', fields: [{ name: 'a', value: '1', enabled: false }] })).toBeUndefined();
+    expect(bodyBadge({ kind: 'multipart', parts: [] })).toBeUndefined();
+    expect(bodyBadge({ kind: 'binary', source: { kind: 'path', path: '' }, contentType: 'x/y' })).toBeUndefined();
+    expect(bodyBadge({ kind: 'graphql', query: '', variables: '' })).toBeUndefined();
   });
 });

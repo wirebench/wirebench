@@ -53,8 +53,9 @@ fixed or cleared.
 ## Results and past runs
 
 The results fill in as each request ends, grouped by iteration (`Iteration 2/3 (row 2)`), with the
-summary above them: passed, failed, errored, iterations run and time. Expand a request for its
-assertions, failed ones first, its error and its script log.
+summary above them: passed, failed, errored, iterations run and time. A request with no checks gets a
+grey ○ (an amber ! when the status was 4xx or 5xx) and is counted as "without checks" rather than
+passed. Expand a request for its assertions, failed ones first, its error and its script log.
 
 Each target keeps its last 20 runs under **Past runs**, stored with the app rather than in the project,
 so they are never committed. Choose one to see its results again.

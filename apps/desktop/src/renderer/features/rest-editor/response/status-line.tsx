@@ -6,7 +6,7 @@
  * of the app. A transport failure has no status at all: the line names it in plain words, and the
  * panel under it says the rest.
  */
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import type { IpcError } from '../../../../shared/ipc.js';
 import type { RestExchangeSummary } from '../../../../shared/kinds/rest/wire.js';
 import { base64ByteLength, formatBytes } from '../../../lib/format-size.js';
@@ -133,39 +133,68 @@ export function StatusLine({ exchange, error, sending = false, live, startedAt }
   const announce = exchange.stream === undefined || exchange.stream.endedBy === 'error';
   const failedAssertions = failedAssertionCount(exchange.assertions);
 
+  // Each part keeps its words together, and the line wraps between parts rather than cutting the
+  // last one short: at the default split a 500's `· HTTP/1.1` used to end as `· HTT…` (#636).
+  const parts: { readonly key: string; readonly node: ReactNode }[] = [
+    {
+      key: 'status',
+      node: (
+        <span className={`font-medium ${statusToneClass(exchange.http.status)}`}>
+          {exchange.http.status} {exchange.http.statusText}
+        </span>
+      ),
+    },
+    { key: 'time', node: `${Math.round(exchange.durationMs)} ms` },
+    { key: 'body', node: `${formatBytes(bodyBytes)} body` },
+  ];
+  if (totalBytes > 0) parts.push({ key: 'total', node: `${formatBytes(totalBytes)} total` });
+  if (exchange.http.httpVersion !== undefined)
+    parts.push({ key: 'version', node: `HTTP/${exchange.http.httpVersion}` });
+  if (exchange.methodChanged) {
+    parts.push({ key: 'redirected', node: <span className="text-status-warning">redirected as GET</span> });
+  }
+  if (exchange.http.truncated === true) {
+    parts.push({ key: 'truncated', node: <span className="text-status-warning">truncated</span> });
+  }
+  if (failedAssertions > 0) {
+    parts.push({
+      key: 'assertions',
+      node: (
+        <span data-testid="rest-response-assertions-failed" className="text-status-danger">
+          {`${String(failedAssertions)} assertion${failedAssertions === 1 ? '' : 's'} failed`}
+        </span>
+      ),
+    });
+  }
+  if (exchange.stream !== undefined) {
+    parts.push({ key: 'stream', node: streamCountsText(exchange.stream.counts.events, exchange.stream.lastEventId) });
+  }
+  if (exchange.stream?.endedBy === 'client') parts.push({ key: 'stopped', node: 'stopped' });
+  if (exchange.stream?.endedBy === 'error') {
+    parts.push({
+      key: 'ended',
+      node: <span className="text-status-danger">{`ended: ${exchange.stream.error ?? 'connection lost'}`}</span>,
+    });
+  }
+  if (exchange.contract !== undefined && exchange.contract.status !== 'no-contract') {
+    parts.push({ key: 'contract', node: <ContractChip result={exchange.contract} /> });
+  }
+
   return (
     <p
       {...(announce ? { role: 'status' } : {})}
       data-testid="rest-response-status"
-      className="truncate px-2 font-mono text-xs text-fg-muted"
+      className="px-2 py-0.5 font-mono text-xs text-fg-muted"
     >
-      <span className={`font-medium ${statusToneClass(exchange.http.status)}`}>
-        {exchange.http.status} {exchange.http.statusText}
-      </span>
-      {' · '}
-      {Math.round(exchange.durationMs)} ms{' · '}
-      {formatBytes(bodyBytes)} body
-      {totalBytes > 0 && ` · ${formatBytes(totalBytes)} total`}
-      {exchange.http.httpVersion !== undefined && ` · HTTP/${exchange.http.httpVersion}`}
-      {exchange.methodChanged && <span className="text-status-warning">{' · redirected as GET'}</span>}
-      {exchange.http.truncated === true && <span className="text-status-warning">{' · truncated'}</span>}
-      {failedAssertions > 0 && (
-        <span data-testid="rest-response-assertions-failed" className="text-status-danger">
-          {` · ${String(failedAssertions)} assertion${failedAssertions === 1 ? '' : 's'} failed`}
-        </span>
-      )}
-      {exchange.stream !== undefined &&
-        ` · ${streamCountsText(exchange.stream.counts.events, exchange.stream.lastEventId)}`}
-      {exchange.stream?.endedBy === 'client' && ' · stopped'}
-      {exchange.stream?.endedBy === 'error' && (
-        <span className="text-status-danger">{` · ended: ${exchange.stream.error ?? 'connection lost'}`}</span>
-      )}
-      {exchange.contract !== undefined && exchange.contract.status !== 'no-contract' && (
-        <>
-          {' · '}
-          <ContractChip result={exchange.contract} />
-        </>
-      )}
+      {parts.map((part, index) => (
+        <Fragment key={part.key}>
+          {index > 0 && ' '}
+          <span className="whitespace-nowrap">
+            {index > 0 && '· '}
+            {part.node}
+          </span>
+        </Fragment>
+      ))}
       {exchange.graphql !== undefined && <GraphqlChip check={exchange.graphql} />}
     </p>
   );
