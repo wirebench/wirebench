@@ -561,7 +561,6 @@ const SECRET_KEYS: Readonly<Record<string, readonly string[]>> = {
   ntlm: ['password'],
   digest: ['password'],
   awsv4: ['accessKey', 'secretKey', 'sessionToken'],
-  jwt: ['secret', 'privateKey'],
 };
 
 /** Whether `auth` carries a secret the import does not copy. */
@@ -678,7 +677,11 @@ export function mapPostmanAuth(
     case 'awsv4': {
       // The access key, secret key and session token are credentials: never copied.
       const attr = (key: string): string => asText(auth.awsv4?.find((a) => a.key === key)?.value) ?? '';
-      return { type: 'aws-sigv4', region: attr('region'), service: attr('service') };
+      const region = attr('region');
+      const service = attr('service');
+      if (region === '') warnings?.push('AWS Signature: region is not set');
+      if (service === '') warnings?.push('AWS Signature: service is not set');
+      return { type: 'aws-sigv4', region, service };
     }
     case 'jwt': {
       const attr = (key: string): string | undefined => asText(auth.jwt?.find((a) => a.key === key)?.value);
@@ -687,6 +690,9 @@ export function mapPostmanAuth(
         warnings?.push(`JWT algorithm "${algorithm}" is not supported; set to "none"`);
         return { type: 'none' };
       }
+      // One line for every JWT, whether or not the file held a secret: none is copied (the credential
+      // count above leaves JWT out so the user is not told twice).
+      warnings?.push('JWT: the secret or key is not copied; set the secret (HS*) or key (RS*/ES*/PS*) before sending');
       const inQuery = attr('addTokenTo') === 'queryParam';
       const name = inQuery ? attr('queryParamKey') : undefined;
       const prefix = inQuery ? undefined : attr('headerPrefix');

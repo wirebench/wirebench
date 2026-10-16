@@ -10,6 +10,7 @@ function importAuth(auth: Record<string, unknown>) {
   );
 }
 
+const jwtWarning = 'JWT: the secret or key is not copied; set the secret (HS*) or key (RS*/ES*/PS*) before sending';
 const credentialWarning = 'Credentials are not copied from the collection; re-enter them for 1 auth configuration';
 
 describe('Postman digest, AWS SigV4 and JWT auth', () => {
@@ -87,7 +88,8 @@ describe('Postman digest, AWS SigV4 and JWT auth', () => {
       prefix: 'Bearer',
     });
     expect(JSON.stringify(api.auth)).not.toContain('topsecret');
-    expect(summary.warnings).toContain(credentialWarning);
+    expect(summary.warnings).toContain(jwtWarning);
+    expect(summary.warnings).not.toContain(credentialWarning);
   });
 
   it('jwt placed in the query keeps its parameter name and drops a private key', () => {
@@ -110,7 +112,21 @@ describe('Postman digest, AWS SigV4 and JWT auth', () => {
       name: 'token',
     });
     expect(JSON.stringify(api.auth)).not.toContain('PRIVATE KEY');
-    expect(summary.warnings).toContain(credentialWarning);
+    expect(summary.warnings).toContain(jwtWarning);
+    expect(summary.warnings).not.toContain(credentialWarning);
+  });
+
+  it('jwt warns that it needs a secret even when the file had none', () => {
+    const { api, summary } = importAuth({ type: 'jwt', jwt: [{ key: 'algorithm', value: 'HS256' }] });
+    expect(api.auth).toMatchObject({ type: 'jwt', algorithm: 'HS256' });
+    expect(summary.warnings).toContain(jwtWarning);
+  });
+
+  it('awsv4 warns about a missing region and service', () => {
+    const { api, summary } = importAuth({ type: 'awsv4', awsv4: [{ key: 'accessKey', value: 'K' }] });
+    expect(api.auth).toEqual({ type: 'aws-sigv4', region: '', service: '' });
+    expect(summary.warnings).toContain('AWS Signature: region is not set');
+    expect(summary.warnings).toContain('AWS Signature: service is not set');
   });
 
   it('an unknown jwt algorithm becomes none, named', () => {

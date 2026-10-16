@@ -145,8 +145,9 @@ These rules apply to every format:
 - **Credential-looking names.** A plain variable whose name contains `token`, `password`, `secret`,
   `apikey` or `api_key` (any case) is imported as it is. One warning lists all such names and
   suggests marking them Secret.
-- **Unsupported auth.** The supported auth types are none, basic, NTLM, bearer, API key and
-  OAuth 2. Any other type (digest, AWS v4, OAuth 1, WSSE) becomes `none` with a warning naming it.
+- **Unsupported auth.** The supported auth types are none, basic, NTLM, bearer, API key, OAuth 2,
+  digest, AWS SigV4 and JWT; for these the credentials are dropped and warned. Any other type
+  (hawk, OAuth 1, Akamai, WSSE) becomes `none` with a warning naming it.
 
 ### 3.5 Applying a plan (desktop main)
 

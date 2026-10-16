@@ -39,14 +39,14 @@
           }
         },
         {
-          "name": "Unsupported Digest Request",
+          "name": "Unsupported Hawk Request",
           "request": {
             "method": "GET",
-            "url": "{{baseUrl}}/digest-protected",
+            "url": "{{baseUrl}}/hawk-protected",
             "auth": {
               "type": "hawk",
               "hawk": {
-                "username": "digestuser"
+                "username": "hawkuser"
               }
             }
           }
