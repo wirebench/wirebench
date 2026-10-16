@@ -36,6 +36,13 @@ All notable changes to this project are documented here. The format follows
   An environments file goes to the workspace, never made active, its `Global` environment into
   Globals. Scripts are saved as text and never run. `wirebench import` reads collections files
   (#588).
+- **Import Thunder Client exports.** **Import…** reads Thunder Client collection and environment
+  exports, a `thunder-tests` folder (picked with **Folder…**) and the older four-file folder. Each
+  collection becomes a REST API with its base URL as the server, its folders and requests in order;
+  status, response-time and JSON-path tests become assertions. Environments go to the workspace,
+  never made active, the global one into Globals; encrypted values and `.env` files are listed, not
+  read. Scripts are saved as text and never run, and request chaining is reported. A folder that
+  keeps one file per request is refused. `wirebench import` reads exports and folders (#588).
 
 ### Changed
 
@@ -69,6 +76,12 @@ All notable changes to this project are documented here. The format follows
 - **A refused proxy tunnel no longer reads as Cancelled.** When an HTTPS request goes through a proxy
   that refuses the tunnel (a 407 for a wrong or missing proxy password), the send now fails with
   "Proxy connection failed" and the proxy's status, instead of showing as if you had cancelled it.
+- **Credential headers stay out of imported Postman requests.** A literal `Authorization` header in a
+  Postman collection becomes the request's bearer or basic auth (the user name only) and is dropped;
+  any other credential-looking header with a literal value, such as `X-Api-Key` or `Cookie`, is
+  dropped and named in the import report. A value made only of variables stays. The Insomnia,
+  Hoppscotch and Thunder Client imports, which share this mapper, follow the same rule, as the
+  `.http`, OpenCollection and HAR imports already did (#588).
 
 ## [6.1.0] - 2026-10-16
 

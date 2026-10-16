@@ -1,0 +1,186 @@
+{
+  "clientName": "Thunder Client",
+  "collectionName": "Shop API",
+  "collectionId": "11111111-1111-4111-8111-111111111111",
+  "dateExported": "2025-03-02T10:15:30.000Z",
+  "version": "1.2",
+  "folders": [
+    {
+      "_id": "f-admin",
+      "name": "admin",
+      "containerId": "",
+      "created": "2025-03-01T09:00:00.000Z",
+      "sortNum": 10000,
+      "settings": {
+        "auth": { "type": "bearer", "bearer": "{{adminToken}}" },
+        "headers": [{ "name": "X-Scope", "value": "admin" }],
+        "tests": [{ "type": "res-time", "custom": "", "action": "<", "value": "800" }]
+      }
+    },
+    { "_id": "f-orders", "name": "orders", "containerId": "f-admin", "created": "2025-03-01T09:01:00.000Z", "sortNum": 10000 },
+    { "_id": "f-orphan", "name": "lost", "containerId": "f-missing", "created": "2025-03-01T09:01:00.000Z", "sortNum": 5000 }
+  ],
+  "requests": [
+    {
+      "_id": "r-create",
+      "colId": "11111111-1111-4111-8111-111111111111",
+      "containerId": "f-orders",
+      "name": "Create order",
+      "url": "/orders/{orderId}/items?dryRun=true",
+      "method": "POST",
+      "sortNum": 10000,
+      "created": "2025-03-01T09:05:00.000Z",
+      "modified": "2025-03-01T09:06:00.000Z",
+      "headers": [
+        { "name": "Accept", "value": "application/json" },
+        { "name": "X-Debug", "value": "1", "isDisabled": true }
+      ],
+      "params": [
+        { "name": "orderId", "value": "42", "isPath": true },
+        { "name": "dryRun", "value": "true", "isPath": false, "isDisabled": true }
+      ],
+      "body": { "type": "json", "raw": ["{", "  \"sku\": \"{{#guid}}\",", "  \"qty\": {{#number, 1, 5}}", "}", ""], "form": [] },
+      "tests": [
+        { "type": "res-code", "custom": "", "action": "equal", "value": "201" },
+        { "type": "json-query", "custom": "json.items[0].id", "action": "equal", "value": "7" },
+        { "type": "json-query", "custom": "json.id", "action": "istype", "value": "string" },
+        { "type": "set-env-var", "custom": "json.id", "action": "setto", "value": "{{lastItemId}}" }
+      ],
+      "docs": ["# Create", "Adds an order."]
+    },
+    {
+      "_id": "r-upload",
+      "colId": "11111111-1111-4111-8111-111111111111",
+      "containerId": "",
+      "name": "Upload picture",
+      "url": "products/{{productId}}/picture",
+      "method": "POST",
+      "sortNum": 20000,
+      "headers": [],
+      "body": {
+        "type": "formdata",
+        "raw": "",
+        "form": [{ "name": "caption", "value": "front view" }],
+        "files": [{ "name": "picture", "value": "../assets/front.webp" }]
+      },
+      "auth": { "type": "basic", "basic": { "username": "svc", "password": "basic-pass-123" } }
+    },
+    {
+      "_id": "r-gql",
+      "colId": "11111111-1111-4111-8111-111111111111",
+      "containerId": "",
+      "name": "Product by id",
+      "url": "/graphql",
+      "method": "POST",
+      "sortNum": 30000,
+      "headers": [],
+      "body": {
+        "type": "graphql",
+        "raw": "",
+        "form": [],
+        "graphql": { "query": "query($id: ID!) { product(id: $id) { name } }", "variables": "{ \"id\": \"{{productId}}\" }" }
+      },
+      "postReq": { "inlineScripts": [{ "script": ["var json = tc.response.json;", "tc.setVar(\"firstName\", json.data.product.name);"] }] },
+      "preReq": { "runRequests": [{ "reqId": "r-create", "colId": "11111111-1111-4111-8111-111111111111", "triggerCondition": "run-once", "triggerValue": "" }] }
+    },
+    {
+      "_id": "r-dup-1",
+      "colId": "11111111-1111-4111-8111-111111111111",
+      "containerId": "f-orders",
+      "name": "List",
+      "url": "https://other.example.com/list",
+      "method": "GET",
+      "sortNum": 20000,
+      "headers": [],
+      "tests": [{ "type": "res-code", "custom": "", "action": "equal", "value": "200" }]
+    },
+    {
+      "_id": "r-dup-2",
+      "colId": "11111111-1111-4111-8111-111111111111",
+      "containerId": "f-orders",
+      "name": "List",
+      "url": "/list",
+      "method": "GET",
+      "sortNum": 30000,
+      "headers": [],
+      "tests": [{ "type": "res-code", "custom": "", "action": "equal", "value": "404" }]
+    },
+    {
+      "_id": "r-sse",
+      "colId": "11111111-1111-4111-8111-111111111111",
+      "containerId": "",
+      "name": "Events",
+      "url": "/sse?sessionId=dev",
+      "method": "GET",
+      "reqType": "sse",
+      "sortNum": null,
+      "headers": [],
+      "auth": { "type": "bearer", "bearer": "literal-bearer-123", "bearerPrefix": "Sanctum" }
+    },
+    {
+      "_id": "r-ws",
+      "colId": "11111111-1111-4111-8111-111111111111",
+      "containerId": "",
+      "name": "Socket",
+      "url": "ws://localhost/ws",
+      "method": "GET",
+      "reqType": "ws",
+      "sortNum": 40000,
+      "headers": []
+    },
+    {
+      "_id": "r-oauth",
+      "colId": "11111111-1111-4111-8111-111111111111",
+      "containerId": "f-orphan",
+      "name": "Token",
+      "url": "/me",
+      "method": "GET",
+      "sortNum": 10000,
+      "headers": [],
+      "body": { "type": "formencoded", "raw": "", "form": [{ "name": "a", "value": "1" }, { "name": "b", "value": "2", "isDisabled": true }] },
+      "auth": {
+        "type": "oauth2",
+        "oauth2": {
+          "grantType": "client_credentials",
+          "tokenUrl": "https://auth.example.com/token",
+          "clientId": "app",
+          "clientSecret": "oauth-secret-123",
+          "clientAuth": "in-header",
+          "scope": "read"
+        }
+      }
+    },
+    {
+      "_id": "r-aws",
+      "colId": "11111111-1111-4111-8111-111111111111",
+      "containerId": "f-orphan",
+      "name": "Bucket",
+      "url": "/bucket",
+      "method": "PUT",
+      "sortNum": 20000,
+      "headers": [],
+      "body": { "type": "binary", "raw": "", "form": [], "binary": "../input/file.zip" },
+      "auth": { "type": "aws", "aws": { "accessKeyId": "AKIA", "secretKey": "aws-secret-123", "region": "eu-west-1", "service": "s3", "sessionToken": "" } }
+    },
+    {
+      "_id": "r-hawk",
+      "colId": "11111111-1111-4111-8111-111111111111",
+      "containerId": "f-orphan",
+      "name": "Odd auth",
+      "url": "/odd",
+      "method": "GET",
+      "sortNum": 30000,
+      "headers": [],
+      "body": { "type": "xml", "raw": "<a/>", "form": [] },
+      "auth": { "type": "hawk", "hawk": { "id": "x" } }
+    }
+  ],
+  "settings": {
+    "headers": [{ "name": "Accept", "value": "application/json" }],
+    "auth": { "type": "bearer", "bearer": "{{token}}" },
+    "tests": [{ "type": "Content-Type", "custom": "", "action": "contains", "value": "json" }],
+    "options": { "baseUrl": "{{baseUrl}}/api/" },
+    "envId": "env-dev-0001"
+  },
+  "ref": "IGNORED"
+}

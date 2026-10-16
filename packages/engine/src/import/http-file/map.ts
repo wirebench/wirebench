@@ -25,7 +25,7 @@ import type { ImportedVariableSet } from '../variables.js';
 import { VariableSetBuilder } from '../variables.js';
 import type { IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
-import { slugify, uniqueSlug } from '../../project/paths.js';
+import { slugify, SlugSet, uniqueSlug } from '../../project/paths.js';
 import type { WsApi, WsRequestDef } from '../../ws/model.js';
 import { createWsApi, createWsRequest, createWsSavedMessage } from '../../ws/model.js';
 import type { KeyValueEntry, RestApi, RestBody, RestRequestDef, RestRequestSettings } from '../../rest/model.js';
@@ -239,9 +239,9 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
   const scripts: ImportedScriptFile[] = [];
   const scriptPaths = new Set<string>();
   const rest: RestRequestDef[] = [];
-  const restSlugs = new Set<string>();
+  const restSlugs = new SlugSet();
   const ws: WsRequestDef[] = [];
-  const wsSlugs = new Set<string>();
+  const wsSlugs = new SlugSet();
   let skipped = 0;
 
   for (const request of parsed.requests) {

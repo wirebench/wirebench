@@ -13,7 +13,7 @@ import type { ImportReport } from '../../import/report.js';
 import { ReportBuilder } from '../../import/report.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
-import { uniqueSlug } from '../../project/paths.js';
+import { SlugSet, uniqueSlug } from '../../project/paths.js';
 import type { RawLanguage, RestApi, RestBody, RestRequestDef, RestResponseExample } from '../model.js';
 import { NO_BODY, createApi, createRestRequest, entry } from '../model.js';
 import type { HarEntryIn, HarLogIn, HarNameValue, HarPostData } from './model.js';
@@ -261,7 +261,7 @@ interface ApiDraft {
   readonly order: number;
   readonly requests: Map<string, RestRequestDef>;
   readonly examples: Map<string, Map<number, RestResponseExample>>;
-  readonly slugs: Set<string>;
+  readonly slugs: SlugSet;
 }
 
 /** Maps a parsed HAR log to REST APIs, in the order each origin is first seen. */
@@ -312,7 +312,7 @@ export function mapHar(log: HarLogIn, options: MapHarOptions = {}): MappedHar {
         order: firstOrder + drafts.size,
         requests: new Map(),
         examples: new Map(),
-        slugs: new Set(),
+        slugs: new SlugSet(),
       };
       drafts.set(url.origin, draft);
     }

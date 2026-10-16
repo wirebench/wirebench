@@ -12,6 +12,7 @@ import {
   operationDir,
   requestFiles,
   slugify,
+  SlugSet,
   uniqueSlug,
   wssFile,
 } from '../../../src/project/paths.js';
@@ -80,6 +81,37 @@ describe('uniqueSlug', () => {
 
   it('slugifies before checking for collisions', () => {
     expect(uniqueSlug('Orders: v2', new Set(['orders_ v2']))).toBe('Orders_ v2-2');
+  });
+});
+
+describe('SlugSet', () => {
+  it('picks the slug uniqueSlug picks from a plain set, as siblings are added one by one', () => {
+    const names = ['Item', 'item', 'Item-2', 'ITEM', 'Other', 'Item', 'Orders: v2', 'orders_ v2', 'item-3', 'Item'];
+    const plain = new Set<string>();
+    const tracked = new SlugSet();
+    for (const [i, name] of names.entries()) {
+      const expected = uniqueSlug(name, plain);
+      expect(uniqueSlug(name, tracked), name).toBe(expected);
+      // Every third pick is dropped, as an importer does when it skips an item after slugging it.
+      if (i % 3 !== 2) {
+        plain.add(expected);
+        tracked.add(expected);
+      }
+    }
+  });
+
+  it('starts from the slugs it is given, case-insensitively', () => {
+    const taken = new SlugSet(['Request 1', 'request 1-2']);
+    expect(taken.has('REQUEST 1')).toBe(true);
+    expect(taken.unique('Request 1')).toBe('Request 1-3');
+  });
+
+  it('does not skip a suffix freed by a pick that was never added', () => {
+    const taken = new SlugSet(['A']);
+    expect(taken.unique('A')).toBe('A-2');
+    expect(taken.unique('A')).toBe('A-2');
+    taken.add('A-2');
+    expect(taken.unique('a')).toBe('a-3');
   });
 });
 

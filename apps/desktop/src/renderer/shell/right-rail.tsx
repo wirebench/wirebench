@@ -4,9 +4,8 @@ import {
   setEnvironmentDetailsOpen,
   useOpenEnvironmentId,
 } from '../features/environments/environment-details.js';
-import { useForwardDetailsShown } from '../features/ssh/forwarding/forward-details.js';
+import { useForwardDetailsShown, useHostDetailsShown } from '../features/ssh/details-shown.js';
 import { useForwardsStore } from '../features/ssh/forwarding/forwards-store.js';
-import { useHostDetailsShown } from '../features/ssh/host-details.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import { useEditorsStore } from '../state/editors.js';
 import { shortcutFor } from '../lib/keybindings.js';
