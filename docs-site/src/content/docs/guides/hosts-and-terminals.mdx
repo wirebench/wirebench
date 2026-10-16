@@ -390,7 +390,8 @@ once it is empty.
 The **Host details** icon in the right rail opens a panel with the selected host's settings; clicking
 a host only selects it, and an open panel then shows that host. The panel closes from its close icon,
 <kbd>Esc</kbd> or the rail icon, never from clicking a host, and stays open or closed after a restart
-(per machine).
+(per machine). On a new machine, the first host you pick shows a note that points to the icon. When a
+forward runs through the host, the details say so ("1 forward running"); click that to open **Port forwarding**.
 
 With more than six hosts, the ones you connected to lately show in a **Recent** strip above the list
 (with fewer, the list already shows every host), newest first, with when
@@ -764,7 +765,8 @@ replaces the farther one whole (fields are not merged), and `{ id, enabled: fals
 rule off: above, `db-1` has `pg` and not `grafana`, while every other host under **Production** has
 `grafana`. A switch-off that names no rule above it is refused when the file is read, so a typo is caught.
 
-**New rule…** in the **Port forwarding** view adds a rule to a host you pick from a list. To edit rules, or to
+**New rule…** in the **Port forwarding** view adds a rule to a host you pick from a list, and once forwarding
+groups exist, to the group you pick under **Forwarding group**. To edit rules, or to
 set one on a whole group, use the host and group dialogs, under **Port forwarding**: **Add rule** adds one at
 that level, an inherited rule shows greyed with where it came from, **Override** copies it to this level to
 edit it, and **Off** switches it off here. The rule form has the type, port, bind, target and **Start with
@@ -833,8 +835,9 @@ In the **Port forwarding** view:
   same new host share one. Cancelling one leaves its rule stopped. While some rules of a group run, the
   header offers **Start N more** for the rest beside **Stop group**, which stops the ones running. Each
   rule still has its own **Start** and **Stop**.
-- The group's menu has **Rename…** and **Delete group**. Deleting a group keeps its rules, which move to
-  **Ungrouped**, and doesn't stop them.
+- The group's menu has **New rule…** (with the group already picked), **Rename…** and **Delete group**.
+  Deleting a group keeps its rules, which move to **Ungrouped**, and doesn't stop them; **Undo** in the
+  toast puts the group back.
 - Clicking a rule opens its details on the right, in place of the host details: where it listens and
   forwards to, where the rule is set, what runs of it now, its error if it failed, and its group, which you
   can change there. The panel icon in the right rail shows and hides them.
@@ -1209,7 +1212,8 @@ machine, never in the workspace. A shared workspace therefore cannot pre-trust a
   **Replace key and connect**. A changed key can mean the machine was reinstalled, or that something
   is in the way; find out which before you replace it.
 
-The **Known hosts** view lists the trusted keys; **Forget** one and the next connection asks again.
+The **Known hosts** view lists the trusted keys, each with the saved hosts that use it; **Forget** one and
+the next connection asks again. **Undo** in the toast trusts the key again.
 
 ### Importing known_hosts
 

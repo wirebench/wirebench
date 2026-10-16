@@ -29,6 +29,17 @@ All notable changes to this project are documented here. The format follows
   says so ("Connection to box lost · 21:31") with **Reconnect** as the main button, over its last
   listing, dimmed. The connection log pins its one-sentence summary above the lines and shows them in
   time order (#590).
+- **SSH polish, round 2.** The first host picked says once where Host details are, and Host details say
+  "1 forward running" (opening Port forwarding) when a forward runs through the host. Grid cards show up to
+  two tags. New host and New identity name a missing field only after **Save** or once a required field is
+  left empty. In Advanced, Keep-alive and Connect timeout keep their labels on one line, with the source
+  under the input. known_hosts rows say which saved hosts use the key, and **Forget**, a layout's
+  **Delete** and **Delete group** end in a toast with **Undo**. Deleting a host can also delete its own
+  password secret. **New rule…** is headed "Rule", hints at the port only when it is wrong, and has a
+  **Forwarding group** select; each group's menu has **New rule…** too. Quick connect lists the saved hosts
+  a typed server matches above the one-off entry. A running session log says "running" without a size,
+  Files gives names more room with a short Modified column, the snippet picker's **New snippet** stays on
+  one line, and a Settings search for "ssh" lists the SSH page first (#594).
 
 ### Fixed
 
