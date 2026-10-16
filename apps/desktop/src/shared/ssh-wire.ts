@@ -262,6 +262,8 @@ export const sshSecretNameSchema = z.object({ name: z.string(), local: z.boolean
 export const sshSecretNamesResponseSchema = z.object({ names: z.array(sshSecretNameSchema) });
 /** A write-only value for a workspace-scoped name; the value never comes back. */
 export const sshSetSecretRequestSchema = z.strictObject({ name: z.string(), value: z.string() });
+/** Deletes this machine's value of a workspace secret by name (#594). */
+export const sshDeleteSecretRequestSchema = z.strictObject({ name: z.string() });
 export type SshSecretNameWire = z.infer<typeof sshSecretNameSchema>;
 
 /** Opens a shell on a host; the answer is the session id the terminal addresses from then on. */

@@ -1,11 +1,13 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../src/renderer/state/ipc-client.js', () => ({ ipc: () => ({ ssh: {} }) }));
+const { deleteSecret } = vi.hoisted(() => ({ deleteSecret: vi.fn() }));
+vi.mock('../../src/renderer/state/ipc-client.js', () => ({ ipc: () => ({ ssh: { deleteSecret } }) }));
 import {
   deleteHost,
   deleteHostDescription,
   HostDeleteDialog,
+  ownPasswordSecret,
   sessionCount,
   sessionsOf,
   useHostDelete,
@@ -54,6 +56,7 @@ function openTabs(): void {
 }
 
 beforeEach(() => {
+  deleteSecret.mockReset().mockResolvedValue({ ok: true, value: {} });
   save.mockReset().mockResolvedValue(true);
   useHostsStore.setState({ file: FILE, save });
   openTabs();
@@ -128,5 +131,68 @@ describe('HostDeleteDialog', () => {
       expect(useEditorsStore.getState().tabs.map((t) => t.id)).toEqual(['ssh-terminal:two']);
     });
     expect(useHostDelete.getState().hostId).toBeNull();
+  });
+});
+
+describe("deleting a host's password secret (#594)", () => {
+  const withPasswords = (identitySecret?: string): HostsFileWire =>
+    ({
+      version: 1,
+      groups: [],
+      hosts: [
+        {
+          id: 'web-1',
+          name: 'web-1',
+          address: '10.0.0.1',
+          tags: [],
+          ssh: { auth: { kind: 'password', secret: 'web_pw' } },
+        },
+        {
+          id: 'db',
+          name: 'db',
+          address: '10.0.0.2',
+          tags: [],
+          ssh: { auth: { kind: 'password', secret: 'shared_pw' } },
+        },
+        {
+          id: 'db-2',
+          name: 'db-2',
+          address: '10.0.0.3',
+          tags: [],
+          ssh: { auth: { kind: 'password', secret: 'shared_pw' } },
+        },
+      ],
+      ...(identitySecret === undefined
+        ? {}
+        : { identities: [{ id: 'i', name: 'I', auth: { kind: 'password', secret: identitySecret } }] }),
+    }) as unknown as HostsFileWire;
+
+  it('offers only a secret no other host, group or identity names', () => {
+    expect(ownPasswordSecret(withPasswords(), 'web-1')).toBe('web_pw');
+    expect(ownPasswordSecret(withPasswords(), 'db')).toBeUndefined();
+    expect(ownPasswordSecret(withPasswords('web_pw'), 'web-1')).toBeUndefined();
+    expect(ownPasswordSecret(FILE, 'web-1')).toBeUndefined();
+  });
+
+  it('the confirm deletes the secret only when the box is ticked', async () => {
+    useHostsStore.setState({ file: withPasswords() });
+    render(<HostDeleteDialog />);
+    act(() => {
+      useHostDelete.getState().ask('web-1');
+    });
+    const box = screen.getByTestId<HTMLInputElement>('host-delete-secret');
+    expect(box.checked).toBe(false);
+    expect(screen.getByTestId('host-delete-dialog').textContent).toContain('Also delete its password secret web_pw');
+    fireEvent.click(box);
+    fireEvent.click(screen.getByTestId('host-delete-confirm'));
+    await waitFor(() => {
+      expect(deleteSecret).toHaveBeenCalledWith({ name: 'web_pw' });
+    });
+  });
+
+  it('leaves the secret when the box is not ticked', async () => {
+    useHostsStore.setState({ file: withPasswords() });
+    await deleteHost('web-1');
+    expect(deleteSecret).not.toHaveBeenCalled();
   });
 });

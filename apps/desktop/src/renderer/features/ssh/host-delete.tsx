@@ -3,10 +3,14 @@
  * leaves `hosts.yaml` and its terminal panes and Files tab close with it, so no tab is left on a host that
  * no longer exists.
  */
+import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
+import { showToast } from '../../components/toast.js';
+import type { HostsFileWire, SshAuthWire } from '../../../shared/ssh-wire.js';
 import { useEditorsStore } from '../../state/editors.js';
-import { findHost, removeHost, useHostsStore } from './hosts-store.js';
+import { ipc } from '../../state/ipc-client.js';
+import { findHost, flattenGroups, removeHost, useHostsStore } from './hosts-store.js';
 import { filesTabId } from './files/open-files.js';
 import { closePane } from './panes/pane-actions.js';
 import { leaves } from './panes/pane-tree.js';
@@ -40,13 +44,40 @@ export function deleteHostDescription(count: number): string {
   return `${String(count)} open ${count === 1 ? 'session' : 'sessions'} will close.`;
 }
 
-/** Removes the host from `hosts.yaml`, then closes its panes (a tab whose last pane goes closes) and Files tab. */
-export async function deleteHost(hostId: string): Promise<void> {
+/**
+ * The password secret only this host signs in with, which its delete can take along (#594): the host's own
+ * password auth, named by no other host, group or identity. `undefined` when there is none to offer.
+ */
+export function ownPasswordSecret(file: HostsFileWire, hostId: string): string | undefined {
+  const auth = findHost(file, hostId)?.ssh.auth;
+  if (auth?.kind !== 'password' || auth.secret === '') return undefined;
+  const named = (other: SshAuthWire | undefined): boolean =>
+    other !== undefined &&
+    other.kind !== 'agent' &&
+    (other.secret === auth.secret || (other.kind === 'key' && other.passphraseSecret === auth.secret));
+  const groups = flattenGroups(file).map(({ group }) => group);
+  const hosts = [...file.hosts, ...groups.flatMap((group) => group.hosts)];
+  const elsewhere =
+    hosts.some((host) => host.id !== hostId && named(host.ssh.auth)) ||
+    groups.some((group) => named(group.ssh.auth)) ||
+    (file.identities ?? []).some((identity) => named(identity.auth));
+  return elsewhere ? undefined : auth.secret;
+}
+
+/**
+ * Removes the host from `hosts.yaml`, then closes its panes (a tab whose last pane goes closes) and Files tab.
+ * With `secret`, its password's value on this machine goes too.
+ */
+export async function deleteHost(hostId: string, secret?: string): Promise<void> {
   const { file, save } = useHostsStore.getState();
   if (!(await save(removeHost(file, hostId)))) return;
   const { panes, filesTab } = sessionsOf(hostId);
   for (const { tabId, paneId } of panes) closePane(tabId, paneId);
   if (filesTab !== undefined) useEditorsStore.getState().close(filesTab);
+  if (secret !== undefined) {
+    const deleted = await ipc().ssh.deleteSecret({ name: secret });
+    if (!deleted.ok) showToast(`The secret ${secret} was not deleted: ${deleted.error.message}`);
+  }
 }
 
 interface HostDeleteState {
@@ -74,6 +105,13 @@ export function HostDeleteDialog() {
   useEditorsStore((s) => s.tabs);
   const name = hostId === null ? '' : (findHost(file, hostId)?.name ?? hostId);
   const count = hostId === null ? 0 : sessionCount(sessionsOf(hostId));
+  const secret = hostId === null ? undefined : ownPasswordSecret(file, hostId);
+  // Off each time the confirm opens: deleting a secret is never the default.
+  const [alsoSecret, setAlsoSecret] = useState(false);
+  useEffect(() => {
+    setAlsoSecret(false);
+  }, [hostId]);
+  const description = deleteHostDescription(count);
   return (
     <ConfirmDialog
       open={hostId !== null}
@@ -81,13 +119,32 @@ export function HostDeleteDialog() {
         if (!open) useHostDelete.getState().cancel();
       }}
       title={`Delete ${name}?`}
-      description={deleteHostDescription(count)}
+      description={
+        secret === undefined ? (
+          description
+        ) : (
+          <div className="flex flex-col gap-2">
+            <p>{description}</p>
+            <label className="flex items-center gap-2 text-fg-default">
+              <input
+                type="checkbox"
+                data-testid="host-delete-secret"
+                checked={alsoSecret}
+                onChange={(e) => {
+                  setAlsoSecret(e.target.checked);
+                }}
+              />
+              {`Also delete its password secret ${secret}`}
+            </label>
+          </div>
+        )
+      }
       confirmLabel="Delete"
       destructive
       testId="host-delete-dialog"
       confirmTestId="host-delete-confirm"
       onConfirm={() => {
-        if (hostId !== null) void deleteHost(hostId);
+        if (hostId !== null) void deleteHost(hostId, alsoSecret ? secret : undefined);
         useHostDelete.getState().cancel();
       }}
     />

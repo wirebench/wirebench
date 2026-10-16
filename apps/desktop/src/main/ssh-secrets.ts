@@ -5,7 +5,7 @@ import { workspaceSecretLabel } from './secret-resolver.js';
 import type { SecretStore } from './secrets.js';
 
 export interface SshSecretsDeps {
-  readonly store: Pick<SecretStore, 'set' | 'replace' | 'findByLabel' | 'list'>;
+  readonly store: Pick<SecretStore, 'set' | 'replace' | 'findByLabel' | 'list' | 'delete'>;
   /** The open workspace's id; `undefined` when none is open. */
   readonly workspaceId: () => string | undefined;
   /** Names a secret source maps in the open workspace (no values). */
@@ -45,5 +45,16 @@ export class SshSecretsService {
     const existing = await this.deps.store.findByLabel(label);
     if (existing === undefined) await this.deps.store.set(value, { label });
     else await this.deps.store.replace(existing, value);
+  }
+
+  /**
+   * Deletes this machine's value of `name` in the open workspace (#594: a deleted host's password). A name a
+   * secret source maps keeps resolving from there; no value here is no error.
+   */
+  async delete(name: string): Promise<void> {
+    const workspaceId = this.deps.workspaceId();
+    if (workspaceId === undefined) throw new WirebenchError('workspace-not-open', 'Open a workspace first');
+    const existing = await this.deps.store.findByLabel(workspaceSecretLabel(workspaceId, name));
+    if (existing !== undefined) await this.deps.store.delete(existing);
   }
 }
