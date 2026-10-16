@@ -56,6 +56,9 @@ All notable changes to this project are documented here. The format follows
 - **Query examples match the language picked.** The example chips in an empty Query view now follow
   the query language: JSONPath offers only JSONPath expressions, XPath and XQuery their own, instead
   of mixing XPath 3.1 map lookups in with JSONPath (#632).
+- **HTML Pretty reads like the page.** Inline elements such as `<b>`, `<a>`, `<span>`, `<code>` and
+  `<title>` stay on one line with their text instead of taking three, and the content of `<pre>`,
+  `<textarea>`, `<script>` and `<style>` is shown exactly as it arrived (#632).
 
 ## [6.1.0] - 2026-10-16
 
