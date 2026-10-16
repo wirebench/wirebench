@@ -1,0 +1,34 @@
+type: spec.insomnia.rest/5.0
+schema_version: "5.1"
+name: Pets design
+meta:
+  id: wrk_spec0000000000000000000000000001
+spec:
+  contents:
+    openapi: 3.0.3
+    info:
+      title: Pets
+      version: "1.0"
+    paths: {}
+  meta:
+    id: spc_0000000000000000000000000000001
+collection:
+  - url: https://pets.example.com/pets
+    name: List pets
+    meta:
+      id: req_spec0000000000000000000000000001
+      sortKey: -1
+    method: GET
+    headers:
+      - name: Accept
+        value: text/event-stream
+testSuites:
+  - name: Pets suite
+    meta:
+      id: uts_spec000000000000000000000000001
+    tests:
+      - name: lists pets
+        meta:
+          id: ut_spec0000000000000000000000000001
+        requestId: req_spec0000000000000000000000000001
+        code: expect(response.status).to.equal(200);

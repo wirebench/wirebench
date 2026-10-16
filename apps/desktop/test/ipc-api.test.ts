@@ -136,19 +136,29 @@ type VariablesPorts = ReturnType<ApiChannelDeps['variablesPorts']>;
  */
 function fakeVariablesPorts(withProject?: { readonly fail?: boolean }): {
   readonly ports: VariablesPorts;
-  readonly environments: { name: string; properties: Record<string, string>; disabled: readonly string[] }[];
+  readonly environments: {
+    name: string;
+    properties: Record<string, string>;
+    disabled: readonly string[];
+    color?: string;
+  }[];
   readonly projectMerges: { properties: Record<string, string>; disabled: readonly string[] }[];
   readonly deletedSecrets: string[];
 } {
-  const environments: { name: string; properties: Record<string, string>; disabled: readonly string[] }[] = [];
+  const environments: {
+    name: string;
+    properties: Record<string, string>;
+    disabled: readonly string[];
+    color?: string;
+  }[] = [];
   const projectMerges: { properties: Record<string, string>; disabled: readonly string[] }[] = [];
   const deletedSecrets: string[] = [];
   let secrets = 0;
   const ports: VariablesPorts = {
     workspace: {
       environmentNames: () => environments.map((environment) => environment.name),
-      addEnvironment: (name, properties, disabled) => {
-        environments.push({ name, properties, disabled });
+      addEnvironment: (name, properties, disabled, color) => {
+        environments.push({ name, properties, disabled, ...(color !== undefined ? { color } : {}) });
         return Promise.resolve();
       },
       removeEnvironment: (name) => {
@@ -1633,5 +1643,270 @@ describe('api.importPostmanFolder', () => {
     } finally {
       await rm(outside, { recursive: true, force: true });
     }
+  });
+});
+
+const INSOMNIA = resolve(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/insomnia/crafted');
+
+describe('api.importInsomnia and api.importClientEnvironments', () => {
+  type ClientResponse = {
+    projectId: string;
+    apiIds: string[];
+    counts: Record<string, number>;
+    variables?: { secretsStored: number; environments: { name: string }[] };
+    warnings: string[];
+    notes: string[];
+    reportText: string;
+  };
+
+  const setupPicked = (picked?: string) => {
+    const picks = new DialogPicks();
+    if (picked !== undefined) picks.rememberRead(picked);
+    const fake = fakeVariablesPorts({});
+    const variablesPorts = vi.fn().mockReturnValue(fake.ports);
+    const stubs = setup({ picks, variablesPorts });
+    vi.mocked(stubs.deps.router.addGrpcApi).mockResolvedValue({ project: PROJECT, apiId: 'grpc-1' });
+    return { ...stubs, fake, variablesPorts };
+  };
+
+  it('places a v5 export as REST, gRPC and WebSocket APIs, its scripts as text, its environments unactivated', async () => {
+    const file = join(INSOMNIA, 'v5-collection.yaml');
+    const { addApi, deps, fake } = setupPicked(file);
+    vi.mocked(deps.router.writeImportedScripts).mockImplementationOnce((_projectId, scripts) =>
+      Promise.resolve({ written: scripts.map((script) => script.path), renamed: [], skipped: [] }),
+    );
+
+    const response = await value<ClientResponse>('api.importInsomnia', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: file },
+    });
+
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({
+      api: { name: 'Orders API' },
+      source: file,
+      declaredVersion: 'insomnia',
+      cache: false,
+    });
+    expect(vi.mocked(deps.router.importWsApi).mock.calls[0]?.[1].api.name).toBe('Orders API (WebSocket)');
+    expect(response.apiIds).toContain('api-1');
+    expect(response.apiIds).toContain('ws-1');
+    expect(response.counts.scripts).toBeGreaterThan(0);
+    expect(response.counts.scripts).toBe(vi.mocked(deps.router.writeImportedScripts).mock.calls[0]?.[1].length);
+    expect(fake.environments.length).toBeGreaterThan(0);
+    expect(response.variables?.environments.map((environment) => environment.name)).toEqual(
+      fake.environments.map((environment) => environment.name),
+    );
+  });
+
+  it('places pasted v4 JSON under the given name in a new project', async () => {
+    const { addApi, deps } = setupPicked();
+    const response = await value<ClientResponse>('api.importInsomnia', {
+      target: { newProjectName: 'Fresh' },
+      source: { kind: 'text', text: readFileSync(join(INSOMNIA, 'v4.json'), 'utf8') },
+      name: 'Renamed',
+    });
+    expect(deps.addProject).toHaveBeenCalledWith('Fresh');
+    expect(response.projectId).toBe('p-new');
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({ api: { name: 'Renamed' }, source: 'inline:insomnia' });
+  });
+
+  it('takes back a project it created when placing fails', async () => {
+    const { addApi, deps } = setupPicked();
+    addApi.mockRejectedValueOnce(new WirebenchError('disk-full', 'disk full'));
+    await failure('api.importInsomnia', {
+      target: { newProjectName: 'Fresh' },
+      source: { kind: 'text', text: readFileSync(join(INSOMNIA, 'v4.json'), 'utf8') },
+    });
+    expect(deps.removeProject).toHaveBeenCalledWith('p-new', { deleteFiles: true });
+  });
+
+  it('sends an environments-only file to the environments import, before creating anything', async () => {
+    const { addApi, deps } = setupPicked();
+    const text = readFileSync(join(INSOMNIA, 'v5-environment.yaml'), 'utf8');
+    expect(
+      (await failure('api.importInsomnia', { target: { newProjectName: 'X' }, source: { kind: 'text', text } })).code,
+    ).toBe('insomnia-environments-only');
+    expect(deps.addProject).not.toHaveBeenCalled();
+    expect(addApi).not.toHaveBeenCalled();
+  });
+
+  it('adds the sub-environments of an environments file to the workspace, with their #rrggbb colours', async () => {
+    const file = join(INSOMNIA, 'v5-environment.yaml');
+    const { fake, variablesPorts } = setupPicked(file);
+    const response = await value<{ summary: { environments: { name: string }[] }; reportText: string }>(
+      'api.importClientEnvironments',
+      { format: 'insomnia', source: { kind: 'file', path: file } },
+    );
+    expect(variablesPorts).toHaveBeenCalledWith(undefined);
+    expect(fake.environments.map(({ name, color }) => ({ name, color }))).toEqual([
+      // A named colour is not a #rrggbb value, so it is left out.
+      { name: 'Development', color: undefined },
+      { name: 'Production', color: '#cc0000' },
+    ]);
+    expect(fake.environments[0]?.properties).toEqual({ host: 'localhost:8080' });
+    expect(response.summary.environments.map((environment) => environment.name)).toEqual(['Development', 'Production']);
+  });
+
+  it('refuses an export holding a collection as an environments file', async () => {
+    const { fake } = setupPicked();
+    const text = readFileSync(join(INSOMNIA, 'v4.json'), 'utf8');
+    expect(
+      (await failure('api.importClientEnvironments', { format: 'insomnia', source: { kind: 'text', text } })).code,
+    ).toBe('insomnia-not-environments');
+    expect(fake.environments).toEqual([]);
+  });
+});
+
+const BRUNO = resolve(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/bruno/crafted');
+
+describe('api.importBruno', () => {
+  type ClientResponse = {
+    projectId: string;
+    apiIds: string[];
+    counts: Record<string, number>;
+    variables?: { environments: { name: string }[] };
+    warnings: string[];
+    notes: string[];
+  };
+
+  const setupPicked = (picked?: string) => {
+    const picks = new DialogPicks();
+    if (picked !== undefined) picks.rememberRead(picked);
+    const fake = fakeVariablesPorts({});
+    const variablesPorts = vi.fn().mockReturnValue(fake.ports);
+    const stubs = setup({ picks, variablesPorts });
+    vi.mocked(stubs.deps.router.addGrpcApi).mockResolvedValue({ project: PROJECT, apiId: 'grpc-1' });
+    return { ...stubs, fake };
+  };
+
+  it('imports a picked Bruno folder: its APIs, its .proto, its environments unactivated', async () => {
+    const folder = join(BRUNO, 'basic');
+    const { addApi, deps, fake } = setupPicked(folder);
+    const response = await value<ClientResponse>('api.importBruno', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: folder },
+    });
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({
+      api: { name: 'demo-collection' },
+      source: folder,
+      declaredVersion: 'bruno',
+    });
+    expect(vi.mocked(deps.router.addGrpcApi).mock.calls[0]?.[1]).toMatchObject({ roots: ['protos/hello.proto'] });
+    expect(vi.mocked(deps.router.importWsApi)).toHaveBeenCalled();
+    expect(response.apiIds).toEqual(['api-1', 'grpc-1', 'ws-1']);
+    expect(fake.environments.map((environment) => environment.name)).toEqual(['Local', 'Prod']);
+    expect(response.warnings.join('\n')).toContain('broken.bru, line 7');
+  });
+
+  it('reads a picked bruno.json as the folder it stands for', async () => {
+    const file = join(BRUNO, 'basic', 'bruno.json');
+    const { addApi } = setupPicked(file);
+    await value<ClientResponse>('api.importBruno', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: file },
+    });
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({
+      api: { name: 'demo-collection', folders: expect.arrayContaining([expect.anything()]) as unknown },
+      source: file,
+    });
+  });
+
+  it('reads any other picked file, or pasted text, as a JSON export under the given name', async () => {
+    const { addApi, deps } = setupPicked();
+    const response = await value<ClientResponse>('api.importBruno', {
+      target: { newProjectName: 'Fresh' },
+      source: { kind: 'text', text: readFileSync(join(BRUNO, 'export.json'), 'utf8') },
+      name: 'Renamed',
+    });
+    expect(deps.addProject).toHaveBeenCalledWith('Fresh');
+    expect(response.projectId).toBe('p-new');
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({ api: { name: 'Renamed' }, source: 'inline:bruno' });
+    expect(JSON.stringify(response)).not.toContain('proxy-pass-123');
+  });
+
+  it('refuses a folder it was not given, before creating anything', async () => {
+    const { deps } = setupPicked();
+    expect(
+      (
+        await failure('api.importBruno', {
+          target: { newProjectName: 'X' },
+          source: { kind: 'file', path: join(BRUNO, 'basic') },
+        })
+      ).code,
+    ).toBe('import-path-refused');
+    expect(deps.addProject).not.toHaveBeenCalled();
+  });
+});
+
+describe('api.detectImportSource', () => {
+  let dir = '';
+  beforeEach(async () => {
+    dir = await realpath(await mkdtemp(join(tmpdir(), 'wirebench-detect-')));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  type Detected = { kind: string; label: string; confidence: string };
+
+  const picked = (path: string) => {
+    const picks = new DialogPicks();
+    picks.rememberRead(path);
+    setup({ picks });
+  };
+
+  it('reads a renamed export by its content', async () => {
+    const file = join(dir, 'export.json');
+    await writeFile(file, 'type: collection.insomnia.rest/5.0\nname: Orders\ncollection: []\n');
+    picked(file);
+    expect(await value<Detected>('api.detectImportSource', { path: file, folder: false })).toMatchObject({
+      kind: 'insomnia',
+      confidence: 'definite',
+    });
+  });
+
+  it('classifies a Bruno folder by its bruno.json', async () => {
+    await writeFile(join(dir, 'bruno.json'), '{"version":"1","name":"B","type":"collection"}');
+    await mkdir(join(dir, 'users'));
+    picked(dir);
+    expect((await value<Detected>('api.detectImportSource', { path: dir, folder: true })).kind).toBe('bruno');
+  });
+
+  it('sends a folder holding an opencollection.yml beside its bruno.json to the OpenCollection import', async () => {
+    await writeFile(join(dir, 'bruno.json'), '{"version":"1","name":"B","type":"collection"}');
+    await writeFile(join(dir, 'opencollection.yml'), 'opencollection: 1.0.0\ninfo:\n  name: B\n');
+    picked(dir);
+    expect((await value<Detected>('api.detectImportSource', { path: dir, folder: true })).kind).toBe('opencollection');
+  });
+
+  it('classifies a thunder-tests folder, and one whose collections/ holds tc_col_ files', async () => {
+    const thunder = join(dir, 'thunder-tests');
+    await mkdir(join(thunder, 'collections'), { recursive: true });
+    picked(thunder);
+    expect((await value<Detected>('api.detectImportSource', { path: thunder, folder: true })).kind).toBe(
+      'thunder-client',
+    );
+
+    handlers.clear();
+    const other = join(dir, 'tc');
+    await mkdir(join(other, 'collections'), { recursive: true });
+    await writeFile(join(other, 'collections', 'tc_col_api.json'), '{}');
+    picked(other);
+    expect((await value<Detected>('api.detectImportSource', { path: other, folder: true })).kind).toBe(
+      'thunder-client',
+    );
+  });
+
+  it('falls back to a folder collection for any other folder', async () => {
+    await mkdir(join(dir, 'collections'));
+    picked(dir);
+    expect((await value<Detected>('api.detectImportSource', { path: dir, folder: true })).kind).toBe('postman-v3');
+  });
+
+  it('refuses a path that was neither picked nor inside a project', async () => {
+    const file = join(dir, 'export.json');
+    await writeFile(file, '{}');
+    picked(join(dir, 'elsewhere.json'));
+    expect((await failure('api.detectImportSource', { path: file, folder: false })).code).toBe('import-path-refused');
   });
 });

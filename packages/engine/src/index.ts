@@ -178,6 +178,8 @@ export {
   HarError,
   HttpFileError,
   OpenCollectionError,
+  BrunoError,
+  InsomniaError,
   ExportError,
   LegacyProjectError,
   ProtoError,
@@ -991,6 +993,10 @@ export {
   readCollectionV3Folder,
 } from './import/collection-v3/read-folder.js';
 export type { CollectionV3FolderLimits } from './import/collection-v3/read-folder.js';
+export { IMPORT_FOLDER_LIMITS, readImportFolder } from './import/read-folder.js';
+export { flattenValue, ScriptCollector } from './import/client-import.js';
+export type { ClientFormat, MappedClientEntry, MappedClientImport, MappedProtoSet } from './import/client-import.js';
+export type { ImportFolderErrorCode, ImportFolderLimits, ImportFolderOptions } from './import/read-folder.js';
 export type { V3Collection, V3File, V3Folder, V3Request, V3Script, V3Workspace } from './import/collection-v3/index.js';
 // Exporters: a project, an API or an interface as a Postman Collection v2.1 or an OpenCollection.
 export { COLLECTION_EXPORT_FORMATS, exportCollection } from './export/index.js';
@@ -1569,7 +1575,7 @@ export type {
 export { renderWsiAssertionsMarkdown, WSI_PLANNED_ASSERTIONS } from './validate/wsi/index.js';
 export type { PlannedAssertion } from './validate/wsi/index.js';
 
-export { detectImportFormat } from './import-detect.js';
+export { detectImportFolder, detectImportFormat } from './import-detect.js';
 export type { ImportFormatKind, DetectedImportFormat, ImportDetectInput } from './import-detect.js';
 
 // gRPC: the third protocol, a sibling container to a SOAP interface and a REST API (ADR-0007).
@@ -2364,3 +2370,9 @@ export { LINT_CHECKS, LINT_TARGETS } from './rest/openapi/lint/ruleset.js';
 export { LINT_FOLDER, readProjectLintRulesets } from './rest/openapi/lint/project.js';
 export { lintReportJson, lintReportSarif } from './rest/openapi/lint/report.js';
 export type { LintJsonReport, LintReportOptions, LintTool } from './rest/openapi/lint/report.js';
+export * from './import/bruno/index.js';
+export * from './import/insomnia/index.js';
+export { importInsomnia, readInsomniaFile } from './import/insomnia/import.js';
+export type { InsomniaSource } from './import/insomnia/import.js';
+export { importBruno, readBrunoFolder } from './import/bruno/import.js';
+export type { BrunoSource } from './import/bruno/import.js';

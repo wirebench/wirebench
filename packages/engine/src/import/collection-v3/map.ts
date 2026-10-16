@@ -60,7 +60,7 @@ const WS_FIELDS = new Set([
   'messages',
 ]);
 /** `/package.Service/Method`, the leading slash optional. Each part is one character class: linear. */
-const GRPC_METHOD = /^\/?([\w.]+)\/(\w+)$/;
+export const GRPC_METHOD = /^\/?([\w.]+)\/(\w+)$/;
 
 export interface MapCollectionV3Options {
   readonly newId?: IdGenerator;
@@ -108,7 +108,7 @@ function text(value: unknown): string {
 }
 
 /** `grpcs://host:port` as a target and whether it speaks TLS; a literal host without a port gets the default one. */
-function grpcTarget(url: string): { target: string; tls: boolean } | undefined {
+export function grpcTarget(url: string): { target: string; tls: boolean } | undefined {
   const match = /^(?:([A-Za-z][A-Za-z0-9+.-]*):\/\/)?([^/?#]*)/.exec(url.trim());
   const authority = match?.[2] ?? '';
   if (authority === '') return undefined;

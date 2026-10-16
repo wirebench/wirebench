@@ -135,6 +135,22 @@ export class OpenCollectionError extends WirebenchError {
   }
 }
 
+/** Thrown when an Insomnia export cannot be read, or is not one Wirebench imports. */
+export class InsomniaError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'InsomniaError';
+  }
+}
+
+/** Thrown when a Bruno collection, `.bru` file or JSON export cannot be read. */
+export class BrunoError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'BrunoError';
+  }
+}
+
 /** Thrown when a legacy single-XML SOAP project file cannot be read, or is not one. */
 export class LegacyProjectError extends WirebenchError {
   constructor(code: string, message: string, options?: WirebenchErrorOptions) {

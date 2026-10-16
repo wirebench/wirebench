@@ -1,0 +1,25 @@
+meta {
+  name: User via GraphQL
+  type: graphql
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/graphql
+  body: graphql
+  auth: inherit
+}
+
+body:graphql {
+  query User($id: ID!) {
+    user(id: $id) {
+      id
+    }
+  }
+}
+
+body:graphql:vars {
+  {
+    "id": "{{userId}}"
+  }
+}

@@ -210,11 +210,9 @@ describe('Postman entity mapping (map.ts)', () => {
       workstation: 'WS01',
     });
 
-    // 2.5: Unsupported digest auth on request maps to 'none' and generates warning
+    // Digest auth on a request keeps its type; its password, like every secret, is not imported.
     const digestReq = folder.requests[1]!;
-    expect(digestReq.auth).toEqual({ type: 'none' });
-    expect(summary.warnings).toBeDefined();
-    expect(summary.warnings?.some((w) => w.includes('digest'))).toBe(true);
+    expect(digestReq.auth?.type).toBe('digest');
   });
 
   it('turns collection and folder variables into project properties, base URL excluded', () => {

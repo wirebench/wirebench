@@ -800,6 +800,24 @@ export type ApiInspectHttpFileRequest = z.infer<typeof apiInspectHttpFileRequest
 export const apiInspectHttpFileResponseSchema = z.object({ environments: z.array(z.string()).readonly() });
 export type ApiInspectHttpFileResponse = z.infer<typeof apiInspectHttpFileResponseSchema>;
 
+/**
+ * Request payload for `api.detectImportSource`: a picked file, or a folder picked with Folder…,
+ * whose content the Import dialog cannot read itself.
+ */
+export const apiDetectImportSourceRequestSchema = z.object({
+  path: z.string().min(1).max(MAX_IMPORT_LOCATION_CHARS),
+  folder: z.boolean(),
+});
+export type ApiDetectImportSourceRequest = z.infer<typeof apiDetectImportSourceRequestSchema>;
+
+/** Response payload for `api.detectImportSource`: the format it holds, as the engine's detection names it. */
+export const apiDetectImportSourceResponseSchema = z.object({
+  kind: z.string().max(64),
+  label: z.string().max(200),
+  confidence: z.enum(['definite', 'probable', 'unknown']),
+});
+export type ApiDetectImportSourceResponse = z.infer<typeof apiDetectImportSourceResponseSchema>;
+
 /** Request payload for `api.importHttpFile`: a `.http` request file, read as a REST API (and a WebSocket one). */
 export const apiImportHttpFileRequestSchema = z.object({
   target: projectAddInterfaceTargetSchema,

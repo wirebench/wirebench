@@ -145,6 +145,17 @@ export function mapOcAuth(auth: unknown, where: string, report: ReportBuilder, d
         },
       };
     }
+    case 'digest': {
+      if (text(auth, 'password') !== '') dropped();
+      const username = text(auth, 'username');
+      return { auth: { type: 'digest', ...(username !== '' ? { username: rewrite(username) } : {}) } };
+    }
+    case 'awsv4': {
+      if (['accessKeyId', 'secretAccessKey', 'sessionToken'].some((key) => text(auth, key) !== '')) dropped();
+      return {
+        auth: { type: 'aws-sigv4', region: rewrite(text(auth, 'region')), service: rewrite(text(auth, 'service')) },
+      };
+    }
     case 'oauth2':
       return { auth: mapOcOAuth2(auth, where, report, dynamic) };
     default: {

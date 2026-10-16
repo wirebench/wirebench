@@ -102,6 +102,9 @@ export type ImportDialogFormat =
   | 'http-env'
   | 'opencollection'
   | 'postman-v3'
+  | 'insomnia'
+  | 'insomnia-environment'
+  | 'bruno'
   | 'wsdl'
   | 'proto'
   | 'legacy-soap-project';

@@ -6,11 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- **A refused proxy tunnel no longer reads as Cancelled.** When an HTTPS request goes through a proxy
-  that refuses the tunnel (a 407 for a wrong or missing proxy password), the send now fails with
-  "Proxy connection failed" and the proxy's status, instead of showing as if you had cancelled it.
+- **Import Insomnia exports.** **Import…** reads Insomnia's export formats 4 (JSON or YAML) and 5
+  (YAML), and detects a picked file by its content. Each workspace becomes a REST, a gRPC and a
+  WebSocket API in the chosen project, in Insomnia's order, with folder headers and auth. The base and
+  folder environments become project properties and the sub-environments workspace environments,
+  never made active; an environments file goes to the workspace, its base into Globals. Vault secrets
+  become secrets with no value, scripts are saved as text under `imported-scripts/` and never run, and
+  template tags Wirebench cannot run are kept and listed. `wirebench import` reads the same files.
+  Postman collections now bring Digest, AWS Signature and JWT auth across as well (#588).
+- **Import Bruno collections.** **Import…** reads a Bruno collection from its folder (**Folder…**),
+  its `bruno.json` or a JSON export, in Bruno's order. Its requests become a REST, a gRPC and a
+  WebSocket API in the chosen project, with collection and folder headers, auth and variables; each
+  environment becomes a workspace environment, never made active, its `vars:secret` names secrets
+  with no value. `assert` lines become assertions where they fit, scripts and tests are saved as text
+  and never run, and a `.env` file is never read. `wirebench import` reads the same sources. The
+  OpenCollection import now also maps Digest and AWS Signature v4 auth, `omitHeaders`, descriptions
+  and lists of WebSocket messages (#588).
 
 ### Changed
 
@@ -19,6 +32,12 @@ All notable changes to this project are documented here. The format follows
   beside the requests, so a request stays in view while you browse its history or edit its variables.
   SSH keeps its own strip. The right rail shows an environment's details while its tab is in front
   (#607).
+
+### Fixed
+
+- **A refused proxy tunnel no longer reads as Cancelled.** When an HTTPS request goes through a proxy
+  that refuses the tunnel (a 407 for a wrong or missing proxy password), the send now fails with
+  "Proxy connection failed" and the proxy's status, instead of showing as if you had cancelled it.
 
 ## [6.1.0] - 2026-10-16
 

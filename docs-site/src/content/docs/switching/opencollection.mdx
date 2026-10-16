@@ -73,8 +73,10 @@ importers guide. It takes a picked or dropped file, or pasted YAML.
 | `body` of type `multipart-form` | A multipart body. A file part points at its file, resolved against the collection's folder; when a part lists several files, only the first is kept, with a note | |
 | `body` of type `file` | A binary body pointing at the selected file (else the first), resolved against the collection's folder. The file is not copied | |
 | A body given as a list of variants | The selected variant, else the first. A note names the others | |
-| `auth` | The request's auth: `inherit`, `none`, Basic (user name only), Bearer, API key (name and placement), NTLM (user name and domain) and OAuth 2 with the client credentials, authorization code or resource owner password grant (user name only). See [Credentials](#credentials) for what happens to the secrets | [Auth](/wirebench/docs/guides/auth/) |
+| `auth` | The request's auth: `inherit`, `none`, Basic and Digest (user name only), Bearer, API key (name and placement), NTLM (user name and domain), AWS Signature v4 (region and service) and OAuth 2 with the client credentials, authorization code or resource owner password grant (user name only). See [Credentials](#credentials) for what happens to the secrets | [Auth](/wirebench/docs/guides/auth/) |
 | `settings.timeout`, `followRedirects`, `maxRedirects`, `encodeUrl` | The matching request settings. Any other setting is ignored, with a note | |
+| `settings.omitHeaders` | The generated headers the request leaves out | |
+| `info.description` as text | The request's description | |
 | `examples` with a numeric response status | [Response examples](/wirebench/docs/guides/rest-client/#examples) on the request, masked as every import masks a recorded response: credential-named headers, JSON and form body fields, and XML elements and attributes are masked, and cookies are dropped. A binary example body is left out, and a body over 256 KB is cut | |
 | `runtime.assertions` | Request assertions, when they fit the table under [Assertions](#assertions) | [Assertions](/wirebench/docs/guides/assertions/) |
 
@@ -104,6 +106,7 @@ auth and settings come across as for an HTTP item.
 | `websocket.url` | The request's URL. Its query string becomes query rows. The API's URL is taken from the first WebSocket item | [WebSocket](/wirebench/docs/guides/websocket/) |
 | `headers` and `auth` | The request's headers and auth | |
 | `message.data` | One saved message, named "Message" | |
+| `messages`, a list of `name` and `data` | One saved message for each, under its name | |
 | `settings.timeout` | The handshake timeout | |
 
 ### Environments
