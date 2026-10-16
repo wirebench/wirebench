@@ -1,0 +1,138 @@
+---
+title: From Insomnia exports
+description: What an Insomnia export brings into Wirebench, what it leaves behind, and where each part lives once it's imported.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+An Insomnia export becomes **one set of APIs per workspace** in the project you choose:
+- the HTTP requests become a REST API, with the folders kept;
+- gRPC requests become a gRPC API and WebSocket requests a WebSocket API, each only when the workspace
+  has requests of that kind;
+- `{{ _.name }}` references become Wirebench properties.
+
+Credentials do not come across. Scripts are saved as text and never run. The import summary lists
+each of these, so you know what to set up before the first send.
+
+To run the import, see [Insomnia exports](/wirebench/docs/guides/importers/#insomnia-exports) in the
+importers guide. It takes an export in format 4 (JSON or YAML) and format 5 (YAML), from a file or
+pasted. A file holding several workspaces becomes several sets of APIs, named after their workspaces.
+
+## What carries over
+
+| In Insomnia | In Wirebench | More |
+| --- | --- | --- |
+| A workspace, its name and description | A REST API with the same name and description. With gRPC or WebSocket requests too, the others are named `<name> (gRPC)` and `<name> (WebSocket)` | [REST](/wirebench/docs/guides/rest-client/) |
+| Folders, nested, with their descriptions | Folders, nested the same way. Siblings keep Insomnia's order | |
+| HTTP requests: method, URL and description | Requests. The URL keeps its own query string | |
+| `{{ _.name }}` anywhere in a name, URL, header, query, body or auth field | `${name}`. It looks the name up in the active environment first, then the project, the workspace and global properties | [Property syntax](/wirebench/docs/reference/property-syntax/) |
+| `:id` path segments and their values | `{id}` in the URL, with a row in the **Path parameters** table | [Path and query parameters](/wirebench/docs/guides/rest-client/#path-and-query-parameters) |
+| Query parameters and headers, including disabled ones | Rows in the **Params** and **Headers** tables. Disabled rows stay off | |
+| Headers set on a folder | Copied onto each request below it that does not set the same name. The summary says so | |
+| A JSON, XML, YAML, text or other raw body | A raw body with that content type. A request with no `Content-Type` header gets one from the body's type | [Request body](/wirebench/docs/guides/rest-client/#request-body) |
+| A URL-encoded form body | A form body | |
+| A multipart body | A multipart body. A file part keeps its path; the file is not in the export, so the summary notes it | |
+| A GraphQL body | A [GraphQL body](/wirebench/docs/guides/graphql/) with the same query and variables. Variables that are not JSON are kept as text | |
+| A binary file body | A binary body pointing at the same path | |
+| A request with `Accept: text/event-stream` | A REST request. Wirebench reads the stream when it sends it | |
+| Request settings: follow redirects, URL encoding | The request's redirect and URL-encoding settings. A setting of `global` means the default. Cookie, render and rebuild-path settings are noted | |
+| gRPC requests | Requests in a gRPC API: service and method from the method path, TLS from `grpcs://`, the message and the metadata. Format 4 exports also bring the `.proto` files the requests point to, one set per workspace, with the files beside them that they import. Format 5 exports hold no `.proto` text, so the API has no definition: import the `.proto` or use server reflection. Reflection settings are noted | [gRPC](/wirebench/docs/guides/grpc/) |
+| WebSocket requests | Requests in a WebSocket API: URL, query, headers and auth. A format 4 payload is kept as one saved message. Format 5 exports do not hold payloads, so none are imported | |
+
+### Authentication
+
+Auth set on a folder becomes the folder's, and auth on a request becomes the request's. An empty or
+disabled auth still inherits; auth set to none stops inheriting.
+
+| Insomnia auth | Wirebench auth |
+| --- | --- |
+| None | None |
+| Basic | Basic, with the username |
+| Bearer, with its prefix | Bearer. The token is not copied |
+| Digest | Digest, with the username. The password is not copied |
+| NTLM | NTLM, with the username, domain and workstation |
+| API key (header, query or cookie) | API key, with its name and where it goes. The key is not copied |
+| OAuth 2.0, each grant | OAuth 2 with the matching grant: URLs, client ID and scopes. Secrets and tokens are not copied |
+| AWS IAM | AWS Signature v4, with its region and service. The keys are not copied |
+| Hawk, OAuth 1.0, ASAP, netrc and single token | None. The summary names the type |
+
+See [Authentication](/wirebench/docs/guides/auth/) for each scheme's fields.
+
+### Environments and variables
+
+| In Insomnia | In Wirebench |
+| --- | --- |
+| The base environment | Project properties |
+| Sub-environments | Workspace environments, never made active. Their `#rrggbb` colour is kept as the environment colour. Private ones are imported too; Insomnia only exports them when asked to |
+| An environment on a folder | Project properties, outermost folder first. The first definition of a name wins |
+| Nested values | Dotted names: `{"db": {"host": "x"}}` becomes `db.host`, and an array element `name.0`. Numbers and booleans become strings |
+| An environment file (global environment) | **Import…** → Insomnia environments: the base environment merges into Globals and sub-environments become workspace environments. No project is asked for |
+| Vault secrets (`{{ _.vault.name }}`) | A secret named `name` in the secret store with no value, and the project property `${secret:…}` pointing at it. The values are sealed in the export, so the summary lists each name as needing one |
+
+A name the project already has keeps its value, and the summary lists it.
+
+## Scripts
+
+Pre-request and after-response scripts, on requests and folders, are saved as text under
+`imported-scripts/<api>/<item>.pre.js` or `.post.js` in the project folder. Nothing is attached to a
+request and nothing runs. The summary names the call styles the scripts use, such as `insomnia.`, so
+you know what to port. Insomnia's `{% response %}` and other template tags are kept as written and
+named in the summary; a value one request passes to another can be a
+[sequence](/wirebench/docs/guides/sequences/) transfer.
+
+## What does not carry over
+
+| In Insomnia | What happens | What to do |
+| --- | --- | --- |
+| Passwords, tokens, API key values, client secrets | Never copied. The summary counts the auth configurations that need one | Enter each on its **Auth** tab. Wirebench stores it encrypted outside the project |
+| Vault secret values | Not in the export. Each name arrives as a secret waiting for a value | Set the value in the secret store |
+| Credential headers in gRPC metadata and WebSocket headers, such as `Authorization` | Left out when the value is a literal credential. A value that is only references, or an auth scheme word followed by references (`Bearer ${token}`), is kept | Re-enter the credential on the request, or reference a secret |
+| A credential in a URL | Removed from the URL. The summary says so | Set it on the request's **Auth** tab |
+| The cookie jar | Not imported. The summary notes it | Nothing: the jar fills on the first send |
+| Unit test suites | Not imported. The summary lists each suite with the requests its tests check | Recreate the checks as [assertions](/wirebench/docs/guides/assertions/) |
+| An API spec embedded in a collection | Not imported. The summary notes it | Import the spec as OpenAPI |
+| Mock servers | Skipped. The summary names them | |
+| Socket.IO and MCP requests | Skipped. The summary names them | |
+| Template tags such as `{% response … %}` | Kept as written; nothing evaluates them. The summary names each tag | Replace it with a property or a sequence transfer |
+| Client certificates and saved responses | Never in an Insomnia export | |
+| Dynamic variables such as `{{ $guid }}` | Kept as written, and nothing generates a value. One warning names them all | Replace each with a property, or with a value a script sets |
+
+<Aside type="caution" title="Credentials typed as headers">
+A token written straight into a REST request's header, such as `Authorization: Bearer …`, is an
+ordinary header to the importer, so it arrives as plain text in the project files. Before you share
+the project, move it to the **Auth** tab, where it is stored as a secret.
+</Aside>
+
+## Limits
+
+- A file larger than 50 MB is refused, picked or pasted.
+- Exports in format 1 to 3 are refused. Re-export from a current version of Insomnia.
+- An export of more than 100,000 items is refused.
+- Import by URL is not supported. Download the file, or paste its contents.
+
+`wirebench import <file>` reads the same files. It has no secret store or workspace: it adds the APIs
+and the plain variables, saves the scripts, and lists secret variables, environments and `.proto`
+files as not imported.
+
+## After importing
+
+<Steps>
+
+1. Read the summary, or choose **Copy report** to keep it as a checklist.
+
+2. Enter the passwords, tokens and keys it counts, on each **Auth** tab, and give each vault secret
+   its value. See [Secrets](/wirebench/docs/guides/secrets/).
+
+3. For a gRPC API with no definition, import its `.proto` or turn on server reflection.
+
+4. Read the scripts under `imported-scripts/` and port what you need.
+
+5. Check the API's **Base URL**, then send one request to confirm the setup.
+
+</Steps>
+
+## Related
+
+- [Importing APIs](/wirebench/docs/guides/importers/): the Import dialog and every format it reads.
+- [Property expansion syntax](/wirebench/docs/reference/property-syntax/): how `${name}` resolves.
+- [Secrets](/wirebench/docs/guides/secrets/): where credentials live and why no import copies them.

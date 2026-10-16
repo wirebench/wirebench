@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Insomnia import.** **Import…** reads an Insomnia export, v4 JSON or v5 YAML, from a file or pasted
+  text. Each workspace becomes a REST API, plus a gRPC and a WebSocket API when it has such requests;
+  folders, bodies, headers, auth schemes, request settings and the base and folder environments come
+  across, and sub-environments become workspace environments with their colour. Vault secrets arrive as
+  named secrets waiting for a value, and the report lists them. Scripts are saved as text under
+  `imported-scripts/` and never run. The cookie jar, unit tests, the API spec, mocks, Socket.IO and MCP
+  requests are reported, not imported. `wirebench import` takes the same files (#588).
+
 - **Forwarding groups.** Name a set of port forwarding rules, from any hosts, and start or stop them
   together. The Port forwarding view shows each group as a section with its rules and a count such as
   "2 of 3 running · 1 failed", then the rules in no group under **Ungrouped**. **Start group** connects to
@@ -18,6 +26,10 @@ All notable changes to this project are documented here. The format follows
   line (#583).
 
 ### Changed
+
+- **Postman v2.1 import maps more.** The importer now honours `disableUrlEncoding`, maps Digest, AWS
+  Signature and JWT auth (credentials are not copied), and warns for every gRPC and WebSocket
+  credential it leaves out (#588).
 
 - **Host details opens and closes only when asked.** Clicking a host selects it without opening or
   closing the Host details panel; an open panel shows the selected host. The right rail's icon (and

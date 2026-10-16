@@ -1,12 +1,12 @@
 ---
 title: Importing APIs
-description: Bring a WSDL, OpenAPI document, Postman collection, HAR capture, .http file, OpenCollection, cURL command, .proto file, gRPC server or legacy SOAP project into Wirebench.
+description: Bring a WSDL, OpenAPI document, Postman collection, HAR capture, .http file, OpenCollection, Insomnia export, cURL command, .proto file, gRPC server or legacy SOAP project into Wirebench.
 ---
 
 import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
 Importing turns something you already have — a WSDL, an OpenAPI document, a Postman collection, a
-HAR capture of recorded traffic, a `.http` request file, an OpenCollection, a `curl` command, a `.proto` file, a running gRPC server, or a whole legacy SOAP project — into
+HAR capture of recorded traffic, a `.http` request file, an OpenCollection, an Insomnia export, a `curl` command, a `.proto` file, a running gRPC server, or a whole legacy SOAP project — into
 requests you can run and edit in Wirebench. Most formats share one dialog; cURL has its own,
 smaller one.
 
@@ -21,6 +21,8 @@ smaller one.
 | .http file | Import dialog | File or pasted text |
 | HTTP client environment file | Import dialog | File or pasted JSON |
 | OpenCollection | Import dialog | File (a document, or a folder's `opencollection.yml`) or pasted YAML |
+| Insomnia export (v4 JSON, v5 YAML) | Import dialog | File or pasted text |
+| Insomnia environments | Import dialog | File or pasted text |
 | .proto (gRPC) | Import dialog | URL, file, pasted text, or a running server |
 | Legacy SOAP project | Import dialog | File only |
 | cURL command | Import cURL dialog | Pasted command |
@@ -382,6 +384,49 @@ kept as text, then lists the environments and project properties added and the s
 
 See [From OpenCollection](/wirebench/docs/switching/opencollection/) for every rule, and what does
 not come across.
+
+## Insomnia exports
+
+Wirebench reads Insomnia exports in format 4 (JSON or YAML) and format 5 (YAML) — the app labels this
+format **Insomnia export**. Each workspace becomes a REST API for its HTTP requests, plus a gRPC API
+and a WebSocket API when it has requests of those kinds. Auto-detect recognizes both formats, and an
+export that also holds an API spec.
+
+<Steps>
+
+1. Open **Import…**; it detects the format, or pick **Insomnia export** yourself.
+
+2. Pick or drop the file on the **File** tab, or paste its contents on the **Paste** tab. There is
+   no URL tab.
+
+3. Choose the target project and **Import**.
+
+</Steps>
+
+The summary counts the APIs, requests and folders, then lists the environments and properties added
+and the secrets stored. **Things to look at**, **Notes** and **Copy report** work as they do for a
+legacy project. A file of environments only (Insomnia's global environment) is **Insomnia
+environments** in the format list: it lands in the workspace, so no project is asked for.
+
+- **Variables.** The base environment and folder environments become project properties; the first
+  definition of a name wins, and a name the project already has keeps its value. Sub-environments
+  become workspace environments with their colour, never made active.
+- **Vault secrets** are not in the export. Each arrives as a secret waiting for a value, and the
+  summary lists them.
+- **Scripts** are saved as text under `imported-scripts/` and never run.
+- **Credentials** are never imported. Digest and AWS signature auth keep their settings without the
+  password or keys; Hawk, OAuth 1.0, ASAP, netrc and single-token auth become none. A credential
+  header in gRPC metadata or WebSocket headers is dropped unless it holds only references.
+- **gRPC definitions.** A format 4 export brings the `.proto` files its requests point to; a format 5
+  export holds none, so the gRPC API has no definition until you import the `.proto` or use server
+  reflection. A format 5 export holds no WebSocket payloads either.
+- **Reported, not imported.** The cookie jar, unit test suites, the embedded API spec, mock servers,
+  Socket.IO and MCP requests, and template tags with no Wirebench equivalent (kept as written).
+- **Limits.** A file larger than 50 MB is refused, picked or pasted, and so is one with more than
+  100,000 items. Formats 1 to 3 are refused: re-export from a current version of Insomnia.
+
+See [From Insomnia exports](/wirebench/docs/switching/insomnia/) for every rule, and what does not
+come across.
 
 ## cURL commands
 

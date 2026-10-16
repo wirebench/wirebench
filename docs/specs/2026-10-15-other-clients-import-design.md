@@ -291,6 +291,11 @@ Each HTTP request becomes a v2.1 item:
   in the file only when the user chose to include it.
 - **Vault secrets.** Values under `__insomnia_vault` are sealed or masked and cannot be read. Each
   name becomes a secret with no value, listed as needing one. `{{ _.vault.name }}` points at it.
+  Ruling R9: a vault secret gets an empty entry in the secret store and the project property
+  `${secret:<ref>}`, and the report lists it as needing a value. Every other empty secret keeps the
+  2026-10-04 rule (an empty property). A vault value is known to be secret, and an empty property
+  invites typing it into the project file; if the guess is wrong, the store holds empty labelled
+  entries until they are filled.
 - **Global environment file** (`environment.insomnia.rest/5.0`, or a v4 export of an environment
   workspace): the base environment merges into Globals and sub-environments become workspace
   environments. No project picker shows.

@@ -716,7 +716,7 @@ to [`wirebench mcp`](#wirebench-mcp).
 
 | Verb | Does |
 | --- | --- |
-| `wirebench import <source> [--name <name>]` | Adds a WSDL or an OpenAPI document to the project, as the desktop's import does: the definition is cached when the project's settings cache definitions, and each operation gets a `Request 1`. |
+| `wirebench import <source> [--name <name>]` | Adds a WSDL or an OpenAPI document, a Postman v3 collection folder, or an Insomnia export (v4 JSON, v5 YAML) to the project, as the desktop's import does. A WSDL or OpenAPI definition is cached when the project's settings cache definitions, and each operation gets a `Request 1`. A folder or an Insomnia export adds its REST, gRPC and WebSocket APIs. |
 | `wirebench operations [<interface-or-api>]` | Lists SOAP operations (interface, binding, operation, SOAP action), REST endpoints (API, method, path, operationId) saved WebSocket requests (API, URL) and saved MCP requests (server, method, tool, prompt or URI), with the reference `generate` and `validate` take and the saved requests `send` takes. gRPC items are in the project but not listed. Each SOAP and REST row also carries `tool`, the name of the operation's tool (see [Contract operations as tools](#contract-operations-as-tools)), when its definition is readable. |
 | `wirebench generate <operation> [--optional all\|required]` | Prints a sample request: a SOAP envelope built from the XSD, or a REST method, path, headers and JSON body. Nothing is saved. |
 | `wirebench send <item> [-e <env>] [--body <text> \| --body-file <file>] [--baseline] [--allow-commands]` | Sends one saved SOAP, REST, WebSocket or MCP request as `run` sends it (environment, `WIREBENCH_SECRET_*` secrets, scripts, assertions, callback captures), prints the redacted response and the assertion results, and records the send in History, tagged `cli`. |
@@ -734,6 +734,17 @@ Details that are easy to get wrong:
   machine's network reaches, through `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY`. The desktop limits an
   import to project roots and files the user picked; this does not. A WSDL import takes
   `cacheDefinitions` from the project's own settings, not from the desktop's preferences.
+  The command reads WSDL, OpenAPI, Postman v3 folders and Insomnia v4 JSON or v5 YAML. A folder or an
+  Insomnia export has no secret store or workspace to write to, so the v3 rule applies: plain variables
+  become project properties, and a name the project already has keeps its value
+  (`property-kept`); secret variables are named, not stored (`secret-not-imported`; an Insomnia vault
+  secret counts as one); environments and globals are named, not imported
+  (`environments-not-imported`). Scripts are saved as text under `imported-scripts/<api>/` and never
+  run; a script that cannot be saved without overwriting a file or leaving that folder is reported as
+  `script-not-saved`. gRPC APIs are added without their `.proto` definitions, which are named
+  (`proto-not-imported`); import the file in the desktop to bring them across. Everything else the
+  importer says arrives as an `import-warning` or `import-note`. An environment file given on its
+  own is refused with `environments-not-imported`.
 - **`send --baseline`.** The response body is compared with the golden saved beside the request
   (`<slug>.golden.yaml`), honouring its ignore rules. A difference is a failed `baseline` assertion
   (exit 1). No golden prints `baseline: no baseline saved` and does not fail. An unreadable or

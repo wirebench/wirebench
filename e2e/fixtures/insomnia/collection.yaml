@@ -1,0 +1,74 @@
+type: collection.insomnia.rest/5.0
+schema_version: "5.1"
+name: Orders API
+meta:
+  id: wrk_0a1b2c3d4e5f60718293a4b5c6d7e8f9
+  created: 1760000000000
+  modified: 1760000100000
+  description: Example collection
+collection:
+  - name: Orders
+    meta:
+      id: fld_1111111111111111111111111111aaaa
+      created: 1760000001000
+      modified: 1760000001000
+      sortKey: -1760000001000
+    scripts:
+      preRequest: |-
+        console.log('folder pre-request');
+    children:
+      - url: "{{ _.baseUrl }}/orders"
+        name: Create order
+        meta:
+          id: req_2222222222222222222222222222aaaa
+          created: 1760000002000
+          modified: 1760000002000
+          sortKey: -1760000002000
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "sku": "EXAMPLE-1",
+              "qty": 2
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+      - url: "{{ _.baseUrl }}/orders/latest"
+        name: Latest order
+        meta:
+          id: req_3333333333333333333333333333aaaa
+          created: 1760000003000
+          modified: 1760000003000
+          sortKey: -1760000003000
+        method: GET
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_9999999999999999999999999999aaaa
+    created: 1760000000000
+    modified: 1760000000000
+  cookies: []
+environments:
+  name: Base Environment
+  meta:
+    id: env_aaaaaaaaaaaaaaaaaaaaaaaaaaaa0001
+    created: 1760000000000
+    modified: 1760000000000
+    isPrivate: false
+  data:
+    baseUrl: https://api.example.com
+  subEnvironments:
+    - name: Staging
+      meta:
+        id: env_bbbbbbbbbbbbbbbbbbbbbbbbbbbb0002
+        created: 1760000000000
+        modified: 1760000000000
+        isPrivate: false
+        sortKey: 1760000000001
+      data:
+        baseUrl: https://staging.example.com
+        __insomnia_vault:
+          apiKey: placeholder
+      color: "#ff8800"
