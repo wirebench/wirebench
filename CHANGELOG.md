@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A refused proxy tunnel no longer reads as Cancelled.** When an HTTPS request goes through a proxy
+  that refuses the tunnel (a 407 for a wrong or missing proxy password), the send now fails with
+  "Proxy connection failed" and the proxy's status, instead of showing as if you had cancelled it.
+
 ### Changed
 
 - **History and Environments keep your request tabs.** Opening History or Environments no longer swaps

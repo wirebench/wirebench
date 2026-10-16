@@ -153,6 +153,33 @@ describe('sendHttp through a proxy', () => {
     expect(server.requests).toHaveLength(0);
   });
 
+  it.each([
+    ['wrong', { username: 'u', password: 'bad' }],
+    ['no', undefined],
+  ] as const)(
+    'fails with a `proxy` error, not `aborted`, when the proxy refuses an HTTPS tunnel for %s credentials',
+    async (_label, auth) => {
+      const server = await startTls();
+      const proxy = await startProxy({ requireAuth: { username: 'proxyuser', password: 'proxypass' } });
+
+      const error = await sendHttp(
+        req({
+          url: `${server.url}/headers`,
+          proxy: { url: proxy.url, ...(auth !== undefined ? { auth } : {}) },
+          tls: { ca: [ca.certPem] },
+        }),
+      ).catch((err: unknown) => err);
+
+      // undici refuses the CONNECT's 407 by aborting the request; that abort is the proxy's
+      // doing, not the user's Cancel.
+      expect(error).toBeInstanceOf(HttpError);
+      expect((error as HttpError).code).toBe('proxy');
+      expect((error as HttpError).details?.['proxyStatus']).toBe(407);
+      expect(proxy.requests[0]?.method).toBe('CONNECT');
+      expect(server.requests).toHaveLength(0);
+    },
+  );
+
   it('reports a `proxy` HttpError when the proxy itself refuses the connection', async () => {
     const server = await startPlain();
     // A port nothing listens on. Taken by binding and immediately closing a throwaway socket,
