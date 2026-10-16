@@ -73,9 +73,7 @@ describe('Import dialog — Bruno', () => {
     expect(screen.getByTestId('import-target-project')).toBeTruthy();
     expect(screen.getByTestId('import-bruno-help').textContent).toContain('.env files are never read');
     fireEvent.click(screen.getByTestId('import-browse-folder'));
-    await waitFor(() =>
-      expect((screen.getByTestId('import-file-input') as HTMLInputElement).value).toBe('/work/bruno'),
-    );
+    expect(await screen.findByDisplayValue('/work/bruno')).toBeTruthy();
     fireEvent.click(screen.getByTestId('import-submit'));
     await waitFor(() =>
       expect(importBruno).toHaveBeenCalledWith({

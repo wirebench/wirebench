@@ -1805,8 +1805,10 @@ describe('api.importBruno', () => {
       target: { projectId: 'p1' },
       source: { kind: 'file', path: file },
     });
-    expect(addApi.mock.calls[0]?.[1]).toMatchObject({ api: { name: 'demo-collection' }, source: file });
-    expect(vi.mocked(addApi).mock.calls[0]?.[1].api.folders.length).toBeGreaterThan(0);
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({
+      api: { name: 'demo-collection', folders: expect.arrayContaining([expect.anything()]) as unknown },
+      source: file,
+    });
   });
 
   it('reads any other picked file, or pasted text, as a JSON export under the given name', async () => {
