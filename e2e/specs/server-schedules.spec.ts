@@ -80,8 +80,8 @@ test.describe('scheduled runs', () => {
     await run.click();
     await expect(tab.getByTestId('schedule-run-status')).toHaveText('failed');
     const detail = tab.getByTestId('schedule-run-detail');
-    await expect(detail).toContainText('Health check');
-    await expect(detail).toContainText('expected status 200, got 500');
+    await expect(detail).toContainText('Demo/check.yaml');
+    await expect(detail).toContainText('expected 200, actual 500');
 
     // --- A passing run clears the dot ---------------------------------------------------------------
     server.setScheduleOutcome('passed');
