@@ -59,6 +59,9 @@ All notable changes to this project are documented here. The format follows
 - **History's search box keeps its width.** Search sits on its own row above the project filter and
   **Delete all**, so a narrow sidebar no longer crushes it or clips **Delete all**; the project filter
   shows only when more than one project is open (#608).
+- **A History entry shows what came back.** Its meta line leads with the status ("404 Not Found",
+  coloured by class), and a **Headers** tab lists the response's headers and the request's, as History
+  recorded them (#609).
 - **A fresh OpenAPI import no longer turns the status bar red.** The built-in rule
   `owasp-security-defined` (no security scheme defined) is a warning instead of an error, so the Console
   and Problems counters read amber unless a real error is found (#610).
