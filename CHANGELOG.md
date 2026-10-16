@@ -39,6 +39,12 @@ All notable changes to this project are documented here. The format follows
   beside the requests, so a request stays in view while you browse its history or edit its variables.
   SSH keeps its own strip. The right rail shows an environment's details while its tab is in front
   (#607).
+- **A send the network failed is not a Problem.** A refused connection, an unknown host, a timeout, a
+  failed TLS handshake, a proxy or network failure no longer adds a red Problem: the response pane
+  already says what happened, with a hint and Retry, and the status bar's `last:` shows it. Failures
+  the project can fix (unresolved variables, an incomplete URL, an untrusted certificate, script type
+  errors) stay in Problems, now worded by their title ("Incomplete URL: …") rather than their code
+  (#635).
 
 ### Fixed
 
