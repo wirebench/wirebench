@@ -61,6 +61,7 @@ import { lintGroupId, useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore, type ImportDialogFormat } from '../../state/ui.js';
 import { getExplorerTree } from './explorer-api.js';
+import { IMPORT_FORMATS, importFormatRow, type ImportFormatRow } from './import-formats.js';
 import { CopyReport, ImportReportView, ReportItems } from './import-report.js';
 
 export type SourceTab = 'url' | 'file' | 'paste' | 'server';
@@ -168,17 +169,6 @@ export type UnifiedImportResult =
   | { readonly kind: 'opencollection'; readonly value: ApiImportOpenCollectionResponse }
   | { readonly kind: 'postman-v3'; readonly value: ApiImportPostmanFolderResponse };
 
-/**
- * Formats that land in the workspace, not in a project: a Postman environment or a `.http` client
- * environment file becomes workspace environments and Postman globals merge into Globals, so the
- * dialog asks for no target project.
- */
-const WORKSPACE_ONLY = new Set<ImportDialogFormat | ImportFormatKind>([
-  'postman-environment',
-  'postman-globals',
-  'http-env',
-]);
-
 /** The formats read from a Postman export file. */
 const POSTMAN_FORMATS = new Set<ImportDialogFormat | ImportFormatKind>([
   'postman',
@@ -186,29 +176,10 @@ const POSTMAN_FORMATS = new Set<ImportDialogFormat | ImportFormatKind>([
   'postman-globals',
 ]);
 
-/** The formats that start on the File tab: an export, a capture or a request file is a file on disk. */
-const FILE_FIRST = new Set<ImportDialogFormat | ImportFormatKind>([
-  ...POSTMAN_FORMATS,
-  'har',
-  'http-file',
-  'http-env',
-  'opencollection',
-  'postman-v3',
-  'legacy-soap-project',
-]);
-
-/**
- * The formats with nothing to fetch from a URL, so no URL tab: a variables export, a HAR capture, a
- * `.http` file (whose environment files are found beside it on disk) and an OpenCollection (whose
- * directory form is read from disk beside its root file).
- */
-const NO_URL = new Set<ImportDialogFormat | ImportFormatKind>([
-  ...WORKSPACE_ONLY,
-  'har',
-  'http-file',
-  'opencollection',
-  'postman-v3',
-]);
+/** The table row of a format picked by hand; Auto-detect has none. */
+function pickedRow(format: ImportDialogFormat): ImportFormatRow | undefined {
+  return format === 'auto' ? undefined : importFormatRow(format);
+}
 
 /** The definition file of a folder (v3) collection, which stands for the folder above `.resources`. */
 const V3_DEFINITION_FILE = /[\\/]\.resources[\\/]definition\.ya?ml$/i;
@@ -234,7 +205,7 @@ export interface ImportDialogProps {
 export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: ImportDialogProps) {
   const storeFormat = useUiStore((state) => state.importDialogFormat);
   const initialFmt = propFormat ?? storeFormat ?? 'auto';
-  const [tab, setTab] = useState<SourceTab>(FILE_FIRST.has(initialFmt) ? 'file' : 'url');
+  const [tab, setTab] = useState<SourceTab>(pickedRow(initialFmt)?.fileFirst === true ? 'file' : 'url');
   const [format, setFormat] = useState<ImportDialogFormat>(initialFmt);
   const [url, setUrl] = useState('');
   const [filePath, setFilePath] = useState('');
@@ -329,7 +300,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setTarget(selected ?? only ?? NEW_PROJECT);
     const fmt = propFormat ?? useUiStore.getState().importDialogFormat ?? 'auto';
     setFormat(fmt);
-    if (FILE_FIRST.has(fmt)) {
+    if (pickedRow(fmt)?.fileFirst === true) {
       setTab('file');
     }
   }, [open, propFormat]);
@@ -536,74 +507,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   }
 
   async function browseForFile(): Promise<void> {
-    const filters =
-      effectiveFormat === 'legacy-soap-project'
-        ? [
-            { name: 'Legacy SOAP project', extensions: ['xml'] },
-            { name: 'All Files', extensions: ['*'] },
-          ]
-        : effectiveFormat === 'postman'
-          ? [{ name: 'Postman Collection', extensions: ['json'] }]
-          : effectiveFormat === 'http-file'
-            ? [{ name: '.http file', extensions: ['http', 'rest'] }]
-            : effectiveFormat === 'http-env'
-              ? [{ name: 'HTTP client environment file', extensions: ['json'] }]
-              : effectiveFormat === 'opencollection'
-                ? [{ name: 'OpenCollection', extensions: ['yml', 'yaml'] }]
-                : effectiveFormat === 'postman-v3'
-                  ? [{ name: 'Collection definition (.resources/definition.yaml)', extensions: ['yaml', 'yml'] }]
-                  : WORKSPACE_ONLY.has(effectiveFormat)
-                    ? [{ name: 'Postman export', extensions: ['json'] }]
-                    : effectiveFormat === 'har'
-                      ? [{ name: 'HAR', extensions: ['har', 'json'] }]
-                      : effectiveFormat === 'proto'
-                        ? [
-                            { name: 'Protocol Buffers', extensions: ['proto'] },
-                            { name: 'All Files', extensions: ['*'] },
-                          ]
-                        : effectiveFormat === 'openapi'
-                          ? [
-                              { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
-                              { name: 'All Files', extensions: ['*'] },
-                            ]
-                          : effectiveFormat === 'asyncapi'
-                            ? [
-                                { name: 'AsyncAPI Document', extensions: ['json', 'yaml', 'yml'] },
-                                { name: 'All Files', extensions: ['*'] },
-                              ]
-                            : [
-                                {
-                                  name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
-                                  extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
-                                },
-                                { name: 'All Files', extensions: ['*'] },
-                              ];
-    const title =
-      effectiveFormat === 'legacy-soap-project'
-        ? 'Import Legacy SOAP Project'
-        : effectiveFormat === 'postman'
-          ? 'Import Postman Collection'
-          : effectiveFormat === 'postman-environment'
-            ? 'Import Postman Environment'
-            : effectiveFormat === 'postman-globals'
-              ? 'Import Postman Globals'
-              : effectiveFormat === 'har'
-                ? 'Import HAR'
-                : effectiveFormat === 'http-file'
-                  ? 'Import .http File'
-                  : effectiveFormat === 'http-env'
-                    ? 'Import HTTP Client Environments'
-                    : effectiveFormat === 'opencollection'
-                      ? 'Import OpenCollection'
-                      : effectiveFormat === 'postman-v3'
-                        ? 'Import Collection Definition'
-                        : effectiveFormat === 'proto'
-                          ? 'Import .proto'
-                          : effectiveFormat === 'openapi'
-                            ? 'Import OpenAPI Specification'
-                            : effectiveFormat === 'asyncapi'
-                              ? 'Import AsyncAPI Document'
-                              : 'Import Definition';
+    const row = importFormatRow(effectiveFormat);
+    const filters = row.fileFilters.map((filter) => ({ name: filter.name, extensions: [...filter.extensions] }));
+    const title = row.pickerTitle;
     const res = await ipc().dialogs.openFile({ title, filters });
     if (res.ok && res.value.path !== undefined) {
       setDropped(undefined);
@@ -652,23 +558,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
             : undefined
         : undefined;
 
-  const defaultName =
-    format === 'wsdl' || (format === 'auto' && (effectiveFormat === 'wsdl' || effectiveFormat === 'unknown'))
-      ? 'Imported service'
-      : format === 'postman' || effectiveFormat === 'postman'
-        ? 'Imported Collection'
-        : format === 'proto' || effectiveFormat === 'proto'
-          ? 'Imported gRPC API'
-          : format === 'har' || effectiveFormat === 'har'
-            ? 'Imported traffic'
-            : format === 'http-file' || effectiveFormat === 'http-file'
-              ? 'Imported requests'
-              : format === 'opencollection' ||
-                  effectiveFormat === 'opencollection' ||
-                  format === 'postman-v3' ||
-                  effectiveFormat === 'postman-v3'
-                ? 'Imported collection'
-                : 'Imported API';
+  const defaultName = importFormatRow(effectiveFormat).defaultName;
 
   // A collection saved as a folder is picked by its `opencollection.yml`, so the folder names it.
   const sourceName =
@@ -1298,33 +1188,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
             <Dialog.Title className="text-md font-medium text-fg-default">
               {result !== undefined
                 ? 'Import Complete'
-                : format === 'postman'
-                  ? 'Import Postman Collection'
-                  : format === 'openapi'
-                    ? 'Import OpenAPI'
-                    : format === 'asyncapi'
-                      ? 'Import AsyncAPI'
-                      : format === 'wsdl'
-                        ? 'Import WSDL'
-                        : format === 'proto'
-                          ? 'Import .proto'
-                          : format === 'legacy-soap-project'
-                            ? 'Import Legacy SOAP Project'
-                            : format === 'postman-environment'
-                              ? 'Import Postman Environment'
-                              : format === 'postman-globals'
-                                ? 'Import Postman Globals'
-                                : format === 'har'
-                                  ? 'Import HAR'
-                                  : format === 'http-file'
-                                    ? 'Import .http File'
-                                    : format === 'http-env'
-                                      ? 'Import HTTP Client Environments'
-                                      : format === 'opencollection'
-                                        ? 'Import OpenCollection'
-                                        : format === 'postman-v3'
-                                          ? 'Import Postman Collection v3'
-                                          : 'Import API or Service'}
+                : format === 'auto'
+                  ? 'Import API or Service'
+                  : importFormatRow(format).dialogTitle}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button type="button" aria-label="Close" className="text-fg-subtle hover:text-fg-default">
@@ -1353,26 +1219,18 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                         setTab('url');
                       }
                       // A Postman environment or globals export, or a HAR capture, has no URL tab.
-                      if (NO_URL.has(next) && tab === 'url') {
+                      if (pickedRow(next)?.tabs.includes('url') === false && tab === 'url') {
                         setTab('file');
                       }
                     }}
                     className="rounded border border-hairline-strong bg-surface-base px-2 py-1 text-xs text-fg-default outline-none focus:ring-1 focus:ring-accent"
                   >
                     <option value="auto">Auto-detect</option>
-                    <option value="openapi">OpenAPI / Swagger</option>
-                    <option value="asyncapi">AsyncAPI (WebSocket)</option>
-                    <option value="postman">Postman Collection</option>
-                    <option value="postman-v3">Postman Collection v3 (folder)</option>
-                    <option value="postman-environment">Postman environment</option>
-                    <option value="postman-globals">Postman globals</option>
-                    <option value="har">HAR (recorded traffic)</option>
-                    <option value="http-file">.http file</option>
-                    <option value="http-env">HTTP client environment file</option>
-                    <option value="opencollection">OpenCollection</option>
-                    <option value="wsdl">WSDL (SOAP)</option>
-                    <option value="proto">Protocol Buffers (gRPC)</option>
-                    <option value="legacy-soap-project">Legacy SOAP project</option>
+                    {IMPORT_FORMATS.map((row) => (
+                      <option key={row.kind} value={row.kind}>
+                        {row.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -1398,7 +1256,13 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 */}
                 <Tabs
                   label="Import source"
-                  items={isProto || tab === 'server' ? PROTO_TABS : NO_URL.has(effectiveFormat) ? FILE_TABS : TABS}
+                  items={
+                    isProto || tab === 'server'
+                      ? PROTO_TABS
+                      : importFormatRow(effectiveFormat).tabs.includes('url')
+                        ? TABS
+                        : FILE_TABS
+                  }
                   active={tab}
                   onSelect={setTab}
                 />
@@ -1549,7 +1413,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       >
                         Browse…
                       </Button>
-                      {(format === 'auto' || format === 'postman-v3') && (
+                      {(format === 'auto' || pickedRow(format)?.folder === true) && (
                         <Button data-testid="import-browse-folder" onClick={() => void browseForFolder()}>
                           Folder…
                         </Button>
@@ -1649,7 +1513,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
               </div>
 
               {/* Target Project Selection: a workspace-only format has no project to land in */}
-              {!WORKSPACE_ONLY.has(effectiveFormat) && (
+              {!importFormatRow(effectiveFormat).workspaceOnly && (
                 <div className="mt-3 flex items-center gap-2">
                   <label className="text-sm text-fg-subtle" htmlFor="import-target-project">
                     Into project
