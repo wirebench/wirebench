@@ -92,6 +92,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       definitionDocuments: fail('api.definitionDocuments'),
       definitionText: fail('api.definitionText'),
       exportDefinition: fail('api.exportDefinition'),
+      detectImportSource: fail('api.detectImportSource'),
     },
     definition: {
       import: fail('definition.import'),

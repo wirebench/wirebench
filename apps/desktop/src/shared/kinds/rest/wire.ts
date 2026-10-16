@@ -5,6 +5,7 @@
  */
 
 import { z } from 'zod';
+import type { ImportFormatKind } from '@wirebench/engine/detect';
 import { MAX_SEND_ENVIRONMENTS } from '../../multi-env-limits.js';
 import {
   MAX_IMPORT_LOCATION_CHARS,
@@ -795,6 +796,21 @@ export type ApiImportHarRequest = z.infer<typeof apiImportHarRequestSchema>;
 /** Request payload for `api.inspectHttpFile`: a `.http` file whose environment files are looked for beside it. */
 export const apiInspectHttpFileRequestSchema = z.object({ path: z.string().max(MAX_IMPORT_LOCATION_CHARS) });
 export type ApiInspectHttpFileRequest = z.infer<typeof apiInspectHttpFileRequestSchema>;
+
+/** Request payload for `api.detectImportSource`: a path the user picked, and whether it is a folder. */
+export const apiDetectImportSourceRequestSchema = z.object({
+  path: z.string().min(1).max(MAX_IMPORT_LOCATION_CHARS),
+  folder: z.boolean(),
+});
+export type ApiDetectImportSourceRequest = z.infer<typeof apiDetectImportSourceRequestSchema>;
+
+/** Response payload for `api.detectImportSource`: what main found the picked file or folder to be. */
+export const apiDetectImportSourceResponseSchema = z.object({
+  kind: z.custom<ImportFormatKind>((value) => typeof value === 'string' && value.length > 0 && value.length <= 64),
+  label: z.string().max(200),
+  confidence: z.enum(['definite', 'probable', 'unknown']),
+});
+export type ApiDetectImportSourceResponse = z.infer<typeof apiDetectImportSourceResponseSchema>;
 
 /** Response payload for `api.inspectHttpFile`: the environment names beside the file, never a value. */
 export const apiInspectHttpFileResponseSchema = z.object({ environments: z.array(z.string()).readonly() });

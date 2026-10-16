@@ -38,6 +38,7 @@ import type { PostmanSourceWire } from '../../shared/kinds/rest/wire.js';
 import type { DefinitionAuthWire, OpenApiSourceWire } from '../../shared/wire-base.js';
 import { MAX_DOCUMENT_TEXT_BYTES } from '../../shared/kinds/soap/wire.js';
 import type { ReadPicks } from '../dialog-picks.js';
+import { detectImportSource } from '../import-source-detect.js';
 import { pickFolder } from '../native-dialogs.js';
 import type { OpenApiImportService } from '../openapi-import.js';
 import type { ProtoImportService } from '../proto-import.js';
@@ -411,6 +412,11 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     };
     return [await textOf(HTTP_ENV_FILE), await textOf(HTTP_PRIVATE_ENV_FILE)];
   };
+
+  /** What a picked file or folder is, read by content: the renderer never holds a picked file's text. */
+  registerHandler(channels.api.detectImportSource, async (request) =>
+    detectImportSource(deps.projectDirs(), deps.picks, request),
+  );
 
   /** The environment names beside a `.http` file, so the import dialog can offer them. Never a value. */
   registerHandler(channels.api.inspectHttpFile, async (request) => {

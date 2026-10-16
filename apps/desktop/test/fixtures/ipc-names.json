@@ -17,6 +17,7 @@
     "api.clearGraphqlSchema",
     "api.definitionDocuments",
     "api.definitionText",
+    "api.detectImportSource",
     "api.exportDefinition",
     "api.grpcDefinition",
     "api.grpcFields",

@@ -27,6 +27,7 @@ const project: ProjectWire = {
 
 const importPostmanFolder = vi.fn();
 const openFolder = vi.fn();
+const detectImportSource = vi.fn();
 
 beforeEach(() => {
   useProjectStore.getState().reset();
@@ -43,6 +44,10 @@ beforeEach(() => {
     },
   });
   openFolder.mockReset().mockResolvedValue({ ok: true, value: { path: '/work/postman' } });
+  detectImportSource.mockReset().mockResolvedValue({
+    ok: true,
+    value: { kind: 'postman-v3', label: 'Postman Collection v3 (folder)', confidence: 'definite' },
+  });
 });
 
 afterEach(() => {
@@ -51,7 +56,7 @@ afterEach(() => {
 
 describe('Import dialog — folder (v3) collections', () => {
   it('detects a folder picked with Folder… and imports it', async () => {
-    installWirebenchApi({ api: { importPostmanFolder }, dialogs: { openFolder } });
+    installWirebenchApi({ api: { importPostmanFolder, detectImportSource }, dialogs: { openFolder } });
     render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="auto" />);
     await userEvent.click(screen.getByRole('tab', { name: 'File' }));
     fireEvent.click(screen.getByTestId('import-browse-folder'));
@@ -68,7 +73,7 @@ describe('Import dialog — folder (v3) collections', () => {
 
   it("detects a typed .resources/definition.yaml and names a new project after the collection's folder", async () => {
     useProjectStore.getState().reset();
-    installWirebenchApi({ api: { importPostmanFolder }, dialogs: { openFolder } });
+    installWirebenchApi({ api: { importPostmanFolder, detectImportSource }, dialogs: { openFolder } });
     render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="auto" />);
     await userEvent.click(screen.getByRole('tab', { name: 'File' }));
     fireEvent.change(screen.getByTestId('import-file-input'), {
@@ -84,7 +89,7 @@ describe('Import dialog — folder (v3) collections', () => {
   });
 
   it('asks for the folder when the collection was pasted', async () => {
-    installWirebenchApi({ api: { importPostmanFolder }, dialogs: { openFolder } });
+    installWirebenchApi({ api: { importPostmanFolder, detectImportSource }, dialogs: { openFolder } });
     render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="postman-v3" />);
     fireEvent.click(screen.getByTestId('import-submit'));
     expect(await screen.findByText('Pick the collection folder with Folder…')).toBeTruthy();

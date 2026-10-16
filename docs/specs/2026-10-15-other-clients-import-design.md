@@ -131,6 +131,14 @@ A file whose `type` is `mock.insomnia.rest/5.0` or `mcpClient.insomnia/5.0` is r
 `insomnia-not-collection`, naming the kind. Thunder Client's `thunderActivity.json` (History) is
 ignored.
 
+A picked file's text never reaches the renderer, so content rules run in main: the channel
+`api.detectImportSource` takes `{ path, folder }` and answers `{ kind, label, confidence }`. The path
+must pass `checkedImportSource`; a file is read with no-follow up to 50 MB and given to
+`detectImportFormat`, a folder's direct children are listed (a folder's name ends in `/`) and given to
+`detectImportFolder`, and the `thunder-tests` name and the `collections/` lookahead are decided in the
+handler. The dialog asks after a pick whose name is not definite and after every folder pick, and drops
+an answer for a source that has since changed.
+
 ### 3.4 Template dialects
 
 `template-dialects.ts` rewrites each tool's variable syntax to `{{x}}` before the shared

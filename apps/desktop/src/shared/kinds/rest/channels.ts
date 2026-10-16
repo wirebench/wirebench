@@ -22,6 +22,8 @@ import {
   apiImportPostmanVariablesResponseSchema,
   apiImportWebhooksRequestSchema,
   apiImportWebhooksResponseSchema,
+  apiDetectImportSourceRequestSchema,
+  apiDetectImportSourceResponseSchema,
   apiInspectHttpFileRequestSchema,
   apiInspectHttpFileResponseSchema,
   apiRestApplyUpdateRequestSchema,
@@ -131,6 +133,11 @@ export const restChannels = {
     importOpenApi: defineChannel('api.importOpenApi', apiImportOpenApiRequestSchema, apiImportOpenApiResponseSchema),
     importPostman: defineChannel('api.importPostman', apiImportPostmanRequestSchema, apiImportPostmanResponseSchema),
     importHar: defineChannel('api.importHar', apiImportHarRequestSchema, apiImportHarResponseSchema),
+    detectImportSource: defineChannel(
+      'api.detectImportSource',
+      apiDetectImportSourceRequestSchema,
+      apiDetectImportSourceResponseSchema,
+    ),
     inspectHttpFile: defineChannel(
       'api.inspectHttpFile',
       apiInspectHttpFileRequestSchema,

@@ -213,13 +213,6 @@ const NO_URL = new Set<ImportDialogFormat | ImportFormatKind>([
 /** The definition file of a folder (v3) collection, which stands for the folder above `.resources`. */
 const V3_DEFINITION_FILE = /[\\/]\.resources[\\/]definition\.ya?ml$/i;
 
-/** What a picked folder is read as: a folder (v3) collection, the one format kept as a folder. */
-const FOLDER_FORMAT: DetectedImportFormat = {
-  kind: 'postman-v3',
-  label: 'Postman Collection v3 (folder)',
-  confidence: 'definite',
-};
-
 /** The root document of an OpenCollection saved as a folder, which names nothing: the folder does. */
 const OC_ROOT_FILE = /(^|[\\/])opencollection\.ya?ml$/i;
 
@@ -346,15 +339,51 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     }) as (payload: unknown) => void);
   }, [open]);
 
+  // What main made of the picked file or folder by its content, for the path it was asked about.
+  const [sourceDetected, setSourceDetected] = useState<{ key: string; format: DetectedImportFormat } | undefined>(
+    undefined,
+  );
+
   // Real-time format detection
+  const pickedPath = tab === 'file' && dropped === undefined && filePath.length > 0 ? filePath : undefined;
+  const sourceKey = pickedPath === undefined ? undefined : `${folderPicked ? 'folder' : 'file'}:${pickedPath}`;
+  const byName = useMemo(
+    () => (pickedPath === undefined || folderPicked ? undefined : detectImportFormat({ filename: pickedPath })),
+    [pickedPath, folderPicked],
+  );
   const detected: DetectedImportFormat = useMemo(() => {
     const currentText = tab === 'paste' ? pasted : tab === 'file' ? dropped?.text : undefined;
     const currentFilename =
       tab === 'file' ? (dropped?.name ?? (filePath.length > 0 ? filePath : undefined)) : undefined;
     const currentUrl = tab === 'url' && url.length > 0 ? url : undefined;
-    if (tab === 'file' && folderPicked && dropped === undefined && filePath.length > 0) return FOLDER_FORMAT;
+    if (sourceKey !== undefined && sourceDetected?.key === sourceKey) return sourceDetected.format;
+    // A folder says nothing by its name: until main has read it, it is not assumed to be any format.
+    if (folderPicked && pickedPath !== undefined) return detectImportFormat({});
     return detectImportFormat({ text: currentText, filename: currentFilename, url: currentUrl });
-  }, [tab, pasted, dropped, filePath, url, folderPicked]);
+  }, [tab, pasted, dropped, filePath, url, folderPicked, pickedPath, sourceKey, sourceDetected]);
+
+  /*
+   * A picked file's text never reaches this side, so a name that does not settle its format (a renamed
+   * export) is put to main, and so is every folder. If a newer pick arrives before the answer, the
+   * answer is dropped. A path main refuses (typed in, not picked) keeps the name's guess.
+   */
+  useEffect(() => {
+    if (!open || sourceKey === undefined || pickedPath === undefined) return;
+    if (!folderPicked && byName?.confidence === 'definite') return;
+    let current = true;
+    const timer = setTimeout(() => {
+      void ipc()
+        .api.detectImportSource({ path: pickedPath, folder: folderPicked })
+        .then((res) => {
+          if (current && res.ok) setSourceDetected({ key: sourceKey, format: res.value });
+        })
+        .catch(() => undefined);
+    }, 150);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [open, sourceKey, pickedPath, folderPicked, byName]);
 
   const effectiveFormat: ImportFormatKind = format !== 'auto' ? format : detected.kind;
 
