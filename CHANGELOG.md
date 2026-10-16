@@ -39,7 +39,8 @@ All notable changes to this project are documented here. The format follows
   **Forwarding group** select; each group's menu has **New rule…** too. Quick connect lists the saved hosts
   a typed server matches above the one-off entry. A running session log says "running" without a size,
   Files gives names more room with a short Modified column, the snippet picker's **New snippet** stays on
-  one line, and a Settings search for "ssh" lists the SSH page first (#594).
+  one line, and a Settings search for "ssh" lists the SSH page first. A snippet suggestion typed fast no
+  longer starts over the last typed character: it waits for the shell's echo of the last key (#594).
 
 ### Fixed
 
