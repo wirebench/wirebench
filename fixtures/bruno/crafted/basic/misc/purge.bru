@@ -1,0 +1,15 @@
+meta {
+  name: Purge cache
+}
+
+http {
+  method: purge
+  url: {{baseUrl}}/cache?prompt={{?Which key}}
+  body: none
+  auth: wsse
+}
+
+auth:wsse {
+  username: u
+  password: p
+}

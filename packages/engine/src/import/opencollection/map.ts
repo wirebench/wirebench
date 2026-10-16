@@ -82,7 +82,7 @@ export interface MapOpenCollectionOptions {
 
 type Rec = Readonly<Record<string, unknown>>;
 
-const SETTINGS = new Set(['timeout', 'followRedirects', 'maxRedirects', 'encodeUrl']);
+const SETTINGS = new Set(['timeout', 'followRedirects', 'maxRedirects', 'encodeUrl', 'omitHeaders']);
 const ABSOLUTE_PATH = /^(?:[A-Za-z]:)?[\\/]/;
 /** A content type for an example body that names none in its headers, by the body's declared type. */
 const EXAMPLE_TYPES: Readonly<Record<string, string>> = {
@@ -469,17 +469,17 @@ class Mapper {
     if (this.wsApiUrl === undefined) this.wsApiUrl = split.path;
 
     const mapped = this.protocolRows(details['headers'], this.auth(details['auth'], label), label, blanked);
-    const raw = isRecord(details['message']) ? details['message'] : undefined;
-    const messages =
-      raw?.['data'] !== undefined
-        ? [
-            createWsSavedMessage('Message', {
-              newId: this.newId,
-              content: blankText(this.rewrite(this.messageText(raw['data'])), undefined, blanked),
-              format: 'text',
-            }),
-          ]
-        : [];
+    // One `message`, or a `messages` list of named ones.
+    const raw = isRecord(details['message']) ? [details['message']] : records(details['messages']);
+    const messages = raw
+      .filter((message) => message['data'] !== undefined)
+      .map((message) =>
+        createWsSavedMessage(str(message['name']) || 'Message', {
+          newId: this.newId,
+          content: blankText(this.rewrite(this.messageText(message['data'])), undefined, blanked),
+          format: 'text',
+        }),
+      );
     this.blankedWarning(label, blanked);
 
     const settings = item.settings ?? {};
@@ -570,6 +570,9 @@ class Mapper {
         body,
         auth,
         settings: this.settings(item.settings, label),
+        ...(typeof item.info.description === 'string' && item.info.description.trim() !== ''
+          ? { description: item.info.description }
+          : {}),
       }),
       assertions,
       ...(examples.length > 0 ? { examples } : {}),
@@ -734,7 +737,10 @@ class Mapper {
   /** The REST settings the item names; any other setting is noted once. */
   private settings(raw: Rec | undefined, label: string): RestRequestSettings {
     if (raw === undefined) return {};
-    const { timeout, followRedirects, maxRedirects, encodeUrl } = raw;
+    const { timeout, followRedirects, maxRedirects, encodeUrl, omitHeaders } = raw;
+    const omitted = Array.isArray(omitHeaders)
+      ? omitHeaders.filter((name): name is string => typeof name === 'string' && name.trim() !== '')
+      : [];
     const others = Object.keys(raw).filter((key) => !SETTINGS.has(key));
     if (others.length > 0) {
       this.report.note(`${label}: the settings ${others.join(', ')} have no Wirebench equivalent and were ignored.`);
@@ -744,6 +750,7 @@ class Mapper {
       ...(typeof followRedirects === 'boolean' ? { followRedirects } : {}),
       ...(typeof maxRedirects === 'number' && Number.isFinite(maxRedirects) ? { maxRedirects } : {}),
       ...(typeof encodeUrl === 'boolean' ? { encodeUrl } : {}),
+      ...(omitted.length > 0 ? { omitHeaders: omitted } : {}),
     };
   }
 

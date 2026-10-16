@@ -1,0 +1,33 @@
+meta {
+  name: Echo socket
+  type: ws
+  seq: 1
+}
+
+ws {
+  url: wss://echo.example.com/socket
+  body: ws
+  auth: none
+}
+
+headers {
+  X-Socket: 1
+}
+
+body:ws {
+  name: hello
+  type: json
+  content: '''
+    {"say": "hello"}
+  '''
+}
+
+body:ws {
+  name: bye
+  type: text
+  content: bye
+}
+
+settings {
+  keepAliveInterval: 30
+}

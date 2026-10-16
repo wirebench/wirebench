@@ -1,0 +1,13 @@
+{
+  "version": "1",
+  "name": "demo-collection",
+  "type": "collection",
+  "ignore": ["node_modules", ".git", "scratch"],
+  "proxy": {
+    "enabled": false,
+    "protocol": "http",
+    "hostname": "proxy.local",
+    "port": 3128,
+    "auth": { "enabled": true, "username": "proxyuser", "password": "proxy-pass-123" }
+  }
+}

@@ -1,0 +1,35 @@
+meta {
+  name: Get user
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/users/:id?verbose=true
+  body: none
+  auth: digest
+}
+
+params:query {
+  verbose: true
+  ~trace: 1
+}
+
+params:path {
+  id: {{userId}}
+}
+
+auth:digest {
+  username: admin
+  password: literal-digest-pass
+}
+
+settings {
+  encodeUrl: false
+  timeout: 5000
+  followRedirects: false
+  maxRedirects: 3
+  omitHeaders: [
+    User-Agent
+  ]
+}
