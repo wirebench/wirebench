@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Download, Lock, LockOpen, Trash2 } from 'lucide-react';
 import { Button } from '../../components/button.js';
@@ -10,7 +10,6 @@ import { isStsRow, sendIdOf, useExchangesStore } from '../../state/exchanges.js'
 import { ipc } from '../../state/ipc-client.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
 import { LogDetail, type LogDetailTab } from './log-detail.js';
-import { LogCompare } from './log-compare-view.js';
 import { LogFilterBar } from './log-filter-bar.js';
 import { nextSelection } from './log-selection.js';
 import { LogRowMenu, type LogRowMenuProps } from './log-row-menu.js';
@@ -28,6 +27,13 @@ import {
   statusLabelOf,
   urlOf,
 } from './log-filter.js';
+
+// Split out: the comparison is a Monaco diff editor, and the log is part of the shell, so a static
+// import put all of Monaco in the window's first script.
+const LogCompare = lazy(async () => {
+  const module = await import('./log-compare-view.js');
+  return { default: module.LogCompare };
+});
 
 /** Beyond this many rows the plain map costs more than the virtualiser's bookkeeping. */
 const VIRTUALISE_ABOVE = 200;
@@ -441,7 +447,9 @@ export function HttpLog() {
         </div>
 
         {pair !== undefined ? (
-          <LogCompare left={pair[0]} right={pair[1]} />
+          <Suspense fallback={null}>
+            <LogCompare left={pair[0]} right={pair[1]} />
+          </Suspense>
         ) : (
           selected !== undefined && (
             <LogDetail

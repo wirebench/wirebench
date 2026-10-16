@@ -1,6 +1,6 @@
 import { completionContextAt, formatXml } from '@wirebench/engine/xml';
 import type * as Monaco from 'monaco-editor';
-import { XML_LANGUAGE_ID } from './monaco.js';
+import { XML_LANGUAGE_ID } from './language-ids.js';
 
 /** One candidate child element, as returned by the `xml.completions` IPC channel. */
 export interface XmlCompletionCandidate {

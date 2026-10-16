@@ -409,9 +409,11 @@ export function mapCollectionV3(workspace: V3Workspace, options: MapCollectionV3
     );
     const prefix = several ? `${collection.name}: ` : '';
     for (const warning of http.summary.warnings ?? []) report.warn(`${prefix}${warning}`);
-    if (protocols.credentials > 0 && http.summary.requests === 0) {
+    if (protocols.credentials > 0) {
+      // With REST requests, the REST mapper's line counts only theirs: this one counts the rest.
+      const from = http.summary.requests === 0 ? 'the collection' : 'gRPC and WebSocket requests';
       report.warn(
-        `${prefix}Credentials are not copied from the collection; re-enter them for ${String(protocols.credentials)} auth ${protocols.credentials === 1 ? 'configuration' : 'configurations'}`,
+        `${prefix}Credentials are not copied from ${from}; re-enter them for ${String(protocols.credentials)} auth ${protocols.credentials === 1 ? 'configuration' : 'configurations'}`,
       );
     }
     for (const variable of http.projectProperties.variables)

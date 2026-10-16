@@ -5,11 +5,14 @@
  * the renderer from 28 MB to under 10 MB by leaving the TypeScript, CSS, HTML and JSON language
  * services — and the four web workers behind them — out of the bundle. Nothing about that is
  * enforced by the compiler: one bare `import 'monaco-editor'` anywhere puts all four workers
- * back, silently. So the facts are asserted against the actual build output, by
+ * back, silently. The same goes for keeping Monaco out of the window's startup: one static import
+ * of an editor module from the shell loads all ~7 MB of it before the first paint (three such
+ * imports, and Vite's preload helper filed inside Monaco's chunk, once did). So the facts are asserted
+ * against the actual build output, by
  * `test/build-output.test.ts` (when the app has been built) and by the e2e global setup (which
  * requires a build in any case).
  */
-import { readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT } from './fixtures.js';
 
@@ -44,6 +47,38 @@ export interface RendererAssets {
   readonly forbidden: readonly string[];
   /** Total size of every `.js` file in the build. */
   readonly totalJsBytes: number;
+  /**
+   * Every file the window loads before its first paint: what `index.html` names (the entry script,
+   * its `modulepreload`s and stylesheets) plus everything those scripts import statically.
+   */
+  readonly startup: readonly string[];
+  /** The {@link startup} files that are Monaco's chunk (`monaco-*.js` / `monaco-*.css`). */
+  readonly startupMonaco: readonly string[];
+}
+
+/** `./assets/x.js` as named in `index.html`, or `./x.js` as imported by a chunk in `assets/`. */
+const HTML_ASSET = /(?:src|href)="\.\/([^"]+)"/g;
+const STATIC_IMPORT = /(?:^|[;\n}])\s*import\s*(?:[^'"()]*?\bfrom\s*)?"\.\/([^"]+\.js)"/g;
+
+/**
+ * The files the window loads before it can paint. Only static `import` statements are followed —
+ * a lazy `import()` is exactly what keeps a chunk out of this list.
+ */
+function startupFiles(dir: string): string[] {
+  const html = readFileSync(join(dir, 'index.html'), 'utf8');
+  const seen = new Set<string>([...html.matchAll(HTML_ASSET)].map((match) => match[1] ?? ''));
+  const queue = [...seen].filter((file) => file.endsWith('.js'));
+  for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
+    const folder = file.includes('/') ? file.slice(0, file.lastIndexOf('/') + 1) : '';
+    for (const match of readFileSync(join(dir, file), 'utf8').matchAll(STATIC_IMPORT)) {
+      const imported = `${folder}${match[1] ?? ''}`;
+      if (!seen.has(imported)) {
+        seen.add(imported);
+        queue.push(imported);
+      }
+    }
+  }
+  return [...seen].filter((file) => file !== '');
 }
 
 /** Recursively lists `dir`, returning paths relative to it. */
@@ -63,8 +98,11 @@ function listFiles(dir: string, prefix = ''): string[] {
 /** Reads a renderer build directory and reports what it holds. */
 export function inspectRendererAssets(dir: string = RENDERER_OUT_DIR): RendererAssets {
   const files = listFiles(dir);
+  const startup = startupFiles(dir);
   return {
     files,
+    startup,
+    startupMonaco: startup.filter((file) => /(^|\/)monaco-[^/]*\.(js|css)$/.test(file)),
     forbidden: files.filter((file) => FORBIDDEN_WORKER_ASSETS.some((worker) => file.includes(worker))),
     totalJsBytes: files
       .filter((file) => file.endsWith('.js'))
@@ -83,6 +121,13 @@ export function assertRendererAssets(dir: string = RENDERER_OUT_DIR): void {
     throw new Error(
       `renderer build contains Monaco language-service workers (${assets.forbidden.join(', ')}); ` +
         'only `monaco-core.ts` may pull Monaco in, and never through a bare `monaco-editor` import',
+    );
+  }
+  if (assets.startupMonaco.length > 0) {
+    throw new Error(
+      `the window loads Monaco before its first paint (${assets.startupMonaco.join(', ')}); ` +
+        'something the shell imports statically reaches `monaco-editor` — put it behind a `React.lazy` ' +
+        'boundary or a dynamic `import()`, as the editors are',
     );
   }
   if (assets.totalJsBytes >= RENDERER_JS_BUDGET_BYTES) {

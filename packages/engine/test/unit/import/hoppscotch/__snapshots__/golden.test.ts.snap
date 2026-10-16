@@ -806,7 +806,8 @@ exports[`Hoppscotch golden > maps v12-r17.json 1`] = `
       "The saved scripts call pw., hopp.; Wirebench does not run them. Port what they do to Wirebench scripts by hand.",
       "Shop API / Orders / Create order: request-level variables (sku) were not imported; Wirebench has no request scope.",
       "Shop API / Hawk: Hawk auth has no Wirebench equivalent, so it was set to "none".",
-      "Credentials are not copied from the collection; re-enter them for 5 auth configurations",
+      "JWT: the secret or key is not copied; set the secret (HS*) or key (RS*/ES*/PS*) before sending",
+      "Credentials are not copied from the collection; re-enter them for 4 auth configurations",
     ],
   },
   "scripts": [

@@ -117,4 +117,24 @@ describe('toHttpError', () => {
     const err = toHttpError(proxyErr, { userAborted: false, deadlineHit: false, hadProxy: true });
     expect(err.code).toBe('proxy');
   });
+
+  it("maps undici's refused-tunnel abort to proxy, with the proxy's status, when the user did not cancel", () => {
+    const tunnelErr = Object.assign(new Error('Proxy response (407) !== 200 when HTTP Tunneling'), {
+      name: 'AbortError',
+      code: 'UND_ERR_ABORTED',
+    });
+    const err = toHttpError(tunnelErr, { userAborted: false, deadlineHit: false, hadProxy: true });
+    expect(err.code).toBe('proxy');
+    expect(err.message).toBe('Proxy connection failed.');
+    expect(err.details).toEqual({ code: 'UND_ERR_ABORTED', proxyStatus: 407 });
+  });
+
+  it('keeps a user Cancel as aborted even when the abort error names the proxy', () => {
+    const tunnelErr = Object.assign(new Error('Proxy response (407) !== 200 when HTTP Tunneling'), {
+      name: 'AbortError',
+      code: 'UND_ERR_ABORTED',
+    });
+    const err = toHttpError(tunnelErr, { userAborted: true, deadlineHit: false, hadProxy: true });
+    expect(err.code).toBe('aborted');
+  });
 });

@@ -73,7 +73,7 @@ plain text. The import summary lists everything that was left out or changed.
 | Bearer | Bearer. A custom prefix is kept as the scheme. A token sent with no prefix becomes an API key named `Authorization`, with a note |
 | API key in a header or the query | API key, with its name and placement |
 | API key in a cookie | Auth **none**, with a warning |
-| OAuth 2 | OAuth 2, with each grant Wirebench has, its URLs, client ID and scopes |
+| OAuth 2 | OAuth 2 with the authorization code (PKCE included), client credentials or password grant, its URLs, client ID and scopes. Any other grant becomes **none**, with a warning naming it |
 | AWS IAM | AWS Signature v4, with the region and service |
 | OAuth 1, Hawk, ASAP, Netrc and any other type | Auth **none**, with a warning naming the type |
 
@@ -98,6 +98,12 @@ Format 5 does not export `.proto` files, so its gRPC API has no definition, and 
 
 Format 5 does not export WebSocket messages, and a note says so.
 
+In gRPC metadata and WebSocket headers, a header whose name looks like a credential (such as
+`Authorization`, `Cookie`, `X-Auth-Token` or `Api-Key`) holding a literal value is left out, and a
+note names it. A value that is only references, or an auth scheme word followed by references
+(`Bearer ${token}`), is kept. User info in a WebSocket or gRPC URL is cut, and a literal value of a
+credential-looking WebSocket query parameter is blanked, each with a note.
+
 ### Environments
 
 - **Base environment.** Its variables become project properties. A name the project already has
@@ -110,8 +116,9 @@ Format 5 does not export WebSocket messages, and a note says so.
   array element becomes `name.0`. Numbers and booleans become text.
 - **Private environments** import like the others. They are in the file only when you chose to
   export them.
-- **Vault secrets** are sealed or masked in the export and cannot be read. Each becomes a secret
-  with no value, listed in the summary so you can set it. `{{ _.vault.name }}` points at it.
+- **Vault secrets** are sealed or masked in the export and cannot be read. Each becomes an empty
+  entry in the secret store, referenced as `${secret:…}`, and the summary lists it so you can set
+  its value. `{{ _.vault.name }}` points at it.
 - **An environments file** (format 5 `environment` file, or a format 4 export of environments
   only): pick **Insomnia environments**. Its base environment merges into Globals, and each
   sub-environment becomes a workspace environment.

@@ -42,6 +42,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **WSDL import goes through your proxy and CA bundle.** Importing a WSDL by URL, re-fetching it when a
+  project reopens, and fetching a definition a legacy SOAP project file holds no copy of now use the
+  proxy and CA bundle from Settings, as sends and OpenAPI imports already did, with Basic or Kerberos
+  definition authentication too. On a corporate network, a WSDL reachable only through the proxy, or
+  served with a corporate-CA certificate, now imports.
+- **A refused proxy tunnel no longer reads as Cancelled.** When an HTTPS request goes through a proxy
+  that refuses the tunnel (a 407 for a wrong or missing proxy password), the send now fails with
+  "Proxy connection failed" and the proxy's status, instead of showing as if you had cancelled it.
 - **Credential headers stay out of imported Postman requests.** A literal `Authorization` header in a
   Postman collection becomes the request's bearer or basic auth (the user name only) and is dropped;
   any other credential-looking header with a literal value, such as `X-Api-Key` or `Cookie`, is
