@@ -25,6 +25,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { X, Sparkles } from 'lucide-react';
 import { detectImportFormat, type DetectedImportFormat, type ImportFormatKind } from '@wirebench/engine/detect';
 import type {
+  ApiImportClientResponse,
   ApiImportHarResponse,
   ApiImportHttpFileResponse,
   ApiImportOpenApiResponse,
@@ -61,6 +62,7 @@ import { lintGroupId, useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore, type ImportDialogFormat } from '../../state/ui.js';
 import { getExplorerTree } from './explorer-api.js';
+import { IMPORT_FORMATS, importFormatRow, type ImportFormatRow } from './import-formats.js';
 import { CopyReport, ImportReportView, ReportItems } from './import-report.js';
 
 export type SourceTab = 'url' | 'file' | 'paste' | 'server';
@@ -166,18 +168,8 @@ export type UnifiedImportResult =
   | { readonly kind: 'har'; readonly value: ApiImportHarResponse; readonly responses: HarResponses }
   | { readonly kind: 'http-file'; readonly value: ApiImportHttpFileResponse }
   | { readonly kind: 'opencollection'; readonly value: ApiImportOpenCollectionResponse }
-  | { readonly kind: 'postman-v3'; readonly value: ApiImportPostmanFolderResponse };
-
-/**
- * Formats that land in the workspace, not in a project: a Postman environment or a `.http` client
- * environment file becomes workspace environments and Postman globals merge into Globals, so the
- * dialog asks for no target project.
- */
-const WORKSPACE_ONLY = new Set<ImportDialogFormat | ImportFormatKind>([
-  'postman-environment',
-  'postman-globals',
-  'http-env',
-]);
+  | { readonly kind: 'postman-v3'; readonly value: ApiImportPostmanFolderResponse }
+  | { readonly kind: 'client'; readonly value: ApiImportClientResponse };
 
 /** The formats read from a Postman export file. */
 const POSTMAN_FORMATS = new Set<ImportDialogFormat | ImportFormatKind>([
@@ -186,39 +178,32 @@ const POSTMAN_FORMATS = new Set<ImportDialogFormat | ImportFormatKind>([
   'postman-globals',
 ]);
 
-/** The formats that start on the File tab: an export, a capture or a request file is a file on disk. */
-const FILE_FIRST = new Set<ImportDialogFormat | ImportFormatKind>([
-  ...POSTMAN_FORMATS,
-  'har',
-  'http-file',
-  'http-env',
-  'opencollection',
-  'postman-v3',
-  'legacy-soap-project',
-]);
-
-/**
- * The formats with nothing to fetch from a URL, so no URL tab: a variables export, a HAR capture, a
- * `.http` file (whose environment files are found beside it on disk) and an OpenCollection (whose
- * directory form is read from disk beside its root file).
- */
-const NO_URL = new Set<ImportDialogFormat | ImportFormatKind>([
-  ...WORKSPACE_ONLY,
-  'har',
-  'http-file',
-  'opencollection',
-  'postman-v3',
-]);
+/** The table row of a format picked by hand; Auto-detect has none. */
+function pickedRow(format: ImportDialogFormat): ImportFormatRow | undefined {
+  return format === 'auto' ? undefined : importFormatRow(format);
+}
 
 /** The definition file of a folder (v3) collection, which stands for the folder above `.resources`. */
 const V3_DEFINITION_FILE = /[\\/]\.resources[\\/]definition\.ya?ml$/i;
 
-/** What a picked folder is read as: a folder (v3) collection, the one format kept as a folder. */
-const FOLDER_FORMAT: DetectedImportFormat = {
+/**
+ * What a picked folder is read as until main says what it holds, or when it cannot: a folder (v3)
+ * collection, which main's folder walk also takes a workspace folder for.
+ */
+const FOLDER_FALLBACK: DetectedImportFormat = {
   kind: 'postman-v3',
   label: 'Postman Collection v3 (folder)',
-  confidence: 'definite',
+  confidence: 'probable',
 };
+
+/** Formats detection knows that this build does not import yet. */
+const NOT_IMPORTED_YET = new Set<ImportFormatKind>([
+  'bruno',
+  'hoppscotch',
+  'hoppscotch-environment',
+  'thunder-client',
+  'thunder-client-environment',
+]);
 
 /** The root document of an OpenCollection saved as a folder, which names nothing: the folder does. */
 const OC_ROOT_FILE = /(^|[\\/])opencollection\.ya?ml$/i;
@@ -234,7 +219,7 @@ export interface ImportDialogProps {
 export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: ImportDialogProps) {
   const storeFormat = useUiStore((state) => state.importDialogFormat);
   const initialFmt = propFormat ?? storeFormat ?? 'auto';
-  const [tab, setTab] = useState<SourceTab>(FILE_FIRST.has(initialFmt) ? 'file' : 'url');
+  const [tab, setTab] = useState<SourceTab>(pickedRow(initialFmt)?.fileFirst === true ? 'file' : 'url');
   const [format, setFormat] = useState<ImportDialogFormat>(initialFmt);
   const [url, setUrl] = useState('');
   const [filePath, setFilePath] = useState('');
@@ -329,7 +314,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setTarget(selected ?? only ?? NEW_PROJECT);
     const fmt = propFormat ?? useUiStore.getState().importDialogFormat ?? 'auto';
     setFormat(fmt);
-    if (FILE_FIRST.has(fmt)) {
+    if (pickedRow(fmt)?.fileFirst === true) {
       setTab('file');
     }
   }, [open, propFormat]);
@@ -346,15 +331,59 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     }) as (payload: unknown) => void);
   }, [open]);
 
+  /*
+   * A picked file's content never reaches the renderer, so its name is all detection here can read.
+   * When the name does not settle it, and for every picked folder, main is asked what the file or
+   * folder holds (`api.detectImportSource`); an answer for a path that has since changed is dropped.
+   */
+  const pickedKey =
+    tab === 'file' && dropped === undefined && filePath.length > 0 ? JSON.stringify([filePath, folderPicked]) : '';
+  const nameOnly = pickedKey !== '' && !folderPicked ? detectImportFormat({ filename: filePath }) : undefined;
+  const detectKey = open && pickedKey !== '' && (folderPicked || nameOnly?.confidence !== 'definite') ? pickedKey : '';
+  const [sourceDetection, setSourceDetection] = useState<
+    { readonly key: string; readonly detected: DetectedImportFormat } | undefined
+  >(undefined);
+  const detectionRef = useRef<{ key: string; answer: Promise<DetectedImportFormat | undefined> } | undefined>(
+    undefined,
+  );
+
+  useEffect(() => {
+    if (detectKey === '') {
+      detectionRef.current = undefined;
+      return;
+    }
+    const [path, folder] = JSON.parse(detectKey) as [string, boolean];
+    const answer = Promise.resolve()
+      .then(() => ipc().api.detectImportSource({ path, folder }))
+      .then((res): DetectedImportFormat | undefined =>
+        // Main answers with the engine's own detection, so its kind is one of the engine's kinds.
+        res.ok ? { ...res.value, kind: res.value.kind as ImportFormatKind } : undefined,
+      )
+      .catch(() => undefined);
+    detectionRef.current = { key: detectKey, answer };
+    let current = true;
+    void answer.then((detected) => {
+      if (current && detected !== undefined) setSourceDetection({ key: detectKey, detected });
+    });
+    return () => {
+      current = false;
+    };
+  }, [detectKey]);
+
   // Real-time format detection
   const detected: DetectedImportFormat = useMemo(() => {
+    if (pickedKey !== '') {
+      if (sourceDetection?.key === pickedKey && sourceDetection.detected.kind !== 'unknown') {
+        return sourceDetection.detected;
+      }
+      if (folderPicked) return FOLDER_FALLBACK;
+    }
     const currentText = tab === 'paste' ? pasted : tab === 'file' ? dropped?.text : undefined;
     const currentFilename =
       tab === 'file' ? (dropped?.name ?? (filePath.length > 0 ? filePath : undefined)) : undefined;
     const currentUrl = tab === 'url' && url.length > 0 ? url : undefined;
-    if (tab === 'file' && folderPicked && dropped === undefined && filePath.length > 0) return FOLDER_FORMAT;
     return detectImportFormat({ text: currentText, filename: currentFilename, url: currentUrl });
-  }, [tab, pasted, dropped, filePath, url, folderPicked]);
+  }, [tab, pasted, dropped, filePath, url, folderPicked, pickedKey, sourceDetection]);
 
   const effectiveFormat: ImportFormatKind = format !== 'auto' ? format : detected.kind;
 
@@ -536,74 +565,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   }
 
   async function browseForFile(): Promise<void> {
-    const filters =
-      effectiveFormat === 'legacy-soap-project'
-        ? [
-            { name: 'Legacy SOAP project', extensions: ['xml'] },
-            { name: 'All Files', extensions: ['*'] },
-          ]
-        : effectiveFormat === 'postman'
-          ? [{ name: 'Postman Collection', extensions: ['json'] }]
-          : effectiveFormat === 'http-file'
-            ? [{ name: '.http file', extensions: ['http', 'rest'] }]
-            : effectiveFormat === 'http-env'
-              ? [{ name: 'HTTP client environment file', extensions: ['json'] }]
-              : effectiveFormat === 'opencollection'
-                ? [{ name: 'OpenCollection', extensions: ['yml', 'yaml'] }]
-                : effectiveFormat === 'postman-v3'
-                  ? [{ name: 'Collection definition (.resources/definition.yaml)', extensions: ['yaml', 'yml'] }]
-                  : WORKSPACE_ONLY.has(effectiveFormat)
-                    ? [{ name: 'Postman export', extensions: ['json'] }]
-                    : effectiveFormat === 'har'
-                      ? [{ name: 'HAR', extensions: ['har', 'json'] }]
-                      : effectiveFormat === 'proto'
-                        ? [
-                            { name: 'Protocol Buffers', extensions: ['proto'] },
-                            { name: 'All Files', extensions: ['*'] },
-                          ]
-                        : effectiveFormat === 'openapi'
-                          ? [
-                              { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
-                              { name: 'All Files', extensions: ['*'] },
-                            ]
-                          : effectiveFormat === 'asyncapi'
-                            ? [
-                                { name: 'AsyncAPI Document', extensions: ['json', 'yaml', 'yml'] },
-                                { name: 'All Files', extensions: ['*'] },
-                              ]
-                            : [
-                                {
-                                  name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
-                                  extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
-                                },
-                                { name: 'All Files', extensions: ['*'] },
-                              ];
-    const title =
-      effectiveFormat === 'legacy-soap-project'
-        ? 'Import Legacy SOAP Project'
-        : effectiveFormat === 'postman'
-          ? 'Import Postman Collection'
-          : effectiveFormat === 'postman-environment'
-            ? 'Import Postman Environment'
-            : effectiveFormat === 'postman-globals'
-              ? 'Import Postman Globals'
-              : effectiveFormat === 'har'
-                ? 'Import HAR'
-                : effectiveFormat === 'http-file'
-                  ? 'Import .http File'
-                  : effectiveFormat === 'http-env'
-                    ? 'Import HTTP Client Environments'
-                    : effectiveFormat === 'opencollection'
-                      ? 'Import OpenCollection'
-                      : effectiveFormat === 'postman-v3'
-                        ? 'Import Collection Definition'
-                        : effectiveFormat === 'proto'
-                          ? 'Import .proto'
-                          : effectiveFormat === 'openapi'
-                            ? 'Import OpenAPI Specification'
-                            : effectiveFormat === 'asyncapi'
-                              ? 'Import AsyncAPI Document'
-                              : 'Import Definition';
+    const row = importFormatRow(effectiveFormat);
+    const filters = row.fileFilters.map((filter) => ({ name: filter.name, extensions: [...filter.extensions] }));
+    const title = row.pickerTitle;
     const res = await ipc().dialogs.openFile({ title, filters });
     if (res.ok && res.value.path !== undefined) {
       setDropped(undefined);
@@ -652,23 +616,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
             : undefined
         : undefined;
 
-  const defaultName =
-    format === 'wsdl' || (format === 'auto' && (effectiveFormat === 'wsdl' || effectiveFormat === 'unknown'))
-      ? 'Imported service'
-      : format === 'postman' || effectiveFormat === 'postman'
-        ? 'Imported Collection'
-        : format === 'proto' || effectiveFormat === 'proto'
-          ? 'Imported gRPC API'
-          : format === 'har' || effectiveFormat === 'har'
-            ? 'Imported traffic'
-            : format === 'http-file' || effectiveFormat === 'http-file'
-              ? 'Imported requests'
-              : format === 'opencollection' ||
-                  effectiveFormat === 'opencollection' ||
-                  format === 'postman-v3' ||
-                  effectiveFormat === 'postman-v3'
-                ? 'Imported collection'
-                : 'Imported API';
+  const defaultName = importFormatRow(effectiveFormat).defaultName;
 
   // A collection saved as a folder is picked by its `opencollection.yml`, so the folder names it.
   const sourceName =
@@ -775,18 +723,18 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   }
 
   /**
-   * A Postman environment or globals export, or a `.http` client environment file, lands in the
-   * workspace: main reads it, stores its secrets and answers with what it made. There is no project
-   * to pick and nothing to cancel.
+   * A Postman environment or globals export, a `.http` client environment file or another client's
+   * environments file lands in the workspace: main reads it, stores its secrets and answers with
+   * what it made. There is no project to pick and nothing to cancel.
    */
   async function importVariables(
-    kind: 'postman-environment' | 'postman-globals' | 'http-env',
+    kind: 'postman-environment' | 'postman-globals' | 'http-env' | 'insomnia-environment',
     source: ImportSourceWire,
   ): Promise<void> {
     if (source.kind === 'url') {
       setImportError(
-        kind === 'http-env'
-          ? 'Import from a URL is not supported for environment files. Pick the file or paste its JSON.'
+        kind === 'http-env' || kind === 'insomnia-environment'
+          ? 'Import from a URL is not supported for environment files. Pick the file or paste its contents.'
           : 'Import from a URL is not supported for Postman exports. Pick the file or paste its JSON.',
       );
       return;
@@ -794,11 +742,14 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setImporting(true);
     try {
       const call =
-        kind === 'http-env'
-          ? ipc().api.importHttpEnv
-          : kind === 'postman-environment'
-            ? ipc().api.importPostmanEnvironment
-            : ipc().api.importPostmanGlobals;
+        kind === 'insomnia-environment'
+          ? (request: { source: PostmanSourceWire }) =>
+              ipc().api.importClientEnvironments({ format: 'insomnia', source: request.source })
+          : kind === 'http-env'
+            ? ipc().api.importHttpEnv
+            : kind === 'postman-environment'
+              ? ipc().api.importPostmanEnvironment
+              : ipc().api.importPostmanGlobals;
       const res = await call({
         source:
           source.kind === 'file'
@@ -927,6 +878,37 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   }
 
   /**
+   * Another request client's export: main converts each collection into a REST, a gRPC and a
+   * WebSocket API in the chosen project, writes its scripts under `imported-scripts/` as text, and
+   * adds its environments to the workspace without making one active.
+   */
+  async function importClient(source: ImportSourceWire): Promise<void> {
+    if (source.kind === 'url') {
+      setImportError('Import from a URL is not supported for this export. Pick the file or paste its contents.');
+      return;
+    }
+    setImporting(true);
+    const chosen = openProjects.some((project) => project.id === target) ? target : NEW_PROJECT;
+    try {
+      const res = await ipc().api.importInsomnia({
+        target: chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen },
+        source: source.kind === 'file' ? { kind: 'file', path: source.path } : { kind: 'text', text: source.text },
+        ...(name.trim().length > 0 ? { name: name.trim() } : {}),
+      });
+      if (!res.ok) {
+        setImportError(res.error.message);
+        return;
+      }
+      getExplorerTree()?.open(`proj:${res.value.projectId}`);
+      setResult({ kind: 'client', value: res.value });
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  /**
    * A folder (v3) collection: main reads the picked folder — or the folder a picked
    * `.resources/definition.yaml` stands for — and places each collection's REST, gRPC and WebSocket
    * API; a workspace folder brings its environments and globals too. Only a path main can check is
@@ -958,6 +940,21 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     }
   }
 
+  /**
+   * The format to import as: the picked one, or the detected one. A picked file or folder main has
+   * not answered for yet is waited for, so an Import pressed straight after a pick reads what the
+   * file holds rather than its name.
+   */
+  async function importKind(): Promise<ImportFormatKind> {
+    if (format !== 'auto') return format;
+    const pending = detectionRef.current;
+    if (pending !== undefined && pending.key === detectKey && sourceDetection?.key !== detectKey) {
+      const answer = await pending.answer;
+      if (answer !== undefined && answer.kind !== 'unknown') return answer.kind;
+    }
+    return effectiveFormat;
+  }
+
   async function onImport(): Promise<void> {
     if (importing) {
       return;
@@ -967,93 +964,112 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       await importFromServer();
       return;
     }
+    const kind = await importKind();
+    if (NOT_IMPORTED_YET.has(kind)) {
+      setImportError(
+        `${kind === detected.kind ? detected.label : 'This format'} cannot be imported yet. Export it in another format Wirebench reads.`,
+      );
+      return;
+    }
     const source = buildSource();
     if (source === undefined) {
       if (tab === 'url') {
         setUrlError('Enter a valid URL');
       } else if (tab === 'file') {
         setImportError(
-          POSTMAN_FORMATS.has(effectiveFormat)
+          POSTMAN_FORMATS.has(kind)
             ? 'Pick a .json file to import'
-            : effectiveFormat === 'har'
+            : kind === 'har'
               ? 'Pick a .har file to import'
-              : effectiveFormat === 'http-file'
+              : kind === 'http-file'
                 ? 'Pick a .http file to import'
-                : effectiveFormat === 'http-env'
+                : kind === 'http-env' || kind === 'insomnia-environment'
                   ? 'Pick an environment file to import'
-                  : effectiveFormat === 'opencollection'
+                  : kind === 'opencollection'
                     ? 'Pick a collection .yml file, or the opencollection.yml of a collection folder'
-                    : effectiveFormat === 'postman-v3'
+                    : kind === 'postman-v3'
                       ? 'Pick the collection folder with Folder…'
-                      : 'Pick a file to import',
+                      : kind === 'insomnia'
+                        ? 'Pick an exported .json or .yaml file to import'
+                        : 'Pick a file to import',
         );
       } else {
         setImportError(
-          effectiveFormat === 'postman'
+          kind === 'postman'
             ? 'Paste a .json collection to import'
-            : POSTMAN_FORMATS.has(effectiveFormat)
+            : POSTMAN_FORMATS.has(kind)
               ? 'Paste the exported .json to import'
-              : effectiveFormat === 'har'
+              : kind === 'har'
                 ? 'Paste the HAR JSON to import'
-                : effectiveFormat === 'http-file'
+                : kind === 'http-file'
                   ? 'Paste the .http requests to import'
-                  : effectiveFormat === 'http-env'
+                  : kind === 'http-env'
                     ? 'Paste the environment JSON to import'
-                    : effectiveFormat === 'opencollection'
+                    : kind === 'opencollection'
                       ? 'Paste the collection YAML to import'
-                      : effectiveFormat === 'postman-v3'
+                      : kind === 'postman-v3'
                         ? 'A folder collection is imported from its folder: use the File tab'
-                        : 'Paste a definition to import',
+                        : kind === 'insomnia'
+                          ? 'Paste the exported JSON or YAML to import'
+                          : kind === 'insomnia-environment'
+                            ? 'Paste the environments file to import'
+                            : 'Paste a definition to import',
         );
       }
       return;
     }
 
     if (
-      effectiveFormat === 'postman-environment' ||
-      effectiveFormat === 'postman-globals' ||
-      effectiveFormat === 'http-env'
+      kind === 'postman-environment' ||
+      kind === 'postman-globals' ||
+      kind === 'http-env' ||
+      kind === 'insomnia-environment'
     ) {
-      await importVariables(effectiveFormat, source);
+      await importVariables(kind, source);
       return;
     }
 
-    if (effectiveFormat === 'legacy-soap-project') {
+    if (kind === 'legacy-soap-project') {
       await importLegacyProject(source);
       return;
     }
 
-    if (effectiveFormat === 'har') {
+    if (kind === 'har') {
       await importHar(source);
       return;
     }
 
-    if (effectiveFormat === 'http-file') {
+    if (kind === 'http-file') {
       await importHttp(source);
       return;
     }
 
-    if (effectiveFormat === 'opencollection') {
+    if (kind === 'opencollection') {
       await importOpenCollection(source);
       return;
     }
 
-    if (effectiveFormat === 'postman-v3') {
+    if (kind === 'postman-v3') {
       await importPostmanFolder(source);
+      return;
+    }
+
+    if (kind === 'insomnia') {
+      await importClient(source);
       return;
     }
 
     // Determine target format
     let targetFormat: 'wsdl' | 'openapi' | 'asyncapi' | 'postman' | 'proto';
-    if (effectiveFormat === 'wsdl') {
+    if (kind === 'wsdl') {
       targetFormat = 'wsdl';
-    } else if (effectiveFormat === 'proto') {
+    } else if (kind === 'proto') {
       targetFormat = 'proto';
-    } else if (effectiveFormat === 'postman') {
+    } else if (kind === 'postman') {
       targetFormat = 'postman';
-    } else if (effectiveFormat === 'openapi') {
+    } else if (kind === 'openapi') {
       targetFormat = 'openapi';
-    } else if (effectiveFormat === 'asyncapi') {
+    } else if (kind === 'asyncapi') {
       targetFormat = 'asyncapi';
     } else {
       // Unknown format: check hints
@@ -1298,33 +1314,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
             <Dialog.Title className="text-md font-medium text-fg-default">
               {result !== undefined
                 ? 'Import Complete'
-                : format === 'postman'
-                  ? 'Import Postman Collection'
-                  : format === 'openapi'
-                    ? 'Import OpenAPI'
-                    : format === 'asyncapi'
-                      ? 'Import AsyncAPI'
-                      : format === 'wsdl'
-                        ? 'Import WSDL'
-                        : format === 'proto'
-                          ? 'Import .proto'
-                          : format === 'legacy-soap-project'
-                            ? 'Import Legacy SOAP Project'
-                            : format === 'postman-environment'
-                              ? 'Import Postman Environment'
-                              : format === 'postman-globals'
-                                ? 'Import Postman Globals'
-                                : format === 'har'
-                                  ? 'Import HAR'
-                                  : format === 'http-file'
-                                    ? 'Import .http File'
-                                    : format === 'http-env'
-                                      ? 'Import HTTP Client Environments'
-                                      : format === 'opencollection'
-                                        ? 'Import OpenCollection'
-                                        : format === 'postman-v3'
-                                          ? 'Import Postman Collection v3'
-                                          : 'Import API or Service'}
+                : format === 'auto'
+                  ? 'Import API or Service'
+                  : importFormatRow(format).dialogTitle}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button type="button" aria-label="Close" className="text-fg-subtle hover:text-fg-default">
@@ -1353,26 +1345,18 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                         setTab('url');
                       }
                       // A Postman environment or globals export, or a HAR capture, has no URL tab.
-                      if (NO_URL.has(next) && tab === 'url') {
+                      if (pickedRow(next)?.tabs.includes('url') === false && tab === 'url') {
                         setTab('file');
                       }
                     }}
                     className="rounded border border-hairline-strong bg-surface-base px-2 py-1 text-xs text-fg-default outline-none focus:ring-1 focus:ring-accent"
                   >
                     <option value="auto">Auto-detect</option>
-                    <option value="openapi">OpenAPI / Swagger</option>
-                    <option value="asyncapi">AsyncAPI (WebSocket)</option>
-                    <option value="postman">Postman Collection</option>
-                    <option value="postman-v3">Postman Collection v3 (folder)</option>
-                    <option value="postman-environment">Postman environment</option>
-                    <option value="postman-globals">Postman globals</option>
-                    <option value="har">HAR (recorded traffic)</option>
-                    <option value="http-file">.http file</option>
-                    <option value="http-env">HTTP client environment file</option>
-                    <option value="opencollection">OpenCollection</option>
-                    <option value="wsdl">WSDL (SOAP)</option>
-                    <option value="proto">Protocol Buffers (gRPC)</option>
-                    <option value="legacy-soap-project">Legacy SOAP project</option>
+                    {IMPORT_FORMATS.map((row) => (
+                      <option key={row.kind} value={row.kind}>
+                        {row.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -1398,7 +1382,13 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 */}
                 <Tabs
                   label="Import source"
-                  items={isProto || tab === 'server' ? PROTO_TABS : NO_URL.has(effectiveFormat) ? FILE_TABS : TABS}
+                  items={
+                    isProto || tab === 'server'
+                      ? PROTO_TABS
+                      : importFormatRow(effectiveFormat).tabs.includes('url')
+                        ? TABS
+                        : FILE_TABS
+                  }
                   active={tab}
                   onSelect={setTab}
                 />
@@ -1549,7 +1539,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       >
                         Browse…
                       </Button>
-                      {(format === 'auto' || format === 'postman-v3') && (
+                      {(format === 'auto' || pickedRow(format)?.folder === true) && (
                         <Button data-testid="import-browse-folder" onClick={() => void browseForFolder()}>
                           Folder…
                         </Button>
@@ -1649,7 +1639,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
               </div>
 
               {/* Target Project Selection: a workspace-only format has no project to land in */}
-              {!WORKSPACE_ONLY.has(effectiveFormat) && (
+              {!importFormatRow(effectiveFormat).workspaceOnly && (
                 <div className="mt-3 flex items-center gap-2">
                   <label className="text-sm text-fg-subtle" htmlFor="import-target-project">
                     Into project
@@ -2000,7 +1990,9 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
                           ? 'import-opencollection-summary'
                           : result.kind === 'postman-v3'
                             ? 'import-postman-v3-summary'
-                            : 'import-summary'
+                            : result.kind === 'client'
+                              ? 'import-client-summary'
+                              : 'import-summary'
       }
       className="mt-3 flex flex-col gap-3"
     >
@@ -2175,6 +2167,7 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
 
       {result.kind === 'opencollection' && <OpenCollectionSummary value={result.value} />}
       {result.kind === 'postman-v3' && <PostmanFolderSummary value={result.value} />}
+      {result.kind === 'client' && <ClientImportSummary value={result.value} />}
 
       {result.kind === 'wsdl' && (
         <div className="rounded border border-hairline-strong p-2">
@@ -2463,6 +2456,47 @@ function PostmanFolderSummary({ value }: { readonly value: ApiImportPostmanFolde
         notes={value.notes}
         reportText={value.reportText}
         testId="import-postman-v3-report"
+      />
+    </>
+  );
+}
+
+/**
+ * What another client's export made: the APIs, requests and folders (and collections, when the
+ * export held several), the examples and assertions kept, the scripts saved as text; then the
+ * environments and properties it added, and the report.
+ */
+function ClientImportSummary({ value }: { readonly value: ApiImportClientResponse }) {
+  const { counts, variables } = value;
+  return (
+    <>
+      <div className="rounded border border-hairline-strong p-3 text-sm text-fg-default">
+        <p data-testid="import-client-counts">
+          {counts.collections > 1 ? `${plural(counts.collections, 'collection')}: ` : ''}
+          {plural(value.apiIds.length, 'API')}, {plural(counts.requests, 'request')}, {plural(counts.folders, 'folder')}
+        </p>
+        {counts.examples > 0 && (
+          <p data-testid="import-client-examples" className="mt-1 text-xs text-fg-subtle">
+            {plural(counts.examples, 'example')} kept
+          </p>
+        )}
+        {counts.assertions > 0 && (
+          <p data-testid="import-client-assertions" className="mt-1 text-xs text-fg-subtle">
+            {plural(counts.assertions, 'assertion')} mapped
+          </p>
+        )}
+        {counts.scripts > 0 && (
+          <p data-testid="import-client-scripts" className="mt-1 text-xs text-fg-subtle">
+            {plural(counts.scripts, 'script')} kept as text, never run
+          </p>
+        )}
+        {variables !== undefined && <VariablesLines summary={variables} testId="import-client" />}
+      </div>
+      <ImportReportView
+        warnings={value.warnings}
+        notes={value.notes}
+        reportText={value.reportText}
+        testId="import-client-report"
       />
     </>
   );

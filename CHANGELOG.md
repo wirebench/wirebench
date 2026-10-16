@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Import Insomnia exports.** **Import…** reads Insomnia's export formats 4 (JSON or YAML) and 5
+  (YAML), and detects a picked file by its content. Each workspace becomes a REST, a gRPC and a
+  WebSocket API in the chosen project, in Insomnia's order, with folder headers and auth. The base and
+  folder environments become project properties and the sub-environments workspace environments,
+  never made active; an environments file goes to the workspace, its base into Globals. Vault secrets
+  become secrets with no value, scripts are saved as text under `imported-scripts/` and never run, and
+  template tags Wirebench cannot run are kept and listed. `wirebench import` reads the same files.
+  Postman collections now bring Digest, AWS Signature and JWT auth across as well (#588).
+
 ### Changed
 
 - **History and Environments keep your request tabs.** Opening History or Environments no longer swaps

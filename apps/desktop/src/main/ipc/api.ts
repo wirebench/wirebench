@@ -8,9 +8,12 @@
  */
 
 import { createHash } from 'node:crypto';
+import { readdir } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import {
+  detectImportFolder,
+  detectImportFormat,
   formatImportReport,
   HTTP_ENV_FILE,
   HTTP_PRIVATE_ENV_FILE,
@@ -18,6 +21,7 @@ import {
   collectionV3Root,
   importHar,
   importHttpFile,
+  importInsomnia,
   importOpenCollection,
   importPostmanCollection,
   importPostmanVariables,
@@ -41,12 +45,13 @@ import type { ReadPicks } from '../dialog-picks.js';
 import { pickFolder } from '../native-dialogs.js';
 import type { OpenApiImportService } from '../openapi-import.js';
 import type { ProtoImportService } from '../proto-import.js';
-import { checkedCompanionPaths, checkedImportSource, readCompanionFile } from '../path-access.js';
+import { checkedCompanionPaths, checkedImportSource, readCompanionFile, readNoFollow } from '../path-access.js';
 import { checkedOpenCollectionRoot, readCompanionProtos, readOpenCollectionTree } from '../opencollection-tree.js';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { HistoryService, ImportedHistoryOutcome } from '../history-service.js';
 import type { ProjectRouter } from '../project-router.js';
 import { applyImportedVariables } from '../import-variables-apply.js';
+import { placeMappedImport } from '../import-place.js';
 import type { VariablesApplyPorts } from '../import-variables-apply.js';
 import { registerHandler } from './register.js';
 
@@ -216,6 +221,9 @@ function sharedNamesOf(text: string): string[] {
   const shared = (JSON.parse(text) as Record<string, unknown>)['$shared'];
   return typeof shared === 'object' && shared !== null && !Array.isArray(shared) ? Object.keys(shared) : [];
 }
+
+/** The most of a picked file read to detect its format: the import's own file limit. */
+const DETECT_MAX_BYTES = 50 * 1024 * 1024;
 
 /** The root document of an OpenCollection directory, in any case. */
 const OC_ROOT_FILE = /^opencollection\.ya?ml$/i;
@@ -436,6 +444,41 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     return {
       environments: parseHttpEnvFiles(publicText, privateText, 'project').environments.map((set) => set.name),
     };
+  });
+
+  /**
+   * What a picked file or folder holds, for the Import dialog, which can read neither (spec
+   * 2026-10-15 §3.3). A file is read without following a link, up to {@link DETECT_MAX_BYTES}, and
+   * detected by its content and name; a larger one by its name alone. A folder is detected by the
+   * names directly in it, a folder's name ending in `/`; a Thunder Client `thunder-tests` folder, or
+   * one whose `collections/` holds its `tc_col_*.json` files, is told apart from a folder collection
+   * here. The path must pass {@link checkedImportSource} first.
+   */
+  registerHandler(channels.api.detectImportSource, async (request) => {
+    const checked = await checkedPostmanSource({ kind: 'file', path: request.path });
+    if (checked.kind !== 'file') throw new WirebenchError('invalid-argument', 'Expected a path');
+    if (!request.folder) {
+      const bytes = await readNoFollow(checked.path, DETECT_MAX_BYTES, () => new Error('too large')).catch(
+        () => undefined,
+      );
+      return detectImportFormat({
+        ...(bytes !== undefined ? { text: bytes.toString('utf8') } : {}),
+        filename: checked.path,
+      });
+    }
+    const entries = await readdir(checked.path, { withFileTypes: true });
+    const children = entries.map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name));
+    if (basename(checked.path).toLowerCase() === 'thunder-tests') {
+      return { kind: 'thunder-client', label: 'Thunder Client collection', confidence: 'definite' as const };
+    }
+    if (entries.some((entry) => entry.isDirectory() && entry.name === 'collections')) {
+      const inner = await readdir(join(checked.path, 'collections')).catch(() => [] as string[]);
+      const lower = inner.map((name) => name.toLowerCase());
+      if (lower.some((name) => name.startsWith('tc_col_') && name.endsWith('.json'))) {
+        return { kind: 'thunder-client', label: 'Thunder Client collection', confidence: 'definite' as const };
+      }
+    }
+    return detectImportFolder(children);
   });
 
   /**
@@ -732,47 +775,19 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     });
 
     const placeIn = async (projectId: string) => {
-      let project: Awaited<ReturnType<typeof router.addApi>>['project'] | undefined;
-      const apiIds: string[] = [];
-      const placed = (added: Awaited<ReturnType<typeof router.addApi>>) => {
-        project = added.project;
-        apiIds.push(added.apiId);
-      };
-      for (const collection of mapped.collections) {
-        if (collection.rest !== undefined) {
-          placed(
-            await router.addApi(projectId, {
-              api: collection.rest,
-              documents: [],
-              source: root,
-              declaredVersion: 'postman-collection-v3',
-              cache: false,
-            }),
-          );
-        }
-        if (collection.grpc !== undefined) placed(await router.importGrpcApi(projectId, { api: collection.grpc }));
-        if (collection.websocket !== undefined)
-          placed(await router.importWsApi(projectId, { api: collection.websocket }));
-      }
-      const plan = mapped.variables;
-      const variables =
-        plan.environments.length > 0 || plan.globals !== undefined || plan.projectProperties !== undefined
-          ? await applyImportedVariables(plan, deps.variablesPorts(projectId))
-          : undefined;
-      // The apply result repeats the plan's own report; with nothing applied, the plan's report stands.
-      const variableReport = variables ?? plan.report;
-      const report = {
-        warnings: [...mapped.report.warnings, ...variableReport.warnings],
-        notes: [...mapped.report.notes, ...variableReport.notes],
-      };
+      const placed = await placeMappedImport(deps, projectId, mapped, {
+        source: root,
+        declaredVersion: 'postman-collection-v3',
+      });
       return {
-        projectId,
-        ...(project !== undefined ? { project } : {}),
-        apiIds,
+        projectId: placed.projectId,
+        ...(placed.project !== undefined ? { project: placed.project } : {}),
+        apiIds: placed.apiIds,
         counts: mapped.counts,
-        ...(variables !== undefined ? { variables } : {}),
-        ...report,
-        reportText: formatImportReport(report),
+        ...(placed.variables !== undefined ? { variables: placed.variables } : {}),
+        warnings: placed.warnings,
+        notes: placed.notes,
+        reportText: placed.reportText,
       };
     };
 
@@ -787,6 +802,76 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
       throw error;
     }
+  });
+
+  /**
+   * An Insomnia export (spec 2026-10-15 §4): each workspace's REST, gRPC and WebSocket API in the
+   * chosen project, its scripts under `imported-scripts/` (never run), its base and folder
+   * environments as project properties and its sub-environments as workspace environments (never
+   * activated). Everything is read and mapped before a project is created, so a refusal changes
+   * nothing; a project created for the import is taken back when anything after it fails. An export
+   * holding only environments goes to `api.importClientEnvironments` instead.
+   */
+  registerHandler(channels.api.importInsomnia, async (request) => {
+    const checkedSource = await checkedPostmanSource(request.source);
+    const mapped = await importInsomnia(checkedSource, {
+      ...(request.name !== undefined && request.name.trim() !== '' ? { name: request.name } : {}),
+    });
+    if (mapped.collections.length === 0 && mapped.variables.projectProperties === undefined) {
+      throw new WirebenchError(
+        'insomnia-environments-only',
+        'This Insomnia file holds only environments: import it as Insomnia environments.',
+      );
+    }
+    const source = checkedSource.kind === 'file' ? checkedSource.path : 'inline:insomnia';
+
+    const placeIn = async (projectId: string) => {
+      const placed = await placeMappedImport(deps, projectId, mapped, { source, declaredVersion: 'insomnia' });
+      return {
+        projectId: placed.projectId,
+        ...(placed.project !== undefined ? { project: placed.project } : {}),
+        apiIds: placed.apiIds,
+        counts: { ...mapped.counts, scripts: placed.scripts },
+        ...(placed.variables !== undefined ? { variables: placed.variables } : {}),
+        warnings: placed.warnings,
+        notes: placed.notes,
+        reportText: placed.reportText,
+      };
+    };
+
+    if ('projectId' in request.target) {
+      return await placeIn(request.target.projectId);
+    }
+
+    const { projectId } = await deps.addProject(request.target.newProjectName);
+    try {
+      return await placeIn(projectId);
+    } catch (error) {
+      await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
+      throw error;
+    }
+  });
+
+  /**
+   * Another request client's environments file, applied to the open workspace: its base merged into
+   * Globals, each sub-environment a workspace environment under a free name (never activated). An
+   * export holding requests is refused rather than half imported.
+   */
+  registerHandler(channels.api.importClientEnvironments, async (request) => {
+    const checkedSource = await checkedPostmanSource(request.source);
+    const mapped = await importInsomnia(checkedSource);
+    if (mapped.collections.length > 0 || mapped.variables.projectProperties !== undefined) {
+      throw new WirebenchError(
+        'insomnia-not-environments',
+        'This Insomnia export holds a collection: import it as an Insomnia export.',
+      );
+    }
+    const summary = await applyImportedVariables(mapped.variables, deps.variablesPorts(undefined));
+    const report = {
+      warnings: [...mapped.report.warnings, ...summary.warnings],
+      notes: [...mapped.report.notes, ...summary.notes],
+    };
+    return { summary: { ...summary, ...report }, reportText: formatImportReport(report) };
   });
 
   /**

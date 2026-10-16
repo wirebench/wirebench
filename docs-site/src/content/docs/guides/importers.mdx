@@ -1,12 +1,12 @@
 ---
 title: Importing APIs
-description: Bring a WSDL, OpenAPI document, Postman collection, HAR capture, .http file, OpenCollection, cURL command, .proto file, gRPC server or legacy SOAP project into Wirebench.
+description: Bring a WSDL, OpenAPI document, Postman collection, HAR capture, .http file, OpenCollection, Insomnia export, cURL command, .proto file, gRPC server or legacy SOAP project into Wirebench.
 ---
 
 import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
 Importing turns something you already have — a WSDL, an OpenAPI document, a Postman collection, a
-HAR capture of recorded traffic, a `.http` request file, an OpenCollection, a `curl` command, a `.proto` file, a running gRPC server, or a whole legacy SOAP project — into
+HAR capture of recorded traffic, a `.http` request file, an OpenCollection, an Insomnia export, a `curl` command, a `.proto` file, a running gRPC server, or a whole legacy SOAP project — into
 requests you can run and edit in Wirebench. Most formats share one dialog; cURL has its own,
 smaller one.
 
@@ -21,6 +21,7 @@ smaller one.
 | .http file | Import dialog | File or pasted text |
 | HTTP client environment file | Import dialog | File or pasted JSON |
 | OpenCollection | Import dialog | File (a document, or a folder's `opencollection.yml`) or pasted YAML |
+| Insomnia export or environments | Import dialog | File or pasted JSON/YAML |
 | .proto (gRPC) | Import dialog | URL, file, pasted text, or a running server |
 | Legacy SOAP project | Import dialog | File only |
 | cURL command | Import cURL dialog | Pasted command |
@@ -38,11 +39,12 @@ smaller one.
 
 3. Leave **Format** on **Auto-detect**, or pick one explicitly: **OpenAPI / Swagger**, **Postman
    Collection**, **Postman Collection v3 (folder)**, **Postman environment**, **Postman globals**, **HAR (recorded traffic)**, **.http file**, **HTTP client
-   environment file**, **OpenCollection**, **WSDL (SOAP)**, **Protocol Buffers (gRPC)**, or **Legacy SOAP project**. With
+   environment file**, **OpenCollection**, **Insomnia export**, **Insomnia environments**, **WSDL (SOAP)**, **Protocol Buffers (gRPC)**, or **Legacy SOAP project**. With
    auto-detect, a badge shows what was recognized, for example "WSDL / SOAP" or "OpenAPI 3.1.0".
 
 4. Pick **Into project** — an open project, or **New project "…"**. Postman environments and
-   globals, and HTTP client environment files, land in the workspace, so the dialog does not ask.
+   globals, HTTP client environment files and Insomnia environments land in the workspace, so the
+   dialog does not ask.
 
 5. Choose **Import**.
 
@@ -382,6 +384,47 @@ kept as text, then lists the environments and project properties added and the s
 
 See [From OpenCollection](/wirebench/docs/switching/opencollection/) for every rule, and what does
 not come across.
+
+## Insomnia exports
+
+Wirebench reads Insomnia's export formats 4 (JSON or YAML) and 5 (YAML). Each workspace in the file
+becomes a REST API, a gRPC API and a WebSocket API, each only when it has requests of that kind.
+Auto-detect recognizes the export by its content; a file that holds only environments is
+recognized as **Insomnia environments**.
+
+<Steps>
+
+1. Open **Import…**; it detects the format, or pick **Insomnia export** yourself.
+
+2. On the **File** tab, pick or drop the exported file, or paste its text on the **Paste** tab.
+   There is no URL tab.
+
+3. Choose the target project and **Import**.
+
+</Steps>
+
+The summary counts the APIs, requests and folders and the scripts kept as text, then lists the
+environments and project properties added and the secrets stored.
+
+- **Environments.** The base and folder environments become project properties; a name the
+  project already has keeps its value. Each sub-environment becomes a workspace environment,
+  renamed when the name is taken and **never made active**.
+- **Environments files.** Pick **Insomnia environments**: the base environment merges into Globals
+  and each sub-environment becomes a workspace environment. No project is asked for.
+- **Vault secrets** cannot be read from the export: each becomes a secret with no value, listed so
+  you can set it.
+- **Scripts** are saved as text under `imported-scripts/` and never run.
+- **Template tags** other than `uuid` and `now`, such as `{% response %}`, are kept as written and
+  listed; nothing runs them.
+- **Credentials** are never imported as plain text: passwords, tokens and keys are left for you to
+  enter on each **Auth** tab.
+- **gRPC definitions.** A format 4 export's `.proto` files become the gRPC API's definition. Format
+  5 does not export them, so its gRPC API has no definition yet, and the report says so.
+- **Refused.** Formats 1 to 3, mock server and MCP client files, and a file over 50 MB.
+
+From the command line, `wirebench import <file>` adds the same APIs and the plain variables, and
+lists secrets, environments, scripts and `.proto` files as not imported. See
+[From Insomnia](/wirebench/docs/switching/insomnia/) for every rule, and what does not come across.
 
 ## cURL commands
 

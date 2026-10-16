@@ -1,6 +1,7 @@
 /**
  * Format detection for API definition imports: WSDL, OpenAPI / Swagger, Postman Collections, HAR captures,
- * AsyncAPI, Protocol Buffers (`.proto`) and legacy single-XML SOAP projects.
+ * AsyncAPI, Protocol Buffers (`.proto`), legacy single-XML SOAP projects, and the exports of other
+ * request clients (Insomnia, Bruno, Hoppscotch, Thunder Client).
  *
  * Inspects document text, file names, or URLs to classify definition formats before or during import.
  */
@@ -23,6 +24,13 @@ export type ImportFormatKind =
   | 'http-file'
   | 'http-env'
   | 'opencollection'
+  | 'insomnia'
+  | 'insomnia-environment'
+  | 'bruno'
+  | 'hoppscotch'
+  | 'hoppscotch-environment'
+  | 'thunder-client'
+  | 'thunder-client-environment'
   | 'wsdl'
   | 'proto'
   | 'legacy-soap-project'
@@ -143,6 +151,166 @@ function looksLikeHttpEnv(parsed: Record<string, unknown>): boolean {
   );
 }
 
+/** Another request client's export, by its content (spec 2026-10-15 §3.3). */
+const INSOMNIA_FORMAT: DetectedImportFormat = { kind: 'insomnia', label: 'Insomnia export', confidence: 'definite' };
+const INSOMNIA_ENV_FORMAT: DetectedImportFormat = {
+  kind: 'insomnia-environment',
+  label: 'Insomnia environments',
+  confidence: 'definite',
+};
+const BRUNO_FORMAT: DetectedImportFormat = { kind: 'bruno', label: 'Bruno collection', confidence: 'definite' };
+const HOPPSCOTCH_FORMAT: DetectedImportFormat = {
+  kind: 'hoppscotch',
+  label: 'Hoppscotch collection',
+  confidence: 'definite',
+};
+const HOPPSCOTCH_ENV_FORMAT: DetectedImportFormat = {
+  kind: 'hoppscotch-environment',
+  label: 'Hoppscotch environments',
+  confidence: 'definite',
+};
+const THUNDER_FORMAT: DetectedImportFormat = {
+  kind: 'thunder-client',
+  label: 'Thunder Client collection',
+  confidence: 'definite',
+};
+const THUNDER_ENV_FORMAT: DetectedImportFormat = {
+  kind: 'thunder-client-environment',
+  label: 'Thunder Client environment',
+  confidence: 'definite',
+};
+const OPENCOLLECTION_FOLDER_FORMAT: DetectedImportFormat = {
+  kind: 'opencollection',
+  label: 'OpenCollection',
+  confidence: 'definite',
+};
+
+const THUNDER_MARKER = 'Thunder Client';
+/** How many collections and requests a Hoppscotch check looks at before it settles. */
+const HOPPSCOTCH_LOOK = 1000;
+
+/** The Thunder Client export kind `parsed` is, by its `clientName` (or older `client`) marker. */
+function thunderKindOf(parsed: Record<string, unknown>): DetectedImportFormat | undefined {
+  if ((parsed['clientName'] ?? parsed['client']) !== THUNDER_MARKER) return undefined;
+  if (typeof parsed['environmentName'] === 'string' && Array.isArray(parsed['variables'])) return THUNDER_ENV_FORMAT;
+  return THUNDER_FORMAT;
+}
+
+/**
+ * Whether `items` are Hoppscotch collections: each has a `name`, `folders` and `requests`, and the
+ * requests carry `endpoint` and `method` (REST), `url` and `query` (GraphQL) or `url` and `path`
+ * (the oldest REST). `probable` when no request was found to tell.
+ */
+function hoppscotchCollections(items: readonly unknown[]): 'definite' | 'probable' | undefined {
+  const queue: unknown[] = [...items];
+  let sawRequest = false;
+  for (let at = 0; at < queue.length && at < HOPPSCOTCH_LOOK; at += 1) {
+    const collection = queue[at];
+    if (!isRecord(collection)) return undefined;
+    const folders = collection['folders'];
+    const requests = collection['requests'];
+    if (typeof collection['name'] !== 'string' || !Array.isArray(folders) || !Array.isArray(requests)) return undefined;
+    if ('colId' in collection || 'colName' in collection) return undefined;
+    for (const request of requests) {
+      if (!isRecord(request)) return undefined;
+      const rest = typeof request['endpoint'] === 'string' && typeof request['method'] === 'string';
+      const graphql = typeof request['url'] === 'string' && typeof request['query'] === 'string';
+      const legacy = typeof request['url'] === 'string' && typeof request['path'] === 'string';
+      if (!rest && !graphql && !legacy) return undefined;
+      sawRequest = true;
+    }
+    queue.push(...(folders as unknown[]));
+  }
+  return sawRequest ? 'definite' : 'probable';
+}
+
+/** Whether `items` are Hoppscotch environments: a `name` and `variables` whose entries carry `key`. */
+function hoppscotchEnvironments(items: readonly unknown[]): 'definite' | 'probable' | undefined {
+  let sawVariable = false;
+  for (const environment of items.slice(0, HOPPSCOTCH_LOOK)) {
+    if (!isRecord(environment) || typeof environment['name'] !== 'string') return undefined;
+    const variables = environment['variables'];
+    if (!Array.isArray(variables) || 'values' in environment) return undefined;
+    for (const variable of variables) {
+      if (!isRecord(variable) || typeof variable['key'] !== 'string') return undefined;
+      sawVariable = true;
+    }
+  }
+  return sawVariable ? 'definite' : 'probable';
+}
+
+/** The Hoppscotch kind of a parsed file: one object or an array of them. */
+function hoppscotchKindOf(parsed: unknown): DetectedImportFormat | undefined {
+  const items = Array.isArray(parsed) ? parsed : [parsed];
+  if (items.length === 0) return undefined;
+  const collections = hoppscotchCollections(items);
+  if (collections !== undefined) return { ...HOPPSCOTCH_FORMAT, confidence: collections };
+  const environments = hoppscotchEnvironments(items);
+  if (environments !== undefined) return { ...HOPPSCOTCH_ENV_FORMAT, confidence: environments };
+  return undefined;
+}
+
+/** The Insomnia kind: a v1–v4 export by `__export_format`, a v5 file by its `type`. */
+function insomniaKindOf(parsed: Record<string, unknown>): DetectedImportFormat | undefined {
+  const format = parsed['__export_format'];
+  if (typeof format === 'number' && Number.isInteger(format) && format >= 1 && format <= 4) {
+    return { ...INSOMNIA_FORMAT, label: `Insomnia export (v${String(format)})` };
+  }
+  const type = parsed['type'];
+  if (typeof type !== 'string' || !(type.endsWith('.insomnia.rest/5.0') || type.endsWith('.insomnia/5.0'))) {
+    return undefined;
+  }
+  return type.startsWith('environment.') ? INSOMNIA_ENV_FORMAT : { ...INSOMNIA_FORMAT, label: 'Insomnia export (v5)' };
+}
+
+/** A Bruno JSON export: a string `version` and `name`, an `items` array, and none of OpenCollection's keys. */
+function isBrunoExport(parsed: Record<string, unknown>): boolean {
+  return (
+    typeof parsed['version'] === 'string' &&
+    parsed['version'] !== '' &&
+    typeof parsed['name'] === 'string' &&
+    Array.isArray(parsed['items']) &&
+    !('info' in parsed) &&
+    !('opencollection' in parsed)
+  );
+}
+
+/** Another request client's export, from its parsed content; checked before the Postman rules. */
+function detectClientExport(parsed: unknown): DetectedImportFormat | undefined {
+  if (isRecord(parsed)) {
+    const thunder = thunderKindOf(parsed);
+    if (thunder !== undefined) return thunder;
+  }
+  const hoppscotch = hoppscotchKindOf(parsed);
+  if (hoppscotch !== undefined) return hoppscotch;
+  if (!isRecord(parsed)) return undefined;
+  const insomnia = insomniaKindOf(parsed);
+  if (insomnia !== undefined) return insomnia;
+  return isBrunoExport(parsed) ? BRUNO_FORMAT : undefined;
+}
+
+/**
+ * A picked folder's format from its direct children's names, a folder's with a trailing `/`. An
+ * `opencollection.yml` beats a `bruno.json` beside it; Thunder Client's own files name it. A
+ * `thunder-tests` folder holding only `collections/` and `environments/` looks like a folder
+ * collection's workspace here: the host, which can look inside, settles that.
+ */
+export function detectImportFolder(children: readonly string[]): DetectedImportFormat {
+  const names = new Set(children.map((child) => child.toLowerCase()));
+  if (names.has('opencollection.yml') || names.has('opencollection.yaml')) return OPENCOLLECTION_FOLDER_FORMAT;
+  if (names.has('bruno.json')) return BRUNO_FORMAT;
+  if (
+    names.has('thunderclient.json') ||
+    names.has('thundercollection.json') ||
+    names.has('thunderenvironment.json') ||
+    names.has('thunderactivity.json')
+  ) {
+    return THUNDER_FORMAT;
+  }
+  if (names.has('.resources/') || children.some((child) => POSTMAN_V3_REQUEST.test(child))) return POSTMAN_V3_FORMAT;
+  return { ...POSTMAN_V3_FORMAT, confidence: 'probable' };
+}
+
 /** The format `text` shows by its content, or `undefined` when it shows none. */
 function detectFromText(text: string): DetectedImportFormat | undefined {
   // 0. A .proto file: a syntax statement, or the keywords nothing else opens with
@@ -193,6 +361,11 @@ function detectFromText(text: string): DetectedImportFormat | undefined {
     } catch {
       // Fall through to pattern matching
     }
+  }
+
+  if (didParse) {
+    const client = detectClientExport(parsed);
+    if (client !== undefined) return client;
   }
 
   if (didParse && isRecord(parsed)) {
@@ -341,6 +514,18 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
     if (target.endsWith('.postman_globals.json')) {
       return { kind: 'postman-globals', label: 'Postman globals', confidence: 'probable' };
     }
+    const base = target.split(/[\\/]/).at(-1) ?? target;
+    if (base === 'bruno.json') return { ...BRUNO_FORMAT, confidence: 'probable' };
+    if (base.startsWith('insomnia_') || base.includes('.insomnia.')) {
+      return { ...INSOMNIA_FORMAT, confidence: 'probable' };
+    }
+    if (base.startsWith('hoppscotch-') && base.endsWith('.json')) {
+      return base.includes('environment')
+        ? { ...HOPPSCOTCH_ENV_FORMAT, confidence: 'probable' }
+        : { ...HOPPSCOTCH_FORMAT, confidence: 'probable' };
+    }
+    if (base.startsWith('thunder-environment_')) return { ...THUNDER_ENV_FORMAT, confidence: 'probable' };
+    if (base.startsWith('thunder-collection_')) return { ...THUNDER_FORMAT, confidence: 'probable' };
     if (target.includes('postman_collection') || target.endsWith('.postman.json')) {
       return { kind: 'postman', label: 'Postman Collection', confidence: 'probable' };
     }

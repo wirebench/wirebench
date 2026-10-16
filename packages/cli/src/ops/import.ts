@@ -20,6 +20,7 @@ import {
   generateId,
   generateSoapRequest,
   importCollectionV3Folder,
+  importInsomnia,
   importOpenApi,
   importWsdl,
   nextApiOrder,
@@ -36,6 +37,10 @@ import {
 import type {
   Endpoint,
   FetchDocument,
+  ImportedScriptFile,
+  ImportedVariables,
+  ImportReport,
+  MappedClientEntry,
   WsdlImportResult,
   Interface,
   OperationDef,
@@ -66,7 +71,7 @@ export interface ImportProblemView {
 }
 
 export interface ImportOutput {
-  readonly format: 'wsdl' | 'openapi' | 'postman-v3';
+  readonly format: 'wsdl' | 'openapi' | 'postman-v3' | 'insomnia';
   readonly added: readonly ImportedItem[];
   /** What the importer reported it could not map. */
   readonly problems: readonly ImportProblemView[];
@@ -87,7 +92,7 @@ const input = z.object({
     .string()
     .min(1)
     .describe(
-      'A WSDL or OpenAPI file (an absolute path is safest), an http(s) URL, or a folder collection (v3): its folder, its .resources/definition.yaml, or a workspace folder holding collections/',
+      'A WSDL or OpenAPI file (an absolute path is safest), an http(s) URL, an Insomnia export, or a folder collection (v3): its folder, its .resources/definition.yaml, or a workspace folder holding collections/',
     ),
   name: z
     .string()
@@ -326,24 +331,33 @@ function requestCount(container: {
   );
 }
 
+/** A collection export, mapped: what {@link addMappedCollections} places. */
+interface MappedCollections {
+  readonly collections: readonly MappedClientEntry[];
+  readonly variables: ImportedVariables;
+  readonly scripts?: readonly ImportedScriptFile[];
+  readonly report: ImportReport;
+}
+
+/** Why the command line leaves environments out, for a file of them or a collection that has some. */
+const NO_WORKSPACE = 'the command line has no workspace. Import the file in the desktop to bring them across.';
+
 /**
- * A folder (v3) collection: each collection's REST, gRPC and WebSocket APIs under free slugs, and
- * its plain variables as project properties a name the project already has keeps its value. The
- * command line has no secret store and no workspace, so secret variables, environments and globals
- * are reported, not imported.
+ * A mapped collection export (a folder (v3) collection or another client's export): each
+ * collection's REST, gRPC and WebSocket APIs under free slugs, and its plain variables as project
+ * properties a name the project already has keeps its value. The command line has no secret store,
+ * no workspace and no script folder, so secret variables, environments, globals and scripts are
+ * reported, not imported; so is a `.proto` definition, which only the desktop loads.
  */
-async function addCollectionV3(
+async function addMappedCollections(
   context: OpsContext,
   project: Project,
-  path: string,
-  name: string | undefined,
+  mapped: MappedCollections,
+  format: 'postman-v3' | 'insomnia',
 ): Promise<ImportOutput> {
-  const mapped = await importCollectionV3Folder(path, {
-    firstOrder: nextApiOrder(project),
-    ...(name !== undefined ? { name } : {}),
-  });
   const taken = new Set([...takenContainerSlugs(project, 'apis'), ...takenContainerSlugs(project, 'interfaces')]);
   const added: ImportedItem[] = [];
+  const noDefinition: string[] = [];
   let next = project;
   for (const collection of mapped.collections) {
     for (const api of [collection.rest, collection.grpc, collection.websocket]) {
@@ -353,6 +367,7 @@ async function addCollectionV3(
       next = withContainersOf(next, api.kind, [...containersOf(next, api.kind), { ...api, slug }]);
       added.push({ kind: api.kind, name: api.name, slug, requests: requestCount(api) });
     }
+    if (collection.grpc !== undefined && collection.grpcProtos !== undefined) noDefinition.push(collection.grpc.name);
   }
   // A Map, then fromEntries: a variable named like an Object.prototype member stays an own entry.
   const properties = new Map(Object.entries(next.properties));
@@ -387,14 +402,47 @@ async function addCollectionV3(
   if (environments > 0) {
     problems.push({
       code: 'environments-not-imported',
-      message: `${String(environments)} environment and globals file(s) were not imported: the command line has no workspace. Import the folder in the desktop to bring them across.`,
+      message: `${String(environments)} environment and globals file(s) were not imported: ${NO_WORKSPACE}`,
+    });
+  }
+  const scripts = mapped.scripts?.length ?? 0;
+  if (scripts > 0) {
+    problems.push({
+      code: 'scripts-not-saved',
+      message: `${String(scripts)} script(s) were not saved: the command line keeps no imported scripts. Import the file in the desktop to keep them as text.`,
+    });
+  }
+  if (noDefinition.length > 0) {
+    problems.push({
+      code: 'definition-not-imported',
+      message: `${noDefinition.join(', ')}: the export's .proto files were not imported from the command line; import them with the API, or use server reflection.`,
     });
   }
   problems.push(
     ...mapped.report.warnings.map((message) => ({ code: 'import-warning', message: redactUrlsInText(message) })),
     ...mapped.report.notes.map((message) => ({ code: 'import-note', message: redactUrlsInText(message) })),
   );
-  return { format: 'postman-v3', added, problems };
+  return { format, added, problems };
+}
+
+/** An Insomnia export's text, mapped; a file of environments alone is refused, as the command line has no workspace. */
+async function addInsomnia(
+  context: OpsContext,
+  project: Project,
+  text: string,
+  name: string | undefined,
+): Promise<ImportOutput> {
+  const mapped = await importInsomnia(
+    { kind: 'text', text },
+    { firstOrder: nextApiOrder(project), ...(name !== undefined ? { name } : {}) },
+  );
+  if (mapped.collections.length === 0 && mapped.variables.projectProperties === undefined) {
+    throw new OpsError(
+      'environments-not-imported',
+      `The file holds only environments, which are not imported: ${NO_WORKSPACE}`,
+    );
+  }
+  return addMappedCollections(context, project, mapped, 'insomnia');
 }
 
 export const importOp = defineOp({
@@ -403,7 +451,8 @@ export const importOp = defineOp({
   description:
     'Imports a WSDL or OpenAPI definition (a file path or an http(s) URL) into the project as a new SOAP ' +
     'interface or REST API, with its definition cached and one sample request per operation; or a folder ' +
-    'collection (v3) as its REST, gRPC and WebSocket APIs with its plain variables as project properties. ' +
+    'collection (v3) or an Insomnia export as its REST, gRPC and WebSocket APIs with its plain variables as ' +
+    'project properties. ' +
     'Writes the project folder. Needs the server started with --allow-write.',
   input,
   async run(value, context): Promise<ImportOutput> {
@@ -415,7 +464,12 @@ export const importOp = defineOp({
     }
     const { project } = await openProject(context);
     if (await isCollectionFolder(value.source)) {
-      return addCollectionV3(context, project, resolve(value.source), value.name);
+      const path = resolve(value.source);
+      const mapped = await importCollectionV3Folder(path, {
+        firstOrder: nextApiOrder(project),
+        ...(value.name !== undefined ? { name: value.name } : {}),
+      });
+      return addMappedCollections(context, project, mapped, 'postman-v3');
     }
     const fetchDocument = fetcherFor(context.env);
     const read = await readSource(value.source, fetchDocument);
@@ -426,11 +480,21 @@ export const importOp = defineOp({
     if (detected.kind === 'openapi') {
       return addOpenApi(context, project, read, fetchDocument, value.name);
     }
+    if (detected.kind === 'insomnia') {
+      return addInsomnia(context, project, read.text, value.name);
+    }
+    if (detected.kind.endsWith('-environment')) {
+      throw new OpsError(
+        'environments-not-imported',
+        `${value.source} reads as ${detected.label}, which is not imported: ${NO_WORKSPACE}`,
+        { format: detected.kind },
+      );
+    }
     throw new OpsError(
       'unsupported-format',
       detected.kind === 'postman-v3'
         ? `${value.source} is one file of a folder collection; import its folder or its .resources/definition.yaml`
-        : `${value.source} reads as ${detected.label}; import takes a WSDL or an OpenAPI document, or a folder collection`,
+        : `${value.source} reads as ${detected.label}; import takes a WSDL or an OpenAPI document, an Insomnia export, or a folder collection`,
       { format: detected.kind },
     );
   },

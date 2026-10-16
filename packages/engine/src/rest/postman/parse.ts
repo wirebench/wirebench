@@ -264,15 +264,17 @@ function parseItem(raw: Record_, ctx: ParseContext, depth: number): PostmanItem 
   };
 }
 
-/** The redirect settings of `protocolProfileBehavior`; `undefined` when it names neither. */
+/** The redirect and URL-encoding settings of `protocolProfileBehavior`; `undefined` when it names none. */
 function parseBehaviour(raw: Record_): PostmanRequestBehaviour | undefined {
   const follow = asBoolean(raw['followRedirects']);
   const max = raw['maxRedirects'];
   const maxRedirects = typeof max === 'number' && Number.isInteger(max) && max >= 0 ? max : undefined;
-  if (follow === undefined && maxRedirects === undefined) return undefined;
+  const verbatim = asBoolean(raw['disableUrlEncoding']) === true;
+  if (follow === undefined && maxRedirects === undefined && !verbatim) return undefined;
   return {
     ...(follow !== undefined ? { followRedirects: follow } : {}),
     ...(maxRedirects !== undefined ? { maxRedirects } : {}),
+    ...(verbatim ? { encodeUrl: false } : {}),
   };
 }
 
@@ -543,10 +545,12 @@ function parseBody(raw: Record_, ctx: ParseContext): PostmanBody {
   if (mode === 'graphql') {
     const gql = isRecord(raw['graphql']) ? raw['graphql'] : {};
     const variables = gql['variables'];
+    const operationName = asString(gql['operationName']);
     return {
       mode: 'graphql',
       graphql: {
         query: tv(ctx, asString(gql['query']) ?? ''),
+        ...(operationName !== undefined && operationName !== '' ? { operationName } : {}),
         // Kept as text: it may hold a reference in a value position, which is not JSON until a send.
         variables: isRecord(variables)
           ? tv(ctx, JSON.stringify(variables, null, 2))
@@ -616,6 +620,9 @@ function parseAuth(raw: Record_, ctx: ParseContext): PostmanAuth {
   const apikey = extractAttributes('apikey');
   const oauth2 = extractAttributes('oauth2');
   const ntlm = extractAttributes('ntlm');
+  const digest = extractAttributes('digest');
+  const awsv4 = extractAttributes('awsv4');
+  const jwt = extractAttributes('jwt');
 
   return {
     ...(type !== undefined ? { type } : {}),
@@ -624,6 +631,9 @@ function parseAuth(raw: Record_, ctx: ParseContext): PostmanAuth {
     ...(apikey !== undefined ? { apikey } : {}),
     ...(oauth2 !== undefined ? { oauth2 } : {}),
     ...(ntlm !== undefined ? { ntlm } : {}),
+    ...(digest !== undefined ? { digest } : {}),
+    ...(awsv4 !== undefined ? { awsv4 } : {}),
+    ...(jwt !== undefined ? { jwt } : {}),
   };
 }
 

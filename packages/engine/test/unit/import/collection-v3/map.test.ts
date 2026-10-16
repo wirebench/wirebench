@@ -126,8 +126,7 @@ describe('mapCollectionV3: HTTP requests through the v2.1 mapping', () => {
     expect(folderNamed('Admin').auth).toEqual({ type: 'basic', username: '${adminUser}' });
     expect(requestNamed('Get all books').auth).toEqual({ type: 'inherit' });
     expect(requestNamed('Audit').auth).toEqual({ type: 'none' });
-    expect(requestNamed('Purge').auth).toEqual({ type: 'none' });
-    expect(warnings).toContain('Bookstore API: Authentication type "digest" is not supported; set to "none"');
+    expect(requestNamed('Purge').auth).toEqual({ type: 'digest', username: 'admin' });
     expect(JSON.stringify(rest)).not.toContain('hunter2');
   });
 

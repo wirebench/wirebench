@@ -58,6 +58,9 @@ on a request becomes the request's. A request or folder set to inherit still inh
 | OAuth 2.0, client credentials | OAuth 2, client credentials: token URL, client ID and scopes |
 | OAuth 2.0, password credentials | OAuth 2, password: token URL, client ID, username and scopes. The password is not imported |
 | NTLM | NTLM, with the username, domain and workstation |
+| Digest | Digest, with the username. The password is not imported |
+| AWS Signature | AWS Signature v4, with the region and service. The keys and session token are not imported |
+| JWT Bearer | JWT, with the algorithm, payload, extra header and where the token goes. The secret or private key is not imported; an algorithm Wirebench cannot sign with sets auth to none, named in the summary |
 
 See [Authentication](/wirebench/docs/guides/auth/) for each scheme's fields.
 
@@ -69,7 +72,7 @@ See [Authentication](/wirebench/docs/guides/auth/) for each scheme's fields.
 | Dynamic variables such as `{{$guid}}` or `{{$timestamp}}` | Kept as written, and nothing generates a value. One warning in the summary names them all | Replace each with a property, or with a value a script sets |
 | Pre-request and test scripts | Imported where they were: the collection's on the API, each folder's on its folder, each request's on the request ([scripts](/wirebench/docs/guides/scripts/#scripts-on-apis-interfaces-and-folders)), run in the same order through a `pm` layer. **Switched off** until switched on. The summary counts them and names the scripts that call something the layer does not support | Read them, then **Switch on** (on a request, the API tab or a folder's **Scripts…**) or **Switch on scripts…** (for an API or folder and everything in it). `setNextRequest` and `skipRequest` steer an API or folder run ([steer a run](/wirebench/docs/guides/scripts/#steer-a-run)). Rewrite a call the layer does not support, such as `pm.sendRequest`; a value one request passes to another can also be a [sequence](/wirebench/docs/guides/sequences/) transfer |
 | OAuth 2.0 implicit grant | Auth set to none. The summary names the grant | Pick a supported grant on the **Auth** tab, or set the token as Bearer |
-| Other auth types (Digest, AWS Signature, Hawk, OAuth 1.0, Akamai, JWT…) | Auth set to none. The summary names the type | Set the request's auth by hand, or send the header yourself |
+| Other auth types (Hawk, OAuth 1.0, Akamai…) | Auth set to none. The summary names the type | Set the request's auth by hand, or send the header yourself |
 | Items that are neither a folder nor a request | Skipped. The summary counts them | Nothing: there was no request to import |
 | A saved response without a status code | Skipped. The summary counts them | Nothing |
 | Collections by URL | Not supported | Download the file, or paste its JSON |

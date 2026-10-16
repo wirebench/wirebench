@@ -1215,7 +1215,7 @@ void app.whenReady().then(() => {
       workspace: {
         environmentNames: () =>
           (workspaceService.snapshot()?.environments ?? []).map((environment) => environment.name),
-        addEnvironment: async (name, properties, disabled) => {
+        addEnvironment: async (name, properties, disabled, color) => {
           const { createdEnvironmentId } = await workspaceService.mutate({ kind: 'add-workspace-environment', name });
           if (createdEnvironmentId === undefined) {
             throw new WirebenchError('import-failed', `Could not add the environment "${name}"`);
@@ -1224,7 +1224,7 @@ void app.whenReady().then(() => {
             await workspaceService.mutate({
               kind: 'update-workspace-environment',
               environmentId: createdEnvironmentId,
-              patch: { properties, disabled: [...disabled] },
+              patch: { properties, disabled: [...disabled], ...(color !== undefined ? { color } : {}) },
             });
           } catch (error) {
             // Adding is two saves: do not leave the empty environment of the first behind.
