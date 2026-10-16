@@ -49,6 +49,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **An imported form-data file part with no file no longer stops the project from opening.** A
+  collection whose multipart body has a file part without a file, from Postman, Insomnia, Thunder
+  Client or Hoppscotch, now keeps that row as a switched-off text part, and the import report names
+  the request and tells you to pick the file again on the Body tab.
 - **WSDL import goes through your proxy and CA bundle.** Importing a WSDL by URL, re-fetching it when a
   project reopens, and fetching a definition a legacy SOAP project file holds no copy of now use the
   proxy and CA bundle from Settings, as sends and OpenAPI imports already did, with Basic or Kerberos
