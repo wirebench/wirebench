@@ -17,6 +17,7 @@ import { wsTabId } from '../../src/renderer/features/ws-editor/ws-actions.js';
 import { runnerTabId } from '../../src/renderer/features/runner/runner-actions.js';
 import { mcpApiTabId } from '../../src/renderer/features/mcp-api/mcp-api-actions.js';
 import { mcpTabId } from '../../src/renderer/features/mcp-editor/mcp-actions.js';
+import { scheduleTabId } from '../../src/renderer/features/schedules/schedules-actions.js';
 
 describe('renderer kinds (kind modules spec §6)', () => {
   it('has one renderer half per shared kind, in the same order', () => {
@@ -56,6 +57,7 @@ describe('renderer kinds (kind modules spec §6)', () => {
       history: (id) => `history:${id}`,
       'catch-url': catchUrlTabId,
       runner: runnerTabId,
+      schedule: scheduleTabId,
     };
     expect(Object.keys(TAB_KINDS).sort()).toEqual(Object.keys(openers).sort());
     for (const [kind, opener] of Object.entries(openers)) {

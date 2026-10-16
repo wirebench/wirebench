@@ -13,6 +13,13 @@ All notable changes to this project are documented here. The format follows
   as a project secret on this machine and the row keeps `${secret:name}`. On a workspace scope it is
   stored for every project the scope applies to. A name the project already has is refused, never
   overwritten (#634).
+- **Scheduled runs in the app.** A workspace shared on a server that runs schedules shows a
+  **Schedules** node in the Explorer: each schedule with a green, red or grey dot and, while failing,
+  how many runs failed in a row. Opening one shows its runs, newest first, and each run's results as
+  the Runner shows them, with the exchange of a failed request and how its alerts were delivered; a run
+  that ends appears without a refresh. **Schedule…** on a project, API, folder, request or sequence
+  opens a new schedule that runs it, picked from the open workspace. Workspace admins create, edit,
+  pause, run now, set secrets, test alerts and delete; everyone else reads (#517).
 - **Import Insomnia exports.** **Import…** reads Insomnia's export formats 4 (JSON or YAML) and 5
   (YAML), and detects a picked file by its content. Each workspace becomes a REST, a gRPC and a
   WebSocket API in the chosen project, in Insomnia's order, with folder headers and auth. The base and
