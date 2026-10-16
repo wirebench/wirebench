@@ -17,7 +17,10 @@ const GROUP_LABEL_CLASS = 'px-2 pt-1.5 pb-0.5 text-xs font-medium text-fg-subtle
 /** The label shown for "nothing is active", in the trigger and as the last menu entry. */
 export const NO_ENVIRONMENT_LABEL = 'No environment';
 
-/** What the trigger reads while no project tab has been focused yet: there is nothing to switch. */
+/**
+ * What the trigger reads while there is no current project: several projects are open and no project
+ * tab has been focused yet, so there is no one project a pick would apply to.
+ */
 export const NO_PROJECT_LABEL = 'No project';
 
 /** Stable empty groups, so the switcher does not rerender while there is nothing to offer. */
@@ -70,7 +73,7 @@ export function EnvSwitcher() {
 
   const environments = [...groups.allProjects, ...groups.project];
   const active = environments.find((environment) => environment.id === activeId);
-  // Until a project tab has been focused there is no project for a pick to apply to.
+  // With several projects and none focused yet there is no project for a pick to apply to.
   const disabled = projectId === undefined;
   // An open request made while disabled is dropped, not kept: otherwise focusing a project tab
   // later would pop the menu open unasked (Radix resets it only on user interaction).

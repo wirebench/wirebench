@@ -42,6 +42,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The environment switcher names your only project.** In a workspace of one project the title
+  bar's switcher now names that project and can be used straight away, instead of reading "No
+  project" until a request is opened. With several projects it still waits for a request tab to say
+  which (#634).
 - **API tabs read cleanly.** The REST, gRPC and WebSocket API tabs no longer show an issue number or
   repeat when an API's scripts run, and their authentication fields line up with Name and Description
   (#634).
