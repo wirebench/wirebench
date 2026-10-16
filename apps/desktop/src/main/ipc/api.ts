@@ -47,6 +47,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { HistoryService, ImportedHistoryOutcome } from '../history-service.js';
 import type { ProjectRouter } from '../project-router.js';
 import { applyImportedVariables } from '../import-variables-apply.js';
+import { placeMappedImport } from '../import-place.js';
 import type { VariablesApplyPorts } from '../import-variables-apply.js';
 import { registerHandler } from './register.js';
 
@@ -732,47 +733,19 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     });
 
     const placeIn = async (projectId: string) => {
-      let project: Awaited<ReturnType<typeof router.addApi>>['project'] | undefined;
-      const apiIds: string[] = [];
-      const placed = (added: Awaited<ReturnType<typeof router.addApi>>) => {
-        project = added.project;
-        apiIds.push(added.apiId);
-      };
-      for (const collection of mapped.collections) {
-        if (collection.rest !== undefined) {
-          placed(
-            await router.addApi(projectId, {
-              api: collection.rest,
-              documents: [],
-              source: root,
-              declaredVersion: 'postman-collection-v3',
-              cache: false,
-            }),
-          );
-        }
-        if (collection.grpc !== undefined) placed(await router.importGrpcApi(projectId, { api: collection.grpc }));
-        if (collection.websocket !== undefined)
-          placed(await router.importWsApi(projectId, { api: collection.websocket }));
-      }
-      const plan = mapped.variables;
-      const variables =
-        plan.environments.length > 0 || plan.globals !== undefined || plan.projectProperties !== undefined
-          ? await applyImportedVariables(plan, deps.variablesPorts(projectId))
-          : undefined;
-      // The apply result repeats the plan's own report; with nothing applied, the plan's report stands.
-      const variableReport = variables ?? plan.report;
-      const report = {
-        warnings: [...mapped.report.warnings, ...variableReport.warnings],
-        notes: [...mapped.report.notes, ...variableReport.notes],
-      };
+      const placed = await placeMappedImport(deps, projectId, mapped, {
+        source: root,
+        declaredVersion: 'postman-collection-v3',
+      });
       return {
-        projectId,
-        ...(project !== undefined ? { project } : {}),
-        apiIds,
+        projectId: placed.projectId,
+        ...(placed.project !== undefined ? { project: placed.project } : {}),
+        apiIds: placed.apiIds,
         counts: mapped.counts,
-        ...(variables !== undefined ? { variables } : {}),
-        ...report,
-        reportText: formatImportReport(report),
+        ...(placed.variables !== undefined ? { variables: placed.variables } : {}),
+        warnings: placed.warnings,
+        notes: placed.notes,
+        reportText: placed.reportText,
       };
     };
 
