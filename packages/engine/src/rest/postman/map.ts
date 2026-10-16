@@ -13,7 +13,7 @@ import type { ImportedVariableSet } from '../../import/variables.js';
 import { VariableSetBuilder, warnCredentialLookingNames } from '../../import/variables.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
-import { slugify, uniqueSlug } from '../../project/paths.js';
+import { slugify, SlugSet, uniqueSlug } from '../../project/paths.js';
 import type {
   KeyValueEntry,
   MultipartFormPart,
@@ -166,8 +166,8 @@ export function apiFromPostmanCollection(
     }
     const folders: RestFolder[] = [];
     const requests: RestRequestDef[] = [];
-    const folderSlugs = new Set<string>();
-    const requestSlugs = new Set<string>();
+    const folderSlugs = new SlugSet();
+    const requestSlugs = new SlugSet();
 
     for (const item of items) {
       addVariables(item.variable, `folder "${item.name}"`);

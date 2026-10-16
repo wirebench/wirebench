@@ -10,7 +10,7 @@ import type { EndpointAuth, Environment, IdGenerator } from '../../project/model
 import type { Endpoint, Interface, OperationDef, SoapRequestDef } from '../model.js';
 import { generateId } from '../../project/model.js';
 import { createInterface, createRequest } from '../model.js';
-import { slugify, uniqueSlug } from '../../project/paths.js';
+import { slugify, SlugSet, uniqueSlug } from '../../project/paths.js';
 import type { SoapOperationSummary } from '../types.js';
 import { DEFAULT_WSA_CONFIG } from '../../wsa/model.js';
 import { qnameToString } from '../../wsdl/qname.js';
@@ -207,7 +207,7 @@ function mapOperations(
     byName.set(operation.bindingOperationName, operation);
   }
 
-  const taken = new Set<string>();
+  const taken = new SlugSet();
   const operations: OperationDef[] = [];
   let requests = 0;
 
@@ -219,7 +219,7 @@ function mapOperations(
   ): void => {
     const slug = uniqueSlug(name, taken);
     taken.add(slug);
-    const requestSlugs = new Set<string>();
+    const requestSlugs = new SlugSet();
     const defs: SoapRequestDef[] = [];
     for (const call of source?.calls ?? []) {
       const path = joinPath(legacy.name, name, call.name);
@@ -360,7 +360,7 @@ export function mapLegacyProject(
   }
 
   const environmentNames = new Set(context.environmentNames);
-  const environmentSlugs = new Set(context.environmentSlugs);
+  const environmentSlugs = new SlugSet(context.environmentSlugs);
   const environments: Environment[] = [];
   for (const legacy of project.environments) {
     const name = uniqueName(legacy.name, environmentNames);

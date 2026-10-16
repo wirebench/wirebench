@@ -6,6 +6,7 @@
  * that sends — the round trip, not either half of it.
  */
 import { expect, test } from '@playwright/test';
+import { copyAndRead } from '../helpers/clipboard.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace, dismissChangedOnDiskBanners } from '../helpers/project.js';
 import {
@@ -155,9 +156,10 @@ test.describe('cURL', () => {
     await expect(page.getByTestId('code-panel-preview')).toContainText('X-Round: trip', { timeout: 20_000 });
     // Read the command through Copy rather than by scraping the highlighted preview: the preview is
     // one element per token, so its text content loses exactly the newlines a heredoc needs.
-    await page.getByTestId('code-panel-copy').click();
-    const command = await page.evaluate(() =>
-      (navigator as Navigator & { readonly clipboard: { readText(): Promise<string> } }).clipboard.readText(),
+    const command = await copyAndRead(
+      launched.app,
+      () => page.getByTestId('code-panel-copy').click(),
+      `${server.url}/echo`,
     );
     expect(command).toContain('X-Round: trip');
 

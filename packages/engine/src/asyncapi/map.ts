@@ -10,7 +10,7 @@ import { AsyncApiError } from '../errors.js';
 import { unsupportedKeywordsIn } from '../json/schema-validate.js';
 import { escapeExpansions } from '../project/escape-expansions.js';
 import type { AuthConfig, IdGenerator } from '../project/model.js';
-import { uniqueSlug } from '../project/paths.js';
+import { SlugSet, uniqueSlug } from '../project/paths.js';
 import { entry, type KeyValueEntry } from '../http/entries.js';
 import { sampleFromSchema } from '../json/schema/sample.js';
 import {
@@ -208,7 +208,7 @@ export function mapAsyncApi(document: AsyncApiDocument, options: MapAsyncApiOpti
 
   const rootRequests: WsRequestDef[] = [];
   const folders = new Map<string, WsRequestDef[]>();
-  const requestSlugs = new Map<string, Set<string>>();
+  const requestSlugs = new Map<string, SlugSet>();
   let messageCount = 0;
   let order = 0;
 
@@ -226,7 +226,7 @@ export function mapAsyncApi(document: AsyncApiDocument, options: MapAsyncApiOpti
     const operations = document.operations.filter((o) => o.channel === channel.key);
 
     const messages: WsSavedMessage[] = [];
-    const messageSlugs = new Set<string>();
+    const messageSlugs = new SlugSet();
     const seen = new Set<string>();
     for (const op of operations) {
       for (const m of op.messages) {
@@ -246,7 +246,7 @@ export function mapAsyncApi(document: AsyncApiDocument, options: MapAsyncApiOpti
 
     const tag = channel.tags[0];
     const bucket = tag ?? '';
-    const slugs = requestSlugs.get(bucket) ?? new Set<string>();
+    const slugs = requestSlugs.get(bucket) ?? new SlugSet();
     requestSlugs.set(bucket, slugs);
     const slug = uniqueSlug(channel.key, slugs);
     slugs.add(slug);
@@ -271,7 +271,7 @@ export function mapAsyncApi(document: AsyncApiDocument, options: MapAsyncApiOpti
     else folders.set(tag, [...(folders.get(tag) ?? []), request]);
   }
 
-  const folderSlugs = new Set<string>();
+  const folderSlugs = new SlugSet();
   const folderList: WsFolder[] = [...folders].map(([name, requests], index) => {
     const slug = uniqueSlug(name, folderSlugs);
     folderSlugs.add(slug);

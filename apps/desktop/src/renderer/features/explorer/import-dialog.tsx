@@ -196,9 +196,6 @@ const FOLDER_FALLBACK: DetectedImportFormat = {
   confidence: 'probable',
 };
 
-/** Formats detection knows that this build does not import yet. */
-const NOT_IMPORTED_YET = new Set<ImportFormatKind>(['thunder-client', 'thunder-client-environment']);
-
 /** The root document of an OpenCollection saved as a folder, which names nothing: the folder does. */
 const OC_ROOT_FILE = /(^|[\\/])opencollection\.ya?ml$/i;
 
@@ -722,12 +719,18 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
    * what it made. There is no project to pick and nothing to cancel.
    */
   async function importVariables(
-    kind: 'postman-environment' | 'postman-globals' | 'http-env' | 'insomnia-environment' | 'hoppscotch-environment',
+    kind:
+      | 'postman-environment'
+      | 'postman-globals'
+      | 'http-env'
+      | 'insomnia-environment'
+      | 'hoppscotch-environment'
+      | 'thunder-client-environment',
     source: ImportSourceWire,
   ): Promise<void> {
     if (source.kind === 'url') {
       setImportError(
-        kind === 'http-env' || kind === 'insomnia-environment' || kind === 'hoppscotch-environment'
+        kind !== 'postman-environment' && kind !== 'postman-globals'
           ? 'Import from a URL is not supported for environment files. Pick the file or paste its contents.'
           : 'Import from a URL is not supported for Postman exports. Pick the file or paste its JSON.',
       );
@@ -736,10 +739,15 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setImporting(true);
     try {
       const call =
-        kind === 'insomnia-environment' || kind === 'hoppscotch-environment'
+        kind === 'insomnia-environment' || kind === 'hoppscotch-environment' || kind === 'thunder-client-environment'
           ? (request: { source: PostmanSourceWire }) =>
               ipc().api.importClientEnvironments({
-                format: kind === 'insomnia-environment' ? 'insomnia' : 'hoppscotch',
+                format:
+                  kind === 'insomnia-environment'
+                    ? 'insomnia'
+                    : kind === 'hoppscotch-environment'
+                      ? 'hoppscotch'
+                      : 'thunder-client',
                 source: request.source,
               })
           : kind === 'http-env'
@@ -879,7 +887,10 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
    * WebSocket API in the chosen project, writes its scripts under `imported-scripts/` as text, and
    * adds its environments to the workspace without making one active.
    */
-  async function importClient(kind: 'insomnia' | 'bruno' | 'hoppscotch', source: ImportSourceWire): Promise<void> {
+  async function importClient(
+    kind: 'insomnia' | 'bruno' | 'hoppscotch' | 'thunder-client',
+    source: ImportSourceWire,
+  ): Promise<void> {
     if (source.kind === 'url') {
       setImportError('Import from a URL is not supported for this export. Pick the file or paste its contents.');
       return;
@@ -900,7 +911,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
           ? await ipc().api.importBruno(request)
           : kind === 'hoppscotch'
             ? await ipc().api.importHoppscotch(request)
-            : await ipc().api.importInsomnia(request);
+            : kind === 'thunder-client'
+              ? await ipc().api.importThunderClient(request)
+              : await ipc().api.importInsomnia(request);
       if (!res.ok) {
         setImportError(res.error.message);
         return;
@@ -971,12 +984,6 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       return;
     }
     const kind = await importKind();
-    if (NOT_IMPORTED_YET.has(kind)) {
-      setImportError(
-        `${kind === detected.kind ? detected.label : 'This format'} cannot be imported yet. Export it in another format Wirebench reads.`,
-      );
-      return;
-    }
     const source = buildSource();
     if (source === undefined) {
       if (tab === 'url') {
@@ -989,7 +996,10 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
               ? 'Pick a .har file to import'
               : kind === 'http-file'
                 ? 'Pick a .http file to import'
-                : kind === 'http-env' || kind === 'insomnia-environment' || kind === 'hoppscotch-environment'
+                : kind === 'http-env' ||
+                    kind === 'insomnia-environment' ||
+                    kind === 'hoppscotch-environment' ||
+                    kind === 'thunder-client-environment'
                   ? 'Pick an environment file to import'
                   : kind === 'opencollection'
                     ? 'Pick a collection .yml file, or the opencollection.yml of a collection folder'
@@ -1001,7 +1011,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                           ? 'Pick the collection folder with Folder…, its bruno.json, or an exported .json file'
                           : kind === 'hoppscotch'
                             ? 'Pick an exported .json file to import'
-                            : 'Pick a file to import',
+                            : kind === 'thunder-client'
+                              ? 'Pick the thunder-tests folder with Folder…, or an exported .json file'
+                              : 'Pick a file to import',
         );
       } else {
         setImportError(
@@ -1023,9 +1035,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                           ? 'Paste the exported JSON or YAML to import'
                           : kind === 'insomnia-environment'
                             ? 'Paste the environments file to import'
-                            : kind === 'bruno' || kind === 'hoppscotch'
+                            : kind === 'bruno' || kind === 'hoppscotch' || kind === 'thunder-client'
                               ? 'Paste the exported collection JSON to import'
-                              : kind === 'hoppscotch-environment'
+                              : kind === 'hoppscotch-environment' || kind === 'thunder-client-environment'
                                 ? 'Paste the environments file to import'
                                 : 'Paste a definition to import',
         );
@@ -1038,7 +1050,8 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       kind === 'postman-globals' ||
       kind === 'http-env' ||
       kind === 'insomnia-environment' ||
-      kind === 'hoppscotch-environment'
+      kind === 'hoppscotch-environment' ||
+      kind === 'thunder-client-environment'
     ) {
       await importVariables(kind, source);
       return;
@@ -1069,7 +1082,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       return;
     }
 
-    if (kind === 'insomnia' || kind === 'bruno' || kind === 'hoppscotch') {
+    if (kind === 'insomnia' || kind === 'bruno' || kind === 'hoppscotch' || kind === 'thunder-client') {
       await importClient(kind, source);
       return;
     }
@@ -1579,6 +1592,12 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       <p data-testid="import-bruno-help" className="text-xs text-fg-subtle">
                         Pick the collection's folder with Folder…, or its bruno.json. An exported collection .json is
                         read on its own. .env files are never read.
+                      </p>
+                    )}
+                    {effectiveFormat === 'thunder-client' && (
+                      <p data-testid="import-thunder-client-help" className="text-xs text-fg-subtle">
+                        Pick the workspace's thunder-tests folder with Folder…, or an exported collection .json. A
+                        folder that keeps one file per request cannot be read: export the collection instead.
                       </p>
                     )}
                     {effectiveFormat === 'opencollection' && (
