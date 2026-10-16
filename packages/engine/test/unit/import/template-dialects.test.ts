@@ -186,7 +186,9 @@ describe('hostile input', () => {
       dialect(run);
       dialect(`${run}}}`);
       dialect('<'.repeat(1024 * 1024) + '>>');
-      expect(performance.now() - started).toBeLessThan(500);
+      // A linear scan of 1 MB takes well under this even with coverage instrumentation (about 580 ms on
+      // CI); a quadratic one would take minutes, so the margin does not hide the regression.
+      expect(performance.now() - started).toBeLessThan(2000);
     });
   }
 });
