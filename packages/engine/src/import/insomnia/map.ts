@@ -51,6 +51,16 @@ export interface MapInsomniaOptions {
 }
 
 const HEX_COLOUR = /^#[0-9a-f]{6}$/i;
+/** Header and metadata names whose literal value is a credential, never copied (lower case). */
+const CREDENTIAL_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'x-api-key']);
+/** Auth scheme words a credential header may hold beside its references (lower case). */
+const AUTH_SCHEMES = new Set(['bearer', 'basic', 'digest', 'token', 'negotiate', 'apikey']);
+
+/** True when `value` holds no literal credential: only references, optionally beside one scheme word. */
+function credentialSafe(value: string): boolean {
+  const rest = value.replace(/\$\{[^{}]*\}/g, '').trim();
+  return rest === '' || AUTH_SCHEMES.has(rest.toLowerCase());
+}
 /** Deeper nesting is kept as JSON text under its name rather than flattened further. */
 const MAX_FLATTEN_DEPTH = 32;
 
@@ -140,13 +150,27 @@ class WorkspaceMapper {
     return mapped;
   }
 
-  private rows(rows: readonly InsRow[], label: string): KeyValueEntry[] {
-    return rows.map((row) =>
-      entry(this.value(row.name, label), this.value(row.value, label), {
-        enabled: !row.disabled,
-        ...(row.description !== undefined ? { description: row.description } : {}),
-      }),
-    );
+  /**
+   * Rows as entries. With `dropCredentials` (headers, gRPC metadata), a credential-named row whose
+   * value holds a literal credential (more than references, or one scheme word and references) is
+   * left out and counted for the credential warning (ruling R8).
+   */
+  private rows(rows: readonly InsRow[], label: string, dropCredentials = false): KeyValueEntry[] {
+    return rows.flatMap((row) => {
+      const name = this.value(row.name, label);
+      const value = this.value(row.value, label);
+      if (dropCredentials && CREDENTIAL_HEADERS.has(name.toLowerCase()) && !credentialSafe(value)) {
+        this.credentials += 1;
+        this.report.note(`${label}: the value of "${name}" is a credential and was not imported.`);
+        return [];
+      }
+      return [
+        entry(name, value, {
+          enabled: !row.disabled,
+          ...(row.description !== undefined ? { description: row.description } : {}),
+        }),
+      ];
+    });
   }
 
   grpcRequest(node: InsGrpc, trail: readonly string[], slug: string, order: number): GrpcRequestDef | undefined {
@@ -180,7 +204,7 @@ class WorkspaceMapper {
       service: method[1]!,
       method: method[2]!,
       methodKind: 'unary',
-      metadata: this.rows(node.metadata, label),
+      metadata: this.rows(node.metadata, label, true),
       ...(node.message !== '' ? { message: this.value(node.message, label) } : {}),
       auth: { type: 'inherit' },
     });
@@ -215,7 +239,7 @@ class WorkspaceMapper {
       ...(node.description !== undefined ? { description: node.description } : {}),
       url: split.path,
       query: [...split.query, ...this.rows([...inline, ...node.parameters], label)],
-      headers: this.rows(withInherited(node.headers, inherited), label),
+      headers: this.rows(withInherited(node.headers, inherited), label, true),
       auth: this.auth(node.auth, label, true) ?? { type: 'inherit' },
       settings: {},
       messages,
@@ -503,9 +527,11 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
       { newId, name },
     );
     for (const warning of http.summary.warnings ?? []) report.warn(`${mapper.prefix}${warning}`);
-    if (mapper.credentials > 0 && http.summary.requests === 0) {
+    if (mapper.credentials > 0) {
+      // With REST requests, the REST mapper's line counts only theirs: this one counts the rest.
+      const from = http.summary.requests === 0 ? 'the export' : 'gRPC and WebSocket requests';
       report.warn(
-        `${mapper.prefix}Credentials are not copied from the export; re-enter them for ${String(mapper.credentials)} auth ${mapper.credentials === 1 ? 'configuration' : 'configurations'}`,
+        `${mapper.prefix}Credentials are not copied from ${from}; re-enter them for ${String(mapper.credentials)} auth ${mapper.credentials === 1 ? 'configuration' : 'configurations'}`,
       );
     }
 

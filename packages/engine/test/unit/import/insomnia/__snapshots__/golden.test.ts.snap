@@ -334,6 +334,7 @@ message Order { string id = 1; }
     "warnings": [
       "Live feed: Socket.IO requests have no Wirebench equivalent, so it was not imported.",
       "Credentials are not copied from the collection; re-enter them for 2 auth configurations",
+      "Credentials are not copied from gRPC and WebSocket requests; re-enter them for 1 auth configuration",
       "The unit test suite "Smoke" was not imported ("creates an order" on Orders / Create order); write its checks as assertions or scripts.",
       "{% response %} was kept as written in Orders / Latest order (chained); Wirebench does not run it. To pass a value from one response to the next request, use a sequence transfer.",
       "The saved scripts call insomnia.; Wirebench does not run them. Port what they do to Wirebench scripts by hand.",
@@ -728,6 +729,7 @@ exports[`Insomnia golden > maps v5-collection.yaml 1`] = `
     ],
     "warnings": [
       "Credentials are not copied from the collection; re-enter them for 2 auth configurations",
+      "Credentials are not copied from gRPC and WebSocket requests; re-enter them for 1 auth configuration",
       "{% response %} was kept as written in Orders / Latest order (chained); Wirebench does not run it. To pass a value from one response to the next request, use a sequence transfer.",
       "The saved scripts call insomnia.; Wirebench does not run them. Port what they do to Wirebench scripts by hand.",
     ],

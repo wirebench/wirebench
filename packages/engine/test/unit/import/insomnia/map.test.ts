@@ -1,7 +1,12 @@
+import { mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { InsomniaError } from '../../../../src/errors.js';
 import type { MappedClientImport } from '../../../../src/import/client-import.js';
 import { flattenEnvironment, mapInsomnia } from '../../../../src/import/insomnia/map.js';
+import { importInsomnia } from '../../../../src/import/insomnia/import.js';
+import { MAX_INSOMNIA_BYTES } from '../../../../src/import/insomnia/model.js';
 import { parseInsomnia } from '../../../../src/import/insomnia/parse.js';
 import type { RestRequestDef } from '../../../../src/rest/model.js';
 import { apiRequests } from '../../../../src/rest/model.js';
@@ -447,6 +452,120 @@ describe('mapInsomnia: scripts and the report', () => {
       v5([]);
     } catch (error) {
       expect((error as InsomniaError).code).toBe('insomnia-nothing-to-import');
+    }
+  });
+});
+
+describe('mapInsomnia: credentials outside REST', () => {
+  const socket = (over: Record<string, unknown>): Record<string, unknown> => ({
+    name: 'Echo',
+    meta: { id: 'ws-req_1' },
+    url: 'wss://echo.example.com/ws',
+    ...over,
+  });
+  const grpcCall = (over: Record<string, unknown>): Record<string, unknown> => ({
+    name: 'Get',
+    meta: { id: 'greq_1' },
+    url: 'grpc.example.com:443',
+    protoMethodName: '/pkg.Svc/M',
+    reflectionApi: { enabled: false },
+    ...over,
+  });
+
+  it('warns about a WebSocket bearer token beside REST requests, and copies no token', () => {
+    const mapped = v5([req({}), socket({ authentication: { type: 'bearer', token: 's3cr3t-ws-token' } })]);
+    expect(mapped.collections[0]!.rest).toBeDefined();
+    expect(mapped.report.warnings).toContain(
+      'Credentials are not copied from gRPC and WebSocket requests; re-enter them for 1 auth configuration',
+    );
+    expect(JSON.stringify(mapped)).not.toContain('s3cr3t-ws-token');
+  });
+
+  it('drops literal credential headers and metadata with the warning, and keeps references', () => {
+    const mapped = v5([
+      socket({
+        headers: [
+          { name: 'Authorization', value: 'Bearer LEAK-ws-auth' },
+          { name: 'Cookie', value: 'session=LEAK-cookie' },
+          { name: 'X-API-Key', value: '{{ _.key }}' },
+          { name: 'X-Trace', value: 't' },
+        ],
+      }),
+      grpcCall({
+        metadata: [
+          { name: 'authorization', value: 'Bearer LEAK-grpc-token' },
+          { name: 'Proxy-Authorization', value: 'Basic LEAK-proxy' },
+        ],
+      }),
+    ]);
+    const entry = mapped.collections[0]!;
+    expect(entry.websocket!.requests[0]!.headers.map((h) => [h.name, h.value])).toEqual([
+      ['X-API-Key', '${key}'],
+      ['X-Trace', 't'],
+    ]);
+    expect(entry.grpc!.requests[0]!.metadata).toEqual([]);
+    expect(mapped.report.warnings).toContain(
+      'Credentials are not copied from the export; re-enter them for 4 auth configurations',
+    );
+    expect(mapped.report.notes).toContain('Echo: the value of "Cookie" is a credential and was not imported.');
+    expect(mapped.report.notes).toContain('Get: the value of "authorization" is a credential and was not imported.');
+    expect(JSON.stringify(mapped)).not.toContain('LEAK');
+  });
+
+  it('drops a credential header a folder passes down to its WebSocket requests', () => {
+    const mapped = v5([
+      {
+        name: 'F',
+        meta: { id: 'fld_1' },
+        headers: [{ name: 'Authorization', value: 'Bearer LEAK-folder' }],
+        children: [socket({})],
+      },
+    ]);
+    expect(JSON.stringify(mapped)).not.toContain('LEAK');
+  });
+});
+
+describe('mapInsomnia: credential header values (R8)', () => {
+  const kept = (value: string): boolean => {
+    const mapped = v5([
+      {
+        name: 'Echo',
+        meta: { id: 'ws-req_1' },
+        url: 'wss://echo.example.com/ws',
+        headers: [{ name: 'Authorization', value }],
+      },
+    ]);
+    return mapped.collections[0]!.websocket!.requests[0]!.headers.length === 1;
+  };
+
+  it('keeps references alone, or one scheme word beside references, in any case', () => {
+    expect(kept('{{ _.token }}')).toBe(true);
+    expect(kept('Bearer {{ _.token }}')).toBe(true);
+    expect(kept('basic {{ _.creds }}')).toBe(true);
+    expect(kept('Bearer')).toBe(true);
+  });
+
+  it('drops a literal token after the scheme word', () => {
+    expect(kept('Bearer abc')).toBe(false);
+  });
+
+  it('drops literal text joined to a reference', () => {
+    expect(kept('{{ _.token }}x')).toBe(false);
+  });
+});
+
+describe('importInsomnia: size', () => {
+  it('refuses a file past the size cap with insomnia-too-large, before reading it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'insomnia-'));
+    const path = join(dir, 'big.json');
+    writeFileSync(path, '');
+    truncateSync(path, MAX_INSOMNIA_BYTES + 1);
+    try {
+      await expect(importInsomnia({ kind: 'file', path }, { newId: () => 'id' })).rejects.toMatchObject({
+        code: 'insomnia-too-large',
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
