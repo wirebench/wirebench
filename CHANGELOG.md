@@ -50,6 +50,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A failing assertion is never hidden.** Once a send has run assertions, the response's
+  **Assertions** tab stays in the strip however narrow it is, with its count in red when one failed, and
+  the status line adds "· 1 assertion failed". Any other tab with a failure that moves into **More** puts
+  a red dot and count on the More button (#606).
 - **SSH small fixes.** Typing "ssh" in the command palette lists every SSH-area command (hosts,
   terminals, files, forwarding, snippets) above anything that only matches the letters. The SSH menu's
   Keychain count updates as soon as a key is generated or a secret stored, wherever that happens.

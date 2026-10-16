@@ -7,6 +7,10 @@ export interface TabItem<T extends string> {
   readonly label: string;
   /** Rendered after the label, e.g. a problem count. */
   readonly badge?: string;
+  /** Stays in the strip however narrow it gets, e.g. a tab carrying a verdict the user must see. */
+  readonly pinned?: boolean;
+  /** `danger` colours the badge, and marks the More button while the tab is hidden behind it. */
+  readonly tone?: 'danger';
 }
 
 export interface TabsProps<T extends string> {
@@ -36,26 +40,41 @@ export interface FitInput {
   readonly moreWidth: number;
   /** The selected tab's index; when it overflows, the More button shows its name instead. */
   readonly activeIndex: number;
+  /** Which tabs never overflow (by index); their room is taken first. */
+  readonly pinned?: readonly boolean[];
 }
 
 /**
- * How many tabs, from the left, fit in the strip. All of them when they fit; otherwise as many as
- * leave room for the More button, which is as wide as the name it shows.
+ * How many of the unpinned tabs, from the left, fit in the strip beside the pinned ones. All of
+ * them when they fit; otherwise as many as leave room for the More button, which is as wide as the
+ * name it shows.
  */
-export function fitTabs({ widths, available, moreWidth, activeIndex }: FitInput): number {
-  const total = widths.reduce((sum, width) => sum + width, 0);
-  if (total <= available) {
-    return widths.length;
+export function fitTabs({ widths, available, moreWidth, activeIndex, pinned = [] }: FitInput): number {
+  const free = widths.filter((_, index) => pinned[index] !== true);
+  const room = available - widths.reduce((sum, width, index) => sum + (pinned[index] === true ? width : 0), 0);
+  // The selected tab's place among the unpinned ones; a pinned selected tab never sits in More.
+  const freeActive =
+    pinned[activeIndex] === true
+      ? -1
+      : widths.slice(0, activeIndex).filter((_, index) => pinned[index] !== true).length;
+  const total = free.reduce((sum, width) => sum + width, 0);
+  if (total <= room) {
+    return free.length;
   }
   let used = total;
-  for (let count = widths.length - 1; count > 0; count -= 1) {
-    used -= widths[count] ?? 0;
-    const trigger = activeIndex >= count ? (widths[activeIndex] ?? 0) + CHEVRON_PX : moreWidth;
-    if (used + trigger <= available) {
+  for (let count = free.length - 1; count > 0; count -= 1) {
+    used -= free[count] ?? 0;
+    const trigger = freeActive >= count ? (free[freeActive] ?? 0) + CHEVRON_PX : moreWidth;
+    if (used + trigger <= room) {
       return count;
     }
   }
   return 0;
+}
+
+/** The badge's classes: faint, or the danger colour for a tab that reports a failure. */
+function badgeClass(item: { readonly tone?: 'danger' }): string {
+  return `font-mono text-xs ${item.tone === 'danger' ? 'text-status-danger' : 'text-fg-faint'}`;
 }
 
 /**
@@ -65,6 +84,8 @@ export function fitTabs({ widths, available, moreWidth, activeIndex }: FitInput)
  * The strip never grows wider than its container: tabs that don't fit move into a trailing More
  * menu, whose button shows the selected tab's name when that tab is one of them. A hidden copy of
  * the strip measures each tab's natural width, so the fit follows labels and badges as they change.
+ * A pinned tab always stays in the strip, and a hidden `danger` tab puts a count on the More button,
+ * so a failure is never out of sight.
  */
 export function Tabs<T extends string>({ label, items, active, onSelect }: TabsProps<T>) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -110,10 +131,23 @@ export function Tabs<T extends string>({ label, items, active, onSelect }: TabsP
   const count =
     available === undefined || widths.length !== items.length
       ? items.length
-      : fitTabs({ widths, available, moreWidth, activeIndex });
-  const shown = items.slice(0, count);
-  const hidden = items.slice(count);
+      : fitTabs({ widths, available, moreWidth, activeIndex, pinned: items.map((item) => item.pinned === true) });
+  // The first `count` unpinned tabs stay, with every pinned one, in their own order.
+  const shown: TabItem<T>[] = [];
+  const hidden: TabItem<T>[] = [];
+  let free = 0;
+  for (const item of items) {
+    if (item.pinned === true || free < count) {
+      shown.push(item);
+    } else {
+      hidden.push(item);
+    }
+    if (item.pinned !== true) {
+      free += 1;
+    }
+  }
   const activeHidden = hidden.find((item) => item.id === active);
+  const alerts = hidden.filter((item) => item.tone === 'danger' && item.id !== active).length;
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>): void {
     const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
@@ -148,7 +182,7 @@ export function Tabs<T extends string>({ label, items, active, onSelect }: TabsP
                 className={`${TAB_CLASS} ${selected ? SELECTED_CLASS : UNSELECTED_CLASS}`}
               >
                 {item.label}
-                {item.badge !== undefined && <span className="font-mono text-xs text-fg-faint">{item.badge}</span>}
+                {item.badge !== undefined && <span className={badgeClass(item)}>{item.badge}</span>}
               </button>
             );
           })}
@@ -159,12 +193,23 @@ export function Tabs<T extends string>({ label, items, active, onSelect }: TabsP
               <button
                 type="button"
                 data-testid="tabs-more"
-                aria-label={activeHidden !== undefined ? `${activeHidden.label}, more ${label}` : `More ${label}`}
+                aria-label={`${activeHidden !== undefined ? `${activeHidden.label}, more ${label}` : `More ${label}`}${
+                  alerts > 0 ? `, ${String(alerts)} with failures` : ''
+                }`}
                 className={`${TAB_CLASS} gap-1 ${activeHidden !== undefined ? SELECTED_CLASS : UNSELECTED_CLASS}`}
               >
                 {activeHidden !== undefined ? activeHidden.label : 'More'}
                 {activeHidden?.badge !== undefined && (
-                  <span className="font-mono text-xs text-fg-faint">{activeHidden.badge}</span>
+                  <span className={badgeClass(activeHidden)}>{activeHidden.badge}</span>
+                )}
+                {alerts > 0 && (
+                  <span
+                    data-testid="tabs-more-alerts"
+                    className="inline-flex items-center gap-1 font-mono text-xs text-status-danger"
+                  >
+                    <span aria-hidden="true" className="size-1.5 rounded-full bg-status-danger" />
+                    {alerts}
+                  </span>
                 )}
                 <ChevronDown size={12} aria-hidden="true" />
               </button>
@@ -188,9 +233,7 @@ export function Tabs<T extends string>({ label, items, active, onSelect }: TabsP
                   {hidden.map((item) => (
                     <DropdownMenu.RadioItem key={item.id} value={item.id} className={ITEM_CLASS}>
                       <span className={item.id === active ? 'text-accent' : ''}>{item.label}</span>
-                      {item.badge !== undefined && (
-                        <span className="font-mono text-xs text-fg-faint">{item.badge}</span>
-                      )}
+                      {item.badge !== undefined && <span className={badgeClass(item)}>{item.badge}</span>}
                     </DropdownMenu.RadioItem>
                   ))}
                 </DropdownMenu.RadioGroup>
