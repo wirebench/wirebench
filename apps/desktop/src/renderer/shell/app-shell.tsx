@@ -50,11 +50,9 @@ import {
   useSnippetsStore,
 } from '../features/ssh/snippets/snippets-store.js';
 import { subscribeToSshEvents } from '../features/ssh/terminal-session.js';
-import { SessionLogsDialog } from '../features/ssh/session-logs.js';
-import { SnippetRunDialog } from '../features/ssh/snippets/run-dialog.js';
-import { TrustDialog } from '../features/ssh/trust-dialog.js';
-import { HostDeleteDialog } from '../features/ssh/host-delete.js';
-import { ForwardPrompts } from '../features/ssh/forwarding/bind-confirm-dialog.js';
+import { useSessionLogsDialogStore } from '../features/ssh/session-logs-store.js';
+import { useRunDialogStore } from '../features/ssh/snippets/run.js';
+import { useHostDelete } from '../features/ssh/host-delete-store.js';
 import { subscribeToForwards } from '../features/ssh/forwarding/forwards-store.js';
 import { subscribeToTeamSecrets } from '../state/team-secrets.js';
 import { subscribeToWebhooks } from '../state/webhooks.js';
@@ -81,8 +79,7 @@ import { ActivityBar } from './activity-bar.js';
 import { subscribeToMenuCommands, syncAppMenu } from './app-menu.js';
 import { CodePanel } from './code-panel.js';
 import { slideOverWidthOf } from '../state/ui-state.js';
-import { HostDetails, useHostDetailsShown } from '../features/ssh/host-details.js';
-import { ForwardDetails, useForwardDetailsShown } from '../features/ssh/forwarding/forward-details.js';
+import { useForwardDetailsShown, useHostDetailsShown } from '../features/ssh/details-shown.js';
 import { useForwardsStore } from '../features/ssh/forwarding/forwards-store.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import { CommandPalette } from './command-palette.js';
@@ -149,6 +146,37 @@ const SnippetEditor = lazy(async () => {
   return { default: module.SnippetEditor };
 });
 
+// The SSH panels and dialogs below load the first time one shows, not before the first paint: the
+// window opens on whichever area was last in front, and most of them sit behind a click.
+const HostDetails = lazy(async () => {
+  const module = await import('../features/ssh/host-details.js');
+  return { default: module.HostDetails };
+});
+const ForwardDetails = lazy(async () => {
+  const module = await import('../features/ssh/forwarding/forward-details.js');
+  return { default: module.ForwardDetails };
+});
+const TrustDialog = lazy(async () => {
+  const module = await import('../features/ssh/trust-dialog.js');
+  return { default: module.TrustDialog };
+});
+const HostDeleteDialog = lazy(async () => {
+  const module = await import('../features/ssh/host-delete.js');
+  return { default: module.HostDeleteDialog };
+});
+const ForwardPrompts = lazy(async () => {
+  const module = await import('../features/ssh/forwarding/bind-confirm-dialog.js');
+  return { default: module.ForwardPrompts };
+});
+const SnippetRunDialog = lazy(async () => {
+  const module = await import('../features/ssh/snippets/run-dialog.js');
+  return { default: module.SnippetRunDialog };
+});
+const SessionLogsDialog = lazy(async () => {
+  const module = await import('../features/ssh/session-logs.js');
+  return { default: module.SessionLogsDialog };
+});
+
 export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteMode, setPaletteMode] = useState<PaletteMode>('commands');
@@ -201,6 +229,12 @@ export function AppShell() {
     useSnippetsStore.getState().closeEditor();
   }, []);
   const importDialogOpen = useUiStore((state) => state.importDialogOpen);
+  // The SSH dialogs mount only while they ask something, so their code loads on the first ask.
+  const trustAsked = useHostsStore((state) => state.trustPrompt !== null);
+  const hostDeleteAsked = useHostDelete((state) => state.hostId !== null);
+  const forwardAsked = useForwardsStore((state) => state.bindPrompt !== null || state.portPrompt !== null);
+  const snippetRunAsked = useRunDialogStore((state) => state.request !== null);
+  const sessionLogsOpen = useSessionLogsDialogStore((state) => state.open);
   const closeImportDialog = useUiStore((state) => state.closeImportDialog);
 
   // The row the sidebar and the editor/console column share, and the column the editor area and
@@ -568,7 +602,9 @@ export function AppShell() {
                   onToggle={toggleHostDetails}
                   onClose={closeHostDetails}
                 >
-                  <HostDetails />
+                  <Suspense fallback={null}>
+                    <HostDetails />
+                  </Suspense>
                 </SlideOver>
                 <SlideOver
                   label="Forward details"
@@ -578,7 +614,9 @@ export function AppShell() {
                   onToggle={closeForwardDetails}
                   onClose={closeForwardDetails}
                 >
-                  <ForwardDetails />
+                  <Suspense fallback={null}>
+                    <ForwardDetails />
+                  </Suspense>
                 </SlideOver>
                 <SlideOver
                   label="Environment details"
@@ -644,12 +682,33 @@ export function AppShell() {
       <SecretTokenDialog />
       <SecretSourcesDialog />
       <SecretSourcesApproveDialog />
-      {/* Here, not in the Hosts view: a connect from a terminal tab prompts while that view is hidden. */}
-      {sshEnabled && <TrustDialog />}
-      {sshEnabled && <HostDeleteDialog />}
-      {sshEnabled && <ForwardPrompts />}
-      {sshEnabled && <SnippetRunDialog />}
-      {sshEnabled && <SessionLogsDialog />}
+      {/* Here, not in the Hosts view: a connect from a terminal tab prompts while that view is hidden.
+          Each in its own boundary, so one loading never hides another that is open. */}
+      {sshEnabled && trustAsked && (
+        <Suspense fallback={null}>
+          <TrustDialog />
+        </Suspense>
+      )}
+      {sshEnabled && hostDeleteAsked && (
+        <Suspense fallback={null}>
+          <HostDeleteDialog />
+        </Suspense>
+      )}
+      {sshEnabled && forwardAsked && (
+        <Suspense fallback={null}>
+          <ForwardPrompts />
+        </Suspense>
+      )}
+      {sshEnabled && snippetRunAsked && (
+        <Suspense fallback={null}>
+          <SnippetRunDialog />
+        </Suspense>
+      )}
+      {sshEnabled && sessionLogsOpen && (
+        <Suspense fallback={null}>
+          <SessionLogsDialog />
+        </Suspense>
+      )}
       <CollectionExportReportDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>

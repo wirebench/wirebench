@@ -1,0 +1,5 @@
+[
+  { "_id": "l1", "colId": "lc1", "containerId": "lf1", "name": "Get item", "url": "https://legacy.example.com/items/1", "method": "GET", "sortNum": 10000, "headers": [] },
+  { "_id": "l2", "colId": "lc1", "containerId": "", "name": "Health", "url": "https://legacy.example.com/health", "method": "GET", "sortNum": 20000, "headers": [] },
+  { "_id": "l3", "colId": "lc2", "containerId": "", "name": "Other", "url": "https://other.example.com/", "method": "GET", "sortNum": 10000, "headers": [] }
+]

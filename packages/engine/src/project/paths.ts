@@ -86,22 +86,54 @@ export function isReservedFileName(name: string): boolean {
 }
 
 /**
- * Returns `slugify(name)`, or that slug plus a `-N` suffix when it is already
- * taken. Comparison is case-insensitive because macOS and Windows file systems
- * usually are.
+ * A grow-only set of taken slugs for a caller that slugs many siblings one by
+ * one. {@link uniqueSlug} given a plain set lowercases the whole set on every
+ * call, which is quadratic over n siblings; this keeps the lowercased set as
+ * it grows, and remembers per base slug the lowest `-N` suffix that could still
+ * be free, so n copies of one name do not probe 2, 3, ... again each time.
+ * Slugs are only ever added, so the first free suffix never moves down and the
+ * slug picked is the same one `uniqueSlug` would pick from a plain set.
  */
-export function uniqueSlug(name: string, taken: ReadonlySet<string>): string {
-  const base = slugify(name);
-  const lower = new Set([...taken].map((s) => s.toLowerCase()));
-  if (!lower.has(base.toLowerCase())) {
-    return base;
+export class SlugSet {
+  private readonly lower = new Set<string>();
+  private readonly nextSuffix = new Map<string, number>();
+
+  constructor(taken: Iterable<string> = []) {
+    for (const slug of taken) this.add(slug);
   }
-  for (let n = 2; ; n += 1) {
-    const candidate = `${base}-${n}`;
-    if (!lower.has(candidate.toLowerCase())) {
-      return candidate;
+
+  add(slug: string): void {
+    this.lower.add(slug.toLowerCase());
+  }
+
+  has(slug: string): boolean {
+    return this.lower.has(slug.toLowerCase());
+  }
+
+  /** What `uniqueSlug(name, this)` returns; does not add it. */
+  unique(name: string): string {
+    const base = slugify(name);
+    if (!this.has(base)) {
+      return base;
+    }
+    const key = base.toLowerCase();
+    for (let n = this.nextSuffix.get(key) ?? 2; ; n += 1) {
+      const candidate = `${base}-${n}`;
+      if (!this.has(candidate)) {
+        this.nextSuffix.set(key, n);
+        return candidate;
+      }
     }
   }
+}
+
+/**
+ * Returns `slugify(name)`, or that slug plus a `-N` suffix when it is already
+ * taken. Comparison is case-insensitive because macOS and Windows file systems
+ * usually are. A caller slugging many siblings passes a {@link SlugSet}.
+ */
+export function uniqueSlug(name: string, taken: ReadonlySet<string> | SlugSet): string {
+  return (taken instanceof SlugSet ? taken : new SlugSet(taken)).unique(name);
 }
 
 /**

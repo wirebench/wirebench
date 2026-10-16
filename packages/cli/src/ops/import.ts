@@ -24,6 +24,7 @@ import {
   importHoppscotch,
   importInsomnia,
   importOpenApi,
+  importThunderClient,
   importWsdl,
   nextApiOrder,
   qnameToString,
@@ -74,7 +75,7 @@ export interface ImportProblemView {
 }
 
 export interface ImportOutput {
-  readonly format: 'wsdl' | 'openapi' | 'postman-v3' | 'insomnia' | 'bruno' | 'hoppscotch';
+  readonly format: 'wsdl' | 'openapi' | 'postman-v3' | 'insomnia' | 'bruno' | 'hoppscotch' | 'thunder-client';
   readonly added: readonly ImportedItem[];
   /** What the importer reported it could not map. */
   readonly problems: readonly ImportProblemView[];
@@ -95,7 +96,7 @@ const input = z.object({
     .string()
     .min(1)
     .describe(
-      'A WSDL or OpenAPI file (an absolute path is safest), an http(s) URL, an Insomnia or Hoppscotch export, a Bruno collection (its folder, its bruno.json or a JSON export), or a folder collection (v3): its folder, its .resources/definition.yaml, or a workspace folder holding collections/',
+      'A WSDL or OpenAPI file (an absolute path is safest), an http(s) URL, an Insomnia, Hoppscotch or Thunder Client export, a Bruno collection (its folder, its bruno.json or a JSON export), a thunder-tests folder, or a folder collection (v3): its folder, its .resources/definition.yaml, or a workspace folder holding collections/',
     ),
   name: z
     .string()
@@ -333,6 +334,29 @@ async function isBrunoFolder(source: string): Promise<boolean> {
   }
 }
 
+/** The files only a legacy Thunder Client folder holds. */
+const THUNDER_LEGACY_FILES = ['thunderclient.json', 'thundercollection.json', 'thunderenvironment.json'];
+
+/**
+ * Whether `source` is a Thunder Client `thunder-tests` folder: named so, holding the legacy files,
+ * or with `tc_col_*.json` files in its `collections/`, which a folder collection's workspace never has.
+ */
+async function isThunderFolder(source: string): Promise<boolean> {
+  if (/^https?:\/\//i.test(source)) return false;
+  const path = resolve(source);
+  try {
+    if (!(await stat(path)).isDirectory()) return false;
+    if (basename(path).toLowerCase() === 'thunder-tests') return true;
+    const names = (await readdir(path)).map((name) => name.toLowerCase());
+    if (names.some((name) => THUNDER_LEGACY_FILES.includes(name))) return true;
+    if (!names.includes('collections')) return false;
+    const inner = await readdir(resolve(path, 'collections')).catch(() => [] as string[]);
+    return inner.some((name) => /^tc_col_.*\.json$/i.test(name));
+  } catch {
+    return false;
+  }
+}
+
 /** Requests in a container of any kind, its folders' included. */
 function requestCount(container: {
   readonly folders: readonly unknown[];
@@ -370,7 +394,7 @@ async function addMappedCollections(
   context: OpsContext,
   project: Project,
   mapped: MappedCollections,
-  format: 'postman-v3' | 'insomnia' | 'bruno' | 'hoppscotch',
+  format: 'postman-v3' | 'insomnia' | 'bruno' | 'hoppscotch' | 'thunder-client',
 ): Promise<ImportOutput> {
   const taken = new Set([...takenContainerSlugs(project, 'apis'), ...takenContainerSlugs(project, 'interfaces')]);
   const added: ImportedItem[] = [];
@@ -488,7 +512,7 @@ export const importOp = defineOp({
   description:
     'Imports a WSDL or OpenAPI definition (a file path or an http(s) URL) into the project as a new SOAP ' +
     'interface or REST API, with its definition cached and one sample request per operation; or a folder ' +
-    'collection (v3), an Insomnia or Hoppscotch export or a Bruno collection as its REST, gRPC and WebSocket APIs with its plain variables as ' +
+    'collection (v3), an Insomnia, Hoppscotch or Thunder Client export or a Bruno collection as its REST, gRPC and WebSocket APIs with its plain variables as ' +
     'project properties. ' +
     'Writes the project folder. Needs the server started with --allow-write.',
   input,
@@ -502,6 +526,13 @@ export const importOp = defineOp({
     const { project } = await openProject(context);
     if (await isBrunoFolder(value.source)) {
       return addBruno(context, project, { kind: 'folder', path: resolve(value.source) }, value.name);
+    }
+    if (await isThunderFolder(value.source)) {
+      const mapped = await importThunderClient(
+        { kind: 'folder', path: resolve(value.source) },
+        { firstOrder: nextApiOrder(project), ...(value.name !== undefined ? { name: value.name } : {}) },
+      );
+      return addMappedCollections(context, project, mapped, 'thunder-client');
     }
     if (await isCollectionFolder(value.source)) {
       const path = resolve(value.source);
@@ -530,6 +561,13 @@ export const importOp = defineOp({
       );
       return addMappedCollections(context, project, mapped, 'hoppscotch');
     }
+    if (detected.kind === 'thunder-client') {
+      const mapped = await importThunderClient(
+        { kind: 'text', text: read.text },
+        { firstOrder: nextApiOrder(project), ...(value.name !== undefined ? { name: value.name } : {}) },
+      );
+      return addMappedCollections(context, project, mapped, 'thunder-client');
+    }
     if (detected.kind === 'bruno') {
       // A collection's bruno.json stands for its folder; any other file is a JSON export.
       const folder = read.url === undefined && read.filename?.toLowerCase() === 'bruno.json';
@@ -551,7 +589,7 @@ export const importOp = defineOp({
       'unsupported-format',
       detected.kind === 'postman-v3'
         ? `${value.source} is one file of a folder collection; import its folder or its .resources/definition.yaml`
-        : `${value.source} reads as ${detected.label}; import takes a WSDL or an OpenAPI document, an Insomnia, Hoppscotch or Bruno export, or a folder collection`,
+        : `${value.source} reads as ${detected.label}; import takes a WSDL or an OpenAPI document, an Insomnia, Hoppscotch, Thunder Client or Bruno export, or a folder collection`,
       { format: detected.kind },
     );
   },

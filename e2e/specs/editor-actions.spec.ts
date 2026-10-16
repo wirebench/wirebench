@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { runCommand } from '../helpers/palette.js';
+import { copyAndRead } from '../helpers/clipboard.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { setMonacoText } from '../helpers/editor.js';
 import { createProjectWithCalculator, expectReopenedWorkspace, openFirstRequest } from '../helpers/project.js';
@@ -124,12 +125,13 @@ test.describe('request editor actions', () => {
     await expect(preview).toContainText('curl --request POST', { timeout: 20_000 });
     await expect(preview).toContainText(`${server!.url}/soap`);
 
-    await page.getByTestId('code-panel-copy').click();
-
-    await expect
-      .poll(async () => launched!.app.evaluate(({ clipboard }) => clipboard.readText()), { timeout: 10_000 })
-      .toContain('curl');
-    const command = await launched.app.evaluate(({ clipboard }) => clipboard.readText());
+    // Wait for this spec's own endpoint, not just "curl": the clipboard is the machine's, and
+    // another worker's spec copies a cURL command of its own.
+    const command = await copyAndRead(
+      launched.app,
+      () => page.getByTestId('code-panel-copy').click(),
+      `${server!.url}/soap`,
+    );
     expect(command).toContain('tem:Add');
   });
 

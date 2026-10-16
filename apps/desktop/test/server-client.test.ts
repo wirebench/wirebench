@@ -458,3 +458,125 @@ describe('ServerClient — webhook capture (webhook-capture §3.5)', () => {
     await expect(c.listHooks(SERVER, TOKEN, WS)).rejects.toMatchObject({ code: 'server-bad-response' });
   });
 });
+
+describe('ServerClient — scheduled runs (scheduled-runs §3.7)', () => {
+  const SERVER = 'https://wb.test';
+  const WS = '01J8ZC5Q0V7R3T9XK2M4N6P8QA';
+  const SCHEDULE_ID = '01J8ZC5Q0V7R3T9XK2M4N6S001';
+  const RUN_ID = '01J8ZE00000000000000000R01';
+  const ROUTE = `/api/v1/workspaces/${WS}/schedules`;
+  const RUN = {
+    id: RUN_ID,
+    scheduleId: SCHEDULE_ID,
+    trigger: 'manual',
+    status: 'failed',
+    reason: null,
+    commit: 'a'.repeat(40),
+    environment: 'Production',
+    queuedAt: '2026-10-16T08:00:00.000Z',
+    startedAt: '2026-10-16T08:00:01.000Z',
+    finishedAt: '2026-10-16T08:00:04.000Z',
+    summary: { total: 2, passed: 1, failed: 1, errored: 0, skipped: 0, durationMs: 3000 },
+  };
+  const SCHEDULE = {
+    id: SCHEDULE_ID,
+    workspaceId: WS,
+    name: 'Smoke',
+    cron: '*/5 * * * *',
+    timeZone: 'Europe/Vienna',
+    target: { project: 'CountryInfo', environment: 'Production' },
+    options: { timeoutMinutes: 15, allowProtected: false, insecureTls: false, bail: false },
+    alerts: { targets: [{ kind: 'slack', host: 'hooks.slack.com', hint: 'x9Q2' }], muteAfter: 3 },
+    secrets: [{ name: 'API_KEY', hint: 'cdef' }],
+    enabled: true,
+    nextRunAt: '2026-10-16T08:05:00.000Z',
+    alertState: 'failing',
+    failureStreak: 1,
+    createdBy: '01J8Z0000000000000000000AB',
+    createdAt: '2026-10-15T12:00:00.000Z',
+    updatedAt: '2026-10-15T12:00:00.000Z',
+    lastRun: RUN,
+  };
+  const DETAIL = {
+    ...RUN,
+    results: [{ path: 'CountryInfo/a.yaml', group: 'Countries', name: 'List', protocol: 'rest', outcome: 'failed' }],
+    alerts: [{ kind: 'failure', target: 0, state: 'delivered', attempts: 1, lastError: null }],
+  };
+  const body = (request: HttpRequest | undefined): unknown =>
+    request?.body === undefined ? undefined : JSON.parse(new TextDecoder().decode(request.body));
+
+  it('sends each call to its route with the method, the bearer and the body', async () => {
+    const { client: c, sent } = client(
+      exchange(200, [SCHEDULE]),
+      exchange(200, SCHEDULE),
+      exchange(201, SCHEDULE),
+      exchange(200, SCHEDULE),
+      exchange(204, ''),
+      exchange(200, SCHEDULE),
+      exchange(200, { results: [{ index: 0, kind: 'slack', ok: true }] }),
+      exchange(202, { ...RUN, status: 'queued', summary: null }),
+      exchange(200, { runs: [RUN], next: 'cursor-1' }),
+      exchange(200, { runs: [] }),
+      exchange(200, DETAIL),
+      exchange(204, ''),
+    );
+    expect(await c.listSchedules(SERVER, TOKEN, WS)).toEqual([SCHEDULE]);
+    expect(await c.getSchedule(SERVER, TOKEN, WS, SCHEDULE_ID)).toEqual(SCHEDULE);
+    expect(
+      await c.createSchedule(SERVER, TOKEN, WS, {
+        name: 'Smoke',
+        schedule: 'every 5m',
+        target: { project: 'CountryInfo' },
+      }),
+    ).toEqual(SCHEDULE);
+    expect(await c.updateSchedule(SERVER, TOKEN, WS, SCHEDULE_ID, { enabled: false })).toEqual(SCHEDULE);
+    await c.deleteSchedule(SERVER, TOKEN, WS, SCHEDULE_ID);
+    expect(await c.setScheduleSecrets(SERVER, TOKEN, WS, SCHEDULE_ID, { API_KEY: 'abcdef', OLD: null })).toEqual(
+      SCHEDULE,
+    );
+    expect(await c.testScheduleAlerts(SERVER, TOKEN, WS, SCHEDULE_ID)).toEqual({
+      results: [{ index: 0, kind: 'slack', ok: true }],
+    });
+    expect((await c.runScheduleNow(SERVER, TOKEN, WS, SCHEDULE_ID)).status).toBe('queued');
+    expect(await c.listScheduleRuns(SERVER, TOKEN, WS, SCHEDULE_ID, {})).toEqual({ runs: [RUN], next: 'cursor-1' });
+    expect(
+      await c.listScheduleRuns(SERVER, TOKEN, WS, SCHEDULE_ID, { after: 'cursor-1', limit: 50, status: 'failed' }),
+    ).toEqual({ runs: [] });
+    expect(await c.getScheduleRun(SERVER, TOKEN, WS, SCHEDULE_ID, RUN_ID)).toEqual(DETAIL);
+    await c.cancelScheduleRun(SERVER, TOKEN, WS, SCHEDULE_ID, RUN_ID);
+
+    const one = `${ROUTE}/${SCHEDULE_ID}`;
+    expect(sent.map((r) => [r.method, r.url.replace(SERVER, ''), r.timeoutMs])).toEqual([
+      ['GET', ROUTE, 15_000],
+      ['GET', one, 15_000],
+      ['POST', ROUTE, 15_000],
+      ['PATCH', one, 15_000],
+      ['DELETE', one, 15_000],
+      ['PUT', `${one}/secrets`, 15_000],
+      ['POST', `${one}/alerts/test`, 15_000],
+      ['POST', `${one}/runs`, 15_000],
+      ['GET', `${one}/runs`, 15_000],
+      ['GET', `${one}/runs?status=failed&after=cursor-1&limit=50`, 15_000],
+      ['GET', `${one}/runs/${RUN_ID}`, SYNC_TRANSFER_TIMEOUT_MS],
+      ['DELETE', `${one}/runs/${RUN_ID}`, 15_000],
+    ]);
+    expect(sent.every((r) => r.headers.authorization === `Bearer ${TOKEN}`)).toBe(true);
+    expect([body(sent[2]), body(sent[3]), body(sent[5])]).toEqual([
+      { name: 'Smoke', schedule: 'every 5m', target: { project: 'CountryInfo' } },
+      { enabled: false },
+      { API_KEY: 'abcdef', OLD: null },
+    ]);
+    expect(sent[7]?.body).toBeUndefined();
+  });
+
+  it('passes schedules-* problems through with their status and refuses a drifting answer', async () => {
+    const { client: c } = client(
+      exchange(400, { code: 'schedules-cron-invalid', message: 'The schedule is not a valid cron expression.' }),
+      exchange(200, [{ ...SCHEDULE, cron: undefined }]),
+    );
+    await expect(
+      c.createSchedule(SERVER, TOKEN, WS, { name: 'Smoke', schedule: 'nope', target: { project: 'CountryInfo' } }),
+    ).rejects.toMatchObject({ code: 'schedules-cron-invalid', details: { status: 400 } });
+    await expect(c.listSchedules(SERVER, TOKEN, WS)).rejects.toMatchObject({ code: 'server-bad-response' });
+  });
+});
