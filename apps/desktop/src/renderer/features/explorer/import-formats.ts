@@ -29,6 +29,8 @@ export interface ImportFormatRow {
    * auto-detecting it says so instead of offering an Import that cannot work.
    */
   readonly available: boolean;
+  /** The dialog opens on the File tab: an export, a capture or a request file is a file on disk. */
+  readonly startsOnFile: boolean;
 }
 
 const URL_FILE_PASTE: readonly ImportTab[] = ['url', 'file', 'paste'];
@@ -59,6 +61,7 @@ function row(
     workspaceOnly: false,
     fileFilters: API_DEFINITIONS,
     available: true,
+    startsOnFile: false,
     ...fields,
   };
 }
@@ -72,40 +75,48 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
     fileFilters: [{ name: 'AsyncAPI Document', extensions: ['json', 'yaml', 'yml'] }, ALL_FILES],
   }),
   row('postman', 'Postman Collection', {
+    startsOnFile: true,
     defaultName: 'Imported Collection',
     fileFilters: [{ name: 'Postman Collection', extensions: ['json'] }],
   }),
   row('postman-v3', 'Postman Collection v3 (folder)', {
+    startsOnFile: true,
     tabs: FILE_PASTE,
     defaultName: 'Imported collection',
     fileFilters: [{ name: 'Collection definition (.resources/definition.yaml)', extensions: ['yaml', 'yml'] }],
   }),
   row('postman-environment', 'Postman environment', {
+    startsOnFile: true,
     tabs: FILE_PASTE,
     workspaceOnly: true,
     fileFilters: [{ name: 'Postman export', extensions: ['json'] }],
   }),
   row('postman-globals', 'Postman globals', {
+    startsOnFile: true,
     tabs: FILE_PASTE,
     workspaceOnly: true,
     fileFilters: [{ name: 'Postman export', extensions: ['json'] }],
   }),
   row('har', 'HAR (recorded traffic)', {
+    startsOnFile: true,
     tabs: FILE_PASTE,
     defaultName: 'Imported traffic',
     fileFilters: [{ name: 'HAR', extensions: ['har', 'json'] }],
   }),
   row('http-file', '.http file', {
+    startsOnFile: true,
     tabs: FILE_PASTE,
     defaultName: 'Imported requests',
     fileFilters: [{ name: '.http file', extensions: ['http', 'rest'] }],
   }),
   row('http-env', 'HTTP client environment file', {
+    startsOnFile: true,
     tabs: FILE_PASTE,
     workspaceOnly: true,
     fileFilters: [{ name: 'HTTP client environment file', extensions: ['json'] }],
   }),
   row('opencollection', 'OpenCollection', {
+    startsOnFile: true,
     tabs: FILE_PASTE,
     defaultName: 'Imported collection',
     fileFilters: [{ name: 'OpenCollection', extensions: ['yml', 'yaml'] }],
@@ -117,46 +128,54 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
     fileFilters: [{ name: 'Protocol Buffers', extensions: ['proto'] }, ALL_FILES],
   }),
   row('legacy-soap-project', 'Legacy SOAP project', {
+    startsOnFile: true,
     fileFilters: [{ name: 'Legacy SOAP project', extensions: ['xml'] }, ALL_FILES],
   }),
   // Other API clients: the importers land in later tasks, which flip `available`.
   row('insomnia', 'Insomnia export', {
+    startsOnFile: true,
     tabs: FILE_PASTE,
     defaultName: 'Imported collection',
     fileFilters: JSON_OR_YAML,
     available: false,
   }),
   row('insomnia-environment', 'Insomnia environments', {
+    startsOnFile: true,
     tabs: FILE_PASTE,
     workspaceOnly: true,
     fileFilters: JSON_OR_YAML,
     available: false,
   }),
   row('bruno', 'Bruno collection', {
+    startsOnFile: true,
     tabs: ['file', 'paste', 'folder'],
     defaultName: 'Imported collection',
     fileFilters: [],
     available: false,
   }),
   row('hoppscotch', 'Hoppscotch collection', {
+    startsOnFile: true,
     tabs: FILE_PASTE,
     defaultName: 'Imported collection',
     fileFilters: JSON_OR_YAML,
     available: false,
   }),
   row('hoppscotch-environment', 'Hoppscotch environments', {
+    startsOnFile: true,
     tabs: FILE_PASTE,
     workspaceOnly: true,
     fileFilters: JSON_OR_YAML,
     available: false,
   }),
   row('thunder-client', 'Thunder Client collection', {
+    startsOnFile: true,
     tabs: ['file', 'paste', 'folder'],
     defaultName: 'Imported collection',
     fileFilters: JSON_OR_YAML,
     available: false,
   }),
   row('thunder-client-environment', 'Thunder Client environment', {
+    startsOnFile: true,
     tabs: FILE_PASTE,
     workspaceOnly: true,
     fileFilters: JSON_OR_YAML,

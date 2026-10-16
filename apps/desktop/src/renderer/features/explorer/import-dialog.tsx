@@ -157,17 +157,6 @@ export type UnifiedImportResult =
   | { readonly kind: 'opencollection'; readonly value: ApiImportOpenCollectionResponse }
   | { readonly kind: 'postman-v3'; readonly value: ApiImportPostmanFolderResponse };
 
-/**
- * Formats that land in the workspace, not in a project: a Postman environment or a `.http` client
- * environment file becomes workspace environments and Postman globals merge into Globals, so the
- * dialog asks for no target project.
- */
-const WORKSPACE_ONLY = new Set<ImportDialogFormat | ImportFormatKind>([
-  'postman-environment',
-  'postman-globals',
-  'http-env',
-]);
-
 /** The formats read from a Postman export file. */
 const POSTMAN_FORMATS = new Set<ImportDialogFormat | ImportFormatKind>([
   'postman',
@@ -175,29 +164,15 @@ const POSTMAN_FORMATS = new Set<ImportDialogFormat | ImportFormatKind>([
   'postman-globals',
 ]);
 
-/** The formats that start on the File tab: an export, a capture or a request file is a file on disk. */
-const FILE_FIRST = new Set<ImportDialogFormat | ImportFormatKind>([
-  ...POSTMAN_FORMATS,
-  'har',
-  'http-file',
-  'http-env',
-  'opencollection',
-  'postman-v3',
-  'legacy-soap-project',
-]);
+/** Whether a dropdown value opens on the File tab; Auto-detect does not. */
+function startsOnFile(fmt: ImportDialogFormat): boolean {
+  return fmt !== 'auto' && importFormatRow(fmt).startsOnFile;
+}
 
-/**
- * The formats with nothing to fetch from a URL, so no URL tab: a variables export, a HAR capture, a
- * `.http` file (whose environment files are found beside it on disk) and an OpenCollection (whose
- * directory form is read from disk beside its root file).
- */
-const NO_URL = new Set<ImportDialogFormat | ImportFormatKind>([
-  ...WORKSPACE_ONLY,
-  'har',
-  'http-file',
-  'opencollection',
-  'postman-v3',
-]);
+/** Whether a dropdown value has a URL tab; Auto-detect does. */
+function hasUrlTab(fmt: ImportDialogFormat): boolean {
+  return fmt === 'auto' || importFormatRow(fmt).tabs.includes('url');
+}
 
 /** The definition file of a folder (v3) collection, which stands for the folder above `.resources`. */
 const V3_DEFINITION_FILE = /[\\/]\.resources[\\/]definition\.ya?ml$/i;
@@ -216,7 +191,7 @@ export interface ImportDialogProps {
 export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: ImportDialogProps) {
   const storeFormat = useUiStore((state) => state.importDialogFormat);
   const initialFmt = propFormat ?? storeFormat ?? 'auto';
-  const [tab, setTab] = useState<SourceTab>(FILE_FIRST.has(initialFmt) ? 'file' : 'url');
+  const [tab, setTab] = useState<SourceTab>(startsOnFile(initialFmt) ? 'file' : 'url');
   const [format, setFormat] = useState<ImportDialogFormat>(initialFmt);
   const [url, setUrl] = useState('');
   const [filePath, setFilePath] = useState('');
@@ -311,7 +286,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setTarget(selected ?? only ?? NEW_PROJECT);
     const fmt = propFormat ?? useUiStore.getState().importDialogFormat ?? 'auto';
     setFormat(fmt);
-    if (FILE_FIRST.has(fmt)) {
+    if (startsOnFile(fmt)) {
       setTab('file');
     }
   }, [open, propFormat]);
@@ -921,7 +896,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   }
 
   async function onImport(): Promise<void> {
-    if (importing) {
+    if (importing || !formatRow.available) {
       return;
     }
     setImportError(undefined);
@@ -1322,8 +1297,8 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       if (next !== 'proto' && tab === 'server') {
                         setTab('url');
                       }
-                      // A Postman environment or globals export, or a HAR capture, has no URL tab.
-                      if (NO_URL.has(next) && tab === 'url') {
+                      // A format with no URL tab (an export, a capture, a request file) moves off it.
+                      if (!hasUrlTab(next) && tab === 'url') {
                         setTab('file');
                       }
                     }}
@@ -1351,7 +1326,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
               {!formatRow.available && (
                 <p data-testid="import-format-unavailable" role="status" className="mt-2 text-xs text-fg-subtle">
-                  {detected.label} import is not available yet
+                  Importing {formatRow.label} is not available yet.
                 </p>
               )}
 

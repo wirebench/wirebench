@@ -142,10 +142,31 @@ describe('IMPORT_FORMATS', () => {
     }
   });
 
-  it('has exactly one row per format kind', () => {
-    const kinds = IMPORT_FORMATS.map((row) => row.kind);
-    expect(new Set(kinds).size).toBe(kinds.length);
-    expect(kinds).toHaveLength(21);
+  it('has exactly one row for every format kind', () => {
+    const all = {
+      openapi: true,
+      asyncapi: true,
+      postman: true,
+      'postman-v3': true,
+      'postman-environment': true,
+      'postman-globals': true,
+      har: true,
+      'http-file': true,
+      'http-env': true,
+      opencollection: true,
+      insomnia: true,
+      'insomnia-environment': true,
+      bruno: true,
+      hoppscotch: true,
+      'hoppscotch-environment': true,
+      'thunder-client': true,
+      'thunder-client-environment': true,
+      wsdl: true,
+      proto: true,
+      'legacy-soap-project': true,
+      unknown: true,
+    } satisfies Record<ImportFormatKind, true>;
+    expect(IMPORT_FORMATS.map((row) => row.kind).sort()).toEqual(Object.keys(all).sort());
   });
 
   it('every client format is unavailable until its importer is wired', () => {

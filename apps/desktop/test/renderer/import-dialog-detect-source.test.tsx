@@ -101,9 +101,21 @@ describe('Import dialog: a format whose importer is not wired yet', () => {
     fireEvent.click(screen.getByTestId('import-browse'));
     await waitFor(() =>
       expect(screen.getByTestId('import-format-unavailable').textContent).toBe(
-        'Insomnia export import is not available yet',
+        'Importing Insomnia export is not available yet.',
       ),
     );
     expect(screen.getByTestId('import-submit')).toHaveProperty('disabled', true);
+  });
+
+  it('Enter in the URL field does not import a detected format that is not available', async () => {
+    installWirebenchApi({ api: { detectImportSource }, dialogs: { openFile, openFolder } });
+    const importDefinition = vi.spyOn(useProjectStore.getState(), 'importDefinition');
+    const importOpenApi = vi.spyOn(useProjectStore.getState(), 'importOpenApi');
+    render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="auto" />);
+    await userEvent.type(screen.getByTestId('import-url-input'), 'https://example.test/insomnia-export.json{Enter}');
+    await waitFor(() => expect(screen.getByTestId('import-format-unavailable')).toBeTruthy());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(importDefinition).not.toHaveBeenCalled();
+    expect(importOpenApi).not.toHaveBeenCalled();
   });
 });
