@@ -9,7 +9,9 @@ describe('mapOcAuth: digest and AWS Signature', () => {
       type: 'digest',
       username: '${user}',
     });
-    expect(report.build().warnings).toEqual(['D: the digest credential was not imported; set it on the request or API.']);
+    expect(report.build().warnings).toEqual([
+      'D: the digest credential was not imported; set it on the request or API.',
+    ]);
   });
 
   it('maps digest without a password quietly', () => {
@@ -34,6 +36,8 @@ describe('mapOcAuth: digest and AWS Signature', () => {
     ).auth;
     expect(auth).toEqual({ type: 'aws-sigv4', region: '${region}', service: 'execute-api' });
     expect(JSON.stringify(auth)).not.toContain('secret');
-    expect(report.build().warnings).toEqual(['A: the awsv4 credential was not imported; set it on the request or API.']);
+    expect(report.build().warnings).toEqual([
+      'A: the awsv4 credential was not imported; set it on the request or API.',
+    ]);
   });
 });
