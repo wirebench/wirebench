@@ -322,8 +322,11 @@ class WorkspaceMapper {
     return out;
   }
 
-  /** The proto texts by path, rooted at the files the gRPC requests point at. */
-  protos(): MappedProtoSet | undefined {
+  /**
+   * The proto texts by path, rooted at the files the gRPC requests point at. Two files at one path
+   * (`svc` and `svc.proto`, or one name twice in a directory) keep the first, with a warning on `api`.
+   */
+  protos(api: string): MappedProtoSet | undefined {
     const { protos, protoDirs } = this.workspace;
     if (protos.length === 0 || this.protoIds.size === 0) return undefined;
     const dirs = new Map(protoDirs.map((dir) => [dir.id, dir]));
@@ -339,10 +342,15 @@ class WorkspaceMapper {
       return parts.join('/');
     };
     const sources = new Map<string, string>();
+    const clashes = new Set<string>();
     const roots: string[] = [];
     for (const proto of protos) {
       const path = pathOf(proto.dirId, proto.name);
-      sources.set(path, proto.text);
+      if (!sources.has(path)) sources.set(path, proto.text);
+      else if (!clashes.has(path)) {
+        clashes.add(path);
+        this.report.warn(`${api}: two .proto files share the path ${path}; the first was kept.`);
+      }
       if (this.protoIds.has(proto.id) && !roots.includes(path)) roots.push(path);
     }
     return roots.length > 0 ? { sources, roots } : undefined;
@@ -559,7 +567,7 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
             requests: wsWalk.requests,
           })
         : undefined;
-    const grpcProtos = grpc !== undefined ? mapper.protos() : undefined;
+    const grpcProtos = grpc !== undefined ? mapper.protos(grpc.name) : undefined;
     if (grpc !== undefined && grpcProtos === undefined) {
       report.note(
         `${grpc.name}: needs a definition: ${doc.format === 5 ? 'Insomnia does not export .proto files, so ' : ''}import its .proto or use server reflection.`,

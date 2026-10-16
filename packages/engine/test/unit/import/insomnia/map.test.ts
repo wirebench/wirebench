@@ -569,3 +569,45 @@ describe('importInsomnia: size', () => {
     }
   });
 });
+
+describe('mapInsomnia: .proto files at one path', () => {
+  it('keeps the first file at a clashing path and warns', () => {
+    const mapped = mapText(
+      JSON.stringify({
+        __export_format: 4,
+        resources: [
+          { _id: 'wrk_1', parentId: null, name: 'W', scope: 'collection', _type: 'workspace' },
+          {
+            _id: 'pf_1',
+            parentId: 'wrk_1',
+            _type: 'proto_file',
+            name: 'svc.proto',
+            metaSortKey: 1,
+            protoText: 'syntax = "proto3"; package a; service A {}',
+          },
+          {
+            _id: 'pf_2',
+            parentId: 'wrk_1',
+            _type: 'proto_file',
+            name: 'svc',
+            metaSortKey: 2,
+            protoText: 'syntax = "proto3"; package b; service B {}',
+          },
+          {
+            _id: 'greq_1',
+            parentId: 'wrk_1',
+            _type: 'grpc_request',
+            name: 'G',
+            url: 'grpc://h:1',
+            protoFileId: 'pf_2',
+            protoMethodName: '/b.B/M',
+          },
+        ],
+      }),
+    );
+    const protos = mapped.collections[0]!.grpcProtos!;
+    expect([...protos.sources.keys()]).toEqual(['svc.proto']);
+    expect(protos.sources.get('svc.proto')).toContain('package a');
+    expect(mapped.report.warnings).toContain('W: two .proto files share the path svc.proto; the first was kept.');
+  });
+});
