@@ -229,6 +229,8 @@ const scopes = new WindowScopes<WindowScope>();
 const preferencesService = new PreferencesService(app.getPath('userData'), {
   // Managed machines: an administrator's policy file locks the settings it names (see `policy.ts`).
   policyFile: policyFilePath({ platform: process.platform, env: process.env, isPackaged: app.isPackaged }),
+  // A default User-Agent names the release that sends it.
+  appVersion: appVersion(),
 });
 
 /**
