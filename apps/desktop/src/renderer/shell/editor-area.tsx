@@ -102,8 +102,6 @@ const FIXED_TAB: Readonly<Partial<Record<TabSet, string>>> = { explorer: 'Start'
 
 const EMPTY_HINT: Readonly<Record<TabSet, string>> = {
   explorer: 'Select a request in the Explorer, or import a definition to get started.',
-  environments: 'Select an environment to edit its variables.',
-  history: 'Select a history entry to see what was sent and received.',
   ssh: 'No open sessions. Double-click a host to connect.',
 };
 
