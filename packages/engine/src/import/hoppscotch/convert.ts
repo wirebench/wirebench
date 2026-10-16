@@ -203,8 +203,11 @@ function v21Body(body: HopBody, label: string, report: ReportBuilder): { body?: 
       const disabled = part['active'] === false ? { disabled: true } : {};
       const contentType = str(part['contentType']);
       if (part['isFile'] === true) {
-        report.note(`${label}: the file part "${key}" has no file in the export; pick its file on the Body tab.`);
-        return { key: t(key), type: 'file', src: '', ...disabled };
+        // No file travels in the export, and a file part needs one: the row stays, switched off.
+        report.note(
+          `${label}: the file part "${key}" has no file in the export, so it was kept switched off as a text part; pick its file on the Body tab.`,
+        );
+        return { key: t(key), type: 'text', value: '', disabled: true };
       }
       return {
         key: t(key),
@@ -217,8 +220,10 @@ function v21Body(body: HopBody, label: string, report: ReportBuilder): { body?: 
     return { body: { mode: 'formdata', formdata: parts } };
   }
   if (type === 'application/octet-stream' || type === 'binary') {
-    report.note(`${label}: its body is a file, which is not in the export; pick it on the Body tab.`);
-    return { body: { mode: 'file', file: {} } };
+    report.note(
+      `${label}: its body is a file, which is not in the export, so it has no body; pick the file on the Body tab.`,
+    );
+    return {};
   }
   return {
     body: { mode: 'raw', raw: t(str(body.body)), options: { raw: { language: rawLanguage(type) } } },

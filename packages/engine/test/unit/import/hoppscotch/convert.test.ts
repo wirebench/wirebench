@@ -46,7 +46,7 @@ describe('mapHoppscotch: requests', () => {
     ]);
   });
 
-  it('maps each body: raw by content type, url-encoded text as a form, a multipart file part empty', () => {
+  it('maps each body: raw by content type, url-encoded text as a form, a multipart file part switched off', () => {
     expect(request('Create order')?.body).toMatchObject({ kind: 'raw', language: 'json' });
     expect(request('Digest')?.body).toMatchObject({ kind: 'raw', language: 'xml' });
     expect(request('Login form')?.body).toEqual({
@@ -61,14 +61,14 @@ describe('mapHoppscotch: requests', () => {
       kind: 'multipart',
       parts: [
         { kind: 'text', name: 'caption', value: 'me' },
-        { kind: 'file', name: 'file', source: { kind: 'path', path: '' } },
+        { kind: 'text', name: 'file', value: '', enabled: false },
       ],
     });
-    expect(request('Signed')?.body).toMatchObject({ kind: 'binary', source: { kind: 'path', path: '' } });
+    expect(request('Signed')?.body).toEqual({ kind: 'none' });
     expect(shop().report.notes).toEqual(
       expect.arrayContaining([
-        'Shop API / Upload avatar: the file part "file" has no file in the export; pick its file on the Body tab.',
-        'Shop API / Signed: its body is a file, which is not in the export; pick it on the Body tab.',
+        'Shop API / Upload avatar: the file part "file" has no file in the export, so it was kept switched off as a text part; pick its file on the Body tab.',
+        'Shop API / Signed: its body is a file, which is not in the export, so it has no body; pick the file on the Body tab.',
       ]),
     );
   });

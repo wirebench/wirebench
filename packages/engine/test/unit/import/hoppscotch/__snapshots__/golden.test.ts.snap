@@ -558,13 +558,10 @@ exports[`Hoppscotch golden > maps v12-r17.json 1`] = `
                   "value": "me",
                 },
                 {
-                  "enabled": true,
-                  "kind": "file",
+                  "enabled": false,
+                  "kind": "text",
                   "name": "file",
-                  "source": {
-                    "kind": "path",
-                    "path": "",
-                  },
+                  "value": "",
                 },
               ],
             },
@@ -667,12 +664,7 @@ exports[`Hoppscotch golden > maps v12-r17.json 1`] = `
               "type": "jwt",
             },
             "body": {
-              "contentType": "application/octet-stream",
-              "kind": "binary",
-              "source": {
-                "kind": "path",
-                "path": "",
-              },
+              "kind": "none",
             },
             "headers": [
               {
@@ -806,9 +798,9 @@ exports[`Hoppscotch golden > maps v12-r17.json 1`] = `
       "Shop API / Get user (GraphQL): its tests script was saved to imported-scripts/shop api/shop api-get user (graphql).tests.js and is never run.",
       "The collection's headers were copied onto each request that does not set them.",
       "Shop API / Orders: its headers were copied onto the requests below it that do not set them.",
-      "Shop API / Upload avatar: the file part "file" has no file in the export; pick its file on the Body tab.",
+      "Shop API / Upload avatar: the file part "file" has no file in the export, so it was kept switched off as a text part; pick its file on the Body tab.",
       "Shop API / Token via client credentials: its OAuth 2 extra request parameters were not imported.",
-      "Shop API / Signed: its body is a file, which is not in the export; pick it on the Body tab.",
+      "Shop API / Signed: its body is a file, which is not in the export, so it has no body; pick the file on the Body tab.",
     ],
     "warnings": [
       "The saved scripts call pw., hopp.; Wirebench does not run them. Port what they do to Wirebench scripts by hand.",
