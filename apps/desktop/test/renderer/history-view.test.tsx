@@ -192,6 +192,22 @@ describe('HistoryView', () => {
     expect(activeId).toBe('diff');
   });
 
+  it('offers no project filter with one project open, and keeps search on its own row (N03)', () => {
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        projects: [
+          { id: 'proj-1', name: 'Calc Project', slug: 'calc', source: 'internal', dir: '/x', status: 'ready' },
+        ],
+      }),
+    });
+    render(<HistoryView />);
+
+    expect(screen.queryByTestId('history-project-filter')).toBeNull();
+    const searchBox = screen.getByRole('searchbox', { name: 'Search history' });
+    // Delete all sits on the row below the search box, never beside it.
+    expect(searchBox.nextElementSibling?.contains(screen.getByRole('button', { name: 'Delete all' }))).toBe(true);
+  });
+
   describe('with several projects open', () => {
     beforeEach(() => {
       useWorkspaceStore.setState({

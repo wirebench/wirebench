@@ -12,6 +12,7 @@ import type { RestExchangeSummary } from '../../../../shared/kinds/rest/wire.js'
 import { base64ByteLength, formatBytes } from '../../../lib/format-size.js';
 import type { RestLiveState } from '../../../state/exchanges.js';
 import { describeSendError } from '../../request-editor/send-error.js';
+import { failedAssertionCount } from '../../assertions/assertion-results.js';
 import { ContractChip } from './contract-chip.js';
 import { GraphqlChip } from './graphql-chip.js';
 
@@ -130,6 +131,7 @@ export function StatusLine({ exchange, error, sending = false, live, startedAt }
   // A stream's end is not news worth interrupting for — it was on screen all along — unless it
   // failed; every other finished send is announced as it always was.
   const announce = exchange.stream === undefined || exchange.stream.endedBy === 'error';
+  const failedAssertions = failedAssertionCount(exchange.assertions);
 
   return (
     <p
@@ -147,6 +149,11 @@ export function StatusLine({ exchange, error, sending = false, live, startedAt }
       {exchange.http.httpVersion !== undefined && ` · HTTP/${exchange.http.httpVersion}`}
       {exchange.methodChanged && <span className="text-status-warning">{' · redirected as GET'}</span>}
       {exchange.http.truncated === true && <span className="text-status-warning">{' · truncated'}</span>}
+      {failedAssertions > 0 && (
+        <span data-testid="rest-response-assertions-failed" className="text-status-danger">
+          {` · ${String(failedAssertions)} assertion${failedAssertions === 1 ? '' : 's'} failed`}
+        </span>
+      )}
       {exchange.stream !== undefined &&
         ` · ${streamCountsText(exchange.stream.counts.events, exchange.stream.lastEventId)}`}
       {exchange.stream?.endedBy === 'client' && ' · stopped'}

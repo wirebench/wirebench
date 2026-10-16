@@ -127,7 +127,14 @@ export function RestResponsePane({
       if (verdict === undefined) {
         return item;
       }
-      return { ...item, label: verdict.failed ? 'Assertions ✕' : item.label, badge: verdict.text };
+      // Once assertions ran, their verdict never hides behind More, and a failure reads in red.
+      return {
+        ...item,
+        label: verdict.failed ? 'Assertions ✕' : item.label,
+        badge: verdict.text,
+        pinned: true,
+        ...(verdict.failed ? { tone: 'danger' as const } : {}),
+      };
     }
     if (item.id === 'script') {
       const badge = scriptResultsBadge(exchange?.script);

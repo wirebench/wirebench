@@ -18,6 +18,12 @@ export function assertionResultsBadge(
   return { text: `${String(passed)}/${String(checked.length)}`, failed: passed < checked.length };
 }
 
+/** How many assertions failed or errored; those not checked don't count. */
+export function failedAssertionCount(assertions: readonly RequestAssertionResultWire[] | undefined): number {
+  return (assertions ?? []).filter((assertion) => assertion.outcome === 'failed' || assertion.outcome === 'errored')
+    .length;
+}
+
 function OutcomeIcon({ outcome }: { readonly outcome: RequestAssertionResultWire['outcome'] }) {
   switch (outcome) {
     case 'passed':

@@ -30,6 +30,12 @@ describe('fitTabs', () => {
   it('can hide every tab behind More', () => {
     expect(fitTabs({ widths: [100, 100], available: 50, moreWidth: 60, activeIndex: 0 })).toBe(0);
   });
+
+  it('takes the room of a pinned tab first, and counts only unpinned tabs', () => {
+    // The pinned last tab keeps its 50px; of the other three, one fits beside More.
+    const pinned = [false, false, false, true];
+    expect(fitTabs({ widths: [50, 50, 50, 50], available: 160, moreWidth: 60, activeIndex: 0, pinned })).toBe(1);
+  });
 });
 
 describe('Tabs', () => {
@@ -80,6 +86,23 @@ describe('Tabs', () => {
       screen.getByRole('tab', { name: 'Body' }).focus();
       await userEvent.keyboard('{ArrowLeft}');
       expect(onSelect).toHaveBeenCalledWith('snapshot');
+    });
+
+    it('keeps a pinned tab in the strip, in its own place', () => {
+      const items = [...ITEMS.slice(0, 4), { id: 'snapshot', label: 'Snapshot', pinned: true }] as const;
+      render(<Tabs label="Response tabs" items={items} active="body" onSelect={() => undefined} />);
+      expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Snapshot']);
+    });
+
+    it('counts hidden failing tabs on the More button', () => {
+      const items = [
+        ...ITEMS.slice(0, 4),
+        { id: 'snapshot', label: 'Snapshot', badge: '0/1', tone: 'danger' },
+      ] as const;
+      render(<Tabs label="Response tabs" items={items} active="body" onSelect={() => undefined} />);
+      const more = screen.getByRole('button', { name: 'More Response tabs, 1 with failures' });
+      expect(screen.getByTestId('tabs-more-alerts').textContent).toBe('1');
+      expect(more.textContent).toBe('More1');
     });
   });
 });
