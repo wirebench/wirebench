@@ -49,6 +49,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **No orphan warning for a saved golden.** Opening a project, or `wirebench run`, no longer warns
+  `"<request>.golden.yaml" does not belong to any request` for a golden saved beside its request, in
+  any protocol. A golden whose request is gone is still reported.
 - **WSDL import goes through your proxy and CA bundle.** Importing a WSDL by URL, re-fetching it when a
   project reopens, and fetching a definition a legacy SOAP project file holds no copy of now use the
   proxy and CA bundle from Settings, as sends and OpenAPI imports already did, with Basic or Kerberos
