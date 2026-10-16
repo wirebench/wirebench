@@ -388,9 +388,8 @@ not come across.
 ## Insomnia exports
 
 Wirebench reads Insomnia exports in format 4 (JSON or YAML) and format 5 (YAML) — the app labels this
-format **Insomnia export**. Each workspace becomes a REST API for its HTTP requests, plus a gRPC API
-and a WebSocket API when it has requests of those kinds. Auto-detect recognizes both formats, and an
-export that also holds an API spec.
+format **Insomnia export**. Each workspace becomes a REST API, plus a gRPC and a WebSocket API when
+it has such requests. Auto-detect recognizes both formats.
 
 <Steps>
 
@@ -403,30 +402,12 @@ export that also holds an API spec.
 
 </Steps>
 
-The summary counts the APIs, requests and folders, then lists the environments and properties added
-and the secrets stored. **Things to look at**, **Notes** and **Copy report** work as they do for a
-legacy project. A file of environments only (Insomnia's global environment) is **Insomnia
-environments** in the format list: it lands in the workspace, so no project is asked for.
+A file of environments only is **Insomnia environments** and lands in the workspace. Files over 50 MB
+or 100,000 items are refused, and so are formats 1 to 3: re-export from a current Insomnia. The
+summary reports what is not imported: credentials, vault secret values, the cookie jar, unit tests,
+mocks, Socket.IO and MCP requests. Scripts are saved as text under `imported-scripts/` and never run.
 
-- **Variables.** The base environment and folder environments become project properties; the first
-  definition of a name wins, and a name the project already has keeps its value. Sub-environments
-  become workspace environments with their colour, never made active.
-- **Vault secrets** are not in the export. Each arrives as a secret waiting for a value, and the
-  summary lists them.
-- **Scripts** are saved as text under `imported-scripts/` and never run.
-- **Credentials** are never imported. Digest and AWS signature auth keep their settings without the
-  password or keys; Hawk, OAuth 1.0, ASAP, netrc and single-token auth become none. A credential
-  header in gRPC metadata or WebSocket headers is dropped unless it holds only references.
-- **gRPC definitions.** A format 4 export brings the `.proto` files its requests point to; a format 5
-  export holds none, so the gRPC API has no definition until you import the `.proto` or use server
-  reflection. A format 5 export holds no WebSocket payloads either.
-- **Reported, not imported.** The cookie jar, unit test suites, the embedded API spec, mock servers,
-  Socket.IO and MCP requests, and template tags with no Wirebench equivalent (kept as written).
-- **Limits.** A file larger than 50 MB is refused, picked or pasted, and so is one with more than
-  100,000 items. Formats 1 to 3 are refused: re-export from a current version of Insomnia.
-
-See [From Insomnia exports](/wirebench/docs/switching/insomnia/) for every rule, and what does not
-come across.
+See [From Insomnia exports](/wirebench/docs/switching/insomnia/) for every mapping.
 
 ## cURL commands
 

@@ -48,11 +48,12 @@ disabled auth still inherits; auth set to none stops inheriting.
 | --- | --- |
 | None | None |
 | Basic | Basic, with the username |
-| Bearer, with its prefix | Bearer. The token is not copied |
+| Bearer, with its prefix | Bearer. The token is not copied. A bearer with no prefix (`NO_PREFIX`) becomes an API key in the `Authorization` header, and the summary notes it |
 | Digest | Digest, with the username. The password is not copied |
 | NTLM | NTLM, with the username, domain and workstation |
-| API key (header, query or cookie) | API key, with its name and where it goes. The key is not copied |
-| OAuth 2.0, each grant | OAuth 2 with the matching grant: URLs, client ID and scopes. Secrets and tokens are not copied |
+| API key (header or query) | API key, with its name and where it goes. The key is not copied. A cookie key becomes None, and the summary says so |
+| OAuth 2.0, authorization code, client credentials or password | OAuth 2 with the matching grant: URLs, client ID and scopes. Secrets and tokens are not copied |
+| OAuth 2.0, any other grant | None. The summary names the grant |
 | AWS IAM | AWS Signature v4, with its region and service. The keys are not copied |
 | Hawk, OAuth 1.0, ASAP, netrc and single token | None. The summary names the type |
 
