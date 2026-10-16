@@ -24,7 +24,8 @@ const STATE: RunnerState = {
   settings: SETTINGS,
   requests: [
     { id: 'login', name: 'Log in', path: 'Shop/Log in', protocol: 'rest' },
-    { id: 'me', name: 'Me', path: 'Shop/Me', protocol: 'rest' },
+    // Named as an import used to name a request with no summary: by its method and path.
+    { id: 'me', name: 'GET /me', path: 'Shop/GET /me', protocol: 'rest', method: 'GET' },
   ],
   data: { name: 'users.csv', columns: ['user', 'password'], rows: 2 },
 };
@@ -112,9 +113,11 @@ async function mount(): Promise<void> {
 describe('RunnerTab', () => {
   it('lists the requests in run order and names the data file, never its path', async () => {
     await mount();
+    // The method shows once, in the badge, not again at the start of the name (#633).
+    expect(screen.getAllByTestId('method-badge').map((badge) => badge.textContent)).toEqual(['GET']);
     expect(screen.getAllByTestId('runner-request').map((row) => row.textContent)).toEqual([
       expect.stringContaining('Shop/Log in'),
-      expect.stringContaining('Shop/Me'),
+      expect.stringContaining('Shop › /me'),
     ]);
     expect(screen.getByTestId('runner-data').textContent).toBe('users.csv — 2 rows: user, password');
     expect(screen.getByTestId('runner-iterations').getAttribute('placeholder')).toBe('One per row (2)');

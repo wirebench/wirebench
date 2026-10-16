@@ -530,6 +530,39 @@ describe('ExplorerView with APIs', () => {
     expect(folderRow.querySelector('[data-testid="explorer-row-gutter"]')).not.toBeNull();
   });
 
+  it('never scrolls sideways: rows keep the tree width, and a cut name says itself in a title (#633)', () => {
+    seedRest();
+    mount();
+
+    // react-arborist sizes a row to its content (`min-width: max-content`); held to the tree's width
+    // instead, a long name truncates rather than pushing a horizontal scrollbar onto the sidebar.
+    expect(screen.getByTestId('explorer-tree-scroll').className).toContain('overflow-x-hidden!');
+    const treeItem = screen.getAllByTestId('rest-request-row')[0]!.closest('[role="treeitem"]');
+    expect(treeItem?.className).toContain('min-w-0!');
+
+    const name = screen.getByText('At root');
+    expect(name.className).toContain('truncate');
+    expect(name.getAttribute('title')).toBe('At root');
+  });
+
+  it('shows a stored name without the method its badge already shows (#633)', () => {
+    seedRest();
+    useProjectStore.setState((state) => ({
+      rest: {
+        p1: {
+          ...state.rest['p1']!,
+          requests: state.rest['p1']!.requests.map((request) =>
+            request.id === 'rest-root' ? { ...request, name: 'POST /echo' } : request,
+          ),
+        },
+      },
+    }));
+    mount();
+
+    expect(screen.getByText('/echo').getAttribute('title')).toBe('/echo');
+    expect(screen.queryByText('POST /echo')).toBeNull();
+  });
+
   it('opens a project tab and folds the project under the same single click', () => {
     seedRest();
     mount();
