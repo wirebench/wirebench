@@ -126,12 +126,14 @@ import { OAuth2Service } from './oauth2.js';
 import { registerAccountChannels, toAccountWire } from './ipc/account.js';
 import { registerTeamChannels } from './ipc/team.js';
 import { HooksService } from './hooks/hooks-service.js';
+import { SchedulesService } from './schedules/schedules-service.js';
 import { desktopCaptureSource, linkedServerOf } from './hooks/capture-source.js';
 import { registerCiTokenChannels } from './ipc/ci-tokens.js';
 import { registerLicenseChannels } from './ipc/license.js';
 import { registerProvisioningChannels } from './ipc/provisioning.js';
 import { registerAuditChannels } from './ipc/audit.js';
 import { registerHooksChannels } from './ipc/hooks.js';
+import { registerSchedulesChannels } from './ipc/schedules.js';
 import { AccountService } from './account-service.js';
 import { AuditReporter } from './audit/reporter.js';
 import { normalizeServerUrl, ServerClient } from './server-client.js';
@@ -412,6 +414,14 @@ const hooksService = new HooksService({
     captured: (event) => broadcast(events.hooks.captured, event),
     captures: (event) => broadcast(events.hooks.captures, event),
   },
+});
+
+/** A shared workspace's schedules (#517): every call goes to the server; `schedule-run` rides the live socket. */
+const schedulesService = new SchedulesService({
+  client: serverClient,
+  accounts: accountService,
+  live: liveClients,
+  emit: { changed: (event) => broadcast(events.schedules.changed, event) },
 });
 
 /** The session's in-flight OpenAPI and AsyncAPI reads: one cancel per token, one fetcher per read. */
@@ -1139,6 +1149,7 @@ void app.whenReady().then(() => {
   registerProvisioningChannels({ client: serverClient, accounts: accountService });
   registerAuditChannels({ client: serverClient, accounts: accountService, picks: dialogPicks });
   registerHooksChannels({ hooks: hooksService });
+  registerSchedulesChannels({ schedules: schedulesService });
   accountService.onChange((servers) => broadcast(events.account.changed, { servers: servers.map(toAccountWire) }));
   // Signing in to a window's workspace's server sends what its audit outbox kept while signed out.
   accountService.onChange((servers) => {
@@ -1578,6 +1589,7 @@ app.on('before-quit', (event) => {
   }
   // The catch URL views and their subscriptions go first; nothing of them outlives the process.
   hooksService.dispose();
+  schedulesService.dispose();
   // SSH sessions end with the app; closing never throws or waits.
   sshService.disposeAll();
   sftpTransfers.disposeAll();

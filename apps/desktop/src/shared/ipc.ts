@@ -417,6 +417,25 @@ import {
   runnerStateSchema,
   runnerTargetRequestSchema,
 } from './runner-wire.js';
+import {
+  scheduleAlertTestResponseWireSchema,
+  scheduleCreateRequestWireSchema,
+  scheduleRefRequestWireSchema,
+  scheduleResponseWireSchema,
+  scheduleRunDetailResponseWireSchema,
+  scheduleRunPageResponseWireSchema,
+  scheduleRunRequestWireSchema,
+  scheduleRunResponseWireSchema,
+  scheduleRunsRequestWireSchema,
+  scheduleSecretsRequestWireSchema,
+  scheduleUpdateRequestWireSchema,
+  schedulesAvailableResponseWireSchema,
+  schedulesChangedEventWireSchema,
+  schedulesDoneResponseWireSchema,
+  schedulesListResponseWireSchema,
+  schedulesServerRequestWireSchema,
+  schedulesWorkspaceRequestWireSchema,
+} from './schedules-wire.js';
 import { apiImportPostmanVariablesResponseSchema } from './kinds/rest/wire.js';
 import { soapChannels } from './kinds/soap/channels.js';
 import { restChannels, restEvents } from './kinds/rest/channels.js';
@@ -621,6 +640,33 @@ export const channels = {
     older: defineChannel('hooks.older', hooksViewRequestWireSchema, hooksPageResponseWireSchema),
     capture: defineChannel('hooks.capture', hooksCaptureRequestWireSchema, hooksCaptureResponseWireSchema),
     close: defineChannel('hooks.close', hooksViewRequestWireSchema, hooksDoneResponseWireSchema),
+  },
+  /** Schedules of a server workspace (scheduled-runs spec §3.7, #517); main adds the account's token. */
+  schedules: {
+    /** Whether the server runs schedules: the `scheduled-runs` capability on an Enterprise edition. */
+    available: defineChannel(
+      'schedules.available',
+      schedulesServerRequestWireSchema,
+      schedulesAvailableResponseWireSchema,
+    ),
+    list: defineChannel('schedules.list', schedulesWorkspaceRequestWireSchema, schedulesListResponseWireSchema),
+    get: defineChannel('schedules.get', scheduleRefRequestWireSchema, scheduleResponseWireSchema),
+    create: defineChannel('schedules.create', scheduleCreateRequestWireSchema, scheduleResponseWireSchema),
+    update: defineChannel('schedules.update', scheduleUpdateRequestWireSchema, scheduleResponseWireSchema),
+    remove: defineChannel('schedules.remove', scheduleRefRequestWireSchema, schedulesDoneResponseWireSchema),
+    setSecrets: defineChannel('schedules.setSecrets', scheduleSecretsRequestWireSchema, scheduleResponseWireSchema),
+    testAlerts: defineChannel(
+      'schedules.testAlerts',
+      scheduleRefRequestWireSchema,
+      scheduleAlertTestResponseWireSchema,
+    ),
+    runNow: defineChannel('schedules.runNow', scheduleRefRequestWireSchema, scheduleRunResponseWireSchema),
+    runs: defineChannel('schedules.runs', scheduleRunsRequestWireSchema, scheduleRunPageResponseWireSchema),
+    run: defineChannel('schedules.run', scheduleRunRequestWireSchema, scheduleRunDetailResponseWireSchema),
+    cancelRun: defineChannel('schedules.cancelRun', scheduleRunRequestWireSchema, schedulesDoneResponseWireSchema),
+    /** Follow the workspace's `schedule-run` messages while the Schedules view shows. */
+    watch: defineChannel('schedules.watch', schedulesWorkspaceRequestWireSchema, schedulesDoneResponseWireSchema),
+    unwatch: defineChannel('schedules.unwatch', schedulesWorkspaceRequestWireSchema, schedulesDoneResponseWireSchema),
   },
   /** CI tokens of a server workspace (callback-assertion §5); main adds the account's token. */
   ciTokens: {
@@ -1295,6 +1341,10 @@ export const events = {
     captured: defineEvent('hooks.captured', hooksCapturedEventWireSchema),
     /** An open view's summaries changed: new ones on top, a fresh first page, or a failed fetch. */
     captures: defineEvent('hooks.captures', hooksCapturesEventWireSchema),
+  },
+  schedules: {
+    /** A scheduled run finished (`scheduleId` set), or the live socket came back (re-read them all). */
+    changed: defineEvent('schedules.changed', schedulesChangedEventWireSchema),
   },
   account: {
     /** The list of known servers changed (sign-in, sign-out, removal, a token the server refused). */
