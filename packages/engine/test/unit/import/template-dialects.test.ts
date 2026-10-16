@@ -64,6 +64,17 @@ describe('insomniaTemplates', () => {
   });
 });
 
+describe('timestamp dialects through rewriteMustache', () => {
+  it.each([
+    ["{% now 'iso-8601' %}", '${$isoTimestamp}', insomniaTemplates],
+    ["{% now 'unix' %}", '${$timestamp}', insomniaTemplates],
+    ['{{#dateISO}}', '${$isoTimestamp}', thunderTemplates],
+    ['{{#timestamp}}', '${$timestamp}', thunderTemplates],
+  ] as const)('%s becomes %s', (input, expected, dialect) => {
+    expect(rewriteMustache(dialect(input, new Set()))).toBe(expected);
+  });
+});
+
 describe('hoppscotchTemplates', () => {
   it('rewrites angle references', () => {
     expect(hoppscotchTemplates('<<base>>/a/<<$guid>>', new Set())).toBe('{{base}}/a/{{$guid}}');
