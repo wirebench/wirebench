@@ -39,6 +39,9 @@ export type ExplorerNodeKind =
   /** The open workspace's catch URLs on its server (webhook-capture §4.2); a root after the projects. */
   | 'webhooks'
   | 'catch-url'
+  /** The open workspace's schedules on its server (#517); a root after the Webhook inbox. */
+  | 'schedules'
+  | 'schedule'
   /** The group of a project's sequences; a container, not an entity. */
   | 'sequences'
   | 'sequence'
@@ -144,6 +147,14 @@ export interface ExplorerNode {
   /** Set on `catch-url` nodes: captures this device has not seen, and whether there are more than that. */
   readonly unseen?: number;
   readonly unseenMore?: boolean;
+  /** Set on `schedule` nodes: the schedule's id. */
+  readonly scheduleId?: string;
+  /** Set on `schedule` nodes: its dot. */
+  readonly scheduleState?: 'paused' | 'failing' | 'ok' | 'never';
+  /** Set on a failing `schedule` node: its failing runs in a row; on the `schedules` root: how many fail. */
+  readonly failing?: number;
+  /** Set on `schedule` nodes: what its schedule reads as, after the name. */
+  readonly when?: string;
   /** Set on `sequence` nodes: the sequence the row stands for. */
   readonly sequenceId?: string;
   /** Set on `mock` nodes: the mock the row stands for. */
@@ -382,6 +393,41 @@ export function webhooksNode(webhooks: ExplorerWebhooks): ExplorerNode {
       enabled: hook.enabled,
       unseen: hook.unseen.count,
       unseenMore: hook.unseen.more,
+    })),
+  };
+}
+
+/** The Schedules root's input: present only when the workspace's server runs schedules (#517). */
+export interface ExplorerSchedules {
+  readonly canEdit: boolean;
+  readonly schedules: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly state: 'paused' | 'failing' | 'ok' | 'never';
+    readonly failureStreak: number;
+    readonly when: string;
+  }[];
+}
+
+export const SCHEDULES_ROOT_ID = 'schedules';
+
+/** The workspace's schedules root, after the Webhook inbox: one row per schedule with its dot. */
+export function schedulesNode(input: ExplorerSchedules): ExplorerNode {
+  return {
+    id: SCHEDULES_ROOT_ID,
+    kind: 'schedules',
+    label: 'Schedules',
+    canEdit: input.canEdit,
+    failing: input.schedules.filter((schedule) => schedule.state === 'failing').length,
+    children: input.schedules.map((schedule) => ({
+      id: `schedule:${schedule.id}`,
+      kind: 'schedule' as const,
+      label: schedule.name,
+      scheduleId: schedule.id,
+      canEdit: input.canEdit,
+      scheduleState: schedule.state,
+      when: schedule.when,
+      ...(schedule.state === 'failing' ? { failing: schedule.failureStreak } : {}),
     })),
   };
 }

@@ -4,6 +4,7 @@ import { forwardRef } from 'react';
 import { ListOuterElement, Tree } from 'react-arborist';
 import {
   Box,
+  CalendarClock,
   ChevronDown,
   ChevronRight,
   FileDown,
@@ -40,11 +41,14 @@ import { explorerActions } from './explorer-actions.js';
 import { openProjectTab, projectRowActions } from './project-actions.js';
 import { isDropDisabled, planMoves } from './drag-drop.js';
 import { getExplorerTree, registerExplorerTree, revealNode } from './explorer-api.js';
-import type { ExplorerNode, ExplorerProject, ExplorerWebhooks } from './tree-nodes.js';
-import { buildExplorerTree, nodeProjectId } from './tree-nodes.js';
+import type { ExplorerNode, ExplorerProject, ExplorerSchedules, ExplorerWebhooks } from './tree-nodes.js';
+import { buildExplorerTree, nodeProjectId, schedulesNode } from './tree-nodes.js';
 import { openCatchUrlTab, webhooksActions } from '../webhooks/webhooks-actions.js';
 import { useSyncStore } from '../../state/sync.js';
 import { useWebhooksStore } from '../../state/webhooks.js';
+import { scheduleStateOf, schedulesShown, useSchedulesStore } from '../../state/schedules.js';
+import { describeCron, STATE_DOT, STATE_LABEL } from '../schedules/schedule-format.js';
+import { openScheduleTab, schedulesActions } from '../schedules/schedules-actions.js';
 import { useScriptValuesStore } from '../../state/script-values.js';
 import { EnableScriptsDialog } from '../scripts/enable-scripts-dialog.js';
 
@@ -82,6 +86,7 @@ const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size
   'webhook-request': Forward,
   webhooks: Webhook,
   'catch-url': Inbox,
+  schedules: CalendarClock,
   sequences: Folder,
   sequence: ListOrdered,
   mocks: Folder,
@@ -116,6 +121,8 @@ const ROW_TESTID: Partial<Record<ExplorerNode['kind'], string>> = {
   'webhook-request': 'webhook-request-row',
   webhooks: 'webhooks-row',
   'catch-url': 'catch-url-row',
+  schedules: 'schedules-row',
+  schedule: 'schedule-row',
   sequences: 'sequences-group-row',
   sequence: 'sequence-row',
   mocks: 'mocks-group-row',
@@ -182,6 +189,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             role?.click === 'open' ||
             node.data.kind === 'webhook-request' ||
             node.data.kind === 'catch-url' ||
+            node.data.kind === 'schedule' ||
             node.data.kind === 'sequence' ||
             node.data.kind === 'mock'
           ) {
@@ -239,6 +247,15 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
               title={`${node.data.method} ${node.data.label}`}
               compact
               className="w-auto"
+            />
+          ) : node.data.kind === 'schedule' && node.data.scheduleState !== undefined ? (
+            <span
+              role="img"
+              data-testid="schedule-dot"
+              data-state={node.data.scheduleState}
+              aria-label={STATE_LABEL[node.data.scheduleState]}
+              title={STATE_LABEL[node.data.scheduleState]}
+              className={`mr-1 h-2 w-2 rounded-full ${STATE_DOT[node.data.scheduleState]}`}
             />
           ) : (
             Icon !== undefined && <Icon size={13} />
@@ -383,6 +400,18 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             off
           </span>
         )}
+        {node.data.kind === 'schedule' && node.data.when !== undefined && (
+          <span className="min-w-0 shrink truncate text-xs text-fg-subtle">{node.data.when}</span>
+        )}
+        {(node.data.kind === 'schedule' || node.data.kind === 'schedules') && (node.data.failing ?? 0) > 0 && (
+          <span
+            data-testid="schedule-failing"
+            title={node.data.kind === 'schedule' ? 'Failing runs in a row' : 'Schedules failing now'}
+            className="shrink-0 rounded-full bg-status-danger px-1.5 text-xs text-fg-on-accent"
+          >
+            {String(node.data.failing)}
+          </span>
+        )}
         {node.data.kind === 'catch-url' && (node.data.unseen ?? 0) > 0 && (
           <span
             data-testid="catch-url-unseen"
@@ -433,6 +462,9 @@ export function ExplorerView() {
   const hooksMeta = useWebhooksStore((state) => state.meta);
   const catchUrls = useWebhooksStore((state) => state.hooks);
   const unseen = useWebhooksStore((state) => state.unseen);
+  const schedulesAvailable = useSchedulesStore((state) => state.available);
+  const schedulesError = useSchedulesStore((state) => state.error);
+  const scheduleList = useSchedulesStore((state) => state.schedules);
 
   const [containerRef, size] = useElementSize<HTMLDivElement>();
   const [treeRef, setTreeRef] = useState<import('react-arborist').TreeApi<ExplorerNode> | null | undefined>(undefined);
@@ -462,7 +494,23 @@ export function ExplorerView() {
           })),
         }
       : undefined;
-  const data = buildExplorerTree(
+  // #517: the Schedules root, when the workspace's server runs schedules; every role sees it.
+  const schedules: ExplorerSchedules | undefined = schedulesShown({
+    available: schedulesAvailable,
+    error: schedulesError,
+  })
+    ? {
+        canEdit: role === 'admin',
+        schedules: scheduleList.map((schedule) => ({
+          id: schedule.id,
+          name: schedule.name,
+          state: scheduleStateOf(schedule),
+          failureStreak: schedule.failureStreak,
+          when: describeCron(schedule.cron),
+        })),
+      }
+    : undefined;
+  const tree = buildExplorerTree(
     roots,
     order,
     interfaces,
@@ -479,6 +527,7 @@ export function ExplorerView() {
     Object.fromEntries(Object.entries(projects).map(([id, project]) => [id, project.unsupported ?? []])),
     mcp,
   );
+  const data = schedules === undefined ? tree : [...tree, schedulesNode(schedules)];
 
   useEffect(() => {
     registerExplorerTree(treeRef ?? null);
@@ -694,6 +743,13 @@ export function ExplorerView() {
                   if (node.data.hookId !== undefined) openCatchUrlTab(node.data.hookId);
                   return;
                 }
+                if (node.data.kind === 'schedules') {
+                  return;
+                }
+                if (node.data.kind === 'schedule') {
+                  if (node.data.scheduleId !== undefined) openScheduleTab(node.data.scheduleId);
+                  return;
+                }
                 if (node.data.kind === 'sequence') {
                   explorerActions.openSequence(node.data.sequenceId);
                   return;
@@ -807,6 +863,12 @@ export function ExplorerView() {
                     node.data.hookId !== undefined
                   ) {
                     webhooksActions.confirm('delete', node.data.hookId);
+                  } else if (
+                    node.data.kind === 'schedule' &&
+                    node.data.canEdit === true &&
+                    node.data.scheduleId !== undefined
+                  ) {
+                    schedulesActions.confirmDelete(node.data.scheduleId);
                   } else if (node.data.kind === 'sequence') {
                     explorerActions.removeSequence(node.data.sequenceId);
                   } else if (node.data.kind === 'mock') {
