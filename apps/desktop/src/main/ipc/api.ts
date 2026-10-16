@@ -21,6 +21,8 @@ import {
   collectionV3Root,
   importBruno,
   importHar,
+  importHoppscotch,
+  importHoppscotchEnvironments,
   importHttpFile,
   importInsomnia,
   importOpenCollection,
@@ -889,13 +891,31 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
   });
 
   /**
+   * A Hoppscotch collections export (spec 2026-10-15 §6): each top-level collection's REST API in the
+   * chosen project, its collection and folder variables as project properties, its scripts as text
+   * (never run). An environments file is refused by the reader: it goes to `api.importClientEnvironments`.
+   */
+  registerHandler(channels.api.importHoppscotch, async (request) => {
+    const checkedSource = await checkedPostmanSource(request.source);
+    const mapped = await importHoppscotch(checkedSource, {
+      ...(request.name !== undefined && request.name.trim() !== '' ? { name: request.name } : {}),
+    });
+    const source = checkedSource.kind === 'file' ? checkedSource.path : 'inline:hoppscotch';
+    return await placeClientImport(request.target, mapped, { source, declaredVersion: 'hoppscotch' });
+  });
+
+  /**
    * Another request client's environments file, applied to the open workspace: its base merged into
    * Globals, each sub-environment a workspace environment under a free name (never activated). An
    * export holding requests is refused rather than half imported.
    */
   registerHandler(channels.api.importClientEnvironments, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
-    const mapped = await importInsomnia(checkedSource);
+    // A Hoppscotch environments file is its own format, refused by the reader when it holds collections.
+    const mapped =
+      request.format === 'hoppscotch'
+        ? await importHoppscotchEnvironments(checkedSource)
+        : await importInsomnia(checkedSource);
     if (mapped.collections.length > 0 || mapped.variables.projectProperties !== undefined) {
       throw new WirebenchError(
         'insomnia-not-environments',

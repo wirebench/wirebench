@@ -1,0 +1,25 @@
+{
+  "name": "Legacy API",
+  "folders": [],
+  "requests": [
+    {
+      "url": "https://echo.example.test",
+      "path": "/get",
+      "headers": [
+        { "key": "X-Old", "value": "1", "active": false },
+        { "key": "Accept", "value": "application/json", "active": true }
+      ],
+      "params": [{ "key": "q", "value": "x", "active": true }],
+      "name": "get-thing",
+      "method": "GET",
+      "preRequestScript": "",
+      "testScript": "pw.test(\"ok\", () => { pw.expect(pw.response.status).toBe(200) })",
+      "contentType": "application/json",
+      "body": "",
+      "rawParams": "{\"a\":1}",
+      "auth": "Basic Auth",
+      "httpUser": "alice",
+      "httpPassword": "legacy-pass-123"
+    }
+  ]
+}

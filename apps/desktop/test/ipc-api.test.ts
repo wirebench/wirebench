@@ -1838,6 +1838,55 @@ describe('api.importBruno', () => {
   });
 });
 
+const HOPPSCOTCH = resolve(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/hoppscotch/crafted');
+
+describe('api.importHoppscotch', () => {
+  type ClientResponse = { projectId: string; apiIds: string[]; counts: Record<string, number> };
+
+  const setupVariables = () => {
+    const fake = fakeVariablesPorts({});
+    const variablesPorts = vi.fn().mockReturnValue(fake.ports);
+    return { ...setup({ variablesPorts }), fake, variablesPorts };
+  };
+
+  it('imports a pasted collection array, its variables as project properties', async () => {
+    const { addApi, fake } = setupVariables();
+    const response = await value<ClientResponse>('api.importHoppscotch', {
+      target: { projectId: 'p1' },
+      source: { kind: 'text', text: readFileSync(join(HOPPSCOTCH, 'v12-r17.json'), 'utf8') },
+    });
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({
+      api: { name: 'Shop API' },
+      source: 'inline:hoppscotch',
+      declaredVersion: 'hoppscotch',
+    });
+    expect(response.apiIds).toEqual(['api-1']);
+    expect(response.counts.requests).toBe(9);
+    expect(fake.environments).toEqual([]);
+  });
+
+  it('refuses an environments file, before creating anything', async () => {
+    const { deps } = setupVariables();
+    const text = readFileSync(join(HOPPSCOTCH, 'environments-v2.json'), 'utf8');
+    expect(
+      (await failure('api.importHoppscotch', { target: { newProjectName: 'X' }, source: { kind: 'text', text } })).code,
+    ).toBe('hoppscotch-not-collection');
+    expect(deps.addProject).not.toHaveBeenCalled();
+  });
+
+  it('sends environments to the workspace, the global one into Globals', async () => {
+    const { fake, variablesPorts } = setupVariables();
+    const text = readFileSync(join(HOPPSCOTCH, 'environments-v2.json'), 'utf8');
+    const response = await value<{ summary: { environments: { name: string }[] } }>('api.importClientEnvironments', {
+      format: 'hoppscotch',
+      source: { kind: 'text', text },
+    });
+    expect(variablesPorts).toHaveBeenCalledWith(undefined);
+    expect(fake.environments.map((environment) => environment.name)).toEqual(['Staging', 'Old']);
+    expect(response.summary.environments.map((environment) => environment.name)).toEqual(['Staging', 'Old']);
+  });
+});
+
 describe('api.detectImportSource', () => {
   let dir = '';
   beforeEach(async () => {

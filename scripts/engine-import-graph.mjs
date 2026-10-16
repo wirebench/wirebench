@@ -88,6 +88,8 @@ export const CORE_EXCEPTIONS = Object.freeze([
   { from: 'import/insomnia/map.ts', to: 'rest/postman/', until: 'phase 7' },
   { from: 'import/insomnia/map.ts', to: 'grpc/model.ts', until: 'phase 7' },
   { from: 'import/insomnia/map.ts', to: 'ws/model.ts', until: 'phase 7' },
+  { from: 'import/hoppscotch/convert.ts', to: 'rest/model.ts', until: 'phase 7' },
+  { from: 'import/hoppscotch/convert.ts', to: 'rest/postman/', until: 'phase 7' },
   { from: 'export/tree.ts', to: 'rest/model.ts', until: 'phase 7' },
   { from: 'export/tree.ts', to: 'rest/url.ts', until: 'phase 7' },
   { from: 'export/tree.ts', to: 'rest/graphql/body.ts', until: 'phase 7' },
