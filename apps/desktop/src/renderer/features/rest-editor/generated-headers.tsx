@@ -8,7 +8,7 @@
  * connection or a credential's handshake adds is listed read-only.
  */
 import { useEffect, useState } from 'react';
-import { Button } from '../../components/button.js';
+import { KV_CHECKBOX_CLASS } from '../../components/kv-table.js';
 import { useCurrentValuesStore } from '../../state/current-values.js';
 import { ipc } from '../../state/ipc-client.js';
 import { restDraftPatch } from '../../state/project.js';
@@ -144,6 +144,7 @@ export function GeneratedHeaders({ request, onChange }: GeneratedHeadersProps) {
                   {reason === undefined && (
                     <input
                       type="checkbox"
+                      className={KV_CHECKBOX_CLASS}
                       aria-label={`Send ${row.name}`}
                       checked={row.state !== 'omitted'}
                       disabled={row.state === 'overridden'}
@@ -168,16 +169,18 @@ export function GeneratedHeaders({ request, onChange }: GeneratedHeadersProps) {
                 <td className="px-2 py-1 text-xs text-fg-subtle">
                   {reason ?? note}
                   {reason === undefined && row.state !== 'overridden' && (
-                    <Button
-                      variant="ghost"
-                      className="ml-1"
+                    // A text-sized control, not a toolbar button: a full-height button would stand
+                    // taller than the row's text and sit off its baseline.
+                    <button
+                      type="button"
+                      className="ml-1 rounded-sm px-1 align-baseline text-xs text-fg-muted hover:bg-surface-hover hover:text-fg-default focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
                       aria-label={`Override ${row.name}`}
                       onClick={() => {
                         override(row);
                       }}
                     >
                       Override
-                    </Button>
+                    </button>
                   )}
                 </td>
               </tr>

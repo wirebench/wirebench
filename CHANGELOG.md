@@ -46,8 +46,28 @@ All notable changes to this project are documented here. The format follows
   beside the requests, so a request stays in view while you browse its history or edit its variables.
   SSH keeps its own strip. The right rail shows an environment's details while its tab is in front
   (#607).
+- **Copy as cURL and Generate code… under Send ▾.** The menu under a SOAP or REST request's Send
+  button, which offered only **Send to environments…**, now also has **Copy as cURL** (the same as
+  the request's palette command) and **Generate code…**, which opens the Code panel (#632).
+- **A send the network failed is not a Problem.** A refused connection, an unknown host, a timeout, a
+  failed TLS handshake, a proxy or network failure no longer adds a red Problem: the response pane
+  already says what happened, with a hint and Retry, and the status bar's `last:` shows it. Failures
+  the project can fix (unresolved variables, an incomplete URL, an untrusted certificate, script type
+  errors) stay in Problems, now worded by their title ("Incomplete URL: …") rather than their code
+  (#635).
 
 ### Fixed
+
+- **The Body tab shows when there is a body.** Like Scripts, the REST request's Body tab carries a dot
+  while the request would send a body (#637).
+- **The Runner counts requests without checks apart.** Its summary and Past runs now say "3 passed,
+  9 without checks" instead of counting a request that tested nothing as passed, and a request that
+  errored reads like the send error panel ("Incomplete URL: …", the code in small text) (#637).
+- **REST fits a 1024×700 window better.** Shrinking the window below 720px collapses an open console,
+  and growing it back reopens it; the first send in a short window leaves the console collapsed. The
+  HTTP Log toolbar wraps instead of scrolling sideways when the code panel narrows the console, and
+  **Preserve log** is now a pin icon beside the other actions. The response's status line wraps
+  between its parts instead of cutting the last one short (#636).
 
 - **WSDL import goes through your proxy and CA bundle.** Importing a WSDL by URL, re-fetching it when a
   project reopens, and fetching a definition a legacy SOAP project file holds no copy of now use the
@@ -64,6 +84,30 @@ All notable changes to this project are documented here. The format follows
   A `${` that is never closed is reported as such, naming the field it is in with a link to it,
   instead of as a variable missing from the environment. Cancelling a send keeps the response you
   were looking at, under a one-line "Cancelled after … · Retry" bar (#631).
+- **The "Method changed to POST" toast goes when it stops being true.** Switching a REST body to
+  GraphQL and back, or to another kind, now takes the toast and its **Undo** down at once instead of
+  leaving it up for its full eight seconds (#632).
+- **Query examples match the language picked.** The example chips in an empty Query view now follow
+  the query language: JSONPath offers only JSONPath expressions, XPath and XQuery their own, instead
+  of mixing XPath 3.1 map lookups in with JSONPath (#632).
+- **HTML Pretty reads like the page.** Inline elements such as `<b>`, `<a>`, `<span>`, `<code>` and
+  `<title>` stay on one line with their text instead of taking three, and the content of `<pre>`,
+  `<textarea>`, `<script>` and `<style>` is shown exactly as it arrived (#632).
+- **Key/value checkboxes use the accent colour.** The checkboxes in Params, Headers and the other
+  key/value tables, and in an environment's variables, are tinted like the ones in Settings instead
+  of the system blue (#632).
+- **The default User-Agent names the real version.** Requests sent from the app now carry
+  `User-Agent: Wirebench/<version>` (for example `Wirebench/6.1.0`) instead of the stale
+  `Wirebench/0.1`, and it follows each update; a User-Agent you set yourself is kept. The CLI, which
+  sends without the app's preferences, sends `Wirebench`. The **Accept compressed responses** hint now
+  names what is sent: `gzip, deflate, br` on REST requests, `gzip, deflate` on SOAP ones (#632).
+- **A response with no body says so.** A 204, a `HEAD` answer or any other empty response now shows
+  "No body (204 No Content)" in the Body tab, with the response's own status, instead of an empty
+  editor showing line 1. A saved example and a captured webhook request with no body say the same
+  (#632).
+- **Override sits on the row in the generated headers.** In a REST request's **Generated** headers,
+  **Override** is now a small text-sized control on the row's baseline instead of a full-height
+  button standing off it, and the row checkboxes use the accent colour (#632).
 - **Credential headers stay out of imported Postman requests.** A literal `Authorization` header in a
   Postman collection becomes the request's bearer or basic auth (the user name only) and is dropped;
   any other credential-looking header with a literal value, such as `X-Api-Key` or `Cookie`, is

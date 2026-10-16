@@ -13,7 +13,8 @@ import type { PreferencesWire } from '../../shared/wire-base.js';
 export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
   http: {
     version: '1.1',
-    userAgent: 'Wirebench/0.1',
+    // Main moves this to `Wirebench/<app version>` (`withAppUserAgent`); a reset sends it back there.
+    userAgent: 'Wirebench',
     requestCompression: 'none',
     responseCompression: true,
     closeConnections: false,

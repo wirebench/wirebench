@@ -169,7 +169,7 @@ export function RestResponsePane({
 
   return (
     <section aria-label="Response" data-testid="rest-response" className="flex h-full min-h-0 flex-col">
-      <div className="flex h-row shrink-0 items-center gap-2 border-b border-hairline">
+      <div className="flex min-h-row shrink-0 items-center gap-2 border-b border-hairline">
         <div className="min-w-0 flex-1">
           <StatusLine
             {...(exchange !== undefined ? { exchange } : {})}
