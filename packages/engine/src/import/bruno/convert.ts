@@ -568,13 +568,13 @@ export function sortItems(items: OcItem[]): OcItem[] {
 
 /** `bruno.json`'s name, ignored paths and the settings Wirebench does not read. */
 function config(text: string | undefined, rootName: string, report: ReportBuilder) {
-  if (text === undefined) return { name: rootName, ignore: [] as string[], extras: [] as string[] };
+  if (text === undefined) return { name: rootName, ignore: [] as string[], extras: [] as string[], flow: undefined };
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
     report.warn('bruno.json could not be read, so the collection is named after its folder.');
-    return { name: rootName, ignore: [], extras: [] };
+    return { name: rootName, ignore: [], extras: [], flow: undefined };
   }
   const rec = typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as Rec) : {};
   const name = typeof rec['name'] === 'string' && rec['name'].trim() !== '' ? rec['name'].trim() : rootName;
@@ -582,7 +582,12 @@ function config(text: string | undefined, rootName: string, report: ReportBuilde
     ? rec['ignore'].filter((p): p is string => typeof p === 'string' && p !== '')
     : [];
   const extras = ['proxy', 'clientCertificates'].filter((key) => rec[key] !== undefined);
-  return { name, ignore, extras };
+  const scripts = rec['scripts'];
+  const flow =
+    typeof scripts === 'object' && scripts !== null && typeof (scripts as Rec)['flow'] === 'string'
+      ? ((scripts as Rec)['flow'] as string)
+      : undefined;
+  return { name, ignore, extras, flow };
 }
 
 /**
@@ -595,7 +600,7 @@ export function ocOfBrunoFolder(
   rootName: string,
 ): { collection: OcCollection; report: ImportReport } {
   const conv = new Converter();
-  const { name, ignore, extras } = config(files.get('bruno.json'), rootName, conv.report);
+  const { name, ignore, extras, flow } = config(files.get('bruno.json'), rootName, conv.report);
   const ignored = (path: string): boolean => ignore.some((p) => path === p || path.startsWith(`${p}/`));
 
   const folders = new Map<string, Folder>();
@@ -665,6 +670,7 @@ export function ocOfBrunoFolder(
       ...(request !== undefined && Object.keys(request).length > 0 ? { request } : {}),
       environments,
       configExtras: extras,
+      ...(flow !== undefined ? { scriptFlow: flow } : {}),
     },
     report: conv.report.build(),
   };

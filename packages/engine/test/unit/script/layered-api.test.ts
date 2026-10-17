@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import type { RestRequestSnapshot } from '../../../src/rest/scripting.js';
 import { checkOnce } from '../../../src/script/check/service.js';
 import { isLayeredApi, scriptFileName, type ScriptApi } from '../../../src/script/model.js';
+import { SCRIPT_LAYERS } from '../../../src/script/api/layers.js';
 import { runScript } from '../../../src/script/run.js';
 import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
 
@@ -39,12 +40,15 @@ describe('the layered script APIs', () => {
     }
   });
 
-  it('a layered api with no layer fails with script-unsupported', async () => {
+  const unlayered = LAYERED.find((api) => !(api in SCRIPT_LAYERS));
+
+  it.skipIf(unlayered === undefined)('a layered api with no layer fails with script-unsupported', async () => {
+    const api = unlayered!;
     const onSecretValue = vi.fn();
     const outcome = await runScript({
       sandbox,
       phase: 'pre',
-      api: 'bruno',
+      api,
       source: 'log("hi");',
       filename: 'X.pre.js',
       request: REQUEST,
@@ -58,7 +62,10 @@ describe('the layered script APIs', () => {
     expect(outcome.log.lines).toEqual([]);
     expect(onSecretValue).not.toHaveBeenCalled();
     if (!outcome.ok) {
-      expect(outcome.error).toEqual({ code: 'script-unsupported', message: 'bruno scripts are not supported yet' });
+      expect(outcome.error).toEqual({
+        code: 'script-unsupported',
+        message: `${api} scripts are not supported yet`,
+      });
     }
   });
 });

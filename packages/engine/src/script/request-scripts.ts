@@ -109,6 +109,9 @@ export interface RequestScriptingOptions {
   readonly registry?: ProtocolRegistry;
 }
 
+/** Which level's post-response script runs first. */
+export type PostResponseOrder = NonNullable<RequestScripts['postResponseOrder']>;
+
 /** Where a script sits (#334): above the request, on its API, interface or a folder, or on the request. */
 export type ScriptLevelKind = 'api' | 'interface' | 'folder' | 'request';
 
@@ -143,6 +146,8 @@ export interface ScriptedRequest {
   readonly scripts?: RequestScripts;
   /** The scripts of the levels above it that run, outermost first (#334). */
   readonly outer?: readonly ScriptLevel[];
+  /** The API's setting, even when its level does not run: see {@link postResponseLevels}. */
+  readonly postResponseOrder?: PostResponseOrder;
   readonly types: RequestScriptTypes;
 }
 
@@ -154,6 +159,15 @@ export function scriptLevels(request: ScriptedRequest): readonly ScriptRunLevel[
       ? [{ level: 'request' as const, name: request.name, stem: request.slug, scripts: request.scripts }]
       : []),
   ];
+}
+
+/**
+ * The levels in the order their post-response scripts run: as `levels`, outermost first, unless
+ * `order` is `inner-first`. The order is the API's setting, read before its level was dropped for
+ * being switched off or empty. Pre-request scripts always run in `levels` order.
+ */
+export function postResponseLevels<L>(levels: readonly L[], order: PostResponseOrder | undefined): readonly L[] {
+  return order === 'inner-first' ? [...levels].reverse() : levels;
 }
 
 /** The scripts of every level that will run: switched on, with a script. Outermost first. */
@@ -249,16 +263,18 @@ export class RequestScripting {
     for (const level of levels) assertScriptsUsable(level.scripts, request.path, levelOwner(level));
     const errors: { file: string; diagnostic: ScriptDiagnostic }[] = [];
     let typed = false;
-    for (const level of levels) {
-      for (const phase of ['pre', 'post'] as const) {
-        const source = level.scripts[phase];
-        if (source === undefined) continue;
-        const file = this.fileOf(level, phase);
-        for (const diagnostic of await this.diagnostics(request, level, phase, source)) {
-          if (diagnostic.severity !== 'error') continue;
-          errors.push({ file, diagnostic });
-          typed ||= level.scripts.api === 'wirebench';
-        }
+    const order = [
+      ...levels.map((level) => [level, 'pre'] as const),
+      ...postResponseLevels(levels, request.postResponseOrder).map((level) => [level, 'post'] as const),
+    ];
+    for (const [level, phase] of order) {
+      const source = level.scripts[phase];
+      if (source === undefined) continue;
+      const file = this.fileOf(level, phase);
+      for (const diagnostic of await this.diagnostics(request, level, phase, source)) {
+        if (diagnostic.severity !== 'error') continue;
+        errors.push({ file, diagnostic });
+        typed ||= level.scripts.api === 'wirebench';
       }
     }
     if (errors.length > 0) {

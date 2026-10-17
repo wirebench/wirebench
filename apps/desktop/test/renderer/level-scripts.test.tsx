@@ -6,7 +6,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { ScriptResultWire } from '../../src/shared/wire-base.js';
+import type { RequestScriptsWire, ScriptResultWire } from '../../src/shared/wire-base.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
@@ -119,6 +119,27 @@ describe('a level’s Scripts editor', () => {
     expect(screen.getByTestId('scripts-problem-pre').textContent).toContain(
       'no request in this API will send until it is fixed',
     );
+  });
+});
+
+describe('an API’s post-response order', () => {
+  const API_SCRIPTS: RequestScriptsWire = { api: 'wirebench', enabled: true, secrets: [], post: 'log(1);' };
+
+  it('shows the current order and writes the other one', () => {
+    render(<ScriptsTab requestId="api-1" level="API" scripts={{ ...API_SCRIPTS, postResponseOrder: 'inner-first' }} />);
+    const select = screen.getByTestId<HTMLSelectElement>('scripts-post-order');
+    expect(select.value).toBe('inner-first');
+
+    fireEvent.change(select, { target: { value: 'outer-first' } });
+    expect(updateRequestScripts).toHaveBeenCalledWith('api-1', { postResponseOrder: 'outer-first' });
+  });
+
+  it('defaults to outermost first, and is offered for an API only', () => {
+    const { unmount } = render(<ScriptsTab requestId="api-1" level="API" scripts={API_SCRIPTS} />);
+    expect(screen.getByTestId<HTMLSelectElement>('scripts-post-order').value).toBe('outer-first');
+    unmount();
+    render(<ScriptsTab requestId="f1" level="folder" scripts={API_SCRIPTS} />);
+    expect(screen.queryByTestId('scripts-post-order')).toBeNull();
   });
 });
 

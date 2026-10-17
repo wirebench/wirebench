@@ -181,3 +181,26 @@ describe('the Postman layer', () => {
     expect(outcome).toMatchObject({ ok: true, log: { lines: ['undefined 0 1'] } });
   });
 });
+
+describe('assertions chained after .property(...)', () => {
+  it('fail when the follow-on check is wrong', async () => {
+    const outcome = await run(
+      'post',
+      `pm.test('wrong', () => pm.expect({ a: 1 }).to.have.property('a').that.equals(5));
+       pm.test('right', () => pm.expect({ a: 1 }).to.have.property('a').that.equals(1));
+       pm.test('absent', () => pm.expect({ a: 1 }).not.to.have.property('b'));
+       pm.test('type', () => pm.expect({ a: 1 }).to.have.property('a').that.is.a('number'));
+       pm.test('wrong type', () => pm.expect({ a: 1 }).to.have.property('a').that.is.a('string'));`,
+    );
+    expect(outcome).toMatchObject({
+      ok: true,
+      tests: [
+        { name: 'wrong', passed: false },
+        { name: 'right', passed: true },
+        { name: 'absent', passed: true },
+        { name: 'type', passed: true },
+        { name: 'wrong type', passed: false },
+      ],
+    });
+  });
+});

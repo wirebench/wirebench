@@ -10,6 +10,8 @@ import { PostmanError } from '../../errors.js';
 import { headersAndAuth } from '../../import/credential-values.js';
 import { MAX_EXAMPLE_BODY_CHARS, maskRecordedResponse } from '../../import/examples.js';
 import { ReportBuilder } from '../../import/report.js';
+import type { ScriptLevel } from '../../import/scripts.js';
+import { ScriptImportLog, scriptText } from '../../import/scripts.js';
 import type { ImportedVariableSet } from '../../import/variables.js';
 import { VariableSetBuilder, warnCredentialLookingNames } from '../../import/variables.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
@@ -144,22 +146,13 @@ export function apiFromPostmanCollection(
   let requestCount = 0;
 
   // Each level keeps its own scripts (#334): the collection's on the API, a folder's on the folder.
-  const scripted = { api: false, folders: 0, requests: 0 };
-  const unsupported = new Map<string, Set<string>>();
-  const steering = new Map<string, readonly string[]>();
-  const scriptsAt = (events: readonly PostmanEvent[] | undefined, path: string): RequestScripts | undefined => {
-    const scripts = importedScripts(events, scriptApi);
-    if (scripts !== undefined) {
-      const text = [scripts.pre?.text ?? '', scripts.post?.text ?? ''].join('\n');
-      const calls = unsupportedCalls(text, scriptApi);
-      if (calls.length > 0) unsupported.set(path, new Set(calls));
-      const steers = runControlCalls(text, scriptApi);
-      if (steers.length > 0) steering.set(path, steers);
-    }
-    return scripts;
-  };
-  const apiScripts = scriptsAt(collection.event, name);
-  scripted.api = apiScripts !== undefined;
+  const log = new ScriptImportLog(scriptApi);
+  const scriptsAt = (
+    events: readonly PostmanEvent[] | undefined,
+    level: ScriptLevel,
+    path: string,
+  ): RequestScripts | undefined => log.note(importedScripts(events, scriptApi), level, path);
+  const apiScripts = scriptsAt(collection.event, 'api', name);
 
   const mapItems = (
     items: readonly PostmanItem[],
@@ -185,8 +178,7 @@ export function apiFromPostmanCollection(
         folderSlugs.add(slug);
         const folderAuth = mapPostmanAuth(item.auth, false, warnings);
         const folderTrail = [...trail, item.name];
-        const folderScripts = scriptsAt(item.event, folderTrail.join(' / '));
-        if (folderScripts !== undefined) scripted.folders += 1;
+        const folderScripts = scriptsAt(item.event, 'folder', folderTrail.join(' / '));
         const children = mapItems(item.item, depth + 1, folderTrail);
 
         folders.push(
@@ -208,8 +200,7 @@ export function apiFromPostmanCollection(
         requestSlugs.add(slug);
 
         const mappedRequest = mapRequest(item.name, slug, requests.length, item, newId, baseUrl, warnings);
-        const scripts = scriptsAt(item.event, [...trail, item.name].join(' / '));
-        if (scripts !== undefined) scripted.requests += 1;
+        const scripts = scriptsAt(item.event, 'request', [...trail, item.name].join(' / '));
         const examples = mapExamples(item.response ?? [], item.responsesDropped ?? 0, item.name, newId, warnings);
         const behaviour = item.protocolProfileBehavior;
         requests.push({
@@ -225,35 +216,7 @@ export function apiFromPostmanCollection(
   };
 
   const root = mapItems(collection.item, 1, []);
-  const scriptedPlaces = [
-    ...(scripted.api ? ['the API'] : []),
-    ...(scripted.folders > 0 ? [`${String(scripted.folders)} ${scripted.folders === 1 ? 'folder' : 'folders'}`] : []),
-    ...(scripted.requests > 0
-      ? [`${String(scripted.requests)} ${scripted.requests === 1 ? 'request' : 'requests'}`]
-      : []),
-  ];
-  if (scriptedPlaces.length > 0) {
-    const listed =
-      scriptedPlaces.length === 1
-        ? scriptedPlaces[0]!
-        : `${scriptedPlaces.slice(0, -1).join(', ')} and ${scriptedPlaces[scriptedPlaces.length - 1]!}`;
-    warnings.push(`Scripts on ${listed} were imported switched off: read each on its Scripts tab, then switch them on`);
-  }
-  for (const [path, calls] of unsupported) {
-    // A request a script sends is the one call people most often need, so its warning says what to do instead.
-    const sends = ['pm.sendRequest', 'insomnia.sendRequest'].find((name) => calls.delete(name));
-    if (sends !== undefined) {
-      warnings.push(
-        `The scripts of "${path}" call ${sends}, which a script cannot do: send that request as a sequence step, or use OAuth2 auth for a token`,
-      );
-    }
-    if (calls.size > 0) {
-      warnings.push(`The scripts of "${path}" call what Wirebench does not run: ${[...calls].sort().join(', ')}`);
-    }
-  }
-  for (const [path, calls] of steering) {
-    warnings.push(`The scripts of "${path}" steer the run (${calls.join(', ')}): obeyed in API and folder runs only`);
-  }
+  warnings.push(...log.warnings());
   if (dynamic.size > 0) {
     warnings.push(`Dynamic variables are kept as written and not expanded: ${[...dynamic].sort().join(', ')}`);
   }
@@ -804,11 +767,6 @@ function inferBaseUrl(items: readonly PostmanItem[], depth: number): string {
   return '';
 }
 
-/** A level's scripts of one kind, in the order Postman runs them; two of one kind are joined. */
-function scriptText(texts: readonly string[]): string {
-  return texts.map((text) => `${text.replace(/\s+$/, '')}\n`).join('\n');
-}
-
 /**
  * One level's imported scripts (a collection's, a folder's or a request's), written against the
  * layer of the script API (the Postman one unless the importer says otherwise) and switched off until someone has read them (#63, #334).
@@ -827,50 +785,4 @@ function importedScripts(events: readonly PostmanEvent[] | undefined, api: Layer
     enabled: false,
     secrets: [],
   };
-}
-
-/**
- * The calls a script makes that its API's layer does not run (spec §Postman), found by name. Each
- * other client's list is filled by its layer.
- */
-const UNSUPPORTED_CALLS: Record<LayeredApi, readonly [RegExp, string][]> = {
-  postman: [
-    [/\bpm\.sendRequest\b/, 'pm.sendRequest'],
-    [/\bpm\.cookies\.jar\b/, 'pm.cookies.jar'],
-    [/\bpm\.visualizer\b/, 'pm.visualizer'],
-    [/\brequire\s*\(/, 'require'],
-    [/\bpm\.iterationData\b/, 'pm.iterationData'],
-    [/\bpm\.vault\b/, 'pm.vault'],
-  ],
-  insomnia: [
-    [/(?<![\w$.])(?:insomnia|\$)\.sendRequest\b/, 'insomnia.sendRequest'],
-    [/(?<![\w$.])(?:insomnia|\$)\.require\b/, 'insomnia.require'],
-    [/(?<![\w$.])require\s*\(/, 'require'],
-    [/(?<![\w$.])(?:insomnia|\$)\.cookies\.(?:set|unset|clear)\b/, 'insomnia.cookies writes'],
-    [/(?<![\w$.])(?:insomnia|\$)\.vault\b/, 'insomnia.vault'],
-  ],
-  bruno: [],
-  hoppscotch: [],
-  'thunder-client': [],
-};
-
-export function unsupportedCalls(text: string, api: LayeredApi): string[] {
-  return UNSUPPORTED_CALLS[api].filter(([pattern]) => pattern.test(text)).map(([, name]) => name);
-}
-
-/** The Postman calls that steer a run (#335), found by name: obeyed in API and folder runs only. */
-const RUN_CONTROL_CALLS: Partial<Record<LayeredApi, readonly [RegExp, string][]>> = {
-  postman: [
-    [/\bpm\.execution\.setNextRequest\b/, 'pm.execution.setNextRequest'],
-    [/\bpostman\.setNextRequest\b/, 'postman.setNextRequest'],
-    [/\bpm\.execution\.skipRequest\b/, 'pm.execution.skipRequest'],
-  ],
-  insomnia: [
-    [/(?<![\w$.])(?:insomnia|\$)\.execution\.setNextRequest\b/, 'insomnia.execution.setNextRequest'],
-    [/(?<![\w$.])(?:insomnia|\$)\.execution\.skipRequest\b/, 'insomnia.execution.skipRequest'],
-  ],
-};
-
-export function runControlCalls(text: string, api: LayeredApi = 'postman'): string[] {
-  return (RUN_CONTROL_CALLS[api] ?? []).filter(([pattern]) => pattern.test(text)).map(([, name]) => name);
 }

@@ -5,6 +5,7 @@
  * taken and a layer is these parts joined plus its own objects. Some parts
  * use names an earlier part defines (`PART_VARIABLES` and `PART_CRYPTO` use `unsupported`).
  */
+import { jsonSchemaValidator } from '../../json/schema-validate.js';
 
 /** Declares `unsupported`: a function that throws `ScriptUnsupported` naming the call. */
 export const PART_UNSUPPORTED = String.raw`
@@ -30,7 +31,11 @@ const variables = Object.freeze({
 });
 `;
 
-/** Declares `typeName`, `same`, `chain` and `chaiExpect`: the chai chains collections use. */
+/**
+ * Declares `typeName`, `same`, `chain`, `chaiExpect` and `chaiExpectSchema`: the chai chains collections
+ * use. `chaiExpectSchema` is `chaiExpect` whose chains also have `.jsonSchema(schema)`, which needs
+ * `PART_JSON_SCHEMA`; the flag survives `.not`, `.deep` and `.property(...)`.
+ */
 export const PART_EXPECT = String.raw`
 // --- expect: the chai chains collections use ---------------------------------------------------
 const typeName = (value) => {
@@ -64,7 +69,7 @@ const chain = (actual, flags) => {
   self.property = (name, ...value) => {
     const has = actual !== null && actual !== undefined && typeof actual === 'object' && name in actual;
     assert(has && (value.length === 0 || same(actual[name], value[0])), 'to have property ' + name + (value.length === 0 ? '' : ' of ' + show(value[0])));
-    return has && !flags.not ? chain(actual[name], {}) : self;
+    return has && !flags.not ? chain(actual[name], { not: false, deep: false, schema: flags.schema }) : self;
   };
   self.above = self.gt = self.greaterThan = (n) => assert(actual > n, 'to be above ' + n);
   self.below = self.lt = self.lessThan = (n) => assert(actual < n, 'to be below ' + n);
@@ -89,9 +94,23 @@ const chain = (actual, flags) => {
   getter('empty', () => (typeof actual === 'string' || Array.isArray(actual) ? actual.length === 0 : actual !== null && typeof actual === 'object' ? Object.keys(actual).length === 0 : false), 'to be empty');
   getter('NaN', () => Number.isNaN(actual), 'to be NaN');
   self.length = (n) => self.lengthOf(n);
+  if (flags.schema) {
+    self.jsonSchema = (schema) => {
+      const problems = jsonSchema(actual, schema);
+      const stopped = problems.some((p) => p.keyword === 'budget');
+      // A check that ran out of budget proved nothing, so it fails with or without .not.
+      if (stopped || (problems.length > 0) !== Boolean(flags.not)) {
+        if (flags.not && !stopped) throw new ExpectationFailed('expected the value not to match the JSON schema');
+        throw new ExpectationFailed('the value does not match the JSON schema' + (stopped ? ' (the check could not finish): ' : ': ')
+          + problems.map((p) => (p.path === '' ? '/' : p.path) + ' ' + p.keyword + ': ' + p.message).join('; '));
+      }
+      return self;
+    };
+  }
   return self;
 };
 const chaiExpect = (actual) => chain(actual, { not: false, deep: false });
+const chaiExpectSchema = (actual) => chain(actual, { not: false, deep: false, schema: true });
 `;
 
 /** Declares `pairs`: a header or metadata list as a key/value collection. */
@@ -275,4 +294,17 @@ const pmObject = {
 };
 const pmResponseValue = pmResponse();
 if (pmResponseValue !== undefined) pmObject.response = pmResponseValue;
+`;
+
+/**
+ * Declares `jsonSchema`: `jsonSchema(value, schema)` returns the problems (`{ path, keyword, message }`)
+ * the engine's own JSON Schema validator finds, the one the response assertions use, or `[]`. The
+ * validator's source is `jsonSchemaValidator.toString()`, so no copy can drift from it. It adds about
+ * 20 KB of source to every run of a layer that includes it (spec §5 has the measurements).
+ */
+export const PART_JSON_SCHEMA = `
+const jsonSchema = (() => {
+  const { validateJsonSchema } = (${jsonSchemaValidator.toString()})();
+  return (value, schema) => validateJsonSchema(value, schema);
+})();
 `;

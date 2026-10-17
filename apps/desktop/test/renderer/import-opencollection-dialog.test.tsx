@@ -132,7 +132,7 @@ describe('Import dialog — OpenCollection', () => {
     const summary = await screen.findByTestId('import-opencollection-summary');
     expect(screen.getByTestId('import-opencollection-counts').textContent).toBe('3 APIs, 5 requests, 1 folder');
     expect(screen.getByTestId('import-opencollection-assertions').textContent).toBe('2 assertions mapped, 1 not');
-    expect(screen.getByTestId('import-opencollection-scripts').textContent).toBe('2 scripts kept as text, never run');
+    expect(screen.getByTestId('import-opencollection-scripts').textContent).toBe('2 script files kept as text');
     expect(summary.textContent).toContain('dev (3 variables)');
     expect(summary.textContent).toContain('1 project property added');
     expect(screen.getByTestId('import-opencollection-summary-warnings').textContent).toContain('app items');

@@ -43,11 +43,16 @@ describe('OpenCollection variables and scripts', () => {
     expect(m.variables.projectProperties?.variables.map((v) => v.name)).toEqual(['tenant']);
   });
 
-  it('keeps scripts as files under imported-scripts and never on requests', () => {
-    expect(m.scripts).toEqual([{ path: 'imported-scripts/pets/get user.tests.js', source: "test('ok', () => {});" }]);
-    expect(m.rest?.folders[0]?.requests[1]).not.toHaveProperty('scripts');
-    expect(m.report.notes).toContain(
-      'Get User: the tests script was saved to imported-scripts/pets/get user.tests.js and is never run.',
+  it('attaches scripts to their request, switched off, and writes no file for them', () => {
+    expect(m.scripts).toEqual([]);
+    expect(m.rest?.folders[0]?.requests[1]?.scripts).toEqual({
+      post: { text: "test('ok', () => {});\n" },
+      api: 'bruno',
+      enabled: false,
+      secrets: [],
+    });
+    expect(m.report.warnings).toContain(
+      'Scripts on 1 request were imported switched off: read each on its Scripts tab, then switch them on',
     );
   });
 
@@ -215,12 +220,28 @@ items:
     expect(m.report.warnings).toContain("The collection's proxy setting is not supported and was not imported.");
   });
 
-  it('saves collection, folder and script-file scripts', () => {
-    expect(m.scripts).toEqual([
-      { path: 'imported-scripts/crafted/crafted.before-request.js', source: 'a()' },
-      { path: 'imported-scripts/crafted/outer.after-response.js', source: 'b()' },
-      { path: 'imported-scripts/crafted/helpers.module.js', source: 'module.exports = {};' },
-    ]);
+  it('attaches the collection and folder scripts, and saves only the script-file item', () => {
+    expect(m.rest?.scripts).toEqual({
+      pre: { text: 'a()\n' },
+      api: 'bruno',
+      enabled: false,
+      secrets: [],
+      postResponseOrder: 'inner-first',
+    });
+    expect(m.rest?.folders[0]?.scripts).toEqual({
+      post: { text: 'b()\n' },
+      api: 'bruno',
+      enabled: false,
+      secrets: [],
+    });
+    expect(m.scripts).toEqual([{ path: 'imported-scripts/crafted/helpers.module.js', source: 'module.exports = {};' }]);
+  });
+
+  it('reads the post-response order from extensions.bruno.scripts.flow', () => {
+    const flow = (name: string): string =>
+      `${head}extensions:\n  bruno:\n    scripts:\n      flow: ${name}\nrequest:\n  scripts:\n    - { type: after-response, code: "a()" }\nitems:\n  - info: { name: Ping, type: http }\n    http: { method: GET, url: "https://h/x" }\n`;
+    expect(mapText(flow('sequential')).rest?.scripts?.postResponseOrder).toBe('outer-first');
+    expect(mapText(flow('sandwich')).rest?.scripts?.postResponseOrder).toBe('inner-first');
   });
 
   it('counts mapped and skipped assertions with a line for each one left out', () => {
@@ -246,7 +267,8 @@ describe('OpenCollection directory form', () => {
     const m = mapOpenCollection(parseOpenCollection(root, files));
     expect(m.variables.environments.map((e) => e.name)).toEqual(['dev', 'dev 2']);
     expect(m.report.warnings).toContain('environments/broken.yml could not be read and was skipped.');
-    expect(m.scripts.map((s) => s.path)).toEqual(['imported-scripts/crafted/get user.tests.js']);
+    expect(m.scripts).toEqual([]);
+    expect(m.rest?.folders[0]?.requests[0]?.scripts).toMatchObject({ api: 'bruno', enabled: false });
   });
 });
 
