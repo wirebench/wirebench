@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { apiFromPostmanCollection } from '../../../../src/rest/postman/map.js';
 import type { PostmanCollection } from '../../../../src/rest/postman/model.js';
+import { restBodySchema } from '../../../../src/rest/files.js';
 
 describe('Postman entity mapping (map.ts)', () => {
   it('maps recursive folders, requests, and calculates summary', () => {
@@ -303,6 +304,91 @@ describe('Postman entity mapping (map.ts)', () => {
         expect.stringContaining(
           'look like credentials but are not marked secret, so their values were imported as plain text: authToken.',
         ),
+      ]),
+    );
+  });
+
+  it('keeps a file part with no file as a switched-off text part the project can load', () => {
+    const mapped = apiFromPostmanCollection({
+      info: { name: 'Uploads' },
+      item: [
+        {
+          name: 'Docs',
+          item: [
+            {
+              name: 'Upload',
+              request: {
+                method: 'POST',
+                url: 'https://example.com/upload',
+                body: {
+                  mode: 'formdata',
+                  formdata: [
+                    { key: 'f', type: 'file' },
+                    { key: 'g', type: 'file', src: '' },
+                    { key: 'h', type: 'file', src: [] },
+                    { key: 'i', type: 'file', src: ['a.txt', ''], contentType: 'text/plain' },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const body = mapped.api.folders[0]!.requests[0]!.body;
+    expect(body).toEqual({
+      kind: 'multipart',
+      parts: [
+        { kind: 'text', name: 'f', value: '', enabled: false },
+        { kind: 'text', name: 'g', value: '', enabled: false },
+        { kind: 'text', name: 'h', value: '', enabled: false },
+        { kind: 'file', name: 'i', source: { kind: 'path', path: 'a.txt' }, enabled: true, contentType: 'text/plain' },
+      ],
+    });
+    expect(restBodySchema.safeParse(body).success).toBe(true);
+    expect(mapped.summary.warnings).toEqual(
+      expect.arrayContaining([
+        'Docs / Upload: the file part "f" has no file, so it was kept switched off as a text part; pick its file on the Body tab.',
+        'Docs / Upload: the file part "g" has no file, so it was kept switched off as a text part; pick its file on the Body tab.',
+        'Docs / Upload: the file part "h" has no file, so it was kept switched off as a text part; pick its file on the Body tab.',
+      ]),
+    );
+  });
+
+  it('maps a file body with no file to no body the project can load', () => {
+    const mapped = apiFromPostmanCollection({
+      info: { name: 'Uploads' },
+      item: [
+        {
+          name: 'Docs',
+          item: [
+            { name: 'Bare', request: { method: 'PUT', url: 'https://example.com/a', body: { mode: 'file' } } },
+            {
+              name: 'Empty',
+              request: { method: 'PUT', url: 'https://example.com/b', body: { mode: 'file', file: { src: '' } } },
+            },
+            {
+              name: 'Kept',
+              request: { method: 'PUT', url: 'https://example.com/c', body: { mode: 'file', file: { src: 'a.bin' } } },
+            },
+          ],
+        },
+      ],
+    });
+    const [bare, empty, kept] = mapped.api.folders[0]!.requests;
+    expect(bare!.body).toEqual({ kind: 'none' });
+    expect(empty!.body).toEqual({ kind: 'none' });
+    expect(restBodySchema.safeParse(bare!.body).success).toBe(true);
+    expect(restBodySchema.safeParse(empty!.body).success).toBe(true);
+    expect(kept!.body).toEqual({
+      kind: 'binary',
+      source: { kind: 'path', path: 'a.bin' },
+      contentType: 'application/octet-stream',
+    });
+    expect(mapped.summary.warnings).toEqual(
+      expect.arrayContaining([
+        'Docs / Bare: its body is a file with no file, so it has no body; pick the file on the Body tab.',
+        'Docs / Empty: its body is a file with no file, so it has no body; pick the file on the Body tab.',
       ]),
     );
   });

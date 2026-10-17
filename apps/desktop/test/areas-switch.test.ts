@@ -7,6 +7,8 @@ import {
   localTerminalFromEnv,
   parseAreaSwitches,
   registerEnabledAreaChannels,
+  serialFromEnv,
+  telnetFromEnv,
 } from '../src/main/areas.js';
 
 const registered = vi.hoisted(() => new Set<string>());
@@ -117,6 +119,16 @@ describe('area channels', () => {
   });
 });
 
+describe('the Telnet switch (#425)', () => {
+  it('is on with the SSH area, off with it, and telnet=off switches it off on its own', () => {
+    expect(telnetFromEnv({})).toBe(true);
+    expect(telnetFromEnv({ WIREBENCH_AREAS: 'ssh=off' })).toBe(false);
+    const env = { WIREBENCH_AREAS: 'telnet=off' };
+    expect(telnetFromEnv(env)).toBe(false);
+    expect(enabledAreasFromEnv(env)).toContain('ssh');
+  });
+});
+
 describe('the local terminal switch', () => {
   it('is on with the SSH area, and off with it', () => {
     expect(localTerminalFromEnv({})).toBe(true);
@@ -174,5 +186,16 @@ describe('hostsOnFileChange', () => {
     hostsOnFileChange(['explorer'], off, notifyOff);
     expect(off.invalidate).toHaveBeenCalledTimes(1);
     expect(notifyOff).not.toHaveBeenCalled();
+  });
+});
+
+describe('the serial switch (#426)', () => {
+  it('is on with the SSH area, off with it, and serial=off switches it off on its own', () => {
+    expect(serialFromEnv({})).toBe(true);
+    expect(serialFromEnv({ WIREBENCH_AREAS: 'ssh=off' })).toBe(false);
+    const env = { WIREBENCH_AREAS: 'serial=off' };
+    expect(serialFromEnv(env)).toBe(false);
+    expect(telnetFromEnv(env)).toBe(true);
+    expect(enabledAreasFromEnv(env)).toContain('ssh');
   });
 });

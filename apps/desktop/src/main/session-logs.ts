@@ -512,28 +512,36 @@ export type StartSessionLog = (sessionId: string) => SessionLogWriter;
  * else its nearest group's), and if so how to start the log. The secrets every hop signed in with go to the
  * log's masker; the target hop gives the address, port and user.
  */
-export function sessionLogPlanner(
-  deps: SessionLogPlannerDeps,
-): (
+export function sessionLogPlanner(deps: SessionLogPlannerDeps): (
   sender: WebContents,
-  request: { hostId: string; hops: readonly HopCredentials[] },
+  request: {
+    hostId: string;
+    hops: readonly HopCredentials[];
+    /** A Telnet target (#425), past the SSH hops; the last hop otherwise. */
+    target?: { readonly address: string; readonly port: number; readonly user: string };
+    /** Secrets beyond the hops' own (a Telnet password). */
+    secrets?: readonly string[];
+  },
 ) => Promise<StartSessionLog | undefined> {
-  return async (sender, { hostId, hops }) => {
+  return async (sender, { hostId, hops, target: past, secrets: more = [] }) => {
     const workspace = deps.workspaceOf(sender);
     const file = deps.hosts(sender).current();
-    const target = hops[hops.length - 1];
+    const target = past ?? hops[hops.length - 1];
     if (!workspace || !file || !target) return undefined;
     const host = resolveHost(file, hostId);
     // The team's recording (#430 R3) logs every session; otherwise this machine's switch decides.
     if (!workspace.upload && !resolveLogSwitch(await deps.switches.all(workspace.id), hostId, host.path).on)
       return undefined;
-    const secrets = hops.flatMap((hop) =>
-      hop.auth.kind === 'password'
-        ? [hop.auth.password]
-        : hop.auth.kind === 'key'
-          ? [hop.auth.privateKey, ...(hop.auth.passphrase === undefined ? [] : [hop.auth.passphrase])]
-          : [],
-    );
+    const secrets = [
+      ...hops.flatMap((hop) =>
+        hop.auth.kind === 'password'
+          ? [hop.auth.password]
+          : hop.auth.kind === 'key'
+            ? [hop.auth.privateKey, ...(hop.auth.passphrase === undefined ? [] : [hop.auth.passphrase])]
+            : [],
+      ),
+      ...more,
+    ];
     return (sessionId) =>
       deps.store.start({
         workspaceId: workspace.id,

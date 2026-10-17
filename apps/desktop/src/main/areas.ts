@@ -30,6 +30,24 @@ export function localTerminalFromEnv(env: NodeJS.ProcessEnv = process.env): bool
   return enabledAreaIds(switches).includes('ssh') && switches[LOCAL_TERMINAL_SWITCH] !== false;
 }
 
+/** The `WIREBENCH_AREAS` key that switches Telnet hosts (#425) off while leaving SSH on. */
+export const TELNET_SWITCH = 'telnet';
+
+/** Whether Telnet hosts connect: they ride with the SSH area, and an enterprise build can switch them off. */
+export function telnetFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  const switches = parseAreaSwitches(env['WIREBENCH_AREAS']);
+  return enabledAreaIds(switches).includes('ssh') && switches[TELNET_SWITCH] !== false;
+}
+
+/** The `WIREBENCH_AREAS` key that switches serial consoles (#426) off while leaving SSH on. */
+export const SERIAL_SWITCH = 'serial';
+
+/** Whether serial hosts connect: they ride with the SSH area, and an enterprise build can switch them off. */
+export function serialFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  const switches = parseAreaSwitches(env['WIREBENCH_AREAS']);
+  return enabledAreaIds(switches).includes('ssh') && switches[SERIAL_SWITCH] !== false;
+}
+
 /** Registers the IPC channels of the areas that are switched on; an off area answers nothing. */
 export function registerEnabledAreaChannels(
   enabled: readonly AreaId[],

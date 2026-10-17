@@ -51,6 +51,8 @@ import { registerAppChannels } from './ipc/app.js';
 import {
   enabledAreasFromEnv,
   localTerminalFromEnv,
+  serialFromEnv,
+  telnetFromEnv,
   hostsOnFileChange,
   hostsOnWorkspaceChange,
   registerEnabledAreaChannels,
@@ -61,6 +63,8 @@ import { sshAreaEndsOnSwitch, sshScopeOf, sshSecretsFor } from './ssh-window.js'
 import { sshDefaultsOf, windowHosts, type HostsService } from './hosts-service.js';
 import { windowSnippets, type SnippetsService } from './snippets-service.js';
 import { LAYOUTS_FILE, LayoutStore } from './layout-store.js';
+import { SERIAL_DEVICES_FILE, SerialDeviceStore } from './serial-devices.js';
+import { listSerialPorts, openSerialSession } from './serial-session.js';
 import { MCP_APPROVALS_FILE, McpApprovals, McpApprovalStore } from './mcp-approvals.js';
 import { promptWindowOf } from './kinds/mcp/ipc.js';
 import {
@@ -535,6 +539,10 @@ const secretScans = scoped(scopes, (scope) => scope.secretScans);
 const enabledAreas = enabledAreasFromEnv();
 /** Whether the local terminal tab (#410) is on: with the SSH area, unless `local-terminal=off`. */
 const localTerminalOn = localTerminalFromEnv();
+const telnetOn = telnetFromEnv();
+const serialOn = serialFromEnv();
+/** The device each serial host (#426) opens on this machine, per workspace. */
+const serialDevices = new SerialDeviceStore(join(app.getPath('userData'), SERIAL_DEVICES_FILE));
 
 /**
  * The kinds `WIREBENCH_KINDS` leaves switched on (see `kinds/enabled-kinds.ts`), and the engine
@@ -591,6 +599,15 @@ const sessionLogs = new SessionLogStore({
 });
 const sshService = new SshService({
   ...sshConnectDeps,
+  telnet: telnetOn,
+  serial: serialOn,
+  // The serial-port binding is native and loads at the first serial connect, so a machine it does not load on
+  // only loses serial consoles.
+  openSerial: (options) => openSerialSession(options),
+  serialDevice: (sender, hostId) => {
+    const workspace = sshScopeOf(scopes, sender).workspace.openWorkspaceId();
+    return workspace === undefined ? Promise.resolve(undefined) : serialDevices.get(workspace, hostId);
+  },
   // Mosh hosts (#419): mosh-server is started over SSH, then the installed mosh-client runs in a pty.
   openMosh: (options) =>
     openMoshSession(
@@ -1025,6 +1042,8 @@ void app.whenReady().then(() => {
     enabledAreas,
     enabledKinds,
     localTerminalOn,
+    telnetOn,
+    serialOn,
   );
   // The calling window's open projects' folders: the containment roots a renderer-named import path may sit in.
   const openProjectDirs = (): readonly string[] =>
@@ -1445,6 +1464,11 @@ void app.whenReady().then(() => {
     transfers: sftpTransfers,
     edits: sftpEdits,
     forward: forwardService,
+    serial: {
+      ports: () => listSerialPorts(),
+      devices: serialDevices,
+      workspaceOf: (sender) => sshScopeOf(scopes, sender).workspace.openWorkspaceId(),
+    },
     sessionLogs: {
       logs: sessionLogs,
       switches: sessionLogSwitches,
