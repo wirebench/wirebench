@@ -65,9 +65,13 @@ describe('mapHoppscotch: requests', () => {
       ],
     });
     expect(request('Signed')?.body).toEqual({ kind: 'none' });
+    expect(shop().report.warnings).toEqual(
+      expect.arrayContaining([
+        'Upload avatar: the file part "file" has no file, so it was kept switched off as a text part; pick its file on the Body tab.',
+      ]),
+    );
     expect(shop().report.notes).toEqual(
       expect.arrayContaining([
-        'Shop API / Upload avatar: the file part "file" has no file in the export, so it was kept switched off as a text part; pick its file on the Body tab.',
         'Shop API / Signed: its body is a file, which is not in the export, so it has no body; pick the file on the Body tab.',
       ]),
     );
