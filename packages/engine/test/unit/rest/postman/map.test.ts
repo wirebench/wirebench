@@ -354,4 +354,42 @@ describe('Postman entity mapping (map.ts)', () => {
       ]),
     );
   });
+
+  it('maps a file body with no file to no body the project can load', () => {
+    const mapped = apiFromPostmanCollection({
+      info: { name: 'Uploads' },
+      item: [
+        {
+          name: 'Docs',
+          item: [
+            { name: 'Bare', request: { method: 'PUT', url: 'https://example.com/a', body: { mode: 'file' } } },
+            {
+              name: 'Empty',
+              request: { method: 'PUT', url: 'https://example.com/b', body: { mode: 'file', file: { src: '' } } },
+            },
+            {
+              name: 'Kept',
+              request: { method: 'PUT', url: 'https://example.com/c', body: { mode: 'file', file: { src: 'a.bin' } } },
+            },
+          ],
+        },
+      ],
+    });
+    const [bare, empty, kept] = mapped.api.folders[0]!.requests;
+    expect(bare!.body).toEqual({ kind: 'none' });
+    expect(empty!.body).toEqual({ kind: 'none' });
+    expect(restBodySchema.safeParse(bare!.body).success).toBe(true);
+    expect(restBodySchema.safeParse(empty!.body).success).toBe(true);
+    expect(kept!.body).toEqual({
+      kind: 'binary',
+      source: { kind: 'path', path: 'a.bin' },
+      contentType: 'application/octet-stream',
+    });
+    expect(mapped.summary.warnings).toEqual(
+      expect.arrayContaining([
+        'Docs / Bare: its body is a file with no file, so it has no body; pick the file on the Body tab.',
+        'Docs / Empty: its body is a file with no file, so it has no body; pick the file on the Body tab.',
+      ]),
+    );
+  });
 });
