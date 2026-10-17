@@ -555,10 +555,16 @@ function mapBody(
   }
 
   if (body.mode === 'file') {
+    const src = body.file?.src ?? '';
+    if (src === '') {
+      // A binary body needs a file, and a project refuses one with no path: the request gets no body.
+      warnings?.push(`${label}: its body is a file with no file, so it has no body; pick the file on the Body tab.`);
+      return NO_BODY;
+    }
     const ctHeader = headers.find((h) => h.key.toLowerCase() === 'content-type')?.value;
     return {
       kind: 'binary',
-      source: { kind: 'path', path: body.file?.src ?? '' },
+      source: { kind: 'path', path: src },
       contentType: ctHeader ?? 'application/octet-stream',
     };
   }
