@@ -11,6 +11,7 @@
 import { HoppscotchError } from '../../errors.js';
 import type { IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
+import { slugify } from '../../project/paths.js';
 import { folderRequests } from '../../rest/model.js';
 import { apiFromPostmanCollection } from '../../rest/postman/map.js';
 import { parsePostmanCollection } from '../../rest/postman/parse.js';
@@ -19,7 +20,8 @@ import { V21_SCHEMA } from '../collection-v3/convert.js';
 import { inlineQuery } from '../insomnia/convert.js';
 import type { ImportReport } from '../report.js';
 import { ReportBuilder } from '../report.js';
-import { eventsOf } from '../scripts.js';
+import type { DroppedLevel, ImportedScriptFile } from '../scripts.js';
+import { droppedApiScriptFiles, eventsOf } from '../scripts.js';
 import { hoppscotchTemplates } from '../template-dialects.js';
 import { rewriteMustache } from '../templates.js';
 import type { ImportedVariable, ImportedVariables, ImportedVariableSet } from '../variables.js';
@@ -27,6 +29,14 @@ import { credentialSafeVariable, VariableSetBuilder, warnCredentialLookingNames 
 import type { HopBody, HopCollection, HopEnvironment, HopRec, HopRequest, HopRow, HopVariable } from './model.js';
 
 type Json = Record<string, unknown>;
+
+/** The collection and every folder below it, as the levels whose scripts a dropped API still owes. */
+function droppedLevels(collection: HopCollection, path: readonly string[]): DroppedLevel[] {
+  return [
+    { path, pre: collection.pre, post: collection.test },
+    ...collection.folders.flatMap((folder) => droppedLevels(folder, [...path, folder.name])),
+  ];
+}
 
 export interface MapHoppscotchOptions {
   readonly newId?: IdGenerator;
@@ -397,6 +407,7 @@ export function mapHoppscotch(
   for (const line of report.notes) mapper.report.note(line);
   const single = collections.length === 1;
   const entries: MappedClientEntry[] = [];
+  const scriptFiles: ImportedScriptFile[] = [];
   let order = options.firstOrder ?? 0;
   let requests = 0;
   let folders = 0;
@@ -424,7 +435,17 @@ export function mapHoppscotch(
     });
     const http = apiFromPostmanCollection(parsed, { newId, name, scriptApi: 'hoppscotch' });
     for (const warning of http.summary.warnings ?? []) mapper.report.warn(`${prefix}${warning}`);
-    if (http.summary.requests === 0) continue;
+    if (http.summary.requests === 0) {
+      // No API is left to hold the collection's and its folders' scripts: keep them as text.
+      scriptFiles.push(
+        ...droppedApiScriptFiles(
+          slugify(name).toLowerCase(),
+          droppedLevels(collection, [collection.name]),
+          mapper.report,
+        ),
+      );
+      continue;
+    }
     const rest = { ...http.api, order: order++ };
     requests += http.summary.requests;
     folders += http.summary.folders;
@@ -447,9 +468,10 @@ export function mapHoppscotch(
       ...(projectProperties.variables.length > 0 ? { projectProperties } : {}),
       report: mapper.variableReport.build(),
     },
-    // Scripts are attached to the requests, folders and API, switched off: no file is saved.
-    scripts: [],
-    counts: { collections: entries.length, requests, folders, examples, assertions: 0, scripts: 0 },
+    // Scripts are attached to the requests, folders and API, switched off; only those of a collection
+    // with no request are saved, as text.
+    scripts: scriptFiles,
+    counts: { collections: entries.length, requests, folders, examples, assertions: 0, scripts: scriptFiles.length },
     report: mapper.report.build(),
   };
 }

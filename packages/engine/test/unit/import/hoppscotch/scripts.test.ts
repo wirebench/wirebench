@@ -70,6 +70,29 @@ describe('Hoppscotch scripts are attached', () => {
     expect(apiRequests(api)[0]!.scripts).toBeUndefined();
   });
 
+  it('a collection with no request keeps its collection and folder scripts as text', () => {
+    let n = 0;
+    const empty = {
+      v: 12,
+      name: 'Idle',
+      preRequestScript: "console.log('root');",
+      folders: [{ v: 12, name: 'Empty', folders: [], requests: [], testScript: "console.log('folder test');" }],
+      requests: [],
+    };
+    const busy = { v: 12, name: 'Busy', folders: [], requests: [request('Ping', {})] };
+    const { collections, report } = parseHoppscotchCollections(JSON.stringify([empty, busy]));
+    const mapped = mapHoppscotch(collections, report, { newId: () => `id${String((n += 1))}` });
+    expect(mapped.collections.map((entry) => entry.name)).toEqual(['Busy']);
+    expect(mapped.scripts).toEqual([
+      { path: 'imported-scripts/idle/idle.pre.js', source: "console.log('root');" },
+      { path: 'imported-scripts/idle/idle-empty.post.js', source: "console.log('folder test');" },
+    ]);
+    expect(mapped.counts.scripts).toBe(2);
+    expect(mapped.report.notes).toContain(
+      'Idle / Empty: its post script has no place to run in Wirebench, so it was saved to imported-scripts/idle/idle-empty.post.js and is never run.',
+    );
+  });
+
   it('no imported-scripts files are written', () => {
     const mapped = mapCollection({ requests: [request('Ping', { pre: 'pw.env.set("a", "1")' })] });
     expect(mapped.scripts).toEqual([]);
@@ -87,7 +110,7 @@ describe('Hoppscotch scripts are attached', () => {
       ],
     });
     expect(mapped.report.warnings).toContain(
-      'Scripts on 2 requests were imported switched off: read each on its Scripts tab, then switch them on',
+      'Scripts on 2 requests were imported switched off: read each on its Scripts tab, then switch them on.',
     );
     const line = mapped.report.warnings.find((w) => w.includes('call what Wirebench does not run'));
     expect(line).toBe('The scripts of "Jar" call what Wirebench does not run: hopp.cookies, hopp.fetch');

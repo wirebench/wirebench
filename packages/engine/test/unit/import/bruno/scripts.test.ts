@@ -139,7 +139,7 @@ describe('Bruno scripts are attached', () => {
     );
     const warnings = mapped.report.warnings;
     expect(warnings).toContain(
-      'Scripts on the API and 1 request were imported switched off: read each on its Scripts tab, then switch them on',
+      'Scripts on the API and 1 request were imported switched off: read each on its Scripts tab, then switch them on.',
     );
     expect(warnings).toContain(
       'The scripts of "Ping" call bru.sendRequest, which a script cannot do: send that request as a sequence step, or use OAuth2 auth for a token',

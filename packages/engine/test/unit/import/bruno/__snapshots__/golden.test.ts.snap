@@ -277,7 +277,7 @@ test("returns the created user", function() {
       "Get user: the digest credential was not imported; set it on the request or API.",
       "Token: the oauth2 credential was not imported; set it on the request or API.",
       "The collection's proxy setting is not supported and was not imported.",
-      "Scripts on the API and 1 request were imported switched off: read each on its Scripts tab, then switch them on",
+      "Scripts on the API and 1 request were imported switched off: read each on its Scripts tab, then switch them on.",
     ],
   },
   "scripts": [],
@@ -849,7 +849,7 @@ test("returns the created user", function() {
       "Upload avatar: the body file assets/a.png is relative to the collection; check its path on the request.",
       "Get user: the digest credential was not imported; set it on the request or API.",
       "The collection's proxy setting is not supported and was not imported.",
-      "Scripts on the API and 1 request were imported switched off: read each on its Scripts tab, then switch them on",
+      "Scripts on the API and 1 request were imported switched off: read each on its Scripts tab, then switch them on.",
     ],
   },
   "scripts": [

@@ -539,7 +539,7 @@ tc.setVar("firstName", json.data.product.name);
       "admin / orders / Create order: the test "set-env-var json.id setto {{lastItemId}}" sets a variable from the response, which was not imported; use a capture or a script.",
       "Product by id: it runs other requests first (request chaining), which was not imported; build the chain as a sequence.",
       "Socket: its request type "ws" has no published file shape, so it was not imported.",
-      "Scripts on 1 request were imported switched off: read each on its Scripts tab, then switch them on",
+      "Scripts on 1 request were imported switched off: read each on its Scripts tab, then switch them on.",
       "Credentials are not copied from the collection; re-enter them for 6 auth configurations",
     ],
   },

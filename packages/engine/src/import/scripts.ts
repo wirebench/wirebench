@@ -2,8 +2,10 @@
  * Scripts an importer keeps as text (spec §7.4, §6.2): written under `imported-scripts/` by the
  * desktop main process, never read back or run. The path rule here is pure.
  */
+import { slugify } from '../project/paths.js';
 import { TOP_LEVEL_IMPORT } from '../script/module-syntax.js';
 import type { LayeredApi, RequestScripts } from '../script/model.js';
+import type { ReportBuilder } from './report.js';
 
 /** The folder imported scripts are written to. Nothing in Wirebench reads it. */
 export const IMPORTED_SCRIPTS_DIR = 'imported-scripts';
@@ -40,6 +42,43 @@ export function eventsOf(scripts: {
   if (scripts.post !== undefined && scripts.post.trim() !== '')
     event.push({ listen: 'test', script: { type: 'text/javascript', exec: scripts.post } });
   return event.length > 0 ? { event } : {};
+}
+
+/** One level of a dropped API that held scripts: its names from the API down and its two scripts. */
+export interface DroppedLevel {
+  readonly path: readonly string[];
+  readonly pre?: string;
+  readonly post?: string;
+}
+
+/**
+ * The text files for the scripts of an API dropped because it holds no HTTP request: no tree is
+ * left to attach them to, so each is saved as `imported-scripts/<api>/<owner>.<phase>.js`, as the
+ * OpenCollection importer saves its loose scripts, and the report names the file. A blank script
+ * is skipped.
+ */
+export function droppedApiScriptFiles(
+  apiSlug: string,
+  levels: readonly DroppedLevel[],
+  report: ReportBuilder,
+): ImportedScriptFile[] {
+  const taken = new Set<string>();
+  const files: ImportedScriptFile[] = [];
+  for (const { path: names, pre, post } of levels) {
+    const owner = names.join(' / ');
+    for (const [phase, source] of [
+      ['pre', pre],
+      ['post', post],
+    ] as const) {
+      if (source === undefined || source.trim() === '') continue;
+      const path = importedScriptPath(apiSlug, slugify(names.join('-')).toLowerCase(), `${phase}.js`, taken);
+      report.note(
+        `${owner}: its ${phase} script has no place to run in Wirebench, so it was saved to ${path} and is never run.`,
+      );
+      files.push({ path, source });
+    }
+  }
+  return files;
 }
 
 /** A level's scripts of one kind, in the order the client runs them; two of one kind are joined. */
@@ -201,7 +240,7 @@ export class ScriptImportLog {
     if (places.length > 0) {
       const listed =
         places.length === 1 ? places[0]! : `${places.slice(0, -1).join(', ')} and ${places[places.length - 1]!}`;
-      out.push(`Scripts on ${listed} were imported switched off: read each on its Scripts tab, then switch them on`);
+      out.push(`Scripts on ${listed} were imported switched off: read each on its Scripts tab, then switch them on.`);
     }
     for (const [path, calls] of this.unsupported) {
       // A request a script sends is the one call people most often need, so its warning says what to do instead.

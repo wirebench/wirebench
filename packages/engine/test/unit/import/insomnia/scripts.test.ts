@@ -64,6 +64,26 @@ describe('Insomnia scripts are attached', () => {
     expect(mapped.report.notes.some((n) => n.includes('imported-scripts'))).toBe(false);
   });
 
+  it('a workspace with no HTTP request keeps its folder scripts as text', () => {
+    const mapped = mapV5([
+      {
+        name: 'Live',
+        meta: { id: 'fld_1' },
+        scripts: { preRequest: "console.log('folder');", afterResponse: 'console.log("after");' },
+        children: [{ name: 'Feed', url: 'wss://a.example.com/feed', meta: { id: 'ws-req_1' } }],
+      },
+    ]);
+    expect(mapped.collections[0]!.rest).toBeUndefined();
+    expect(mapped.scripts).toEqual([
+      { path: 'imported-scripts/w/live.pre.js', source: "console.log('folder');" },
+      { path: 'imported-scripts/w/live.post.js', source: 'console.log("after");' },
+    ]);
+    expect(mapped.counts.scripts).toBe(2);
+    expect(mapped.report.notes).toContain(
+      'Live: its pre script has no place to run in Wirebench, so it was saved to imported-scripts/w/live.pre.js and is never run.',
+    );
+  });
+
   it('the report says scripts were imported switched off and lists unsupported calls per request', () => {
     const mapped = mapV5([
       request('Fetch', {
@@ -72,7 +92,7 @@ describe('Insomnia scripts are attached', () => {
       request('Plain', { preRequest: 'insomnia.variables.set("a", 1);' }),
     ]);
     expect(mapped.report.warnings).toContain(
-      'Scripts on 2 requests were imported switched off: read each on its Scripts tab, then switch them on',
+      'Scripts on 2 requests were imported switched off: read each on its Scripts tab, then switch them on.',
     );
     const line = mapped.report.warnings.find((w) => w.includes('call what Wirebench does not run'));
     expect(line).toBe('The scripts of "Fetch" call what Wirebench does not run: insomnia.vault, require');

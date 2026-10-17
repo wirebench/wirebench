@@ -13,7 +13,7 @@ import { entry } from '../../http/entries.js';
 import type { KeyValueEntry } from '../../http/entries.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
-import { SlugSet, uniqueSlug } from '../../project/paths.js';
+import { slugify, SlugSet, uniqueSlug } from '../../project/paths.js';
 import { folderRequests } from '../../rest/model.js';
 import { apiFromPostmanCollection, hasCredentials, mapPostmanAuth } from '../../rest/postman/map.js';
 import { parsePostmanAuth, parsePostmanCollection } from '../../rest/postman/parse.js';
@@ -22,6 +22,8 @@ import type { WsApi, WsFolder, WsRequestDef } from '../../ws/model.js';
 import { createWsApi, createWsFolder, createWsRequest, createWsSavedMessage } from '../../ws/model.js';
 import type { MappedClientEntry, MappedClientImport, MappedProtoSet } from '../client-import.js';
 import { flattenValue } from '../client-import.js';
+import type { DroppedLevel, ImportedScriptFile } from '../scripts.js';
+import { droppedApiScriptFiles } from '../scripts.js';
 import { GRPC_METHOD, grpcTarget } from '../collection-v3/map.js';
 import { blankIfLiteral, blankUrlCredentials } from '../credential-values.js';
 import { isCredentialName } from '../credentials.js';
@@ -494,6 +496,15 @@ function reportWorkspace(mapper: WorkspaceMapper, format: 4 | 5): void {
   }
 }
 
+/** Every folder below `nodes` as a level whose scripts a dropped REST API still owes. */
+function droppedFolderLevels(nodes: readonly InsNode[], trail: readonly string[]): DroppedLevel[] {
+  return nodes.flatMap((node) => {
+    if (node.kind !== 'folder') return [];
+    const path = [...trail, node.name];
+    return [{ path, pre: node.scripts.pre, post: node.scripts.post }, ...droppedFolderLevels(node.children, path)];
+  });
+}
+
 /**
  * Maps a read Insomnia export. Throws `insomnia-nothing-to-import` when it holds no request
  * Wirebench maps and no environment.
@@ -509,6 +520,7 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
   const globals = new VariableSetBuilder('Globals', variableReport);
   const environments: ImportedVariableSet[] = [];
   const collections: MappedClientEntry[] = [];
+  const scriptFiles: ImportedScriptFile[] = [];
   let order = options.firstOrder ?? 0;
   let requests = 0;
   let folders = 0;
@@ -585,6 +597,12 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
     const kinds = [http.summary.requests, grpcWalk.count, wsWalk.count].filter((n) => n > 0).length;
     const apiName = (suffix: string): string => (kinds > 1 ? `${name} (${suffix})` : name);
     const rest = http.summary.requests > 0 ? { ...http.api, order: order++ } : undefined;
+    if (rest === undefined) {
+      // No REST API is left to hold the folders' scripts: keep them as text.
+      scriptFiles.push(
+        ...droppedApiScriptFiles(slugify(name).toLowerCase(), droppedFolderLevels(workspace.items, []), report),
+      );
+    }
     const grpc: GrpcApi | undefined =
       grpcWalk.count > 0
         ? createGrpcApi(apiName('gRPC'), {
@@ -647,9 +665,17 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
       ...(projectProperties.variables.length > 0 ? { projectProperties } : {}),
       report: variableReport.build(),
     },
-    // Scripts are attached to the requests, folders and API, switched off: no file is saved.
-    scripts: [],
-    counts: { collections: collections.length, requests, folders, examples, assertions: 0, scripts: 0 },
+    // Scripts are attached to the requests, folders and API, switched off; only those of a workspace
+    // with no HTTP request are saved, as text.
+    scripts: scriptFiles,
+    counts: {
+      collections: collections.length,
+      requests,
+      folders,
+      examples,
+      assertions: 0,
+      scripts: scriptFiles.length,
+    },
     report: report.build(),
   });
 }

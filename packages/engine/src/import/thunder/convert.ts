@@ -11,6 +11,7 @@ import type { Assertion } from '../../assert/model.js';
 import { ThunderError } from '../../errors.js';
 import type { IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
+import { slugify } from '../../project/paths.js';
 import type { RestApi, RestFolder, RestRequestDef } from '../../rest/model.js';
 import { folderRequests } from '../../rest/model.js';
 import { apiFromPostmanCollection } from '../../rest/postman/map.js';
@@ -19,7 +20,8 @@ import type { MappedClientEntry, MappedClientImport } from '../client-import.js'
 import { V21_SCHEMA } from '../collection-v3/convert.js';
 import type { ImportReport } from '../report.js';
 import { ReportBuilder } from '../report.js';
-import { eventsOf } from '../scripts.js';
+import type { DroppedLevel, ImportedScriptFile } from '../scripts.js';
+import { droppedApiScriptFiles, eventsOf } from '../scripts.js';
 import { thunderTemplates, unshieldTemplates } from '../template-dialects.js';
 import { rewriteMustache } from '../templates.js';
 import type { ImportedVariable, ImportedVariableSet } from '../variables.js';
@@ -428,6 +430,9 @@ class CollectionMapper {
         ...this.mapper.assertions(readTests(folder.settings['tests']), label),
       ]),
       ...(auth !== undefined ? { auth } : {}),
+      // Scripts at folder level are documented (https://docs.thunderclient.com/scripting: request, folder
+      // and collection); the keys that store them are UNCONFIRMED in real files (research note §6), so
+      // they are inferred from the request-level shape.
       ...eventsOf({
         pre: inlineScripts(folder.settings['preReq']),
         post: inlineScripts(folder.settings['postReq']),
@@ -544,6 +549,7 @@ export function mapThunderClient(
   for (const line of parsed.report.notes) mapper.report.note(line);
   const single = parsed.collections.length === 1;
   const entries: MappedClientEntry[] = [];
+  const scriptFiles: ImportedScriptFile[] = [];
   let order = options.firstOrder ?? 0;
   let requests = 0;
   let folders = 0;
@@ -580,6 +586,8 @@ export function mapThunderClient(
       info: { name, schema: V21_SCHEMA, ...(docs !== '' ? { description: docs } : {}) },
       item: items,
       ...(auth !== undefined ? { auth } : {}),
+      // The collection's `postReq` is inferred like the folders' keys (UNCONFIRMED in real files, research
+      // note §6); https://docs.thunderclient.com/scripting documents scripts at collection level.
       ...eventsOf({ pre: inlineScripts(settings['preReq']), post: inlineScripts(settings['postReq']) }),
     });
     // Without its trailing slash, so the mapper finds it at the start of each joined URL.
@@ -592,7 +600,23 @@ export function mapThunderClient(
       ...(base !== undefined ? { baseUrl: base } : {}),
     });
     for (const warning of http.summary.warnings ?? []) mapper.report.warn(`${prefix}${warning}`);
-    if (http.summary.requests === 0) continue;
+    if (http.summary.requests === 0) {
+      // No API is left to hold the collection's and its folders' scripts: keep them as text.
+      const levels: DroppedLevel[] = [
+        {
+          path: [collection.name],
+          pre: inlineScripts(settings['preReq']),
+          post: inlineScripts(settings['postReq']),
+        },
+        ...collection.folders.map((folder) => ({
+          path: [collection.name, folder.name],
+          pre: inlineScripts(folder.settings['preReq']),
+          post: inlineScripts(folder.settings['postReq']),
+        })),
+      ];
+      scriptFiles.push(...droppedApiScriptFiles(slugify(name).toLowerCase(), levels, mapper.report));
+      continue;
+    }
 
     // The mapper keeps the items' order, so the n-th request walked is the n-th item written.
     const mapped = walk(http.api);
@@ -653,15 +677,16 @@ export function mapThunderClient(
       ...(globalSet.variables.length > 0 ? { globals: globalSet } : {}),
       report: mapper.variableReport.build(),
     },
-    // Scripts are attached to the requests, folders and API, switched off: no file is saved.
-    scripts: [],
+    // Scripts are attached to the requests, folders and API, switched off; only those of a collection
+    // with no HTTP request are saved, as text.
+    scripts: scriptFiles,
     counts: {
       collections: entries.length,
       requests,
       folders,
       examples,
       assertions: assertionCount,
-      scripts: 0,
+      scripts: scriptFiles.length,
     },
     report: mapper.report.build(),
   });

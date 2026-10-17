@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { MappedClientImport } from '../../../../src/import/client-import.js';
 import { eventsOf } from '../../../../src/import/scripts.js';
 import { mapThunderClient } from '../../../../src/import/thunder/convert.js';
-import { parseThunderExport } from '../../../../src/import/thunder/parse.js';
+import { parseThunderExport, parseThunderFolder } from '../../../../src/import/thunder/parse.js';
 import { apiFolders, apiRequests } from '../../../../src/rest/model.js';
 
 type Item = Record<string, unknown>;
@@ -62,7 +62,7 @@ describe('Thunder Client scripts are attached', () => {
     expect(apiRequests(api)[0]!.scripts).toBeUndefined();
   });
 
-  it('a folder script goes on the folder', () => {
+  it('a folder script goes on the folder (the folder key is inferred)', () => {
     const mapped = mapCollection({
       folders: [
         {
@@ -82,6 +82,39 @@ describe('Thunder Client scripts are attached', () => {
       api: 'thunder-client',
       enabled: false,
     });
+  });
+
+  it('a collection with no HTTP request keeps its collection and folder scripts as text', () => {
+    let n = 0;
+    const idle = {
+      colName: 'Idle',
+      settings: { preReq: inline(['tc.setVar("root", "1");']) },
+      folders: [
+        {
+          _id: 'f1',
+          name: 'Live',
+          containerId: '',
+          sortNum: 1,
+          settings: { postReq: inline(['tc.setVar("g", "2");']) },
+        },
+      ],
+      requests: [request('Feed', { reqType: 'ws', containerId: 'f1' })],
+    };
+    const busy = { colName: 'Busy', folders: [], requests: [request('Ping')] };
+    const files = new Map([
+      ['collections/tc_col_idle.json', JSON.stringify(idle)],
+      ['collections/tc_col_busy.json', JSON.stringify(busy)],
+    ]);
+    const mapped = mapThunderClient(parseThunderFolder(files), { newId: () => `id${String((n += 1))}` });
+    expect(mapped.collections.map((entry) => entry.name)).toEqual(['Busy']);
+    expect(mapped.scripts).toEqual([
+      { path: 'imported-scripts/idle/idle.pre.js', source: 'tc.setVar("root", "1");' },
+      { path: 'imported-scripts/idle/idle-live.post.js', source: 'tc.setVar("g", "2");' },
+    ]);
+    expect(mapped.counts.scripts).toBe(2);
+    expect(mapped.report.notes).toContain(
+      'Idle: its pre script has no place to run in Wirebench, so it was saved to imported-scripts/idle/idle.pre.js and is never run.',
+    );
   });
 
   it('declarative test rows are unchanged', () => {
@@ -117,7 +150,7 @@ describe('Thunder Client scripts are attached', () => {
       ],
     });
     expect(mapped.report.warnings).toContain(
-      'Scripts on 2 requests were imported switched off: read each on its Scripts tab, then switch them on',
+      'Scripts on 2 requests were imported switched off: read each on its Scripts tab, then switch them on.',
     );
   });
 });
