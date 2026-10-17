@@ -512,6 +512,7 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
   const environments: ImportedVariableSet[] = [];
   const collections: MappedClientEntry[] = [];
   const scriptFiles: ImportedScriptFile[] = [];
+  const takenScriptPaths = new Set<string>();
   let order = options.firstOrder ?? 0;
   let requests = 0;
   let folders = 0;
@@ -591,7 +592,7 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
     const rest = http.summary.requests > 0 ? { ...http.api, order: order++ } : undefined;
     // A folder with no HTTP request below it is no folder of the REST API, or there is no REST API
     // at all: either way its scripts have nowhere to attach, so they are kept as text.
-    scriptFiles.push(...droppedApiScriptFiles(slugify(name).toLowerCase(), dropped, report));
+    scriptFiles.push(...droppedApiScriptFiles(slugify(name).toLowerCase(), dropped, report, takenScriptPaths));
     const grpc: GrpcApi | undefined =
       grpcWalk.count > 0
         ? createGrpcApi(apiName('gRPC'), {

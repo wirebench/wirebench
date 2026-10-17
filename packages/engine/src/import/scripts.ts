@@ -55,14 +55,15 @@ export interface DroppedLevel {
  * The text files for the scripts of an API dropped because it holds no HTTP request: no tree is
  * left to attach them to, so each is saved as `imported-scripts/<api>/<owner>.<phase>.js`, as the
  * OpenCollection importer saves its loose scripts, and the report names the file. A blank script
- * is skipped.
+ * is skipped. `taken` is the set of paths this import already wrote and is shared by every call of
+ * one import, so two dropped APIs whose names slugify alike (`Idle`, `idle`) never write one path.
  */
 export function droppedApiScriptFiles(
   apiSlug: string,
   levels: readonly DroppedLevel[],
   report: ReportBuilder,
+  taken: Set<string>,
 ): ImportedScriptFile[] {
-  const taken = new Set<string>();
   const files: ImportedScriptFile[] = [];
   for (const { path: names, pre, post } of levels) {
     const owner = names.join(' / ');

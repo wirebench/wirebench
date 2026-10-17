@@ -550,6 +550,7 @@ export function mapThunderClient(
   const single = parsed.collections.length === 1;
   const entries: MappedClientEntry[] = [];
   const scriptFiles: ImportedScriptFile[] = [];
+  const takenScriptPaths = new Set<string>();
   let order = options.firstOrder ?? 0;
   let requests = 0;
   let folders = 0;
@@ -614,7 +615,7 @@ export function mapThunderClient(
           post: inlineScripts(folder.settings['postReq']),
         })),
       ];
-      scriptFiles.push(...droppedApiScriptFiles(slugify(name).toLowerCase(), levels, mapper.report));
+      scriptFiles.push(...droppedApiScriptFiles(slugify(name).toLowerCase(), levels, mapper.report, takenScriptPaths));
       continue;
     }
 

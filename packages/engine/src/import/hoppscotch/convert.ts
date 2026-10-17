@@ -408,6 +408,7 @@ export function mapHoppscotch(
   const single = collections.length === 1;
   const entries: MappedClientEntry[] = [];
   const scriptFiles: ImportedScriptFile[] = [];
+  const takenScriptPaths = new Set<string>();
   let order = options.firstOrder ?? 0;
   let requests = 0;
   let folders = 0;
@@ -442,6 +443,7 @@ export function mapHoppscotch(
           slugify(name).toLowerCase(),
           droppedLevels(collection, [collection.name]),
           mapper.report,
+          takenScriptPaths,
         ),
       );
       continue;

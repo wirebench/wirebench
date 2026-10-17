@@ -93,6 +93,30 @@ describe('Hoppscotch scripts are attached', () => {
     );
   });
 
+  it('two dropped collections whose names slugify alike keep their files apart', () => {
+    let n = 0;
+    const idle = (name: string, script: string) => ({
+      v: 12,
+      name,
+      preRequestScript: script,
+      folders: [],
+      requests: [],
+    });
+    const { collections, report } = parseHoppscotchCollections(
+      JSON.stringify([
+        idle('Idle', 'console.log(1);'),
+        idle('idle', 'console.log(2);'),
+        { v: 12, name: 'Busy', folders: [], requests: [request('Ping', {})] },
+      ]),
+    );
+    const mapped = mapHoppscotch(collections, report, { newId: () => `id${String((n += 1))}` });
+    expect(mapped.scripts.map((file) => file.path)).toEqual([
+      'imported-scripts/idle/idle.pre.js',
+      'imported-scripts/idle/idle-2.pre.js',
+    ]);
+    expect(mapped.scripts.map((file) => file.source)).toEqual(['console.log(1);', 'console.log(2);']);
+  });
+
   it('no imported-scripts files are written', () => {
     const mapped = mapCollection({ requests: [request('Ping', { pre: 'pw.env.set("a", "1")' })] });
     expect(mapped.scripts).toEqual([]);
