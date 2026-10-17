@@ -18,6 +18,8 @@ import {
   PART_JSON_SCHEMA,
   PART_PAIRS,
   PART_PM,
+  PART_REQUEST,
+  PART_RESPONSE,
   PART_UNSUPPORTED,
   PART_VARIABLES,
 } from '../../../src/script/api/layer-parts.js';
@@ -31,6 +33,8 @@ const PARTS: ReadonlyArray<readonly [string, string]> = [
   ['PART_PM', PART_PM],
   ['PART_JSON_SCHEMA', PART_JSON_SCHEMA],
   ['PART_JEST_EXPECT', PART_JEST_EXPECT],
+  ['PART_REQUEST', PART_REQUEST],
+  ['PART_RESPONSE', PART_RESPONSE],
 ];
 
 interface Evaluated {
@@ -57,7 +61,7 @@ const makeContext = (defined: string[]) => {
     encoding: {},
     request: {},
     response: {},
-    input: { phase: 'pre', info: { requestName: 'x' } },
+    input: { phase: 'pre', info: { requestName: 'x' }, request: {} },
     iteration: { index: 0, count: 1 },
     execution: {},
     test: () => undefined,
@@ -105,6 +109,25 @@ const EXPECTED: ReadonlyArray<{ declared: string[]; defined: string[] }> = [
   { declared: ['pmExpect', 'pmRequest', 'pmResponse', 'pmObject', 'pmResponseValue'], defined: [] },
   { declared: ['jsonSchema'], defined: [] },
   { declared: ['TYPES', 'jestMatchers', 'jestExpect'], defined: [] },
+  {
+    declared: [
+      'noPairs',
+      'cannot',
+      'requestHeaders',
+      'noQuery',
+      'requestQuery',
+      'requestUrl',
+      'hasMessage',
+      'restBody',
+      'requestBody',
+      'requestText',
+      'setRequestBody',
+      'setRequestUrl',
+      'setRequestMethod',
+    ],
+    defined: [],
+  },
+  { declared: ['responseView'], defined: [] },
 ];
 
 describe('the shared layer parts', () => {

@@ -125,6 +125,103 @@ const pairs = (list) => Object.freeze({
 `;
 
 /**
+ * Declares `noPairs`, `requestHeaders`, `requestQuery`, `requestUrl`, `requestBody`, `requestText`,
+ * `setRequestBody`, `setRequestUrl` and `setRequestMethod` (and the helpers `cannot`, `noQuery`,
+ * `hasMessage` and `restBody`): the request as a client layer reads it, whatever the protocol. A
+ * gRPC call has `metadata` for headers, a `message` for a body, a target and no query; a write the request cannot take throws `ScriptUnsupported` naming the call, never a bare
+ * `TypeError`. `requestQuery` and the setters take the name of the call they serve.
+ */
+export const PART_REQUEST = String.raw`
+const noPairs = Object.freeze({ get: () => undefined, getAll: () => [], has: () => false, list: () => [], toObject: () => ({}) });
+const cannot = (name, what) => { throw new ScriptUnsupported(name + ' is not supported: this request has no ' + what); };
+const requestHeaders = request.headers !== undefined ? request.headers : request.metadata !== undefined ? request.metadata : noPairs;
+const noQuery = (name) => () => cannot(name, 'query parameters');
+// The query, or for a request with none (gRPC) a list that is empty and refuses writes, named for the call.
+const requestQuery = (name) => (request.query !== undefined ? request.query : Object.freeze({ ...noPairs, set: noQuery(name), add: noQuery(name), delete: noQuery(name) }));
+const requestUrl = () => (request.url !== undefined ? request.url : request.target !== undefined ? request.target : request.endpoint);
+const hasMessage = 'message' in request;
+const restBody = () => ('body' in request && !hasMessage ? request.body : undefined);
+// The body as a value: a gRPC message as it is, a REST body parsed when it is JSON and as text otherwise.
+const requestBody = () => {
+  if (hasMessage) return request.message;
+  const body = restBody();
+  if (body === null || typeof body !== 'object' || !('kind' in body)) return body;
+  if (body.kind === 'none') return undefined;
+  const text = body.text;
+  try { return JSON.parse(text); } catch { return text; }
+};
+// The body as text, or undefined when there is none.
+const requestText = () => {
+  if (hasMessage) return request.message === undefined ? undefined : JSON.stringify(request.message);
+  const body = restBody();
+  if (body === null || typeof body !== 'object' || !('kind' in body)) return body === undefined ? undefined : JSON.stringify(body);
+  return body.kind === 'none' ? undefined : body.text;
+};
+const setRequestBody = (name, value) => {
+  if (hasMessage) {
+    let message = value;
+    if (typeof value === 'string') { try { message = JSON.parse(value); } catch { message = value; } }
+    request.message = message;
+    return;
+  }
+  const body = restBody();
+  if (body === null || typeof body !== 'object' || !('kind' in body)) return cannot(name, 'body a script can write');
+  if (typeof value === 'string') body.text = value;
+  else body.json = value;
+};
+const setRequestUrl = (name, url) => {
+  if (!('url' in request)) return cannot(name, 'URL');
+  request.url = url;
+};
+const setRequestMethod = (name, method) => {
+  const property = Object.getOwnPropertyDescriptor(request, 'method');
+  if (property === undefined || property.set === undefined) return cannot(name, 'method a script can change');
+  request.method = method;
+};
+`;
+
+/**
+ * Declares `responseView`: the response as a client layer reads it, whatever the protocol, or
+ * `undefined` before the response. It has `headers` (the headers, or a gRPC call's metadata, as the
+ * typed pairs), a numeric `status` (a gRPC status code), `statusText`, `text` (the body, or the JSON
+ * of a gRPC message), `json()`, `body()` (parsed for a JSON content type or a message, the text
+ * otherwise, read once) and `durationMs`. Needs `noPairs` from `PART_REQUEST`.
+ */
+export const PART_RESPONSE = String.raw`
+const responseView = input.phase !== 'post' ? undefined : (() => {
+  const status = response.status;
+  const code = typeof status === 'number' ? status : status !== null && typeof status === 'object' ? status.code : undefined;
+  const statusText = response.statusText !== undefined ? response.statusText : status !== null && typeof status === 'object' ? status.name : undefined;
+  const isMessage = typeof response.text !== 'string' && 'message' in response;
+  const text = typeof response.text === 'string' ? response.text : response.message === undefined ? '' : JSON.stringify(response.message);
+  const headers = response.headers !== undefined ? response.headers : response.metadata !== undefined ? response.metadata : noPairs;
+  const json = () => (typeof response.json === 'function' ? response.json() : isMessage ? response.message : JSON.parse(text));
+  let body;
+  let parsed = false;
+  return Object.freeze({
+    headers,
+    status: code,
+    statusText,
+    text,
+    json,
+    body: () => {
+      if (!parsed) {
+        parsed = true;
+        const type = headers.get('content-type');
+        body = text;
+        if (isMessage) body = response.message;
+        else if (type !== undefined && /json/i.test(type)) {
+          try { body = json(); } catch { body = text; }
+        }
+      }
+      return body;
+    },
+    durationMs: response.durationMs,
+  });
+})();
+`;
+
+/**
  * Declares `Hex`, `Base64`, `Utf8`, `Latin1`, `words`, `text`, `hashOf`, `hmacOf` and `CryptoJS`, and
  * defines `CryptoJS`, `btoa` and `atob`: hashes, HMACs and the encoders over `crypto` and `encoding`.
  */
@@ -190,7 +287,10 @@ const pmRequest = () => {
     remove: (name) => request.headers.delete(typeof name === 'object' ? String(name.key) : String(name)),
   };
   const body = {};
-  if (request.body !== undefined && typeof request.body === 'object' && 'text' in request.body) {
+  // Only a REST body ({ kind, text }); the snapshot is read, not request.body, whose getter throws
+  // on a SOAP request with no schema.
+  const snapshotBody = input.request.body;
+  if (snapshotBody !== null && typeof snapshotBody === 'object' && 'kind' in snapshotBody) {
     Object.defineProperty(body, 'raw', {
       get: () => (request.body.kind === 'other' ? undefined : request.body.text),
       set: (text) => { request.body.text = String(text); },
@@ -221,7 +321,7 @@ const pmRequest = () => {
 const pmResponse = () => {
   if (input.phase !== 'post') return undefined;
   const status = response.status;
-  const code = typeof status === 'number' ? status : status.code;
+  const code = typeof status === 'number' ? status : status !== null && typeof status === 'object' ? status.code : undefined;
   const text = response.text !== undefined ? response.text : response.message === undefined ? '' : JSON.stringify(response.message);
   const res = {
     code,

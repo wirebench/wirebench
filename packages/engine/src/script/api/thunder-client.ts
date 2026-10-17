@@ -14,55 +14,49 @@
  * call. `tc.request.url` stays a string, so the page's `url.getParam` and `url.setParam` are only
  * scanned (spec §7), not run.
  */
-import { PART_EXPECT, PART_UNSUPPORTED, PART_VARIABLES } from './layer-parts.js';
+import { PART_EXPECT, PART_REQUEST, PART_RESPONSE, PART_UNSUPPORTED, PART_VARIABLES } from './layer-parts.js';
 
 export const THUNDER_CLIENT_LAYER =
   PART_UNSUPPORTED +
   PART_VARIABLES +
   PART_EXPECT +
+  PART_REQUEST +
+  PART_RESPONSE +
   String.raw`
 // --- the request --------------------------------------------------------------------------------
-const tcBody = () => {
-  if (request.body.kind === 'none') return undefined;
-  const text = request.body.text;
-  try { return JSON.parse(text); } catch { return text; }
-};
 const tcRequest = Object.freeze({
   id: undefined,
   get name() { return input.info.requestName; },
-  get url() { return request.url; },
+  get url() { return requestUrl(); },
   get method() { return request.method; },
   // https://docs.thunderclient.com/scripting/api: headers are an array of { name, value, isDisabled }.
-  get headers() { return request.headers.list().map(({ name, value }) => Object.freeze({ name, value, isDisabled: false })); },
-  get body() { return tcBody(); },
+  get headers() { return requestHeaders.list().map(({ name, value }) => Object.freeze({ name, value, isDisabled: false })); },
+  get body() { return requestBody(); },
   get auth() { return unsupported('tc.request.auth')(); },
-  getHeader: (name) => request.headers.get(String(name)),
-  setHeader: (name, value) => request.headers.set(String(name), String(value)),
-  setBody: (body) => {
-    if (typeof body === 'string') request.body.text = body;
-    else request.body.json = body;
-  },
+  getHeader: (name) => requestHeaders.get(String(name)),
+  setHeader: (name, value) => requestHeaders.set(String(name), String(value)),
+  setBody: (body) => setRequestBody('tc.request.setBody', body),
 });
 
 // --- the response -------------------------------------------------------------------------------
 let tcResponse;
-if (input.phase === 'post') {
+if (responseView !== undefined) {
   // https://docs.thunderclient.com/scripting/api: headers are an array of { name, value }, original casing.
-  const rows = Object.freeze(response.headers.list().map(({ name, value }) => Object.freeze({ name, value })));
+  const rows = Object.freeze(responseView.headers.list().map(({ name, value }) => Object.freeze({ name, value })));
   tcResponse = Object.freeze({
-    status: response.status,
-    time: response.durationMs,
-    size: utf8Length(response.text),
-    contentType: response.headers.get('content-type'),
-    text: response.text,
+    status: responseView.status,
+    time: responseView.durationMs,
+    size: utf8Length(responseView.text),
+    contentType: responseView.headers.get('content-type'),
+    text: responseView.text,
     headers: rows,
     // Parsed when the body is JSON, whatever the content type says; undefined when it does not parse.
     get json() {
-      try { return response.json(); } catch { return undefined; }
+      try { return responseView.json(); } catch { return undefined; }
     },
     get cookies() { return unsupported('tc.response.cookies')(); },
     get passed() { return unsupported('tc.response.passed')(); },
-    getHeader: (name) => response.headers.get(String(name)),
+    getHeader: (name) => responseView.headers.get(String(name)),
     getBinary: unsupported('tc.response.getBinary'),
   });
 } else {
@@ -90,7 +84,7 @@ define('tc', Object.freeze({
   getVar: (name) => variables.get(name),
   setVar: (name, value) => variables.set(name, value),
   replaceVars: (text) => variables.replaceIn(text),
-  setParam: (name, value) => request.query.set(String(name), String(value)),
+  setParam: (name, value) => requestQuery('tc.setParam').set(String(name), String(value)),
   request: tcRequest,
   response: tcResponse,
   // The page: a boolean or a function that returns a boolean or nothing.

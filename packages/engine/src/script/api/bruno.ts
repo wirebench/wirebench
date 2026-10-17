@@ -9,13 +9,22 @@
  * Sending requests, sleeping, cookies, modules and the request settings throw
  * `ScriptUnsupported` naming the call.
  */
-import { PART_EXPECT, PART_JSON_SCHEMA, PART_UNSUPPORTED, PART_VARIABLES } from './layer-parts.js';
+import {
+  PART_EXPECT,
+  PART_JSON_SCHEMA,
+  PART_REQUEST,
+  PART_RESPONSE,
+  PART_UNSUPPORTED,
+  PART_VARIABLES,
+} from './layer-parts.js';
 
 export const BRUNO_LAYER =
   PART_UNSUPPORTED +
   PART_VARIABLES +
   PART_EXPECT +
   PART_JSON_SCHEMA +
+  PART_REQUEST +
+  PART_RESPONSE +
   String.raw`
 // --- expect, with .jsonSchema ---------------------------------------------------------------------
 define('expect', chaiExpectSchema);
@@ -54,25 +63,17 @@ define('bru', Object.freeze({
 }));
 
 // --- req ------------------------------------------------------------------------------------------
-const bodyOf = () => {
-  if (request.body.kind === 'none') return undefined;
-  const text = request.body.text;
-  try { return JSON.parse(text); } catch { return text; }
-};
 define('req', Object.freeze({
-  getUrl: () => request.url,
-  setUrl: (url) => { request.url = url; },
+  getUrl: requestUrl,
+  setUrl: (url) => setRequestUrl('req.setUrl', url),
   getMethod: () => request.method,
-  setMethod: (method) => { request.method = method; },
-  getHeader: (name) => request.headers.get(name),
-  setHeader: (name, value) => request.headers.set(String(name), String(value)),
-  deleteHeader: (name) => request.headers.delete(String(name)),
-  getBody: bodyOf,
-  setBody: (body) => {
-    if (typeof body === 'string') request.body.text = body;
-    else request.body.json = body;
-  },
-  getHeaders: () => request.headers.toObject(),
+  setMethod: (method) => setRequestMethod('req.setMethod', method),
+  getHeader: (name) => requestHeaders.get(name),
+  setHeader: (name, value) => requestHeaders.set(String(name), String(value)),
+  deleteHeader: (name) => requestHeaders.delete(String(name)),
+  getBody: requestBody,
+  setBody: (body) => setRequestBody('req.setBody', body),
+  getHeaders: () => requestHeaders.toObject(),
   setTimeout: unsupported('req.setTimeout'),
   getTimeout: unsupported('req.getTimeout'),
   setMaxRedirects: unsupported('req.setMaxRedirects'),
@@ -81,34 +82,21 @@ define('req', Object.freeze({
 }));
 
 // --- res ------------------------------------------------------------------------------------------
-if (input.phase === 'post') {
+if (responseView !== undefined) {
   const headers = {};
-  for (const { name, value } of response.headers.list()) {
+  for (const { name, value } of responseView.headers.list()) {
     const key = name.toLowerCase();
     headers[key] = key in headers ? headers[key] + ', ' + value : value;
   }
-  let body;
-  let parsed = false;
-  const bodyValue = () => {
-    if (!parsed) {
-      parsed = true;
-      const type = headers['content-type'];
-      body = response.text;
-      if (type !== undefined && /json/i.test(type)) {
-        try { body = response.json(); } catch { body = response.text; }
-      }
-    }
-    return body;
-  };
   define('res', Object.freeze({
-    status: response.status,
+    status: responseView.status,
     headers: Object.freeze(headers),
-    get body() { return bodyValue(); },
-    responseTime: response.durationMs,
-    getStatus: () => response.status,
-    getBody: () => bodyValue(),
+    get body() { return responseView.body(); },
+    responseTime: responseView.durationMs,
+    getStatus: () => responseView.status,
+    getBody: () => responseView.body(),
     getHeader: (name) => headers[String(name).toLowerCase()],
-    getResponseTime: () => response.durationMs,
+    getResponseTime: () => responseView.durationMs,
   }));
 } else {
   define('res', undefined);
