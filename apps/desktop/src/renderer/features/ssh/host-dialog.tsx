@@ -17,6 +17,8 @@ import { ForwardsSection, inheritedForwards } from './forwarding/forwards-sectio
 import { EnvSection, envProblem, inheritedEnv } from './env-section.js';
 import { AgentForwardingSection, inheritedForwardAgent } from './agent-forwarding.js';
 import { inheritedMosh, inheritedProtocol, MoshSection, moshProblem } from './mosh-section.js';
+import { TELNET_PORT } from './host-protocol.js';
+import { inheritedSerial, SerialDeviceField, SerialLineSection, serialProblem } from './serial-section.js';
 import { cleanProxy, proxyProblem, ProxySection } from './proxy-section.js';
 import { OS_LABELS } from './os-icon.js';
 import { HostAuthSection } from './host-auth-section.js';
@@ -135,9 +137,37 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const { names: secretNames } = useSecretNames();
   const localUser = useLocalUser();
   const missingId = useId();
+  // Telnet (#425) needs no user or way in, signs in with a password only, and has no SSH-only settings. A
+  // serial console (#426) has no network at all: no address, port, sign-in, jump or proxy.
+  const protocol = ssh.protocol ?? inheritedProtocol(chain).value ?? 'ssh';
+  const telnet = protocol === 'telnet';
+  const serial = protocol === 'serial';
+  const viaSsh = !telnet && !serial;
+  // The device a serial host opens on this machine: read from main, written after a save (never to the file).
+  const [device, setDevice] = useState('');
+  const [savedDevice, setSavedDevice] = useState('');
+  const [deviceError, setDeviceError] = useState<string | undefined>(undefined);
+  const editId = dialog.mode === 'edit-host' ? dialog.id : undefined;
+  useEffect(() => {
+    if (editId === undefined) return;
+    let live = true;
+    Promise.resolve()
+      .then(() => ipc().ssh.serialDevice({ hostId: editId }))
+      .then((result) => {
+        if (!live || !result.ok) return;
+        setDevice(result.value.device ?? '');
+        setSavedDevice(result.value.device ?? '');
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [editId]);
+  const portInherited = inheritedFrom(chain, 'port');
+  const inheritedPort =
+    telnet && portInherited.from === 'default' ? { ...portInherited, value: TELNET_PORT } : portInherited;
   // The OS is kept per server on this machine, keyed like its trusted host key: address and port.
-  const osKey = (): string =>
-    `${address.trim()}:${String(ssh.port ?? inheritedFrom(chain, 'port').value ?? SSH_DEFAULTS.port)}`;
+  const osKey = (): string => `${address.trim()}:${String(ssh.port ?? inheritedPort.value ?? SSH_DEFAULTS.port)}`;
   const [savedOsKey] = useState(osKey);
   const savedOs = useHostsStore((s) => s.osByHost[savedOsKey]);
   const [os, setOs] = useState<SshOsId | ''>(savedOs?.chosen ?? '');
@@ -153,14 +183,16 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const groupUser = loginUser.value;
   const groupHasAuth = loginAuth.value !== undefined;
   const fresh = dialog.mode === 'new-host';
+  // A device's login is not this machine's: a new Telnet host or serial console starts with neither.
   useEffect(() => {
     if (!fresh || touched.user === true) return;
-    setSsh((prev) => withField(prev, 'user', groupUser === undefined && localUser !== '' ? localUser : undefined));
-  }, [fresh, touched.user, groupUser, localUser]);
+    const user = groupUser === undefined && localUser !== '' && viaSsh ? localUser : undefined;
+    setSsh((prev) => withField(prev, 'user', user));
+  }, [fresh, touched.user, groupUser, localUser, viaSsh]);
   useEffect(() => {
     if (!fresh || touched.auth === true) return;
-    setSsh((prev) => withField(prev, 'auth', groupHasAuth ? undefined : { kind: 'password', secret: '' }));
-  }, [fresh, touched.auth, groupHasAuth]);
+    setSsh((prev) => withField(prev, 'auth', groupHasAuth || !viaSsh ? undefined : { kind: 'password', secret: '' }));
+  }, [fresh, touched.auth, groupHasAuth, viaSsh]);
 
   const set = (key: Inheritable | 'auth') => (value: unknown) => {
     if (key === 'user' || key === 'auth') setTouched((prev) => ({ ...prev, [key]: true }));
@@ -190,20 +222,26 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const forwardsReady = forwards.every((entry) => !('type' in entry) || forwardProblem(entry) === undefined);
   const sectionProblems = [
     ...(forwardsReady ? [] : ['A forwarding rule is incomplete (Advanced)']),
-    ...[envProblem(env), terminalProblem(terminal), proxyProblem(ssh.proxy), moshProblem(ssh.mosh)].filter(
-      (p): p is string => p !== undefined,
-    ),
+    ...[
+      envProblem(env),
+      terminalProblem(terminal),
+      proxyProblem(ssh.proxy),
+      moshProblem(ssh.mosh),
+      serialProblem(ssh.serial),
+    ].filter((p): p is string => p !== undefined),
   ];
   const missing = missingFields({
     isHost,
-    needsLogin: fresh,
+    needsLogin: fresh && viaSsh,
+    needsAddress: !serial,
     name,
     address,
     user: ssh.user,
     inheritedUser: groupUser,
-    auth: ssh.auth,
+    // A serial console signs in to nothing: a sign-in left from another protocol does not hold up Save.
+    auth: serial ? undefined : ssh.auth,
     inheritedAuth: loginAuth.value,
-    password,
+    password: serial ? '' : password,
     sectionProblems,
   });
   const valid = missing.length === 0;
@@ -299,10 +337,20 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
       setFailed(true);
       return;
     }
+    const typedDevice = device.trim();
+    if (isHost && serial && typedDevice !== savedDevice) {
+      const kept = await ipc().ssh.setSerialDevice({ hostId: id, device: typedDevice === '' ? null : typedDevice });
+      if (!kept.ok) {
+        setDeviceError(kept.error.message);
+        return;
+      }
+      setSavedDevice(typedDevice);
+      setDeviceError(undefined);
+    }
     const chosen = os === '' ? null : os;
     const key = osKey();
     // A choice moves with the host when its address or port changes; Auto on a new host is nothing to store.
-    if (isHost && (chosen !== (savedOs?.chosen ?? null) || (key !== savedOsKey && chosen !== null))) {
+    if (isHost && !serial && (chosen !== (savedOs?.chosen ?? null) || (key !== savedOsKey && chosen !== null))) {
       await ipc().ssh.setHostOs({ host: key, os: chosen });
     }
     closeDialog();
@@ -339,7 +387,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
           }}
         />
       </label>
-      {isHost && (
+      {isHost && !serial && (
         <label className={FIELD_CLASS}>
           <span className="text-fg-subtle">Address</span>
           <input
@@ -373,7 +421,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
           </select>
         </label>
       )}
-      {(identities.length > 0 || ssh.identity !== undefined) && (
+      {!serial && (identities.length > 0 || ssh.identity !== undefined) && (
         <label className={FIELD_CLASS}>
           <span className="flex gap-2 text-fg-subtle">
             Identity
@@ -398,23 +446,62 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
           </select>
         </label>
       )}
-      <div className="grid grid-cols-[minmax(0,1fr)_9rem] gap-2">
-        <InheritedField label="User" provenance={loginUser} override={ssh.user} onChange={set('user')} />
-        <InheritedField
-          label="Port"
-          type="number"
-          provenance={inheritedFrom(chain, 'port')}
-          override={ssh.port}
-          onChange={set('port')}
-        />
-      </div>
-      <HostAuthSection
-        value={ssh.auth}
-        inherited={loginAuth}
-        onChange={set('auth')}
-        password={password}
-        onPasswordChange={setPassword}
-      />
+      {serial ? (
+        <>
+          {isHost && (
+            <SerialDeviceField
+              value={device}
+              onChange={(next) => {
+                setDevice(next);
+                setDeviceError(undefined);
+              }}
+            />
+          )}
+          <SerialLineSection
+            own={ssh.serial}
+            inherited={inheritedSerial(chain)}
+            onChange={(next) => {
+              setSsh((prev) => withField(prev, 'serial', next));
+            }}
+          />
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-[minmax(0,1fr)_9rem] gap-2">
+            <InheritedField label="User" provenance={loginUser} override={ssh.user} onChange={set('user')} />
+            <InheritedField
+              label="Port"
+              type="number"
+              provenance={inheritedPort}
+              override={ssh.port}
+              onChange={set('port')}
+            />
+          </div>
+          <HostAuthSection
+            value={ssh.auth}
+            inherited={loginAuth}
+            onChange={set('auth')}
+            password={password}
+            onPasswordChange={(typed) => {
+              // A typed password is a choice: switching to Telnet afterwards keeps it.
+              setTouched((prev) => ({ ...prev, auth: true }));
+              setPassword(typed);
+            }}
+            passwordOnly={telnet}
+          />
+        </>
+      )}
+      {telnet && (
+        <p className="text-xs text-fg-subtle">
+          Wirebench types the user and password at the device's login and password prompts. Leave them empty to sign in
+          yourself.
+        </p>
+      )}
+      {deviceError !== undefined && (
+        <p role="alert" className="text-sm text-status-danger">
+          {`The device was not kept: ${deviceError}`}
+        </p>
+      )}
       {secretError !== undefined && (
         <p role="alert" className="text-sm text-status-danger">
           {`The password was not stored: ${secretError}`}
@@ -425,7 +512,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
           Advanced
         </summary>
         <div className="mt-3 flex flex-col gap-3">
-          {isHost && (
+          {isHost && !serial && (
             <label className={FIELD_CLASS}>
               <span className="text-fg-subtle">OS</span>
               <select
@@ -461,45 +548,51 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             override={protectedHere}
             onChange={setProtectedHere}
           />
-          <label className={FIELD_CLASS}>
-            <span className="flex gap-2 text-fg-subtle">
-              Jump host
-              {ssh.jump === undefined && jumpInherited.value !== undefined && (
-                <span className="text-fg-faint">{sourceText(jumpInherited)}</span>
+          {!serial && (
+            <label className={FIELD_CLASS}>
+              <span className="flex gap-2 text-fg-subtle">
+                Jump host
+                {ssh.jump === undefined && jumpInherited.value !== undefined && (
+                  <span className="text-fg-faint">{sourceText(jumpInherited)}</span>
+                )}
+              </span>
+              <select
+                aria-label="Jump host"
+                className={INPUT_CLASS}
+                value={ssh.jump ?? ''}
+                onChange={(e) => {
+                  set('jump')(e.target.value === '' ? undefined : e.target.value);
+                }}
+              >
+                <option value="">{jumpInherited.value === undefined ? 'None' : 'Inherit'}</option>
+                {jumpOptions.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {!serial && (
+            <div className="grid grid-cols-2 gap-2">
+              {!telnet && (
+                <InheritedField
+                  label="Keep-alive (s)"
+                  type="number"
+                  provenance={inheritedFrom(chain, 'keepAlive', sshPrefs)}
+                  override={ssh.keepAlive}
+                  onChange={set('keepAlive')}
+                />
               )}
-            </span>
-            <select
-              aria-label="Jump host"
-              className={INPUT_CLASS}
-              value={ssh.jump ?? ''}
-              onChange={(e) => {
-                set('jump')(e.target.value === '' ? undefined : e.target.value);
-              }}
-            >
-              <option value="">{jumpInherited.value === undefined ? 'None' : 'Inherit'}</option>
-              {jumpOptions.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <InheritedField
-              label="Keep-alive (s)"
-              type="number"
-              provenance={inheritedFrom(chain, 'keepAlive', sshPrefs)}
-              override={ssh.keepAlive}
-              onChange={set('keepAlive')}
-            />
-            <InheritedField
-              label="Connect timeout (s)"
-              type="number"
-              provenance={inheritedFrom(chain, 'connectTimeout', sshPrefs)}
-              override={ssh.connectTimeout}
-              onChange={set('connectTimeout')}
-            />
-          </div>
+              <InheritedField
+                label="Connect timeout (s)"
+                type="number"
+                provenance={inheritedFrom(chain, 'connectTimeout', sshPrefs)}
+                override={ssh.connectTimeout}
+                onChange={set('connectTimeout')}
+              />
+            </div>
+          )}
           <MoshSection
             protocol={ssh.protocol}
             mosh={ssh.mosh}
@@ -512,30 +605,34 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
               setSsh((prev) => withField(prev, 'mosh', next));
             }}
           />
-          <ProxySection
-            own={ssh.proxy}
-            inherited={inheritedFrom(chain, 'proxy')}
-            onChange={(next) => {
-              setSsh((prev) => withField(prev, 'proxy', next));
-            }}
-            names={secretNames}
-            password={proxyPassword}
-            onPasswordChange={setProxyPassword}
-          />
-          <AgentForwardingSection
-            override={ssh.forwardAgent}
-            inherited={inheritedForwardAgent(chain)}
-            onChange={(next) => {
-              setSsh((prev) => withField(prev, 'forwardAgent', next));
-            }}
-          />
-          <EnvSection own={env} inherited={inheritedEnv(chain)} onChange={setEnv} />
+          {!serial && (
+            <ProxySection
+              own={ssh.proxy}
+              inherited={inheritedFrom(chain, 'proxy')}
+              onChange={(next) => {
+                setSsh((prev) => withField(prev, 'proxy', next));
+              }}
+              names={secretNames}
+              password={proxyPassword}
+              onPasswordChange={setProxyPassword}
+            />
+          )}
+          {viaSsh && (
+            <AgentForwardingSection
+              override={ssh.forwardAgent}
+              inherited={inheritedForwardAgent(chain)}
+              onChange={(next) => {
+                setSsh((prev) => withField(prev, 'forwardAgent', next));
+              }}
+            />
+          )}
+          {viaSsh && <EnvSection own={env} inherited={inheritedEnv(chain)} onChange={setEnv} />}
           <HostTerminalSection
             own={terminal}
             inherited={inheritedTerminal(chain, terminalPrefs)}
             onChange={setTerminal}
           />
-          <ForwardsSection own={forwards} inherited={inheritedForwards(chain)} onChange={setForwards} />
+          {viaSsh && <ForwardsSection own={forwards} inherited={inheritedForwards(chain)} onChange={setForwards} />}
         </div>
       </details>
       {failed && problems[0] !== undefined && (

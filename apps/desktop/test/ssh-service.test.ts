@@ -96,6 +96,11 @@ function make(
     agentRefused?: boolean;
     sessionLog?: SshServiceDeps['sessionLog'];
     openMosh?: SshServiceDeps['openMosh'];
+    openTelnet?: SshServiceDeps['openTelnet'];
+    telnet?: boolean;
+    openSerial?: SshServiceDeps['openSerial'];
+    serial?: boolean;
+    serialDevice?: SshServiceDeps['serialDevice'];
   } = {},
 ) {
   const knownHostsFile = join(mkdtempSync(join(tmpdir(), 'wb-ssh-')), 'ssh-known-hosts.json');
@@ -146,6 +151,11 @@ function make(
     ...(opts.onSessionsChange ? { onSessionsChange: opts.onSessionsChange } : {}),
     ...(opts.sessionLog ? { sessionLog: opts.sessionLog } : {}),
     ...(opts.openMosh ? { openMosh: opts.openMosh } : {}),
+    ...(opts.openTelnet ? { openTelnet: opts.openTelnet } : {}),
+    ...(opts.telnet === undefined ? {} : { telnet: opts.telnet }),
+    ...(opts.openSerial ? { openSerial: opts.openSerial } : {}),
+    ...(opts.serial === undefined ? {} : { serial: opts.serial }),
+    ...(opts.serialDevice ? { serialDevice: opts.serialDevice } : {}),
   });
   return { service, open, emit, fake, opened, knownHostsFile, hostOsFile, list };
 }
@@ -1297,5 +1307,137 @@ describe('SshService Mosh hosts (#419)', () => {
   it('refuses a Mosh host when no Mosh opener is set up', async () => {
     const { service } = make({ known: [KEY], file: moshFile() });
     await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({ code: 'mosh-unavailable' });
+  });
+});
+
+describe('SshService Telnet hosts (#425)', () => {
+  const telnetFile = (extra = ''): HostsFile =>
+    parseHostsFile(
+      `version: 1\nhosts:\n  - { id: a, name: a, address: 10.0.0.1, env: { STAGE: blue }, ssh: { user: admin, auth: { password: '\${secret:a_pw}' }, forwardAgent: true, protocol: telnet${extra} } }\n`,
+    );
+  const shown = (emit: ReturnType<typeof vi.fn>): string =>
+    emit.mock.calls
+      .filter((call) => (call[1] as { name?: string }).name === 'ssh.data')
+      .map((call) => Buffer.from((call[2] as { data: string }).data, 'base64').toString('utf8'))
+      .join('');
+
+  it('opens through the Telnet opener with the sign-in, masks the password, and sends no env and no OS probe', async () => {
+    const telnet = fakeSession('t1');
+    const openTelnet = vi.fn(() => Promise.resolve(telnet.session));
+    const { service, open, emit } = make({ file: telnetFile(), openTelnet });
+    const result = await service.connect(as(sender(1)), CONNECT);
+    expect(open).not.toHaveBeenCalled();
+    const options = (openTelnet.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+    expect(options).toMatchObject({
+      hops: [],
+      target: { address: '10.0.0.1', port: 23 },
+      login: { user: 'admin', password: 'pw' },
+      cols: 80,
+      rows: 24,
+    });
+    expect(options).not.toHaveProperty('env');
+    expect(options).not.toHaveProperty('forwardAgent');
+    expect(result).toEqual({ sessionId: 't1' });
+    await flush();
+    expect(telnet.exec).not.toHaveBeenCalled();
+    telnet.pushData(Buffer.from('Password: pw\r\n$ '));
+    await flush();
+    expect(shown(emit)).toContain('Password: ');
+    expect(shown(emit)).not.toContain('pw');
+  });
+
+  it('logs the Telnet target with its user, and the password among the secrets', async () => {
+    const telnet = fakeSession('t1');
+    const sessionLog = vi.fn(() => Promise.resolve(undefined));
+    const { service } = make({ file: telnetFile(), openTelnet: () => Promise.resolve(telnet.session), sessionLog });
+    await service.connect(as(sender(1)), CONNECT);
+    expect(sessionLog).toHaveBeenCalledWith(expect.anything(), {
+      hostId: 'a',
+      hops: [],
+      target: { address: '10.0.0.1', port: 23, user: 'admin' },
+      secrets: ['pw'],
+    });
+  });
+
+  it('refuses a Telnet host when this build switched Telnet off, before any connection', async () => {
+    const openTelnet = vi.fn();
+    const { service } = make({ file: telnetFile(), openTelnet, telnet: false });
+    await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({ code: 'telnet-off' });
+    expect(openTelnet).not.toHaveBeenCalled();
+  });
+});
+
+describe('SshService serial consoles (#426)', () => {
+  // A jump inherited from the group is not used (bastion has no sign-in and would be refused): the console is local.
+  const serialFile = (): HostsFile =>
+    parseHostsFile(
+      `version: 1\nhosts:\n  - { id: bastion, name: bastion, address: 10.0.0.9 }\ngroups:\n  - id: lab\n    name: Lab\n    ssh: { jump: bastion, user: u, auth: { password: '\${secret:a_pw}' } }\n    hosts:\n      - { id: a, name: Console, env: { STAGE: blue }, ssh: { protocol: serial, serial: { baud: 9600 } } }\n`,
+    );
+  const device = (path: string | undefined) => vi.fn(() => Promise.resolve(path));
+
+  it('opens this machine’s device with the line settings, reads no secret, and probes no OS', async () => {
+    const serial = fakeSession('c1');
+    const openSerial = vi.fn(() => Promise.resolve(serial.session));
+    const serialDevice = device('/dev/ttyUSB0');
+    const secretsFor = vi.fn(() => vi.fn(() => Promise.resolve(undefined)));
+    const { service, open, emit } = make({ file: serialFile(), openSerial, serialDevice, secretsFor });
+    const result = await service.connect(as(sender(1)), { ...CONNECT, attemptId: 'x1' });
+    expect(result).toEqual({ sessionId: 'c1' });
+    expect(open).not.toHaveBeenCalled();
+    expect(serialDevice).toHaveBeenCalledWith(expect.anything(), 'a');
+    expect(openSerial).toHaveBeenCalledWith({
+      path: '/dev/ttyUSB0',
+      line: { baud: 9600, dataBits: 8, parity: 'none', stopBits: 1, flowControl: 'none' },
+    });
+    expect((secretsFor.mock.results[0]?.value as ReturnType<typeof vi.fn>).mock.calls).toEqual([]);
+    const logged = emit.mock.calls
+      .filter((call) => (call[1] as { name?: string }).name === 'ssh.connectProgress')
+      .map((call) => JSON.stringify(call[2]));
+    expect(logged.join('\n')).toContain('Opening /dev/ttyUSB0 at 9600 8N1');
+    await flush();
+    expect(serial.exec).not.toHaveBeenCalled();
+  });
+
+  it('logs the session under the device, with no port and no user', async () => {
+    const sessionLog = vi.fn(() => Promise.resolve(undefined));
+    const { service } = make({
+      file: serialFile(),
+      openSerial: () => Promise.resolve(fakeSession('c1').session),
+      serialDevice: device('COM3'),
+      sessionLog,
+    });
+    await service.connect(as(sender(1)), CONNECT);
+    expect(sessionLog).toHaveBeenCalledWith(expect.anything(), {
+      hostId: 'a',
+      hops: [],
+      target: { address: 'COM3', port: 0, user: '' },
+    });
+  });
+
+  it('asks for a device when this machine has none for the host', async () => {
+    const openSerial = vi.fn();
+    const { service } = make({ file: serialFile(), openSerial, serialDevice: device(undefined) });
+    await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({
+      code: 'serial-device-unset',
+      details: { hostId: 'a' },
+    });
+    expect(openSerial).not.toHaveBeenCalled();
+  });
+
+  it('refuses a serial host when this build switched serial off, or has no binding', async () => {
+    const off = make({ file: serialFile(), openSerial: vi.fn(), serialDevice: device('COM3'), serial: false });
+    await expect(off.service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({ code: 'serial-off' });
+    const none = make({ file: serialFile(), serialDevice: device('COM3') });
+    await expect(none.service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({ code: 'serial-unavailable' });
+  });
+
+  it('passes the port’s own refusal on', async () => {
+    const busy = Object.assign(new Error('COM3 is in use by another program'), { code: 'serial-device-busy' });
+    const { service } = make({
+      file: serialFile(),
+      openSerial: () => Promise.reject(busy),
+      serialDevice: device('COM3'),
+    });
+    await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({ code: 'serial-device-busy' });
   });
 });

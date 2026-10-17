@@ -156,6 +156,12 @@ export interface UiStore extends UiSnapshot {
   /** Whether this run has the local terminal tab on (#410; `WIREBENCH_AREAS`). Transient — answered by main. */
   readonly localTerminalEnabled: boolean;
   readonly setLocalTerminalEnabled: (enabled: boolean) => void;
+  /** Whether this run lets Telnet hosts connect (#425; `WIREBENCH_AREAS`). Transient — answered by main. */
+  readonly telnetEnabled: boolean;
+  readonly setTelnetEnabled: (enabled: boolean) => void;
+  /** Whether this run lets serial consoles connect (#426; `WIREBENCH_AREAS`). Transient — answered by main. */
+  readonly serialEnabled: boolean;
+  readonly setSerialEnabled: (enabled: boolean) => void;
   /** The protocol kinds this run has switched on (`WIREBENCH_KINDS`). Transient — answered by main. */
   readonly enabledKinds: readonly KindId[];
   readonly setEnabledKinds: (ids: readonly KindId[]) => void;
@@ -338,6 +344,14 @@ export const useUiStore = create<UiStore>((set, get) => {
       }
     },
     localTerminalEnabled: true,
+    telnetEnabled: true,
+    setTelnetEnabled: (enabled) => {
+      set({ telnetEnabled: enabled });
+    },
+    serialEnabled: true,
+    setSerialEnabled: (enabled) => {
+      set({ serialEnabled: enabled });
+    },
     setLocalTerminalEnabled: (enabled) => {
       set({ localTerminalEnabled: enabled });
     },

@@ -242,6 +242,24 @@ export function connectFailureSentence(error: ConnectError, purpose: ConnectPurp
       return `Mosh connects to ${host} directly over UDP, and that address does not resolve on this computer. A host behind a jump host is often not reachable directly: switch it to SSH.`;
     case 'mosh-unavailable':
       return 'Mosh sessions are not available on this computer.';
+    case 'telnet-off':
+      return 'Telnet is switched off in this build of Wirebench. Connect to the device over SSH instead.';
+    case 'ssh-jump-not-ssh':
+      return `The jump host is ${details['protocol'] === 'serial' ? 'a serial console' : 'a Telnet host'}, and a jump host must be reached over SSH. Pick an SSH jump host in the host's Advanced settings.`;
+    case 'ssh-protocol-unsupported':
+      return `This is ${details['protocol'] === 'serial' ? 'a serial console' : 'a Telnet host'}: files, port forwarding and keys need SSH.`;
+    case 'serial-off':
+      return 'Serial consoles are switched off in this build of Wirebench.';
+    case 'serial-unavailable':
+      return 'Serial ports are not available on this computer.';
+    case 'serial-device-unset':
+      return 'Pick the serial port this console is plugged into on this computer.';
+    case 'serial-device-missing':
+      return `${text(details, 'device') ?? 'The serial port'} is not on this computer. Plug the adapter in, or pick another port.`;
+    case 'serial-device-busy':
+      return `${text(details, 'device') ?? 'The serial port'} is in use by another program. Close it there, then retry.`;
+    case 'serial-permission':
+      return `Wirebench may not open ${text(details, 'device') ?? 'the serial port'}. On Linux, add yourself to the dialout group (sudo usermod -aG dialout $USER), then sign out and in again.`;
     case 'sftp-unavailable':
       return `Signed in, but ${who} offers no SFTP. Enable the SFTP subsystem on the server to browse its files.`;
     case 'ssh-hosts-invalid':
@@ -285,6 +303,14 @@ export function connectErrorKind(code: string): ConnectErrorKind {
     case 'mosh-client-missing':
     case 'ssh-device-key-missing':
     case 'ssh-device-key-unavailable':
+    case 'telnet-off':
+    case 'ssh-jump-not-ssh':
+    case 'ssh-protocol-unsupported':
+    case 'serial-off':
+    case 'serial-unavailable':
+    case 'serial-device-unset':
+    case 'serial-device-missing':
+    case 'serial-permission':
       return 'settings';
     case 'ssh-host-key-new':
     case 'ssh-host-key-changed':
@@ -304,7 +330,7 @@ export interface SignIn {
 /**
  * What the screen offers for a failed connect. `retryPrimary`: Retry is the main button, since trying again
  * can work. `ask`: a field on the screen fixes it there: the user to sign in as, or the password for `user`,
- * stored under the host's secret `secret`, or the security key's PIN for the next connect.
+ * stored under the host's secret `secret`, the security key's PIN for the next connect, or a serial port.
  */
 export type ConnectFix =
   | { readonly kind: ConnectErrorKind; readonly retryPrimary: boolean; readonly ask?: undefined }
@@ -317,7 +343,9 @@ export type ConnectFix =
       readonly user: string | undefined;
     }
   /** The security key needs its PIN (#420); `wrong` after one it refused. */
-  | { readonly kind: ConnectErrorKind; readonly retryPrimary: false; readonly ask: 'pin'; readonly wrong: boolean };
+  | { readonly kind: ConnectErrorKind; readonly retryPrimary: false; readonly ask: 'pin'; readonly wrong: boolean }
+  /** A serial console (#426) has no device on this computer yet, or the one it had is gone: pick one. */
+  | { readonly kind: ConnectErrorKind; readonly retryPrimary: false; readonly ask: 'device' };
 
 /** Retry stays primary unless the same attempt would fail the same way: a refused sign-in or a setting. */
 export function connectFix(error: ConnectError, target: SignIn | undefined): ConnectFix {
@@ -327,6 +355,9 @@ export function connectFix(error: ConnectError, target: SignIn | undefined): Con
   const reason = details['reason'];
   if (error.code === 'ssh-sk-pin' && (reason === 'required' || reason === 'wrong')) {
     return { kind, retryPrimary: false, ask: 'pin', wrong: reason === 'wrong' };
+  }
+  if (error.code === 'serial-device-unset' || error.code === 'serial-device-missing') {
+    return { kind, retryPrimary: false, ask: 'device' };
   }
   if (target === undefined || retryPrimary) return { kind, retryPrimary };
   const hostId = details['hostId'];

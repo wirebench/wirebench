@@ -33,6 +33,8 @@ export function registerAppChannels(
   enabledAreas: readonly AreaId[] = AREAS.map((area) => area.id),
   enabledKinds: readonly KindId[] = enabledKindsFromEnv({}),
   localTerminal = enabledAreas.includes('ssh'),
+  telnet = enabledAreas.includes('ssh'),
+  serial = enabledAreas.includes('ssh'),
 ): void {
   registerHandler(channels.app.version, () =>
     Promise.resolve({
@@ -42,7 +44,9 @@ export function registerAppChannels(
     }),
   );
 
-  registerHandler(channels.app.areas, () => Promise.resolve({ enabled: [...enabledAreas], localTerminal }));
+  registerHandler(channels.app.areas, () =>
+    Promise.resolve({ enabled: [...enabledAreas], localTerminal, telnet, serial }),
+  );
 
   registerHandler(channels.app.kinds, () => Promise.resolve({ enabled: [...enabledKinds] }));
 

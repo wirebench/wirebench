@@ -54,6 +54,12 @@ export interface HopCredentials {
   readonly proxy?: ProxyCredentials;
 }
 
+/**
+ * Where a session that is not SSH connects (#425): its address and port, how long to wait, and the proxy to
+ * dial it through when it is the first network hop.
+ */
+export type TcpTarget = Pick<HopCredentials, 'address' | 'port' | 'connectTimeout' | 'proxy'>;
+
 export interface DialOptions {
   /** Outermost first, target last. */
   readonly hops: readonly HopCredentials[];
@@ -109,7 +115,8 @@ export interface DialledChain {
  */
 export class SshConnectError extends SshModelError {}
 
-export const hostOf = (hop: HopCredentials): string => `${hop.address}:${hop.port}`;
+export const hostOf = (hop: { readonly address: string; readonly port: number }): string =>
+  `${hop.address}:${hop.port}`;
 
 /** The words a log line and a step use for an auth method. */
 function methodLabel(type: string, hop: HopCredentials): string {
@@ -210,7 +217,7 @@ function trackAuth(config: ConnectConfig, hop: HopCredentials, progress: HopProg
  * With a proxy, the connection goes to the proxy, which is then asked for a tunnel to the hop; the proxy
  * resolves the hop's name.
  */
-function openSocket(hop: HopCredentials, index: number, progress: HopProgress): Promise<Socket> {
+function openSocket(hop: TcpTarget, index: number, progress: HopProgress): Promise<Socket> {
   const host = hostOf(hop);
   const proxy = hop.proxy;
   const proxyName = proxy === undefined ? undefined : `${proxyKind(proxy)} ${proxyTargetOf(proxy.host, proxy.port)}`;
@@ -697,7 +704,7 @@ function handshake(
 function forwardOut(
   client: Client,
   via: HopCredentials,
-  next: HopCredentials,
+  next: TcpTarget,
   index: number,
   progress: HopProgress,
 ): Promise<Duplex> {
@@ -730,6 +737,45 @@ function forwardOut(
 
 /** Connects every hop in turn, each through a forwarded channel on the one before it. */
 export async function dialChain(options: DialOptions): Promise<DialledChain> {
+  return dialHops(options, options.hops.length);
+}
+
+/**
+ * A TCP connection to `target` for a session that is not SSH (#425): straight, through its proxy, or, with
+ * `hops`, a channel from the last SSH jump host. The connection screen shows the target as one hop more.
+ * `chain` is the jump chain, when there is one: ending the session ends it.
+ *
+ * @throws SshConnectError `ssh-connect-failed` (with `reason`), and every refusal of the jump chain's dial
+ */
+export async function dialTcp(
+  options: Omit<DialOptions, 'forwardAgent'> & { readonly target: TcpTarget },
+): Promise<{ readonly socket: Duplex; readonly chain?: DialledChain }> {
+  const total = options.hops.length + 1;
+  const index = options.hops.length;
+  const progress = new HopProgress(options.onProgress, index, total, hostOf(options.target));
+  const counted = (error: unknown): unknown =>
+    error instanceof SshModelError
+      ? new SshConnectError(error.code, error.message, { ...error.details, hops: total })
+      : error;
+  if (options.hops.length === 0) {
+    try {
+      return { socket: await openSocket(options.target, index, progress) };
+    } catch (error) {
+      throw counted(error);
+    }
+  }
+  const chain = await dialHops(options, total);
+  try {
+    const via = options.hops[index - 1] as HopCredentials;
+    return { socket: await forwardOut(chain.client, via, options.target, index, progress), chain };
+  } catch (error) {
+    chain.endAll();
+    throw counted(error);
+  }
+}
+
+/** {@link dialChain}, telling the connection screen there are `shown` hops in all. */
+async function dialHops(options: DialOptions, shown: number): Promise<DialledChain> {
   const clients: Client[] = [];
   const lostListeners = new Set<() => void>();
   // `endAll` from this side is not a lost connection: the end and close events it causes are ignored.
@@ -749,8 +795,7 @@ export async function dialChain(options: DialOptions): Promise<DialledChain> {
   };
   try {
     let sock: Duplex | undefined;
-    const count = options.hops.length;
-    const progress = options.hops.map((hop, index) => new HopProgress(options.onProgress, index, count, hostOf(hop)));
+    const progress = options.hops.map((hop, index) => new HopProgress(options.onProgress, index, shown, hostOf(hop)));
     for (const [index, hop] of options.hops.entries()) {
       const client = await connectHop(hop, index, options, sock, onLost, progress[index] as HopProgress);
       clients.push(client);
@@ -776,7 +821,7 @@ export async function dialChain(options: DialOptions): Promise<DialledChain> {
     endAll();
     // Which hop failed means more with how many there are: the screen tells a jump host from the target.
     if (error instanceof SshModelError)
-      throw new SshConnectError(error.code, error.message, { ...error.details, hops: options.hops.length });
+      throw new SshConnectError(error.code, error.message, { ...error.details, hops: shown });
     throw error;
   }
 }

@@ -1,4 +1,6 @@
 import { userInfo } from 'node:os';
+import type { WebContents } from 'electron';
+import { WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { ForwardService } from '../forward-service.js';
 import { registerHandler } from '../ipc/register.js';
@@ -8,6 +10,8 @@ import type { KnownHostsImportService } from '../known-hosts-import.js';
 import type { SshImportService } from '../ssh-import.js';
 import type { SshKeysService } from '../ssh-keys.js';
 import type { SshSecretsService } from '../ssh-secrets.js';
+import type { SerialDeviceStore } from '../serial-devices.js';
+import type { SerialPortEntry } from '../serial-session.js';
 import type { SshService } from '../ssh-service.js';
 import { registerLayoutChannels } from './layout-channels.js';
 import { registerForwardChannels } from './forward-channels.js';
@@ -42,6 +46,13 @@ export function registerSshChannels(deps: {
   edits: Parameters<typeof registerSftpChannels>[0]['edits'];
   forward: Parameters<typeof registerForwardChannels>[0]['forward'] & Pick<ForwardService, 'hostsChanged'>;
   sessionLogs: Parameters<typeof registerSessionLogChannels>[0];
+  /** Serial consoles (#426): this machine's ports, and the device it opens for each serial host. */
+  serial: {
+    ports: () => Promise<readonly SerialPortEntry[]>;
+    devices: Pick<SerialDeviceStore, 'get' | 'set'>;
+    /** The calling window's open workspace: a device is remembered per workspace and host. */
+    workspaceOf: (sender: WebContents) => string | undefined;
+  };
 }): void {
   registerHandler(channels.ssh.listHosts, () => deps.hosts.list());
   registerHandler(channels.ssh.saveHosts, async (request, sender) => {
@@ -94,6 +105,20 @@ export function registerSshChannels(deps: {
   registerHandler(channels.ssh.hostOs, async () => ({ entries: await deps.ssh.hostOs() }));
   registerHandler(channels.ssh.setHostOs, async (request, sender) => {
     await deps.ssh.setHostOs(sender, request);
+    return {};
+  });
+  const serialWorkspace = (sender: WebContents): string => {
+    const id = deps.serial.workspaceOf(sender);
+    if (id === undefined) throw new WirebenchError('workspace-not-open', 'Open a workspace first');
+    return id;
+  };
+  registerHandler(channels.ssh.serialPorts, async () => ({ ports: [...(await deps.serial.ports())] }));
+  registerHandler(channels.ssh.serialDevice, async (request, sender) => {
+    const device = await deps.serial.devices.get(serialWorkspace(sender), request.hostId);
+    return device === undefined ? {} : { device };
+  });
+  registerHandler(channels.ssh.setSerialDevice, async (request, sender) => {
+    await deps.serial.devices.set(serialWorkspace(sender), request.hostId, request.device);
     return {};
   });
   // A preview belongs to the window that asked for it; only that window can apply it.
