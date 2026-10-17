@@ -188,6 +188,11 @@ function tlsConnectOptions(tls: TlsOptions): buildConnector.BuildOptions {
 const CREDENTIAL_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie']);
 
 /** Origin as scheme + host + port (host already includes a non-default port). */
+/** The port a URL connects to, its scheme's default when it names none. */
+function portOf(url: URL): number {
+  return url.port !== '' ? Number(url.port) : url.protocol === 'https:' ? 443 : 80;
+}
+
 function originOf(url: URL): string {
   return `${url.protocol}//${url.host}`;
 }
@@ -508,6 +513,7 @@ export async function sendHttp(
           deadlineHit: deadlineController.signal.aborted,
           hadProxy: req.proxy !== undefined,
           host: currentUrl.host,
+          port: portOf(currentUrl),
           timeoutMs: req.timeoutMs,
         });
       }
@@ -617,6 +623,7 @@ export async function sendHttp(
           deadlineHit: deadlineController.signal.aborted,
           hadProxy: req.proxy !== undefined,
           host: currentUrl.host,
+          port: portOf(currentUrl),
           timeoutMs: req.timeoutMs,
         });
       }

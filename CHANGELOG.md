@@ -74,6 +74,9 @@ All notable changes to this project are documented here. The format follows
   collection whose multipart body has a file part without a file, from Postman, Insomnia, Thunder
   Client or Hoppscotch, now keeps that row as a switched-off text part, and the import report names
   the request and tells you to pick the file again on the Body tab.
+- **No orphan warning for a saved golden.** Opening a project, or `wirebench run`, no longer warns
+  `"<request>.golden.yaml" does not belong to any request` for a golden saved beside its request, in
+  any protocol. A golden whose request is gone is still reported.
 - **Environment rows show colour and protection.** The Environments list now shows each
   environment's colour dot and, for a protected one, its lock, as the title-bar switcher does. The
   Environment details panel stays as you left it, open or put away, when you come back to an
@@ -107,6 +110,13 @@ All notable changes to this project are documented here. The format follows
 - **A refused proxy tunnel no longer reads as Cancelled.** When an HTTPS request goes through a proxy
   that refuses the tunnel (a 407 for a wrong or missing proxy password), the send now fails with
   "Proxy connection failed" and the proxy's status, instead of showing as if you had cancelled it.
+- **A failed send says what happened once, and where.** The error panel names the host and port a
+  refused connection was aimed at ("Couldn't connect to 127.0.0.1:9") and the host that did not
+  resolve, and leaves out a message that only repeats its title. The HTTP Log names a failed row the
+  way the panel does ("Connection refused", not `connection-refused`), with the code in its tooltip.
+  A `${` that is never closed is reported as such, naming the field it is in with a link to it,
+  instead of as a variable missing from the environment. Cancelling a send keeps the response you
+  were looking at, under a one-line "Cancelled after … · Retry" bar (#631).
 - **Imported requests no longer show their method twice.** An OpenAPI operation with no summary or
   operation id, and a request from **Import cURL…**, is now named by its path alone (`/pets/{id}`), since
   the method badge beside it already says GET or POST. A request imported earlier as `GET /pets/{id}`
