@@ -1,17 +1,19 @@
 /**
- * Scripts imported from another client run (script layers): an Insomnia export is imported, its
- * scripts arrive switched off, and once switched on a variable the first request's script sets is
- * what the second request sends.
+ * Scripts imported from another client run (script layers): an Insomnia or Bruno import arrives with
+ * its scripts switched off, and once switched on a variable the first request's script sets is what
+ * the second request sends.
  */
-import { mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { importBruno } from '../../../src/import/bruno/import.js';
 import { mapInsomnia } from '../../../src/import/insomnia/map.js';
 import { parseInsomnia } from '../../../src/import/insomnia/parse.js';
 import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
 import type { Project } from '../../../src/project/model.js';
-import { apiRequests } from '../../../src/rest/model.js';
+import { apiFolders, apiRequests } from '../../../src/rest/model.js';
 import type { RestApi } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
 import { runRequests } from '../../../src/run/run.js';
@@ -125,4 +127,160 @@ describe('imported client scripts in a run', () => {
     expect(result.requests).toHaveLength(2);
     expect(result.requests[1]!.assertions).toEqual([]);
   });
+});
+
+const BRUNO_BASIC = fileURLToPath(new URL('../../../../../fixtures/bruno/crafted/basic', import.meta.url));
+
+/** Writes `files` (relative POSIX path to text) under a fresh folder of `dir`, and returns it. */
+function writeFolder(name: string, files: Record<string, string>): string {
+  const root = join(dir, name);
+  for (const [rel, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, rel)), { recursive: true });
+    writeFileSync(join(root, rel), text);
+  }
+  return root;
+}
+
+/** Turns on every script an import attached, at any level. */
+function switchOn(api: RestApi): void {
+  for (const holder of [...apiFolders(api), ...apiRequests(api)]) {
+    if (holder.scripts !== undefined) (holder as { scripts: unknown }).scripts = { ...holder.scripts, enabled: true };
+  }
+}
+
+async function brunoProject(root: string): Promise<{ project: Project; api: RestApi }> {
+  let n = 0;
+  const mapped = await importBruno({ kind: 'folder', path: root }, { newId: () => `b${String((n += 1))}` });
+  const api = mapped.collections[0]!.rest!;
+  return { project: projectFrom(api), api };
+}
+
+const outcomes = (r: { assertions: readonly { label: string; outcome: string }[] }): string[][] =>
+  r.assertions.map((a) => [a.label, a.outcome]);
+
+describe('imported Bruno scripts in a run', () => {
+  it('an imported Bruno post script captures a value the next request sends', { timeout: 30_000 }, async () => {
+    // The crafted collection, with its requests pointed at the test server's /echo and the two
+    // references only an environment could fill (the collection's token, the path's {{userId}}) given values,
+    // and the digest login, whose password is a secret, switched off.
+    const root = join(dir, 'bruno-basic');
+    cpSync(BRUNO_BASIC, root, { recursive: true });
+    const edit = (rel: string, change: (text: string) => string): void => {
+      writeFileSync(join(root, rel), change(readFileSync(join(root, rel), 'utf8')));
+    };
+    edit('collection.bru', (t) => t.replace('{{process.env.TOKEN}}', 'literal-token'));
+    for (const file of readdirSync(join(root, 'users'))) {
+      edit(`users/${file}`, (t) =>
+        t
+          .replace(/^( {2}url: ).*$/m, `$1${rest.url}/echo`)
+          // The echo has no `id`: capture the method it answers with instead.
+          .replaceAll('res.body.id', 'res.body.method')
+          .replace('id: {{userId}}', 'id: 7')
+          // Digest auth keeps its password as a secret, which a run has no store for.
+          .replace('auth: digest', 'auth: none'),
+      );
+    }
+    const { project, api } = await brunoProject(root);
+    for (const r of apiRequests(api)) {
+      if (r.name === 'Get user') {
+        // A value a script sets is read as ${#Sequence#name}; an imported {{userId}} is not rewritten to it.
+        (r as { headers: unknown }).headers = [{ name: 'X-Echo', value: '${#Sequence#userId}', enabled: true }];
+        (r as { scripts: unknown }).scripts = {
+          post: {
+            text: "test('sent the captured id', function () { expect(res.body.headers['x-echo']).to.equal('POST'); });",
+          },
+          api: 'bruno',
+          enabled: true,
+          secrets: [],
+        };
+      }
+      if (r.name === 'Create user') (r as { scripts: unknown }).scripts = { ...r.scripts, enabled: true };
+    }
+    const { selected } = selectRequests(project, []);
+    const wanted = selected.filter((s) => ['Create user', 'Get user'].includes(s.request.name));
+    const result = await runRequests(wanted, {
+      project,
+      projectDir: dir,
+      overrides: {},
+      host: { getSecret: () => Promise.resolve(undefined) },
+      scripting: new RequestScripting({ sandbox, checker }),
+    });
+    expect(result.requests.map((r) => r.name)).toEqual(['Create user', 'Get user']);
+    expect(outcomes(result.requests[1]!)).toEqual([['sent the captured id', 'passed']]);
+  });
+
+  const collection = (extra: Record<string, string>): string =>
+    writeFolder(`bruno-${String(Math.random()).slice(2)}`, {
+      'bruno.json': JSON.stringify({ version: '1', name: 'order', type: 'collection' }),
+      ...extra,
+    });
+  const get = (name: string, seq: number, blocks: string): string =>
+    `meta {\n  name: ${name}\n  type: http\n  seq: ${String(seq)}\n}\n\nget {\n  url: ${rest.url}/echo\n  body: none\n  auth: none\n}\n\n${blocks}`;
+
+  it(
+    "with the API's scripts off, the request's post script runs before its folder's",
+    { timeout: 30_000 },
+    async () => {
+      // A Bruno collection with no flow setting is a sandwich: the API holds only postResponseOrder
+      // 'inner-first', and its level is not run.
+      const root = collection({
+        'f/folder.bru': [
+          'meta {\n  name: F\n  seq: 1\n}\n',
+          'script:post-response {',
+          '  bru.setVar("order", (bru.getVar("order") || "") + "F");',
+          '  test("the request ran first", function () { expect(bru.getVar("order")).to.equal("RF"); });',
+          '}\n',
+        ].join('\n'),
+        'f/r.bru': get(
+          'R',
+          1,
+          'script:post-response {\n  bru.setVar("order", (bru.getVar("order") || "") + "R");\n}\n',
+        ),
+      });
+      const { project, api } = await brunoProject(root);
+      expect(api.scripts).toMatchObject({ postResponseOrder: 'inner-first' });
+      switchOn(api);
+      (api as { scripts: unknown }).scripts = { ...api.scripts, enabled: false };
+      const { selected } = selectRequests(project, []);
+      const result = await runRequests(selected, {
+        project,
+        projectDir: dir,
+        overrides: {},
+        host: { getSecret: () => Promise.resolve(undefined) },
+        scripting: new RequestScripting({ sandbox, checker }),
+      });
+      expect(result.requests).toHaveLength(1);
+      expect(outcomes(result.requests[0]!)).toEqual([['the request ran first', 'passed']]);
+    },
+  );
+
+  it(
+    'runs a .jsonSchema assertion through the real worker: a matching body passes, a mismatch fails',
+    { timeout: 30_000 },
+    async () => {
+      const root = collection({
+        'ok.bru': get(
+          'Ok',
+          1,
+          'tests {\n  test("matches", function () { expect(res.body).to.have.jsonSchema({ type: "object", required: ["method"] }); });\n}\n',
+        ),
+        'bad.bru': get(
+          'Bad',
+          2,
+          'tests {\n  test("mismatches", function () { expect(res.body).to.have.jsonSchema({ type: "object", required: ["nope"] }); });\n}\n',
+        ),
+      });
+      const { project, api } = await brunoProject(root);
+      switchOn(api);
+      const { selected } = selectRequests(project, []);
+      const result = await runRequests(selected, {
+        project,
+        projectDir: dir,
+        overrides: {},
+        host: { getSecret: () => Promise.resolve(undefined) },
+        scripting: new RequestScripting({ sandbox, checker }),
+      });
+      expect(result.requests.map((r) => outcomes(r))).toEqual([[['matches', 'passed']], [['mismatches', 'failed']]]);
+    },
+  );
 });

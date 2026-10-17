@@ -215,12 +215,12 @@ class Mapper {
   wsFolders = 0;
   assertions = 0;
   assertionsSkipped = 0;
-  /** The scripts of every level, for the Bruno layer, keyed by item path. */
+  /** The scripts of every level, for the Bruno layer, keyed by the item itself. */
   readonly scriptLevels: ReadonlyMap<OcItem, RequestScripts>;
   private readonly collectionScripts: RequestScripts | undefined;
   /** The levels whose scripts an API of the import holds. */
   private readonly attached = new Set<OcItem | 'collection'>();
-  /** What was attached to the REST tree, for the report. */
+  /** What was attached to the REST and gRPC trees, for the report. */
   readonly scriptLog = new ScriptImportLog('bruno');
   readonly modules: readonly OcModule[];
   /** The `.proto` files the gRPC items name. */

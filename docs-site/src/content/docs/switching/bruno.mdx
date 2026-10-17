@@ -15,8 +15,8 @@ into up to three APIs in the project you choose:
 - WebSocket requests become a **WebSocket API**.
 
 Collection and folder variables become project properties, and each environment becomes a
-workspace environment. Scripts and tests are kept as text and never run. Credentials do not come
-across as plain text. The import summary lists everything that was left out or changed.
+workspace environment. Scripts and tests are attached to their requests, folders and APIs, switched
+off. Credentials do not come across as plain text. The import summary lists everything that was left out or changed.
 
 ## Steps
 
@@ -68,7 +68,7 @@ instead, even with a `bruno.json` beside it.
 | `settings` `omitHeaders` | The generated headers the request leaves out | |
 | `docs` | The request's description | |
 | `assert` | Request assertions; see [Assertions](#assertions) | [Assertions](/wirebench/docs/guides/assertions/) |
-| `script:pre-request`, `script:post-response`, `tests` | See [Scripts](#scripts) | |
+| `script:pre-request`, `script:post-response`, `tests` | Attached to the request, switched off. See [Scripts](#scripts) | [Scripts from other clients](/wirebench/docs/guides/scripts/#bruno-scripts) |
 
 ### Auth
 
@@ -121,10 +121,37 @@ note.
 
 ### Scripts
 
-Every `script:pre-request`, `script:post-response` and `tests` block, on the collection, a folder
-or a request, and every `.js` file in the collection, is written as it is to `imported-scripts/` in
-the project folder, and never read back or run. An existing file is never overwritten: a second
-import adds a number to the name. The notes list where each script went.
+Every `script:pre-request`, `script:post-response` and `tests` block is attached as it is, switched
+off, to the level it was on: the collection's to the API (the REST and the gRPC API both, when there
+are both), a folder's to the folder, a request's to the request. A request's post-response script and
+its `tests` block become one post-response script. The import summary lists the levels that have
+scripts, and the calls in them that cannot run.
+
+Read a script, then switch it on from the request's banner, or use **Switch on scripts…** on an API or
+folder. It runs against Bruno's own names: `test`, `expect` (with `.jsonSchema`), `bru`, `req` and
+`res`. These fail when called, with `script-unsupported` naming them:
+
+- `bru.sendRequest`: a login whose token the next request uses is a
+  [sequence](/wirebench/docs/guides/sequences/) step with a transfer.
+- `require`.
+- `bru.cookies` and `bru.sleep`.
+- `req.setTimeout`, `getTimeout`, `setMaxRedirects`, `onFail` and `disableParsingResponseJson`: use the
+  request's **Settings**.
+
+Three things change from Bruno. A variable a script sets lasts for the run and is never written to an
+environment file, and the next request reads it as `${#Sequence#name}`; a `{{name}}` in a request
+becomes `${name}`, which reads the environment, so change it where a script's value is meant.
+`bru.interpolate` leaves a dynamic `{{$name}}` and `{{process.env.NAME}}` as written. And
+`bruno.json`'s `scripts.flow` becomes the API's **Post-response order**: `sandwich`, or no flow, is
+**Innermost first**, and `sequential` is **Outermost first**.
+
+Some scripts cannot be attached and are written as they are to `imported-scripts/` in the project
+folder instead, never read back or run: the `.js` module files in the collection, scripts on a
+WebSocket request or a folder holding only WebSocket requests, and a collection script when the
+collection has no REST or gRPC request. An existing file is never overwritten: a second import adds a
+number to the name, and the notes list where each went.
+
+The [Scripts guide](/wirebench/docs/guides/scripts/#bruno-scripts) has the full table.
 
 ## The JSON export
 
@@ -180,7 +207,8 @@ scripts and `.proto` files as not imported.
 
 </Steps>
 
-<Aside type="note" title="Scripts are kept, not translated">
-An imported script is text written against another client's scripting API. Wirebench never runs it;
-rewrite what you need as a Wirebench script or as assertions.
+<Aside type="note" title="Scripts arrive switched off">
+An imported script is code nobody on your team has read. It runs only after you switch it on, and calls
+Wirebench cannot honour fail with `script-unsupported`. Rewrite what you need as a Wirebench script or
+as assertions.
 </Aside>

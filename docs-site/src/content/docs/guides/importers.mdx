@@ -358,8 +358,8 @@ only when the collection has items of that kind. Auto-detect recognizes a docume
 
 </Steps>
 
-The summary counts the APIs, requests and folders, the assertions mapped and not, and the scripts
-kept as text, then lists the environments and project properties added and the secrets stored.
+The summary counts the APIs, requests and folders, the assertions mapped and not, and the script
+files kept as text, then lists the environments and project properties added and the secrets stored.
 **Things to look at**, **Notes** and **Copy report** work as they do for a legacy project.
 
 - **Variables.** Collection and folder variables become project properties; the first definition
@@ -369,7 +369,10 @@ kept as text, then lists the environments and project properties added and the s
   becomes a workspace environment, renamed when the name is taken and **never made active**. A
   `secret: true` variable, and a literal value whose name looks like a credential, become secrets
   in the [secret store](/wirebench/docs/guides/secrets/).
-- **Scripts** are saved as text under `imported-scripts/` and never run.
+- **Scripts** are attached to their requests, folders and APIs, switched off, and run once you switch
+  them on, against the same `bru`, `req` and `res` names as a Bruno import. Script file items are
+  saved as text under `imported-scripts/` and never run. See
+  [Scripts from other clients](/wirebench/docs/guides/scripts/#bruno-scripts).
 - **Assertions** on the status, the response time and JSON body paths become request assertions.
   Others are listed in the report, and so is an assertion that compares a credential-named value
   with a literal one.
@@ -462,7 +465,10 @@ recognizes a folder by its `bruno.json`, and an export by its content.
   listed so you can set it. `{{process.env.NAME}}` becomes `${#System#NAME}`.
 - **`.env` files are never read**: they hold secrets and are kept out of repositories.
 - **Assertions.** `assert` lines become request assertions where Wirebench has the operator.
-- **Scripts and tests** are saved as text under `imported-scripts/` and never run.
+- **Scripts and tests** are attached to their requests, folders and APIs, switched off, and run once
+  you switch them on. The summary lists the calls Wirebench cannot run. Module `.js` files, and scripts
+  on a level that cannot hold one, are saved as text under `imported-scripts/`. See
+  [Scripts from other clients](/wirebench/docs/guides/scripts/#bruno-scripts).
 - **Credentials** are never imported as plain text, and a proxy password in an export is never
   copied.
 - **gRPC definitions.** A `.proto` file inside the collection folder becomes the gRPC API's
@@ -471,8 +477,8 @@ recognizes a folder by its `bruno.json`, and an export by its content.
   export over 50 MB. Links are not followed, and `mocks/`, `node_modules` and `.git` are skipped.
 
 From the command line, `wirebench import <folder>` (or its `bruno.json`, or an export) adds the same
-APIs and the plain collection and folder variables, and lists secrets, environments and scripts as
-not imported. See [From Bruno](/wirebench/docs/switching/bruno/) for every rule, and what does not
+APIs and the plain collection and folder variables, attaches the scripts switched off as the desktop
+does, and lists secrets, environments and module files as not imported. See [From Bruno](/wirebench/docs/switching/bruno/) for every rule, and what does not
 come across.
 
 ## Hoppscotch exports

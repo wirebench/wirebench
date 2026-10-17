@@ -15,7 +15,7 @@ collection into up to three APIs in the project you choose:
 - WebSocket items become a **WebSocket API**.
 
 The collection's variables become project properties and its environments become workspace
-environments. Scripts are kept as text and never run. Assertions come across when Wirebench has an
+environments. Scripts are attached switched off. Assertions come across when Wirebench has an
 equivalent. Credentials do not come across as plain text. The import summary lists everything that
 was left out or changed, so you know what to set up before the first send.
 
@@ -127,12 +127,17 @@ also from each file under `environments/`. Each one becomes a workspace environm
 
 ### Scripts
 
-Every script is written as it is to `imported-scripts/` in the project folder, and never read back
-or run. That covers the collection's and each folder's `request.scripts`, each request's
-`runtime.scripts`, and script file items. A script lands at
-`imported-scripts/<api>/<owner>.<type>.js`, for example `imported-scripts/pets/get user.tests.js`.
-An existing file is never overwritten: a second import adds a number to the name. The notes list
-where each script went.
+The collection's and each folder's `request.scripts` and each request's `runtime.scripts` are attached,
+as they are, to the API, folder or request they were on, switched off. They run against Bruno's names
+(`bru`, `req`, `res`, `test` and `expect`) once you switch them on; see
+[Bruno scripts](/wirebench/docs/guides/scripts/#bruno-scripts) for what is supported and what fails
+with `script-unsupported`. A request's `after-response` script and its `tests` become one
+post-response script.
+
+Script file items, and a script on a level that cannot hold one, are written as they are to
+`imported-scripts/` in the project folder, and never read back or run. A script lands at
+`imported-scripts/<api>/<owner>.<type>.js`. An existing file is never overwritten: a second import
+adds a number to the name. The notes list where each script went.
 
 ### Assertions
 

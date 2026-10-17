@@ -2459,7 +2459,7 @@ function OpenCollectionSummary({ value }: { readonly value: ApiImportOpenCollect
         )}
         {counts.scripts > 0 && (
           <p data-testid="import-opencollection-scripts" className="mt-1 text-xs text-fg-subtle">
-            {plural(counts.scripts, 'script')} kept as text, never run
+            {plural(counts.scripts, 'script file')} kept as text
           </p>
         )}
         {variables !== undefined && <VariablesLines summary={variables} testId="import-opencollection" />}
@@ -2531,7 +2531,7 @@ function ClientImportSummary({ value }: { readonly value: ApiImportClientRespons
         )}
         {counts.scripts > 0 && (
           <p data-testid="import-client-scripts" className="mt-1 text-xs text-fg-subtle">
-            {plural(counts.scripts, 'script')} kept as text, never run
+            {plural(counts.scripts, 'script file')} kept as text
           </p>
         )}
         {variables !== undefined && <VariablesLines summary={variables} testId="import-client" />}
