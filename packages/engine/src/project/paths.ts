@@ -209,6 +209,8 @@ export const OPERATIONS_DIR = 'operations';
 export const ATTACHMENTS_DIR = 'attachments';
 /** Suffix identifying a request metadata file. */
 export const REQUEST_SUFFIX = '.request.yaml';
+/** Suffix of a request's snapshot sidecar, `<slug>.golden.yaml`, saved beside its request file. */
+export const GOLDEN_SUFFIX = '.golden.yaml';
 /** Directory holding every REST API, beside `interfaces/`. */
 export const APIS_DIR = 'apis';
 /** Directory holding the project's webhook collection (`webhooks.yaml` and a `requests/` tree). */

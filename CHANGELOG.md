@@ -70,6 +70,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **No orphan warning for a saved golden.** Opening a project, or `wirebench run`, no longer warns
+  `"<request>.golden.yaml" does not belong to any request` for a golden saved beside its request, in
+  any protocol. A golden whose request is gone is still reported.
 - **Environment rows show colour and protection.** The Environments list now shows each
   environment's colour dot and, for a protected one, its lock, as the title-bar switcher does. The
   Environment details panel stays as you left it, open or put away, when you come back to an
