@@ -111,16 +111,29 @@ describe('the Thunder Client layer: run control', () => {
   });
 });
 
+describe('the Thunder Client layer: skipRequest with an argument', () => {
+  it('skipRequest(undefined) is the named form, as the scan reads it', async () => {
+    expect(await run('pre', 'tc.skipRequest(undefined);')).toMatchObject({
+      ok: false,
+      error: { code: 'script-unsupported' },
+    });
+  });
+});
+
 describe('the Thunder Client layer: request', () => {
   it('the getters read the typed request', async () => {
     const outcome = await run(
       'pre',
       `console.log(tc.request.method, tc.request.url, tc.request.name, tc.request.getHeader('content-type'),
-        tc.request.headers['Content-Type'], JSON.stringify(tc.request.body));`,
+        JSON.stringify(tc.request.headers), JSON.stringify(tc.request.body));`,
     );
     expect(outcome).toMatchObject({
       ok: true,
-      log: { lines: ['POST https://shop.test/graphql Product by id application/json application/json {"item":"a"}'] },
+      log: {
+        lines: [
+          'POST https://shop.test/graphql Product by id application/json [{"name":"Content-Type","value":"application/json","isDisabled":false}] {"item":"a"}',
+        ],
+      },
     });
   });
 
@@ -131,6 +144,7 @@ describe('the Thunder Client layer: request', () => {
        console.log(tc.request.getHeader('X-Trace'), JSON.stringify(tc.request.body));`,
     );
     expect(outcome).toMatchObject({ ok: true, log: { lines: ['t1 {"item":"b"}'] } });
+    expect(outcome.ok && (outcome.request as { url?: string } | undefined)?.url).toContain('page=2');
   });
 
   it('a setter in a post-request script fails', async () => {
@@ -140,19 +154,72 @@ describe('the Thunder Client layer: request', () => {
 });
 
 describe('the Thunder Client layer: response and tests', () => {
-  it('response has status, json, text, headers and time', async () => {
+  // https://docs.thunderclient.com/scripting/api: response headers are an array of { name, value }.
+  it('response has status, json, text, size, contentType, headers (rows, original casing) and time', async () => {
     const outcome = await run(
       'post',
       `tc.test('shape', () => {
          expect(tc.response.status).to.equal(200);
          tc.expect(tc.response.json.data.product.name).to.equal('Ada');
          expect(tc.response.text).to.include('Ada');
-         expect(tc.response.headers['x-id']).to.equal('7');
-         expect(tc.response.getHeader('X-Id')).to.equal('7');
+         expect(tc.response.size).to.equal(35);
+         expect(tc.response.contentType).to.equal('application/json');
+         expect(tc.response.headers).to.deep.equal([
+           { name: 'Content-Type', value: 'application/json' },
+           { name: 'X-Id', value: '7' },
+         ]);
+         expect(Object.isFrozen(tc.response.headers)).to.equal(true);
+         expect(tc.response.getHeader('x-id')).to.equal('7');
          expect(tc.response.time).to.equal(42);
        });`,
     );
     expect(outcome).toMatchObject({ ok: true, tests: [{ name: 'shape', passed: true }] });
+  });
+
+  it('tc.test takes a boolean or a function', async () => {
+    const outcome = await run('post', 'tc.test("a", true); tc.test("b", false); tc.test("c", () => true);');
+    expect(outcome).toMatchObject({
+      ok: true,
+      tests: [
+        { name: 'a', passed: true },
+        { name: 'b', passed: false },
+        { name: 'c', passed: true },
+      ],
+    });
+  });
+
+  it('json parses a body whose content type is missing, and is undefined when it does not parse', async () => {
+    const bare = await run('post', 'console.log(tc.response.json.a);', {
+      response: { ...RESPONSE, headers: [], text: '{"a":5}' },
+    });
+    expect(bare).toMatchObject({ ok: true, log: { lines: ['5'] } });
+  });
+
+  it('tc.info has the documented names', async () => {
+    const outcome = await run(
+      'pre',
+      `console.log(JSON.stringify(tc.info), tc.info.requestName, tc.request.id, tc.request.name);`,
+    );
+    expect(outcome).toMatchObject({
+      ok: true,
+      log: {
+        lines: [
+          expect.stringContaining(
+            '{"requestName":"Product by id","currentIteration":0,"totalIterations":1}',
+          ) as unknown,
+        ],
+      },
+    });
+  });
+
+  it('tc.response in a pre-request script is a refusal that names it', async () => {
+    expect(await run('pre', 'tc.response.status;')).toMatchObject({
+      ok: false,
+      error: {
+        code: 'script-unsupported',
+        message: expect.stringContaining('tc.response in a pre-request script') as unknown,
+      },
+    });
   });
 
   it('json is undefined for a response that is not JSON', async () => {
@@ -168,6 +235,19 @@ describe('the Thunder Client layer: response and tests', () => {
   });
 });
 
+describe('the Thunder Client layer: unsupported response members', () => {
+  it.each([
+    ['tc.response.cookies', 'tc.response.cookies;'],
+    ['tc.response.getBinary', 'tc.response.getBinary();'],
+    ['tc.response.passed', 'tc.response.passed;'],
+  ])('%s fails with script-unsupported', async (name, source) => {
+    expect(await run('post', source)).toMatchObject({
+      ok: false,
+      error: { code: 'script-unsupported', message: expect.stringContaining(name) as unknown },
+    });
+  });
+});
+
 describe('the Thunder Client layer: unsupported calls', () => {
   it.each([
     ['tc.runRequest', "tc.runRequest('r-1');"],
@@ -177,6 +257,14 @@ describe('the Thunder Client layer: unsupported calls', () => {
     ['tc.readFile', "tc.readFile('./a.txt');"],
     ['tc.exec', "tc.exec('ls');"],
     ['tc.delay', 'tc.delay(100);'],
+    ['tc.getAbsolutePath', "tc.getAbsolutePath('a');"],
+    ['tc.getCookies', 'tc.getCookies();'],
+    ['tc.setCookie', "tc.setCookie('u', 'n', 'v');"],
+    ['tc.clearCookies', 'tc.clearCookies();'],
+    ['tc.chartHTML', "tc.chartHTML('<p></p>', {});"],
+    ['tc.request.auth', 'tc.request.auth;'],
+    ['assert', 'assert.equal(1, 1);'],
+    ['assert', 'assert(true);'],
     ['require("thunder-tests/...")', "const lib = require('thunder-tests/lib.js');"],
     ['require', "const fs = require('fs');"],
   ])('%s fails with script-unsupported', async (name, source) => {
@@ -190,7 +278,10 @@ describe('the Thunder Client layer: unsupported calls', () => {
   it('the scan names each call once, and plain require does not double-report', () => {
     const text = [
       "tc.runRequest('r'); tc.retryRequest(); tc.loadModule('m'); tc.loadFromPath('p');",
-      "tc.readFile('f'); tc.exec('ls'); tc.delay(1); tc.skipRequest('Login');",
+      "tc.readFile('f'); tc.exec('ls'); tc.delay(1); tc.skipRequest('Login'); tc.getAbsolutePath('a');",
+      "tc.getCookies(); tc.setCookie('u', 'n', 'v'); tc.clearCookies(); tc.chartHTML('t', {});",
+      'tc.response.cookies; tc.response.getBinary(); tc.response.passed; tc.request.auth;',
+      "tc.request.url.getParam('a'); tc.request.url.setParam('a', 'b'); assert.equal(1, 1);",
       "require('thunder-tests/lib.js');",
     ].join('\n');
     expect(unsupportedCalls(text, 'thunder-client')).toEqual([
@@ -202,6 +293,18 @@ describe('the Thunder Client layer: unsupported calls', () => {
       'tc.exec',
       'tc.delay',
       'tc.skipRequest with a request name',
+      'tc.getAbsolutePath',
+      'tc.getCookies',
+      'tc.setCookie',
+      'tc.clearCookies',
+      'tc.chartHTML',
+      'tc.response.cookies',
+      'tc.response.getBinary',
+      'tc.response.passed',
+      'tc.request.auth',
+      'tc.request.url.getParam',
+      'tc.request.url.setParam',
+      'assert',
       'require("thunder-tests/...")',
     ]);
     expect(

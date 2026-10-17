@@ -3,13 +3,16 @@
  * and before an imported script. It is written over `vars`, `props`, `request`, `response` and
  * `execution`, so it can do nothing a typed script cannot.
  *
- * Every `tc.setVar` scope (`local`, `global`, `request`) reads `vars` then `props` and writes `vars`
- * (spec §3.3). `tc.replaceVars` expands `{{name}}` through vars then props. `tc.response.json` is a
- * property, as in the collection fixtures (`var json = tc.response.json;`); its header keys are
- * lower-cased. `tc.test` is the typed API's own; its checks use a chai `expect`, available as
- * `tc.expect` and as a global `expect`. Request setters work in a pre-request script only, as in every
- * layer. Sending requests, modules, files, processes and waiting throw `ScriptUnsupported` naming the
- * call.
+ * The shapes follow Thunder Client's scripting API page (https://docs.thunderclient.com/scripting/api):
+ * `tc.request.headers` and `tc.response.headers` are arrays of rows (`{ name, value }`, with
+ * `isDisabled` on the request's), `tc.response.json` is a property, `tc.info` has the six names the
+ * page lists, and `expect` is a chai global used inside `tc.test`. `tc.test` takes a boolean or a
+ * function. Every `tc.setVar` scope (`local`, `global`, `request`) reads `vars` then `props` and
+ * writes `vars` (spec §3.3); `tc.replaceVars` expands `{{name}}`. Request setters work in a
+ * pre-request script only, as in every layer. Sending requests, modules, files, processes, waiting,
+ * cookies, binary bodies, charts, `tc.request.auth` and `assert` throw `ScriptUnsupported` naming the
+ * call. `tc.request.url` stays a string, so the page's `url.getParam` and `url.setParam` are only
+ * scanned (spec §7), not run.
  */
 import { PART_EXPECT, PART_UNSUPPORTED, PART_VARIABLES } from './layer-parts.js';
 
@@ -25,11 +28,14 @@ const tcBody = () => {
   try { return JSON.parse(text); } catch { return text; }
 };
 const tcRequest = Object.freeze({
+  id: undefined,
   get name() { return input.info.requestName; },
   get url() { return request.url; },
   get method() { return request.method; },
-  get headers() { return request.headers.toObject(); },
+  // https://docs.thunderclient.com/scripting/api: headers are an array of { name, value, isDisabled }.
+  get headers() { return request.headers.list().map(({ name, value }) => Object.freeze({ name, value, isDisabled: false })); },
   get body() { return tcBody(); },
+  get auth() { return unsupported('tc.request.auth')(); },
   getHeader: (name) => request.headers.get(String(name)),
   setHeader: (name, value) => request.headers.set(String(name), String(value)),
   setBody: (body) => {
@@ -41,29 +47,45 @@ const tcRequest = Object.freeze({
 // --- the response -------------------------------------------------------------------------------
 let tcResponse;
 if (input.phase === 'post') {
-  const headers = {};
-  for (const { name, value } of response.headers.list()) {
-    const key = name.toLowerCase();
-    headers[key] = key in headers ? headers[key] + ', ' + value : value;
-  }
+  // https://docs.thunderclient.com/scripting/api: headers are an array of { name, value }, original casing.
+  const rows = Object.freeze(response.headers.list().map(({ name, value }) => Object.freeze({ name, value })));
   tcResponse = Object.freeze({
     status: response.status,
     time: response.durationMs,
+    size: utf8Length(response.text),
+    contentType: response.headers.get('content-type'),
     text: response.text,
-    headers: Object.freeze(headers),
-    // Parsed when the response is JSON; otherwise (or when it does not parse) undefined.
+    headers: rows,
+    // Parsed when the body is JSON, whatever the content type says; undefined when it does not parse.
     get json() {
-      const type = headers['content-type'];
-      if (type === undefined || !/json/i.test(type)) return undefined;
       try { return response.json(); } catch { return undefined; }
     },
-    getHeader: (name) => headers[String(name).toLowerCase()],
+    get cookies() { return unsupported('tc.response.cookies')(); },
+    get passed() { return unsupported('tc.response.passed')(); },
+    getHeader: (name) => response.headers.get(String(name)),
+    getBinary: unsupported('tc.response.getBinary'),
+  });
+} else {
+  tcResponse = new Proxy({}, {
+    get: (target, member) => (typeof member === 'symbol' || member === 'then' || member === 'toJSON' ? undefined : unsupported('tc.response in a pre-request script')()),
   });
 }
 
 // --- tc -----------------------------------------------------------------------------------------
 define('expect', chaiExpect);
+// The page lists chai's assert as a global too; only expect is run.
+define('assert', new Proxy(unsupported('assert'), {
+  get: (target, member) => (typeof member === 'symbol' || member === 'then' || member === 'toJSON' ? undefined : unsupported('assert.' + member)),
+}));
 define('tc', Object.freeze({
+  info: Object.freeze({
+    environmentName: undefined,
+    requestName: input.info.requestName,
+    collectionName: undefined,
+    folderName: undefined,
+    currentIteration: iteration.index,
+    totalIterations: iteration.count,
+  }),
   // The scope argument (local, global, request) picks nothing: every one is a run value.
   getVar: (name) => variables.get(name),
   setVar: (name, value) => variables.set(name, value),
@@ -71,11 +93,15 @@ define('tc', Object.freeze({
   setParam: (name, value) => request.query.set(String(name), String(value)),
   request: tcRequest,
   response: tcResponse,
-  test: (name, check) => test(name, () => check()),
+  // The page: a boolean or a function that returns a boolean or nothing.
+  test: (name, result) => test(name, () => {
+    const outcome = typeof result === 'function' ? result() : result;
+    if (outcome === false) throw new ExpectationFailed('the test returned false');
+  }),
   expect: chaiExpect,
-  // With no argument it skips the current request; another request's id or name cannot be reached.
+  // With no argument it skips the current request; any argument names another request, which is out of reach.
   skipRequest: (...args) => {
-    if (args.length > 0 && args[0] !== undefined) return unsupported('tc.skipRequest with a request name')();
+    if (args.length > 0) return unsupported('tc.skipRequest with a request name')();
     return execution.skipRequest();
   },
   runRequest: unsupported('tc.runRequest'),
@@ -83,8 +109,13 @@ define('tc', Object.freeze({
   loadModule: unsupported('tc.loadModule'),
   loadFromPath: unsupported('tc.loadFromPath'),
   readFile: unsupported('tc.readFile'),
+  getAbsolutePath: unsupported('tc.getAbsolutePath'),
   exec: unsupported('tc.exec'),
   delay: unsupported('tc.delay'),
+  getCookies: unsupported('tc.getCookies'),
+  setCookie: unsupported('tc.setCookie'),
+  clearCookies: unsupported('tc.clearCookies'),
+  chartHTML: unsupported('tc.chartHTML'),
 }));
 define('require', (path) => unsupported(typeof path === 'string' && path.startsWith('thunder-tests/') ? 'require("thunder-tests/...")' : 'require')());
 `;

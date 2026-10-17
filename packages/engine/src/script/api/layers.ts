@@ -10,7 +10,7 @@ import { INSOMNIA_LAYER } from './insomnia.js';
 import { POSTMAN_LAYER } from './postman.js';
 import { THUNDER_CLIENT_LAYER } from './thunder-client.js';
 
-export const SCRIPT_LAYERS: Partial<Record<LayeredApi, string>> = {
+export const SCRIPT_LAYERS: Record<LayeredApi, string> = {
   postman: POSTMAN_LAYER,
   insomnia: INSOMNIA_LAYER,
   bruno: BRUNO_LAYER,

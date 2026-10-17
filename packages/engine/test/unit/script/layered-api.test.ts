@@ -1,5 +1,5 @@
 /** The layered script APIs (format 11): every API but the typed one is JavaScript, syntax-checked only. */
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import type { RestRequestSnapshot } from '../../../src/rest/scripting.js';
 import { checkOnce } from '../../../src/script/check/service.js';
 import { isLayeredApi, scriptFileName, type ScriptApi } from '../../../src/script/model.js';
@@ -21,6 +21,11 @@ const REQUEST: RestRequestSnapshot = {
 };
 
 describe('the layered script APIs', () => {
+  afterEach(() => {
+    vi.doUnmock('../../../src/script/api/layers.js');
+    vi.resetModules();
+  });
+
   it('every layered api has a layer', () => {
     for (const api of LAYERED) if (isLayeredApi(api)) expect(SCRIPT_LAYERS[api]).toBeTypeOf('string');
   });
@@ -72,7 +77,5 @@ describe('the layered script APIs', () => {
         message: `${api} scripts are not supported yet`,
       });
     }
-    vi.doUnmock('../../../src/script/api/layers.js');
-    vi.resetModules();
   });
 });
