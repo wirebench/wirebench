@@ -86,6 +86,15 @@ hosts:
         type: local
         port: 5432
         target: 127.0.0.1:5432
+  - id: console
+    name: Serial console
+    ssh:
+      protocol: serial
+    forwards:
+      - id: pg
+        type: local
+        port: 5433
+        target: 127.0.0.1:5432
   - id: half
     name: Half set up
     address: 10.0.0.8
@@ -431,6 +440,7 @@ describe('wirebench ssh forward', () => {
       ['a --port for a rule not started', { rules: ['pg'], ports: { socks: 1081 } }, /--port socks: .*not started/],
       ['a host with no user', { host: 'half' }, /^ssh-host-incomplete: /],
       ['a Telnet host (#425)', { host: 'switch' }, /^ssh-protocol-unsupported: switch is a Telnet host/],
+      ['a serial console (#426)', { host: 'console' }, /^ssh-protocol-unsupported: console is a serial console/],
       [
         'a network bind without --allow-network-bind',
         { host: 'web-1' },
