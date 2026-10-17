@@ -57,15 +57,6 @@ describe('Insomnia scripts are attached', () => {
     expect(apiRequests(api)[0]!.scripts).toBeUndefined();
   });
 
-  it('a workspace script is attached to the API', () => {
-    const mapped = mapV5([request('Ping', {})], { scripts: { preRequest: "console.log('root');" } });
-    expect(mapped.collections[0]!.rest!.scripts).toMatchObject({
-      pre: { text: "console.log('root');\n" },
-      api: 'insomnia',
-      enabled: false,
-    });
-  });
-
   it('no imported-scripts files are written', () => {
     const mapped = mapV5([request('Ping', { preRequest: 'insomnia.variables.set("a", 1);' })]);
     expect(mapped.scripts).toEqual([]);
@@ -84,9 +75,7 @@ describe('Insomnia scripts are attached', () => {
       'Scripts on 2 requests were imported switched off: read each on its Scripts tab, then switch them on',
     );
     const line = mapped.report.warnings.find((w) => w.includes('call what Wirebench does not run'));
-    expect(line).toBe(
-      'The scripts of "Fetch" call what Wirebench does not run: insomnia.sendRequest, insomnia.vault, require',
-    );
+    expect(line).toBe('The scripts of "Fetch" call what Wirebench does not run: insomnia.vault, require');
     expect(mapped.report.warnings.join('\n')).not.toContain('Plain" call');
   });
 
@@ -97,5 +86,42 @@ describe('Insomnia scripts are attached', () => {
     ]);
     const lines = mapped.report.warnings.filter((w) => w.includes('call what Wirebench does not run'));
     expect(lines).toEqual(['The scripts of "Write" call what Wirebench does not run: insomnia.cookies writes']);
+  });
+
+  it('insomnia.require is reported once, not also as require', () => {
+    const mapped = mapV5([request('Req', { preRequest: "insomnia.require('x'); $.require('y');" })]);
+    expect(mapped.report.warnings).toContain('The scripts of "Req" call what Wirebench does not run: insomnia.require');
+  });
+
+  it('a name that merely ends in insomnia or $ is not flagged', () => {
+    const mapped = mapV5([
+      request('Lookalike', {
+        preRequest: "myinsomnia.vault.get('a'); x$.vault.get('b'); other.insomnia.vault.get('c');",
+      }),
+    ]);
+    expect(mapped.report.warnings.join('\n')).not.toContain('does not run');
+  });
+
+  it('sendRequest through insomnia or $ gets the sequence-step advice', () => {
+    const mapped = mapV5([
+      request('A', { preRequest: "insomnia.sendRequest('u', () => {});" }),
+      request('B', { preRequest: "$.sendRequest('u', () => {});" }),
+    ]);
+    for (const name of ['A', 'B']) {
+      expect(
+        mapped.report.warnings.some(
+          (w) => w.startsWith(`The scripts of "${name}" call `) && w.includes('send that request as a sequence step'),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('run-control calls through insomnia or $ are reported', () => {
+    const mapped = mapV5([
+      request('Steer', { afterResponse: "insomnia.execution.setNextRequest('X'); $.execution.skipRequest();" }),
+    ]);
+    expect(mapped.report.warnings).toContain(
+      'The scripts of "Steer" steer the run (insomnia.execution.setNextRequest, insomnia.execution.skipRequest): obeyed in API and folder runs only',
+    );
   });
 });

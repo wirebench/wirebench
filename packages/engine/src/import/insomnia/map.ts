@@ -2,7 +2,8 @@
  * A read Insomnia export mapped to Wirebench APIs (spec 2026-10-15 §4): per workspace a REST API
  * for its HTTP requests (through the v2.1 parser and mapper, see `convert.ts`), a gRPC API and a
  * WebSocket API for theirs; the base and folder environments as project properties, the
- * sub-environments as workspace environments, every script saved as text. Pure.
+ * sub-environments as workspace environments, every script attached to its request or folder
+ * switched off. Pure.
  */
 
 import { InsomniaError } from '../../errors.js';

@@ -1,4 +1,4 @@
-import { readdir, writeFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { apiRequests, grpcApisOf, loadProject, restApisOf, wsApisOf } from '@wirebench/engine';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -64,13 +64,16 @@ describe('op import: an Insomnia export', () => {
       .find((request) => request.name === 'Create order');
     expect(create?.scripts).toMatchObject({ api: 'insomnia', enabled: false });
     expect(create?.scripts?.pre?.text).toContain('requestedAt');
-    const files = await readdir(fixture.dir, { recursive: true });
+    const files = (await readdir(fixture.dir, { recursive: true })).map((file) => file.replaceAll('\\', '/'));
     expect(files).toEqual(
       expect.arrayContaining([
         'apis/Orders API/requests/Orders/Create order.pre.js',
         'apis/Orders API/requests/Orders/Create order.post.js',
+        'apis/Orders API/requests/Orders/folder.pre.js',
       ]),
     );
+    const post = await readFile(join(fixture.dir, 'apis/Orders API/requests/Orders/Create order.post.js'), 'utf8');
+    expect(post).toContain("insomnia.test('201'");
     expect(files.some((file) => file.includes('imported-scripts'))).toBe(false);
   });
 

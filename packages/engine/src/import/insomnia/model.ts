@@ -151,8 +151,6 @@ export interface InsWorkspace {
   readonly description?: string;
   /** v4 `scope`: `collection`, `design`, `environment`, …; absent in v5 and very old files. */
   readonly scope?: string;
-  /** The workspace's own scripts (v5 root `scripts`); absent when it has none. */
-  readonly scripts?: InsScripts;
   readonly items: readonly InsNode[];
   readonly baseEnv?: InsEnv;
   readonly subEnvs: readonly InsEnv[];

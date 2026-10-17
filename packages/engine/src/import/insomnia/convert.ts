@@ -422,6 +422,5 @@ export function v21OfInsomnia(workspace: InsWorkspace, name: string, context: In
       ...(workspace.description !== undefined ? { description: workspace.description } : {}),
     },
     item: items(workspace.items, [], new Map(), context),
-    ...eventsOf(workspace.scripts),
   };
 }

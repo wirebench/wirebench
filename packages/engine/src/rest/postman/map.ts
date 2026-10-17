@@ -153,7 +153,7 @@ export function apiFromPostmanCollection(
       const text = [scripts.pre?.text ?? '', scripts.post?.text ?? ''].join('\n');
       const calls = unsupportedCalls(text, scriptApi);
       if (calls.length > 0) unsupported.set(path, new Set(calls));
-      const steers = runControlCalls(text);
+      const steers = runControlCalls(text, scriptApi);
       if (steers.length > 0) steering.set(path, steers);
     }
     return scripts;
@@ -241,9 +241,10 @@ export function apiFromPostmanCollection(
   }
   for (const [path, calls] of unsupported) {
     // A request a script sends is the one call people most often need, so its warning says what to do instead.
-    if (calls.delete('pm.sendRequest')) {
+    const sends = ['pm.sendRequest', 'insomnia.sendRequest'].find((name) => calls.delete(name));
+    if (sends !== undefined) {
       warnings.push(
-        `The scripts of "${path}" call pm.sendRequest, which a script cannot do: send that request as a sequence step, or use OAuth2 auth for a token`,
+        `The scripts of "${path}" call ${sends}, which a script cannot do: send that request as a sequence step, or use OAuth2 auth for a token`,
       );
     }
     if (calls.size > 0) {
@@ -842,11 +843,11 @@ const UNSUPPORTED_CALLS: Record<LayeredApi, readonly [RegExp, string][]> = {
     [/\bpm\.vault\b/, 'pm.vault'],
   ],
   insomnia: [
-    [/(?:insomnia|\$)\.sendRequest\b/, 'insomnia.sendRequest'],
-    [/(?:insomnia|\$)\.require\b/, 'insomnia.require'],
-    [/\brequire\s*\(/, 'require'],
-    [/(?:insomnia|\$)\.cookies\.(?:set|unset|clear)\b/, 'insomnia.cookies writes'],
-    [/(?:insomnia|\$)\.vault\b/, 'insomnia.vault'],
+    [/(?<![\w$.])(?:insomnia|\$)\.sendRequest\b/, 'insomnia.sendRequest'],
+    [/(?<![\w$.])(?:insomnia|\$)\.require\b/, 'insomnia.require'],
+    [/(?<![\w$.])require\s*\(/, 'require'],
+    [/(?<![\w$.])(?:insomnia|\$)\.cookies\.(?:set|unset|clear)\b/, 'insomnia.cookies writes'],
+    [/(?<![\w$.])(?:insomnia|\$)\.vault\b/, 'insomnia.vault'],
   ],
   bruno: [],
   hoppscotch: [],
@@ -858,12 +859,18 @@ export function unsupportedCalls(text: string, api: LayeredApi): string[] {
 }
 
 /** The Postman calls that steer a run (#335), found by name: obeyed in API and folder runs only. */
-const RUN_CONTROL_CALLS: readonly [RegExp, string][] = [
-  [/\bpm\.execution\.setNextRequest\b/, 'pm.execution.setNextRequest'],
-  [/\bpostman\.setNextRequest\b/, 'postman.setNextRequest'],
-  [/\bpm\.execution\.skipRequest\b/, 'pm.execution.skipRequest'],
-];
+const RUN_CONTROL_CALLS: Partial<Record<LayeredApi, readonly [RegExp, string][]>> = {
+  postman: [
+    [/\bpm\.execution\.setNextRequest\b/, 'pm.execution.setNextRequest'],
+    [/\bpostman\.setNextRequest\b/, 'postman.setNextRequest'],
+    [/\bpm\.execution\.skipRequest\b/, 'pm.execution.skipRequest'],
+  ],
+  insomnia: [
+    [/(?<![\w$.])(?:insomnia|\$)\.execution\.setNextRequest\b/, 'insomnia.execution.setNextRequest'],
+    [/(?<![\w$.])(?:insomnia|\$)\.execution\.skipRequest\b/, 'insomnia.execution.skipRequest'],
+  ],
+};
 
-export function runControlCalls(text: string): string[] {
-  return RUN_CONTROL_CALLS.filter(([pattern]) => pattern.test(text)).map(([, name]) => name);
+export function runControlCalls(text: string, api: LayeredApi = 'postman'): string[] {
+  return (RUN_CONTROL_CALLS[api] ?? []).filter(([pattern]) => pattern.test(text)).map(([, name]) => name);
 }
