@@ -417,7 +417,9 @@ environments and project properties added and the secrets stored.
   and each sub-environment becomes a workspace environment. No project is asked for.
 - **Vault secrets** cannot be read from the export: each becomes a secret with no value, listed so
   you can set it.
-- **Scripts** are saved as text under `imported-scripts/` and never run.
+- **Scripts** are attached to their requests and folders, switched off, and run once you switch them
+  on. The summary lists the calls Wirebench cannot run. See
+  [Scripts from other clients](/wirebench/docs/guides/scripts/#scripts-from-other-clients).
 - **Template tags** other than `uuid` and `now`, such as `{% response %}`, are kept as written and
   listed; nothing runs them.
 - **Credentials** are never imported as plain text: passwords, tokens and keys are left for you to

@@ -59,7 +59,7 @@ Owner decisions, 2026-10-15 (1–4 chosen in review; 5–8 accepted as proposed)
 
 | # | Question | Decision |
 | --- | --- | --- |
-| 1 | Scripts | Every tool's scripts, Insomnia's included, are saved as text under `imported-scripts/` and never run. |
+| 1 | Scripts | Every tool's scripts, Insomnia's included, are saved as text under `imported-scripts/` and never run. Superseded for Insomnia by the [script layers spec](2026-10-16-imported-script-layers-design.md): its scripts are attached switched off and run once turned on. |
 | 2 | Declarative checks | Bruno `assert` lines and Thunder Client test rows become assertions where they fit; the rest is reported. |
 | 3 | Request chaining | Insomnia `{% response %}` tags, Thunder Client pre-requests and Bruno post-response variables are reported, not converted. |
 | 4 | Command line | `wirebench import` reads all four formats, with the v3 rule: plain variables become project properties, secrets and environments are reported, not imported. |

@@ -8,12 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Run imported Insomnia scripts.** An Insomnia export's pre-request and after-response scripts are
+  attached to their requests and folders, switched off, instead of being saved as text. Once switched on
+  they run against an `insomnia` object (`insomnia.test`, `insomnia.expect`, `insomnia.response`,
+  `insomnia.request` and the variable scopes); `sendRequest`, `require`, cookie writes and the vault fail
+  with `script-unsupported`, and the import report lists them. Project format 11.
 - **Import Insomnia exports.** **Import…** reads Insomnia's export formats 4 (JSON or YAML) and 5
   (YAML), and detects a picked file by its content. Each workspace becomes a REST, a gRPC and a
   WebSocket API in the chosen project, in Insomnia's order, with folder headers and auth. The base and
   folder environments become project properties and the sub-environments workspace environments,
   never made active; an environments file goes to the workspace, its base into Globals. Vault secrets
-  become secrets with no value, scripts are saved as text under `imported-scripts/` and never run, and
+  become secrets with no value, scripts are attached to their requests and folders switched off, and
   template tags Wirebench cannot run are kept and listed. `wirebench import` reads the same files.
   Postman collections now bring Digest, AWS Signature and JWT auth across as well (#588).
 - **Import Bruno collections.** **Import…** reads a Bruno collection from its folder (**Folder…**),

@@ -113,7 +113,7 @@ describe('the Insomnia layer', () => {
     });
   });
 
-  it('a secret-named write stays in vars', async () => {
+  it('a secret-named write is returned as a run value', async () => {
     const outcome = await run(
       'pre',
       "insomnia.baseEnvironment.set('clientSecret', 'shh'); insomnia.environment.set('apiPassword', 'pw');",
