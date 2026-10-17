@@ -55,23 +55,29 @@ async function freePort(): Promise<number> {
   return port;
 }
 
-function waitForPort(port: number, child: ChildProcess, log: () => string): Promise<void> {
-  const deadline = Date.now() + 10_000;
+/**
+ * Waits for sshd to say it is listening on `port`. A connect to the port is no proof: the port is free only
+ * when `freePort` looks, and another test's server can bind it before sshd does, so sshd exits and the
+ * connect reaches that stranger instead. Resolves false when sshd exits before it listens.
+ */
+function waitForListening(port: number, child: ChildProcess, log: () => string): Promise<boolean> {
+  const line = `Server listening on 127.0.0.1 port ${String(port)}.`;
   return new Promise((resolve, reject) => {
-    const attempt = (): void => {
-      if (child.exitCode !== null) return reject(new Error(`sshd exited: ${log()}`));
-      const socket = net.connect(port, '127.0.0.1');
-      socket.once('connect', () => {
-        socket.destroy();
-        resolve();
-      });
-      socket.once('error', () => {
-        socket.destroy();
-        if (Date.now() > deadline) reject(new Error(`sshd did not listen: ${log()}`));
-        else setTimeout(attempt, 50);
-      });
+    const done = (result: boolean | Error): void => {
+      clearTimeout(timer);
+      child.stderr?.off('data', check);
+      child.off('exit', exited);
+      if (result instanceof Error) reject(result);
+      else resolve(result);
     };
-    attempt();
+    const check = (): void => {
+      if (log().includes(line)) done(true);
+    };
+    const exited = (): void => done(false);
+    const timer = setTimeout(() => done(new Error(`sshd did not listen: ${log()}`)), 10_000);
+    child.stderr?.on('data', check);
+    child.once('exit', exited);
+    check();
   });
 }
 
@@ -85,7 +91,21 @@ export async function startOpenSshServer(): Promise<OpenSshServer> {
   copyFileSync(join(FIXTURES, 'ca'), join(dir, 'ca'));
   spawnSync('chmod', ['600', join(dir, 'ca')]);
   writeFileSync(join(dir, 'authorized_keys'), '');
-  const port = await freePort();
+  const configFile = join(dir, 'sshd_config');
+  for (let attempt = 1; ; attempt++) {
+    const port = await freePort();
+    writeConfig(sshd, configFile, port, dir);
+    let output = '';
+    const child = spawn(sshd, ['-D', '-e', '-f', configFile], { stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout?.on('data', (data: Buffer) => (output += data.toString('utf8')));
+    child.stderr?.on('data', (data: Buffer) => (output += data.toString('utf8')));
+    if (await waitForListening(port, child, () => output)) return serverOn(port, user, dir, child);
+    // Lost the port to another listener between freePort and sshd's bind: take another one.
+    if (attempt === 5) throw new Error(`sshd exited: ${output}`);
+  }
+}
+
+function writeConfig(sshd: string, configFile: string, port: number, dir: string): void {
   const config = [
     `Port ${port}`,
     'ListenAddress 127.0.0.1',
@@ -102,17 +122,14 @@ export async function startOpenSshServer(): Promise<OpenSshServer> {
     'PerSourcePenalties no',
     '',
   ];
-  const configFile = join(dir, 'sshd_config');
   writeFileSync(configFile, config.join('\n'));
   // An older sshd does not know the option and would refuse the whole file.
   if (spawnSync(sshd, ['-t', '-f', configFile], { stdio: 'ignore' }).status !== 0) {
     writeFileSync(configFile, config.filter((line) => !line.startsWith('PerSourcePenalties')).join('\n'));
   }
-  let output = '';
-  const child = spawn(sshd, ['-D', '-e', '-f', join(dir, 'sshd_config')], { stdio: ['ignore', 'pipe', 'pipe'] });
-  child.stdout?.on('data', (data: Buffer) => (output += data.toString('utf8')));
-  child.stderr?.on('data', (data: Buffer) => (output += data.toString('utf8')));
-  await waitForPort(port, child, () => output);
+}
+
+function serverOn(port: number, user: string, dir: string, child: ChildProcess): OpenSshServer {
   let serial = 100;
   const hostBlob = Buffer.from(readFileSync(join(dir, 'host_ed25519.pub'), 'utf8').split(' ')[1] ?? '', 'base64');
   return {
