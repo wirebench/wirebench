@@ -180,7 +180,7 @@ function offsetOf(source: string, line: number, column: number): number {
 }
 
 /**
- * The script's diagnostics. A Postman script (JavaScript) gets only its syntax errors; a typed one
+ * The script's diagnostics. A layered script (JavaScript) gets only its syntax errors; a typed one
  * gets syntax and type errors. Errors in the declarations themselves are not the script's and are
  * left out.
  */

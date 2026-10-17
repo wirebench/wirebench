@@ -88,7 +88,7 @@ describe('GraphQL body on disk', () => {
     expect(restApisOf(loaded)[0]!.graphqlSchema).toEqual(api.graphqlSchema);
   });
 
-  it('belongs to format 10, which has not shipped yet', () => {
+  it('belongs to format 10 or later', () => {
     expect(FORMAT_VERSION).toBeGreaterThanOrEqual(10);
   });
 

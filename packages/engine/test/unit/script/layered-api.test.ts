@@ -1,5 +1,5 @@
 /** The layered script APIs (format 11): every API but the typed one is JavaScript, syntax-checked only. */
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import type { RestRequestSnapshot } from '../../../src/rest/scripting.js';
 import { checkOnce } from '../../../src/script/check/service.js';
 import { isLayeredApi, scriptFileName, type ScriptApi } from '../../../src/script/model.js';
@@ -40,6 +40,7 @@ describe('the layered script APIs', () => {
   });
 
   it('a layered api with no layer fails with script-unsupported', async () => {
+    const onSecretValue = vi.fn();
     const outcome = await runScript({
       sandbox,
       phase: 'pre',
@@ -49,10 +50,13 @@ describe('the layered script APIs', () => {
       request: REQUEST,
       vars: {},
       props: {},
-      secrets: {},
+      secrets: { key: 'hunter2' },
+      onSecretValue,
       requestName: 'X',
     });
     expect(outcome.ok).toBe(false);
+    expect(outcome.log.lines).toEqual([]);
+    expect(onSecretValue).not.toHaveBeenCalled();
     if (!outcome.ok) {
       expect(outcome.error).toEqual({ code: 'script-unsupported', message: 'bruno scripts are not supported yet' });
     }

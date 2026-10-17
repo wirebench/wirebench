@@ -39,6 +39,13 @@ All notable changes to this project are documented here. The format follows
   read. Scripts are saved as text and never run, and request chaining is reported. A folder that
   keeps one file per request is refused. `wirebench import` reads exports and folders (#588).
 
+### Breaking
+
+- **Project format 11.** A `scripts` key can name the script API of another API client (`insomnia`,
+  `bruno`, `hoppscotch` or `thunder-client`) and carry `postResponseOrder`. A project saved by this
+  version cannot be opened by an older one, which refuses it as made by a newer Wirebench. A
+  version-10 project opens unchanged.
+
 ### Changed
 
 - **History and Environments keep your request tabs.** Opening History or Environments no longer swaps
@@ -466,10 +473,7 @@ All notable changes to this project are documented here. The format follows
   schema (`graphqlSchema`). A project saved by this version cannot be opened by an older one, which
   refuses it as made by a newer Wirebench. A version-9 project opens unchanged (#338, #339, #348,
   #77).
-- **Project format 11.** A `scripts` key can name the script API of another API client (`insomnia`,
-  `bruno`, `hoppscotch` or `thunder-client`) and carry `postResponseOrder`; a project saved by this
-  version cannot be opened by an older one, which would drop them. A version-10 project opens
-  unchanged.
+
 
 ### Changed
 

@@ -69,6 +69,7 @@ export function scriptsDocument(
       enabled: scripts.enabled ? undefined : false,
       secrets: scripts.secrets.length > 0 ? [...scripts.secrets] : undefined,
       timeoutMs: scripts.timeoutMs,
+      postResponseOrder: scripts.postResponseOrder,
     }),
     files,
   };

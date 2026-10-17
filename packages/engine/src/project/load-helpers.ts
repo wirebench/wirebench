@@ -115,6 +115,7 @@ export async function loadScripts(
     enabled: document.enabled,
     secrets: [...document.secrets],
     ...(document.timeoutMs !== undefined ? { timeoutMs: document.timeoutMs } : {}),
+    ...(document.postResponseOrder !== undefined ? { postResponseOrder: document.postResponseOrder } : {}),
   };
 }
 
