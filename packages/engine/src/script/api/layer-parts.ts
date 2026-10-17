@@ -310,13 +310,15 @@ const jsonSchema = (() => {
 `;
 
 /**
- * Declares `jestMatchers` and `jestExpect`: the jest-style matchers (`toBe`, `toBeType`, `toInclude`,
+ * Declares `TYPES`, `jestMatchers` and `jestExpect`: the jest-style matchers (`toBe`, `toBeType`, `toInclude`,
  * `toBeLevel2xx` to `toBeLevel5xx`, `toHaveLength`, each with `.not`). `jestMatchers(actual, negated)`
  * returns the matchers alone, for a layer that merges them into another chain; `jestExpect(actual)`
- * returns them with `.not`. Needs `ExpectationFailed` and `show` from the common API only.
+ * returns them with `.not`. The type, length and range rules follow Hoppscotch's own sandbox
+ * (`toBeType` is `typeof` against its eight names; `toHaveLength` takes an array or a string). Needs `ExpectationFailed` and `show` from the common API only.
  */
 export const PART_JEST_EXPECT = String.raw`
 // --- expect: the jest-style matchers -------------------------------------------------------------
+const TYPES = ['string', 'boolean', 'number', 'object', 'undefined', 'bigint', 'symbol', 'function'];
 const jestMatchers = (actual, negated) => {
   const check = (passed, message) => {
     if (passed === negated) throw new ExpectationFailed('expected ' + show(actual) + (negated ? ' not ' : ' ') + message);
@@ -324,9 +326,16 @@ const jestMatchers = (actual, negated) => {
   const level = (hundred) => () => check(typeof actual === 'number' && actual >= hundred && actual <= hundred + 99, 'to be a ' + String(hundred / 100) + 'xx status');
   return {
     toBe: (expected) => check(actual === expected, 'to be ' + show(expected)),
-    toBeType: (type) => check((actual instanceof Date ? 'date' : typeof actual) === String(type), 'to be of type ' + show(type)),
+    toBeType: (type) => {
+      if (!TYPES.includes(type)) throw new ExpectationFailed('toBeType takes ' + TYPES.map((t) => '"' + t + '"').join(', ') + ', not ' + show(type));
+      check(typeof actual === type, 'to be of type ' + show(type));
+    },
     toInclude: (needle) => check((typeof actual === 'string' || Array.isArray(actual)) && actual.includes(needle), 'to include ' + show(needle)),
-    toHaveLength: (length) => check(actual !== null && actual !== undefined && actual.length === length, 'to have length ' + String(length)),
+    toHaveLength: (length) => {
+      if (!Array.isArray(actual) && typeof actual !== 'string') throw new ExpectationFailed('toHaveLength needs an array or a string, not ' + show(actual));
+      if (typeof length !== 'number' || Number.isNaN(length)) throw new ExpectationFailed('toHaveLength takes a number, not ' + show(length));
+      check(actual.length === length, 'to have length ' + String(length));
+    },
     toBeLevel2xx: level(200),
     toBeLevel3xx: level(300),
     toBeLevel4xx: level(400),

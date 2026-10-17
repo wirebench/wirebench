@@ -103,7 +103,7 @@ const EXPECTED: ReadonlyArray<{ declared: string[]; defined: string[] }> = [
   },
   { declared: ['pmExpect', 'pmRequest', 'pmResponse', 'pmObject', 'pmResponseValue'], defined: [] },
   { declared: ['jsonSchema'], defined: [] },
-  { declared: ['jestMatchers', 'jestExpect'], defined: [] },
+  { declared: ['TYPES', 'jestMatchers', 'jestExpect'], defined: [] },
 ];
 
 describe('the shared layer parts', () => {

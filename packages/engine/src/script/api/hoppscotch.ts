@@ -25,20 +25,6 @@ import {
   PART_VARIABLES,
 } from './layer-parts.js';
 
-/**
- * A top-level `import` statement at the start of a line. It is a syntax error in a script, not a call,
- * so the runner refuses it by name before anything runs and the importer lists it as unsupported. A
- * dynamic `import(...)` is a call and is not matched. The pattern is anchored and has no repetition
- * that can overlap.
- */
-export const TOP_LEVEL_IMPORT = /^[ \t]*import[ \t]*[\w{*"']/m;
-
-/**
- * The `export {};` line Hoppscotch scripts may start with to mark a module context. It means nothing
- * here and is a syntax error in a script, so the runner blanks it (keeping the line count).
- */
-export const MODULE_MARKER = /^[ \t]*export[ \t]*\{[ \t]*\}[ \t]*;?[ \t]*$/gm;
-
 export const HOPPSCOTCH_LAYER =
   PART_UNSUPPORTED +
   PART_VARIABLES +
@@ -49,10 +35,20 @@ export const HOPPSCOTCH_LAYER =
   PART_JEST_EXPECT +
   String.raw`
 // --- shared by pw and hopp ----------------------------------------------------------------------
-const resolve = (text) => String(text).replace(/<<([^<>]*)>>/g, (whole, name) => {
-  const value = variables.get(name.trim());
-  return value === undefined ? whole : String(value);
-});
+// Hoppscotch expands <<name>> again inside what it found, up to 10 levels (research §5.1); a name with
+// no value becomes "". A cycle stops at the cap, leaving what the last pass produced.
+const resolve = (text) => {
+  let out = String(text);
+  for (let level = 0; level < 10 && out.includes('<<'); level++) {
+    const next = out.replace(/<<([^<>]*)>>/g, (whole, name) => {
+      const value = variables.get(name.trim());
+      return value === undefined ? '' : String(value);
+    });
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+};
 const env = {
   get: (name) => variables.get(name),
   set: (name, value) => variables.set(name, value),
@@ -129,27 +125,45 @@ const hoppExpect = (actual, negated = false) => {
   Object.defineProperty(both, 'not', { get: () => hoppExpect(actual, !negated) });
   return both;
 };
+// get resolves <<name>> and, like Hoppscotch's, answers null for a name that is not set.
 const scope = Object.freeze({
-  get: env.get,
-  getRaw: (name) => variables.get(name),
+  get: (name) => { const value = variables.get(name); return value === undefined ? null : resolve(value); },
+  getRaw: (name) => { const value = variables.get(name); return value === undefined ? null : value; },
   set: env.set,
   delete: env.unset,
   reset: unsupported('hopp.env.reset'),
+  getInitialRaw: unsupported('hopp.env.getInitialRaw'),
+  setInitial: unsupported('hopp.env.setInitial'),
 });
+const rows = (list) => list.list().map(({ name, value }) => ({ key: name, value }));
+const eachRow = (list, apply) => {
+  if (!Array.isArray(list)) throw new TypeError('Expected a list of { key, value } rows');
+  for (const row of list) apply(row.key, row.value);
+};
+const bodyKind = () => request.headers.get('content-type') ?? (() => { try { JSON.parse(request.body.text); return 'application/json'; } catch { return 'text/plain'; } })();
 const hoppRequest = Object.freeze({
   get url() { return request.url; },
   get method() { return request.method; },
-  get headers() { return request.headers.list().map(({ name, value }) => ({ key: name, value })); },
-  get body() { return request.body.kind === 'none' ? '' : request.body.text; },
+  get headers() { return rows(request.headers); },
+  get params() { return rows(request.query); },
+  // { contentType, body } as Hoppscotch has it; a body a script cannot read (a form) throws the typed API's own error.
+  get body() { return request.body.kind === 'none' ? { contentType: null, body: null } : { contentType: bodyKind(), body: request.body.text }; },
+  get auth() { return unsupported('hopp.request.auth')(); },
   setUrl: (url) => { request.url = url; },
   setMethod: (method) => { request.method = method; },
   setHeader: (name, value) => request.headers.set(String(name), String(value)),
+  setHeaders: (list) => eachRow(list, (key, value) => request.headers.set(String(key), String(value))),
+  removeHeader: (name) => request.headers.delete(String(name)),
   setParam: (name, value) => request.query.set(String(name), String(value)),
+  setParams: (list) => eachRow(list, (key, value) => request.query.set(String(key), String(value))),
+  removeParam: (name) => request.query.delete(String(name)),
   setBody: (body) => {
-    if (typeof body === 'string') request.body.text = body;
-    else request.body.json = body;
+    if (body === null || typeof body !== 'object' || !('body' in body)) throw new TypeError('hopp.request.setBody takes { contentType, body }');
+    if (typeof body.body === 'string') request.body.text = body.body;
+    else request.body.json = body.body;
   },
   setAuth: unsupported('hopp.request.setAuth'),
+  variables: Object.freeze({ get: (name) => variables.get(name), set: (name, value) => variables.set(name, value) }),
 });
 define('hopp', Object.freeze({
   env: Object.freeze({ ...scope, active: scope, global: scope }),

@@ -89,7 +89,37 @@ describe('the Hoppscotch layer: pw', () => {
         { name: 'a', value: '' },
         { name: 'b', value: 'https://shop.test' },
       ],
-      log: { lines: ['https://shop.test/x/1/<<missing>>'] },
+      log: { lines: ['https://shop.test/x/1/'] },
+    });
+  });
+
+  it('env.resolve expands nested references to 10 levels and stops a cycle there', async () => {
+    const outcome = await run(
+      'pre',
+      `pw.env.set('a', '<<b>>-a'); pw.env.set('b', '<<c>>-b'); pw.env.set('c', 'c');
+       pw.env.set('x', '<<y>>'); pw.env.set('y', '<<x>>');
+       console.log(pw.env.resolve('<<a>>'));
+       const loop = pw.env.resolve('<<x>>');
+       console.log(loop === '<<x>>' || loop === '<<y>>');
+       console.log(pw.env.getResolve('a'));`,
+    );
+    expect(outcome).toMatchObject({ ok: true, log: { lines: ['c-b-a', 'true', 'c-b-a'] } });
+  });
+
+  it('a toBeType name outside the eight, or toHaveLength on a number, is an error', async () => {
+    const outcome = await run(
+      'post',
+      `pw.test('type', () => pw.expect(1).toBeType('date'));
+       pw.test('length', () => pw.expect(5).toHaveLength(1));
+       pw.test('typeof', () => { pw.expect([]).toBeType('object'); pw.expect(null).toBeType('object'); pw.expect([1]).toHaveLength(1); });`,
+    );
+    expect(outcome).toMatchObject({
+      ok: true,
+      tests: [
+        { name: 'type', passed: false },
+        { name: 'length', passed: false },
+        { name: 'typeof', passed: true },
+      ],
     });
   });
 
@@ -229,7 +259,7 @@ describe('the Hoppscotch layer: hopp', () => {
       `hopp.request.setUrl('https://shop.test/v2');
        hopp.request.setMethod('PUT');
        hopp.request.setHeader('X-Trace', 't1');
-       hopp.request.setBody('{"item":"b"}');
+       hopp.request.setBody({ contentType: 'application/json', body: '{"item":"b"}' });
        console.log(hopp.request.method, hopp.request.url);`,
     );
     expect(outcome).toMatchObject({
@@ -244,18 +274,61 @@ describe('the Hoppscotch layer: hopp', () => {
       "hopp.request.setUrl('https://x.test')",
       "hopp.request.setMethod('PUT')",
       "hopp.request.setHeader('X-A', '1')",
-      "hopp.request.setBody('x')",
+      "hopp.request.setBody({ contentType: 'text/plain', body: 'x' })",
     ]) {
       const outcome = await run('post', source);
       expect(outcome).toMatchObject({
         ok: false,
-        error: { message: expect.stringContaining('cannot be changed') as unknown },
+        error: { code: 'script-error', message: expect.stringContaining('cannot be changed') as unknown },
       });
     }
     expect(await run('post', 'console.log(hopp.request.method)')).toMatchObject({
       ok: true,
       log: { lines: ['POST'] },
     });
+  });
+
+  it('hopp.request reads params and body, and changes headers, params and variables before the send', async () => {
+    const outcome = await run(
+      'pre',
+      `hopp.request.setHeaders([{ key: 'X-A', value: '1' }, { key: 'X-B', value: '2' }]);
+       hopp.request.removeHeader('X-A');
+       hopp.request.setParams([{ key: 'p', value: '9' }]);
+       hopp.request.removeParam('x');
+       hopp.request.variables.set('rv', 'r');
+       hopp.request.setBody({ contentType: 'application/json', body: { item: 'c' } });
+       console.log(JSON.stringify(hopp.request.headers.map((h) => h.key)));
+       console.log(JSON.stringify(hopp.request.params));
+       console.log(JSON.stringify(hopp.request.body), hopp.request.variables.get('rv'));`,
+    );
+    expect(outcome).toMatchObject({
+      ok: true,
+      values: [{ name: 'rv', value: 'r' }],
+      log: {
+        lines: [
+          '["Content-Type","X-B"]',
+          '[{"key":"p","value":"9"}]',
+          '{"contentType":"application/json","body":"{\\"item\\":\\"c\\"}"} r',
+        ],
+      },
+    });
+  });
+
+  it('hopp.request.body of a form body is a clear error, not undefined', async () => {
+    const form: RestRequestSnapshot = { ...REQUEST, body: { kind: 'other', description: 'a form' } };
+    const outcome = await runScript({
+      sandbox,
+      phase: 'pre',
+      api: 'hoppscotch',
+      source: 'console.log(typeof hopp.request.body);',
+      filename: 'Order.pre.js',
+      request: form,
+      vars: {},
+      props: {},
+      secrets: {},
+      requestName: 'Order',
+    });
+    expect(outcome).toMatchObject({ ok: false, error: { message: expect.stringContaining('a form') as unknown } });
   });
 
   it('a secret-named write is returned as a run value', async () => {
@@ -302,6 +375,15 @@ describe('the Hoppscotch layer: what it does not run', () => {
       ['pm.visualizer', "pm.visualizer.set('<p/>')"],
       ['pm.execution.setNextRequest', "pm.execution.setNextRequest('B')"],
       ['pm.execution.skipRequest', 'pm.execution.skipRequest()'],
+      ['pm.vault', "pm.vault.get('a')"],
+      ['pm.cookies.jar', 'pm.cookies.jar()'],
+      ['pm.require', "pm.require('lodash')"],
+      ['hopp.env.reset', "hopp.env.reset('a')"],
+      ['hopp.env.getInitialRaw', "hopp.env.active.getInitialRaw('a')"],
+      ['hopp.env.setInitial', "hopp.env.global.setInitial('a', 'b')"],
+      ['hopp.request.setAuth', "hopp.request.setAuth({ authType: 'none' })"],
+      ['hopp.request.auth', 'hopp.request.auth'],
+      ['hopp.response.body.bytes', 'hopp.response.body.bytes()'],
       ['require', "require('lodash')"],
     ] as const) {
       expect(await run('post', source)).toMatchObject({
@@ -329,6 +411,8 @@ describe('the Hoppscotch layer: what it does not run', () => {
     const text = [
       "hopp.cookies.get('a'); hopp.fetch('u'); pm.sendRequest('u'); pm.collectionVariables.get('a');",
       'pm.iterationData.get("a"); pm.visualizer.set("x"); pm.execution.setNextRequest("B"); pm.execution.skipRequest();',
+      "pm.vault.get('a'); pm.cookies.jar(); pm.require('m'); hopp.env.reset('a'); hopp.env.active.getInitialRaw('a');",
+      "hopp.env.global.setInitial('a', 'b'); hopp.request.setAuth({}); hopp.request.auth; hopp.response.body.bytes();",
       "require('x');",
       "import { x } from 'lib';",
     ].join('\n');
@@ -341,11 +425,61 @@ describe('the Hoppscotch layer: what it does not run', () => {
       'pm.visualizer',
       'pm.execution.setNextRequest',
       'pm.execution.skipRequest',
+      'pm.vault',
+      'pm.cookies.jar',
+      'pm.require',
+      'hopp.env.reset',
+      'hopp.env.getInitialRaw',
+      'hopp.env.setInitial',
+      'hopp.request.setAuth',
+      'hopp.request.auth',
+      'hopp.response.body.bytes',
       'require',
       'import',
     ]);
     expect(unsupportedCalls('ahopp.cookies.x; foo.hopp.fetch(1); // import x', 'hoppscotch')).toEqual([]);
     expect(unsupportedCalls("const s = 'important'; reimport(1);", 'hoppscotch')).toEqual([]);
+  });
+
+  const NOT_IMPORTS = [
+    'importantFlag = 1;',
+    'imports.push(1);',
+    'import(x);',
+    'import.meta.url;',
+    'const importer = 1;',
+  ];
+
+  it('the scan does not take importantFlag, imports.push, import() or import.meta for an import', () => {
+    for (const line of NOT_IMPORTS) expect(unsupportedCalls(`  ${line}`, 'hoppscotch')).toEqual([]);
+    for (const line of [
+      "import x from 'm';",
+      "import {a} from 'm';",
+      "import * as m from 'm';",
+      "import 'm';",
+      "import'm';",
+    ]) {
+      expect(unsupportedCalls(line, 'hoppscotch')).toEqual(['import']);
+    }
+  });
+
+  it('the runner does not refuse a script that only looks like an import', async () => {
+    const outcome = await run(
+      'pre',
+      `let importantFlag = 0; const imports = [];
+importantFlag = 1;
+imports.push(1);
+hopp.env.set('n', String(importantFlag + imports.length));`,
+    );
+    expect(outcome).toMatchObject({ ok: true, values: [{ name: 'n', value: '2' }] });
+    for (const line of ['import(x);', 'import.meta.url;']) {
+      // These are real (dynamic or meta) uses: they fail on their own terms, not as a refused import.
+      const failed = await run('pre', `try { ${line} } catch (e) {}\nhopp.env.set('ran', '1');`.replace(/^/, ''));
+      expect(failed.ok === false ? failed.error.message : '').not.toContain('import is not supported');
+    }
+    const atLineStart = await run('pre', "import(x);\nhopp.env.set('a', '1');");
+    expect(atLineStart.ok === false ? atLineStart.error.message : '').not.toContain('import is not supported');
+    const meta = await run('pre', "import.meta.url;\nhopp.env.set('a', '1');");
+    expect(meta.ok === false ? meta.error.message : '').not.toContain('import is not supported');
   });
 
   it('Hoppscotch has no run control to warn about', () => {

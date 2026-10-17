@@ -2,7 +2,7 @@
  * Scripts an importer keeps as text (spec §7.4, §6.2): written under `imported-scripts/` by the
  * desktop main process, never read back or run. The path rule here is pure.
  */
-import { TOP_LEVEL_IMPORT } from '../script/api/hoppscotch.js';
+import { TOP_LEVEL_IMPORT } from '../script/module-syntax.js';
 import type { LayeredApi, RequestScripts } from '../script/model.js';
 
 /** The folder imported scripts are written to. Nothing in Wirebench reads it. */
@@ -70,6 +70,15 @@ const UNSUPPORTED_CALLS: Record<LayeredApi, readonly [RegExp, string][]> = {
     [/(?<![\w$.])pm\.visualizer\b/, 'pm.visualizer'],
     [/(?<![\w$.])pm\.execution\.setNextRequest\b/, 'pm.execution.setNextRequest'],
     [/(?<![\w$.])pm\.execution\.skipRequest\b/, 'pm.execution.skipRequest'],
+    [/(?<![\w$.])pm\.vault\b/, 'pm.vault'],
+    [/(?<![\w$.])pm\.cookies\.jar\b/, 'pm.cookies.jar'],
+    [/(?<![\w$.])pm\.require\b/, 'pm.require'],
+    [/(?<![\w$.])hopp\.env(?:\.(?:active|global))?\.reset\b/, 'hopp.env.reset'],
+    [/(?<![\w$.])hopp\.env(?:\.(?:active|global))?\.getInitialRaw\b/, 'hopp.env.getInitialRaw'],
+    [/(?<![\w$.])hopp\.env(?:\.(?:active|global))?\.setInitial\b/, 'hopp.env.setInitial'],
+    [/(?<![\w$.])hopp\.request\.setAuth\b/, 'hopp.request.setAuth'],
+    [/(?<![\w$.])hopp\.request\.auth\b/, 'hopp.request.auth'],
+    [/(?<![\w$.])hopp\.response\.body\.bytes\b/, 'hopp.response.body.bytes'],
     [/(?<![\w$.])require\s*\(/, 'require'],
     [TOP_LEVEL_IMPORT, 'import'],
   ],

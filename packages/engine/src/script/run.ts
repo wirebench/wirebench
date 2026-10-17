@@ -13,8 +13,8 @@ import type { ResponseSnapshot } from '../protocols.js';
 import { TRANSFER_NAME_PATTERN } from '../sequence/model.js';
 import { applyRequestChanges } from './apply.js';
 import { buildPrelude } from './api/prelude.js';
-import { MODULE_MARKER, TOP_LEVEL_IMPORT } from './api/hoppscotch.js';
 import { SCRIPT_LAYERS } from './api/layers.js';
+import { MODULE_MARKER, TOP_LEVEL_IMPORT } from './module-syntax.js';
 import { scriptingOf } from './lookup.js';
 import {
   isLayeredApi,
