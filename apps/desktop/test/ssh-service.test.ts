@@ -96,6 +96,8 @@ function make(
     agentRefused?: boolean;
     sessionLog?: SshServiceDeps['sessionLog'];
     openMosh?: SshServiceDeps['openMosh'];
+    openTelnet?: SshServiceDeps['openTelnet'];
+    telnet?: boolean;
   } = {},
 ) {
   const knownHostsFile = join(mkdtempSync(join(tmpdir(), 'wb-ssh-')), 'ssh-known-hosts.json');
@@ -146,6 +148,8 @@ function make(
     ...(opts.onSessionsChange ? { onSessionsChange: opts.onSessionsChange } : {}),
     ...(opts.sessionLog ? { sessionLog: opts.sessionLog } : {}),
     ...(opts.openMosh ? { openMosh: opts.openMosh } : {}),
+    ...(opts.openTelnet ? { openTelnet: opts.openTelnet } : {}),
+    ...(opts.telnet === undefined ? {} : { telnet: opts.telnet }),
   });
   return { service, open, emit, fake, opened, knownHostsFile, hostOsFile, list };
 }
@@ -1297,5 +1301,62 @@ describe('SshService Mosh hosts (#419)', () => {
   it('refuses a Mosh host when no Mosh opener is set up', async () => {
     const { service } = make({ known: [KEY], file: moshFile() });
     await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({ code: 'mosh-unavailable' });
+  });
+});
+
+describe('SshService Telnet hosts (#425)', () => {
+  const telnetFile = (extra = ''): HostsFile =>
+    parseHostsFile(
+      `version: 1\nhosts:\n  - { id: a, name: a, address: 10.0.0.1, env: { STAGE: blue }, ssh: { user: admin, auth: { password: '\${secret:a_pw}' }, forwardAgent: true, protocol: telnet${extra} } }\n`,
+    );
+  const shown = (emit: ReturnType<typeof vi.fn>): string =>
+    emit.mock.calls
+      .filter((call) => (call[1] as { name?: string }).name === 'ssh.data')
+      .map((call) => Buffer.from((call[2] as { data: string }).data, 'base64').toString('utf8'))
+      .join('');
+
+  it('opens through the Telnet opener with the sign-in, masks the password, and sends no env and no OS probe', async () => {
+    const telnet = fakeSession('t1');
+    const openTelnet = vi.fn(() => Promise.resolve(telnet.session));
+    const { service, open, emit } = make({ file: telnetFile(), openTelnet });
+    const result = await service.connect(as(sender(1)), CONNECT);
+    expect(open).not.toHaveBeenCalled();
+    const options = (openTelnet.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+    expect(options).toMatchObject({
+      hops: [],
+      target: { address: '10.0.0.1', port: 23 },
+      login: { user: 'admin', password: 'pw' },
+      cols: 80,
+      rows: 24,
+    });
+    expect(options).not.toHaveProperty('env');
+    expect(options).not.toHaveProperty('forwardAgent');
+    expect(result).toEqual({ sessionId: 't1' });
+    await flush();
+    expect(telnet.exec).not.toHaveBeenCalled();
+    telnet.pushData(Buffer.from('Password: pw\r\n$ '));
+    await flush();
+    expect(shown(emit)).toContain('Password: ');
+    expect(shown(emit)).not.toContain('pw');
+  });
+
+  it('logs the Telnet target with its user, and the password among the secrets', async () => {
+    const telnet = fakeSession('t1');
+    const sessionLog = vi.fn(() => Promise.resolve(undefined));
+    const { service } = make({ file: telnetFile(), openTelnet: () => Promise.resolve(telnet.session), sessionLog });
+    await service.connect(as(sender(1)), CONNECT);
+    expect(sessionLog).toHaveBeenCalledWith(expect.anything(), {
+      hostId: 'a',
+      hops: [],
+      target: { address: '10.0.0.1', port: 23, user: 'admin' },
+      secrets: ['pw'],
+    });
+  });
+
+  it('refuses a Telnet host when this build switched Telnet off, before any connection', async () => {
+    const openTelnet = vi.fn();
+    const { service } = make({ file: telnetFile(), openTelnet, telnet: false });
+    await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({ code: 'telnet-off' });
+    expect(openTelnet).not.toHaveBeenCalled();
   });
 });

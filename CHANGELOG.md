@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Telnet hosts.** A host or group can set `protocol: telnet` to open a Telnet session in the same
+  terminal tab, with panes, find, snippets and session logs. Wirebench negotiates the terminal type and
+  window size, and types the host's user and password at the device's login and password prompts when they
+  are set. It connects straight, through the host's proxy, or through an SSH jump host. The form, the
+  details panel and the terminal all say the session is not encrypted, and Files, port forwarding, agent
+  forwarding and keys are hidden for these hosts. `WIREBENCH_AREAS=telnet=off` switches Telnet off for a
+  build (#425).
 - **Make secret on credential-like variables.** A variable named like a credential (`token`,
   `password`, `apiKey`…) with a plain value now offers **Make secret** in its row: the value is stored
   as a project secret on this machine and the row keeps `${secret:name}`. On a workspace scope it is

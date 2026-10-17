@@ -21,7 +21,7 @@ export const sshAuthWireSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('agent') }),
 ]);
 
-export const sshProtocolWireSchema = z.enum(['ssh', 'mosh']);
+export const sshProtocolWireSchema = z.enum(['ssh', 'mosh', 'telnet']);
 export type SshProtocolWire = z.infer<typeof sshProtocolWireSchema>;
 
 /** `ssh.mosh`, taken whole from the nearest level: the remote server command and the UDP port or range. */

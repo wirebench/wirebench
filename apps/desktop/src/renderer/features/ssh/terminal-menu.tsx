@@ -29,6 +29,8 @@ export interface TerminalMenuState {
   readonly hasSelection: boolean;
   /** The pane's session is open, so what is typed or pasted has somewhere to go. */
   readonly connected: boolean;
+  /** Whether the host has Files (SFTP); a Telnet host does not (#425). Offered unless false. */
+  readonly files?: boolean;
 }
 
 export interface TerminalMenuItem {
@@ -99,7 +101,7 @@ export function terminalMenuGroups(
     ],
     [
       item('runSnippet', 'Run snippet…', command('ssh.snippetPicker'), !state.connected),
-      item('openFiles', 'Open files', command('ssh.openFiles')),
+      ...(state.files === false ? [] : [item('openFiles', 'Open files', command('ssh.openFiles'))]),
       item('reconnect', 'Reconnect', undefined),
     ],
   ];

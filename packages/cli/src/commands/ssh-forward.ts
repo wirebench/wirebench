@@ -154,6 +154,10 @@ function chainOf(file: HostsFile, hostId: string): readonly ResolvedHost[] {
     throw usage(failure.code, failure.message);
   }
   for (const hop of chain) {
+    // Forwarding runs over an SSH connection to every hop; a Telnet host (#425) has none.
+    if (hop.ssh.protocol.value === 'telnet') {
+      throw usage('ssh-protocol-unsupported', `${hop.id} is a Telnet host: port forwarding needs SSH`);
+    }
     if (hop.incomplete) {
       throw usage(
         'ssh-host-incomplete',

@@ -15,6 +15,9 @@ import { openFiles } from './files/open-files.js';
 import { HostForwards } from './forwarding/forwarding-view.js';
 import { isLive, useForwardsStore } from './forwarding/forwards-store.js';
 import { HostForm } from './host-dialog.js';
+import { hasSshFeatures, protocolOf } from './host-protocol.js';
+import { PROTOCOL_LABELS } from './mosh-section.js';
+import { PlainTextMark } from './plain-text-mark.js';
 import { HostActionsButton } from './host-menus.js';
 import { findHost, flattenGroups, hostStatusOf, osKeyOf, useHostsStore } from './hosts-store.js';
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
@@ -124,6 +127,9 @@ export function HostDetails() {
     );
   }
   const host = resolved.find((h) => h.id === entry.id);
+  const protocol = protocolOf(host);
+  // A Telnet host (#425) has no Files, agent, host key, environment, forwarding or ssh command.
+  const sshFeatures = hasSshFeatures(protocol);
   const groups = flattenGroups(file);
   const groupName = (id: string): string => groups.find(({ group }) => group.id === id)?.group.name ?? id;
   const status = sessionStatus(hostStatus);
@@ -183,13 +189,15 @@ export function HostDetails() {
         >
           Connect
         </Button>
-        <Button
-          onClick={() => {
-            openFiles(entry.id);
-          }}
-        >
-          <FolderOpen size={12} aria-hidden="true" /> Files
-        </Button>
+        {sshFeatures && (
+          <Button
+            onClick={() => {
+              openFiles(entry.id);
+            }}
+          >
+            <FolderOpen size={12} aria-hidden="true" /> Files
+          </Button>
+        )}
         <Button onClick={edit}>
           <Pencil size={12} aria-hidden="true" /> Edit
         </Button>
@@ -277,11 +285,18 @@ export function HostDetails() {
           )}
         </Row>
         <Row label="Protocol">
-          <span>{host.ssh.protocol?.value === 'mosh' ? 'Mosh' : 'SSH'}</span>
+          <span>{PROTOCOL_LABELS[protocol]}</span>
           {host.ssh.protocol !== undefined &&
             host.ssh.protocol.from !== 'default' &&
             muted(provenance(host.ssh.protocol.from))}
         </Row>
+        {protocol === 'telnet' && (
+          <Row label="Encryption">
+            <span className="flex items-center gap-1 text-status-warning">
+              <PlainTextMark /> None: plain text
+            </span>
+          </Row>
+        )}
         {host.ssh.protocol?.value === 'mosh' && (
           <Row label="Mosh server">
             <span className="truncate font-mono">
@@ -339,24 +354,28 @@ export function HostDetails() {
           </>
         )}
       </Section>
-      <Section title="Agent">
-        <Row label="Agent forwarding">
-          <span>{host.ssh.forwardAgent.value ? 'On' : 'Off'}</span>
-          {muted(provenance(host.ssh.forwardAgent.from))}
-        </Row>
-      </Section>
-      <Section title="Host key">
-        {keys.length === 0 ? (
-          <p className="py-1 text-sm text-fg-subtle">Not trusted yet: the first connection asks.</p>
-        ) : (
-          keys.map((key) => (
-            <Row key={key.keyType} label={key.keyType}>
-              <span className="font-mono text-xs break-all">{key.fingerprint}</span>
-            </Row>
-          ))
-        )}
-      </Section>
-      {host.env.length > 0 && (
+      {sshFeatures && (
+        <Section title="Agent">
+          <Row label="Agent forwarding">
+            <span>{host.ssh.forwardAgent.value ? 'On' : 'Off'}</span>
+            {muted(provenance(host.ssh.forwardAgent.from))}
+          </Row>
+        </Section>
+      )}
+      {sshFeatures && (
+        <Section title="Host key">
+          {keys.length === 0 ? (
+            <p className="py-1 text-sm text-fg-subtle">Not trusted yet: the first connection asks.</p>
+          ) : (
+            keys.map((key) => (
+              <Row key={key.keyType} label={key.keyType}>
+                <span className="font-mono text-xs break-all">{key.fingerprint}</span>
+              </Row>
+            ))
+          )}
+        </Section>
+      )}
+      {sshFeatures && host.env.length > 0 && (
         <Section title="Environment">
           {host.env.map((variable) => (
             <Row key={variable.name} label={variable.name}>
@@ -390,10 +409,12 @@ export function HostDetails() {
             )}
           </Section>
         )}
-      <section aria-label="Port forwarding" className="flex flex-col border-t border-hairline px-1 py-3">
-        <h3 className="mb-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">Port forwarding</h3>
-        <HostForwards hostId={host.id} />
-      </section>
+      {sshFeatures && (
+        <section aria-label="Port forwarding" className="flex flex-col border-t border-hairline px-1 py-3">
+          <h3 className="mb-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">Port forwarding</h3>
+          <HostForwards hostId={host.id} />
+        </section>
+      )}
       <HostSessionLogs hostId={host.id} path={host.path} groupName={groupName} refreshKey={hostStatus} />
       <Section title="Timing">
         <Row label="Keep-alive">
@@ -416,12 +437,14 @@ export function HostDetails() {
           </div>
         </Section>
       )}
-      <Section title="Command">
-        <div className="flex items-start gap-2 rounded-md bg-surface-sunken px-2 py-1.5">
-          <code className="min-w-0 flex-1 font-mono text-xs break-all text-fg-default">{command}</code>
-          <CopyButton text={command} label="Copy command" />
-        </div>
-      </Section>
+      {sshFeatures && (
+        <Section title="Command">
+          <div className="flex items-start gap-2 rounded-md bg-surface-sunken px-2 py-1.5">
+            <code className="min-w-0 flex-1 font-mono text-xs break-all text-fg-default">{command}</code>
+            <CopyButton text={command} label="Copy command" />
+          </div>
+        </Section>
+      )}
     </div>
   );
 }

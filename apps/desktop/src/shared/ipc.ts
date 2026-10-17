@@ -489,11 +489,12 @@ export const channels = {
      */
     checkForUpdates: defineChannel('app.checkForUpdates', z.undefined(), appUpdateStatusSchema),
     /** The sidebar areas this run has switched on (`WIREBENCH_AREAS`); the renderer hides the rest. */
-    // `localTerminal`: whether the local terminal tab (#410) is on; it rides with the SSH area.
+    // `localTerminal`: whether the local terminal tab (#410) is on; it rides with the SSH area. `telnet`: whether
+    // Telnet hosts (#425) connect; main always sends it.
     areas: defineChannel(
       'app.areas',
       z.undefined(),
-      z.object({ enabled: z.array(z.string()), localTerminal: z.boolean() }),
+      z.object({ enabled: z.array(z.string()), localTerminal: z.boolean(), telnet: z.boolean().optional() }),
     ),
     /** The protocol kinds this run has switched on (`WIREBENCH_KINDS`); the renderer shows the rest as placeholders. */
     kinds: defineChannel('app.kinds', z.undefined(), z.object({ enabled: z.array(z.string()) })),
