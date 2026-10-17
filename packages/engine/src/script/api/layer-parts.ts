@@ -5,6 +5,7 @@
  * taken and a layer is these parts joined plus its own objects. Some parts
  * use names an earlier part defines (`PART_VARIABLES` and `PART_CRYPTO` use `unsupported`).
  */
+import { jsonSchemaValidator } from '../../json/schema-validate.js';
 
 /** Declares `unsupported`: a function that throws `ScriptUnsupported` naming the call. */
 export const PART_UNSUPPORTED = String.raw`
@@ -275,4 +276,17 @@ const pmObject = {
 };
 const pmResponseValue = pmResponse();
 if (pmResponseValue !== undefined) pmObject.response = pmResponseValue;
+`;
+
+/**
+ * Declares `jsonSchema`: `jsonSchema(value, schema)` returns the problems (`{ path, keyword, message }`)
+ * the engine's own JSON Schema validator finds, the one the response assertions use, or `[]`. The
+ * validator's source is `jsonSchemaValidator.toString()`, so no copy can drift from it. It adds about
+ * 20 KB of source to every run of a layer that includes it (spec §5 has the measurements).
+ */
+export const PART_JSON_SCHEMA = `
+const jsonSchema = (() => {
+  const { validateJsonSchema } = (${jsonSchemaValidator.toString()})();
+  return (value, schema) => validateJsonSchema(value, schema);
+})();
 `;

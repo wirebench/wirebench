@@ -11,6 +11,7 @@ import { POSTMAN_LAYER } from '../../../src/script/api/postman.js';
 import {
   PART_CRYPTO,
   PART_EXPECT,
+  PART_JSON_SCHEMA,
   PART_PAIRS,
   PART_PM,
   PART_UNSUPPORTED,
@@ -24,6 +25,7 @@ const PARTS: ReadonlyArray<readonly [string, string]> = [
   ['PART_PAIRS', PART_PAIRS],
   ['PART_CRYPTO', PART_CRYPTO],
   ['PART_PM', PART_PM],
+  ['PART_JSON_SCHEMA', PART_JSON_SCHEMA],
 ];
 
 interface Evaluated {
@@ -96,6 +98,7 @@ const EXPECTED: ReadonlyArray<{ declared: string[]; defined: string[] }> = [
     defined: ['CryptoJS', 'btoa', 'atob'],
   },
   { declared: ['pmExpect', 'pmRequest', 'pmResponse', 'pmObject', 'pmResponseValue'], defined: [] },
+  { declared: ['jsonSchema'], defined: [] },
 ];
 
 describe('the shared layer parts', () => {

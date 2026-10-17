@@ -181,13 +181,30 @@ The layer defines these:
 - **`res`:**
   - `status`, `headers`, `body` (parsed as JSON when the response is JSON) and `responseTime`;
   - `getStatus`, `getBody` and `getHeader`.
-- **`test` and `expect`:** the shared ones, plus `.jsonSchema` (decision 6). The Bruno PR opens
-  with a spike: run the validator assertions use inside the sandbox, within the 64 MiB and 1 s
-  limits. If it fits, `.jsonSchema` checks against the schema in the script. If not, it is
-  unsupported, and the spike's result is recorded here.
+- **`test` and `expect`:** the shared ones, plus `.jsonSchema` (decision 6), which checks the
+  value against the schema in the script.
 
-Unsupported: `bru.sendRequest`, `bru.sleep`, `require`, `bru.cookies` and `.jsonSchema` if the
-validator cannot run in the sandbox.
+**`.jsonSchema` in the sandbox (spike result).** The validator the response assertions use is the
+engine's own (`json/schema-validate.ts`; R12 rules out the dev-only one). It now lives in one
+self-contained function, `jsonSchemaValidator`, and `PART_JSON_SCHEMA` embeds its
+`toString()`. So the sandbox runs the same code, with no copy and no build step. It compiles
+nothing at run time (no `new Function` or `eval`). Its unit tests run twice, once against the
+module and once against that source in a fresh realm, so a reference outside the function fails a
+test. Measured in QuickJS under the real limits, on a developer laptop:
+
+- A 1 MiB body that is one 50-property object checks in 13.7 ms in all. Parsing the JSON takes
+  13.2 ms of that, the check about 0.5 ms. With the input, the body and its parse held, the runtime
+  uses 2.1 MiB, and the run succeeds under half the 64 MiB limit.
+- The part adds 1.2 ms (1.5 ms against 0.3 ms) and 38 KiB to every run of a layer that includes it,
+  called or not. Loading it lazily would gain nothing.
+- The node cap holds in scripts too: the validator stops after 10,000 schema nodes with one `budget`
+  problem. A 1 MiB array of 1,253 rows of 50 properties gets that `budget` problem after about 200
+  rows, in 66 ms. Without the cap it checks in full in 277 ms, still inside 1 s.
+
+So `.jsonSchema` is supported. The unit test (`test/unit/script/json-schema-spike.test.ts`) and
+the perf test (`test/perf/json-schema-part.perf.test.ts`) keep these measurements as assertions.
+
+Unsupported: `bru.sendRequest`, `bru.sleep`, `require` and `bru.cookies`.
 
 **Script order (decision 5).** Bruno's `scripts.flow` defaults to `sandwich`; Wirebench runs
 post-response scripts outermost first. Bruno's source (commit `1b932553`, 2026-10-17) confirms both
