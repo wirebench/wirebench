@@ -309,6 +309,7 @@ export class ScriptHost {
     }
     const scripts = activeScripts(located.scripts);
     const outer = activeLevels(located.outer);
+    const postResponseOrder = located.outer.find((level) => level.level === 'api')?.scripts.postResponseOrder;
     if (scripts === undefined && outer.length === 0) return { kind: 'off' };
     return {
       kind: 'on',
@@ -319,6 +320,7 @@ export class ScriptHost {
         slug: located.slug,
         ...(scripts !== undefined ? { scripts } : {}),
         ...(outer.length > 0 ? { outer } : {}),
+        ...(postResponseOrder !== undefined ? { postResponseOrder } : {}),
         types: await located.types(),
       },
     };

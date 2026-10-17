@@ -37,7 +37,7 @@ export function patchedScripts(
   const timeoutMs = patch.timeoutMs === null ? undefined : (patch.timeoutMs ?? scripts?.timeoutMs);
   const postResponseOrder = patch.postResponseOrder ?? scripts?.postResponseOrder;
   const secrets = patch.secrets ?? scripts?.secrets ?? [];
-  if (pre === undefined && post === undefined && secrets.length === 0) {
+  if (pre === undefined && post === undefined && secrets.length === 0 && postResponseOrder !== 'inner-first') {
     return undefined;
   }
   return {

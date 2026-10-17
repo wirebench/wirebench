@@ -110,6 +110,9 @@ export interface RequestScriptingOptions {
 }
 
 /** Where a script sits (#334): above the request, on its API, interface or a folder, or on the request. */
+/** Which level's post-response script runs first. */
+export type PostResponseOrder = NonNullable<RequestScripts['postResponseOrder']>;
+
 export type ScriptLevelKind = 'api' | 'interface' | 'folder' | 'request';
 
 /** The scripts of one level above a request (#334). */
@@ -143,6 +146,8 @@ export interface ScriptedRequest {
   readonly scripts?: RequestScripts;
   /** The scripts of the levels above it that run, outermost first (#334). */
   readonly outer?: readonly ScriptLevel[];
+  /** The API's setting, even when its level does not run: see {@link postResponseLevels}. */
+  readonly postResponseOrder?: PostResponseOrder;
   readonly types: RequestScriptTypes;
 }
 
@@ -158,14 +163,11 @@ export function scriptLevels(request: ScriptedRequest): readonly ScriptRunLevel[
 
 /**
  * The levels in the order their post-response scripts run: as `levels`, outermost first, unless
- * the API level's scripts say `inner-first`. Only the API's setting counts; a folder's or a
- * request's is ignored. Pre-request scripts always run in `levels` order.
+ * `order` is `inner-first`. The order is the API's setting, read before its level was dropped for
+ * being switched off or empty. Pre-request scripts always run in `levels` order.
  */
-export function postResponseLevels<L extends { readonly level: ScriptLevelKind; readonly scripts: RequestScripts }>(
-  levels: readonly L[],
-): readonly L[] {
-  const api = levels.find((level) => level.level === 'api');
-  return api?.scripts.postResponseOrder === 'inner-first' ? [...levels].reverse() : levels;
+export function postResponseLevels<L>(levels: readonly L[], order: PostResponseOrder | undefined): readonly L[] {
+  return order === 'inner-first' ? [...levels].reverse() : levels;
 }
 
 /** The scripts of every level that will run: switched on, with a script. Outermost first. */
@@ -263,7 +265,7 @@ export class RequestScripting {
     let typed = false;
     const order = [
       ...levels.map((level) => [level, 'pre'] as const),
-      ...postResponseLevels(levels).map((level) => [level, 'post'] as const),
+      ...postResponseLevels(levels, request.postResponseOrder).map((level) => [level, 'post'] as const),
     ];
     for (const [level, phase] of order) {
       const source = level.scripts[phase];

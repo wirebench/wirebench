@@ -149,6 +149,25 @@ describe('level scripts (#334)', () => {
     expect(on.kind === 'on' ? [on.request.scripts, on.request.outer?.length] : on).toEqual([undefined, 2]);
   });
 
+  it('carries the API’s post-response order when its own scripts are off or hold only the order', async () => {
+    const project = levelled(SCRIPTS);
+    const api = project.containers['rest']![0] as ReturnType<typeof createApi>;
+    const withApi = (scripts: RequestScripts): Project => {
+      const levelledApi = { ...api, scripts };
+      return { ...project, containers: { rest: [levelledApi] } };
+    };
+    const off = await hostFor(withApi({ ...PRE, enabled: false, postResponseOrder: 'inner-first' })).lookup('r1');
+    const bare = await hostFor(
+      withApi({ api: 'wirebench', enabled: true, secrets: [], postResponseOrder: 'inner-first' }),
+    ).lookup('r1');
+    for (const on of [off, bare]) {
+      expect(on.kind).toBe('on');
+      if (on.kind !== 'on') return;
+      expect(on.request.postResponseOrder).toBe('inner-first');
+      expect(on.request.outer?.map((level) => level.level)).toEqual(['folder']);
+    }
+  });
+
   it('says the scripts are off when every level and the request are switched off', async () => {
     const off = { ...PRE, enabled: false };
     const project = levelled({ ...SCRIPTS, enabled: false }, off);

@@ -2,6 +2,9 @@
  * The script changes (#63): `update-request-scripts` edits one request's scripts on any protocol,
  * `enable-scripts` switches many on, and the other request edits and clones keep them.
  */
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   createApi,
@@ -14,6 +17,8 @@ import {
   createRestRequest,
   grpcApisOf,
   isWirebenchError,
+  loadProject,
+  saveProject,
   restApisOf,
   SCRIPT_LIMITS,
   soapInterfacesOf,
@@ -238,6 +243,44 @@ describe('other edits keep scripts', () => {
     ({ project } = await applyChange(project, { kind: 'clone-grpc-request', requestId: 'grpc-1' }, deps));
     const copies = grpcApisOf(project)[0]!.requests.filter((request) => request.id !== 'grpc-1');
     expect(copies[0]?.scripts?.post?.text).toBe('log(1);');
+  });
+});
+
+describe('an API’s post-response order without scripts', () => {
+  it('keeps an order-only scripts object across a save and load, and drops a lone outer-first', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wb-order-'));
+    try {
+      const { project } = await applyChange(
+        build(),
+        { kind: 'update-request-scripts', requestId: 'api-1', scripts: { postResponseOrder: 'inner-first' } },
+        deps,
+      );
+      expect(restApisOf(project)[0]?.scripts).toEqual({
+        api: 'wirebench',
+        enabled: true,
+        secrets: [],
+        postResponseOrder: 'inner-first',
+      });
+      await saveProject(project, dir);
+      const loaded = await loadProject(dir);
+      expect(restApisOf(loaded.project)[0]?.scripts?.postResponseOrder).toBe('inner-first');
+
+      const back = await applyChange(
+        project,
+        { kind: 'update-request-scripts', requestId: 'api-1', scripts: { postResponseOrder: 'outer-first' } },
+        deps,
+      );
+      // Back to the default with nothing else to keep: the scripts object goes.
+      expect(restApisOf(back.project)[0]).not.toHaveProperty('scripts');
+      const fresh = await applyChange(
+        build(),
+        { kind: 'update-request-scripts', requestId: 'api-1', scripts: { postResponseOrder: 'outer-first' } },
+        deps,
+      );
+      expect(restApisOf(fresh.project)[0]).not.toHaveProperty('scripts');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

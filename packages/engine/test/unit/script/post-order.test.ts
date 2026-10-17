@@ -45,15 +45,22 @@ const logging = (name: string, extra: Partial<RequestScripts> = {}): RequestScri
   ...extra,
 });
 
-function scripted(api: RequestScripts, folder: RequestScripts, request: RequestScripts): ScriptedRequest {
+function scripted(
+  api: RequestScripts,
+  folder: RequestScripts,
+  request: RequestScripts,
+  runs: { readonly api: boolean } = { api: true },
+): ScriptedRequest {
   return {
     protocol: 'rest',
     path: 'Shop/Orders/List carts',
     name: 'List carts',
     slug: 'List carts',
     scripts: request,
+    // The order is the API's setting even when its level is dropped for being off or empty.
+    ...(api.postResponseOrder !== undefined ? { postResponseOrder: api.postResponseOrder } : {}),
     outer: [
-      { level: 'api', name: 'Shop', stem: 'api', scripts: api },
+      ...(runs.api ? [{ level: 'api' as const, name: 'Shop', stem: 'api', scripts: api }] : []),
       { level: 'folder', name: 'Orders', stem: 'Orders/folder', scripts: folder },
     ],
     types: { generated: '' },
@@ -104,6 +111,15 @@ describe('post-response order', () => {
       ),
     );
     expect(done.log.lines.filter((line) => line.endsWith('post'))).toEqual(['api post', 'folder post', 'request post']);
+  });
+
+  it('inner-first holds when the api’s own level does not run: switched off, or holding only the order', async () => {
+    const off = logging('api', { enabled: false, postResponseOrder: 'inner-first' });
+    const bare: RequestScripts = { api: 'wirebench', enabled: true, secrets: [], postResponseOrder: 'inner-first' };
+    for (const api of [off, bare]) {
+      const { done } = await run(scripted(api, logging('folder'), logging('request'), { api: false }));
+      expect(done.log.lines.filter((line) => line.endsWith('post'))).toEqual(['request post', 'folder post']);
+    }
   });
 
   it('inner-first reports the errors of the scripts in the order they ran', async () => {
