@@ -176,6 +176,19 @@ describe('the Thunder Client layer: response and tests', () => {
     expect(outcome).toMatchObject({ ok: true, tests: [{ name: 'shape', passed: true }] });
   });
 
+  it('tc.response.size counts bytes, not characters', async () => {
+    // "é" is 2 bytes, the emoji 4, "x" 1: 4 characters (the emoji is a surrogate pair) but 7 bytes.
+    const outcome = await run(
+      'post',
+      `tc.test('bytes', () => {
+         expect(tc.response.text.length).to.equal(4);
+         expect(tc.response.size).to.equal(7);
+       });`,
+      { response: { ...RESPONSE, text: 'é\u{1F600}x' } },
+    );
+    expect(outcome).toMatchObject({ ok: true, tests: [{ name: 'bytes', passed: true }] });
+  });
+
   it('tc.test takes a boolean or a function', async () => {
     const outcome = await run('post', 'tc.test("a", true); tc.test("b", false); tc.test("c", () => true);');
     expect(outcome).toMatchObject({

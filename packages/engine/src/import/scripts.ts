@@ -25,6 +25,23 @@ export function importedScriptPath(apiSlug: string, itemSlug: string, fileTail: 
   }
 }
 
+/**
+ * A level's scripts as v2.1 `event` entries, for a converter that writes the collection document the
+ * shared mapper reads: `prerequest` first, then `test` (the after-response script). A blank script
+ * is skipped, and a level with none has no `event` at all.
+ */
+export function eventsOf(scripts: {
+  readonly pre?: string;
+  readonly post?: string;
+}): { event: Record<string, unknown>[] } | Record<string, never> {
+  const event: Record<string, unknown>[] = [];
+  if (scripts.pre !== undefined && scripts.pre.trim() !== '')
+    event.push({ listen: 'prerequest', script: { type: 'text/javascript', exec: scripts.pre } });
+  if (scripts.post !== undefined && scripts.post.trim() !== '')
+    event.push({ listen: 'test', script: { type: 'text/javascript', exec: scripts.post } });
+  return event.length > 0 ? { event } : {};
+}
+
 /** A level's scripts of one kind, in the order the client runs them; two of one kind are joined. */
 export function scriptText(texts: readonly string[]): string {
   return texts.map((text) => `${text.replace(/\s+$/, '')}\n`).join('\n');

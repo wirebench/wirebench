@@ -19,6 +19,7 @@ import { V21_SCHEMA } from '../collection-v3/convert.js';
 import { inlineQuery } from '../insomnia/convert.js';
 import type { ImportReport } from '../report.js';
 import { ReportBuilder } from '../report.js';
+import { eventsOf } from '../scripts.js';
 import { hoppscotchTemplates } from '../template-dialects.js';
 import { rewriteMustache } from '../templates.js';
 import type { ImportedVariable, ImportedVariables, ImportedVariableSet } from '../variables.js';
@@ -26,16 +27,6 @@ import { credentialSafeVariable, VariableSetBuilder, warnCredentialLookingNames 
 import type { HopBody, HopCollection, HopEnvironment, HopRec, HopRequest, HopRow, HopVariable } from './model.js';
 
 type Json = Record<string, unknown>;
-
-/** A script pair as v2.1 `event` entries: `prerequest` first, then `test` (the after-response script). */
-function eventsOf(scripts: { readonly pre: string; readonly test: string }): { event: Json[] } | Record<string, never> {
-  const event: Json[] = [];
-  if (scripts.pre.trim() !== '')
-    event.push({ listen: 'prerequest', script: { type: 'text/javascript', exec: scripts.pre } });
-  if (scripts.test.trim() !== '')
-    event.push({ listen: 'test', script: { type: 'text/javascript', exec: scripts.test } });
-  return event.length > 0 ? { event } : {};
-}
 
 export interface MapHoppscotchOptions {
   readonly newId?: IdGenerator;
@@ -375,7 +366,7 @@ class Mapper {
         ...(folder.description !== undefined ? { description: folder.description } : {}),
         item: inner,
         ...(auth !== undefined ? { auth } : {}),
-        ...eventsOf(folder),
+        ...eventsOf({ pre: folder.pre, post: folder.test }),
       });
     }
     for (const request of collection.requests) {
@@ -384,7 +375,7 @@ class Mapper {
         request.kind === 'rest'
           ? restItem(request, label, inherited, this.report)
           : graphqlItem(request, label, inherited, this.report);
-      out.push({ ...item, ...eventsOf(request) });
+      out.push({ ...item, ...eventsOf({ pre: request.pre, post: request.test }) });
     }
     return out;
   }
@@ -429,7 +420,7 @@ export function mapHoppscotch(
       },
       item: mapper.items(collection, [collection.name], handDown(new Map(), collection)),
       ...(auth !== undefined ? { auth } : {}),
-      ...eventsOf(collection),
+      ...eventsOf({ pre: collection.pre, post: collection.test }),
     });
     const http = apiFromPostmanCollection(parsed, { newId, name, scriptApi: 'hoppscotch' });
     for (const warning of http.summary.warnings ?? []) mapper.report.warn(`${prefix}${warning}`);

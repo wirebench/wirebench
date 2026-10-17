@@ -55,8 +55,9 @@ All notable changes to this project are documented here. The format follows
   collection becomes a REST API with its base URL as the server, its folders and requests in order;
   status, response-time and JSON-path tests become assertions. Environments go to the workspace,
   never made active, the global one into Globals; encrypted values and `.env` files are listed, not
-  read. Scripts are saved as text and never run, and request chaining is reported. A folder that
-  keeps one file per request is refused. `wirebench import` reads exports and folders (#588).
+  read. Scripts are attached to their requests, folders and API switched off, so they run once you
+  read and switch them on, and request chaining is reported. A folder that keeps one file per
+  request is refused. `wirebench import` reads exports and folders (#588).
 
 ### Breaking
 
