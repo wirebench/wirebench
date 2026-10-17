@@ -264,8 +264,11 @@ describeDb('terminal shares (#429)', () => {
     const shareId = await create();
     expect(timers.fire(30_000)).toBeGreaterThan(0);
     expect((await call<{ code: string }>(h, bo, 'GET', `${base}/${shareId}`)).status).toBe(404);
+    // The started row is written without waiting, so it may land after this one.
     await expect
-      .poll(() => events.at(-1), { timeout: WAIT_MS })
-      .toMatchObject({ action: 'terminal_share.ended', details: { reason: 'owner-left' } });
+      .poll(() => events.find((e) => e.action === 'terminal_share.ended' && e.target?.id === shareId), {
+        timeout: WAIT_MS,
+      })
+      .toMatchObject({ details: { reason: 'owner-left' } });
   });
 });
