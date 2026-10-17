@@ -2,6 +2,8 @@ import { SshModelError } from './errors.js';
 import { defaultBind, isOffForm, parseTarget } from './forward-rules.js';
 import { walk } from './tree.js';
 import type { ForwardEntry, ForwardType } from './forward-rules.js';
+import { DEFAULT_CHARSET, DEFAULT_TERM } from './host-charset.js';
+import type { Charset } from './host-charset.js';
 import type { MoshSettings, SessionProtocol } from './host-mosh.js';
 import type { GroupEntry, HostEntry, HostsFile, IdentityEntry, SshAuth, SshProxy, SshSettings } from './model.js';
 
@@ -74,6 +76,10 @@ export interface ResolvedHost {
      * for it, never the target's.
      */
     readonly proxy: Provenance<SshProxy | undefined>;
+    /** How the shell's bytes are read and written (#427); UTF-8 by default. */
+    readonly charset: Provenance<Charset>;
+    /** The terminal type the pty request names (#427). */
+    readonly term: Provenance<string>;
   };
   readonly incomplete?: { readonly field: 'user' | 'auth' };
   /** Merged by id root to leaf: a nearer rule replaces a farther one whole; an off form switches it off. */
@@ -87,7 +93,15 @@ export interface ResolvedHost {
   };
 }
 
-const DEFAULTS = { port: 22, keepAlive: 15, connectTimeout: 20, forwardAgent: false, protocol: 'ssh' } as const;
+const DEFAULTS = {
+  port: 22,
+  keepAlive: 15,
+  connectTimeout: 20,
+  forwardAgent: false,
+  protocol: 'ssh',
+  charset: DEFAULT_CHARSET,
+  term: DEFAULT_TERM,
+} as const;
 
 /**
  * The last level a setting resolves to, after the host, its groups and their identities (#571): the app passes
@@ -97,7 +111,14 @@ export interface SshDefaults {
   readonly user?: string;
   readonly keepAlive?: number;
   readonly connectTimeout?: number;
+  readonly charset?: Charset;
+  readonly term?: string;
 }
+
+/** The fields a level may leave to {@link SshDefaults}. */
+const PREFERRED = ['keepAlive', 'connectTimeout', 'charset', 'term'] as const;
+type Preferred = (typeof PREFERRED)[number];
+const preferred = (key: keyof SshSettings): key is Preferred => (PREFERRED as readonly string[]).includes(key);
 
 interface Located {
   readonly host: HostEntry;
@@ -157,10 +178,8 @@ function pick<K extends keyof SshSettings>(
     const group = located.chain[i] as GroupEntry;
     if (group.ssh[key] !== undefined) return { value: group.ssh[key], from: { group: group.id } };
   }
-  const { defaults } = located;
-  const preferred =
-    key === 'keepAlive' ? defaults.keepAlive : key === 'connectTimeout' ? defaults.connectTimeout : undefined;
-  if (preferred !== undefined) return { value: preferred as SshSettings[K], from: 'preferences' };
+  const fromPreferences = preferred(key) ? located.defaults[key] : undefined;
+  if (fromPreferences !== undefined) return { value: fromPreferences, from: 'preferences' };
   return { value: fallback, from: 'default' };
 }
 
@@ -254,6 +273,8 @@ export function resolveSettings(file: HostsFile, id: string): SshSettings {
     'protocol',
     'mosh',
     'proxy',
+    'charset',
+    'term',
   ] as const) {
     const { value } = pick(located, key, undefined);
     if (value !== undefined) out[key] = value;
@@ -279,6 +300,8 @@ function resolveLocated(located: Located): ResolvedHost {
     protocol: pick(located, 'protocol', DEFAULTS.protocol) as Provenance<SessionProtocol>,
     mosh: pick(located, 'mosh', undefined),
     proxy: proxyOf(pick(located, 'proxy', undefined)),
+    charset: pick(located, 'charset', DEFAULTS.charset) as Provenance<Charset>,
+    term: pick(located, 'term', DEFAULTS.term) as Provenance<string>,
   };
   const incomplete =
     ssh.user.value === undefined

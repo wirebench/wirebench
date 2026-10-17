@@ -3,6 +3,8 @@ import type { Client, ClientChannel } from 'ssh2';
 import { HopProgress } from './connect-progress.js';
 import { SshConnectError, dialChain, hostOf } from './dial.js';
 import type { DialOptions, HopCredentials } from './dial.js';
+import { DEFAULT_TERM, terminalCodec } from './host-charset.js';
+import type { Charset, TerminalCodec } from './host-charset.js';
 
 /** After `close()`, `onExit` still fires once with `{ code: null }`. */
 export type OpenSessionOptions = DialOptions & {
@@ -13,6 +15,13 @@ export type OpenSessionOptions = DialOptions & {
    * is asked for: a server takes only the names its `AcceptEnv` allows and ignores the rest.
    */
   readonly env?: Readonly<Record<string, string>>;
+  /** The terminal type the pty request names; `xterm-256color` when unset. */
+  readonly term?: string;
+  /**
+   * The server's character set. `onData` hands out UTF-8 and `write` takes UTF-8 whatever it is; the
+   * session converts both ways. UTF-8 when unset. `exec` output is read as UTF-8 either way.
+   */
+  readonly charset?: Charset;
 };
 
 /**
@@ -57,13 +66,14 @@ export async function openSession(options: OpenSessionOptions): Promise<SshSessi
   try {
     const lastHop = options.hops[options.hops.length - 1] as HopCredentials;
     const progress = new HopProgress(options.onProgress, options.hops.length - 1, options.hops.length, hostOf(lastHop));
-    progress.start('shell', 'xterm-256color');
-    progress.log(`Opening a shell (xterm-256color, ${String(options.cols)}×${String(options.rows)})`);
+    const term = options.term ?? DEFAULT_TERM;
+    progress.start('shell', term);
+    progress.log(`Opening a shell (${term}, ${String(options.cols)}×${String(options.rows)})`);
     const env = options.env !== undefined && Object.keys(options.env).length > 0 ? { ...options.env } : undefined;
     const shell = (agentForward: boolean): Promise<ClientChannel> =>
       new Promise((resolve, reject) =>
         chain.client.shell(
-          { term: 'xterm-256color', cols: options.cols, rows: options.rows },
+          { term, cols: options.cols, rows: options.rows },
           { ...(env === undefined ? {} : { env }), ...(agentForward ? { agentForward: true } : {}) },
           (error, ch) => (error ? reject(error) : resolve(ch)),
         ),
@@ -89,8 +99,8 @@ export async function openSession(options: OpenSessionOptions): Promise<SshSessi
       channel = await shell(false).catch((again: unknown) => Promise.reject(failed(again as Error)));
     }
     progress.log('Shell open');
-    progress.done('shell', 'xterm-256color');
-    return wrap(channel, chain.client, () => chain.endAll(), chain, forwarding);
+    progress.done('shell', term);
+    return wrap(channel, chain.client, () => chain.endAll(), chain, forwarding, terminalCodec(options.charset));
   } catch (error) {
     chain.endAll();
     throw error;
@@ -103,6 +113,7 @@ function wrap(
   endAll: () => void,
   link: { readonly lost: boolean },
   agentForwarding: AgentForwarding,
+  codec: TerminalCodec,
 ): SshSession {
   const dataListeners = new Set<(data: Uint8Array) => void>();
   const exitListeners = new Set<(exit: SessionExit) => void>();
@@ -118,12 +129,12 @@ function wrap(
     endAll();
   };
   const ended = (): SessionEndReason => (link.lost ? 'lost' : 'exit');
-  channel.on('data', (data: Buffer) => {
-    for (const listener of dataListeners) listener(data);
-  });
-  channel.stderr.on('data', (data: Buffer) => {
-    for (const listener of dataListeners) listener(data);
-  });
+  const emit = (data: Buffer): void => {
+    const text = codec.decode(data);
+    for (const listener of dataListeners) listener(text);
+  };
+  channel.on('data', emit);
+  channel.stderr.on('data', emit);
   channel.on('exit', (code: number | null, signal?: string) => exit(code, 'exit', signal));
   channel.on('close', () => exit(null, ended()));
   channel.on('error', () => exit(null, 'lost'));
@@ -131,7 +142,7 @@ function wrap(
     id: randomUUID(),
     agentForwarding,
     write: (data) => {
-      if (!closed) channel.write(Buffer.from(data));
+      if (!closed) channel.write(Buffer.from(codec.encode(data)));
     },
     resize: (cols, rows) => {
       if (!closed) channel.setWindow(rows, cols, 0, 0);

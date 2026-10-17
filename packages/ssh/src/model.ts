@@ -9,6 +9,7 @@ import {
   forwardGroupSchema,
   serializeForwardGroup,
 } from './forward-groups.js';
+import { charsetSchema, termSchema } from './host-charset.js';
 import { envSchema } from './host-env.js';
 import { moshSchema, protocolSchema } from './host-mosh.js';
 import { terminalSchema } from './host-terminal.js';
@@ -81,6 +82,10 @@ const settingsSchema = z
     mosh: moshSchema,
     /** `false` connects directly though a group above sets a proxy. */
     proxy: z.union([z.literal(false), proxySchema]).optional(),
+    /** How the terminal's bytes are read and written (#427); UTF-8 by default. */
+    charset: charsetSchema,
+    /** The terminal type the pty request names (#427); `xterm-256color` by default. */
+    term: termSchema,
   })
   .default({});
 
@@ -379,6 +384,8 @@ function settings(ssh: SshSettings): Record<string, unknown> {
   if (ssh.forwardAgent !== undefined) out['forwardAgent'] = ssh.forwardAgent;
   if (ssh.protocol !== undefined) out['protocol'] = ssh.protocol;
   if (ssh.mosh !== undefined) out['mosh'] = { ...ssh.mosh };
+  if (ssh.charset !== undefined) out['charset'] = ssh.charset;
+  if (ssh.term !== undefined) out['term'] = ssh.term;
   if (ssh.proxy === false) out['proxy'] = false;
   else if (ssh.proxy !== undefined) {
     const { type, host, port, user, password } = ssh.proxy;
