@@ -1,8 +1,9 @@
 import { useId } from 'react';
+import { useUiStore } from '../../state/ui.js';
 import type { GroupEntryWire, MoshSettingsWire, SshProtocolWire } from '../../../shared/ssh-wire.js';
 import { INPUT_CLASS, sourceText, type Provenance } from './inherited-field.js';
 
-const PROTOCOL_LABELS: Record<SshProtocolWire, string> = { ssh: 'SSH', mosh: 'Mosh', telnet: 'Telnet' };
+export const PROTOCOL_LABELS: Record<SshProtocolWire, string> = { ssh: 'SSH', mosh: 'Mosh', telnet: 'Telnet' };
 const PORTS = /^(\d{1,5})(?::(\d{1,5}))?$/;
 
 /** The protocol the enclosing groups (outermost first) set: the nearest that says, else SSH. */
@@ -60,9 +61,10 @@ export interface MoshSectionProps {
 }
 
 /**
- * The host and group form's protocol (#419): SSH, or Mosh, which starts a mosh server over SSH and then runs
- * the session over UDP with the installed mosh-client. For Mosh, the server command and UDP ports, as one
- * block that replaces a group's whole.
+ * The host and group form's protocol (#419): SSH, Mosh, which starts a mosh server over SSH and then runs the
+ * session over UDP with the installed mosh-client, or Telnet (#425), in plain text. For Mosh, the server command
+ * and UDP ports, as one block that replaces a group's whole. Telnet is offered only while this build allows it,
+ * and stays shown on an entry already set to it.
  */
 export function MoshSection({
   protocol,
@@ -74,6 +76,7 @@ export function MoshSection({
 }: MoshSectionProps) {
   const serverId = useId();
   const portsId = useId();
+  const telnetAllowed = useUiStore((s) => s.telnetEnabled);
   const fromGroup = typeof inheritedP.from === 'object';
   const effective = protocol ?? inheritedP.value ?? 'ssh';
   const inheritedLabel = PROTOCOL_LABELS[inheritedP.value ?? 'ssh'];
@@ -103,8 +106,18 @@ export function MoshSection({
           <option value="">{fromGroup ? `Inherit (${inheritedLabel})` : 'SSH'}</option>
           {fromGroup && <option value="ssh">SSH</option>}
           <option value="mosh">Mosh</option>
+          {(telnetAllowed || protocol === 'telnet') && (
+            <option value="telnet">{telnetAllowed ? 'Telnet' : 'Telnet (switched off)'}</option>
+          )}
         </select>
       </label>
+      {effective === 'telnet' && (
+        <p role="note" className="text-xs text-status-warning">
+          Telnet is not encrypted: everything typed and shown, the password included, travels in plain text. Use it only
+          on a network you trust, or reach the device through an SSH jump host.
+          {!telnetAllowed && ' This build of Wirebench has Telnet switched off, so the host does not connect.'}
+        </p>
+      )}
       {effective === 'mosh' && (
         <>
           <p role="note" className="text-xs text-fg-subtle">

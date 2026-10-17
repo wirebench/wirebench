@@ -230,6 +230,12 @@ export function connectFailureSentence(error: ConnectError, purpose: ConnectPurp
       return `Mosh connects to ${host} directly over UDP, and that address does not resolve on this computer. A host behind a jump host is often not reachable directly: switch it to SSH.`;
     case 'mosh-unavailable':
       return 'Mosh sessions are not available on this computer.';
+    case 'telnet-off':
+      return 'Telnet is switched off in this build of Wirebench. Connect to the device over SSH instead.';
+    case 'ssh-jump-not-ssh':
+      return "The jump host is a Telnet host, and a jump host must be reached over SSH. Pick an SSH jump host in the host's Advanced settings.";
+    case 'ssh-protocol-unsupported':
+      return 'This is a Telnet host: files, port forwarding and keys need SSH.';
     case 'sftp-unavailable':
       return `Signed in, but ${who} offers no SFTP. Enable the SFTP subsystem on the server to browse its files.`;
     case 'ssh-hosts-invalid':
@@ -271,6 +277,9 @@ export function connectErrorKind(code: string): ConnectErrorKind {
     case 'ssh-hosts-invalid':
     case 'mosh-server-missing':
     case 'mosh-client-missing':
+    case 'telnet-off':
+    case 'ssh-jump-not-ssh':
+    case 'ssh-protocol-unsupported':
       return 'settings';
     case 'ssh-host-key-new':
     case 'ssh-host-key-changed':

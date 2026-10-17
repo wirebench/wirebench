@@ -25,6 +25,7 @@ import {
 } from './hosts-store.js';
 import { groupLogged, useLogSwitchesStore } from './session-log-switches.js';
 import { useKeyInstall } from './ssh-keys.js';
+import { hasSshFeatures, useHostProtocol } from './host-protocol.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-accent-muted';
@@ -62,6 +63,8 @@ function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly ki
   const { file, save } = useHostsStore();
   const parent = ancestorsOf(file, 'host', host.id).at(-1);
   const targets = flattenGroups(file).filter(({ group }) => group.id !== parent?.id);
+  // Files and keys need an SSH connection to the host itself; a Telnet host has none (#425).
+  const sshFeatures = hasSshFeatures(useHostProtocol(host.id));
   const duplicate = (): void => {
     const entry = findHost(file, host.id);
     if (entry === undefined) return;
@@ -87,14 +90,16 @@ function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly ki
       >
         Open in new tab
       </M.Item>
-      <M.Item
-        className={ITEM_CLASS}
-        onSelect={() => {
-          openFiles(host.id);
-        }}
-      >
-        Open files
-      </M.Item>
+      {sshFeatures && (
+        <M.Item
+          className={ITEM_CLASS}
+          onSelect={() => {
+            openFiles(host.id);
+          }}
+        >
+          Open files
+        </M.Item>
+      )}
       <M.Item
         className={ITEM_CLASS}
         onSelect={() => {
@@ -143,14 +148,16 @@ function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly ki
       >
         Copy address
       </M.Item>
-      <M.Item
-        className={ITEM_CLASS}
-        onSelect={() => {
-          useKeyInstall.getState().open({ hostId: host.id });
-        }}
-      >
-        Install public key…
-      </M.Item>
+      {sshFeatures && (
+        <M.Item
+          className={ITEM_CLASS}
+          onSelect={() => {
+            useKeyInstall.getState().open({ hostId: host.id });
+          }}
+        >
+          Install public key…
+        </M.Item>
+      )}
       <M.Separator className="my-1 h-px bg-hairline" />
       <M.Item
         className={DANGER_ITEM_CLASS}

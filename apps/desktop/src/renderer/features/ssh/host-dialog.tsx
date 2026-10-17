@@ -17,6 +17,7 @@ import { ForwardsSection, inheritedForwards } from './forwarding/forwards-sectio
 import { EnvSection, envProblem, inheritedEnv } from './env-section.js';
 import { AgentForwardingSection, inheritedForwardAgent } from './agent-forwarding.js';
 import { inheritedMosh, inheritedProtocol, MoshSection, moshProblem } from './mosh-section.js';
+import { TELNET_PORT } from './host-protocol.js';
 import { cleanProxy, proxyProblem, ProxySection } from './proxy-section.js';
 import { OS_LABELS } from './os-icon.js';
 import { HostAuthSection } from './host-auth-section.js';
@@ -135,9 +136,14 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const { names: secretNames } = useSecretNames();
   const localUser = useLocalUser();
   const missingId = useId();
+  // Telnet (#425) needs no user or way in, signs in with a password only, and has no SSH-only settings.
+  const protocol = ssh.protocol ?? inheritedProtocol(chain).value ?? 'ssh';
+  const telnet = protocol === 'telnet';
+  const portInherited = inheritedFrom(chain, 'port');
+  const inheritedPort =
+    telnet && portInherited.from === 'default' ? { ...portInherited, value: TELNET_PORT } : portInherited;
   // The OS is kept per server on this machine, keyed like its trusted host key: address and port.
-  const osKey = (): string =>
-    `${address.trim()}:${String(ssh.port ?? inheritedFrom(chain, 'port').value ?? SSH_DEFAULTS.port)}`;
+  const osKey = (): string => `${address.trim()}:${String(ssh.port ?? inheritedPort.value ?? SSH_DEFAULTS.port)}`;
   const [savedOsKey] = useState(osKey);
   const savedOs = useHostsStore((s) => s.osByHost[savedOsKey]);
   const [os, setOs] = useState<SshOsId | ''>(savedOs?.chosen ?? '');
@@ -153,14 +159,16 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const groupUser = loginUser.value;
   const groupHasAuth = loginAuth.value !== undefined;
   const fresh = dialog.mode === 'new-host';
+  // A device's login is not this machine's: a new Telnet host starts with neither.
   useEffect(() => {
     if (!fresh || touched.user === true) return;
-    setSsh((prev) => withField(prev, 'user', groupUser === undefined && localUser !== '' ? localUser : undefined));
-  }, [fresh, touched.user, groupUser, localUser]);
+    const user = groupUser === undefined && localUser !== '' && !telnet ? localUser : undefined;
+    setSsh((prev) => withField(prev, 'user', user));
+  }, [fresh, touched.user, groupUser, localUser, telnet]);
   useEffect(() => {
     if (!fresh || touched.auth === true) return;
-    setSsh((prev) => withField(prev, 'auth', groupHasAuth ? undefined : { kind: 'password', secret: '' }));
-  }, [fresh, touched.auth, groupHasAuth]);
+    setSsh((prev) => withField(prev, 'auth', groupHasAuth || telnet ? undefined : { kind: 'password', secret: '' }));
+  }, [fresh, touched.auth, groupHasAuth, telnet]);
 
   const set = (key: Inheritable | 'auth') => (value: unknown) => {
     if (key === 'user' || key === 'auth') setTouched((prev) => ({ ...prev, [key]: true }));
@@ -196,7 +204,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   ];
   const missing = missingFields({
     isHost,
-    needsLogin: fresh,
+    needsLogin: fresh && !telnet,
     name,
     address,
     user: ssh.user,
@@ -403,7 +411,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
         <InheritedField
           label="Port"
           type="number"
-          provenance={inheritedFrom(chain, 'port')}
+          provenance={inheritedPort}
           override={ssh.port}
           onChange={set('port')}
         />
@@ -414,7 +422,14 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
         onChange={set('auth')}
         password={password}
         onPasswordChange={setPassword}
+        passwordOnly={telnet}
       />
+      {telnet && (
+        <p className="text-xs text-fg-subtle">
+          Wirebench types the user and password at the device's login and password prompts. Leave them empty to sign in
+          yourself.
+        </p>
+      )}
       {secretError !== undefined && (
         <p role="alert" className="text-sm text-status-danger">
           {`The password was not stored: ${secretError}`}
@@ -485,13 +500,15 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             </select>
           </label>
           <div className="grid grid-cols-2 gap-2">
-            <InheritedField
-              label="Keep-alive (s)"
-              type="number"
-              provenance={inheritedFrom(chain, 'keepAlive', sshPrefs)}
-              override={ssh.keepAlive}
-              onChange={set('keepAlive')}
-            />
+            {!telnet && (
+              <InheritedField
+                label="Keep-alive (s)"
+                type="number"
+                provenance={inheritedFrom(chain, 'keepAlive', sshPrefs)}
+                override={ssh.keepAlive}
+                onChange={set('keepAlive')}
+              />
+            )}
             <InheritedField
               label="Connect timeout (s)"
               type="number"
@@ -522,20 +539,22 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             password={proxyPassword}
             onPasswordChange={setProxyPassword}
           />
-          <AgentForwardingSection
-            override={ssh.forwardAgent}
-            inherited={inheritedForwardAgent(chain)}
-            onChange={(next) => {
-              setSsh((prev) => withField(prev, 'forwardAgent', next));
-            }}
-          />
-          <EnvSection own={env} inherited={inheritedEnv(chain)} onChange={setEnv} />
+          {!telnet && (
+            <AgentForwardingSection
+              override={ssh.forwardAgent}
+              inherited={inheritedForwardAgent(chain)}
+              onChange={(next) => {
+                setSsh((prev) => withField(prev, 'forwardAgent', next));
+              }}
+            />
+          )}
+          {!telnet && <EnvSection own={env} inherited={inheritedEnv(chain)} onChange={setEnv} />}
           <HostTerminalSection
             own={terminal}
             inherited={inheritedTerminal(chain, terminalPrefs)}
             onChange={setTerminal}
           />
-          <ForwardsSection own={forwards} inherited={inheritedForwards(chain)} onChange={setForwards} />
+          {!telnet && <ForwardsSection own={forwards} inherited={inheritedForwards(chain)} onChange={setForwards} />}
         </div>
       </details>
       {failed && problems[0] !== undefined && (
