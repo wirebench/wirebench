@@ -31,7 +31,7 @@ define('expect', chaiExpectSchema);
 
 // --- bru ----------------------------------------------------------------------------------------
 const cookies = new Proxy({}, {
-  get: (target, name) => (typeof name === 'symbol' || name === 'then' || name === 'toJSON' ? undefined : unsupported('bru.cookies.' + name)),
+  get: (target, name) => (typeof name === 'symbol' || name === 'then' || name === 'toJSON' ? undefined : unsupported('bru.cookies.' + name, WHY.cookies)),
 });
 const interpolate = (value) => {
   if (typeof value === 'string') return variables.replaceIn(value);
@@ -62,13 +62,13 @@ define('bru', Object.freeze({
     stopExecution: () => execution.setNextRequest(null),
   }),
   interpolate,
-  sendRequest: unsupported('bru.sendRequest'),
-  runRequest: unsupported('bru.runRequest'),
-  sleep: unsupported('bru.sleep'),
-  getProcessEnv: unsupported('bru.getProcessEnv'),
-  visualize: unsupported('bru.visualize'),
+  sendRequest: unsupported('bru.sendRequest', WHY.send),
+  runRequest: unsupported('bru.runRequest', WHY.send),
+  sleep: unsupported('bru.sleep', WHY.wait),
+  getProcessEnv: unsupported('bru.getProcessEnv', WHY.processEnv),
+  visualize: unsupported('bru.visualize', WHY.visual),
   // The typed API cannot list the run's values, so there is nothing to delete them all from.
-  deleteAllVars: unsupported('bru.deleteAllVars'),
+  deleteAllVars: unsupported('bru.deleteAllVars', WHY.values),
   cookies,
 }));
 
@@ -86,12 +86,12 @@ define('req', Object.freeze({
   getHeaders: () => requestHeaders.toObject(),
   setHeaders: unsupported('req.setHeaders'),
   getName: () => input.info.requestName,
-  getAuthMode: unsupported('req.getAuthMode'),
-  setTimeout: unsupported('req.setTimeout'),
-  getTimeout: unsupported('req.getTimeout'),
-  setMaxRedirects: unsupported('req.setMaxRedirects'),
-  onFail: unsupported('req.onFail'),
-  disableParsingResponseJson: unsupported('req.disableParsingResponseJson'),
+  getAuthMode: unsupported('req.getAuthMode', WHY.auth),
+  setTimeout: unsupported('req.setTimeout', WHY.settings),
+  getTimeout: unsupported('req.getTimeout', WHY.settings),
+  setMaxRedirects: unsupported('req.setMaxRedirects', WHY.settings),
+  onFail: unsupported('req.onFail', WHY.settings),
+  disableParsingResponseJson: unsupported('req.disableParsingResponseJson', WHY.settings),
 }));
 
 // --- res ------------------------------------------------------------------------------------------
@@ -121,11 +121,11 @@ if (responseView !== undefined) {
       const body = utf8Length(responseView.text);
       return { header, body, total: header + body };
     },
-    setBody: unsupported('res.setBody'),
-    setHeader: unsupported('res.setHeader'),
+    setBody: unsupported('res.setBody', WHY.response),
+    setHeader: unsupported('res.setHeader', WHY.response),
   }));
 } else {
   define('res', undefined);
 }
-define('require', unsupported('require'));
+define('require', unsupported('require', WHY.modules));
 `;

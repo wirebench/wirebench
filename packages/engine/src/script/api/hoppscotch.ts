@@ -60,8 +60,8 @@ const env = {
   resolve,
   getResolve: (name) => { const value = variables.get(name); return value === undefined ? undefined : resolve(value); },
 };
-const refused = (name) => new Proxy({}, {
-  get: (target, member) => (typeof member === 'symbol' || member === 'then' || member === 'toJSON' ? undefined : unsupported(name + '.' + member)),
+const refused = (name, reason) => new Proxy({}, {
+  get: (target, member) => (typeof member === 'symbol' || member === 'then' || member === 'toJSON' ? undefined : unsupported(name + '.' + member, reason)),
 });
 
 // --- the response: Hoppscotch's own shape -------------------------------------------------------
@@ -93,7 +93,7 @@ if (responseView !== undefined) {
         const value = bodyValue();
         return value === null || value === undefined ? '' : typeof value === 'string' ? value : JSON.stringify(value);
       },
-      bytes: unsupported('hopp.response.body.bytes'),
+      bytes: unsupported('hopp.response.body.bytes', WHY.binary),
     }),
   });
 }
@@ -123,9 +123,9 @@ const scope = Object.freeze({
   getRaw: (name) => { const value = variables.get(name); return value === undefined ? null : value; },
   set: env.set,
   delete: env.unset,
-  reset: unsupported('hopp.env.reset'),
-  getInitialRaw: unsupported('hopp.env.getInitialRaw'),
-  setInitial: unsupported('hopp.env.setInitial'),
+  reset: unsupported('hopp.env.reset', WHY.initial),
+  getInitialRaw: unsupported('hopp.env.getInitialRaw', WHY.initial),
+  setInitial: unsupported('hopp.env.setInitial', WHY.initial),
 });
 const rows = (list) => list.list().map(({ name, value }) => ({ key: name, value }));
 const eachRow = (list, apply) => {
@@ -143,7 +143,7 @@ const hoppRequest = Object.freeze({
     const text = requestText();
     return text === undefined ? { contentType: null, body: null } : { contentType: bodyKind(), body: text };
   },
-  get auth() { return unsupported('hopp.request.auth')(); },
+  get auth() { return unsupported('hopp.request.auth', WHY.auth)(); },
   setUrl: (url) => setRequestUrl('hopp.request.setUrl', url),
   setMethod: (method) => setRequestMethod('hopp.request.setMethod', method),
   setHeader: (name, value) => requestHeaders.set(String(name), String(value)),
@@ -159,7 +159,7 @@ const hoppRequest = Object.freeze({
     if (!hasMessage && typeof body.contentType === 'string' && body.contentType !== '') requestHeaders.set('Content-Type', body.contentType);
     setRequestBody('hopp.request.setBody', body.body);
   },
-  setAuth: unsupported('hopp.request.setAuth'),
+  setAuth: unsupported('hopp.request.setAuth', WHY.auth),
   variables: Object.freeze({ get: (name) => variables.get(name), set: (name, value) => variables.set(name, value) }),
 });
 define('hopp', Object.freeze({
@@ -168,19 +168,20 @@ define('hopp', Object.freeze({
   response: hoppResponse,
   test: (name, check) => test(name, () => check()),
   expect: hoppExpect,
-  cookies: refused('hopp.cookies'),
-  fetch: unsupported('hopp.fetch'),
+  cookies: refused('hopp.cookies', WHY.cookies),
+  fetch: unsupported('hopp.fetch', WHY.send),
 }));
 
 // --- pm: Postman's object, minus what Hoppscotch's own pm does not have ------------------------------
+const NOT_IN_CLIENT = 'the pm object of these scripts does not have it';
 define('pm', Object.freeze({
   ...pmObject,
-  collectionVariables: refused('pm.collectionVariables'),
-  iterationData: refused('pm.iterationData'),
+  collectionVariables: refused('pm.collectionVariables', NOT_IN_CLIENT),
+  iterationData: refused('pm.iterationData', NOT_IN_CLIENT),
   execution: Object.freeze({
-    setNextRequest: unsupported('pm.execution.setNextRequest'),
-    skipRequest: unsupported('pm.execution.skipRequest'),
+    setNextRequest: unsupported('pm.execution.setNextRequest', NOT_IN_CLIENT),
+    skipRequest: unsupported('pm.execution.skipRequest', NOT_IN_CLIENT),
   }),
 }));
-define('require', unsupported('require'));
+define('require', unsupported('require', WHY.modules));
 `;

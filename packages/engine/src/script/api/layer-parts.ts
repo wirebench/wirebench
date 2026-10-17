@@ -7,10 +7,31 @@
  */
 import { jsonSchemaValidator } from '../../json/schema-validate.js';
 
-/** Declares `unsupported`: a function that throws `ScriptUnsupported` naming the call. */
+/**
+ * Declares `WHY` and `unsupported`: `unsupported(name, reason)` is a function that throws
+ * `ScriptUnsupported` naming the call and why it cannot run; `WHY` holds the reasons a kind of call
+ * shares, and a call with none of them gets a plain default.
+ */
 export const PART_UNSUPPORTED = String.raw`
-const unsupported = (name) => () => {
-  throw new ScriptUnsupported(name + ' is not supported: a script cannot send requests or keep cookies');
+const WHY = Object.freeze({
+  send: 'a script cannot send requests',
+  cookies: 'a script cannot keep cookies',
+  files: 'a script cannot read files',
+  modules: 'a script cannot load modules',
+  wait: 'a script cannot wait',
+  processEnv: "a script cannot read the machine's environment",
+  programs: 'a script cannot run programs',
+  settings: "set this in the request's Settings",
+  auth: "set this on the request's Auth tab",
+  visual: 'a script cannot show visual output',
+  initial: 'a script cannot change initial values',
+  vault: 'a script reads secrets with secrets.get, from the ones its scripts list',
+  binary: 'a script reads a body as text',
+  response: 'a script cannot change the response',
+  values: "a script cannot list the run's values",
+});
+const unsupported = (name, reason = 'Wirebench scripts cannot do this') => () => {
+  throw new ScriptUnsupported(name + ' is not supported: ' + reason);
 };
 `;
 
@@ -31,7 +52,7 @@ const variables = Object.freeze({
   set: (name, value) => { vars.set(name, asValue(value)); removed.delete(String(name)); },
   unset: (name) => { vars.set(name, ''); removed.add(String(name)); },
   has: (name) => !removed.has(String(name)) && (vars.get(name) !== undefined || props.get(name) !== undefined),
-  clear: unsupported('Clearing variables'),
+  clear: unsupported('Clearing variables', WHY.values),
   toObject: () => ({}),
   replaceIn: (text) => String(text).replace(/\{\{\s*([^{}]*?)\s*\}\}/g, (whole, name) => {
     const v = variables.get(name);
@@ -272,7 +293,7 @@ const CryptoJS = Object.freeze({
   HmacSHA256: hmacOf('sha256'),
   HmacSHA512: hmacOf('sha512'),
   enc: Object.freeze({ Hex, Base64, Utf8, Latin1 }),
-  AES: Object.freeze({ encrypt: unsupported('CryptoJS.AES'), decrypt: unsupported('CryptoJS.AES') }),
+  AES: Object.freeze({ encrypt: unsupported('CryptoJS.AES', 'a script has hashes and HMACs only'), decrypt: unsupported('CryptoJS.AES', 'a script has hashes and HMACs only') }),
 });
 define('CryptoJS', CryptoJS);
 define('btoa', (value) => encoding.base64(String(value)));
@@ -389,17 +410,17 @@ const pmObject = {
     iterationCount: iteration.count,
   }),
   request: pmRequest(),
-  sendRequest: unsupported('pm.sendRequest'),
-  cookies: Object.freeze({ get: () => undefined, has: () => false, toObject: () => ({}), jar: unsupported('pm.cookies.jar') }),
-  visualizer: Object.freeze({ set: unsupported('pm.visualizer') }),
+  sendRequest: unsupported('pm.sendRequest', WHY.send),
+  cookies: Object.freeze({ get: () => undefined, has: () => false, toObject: () => ({}), jar: unsupported('pm.cookies.jar', WHY.cookies) }),
+  visualizer: Object.freeze({ set: unsupported('pm.visualizer', WHY.visual) }),
   execution: Object.freeze({ setNextRequest: (name) => execution.setNextRequest(name), skipRequest: () => execution.skipRequest() }),
   iterationData: Object.freeze({
     get: (name) => iteration.data.get(name),
     has: (name) => iteration.data.get(name) !== undefined,
     toObject: () => Object.assign({}, input.data),
   }),
-  vault: Object.freeze({ get: unsupported('pm.vault') }),
-  require: unsupported('pm.require'),
+  vault: Object.freeze({ get: unsupported('pm.vault', WHY.vault) }),
+  require: unsupported('pm.require', WHY.modules),
 };
 const pmResponseValue = pmResponse();
 if (pmResponseValue !== undefined) pmObject.response = pmResponseValue;

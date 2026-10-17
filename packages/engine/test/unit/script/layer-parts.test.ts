@@ -98,7 +98,7 @@ const evaluate = (index: number): Evaluated => {
 };
 
 const EXPECTED: ReadonlyArray<{ declared: string[]; defined: string[] }> = [
-  { declared: ['unsupported'], defined: [] },
+  { declared: ['WHY', 'unsupported'], defined: [] },
   { declared: ['asValue', 'removed', 'variables'], defined: [] },
   { declared: ['typeName', 'same', 'chain', 'chaiExpect', 'chaiExpectSchema'], defined: [] },
   { declared: ['pairs'], defined: [] },
