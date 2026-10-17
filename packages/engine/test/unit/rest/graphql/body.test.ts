@@ -89,7 +89,7 @@ describe('GraphQL body on disk', () => {
   });
 
   it('belongs to format 10, which has not shipped yet', () => {
-    expect(FORMAT_VERSION).toBe(10);
+    expect(FORMAT_VERSION).toBeGreaterThanOrEqual(10);
   });
 
   it('loads a missing query file as an empty query, with a problem', async () => {

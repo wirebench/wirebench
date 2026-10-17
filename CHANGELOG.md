@@ -466,6 +466,10 @@ All notable changes to this project are documented here. The format follows
   schema (`graphqlSchema`). A project saved by this version cannot be opened by an older one, which
   refuses it as made by a newer Wirebench. A version-9 project opens unchanged (#338, #339, #348,
   #77).
+- **Project format 11.** A `scripts` key can name the script API of another API client (`insomnia`,
+  `bruno`, `hoppscotch` or `thunder-client`) and carry `postResponseOrder`; a project saved by this
+  version cannot be opened by an older one, which would drop them. A version-10 project opens
+  unchanged.
 
 ### Changed
 

@@ -12,7 +12,7 @@
  */
 import { dirname } from 'node:path';
 import ts from 'typescript';
-import type { ScriptApi } from '../model.js';
+import { isLayeredApi, type ScriptApi } from '../model.js';
 
 /** Most script models kept at once. */
 export const MAX_MODELS = 32;
@@ -89,7 +89,7 @@ const models = new Map<string, Entry>();
 let lastVersion = 0;
 
 function scriptFile(model: ScriptModel): string {
-  return model.api === 'postman' ? SCRIPT_JS : SCRIPT_TS;
+  return isLayeredApi(model.api) ? SCRIPT_JS : SCRIPT_TS;
 }
 
 function createService(entry: () => Entry): ts.LanguageService {
@@ -189,7 +189,7 @@ export function diagnosticsOf(id: string): ScriptDiagnostic[] {
   const file = scriptFile(model);
   const found = [
     ...service.getSyntacticDiagnostics(file),
-    ...(model.api === 'postman' ? [] : service.getSemanticDiagnostics(file)),
+    ...(isLayeredApi(model.api) ? [] : service.getSemanticDiagnostics(file)),
   ];
   return found.map((d) => {
     const start = d.start ?? 0;

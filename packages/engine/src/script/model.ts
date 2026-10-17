@@ -7,8 +7,14 @@ import type { RequestSnapshotBase } from '../protocol/module.js';
 import type { ScriptPosition } from './sandbox/model.js';
 
 export type ScriptPhase = 'pre' | 'post';
-/** Which API a script is written against: the typed one, or the Postman layer (§Postman). */
-export type ScriptApi = 'wirebench' | 'postman';
+/** Which API a script is written against: the typed one, or the layer of another API client (§Postman). */
+export type ScriptApi = 'wirebench' | 'postman' | 'insomnia' | 'bruno' | 'hoppscotch' | 'thunder-client';
+/** Every API but the typed one: JavaScript over a layer, syntax-checked only. */
+export type LayeredApi = Exclude<ScriptApi, 'wirebench'>;
+
+export function isLayeredApi(api: ScriptApi): api is LayeredApi {
+  return api !== 'wirebench';
+}
 
 /** A header or metadata entry, in order; names may repeat. */
 export type HeaderPair = readonly [name: string, value: string];
@@ -109,15 +115,17 @@ export interface RequestScripts {
   readonly secrets: readonly string[];
   /** Per script; absent means {@link SCRIPT_LIMITS.defaultTimeoutMs}. */
   readonly timeoutMs?: number;
+  /** Which level's post-response script runs first; absent means the API's own default. */
+  readonly postResponseOrder?: 'outer-first' | 'inner-first';
 }
 
 /**
  * The file a request's script lives in, beside the request file: `<slug>.pre.ts` for the typed API,
- * `<slug>.pre.js` for the Postman layer. Always derived from the slug, never read from the request
+ * `<slug>.pre.js` for a layered API. Always derived from the slug, never read from the request
  * file, so a hand-edited name cannot point outside the request's directory.
  */
 export function scriptFileName(slug: string, phase: ScriptPhase, api: ScriptApi): string {
-  return `${slug}.${phase}.${api === 'postman' ? 'js' : 'ts'}`;
+  return `${slug}.${phase}.${isLayeredApi(api) ? 'js' : 'ts'}`;
 }
 
 /** True for `<slug>.pre.ts`, `<slug>.post.ts`, `<slug>.pre.js` or `<slug>.post.js` of this slug. */

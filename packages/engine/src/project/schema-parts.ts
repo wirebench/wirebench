@@ -260,10 +260,11 @@ export const attachmentSourceSchema = z.union([
 export const scriptsSchema = z.looseObject({
   pre: nonEmpty.optional(),
   post: nonEmpty.optional(),
-  api: z.enum(['wirebench', 'postman']).default('wirebench'),
+  api: z.enum(['wirebench', 'postman', 'insomnia', 'bruno', 'hoppscotch', 'thunder-client']).default('wirebench'),
   enabled: z.boolean().default(true),
   secrets: z.array(z.string().regex(SECRET_NAME_PATTERN)).default([]),
   timeoutMs: z.number().int().positive().max(10_000).optional(),
+  postResponseOrder: z.enum(['outer-first', 'inner-first']).optional(),
 });
 
 /**

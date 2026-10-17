@@ -26,7 +26,7 @@ import {
 } from '../../editor/script-language.js';
 import { useProjectStore } from '../../state/project.js';
 import { registerScriptEditFlush } from '../../state/script-edits.js';
-import type { RequestScriptsPatchWire, RequestScriptsWire } from '../../../shared/wire-base.js';
+import type { RequestScriptsPatchWire, RequestScriptsWire, ScriptApiWire } from '../../../shared/wire-base.js';
 
 /** Long enough that a burst of keystrokes is one write, short enough that a send right after sees it. */
 const COMMIT_DEBOUNCE_MS = 300;
@@ -40,6 +40,14 @@ const PHASES = [
   { id: 'pre', label: 'Pre-request' },
   { id: 'post', label: 'Post-response' },
 ] as const;
+
+const LAYER_LABELS: Record<Exclude<ScriptApiWire, 'wirebench'>, string> = {
+  postman: 'Postman',
+  insomnia: 'Insomnia',
+  bruno: 'Bruno',
+  hoppscotch: 'Hoppscotch',
+  'thunder-client': 'Thunder Client',
+};
 
 const PROBLEM_TEXT: Record<'script-file-missing' | 'script-too-large', string> = {
   'script-file-missing': 'file is missing',
@@ -140,7 +148,7 @@ export function ScriptsTab({ requestId, scripts, level }: ScriptsTabProps) {
       <div className="flex shrink-0 items-center justify-between border-b border-hairline">
         <Tabs label="Scripts" items={items} active={phase} onSelect={setPhase} />
         <span className="px-3 text-xs text-fg-faint">
-          {api === 'postman' ? 'JavaScript · Postman layer' : 'TypeScript'}
+          {api === 'wirebench' ? 'TypeScript' : `JavaScript · ${LAYER_LABELS[api]} layer`}
         </span>
       </div>
       <div className="min-h-0 flex-1">
@@ -205,7 +213,7 @@ export function ScriptsTab({ requestId, scripts, level }: ScriptsTabProps) {
 export interface ScriptEditorProps {
   readonly requestId: string;
   readonly phase: ScriptPhase;
-  readonly api: 'wirebench' | 'postman';
+  readonly api: ScriptApiWire;
   readonly value: string;
   /** What an error stops, as a clause: `the request will not send`. */
   readonly blocked?: string;
@@ -307,7 +315,7 @@ export function ScriptEditor({
       <div className="min-h-0 flex-1">
         <CodeEditor
           ariaLabel={`${phase === 'pre' ? 'Pre-request' : 'Post-response'} script${owner === undefined ? '' : ` for ${owner}`}`}
-          language={api === 'postman' ? 'javascript' : 'typescript'}
+          language={api === 'wirebench' ? 'typescript' : 'javascript'}
           path={scriptModelPath(requestId, phase, api)}
           value={local}
           onMount={onMount}

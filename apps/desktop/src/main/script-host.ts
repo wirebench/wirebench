@@ -28,6 +28,7 @@ import {
   dispatchDeclarations,
   grpcMessageTypes,
   grpcScriptTypes,
+  isLayeredApi,
   restOperationFor,
   restScriptTypes,
   scriptDeclarations,
@@ -337,15 +338,14 @@ export class ScriptHost {
       const api = level.scripts?.api ?? 'wirebench';
       return {
         source,
-        declarations:
-          api === 'postman'
-            ? ''
-            : scriptDeclarations(level.protocol, phase, level.scripts?.secrets ?? [], levelScriptTypes(level.protocol)),
+        declarations: isLayeredApi(api)
+          ? ''
+          : scriptDeclarations(level.protocol, phase, level.scripts?.secrets ?? [], levelScriptTypes(level.protocol)),
         api,
       };
     }
     const api = located.scripts?.api ?? 'wirebench';
-    if (api === 'postman') {
+    if (isLayeredApi(api)) {
       return { source, declarations: '', api };
     }
     const types = await located.types();

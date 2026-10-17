@@ -5,13 +5,15 @@
 import { cp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { ProjectError } from '../../../src/errors.js';
 import { loadProject } from '../../../src/project/load.js';
-import type { Project } from '../../../src/project/model.js';
+import { FORMAT_VERSION, type Project } from '../../../src/project/model.js';
 import { saveProject } from '../../../src/project/save.js';
+import { scriptsSchema } from '../../../src/project/schema-parts.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
 import type { RequestScripts } from '../../../src/script/model.js';
 import { SCRIPT_LIMITS } from '../../../src/script/sandbox/model.js';
-import { tempProjectDir } from './fixture.js';
+import { sampleProject, tempProjectDir } from './fixture.js';
 import { restApisOf, withRestApis } from '../../../src/rest/model.js';
 import { soapInterfacesOf } from '../../../src/soap/model.js';
 
@@ -178,5 +180,52 @@ describe('request scripts on disk', () => {
     const { project, problems } = await loadProject(dir);
     expect(restRequest(project).scripts).toBeUndefined();
     expect(problems).toEqual([expect.objectContaining({ code: 'orphan-request-file' })]);
+  });
+});
+
+describe('script APIs in the project format', () => {
+  it('scriptsSchema accepts the four new apis', () => {
+    for (const api of ['insomnia', 'bruno', 'hoppscotch', 'thunder-client']) {
+      expect(scriptsSchema.parse({ api }).api).toBe(api);
+    }
+    expect(scriptsSchema.safeParse({ api: 'other' }).success).toBe(false);
+  });
+
+  it('scriptsSchema round-trips postResponseOrder', () => {
+    for (const postResponseOrder of ['outer-first', 'inner-first']) {
+      expect(scriptsSchema.parse({ api: 'bruno', postResponseOrder }).postResponseOrder).toBe(postResponseOrder);
+    }
+    expect(scriptsSchema.parse({}).postResponseOrder).toBeUndefined();
+    expect(scriptsSchema.safeParse({ postResponseOrder: 'sideways' }).success).toBe(false);
+  });
+
+  it('a format 11 project is refused by a reader limited to format 10', async () => {
+    // The loader reads its maximum from FORMAT_VERSION, so the project is stamped one above it: the
+    // rule a format-10 build applies to a format-11 project is the same one.
+    const dir = await tempProjectDir();
+    await saveProject(sampleProject(), dir);
+    const manifest = join(dir, 'wirebench.yaml');
+    const text = await readFile(manifest, 'utf8');
+    await writeFile(manifest, text.replace(`formatVersion: ${FORMAT_VERSION}`, `formatVersion: ${FORMAT_VERSION + 1}`));
+
+    const error = (await loadProject(dir).catch((e: unknown) => e)) as ProjectError;
+    expect(error.code).toBe('project-format-too-new');
+    expect(error.details).toMatchObject({ formatVersion: FORMAT_VERSION + 1, supported: FORMAT_VERSION });
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('a format 10 project migrates to 11 unchanged', async () => {
+    const dir = await tempProjectDir();
+    await saveProject(sampleProject(), dir);
+    const manifest = join(dir, 'wirebench.yaml');
+    const current = await readFile(manifest, 'utf8');
+    await writeFile(manifest, current.replace('formatVersion: 11', 'formatVersion: 10'));
+
+    const { project, problems } = await loadProject(dir);
+    expect(problems).toEqual([]);
+    expect(project.formatVersion).toBe(11);
+    await saveProject(project, dir);
+    expect(await readFile(manifest, 'utf8')).toBe(current);
+    await rm(dir, { recursive: true, force: true });
   });
 });
