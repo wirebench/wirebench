@@ -15,6 +15,7 @@ import {
   type ConnectOptions,
   type GetSecret,
 } from '@wirebench/engine';
+import { setDeviceKeySigner } from '@wirebench/ssh';
 import { app, BrowserWindow, dialog, powerMonitor, protocol, safeStorage, session, shell } from 'electron';
 import type { WebContents } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
@@ -40,6 +41,8 @@ import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { recordSecretValue, redactSecretText } from './redact.js';
 import { SecretSourcesService } from './secret-sources-service.js';
 import { projectSecretGetter, secretStoreLabel } from './secret-resolver.js';
+import { AppLock, lockedGetter } from './app-lock.js';
+import { DeviceHelper, DeviceKeys, deviceHelperDir } from './device-keys.js';
 import { SshKeysService } from './ssh-keys.js';
 import { SshSecretsService } from './ssh-secrets.js';
 import { SecretScanSessions } from './secret-scan-session.js';
@@ -153,6 +156,7 @@ import { registerTeamSecretsChannels } from './ipc/team-secrets.js';
 import { registerSecretScanChannels } from './ipc/secret-scan.js';
 import { registerSnapshotChannels } from './ipc/snapshot.js';
 import { SnapshotStore } from './snapshot-store.js';
+import { registerAppLockChannels } from './ipc/app-lock.js';
 import { registerSslChannels } from './ipc/ssl.js';
 import { registerGitChannels } from './ipc/git.js';
 import { registerSyncChannels } from './ipc/sync.js';
@@ -562,9 +566,39 @@ const snippetsService = scoped(scopes, (scope) => scope.snippets);
  * The SSH sessions, each owned by the window that opened it; hosts and secrets resolve at connect, from
  * that window's workspace.
  */
+/**
+ * Device keys (#428): SSH keys held by this machine's secure hardware, reached through the device helper. Set
+ * as the process's signer, so every connect (terminal, files, forwards, key install) can sign with one.
+ */
+const deviceHelper = new DeviceHelper({
+  platform: process.platform,
+  dir: deviceHelperDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }),
+});
+const deviceKeys = new DeviceKeys(deviceHelper, process.platform);
+setDeviceKeySigner(deviceKeys);
+
+/**
+ * The app lock (#428): with `secrets.appLock` on, the first SSH secret read after launch, after the idle time,
+ * or after the screen locked asks for biometrics or the OS password, through the same helper.
+ */
+const appLockSupported = deviceHelper.file !== undefined;
+const appLock = new AppLock({
+  enabled: () => preferencesService.get().secrets.appLock,
+  idleMinutes: () => preferencesService.get().secrets.appLockIdleMinutes,
+  supported: appLockSupported,
+  idleSeconds: () => powerMonitor.getSystemIdleTime(),
+  unlock: (reason) => deviceKeys.unlock(reason),
+  log: (line) => {
+    console.warn(line);
+  },
+});
+/** Every SSH secret read waits for the app lock; the keychain's listing reads public halves and does not. */
+const sshSecretsUnlocked = (sender: WebContents): GetSecret =>
+  sshSecretsFor(secretStore, sshScopeOf(scopes, sender), recordSecretValue);
+
 const sshConnectDeps = {
   hosts: (sender: WebContents) => sshScopeOf(scopes, sender).hosts,
-  secretsFor: (sender: WebContents) => sshSecretsFor(secretStore, sshScopeOf(scopes, sender), recordSecretValue),
+  secretsFor: (sender: WebContents) => lockedGetter(appLock, sshSecretsUnlocked(sender)),
   knownHostsFile: join(app.getPath('userData'), 'ssh-known-hosts.json'),
   agentSocket: () => (process.platform === 'win32' ? 'pageant' : process.env['SSH_AUTH_SOCK']),
 };
@@ -707,7 +741,8 @@ const forwardService = new ForwardService({
 const sshKeys = new SshKeysService({
   secrets: sshSecrets,
   connector: sshConnector,
-  secretsFor: sshConnectDeps.secretsFor,
+  secretsFor: sshSecretsUnlocked,
+  deviceKeys,
 });
 
 /** `workspace-state.json`, one queue for every window's workspace service. */
@@ -1020,6 +1055,16 @@ void app.whenReady().then(() => {
   forwardResume(powerMonitor, () => {
     broadcast(events.ssh.resumed, {});
   });
+  // The app lock locks again when the machine does, and after the idle time (#428).
+  powerMonitor.on('lock-screen', () => {
+    appLock.lock();
+  });
+  powerMonitor.on('suspend', () => {
+    appLock.lock();
+  });
+  setInterval(() => {
+    appLock.tick();
+  }, 30_000).unref();
 
   // Created once, up front, so it exists before any sync operation can start (see `hooksDir`).
   mkdirSync(hooksDir, { recursive: true });
@@ -1362,6 +1407,16 @@ void app.whenReady().then(() => {
         }
       }
     }
+  });
+  registerAppLockChannels({
+    preferences: preferencesService,
+    lock: appLock,
+    support: appLockSupported
+      ? { supported: true }
+      : { supported: false, reason: 'This computer cannot ask for biometrics or the password here' },
+    onChanged: (preferences) => {
+      broadcast(events.preferences.changed, { preferences });
+    },
   });
   // Settings picks are the app's: preferences apply to every window (design D4).
   registerSslChannels({

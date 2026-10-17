@@ -385,6 +385,14 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       checkExchange: fail('wsi.checkExchange'),
       exportHtml: fail('wsi.exportHtml'),
     },
+    appLock: {
+      // Settings → Secrets asks once whether the app lock can work here.
+      status: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { supported: false, reason: 'not in tests', active: false, locked: false },
+      }),
+      set: fail('appLock.set'),
+    },
     on: vi.fn().mockReturnValue(() => undefined),
     pathForFile: vi.fn((file: File) => `/dropped/${file.name}`),
   };

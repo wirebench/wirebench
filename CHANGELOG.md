@@ -13,6 +13,16 @@ All notable changes to this project are documented here. The format follows
   as local session logs are, and streamed to the server while they run. **Terminal: Team Session
   Logs…** lists and reads them, filtered by host or member; each read is audited, logs are kept as long
   as audit events, and an admin can delete one sooner (#430).
+- **Device keys.** **Generate key…** can make an SSH key in this machine's secure hardware: the Secure
+  Enclave on macOS (`ecdsa-sha2-nistp256`), or Windows Hello on Windows (RSA, experimental). The keychain
+  stores only a handle that this device alone can use, and every sign-in asks for Touch ID or your password
+  (Windows Hello on Windows). Its public key installs on hosts like any other. On another machine the key is
+  marked "other device" and a connect says where it was made. The key cannot be copied or recovered, so the
+  dialog suggests keeping a second way into the same hosts. The CLI cannot use device keys (#428).
+- **App lock.** **Settings → Secrets → App lock** asks for biometrics or your password before the first SSH
+  secret is used after launch, again after a set idle time (15 minutes by default) and after the screen
+  locks. It is off by default. Turning it on asks once, and the rest of the app stays usable while it is
+  locked (#428).
 - **Terminal type and character set per host.** A host or group's `ssh` settings take `term`, the
   terminal type the shell is opened with (`xterm-256color` by default, for example `vt100` or
   `vt220`), and `charset`, the character set its text is read and written in: UTF-8 by default, or

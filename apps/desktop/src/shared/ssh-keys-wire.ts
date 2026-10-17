@@ -5,8 +5,11 @@ import { z } from 'zod';
  * once, on generate, and what comes back is the public half and the names of the secrets that hold the rest.
  */
 
-/** `-sk`: made on the FIDO2 security key plugged in (#420), which keeps the private half. */
-export const sshKeyAlgorithmSchema = z.enum(['ed25519', 'ecdsa', 'rsa', 'ed25519-sk', 'ecdsa-sk']);
+/**
+ * `-sk`: made on the FIDO2 security key plugged in (#420), which keeps the private half. `device`: made by this
+ * machine's secure hardware (#428), the Secure Enclave or Windows Hello, in the one key type it makes.
+ */
+export const sshKeyAlgorithmSchema = z.enum(['ed25519', 'ecdsa', 'rsa', 'ed25519-sk', 'ecdsa-sk', 'device']);
 
 export const sshGenerateKeyRequestSchema = z.strictObject({
   /** The secret the private key is stored as; its passphrase (if any) goes to `<name>_passphrase`. */
@@ -56,8 +59,28 @@ export const sshKeyWireSchema = z.object({
   certificate: sshCertificateWireSchema.optional(),
   /** Why its `<name>_cert` secret could not be read as a certificate. */
   certificateError: z.string().optional(),
+  /**
+   * A device key (#428): the hardware it was made for, the host name it was made on, and whether this
+   * machine's hardware holds it (`false`: made on another device, so it cannot sign in from here).
+   */
+  device: z
+    .object({
+      platform: z.enum(['macos-secure-enclave', 'windows-hello']),
+      madeOn: z.string(),
+      here: z.boolean(),
+    })
+    .optional(),
 });
 export const sshKeysResponseSchema = z.object({ keys: z.array(sshKeyWireSchema) });
+
+/** Whether this machine can make device keys (#428), and if not, why. */
+export const sshDeviceKeyStatusSchema = z.object({
+  supported: z.boolean(),
+  platform: z.enum(['macos-secure-enclave', 'windows-hello']).optional(),
+  /** The key type a device key made here is: `ecdsa-sha2-nistp256` or `ssh-rsa`. */
+  keyType: z.string().optional(),
+  reason: z.string().optional(),
+});
 
 /** Installs the public half of key secret `secret` on host `hostId`, signing in as the host does now. */
 export const sshInstallKeyRequestSchema = z.strictObject({ secret: z.string(), hostId: z.string() });
@@ -76,3 +99,4 @@ export type SshCertificateWire = z.infer<typeof sshCertificateWireSchema>;
 export type SshAttachCertificateRequest = z.infer<typeof sshAttachCertificateRequestSchema>;
 export type SshInstallKeyRequest = z.infer<typeof sshInstallKeyRequestSchema>;
 export type SshInstallKeyResponse = z.infer<typeof sshInstallKeyResponseSchema>;
+export type SshDeviceKeyStatus = z.infer<typeof sshDeviceKeyStatusSchema>;
