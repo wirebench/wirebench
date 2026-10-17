@@ -72,4 +72,6 @@ export interface OcCollection {
   readonly environments: readonly OcEnvironment[];
   /** `proxy` and `clientCertificates` when present, plus `unreadable:<path>` for each directory file that did not parse. */
   readonly configExtras: readonly string[];
+  /** Bruno's `scripts.flow` (`sandwich` or `sequential`): which order post-response scripts run in. */
+  readonly scriptFlow?: string;
 }

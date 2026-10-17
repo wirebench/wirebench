@@ -1,19 +1,20 @@
 /**
  * OpenCollection's variables and scripts (spec §7.3, §7.4): environments become workspace
- * environments, collection and folder variables project properties, and every script a file under
- * `imported-scripts/` that nothing runs. No literal credential reaches a plain value: the import
+ * environments, collection and folder variables project properties, and scripts attach to their
+ * level, switched off (module items stay text under `imported-scripts/`). No literal credential reaches a plain value: the import
  * credential rule makes it a secret, whose value travels only in `secretValue`.
  */
 
 import type { ReportBuilder } from '../report.js';
 import { uniqueName } from '../report.js';
 import type { ImportedScriptFile } from '../scripts.js';
-import { importedScriptPath } from '../scripts.js';
+import { importedScriptPath, scriptText } from '../scripts.js';
 import { rewriteMustache } from '../templates.js';
 import type { ImportedVariable, ImportedVariableSet } from '../variables.js';
 import { VariableSetBuilder, credentialSafeVariable } from '../variables.js';
 import { slugify } from '../../project/paths.js';
-import type { OcCollection, OcEnvironment, OcItem, OcVariable } from './model.js';
+import type { RequestScripts } from '../../script/model.js';
+import type { OcCollection, OcEnvironment, OcItem, OcScript, OcVariable } from './model.js';
 
 type Scalar = string | number | boolean;
 
@@ -165,37 +166,92 @@ export function reportOcConfigExtras(collection: OcCollection, report: ReportBui
   }
 }
 
+/** The key of the collection's own scripts in {@link OcScripts.levels}; every other key is an item's `path`. */
+export const OC_COLLECTION_KEY = '';
+
+/** A `module` item: a helper file a script would `require`. Kept as text, because `require` is unsupported. */
+export interface OcModule {
+  readonly owner: string;
+  readonly source: string;
+}
+
+export interface OcScripts {
+  /** Each level's scripts for the Bruno layer, switched off, keyed by the item's `path`. */
+  readonly levels: ReadonlyMap<string, RequestScripts>;
+  readonly modules: readonly OcModule[];
+}
+
+const LEVEL_TYPES = new Set(['before-request', 'after-response', 'tests']);
+
 /**
- * Every script as written: the collection's, then each folder's and request's in walk order, and
- * each script file item (type `module`), at `imported-scripts/<api>/<owner>.<type>.js`.
+ * One level's scripts as the Bruno layer's pair: `before-request` is the pre script, and
+ * `after-response` and `tests` join into the post one, the tests second. Anything else has no
+ * Wirebench equivalent and is named in the report.
  */
-export function mapOcScripts(
-  collection: OcCollection,
-  apiSlug: string,
-  collectionName: string,
+function levelScripts(
+  scripts: readonly OcScript[] | undefined,
+  owner: string,
   report: ReportBuilder,
-): ImportedScriptFile[] {
-  const taken = new Set<string>();
-  const scripts: ImportedScriptFile[] = [];
-  const save = (owner: string, type: string, code: string): void => {
-    const path = importedScriptPath(apiSlug, slugify(owner).toLowerCase(), `${type.replace(/[^\w-]/g, '-')}.js`, taken);
-    scripts.push({ path, source: code });
-    report.note(`${owner}: the ${type} script was saved to ${path} and is never run.`);
+): RequestScripts | undefined {
+  const codes = (type: string): string[] =>
+    (scripts ?? []).filter((s) => s.type === type && s.code.trim() !== '').map((s) => s.code);
+  for (const s of scripts ?? []) {
+    if (!LEVEL_TYPES.has(s.type) && s.code.trim() !== '') {
+      report.warn(`${owner}: the ${s.type} script has no Wirebench equivalent and was not imported.`);
+    }
+  }
+  const pre = codes('before-request');
+  // `tests` run after the post-response script whatever order the file lists them in.
+  const ordered = [...codes('after-response'), ...codes('tests')];
+  if (pre.length === 0 && ordered.length === 0) return undefined;
+  return {
+    ...(pre.length > 0 ? { pre: { text: scriptText(pre) } } : {}),
+    ...(ordered.length > 0 ? { post: { text: scriptText(ordered) } } : {}),
+    api: 'bruno',
+    enabled: false,
+    secrets: [],
+  };
+}
+
+/**
+ * Every script of a collection: the collection's, each folder's and each request's attached for the
+ * Bruno layer and switched off, and each script file item (type `module`) kept as text.
+ */
+export function mapOcScripts(collection: OcCollection, report: ReportBuilder): OcScripts {
+  const levels = new Map<string, RequestScripts>();
+  const modules: OcModule[] = [];
+  const attach = (key: string, scripts: readonly OcScript[] | undefined, owner: string): void => {
+    const found = levelScripts(scripts, owner, report);
+    if (found !== undefined) levels.set(key, found);
   };
   const walk = (items: readonly OcItem[]): void => {
     for (const item of items) {
       const owner = item.info.name;
       if (item.items !== undefined) {
-        for (const s of item.request?.scripts ?? []) save(owner, s.type, s.code);
+        attach(item.path, item.request?.scripts, owner);
         walk(item.items);
       } else if (item.script !== undefined) {
-        save(owner, 'module', item.script);
+        modules.push({ owner, source: item.script });
       } else {
-        for (const s of item.runtime?.scripts ?? []) save(owner, s.type, s.code);
+        attach(item.path, item.runtime?.scripts, owner);
       }
     }
   };
-  for (const s of collection.request?.scripts ?? []) save(collectionName, s.type, s.code);
+  attach(OC_COLLECTION_KEY, collection.request?.scripts, collection.info.name);
   walk(collection.items);
-  return scripts;
+  return { levels, modules };
+}
+
+/** The module items as files under `imported-scripts/<api>/<owner>.module.js`, in tree order. */
+export function ocModuleFiles(
+  modules: readonly OcModule[],
+  apiSlug: string,
+  report: ReportBuilder,
+): ImportedScriptFile[] {
+  const taken = new Set<string>();
+  return modules.map(({ owner, source }) => {
+    const path = importedScriptPath(apiSlug, slugify(owner).toLowerCase(), 'module.js', taken);
+    report.note(`${owner}: the module script was saved to ${path} and is never run.`);
+    return { path, source };
+  });
 }

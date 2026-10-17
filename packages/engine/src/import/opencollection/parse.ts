@@ -342,6 +342,9 @@ export function parseOpenCollection(
   );
   const request = readDefaults(root['request']);
   const info = readInfo(root['info'], '');
+  const bruno = isRecord(root['extensions']) ? root['extensions']['bruno'] : undefined;
+  const brunoScripts = isRecord(bruno) ? bruno['scripts'] : undefined;
+  const flow = isRecord(brunoScripts) ? str(brunoScripts['flow']) : undefined;
 
   let items: readonly OcItem[];
   if (files !== undefined && !Array.isArray(root['items'])) {
@@ -369,5 +372,6 @@ export function parseOpenCollection(
     ...(request !== undefined ? { request } : {}),
     environments,
     configExtras,
+    ...(flow !== undefined ? { scriptFlow: flow } : {}),
   };
 }

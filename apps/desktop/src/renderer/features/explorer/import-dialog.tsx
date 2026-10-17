@@ -2438,7 +2438,7 @@ function HttpFileSummary({ value }: { readonly value: ApiImportHttpFileResponse 
 
 /**
  * What an OpenCollection import made: the APIs, requests and folders, how many assertions came
- * across, the scripts kept as text; then the environments and properties it added, and the report
+ * across, the script files kept as text (its scripts are attached to their requests, switched off); then the environments and properties it added, and the report
  * (which already carries the variables' own lines).
  */
 function OpenCollectionSummary({ value }: { readonly value: ApiImportOpenCollectionResponse }) {
@@ -2505,7 +2505,7 @@ function PostmanFolderSummary({ value }: { readonly value: ApiImportPostmanFolde
 /**
  * What another client's export made: the APIs, requests and folders (and collections, when the
  * export held several), the examples and assertions kept, the scripts saved as text (an Insomnia export's are attached switched
- * off, and the report's warnings say so); then the
+ * off, and so are a Bruno collection's, apart from its script files; the report's warnings say so); then the
  * environments and properties it added, and the report.
  */
 function ClientImportSummary({ value }: { readonly value: ApiImportClientResponse }) {

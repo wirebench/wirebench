@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { apiRequests, grpcApisOf, loadProject, restApisOf, wsApisOf } from '@wirebench/engine';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -175,6 +175,42 @@ describe('op import: a Bruno collection', () => {
     expect(restApisOf(project)[0]?.name).toBe('demo-collection');
     expect(project.properties).toMatchObject({ tenant: 'acme' });
     expect(project.disabledProperties).toContain('legacy');
+  });
+
+  it('wirebench import of a Bruno folder writes the scripts beside their requests, folders and API', async () => {
+    const source = await tempDir('wirebench-bruno-');
+    await mkdir(join(source, 'orders'));
+    await writeFile(join(source, 'bruno.json'), '{"name":"Shop","scripts":{"flow":"sandwich"}}');
+    await writeFile(join(source, 'collection.bru'), 'script:pre-request {\n  bru.setVar("root", 1);\n}\n');
+    await writeFile(
+      join(source, 'orders', 'folder.bru'),
+      'meta {\n  name: Orders\n}\n\nscript:pre-request {\n  bru.setVar("dir", 1);\n}\n',
+    );
+    await writeFile(
+      join(source, 'orders', 'create.bru'),
+      'meta {\n  name: Create\n  type: http\n  seq: 1\n}\n\npost {\n  url: https://a.example.com/orders\n}\n\nscript:pre-request {\n  bru.setVar("a", 1);\n}\n\nscript:post-response {\n  bru.setVar("b", 2);\n}\n\ntests {\n  test("ok", () => {});\n}\n',
+    );
+    const fixture = await emptyProject();
+    await runOp(importOp, { source }, fixture.base());
+
+    const { project } = await loadProject(fixture.dir);
+    const [api] = restApisOf(project);
+    expect(api?.scripts).toMatchObject({ api: 'bruno', enabled: false, postResponseOrder: 'inner-first' });
+    const create = apiRequests(api!).find((request) => request.name === 'Create');
+    expect(create?.scripts).toMatchObject({ api: 'bruno', enabled: false });
+    const files = (await readdir(fixture.dir, { recursive: true })).map((file) => file.replaceAll('\\', '/'));
+    expect(files).toEqual(
+      expect.arrayContaining([
+        'apis/Shop/api.pre.js',
+        'apis/Shop/requests/Orders/folder.pre.js',
+        'apis/Shop/requests/Orders/Create.pre.js',
+        'apis/Shop/requests/Orders/Create.post.js',
+      ]),
+    );
+    const post = await readFile(join(fixture.dir, 'apis/Shop/requests/Orders/Create.post.js'), 'utf8');
+    expect(post).toContain('bru.setVar("b", 2);');
+    expect(post).toContain('test("ok"');
+    expect(files.some((file) => file.includes('imported-scripts'))).toBe(false);
   });
 
   it('reads a bruno.json as its folder, and any other file as a JSON export', async () => {

@@ -38,15 +38,21 @@ import type {
 } from '../../rest/model.js';
 import { NO_BODY, createApi, createFolder, createRestRequest } from '../../rest/model.js';
 import { splitQueryKeepingReferences } from '../../rest/url.js';
+import type { ScriptLevel } from '../../rest/postman/map.js';
+import { ScriptImportLog } from '../../rest/postman/map.js';
+import type { RequestScripts } from '../../script/model.js';
 import type { Assertion } from '../../assert/model.js';
 import { mapOcAssertion } from './assertions.js';
 import type { MappedOcAuth } from './auth.js';
 import { mapOcAuth } from './auth.js';
 import type { OcCollection, OcItem, OcKeyValue } from './model.js';
+import type { OcModule } from './variables.js';
 import {
   mapOcEnvironments,
   mapOcProjectVariables,
   mapOcScripts,
+  OC_COLLECTION_KEY,
+  ocModuleFiles,
   reportOcConfigExtras,
   reportOcRequestVariables,
 } from './variables.js';
@@ -60,7 +66,7 @@ export interface MappedOpenCollection {
   readonly protoFiles: readonly string[];
   /** The variable plan; its report holds the variable lines only. */
   readonly variables: ImportedVariables;
-  /** Scripts, to be written under `imported-scripts/` and never run. */
+  /** Module items only, written under `imported-scripts/` and never run; every other script is attached switched off. */
   readonly scripts: readonly ImportedScriptFile[];
   readonly counts: {
     readonly requests: number;
@@ -210,6 +216,11 @@ class Mapper {
   wsFolders = 0;
   assertions = 0;
   assertionsSkipped = 0;
+  /** The scripts of every level, for the Bruno layer, keyed by item path. */
+  readonly scriptLevels: ReadonlyMap<string, RequestScripts>;
+  /** What was attached to the REST tree, for the report. */
+  readonly scriptLog = new ScriptImportLog('bruno');
+  readonly modules: readonly OcModule[];
   /** The `.proto` files the gRPC items name. */
   readonly protoFiles = new Set<string>();
   /** The first gRPC item's target, which the API takes. */
@@ -220,7 +231,18 @@ class Mapper {
   constructor(
     private readonly newId: IdGenerator,
     private readonly rootDir: string | undefined,
-  ) {}
+    collection: OcCollection,
+  ) {
+    const scripts = mapOcScripts(collection, this.report);
+    this.scriptLevels = scripts.levels;
+    this.modules = scripts.modules;
+  }
+
+  /** The scripts of the level at `path`, counted and scanned for the report. */
+  scriptsOf(path: string, level: ScriptLevel, trail: readonly string[]): { scripts?: RequestScripts } {
+    const scripts = this.scriptLog.note(this.scriptLevels.get(path), level, trail.join(' / '));
+    return scripts !== undefined ? { scripts } : {};
+  }
 
   rewrite(text: string): string {
     return rewriteMustache(text, this.dynamic);
@@ -249,7 +271,11 @@ class Mapper {
   }
 
   /** The folders and requests of one level, a folder kept only when REST items live under it. */
-  walk(items: readonly OcItem[], scope: Scope): { folders: RestFolder[]; requests: RestRequestDef[] } {
+  walk(
+    items: readonly OcItem[],
+    scope: Scope,
+    trail: readonly string[] = [],
+  ): { folders: RestFolder[]; requests: RestRequestDef[] } {
     const folders: RestFolder[] = [];
     const requests: RestRequestDef[] = [];
     const folderSlugs = new SlugSet();
@@ -259,7 +285,10 @@ class Mapper {
       if (item.items !== undefined) {
         if (!holdsRest(item)) continue;
         const auth = this.auth(item.request?.auth, name);
-        const inner = this.walk(item.items, this.scopeBelow(scope, item.request?.headers, auth, name));
+        const inner = this.walk(item.items, this.scopeBelow(scope, item.request?.headers, auth, name), [
+          ...trail,
+          name,
+        ]);
         const slug = uniqueSlug(name, folderSlugs);
         folderSlugs.add(slug);
         folders.push(
@@ -268,6 +297,7 @@ class Mapper {
             order: folders.length,
             slug,
             ...(auth.auth.type !== 'inherit' ? { auth: auth.auth } : {}),
+            ...this.scriptsOf(item.path, 'folder', [...trail, name]),
             folders: inner.folders,
             requests: inner.requests,
           }),
@@ -278,10 +308,46 @@ class Mapper {
       if (!isRest(item)) continue;
       const slug = uniqueSlug(name, requestSlugs);
       requestSlugs.add(slug);
-      requests.push(this.request(item, scope, slug, requests.length));
+      requests.push({
+        ...this.request(item, scope, slug, requests.length),
+        ...this.scriptsOf(item.path, 'request', [...trail, name]),
+      });
       this.requests += 1;
     }
     return { folders, requests };
+  }
+
+  /**
+   * The API's scripts: the collection's own, and the order post-response scripts run in, which
+   * Bruno's `scripts.flow` sets: `sandwich` (and no flow at all) runs them innermost first. Nothing
+   * is stored for a collection that has no script at all.
+   */
+  apiScripts(collection: OcCollection, name: string, hasRest: boolean): RequestScripts | undefined {
+    if (!hasRest) return undefined;
+    const own = this.scriptLog.note(this.scriptLevels.get(OC_COLLECTION_KEY), 'api', name);
+    if (!this.scriptLog.any) return undefined;
+    const postResponseOrder = collection.scriptFlow === 'sequential' ? 'outer-first' : 'inner-first';
+    return { ...(own ?? { api: 'bruno', enabled: false, secrets: [] }), postResponseOrder };
+  }
+
+  /** The report lines for the scripts attached, and a warning for each level whose scripts have nowhere to go. */
+  reportScripts(collection: OcCollection, hasRest: boolean): void {
+    for (const line of this.scriptLog.warnings()) this.report.warn(line);
+    const lost = (name: string): void => {
+      this.report.warn(`${name}: its scripts were not imported; only HTTP and GraphQL requests keep scripts.`);
+    };
+    const walk = (items: readonly OcItem[]): void => {
+      for (const item of items) {
+        if (item.items !== undefined) {
+          if (!holdsRest(item) && this.scriptLevels.has(item.path)) lost(item.info.name);
+          walk(item.items);
+        } else if (item.script === undefined && !isRest(item) && this.scriptLevels.has(item.path)) {
+          lost(item.info.name);
+        }
+      }
+    };
+    if (!hasRest && this.scriptLevels.has(OC_COLLECTION_KEY)) lost(collection.info.name);
+    walk(collection.items);
   }
 
   /** A warning for each item that is none of the four request types, a folder or a script file. */
@@ -805,7 +871,7 @@ export function mapOpenCollection(
   collection: OcCollection,
   options: MapOpenCollectionOptions = {},
 ): MappedOpenCollection {
-  const mapper = new Mapper(options.newId ?? generateId, options.rootDir);
+  const mapper = new Mapper(options.newId ?? generateId, options.rootDir, collection);
   const name = collection.info.name !== '' ? collection.info.name : 'Collection';
   const rootAuth = mapper.auth(collection.request?.auth, name);
   const root = mapper.scopeBelow({ headers: [], auth: {} }, collection.request?.headers, rootAuth, name);
@@ -816,6 +882,7 @@ export function mapOpenCollection(
   const kinds = [mapper.requests, mapper.grpcRequests, mapper.wsRequests].filter((n) => n > 0).length;
   const apiName = (suffix: string): string => (kinds > 1 ? `${name} (${suffix})` : name);
   const newId = options.newId ?? generateId;
+  const apiScripts = mapper.apiScripts(collection, name, mapper.requests > 0);
   let order = options.firstOrder ?? 0;
   const inherited = rootAuth.auth.type !== 'inherit' ? { auth: rootAuth.auth } : {};
   const rest =
@@ -827,6 +894,7 @@ export function mapOpenCollection(
           baseUrl: '',
           servers: [],
           ...inherited,
+          ...(apiScripts !== undefined ? { scripts: apiScripts } : {}),
           folders,
           requests,
         });
@@ -862,7 +930,8 @@ export function mapOpenCollection(
   reportOcRequestVariables(collection.items, mapper.report);
   reportOcConfigExtras(collection, mapper.report);
   const apiSlug = (rest ?? grpc ?? websocket)?.slug.toLowerCase() ?? 'collection';
-  const scripts = mapOcScripts(collection, apiSlug, name, mapper.report);
+  const scripts = ocModuleFiles(mapper.modules, apiSlug, mapper.report);
+  mapper.reportScripts(collection, rest !== undefined);
   if (grpc !== undefined && mapper.protoFiles.size === 0) {
     mapper.report.note(`${grpc.name}: needs a definition: import its .proto or use server reflection.`);
   }
