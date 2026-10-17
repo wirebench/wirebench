@@ -6,11 +6,13 @@
  */
 import { createContext, runInContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { INSOMNIA_LAYER } from '../../../src/script/api/insomnia.js';
 import { POSTMAN_LAYER } from '../../../src/script/api/postman.js';
 import {
   PART_CRYPTO,
   PART_EXPECT,
   PART_PAIRS,
+  PART_PM,
   PART_UNSUPPORTED,
   PART_VARIABLES,
 } from '../../../src/script/api/layer-parts.js';
@@ -21,6 +23,7 @@ const PARTS: ReadonlyArray<readonly [string, string]> = [
   ['PART_EXPECT', PART_EXPECT],
   ['PART_PAIRS', PART_PAIRS],
   ['PART_CRYPTO', PART_CRYPTO],
+  ['PART_PM', PART_PM],
 ];
 
 interface Evaluated {
@@ -47,8 +50,8 @@ const makeContext = (defined: string[]) => {
     encoding: {},
     request: {},
     response: {},
-    input: {},
-    iteration: {},
+    input: { phase: 'pre', info: { requestName: 'x' } },
+    iteration: { index: 0, count: 1 },
     execution: {},
     test: () => undefined,
   });
@@ -92,6 +95,7 @@ const EXPECTED: ReadonlyArray<{ declared: string[]; defined: string[] }> = [
     declared: ['Hex', 'Base64', 'Utf8', 'Latin1', 'words', 'text', 'hashOf', 'hmacOf', 'CryptoJS'],
     defined: ['CryptoJS', 'btoa', 'atob'],
   },
+  { declared: ['pmExpect', 'pmRequest', 'pmResponse', 'pmObject', 'pmResponseValue'], defined: [] },
 ];
 
 describe('the shared layer parts', () => {
@@ -114,8 +118,14 @@ describe('the shared layer parts', () => {
   it('the Postman layer runs over the parts in one scope', () => {
     const defined: string[] = [];
     const ctx = makeContext(defined);
-    Object.assign(ctx, { input: { phase: 'pre', info: { requestName: 'x' } }, iteration: { index: 0, count: 1 } });
     expect(() => void runInContext(POSTMAN_LAYER, ctx)).not.toThrow();
     expect(defined).toEqual(expect.arrayContaining(['pm', 'postman', 'CryptoJS', 'btoa', 'atob']));
+  });
+
+  it('the Insomnia layer runs over the parts in one scope', () => {
+    const defined: string[] = [];
+    const ctx = makeContext(defined);
+    expect(() => void runInContext(INSOMNIA_LAYER, ctx)).not.toThrow();
+    expect(defined).toEqual(expect.arrayContaining(['insomnia', '$', 'CryptoJS', 'btoa', 'atob']));
   });
 });
