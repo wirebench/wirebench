@@ -38,21 +38,20 @@ import type {
 } from '../../rest/model.js';
 import { NO_BODY, createApi, createFolder, createRestRequest } from '../../rest/model.js';
 import { splitQueryKeepingReferences } from '../../rest/url.js';
-import type { ScriptLevel } from '../../rest/postman/map.js';
-import { ScriptImportLog } from '../../rest/postman/map.js';
+import type { ScriptLevel } from '../scripts.js';
+import { ScriptImportLog } from '../scripts.js';
 import type { RequestScripts } from '../../script/model.js';
 import type { Assertion } from '../../assert/model.js';
 import { mapOcAssertion } from './assertions.js';
 import type { MappedOcAuth } from './auth.js';
 import { mapOcAuth } from './auth.js';
 import type { OcCollection, OcItem, OcKeyValue } from './model.js';
-import type { OcModule } from './variables.js';
+import type { OcLooseScript, OcModule } from './variables.js';
 import {
   mapOcEnvironments,
   mapOcProjectVariables,
   mapOcScripts,
-  OC_COLLECTION_KEY,
-  ocModuleFiles,
+  ocTextFiles,
   reportOcConfigExtras,
   reportOcRequestVariables,
 } from './variables.js';
@@ -217,7 +216,10 @@ class Mapper {
   assertions = 0;
   assertionsSkipped = 0;
   /** The scripts of every level, for the Bruno layer, keyed by item path. */
-  readonly scriptLevels: ReadonlyMap<string, RequestScripts>;
+  readonly scriptLevels: ReadonlyMap<OcItem, RequestScripts>;
+  private readonly collectionScripts: RequestScripts | undefined;
+  /** The levels whose scripts an API of the import holds. */
+  private readonly attached = new Set<OcItem | 'collection'>();
   /** What was attached to the REST tree, for the report. */
   readonly scriptLog = new ScriptImportLog('bruno');
   readonly modules: readonly OcModule[];
@@ -235,13 +237,17 @@ class Mapper {
   ) {
     const scripts = mapOcScripts(collection, this.report);
     this.scriptLevels = scripts.levels;
+    this.collectionScripts = scripts.collection;
     this.modules = scripts.modules;
   }
 
-  /** The scripts of the level at `path`, counted and scanned for the report. */
-  scriptsOf(path: string, level: ScriptLevel, trail: readonly string[]): { scripts?: RequestScripts } {
-    const scripts = this.scriptLog.note(this.scriptLevels.get(path), level, trail.join(' / '));
-    return scripts !== undefined ? { scripts } : {};
+  /** The scripts of this folder or request, counted and scanned for the report. */
+  scriptsOf(item: OcItem, level: ScriptLevel, trail: readonly string[]): { scripts?: RequestScripts } {
+    const scripts = this.scriptLevels.get(item);
+    if (scripts === undefined) return {};
+    this.attached.add(item);
+    this.scriptLog.note(scripts, level, trail.join(' / '));
+    return { scripts };
   }
 
   rewrite(text: string): string {
@@ -297,7 +303,7 @@ class Mapper {
             order: folders.length,
             slug,
             ...(auth.auth.type !== 'inherit' ? { auth: auth.auth } : {}),
-            ...this.scriptsOf(item.path, 'folder', [...trail, name]),
+            ...this.scriptsOf(item, 'folder', [...trail, name]),
             folders: inner.folders,
             requests: inner.requests,
           }),
@@ -310,7 +316,7 @@ class Mapper {
       requestSlugs.add(slug);
       requests.push({
         ...this.request(item, scope, slug, requests.length),
-        ...this.scriptsOf(item.path, 'request', [...trail, name]),
+        ...this.scriptsOf(item, 'request', [...trail, name]),
       });
       this.requests += 1;
     }
@@ -318,36 +324,45 @@ class Mapper {
   }
 
   /**
-   * The API's scripts: the collection's own, and the order post-response scripts run in, which
-   * Bruno's `scripts.flow` sets: `sandwich` (and no flow at all) runs them innermost first. Nothing
-   * is stored for a collection that has no script at all.
+   * The scripts of an API that holds them (REST and gRPC): the collection's own, and the order
+   * post-response scripts run in, which Bruno's `scripts.flow` sets: `sandwich` (and no flow at
+   * all) runs them innermost first. Nothing is stored for a collection that has no script at all.
    */
-  apiScripts(collection: OcCollection, name: string, hasRest: boolean): RequestScripts | undefined {
-    if (!hasRest) return undefined;
-    const own = this.scriptLog.note(this.scriptLevels.get(OC_COLLECTION_KEY), 'api', name);
+  apiScripts(collection: OcCollection, name: string, hasApi: boolean): RequestScripts | undefined {
+    if (!hasApi) return undefined;
+    if (this.collectionScripts !== undefined) {
+      this.attached.add('collection');
+      this.scriptLog.note(this.collectionScripts, 'api', name);
+    }
     if (!this.scriptLog.any) return undefined;
     const postResponseOrder = collection.scriptFlow === 'sequential' ? 'outer-first' : 'inner-first';
-    return { ...(own ?? { api: 'bruno', enabled: false, secrets: [] }), postResponseOrder };
+    return { ...(this.collectionScripts ?? { api: 'bruno', enabled: false, secrets: [] }), postResponseOrder };
   }
 
-  /** The report lines for the scripts attached, and a warning for each level whose scripts have nowhere to go. */
-  reportScripts(collection: OcCollection, hasRest: boolean): void {
+  /** The report lines for the scripts attached. */
+  reportScripts(): void {
     for (const line of this.scriptLog.warnings()) this.report.warn(line);
-    const lost = (name: string): void => {
-      this.report.warn(`${name}: its scripts were not imported; only HTTP and GraphQL requests keep scripts.`);
+  }
+
+  /** The scripts of levels no API of the import holds (a WebSocket item, a collection with no REST or gRPC API). */
+  looseScripts(collection: OcCollection): OcLooseScript[] {
+    const out: OcLooseScript[] = [];
+    const add = (owner: string, scripts: RequestScripts): void => {
+      if (scripts.pre !== undefined) out.push({ owner, phase: 'before-request', source: scripts.pre.text });
+      if (scripts.post !== undefined) out.push({ owner, phase: 'after-response', source: scripts.post.text });
     };
+    if (this.collectionScripts !== undefined && !this.attached.has('collection')) {
+      add(collection.info.name || 'Collection', this.collectionScripts);
+    }
     const walk = (items: readonly OcItem[]): void => {
       for (const item of items) {
-        if (item.items !== undefined) {
-          if (!holdsRest(item) && this.scriptLevels.has(item.path)) lost(item.info.name);
-          walk(item.items);
-        } else if (item.script === undefined && !isRest(item) && this.scriptLevels.has(item.path)) {
-          lost(item.info.name);
-        }
+        const scripts = this.scriptLevels.get(item);
+        if (scripts !== undefined && !this.attached.has(item)) add(item.info.name, scripts);
+        if (item.items !== undefined) walk(item.items);
       }
     };
-    if (!hasRest && this.scriptLevels.has(OC_COLLECTION_KEY)) lost(collection.info.name);
     walk(collection.items);
+    return out;
   }
 
   /** A warning for each item that is none of the four request types, a folder or a script file. */
@@ -373,7 +388,10 @@ class Mapper {
       ) => F;
       request: (item: OcItem, slug: string, order: number) => R | undefined;
       counted: (folders: number, requests: number) => void;
+      /** True for a protocol whose folders and requests can hold scripts. */
+      scripted: boolean;
     },
+    trail: readonly string[] = [],
   ): { folders: F[]; requests: R[] } {
     const folders: F[] = [];
     const requests: R[] = [];
@@ -384,7 +402,7 @@ class Mapper {
       if (item.items !== undefined) {
         if (!holds(item, kind)) continue;
         const auth = this.auth(item.request?.auth, name);
-        const inner = this.walkProtocol(item.items, kind, build);
+        const inner = this.walkProtocol(item.items, kind, build, [...trail, name]);
         const slug = uniqueSlug(name, folderSlugs);
         folderSlugs.add(slug);
         folders.push(
@@ -392,6 +410,7 @@ class Mapper {
             slug,
             order: folders.length,
             ...(auth.auth.type !== 'inherit' ? { auth: auth.auth } : {}),
+            ...(build.scripted ? this.scriptsOf(item, 'folder', [...trail, name]) : {}),
             folders: inner.folders,
             requests: inner.requests,
           }),
@@ -404,7 +423,7 @@ class Mapper {
       const request = build.request(item, slug, requests.length);
       if (request === undefined) continue;
       requestSlugs.add(slug);
-      requests.push(request);
+      requests.push(build.scripted ? { ...request, ...this.scriptsOf(item, 'request', [...trail, name]) } : request);
       build.counted(0, 1);
     }
     return { folders, requests };
@@ -418,6 +437,7 @@ class Mapper {
         this.grpcFolders += folders;
         this.grpcRequests += requests;
       },
+      scripted: true,
     });
   }
 
@@ -429,6 +449,7 @@ class Mapper {
         this.wsFolders += folders;
         this.wsRequests += requests;
       },
+      scripted: false,
     });
   }
 
@@ -882,7 +903,8 @@ export function mapOpenCollection(
   const kinds = [mapper.requests, mapper.grpcRequests, mapper.wsRequests].filter((n) => n > 0).length;
   const apiName = (suffix: string): string => (kinds > 1 ? `${name} (${suffix})` : name);
   const newId = options.newId ?? generateId;
-  const apiScripts = mapper.apiScripts(collection, name, mapper.requests > 0);
+  const restScripts = mapper.apiScripts(collection, name, mapper.requests > 0);
+  const grpcScripts = mapper.apiScripts(collection, name, mapper.grpcRequests > 0);
   let order = options.firstOrder ?? 0;
   const inherited = rootAuth.auth.type !== 'inherit' ? { auth: rootAuth.auth } : {};
   const rest =
@@ -894,7 +916,7 @@ export function mapOpenCollection(
           baseUrl: '',
           servers: [],
           ...inherited,
-          ...(apiScripts !== undefined ? { scripts: apiScripts } : {}),
+          ...(restScripts !== undefined ? { scripts: restScripts } : {}),
           folders,
           requests,
         });
@@ -907,6 +929,7 @@ export function mapOpenCollection(
           target: mapper.grpcApiTarget?.target ?? '',
           tls: mapper.grpcApiTarget?.tls ?? false,
           ...inherited,
+          ...(grpcScripts !== undefined ? { scripts: grpcScripts } : {}),
           folders: grpcWalk.folders,
           requests: grpcWalk.requests,
         });
@@ -930,8 +953,8 @@ export function mapOpenCollection(
   reportOcRequestVariables(collection.items, mapper.report);
   reportOcConfigExtras(collection, mapper.report);
   const apiSlug = (rest ?? grpc ?? websocket)?.slug.toLowerCase() ?? 'collection';
-  const scripts = ocModuleFiles(mapper.modules, apiSlug, mapper.report);
-  mapper.reportScripts(collection, rest !== undefined);
+  const scripts = ocTextFiles(mapper.modules, mapper.looseScripts(collection), apiSlug, mapper.report);
+  mapper.reportScripts();
   if (grpc !== undefined && mapper.protoFiles.size === 0) {
     mapper.report.note(`${grpc.name}: needs a definition: import its .proto or use server reflection.`);
   }

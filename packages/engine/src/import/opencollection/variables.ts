@@ -166,9 +166,6 @@ export function reportOcConfigExtras(collection: OcCollection, report: ReportBui
   }
 }
 
-/** The key of the collection's own scripts in {@link OcScripts.levels}; every other key is an item's `path`. */
-export const OC_COLLECTION_KEY = '';
-
 /** A `module` item: a helper file a script would `require`. Kept as text, because `require` is unsupported. */
 export interface OcModule {
   readonly owner: string;
@@ -176,9 +173,21 @@ export interface OcModule {
 }
 
 export interface OcScripts {
-  /** Each level's scripts for the Bruno layer, switched off, keyed by the item's `path`. */
-  readonly levels: ReadonlyMap<string, RequestScripts>;
+  /** The collection's own scripts for the Bruno layer, switched off. */
+  readonly collection?: RequestScripts;
+  /**
+   * Each folder's and request's, keyed by the item object itself: a name or a path can repeat
+   * (a Bruno export gives its items no path of their own), the object cannot.
+   */
+  readonly levels: ReadonlyMap<OcItem, RequestScripts>;
   readonly modules: readonly OcModule[];
+}
+
+/** A level's script that no API of the import could hold, kept as text. */
+export interface OcLooseScript {
+  readonly owner: string;
+  readonly phase: 'before-request' | 'after-response';
+  readonly source: string;
 }
 
 const LEVEL_TYPES = new Set(['before-request', 'after-response', 'tests']);
@@ -218,40 +227,51 @@ function levelScripts(
  * Bruno layer and switched off, and each script file item (type `module`) kept as text.
  */
 export function mapOcScripts(collection: OcCollection, report: ReportBuilder): OcScripts {
-  const levels = new Map<string, RequestScripts>();
+  const levels = new Map<OcItem, RequestScripts>();
   const modules: OcModule[] = [];
-  const attach = (key: string, scripts: readonly OcScript[] | undefined, owner: string): void => {
-    const found = levelScripts(scripts, owner, report);
-    if (found !== undefined) levels.set(key, found);
-  };
   const walk = (items: readonly OcItem[]): void => {
     for (const item of items) {
       const owner = item.info.name;
       if (item.items !== undefined) {
-        attach(item.path, item.request?.scripts, owner);
+        const found = levelScripts(item.request?.scripts, owner, report);
+        if (found !== undefined) levels.set(item, found);
         walk(item.items);
       } else if (item.script !== undefined) {
         modules.push({ owner, source: item.script });
       } else {
-        attach(item.path, item.runtime?.scripts, owner);
+        const found = levelScripts(item.runtime?.scripts, owner, report);
+        if (found !== undefined) levels.set(item, found);
       }
     }
   };
-  attach(OC_COLLECTION_KEY, collection.request?.scripts, collection.info.name);
+  const own = levelScripts(collection.request?.scripts, collection.info.name || 'Collection', report);
   walk(collection.items);
-  return { levels, modules };
+  return { ...(own !== undefined ? { collection: own } : {}), levels, modules };
 }
 
-/** The module items as files under `imported-scripts/<api>/<owner>.module.js`, in tree order. */
-export function ocModuleFiles(
+/**
+ * The files under `imported-scripts/<api>/` an import still writes: the module items as
+ * `<owner>.module.js`, then the scripts of levels no API could hold as `<owner>.<phase>.js`.
+ */
+export function ocTextFiles(
   modules: readonly OcModule[],
+  loose: readonly OcLooseScript[],
   apiSlug: string,
   report: ReportBuilder,
 ): ImportedScriptFile[] {
   const taken = new Set<string>();
-  return modules.map(({ owner, source }) => {
+  const files: ImportedScriptFile[] = [];
+  for (const { owner, source } of modules) {
     const path = importedScriptPath(apiSlug, slugify(owner).toLowerCase(), 'module.js', taken);
     report.note(`${owner}: the module script was saved to ${path} and is never run.`);
-    return { path, source };
-  });
+    files.push({ path, source });
+  }
+  for (const { owner, phase, source } of loose) {
+    const path = importedScriptPath(apiSlug, slugify(owner).toLowerCase(), `${phase}.js`, taken);
+    report.note(
+      `${owner}: its ${phase} script has no place to run in Wirebench, so it was saved to ${path} and is never run.`,
+    );
+    files.push({ path, source });
+  }
+  return files;
 }

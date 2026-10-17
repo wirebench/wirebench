@@ -141,8 +141,13 @@ calls.
   Bruno `script:post-response` and a `tests` block. The tests block comes second.
 - **Report.** The one-line warning "Scripts on … were imported switched off" and the per-request
   unsupported list replace the dialect warning and the "saved to `imported-scripts/`" notes.
-- **What still goes to `imported-scripts/`:** only Bruno's `.js` helper files, which a script would
-  `require`. They stay text, because `require` is unsupported.
+- **What still goes to `imported-scripts/`:** Bruno's `.js` helper files, which a script would
+  `require`; they stay text, because `require` is unsupported. Also a script on a level that cannot
+  hold one: a WebSocket item (or a folder holding only WebSocket items), and a collection script when
+  the import makes no REST or gRPC API. Each is saved as `<owner>.<phase>.js` and named in the report,
+  so no script is lost. REST and gRPC items, folders and APIs all hold scripts.
+- **Bruno's collection scripts and order go on every API the import makes** that can hold them
+  (REST and gRPC), because Bruno runs them for every request type.
 
 ### 3.6 The command line
 

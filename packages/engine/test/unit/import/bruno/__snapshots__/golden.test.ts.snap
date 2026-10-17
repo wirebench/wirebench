@@ -387,6 +387,16 @@ exports[`Bruno golden > maps the folder fixture 1`] = `
         "name": "demo-collection (gRPC)",
         "order": 1,
         "requests": [],
+        "scripts": {
+          "api": "bruno",
+          "enabled": false,
+          "postResponseOrder": "inner-first",
+          "pre": {
+            "text": "bru.setVar("startedAt", Date.now());
+",
+          },
+          "secrets": [],
+        },
         "slug": "demo-collection (gRPC)",
         "target": "\${grpcHost}:80",
         "tls": false,

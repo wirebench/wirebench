@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ocOfBrunoFolder } from '../../../../src/import/bruno/convert.js';
 import { mapBruno } from '../../../../src/import/bruno/import.js';
+import { ocOfBrunoExport } from '../../../../src/import/bruno/json-export.js';
 import { apiFolders, apiRequests } from '../../../../src/rest/model.js';
 
 /** A Bruno folder from `bruno.json` and the given files, mapped with numbered ids. */
@@ -149,17 +150,99 @@ describe('Bruno scripts are attached', () => {
     expect(mapped.report.notes.some((note) => note.includes('is never run'))).toBe(false);
   });
 
-  it('warns about the scripts of a gRPC request, which has no script slot', () => {
+  it('attaches gRPC item, folder and collection scripts to the gRPC API', () => {
+    const mapped = mapFolder(
+      {},
+      {
+        'collection.bru': 'script:pre-request {\n  bru.setVar("root", 1);\n}\n',
+        'rpc/folder.bru': 'meta {\n  name: Rpc\n}\n\nscript:pre-request {\n  bru.setVar("dir", 1);\n}\n',
+        'rpc/hello.bru': `${GRPC}script:post-response {\n  bru.setVar("b", 2);\n}\n`,
+      },
+    );
+    const grpc = mapped.collections[0]!.grpc!;
+    expect(grpc.scripts).toMatchObject({ api: 'bruno', enabled: false, postResponseOrder: 'inner-first' });
+    expect(grpc.scripts?.pre?.text).toBe('bru.setVar("root", 1);\n');
+    expect(grpc.folders[0]!.scripts).toMatchObject({ pre: { text: 'bru.setVar("dir", 1);\n' }, enabled: false });
+    expect(grpc.folders[0]!.requests[0]!.scripts).toMatchObject({ post: { text: 'bru.setVar("b", 2);\n' } });
+    expect(mapped.scripts).toEqual([]);
+  });
+
+  it('saves the scripts of a WebSocket item as text, and says so', () => {
     const mapped = mapFolder(
       {},
       {
         'ping.bru': request(''),
-        'rpc.bru':
-          'meta {\n  name: Rpc\n  type: grpc\n  seq: 2\n}\n\ngrpc {\n  url: grpc://h:1\n  method: /a.B/C\n  body: grpc\n}\n\nscript:pre-request {\n  bru.setVar("a", 1);\n}\n',
+        'socket.bru': `${WS}script:pre-request {\n  bru.setVar("a", 1);\n}\n`,
       },
     );
-    expect(mapped.report.warnings).toContain(
-      'Rpc: its scripts were not imported; only HTTP and GraphQL requests keep scripts.',
+    expect(mapped.scripts).toEqual([
+      { path: 'imported-scripts/c/echo.before-request.js', source: 'bru.setVar("a", 1);\n' },
+    ]);
+    expect(mapped.report.notes).toContain(
+      'Echo: its before-request script has no place to run in Wirebench, so it was saved to imported-scripts/c/echo.before-request.js and is never run.',
     );
+    expect(apiRequests(mapped.collections[0]!.rest!)[0]!.scripts).toBeUndefined();
+  });
+
+  it('saves the collection script as text when no REST or gRPC API holds it', () => {
+    const mapped = mapFolder(
+      {},
+      {
+        'collection.bru': 'script:pre-request {\n  bru.setVar("root", 1);\n}\n',
+        'socket.bru': WS,
+      },
+    );
+    expect(mapped.scripts.map((file) => file.path)).toEqual(['imported-scripts/c/c.before-request.js']);
+  });
+});
+
+const GRPC =
+  'meta {\n  name: Hello\n  type: grpc\n  seq: 1\n}\n\ngrpc {\n  url: grpc://h:1\n  method: /a.B/C\n  body: grpc\n}\n\n';
+const WS = 'meta {\n  name: Echo\n  type: ws\n  seq: 2\n}\n\nws {\n  url: wss://h/ws\n  body: ws\n}\n\n';
+
+/** A Bruno JSON export, whose items carry no path of their own: only their names. */
+function mapExport(items: unknown[]) {
+  let n = 0;
+  const { collection, report } = ocOfBrunoExport({ version: '1', name: 'Shop', items });
+  return mapBruno(collection, report, { newId: () => `id${String((n += 1))}` });
+}
+
+const login = (script?: string): Record<string, unknown> => ({
+  type: 'http',
+  name: 'Login',
+  seq: 1,
+  request: {
+    url: 'https://a.example.com/login',
+    method: 'GET',
+    ...(script !== undefined ? { script: { req: script } } : {}),
+  },
+});
+const folder = (name: string, items: unknown[], script?: string): Record<string, unknown> => ({
+  type: 'folder',
+  name,
+  root: { meta: { name }, ...(script !== undefined ? { request: { script: { req: script } } } : {}) },
+  items,
+});
+
+describe('Bruno scripts follow their item, not its name', () => {
+  it('two folders each holding "Login": only the one with a script has one', () => {
+    const api = mapExport([folder('A', [login('a()')]), folder('B', [login()])]).collections[0]!.rest!;
+    const [a, b] = apiFolders(api);
+    expect(a!.requests[0]!.scripts?.pre?.text).toBe('a()\n');
+    expect(b!.requests[0]!.scripts).toBeUndefined();
+  });
+
+  it('two "Login" requests with different scripts each keep their own', () => {
+    const api = mapExport([folder('A', [login('a()')]), folder('B', [login('b()')])]).collections[0]!.rest!;
+    const [a, b] = apiFolders(api);
+    expect(a!.requests[0]!.scripts?.pre?.text).toBe('a()\n');
+    expect(b!.requests[0]!.scripts?.pre?.text).toBe('b()\n');
+  });
+
+  it('a folder and a request sharing a name keep separate scripts', () => {
+    const api = mapExport([folder('Login', [login()], 'dir()'), login('req()')]).collections[0]!.rest!;
+    expect(apiFolders(api)[0]!.scripts?.pre?.text).toBe('dir()\n');
+    expect(apiFolders(api)[0]!.requests[0]!.scripts).toBeUndefined();
+    expect(api.requests[0]!.scripts?.pre?.text).toBe('req()\n');
   });
 });

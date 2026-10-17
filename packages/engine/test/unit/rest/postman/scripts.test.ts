@@ -5,7 +5,8 @@
  * run.
  */
 import { describe, expect, it } from 'vitest';
-import { apiFromPostmanCollection, runControlCalls, unsupportedCalls } from '../../../../src/rest/postman/map.js';
+import { runControlCalls, unsupportedCalls } from '../../../../src/import/scripts.js';
+import { apiFromPostmanCollection } from '../../../../src/rest/postman/map.js';
 import { parsePostmanCollection } from '../../../../src/rest/postman/parse.js';
 
 const info = { name: 'Shop', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' };

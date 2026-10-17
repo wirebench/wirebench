@@ -885,8 +885,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   /**
    * Another request client's export: main converts each collection into a REST, a gRPC and a
    * WebSocket API in the chosen project, and adds its environments to the workspace without making one
-   * active. An Insomnia export's scripts are attached to their requests and folders switched off;
-   * the other clients' scripts are written under `imported-scripts/` as text and never run.
+   * active. An Insomnia or Bruno export's scripts are attached to their requests, folders and APIs
+   * switched off (Bruno's script files, and scripts on levels no API can hold, are written under
+   * `imported-scripts/` as text); the other clients' scripts are written there as text and never run.
    */
   async function importClient(
     kind: 'insomnia' | 'bruno' | 'hoppscotch' | 'thunder-client',
@@ -2438,8 +2439,9 @@ function HttpFileSummary({ value }: { readonly value: ApiImportHttpFileResponse 
 
 /**
  * What an OpenCollection import made: the APIs, requests and folders, how many assertions came
- * across, the script files kept as text (its scripts are attached to their requests, switched off); then the environments and properties it added, and the report
- * (which already carries the variables' own lines).
+ * across, the script files kept as text (its other scripts are attached to their requests, folders
+ * and APIs, switched off); then the environments and properties it added, and the report (which
+ * already carries the variables' own lines).
  */
 function OpenCollectionSummary({ value }: { readonly value: ApiImportOpenCollectionResponse }) {
   const { counts, variables } = value;

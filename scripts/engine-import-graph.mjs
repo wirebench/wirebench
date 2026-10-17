@@ -78,7 +78,6 @@ export const CORE_EXCEPTIONS = Object.freeze([
   { from: 'import/opencollection/map.ts', to: 'rest/url.ts', until: 'phase 7' },
   { from: 'import/opencollection/map.ts', to: 'grpc/model.ts', until: 'phase 7' },
   { from: 'import/opencollection/map.ts', to: 'ws/model.ts', until: 'phase 7' },
-  { from: 'import/opencollection/map.ts', to: 'rest/postman/', until: 'phase 7' },
   { from: 'import/collection-v3/map.ts', to: 'rest/model.ts', until: 'phase 7' },
   { from: 'import/collection-v3/map.ts', to: 'rest/url.ts', until: 'phase 7' },
   { from: 'import/collection-v3/map.ts', to: 'rest/postman/', until: 'phase 7' },
