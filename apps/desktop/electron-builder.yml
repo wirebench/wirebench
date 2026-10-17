@@ -111,7 +111,8 @@ mac:
   # the prebuild ever stops being universal.
   # The same goes for the pty bindings: both darwin folders are in both builds, thin and identical.
   # node-hid ships both darwin prebuilds in one package, so they too are thin and identical in both builds.
-  x64ArchFiles: '{Contents/Resources/kerberos/**,Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-*/**,Contents/Resources/app.asar.unpacked/node_modules/node-hid/prebuilds/**}'
+  # The device helper (#428) is one universal binary, the same file in every mac build.
+  x64ArchFiles: '{Contents/Resources/device-helper/**,Contents/Resources/kerberos/**,Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-*/**,Contents/Resources/app.asar.unpacked/node_modules/node-hid/prebuilds/**}'
   # Both pty bindings in every mac build, for the same reason as the Kerberos folders below.
   files:
     - from: build-resources/node-pty
@@ -122,6 +123,10 @@ mac:
   extraResources:
     - from: build-resources/kerberos
       to: kerberos
+    # Device keys and the app lock (#428): the Secure Enclave helper (`scripts/build-device-helper.ts`),
+    # outside the asar so it can run, and signed with the app.
+    - from: build-resources/device-helper
+      to: device-helper
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: resources/entitlements.mac.plist
@@ -152,6 +157,9 @@ win:
   extraResources:
     - from: build-resources/kerberos/win32-${arch}
       to: kerberos/win32-${arch}
+    # Device keys and the app lock (#428): the Windows Hello script, run by Windows PowerShell.
+    - from: build-resources/device-helper
+      to: device-helper
   # Only this build's own pty binding.
   files:
     - from: build-resources/node-pty/node-pty-win32-${arch}
