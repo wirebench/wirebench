@@ -35,8 +35,15 @@ export const headRoutes =
         return whileRepositoryExists(repos, workspaceId, async () => {
           const head = await env.store.head(workspaceId);
           const { commits, behind } = await env.store.counts(workspaceId, from, head);
-          const recordDesktopActivity = (await workspaceById(db, workspaceId))?.recordDesktopActivity ?? false;
-          return { head, commits, ...(behind !== undefined ? { behind } : {}), role, recordDesktopActivity };
+          const workspace = await workspaceById(db, workspaceId);
+          return {
+            head,
+            commits,
+            ...(behind !== undefined ? { behind } : {}),
+            role,
+            recordDesktopActivity: workspace?.recordDesktopActivity ?? false,
+            recordSessionLogs: workspace?.recordSessionLogs ?? false,
+          };
         });
       },
     );

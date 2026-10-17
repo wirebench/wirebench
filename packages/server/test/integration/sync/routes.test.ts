@@ -46,7 +46,7 @@ describeDb('server-sync routes (§3.2)', () => {
     ] as const) {
       expect(await get(user, 'head')).toEqual({
         status: 200,
-        body: { head: null, commits: 0, role, recordDesktopActivity: false },
+        body: { head: null, commits: 0, role, recordDesktopActivity: false, recordSessionLogs: false },
       });
     }
     expect(await get(f.viewer, 'snapshot')).toEqual({ status: 200, body: { head: null, files: [] } });
@@ -71,6 +71,7 @@ describeDb('server-sync routes (§3.2)', () => {
       behind: 2,
       role: 'viewer',
       recordDesktopActivity: false,
+      recordSessionLogs: false,
     });
     expect((await get<SyncSnapshotResponse>(f.viewer, 'snapshot')).body).toEqual({
       head,

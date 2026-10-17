@@ -69,6 +69,7 @@ export const AUDIT_ACTIONS = [
   'schedule.run_requested',
   'schedule.run_cancelled',
   'schedule.run_finished',
+  'workspace.session_logs_changed',
 ] as const;
 export const auditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof auditActionSchema>;
@@ -87,6 +88,7 @@ export const AUDIT_ACTION_GROUPS = [
   'desktop',
   'scim',
   'schedule',
+  'session_log',
 ] as const;
 export type AuditActionGroup = (typeof AUDIT_ACTION_GROUPS)[number];
 
@@ -105,6 +107,7 @@ export const AUDIT_TARGET_KINDS = [
   'scim-token',
   'scim-group',
   'schedule',
+  'session-log',
 ] as const;
 export type AuditTargetKind = (typeof AUDIT_TARGET_KINDS)[number];
 

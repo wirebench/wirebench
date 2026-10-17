@@ -2284,6 +2284,35 @@ export type {
   ScheduleUpdate,
 } from './server-api/schedules.js';
 export {
+  SESSION_LOG_CLIENT_ID_PATTERN,
+  SESSION_LOG_LIMITS,
+  SESSION_LOG_REASONS,
+  sessionLogChunkRequestSchema,
+  sessionLogChunkResponseSchema,
+  sessionLogEndRequestSchema,
+  sessionLogOpenRequestSchema,
+  sessionLogOpenResponseSchema,
+  sessionLogPageSchema,
+  sessionLogParamsSchema,
+  sessionLogSchema,
+  sessionLogTextQuerySchema,
+  sessionLogTextResponseSchema,
+  sessionLogsQuerySchema,
+} from './server-api/session-logs.js';
+export type {
+  SessionLog,
+  SessionLogChunkRequest,
+  SessionLogChunkResponse,
+  SessionLogEndRequest,
+  SessionLogOpenRequest,
+  SessionLogOpenResponse,
+  SessionLogPage,
+  SessionLogReason,
+  SessionLogTextQuery,
+  SessionLogTextResponse,
+  SessionLogsQuery,
+} from './server-api/session-logs.js';
+export {
   COMMUNITY_SEATS,
   EDITIONS,
   FEATURES,
