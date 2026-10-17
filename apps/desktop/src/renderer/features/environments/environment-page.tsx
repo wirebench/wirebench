@@ -5,7 +5,7 @@ import { queueEnvironmentPatch } from './environment-queue.js';
 import { VariablesTable, type InheritedScope, type VariablesTableTarget } from './variables-table.js';
 import { currentColumn, useCurrentValues } from '../../state/current-values.js';
 import type { ScopeKeyWire } from '../../../shared/wire-base.js';
-import { activeBlocker } from '../../state/environment-scope.js';
+import { activeBlocker, appliesToProject } from '../../state/environment-scope.js';
 import { useGlobalsStore } from '../../state/globals.js';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
 import { selectActiveEnvironmentId, useWorkspaceStore } from '../../state/workspace.js';
@@ -200,6 +200,7 @@ function WorkspacePage() {
   const disabled = useWorkspaceStore((state) => state.workspace?.disabled ?? []);
   const mutate = useWorkspaceStore((state) => state.mutate);
   const setWorkspacePropertyEnabled = useWorkspaceStore((state) => state.setWorkspacePropertyEnabled);
+  const projects = useWorkspaceStore((state) => state.workspace?.projects);
   const globalsProperties = useGlobalsStore((state) => state.properties);
   const globalsDisabled = useGlobalsStore((state) => state.disabled);
   const current = useCurrentValues({ scope: 'workspace' });
@@ -208,6 +209,8 @@ function WorkspacePage() {
   const target: VariablesTableTarget = {
     label: 'Workspace variables',
     scopeLabel: 'Workspace',
+    // Every project of the workspace reads these, so Make secret stores the value for each.
+    secretProjectIds: (projects ?? []).map((project) => project.id),
     inherited: [
       { label: 'Globals', properties: globalsProperties, disabled: globalsDisabled, current: globalsCurrent },
     ],
@@ -320,6 +323,11 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
         inherited,
         properties: environment.properties,
         disabled: environment.disabled,
+        // A secret is stored per project, so Make secret stores it for every project this
+        // environment applies to: each of them can then resolve the token.
+        secretProjectIds: (workspace?.projects ?? [])
+          .filter((candidate) => appliesToProject(workspaceEnvironment, candidate.id))
+          .map((candidate) => candidate.id),
         ...(environmentKey !== undefined ? { current: currentColumn(environmentKey, environmentCurrent) } : {}),
         onSet: (name, value) => {
           void queueEnvironmentPatch(environmentId, (current) => ({
@@ -372,6 +380,7 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
         scopeLabel: 'This environment',
         inherited,
         properties: environment.properties,
+        ...(projectId !== undefined ? { secretProjectIds: [projectId] } : {}),
         // A linked project's own environment publishes `disabled` read-only on the wire — there
         // is deliberately no mutation for it (see `update-environment`'s patch shape), so
         // `onSetEnabled` stays undefined and the table shows the state without letting it change.

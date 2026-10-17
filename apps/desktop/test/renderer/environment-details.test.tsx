@@ -1,15 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import {
-  EnvironmentDetails,
-  useEnvironmentDetailsStore,
-} from '../../src/renderer/features/environments/environment-details.js';
+import { EnvironmentDetails } from '../../src/renderer/features/environments/environment-details.js';
 import { EnvironmentPage } from '../../src/renderer/features/environments/environment-page.js';
 import { RightRail } from '../../src/renderer/shell/right-rail.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+import { useUiStore } from '../../src/renderer/state/ui.js';
+import { DEFAULT_UI_STATE, readUi, writeUi } from '../../src/renderer/state/ui-state.js';
 import type { ProjectWire } from '../../src/shared/wire-types.js';
 import type { EnvironmentWire, WorkspaceEnvironmentWire } from '../../src/shared/wire-base.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
@@ -44,7 +43,7 @@ afterEach(() => {
   useWorkspaceStore.setState({ workspace: null, lastProjectId: undefined });
   useProjectStore.getState().reset();
   useEditorsStore.setState({ tabs: [], activeId: undefined, displayedSet: 'explorer', activeBySet: {} });
-  useEnvironmentDetailsStore.setState({ open: true });
+  useUiStore.getState().setEnvironmentDetailsOpen(true);
 });
 
 describe('EnvironmentDetails — a workspace environment', () => {
@@ -155,8 +154,27 @@ describe('the right rail in the Environments area', () => {
     expect(screen.queryByTestId('rail-code')).toBeNull();
     expect(icon.getAttribute('aria-expanded')).toBe('true');
     fireEvent.click(icon);
-    expect(useEnvironmentDetailsStore.getState().open).toBe(false);
+    expect(useUiStore.getState().slideOver.environmentDetailsOpen).toBe(false);
     expect(icon.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('remembers the choice in the per-machine layout, so coming back keeps it', () => {
+    const storage = new Map<string, string>();
+    const fake = {
+      getItem: (k: string) => storage.get(k) ?? null,
+      setItem: (k: string, v: string) => void storage.set(k, v),
+      removeItem: (k: string) => void storage.delete(k),
+      clear: () => storage.clear(),
+      key: () => null,
+      length: 0,
+    } satisfies Storage;
+    writeUi({ ...DEFAULT_UI_STATE, slideOver: { ...DEFAULT_UI_STATE.slideOver, environmentDetailsOpen: false } }, fake);
+    expect(readUi(fake).slideOver.environmentDetailsOpen).toBe(false);
+    writeUi({ ...DEFAULT_UI_STATE, slideOver: { ...DEFAULT_UI_STATE.slideOver, environmentDetailsOpen: true } }, fake);
+    expect(readUi(fake).slideOver.environmentDetailsOpen).toBe(true);
+    // A layout saved before the flag existed reads as absent, which shows the panel.
+    writeUi(DEFAULT_UI_STATE, fake);
+    expect(readUi(fake).slideOver.environmentDetailsOpen).toBeUndefined();
   });
 
   it('disables it on Globals, which has no colour or scope', () => {

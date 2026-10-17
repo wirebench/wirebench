@@ -25,6 +25,21 @@ function workspace(environments: readonly WorkspaceEnvironmentWire[]): Workspace
     projects: [{ id: 'p1', name: 'Billing', slug: 'billing', source: 'internal', dir: '/tmp/b', status: 'ready' }],
   };
 }
+
+/**
+ * {@link workspace} with a second project, so no project is current until a tab names one: a
+ * workspace of one project makes that one current from the start.
+ */
+function twoProjects(environments: readonly WorkspaceEnvironmentWire[]): WorkspaceWire {
+  const base = workspace(environments);
+  return {
+    ...base,
+    projects: [
+      ...base.projects,
+      { id: 'p2', name: 'Crm', slug: 'crm', source: 'internal', dir: '/tmp/c', status: 'ready' },
+    ],
+  };
+}
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
 import {
   getCommand,
@@ -150,7 +165,7 @@ describe('environment commands', () => {
   });
 
   it('is unavailable while there is no current project (#468)', () => {
-    useWorkspaceStore.setState({ workspace: workspace([]), lastProjectId: undefined });
+    useWorkspaceStore.setState({ workspace: twoProjects([]), lastProjectId: undefined });
     expect(listCommands(context).some((command) => command.id === 'env.switch')).toBe(false);
     useWorkspaceStore.setState({ lastProjectId: 'p1' });
     expect(listCommands(context).some((command) => command.id === 'env.switch')).toBe(true);
@@ -207,7 +222,7 @@ describe('environment commands', () => {
     useWorkspaceStore.setState({ workspace: workspace([{ ...uat, projects: ['p2'] }]) });
     expect(listCommands(context).some((command) => command.id === 'env.next')).toBe(false);
 
-    useWorkspaceStore.setState({ workspace: workspace([uat]), lastProjectId: undefined });
+    useWorkspaceStore.setState({ workspace: twoProjects([uat]), lastProjectId: undefined });
     expect(listCommands(context).some((command) => command.id === 'env.next')).toBe(false);
 
     useWorkspaceStore.setState({ lastProjectId: 'p1' });

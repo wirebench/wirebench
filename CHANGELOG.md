@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Make secret on credential-like variables.** A variable named like a credential (`token`,
+  `password`, `apiKey`…) with a plain value now offers **Make secret** in its row: the value is stored
+  as a project secret on this machine and the row keeps `${secret:name}`. On a workspace scope it is
+  stored for every project the scope applies to. A name the project already has is refused, never
+  overwritten (#634).
 - **Scheduled runs in the app.** A workspace shared on a server that runs schedules shows a
   **Schedules** node in the Explorer: each schedule with a green, red or grey dot and, while failing,
   how many runs failed in a row. Opening one shows its runs, newest first, and each run's results as
@@ -65,6 +70,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Environment rows show colour and protection.** The Environments list now shows each
+  environment's colour dot and, for a protected one, its lock, as the title-bar switcher does. The
+  Environment details panel stays as you left it, open or put away, when you come back to an
+  environment and after a restart (#634).
+- **The mock tab explains port 0 and shows methods uppercase.** A mock on port 0 now shows an empty
+  Port field reading *any free port*, and clearing the field asks for one. An operation's header reads
+  `GET /json` rather than `get /json` (#634).
+- **The environment switcher names your only project.** In a workspace of one project the title
+  bar's switcher now names that project and can be used straight away, instead of reading "No
+  project" until a request is opened. With several projects it still waits for a request tab to say
+  which (#634).
+- **API tabs read cleanly.** The REST, gRPC and WebSocket API tabs no longer show an issue number or
+  repeat when an API's scripts run, and their authentication fields line up with Name and Description
+  (#634).
 - **The Body tab shows when there is a body.** Like Scripts, the REST request's Body tab carries a dot
   while the request would send a body (#637).
 - **The Runner counts requests without checks apart.** Its summary and Past runs now say "3 passed,

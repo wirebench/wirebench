@@ -1,7 +1,7 @@
 import { Code2, PanelRight } from 'lucide-react';
 import {
   useEnvironmentDetailsShown,
-  useEnvironmentDetailsStore,
+  setEnvironmentDetailsOpen,
   useOpenEnvironmentId,
 } from '../features/environments/environment-details.js';
 import { useForwardDetailsShown, useHostDetailsShown } from '../features/ssh/details-shown.js';
@@ -85,7 +85,7 @@ export function RightRail({ platform }: { readonly platform: Platform }) {
           aria-expanded={environmentDetailsShown}
           aria-controls="slide-over"
           onClick={() => {
-            useEnvironmentDetailsStore.getState().setOpen(!environmentDetailsShown);
+            setEnvironmentDetailsOpen(!environmentDetailsShown);
           }}
         >
           <PanelRight size={17} aria-hidden="true" />
