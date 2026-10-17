@@ -118,6 +118,24 @@ describe('sendRest', () => {
     expect(useExchangesStore.getState().restByRequest['rest-1']?.previous).toBeUndefined();
   });
 
+  it('keeps the last response through a cancel, with how long the send ran, and drops it on a failure', async () => {
+    const previous = { ...makeRestExchange(), sendId: 'old' };
+    for (const [code, keeps] of [
+      ['aborted', true],
+      ['connection-refused', false],
+    ] as const) {
+      useExchangesStore.setState({
+        restByRequest: { 'rest-1': { status: 'done', sendId: 'old', exchange: previous } },
+      });
+      sendRest.mockResolvedValue({ ok: false, error: { code, message: 'x' } });
+      await useExchangesStore.getState().sendRest('rest-1');
+      const after = useExchangesStore.getState().restByRequest['rest-1'];
+      expect(after).toMatchObject({ status: 'error', error: { code } });
+      expect(after?.previous?.sendId).toBe(keeps ? 'old' : undefined);
+      expect(after?.cancelledAfterMs !== undefined).toBe(keeps);
+    }
+  });
+
   it('names the request only, and keeps the reply under that request', async () => {
     await useExchangesStore.getState().sendRest('rest-1');
 

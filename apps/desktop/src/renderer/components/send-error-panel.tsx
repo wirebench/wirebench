@@ -1,6 +1,6 @@
 /**
- * What a response pane shows when a send produced no response: what happened in plain words, the
- * whole message, the one hint that points at the fix, and Retry. The code is kept, small, for
+ * What a response pane shows when a send produced no response: what happened in plain words (naming
+ * the host and port to check when the error says), the message when it adds to that, the one hint that points at the fix, and Retry. The code is kept, small, for
  * searching and for bug reports, but it is no longer the headline.
  *
  * Protocol-neutral: the hint's links are callbacks, so each request kind wires them to its own
@@ -24,6 +24,8 @@ export interface SendErrorPanelProps {
   readonly onOpenTimeoutSetting?: (() => void) | undefined;
   /** Shows the field an unresolved `${name}` was written in. Absent leaves each name as plain text. */
   readonly onRevealReference?: ((ref: string) => void) | undefined;
+  /** Names the field a reference was written in ("Header X-List"); absent or undefined says "This request". */
+  readonly describeReferenceField?: ((ref: string) => string | undefined) | undefined;
 }
 
 const LINK = 'text-accent hover:underline';
@@ -35,6 +37,7 @@ export function SendErrorPanel({
   retryDisabledReason,
   onOpenTimeoutSetting,
   onRevealReference,
+  describeReferenceField,
 }: SendErrorPanelProps) {
   const view = describeSendError(error);
   return (
@@ -43,14 +46,21 @@ export function SendErrorPanel({
         data-testid="send-error-title"
         className={`text-md font-medium ${view.tone === 'danger' ? 'text-status-danger' : 'text-fg-default'}`}
       >
-        {view.title}
+        {view.headline}
       </h3>
-      <p data-testid="send-error-message" className="text-sm break-words whitespace-pre-wrap text-fg-default">
-        {error.message}
-      </p>
+      {view.detail !== undefined && (
+        <p data-testid="send-error-message" className="text-sm break-words whitespace-pre-wrap text-fg-default">
+          {view.detail}
+        </p>
+      )}
       {view.hint !== undefined && (
         <div data-testid="send-error-hint" className="text-sm text-fg-muted">
-          <Hint hint={view.hint} onOpenTimeoutSetting={onOpenTimeoutSetting} onRevealReference={onRevealReference} />
+          <Hint
+            hint={view.hint}
+            onOpenTimeoutSetting={onOpenTimeoutSetting}
+            onRevealReference={onRevealReference}
+            describeReferenceField={describeReferenceField}
+          />
         </div>
       )}
       <div className="mt-1 flex items-center gap-3">
@@ -77,10 +87,12 @@ function Hint({
   hint,
   onOpenTimeoutSetting,
   onRevealReference,
+  describeReferenceField,
 }: {
   readonly hint: SendErrorHint;
   readonly onOpenTimeoutSetting: (() => void) | undefined;
   readonly onRevealReference: ((ref: string) => void) | undefined;
+  readonly describeReferenceField: ((ref: string) => string | undefined) | undefined;
 }) {
   if (hint.kind === 'text') {
     return <p>{hint.text}</p>;
@@ -106,6 +118,20 @@ function Hint({
       </p>
     );
   }
+  if (hint.kind === 'unclosed') {
+    return (
+      <ul className="flex flex-col gap-1">
+        {hint.fragments.map((fragment) => (
+          <li key={fragment} data-testid="send-error-unclosed">
+            {describeReferenceField?.(fragment) ?? 'This request'} has a <code className="font-mono">{'${'}</code> that
+            is never closed: <ReferenceLink reference={fragment} onRevealReference={onRevealReference} />. Close it with{' '}
+            <code className="font-mono">{'}'}</code>, or write <code className="font-mono">{'$${'}</code> for a literal{' '}
+            <code className="font-mono">{'${'}</code>.
+          </li>
+        ))}
+      </ul>
+    );
+  }
   if (hint.refs.length === 0) {
     return <p>A variable in this request has no value in the active environment.</p>;
   }
@@ -115,23 +141,35 @@ function Hint({
       <ul className="mt-1 flex flex-wrap gap-2">
         {hint.refs.map((ref) => (
           <li key={ref}>
-            {onRevealReference !== undefined ? (
-              <button
-                type="button"
-                data-testid="send-error-reference"
-                className={`font-mono ${LINK}`}
-                onClick={() => {
-                  onRevealReference(ref);
-                }}
-              >
-                {ref}
-              </button>
-            ) : (
-              <code className="font-mono text-fg-default">{ref}</code>
-            )}
+            <ReferenceLink reference={ref} onRevealReference={onRevealReference} />
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+/** A reference as a link to the field it sits in, or as plain code when there is nowhere to go. */
+function ReferenceLink({
+  reference,
+  onRevealReference,
+}: {
+  readonly reference: string;
+  readonly onRevealReference: ((ref: string) => void) | undefined;
+}) {
+  if (onRevealReference === undefined) {
+    return <code className="font-mono text-fg-default">{reference}</code>;
+  }
+  return (
+    <button
+      type="button"
+      data-testid="send-error-reference"
+      className={`font-mono ${LINK}`}
+      onClick={() => {
+        onRevealReference(reference);
+      }}
+    >
+      {reference}
+    </button>
   );
 }

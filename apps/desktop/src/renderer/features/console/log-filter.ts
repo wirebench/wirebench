@@ -5,6 +5,7 @@
  */
 
 import type { LogEntry, LogFilter, StatusClass } from '../../state/exchanges.js';
+import { describeSendError } from '../request-editor/send-error.js';
 import { compileMatcher, matchesText, type TextMatcher } from './log-search.js';
 
 export type { StatusClass } from '../../state/exchanges.js';
@@ -60,13 +61,26 @@ export function stageOf(entry: LogEntry): 'prepare' | 'send' | undefined {
   return entry.kind === 'failure' ? (entry.failure.stage ?? 'send') : undefined;
 }
 
-/** The status cell text: HTTP status, the error code, or `Failed · before send`. */
+/**
+ * The status cell text: the HTTP status, or for a failure the title the response pane gives it
+ * ("Connection refused", "Host not found"), so the log and the pane name a failure alike.
+ */
 export function statusLabelOf(entry: LogEntry): string {
   if (entry.kind === 'exchange') {
     const { exchange } = entry;
     return String('protocol' in exchange ? exchange.status : exchange.http.status);
   }
-  return entry.failure.stage === 'prepare' ? 'Failed · before send' : entry.failure.error.code;
+  return describeSendError(entry.failure.error).title;
+}
+
+/** The status cell's tooltip: for a failure, the code, where it stopped and the whole message. */
+export function statusTooltipOf(entry: LogEntry): string {
+  if (entry.kind === 'exchange') {
+    return statusLabelOf(entry);
+  }
+  const { error } = entry.failure;
+  const where = entry.failure.stage === 'prepare' ? ' · before send' : '';
+  return `${error.code}${where}: ${error.message}`;
 }
 
 /**

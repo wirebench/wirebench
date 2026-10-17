@@ -50,7 +50,7 @@ test.describe('HTTP Log: failed sends, filter bar and detail tabs', () => {
     await expect(failed).toContainText('rest');
     await expect(failed).toContainText('GET');
     await expect(failed).toContainText('http://127.0.0.1:1/nope');
-    await expect(failed.getByTestId('http-log-status')).toHaveText('connection-refused');
+    await expect(failed.getByTestId('http-log-status')).toHaveText('Connection refused');
     await expect(failed.getByTestId('http-log-status')).toHaveClass(/text-status-danger/);
     await expect(failed).toContainText(/\d+(\.\d)? ms/);
 
