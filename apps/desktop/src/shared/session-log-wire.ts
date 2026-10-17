@@ -14,7 +14,11 @@ const logIdSchema = z.string().min(1).max(64);
 
 export const sessionLogTargetSchema = z.strictObject({ kind: z.enum(['host', 'group']), id: hostIdSchema });
 
-export const sessionLogSwitchesResponseSchema = z.object({ switches: z.record(z.string(), z.boolean()) });
+export const sessionLogSwitchesResponseSchema = z.object({
+  switches: z.record(z.string(), z.boolean()),
+  /** The workspace's server records every SSH session (#430): the switches do not decide while this is set. */
+  team: z.boolean().optional(),
+});
 export type SessionLogSwitchesResponse = z.infer<typeof sessionLogSwitchesResponseSchema>;
 
 /** `on: null` clears the target's own switch, so it follows its group again. */

@@ -22,6 +22,8 @@ import { createStreamMasker, createTextLog, resolveHost } from '@wirebench/ssh';
 import type { HopCredentials, HostsFile } from '@wirebench/ssh';
 import { logSwitchKey, resolveLogSwitch } from '../shared/session-log-switch.js';
 import type { LogSwitchTarget, LogSwitches } from '../shared/session-log-switch.js';
+import { UPLOAD_SUFFIX } from './session-log-uploader.js';
+import type { SessionLogUpload, SessionLogUploader, SessionLogUploadTarget } from './session-log-uploader.js';
 
 export const SESSION_LOGS_DIR = 'session-logs';
 export const SESSION_LOG_SWITCHES_FILE = 'ssh-session-logs.json';
@@ -48,6 +50,8 @@ export interface SessionLogStart {
   readonly secrets: readonly string[];
   /** The server the workspace is bound to, for a later upload (#430). */
   readonly server?: { readonly url: string; readonly recording: boolean } | undefined;
+  /** Where the log streams to while it is written: the workspace's server records SSH sessions (#430). */
+  readonly upload?: SessionLogUploadTarget | undefined;
 }
 
 export interface SessionLogEnd {
@@ -109,6 +113,8 @@ export interface SessionLogStoreDeps {
   readonly limits: () => { readonly maxBytes: number; readonly raw: boolean };
   readonly now?: () => Date;
   readonly log?: (message: string) => void;
+  /** Streams logs that name an upload target (#430). */
+  readonly uploader?: Pick<SessionLogUploader, 'begin'>;
 }
 
 const unknownLog = (): WirebenchError => new WirebenchError('session-log-unknown', 'That session log no longer exists');
@@ -167,6 +173,7 @@ export class SessionLogStore {
     let failed = false;
     let ended = false;
     let handles: { log: FileHandle; raw: FileHandle | undefined } | undefined;
+    let upload: SessionLogUpload | undefined;
     const fail = (error: unknown): void => {
       if (failed) return;
       failed = true;
@@ -179,6 +186,13 @@ export class SessionLogStore {
         log: await open(join(dir, `${id}.log`), 'a'),
         raw: raw ? await open(join(dir, `${id}.raw`), 'a') : undefined,
       };
+      if (info.upload && this.deps.uploader) {
+        // The upload is the log's passenger: if it cannot start, the log on this machine still is written.
+        upload = await this.deps.uploader.begin(dir, meta, info.upload).catch((error: unknown) => {
+          this.deps.log?.(`[session-log] ${id}: cannot start its upload (${(error as Error).message})`);
+          return undefined;
+        });
+      }
     })().catch(fail);
     const write = (textBytes: Uint8Array, rawBytes: Uint8Array): void => {
       if (failed || (textBytes.length === 0 && rawBytes.length === 0)) return;
@@ -187,6 +201,7 @@ export class SessionLogStore {
           if (failed || !handles) return;
           if (textBytes.length > 0) await handles.log.write(textBytes);
           if (rawBytes.length > 0 && handles.raw) await handles.raw.write(rawBytes);
+          if (textBytes.length > 0) upload?.grew();
         })
         .catch(fail);
     };
@@ -216,6 +231,7 @@ export class SessionLogStore {
             await handles?.log.close();
             await handles?.raw?.close();
             if (!failed) await writeFileAtomic(nodeFs, join(dir, `${id}.json`), `${JSON.stringify(meta, null, 2)}\n`);
+            upload?.ended(meta);
           })
           .catch(fail)
           .finally(() => {
@@ -378,7 +394,7 @@ async function sizeOf(file: string): Promise<number> {
 }
 
 async function removeLog(stem: string): Promise<void> {
-  await Promise.all(['.log', '.raw', '.json'].map((ext) => rm(`${stem}${ext}`, { force: true })));
+  await Promise.all(['.log', '.raw', '.json', UPLOAD_SUFFIX].map((ext) => rm(`${stem}${ext}`, { force: true })));
 }
 
 /** How many lines of `file` hold `needle` (lower case), and the first; `undefined` for none or an unreadable file. */
@@ -477,9 +493,14 @@ export interface SessionLogPlannerDeps {
   readonly store: Pick<SessionLogStore, 'start'>;
   readonly switches: Pick<SessionLogSwitches, 'all'>;
   /** The window's open workspace, and the server it is bound to; `undefined` when none is open. */
-  readonly workspaceOf: (
-    sender: WebContents,
-  ) => { readonly id: string; readonly server?: SessionLogStart['server'] } | undefined;
+  readonly workspaceOf: (sender: WebContents) =>
+    | {
+        readonly id: string;
+        readonly server?: SessionLogStart['server'];
+        /** Set while the workspace's server records SSH sessions: every session is logged, whatever the switches. */
+        readonly upload?: SessionLogUploadTarget;
+      }
+    | undefined;
   readonly hosts: (sender: WebContents) => { current(): HostsFile | undefined };
 }
 
@@ -503,7 +524,9 @@ export function sessionLogPlanner(
     const target = hops[hops.length - 1];
     if (!workspace || !file || !target) return undefined;
     const host = resolveHost(file, hostId);
-    if (!resolveLogSwitch(await deps.switches.all(workspace.id), hostId, host.path).on) return undefined;
+    // The team's recording (#430 R3) logs every session; otherwise this machine's switch decides.
+    if (!workspace.upload && !resolveLogSwitch(await deps.switches.all(workspace.id), hostId, host.path).on)
+      return undefined;
     const secrets = hops.flatMap((hop) =>
       hop.auth.kind === 'password'
         ? [hop.auth.password]
@@ -522,6 +545,7 @@ export function sessionLogPlanner(
         sessionId,
         secrets,
         server: workspace.server,
+        upload: workspace.upload,
       });
   };
 }

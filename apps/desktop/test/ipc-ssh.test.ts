@@ -846,7 +846,7 @@ describe('session log channels', () => {
     register({ ...NO_SESSION_LOGS, logs, switches, workspaceOf });
     expect(await invokeAs(window, 'sessionLog.switches', {})).toEqual({
       ok: true,
-      value: { switches: { 'host:web': true } },
+      value: { switches: { 'host:web': true }, team: false },
     });
     await invokeAs(window, 'sessionLog.setSwitch', { target: { kind: 'group', id: 'prod' }, on: null });
     expect(switches.set).toHaveBeenCalledWith('ws-1', { kind: 'group', id: 'prod' }, null);

@@ -13,6 +13,8 @@ export function registerSessionLogChannels(deps: {
   switches: Pick<SessionLogSwitches, 'all' | 'set'>;
   /** The calling window's open workspace. */
   workspaceOf: (sender: WebContents) => string | undefined;
+  /** Whether the calling window's workspace server records every SSH session (#430), whatever the switches say. */
+  teamRecords?: (sender: WebContents) => boolean;
   /** `shell.showItemInFolder`. */
   reveal: (path: string) => void;
 }): void {
@@ -23,6 +25,7 @@ export function registerSessionLogChannels(deps: {
   };
   registerHandler(channels.sessionLog.switches, async (_request, sender) => ({
     switches: { ...(await deps.switches.all(workspace(sender))) },
+    team: deps.teamRecords?.(sender) ?? false,
   }));
   registerHandler(channels.sessionLog.setSwitch, async (request, sender) => {
     await deps.switches.set(workspace(sender), request.target, request.on);
