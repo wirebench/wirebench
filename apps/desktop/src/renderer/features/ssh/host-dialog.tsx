@@ -421,7 +421,11 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
         inherited={loginAuth}
         onChange={set('auth')}
         password={password}
-        onPasswordChange={setPassword}
+        onPasswordChange={(typed) => {
+          // A typed password is a choice: switching to Telnet afterwards keeps it.
+          setTouched((prev) => ({ ...prev, auth: true }));
+          setPassword(typed);
+        }}
         passwordOnly={telnet}
       />
       {telnet && (

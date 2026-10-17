@@ -125,6 +125,18 @@ describe('Telnet in the host form (#425)', () => {
     expect(host.ssh.auth).toBeUndefined();
   });
 
+  it('a password typed before choosing Telnet is kept', async () => {
+    render(<HostForm file={FILE} dialog={{ mode: 'new-host' }} embedded />);
+    await userEvent.type(screen.getByLabelText('Name'), 'edge');
+    await userEvent.type(screen.getByLabelText('Address'), '10.0.0.3');
+    await userEvent.type(document.querySelector<HTMLInputElement>('input[type="password"]')!, 'pw');
+    await userEvent.click(screen.getByText('Advanced'));
+    await userEvent.selectOptions(select(), 'telnet');
+    await save();
+    expect(setSecret).toHaveBeenCalled();
+    expect(saved().hosts.find((h) => h.name === 'edge')!.ssh.auth).toMatchObject({ kind: 'password' });
+  });
+
   it('is not offered when this build switched Telnet off, and says so on a host set to it', () => {
     useUiStore.setState({ telnetEnabled: false });
     edit('plain');

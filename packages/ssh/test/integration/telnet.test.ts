@@ -87,6 +87,21 @@ describe('openTelnetSession', () => {
     expect(f.clients[0]!.lines).toEqual(['someone']);
   });
 
+  it('an empty write does not hand the sign-in over', async () => {
+    const f = await telnet({ user: 'admin', password: 'pw' });
+    session = await openTelnetSession({
+      hops: [],
+      target: target(f.port),
+      cols: 80,
+      rows: 24,
+      verifyHostKey: accept,
+      login: { user: 'admin', password: 'pw' },
+    });
+    const s = session;
+    s.write(new Uint8Array(0));
+    await until(s, (t) => t.includes('Welcome'));
+  });
+
   it('close() ends it as closed', async () => {
     const f = await telnet();
     session = await openTelnetSession({ hops: [], target: target(f.port), cols: 80, rows: 24, verifyHostKey: accept });

@@ -360,7 +360,8 @@ function wrapTelnet(
     id: randomUUID(),
     agentForwarding: 'off',
     write: (data) => {
-      signIn.stop();
+      // Keys typed hand the sign-in over; an empty write or the terminal's own reply (ESC …) does not.
+      if (data.length > 0 && data[0] !== 0x1b) signIn.stop();
       send(codec.encode(data));
     },
     resize: (cols, rows) => {
