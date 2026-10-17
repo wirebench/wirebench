@@ -116,9 +116,10 @@ describe('unsupportedCalls', () => {
     expect(
       unsupportedCalls(
         "pm.sendRequest(x); pm.cookies.jar(); postman.setNextRequest('a'); require('lodash'); pm.visualizer.set(t); pm.execution.setNextRequest(null)",
+        'postman',
       ).sort(),
     ).toEqual(['pm.cookies.jar', 'pm.sendRequest', 'pm.visualizer', 'require']);
-    expect(unsupportedCalls('pm.test("a", () => pm.expect(1).to.equal(1));')).toEqual([]);
+    expect(unsupportedCalls('pm.test("a", () => pm.expect(1).to.equal(1));', 'postman')).toEqual([]);
   });
 
   it('names other unsupported calls in their own warning beside pm.sendRequest', () => {

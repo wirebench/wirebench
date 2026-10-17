@@ -15,6 +15,7 @@ import { VariableSetBuilder, warnCredentialLookingNames } from '../../import/var
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
 import { slugify, SlugSet, uniqueSlug } from '../../project/paths.js';
+import type { LayeredApi } from '../../script/model.js';
 import type {
   KeyValueEntry,
   MultipartFormPart,
@@ -71,6 +72,8 @@ export interface MapPostmanOptions {
   readonly newId?: IdGenerator;
   /** Order in project. */
   readonly order?: number;
+  /** The script API the imported scripts are written for. Defaults to `postman`. */
+  readonly scriptApi?: LayeredApi;
 }
 
 export interface MappedPostmanApi {
@@ -88,6 +91,7 @@ export function apiFromPostmanCollection(
   options: MapPostmanOptions = {},
 ): MappedPostmanApi {
   const newId = options.newId ?? generateId;
+  const scriptApi = options.scriptApi ?? 'postman';
   const name = options.name?.trim() || collection.info.name || 'Imported Collection';
 
   // Every dynamic name, from parsing and from the variables and base URL below, is reported once.
@@ -144,10 +148,10 @@ export function apiFromPostmanCollection(
   const unsupported = new Map<string, Set<string>>();
   const steering = new Map<string, readonly string[]>();
   const scriptsAt = (events: readonly PostmanEvent[] | undefined, path: string): RequestScripts | undefined => {
-    const scripts = importedScripts(events);
+    const scripts = importedScripts(events, scriptApi);
     if (scripts !== undefined) {
       const text = [scripts.pre?.text ?? '', scripts.post?.text ?? ''].join('\n');
-      const calls = unsupportedCalls(text);
+      const calls = unsupportedCalls(text, scriptApi);
       if (calls.length > 0) unsupported.set(path, new Set(calls));
       const steers = runControlCalls(text);
       if (steers.length > 0) steering.set(path, steers);
@@ -806,9 +810,9 @@ function scriptText(texts: readonly string[]): string {
 
 /**
  * One level's imported scripts (a collection's, a folder's or a request's), written against the
- * Postman layer and switched off until someone has read them (#63, #334).
+ * layer of the script API (the Postman one unless the importer says otherwise) and switched off until someone has read them (#63, #334).
  */
-function importedScripts(events: readonly PostmanEvent[] | undefined): RequestScripts | undefined {
+function importedScripts(events: readonly PostmanEvent[] | undefined, api: LayeredApi): RequestScripts | undefined {
   const pre: string[] = [];
   const post: string[] = [];
   for (const event of events ?? []) {
@@ -818,24 +822,33 @@ function importedScripts(events: readonly PostmanEvent[] | undefined): RequestSc
   return {
     ...(pre.length > 0 ? { pre: { text: scriptText(pre) } } : {}),
     ...(post.length > 0 ? { post: { text: scriptText(post) } } : {}),
-    api: 'postman',
+    api,
     enabled: false,
     secrets: [],
   };
 }
 
-/** The Postman calls a script makes that the layer does not run (spec §Postman), found by name. */
-const UNSUPPORTED_CALLS: readonly [RegExp, string][] = [
-  [/\bpm\.sendRequest\b/, 'pm.sendRequest'],
-  [/\bpm\.cookies\.jar\b/, 'pm.cookies.jar'],
-  [/\bpm\.visualizer\b/, 'pm.visualizer'],
-  [/\brequire\s*\(/, 'require'],
-  [/\bpm\.iterationData\b/, 'pm.iterationData'],
-  [/\bpm\.vault\b/, 'pm.vault'],
-];
+/**
+ * The calls a script makes that its API's layer does not run (spec §Postman), found by name. Each
+ * other client's list is filled by its layer.
+ */
+const UNSUPPORTED_CALLS: Record<LayeredApi, readonly [RegExp, string][]> = {
+  postman: [
+    [/\bpm\.sendRequest\b/, 'pm.sendRequest'],
+    [/\bpm\.cookies\.jar\b/, 'pm.cookies.jar'],
+    [/\bpm\.visualizer\b/, 'pm.visualizer'],
+    [/\brequire\s*\(/, 'require'],
+    [/\bpm\.iterationData\b/, 'pm.iterationData'],
+    [/\bpm\.vault\b/, 'pm.vault'],
+  ],
+  insomnia: [],
+  bruno: [],
+  hoppscotch: [],
+  'thunder-client': [],
+};
 
-export function unsupportedCalls(text: string): string[] {
-  return UNSUPPORTED_CALLS.filter(([pattern]) => pattern.test(text)).map(([, name]) => name);
+export function unsupportedCalls(text: string, api: LayeredApi): string[] {
+  return UNSUPPORTED_CALLS[api].filter(([pattern]) => pattern.test(text)).map(([, name]) => name);
 }
 
 /** The Postman calls that steer a run (#335), found by name: obeyed in API and folder runs only. */
