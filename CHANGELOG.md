@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Make secret on credential-like variables.** A variable named like a credential (`token`,
+  `password`, `apiKey`…) with a plain value now offers **Make secret** in its row: the value is stored
+  as a project secret on this machine and the row keeps `${secret:name}`. On a workspace scope it is
+  stored for every project the scope applies to. A name the project already has is refused, never
+  overwritten (#634).
+- **Scheduled runs in the app.** A workspace shared on a server that runs schedules shows a
+  **Schedules** node in the Explorer: each schedule with a green, red or grey dot and, while failing,
+  how many runs failed in a row. Opening one shows its runs, newest first, and each run's results as
+  the Runner shows them, with the exchange of a failed request and how its alerts were delivered; a run
+  that ends appears without a refresh. **Schedule…** on a project, API, folder, request or sequence
+  opens a new schedule that runs it, picked from the open workspace. Workspace admins create, edit,
+  pause, run now, set secrets, test alerts and delete; everyone else reads (#517).
 - **Import Insomnia exports.** **Import…** reads Insomnia's export formats 4 (JSON or YAML) and 5
   (YAML), and detects a picked file by its content. Each workspace becomes a REST, a gRPC and a
   WebSocket API in the chosen project, in Insomnia's order, with folder headers and auth. The base and
@@ -46,6 +58,9 @@ All notable changes to this project are documented here. The format follows
   beside the requests, so a request stays in view while you browse its history or edit its variables.
   SSH keeps its own strip. The right rail shows an environment's details while its tab is in front
   (#607).
+- **Copy as cURL and Generate code… under Send ▾.** The menu under a SOAP or REST request's Send
+  button, which offered only **Send to environments…**, now also has **Copy as cURL** (the same as
+  the request's palette command) and **Generate code…**, which opens the Code panel (#632).
 - **A send the network failed is not a Problem.** A refused connection, an unknown host, a timeout, a
   failed TLS handshake, a proxy or network failure no longer adds a red Problem: the response pane
   already says what happened, with a hint and Retry, and the status bar's `last:` shows it. Failures
@@ -59,6 +74,20 @@ All notable changes to this project are documented here. The format follows
   collection whose multipart body has a file part without a file, from Postman, Insomnia, Thunder
   Client or Hoppscotch, now keeps that row as a switched-off text part, and the import report names
   the request and tells you to pick the file again on the Body tab.
+- **Environment rows show colour and protection.** The Environments list now shows each
+  environment's colour dot and, for a protected one, its lock, as the title-bar switcher does. The
+  Environment details panel stays as you left it, open or put away, when you come back to an
+  environment and after a restart (#634).
+- **The mock tab explains port 0 and shows methods uppercase.** A mock on port 0 now shows an empty
+  Port field reading *any free port*, and clearing the field asks for one. An operation's header reads
+  `GET /json` rather than `get /json` (#634).
+- **The environment switcher names your only project.** In a workspace of one project the title
+  bar's switcher now names that project and can be used straight away, instead of reading "No
+  project" until a request is opened. With several projects it still waits for a request tab to say
+  which (#634).
+- **API tabs read cleanly.** The REST, gRPC and WebSocket API tabs no longer show an issue number or
+  repeat when an API's scripts run, and their authentication fields line up with Name and Description
+  (#634).
 - **The Body tab shows when there is a body.** Like Scripts, the REST request's Body tab carries a dot
   while the request would send a body (#637).
 - **The Runner counts requests without checks apart.** Its summary and Past runs now say "3 passed,
@@ -78,6 +107,47 @@ All notable changes to this project are documented here. The format follows
 - **A refused proxy tunnel no longer reads as Cancelled.** When an HTTPS request goes through a proxy
   that refuses the tunnel (a 407 for a wrong or missing proxy password), the send now fails with
   "Proxy connection failed" and the proxy's status, instead of showing as if you had cancelled it.
+- **Imported requests no longer show their method twice.** An OpenAPI operation with no summary or
+  operation id, and a request from **Import cURL…**, is now named by its path alone (`/pets/{id}`), since
+  the method badge beside it already says GET or POST. A request imported earlier as `GET /pets/{id}`
+  shows without the repeated method in the explorer, the Runner's list and History; its stored name is
+  unchanged (#633).
+- **Method badges in the explorer line up.** Every method badge in the tree has the same width and
+  starts in the same column, so POST no longer sits further left than GET and DEL (#633).
+- **The explorer no longer scrolls sideways.** In a narrow sidebar a long name such as
+  `DELETE /pets/{id}` is cut with an ellipsis instead of running past the edge behind a horizontal
+  scrollbar; hover it to read it in full (#633).
+- **The command palette lists what you can run first.** Within each group, commands that cannot run
+  here (greyed, with the reason) now come after the ones that can, so typing "REST" no longer puts
+  **REST: Lint Definition** and **REST: Update Definition…** above the commands you can use (#633).
+- **History's Compare… shows what it is waiting for.** After **Compare…**, the picked row is tinted
+  and a banner names it ("Comparing with List pets · 22:06:50 — pick another entry") with **Cancel**;
+  a click on another row then opens the comparison. A right-click on a History row now opens the same
+  menu as its **⋯** button (#633).
+- **The "Method changed to POST" toast goes when it stops being true.** Switching a REST body to
+  GraphQL and back, or to another kind, now takes the toast and its **Undo** down at once instead of
+  leaving it up for its full eight seconds (#632).
+- **Query examples match the language picked.** The example chips in an empty Query view now follow
+  the query language: JSONPath offers only JSONPath expressions, XPath and XQuery their own, instead
+  of mixing XPath 3.1 map lookups in with JSONPath (#632).
+- **HTML Pretty reads like the page.** Inline elements such as `<b>`, `<a>`, `<span>`, `<code>` and
+  `<title>` stay on one line with their text instead of taking three, and the content of `<pre>`,
+  `<textarea>`, `<script>` and `<style>` is shown exactly as it arrived (#632).
+- **Key/value checkboxes use the accent colour.** The checkboxes in Params, Headers and the other
+  key/value tables, and in an environment's variables, are tinted like the ones in Settings instead
+  of the system blue (#632).
+- **The default User-Agent names the real version.** Requests sent from the app now carry
+  `User-Agent: Wirebench/<version>` (for example `Wirebench/6.1.0`) instead of the stale
+  `Wirebench/0.1`, and it follows each update; a User-Agent you set yourself is kept. The CLI, which
+  sends without the app's preferences, sends `Wirebench`. The **Accept compressed responses** hint now
+  names what is sent: `gzip, deflate, br` on REST requests, `gzip, deflate` on SOAP ones (#632).
+- **A response with no body says so.** A 204, a `HEAD` answer or any other empty response now shows
+  "No body (204 No Content)" in the Body tab, with the response's own status, instead of an empty
+  editor showing line 1. A saved example and a captured webhook request with no body say the same
+  (#632).
+- **Override sits on the row in the generated headers.** In a REST request's **Generated** headers,
+  **Override** is now a small text-sized control on the row's baseline instead of a full-height
+  button standing off it, and the row checkboxes use the accent colour (#632).
 - **Credential headers stay out of imported Postman requests.** A literal `Authorization` header in a
   Postman collection becomes the request's bearer or basic auth (the user name only) and is dropped;
   any other credential-looking header with a literal value, such as `X-Api-Key` or `Cookie`, is

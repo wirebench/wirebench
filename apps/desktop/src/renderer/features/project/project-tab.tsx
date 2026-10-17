@@ -57,6 +57,7 @@ export function ProjectTab({ projectId }: ProjectTabProps) {
   const propertiesTarget: VariablesTableTarget = {
     label: 'Project properties',
     scopeLabel: 'This project',
+    secretProjectIds: [projectId],
     inherited,
     properties: project.properties,
     disabled: project.disabledProperties,

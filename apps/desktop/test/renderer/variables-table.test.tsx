@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import {
@@ -7,6 +7,9 @@ import {
   type VariablesTableTarget,
 } from '../../src/renderer/features/environments/variables-table.js';
 import { useSecretsVisibilityStore } from '../../src/renderer/state/secrets-visibility.js';
+import { useProjectStore } from '../../src/renderer/state/project.js';
+import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import type { ProjectWire } from '../../src/shared/wire-types.js';
 
 function baseTarget(patch: Partial<VariablesTableTarget> = {}): VariablesTableTarget {
   return {
@@ -867,5 +870,69 @@ describe('VariablesTable — the Current column', () => {
   it('has no Current column without a current target', () => {
     renderTable(baseTarget());
     expect(screen.queryAllByTestId('env-variable-current')).toHaveLength(0);
+  });
+});
+
+describe('VariablesTable Make secret (#634)', () => {
+  const tokens = vi.fn();
+  const setValue = vi.fn();
+
+  beforeEach(() => {
+    tokens.mockReset().mockResolvedValue({ ok: true, value: { tokens: [] } });
+    setValue.mockReset().mockResolvedValue({ ok: true, value: { replaced: false } });
+    installWirebenchApi({ secretScan: { tokens, setValue } });
+    useProjectStore.setState({ projects: { p1: { id: 'p1', name: 'Billing' } as unknown as ProjectWire } });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  function row(name: string): HTMLElement {
+    const found = screen
+      .getAllByTestId('env-variable-row')
+      .find((candidate) => within(candidate).queryByLabelText(`Name of ${name}`) !== null);
+    if (found === undefined) throw new Error(`no row ${name}`);
+    return found;
+  }
+
+  it('offers it only on a secret-like name with a plain value, and only with projects to store for', () => {
+    renderTable(
+      baseTarget({
+        properties: { host: 'one.test', token: 's3cret', apiKey: '${secret:apiKey}' },
+        secretProjectIds: ['p1'],
+      }),
+    );
+    expect(within(row('token')).queryByTestId('env-variable-make-secret')).not.toBeNull();
+    expect(within(row('host')).queryByTestId('env-variable-make-secret')).toBeNull();
+    expect(within(row('apiKey')).queryByTestId('env-variable-make-secret')).toBeNull();
+    cleanup();
+
+    renderTable(baseTarget({ properties: { token: 's3cret' } }));
+    expect(screen.queryByTestId('env-variable-make-secret')).toBeNull();
+  });
+
+  it('stores the value and puts the token in its place', async () => {
+    const onSet = vi.fn();
+    renderTable(baseTarget({ properties: { token: 's3cret' }, secretProjectIds: ['p1'], onSet }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Make token a secret' }));
+
+    await waitFor(() => {
+      expect(onSet).toHaveBeenCalledWith('token', '${secret:token}');
+    });
+    expect(setValue).toHaveBeenCalledWith({ projectId: 'p1', name: 'token', value: 's3cret' });
+  });
+
+  it('leaves the value and says why when the project already has the name', async () => {
+    tokens.mockResolvedValue({ ok: true, value: { tokens: [{ name: 'token', stored: true }] } });
+    const onSet = vi.fn();
+    renderTable(baseTarget({ properties: { token: 's3cret' }, secretProjectIds: ['p1'], onSet }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Make token a secret' }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain('already has a secret named "token"');
+    expect(onSet).not.toHaveBeenCalled();
+    expect(setValue).not.toHaveBeenCalled();
   });
 });

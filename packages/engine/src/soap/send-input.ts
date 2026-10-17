@@ -8,6 +8,7 @@
  * left unset in the request is therefore never "off" — it is "inherit".
  */
 
+import { SOAP_ACCEPT_ENCODING } from '../http/default-headers.js';
 import { DEFAULT_PREFERENCES } from '../project/preferences.js';
 import type { Preferences } from '../project/preferences.js';
 import type { HeaderEntry, ProjectSettings } from '../project/model.js';
@@ -114,7 +115,7 @@ export function toSoapSendInput(args: ToSoapSendInputArgs): SoapSendInput {
     headers['User-Agent'] = preferences.http.userAgent;
   }
   if (preferences.http.responseCompression && !hasHeader(headers, 'accept-encoding')) {
-    headers['Accept-Encoding'] = 'gzip, deflate';
+    headers['Accept-Encoding'] = SOAP_ACCEPT_ENCODING;
   }
   if (preferences.http.closeConnections && !hasHeader(headers, 'connection')) {
     headers['Connection'] = 'close';

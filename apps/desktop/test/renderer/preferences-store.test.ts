@@ -18,7 +18,7 @@ describe('preferences store', () => {
   it('loads the document from main', async () => {
     await usePreferencesStore.getState().load();
     expect(usePreferencesStore.getState().loaded).toBe(true);
-    expect(usePreferencesStore.getState().preferences.http.userAgent).toBe('Wirebench/0.1');
+    expect(usePreferencesStore.getState().preferences.http.userAgent).toBe('Wirebench');
   });
 
   /**

@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
   defaultQueryLanguage,
+  examplesFor,
   placeholderFor,
   QueryView,
 } from '../../src/renderer/features/request-editor/views/query-view.js';
@@ -321,6 +322,19 @@ describe('QueryView over a JSON response', () => {
 
     expect(screen.getByText('$..id')).toBeDefined();
     expect(screen.queryByText('//tem:AddResult/text()')).toBeNull();
+    // JSONPath is the language a JSON response opens on: no XPath 3.1 map lookups beside it.
+    expect(screen.queryByText('?items?*?id')).toBeNull();
+    expect(screen.queryByText('count(?items?*)')).toBeNull();
+  });
+
+  it('swaps the example chips for the language picked', async () => {
+    const { source } = stubSource();
+    render(<QueryView requestId="json-examples-xpath" xml={JSON_BODY} documentKind="json" source={source} />);
+
+    await userEvent.click(screen.getByRole('radio', { name: 'XPath 3.1' }));
+
+    expect(screen.getByText('?items?*?id')).toBeDefined();
+    expect(screen.queryByText('$..id')).toBeNull();
   });
 
   it('does not offer JSONPath for an XML response, which it cannot query', () => {
@@ -387,5 +401,19 @@ describe('placeholderFor', () => {
     expect(placeholderFor('xpath', 'json')).toBe('?items?*[?status = "open"]?id');
     expect(placeholderFor('xquery', 'json')).toContain('for $i in ?items?*');
     expect(placeholderFor('jsonpath', 'json')).toBe('$.items[?(@.status=="open")].id');
+  });
+});
+
+describe('examplesFor', () => {
+  it('offers only expressions in the language picked', () => {
+    for (const example of examplesFor('jsonpath', 'json')) {
+      expect(example.startsWith('$')).toBe(true);
+    }
+    for (const example of [...examplesFor('xpath', 'json'), ...examplesFor('xquery', 'json')]) {
+      expect(example).not.toMatch(/^\$/);
+      expect(example).toContain('?items');
+    }
+    expect(examplesFor('xpath', 'xml')).toContain('//tem:AddResult/text()');
+    expect(examplesFor('xquery', 'xml')[0]).toContain('for $x in');
   });
 });

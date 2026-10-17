@@ -7,6 +7,7 @@
 
 import type { SendAuth } from '../http/auth/send-auth.js';
 import type { Cookie } from '../http/cookies.js';
+import { REST_ACCEPT_ENCODING } from '../http/default-headers.js';
 import type { KeyValueEntry } from '../http/entries.js';
 import type { ProxyOptions, TlsOptions } from '../http/types.js';
 import { inherited } from '../project/inherit.js';
@@ -67,7 +68,7 @@ export function toRestSendInput(args: ToRestSendInputArgs): RestSendInput {
     defaultHeaders['User-Agent'] = preferences.http.userAgent;
   }
   if (preferences.http.responseCompression) {
-    defaultHeaders['Accept-Encoding'] = 'gzip, deflate, br';
+    defaultHeaders['Accept-Encoding'] = REST_ACCEPT_ENCODING;
   }
   if (preferences.http.closeConnections) {
     defaultHeaders.Connection = 'close';

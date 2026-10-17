@@ -81,7 +81,7 @@ test.describe('HAR import', () => {
 
     await expect(apiRow(page, 'api.example.com')).toBeVisible({ timeout: 20_000 });
     await apiRow(page, 'api.example.com').click();
-    await restRequestRow(page, 'GET /pets').dblclick();
+    await restRequestRow(page, '/pets').dblclick();
     await expect(page.getByTestId('rest-editor')).toBeVisible({ timeout: 20_000 });
 
     await page.getByTestId('rest-examples-menu').click();

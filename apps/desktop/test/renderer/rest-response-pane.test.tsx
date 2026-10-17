@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { RestResponsePane } from '../../src/renderer/features/rest-editor/response/response-pane.js';
-import { hexLines } from '../../src/renderer/features/rest-editor/response/body-view.js';
+import { emptyBodyMessage, hexLines } from '../../src/renderer/features/rest-editor/response/body-view.js';
 import { elapsedText, statusToneClass } from '../../src/renderer/features/rest-editor/response/status-line.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
@@ -78,6 +78,17 @@ describe('RestResponsePane', () => {
 
     expect(screen.getByText('Send the request to see its response.')).toBeTruthy();
     expect(screen.queryByRole('tab', { name: 'Body' })).toBeNull();
+  });
+
+  it('says there is no body instead of showing an empty editor', () => {
+    mount(
+      makeRestExchange({
+        text: '',
+        http: { ...makeRestExchange().http, status: 204, statusText: 'No Content', bodyBase64: '' },
+      }),
+    );
+
+    expect(screen.getByTestId('rest-response-no-body').textContent).toBe('No body (204 No Content)');
   });
 
   it('shows the status, the duration and the size', () => {
@@ -416,6 +427,34 @@ describe('RestResponsePane', () => {
     fireEvent.click(screen.getByTestId('rest-response-save'));
 
     expect(saveRestBody).toHaveBeenCalledWith({ sendId: 'send-1' });
+  });
+});
+
+describe('emptyBodyMessage', () => {
+  const empty = (status?: number, statusText?: string) => ({
+    text: '',
+    language: 'text' as const,
+    http: {
+      bodyBase64: '',
+      headers: {},
+      ...(status !== undefined ? { status } : {}),
+      ...(statusText !== undefined ? { statusText } : {}),
+    },
+  });
+
+  it('names the status of a response that has no body', () => {
+    expect(emptyBodyMessage(empty(204, 'No Content'))).toBe('No body (204 No Content)');
+    // HTTP/2 has no reason phrase.
+    expect(emptyBodyMessage(empty(304, ''))).toBe('No body (304)');
+  });
+
+  it('says only "No body" where there is no status, as on a captured request', () => {
+    expect(emptyBodyMessage(empty())).toBe('No body');
+  });
+
+  it('is undefined when there is a body, text or bytes', () => {
+    expect(emptyBodyMessage({ ...empty(200, 'OK'), text: '{}' })).toBeUndefined();
+    expect(emptyBodyMessage({ ...empty(200, 'OK'), http: { bodyBase64: 'AA==', headers: {} } })).toBeUndefined();
   });
 });
 

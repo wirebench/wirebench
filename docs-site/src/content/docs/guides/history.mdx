@@ -29,9 +29,9 @@ footer counts the entries.
 
 </Steps>
 
-A row's actions are in its **⋯** menu at the right edge: **Re-send**, **Compare…**, **Compare with
-current** and **Delete**, which removes that one entry. Clicking the row itself only opens the
-entry; it never sends anything.
+A row's actions are in its **⋯** menu at the right edge, which a right-click on the row also opens:
+**Re-send**, **Compare…**, **Compare with current** and **Delete**, which removes that one entry.
+Clicking the row itself only opens the entry; it never sends anything.
 
 ## Re-send an entry
 
@@ -93,8 +93,10 @@ The request itself isn't changed.
 
 <Steps>
 
-1. Choose **Compare…** from a row's **⋯** menu, then from a second row's. A diff tab opens with the two bodies
-   side by side (or stacked, using the **Side by side** toggle), pretty-printed as JSON or XML
+1. Choose **Compare…** from a row's **⋯** menu. The row is tinted and a banner above the list names
+   it ("Comparing with List pets · 22:06:50 — pick another entry"); **Cancel** in the banner drops
+   it. Then click a second row, or choose **Compare…** from its menu. A diff tab opens with the two
+   bodies side by side (or stacked, using the **Side by side** toggle), pretty-printed as JSON or XML
    depending on what they are.
 2. Toggle **Ignore whitespace** to hide formatting-only differences.
 3. To compare a past entry with its request's latest response in this session, choose

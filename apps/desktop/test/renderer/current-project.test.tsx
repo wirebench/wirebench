@@ -9,6 +9,7 @@ import {
 } from '../../src/renderer/state/workspace.js';
 import {
   currentProjectId,
+  fallbackProjectOf,
   rememberFocusedProject,
   useCurrentProjectId,
 } from '../../src/renderer/state/workspace-tabs.js';
@@ -88,12 +89,23 @@ describe('current project (#468)', () => {
     const { result } = renderHook(() => useCurrentProjectId());
     act(() => openTab('rest-request', 'r2'));
     act(() => openTab('cookies'));
-    act(() => useWorkspaceStore.setState({ workspace: { ...WORKSPACE, projects: [ref('p1')] } }));
+    act(() => useWorkspaceStore.setState({ workspace: { ...WORKSPACE, projects: [ref('p1'), ref('p3')] } }));
     expect(result.current).toBeUndefined();
     act(() => useWorkspaceStore.setState({ workspace: WORKSPACE }));
     expect(result.current).toBe('p2');
     act(() => useWorkspaceStore.getState().applySnapshot(null));
     expect(useWorkspaceStore.getState().lastProjectId).toBeUndefined();
+  });
+
+  it('is the workspace’s only project before any tab was focused', () => {
+    act(() => useWorkspaceStore.setState({ workspace: { ...WORKSPACE, projects: [ref('p1')] } }));
+    const { result } = renderHook(() => useCurrentProjectId());
+    expect(result.current).toBe('p1');
+    expect(currentProjectId()).toBe('p1');
+    // A focused tab still wins.
+    act(() => useProjectStore.setState({ projectOf: { r1: 'p1', r9: 'p9' } }));
+    act(() => openTab('rest-request', 'r9'));
+    expect(result.current).toBe('p9');
   });
 
   it('answers each project’s own active environment', () => {
@@ -123,5 +135,25 @@ describe('current project (#468)', () => {
     await useWorkspaceStore.getState().setActiveEnvironment('p2', null);
     expect(setActiveEnvironment).toHaveBeenCalledWith({ projectId: 'p2', environmentId: null });
     expect(useWorkspaceStore.getState().workspace?.activeEnvironments).toEqual({ p1: 'e-all' });
+  });
+});
+
+describe('fallbackProjectOf', () => {
+  const one = workspaceWire({ projects: [ref('p1')] });
+
+  it('is the last focused project while it is still in the workspace', () => {
+    expect(fallbackProjectOf({ workspace: WORKSPACE, lastProjectId: 'p2' })).toBe('p2');
+  });
+
+  it('is the only project when no tab named one', () => {
+    expect(fallbackProjectOf({ workspace: one })).toBe('p1');
+    expect(fallbackProjectOf({ workspace: one, lastProjectId: 'gone' })).toBe('p1');
+  });
+
+  it('is nothing with several projects and no tab, or no workspace', () => {
+    expect(fallbackProjectOf({ workspace: WORKSPACE })).toBeUndefined();
+    expect(fallbackProjectOf({ workspace: WORKSPACE, lastProjectId: 'gone' })).toBeUndefined();
+    expect(fallbackProjectOf({ workspace: null })).toBeUndefined();
+    expect(fallbackProjectOf({ workspace: workspaceWire({ projects: [] }) })).toBeUndefined();
   });
 });

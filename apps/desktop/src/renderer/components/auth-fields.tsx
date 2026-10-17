@@ -121,7 +121,19 @@ export interface AuthFieldsProps {
   readonly registerFlush?: (flush: (() => Promise<AuthConfigWire | undefined>) | undefined) => void;
   /** Store every secret typed under a new reference rather than over the one shown; see `SecretField`. */
   readonly newSecretRefs?: boolean;
+  /**
+   * How the row labels are set. `form` (the default) is the narrow column a request tab or dialog
+   * uses; `settings` matches the label column of the settings rows around it (an API's page), so
+   * the fields line up with Name and Description above them.
+   */
+  readonly labels?: 'form' | 'settings';
 }
+
+/** The label column for each {@link AuthFieldsProps.labels} layout. */
+const LABEL_CLASS = {
+  form: 'w-28 shrink-0 text-xs text-fg-subtle',
+  settings: 'w-44 shrink-0 truncate text-sm text-fg-muted',
+} as const;
 
 type OAuth2Grant = NonNullable<AuthConfigWire['grant']>;
 type OAuth2ClientAuth = NonNullable<AuthConfigWire['clientAuth']>;
@@ -176,7 +188,9 @@ export function AuthFields({
   preemptiveOption = true,
   registerFlush,
   newSecretRefs = false,
+  labels = 'form',
 }: AuthFieldsProps) {
+  const labelClass = LABEL_CLASS[labels];
   const kerberos = useKerberosAvailability();
   const offered = types === undefined ? TYPES : TYPES.filter((option) => types.includes(option.value));
   const type = auth?.type ?? 'none';
@@ -248,7 +262,7 @@ export function AuthFields({
   /** One secret row, wired to the slot it writes. */
   const secret = (slot: SecretSlot, label: string): ReactNode => (
     <div className="flex items-center gap-2">
-      <span className="w-28 shrink-0 text-xs text-fg-subtle">{label}</span>
+      <span className={labelClass}>{label}</span>
       <div className="min-w-0 flex-1">
         <SecretField
           label={`${scope} ${label.toLowerCase()}`}
@@ -298,7 +312,7 @@ export function AuthFields({
     placeholder?: string,
   ): ReactNode => (
     <label className="flex items-center gap-2">
-      <span className="w-28 shrink-0 text-xs text-fg-subtle">{label}</span>
+      <span className={labelClass}>{label}</span>
       {/* Inside a request editor, `${` completes and a reference is marked and explained (#340). */}
       <VariableInput
         aria-label={`${scope} ${label.toLowerCase()}`}
@@ -315,7 +329,7 @@ export function AuthFields({
   return (
     <div className="flex flex-col gap-2">
       <label className="flex items-center gap-2">
-        <span className="w-28 shrink-0 text-xs text-fg-subtle">Authentication</span>
+        <span className={labelClass}>Authentication</span>
         <select
           aria-label={`${scope} authentication type`}
           className={INPUT_CLASS}
@@ -428,7 +442,7 @@ export function AuthFields({
           {secret('secretAccessKeyRef', 'Secret key')}
           {secret('sessionTokenRef', 'Session token')}
           <label className="flex items-center gap-2">
-            <span className="w-28 shrink-0 text-xs text-fg-subtle">Signature</span>
+            <span className={labelClass}>Signature</span>
             <select
               aria-label={`${scope} signature placement`}
               className={INPUT_CLASS}
@@ -446,7 +460,7 @@ export function AuthFields({
           </label>
           {auth.placement === 'query' && (
             <label className="flex items-center gap-2">
-              <span className="w-28 shrink-0 text-xs text-fg-subtle">Expires (s)</span>
+              <span className={labelClass}>Expires (s)</span>
               <input
                 type="number"
                 min={1}
@@ -531,7 +545,7 @@ export function AuthFields({
           {text('name', 'Name', 'X-Api-Key')}
           {secret('valueRef', 'Value')}
           <label className="flex items-center gap-2">
-            <span className="w-28 shrink-0 text-xs text-fg-subtle">Send in</span>
+            <span className={labelClass}>Send in</span>
             <select
               aria-label={`${scope} api key location`}
               className={INPUT_CLASS}
@@ -560,7 +574,7 @@ export function AuthFields({
       {auth !== undefined && type === 'oauth2' && (
         <>
           <label className="flex items-center gap-2">
-            <span className="w-28 shrink-0 text-xs text-fg-subtle">Grant</span>
+            <span className={labelClass}>Grant</span>
             <select
               aria-label={`${scope} oauth2 grant`}
               className={INPUT_CLASS}
@@ -589,7 +603,7 @@ export function AuthFields({
           {text('clientId', 'Client ID')}
           {!keyBased(auth.clientAuth) && secret('clientSecretRef', 'Client secret')}
           <label className="flex items-center gap-2">
-            <span className="w-28 shrink-0 text-xs text-fg-subtle">Scopes</span>
+            <span className={labelClass}>Scopes</span>
             <input
               aria-label={`${scope} scopes`}
               className={INPUT_CLASS}
@@ -603,7 +617,7 @@ export function AuthFields({
           </label>
           {text('audience', 'Audience')}
           <label className="flex items-center gap-2">
-            <span className="w-28 shrink-0 text-xs text-fg-subtle">Client auth</span>
+            <span className={labelClass}>Client auth</span>
             <select
               aria-label={`${scope} client authentication`}
               className={INPUT_CLASS}
@@ -621,7 +635,7 @@ export function AuthFields({
           </label>
           {keyBased(auth.clientAuth) && (
             <label className="flex items-center gap-2">
-              <span className="w-28 shrink-0 text-xs text-fg-subtle">Keystore</span>
+              <span className={labelClass}>Keystore</span>
               <select
                 aria-label={`${scope} client keystore`}
                 className={INPUT_CLASS}
@@ -641,7 +655,7 @@ export function AuthFields({
           )}
           {(auth.clientAuth === 'client-secret-jwt' || auth.clientAuth === 'private-key-jwt') && (
             <label className="flex items-center gap-2">
-              <span className="w-28 shrink-0 text-xs text-fg-subtle">Algorithm</span>
+              <span className={labelClass}>Algorithm</span>
               <select
                 aria-label={`${scope} assertion algorithm`}
                 className={INPUT_CLASS}
