@@ -56,7 +56,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
   },
   updates: { checkOnLaunch: false },
   accounts: { showInStatusBar: true },
-  secrets: { sourceCacheSeconds: 300 },
+  secrets: { sourceCacheSeconds: 300, appLock: false, appLockIdleMinutes: 15 },
   mocks: { listenOnAllInterfaces: false },
   terminal: {
     confirmMultilinePaste: true,

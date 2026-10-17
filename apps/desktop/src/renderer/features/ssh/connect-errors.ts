@@ -217,6 +217,18 @@ export function connectFailureSentence(error: ConnectError, purpose: ConnectPurp
       }
     case 'ssh-sk-failed':
       return 'The security key did not sign. Unplug it, plug it back in and retry.';
+    case 'ssh-device-key-missing': {
+      const madeOn = text(details, 'device');
+      return `This host signs in with a device key made on ${madeOn === undefined || madeOn === '' ? 'another device' : madeOn}; it cannot sign in from here. Sign in from that device, or generate a key on this one and install it on the host.`;
+    }
+    case 'ssh-device-key-cancelled':
+      return 'The prompt to use the device key was cancelled. Retry to confirm it.';
+    case 'ssh-device-key-unavailable':
+      return 'This host signs in with a device key, which only the Wirebench app on the device that made it can use.';
+    case 'app-locked':
+      return details['reason'] === 'cancelled'
+        ? 'Wirebench is locked, and the prompt to unlock it was cancelled. Retry to unlock it and use SSH secrets.'
+        : 'Wirebench is locked and could not ask to unlock it. Turn the app lock off in Settings → Secrets to connect.';
     case 'mosh-server-missing':
       return `Signed in, but ${text(details, 'server') ?? 'mosh-server'} was not found on ${who}. Install mosh on the server, or set its server command in the host's Advanced settings.`;
     case 'mosh-bootstrap-failed': {
@@ -271,6 +283,8 @@ export function connectErrorKind(code: string): ConnectErrorKind {
     case 'ssh-hosts-invalid':
     case 'mosh-server-missing':
     case 'mosh-client-missing':
+    case 'ssh-device-key-missing':
+    case 'ssh-device-key-unavailable':
       return 'settings';
     case 'ssh-host-key-new':
     case 'ssh-host-key-changed':

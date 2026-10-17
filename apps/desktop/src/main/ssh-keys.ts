@@ -8,20 +8,23 @@ import {
   formatValidity,
   generateKey,
   installPublicKey,
-  looksLikePrivateKey,
+  looksLikeKeySecret,
   parseCertificate,
+  parseDeviceKey,
   SshModelError,
 } from '@wirebench/ssh';
 import type { SshCertificate, SshKeyInfo } from '@wirebench/ssh';
 import type {
   SshAttachCertificateRequest,
   SshCertificateWire,
+  SshDeviceKeyStatus,
   SshGenerateKeyRequest,
   SshInstallKeyRequest,
   SshInstallKeyResponse,
   SshKeyWire,
 } from '../shared/ssh-keys-wire.js';
 import { asWirebenchError } from './hosts-service.js';
+import type { DeviceKeys } from './device-keys.js';
 import type { SshConnector } from './ssh-connect.js';
 import type { SshSecretsService } from './ssh-secrets.js';
 
@@ -30,6 +33,8 @@ export interface SshKeysDeps {
   readonly connector: Pick<SshConnector, 'prepareHops' | 'verifierFor' | 'refusalError'>;
   /** The window's secret getter: local, team and secret-source values alike. */
   readonly secretsFor: (sender: WebContents) => GetSecret;
+  /** This machine's device keys (#428); none where the app has no helper (tests, unless they inject one). */
+  readonly deviceKeys?: Pick<DeviceKeys, 'status' | 'create' | 'isHere'>;
   /** Tests inject fakes. */
   readonly generate?: typeof generateKey;
   readonly install?: typeof installPublicKey;
@@ -65,7 +70,8 @@ export class SshKeysService {
    *   `ssh-literal-secret` for a bad name | `ssh-key-invalid` | `workspace-not-open`
    */
   async generate(request: SshGenerateKeyRequest): Promise<SshKeyWire> {
-    const passphrase = request.passphrase ?? '';
+    // A device key has no passphrase: the hardware guards it.
+    const passphrase = request.algorithm === 'device' ? '' : (request.passphrase ?? '');
     const passphraseName = passphraseSecretOf(request.name);
     const taken = new Set((await this.deps.secrets.names()).map((n) => n.name));
     for (const name of passphrase === '' ? [request.name] : [request.name, passphraseName]) {
@@ -76,6 +82,7 @@ export class SshKeysService {
       }
     }
     const comment = request.comment?.trim() || (this.deps.defaultComment ?? systemComment)();
+    if (request.algorithm === 'device') return this.generateDeviceKey(request.name, comment);
     let key: Awaited<ReturnType<typeof generateKey>>;
     try {
       key = await (this.deps.generate ?? generateKey)({
@@ -95,7 +102,31 @@ export class SshKeysService {
     return this.wire(request.name, key, passphrase === '' ? undefined : passphraseName);
   }
 
-  /** Every secret the window can read whose value is a private key; a key its `_passphrase` cannot open is `locked`. */
+  /** Whether this machine can make device keys (#428). */
+  async deviceKeyStatus(): Promise<SshDeviceKeyStatus> {
+    return (await this.deps.deviceKeys?.status()) ?? { supported: false, reason: 'Device keys are not available here' };
+  }
+
+  /** Makes a key in this machine's hardware and stores its block, which holds no private key, as the secret. */
+  private async generateDeviceKey(name: string, comment: string): Promise<SshKeyWire> {
+    const devices = this.deps.deviceKeys;
+    let block: string;
+    try {
+      if (devices === undefined) {
+        throw new SshModelError('ssh-device-key-unavailable', 'Device keys are not available here');
+      }
+      block = await devices.create(comment);
+    } catch (error) {
+      throw asWirebenchError(error);
+    }
+    await this.deps.secrets.set(name, block);
+    return this.wire(name, describePrivateKey(block), undefined, block, true);
+  }
+
+  /**
+   * Every secret the window can read whose value is a private key or a device key; a key its `_passphrase`
+   * cannot open is `locked`.
+   */
   async keys(sender: WebContents): Promise<SshKeyWire[]> {
     const getSecret = this.deps.secretsFor(sender);
     const keys: SshKeyWire[] = [];
@@ -106,10 +137,14 @@ export class SshKeysService {
       } catch {
         continue; // a secret source that cannot answer now: not listed as a key
       }
-      if (value === undefined || !looksLikePrivateKey(value)) continue;
+      if (value === undefined || !looksLikeKeySecret(value)) continue;
       try {
         const { info, passphraseSecret } = await this.open(getSecret, name, value);
-        keys.push({ ...this.wire(name, info, passphraseSecret), ...(await this.certificateOf(getSecret, name, info)) });
+        const here = await this.isHere(value);
+        keys.push({
+          ...this.wire(name, info, passphraseSecret, value, here),
+          ...(await this.certificateOf(getSecret, name, info)),
+        });
       } catch (error) {
         const code = (error as { code?: unknown }).code;
         if (code === 'ssh-key-locked') keys.push({ name, locked: true });
@@ -237,7 +272,30 @@ export class SshKeysService {
     }
   }
 
-  private wire(name: string, info: SshKeyInfo, passphraseSecret: string | undefined): SshKeyWire {
+  /** For a device key's block: whether this machine's hardware holds it (asks for nothing). */
+  private async isHere(value: string): Promise<boolean> {
+    let key;
+    try {
+      key = parseDeviceKey(value);
+    } catch {
+      return false;
+    }
+    return key !== undefined && (await this.deps.deviceKeys?.isHere(key)) === true;
+  }
+
+  private wire(
+    name: string,
+    info: SshKeyInfo,
+    passphraseSecret: string | undefined,
+    value?: string,
+    here = false,
+  ): SshKeyWire {
+    let device;
+    try {
+      device = value === undefined ? undefined : parseDeviceKey(value);
+    } catch {
+      device = undefined;
+    }
     return {
       name,
       locked: false,
@@ -245,6 +303,7 @@ export class SshKeysService {
       fingerprint: info.fingerprint,
       publicKey: info.publicKey,
       ...(passphraseSecret === undefined ? {} : { passphraseSecret }),
+      ...(device === undefined ? {} : { device: { platform: device.platform, madeOn: device.device, here } }),
     };
   }
 }

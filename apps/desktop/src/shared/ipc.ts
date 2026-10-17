@@ -106,6 +106,7 @@ import {
   sshInstallKeyResponseSchema,
   sshKeyWireSchema,
   sshKeysResponseSchema,
+  sshDeviceKeyStatusSchema,
 } from './ssh-keys-wire.js';
 import {
   accountAcceptInvitationRequestSchema,
@@ -446,6 +447,14 @@ import { restChannels, restEvents } from './kinds/rest/channels.js';
 import { grpcChannels, grpcEvents } from './kinds/grpc/channels.js';
 import { wsChannels, wsEvents } from './kinds/ws/channels.js';
 import { mcpChannels, mcpEvents } from './kinds/mcp/channels.js';
+
+/** Whether the app lock can ask on this OS, whether it is on, and whether the next SSH secret read will ask. */
+const appLockStatusSchema = z.object({
+  supported: z.boolean(),
+  reason: z.string().optional(),
+  active: z.boolean(),
+  locked: z.boolean(),
+});
 
 export { defineChannel, defineEvent } from './ipc-contract.js';
 export type { ChannelRequest, ChannelResponse, EventPayload, IpcChannel, IpcEvent } from './ipc-contract.js';
@@ -916,6 +925,11 @@ export const channels = {
     /** The managed-preferences policy; read once at startup, so the renderer asks once. */
     policy: defineChannel('preferences.policy', z.undefined(), preferencesPolicyResponseSchema),
   },
+  // The app lock (#428): main turns it on only after one prompt the person passes.
+  appLock: {
+    status: defineChannel('appLock.status', z.undefined(), appLockStatusSchema),
+    set: defineChannel('appLock.set', z.strictObject({ enabled: z.boolean() }), preferencesResponseSchema),
+  },
   // The CA bundle preference has channels of its own because only main may set it: the path is
   // a file main reads on every send, so it comes from a native picker main ran, never from a
   // string the renderer sends (`preferences.update` refuses one).
@@ -1152,6 +1166,8 @@ export const channels = {
     // Keychain keys (#409): only the public half crosses; the private key and passphrase stay in main.
     generateKey: defineChannel('ssh.generateKey', sshGenerateKeyRequestSchema, sshKeyWireSchema),
     keys: defineChannel('ssh.keys', z.undefined(), sshKeysResponseSchema),
+    // Device keys (#428): whether this machine's hardware can make one; a handle never crosses.
+    deviceKeyStatus: defineChannel('ssh.deviceKeyStatus', z.undefined(), sshDeviceKeyStatusSchema),
     installKey: defineChannel('ssh.installKey', sshInstallKeyRequestSchema, sshInstallKeyResponseSchema),
     // A key's OpenSSH user certificate (#421), stored as `<secret>_cert`; it is public, so it may cross.
     attachCertificate: defineChannel('ssh.attachCertificate', sshAttachCertificateRequestSchema, sshKeyWireSchema),
