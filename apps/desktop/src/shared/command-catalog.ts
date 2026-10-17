@@ -279,6 +279,12 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Terminal: Session Logs…',
     category: 'Hosts',
   },
+  // The workspace server's session logs, every member's (#430).
+  'ssh.teamSessionLogs': {
+    id: 'ssh.teamSessionLogs',
+    label: 'Terminal: Team Session Logs…',
+    category: 'Hosts',
+  },
   'sftp.refresh': {
     id: 'sftp.refresh',
     label: 'Files: Refresh',

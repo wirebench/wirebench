@@ -1450,6 +1450,14 @@ void app.whenReady().then(() => {
       switches: sessionLogSwitches,
       workspaceOf: (sender) => sshScopeOf(scopes, sender).workspace.openWorkspaceId(),
       teamRecords: (sender) => sshScopeOf(scopes, sender).workspace.sessionLogTarget() !== undefined,
+      team: {
+        serverOf: (sender) => {
+          const target = sshScopeOf(scopes, sender).workspace.auditTarget();
+          return target ? { url: target.url, workspaceId: target.workspaceId } : undefined;
+        },
+        client: serverClient,
+        accounts: accountService,
+      },
       reveal: (path) => {
         shell.showItemInFolder(path);
       },

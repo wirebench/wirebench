@@ -13,7 +13,12 @@ import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
 import type { SessionLogEntryWire, SessionLogMatchWire } from '../../../shared/session-log-wire.js';
 import { resolveLogSwitch } from '../../../shared/session-log-switch.js';
-import { hideSessionLogs, showSessionLogs, useSessionLogsDialogStore } from './session-logs-store.js';
+import {
+  hideSessionLogs,
+  showSessionLogs,
+  showTeamSessionLogs,
+  useSessionLogsDialogStore,
+} from './session-logs-store.js';
 import { useLogSwitchesStore } from './session-log-switches.js';
 
 const SWITCH_CLASS =
@@ -143,6 +148,17 @@ export function HostSessionLogs({ hostId, path, groupName, refreshKey }: HostSes
         >
           All hosts…
         </button>
+        {team && (
+          <button
+            type="button"
+            className="text-xs text-fg-subtle underline hover:text-fg-default"
+            onClick={() => {
+              showTeamSessionLogs(hostId);
+            }}
+          >
+            Team logs…
+          </button>
+        )}
       </div>
       <div className="flex items-center gap-2 py-1 text-sm text-fg-default">
         <span>Log sessions</span>

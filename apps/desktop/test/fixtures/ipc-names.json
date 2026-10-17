@@ -262,6 +262,8 @@
     "sessionLog.search",
     "sessionLog.setSwitch",
     "sessionLog.switches",
+    "sessionLog.teamList",
+    "sessionLog.teamRead",
     "sftp.cancel",
     "sftp.chmod",
     "sftp.close",

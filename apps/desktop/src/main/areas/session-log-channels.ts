@@ -2,7 +2,18 @@ import type { WebContents } from 'electron';
 import { WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import { registerHandler } from '../ipc/register.js';
+import type { ServerClient } from '../server-client.js';
+import { withToken } from '../server-token.js';
+import type { TokenSource } from '../server-token.js';
 import type { SessionLogStore, SessionLogSwitches } from '../session-logs.js';
+
+/** What the team session-log channels need (#430): the window's server binding and a signed-in account. */
+export interface TeamSessionLogDeps {
+  /** The calling window's workspace on its server; `undefined` when it is not shared to one. */
+  readonly serverOf: (sender: WebContents) => { readonly url: string; readonly workspaceId: string } | undefined;
+  readonly client: Pick<ServerClient, 'listSessionLogs' | 'readSessionLog'>;
+  readonly accounts: TokenSource;
+}
 
 /**
  * The `sessionLog.*` channels (#414), registered with the SSH area only. Each acts on the calling window's
@@ -17,6 +28,8 @@ export function registerSessionLogChannels(deps: {
   teamRecords?: (sender: WebContents) => boolean;
   /** `shell.showItemInFolder`. */
   reveal: (path: string) => void;
+  /** The server's logs (#430); without it the team channels answer that there are none. */
+  team?: TeamSessionLogDeps;
 }): void {
   const workspace = (sender: WebContents): string => {
     const id = deps.workspaceOf(sender);
@@ -62,5 +75,48 @@ export function registerSessionLogChannels(deps: {
   registerHandler(channels.sessionLog.reveal, async (request, sender) => {
     deps.reveal(await deps.logs.pathOf(workspace(sender), request.hostId, request.id));
     return {};
+  });
+  registerHandler(channels.sessionLog.teamList, async (request, sender) => {
+    const server = deps.team?.serverOf(sender);
+    if (!deps.team || !server) return { available: false, logs: [], next: null };
+    const team = deps.team;
+    const page = await withToken(team, server.url, (origin, token) =>
+      team.client.listSessionLogs(origin, token, server.workspaceId, {
+        ...(request.hostId !== undefined ? { hostId: request.hostId } : {}),
+        ...(request.userId !== undefined ? { userId: request.userId } : {}),
+        ...(request.before !== undefined ? { before: request.before } : {}),
+      }),
+    );
+    return {
+      available: true,
+      next: page.next,
+      logs: page.logs.map((log) => ({
+        id: log.id,
+        userId: log.userId,
+        userName: log.userName,
+        hostId: log.hostId,
+        hostName: log.hostName,
+        address: log.address,
+        port: log.port,
+        user: log.user,
+        startedAt: log.startedAt,
+        endedAt: log.endedAt,
+        exitCode: log.exitCode,
+        reason: log.reason,
+        size: log.size,
+        truncated: log.truncated,
+        live: log.live,
+      })),
+    };
+  });
+  registerHandler(channels.sessionLog.teamRead, async (request, sender) => {
+    const server = deps.team?.serverOf(sender);
+    if (!deps.team || !server)
+      throw new WirebenchError('workspace-not-shared', 'This workspace is not shared to a server');
+    const team = deps.team;
+    const answer = await withToken(team, server.url, (origin, token) =>
+      team.client.readSessionLog(origin, token, server.workspaceId, request.id, request.offset ?? 0),
+    );
+    return { text: answer.text, next: answer.next, size: answer.size, truncated: answer.truncated, live: answer.live };
   });
 }

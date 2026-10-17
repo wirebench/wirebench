@@ -858,6 +858,54 @@ describe('session log channels', () => {
     });
   });
 
+  it('list and read the workspace server’s team logs with the account’s token (#430)', async () => {
+    const LOG = {
+      id: '01K000000000000000000000L1',
+      workspaceId: 'SRV',
+      userId: 'U1',
+      userName: 'Ada',
+      clientLogId: '20261017T100000Z-aaaaaaaa',
+      hostId: 'web',
+      hostName: 'Web',
+      address: '10.0.0.1',
+      port: 22,
+      user: 'deploy',
+      startedAt: '2026-10-17T10:00:00.000Z',
+      endedAt: null,
+      exitCode: null,
+      signal: null,
+      reason: null,
+      size: 6,
+      truncated: false,
+      live: true,
+    };
+    const client = {
+      listSessionLogs: vi.fn().mockResolvedValue({ logs: [LOG], next: null }),
+      readSessionLog: vi
+        .fn()
+        .mockResolvedValue({ offset: 2, text: 'llo\n', next: 6, size: 6, truncated: false, live: true }),
+    };
+    const accounts = { tokenFor: vi.fn().mockResolvedValue('wbt_t'), markSignedOut: vi.fn() };
+    const serverOf = vi.fn((sender: { id: number }) =>
+      sender.id === 9 ? { url: 'https://wb.example', workspaceId: 'SRV' } : undefined,
+    );
+    register({ ...NO_SESSION_LOGS, workspaceOf: () => 'ws-1', team: { serverOf, client, accounts } });
+    const listed = await invokeAs(window, 'sessionLog.teamList', { hostId: 'web' });
+    expect(listed).toMatchObject({
+      ok: true,
+      value: { available: true, next: null, logs: [{ id: LOG.id, userName: 'Ada' }] },
+    });
+    expect(client.listSessionLogs).toHaveBeenCalledWith('https://wb.example', 'wbt_t', 'SRV', { hostId: 'web' });
+    const read = await invokeAs(window, 'sessionLog.teamRead', { id: LOG.id, offset: 2 });
+    expect(read).toEqual({ ok: true, value: { text: 'llo\n', next: 6, size: 6, truncated: false, live: true } });
+    expect(client.readSessionLog).toHaveBeenCalledWith('https://wb.example', 'wbt_t', 'SRV', LOG.id, 2);
+    // A workspace that is not shared to a server has no team logs.
+    expect(await invokeAs({ id: 3 }, 'sessionLog.teamList', {})).toEqual({
+      ok: true,
+      value: { available: false, logs: [], next: null },
+    });
+  });
+
   it('reveal the file main found for the log, never a path the renderer names', async () => {
     const logs = { ...NO_SESSION_LOGS.logs, pathOf: vi.fn().mockResolvedValue('/data/session-logs/ws-1/web/x.log') };
     const reveal = vi.fn();

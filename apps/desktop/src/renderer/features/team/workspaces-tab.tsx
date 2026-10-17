@@ -21,6 +21,7 @@ function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
   const updateWorkspace = useTeamStore((state) => state.updateWorkspace);
   const openAccess = useTeamStore((state) => state.openAccess);
   const desktopActivity = useTeamStore((state) => state.desktopActivity);
+  const sessionLogs = useTeamStore((state) => state.sessionLogs);
   const [name, setName] = useState(workspace.name);
   const isAdmin = workspace.myRole === 'admin';
 
@@ -70,6 +71,19 @@ function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
               Record desktop activity
             </label>
           )}
+          {sessionLogs && (
+            <label className="flex items-center gap-1 text-xs text-fg-muted whitespace-nowrap">
+              <input
+                type="checkbox"
+                data-testid={`workspace-record-ssh-${workspace.id}`}
+                checked={workspace.recordSessionLogs === true}
+                onChange={(event) => {
+                  void updateWorkspace(workspace.id, { recordSessionLogs: event.target.checked });
+                }}
+              />
+              Record SSH sessions
+            </label>
+          )}
           <select
             data-testid={`workspace-default-${workspace.id}`}
             aria-label={`Default role in ${workspace.name}`}
@@ -94,12 +108,18 @@ function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
           </Button>
         </>
       ) : (
-        desktopActivity &&
-        workspace.recordDesktopActivity && (
-          <span data-testid={`workspace-recorded-${workspace.id}`} className="text-xs text-fg-subtle">
-            Desktop activity is recorded
-          </span>
-        )
+        <>
+          {desktopActivity && workspace.recordDesktopActivity && (
+            <span data-testid={`workspace-recorded-${workspace.id}`} className="text-xs text-fg-subtle">
+              Desktop activity is recorded
+            </span>
+          )}
+          {sessionLogs && workspace.recordSessionLogs === true && (
+            <span data-testid={`workspace-recorded-ssh-${workspace.id}`} className="text-xs text-fg-subtle">
+              SSH sessions are recorded
+            </span>
+          )}
+        </>
       )}
     </li>
   );

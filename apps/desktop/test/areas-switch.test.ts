@@ -99,6 +99,8 @@ describe('area channels', () => {
       'sessionLog.search',
       'sessionLog.setSwitch',
       'sessionLog.switches',
+      'sessionLog.teamList',
+      'sessionLog.teamRead',
     ]);
   });
   it('with ssh=off no ssh.*, sftp.*, forward.*, layout.* or sessionLog.* channel exists', () => {

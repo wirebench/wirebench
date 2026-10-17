@@ -54,6 +54,7 @@ export const COMMAND_IDS = [
   'ssh.snippetPicker',
   'ssh.newLocalTerminal',
   'ssh.sessionLogs',
+  'ssh.teamSessionLogs',
   'sftp.refresh',
   'sftp.newFolder',
   'sftp.rename',
