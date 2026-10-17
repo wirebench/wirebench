@@ -1,18 +1,19 @@
 /**
  * The pieces the layered script APIs are built from. Each one is JavaScript source that runs inside
  * the sandbox after the common API (`ScriptUnsupported`, `ExpectationFailed`, `show`, ...) and
- * defines only the names listed, so a layer is these parts joined plus its own objects. Some parts
- * use names an earlier part defines (`PART_EXPECT` and `PART_CRYPTO` use `unsupported`).
+ * declares only the names its comment lists (helpers included), so a layer author knows which names are
+ * taken and a layer is these parts joined plus its own objects. Some parts
+ * use names an earlier part defines (`PART_VARIABLES` and `PART_CRYPTO` use `unsupported`).
  */
 
-/** Defines `unsupported`: a function that throws `ScriptUnsupported` naming the call. */
+/** Declares `unsupported`: a function that throws `ScriptUnsupported` naming the call. */
 export const PART_UNSUPPORTED = String.raw`
 const unsupported = (name) => () => {
   throw new ScriptUnsupported(name + ' is not supported: a script cannot send requests or keep cookies');
 };
 `;
 
-/** Defines `asValue` and `variables`: a variable scope over `vars` and `props`. */
+/** Declares `asValue` and `variables`: a variable scope over `vars` and `props`. */
 export const PART_VARIABLES = String.raw`
 const asValue = (value) => (value === undefined || value === null ? '' : typeof value === 'object' ? JSON.stringify(value) : value);
 const variables = Object.freeze({
@@ -29,7 +30,7 @@ const variables = Object.freeze({
 });
 `;
 
-/** Defines `chain` and `chaiExpect`: the chai chains collections use. */
+/** Declares `typeName`, `same`, `chain` and `chaiExpect`: the chai chains collections use. */
 export const PART_EXPECT = String.raw`
 // --- expect: the chai chains collections use ---------------------------------------------------
 const typeName = (value) => {
@@ -93,7 +94,7 @@ const chain = (actual, flags) => {
 const chaiExpect = (actual) => chain(actual, { not: false, deep: false });
 `;
 
-/** Defines `pairs`: a header or metadata list as a key/value collection. */
+/** Declares `pairs`: a header or metadata list as a key/value collection. */
 export const PART_PAIRS = String.raw`
 const pairs = (list) => Object.freeze({
   get: (name) => list.get(name),
@@ -104,7 +105,10 @@ const pairs = (list) => Object.freeze({
 });
 `;
 
-/** Defines `CryptoJS`, `btoa` and `atob`: hashes, HMACs and the encoders over `crypto` and `encoding`. */
+/**
+ * Declares `Hex`, `Base64`, `Utf8`, `Latin1`, `words`, `text`, `hashOf`, `hmacOf` and `CryptoJS`, and
+ * defines `CryptoJS`, `btoa` and `atob`: hashes, HMACs and the encoders over `crypto` and `encoding`.
+ */
 export const PART_CRYPTO = String.raw`
 // --- CryptoJS: hashes, HMACs and the encoders, over crypto and encoding --------------------------
 const Hex = { name: 'hex' };

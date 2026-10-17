@@ -105,7 +105,6 @@ const pmResponse = () => {
   return res;
 };
 
-
 // --- pm, postman and the globals -----------------------------------------------------------------
 const pmObject = {
   test: (name, check) => test(name, () => check()),
