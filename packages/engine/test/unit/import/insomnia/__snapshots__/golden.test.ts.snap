@@ -247,11 +247,33 @@ message Order { string id = 1; }
                     "value": "items",
                   },
                 ],
+                "scripts": {
+                  "api": "insomnia",
+                  "enabled": false,
+                  "post": {
+                    "text": "insomnia.test('201', () => insomnia.expect(insomnia.response.code).to.eql(201));
+",
+                  },
+                  "pre": {
+                    "text": "insomnia.variables.set('requestedAt', Date.now());
+",
+                  },
+                  "secrets": [],
+                },
                 "settings": {},
                 "slug": "Create order",
                 "url": "/orders",
               },
             ],
+            "scripts": {
+              "api": "insomnia",
+              "enabled": false,
+              "pre": {
+                "text": "console.log('folder pre-request');
+",
+              },
+              "secrets": [],
+            },
             "slug": "Orders",
           },
         ],
@@ -319,13 +341,10 @@ message Order { string id = 1; }
     "examples": 0,
     "folders": 2,
     "requests": 6,
-    "scripts": 3,
+    "scripts": 0,
   },
   "report": {
     "notes": [
-      "Orders: its pre-request script was saved to imported-scripts/orders api/orders.pre.js and is never run.",
-      "Orders / Create order: its pre-request script was saved to imported-scripts/orders api/orders-create order.pre.js and is never run.",
-      "Orders / Create order: its after-response script was saved to imported-scripts/orders api/orders-create order.post.js and is never run.",
       "Orders / Upload attachment: the file part "file" points at /Users/dev/invoice.pdf, which is not in the export.",
       "Orders / Upload attachment: Wirebench does not keep its settings for not storing cookies.",
       "Orders: its headers were copied onto the requests below it that do not set them.",
@@ -333,27 +352,14 @@ message Order { string id = 1; }
     ],
     "warnings": [
       "Live feed: Socket.IO requests have no Wirebench equivalent, so it was not imported.",
+      "Scripts on 1 folder and 1 request were imported switched off: read each on its Scripts tab, then switch them on",
       "Credentials are not copied from the collection; re-enter them for 2 auth configurations",
       "Credentials are not copied from gRPC and WebSocket requests; re-enter them for 1 auth configuration",
       "The unit test suite "Smoke" was not imported ("creates an order" on Orders / Create order); write its checks as assertions or scripts.",
       "{% response %} was kept as written in Orders / Latest order (chained); Wirebench does not run it. To pass a value from one response to the next request, use a sequence transfer.",
-      "The saved scripts call insomnia.; Wirebench does not run them. Port what they do to Wirebench scripts by hand.",
     ],
   },
-  "scripts": [
-    {
-      "path": "imported-scripts/orders api/orders.pre.js",
-      "source": "console.log('folder pre-request');",
-    },
-    {
-      "path": "imported-scripts/orders api/orders-create order.pre.js",
-      "source": "insomnia.variables.set('requestedAt', Date.now());",
-    },
-    {
-      "path": "imported-scripts/orders api/orders-create order.post.js",
-      "source": "insomnia.test('201', () => insomnia.expect(insomnia.response.code).to.eql(201));",
-    },
-  ],
+  "scripts": [],
   "variables": {
     "environments": [
       {
@@ -652,11 +658,33 @@ exports[`Insomnia golden > maps v5-collection.yaml 1`] = `
                     "value": "items",
                   },
                 ],
+                "scripts": {
+                  "api": "insomnia",
+                  "enabled": false,
+                  "post": {
+                    "text": "insomnia.test('201', () => insomnia.expect(insomnia.response.code).to.eql(201));
+",
+                  },
+                  "pre": {
+                    "text": "insomnia.variables.set('requestedAt', Date.now());
+",
+                  },
+                  "secrets": [],
+                },
                 "settings": {},
                 "slug": "Create order",
                 "url": "/orders",
               },
             ],
+            "scripts": {
+              "api": "insomnia",
+              "enabled": false,
+              "pre": {
+                "text": "console.log('folder pre-request');
+",
+              },
+              "secrets": [],
+            },
             "slug": "Orders",
           },
         ],
@@ -716,13 +744,10 @@ exports[`Insomnia golden > maps v5-collection.yaml 1`] = `
     "examples": 0,
     "folders": 2,
     "requests": 6,
-    "scripts": 3,
+    "scripts": 0,
   },
   "report": {
     "notes": [
-      "Orders: its pre-request script was saved to imported-scripts/orders api/orders.pre.js and is never run.",
-      "Orders / Create order: its pre-request script was saved to imported-scripts/orders api/orders-create order.pre.js and is never run.",
-      "Orders / Create order: its after-response script was saved to imported-scripts/orders api/orders-create order.post.js and is never run.",
       "Orders / Upload attachment: the file part "file" points at /Users/dev/invoice.pdf, which is not in the export.",
       "Orders / Upload attachment: Wirebench does not keep its settings for not storing cookies.",
       "Orders: its headers were copied onto the requests below it that do not set them.",
@@ -731,26 +756,13 @@ exports[`Insomnia golden > maps v5-collection.yaml 1`] = `
       "Insomnia does not export WebSocket messages, so the WebSocket requests have none.",
     ],
     "warnings": [
+      "Scripts on 1 folder and 1 request were imported switched off: read each on its Scripts tab, then switch them on",
       "Credentials are not copied from the collection; re-enter them for 2 auth configurations",
       "Credentials are not copied from gRPC and WebSocket requests; re-enter them for 1 auth configuration",
       "{% response %} was kept as written in Orders / Latest order (chained); Wirebench does not run it. To pass a value from one response to the next request, use a sequence transfer.",
-      "The saved scripts call insomnia.; Wirebench does not run them. Port what they do to Wirebench scripts by hand.",
     ],
   },
-  "scripts": [
-    {
-      "path": "imported-scripts/orders api/orders.pre.js",
-      "source": "console.log('folder pre-request');",
-    },
-    {
-      "path": "imported-scripts/orders api/orders-create order.pre.js",
-      "source": "insomnia.variables.set('requestedAt', Date.now());",
-    },
-    {
-      "path": "imported-scripts/orders api/orders-create order.post.js",
-      "source": "insomnia.test('201', () => insomnia.expect(insomnia.response.code).to.eql(201));",
-    },
-  ],
+  "scripts": [],
   "variables": {
     "environments": [
       {

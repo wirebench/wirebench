@@ -14,7 +14,7 @@ as YAML. It turns each workspace in the file into up to three APIs in the projec
 - WebSocket requests become a **WebSocket API**.
 
 The base and folder environments become project properties, and the sub-environments become
-workspace environments. Scripts are kept as text and never run. Credentials do not come across as
+workspace environments. Scripts are attached to their requests and folders, switched off. Credentials do not come across as
 plain text. The import summary lists everything that was left out or changed.
 
 ## Steps
@@ -63,7 +63,7 @@ plain text. The import summary lists everything that was left out or changed.
 | A GraphQL body | A [GraphQL body](/wirebench/docs/guides/graphql/) with its query, variables and operation name. A body that is not a query document is kept as JSON text, with a note | |
 | A binary file body | A binary body pointing at the file, with a note | |
 | Follow redirects on or off, URL encoding off | The matching request settings. Cookie, render and path settings are noted | |
-| Scripts | See [Scripts](#scripts) | |
+| Scripts | Attached to the request or folder, switched off. See [Scripts](#scripts) | [Scripts from other clients](/wirebench/docs/guides/scripts/#scripts-from-other-clients) |
 
 ### Auth
 
@@ -128,10 +128,28 @@ note.
 
 ### Scripts
 
-Every pre-request and after-response script, on a request or a folder, is written as it is to
-`imported-scripts/` in the project folder, and never read back or run. An existing file is never
-overwritten: a second import adds a number to the name. The notes list where each script went, and
-which script APIs they call.
+Every pre-request and after-response script, on a request or a folder, is attached to it as it is,
+switched off. Insomnia has no script level above a folder, so an API gets none. The import summary
+lists the folders and requests that have scripts, and the calls in them that cannot run.
+
+Read a script, then switch it on from the request's banner, or use **Switch on scripts…** on an API or
+folder. It runs against an `insomnia` object that covers `insomnia.test`, `insomnia.expect`,
+`insomnia.response`, `insomnia.request` and the variable scopes. These fail when called, with
+`script-unsupported` naming them:
+
+- `insomnia.sendRequest`: a login whose token the next request uses is a
+  [sequence](/wirebench/docs/guides/sequences/) step with a transfer.
+- `insomnia.require` and `require`.
+- `insomnia.cookies.set`, `unset` and `clear`; cookie reads return nothing.
+- `insomnia.vault.get`.
+
+Three things change from Insomnia. A variable a script sets lasts for the run and is never written to an
+environment file, and the next request reads it as `${#Sequence#name}`; a `{{ _.name }}` in a request
+becomes `${name}`, which reads the environment, so change it where a script's value is meant.
+A project imported before this behaviour keeps its `imported-scripts/` files untouched; import the
+export again to get the scripts on their requests.
+`insomnia.execution.setNextRequest` and `skipRequest` are obeyed in API and folder runs only. The
+[Scripts guide](/wirebench/docs/guides/scripts/#scripts-from-other-clients) has the full table.
 
 ## Credentials
 
@@ -156,8 +174,9 @@ tab; Wirebench stores it encrypted outside the project.
 ## The command line
 
 `wirebench import <file>` reads an Insomnia export and adds its APIs and its plain base and folder
-variables as project properties. It has no secret store, workspace or script folder, so it lists
-secret variables, environments, scripts and `.proto` files as not imported. A file of environments
+variables as project properties, and attaches its scripts to their requests and folders switched
+off, as the desktop does. It has no secret store or workspace, so it lists secret variables,
+environments and `.proto` files as not imported. A file of environments
 alone is refused.
 
 ## Limits
@@ -181,7 +200,8 @@ alone is refused.
 
 </Steps>
 
-<Aside type="note" title="Scripts are kept, not translated">
-An imported script is text written against another client's scripting API. Wirebench never runs it;
-rewrite what you need as a Wirebench script or as assertions.
+<Aside type="note" title="Scripts arrive switched off">
+An imported script is code nobody on your team has read. It runs only after you switch it on, and calls
+Wirebench cannot honour fail with `script-unsupported`. Rewrite what you need as a Wirebench script or
+as assertions.
 </Aside>

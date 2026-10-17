@@ -16,7 +16,7 @@
  */
 import type { ProtocolScripting } from '../../protocol/module.js';
 import type { ScriptApi, ScriptPhase } from '../model.js';
-import { SCRIPT_CONTROL_LIMITS, SCRIPT_OUTPUT_LIMITS } from '../model.js';
+import { isLayeredApi, SCRIPT_CONTROL_LIMITS, SCRIPT_OUTPUT_LIMITS } from '../model.js';
 
 const COMMON = String.raw`
 const input = JSON.parse(__host.inputJson);
@@ -260,5 +260,5 @@ globalThis.__finish = () => ({
  * scripting facet, any extra layer and `__finish`.
  */
 export function buildPrelude(scripting: ProtocolScripting, phase: ScriptPhase, api: ScriptApi, layer = ''): string {
-  return `'use strict';\n(() => {\n${COMMON}\n${scripting.prelude(phase)}\n${api === 'postman' ? layer : ''}\n${FINISH}\n})();\n`;
+  return `'use strict';\n(() => {\n${COMMON}\n${scripting.prelude(phase)}\n${isLayeredApi(api) ? layer : ''}\n${FINISH}\n})();\n`;
 }

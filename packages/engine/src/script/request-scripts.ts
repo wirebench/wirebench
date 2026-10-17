@@ -13,6 +13,7 @@ import type { RequestSnapshotBase, ResponseSnapshotBase } from '../protocol/modu
 import type { ProtocolRegistry } from '../protocol/registry.js';
 import type { ScriptChecker, ScriptDiagnostic } from './check/host.js';
 import {
+  isLayeredApi,
   scriptFileName,
   type RequestScripts,
   type ScriptFailure,
@@ -218,10 +219,9 @@ export class RequestScripting {
     const api = level.scripts.api;
     const generated =
       level.level === 'request' ? request.types.generated : levelScriptTypes(request.protocol, this.options.registry);
-    const declarations =
-      api === 'postman'
-        ? ''
-        : scriptDeclarations(request.protocol, phase, level.scripts.secrets, generated, this.options.registry);
+    const declarations = isLayeredApi(api)
+      ? ''
+      : scriptDeclarations(request.protocol, phase, level.scripts.secrets, generated, this.options.registry);
     const key = createHash('sha256')
       .update(api)
       .update('\0')
@@ -239,9 +239,9 @@ export class RequestScripting {
   }
 
   /**
-   * Type-checks every level of a request's scripts (syntax only for a Postman one).
+   * Type-checks every level of a request's scripts (syntax only for a layered one).
    *
-   * @throws WirebenchError `script-type-error` (or `script-syntax-error` when only Postman scripts
+   * @throws WirebenchError `script-type-error` (or `script-syntax-error` when only layered scripts
    * fail), `script-file-missing`, `script-too-large`
    */
   async check(request: ScriptedRequest): Promise<void> {

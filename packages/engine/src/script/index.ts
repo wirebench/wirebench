@@ -13,9 +13,10 @@ export type {
   ScriptQuickInfo,
   ScriptSignatureHelp,
 } from './check/host.js';
-export { isScriptFileOf, SCRIPT_OUTPUT_LIMITS, scriptFileName } from './model.js';
+export { isLayeredApi, isScriptFileOf, SCRIPT_OUTPUT_LIMITS, scriptFileName } from './model.js';
 export type {
   HeaderPair,
+  LayeredApi,
   RequestScripts,
   ScriptApi,
   ScriptErrorCode,

@@ -39,8 +39,8 @@ async function readAllText(dir: string, prefix = ''): Promise<Map<string, string
 }
 
 describe('jwt auth in the project format', () => {
-  it('is format 10', () => {
-    expect(FORMAT_VERSION).toBe(10);
+  it('is format 10 or later', () => {
+    expect(FORMAT_VERSION).toBeGreaterThanOrEqual(10);
   });
 
   it('is an auth for requests and APIs, not for SOAP owners', () => {
@@ -52,7 +52,7 @@ describe('jwt auth in the project format', () => {
     const dir = await tempProjectDir();
     await saveProject(sampleProject(), dir);
     const manifest = join(dir, 'wirebench.yaml');
-    await writeFile(manifest, (await readFile(manifest, 'utf8')).replace('formatVersion: 10', 'formatVersion: 9'));
+    await writeFile(manifest, (await readFile(manifest, 'utf8')).replace('formatVersion: 11', 'formatVersion: 9'));
     const before = await readAllText(dir);
 
     const { project, problems } = await loadProject(dir);
@@ -63,7 +63,7 @@ describe('jwt auth in the project format', () => {
     expect([...after.keys()].sort()).toEqual([...before.keys()].sort());
     for (const [file, text] of after) {
       const old = before.get(file) ?? '';
-      expect(text).toBe(file === 'wirebench.yaml' ? old.replace('formatVersion: 9', 'formatVersion: 10') : old);
+      expect(text).toBe(file === 'wirebench.yaml' ? old.replace('formatVersion: 9', 'formatVersion: 11') : old);
     }
     await rm(dir, { recursive: true, force: true });
   });
@@ -72,11 +72,11 @@ describe('jwt auth in the project format', () => {
     const dir = await tempProjectDir();
     await saveProject(sampleProject(), dir);
     const manifest = join(dir, 'wirebench.yaml');
-    await writeFile(manifest, (await readFile(manifest, 'utf8')).replace('formatVersion: 10', 'formatVersion: 11'));
+    await writeFile(manifest, (await readFile(manifest, 'utf8')).replace('formatVersion: 11', 'formatVersion: 12'));
 
     const error = (await loadProject(dir).catch((e: unknown) => e)) as ProjectError;
     expect(error.code).toBe('project-format-too-new');
-    expect(error.details).toMatchObject({ formatVersion: 11, supported: 10 });
+    expect(error.details).toMatchObject({ formatVersion: 12, supported: 11 });
     await rm(dir, { recursive: true, force: true });
   });
 });

@@ -14,7 +14,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { WirebenchError } from '@wirebench/engine';
+import { apiRequests, WirebenchError } from '@wirebench/engine';
+import type { RestApi } from '@wirebench/engine';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
 import { NO_REST, PROJECT_SETTINGS } from './helpers/wire-defaults.js';
@@ -1669,13 +1670,9 @@ describe('api.importInsomnia and api.importClientEnvironments', () => {
     return { ...stubs, fake, variablesPorts };
   };
 
-  it('places a v5 export as REST, gRPC and WebSocket APIs, its scripts as text, its environments unactivated', async () => {
+  it('places a v5 export as REST, gRPC and WebSocket APIs, its scripts attached switched off, its environments unactivated', async () => {
     const file = join(INSOMNIA, 'v5-collection.yaml');
     const { addApi, deps, fake } = setupPicked(file);
-    vi.mocked(deps.router.writeImportedScripts).mockImplementationOnce((_projectId, scripts) =>
-      Promise.resolve({ written: scripts.map((script) => script.path), renamed: [], skipped: [] }),
-    );
-
     const response = await value<ClientResponse>('api.importInsomnia', {
       target: { projectId: 'p1' },
       source: { kind: 'file', path: file },
@@ -1690,8 +1687,14 @@ describe('api.importInsomnia and api.importClientEnvironments', () => {
     expect(vi.mocked(deps.router.importWsApi).mock.calls[0]?.[1].api.name).toBe('Orders API (WebSocket)');
     expect(response.apiIds).toContain('api-1');
     expect(response.apiIds).toContain('ws-1');
-    expect(response.counts.scripts).toBeGreaterThan(0);
-    expect(response.counts.scripts).toBe(vi.mocked(deps.router.writeImportedScripts).mock.calls[0]?.[1].length);
+    // The scripts ride on the REST API, switched off: no text file is written.
+    expect(response.counts.scripts).toBe(0);
+    expect(deps.router.writeImportedScripts).not.toHaveBeenCalled();
+    const requests = apiRequests((addApi.mock.calls[0]![1] as { api: RestApi }).api);
+    expect(requests.find((request) => request.name === 'Create order')?.scripts).toMatchObject({
+      api: 'insomnia',
+      enabled: false,
+    });
     expect(fake.environments.length).toBeGreaterThan(0);
     expect(response.variables?.environments.map((environment) => environment.name)).toEqual(
       fake.environments.map((environment) => environment.name),

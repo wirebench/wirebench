@@ -11,7 +11,7 @@
  */
 import type * as Monaco from 'monaco-editor';
 import { ipc } from '../state/ipc-client.js';
-import type { ScriptDiagnosticWire } from '../../shared/wire-base.js';
+import type { ScriptApiWire, ScriptDiagnosticWire } from '../../shared/wire-base.js';
 
 export type ScriptPhase = 'pre' | 'post';
 
@@ -26,8 +26,8 @@ export const SCRIPT_MARKER_OWNER = 'wirebench-script';
 const targets = new Map<string, ScriptModelTarget>();
 
 /** The model path a script editor opens: one model per request and script, named as its file would be. */
-export function scriptModelPath(requestId: string, phase: ScriptPhase, api: 'wirebench' | 'postman'): string {
-  return `wirebench-script/${encodeURIComponent(requestId)}/${phase}.${api === 'postman' ? 'js' : 'ts'}`;
+export function scriptModelPath(requestId: string, phase: ScriptPhase, api: ScriptApiWire): string {
+  return `wirebench-script/${encodeURIComponent(requestId)}/${phase}.${api === 'wirebench' ? 'ts' : 'js'}`;
 }
 
 /** The model path a dispatch script editor opens: one model per mock operation. */

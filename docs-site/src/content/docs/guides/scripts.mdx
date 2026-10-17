@@ -157,32 +157,82 @@ it had none, isn't type-checked, and its result says its scripts were off. An AP
 folder's scripts are switched on and off on their own: switching off a request's scripts leaves its
 API's and folders' running.
 
-## Postman scripts
+## Scripts from other clients
 
-A Postman collection's `prerequest` and `test` scripts are imported where they were: the collection's on
-the API, each folder's on its folder, and each request's on the request. They run in the same order
-as they did in the collection. They are JavaScript, run through a `pm` layer, and are checked for syntax
-only.
+A Postman collection's scripts and an Insomnia export's scripts are imported onto the request or folder
+they were on, and run through a layer that gives them the other client's own names: `pm` for Postman,
+`insomnia` and `$` for Insomnia. They are JavaScript, checked for syntax only, and run in the same order
+as they did in the client. Scripts exported from Bruno, Hoppscotch and Thunder Client are still saved
+as text under `imported-scripts/` and never run.
 
 **Imported scripts are switched off.** A collection from elsewhere is code nobody on the team has read
 yet. A request with them shows a banner — "These scripts are off. Read them, then switch them on." — and
 **Switch on**. **Switch on scripts…** on an API, a folder or an interface switches on its own scripts and
-those of every folder and request beneath it, after a confirmation that names them.
+those of every folder and request beneath it, after a confirmation that names them. The import summary
+says which folders and requests have scripts and lists the calls in them that cannot run.
+
+A layer is only a vocabulary over the Wirebench script API, so it can do nothing a Wirebench script
+cannot. Three rules hold for every layer.
+
+**Variables.** A client has more variable scopes than Wirebench's two. A read checks the run's `vars`
+first, then the read-only `props`. A write goes to `vars`, whatever scope the script named
+(`environment`, `collectionVariables`, `variables`, `baseEnvironment`): it lasts for the run, later
+requests read it as `${#Sequence#name}`, and it is never written to a project or environment file. A
+script that relied on a write surviving after the app closed loses that. A request that read
+`{{ name }}` in the client keeps reading `${name}` after the import, which is a project property or
+environment variable; point it at `${#Sequence#name}` to read a value a script set.
+
+**Unsupported calls.** A call the sandbox cannot honour — sending requests, loading modules, reading
+files, waiting, cookie writes, the vault — fails when it is called, with `script-unsupported` naming it.
+The import summary lists the scripts that call one.
+
+**Run control.** `setNextRequest` and `skipRequest` steer a run as `execution` does ([below](#steer-a-run)):
+they are obeyed in API and folder runs and ignored, with a note in the log, everywhere else.
+
+### Postman scripts
+
+A Postman collection's `prerequest` and `test` scripts are imported where they were: the collection's on
+the API, each folder's on its folder, and each request's on the request.
 
 The layer covers what collections mostly use: `pm.test`, `pm.expect` with the common chai chains,
 `pm.response` (`code`, `status`, `headers.get`, `json()`, `text()`, `responseTime`,
 `to.have.status`), `pm.request` (`url`, headers, `body.raw`), `pm.info.requestName`, the `pm.*.get`
 and `pm.*.set` variable calls (all kept as the run's values), `CryptoJS` hashes, HMACs and Base64,
 `btoa` and `atob`. `pm.execution.setNextRequest`, `postman.setNextRequest` and
-`pm.execution.skipRequest` steer a run as `execution` does ([below](#steer-a-run)). Anything else —
-`pm.sendRequest`, `pm.cookies.jar()`, `pm.visualizer`, `require` — fails when it is called, with
-`script-unsupported` naming it. The import summary lists the scripts that call one.
+`pm.execution.skipRequest` steer a run. Anything else — `pm.sendRequest`, `pm.cookies.jar()`,
+`pm.visualizer`, `require` — fails when it is called, with `script-unsupported` naming it.
 
 A script can't send a request, so a `pm.sendRequest` call needs rewriting:
 
 - A login whose token the next request uses is a [sequence](/wirebench/docs/guides/sequences/) step with a
   transfer.
 - A token fetched before every request is the request's or its API's OAuth2 auth.
+
+### Insomnia scripts
+
+An Insomnia export's pre-request and after-response scripts are imported onto their request or folder.
+Insomnia has no script level above a folder, so there is none on the API.
+
+`insomnia` and `$` are the same object as `pm` in the Postman layer, with two more members:
+`baseEnvironment` and `parentFolders` read like `environment` and write to the run's `vars`.
+
+| Insomnia | In Wirebench |
+| --- | --- |
+| `insomnia.test`, `insomnia.expect` | Supported, as `pm.test` and `pm.expect` |
+| `insomnia.response` (`code`, `status`, `headers`, `json()`, `text()`, `responseTime`) | Supported |
+| `insomnia.request` (`url`, headers, `body`) | Supported |
+| `insomnia.variables`, `environment`, `baseEnvironment`, `collectionVariables`, `globals` | Supported; reads check `vars` then `props`, writes go to `vars` |
+| `insomnia.iterationData` | Supported; reads the current data row of a [data-driven run](/wirebench/docs/guides/runner/), and has no `set` |
+| `insomnia.info.requestName` | Supported |
+| `insomnia.execution.setNextRequest`, `skipRequest` | Supported; obeyed in API and folder runs only |
+| `insomnia.cookies` reads | Supported; they return nothing, as no cookie is visible to a script |
+| `insomnia.cookies` writes (`set`, `unset`, `clear`) | `script-unsupported` |
+| `insomnia.vault.get` | `script-unsupported` |
+| `insomnia.sendRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step or OAuth2 auth |
+| `insomnia.require`, `require` | `script-unsupported` |
+
+An Insomnia unit-test suite (the Tests tab) is reported on import and not run: it targets a request by
+id outside any script.
 
 ## Steer a run
 

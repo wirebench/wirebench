@@ -88,8 +88,8 @@ describe('GraphQL body on disk', () => {
     expect(restApisOf(loaded)[0]!.graphqlSchema).toEqual(api.graphqlSchema);
   });
 
-  it('belongs to format 10, which has not shipped yet', () => {
-    expect(FORMAT_VERSION).toBe(10);
+  it('belongs to format 10 or later', () => {
+    expect(FORMAT_VERSION).toBeGreaterThanOrEqual(10);
   });
 
   it('loads a missing query file as an empty query, with a problem', async () => {
