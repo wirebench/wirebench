@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Terminal type and character set per host.** A host or group's `ssh` settings take `term`, the
+  terminal type the shell is opened with (`xterm-256color` by default, for example `vt100` or
+  `vt220`), and `charset`, the character set its text is read and written in: UTF-8 by default, or
+  one of ISO-8859-1/2/5/7/9/15, Windows-1250/1251/1252/1253/1254/1257, CP850 and KOI8-R. Both
+  inherit like the other host settings and fall back to new **Settings → SSH** defaults; the host
+  form shows them under **Advanced**. They apply to SSH shells and Telnet; a serial console
+  uses the character set; Mosh stays UTF-8 (#427).
 - **Telnet hosts.** A host or group can set `protocol: telnet` to open a Telnet session in the same
   terminal tab, with panes, find, snippets and session logs. Wirebench negotiates the terminal type and
   window size, and types the host's user and password at the device's login and password prompts when they

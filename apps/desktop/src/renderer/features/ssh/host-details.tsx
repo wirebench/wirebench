@@ -26,6 +26,7 @@ import { proxyText } from './proxy-section.js';
 import { HostSessionLogs } from './session-logs.js';
 import { sessionStatus } from './session-status.js';
 import { schemeLabel } from './terminal-schemes.js';
+import { charsetLabel, DEFAULT_TERMINAL_CHARSET, DEFAULT_TERMINAL_TYPE } from '../../../shared/terminal-charsets.js';
 import { serialLabel } from './serial-section.js';
 
 type Provenance = ResolvedHostWire['ssh']['port']['from'];
@@ -259,6 +260,13 @@ export function HostDetails() {
   const hostKey = `${host.address}:${String(host.ssh.port.value)}`;
   const keys = knownHosts.filter((k) => k.host === hostKey);
   const command = sshCommandOf(host, jumpAddress);
+  // Rows only for what this host changes; the type and character set only when they are not the built-in ones.
+  const shownIf = <T,>(p: { value?: T | undefined; from: ResolvedHostWire['protected']['from'] } | undefined) =>
+    p?.value === undefined ? undefined : { value: p.value, from: p.from };
+  const scheme = shownIf(host.terminal?.scheme);
+  const fontSize = shownIf(host.terminal?.fontSize);
+  const term = serial || host.ssh.term?.value === DEFAULT_TERMINAL_TYPE ? undefined : host.ssh.term;
+  const charset = host.ssh.charset?.value === DEFAULT_TERMINAL_CHARSET ? undefined : host.ssh.charset;
   const proxy = host.ssh.proxy.value;
   const muted = (text: string): ReactNode => <span className="truncate text-xs text-fg-subtle">{text}</span>;
   const osEntry = osByHost[osKeyOf(host)];
@@ -443,23 +451,34 @@ export function HostDetails() {
           ))}
         </Section>
       )}
-      {host.terminal !== undefined &&
-        (host.terminal.scheme.value !== undefined || host.terminal.fontSize.value !== undefined) && (
-          <Section title="Terminal">
-            {host.terminal.scheme.value !== undefined && (
-              <Row label="Scheme">
-                <span className="truncate">{schemeLabel(host.terminal.scheme.value)}</span>
-                {muted(provenance(host.terminal.scheme.from))}
-              </Row>
-            )}
-            {host.terminal.fontSize.value !== undefined && (
-              <Row label="Font size">
-                <span>{`${String(host.terminal.fontSize.value)} px`}</span>
-                {muted(provenance(host.terminal.fontSize.from))}
-              </Row>
-            )}
-          </Section>
-        )}
+      {(scheme !== undefined || fontSize !== undefined || term !== undefined || charset !== undefined) && (
+        <Section title="Terminal">
+          {scheme !== undefined && (
+            <Row label="Scheme">
+              <span className="truncate">{schemeLabel(scheme.value)}</span>
+              {muted(provenance(scheme.from))}
+            </Row>
+          )}
+          {fontSize !== undefined && (
+            <Row label="Font size">
+              <span>{`${String(fontSize.value)} px`}</span>
+              {muted(provenance(fontSize.from))}
+            </Row>
+          )}
+          {term !== undefined && (
+            <Row label="Type">
+              <span className="truncate font-mono">{term.value}</span>
+              {muted(provenance(term.from))}
+            </Row>
+          )}
+          {charset !== undefined && (
+            <Row label="Character set">
+              <span className="truncate">{charsetLabel(charset.value)}</span>
+              {muted(provenance(charset.from))}
+            </Row>
+          )}
+        </Section>
+      )}
       {sshFeatures && (
         <section aria-label="Port forwarding" className="flex flex-col border-t border-hairline px-1 py-3">
           <h3 className="mb-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">Port forwarding</h3>

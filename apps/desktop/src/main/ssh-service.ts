@@ -10,6 +10,7 @@ import {
   findSnippet,
   listSnippets,
   openSession,
+  withCharset,
   openTelnetSession,
   previewSnippet,
   rememberKnownHost,
@@ -307,7 +308,7 @@ export class SshService {
           throw new WirebenchError('serial-unavailable', 'Serial consoles are not available on this computer');
         }
         new HopProgress(options.onProgress, 0, 1, device).log(`Opening ${device} at ${serialLineText(serial.line)}`);
-        session = await openSerial({ path: device, line: serial.line });
+        session = withCharset(await openSerial({ path: device, line: serial.line }), prepared.charset);
       } else if (telnet !== undefined) {
         if (telnet.unusedAuth !== undefined) {
           const where = `${telnet.target.address}:${String(telnet.target.port)}`;
@@ -315,15 +316,17 @@ export class SshService {
             `Telnet signs in with a password only: the ${telnet.unusedAuth === 'key' ? 'private key' : 'SSH agent'} set for this host is not used`,
           );
         }
-        session = await (this.deps.openTelnet ?? openTelnetSession)({
+        const telnetSession = await (this.deps.openTelnet ?? openTelnetSession)({
           hops,
           target: telnet.target,
           login: telnet.login,
           cols: request.cols,
           rows: request.rows,
           verifyHostKey,
+          terminalType: prepared.term,
           ...(options.onProgress === undefined ? {} : { onProgress: options.onProgress }),
         });
+        session = withCharset(telnetSession, prepared.charset);
       } else if (mosh !== undefined) {
         const openMosh = this.deps.openMosh;
         if (!openMosh) throw new WirebenchError('mosh-unavailable', 'Mosh sessions are not available here');
@@ -333,6 +336,8 @@ export class SshService {
         session = await (this.deps.open ?? openSession)({
           ...options,
           ...(forwardAgent?.socket === undefined ? {} : { forwardAgent: forwardAgent.socket }),
+          term: prepared.term,
+          charset: prepared.charset,
         });
       }
     } catch (error) {
