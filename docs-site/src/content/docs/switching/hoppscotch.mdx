@@ -12,7 +12,8 @@ becomes a **REST API** in the project you choose; its GraphQL requests come alon
 a GraphQL body.
 
 Collection and folder variables become project properties. Environments become workspace
-environments. Scripts are kept as text and never run. Credentials do not come across as plain
+environments. Scripts are attached to their requests, folders and API, switched off, and run once you
+read and switch them on. Credentials do not come across as plain
 text. The import summary lists everything that was left out or changed.
 
 ## Steps
@@ -95,10 +96,12 @@ note.
 
 ### Scripts
 
-Every pre-request and test script, on a request, a folder or a collection, is written as it is to
-`imported-scripts/` in the project folder, and never read back or run. An existing file is never
-overwritten: a second import adds a number to the name. The notes list where each script went, and
-a warning names the script APIs they call (`pw.`, `hopp.` or `pm.`).
+Every pre-request and test script is attached where it was: a collection's to the API, a folder's to
+the folder, a request's to the request. A request's test script becomes its post-response script.
+The scripts are **switched off**, so they run once you read them and switch them on, against the
+`pw`, `hopp` and `pm` names Hoppscotch gives them. The summary lists, per request, the calls Wirebench
+cannot run. See [Scripts from other clients](/wirebench/docs/guides/scripts/#hoppscotch-scripts)
+for what is supported.
 
 ## Credentials
 
@@ -118,8 +121,10 @@ one. Enter each on its **Auth** tab; Wirebench stores it encrypted outside the p
 ## The command line
 
 `wirebench import <file>` reads a Hoppscotch collections export and adds its APIs and its plain
-collection and folder variables as project properties. It has no secret store, workspace or script
-folder, so it lists secret variables and scripts as not imported. An environments file is refused.
+collection and folder variables as project properties, and attaches the scripts switched off as the
+desktop does: switch them on by deleting the `enabled: false` line under `scripts:` in the `.yaml`
+file of the request, folder or API. It has no secret store or workspace, so it lists secret variables
+as not imported. An environments file is refused.
 
 ## Limits
 
@@ -140,7 +145,7 @@ folder, so it lists secret variables and scripts as not imported. An environment
 
 </Steps>
 
-<Aside type="note" title="Scripts are kept, not translated">
-An imported script is text written against another client's scripting API. Wirebench never runs it;
-rewrite what you need as a Wirebench script or as assertions.
+<Aside type="note" title="Scripts are off until you switch them on">
+An imported script is code nobody on your team has read yet. Read it, then switch it on. A call
+Wirebench cannot run, such as `hopp.fetch` or a top-level `import`, fails with `script-unsupported`.
 </Aside>

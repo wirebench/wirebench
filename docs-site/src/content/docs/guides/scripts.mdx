@@ -174,12 +174,12 @@ API's and folders' running.
 
 ## Scripts from other clients
 
-A Postman collection's, an Insomnia export's and a Bruno collection's scripts are imported onto the
-request, folder or API they were on, and run through a layer that gives them the other client's own
-names: `pm` for Postman, `insomnia` and `$` for Insomnia, `bru`, `req` and `res` for Bruno. They are
-JavaScript, checked for syntax only, and run in the same order as they did in the client. Scripts
-exported from Hoppscotch and Thunder Client are still saved as text under `imported-scripts/` and
-never run.
+A Postman collection's, an Insomnia export's, a Bruno collection's and a Hoppscotch export's scripts
+are imported onto the request, folder or API they were on, and run through a layer that gives them the
+other client's own names: `pm` for Postman, `insomnia` and `$` for Insomnia, `bru`, `req` and `res`
+for Bruno, `pw`, `hopp` and `pm` for Hoppscotch. They are JavaScript, checked for syntax only, and run
+in the same order as they did in the client. Scripts exported from Thunder Client are still saved as
+text under `imported-scripts/` and never run.
 
 **Imported scripts are switched off.** A collection from elsewhere is code nobody on the team has read
 yet. A request with them shows a banner — "These scripts are off. Read them, then switch them on." — and
@@ -298,6 +298,33 @@ meet it.
 
 As with every layer, a value a script stores lasts for the run and the next request reads it as
 `${#Sequence#name}`; a `{{name}}` in a request becomes `${name}`, which reads the environment.
+
+### Hoppscotch scripts
+
+A Hoppscotch collection's scripts are imported where they were: the collection's on the API, each
+folder's on its folder, each request's on the request. A request's test script becomes its
+post-response script. Pre-request scripts run outermost first, as in every layer.
+
+`pw` and `hopp` are the Hoppscotch names; `pm` is the Postman object without `collectionVariables`,
+`iterationData`, `visualizer` and the run-control calls.
+
+| Hoppscotch | In Wirebench |
+| --- | --- |
+| `pw.test`, `hopp.test`, `pw.expect`, `hopp.expect` | Supported; `hopp.expect` takes both the chai chain and the Jest matchers (`toBe`, `toEqual`, `toBeType` and the rest) |
+| `pw.response`, `hopp.response` (`status`, `statusText`, `headers`, `body`, `responseTime`) | Supported; headers are a list of `{ key, value }` rows, and `body` is parsed JSON for a JSON response and text otherwise |
+| `pw.env`, `hopp.env` (`get`, `getRaw`, `set`, `unset`, `resolve`) | Supported; a name that is not set reads as `null`, writes go to `vars`, and `resolve` expands `<<name>>` (an unset name becomes empty, nested names up to 10 levels) |
+| `hopp.request` (`url`, `method`, `headers`, `params`, `body`, `setUrl`, `setMethod`, `setHeader`, `setHeaders`, `removeHeader`, `setParams`, `removeParam`, `setBody`) | Supported in a pre-request script only; `setBody({ contentType, body })` also sets `Content-Type` |
+| `pm.*` | Supported as in the Postman layer |
+| `hopp.cookies`, `pm.cookies.jar` | `script-unsupported` |
+| `hopp.fetch`, `pm.sendRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step or OAuth2 auth |
+| `hopp.env.reset`, `getInitialRaw`, `setInitial` | `script-unsupported` |
+| `hopp.request.setAuth`, `hopp.request.auth` | `script-unsupported`; use the request's **Auth** tab |
+| `hopp.response.body.bytes` | `script-unsupported` |
+| `pm.vault`, `pm.require`, `require` | `script-unsupported` |
+| A top-level `import` | Refused before the script runs; a bare `export {};` line is ignored |
+
+As with every layer, a value a script stores lasts for the run and the next request reads it as
+`${#Sequence#name}`; a `<<name>>` in a request becomes `${name}`, which reads the environment.
 
 ## Steer a run
 

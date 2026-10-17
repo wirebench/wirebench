@@ -1,5 +1,5 @@
 /**
- * Scripts imported from another client run (script layers): an Insomnia or Bruno import arrives with
+ * Scripts imported from another client run (script layers): an Insomnia, Bruno or Hoppscotch import arrives with
  * its scripts switched off, and once switched on a variable the first request's script sets is what
  * the second request sends.
  */
@@ -9,6 +9,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { importBruno } from '../../../src/import/bruno/import.js';
+import { mapHoppscotch } from '../../../src/import/hoppscotch/convert.js';
+import { parseHoppscotchCollections } from '../../../src/import/hoppscotch/parse.js';
 import { mapInsomnia } from '../../../src/import/insomnia/map.js';
 import { parseInsomnia } from '../../../src/import/insomnia/parse.js';
 import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
@@ -288,4 +290,58 @@ describe('imported Bruno scripts in a run', () => {
       expect(result.requests.map((r) => outcomes(r))).toEqual([[['matches', 'passed']], [['mismatches', 'failed']]]);
     },
   );
+});
+
+describe('imported Hoppscotch scripts in a run', () => {
+  const hopRequest = (name: string, extra: Record<string, unknown>): Record<string, unknown> => ({
+    v: '17',
+    name,
+    method: 'GET',
+    endpoint: `${rest.url}/echo`,
+    params: [],
+    headers: [],
+    body: { contentType: null, body: null },
+    auth: { authType: 'inherit', authActive: true },
+    preRequestScript: '',
+    testScript: '',
+    requestVariables: [],
+    ...extra,
+  });
+
+  it('an imported Hoppscotch test passes against the echo server', { timeout: 30_000 }, async () => {
+    const text = JSON.stringify({
+      v: 12,
+      name: 'Shop',
+      folders: [],
+      requests: [
+        hopRequest('Login', { testScript: "hopp.env.set('token', 'tok-7731');" }),
+        hopRequest('Use', {
+          headers: [{ key: 'X-Echo', value: 'placeholder', active: true, description: '' }],
+          testScript:
+            "pw.test('sent the token', () => { pw.expect(pw.response.body.headers['x-echo']).toBe('tok-7731'); });",
+        }),
+      ],
+    });
+    let n = 0;
+    const { collections, report } = parseHoppscotchCollections(text);
+    const mapped = mapHoppscotch(collections, report, { newId: () => `h${String((n += 1))}` });
+    const api = mapped.collections[0]!.rest!;
+    // Attached switched off; a value a script sets is read as ${#Sequence#name}, not the imported <<name>>.
+    expect(apiRequests(api).map((r) => r.scripts?.enabled)).toEqual([false, false]);
+    for (const r of apiRequests(api)) {
+      if (r.name === 'Use')
+        (r as { headers: unknown }).headers = [{ name: 'X-Echo', value: '${#Sequence#token}', enabled: true }];
+    }
+    switchOn(api);
+    const { selected } = selectRequests(projectFrom(api), []);
+    const result = await runRequests(selected, {
+      project: projectFrom(api),
+      projectDir: dir,
+      overrides: {},
+      host: { getSecret: () => Promise.resolve(undefined) },
+      scripting: new RequestScripting({ sandbox, checker }),
+    });
+    expect(result.requests.map((r) => r.name)).toEqual(['Login', 'Use']);
+    expect(outcomes(result.requests[1]!)).toEqual([['sent the token', 'passed']]);
+  });
 });

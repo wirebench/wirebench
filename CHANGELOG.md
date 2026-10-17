@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Run imported Hoppscotch scripts.** A Hoppscotch export's pre-request and test scripts are attached
+  to their requests, folders and API, switched off, instead of being saved as text. Once switched on
+  they run against `pw`, `hopp` and `pm`, with Jest-style matchers on `hopp.expect`; `hopp.fetch`,
+  `hopp.cookies`, `hopp.request.setAuth`, `require` and a top-level `import` fail with
+  `script-unsupported` (an `import` is refused before the script runs), and the import report lists
+  them per request. `wirebench import` attaches them too.
 - **Run imported Bruno scripts.** A Bruno collection's pre-request, post-response and `tests` scripts are
   attached to their requests, folders and APIs, switched off, instead of being saved as text. Once
   switched on they run against `bru`, `req`, `res`, `test` and an `expect` with `.jsonSchema`;
