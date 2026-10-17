@@ -63,6 +63,11 @@ const NO_SESSION_LOGS = {
   workspaceOf: (): string | undefined => undefined,
   reveal: vi.fn(),
 };
+const NO_SERIAL = {
+  ports: vi.fn(),
+  devices: { get: vi.fn(), set: vi.fn() },
+  workspaceOf: (): string | undefined => undefined,
+};
 const NO_IMPORT = { preview: vi.fn(), apply: vi.fn() };
 const NO_KEYS = { generate: vi.fn(), keys: vi.fn(), install: vi.fn(), attachCertificate: vi.fn() };
 const NO_SFTP = {
@@ -97,6 +102,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -128,6 +134,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -149,6 +156,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -180,6 +188,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -208,6 +217,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -230,6 +240,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -257,6 +268,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -278,6 +290,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -314,6 +327,7 @@ describe('ssh channels', () => {
         layouts: NO_LAYOUTS,
         forward: NO_FORWARD,
         sessionLogs: NO_SESSION_LOGS,
+        serial: NO_SERIAL,
         transfers: NO_TRANSFERS,
         edits: NO_EDITS,
       });
@@ -390,6 +404,7 @@ describe('known hosts channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -415,6 +430,7 @@ describe('known hosts channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -446,6 +462,7 @@ describe('host OS channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -470,6 +487,7 @@ describe('host OS channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -495,6 +513,7 @@ describe('ssh snippet run channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -528,6 +547,7 @@ describe('ssh import channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -556,6 +576,7 @@ describe('ssh import channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -578,6 +599,7 @@ describe('ssh import channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -614,6 +636,7 @@ describe('ssh import channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -653,6 +676,7 @@ describe('ssh import channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
     });
     const window = { id: 4 };
     const copy = {
@@ -693,6 +717,7 @@ describe('ssh import channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
     });
     const window = { id: 4 };
     const request = { sessionId: 's1', path: '/etc/app.conf', confirmedLarge: true };
@@ -729,6 +754,7 @@ describe('ssh key channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -779,6 +805,7 @@ describe('snippet channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
     });
     expect(await invoke('ssh.listSnippets', undefined)).toEqual({ ok: true, value: EMPTY_SNIPPETS });
     await invoke('ssh.saveSnippets', { file: EMPTY_SNIPPETS.file });
@@ -801,6 +828,7 @@ describe('snippet channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      serial: NO_SERIAL,
     });
     const snippet = { id: 'Bad Id', name: 'x', tags: [], variables: [], script: 'ls', enter: true, confirm: false };
     const refused = (await invoke('ssh.saveSnippets', {
@@ -831,6 +859,7 @@ describe('session log channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs,
+      serial: NO_SERIAL,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -868,5 +897,66 @@ describe('session log channels', () => {
     expect(await invokeAs(window, 'sessionLog.reveal', { hostId: 'web', id: 'x', path: '/etc' })).toMatchObject({
       ok: false,
     });
+  });
+});
+
+describe('serial channels (#426)', () => {
+  const register = (serial: Parameters<typeof registerSshChannels>[0]['serial']): void => {
+    registerSshChannels({
+      hosts: NO_HOSTS,
+      secrets: NO_SECRETS,
+      ssh: NO_SSH,
+      importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
+      keys: NO_KEYS,
+      sftp: NO_SFTP,
+      snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
+      serial,
+      transfers: NO_TRANSFERS,
+      edits: NO_EDITS,
+    });
+  };
+
+  it('lists the ports, and reads and keeps the device per workspace of the calling window', async () => {
+    const get = vi.fn((_w: string, hostId: string) => Promise.resolve(hostId === 'lab' ? '/dev/ttyUSB0' : undefined));
+    const set = vi.fn(() => Promise.resolve());
+    const windows = new Map<object, string>();
+    const one = {};
+    windows.set(one, 'ws-1');
+    register({
+      ports: () => Promise.resolve([{ path: '/dev/ttyUSB0', label: 'FTDI' }]),
+      devices: { get, set },
+      workspaceOf: (sender) => windows.get(sender),
+    });
+    expect(await invokeAs(one, 'ssh.serialPorts')).toEqual({
+      ok: true,
+      value: { ports: [{ path: '/dev/ttyUSB0', label: 'FTDI' }] },
+    });
+    expect(await invokeAs(one, 'ssh.serialDevice', { hostId: 'lab' })).toEqual({
+      ok: true,
+      value: { device: '/dev/ttyUSB0' },
+    });
+    expect(await invokeAs(one, 'ssh.serialDevice', { hostId: 'other' })).toEqual({ ok: true, value: {} });
+    expect(get).toHaveBeenCalledWith('ws-1', 'lab');
+    await invokeAs(one, 'ssh.setSerialDevice', { hostId: 'lab', device: 'COM3' });
+    await invokeAs(one, 'ssh.setSerialDevice', { hostId: 'lab', device: null });
+    expect(set.mock.calls).toEqual([
+      ['ws-1', 'lab', 'COM3'],
+      ['ws-1', 'lab', null],
+    ]);
+  });
+
+  it('a window with no workspace open keeps no device', async () => {
+    const set = vi.fn();
+    register({ ports: vi.fn(), devices: { get: vi.fn(), set }, workspaceOf: () => undefined });
+    const answer = (await invoke('ssh.setSerialDevice', { hostId: 'lab', device: 'COM3' })) as {
+      ok: boolean;
+      error: { code: string };
+    };
+    expect(answer).toMatchObject({ ok: false, error: { code: 'workspace-not-open' } });
+    expect(set).not.toHaveBeenCalled();
   });
 });

@@ -441,6 +441,23 @@ export const sshHostOsSchema = z.object({
 export const sshHostOsResponseSchema = z.object({ entries: z.record(z.string(), sshHostOsSchema) });
 /** `os: null` drops the choice, going back to what was detected. */
 export const sshSetHostOsRequestSchema = z.strictObject({ host: z.string(), os: sshOsIdSchema.nullable() });
+
+/** One of this machine's serial ports (#426): its path, with the maker and serial number when the OS knows them. */
+export const sshSerialPortSchema = z.object({
+  path: z.string(),
+  label: z.string().optional(),
+  serialNumber: z.string().optional(),
+});
+export const sshSerialPortsResponseSchema = z.object({ ports: z.array(sshSerialPortSchema) });
+export const sshSerialDeviceRequestSchema = z.strictObject({ hostId: z.string() });
+/** `device` is left out while this machine has none for the host. */
+export const sshSerialDeviceResponseSchema = z.object({ device: z.string().optional() });
+/** `null` forgets the host's device on this machine. */
+export const sshSetSerialDeviceRequestSchema = z.strictObject({
+  hostId: z.string(),
+  device: z.string().max(1024).nullable(),
+});
+export type SshSerialPortWire = z.infer<typeof sshSerialPortSchema>;
 export type SshDetectedOsWire = z.infer<typeof sshDetectedOsSchema>;
 export type SshHostOsWire = z.infer<typeof sshHostOsSchema>;
 

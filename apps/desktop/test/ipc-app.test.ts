@@ -78,7 +78,7 @@ describe('app.* IPC', () => {
     registerAppChannels(undefined, undefined, undefined, ['explorer', 'history']);
     expect(await invoke('app.areas', undefined, webContents())).toEqual({
       ok: true,
-      value: { enabled: ['explorer', 'history'], localTerminal: false, telnet: false },
+      value: { enabled: ['explorer', 'history'], localTerminal: false, telnet: false, serial: false },
     });
   });
 
@@ -86,7 +86,7 @@ describe('app.* IPC', () => {
     registerAppChannels(undefined, undefined, undefined, ['explorer', 'ssh'], undefined, false);
     expect(await invoke('app.areas', undefined, webContents())).toEqual({
       ok: true,
-      value: { enabled: ['explorer', 'ssh'], localTerminal: false, telnet: true },
+      value: { enabled: ['explorer', 'ssh'], localTerminal: false, telnet: true, serial: true },
     });
   });
 
@@ -94,7 +94,15 @@ describe('app.* IPC', () => {
     registerAppChannels(undefined, undefined, undefined, ['explorer', 'ssh'], undefined, true, false);
     expect(await invoke('app.areas', undefined, webContents())).toEqual({
       ok: true,
-      value: { enabled: ['explorer', 'ssh'], localTerminal: true, telnet: false },
+      value: { enabled: ['explorer', 'ssh'], localTerminal: true, telnet: false, serial: true },
+    });
+  });
+
+  it('app.areas says whether serial consoles connect (#426)', async () => {
+    registerAppChannels(undefined, undefined, undefined, ['explorer', 'ssh'], undefined, true, true, false);
+    expect(await invoke('app.areas', undefined, webContents())).toEqual({
+      ok: true,
+      value: { enabled: ['explorer', 'ssh'], localTerminal: true, telnet: true, serial: false },
     });
   });
 

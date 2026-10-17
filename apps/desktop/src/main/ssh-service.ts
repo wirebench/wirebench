@@ -13,6 +13,7 @@ import {
   openTelnetSession,
   previewSnippet,
   rememberKnownHost,
+  serialLineText,
   serializeKnownHosts,
   snippetRevision,
   snippetSecrets,
@@ -49,6 +50,7 @@ import type {
 } from '../shared/ssh-wire.js';
 import { asWirebenchError } from './hosts-service.js';
 import type { OpenMoshOptions } from './mosh-session.js';
+import type { OpenSerialOptions } from './serial-session.js';
 import type { SessionLogWriter, StartSessionLog } from './session-logs.js';
 import type { SnippetsService } from './snippets-service.js';
 import { RefusalStore, createSshConnector, readKnownHosts } from './ssh-connect.js';
@@ -68,6 +70,12 @@ export interface SshServiceDeps extends SshConnectDeps {
   readonly openTelnet?: typeof openTelnetSession;
   /** `false` when this build switched Telnet off (`WIREBENCH_AREAS=telnet=off`, #425): its hosts are refused. */
   readonly telnet?: boolean;
+  /** Opens a host whose protocol is `serial` (#426); without it such a host is refused (`serial-unavailable`). */
+  readonly openSerial?: (options: Omit<OpenSerialOptions, 'modules'>) => Promise<SshSession>;
+  /** `false` when this build switched serial consoles off (`WIREBENCH_AREAS=serial=off`). */
+  readonly serial?: boolean;
+  /** The device this machine opens for the serial host, or `undefined` when none was picked yet. */
+  readonly serialDevice?: (sender: WebContents, hostId: string) => Promise<string | undefined>;
   /** Milliseconds; tests inject a clock. */
   readonly now?: () => number;
   /**
@@ -251,13 +259,17 @@ export class SshService {
     const closed = (): WirebenchError =>
       new WirebenchError('ssh-session-closed', 'The session closed before it opened');
     const prepared = await this.connector.prepareShell(sender, request.hostId, stale, request.user, request.quick);
-    const { env, secrets, forwardAgent, mosh, telnet } = prepared;
+    const { env, secrets, forwardAgent, mosh, telnet, serial } = prepared;
     if (telnet !== undefined && this.deps.telnet === false) {
       throw new WirebenchError(
         'telnet-off',
         'Telnet is switched off in this build of Wirebench. Connect to the device over SSH instead.',
       );
     }
+    if (serial !== undefined && this.deps.serial === false) {
+      throw new WirebenchError('serial-off', 'Serial consoles are switched off in this build of Wirebench.');
+    }
+    const device = serial === undefined ? undefined : await this.serialDeviceOf(sender, request.hostId);
     // The PIN goes to every key hop; only a security key reads it.
     const pin = request.skPin;
     const hops = pin
@@ -267,14 +279,17 @@ export class SshService {
     // A switch while the secrets were read: they must not go to the hosts of the workspace left.
     if (stale()) throw closed();
     const logged =
-      telnet === undefined
-        ? { hostId: request.hostId, hops }
-        : {
-            hostId: request.hostId,
-            hops,
-            target: { address: telnet.target.address, port: telnet.target.port, user: telnet.login.user ?? '' },
-            secrets,
-          };
+      device !== undefined
+        ? // A serial line has no port number and no user: the log names the device.
+          { hostId: request.hostId, hops, target: { address: device, port: 0, user: '' } }
+        : telnet === undefined
+          ? { hostId: request.hostId, hops }
+          : {
+              hostId: request.hostId,
+              hops,
+              target: { address: telnet.target.address, port: telnet.target.port, user: telnet.login.user ?? '' },
+              secrets,
+            };
     const startLog = await this.deps.sessionLog?.(sender, logged).catch(() => undefined);
     let session: SshSession;
     try {
@@ -286,7 +301,14 @@ export class SshService {
         ...progressTo(this.deps.emit, sender, request.attemptId),
         ...(Object.keys(env).length === 0 ? {} : { env }),
       };
-      if (telnet !== undefined) {
+      if (serial !== undefined && device !== undefined) {
+        const openSerial = this.deps.openSerial;
+        if (!openSerial) {
+          throw new WirebenchError('serial-unavailable', 'Serial consoles are not available on this computer');
+        }
+        new HopProgress(options.onProgress, 0, 1, device).log(`Opening ${device} at ${serialLineText(serial.line)}`);
+        session = await openSerial({ path: device, line: serial.line });
+      } else if (telnet !== undefined) {
         if (telnet.unusedAuth !== undefined) {
           const where = `${telnet.target.address}:${String(telnet.target.port)}`;
           new HopProgress(options.onProgress, hops.length, hops.length + 1, where).log(
@@ -398,6 +420,20 @@ export class SshService {
    * Asks the connected host what it runs and keeps the answer. Runs beside the connect, which never waits
    * for it: any failure leaves the host unlabelled and nothing else changes.
    */
+  /**
+   * The device this machine opens for a serial host.
+   * @throws WirebenchError `serial-device-unset` when none was picked yet: the connection screen asks for one
+   */
+  private async serialDeviceOf(sender: WebContents, hostId: string): Promise<string> {
+    const device = await this.deps.serialDevice?.(sender, hostId);
+    if (device === undefined) {
+      throw new WirebenchError('serial-device-unset', 'Pick the serial port this computer opens for the console', {
+        details: { hostId },
+      });
+    }
+    return device;
+  }
+
   private async probeOs(sender: WebContents, session: SshSession, host: string): Promise<void> {
     try {
       const detected = detectOs(await session.exec(OS_PROBE, OS_PROBE_TIMEOUT_MS));

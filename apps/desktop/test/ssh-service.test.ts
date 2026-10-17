@@ -98,6 +98,9 @@ function make(
     openMosh?: SshServiceDeps['openMosh'];
     openTelnet?: SshServiceDeps['openTelnet'];
     telnet?: boolean;
+    openSerial?: SshServiceDeps['openSerial'];
+    serial?: boolean;
+    serialDevice?: SshServiceDeps['serialDevice'];
   } = {},
 ) {
   const knownHostsFile = join(mkdtempSync(join(tmpdir(), 'wb-ssh-')), 'ssh-known-hosts.json');
@@ -150,6 +153,9 @@ function make(
     ...(opts.openMosh ? { openMosh: opts.openMosh } : {}),
     ...(opts.openTelnet ? { openTelnet: opts.openTelnet } : {}),
     ...(opts.telnet === undefined ? {} : { telnet: opts.telnet }),
+    ...(opts.openSerial ? { openSerial: opts.openSerial } : {}),
+    ...(opts.serial === undefined ? {} : { serial: opts.serial }),
+    ...(opts.serialDevice ? { serialDevice: opts.serialDevice } : {}),
   });
   return { service, open, emit, fake, opened, knownHostsFile, hostOsFile, list };
 }
@@ -1358,5 +1364,80 @@ describe('SshService Telnet hosts (#425)', () => {
     const { service } = make({ file: telnetFile(), openTelnet, telnet: false });
     await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({ code: 'telnet-off' });
     expect(openTelnet).not.toHaveBeenCalled();
+  });
+});
+
+describe('SshService serial consoles (#426)', () => {
+  // A jump inherited from the group is not used (bastion has no sign-in and would be refused): the console is local.
+  const serialFile = (): HostsFile =>
+    parseHostsFile(
+      `version: 1\nhosts:\n  - { id: bastion, name: bastion, address: 10.0.0.9 }\ngroups:\n  - id: lab\n    name: Lab\n    ssh: { jump: bastion, user: u, auth: { password: '\${secret:a_pw}' } }\n    hosts:\n      - { id: a, name: Console, env: { STAGE: blue }, ssh: { protocol: serial, serial: { baud: 9600 } } }\n`,
+    );
+  const device = (path: string | undefined) => vi.fn(() => Promise.resolve(path));
+
+  it('opens this machine’s device with the line settings, reads no secret, and probes no OS', async () => {
+    const serial = fakeSession('c1');
+    const openSerial = vi.fn(() => Promise.resolve(serial.session));
+    const serialDevice = device('/dev/ttyUSB0');
+    const secretsFor = vi.fn(() => vi.fn(() => Promise.resolve(undefined)));
+    const { service, open, emit } = make({ file: serialFile(), openSerial, serialDevice, secretsFor });
+    const result = await service.connect(as(sender(1)), { ...CONNECT, attemptId: 'x1' });
+    expect(result).toEqual({ sessionId: 'c1' });
+    expect(open).not.toHaveBeenCalled();
+    expect(serialDevice).toHaveBeenCalledWith(expect.anything(), 'a');
+    expect(openSerial).toHaveBeenCalledWith({
+      path: '/dev/ttyUSB0',
+      line: { baud: 9600, dataBits: 8, parity: 'none', stopBits: 1, flowControl: 'none' },
+    });
+    expect((secretsFor.mock.results[0]?.value as ReturnType<typeof vi.fn>).mock.calls).toEqual([]);
+    const logged = emit.mock.calls
+      .filter((call) => (call[1] as { name?: string }).name === 'ssh.connectProgress')
+      .map((call) => JSON.stringify(call[2]));
+    expect(logged.join('\n')).toContain('Opening /dev/ttyUSB0 at 9600 8N1');
+    await flush();
+    expect(serial.exec).not.toHaveBeenCalled();
+  });
+
+  it('logs the session under the device, with no port and no user', async () => {
+    const sessionLog = vi.fn(() => Promise.resolve(undefined));
+    const { service } = make({
+      file: serialFile(),
+      openSerial: () => Promise.resolve(fakeSession('c1').session),
+      serialDevice: device('COM3'),
+      sessionLog,
+    });
+    await service.connect(as(sender(1)), CONNECT);
+    expect(sessionLog).toHaveBeenCalledWith(expect.anything(), {
+      hostId: 'a',
+      hops: [],
+      target: { address: 'COM3', port: 0, user: '' },
+    });
+  });
+
+  it('asks for a device when this machine has none for the host', async () => {
+    const openSerial = vi.fn();
+    const { service } = make({ file: serialFile(), openSerial, serialDevice: device(undefined) });
+    await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({
+      code: 'serial-device-unset',
+      details: { hostId: 'a' },
+    });
+    expect(openSerial).not.toHaveBeenCalled();
+  });
+
+  it('refuses a serial host when this build switched serial off, or has no binding', async () => {
+    const off = make({ file: serialFile(), openSerial: vi.fn(), serialDevice: device('COM3'), serial: false });
+    await expect(off.service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({ code: 'serial-off' });
+    const none = make({ file: serialFile(), serialDevice: device('COM3') });
+    await expect(none.service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({ code: 'serial-unavailable' });
+  });
+
+  it('passes the port’s own refusal on', async () => {
+    const busy = Object.assign(new Error('COM3 is in use by another program'), { code: 'serial-device-busy' });
+    const { service } = make({
+      file: serialFile(),
+      openSerial: () => Promise.reject(busy),
+      serialDevice: device('COM3'),
+    });
+    await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({ code: 'serial-device-busy' });
   });
 });

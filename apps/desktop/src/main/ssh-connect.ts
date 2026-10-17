@@ -9,6 +9,7 @@ import {
   parseKnownHosts,
   proxyCredentialsOf,
   secretNameOf,
+  serialLineOf,
 } from '@wirebench/ssh';
 import type {
   DialOptions,
@@ -17,6 +18,7 @@ import type {
   KnownHostEntry,
   MoshSettings,
   ResolvedHost,
+  SerialLine,
   TcpTarget,
 } from '@wirebench/ssh';
 import { asWirebenchError } from './hosts-service.js';
@@ -186,6 +188,11 @@ export interface SshConnector {
       readonly login: { readonly user?: string; readonly password?: string };
       readonly unusedAuth?: 'key' | 'agent';
     };
+    /**
+     * Set when the target's protocol is `serial` (#426): no network and no sign-in, so `hops` is empty. The
+     * device is this machine's choice for the host, kept apart from `hosts.yaml`.
+     */
+    serial?: { readonly line: SerialLine };
   }>;
   /**
    * Checks the machine's known hosts (read now, once per connect) and records a refusal that sender may
@@ -260,6 +267,9 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     } catch (error) {
       throw asWirebenchError(error);
     }
+    // A serial console is opened on this machine: a jump inherited from its group is not used.
+    const target = chain[chain.length - 1];
+    if (target?.ssh.protocol.value === 'serial') return [target];
     return completeChain(chain, user);
   };
 
@@ -278,10 +288,10 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     }
     // A jump host forwards the next hop's connection over SSH: a Telnet host cannot.
     for (const hop of chain.slice(0, -1)) {
-      if (hop.ssh.protocol.value === 'telnet') {
+      if (hop.ssh.protocol.value === 'telnet' || hop.ssh.protocol.value === 'serial') {
         throw new WirebenchError(
           'ssh-jump-not-ssh',
-          `${hop.name} is a Telnet host and cannot be a jump host; jump through an SSH host instead`,
+          `${hop.name} is a ${hop.ssh.protocol.value === 'telnet' ? 'Telnet host' : 'serial console'} and cannot be a jump host; jump through an SSH host instead`,
           { details: { hostId: hop.id, protocol: hop.ssh.protocol.value } },
         );
       }
@@ -409,7 +419,15 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     if (abandoned()) throw new WirebenchError('ssh-session-closed', 'The session closed before it opened');
     const target = chain[chain.length - 1] as ResolvedHost;
     if (target.ssh.protocol.value === 'serial') {
-      throw new WirebenchError('serial-unavailable', 'Serial consoles are not available in this build yet');
+      if (!shell) {
+        throw new WirebenchError(
+          'ssh-protocol-unsupported',
+          `${target.name} is a serial console: files, port forwarding and keys need SSH`,
+          { details: { hostId: target.id, protocol: 'serial' } },
+        );
+      }
+      // A serial line has no hops, no jump or proxy and no sign-in: nothing is read from the secrets.
+      return { chain, getSecret, hops: [], telnet: undefined, serial: { line: serialLineOf(target.ssh.serial.value) } };
     }
     if (target.ssh.protocol.value === 'telnet') {
       // Files, port forwarding and keys all need an SSH connection to the host itself.
@@ -422,9 +440,15 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
       }
       const jumps = chain.slice(0, -1);
       const hops = await credentialsFor(jumps, getSecret);
-      return { chain, getSecret, hops, telnet: await telnetFor(target, jumps.length, getSecret, user) };
+      return {
+        chain,
+        getSecret,
+        hops,
+        telnet: await telnetFor(target, jumps.length, getSecret, user),
+        serial: undefined,
+      };
     }
-    return { chain, getSecret, hops: await credentialsFor(chain, getSecret), telnet: undefined };
+    return { chain, getSecret, hops: await credentialsFor(chain, getSecret), telnet: undefined, serial: undefined };
   };
 
   return {
@@ -433,7 +457,8 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     },
 
     async prepareShell(sender, hostId, abandoned = () => false, user, quick) {
-      const { chain, getSecret, hops, telnet } = await prepare(sender, hostId, abandoned, user, quick, true);
+      const { chain, getSecret, hops, telnet, serial } = await prepare(sender, hostId, abandoned, user, quick, true);
+      if (serial !== undefined) return { hops, env: {}, secrets: [], serial };
       // A Telnet device gets no environment: Telnet has no way to pass it.
       if (telnet !== undefined) {
         return { hops, env: {}, secrets: telnet.login.password === undefined ? [] : [telnet.login.password], telnet };
