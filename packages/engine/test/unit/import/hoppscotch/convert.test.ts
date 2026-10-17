@@ -151,7 +151,7 @@ describe('mapHoppscotch: variables and scripts', () => {
   it('attaches every script switched off and names what it will not run', () => {
     expect(shop().scripts).toEqual([]);
     expect(shop().report.warnings).toContain(
-      'Scripts on the API and 2 requests were imported switched off: read each on its Scripts tab, then switch them on',
+      'Scripts on the API and 2 requests were imported switched off: read each on its Scripts tab, then switch them on.',
     );
   });
 

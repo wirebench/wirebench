@@ -129,6 +129,24 @@ describe('Bruno scripts are attached', () => {
     expect(mapped.counts.scripts).toBe(0);
   });
 
+  it('scans the calls the layer refuses, and gives bru.runRequest the send advice', () => {
+    const mapped = mapFolder(
+      {},
+      {
+        'ping.bru': request(
+          'script:pre-request {\n  await bru.runRequest("Auth/Login");\n  bru.getProcessEnv("HOME");\n  bru.visualize("table", {});\n  bru.deleteAllVars();\n  req.getAuthMode();\n  req.setHeaders({});\n}\n',
+        ),
+      },
+    );
+    const warnings = mapped.report.warnings;
+    expect(warnings).toContain(
+      'The scripts of "Ping" call bru.runRequest, which a script cannot do: send that request as a sequence step, or use OAuth2 auth for a token',
+    );
+    expect(warnings).toContain(
+      'The scripts of "Ping" call what Wirebench does not run: bru.deleteAllVars, bru.getProcessEnv, bru.visualize, req.getAuthMode, req.setHeaders',
+    );
+  });
+
   it('reports where scripts were switched off and the calls Wirebench does not run', () => {
     const mapped = mapFolder(
       {},
@@ -139,7 +157,7 @@ describe('Bruno scripts are attached', () => {
     );
     const warnings = mapped.report.warnings;
     expect(warnings).toContain(
-      'Scripts on the API and 1 request were imported switched off: read each on its Scripts tab, then switch them on',
+      'Scripts on the API and 1 request were imported switched off: read each on its Scripts tab, then switch them on.',
     );
     expect(warnings).toContain(
       'The scripts of "Ping" call bru.sendRequest, which a script cannot do: send that request as a sequence step, or use OAuth2 auth for a token',

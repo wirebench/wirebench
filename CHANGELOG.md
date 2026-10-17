@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Run imported Thunder Client scripts.** A Thunder Client export's pre-request and post-request scripts
+  are attached to their requests, folders and API, switched off, instead of being saved as text. Once
+  switched on they run against `tc` (`tc.test`, `expect`, `tc.getVar` and `setVar`, `tc.replaceVars`,
+  `tc.request`, `tc.response`, `tc.info` and `tc.skipRequest()`); `tc.runRequest`, the cookie calls,
+  `tc.loadModule`, `require`, the global `assert` and the rest fail with `script-unsupported`, and the
+  import report lists them. `tc.request.url` is a plain string, so `url.getParam` and `setParam` are a
+  known gap. `wirebench import` attaches them too.
+- **Scripts on a dropped collection or folder are kept.** In every client's import, the scripts of a
+  collection the import drops for having no HTTP request (and, for Insomnia, of a dropped folder) are
+  saved as text under `imported-scripts/`, with a note naming the file.
 - **Run imported Hoppscotch scripts.** A Hoppscotch export's pre-request and test scripts are attached
   to their requests, folders and API, switched off, instead of being saved as text. Once switched on
   they run against `pw`, `hopp` and `pm`, with Jest-style matchers on `hopp.expect`; `hopp.fetch`,
@@ -26,7 +36,7 @@ All notable changes to this project are documented here. The format follows
   attached to their requests and folders, switched off, instead of being saved as text. Once switched on
   they run against an `insomnia` object (`insomnia.test`, `insomnia.expect`, `insomnia.response`,
   `insomnia.request` and the variable scopes); `sendRequest`, `require`, cookie writes and the vault fail
-  with `script-unsupported`, and the import report lists them.
+  with `script-unsupported`, and the import report lists them. `wirebench import` attaches them too.
 - **Import Insomnia exports.** **Import…** reads Insomnia's export formats 4 (JSON or YAML) and 5
   (YAML), and detects a picked file by its content. Each workspace becomes a REST, a gRPC and a
   WebSocket API in the chosen project, in Insomnia's order, with folder headers and auth. The base and
@@ -55,8 +65,9 @@ All notable changes to this project are documented here. The format follows
   collection becomes a REST API with its base URL as the server, its folders and requests in order;
   status, response-time and JSON-path tests become assertions. Environments go to the workspace,
   never made active, the global one into Globals; encrypted values and `.env` files are listed, not
-  read. Scripts are saved as text and never run, and request chaining is reported. A folder that
-  keeps one file per request is refused. `wirebench import` reads exports and folders (#588).
+  read. Scripts are attached to their requests, folders and API switched off, so they run once you
+  read and switch them on, and request chaining is reported. A folder that keeps one file per
+  request is refused. `wirebench import` reads exports and folders (#588).
 
 ### Breaking
 
@@ -75,9 +86,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
-- **Assertions chained after `.property(...)` in imported scripts now fail when they should.** In the
-  Postman, Insomnia and Bruno layers, `expect(x).to.have.property('a').that.equals(5)` passed whatever
-  `a` held, because the check after `.property(...)` could not fail.
+- **Assertions chained after `.property(...)` in imported scripts now fail when they should.** In
+  imported Postman scripts, `expect(x).to.have.property('a').that.equals(5)` passed whatever `a` held,
+  because the check after `.property(...)` could not fail.
 - **WSDL import goes through your proxy and CA bundle.** Importing a WSDL by URL, re-fetching it when a
   project reopens, and fetching a definition a legacy SOAP project file holds no copy of now use the
   proxy and CA bundle from Settings, as sends and OpenAPI imports already did, with Basic or Kerberos

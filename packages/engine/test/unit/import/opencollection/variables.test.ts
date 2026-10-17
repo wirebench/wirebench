@@ -52,7 +52,7 @@ describe('OpenCollection variables and scripts', () => {
       secrets: [],
     });
     expect(m.report.warnings).toContain(
-      'Scripts on 1 request were imported switched off: read each on its Scripts tab, then switch them on',
+      'Scripts on 1 request were imported switched off: read each on its Scripts tab, then switch them on.',
     );
   });
 

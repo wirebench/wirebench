@@ -171,7 +171,7 @@ exports[`Hoppscotch golden > maps legacy-v0.json 1`] = `
   "report": {
     "notes": [],
     "warnings": [
-      "Scripts on 1 request were imported switched off: read each on its Scripts tab, then switch them on",
+      "Scripts on 1 request were imported switched off: read each on its Scripts tab, then switch them on.",
       "Credentials are not copied from the collection; re-enter them for 1 auth configuration",
     ],
   },
@@ -835,7 +835,7 @@ exports[`Hoppscotch golden > maps v12-r17.json 1`] = `
       "Shop API / Orders / Create order: request-level variables (sku) were not imported; Wirebench has no request scope.",
       "Shop API / Hawk: Hawk auth has no Wirebench equivalent, so it was set to "none".",
       "JWT: the secret or key is not copied; set the secret (HS*) or key (RS*/ES*/PS*) before sending",
-      "Scripts on the API and 2 requests were imported switched off: read each on its Scripts tab, then switch them on",
+      "Scripts on the API and 2 requests were imported switched off: read each on its Scripts tab, then switch them on.",
       "Credentials are not copied from the collection; re-enter them for 4 auth configurations",
     ],
   },

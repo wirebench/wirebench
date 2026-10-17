@@ -1,6 +1,6 @@
 /**
  * Placing a mapped collection import in a project (spec 2026-10-15 §3.1): each source collection's
- * REST, gRPC and WebSocket API in that order, the scripts under `imported-scripts/` (never run),
+ * REST, gRPC and WebSocket API in that order, the script files kept as text under `imported-scripts/`,
  * then the variable plan — workspace environments never activated, Globals and project properties
  * never overwriting a name. One path for the folder (v3) importer and every other client's format.
  */

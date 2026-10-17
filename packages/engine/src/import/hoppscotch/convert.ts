@@ -11,6 +11,7 @@
 import { HoppscotchError } from '../../errors.js';
 import type { IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
+import { slugify } from '../../project/paths.js';
 import { folderRequests } from '../../rest/model.js';
 import { apiFromPostmanCollection } from '../../rest/postman/map.js';
 import { parsePostmanCollection } from '../../rest/postman/parse.js';
@@ -19,6 +20,8 @@ import { V21_SCHEMA } from '../collection-v3/convert.js';
 import { inlineQuery } from '../insomnia/convert.js';
 import type { ImportReport } from '../report.js';
 import { ReportBuilder } from '../report.js';
+import type { DroppedLevel, ImportedScriptFile } from '../scripts.js';
+import { droppedApiScriptFiles, eventsOf } from '../scripts.js';
 import { hoppscotchTemplates } from '../template-dialects.js';
 import { rewriteMustache } from '../templates.js';
 import type { ImportedVariable, ImportedVariables, ImportedVariableSet } from '../variables.js';
@@ -27,14 +30,12 @@ import type { HopBody, HopCollection, HopEnvironment, HopRec, HopRequest, HopRow
 
 type Json = Record<string, unknown>;
 
-/** A script pair as v2.1 `event` entries: `prerequest` first, then `test` (the after-response script). */
-function eventsOf(scripts: { readonly pre: string; readonly test: string }): { event: Json[] } | Record<string, never> {
-  const event: Json[] = [];
-  if (scripts.pre.trim() !== '')
-    event.push({ listen: 'prerequest', script: { type: 'text/javascript', exec: scripts.pre } });
-  if (scripts.test.trim() !== '')
-    event.push({ listen: 'test', script: { type: 'text/javascript', exec: scripts.test } });
-  return event.length > 0 ? { event } : {};
+/** The collection and every folder below it, as the levels whose scripts a dropped API still owes. */
+function droppedLevels(collection: HopCollection, path: readonly string[]): DroppedLevel[] {
+  return [
+    { path, pre: collection.pre, post: collection.test },
+    ...collection.folders.flatMap((folder) => droppedLevels(folder, [...path, folder.name])),
+  ];
 }
 
 export interface MapHoppscotchOptions {
@@ -375,7 +376,7 @@ class Mapper {
         ...(folder.description !== undefined ? { description: folder.description } : {}),
         item: inner,
         ...(auth !== undefined ? { auth } : {}),
-        ...eventsOf(folder),
+        ...eventsOf({ pre: folder.pre, post: folder.test }),
       });
     }
     for (const request of collection.requests) {
@@ -384,7 +385,7 @@ class Mapper {
         request.kind === 'rest'
           ? restItem(request, label, inherited, this.report)
           : graphqlItem(request, label, inherited, this.report);
-      out.push({ ...item, ...eventsOf(request) });
+      out.push({ ...item, ...eventsOf({ pre: request.pre, post: request.test }) });
     }
     return out;
   }
@@ -406,6 +407,8 @@ export function mapHoppscotch(
   for (const line of report.notes) mapper.report.note(line);
   const single = collections.length === 1;
   const entries: MappedClientEntry[] = [];
+  const scriptFiles: ImportedScriptFile[] = [];
+  const takenScriptPaths = new Set<string>();
   let order = options.firstOrder ?? 0;
   let requests = 0;
   let folders = 0;
@@ -429,11 +432,22 @@ export function mapHoppscotch(
       },
       item: mapper.items(collection, [collection.name], handDown(new Map(), collection)),
       ...(auth !== undefined ? { auth } : {}),
-      ...eventsOf(collection),
+      ...eventsOf({ pre: collection.pre, post: collection.test }),
     });
     const http = apiFromPostmanCollection(parsed, { newId, name, scriptApi: 'hoppscotch' });
     for (const warning of http.summary.warnings ?? []) mapper.report.warn(`${prefix}${warning}`);
-    if (http.summary.requests === 0) continue;
+    if (http.summary.requests === 0) {
+      // No API is left to hold the collection's and its folders' scripts: keep them as text.
+      scriptFiles.push(
+        ...droppedApiScriptFiles(
+          slugify(name).toLowerCase(),
+          droppedLevels(collection, [collection.name]),
+          mapper.report,
+          takenScriptPaths,
+        ),
+      );
+      continue;
+    }
     const rest = { ...http.api, order: order++ };
     requests += http.summary.requests;
     folders += http.summary.folders;
@@ -456,9 +470,10 @@ export function mapHoppscotch(
       ...(projectProperties.variables.length > 0 ? { projectProperties } : {}),
       report: mapper.variableReport.build(),
     },
-    // Scripts are attached to the requests, folders and API, switched off: no file is saved.
-    scripts: [],
-    counts: { collections: entries.length, requests, folders, examples, assertions: 0, scripts: 0 },
+    // Scripts are attached to the requests, folders and API, switched off; only those of a collection
+    // with no request are saved, as text.
+    scripts: scriptFiles,
+    counts: { collections: entries.length, requests, folders, examples, assertions: 0, scripts: scriptFiles.length },
     report: mapper.report.build(),
   };
 }

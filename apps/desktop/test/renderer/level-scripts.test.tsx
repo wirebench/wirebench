@@ -12,7 +12,7 @@ vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 
 const { ScriptResults, scriptLevelHeading } = await import('../../src/renderer/features/scripts/script-results.js');
-const { ScriptsTab } = await import('../../src/renderer/features/scripts/scripts-tab.js');
+const { ScriptsTab, levelHint } = await import('../../src/renderer/features/scripts/scripts-tab.js');
 const { FolderScriptsDialog } = await import('../../src/renderer/features/scripts/folder-scripts-dialog.js');
 const { useProjectStore } = await import('../../src/renderer/state/project.js');
 const { useUiStore } = await import('../../src/renderer/state/ui.js');
@@ -143,6 +143,36 @@ describe('an API’s post-response order', () => {
   });
 });
 
+describe('the level hint states the post-response order', () => {
+  it('on an API, from its own setting', () => {
+    expect(levelHint('API', undefined)).toBe(
+      'Runs for every request in this API, outer levels first: its pre-request script before the request’s own, its post-response script before the request’s own too.',
+    );
+    expect(levelHint('API', 'outer-first')).toBe(levelHint('API', undefined));
+    expect(levelHint('API', 'inner-first')).toBe(
+      'Runs for every request in this API: its pre-request script before the request’s own, its post-response script after the request’s own and its folders’.',
+    );
+  });
+
+  it('on a folder or an interface, by pointing at the API’s setting', () => {
+    expect(levelHint('folder', undefined)).toBe(
+      'Runs for every request in this folder: its pre-request script before the request’s own; its post-response script in the order the API’s Post-response order sets.',
+    );
+    expect(levelHint('interface', 'inner-first')).toContain('in the order the API’s Post-response order sets');
+  });
+
+  it('is what an API’s Scripts tab shows', () => {
+    render(
+      <ScriptsTab
+        requestId="api-1"
+        level="API"
+        scripts={{ api: 'wirebench', enabled: true, secrets: [], postResponseOrder: 'inner-first' }}
+      />,
+    );
+    expect(screen.getByTestId('scripts-level-hint').textContent).toBe(levelHint('API', 'inner-first'));
+  });
+});
+
 describe('the folder Scripts… dialog', () => {
   it('edits the folder’s own scripts', async () => {
     useProjectStore.setState({
@@ -163,7 +193,7 @@ describe('the folder Scripts… dialog', () => {
     });
 
     expect(screen.getByTestId('folder-scripts-dialog').textContent).toContain('Scripts for “Orders”');
-    expect((await screen.findByTestId('scripts-level-hint')).textContent).toContain('every request in this folder');
+    expect((await screen.findByTestId('scripts-level-hint')).textContent).toBe(levelHint('folder', undefined));
     fireEvent.click(screen.getByTestId('scripts-switch-on'));
     expect(updateRequestScripts).toHaveBeenCalledWith('f1', { enabled: true });
   });

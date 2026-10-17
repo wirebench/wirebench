@@ -295,16 +295,23 @@ describe('op import: a Hoppscotch collection', () => {
 const THUNDER = resolve(import.meta.dirname, '..', '..', '..', '..', '..', 'fixtures', 'thunder-client', 'crafted');
 
 describe('op import: a Thunder Client collection', () => {
-  it('imports a collection export with its tests as assertions, its scripts and secrets left out', async () => {
+  it('imports a collection export with its tests as assertions, its scripts attached switched off and secrets left out', async () => {
     const fixture = await emptyProject();
     const result = await runOp(importOp, { source: join(THUNDER, 'collection-1.2.json') }, fixture.base());
 
     expect(result.format).toBe('thunder-client');
     expect(result.added).toEqual([expect.objectContaining({ kind: 'rest', name: 'Shop API', requests: 9 })]);
-    expect(result.problems.map((problem) => problem.code)).toContain('scripts-not-saved');
+    expect(result.problems.map((problem) => problem.code)).not.toContain('scripts-not-saved');
     expect(JSON.stringify(result)).not.toMatch(/basic-pass-123|oauth-secret-123|aws-secret-123/);
     const { project } = await loadProject(fixture.dir);
     expect(restApisOf(project)[0]?.baseUrl).toBe('${baseUrl}/api');
+    const product = restApisOf(project)
+      .flatMap((api) => apiRequests(api))
+      .find((item) => item.name === 'Product by id');
+    expect(product?.scripts).toMatchObject({ api: 'thunder-client', enabled: false });
+    const files = (await readdir(fixture.dir, { recursive: true })).map((entry) => entry.replaceAll('\\', '/'));
+    expect(files).toEqual(expect.arrayContaining(['apis/Shop API/requests/Product by id.post.js']));
+    expect(files.some((entry) => entry.includes('imported-scripts'))).toBe(false);
   });
 
   it('imports a thunder-tests folder, not as a folder collection, and reports its environments', async () => {

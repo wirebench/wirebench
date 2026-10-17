@@ -13,6 +13,8 @@ import { mapHoppscotch } from '../../../src/import/hoppscotch/convert.js';
 import { parseHoppscotchCollections } from '../../../src/import/hoppscotch/parse.js';
 import { mapInsomnia } from '../../../src/import/insomnia/map.js';
 import { parseInsomnia } from '../../../src/import/insomnia/parse.js';
+import { mapThunderClient } from '../../../src/import/thunder/convert.js';
+import { parseThunderExport } from '../../../src/import/thunder/parse.js';
 import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
 import type { Project } from '../../../src/project/model.js';
 import { apiFolders, apiRequests } from '../../../src/rest/model.js';
@@ -327,6 +329,63 @@ describe('imported Hoppscotch scripts in a run', () => {
     const mapped = mapHoppscotch(collections, report, { newId: () => `h${String((n += 1))}` });
     const api = mapped.collections[0]!.rest!;
     // Attached switched off; a value a script sets is read as ${#Sequence#name}, not the imported <<name>>.
+    expect(apiRequests(api).map((r) => r.scripts?.enabled)).toEqual([false, false]);
+    for (const r of apiRequests(api)) {
+      if (r.name === 'Use')
+        (r as { headers: unknown }).headers = [{ name: 'X-Echo', value: '${#Sequence#token}', enabled: true }];
+    }
+    switchOn(api);
+    const { selected } = selectRequests(projectFrom(api), []);
+    const result = await runRequests(selected, {
+      project: projectFrom(api),
+      projectDir: dir,
+      overrides: {},
+      host: { getSecret: () => Promise.resolve(undefined) },
+      scripting: new RequestScripting({ sandbox, checker }),
+    });
+    expect(result.requests.map((r) => r.name)).toEqual(['Login', 'Use']);
+    expect(outcomes(result.requests[1]!)).toEqual([['sent the token', 'passed']]);
+  });
+});
+
+describe('imported Thunder Client scripts in a run', () => {
+  const tcRequest = (name: string, sortNum: number, extra: Record<string, unknown>): Record<string, unknown> => ({
+    _id: `r-${name}`,
+    name,
+    url: `${rest.url}/echo`,
+    method: 'GET',
+    sortNum,
+    ...extra,
+  });
+
+  it('an imported Thunder Client script sets a variable the next request sends', { timeout: 30_000 }, async () => {
+    const text = JSON.stringify({
+      clientName: 'Thunder Client',
+      collectionName: 'Shop',
+      folders: [],
+      settings: {},
+      requests: [
+        tcRequest('Login', 1, { postReq: { inlineScripts: [{ script: ["tc.setVar('token', 'tok-7731');"] }] } }),
+        tcRequest('Use', 2, {
+          headers: [{ name: 'X-Echo', value: 'placeholder' }],
+          postReq: {
+            inlineScripts: [
+              {
+                script: [
+                  "tc.test('sent the token', () => {",
+                  "  expect(tc.response.json.headers['x-echo']).to.equal('tok-7731');",
+                  '});',
+                ],
+              },
+            ],
+          },
+        }),
+      ],
+    });
+    let n = 0;
+    const mapped = mapThunderClient(parseThunderExport(text), { newId: () => `t${String((n += 1))}` });
+    const api = mapped.collections[0]!.rest!;
+    // Attached switched off; a value a script sets is read as ${#Sequence#name}, not the imported {{name}}.
     expect(apiRequests(api).map((r) => r.scripts?.enabled)).toEqual([false, false]);
     for (const r of apiRequests(api)) {
       if (r.name === 'Use')

@@ -191,6 +191,27 @@ describe('the Hoppscotch layer: hopp', () => {
     });
   });
 
+  it('a deleted name reads as absent: hopp.env answers null, pw.env undefined', async () => {
+    const outcome = await run(
+      'pre',
+      `hopp.env.set('ts', '5');
+       hopp.env.delete('ts');
+       pw.env.set('a', '1');
+       pw.env.unset('a');
+       pw.env.unset('baseUrl');
+       console.log(hopp.env.get('ts'), hopp.env.getRaw('ts'), pw.env.get('a'), pw.env.get('baseUrl'));`,
+    );
+    expect(outcome).toMatchObject({
+      ok: true,
+      values: [
+        { name: 'ts', value: '' },
+        { name: 'a', value: '' },
+        { name: 'baseUrl', value: '' },
+      ],
+      log: { lines: ['null null undefined undefined'] },
+    });
+  });
+
   it('hopp.env get and getRaw answer null for a name that is not set', async () => {
     const outcome = await run(
       'pre',

@@ -3,7 +3,8 @@
  * flat folders and requests become a tree, written as the v2.1 collection document it means and
  * mapped by the shared parser and mapper; its declarative tests become assertions where they fit,
  * attached afterwards in the same walk order. Environments become workspace environments, a global
- * one merged into Globals; scripts are saved as text. Pure.
+ * one merged into Globals; every script rides on the document as a v2.1 `event` and is attached
+ * switched off by the mapper. Pure.
  */
 
 import type { Assertion } from '../../assert/model.js';
@@ -16,11 +17,11 @@ import { folderRequests } from '../../rest/model.js';
 import { apiFromPostmanCollection } from '../../rest/postman/map.js';
 import { MAX_POSTMAN_DEPTH, parsePostmanCollection } from '../../rest/postman/parse.js';
 import type { MappedClientEntry, MappedClientImport } from '../client-import.js';
-import { ScriptCollector } from '../client-import.js';
 import { V21_SCHEMA } from '../collection-v3/convert.js';
 import type { ImportReport } from '../report.js';
 import { ReportBuilder } from '../report.js';
-import type { ImportedScriptFile } from '../scripts.js';
+import type { DroppedLevel, ImportedScriptFile } from '../scripts.js';
+import { droppedApiScriptFiles, eventsOf } from '../scripts.js';
 import { thunderTemplates, unshieldTemplates } from '../template-dialects.js';
 import { rewriteMustache } from '../templates.js';
 import type { ImportedVariable, ImportedVariableSet } from '../variables.js';
@@ -321,7 +322,6 @@ class CollectionMapper {
     private readonly mapper: Mapper,
     private readonly prefix: string,
     private readonly baseUrl: string,
-    private readonly scripts: ScriptCollector,
   ) {
     this.folderIds = new Set(collection.folders.map((folder) => folder.id));
     for (const folder of collection.folders) push(this.childFolders, this.parentOf(folder.parentId), folder);
@@ -430,6 +430,13 @@ class CollectionMapper {
         ...this.mapper.assertions(readTests(folder.settings['tests']), label),
       ]),
       ...(auth !== undefined ? { auth } : {}),
+      // Scripts at folder level are documented (https://docs.thunderclient.com/scripting: request, folder
+      // and collection); the keys that store them are UNCONFIRMED in real files (research note §6), so
+      // they are inferred from the request-level shape.
+      ...eventsOf({
+        pre: inlineScripts(folder.settings['preReq']),
+        post: inlineScripts(folder.settings['postReq']),
+      }),
     };
   }
 
@@ -463,9 +470,6 @@ class CollectionMapper {
     }
     const auth = mapper.auth(request.auth, label);
     this.order.push([...tests, ...mapper.assertions(request.tests, label)]);
-    const slug = slugify([...trail, request.name].join('-')).toLowerCase();
-    this.scripts.add(slug, 'pre', inlineScripts(request.preReq), label);
-    this.scripts.add(slug, 'post', inlineScripts(request.postReq), label);
     return {
       name: request.name,
       ...(request.docs !== undefined ? { description: request.docs } : {}),
@@ -480,6 +484,7 @@ class CollectionMapper {
         ...(body !== undefined ? { body } : {}),
         ...(auth !== undefined ? { auth } : {}),
       },
+      ...eventsOf({ pre: inlineScripts(request.preReq), post: inlineScripts(request.postReq) }),
     };
   }
 }
@@ -544,7 +549,8 @@ export function mapThunderClient(
   for (const line of parsed.report.notes) mapper.report.note(line);
   const single = parsed.collections.length === 1;
   const entries: MappedClientEntry[] = [];
-  const scripts: ImportedScriptFile[] = [];
+  const scriptFiles: ImportedScriptFile[] = [];
+  const takenScriptPaths = new Set<string>();
   let order = options.firstOrder ?? 0;
   let requests = 0;
   let folders = 0;
@@ -563,8 +569,7 @@ export function mapThunderClient(
         `${prefix}The environment attached to the collection was not imported with it; import it on its own.`,
       );
     }
-    const collector = new ScriptCollector(slugify(name).toLowerCase(), mapper.report);
-    const collectionMapper = new CollectionMapper(collection, mapper, prefix, baseUrl, collector);
+    const collectionMapper = new CollectionMapper(collection, mapper, prefix, baseUrl);
     const headers = rowsOf(settings['headers']);
     if (headers.some((row) => !row.disabled)) {
       mapper.report.note(`${prefix}The collection's headers were copied onto each request that does not set them.`);
@@ -573,25 +578,46 @@ export function mapThunderClient(
     const auth = mapper.auth(isRecord(settings['auth']) ? settings['auth'] : undefined, label);
     collectionMapper.reportSettings(settings, label);
     const docs = lines(settings['docs']);
-    collector.add(slugify(collection.name).toLowerCase(), 'pre', inlineScripts(settings['preReq']), label);
     const items = collectionMapper.rootItems(
       handDown(new Map(), headers),
       mapper.assertions(readTests(settings['tests']), label),
     );
-    collector.reportDialects();
-    scripts.push(...collector.files());
 
     const doc = parsePostmanCollection({
       info: { name, schema: V21_SCHEMA, ...(docs !== '' ? { description: docs } : {}) },
       item: items,
       ...(auth !== undefined ? { auth } : {}),
+      // The collection's `postReq` is inferred like the folders' keys (UNCONFIRMED in real files, research
+      // note §6); https://docs.thunderclient.com/scripting documents scripts at collection level.
+      ...eventsOf({ pre: inlineScripts(settings['preReq']), post: inlineScripts(settings['postReq']) }),
     });
     // Without its trailing slash, so the mapper finds it at the start of each joined URL.
     const base =
       baseUrl !== '' ? trimTrailingSlashes(rewriteMustache(mapper.t(baseUrl, label), mapper.dynamic)) : undefined;
-    const http = apiFromPostmanCollection(doc, { newId, name, ...(base !== undefined ? { baseUrl: base } : {}) });
+    const http = apiFromPostmanCollection(doc, {
+      newId,
+      name,
+      scriptApi: 'thunder-client',
+      ...(base !== undefined ? { baseUrl: base } : {}),
+    });
     for (const warning of http.summary.warnings ?? []) mapper.report.warn(`${prefix}${warning}`);
-    if (http.summary.requests === 0) continue;
+    if (http.summary.requests === 0) {
+      // No API is left to hold the collection's and its folders' scripts: keep them as text.
+      const levels: DroppedLevel[] = [
+        {
+          path: [collection.name],
+          pre: inlineScripts(settings['preReq']),
+          post: inlineScripts(settings['postReq']),
+        },
+        ...collection.folders.map((folder) => ({
+          path: [collection.name, folder.name],
+          pre: inlineScripts(folder.settings['preReq']),
+          post: inlineScripts(folder.settings['postReq']),
+        })),
+      ];
+      scriptFiles.push(...droppedApiScriptFiles(slugify(name).toLowerCase(), levels, mapper.report, takenScriptPaths));
+      continue;
+    }
 
     // The mapper keeps the items' order, so the n-th request walked is the n-th item written.
     const mapped = walk(http.api);
@@ -652,14 +678,16 @@ export function mapThunderClient(
       ...(globalSet.variables.length > 0 ? { globals: globalSet } : {}),
       report: mapper.variableReport.build(),
     },
-    scripts,
+    // Scripts are attached to the requests, folders and API, switched off; only those of a collection
+    // with no HTTP request are saved, as text.
+    scripts: scriptFiles,
     counts: {
       collections: entries.length,
       requests,
       folders,
       examples,
       assertions: assertionCount,
-      scripts: scripts.length,
+      scripts: scriptFiles.length,
     },
     report: mapper.report.build(),
   });

@@ -7,22 +7,53 @@
  */
 import { jsonSchemaValidator } from '../../json/schema-validate.js';
 
-/** Declares `unsupported`: a function that throws `ScriptUnsupported` naming the call. */
+/**
+ * Declares `WHY` and `unsupported`: `unsupported(name, reason)` is a function that throws
+ * `ScriptUnsupported` naming the call and why it cannot run; `WHY` holds the reasons a kind of call
+ * shares, and a call with none of them gets a plain default.
+ */
 export const PART_UNSUPPORTED = String.raw`
-const unsupported = (name) => () => {
-  throw new ScriptUnsupported(name + ' is not supported: a script cannot send requests or keep cookies');
+const WHY = Object.freeze({
+  send: 'a script cannot send requests',
+  cookies: 'a script cannot keep cookies',
+  files: 'a script cannot read files',
+  modules: 'a script cannot load modules',
+  wait: 'a script cannot wait',
+  processEnv: "a script cannot read the machine's environment",
+  programs: 'a script cannot run programs',
+  settings: "set this in the request's Settings",
+  auth: "set this on the request's Auth tab",
+  handling: 'a script cannot change how a response is handled',
+  visual: 'a script cannot show visual output',
+  initial: 'a script cannot change initial values',
+  vault: 'a script reads secrets with secrets.get, from the ones its scripts list',
+  binary: 'a script reads a body as text',
+  response: 'a script cannot change the response',
+  values: "a script cannot list the run's values",
+});
+const unsupported = (name, reason = 'Wirebench scripts cannot do this') => () => {
+  throw new ScriptUnsupported(name + ' is not supported: ' + reason);
 };
 `;
 
-/** Declares `asValue` and `variables`: a variable scope over `vars` and `props`. */
+/**
+ * Declares `asValue`, `removed` and `variables`: a variable scope over `vars` and `props`. `unset`
+ * writes `''`, so later scripts see the value cleared, and records the name, so for the rest of this
+ * script it reads as absent (`get` is undefined, `has` false) until it is set again.
+ */
 export const PART_VARIABLES = String.raw`
 const asValue = (value) => (value === undefined || value === null ? '' : typeof value === 'object' ? JSON.stringify(value) : value);
+const removed = new Set();
 const variables = Object.freeze({
-  get: (name) => { const v = vars.get(name); return v !== undefined ? v : props.get(name); },
-  set: (name, value) => vars.set(name, asValue(value)),
-  unset: (name) => vars.set(name, ''),
-  has: (name) => vars.get(name) !== undefined || props.get(name) !== undefined,
-  clear: unsupported('Clearing variables'),
+  get: (name) => {
+    if (removed.has(String(name))) return undefined;
+    const v = vars.get(name);
+    return v !== undefined ? v : props.get(name);
+  },
+  set: (name, value) => { vars.set(name, asValue(value)); removed.delete(String(name)); },
+  unset: (name) => { vars.set(name, ''); removed.add(String(name)); },
+  has: (name) => !removed.has(String(name)) && (vars.get(name) !== undefined || props.get(name) !== undefined),
+  clear: unsupported('Clearing variables', WHY.values),
   toObject: () => ({}),
   replaceIn: (text) => String(text).replace(/\{\{\s*([^{}]*?)\s*\}\}/g, (whole, name) => {
     const v = variables.get(name);
@@ -125,6 +156,103 @@ const pairs = (list) => Object.freeze({
 `;
 
 /**
+ * Declares `noPairs`, `requestHeaders`, `requestQuery`, `requestUrl`, `requestBody`, `requestText`,
+ * `setRequestBody`, `setRequestUrl` and `setRequestMethod` (and the helpers `cannot`, `noQuery`,
+ * `hasMessage` and `restBody`): the request as a client layer reads it, whatever the protocol. A
+ * gRPC call has `metadata` for headers, a `message` for a body, a target and no query; a write the request cannot take throws `ScriptUnsupported` naming the call, never a bare
+ * `TypeError`. `requestQuery` and the setters take the name of the call they serve.
+ */
+export const PART_REQUEST = String.raw`
+const noPairs = Object.freeze({ get: () => undefined, getAll: () => [], has: () => false, list: () => [], toObject: () => ({}) });
+const cannot = (name, what) => { throw new ScriptUnsupported(name + ' is not supported: this request has no ' + what); };
+const requestHeaders = request.headers !== undefined ? request.headers : request.metadata !== undefined ? request.metadata : noPairs;
+const noQuery = (name) => () => cannot(name, 'query parameters');
+// The query, or for a request with none (gRPC) a list that is empty and refuses writes, named for the call.
+const requestQuery = (name) => (request.query !== undefined ? request.query : Object.freeze({ ...noPairs, set: noQuery(name), add: noQuery(name), delete: noQuery(name) }));
+const requestUrl = () => (request.url !== undefined ? request.url : request.target !== undefined ? request.target : request.endpoint);
+const hasMessage = 'message' in request;
+const restBody = () => ('body' in request && !hasMessage ? request.body : undefined);
+// The body as a value: a gRPC message as it is, a REST body parsed when it is JSON and as text otherwise.
+const requestBody = () => {
+  if (hasMessage) return request.message;
+  const body = restBody();
+  if (body === null || typeof body !== 'object' || !('kind' in body)) return body;
+  if (body.kind === 'none') return undefined;
+  const text = body.text;
+  try { return JSON.parse(text); } catch { return text; }
+};
+// The body as text, or undefined when there is none.
+const requestText = () => {
+  if (hasMessage) return request.message === undefined ? undefined : JSON.stringify(request.message);
+  const body = restBody();
+  if (body === null || typeof body !== 'object' || !('kind' in body)) return body === undefined ? undefined : JSON.stringify(body);
+  return body.kind === 'none' ? undefined : body.text;
+};
+const setRequestBody = (name, value) => {
+  if (hasMessage) {
+    let message = value;
+    if (typeof value === 'string') { try { message = JSON.parse(value); } catch { message = value; } }
+    request.message = message;
+    return;
+  }
+  const body = restBody();
+  if (body === null || typeof body !== 'object' || !('kind' in body)) return cannot(name, 'body a script can write');
+  if (typeof value === 'string') body.text = value;
+  else body.json = value;
+};
+const setRequestUrl = (name, url) => {
+  if (!('url' in request)) return cannot(name, 'URL');
+  request.url = url;
+};
+const setRequestMethod = (name, method) => {
+  const property = Object.getOwnPropertyDescriptor(request, 'method');
+  if (property === undefined || property.set === undefined) return cannot(name, 'method a script can change');
+  request.method = method;
+};
+`;
+
+/**
+ * Declares `responseView`: the response as a client layer reads it, whatever the protocol, or
+ * `undefined` before the response. It has `headers` (the headers, or a gRPC call's metadata, as the
+ * typed pairs), a numeric `status` (a gRPC status code), `statusText`, `text` (the body, or the JSON
+ * of a gRPC message), `json()`, `body()` (parsed for a JSON content type or a message, the text
+ * otherwise, read once) and `durationMs`. Needs `noPairs` from `PART_REQUEST`.
+ */
+export const PART_RESPONSE = String.raw`
+const responseView = input.phase !== 'post' ? undefined : (() => {
+  const status = response.status;
+  const code = typeof status === 'number' ? status : status !== null && typeof status === 'object' ? status.code : undefined;
+  const statusText = response.statusText !== undefined ? response.statusText : status !== null && typeof status === 'object' ? status.name : undefined;
+  const isMessage = typeof response.text !== 'string' && 'message' in response;
+  const text = typeof response.text === 'string' ? response.text : response.message === undefined ? '' : JSON.stringify(response.message);
+  const headers = response.headers !== undefined ? response.headers : response.metadata !== undefined ? response.metadata : noPairs;
+  const json = () => (typeof response.json === 'function' ? response.json() : isMessage ? response.message : JSON.parse(text));
+  let body;
+  let parsed = false;
+  return Object.freeze({
+    headers,
+    status: code,
+    statusText,
+    text,
+    json,
+    body: () => {
+      if (!parsed) {
+        parsed = true;
+        const type = headers.get('content-type');
+        body = text;
+        if (isMessage) body = response.message;
+        else if (type !== undefined && /json/i.test(type)) {
+          try { body = json(); } catch { body = text; }
+        }
+      }
+      return body;
+    },
+    durationMs: response.durationMs,
+  });
+})();
+`;
+
+/**
  * Declares `Hex`, `Base64`, `Utf8`, `Latin1`, `words`, `text`, `hashOf`, `hmacOf` and `CryptoJS`, and
  * defines `CryptoJS`, `btoa` and `atob`: hashes, HMACs and the encoders over `crypto` and `encoding`.
  */
@@ -166,7 +294,7 @@ const CryptoJS = Object.freeze({
   HmacSHA256: hmacOf('sha256'),
   HmacSHA512: hmacOf('sha512'),
   enc: Object.freeze({ Hex, Base64, Utf8, Latin1 }),
-  AES: Object.freeze({ encrypt: unsupported('CryptoJS.AES'), decrypt: unsupported('CryptoJS.AES') }),
+  AES: Object.freeze({ encrypt: unsupported('CryptoJS.AES', 'a script has hashes and HMACs only'), decrypt: unsupported('CryptoJS.AES', 'a script has hashes and HMACs only') }),
 });
 define('CryptoJS', CryptoJS);
 define('btoa', (value) => encoding.base64(String(value)));
@@ -190,7 +318,10 @@ const pmRequest = () => {
     remove: (name) => request.headers.delete(typeof name === 'object' ? String(name.key) : String(name)),
   };
   const body = {};
-  if (request.body !== undefined && typeof request.body === 'object' && 'text' in request.body) {
+  // Only a REST body ({ kind, text }); the snapshot is read, not request.body, whose getter throws
+  // on a SOAP request with no schema.
+  const snapshotBody = input.request.body;
+  if (snapshotBody !== null && typeof snapshotBody === 'object' && 'kind' in snapshotBody) {
     Object.defineProperty(body, 'raw', {
       get: () => (request.body.kind === 'other' ? undefined : request.body.text),
       set: (text) => { request.body.text = String(text); },
@@ -221,7 +352,7 @@ const pmRequest = () => {
 const pmResponse = () => {
   if (input.phase !== 'post') return undefined;
   const status = response.status;
-  const code = typeof status === 'number' ? status : status.code;
+  const code = typeof status === 'number' ? status : status !== null && typeof status === 'object' ? status.code : undefined;
   const text = response.text !== undefined ? response.text : response.message === undefined ? '' : JSON.stringify(response.message);
   const res = {
     code,
@@ -280,17 +411,17 @@ const pmObject = {
     iterationCount: iteration.count,
   }),
   request: pmRequest(),
-  sendRequest: unsupported('pm.sendRequest'),
-  cookies: Object.freeze({ get: () => undefined, has: () => false, toObject: () => ({}), jar: unsupported('pm.cookies.jar') }),
-  visualizer: Object.freeze({ set: unsupported('pm.visualizer') }),
+  sendRequest: unsupported('pm.sendRequest', WHY.send),
+  cookies: Object.freeze({ get: () => undefined, has: () => false, toObject: () => ({}), jar: unsupported('pm.cookies.jar', WHY.cookies) }),
+  visualizer: Object.freeze({ set: unsupported('pm.visualizer', WHY.visual) }),
   execution: Object.freeze({ setNextRequest: (name) => execution.setNextRequest(name), skipRequest: () => execution.skipRequest() }),
   iterationData: Object.freeze({
     get: (name) => iteration.data.get(name),
     has: (name) => iteration.data.get(name) !== undefined,
     toObject: () => Object.assign({}, input.data),
   }),
-  vault: Object.freeze({ get: unsupported('pm.vault') }),
-  require: unsupported('pm.require'),
+  vault: Object.freeze({ get: unsupported('pm.vault', WHY.vault) }),
+  require: unsupported('pm.require', WHY.modules),
 };
 const pmResponseValue = pmResponse();
 if (pmResponseValue !== undefined) pmObject.response = pmResponseValue;

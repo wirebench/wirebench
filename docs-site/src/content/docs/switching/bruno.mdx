@@ -131,12 +131,13 @@ Read a script, then switch it on from the request's banner, or use **Switch on s
 folder. It runs against Bruno's own names: `test`, `expect` (with `.jsonSchema`), `bru`, `req` and
 `res`. These fail when called, with `script-unsupported` naming them:
 
-- `bru.sendRequest`: a login whose token the next request uses is a
+- `bru.sendRequest` and `bru.runRequest`: a login whose token the next request uses is a
   [sequence](/wirebench/docs/guides/sequences/) step with a transfer.
 - `require`.
-- `bru.cookies` and `bru.sleep`.
-- `req.setTimeout`, `getTimeout`, `setMaxRedirects`, `onFail` and `disableParsingResponseJson`: use the
-  request's **Settings**.
+- `bru.cookies`, `bru.sleep`, `bru.getProcessEnv`, `bru.visualize` and `bru.deleteAllVars`.
+- `req.setHeaders`, `req.getAuthMode`, `res.setBody` and `res.setHeader`.
+- `req.setTimeout`, `getTimeout` and `setMaxRedirects`: use the request's **Settings**.
+- `req.onFail` and `req.disableParsingResponseJson`: a script cannot change how a response is handled.
 
 Three things change from Bruno. A variable a script sets lasts for the run and is never written to an
 environment file, and the next request reads it as `${#Sequence#name}`; a `{{name}}` in a request

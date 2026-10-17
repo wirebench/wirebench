@@ -738,11 +738,12 @@ Details that are easy to get wrong:
   command line: plain variables become project properties, and a name the project already has
   keeps its value (`property-kept`); secret variables are named, not stored
   (`secret-not-imported`; an Insomnia vault secret counts as one); environments and globals are
-  named, not imported (`environments-not-imported`). An Insomnia, Bruno or Hoppscotch import's scripts are
+  named, not imported (`environments-not-imported`). An Insomnia, Bruno, Hoppscotch or Thunder Client import's scripts are
   attached to their requests, folders and APIs switched off: switch them on in the desktop, or delete the
   `enabled: false` line (or set it to `true`) under `scripts:` in the request's, folder's or API's
   `.yaml` (a folder's scripts live in its folder file). Script files that cannot be attached (a Bruno
-  collection's module `.js` files, scripts on a level with no slot) and Thunder Client's scripts are not
+  collection's module `.js` files, scripts on a level with no slot, the scripts of a collection or
+  folder an import drops for having no HTTP request) are not
   saved (`scripts-not-saved`, with their count); import the file in the desktop to keep them as text.
   gRPC APIs are added without the export's `.proto` files, which are named
   (`definition-not-imported`). Everything else the importer and its variable plan say arrives as

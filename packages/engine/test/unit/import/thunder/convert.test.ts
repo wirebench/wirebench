@@ -210,14 +210,13 @@ describe('mapThunderClient: tests and scripts', () => {
     );
   });
 
-  it('saves scripts as text under a path named after the request, and reports their dialect', () => {
-    expect(shop().scripts).toEqual([
-      {
-        path: 'imported-scripts/shop api/product by id.post.js',
-        source: 'var json = tc.response.json;\ntc.setVar("firstName", json.data.product.name);',
-      },
-    ]);
-    expect(warnings().some((line) => line.includes('tc.'))).toBe(true);
+  it('attaches a request script switched off instead of saving text', () => {
+    expect(shop().scripts).toEqual([]);
+    expect(request('Product by id')?.scripts).toMatchObject({
+      post: { text: 'var json = tc.response.json;\ntc.setVar("firstName", json.data.product.name);\n' },
+      api: 'thunder-client',
+      enabled: false,
+    });
   });
 
   it("reports the collection's run options without importing them", () => {

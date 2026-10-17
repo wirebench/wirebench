@@ -5,9 +5,8 @@
  */
 
 import type { MappedCollectionV3Entry } from './collection-v3/map.js';
-import type { ImportReport, ReportBuilder } from './report.js';
+import type { ImportReport } from './report.js';
 import type { ImportedScriptFile } from './scripts.js';
-import { importedScriptPath } from './scripts.js';
 import type { ImportedVariables } from './variables.js';
 
 export type ClientFormat = 'insomnia' | 'bruno' | 'hoppscotch' | 'thunder-client';
@@ -40,54 +39,6 @@ export interface MappedClientImport {
   };
   /** What the mapping did not bring across; the variable lines are in `variables.report`. */
   readonly report: ImportReport;
-}
-
-/** The script APIs a saved script may be written against, by the global it calls. */
-const DIALECTS: readonly [RegExp, string][] = [
-  [/\bpm\./, 'pm.'],
-  [/\binsomnia\./, 'insomnia.'],
-  [/\bpw\./, 'pw.'],
-  [/\bhopp\./, 'hopp.'],
-  [/\bbru\./, 'bru.'],
-  [/\btc\./, 'tc.'],
-];
-
-/**
- * Saves an importer's scripts as text under `imported-scripts/<api>/` (owner decision 1): none is
- * attached to a request and none is ever run. Each gets a note naming its file.
- */
-export class ScriptCollector {
-  private readonly taken = new Set<string>();
-  private readonly saved: ImportedScriptFile[] = [];
-  private readonly dialects = new Set<string>();
-
-  constructor(
-    private readonly apiSlug: string,
-    private readonly report: ReportBuilder,
-  ) {}
-
-  /** Saves non-empty `source` as `imported-scripts/<apiSlug>/<itemSlug>.<phase>.js`. */
-  add(itemSlug: string, phase: 'pre' | 'post' | 'tests', source: string, label: string): void {
-    if (source.trim() === '') return;
-    const path = importedScriptPath(this.apiSlug, itemSlug === '' ? 'item' : itemSlug, `${phase}.js`, this.taken);
-    this.saved.push({ path, source });
-    for (const [pattern, name] of DIALECTS) if (pattern.test(source)) this.dialects.add(name);
-    const what = phase === 'pre' ? 'pre-request' : phase === 'post' ? 'after-response' : 'tests';
-    this.report.note(`${label}: its ${what} script was saved to ${path} and is never run.`);
-  }
-
-  files(): ImportedScriptFile[] {
-    return [...this.saved];
-  }
-
-  /** One warning naming the script APIs the saved scripts call, so the user knows what to port. */
-  reportDialects(): void {
-    if (this.dialects.size === 0) return;
-    const names = DIALECTS.map(([, name]) => name).filter((name) => this.dialects.has(name));
-    this.report.warn(
-      `The saved scripts call ${names.join(', ')}; Wirebench does not run them. Port what they do to Wirebench scripts by hand.`,
-    );
-  }
 }
 
 /** Deeper nesting is kept as JSON text under its name rather than flattened further. */

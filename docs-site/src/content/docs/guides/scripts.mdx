@@ -174,12 +174,11 @@ API's and folders' running.
 
 ## Scripts from other clients
 
-A Postman collection's, an Insomnia export's, a Bruno collection's and a Hoppscotch export's scripts
-are imported onto the request, folder or API they were on, and run through a layer that gives them the
+A Postman collection's, an Insomnia export's, a Bruno collection's, a Hoppscotch export's and a
+Thunder Client export's scripts are imported onto the request, folder or API they were on, and run through a layer that gives them the
 other client's own names: `pm` for Postman, `insomnia` and `$` for Insomnia, `bru`, `req` and `res`
-for Bruno, `pw`, `hopp` and `pm` for Hoppscotch. They are JavaScript, checked for syntax only, and run
-in the same order as they did in the client. Scripts exported from Thunder Client are still saved as
-text under `imported-scripts/` and never run.
+for Bruno, `pw`, `hopp` and `pm` for Hoppscotch, `tc` for Thunder Client. They are JavaScript, checked
+for syntax only, and run in the same order as they did in the client.
 
 **Imported scripts are switched off.** A collection from elsewhere is code nobody on the team has read
 yet. A request with them shows a banner — "These scripts are off. Read them, then switch them on." — and
@@ -196,7 +195,10 @@ first, then the read-only `props`. A write goes to `vars`, whatever scope the sc
 requests read it as `${#Sequence#name}`, and it is never written to a project or environment file. A
 script that relied on a write surviving after the app closed loses that. A request that read
 `{{ name }}` in the client keeps reading `${name}` after the import, which is a project property or
-environment variable; point it at `${#Sequence#name}` to read a value a script set.
+environment variable; point it at `${#Sequence#name}` to read a value a script set. A delete
+(`unset`, `deleteVar`, `env.delete`) writes an empty value to `vars`, so later scripts see it cleared;
+for the rest of the script that deleted it, the name reads as absent (`has` is false, and `get` gives
+what the client gives for a missing name) until it is set again.
 
 **Unsupported calls.** A call the sandbox cannot honour — sending requests, loading modules, reading
 files, waiting, cookie writes, the vault — fails when it is called, with `script-unsupported` naming it.
@@ -255,7 +257,10 @@ id outside any script.
 A Bruno collection's scripts are imported where they were: `collection.bru` on the API (on both the
 REST and the gRPC API when it has both), each `folder.bru` on its folder, and each request on the
 request. A request's `script:post-response` and its `tests` block become one post-response script,
-the tests after the script.
+the tests after the script; a folder's and a collection's do the same on their level. Bruno runs every
+level's post-response script before any level's tests, but here the tests run with their own level's
+script, so in the default innermost-first order a collection's post-response script runs after the
+request's tests.
 
 Bruno's layers run in an order set by `scripts.flow` in `bruno.json`. Wirebench stores it as the
 API's [post-response order](#post-response-order): `sandwich`, or no flow, runs post-response scripts
@@ -263,21 +268,32 @@ innermost first; `sequential` runs them outermost first. Pre-request scripts run
 either way.
 
 Three things stay as text under `imported-scripts/`, with a note in the report naming the file: the
-`.js` module files a collection holds, scripts on a WebSocket request or a WebSocket-only folder, and a
-collection script when the collection has no REST or gRPC request to hold it.
+`.js` module files a collection holds, scripts on a level that cannot hold one (a WebSocket request or
+a WebSocket-only folder, or a collection script when the collection has no REST or gRPC request), and,
+in every client, the scripts of a collection the import drops for having no HTTP request (in an
+Insomnia import, of a dropped folder too).
 
 | Bruno | In Wirebench |
 | --- | --- |
 | `test`, `expect` with the common chai chains | Supported |
 | `expect(x).to.have.jsonSchema(schema)`, also after `.not` | Supported; see [below](#jsonschema) |
-| `res.status`, `res.body`, `res.headers`, `res.responseTime`, `getStatus()`, `getBody()`, `getHeader()`, `getResponseTime()` | Supported; `res.body` is parsed JSON for a JSON response and text otherwise, and `res.headers` has lower-case names |
-| `req.getUrl`, `setUrl`, `getMethod`, `setMethod`, `getHeader`, `getHeaders`, `setHeader`, `deleteHeader`, `getBody`, `setBody` | Supported |
-| `bru.getVar`, `setVar`, `hasVar`, `deleteVar`, `getEnvVar`, `setEnvVar`, `getCollectionVar`, `getFolderVar`, `getRequestVar` | Supported; reads check `vars` then `props`, writes go to `vars` |
+| `res.status`, `res.body`, `res.headers`, `res.responseTime`, `getStatus()`, `getBody()`, `getHeader()`, `getHeaders()`, `getStatusText()`, `getResponseTime()` | Supported; `res.body` is parsed JSON for a JSON response and text otherwise, and `res.headers` has lower-case names |
+| `res.getUrl()` | Supported; the request's URL, since a script sees no redirect |
+| `res.getSize()` | Supported; `{ header, body, total }` in bytes, the header size counted from the status line and headers |
+| `res.setBody`, `res.setHeader` | `script-unsupported`; a script cannot change the response |
+| `req.getUrl`, `setUrl`, `getMethod`, `setMethod`, `getHeader`, `getHeaders`, `setHeader`, `deleteHeader`, `getBody`, `setBody`, `getName` | Supported |
+| `req.setHeaders`, `req.getAuthMode` | `script-unsupported` |
+| `bru.getVar`, `setVar`, `hasVar`, `deleteVar`, `getEnvVar`, `setEnvVar`, `getGlobalEnvVar`, `setGlobalEnvVar`, `getCollectionVar`, `getFolderVar`, `getRequestVar` | Supported; reads check `vars` then `props`, writes go to `vars` |
+| `bru.getEnvName`, `bru.getCollectionName` | Supported; both give `undefined`, since a run has no named environment or collection a script can see |
+| `bru.deleteAllVars` | `script-unsupported` |
+| `bru.getProcessEnv` | `script-unsupported`; a script cannot read the machine's environment |
+| `bru.visualize` | `script-unsupported` |
 | `bru.interpolate` | Supported with limits; see [below](#interpolate) |
 | `bru.setNextRequest`, `bru.runner.skipRequest`, `bru.runner.stopExecution` | Supported; obeyed in API and folder runs only |
-| `req.setTimeout`, `getTimeout`, `setMaxRedirects`, `onFail`, `disableParsingResponseJson` | `script-unsupported`; use the request's **Settings** |
+| `req.setTimeout`, `getTimeout`, `setMaxRedirects` | `script-unsupported`; use the request's **Settings** |
+| `req.onFail`, `req.disableParsingResponseJson` | `script-unsupported`; a script cannot change how a response is handled |
 | `bru.cookies` | `script-unsupported` |
-| `bru.sendRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step or OAuth2 auth |
+| `bru.sendRequest`, `bru.runRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step or OAuth2 auth |
 | `bru.sleep` | `script-unsupported` |
 | `require` | `script-unsupported` |
 
@@ -332,6 +348,38 @@ post-response script. Pre-request scripts run outermost first, as in every layer
 
 A value a script stores lasts for the run; see [Values for later
 requests](#values-for-later-requests). A `<<name>>` in a request becomes `${name}`, which reads the
+environment, so the next request reads a stored value as `${#Sequence#name}`.
+
+### Thunder Client scripts
+
+A Thunder Client export's pre-request and post-request scripts are imported where they were: the
+collection's on the API, each folder's on its folder, each request's on the request. A request's
+post-request script becomes its post-response script.
+
+| Thunder Client | In Wirebench |
+| --- | --- |
+| `tc.test(name, result)` | Supported; `result` is a boolean or a function that returns a boolean or nothing |
+| `expect` | Supported, the chai chains, as a global and as `tc.expect` |
+| `tc.getVar`, `tc.setVar` | Supported; the scope argument picks nothing, reads check `vars` then `props`, writes go to `vars` |
+| `tc.replaceVars` | Supported; `{{name}}` through `vars`, then `props`; an unset name is left as written |
+| `tc.response` | Supported in a post-response script; `status`, `time`, `size` (bytes), `contentType`, `text`, `json` and `headers` (a list of `{ name, value }` rows, original casing) and `getHeader`. `json` is parsed when the body is JSON and `undefined` when it does not parse |
+| `tc.response` in a pre-request script | `script-unsupported` |
+| `tc.request` reads: `name`, `url`, `method`, `headers`, `body`, `getHeader` | Supported; `headers` is a list of `{ name, value, isDisabled }` rows of the headers being sent, so `isDisabled` is always `false`, `body` is parsed JSON or text, `undefined` when there is none; `id` is `undefined` |
+| `tc.request` writes: `setHeader`, `setBody`, and `tc.setParam` | Supported in a pre-request script only |
+| `tc.request.url.getParam`, `setParam` | A `TypeError`: `tc.request.url` is a plain string. The import report names them; edit the URL with `tc.setParam` or the request's **Params** table |
+| `tc.info` | Supported; `requestName`, `currentIteration` and `totalIterations`. `environmentName`, `collectionName` and `folderName` are `undefined` |
+| `tc.skipRequest()` | Supported with no argument; obeyed in API and folder runs only |
+| `tc.skipRequest('name')` | `script-unsupported` |
+| `tc.runRequest`, `tc.retryRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step |
+| `tc.loadModule`, `tc.loadFromPath`, `tc.readFile`, `tc.getAbsolutePath`, `tc.exec`, `require` | `script-unsupported` |
+| `tc.delay` | `script-unsupported` |
+| `tc.getCookies`, `tc.setCookie`, `tc.clearCookies`, `tc.response.cookies` | `script-unsupported` |
+| `tc.response.getBinary`, `tc.response.passed`, `tc.chartHTML` | `script-unsupported` |
+| `tc.request.auth` | `script-unsupported`; use the request's **Auth** tab |
+| The global `assert` | `script-unsupported`; use `expect` |
+
+A value a script stores lasts for the run; see [Values for later
+requests](#values-for-later-requests). A `{{name}}` in a request becomes `${name}`, which reads the
 environment, so the next request reads a stored value as `${#Sequence#name}`.
 
 ## Steer a run

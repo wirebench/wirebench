@@ -28,7 +28,7 @@ define('postman', Object.freeze({
   getGlobalVariable: (name) => variables.get(name),
   clearEnvironmentVariable: (name) => variables.unset(name),
 }));
-define('require', unsupported('require'));
+define('require', unsupported('require', WHY.modules));
 define('tests', {});
 define('responseCode', pmResponseValue === undefined ? undefined : { code: pmResponseValue.code });
 `;
