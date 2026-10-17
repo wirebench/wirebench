@@ -290,7 +290,8 @@ Insomnia import, of a dropped folder too).
 | `bru.visualize` | `script-unsupported` |
 | `bru.interpolate` | Supported with limits; see [below](#interpolate) |
 | `bru.setNextRequest`, `bru.runner.skipRequest`, `bru.runner.stopExecution` | Supported; obeyed in API and folder runs only |
-| `req.setTimeout`, `getTimeout`, `setMaxRedirects`, `onFail`, `disableParsingResponseJson` | `script-unsupported`; use the request's **Settings** |
+| `req.setTimeout`, `getTimeout`, `setMaxRedirects` | `script-unsupported`; use the request's **Settings** |
+| `req.onFail`, `req.disableParsingResponseJson` | `script-unsupported`; a script cannot change how a response is handled |
 | `bru.cookies` | `script-unsupported` |
 | `bru.sendRequest`, `bru.runRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step or OAuth2 auth |
 | `bru.sleep` | `script-unsupported` |

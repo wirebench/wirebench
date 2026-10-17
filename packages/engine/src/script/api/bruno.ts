@@ -90,8 +90,8 @@ define('req', Object.freeze({
   setTimeout: unsupported('req.setTimeout', WHY.settings),
   getTimeout: unsupported('req.getTimeout', WHY.settings),
   setMaxRedirects: unsupported('req.setMaxRedirects', WHY.settings),
-  onFail: unsupported('req.onFail', WHY.settings),
-  disableParsingResponseJson: unsupported('req.disableParsingResponseJson', WHY.settings),
+  onFail: unsupported('req.onFail', WHY.handling),
+  disableParsingResponseJson: unsupported('req.disableParsingResponseJson', WHY.handling),
 }));
 
 // --- res ------------------------------------------------------------------------------------------

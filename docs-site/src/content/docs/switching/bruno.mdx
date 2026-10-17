@@ -136,8 +136,8 @@ folder. It runs against Bruno's own names: `test`, `expect` (with `.jsonSchema`)
 - `require`.
 - `bru.cookies`, `bru.sleep`, `bru.getProcessEnv`, `bru.visualize` and `bru.deleteAllVars`.
 - `req.setHeaders`, `req.getAuthMode`, `res.setBody` and `res.setHeader`.
-- `req.setTimeout`, `getTimeout`, `setMaxRedirects`, `onFail` and `disableParsingResponseJson`: use the
-  request's **Settings**.
+- `req.setTimeout`, `getTimeout` and `setMaxRedirects`: use the request's **Settings**.
+- `req.onFail` and `req.disableParsingResponseJson`: a script cannot change how a response is handled.
 
 Three things change from Bruno. A variable a script sets lasts for the run and is never written to an
 environment file, and the next request reads it as `${#Sequence#name}`; a `{{name}}` in a request

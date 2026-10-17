@@ -23,6 +23,7 @@ const WHY = Object.freeze({
   programs: 'a script cannot run programs',
   settings: "set this in the request's Settings",
   auth: "set this on the request's Auth tab",
+  handling: 'a script cannot change how a response is handled',
   visual: 'a script cannot show visual output',
   initial: 'a script cannot change initial values',
   vault: 'a script reads secrets with secrets.get, from the ones its scripts list',
