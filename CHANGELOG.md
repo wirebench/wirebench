@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Run imported Hoppscotch scripts.** A Hoppscotch export's pre-request and test scripts are attached
+  to their requests, folders and API, switched off, instead of being saved as text. Once switched on
+  they run against `pw`, `hopp` and `pm`, with Jest-style matchers on `hopp.expect`; `hopp.fetch`,
+  `hopp.cookies`, `hopp.request.setAuth`, `require` and a top-level `import` fail with
+  `script-unsupported` (an `import` is refused before the script runs), and the import report lists
+  them per request. `wirebench import` attaches them too.
 - **Run imported Bruno scripts.** A Bruno collection's pre-request, post-response and `tests` scripts are
   attached to their requests, folders and APIs, switched off, instead of being saved as text. Once
   switched on they run against `bru`, `req`, `res`, `test` and an `expect` with `.jsonSchema`;
@@ -42,8 +48,8 @@ All notable changes to this project are documented here. The format follows
   becomes a REST API in the chosen project, GraphQL requests with a GraphQL body, saved responses as
   examples; collection and folder variables become project properties, a secret one with no value.
   An environments file goes to the workspace, never made active, its `Global` environment into
-  Globals. Scripts are saved as text and never run. `wirebench import` reads collections files
-  (#588).
+  Globals. Scripts are attached to their requests, folders and API switched off, so they run
+  once you read and switch them on. `wirebench import` reads collections files (#588).
 - **Import Thunder Client exports.** **Import…** reads Thunder Client collection and environment
   exports, a `thunder-tests` folder (picked with **Folder…**) and the older four-file folder. Each
   collection becomes a REST API with its base URL as the server, its folders and requests in order;

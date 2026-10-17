@@ -148,15 +148,10 @@ describe('mapHoppscotch: variables and scripts', () => {
     expect(shop().variables.environments).toEqual([]);
   });
 
-  it('saves every script as text and names the script APIs they call', () => {
-    expect(shop().scripts.map((script) => script.path)).toEqual([
-      'imported-scripts/shop api/shop api.pre.js',
-      'imported-scripts/shop api/shop api-orders-create order.pre.js',
-      'imported-scripts/shop api/shop api-orders-create order.tests.js',
-      'imported-scripts/shop api/shop api-get user (graphql).tests.js',
-    ]);
+  it('attaches every script switched off and names what it will not run', () => {
+    expect(shop().scripts).toEqual([]);
     expect(shop().report.warnings).toContain(
-      'The saved scripts call pw., hopp.; Wirebench does not run them. Port what they do to Wirebench scripts by hand.',
+      'Scripts on the API and 2 requests were imported switched off: read each on its Scripts tab, then switch them on',
     );
   });
 
