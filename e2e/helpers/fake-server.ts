@@ -83,6 +83,22 @@ export interface FakeServerOptions {
   readonly saml?: { readonly email: string; readonly displayName?: string };
   /** SCIM groups the IdP has pushed, as the Provisioning tab lists them (§3.7). */
   readonly scimGroups?: readonly { readonly displayName: string; readonly memberCount: number }[];
+  /**
+   * Store team SSH session logs (team session logs spec A1): `/meta` lists `session-logs` and the log routes
+   * answer. A workspace records only once {@link FakeServer.setRecordSessionLogs} turns it on.
+   */
+  readonly sessionLogs?: boolean;
+}
+
+/** One team session log as the fake holds it. */
+export interface FakeSessionLog {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly email: string;
+  readonly hostName: string;
+  readonly text: string;
+  /** The end reason, once ended. */
+  readonly ended: string | undefined;
 }
 
 /** One request the fake answered, for specs that assert what the app sent (or did not). */
@@ -118,6 +134,10 @@ export interface FakeServer {
   readonly requests: readonly FakeRequest[];
   /** The id of the server workspace called `name`. @throws when there is none. */
   workspaceId(name: string): string;
+  /** Turns a workspace's SSH session recording on or off, as its admin would (#430). */
+  setRecordSessionLogs(workspaceId: string, on: boolean): void;
+  /** Every team session log the app streamed, oldest first. */
+  sessionLogs(): readonly FakeSessionLog[];
   /**
    * Gives `email` a grant on a workspace, as a workspace admin would, and sends `access` to their `/live`
    * sockets on it.
@@ -263,6 +283,8 @@ interface WorkspaceRow {
   readonly grants: Map<string, WorkspaceRole>;
   /** Oldest first; the last one is the head. */
   readonly history: FakeCommit[];
+  /** The workspace's `recordSessionLogs` switch (#430). */
+  recordSessionLogs?: boolean;
 }
 
 interface FakeCapture {
@@ -388,7 +410,19 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
   const capabilities = [
     ...(options.capabilities ?? ['sync', LIVE_CAPABILITY]),
     ...(options.schedules === true ? ['scheduled-runs'] : []),
+    ...(options.sessionLogs === true ? ['session-logs'] : []),
   ];
+  const sessionLogs = new Map<
+    string,
+    {
+      readonly id: string;
+      readonly workspaceId: string;
+      readonly email: string;
+      readonly open: Record<string, unknown>;
+      bytes: Buffer;
+      ended: string | undefined;
+    }
+  >();
   const sessions = new Map<string, string>(); // token → email
   const issued: { readonly token: string; readonly email: string }[] = [];
   const tokens: string[] = [];
@@ -697,6 +731,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         commits: ws.history.length,
         ...(from !== null ? { behind } : {}),
         role,
+        recordSessionLogs: ws.recordSessionLogs === true,
       });
       return;
     }
@@ -1633,6 +1668,13 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
           if (ws === undefined || access === undefined) return problem(response, 404, 'teams-workspace-not-found');
           return await schedulesApi(request, response, ws, access.role, segments);
         }
+        if (segments[0] === 'workspaces' && segments[2] === 'session-logs') {
+          if (options.sessionLogs !== true) return problem(response, 404, 'not-found');
+          const ws = workspaces.get(segments[1] ?? '');
+          const access = ws === undefined ? undefined : effective(ws, email);
+          if (ws === undefined || access === undefined) return problem(response, 404, 'teams-workspace-not-found');
+          return await sessionLogsApi(request, response, ws, email, segments, path.searchParams);
+        }
         if (segments[0] === 'workspaces' && segments[2] === 'hooks') {
           if (options.hooks !== true) return problem(response, 404, 'not-found');
           const ws = workspaces.get(segments[1] ?? '');
@@ -1663,9 +1705,112 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   url = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+  /** The team session-log routes (team session logs spec A1), without the audit trail. */
+  const sessionLogsApi = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    ws: WorkspaceRow,
+    email: string,
+    segments: readonly string[],
+    query: URLSearchParams,
+  ): Promise<void> => {
+    const method = request.method ?? 'GET';
+    const [, , , logId, action] = segments;
+    const toWire = (log: NonNullable<ReturnType<typeof sessionLogs.get>>) => ({
+      id: log.id,
+      workspaceId: log.workspaceId,
+      userId: `u-${log.email}`,
+      userName: users.get(log.email)?.displayName ?? log.email,
+      clientLogId: log.open['clientLogId'],
+      hostId: log.open['hostId'],
+      hostName: log.open['hostName'],
+      address: log.open['address'],
+      port: log.open['port'],
+      user: log.open['user'],
+      startedAt: log.open['startedAt'],
+      endedAt: log.ended === undefined ? null : new Date().toISOString(),
+      exitCode: null,
+      signal: null,
+      reason: log.ended ?? null,
+      size: log.bytes.length,
+      truncated: false,
+      live: log.ended === undefined,
+    });
+    if (logId === undefined) {
+      if (method === 'GET') {
+        const hostId = query.get('hostId');
+        const logs = [...sessionLogs.values()]
+          .filter((l) => l.workspaceId === ws.id && (hostId === null || l.open['hostId'] === hostId))
+          .reverse()
+          .map(toWire);
+        return send(response, 200, { logs, next: null });
+      }
+      if (ws.recordSessionLogs !== true) return problem(response, 409, 'session-logs-recording-off');
+      const open = JSON.parse((await readBody(request)).toString('utf8')) as Record<string, unknown>;
+      const existing = [...sessionLogs.values()].find(
+        (l) => l.workspaceId === ws.id && l.email === email && l.open['clientLogId'] === open['clientLogId'],
+      );
+      const log = existing ?? {
+        id: `01K${String(sessionLogs.size + 1).padStart(23, '0')}`,
+        workspaceId: ws.id,
+        email,
+        open,
+        bytes: Buffer.alloc(0),
+        ended: undefined,
+      };
+      sessionLogs.set(log.id, log);
+      return send(response, existing ? 200 : 201, {
+        id: log.id,
+        size: log.bytes.length,
+        ended: log.ended !== undefined,
+      });
+    }
+    const log = sessionLogs.get(logId);
+    if (log === undefined || log.workspaceId !== ws.id) return problem(response, 404, 'session-logs-not-found');
+    if (method === 'GET' && action === 'text') {
+      const offset = Number(query.get('offset') ?? '0');
+      const text = log.bytes.subarray(offset).toString('utf8');
+      return send(response, 200, {
+        offset,
+        text,
+        next: log.bytes.length,
+        size: log.bytes.length,
+        truncated: false,
+        live: log.ended === undefined,
+      });
+    }
+    if (log.email !== email) return problem(response, 404, 'session-logs-not-found');
+    const body = JSON.parse((await readBody(request)).toString('utf8')) as Record<string, unknown>;
+    if (action === 'chunks') {
+      if (log.ended !== undefined) return problem(response, 409, 'session-logs-ended');
+      if (body['offset'] !== log.bytes.length) return problem(response, 409, 'session-logs-offset');
+      log.bytes = Buffer.concat([log.bytes, Buffer.from(String(body['data']), 'base64')]);
+      return send(response, 200, { size: log.bytes.length, truncated: false });
+    }
+    if (action === 'end') {
+      log.ended ??= String(body['reason']);
+      return send(response, 204);
+    }
+    problem(response, 404, 'not-found');
+  };
+
   return {
     url,
     tokens,
+    setRecordSessionLogs: (workspaceId, on) => {
+      workspaceOf(workspaceId).recordSessionLogs = on;
+      // As the server's workspace patch does: an `access` nudge, so the desktops fetch the head again.
+      for (const user of users.values()) announceAccess(user.email, (ws) => ws.id === workspaceId);
+    },
+    sessionLogs: () =>
+      [...sessionLogs.values()].map((log) => ({
+        id: log.id,
+        workspaceId: log.workspaceId,
+        email: log.email,
+        hostName: String(log.open['hostName']),
+        text: log.bytes.toString('utf8'),
+        ended: log.ended,
+      })),
     signOuts,
     requests,
     workspaceId: (name) => {

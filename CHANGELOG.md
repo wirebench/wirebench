@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Team session logs.** A workspace admin on an Enterprise server can turn on **Record SSH
+  sessions** for a shared workspace: every member's SSH sessions on its hosts are then logged, masked
+  as local session logs are, and streamed to the server while they run. **Terminal: Team Session
+  Logs…** lists and reads them, filtered by host or member; each read is audited, logs are kept as long
+  as audit events, and an admin can delete one sooner (#430).
 - **Make secret on credential-like variables.** A variable named like a credential (`token`,
   `password`, `apiKey`…) with a plain value now offers **Make secret** in its row: the value is stored
   as a project secret on this machine and the row keeps `${secret:name}`. On a workspace scope it is

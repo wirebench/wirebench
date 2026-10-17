@@ -1202,7 +1202,30 @@ open a log to read it, filtered to the lines that contain your text. Each log ca
 the file manager, or deleted. **Terminal: Session Logs…** in the palette, or **All hosts…** in a host's
 details, lists every host's logs in one place, with a filter by host name.
 
-Logs from a workspace shared through Wirebench Server stay on this machine too: nothing is uploaded.
+Logs from a workspace shared through Wirebench Server stay on this machine too, and nothing is
+uploaded, unless the workspace's admin records sessions (below).
+
+### Team session logs
+
+On a server with an Enterprise license, a workspace admin can turn on **Record SSH sessions** for a
+shared workspace, on the **Workspaces** tab in **Account: Manage teams**. From then on every member's
+SSH sessions on that workspace's hosts are logged, whatever their own switches say: the host's details
+show **Log sessions** on and greyed, with *recorded by your team*. The log is written on the member's
+machine as above, with the same masking, and streamed to the server while the session runs, a couple of
+seconds behind the terminal. If the server cannot be reached, the upload waits and catches up later,
+also after a restart. A log ends on the server when the session ends; one that was cut off by a crash
+ends as *lost*.
+
+**Reading them.** **Terminal: Team Session Logs…** in the palette, or **Team logs…** in a host's
+details, lists the workspace's logs from the server, newest first, filtered by host or by member. Every
+member of the workspace can read every log, and each read is recorded in the server's
+[audit log](/wirebench/docs/guides/server-audit-log/). A log still running is marked as such;
+**Refresh** fetches what arrived since.
+
+**How long they are kept.** As long as audit events: `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS`. A workspace
+admin can delete a log sooner, and that is recorded too. One log keeps at most
+`WIREBENCH_SERVER_SESSION_LOG_MAX_MB` (64 MB by default); past it the rest is not stored, and the log is
+marked as cut.
 
 ## Host keys
 
