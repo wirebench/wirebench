@@ -268,6 +268,8 @@ export class SshService {
         session = await (this.deps.open ?? openSession)({
           ...options,
           ...(forwardAgent?.socket === undefined ? {} : { forwardAgent: forwardAgent.socket }),
+          term: prepared.term,
+          charset: prepared.charset,
         });
       }
     } catch (error) {

@@ -2073,6 +2073,8 @@ export const preferencesWireSchema = z.object({
     user: z.string().optional(),
     keepAlive: z.number(),
     connectTimeout: z.number(),
+    charset: z.string(),
+    term: z.string(),
   }),
   shortcuts: z.record(z.string(), z.string()),
 });

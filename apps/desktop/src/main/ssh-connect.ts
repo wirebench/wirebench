@@ -11,6 +11,7 @@ import {
   secretNameOf,
 } from '@wirebench/ssh';
 import type {
+  Charset,
   DialOptions,
   HopCredentials,
   HostsFile,
@@ -175,6 +176,9 @@ export interface SshConnector {
     forwardAgent?: { readonly socket?: string };
     /** Set when the target's protocol is `mosh` (#419): the session starts a mosh server, then runs over UDP. */
     mosh?: { readonly settings?: MoshSettings };
+    /** The target's terminal type and character set (#427); an SSH shell's only, mosh is always UTF-8. */
+    term: string;
+    charset: Charset;
   }>;
   /**
    * Checks the machine's known hosts (read now, once per connect) and records a refusal that sender may
@@ -377,6 +381,8 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
         ...(target.ssh.protocol.value === 'mosh'
           ? { mosh: target.ssh.mosh.value === undefined ? {} : { settings: target.ssh.mosh.value } }
           : {}),
+        term: target.ssh.term.value,
+        charset: target.ssh.charset.value,
       };
     },
 

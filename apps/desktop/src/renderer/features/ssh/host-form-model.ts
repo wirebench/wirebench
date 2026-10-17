@@ -6,6 +6,11 @@ import type {
   SshSettingsWire,
 } from '../../../shared/ssh-wire.js';
 import { SSH_DEFAULTS } from '../../../shared/ssh-defaults.js';
+import {
+  DEFAULT_TERMINAL_CHARSET,
+  DEFAULT_TERMINAL_TYPE,
+  TERMINAL_CHARSETS,
+} from '../../../shared/terminal-charsets.js';
 import { ancestorsOf, findGroup } from './hosts-store.js';
 import type { Provenance } from './inherited-field.js';
 
@@ -14,11 +19,20 @@ export interface SshPreferenceDefaults {
   readonly user?: string;
   readonly keepAlive?: number;
   readonly connectTimeout?: number;
+  /** The terminal's character set and type (#427). */
+  readonly charset?: string;
+  readonly term?: string;
 }
+
+/** The settings past every group that Preferences → SSH supplies; `user` goes through {@link inheritedLogin}. */
+const PREFERRED = ['keepAlive', 'connectTimeout', 'charset', 'term'] as const;
+const preferred = (field: string): field is (typeof PREFERRED)[number] =>
+  (PREFERRED as readonly string[]).includes(field);
 
 /**
  * Where `field` comes from for an entry inside `chain` (outermost group first): nearest group that sets it,
- * then Preferences → SSH for keep-alive and connect timeout, then the built-in port.
+ * then Preferences → SSH for keep-alive, connect timeout, character set and terminal type, then the built-in
+ * port.
  */
 export function inheritedFrom<K extends keyof SshSettingsWire>(
   chain: readonly GroupEntryWire[],
@@ -29,9 +43,10 @@ export function inheritedFrom<K extends keyof SshSettingsWire>(
     const value = g.ssh[field];
     if (value !== undefined) return { value, from: { group: g.name } };
   }
-  const preferred =
-    field === 'keepAlive' ? prefs.keepAlive : field === 'connectTimeout' ? prefs.connectTimeout : undefined;
-  if (preferred !== undefined) return { value: preferred as NonNullable<SshSettingsWire[K]>, from: 'preferences' };
+  const fromPreferences = preferred(field) ? prefs[field] : undefined;
+  if (fromPreferences !== undefined) {
+    return { value: fromPreferences, from: 'preferences' };
+  }
   const fallback = (SSH_DEFAULTS as Record<string, number>)[field];
   return { value: fallback as NonNullable<SshSettingsWire[K]> | undefined, from: 'default' };
 }
@@ -41,12 +56,17 @@ export function sshPreferenceDefaults(ssh: {
   readonly user?: string | undefined;
   readonly keepAlive: number;
   readonly connectTimeout: number;
+  readonly charset?: string | undefined;
+  readonly term?: string | undefined;
 }): SshPreferenceDefaults {
   const user = ssh.user?.trim();
   return {
     ...(user === undefined || user === '' ? {} : { user }),
     keepAlive: ssh.keepAlive,
     connectTimeout: ssh.connectTimeout,
+    // A set this version does not know leaves UTF-8, as main resolves it.
+    charset: TERMINAL_CHARSETS.some((c) => c.id === ssh.charset) ? (ssh.charset as string) : DEFAULT_TERMINAL_CHARSET,
+    term: ssh.term === undefined || ssh.term === '' ? DEFAULT_TERMINAL_TYPE : ssh.term,
   };
 }
 

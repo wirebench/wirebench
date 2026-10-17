@@ -22,6 +22,7 @@ import { OS_LABELS } from './os-icon.js';
 import { HostAuthSection } from './host-auth-section.js';
 import { cleanTerminal, HostTerminalSection, inheritedTerminal, terminalProblem } from './host-terminal-section.js';
 import { SSH_DEFAULTS, SSH_OS_IDS } from '../../../shared/ssh-defaults.js';
+import { COMMON_TERMINAL_TYPES, TERMINAL_CHARSETS, terminalTypeProblem } from '../../../shared/terminal-charsets.js';
 import {
   ancestorsOf,
   findGroup,
@@ -33,7 +34,7 @@ import {
   upsertHost,
   useHostsStore,
 } from './hosts-store.js';
-import { INPUT_CLASS, InheritedField, InheritedSwitch, sourceText } from './inherited-field.js';
+import { INPUT_CLASS, InheritedField, InheritedSelect, InheritedSwitch, sourceText } from './inherited-field.js';
 import { useRevealMissing } from './reveal-missing.js';
 import {
   chainOf,
@@ -52,7 +53,7 @@ import { useSecretNames } from './secret-fields.js';
 import { findIdentity, identitiesOf } from './identities.js';
 import { storeSshSecret } from './secret-writes.js';
 
-type Inheritable = 'user' | 'port' | 'jump' | 'keepAlive' | 'connectTimeout';
+type Inheritable = 'user' | 'port' | 'jump' | 'keepAlive' | 'connectTimeout' | 'term' | 'charset';
 
 interface FormProps {
   readonly file: HostsFileWire;
@@ -190,9 +191,13 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const forwardsReady = forwards.every((entry) => !('type' in entry) || forwardProblem(entry) === undefined);
   const sectionProblems = [
     ...(forwardsReady ? [] : ['A forwarding rule is incomplete (Advanced)']),
-    ...[envProblem(env), terminalProblem(terminal), proxyProblem(ssh.proxy), moshProblem(ssh.mosh)].filter(
-      (p): p is string => p !== undefined,
-    ),
+    ...[
+      envProblem(env),
+      terminalProblem(terminal),
+      terminalTypeProblem(ssh.term),
+      proxyProblem(ssh.proxy),
+      moshProblem(ssh.mosh),
+    ].filter((p): p is string => p !== undefined),
   ];
   const missing = missingFields({
     isHost,
@@ -498,6 +503,22 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
               provenance={inheritedFrom(chain, 'connectTimeout', sshPrefs)}
               override={ssh.connectTimeout}
               onChange={set('connectTimeout')}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <InheritedField
+              label="Terminal type"
+              provenance={inheritedFrom(chain, 'term', sshPrefs)}
+              override={ssh.term}
+              onChange={set('term')}
+              suggestions={COMMON_TERMINAL_TYPES}
+            />
+            <InheritedSelect
+              label="Character set"
+              provenance={inheritedFrom(chain, 'charset', sshPrefs)}
+              override={ssh.charset}
+              options={TERMINAL_CHARSETS}
+              onChange={set('charset')}
             />
           </div>
           <MoshSection

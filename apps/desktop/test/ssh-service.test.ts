@@ -555,6 +555,15 @@ describe('SshService', () => {
     expect(some.open.mock.calls[0]![0].hops[0]!.auth).toEqual({ kind: 'agent', socket: '/tmp/agent.sock' });
   });
 
+  it("opens the shell with the target's terminal type and character set (#427)", async () => {
+    const file = parseHostsFile(
+      `version: 1\nhosts:\n  - { id: a, name: a, address: 10.0.0.1, ssh: { user: me, auth: { password: '\${secret:a_pw}' }, charset: windows-1252, term: vt220 } }\n`,
+    );
+    const { service, open } = make({ known: [KEY], file });
+    await service.connect(as(sender(1)), CONNECT);
+    expect(open.mock.calls[0]![0]).toMatchObject({ term: 'vt220', charset: 'windows-1252' });
+  });
+
   describe('agent forwarding', () => {
     const fileWith = (target: string, jump = ''): HostsFile =>
       parseHostsFile(

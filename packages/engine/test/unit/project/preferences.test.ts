@@ -96,8 +96,13 @@ describe('secrets preferences', () => {
 });
 
 describe('ssh preferences (#571)', () => {
-  it('defaults to no user, a 15 s keep-alive and a 20 s connect timeout', () => {
-    expect(DEFAULT_PREFERENCES.ssh).toEqual({ keepAlive: 15, connectTimeout: 20 });
+  it('defaults to no user, a 15 s keep-alive, a 20 s connect timeout, UTF-8 and xterm-256color', () => {
+    expect(DEFAULT_PREFERENCES.ssh).toEqual({
+      keepAlive: 15,
+      connectTimeout: 20,
+      charset: 'utf-8',
+      term: 'xterm-256color',
+    });
   });
 
   it('reads the user and both numbers, and clamps a number from disk into range', () => {
@@ -105,11 +110,23 @@ describe('ssh preferences (#571)', () => {
       user: 'alice',
       keepAlive: 0,
       connectTimeout: 5,
+      charset: 'utf-8',
+      term: 'xterm-256color',
     });
     expect(mergePreferences({ ssh: { keepAlive: 99_999, connectTimeout: 0 } }).ssh).toEqual({
       keepAlive: 3600,
       connectTimeout: 1,
+      charset: 'utf-8',
+      term: 'xterm-256color',
     });
+  });
+
+  it('reads the character set and terminal type (#427), and refuses a terminal type that is not a name', () => {
+    expect(mergePreferences({ ssh: { charset: 'cp850', term: 'vt220' } }).ssh).toMatchObject({
+      charset: 'cp850',
+      term: 'vt220',
+    });
+    expect(preferencesPatchProblems({ ssh: { term: 'xterm 256' } })).not.toEqual([]);
   });
 
   it('refuses an out-of-range patch', () => {

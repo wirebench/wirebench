@@ -54,6 +54,10 @@ export const sshSettingsWireSchema = z.strictObject({
   mosh: moshSettingsWireSchema.optional(),
   /** `false` connects directly though a group above sets a proxy. */
   proxy: z.union([z.literal(false), sshProxyWireSchema]).optional(),
+  /** A character set id (#427); main checks it against the list on save. */
+  charset: z.string().optional(),
+  /** The terminal type the pty request names (#427). */
+  term: z.string().optional(),
 });
 
 const forwardTypeWireSchema = z.enum(['local', 'remote', 'dynamic']);
@@ -226,6 +230,9 @@ export const resolvedHostWireSchema = z.object({
     mosh: prov(moshSettingsWireSchema.optional()).optional(),
     /** Used when this host is the first hop; `undefined` connects directly. */
     proxy: prov(sshProxyWireSchema.optional()),
+    /** Main always sends both (#427); absent reads as UTF-8 and xterm-256color. */
+    charset: prov(z.string()).optional(),
+    term: prov(z.string()).optional(),
   }),
   incomplete: z.object({ field: z.enum(['user', 'auth']) }).optional(),
   forwards: z.array(resolvedForwardWireSchema),
