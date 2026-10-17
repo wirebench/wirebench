@@ -93,6 +93,7 @@ answer on stdout, and exits with 0 or 1. It never writes a handle or a signature
 | -------- | -------------------------------- | ------------------------------------------------------------------------------- |
 | `status` | —                                | `{ "supported": bool, "reason"?: string }`                                      |
 | `create` | `{ "label" }`                    | `{ "publicKey": base64, "handle": base64 or name }`                             |
+| `check`  | `{ "handle" }`                   | `{ "present": bool }`, asking for nothing                                       |
 | `sign`   | `{ "handle", "data", "reason" }` | `{ "signature": base64 }`                                                       |
 | `unlock` | `{ "reason" }`                   | `{ "ok": true }`                                                                |
 | errors   |                                  | `{ "error": "cancelled" \| "missing" \| "unsupported" \| "failed", "message" }` |
@@ -110,8 +111,8 @@ answer on stdout, and exits with 0 or 1. It never writes a handle or a signature
   2026-10-17 with an ad-hoc signed binary.
 
 **Windows**: `apps/desktop/native/device-helper/windows/device-helper.ps1`, run with Windows PowerShell 5.1,
-which ships with Windows, as `powershell.exe -NoProfile -NonInteractive -Command -`. The script goes in on
-stdin, so no execution policy applies.
+which ships with Windows, as `powershell.exe -NoProfile -NonInteractive -EncodedCommand <script + one call>`.
+The request goes in that call as base64 JSON, so no execution policy applies and nothing is read from stdin.
 
 - `status` is `KeyCredentialManager.IsSupportedAsync()`.
 - `create` is `RequestCreateAsync(name, FailIfExists)`. The public key it answers is the X.509
@@ -135,23 +136,25 @@ Linux, or when no helper is found, the answer is `unsupported` with a reason.
   a second way into the same hosts, such as another key or a security key."
 - The default secret name is `id_ecdsa_device` (`id_rsa_device` on Windows).
 
-**The keychain list**: a device key shows a "This device" badge, or "Other device (DEVICE)" in the missing
-state. Install public key… works in both cases, since it needs only the public half.
+**The keychain list**: a device key shows a "this device" badge, or "other device (DEVICE)" in the missing
+state, from the helper's `check`. Install public key… works in both cases, since it needs only the public half.
 
 ## App lock
 
-- Preference `security.appLock: { enabled: false, idleMinutes: 15 }`. The Settings page gets a Security
-  section with a switch and the minutes (1 to 240), on every OS. Turning the switch on needs one successful
-  `unlock` there and then, so it cannot be switched on where it cannot work.
+- Preferences `secrets.appLock` (false) and `secrets.appLockIdleMinutes` (15, from 1 to 240), shown in
+  Settings → Secrets → App lock on every OS. Only main turns the lock on (`appLock.set`), after one successful
+  `unlock` there and then, so it cannot be switched on where it cannot work; `preferences.update` refuses
+  `secrets.appLock`. Turning it off asks for nothing.
 - **When it locks**: at launch; after `idleMinutes` of system idle time (`powerMonitor.getSystemIdleTime`,
   checked every 30 s); on screen lock; on suspend.
-- **The gate**: the SSH connector's secret getter (sign-in, proxy password, host environment variables, key
-  install) awaits `appLock.ensureUnlocked(reason)` before the first secret read while locked. Every waiting
+- **The gate**: the SSH secret getter (sign-in, proxy password, host environment variables, snippets, key
+  install) awaits `appLock.ensureUnlocked(reason)` before a secret read while locked. The keychain's key
+  list, which reads only public halves, is not gated. Every waiting
   read shares one prompt. A cancelled prompt is `app-locked`: "Wirebench is locked; unlock to use SSH
   secrets".
 - Sessions that are already open stay open when the app locks again. Only new secret reads ask.
 - Nothing else is gated. REST, SOAP and the rest of the app stay usable, as ruled.
-- Linux: the switch is disabled and shows the reason. A preferences file that says `enabled` on Linux is
+- Where there is no helper (Linux): the switch is disabled and shows the reason. A preferences file that says `enabled` on Linux is
   ignored, with one log line.
 
 ## Recovery and deletion
