@@ -174,12 +174,11 @@ API's and folders' running.
 
 ## Scripts from other clients
 
-A Postman collection's, an Insomnia export's, a Bruno collection's and a Hoppscotch export's scripts
-are imported onto the request, folder or API they were on, and run through a layer that gives them the
+A Postman collection's, an Insomnia export's, a Bruno collection's, a Hoppscotch export's and a
+Thunder Client export's scripts are imported onto the request, folder or API they were on, and run through a layer that gives them the
 other client's own names: `pm` for Postman, `insomnia` and `$` for Insomnia, `bru`, `req` and `res`
-for Bruno, `pw`, `hopp` and `pm` for Hoppscotch. They are JavaScript, checked for syntax only, and run
-in the same order as they did in the client. Scripts exported from Thunder Client are still saved as
-text under `imported-scripts/` and never run.
+for Bruno, `pw`, `hopp` and `pm` for Hoppscotch, `tc` for Thunder Client. They are JavaScript, checked
+for syntax only, and run in the same order as they did in the client.
 
 **Imported scripts are switched off.** A collection from elsewhere is code nobody on the team has read
 yet. A request with them shows a banner — "These scripts are off. Read them, then switch them on." — and
@@ -263,8 +262,9 @@ innermost first; `sequential` runs them outermost first. Pre-request scripts run
 either way.
 
 Three things stay as text under `imported-scripts/`, with a note in the report naming the file: the
-`.js` module files a collection holds, scripts on a WebSocket request or a WebSocket-only folder, and a
-collection script when the collection has no REST or gRPC request to hold it.
+`.js` module files a collection holds, scripts on a level that cannot hold one (a WebSocket request or
+a WebSocket-only folder, or a collection script when the collection has no REST or gRPC request), and,
+in every client, the scripts of a collection or folder the import drops for having no HTTP request.
 
 | Bruno | In Wirebench |
 | --- | --- |
@@ -332,6 +332,38 @@ post-response script. Pre-request scripts run outermost first, as in every layer
 
 A value a script stores lasts for the run; see [Values for later
 requests](#values-for-later-requests). A `<<name>>` in a request becomes `${name}`, which reads the
+environment, so the next request reads a stored value as `${#Sequence#name}`.
+
+### Thunder Client scripts
+
+A Thunder Client export's pre-request and post-request scripts are imported where they were: the
+collection's on the API, each folder's on its folder, each request's on the request. A request's
+post-request script becomes its post-response script.
+
+| Thunder Client | In Wirebench |
+| --- | --- |
+| `tc.test(name, result)` | Supported; `result` is a boolean or a function that returns a boolean or nothing |
+| `expect` | Supported, the chai chains, as a global and as `tc.expect` |
+| `tc.getVar`, `tc.setVar` | Supported; the scope argument picks nothing, reads check `vars` then `props`, writes go to `vars` |
+| `tc.replaceVars` | Supported; `{{name}}` through `vars`, then `props`; an unset name is left as written |
+| `tc.response` | Supported in a post-response script; `status`, `time`, `size` (bytes), `contentType`, `text`, `json` and `headers` (a list of `{ name, value }` rows, original casing) and `getHeader`. `json` is parsed when the body is JSON and `undefined` when it does not parse |
+| `tc.response` in a pre-request script | `script-unsupported` |
+| `tc.request` reads: `name`, `url`, `method`, `headers`, `body`, `getHeader` | Supported; `headers` is a list of `{ name, value, isDisabled }` rows, `body` is parsed JSON or text; `id` is `undefined` |
+| `tc.request` writes: `setHeader`, `setBody`, and `tc.setParam` | Supported in a pre-request script only |
+| `tc.request.url.getParam`, `setParam` | A `TypeError`: `tc.request.url` is a plain string. The import report names them; edit the URL with `tc.setParam` or the request's **Params** table |
+| `tc.info` | Supported; `requestName`, `currentIteration` and `totalIterations`. `environmentName`, `collectionName` and `folderName` are `undefined` |
+| `tc.skipRequest()` | Supported with no argument; obeyed in API and folder runs only |
+| `tc.skipRequest('name')` | `script-unsupported` |
+| `tc.runRequest`, `tc.retryRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step |
+| `tc.loadModule`, `tc.loadFromPath`, `tc.readFile`, `tc.getAbsolutePath`, `tc.exec`, `require` | `script-unsupported` |
+| `tc.delay` | `script-unsupported` |
+| `tc.getCookies`, `tc.setCookie`, `tc.clearCookies`, `tc.response.cookies` | `script-unsupported` |
+| `tc.response.getBinary`, `tc.response.passed`, `tc.chartHTML` | `script-unsupported` |
+| `tc.request.auth` | `script-unsupported`; use the request's **Auth** tab |
+| The global `assert` | `script-unsupported`; use `expect` |
+
+A value a script stores lasts for the run; see [Values for later
+requests](#values-for-later-requests). A `{{name}}` in a request becomes `${name}`, which reads the
 environment, so the next request reads a stored value as `${#Sequence#name}`.
 
 ## Steer a run

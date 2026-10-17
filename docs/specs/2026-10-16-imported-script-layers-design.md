@@ -1,7 +1,7 @@
 # Spec: Running scripts imported from Insomnia, Bruno, Hoppscotch and Thunder Client
 
 **Date:** 2026-10-16
-**Status:** decisions settled (under review)
+**Status:** implemented
 **Milestone:** 6.1 — Team operations
 **Scope:** making the scripts that the #588 importers save as text runnable. This spec also outlines
 a later "Convert to Wirebench script" action.
