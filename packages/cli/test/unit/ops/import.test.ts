@@ -58,6 +58,25 @@ describe('op import', () => {
     await access(apiDefinitionDir(fixture.dir, 'Pets'));
   });
 
+  it('imports the petstore document, whose upload has a file part with no file yet, into a project that still loads', async () => {
+    const fixture = await emptyProject();
+    const petstore = join(import.meta.dirname, '../../../../../fixtures/openapi/public/petstore-3.0/openapi.json');
+
+    await runOp(importOp, { source: petstore }, fixture.base());
+
+    const { project } = await loadProject(fixture.dir);
+    const upload = restApisOf(project)[0]
+      ?.folders.find((folder) => folder.name === 'pet')
+      ?.requests.find((request) => request.name === 'Uploads an image');
+    const parts = upload?.body.kind === 'multipart' ? upload.body.parts : [];
+    expect(parts.find((part) => part.name === 'file')).toEqual({
+      kind: 'file',
+      name: 'file',
+      source: { kind: 'path', path: '' },
+      enabled: false,
+    });
+  });
+
   it('orders an imported API after every interface and API of any kind, past the highest order', async () => {
     const fixture = await emptyProject();
     // Orders 0 and 1 were deleted; a count would give the new API 2, which Chat still holds.
