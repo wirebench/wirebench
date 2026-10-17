@@ -97,9 +97,10 @@ Connecting:
 6. The server closing the connection ends the session (`exit`); a reset, a timeout or a jump host's
    connection going is `lost`, so reconnect (#407) offers itself as for SSH.
 
-**Not encrypted.** The host form's protocol note, the details panel and the terminal tab all say so: a
-"Not encrypted" badge sits in the pane's header for as long as the session runs, and the first line the tab
-writes says what is plain text (the whole session, or only the leg after the jump host).
+**Not encrypted.** The host form's protocol note, the details panel and the terminal tab all say so: a lone
+Telnet pane shows a "Not encrypted" strip over the terminal for as long as it is open, a pane of a split tab a
+mark in its header, and the connection log says what is plain text (the whole session, or only the leg after
+the jump host).
 
 ## Serial
 
