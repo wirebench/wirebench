@@ -174,6 +174,8 @@ describe('createSshConnector', () => {
       env: {},
       secrets: [],
       serial: { line: { baud: 9600, dataBits: 8, parity: 'none', stopBits: 1, flowControl: 'rtscts' } },
+      term: 'xterm-256color',
+      charset: 'utf-8',
     });
     // The jump is not dialled, so its password is never read.
     expect(getSecret).not.toHaveBeenCalled();

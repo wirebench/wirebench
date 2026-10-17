@@ -590,6 +590,15 @@ describe('SshService', () => {
     expect(some.open.mock.calls[0]![0].hops[0]!.auth).toEqual({ kind: 'agent', socket: '/tmp/agent.sock' });
   });
 
+  it("opens the shell with the target's terminal type and character set (#427)", async () => {
+    const file = parseHostsFile(
+      `version: 1\nhosts:\n  - { id: a, name: a, address: 10.0.0.1, ssh: { user: me, auth: { password: '\${secret:a_pw}' }, charset: windows-1252, term: vt220 } }\n`,
+    );
+    const { service, open } = make({ known: [KEY], file });
+    await service.connect(as(sender(1)), CONNECT);
+    expect(open.mock.calls[0]![0]).toMatchObject({ term: 'vt220', charset: 'windows-1252' });
+  });
+
   describe('agent forwarding', () => {
     const fileWith = (target: string, jump = ''): HostsFile =>
       parseHostsFile(
@@ -1382,6 +1391,20 @@ describe('SshService Telnet hosts (#425)', () => {
       target: { address: '10.0.0.1', port: 23, user: 'admin' },
       secrets: ['pw'],
     });
+  });
+
+  it("answers the device with the host's terminal type and shows its character set as UTF-8 (#427)", async () => {
+    const telnet = fakeSession('t1');
+    const openTelnet = vi.fn(() => Promise.resolve(telnet.session));
+    const { service, emit } = make({ file: telnetFile(', term: vt100, charset: windows-1252'), openTelnet });
+    await service.connect(as(sender(1)), CONNECT);
+    expect((openTelnet.mock.calls[0] as unknown as [Record<string, unknown>])[0]).toMatchObject({
+      terminalType: 'vt100',
+    });
+    await flush();
+    telnet.pushData(Buffer.from([0x80, 0x20, 0x24]));
+    await flush();
+    expect(shown(emit)).toContain('€ $');
   });
 
   it('refuses a Telnet host when this build switched Telnet off, before any connection', async () => {
