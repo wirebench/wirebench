@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { AUDIT_ACTIONS } from '@wirebench/engine';
 import { describe, expect, it } from 'vitest';
 
-const DIRS = ['../../integration/audit-log/', './'].map((dir) => fileURLToPath(new URL(dir, import.meta.url)));
+const DIRS = ['../../integration/audit-log/', '../../integration/session-logs/', './'].map((dir) =>
+  fileURLToPath(new URL(dir, import.meta.url)),
+);
 const text = DIRS.flatMap((dir) =>
   readdirSync(dir)
     .filter((f) => f.endsWith('.test.ts'))

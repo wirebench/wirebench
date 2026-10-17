@@ -13,7 +13,12 @@ import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
 import type { SessionLogEntryWire, SessionLogMatchWire } from '../../../shared/session-log-wire.js';
 import { resolveLogSwitch } from '../../../shared/session-log-switch.js';
-import { hideSessionLogs, showSessionLogs, useSessionLogsDialogStore } from './session-logs-store.js';
+import {
+  hideSessionLogs,
+  showSessionLogs,
+  showTeamSessionLogs,
+  useSessionLogsDialogStore,
+} from './session-logs-store.js';
 import { useLogSwitchesStore } from './session-log-switches.js';
 
 const SWITCH_CLASS =
@@ -80,6 +85,7 @@ function failed(result: { ok: false; error: { message: string } }): void {
 
 export function HostSessionLogs({ hostId, path, groupName, refreshKey }: HostSessionLogsProps) {
   const switches = useLogSwitchesStore((s) => s.switches);
+  const team = useLogSwitchesStore((s) => s.team);
   const [logs, setLogs] = useState<readonly SessionLogEntryWire[]>([]);
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<readonly SessionLogMatchWire[] | undefined>(undefined);
@@ -122,8 +128,9 @@ export function HostSessionLogs({ hostId, path, groupName, refreshKey }: HostSes
   }, [hostId, query, version]);
 
   const resolved = resolveLogSwitch(switches, hostId, path);
-  const source =
-    resolved.from === 'host'
+  const source = team
+    ? 'recorded by your team'
+    : resolved.from === 'host'
       ? 'set on host'
       : resolved.from === 'default'
         ? 'off unless turned on'
@@ -146,23 +153,35 @@ export function HostSessionLogs({ hostId, path, groupName, refreshKey }: HostSes
         >
           All hosts…
         </button>
+        {team && (
+          <button
+            type="button"
+            className="text-xs text-fg-subtle underline hover:text-fg-default"
+            onClick={() => {
+              showTeamSessionLogs(hostId);
+            }}
+          >
+            Team logs…
+          </button>
+        )}
       </div>
       <div className="flex items-center gap-2 py-1 text-sm text-fg-default">
         <span>Log sessions</span>
         <button
           type="button"
           role="switch"
-          aria-checked={resolved.on}
+          aria-checked={team || resolved.on}
           aria-label="Log sessions"
+          disabled={team}
           onClick={() => {
             void setSwitch(!resolved.on);
           }}
-          className={`${SWITCH_CLASS} ${resolved.on ? 'justify-end bg-accent' : 'justify-start bg-surface-base'}`}
+          className={`${SWITCH_CLASS} ${team || resolved.on ? 'justify-end bg-accent' : 'justify-start bg-surface-base'} disabled:opacity-60`}
         >
           <span className="size-2.5 rounded-full bg-fg-default" />
         </button>
         <span className="truncate text-xs text-fg-subtle">{source}</span>
-        {resolved.from === 'host' && path.length > 0 && (
+        {!team && resolved.from === 'host' && path.length > 0 && (
           <button
             type="button"
             className="ml-auto text-xs text-fg-subtle underline hover:text-fg-default"
@@ -175,7 +194,9 @@ export function HostSessionLogs({ hostId, path, groupName, refreshKey }: HostSes
         )}
       </div>
       <p className="pb-1 text-xs text-fg-subtle">
-        Output only, kept on this machine as plain text; secrets used to sign in or typed by a snippet are masked.
+        {team
+          ? 'Every session here is logged and sent to your team’s server as it runs; secrets used to sign in or typed by a snippet are masked.'
+          : 'Output only, kept on this machine as plain text; secrets used to sign in or typed by a snippet are masked.'}
       </p>
       {logs.length > 0 && (
         <input

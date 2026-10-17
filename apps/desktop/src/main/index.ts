@@ -77,6 +77,7 @@ import {
   SessionLogSwitches,
   sessionLogPlanner,
 } from './session-logs.js';
+import { SessionLogUploader } from './session-log-uploader.js';
 import { SshService, forwardResume } from './ssh-service.js';
 import { localShell, localShellCwd, localShellEnv } from './local-shell.js';
 import { LocalTerminalService } from './local-terminal-service.js';
@@ -606,8 +607,22 @@ const sshRefusals = new RefusalStore();
 const sshConnector = createSshConnector({ ...sshConnectDeps, refusals: sshRefusals });
 /** Session logs (#414): per-machine switches, and the logs under `userData/session-logs` within the size limit. */
 const sessionLogSwitches = new SessionLogSwitches(join(app.getPath('userData'), SESSION_LOG_SWITCHES_FILE));
+/** Team session logs (#430): what a recording workspace's server should hold, streamed as it is written. */
+const sessionLogUploader = new SessionLogUploader({
+  client: serverClient,
+  accounts: accountService,
+  now: () => new Date(),
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (handle) => {
+    clearTimeout(handle as ReturnType<typeof setTimeout>);
+  },
+  log: (message) => {
+    console.warn(message);
+  },
+});
 const sessionLogs = new SessionLogStore({
   root: join(app.getPath('userData'), SESSION_LOGS_DIR),
+  uploader: sessionLogUploader,
   limits: () => {
     const terminal = preferencesService.get().terminal;
     return { maxBytes: terminal.sessionLogMaxMb * 1024 * 1024, raw: terminal.sessionLogRaw };
@@ -661,7 +676,12 @@ const sshService = new SshService({
       const id = workspace.openWorkspaceId();
       if (id === undefined) return undefined;
       const target = workspace.auditTarget();
-      return { id, ...(target ? { server: { url: target.url, recording: target.recording } } : {}) };
+      const upload = workspace.sessionLogTarget();
+      return {
+        id,
+        ...(target ? { server: { url: target.url, recording: target.recording } } : {}),
+        ...(upload ? { upload } : {}),
+      };
     },
     hosts: sshConnectDeps.hosts,
   }),
@@ -1508,6 +1528,15 @@ void app.whenReady().then(() => {
       logs: sessionLogs,
       switches: sessionLogSwitches,
       workspaceOf: (sender) => sshScopeOf(scopes, sender).workspace.openWorkspaceId(),
+      teamRecords: (sender) => sshScopeOf(scopes, sender).workspace.sessionLogTarget() !== undefined,
+      team: {
+        serverOf: (sender) => {
+          const target = sshScopeOf(scopes, sender).workspace.auditTarget();
+          return target ? { url: target.url, workspaceId: target.workspaceId } : undefined;
+        },
+        client: serverClient,
+        accounts: accountService,
+      },
       reveal: (path) => {
         shell.showItemInFolder(path);
       },
@@ -1532,6 +1561,8 @@ void app.whenReady().then(() => {
   void clearAttachmentsTmp(app.getPath('userData'));
   // A lowered size limit, or logs from before a crash, are brought under the limit; prune never throws.
   void sessionLogs.prune();
+  // Logs an earlier run left half sent go on streaming; one cut off by a crash ends as lost.
+  void sessionLogUploader.resume(join(app.getPath('userData'), SESSION_LOGS_DIR));
   // Warms the in-memory map so the first send does not have to wait on a disk read, and corrects
   // any early `globals.get` subscriber that raced ahead of the load with the on-disk properties.
   void globalProperties.load().then(

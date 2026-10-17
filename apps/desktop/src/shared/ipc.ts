@@ -63,6 +63,10 @@ import {
   sessionLogSearchResponseSchema,
   sessionLogSetSwitchRequestSchema,
   sessionLogSwitchesResponseSchema,
+  teamSessionLogListRequestSchema,
+  teamSessionLogListResponseSchema,
+  teamSessionLogReadRequestSchema,
+  teamSessionLogReadResponseSchema,
 } from './session-log-wire.js';
 import {
   sshListSnippetsResponseSchema,
@@ -1247,6 +1251,9 @@ export const channels = {
     search: defineChannel('sessionLog.search', sessionLogSearchRequestSchema, sessionLogSearchResponseSchema),
     delete: defineChannel('sessionLog.delete', sessionLogRequestSchema, z.object({})),
     reveal: defineChannel('sessionLog.reveal', sessionLogRequestSchema, z.object({})),
+    // Team session logs (#430): the open workspace's server copies, every member's; each read is audited there.
+    teamList: defineChannel('sessionLog.teamList', teamSessionLogListRequestSchema, teamSessionLogListResponseSchema),
+    teamRead: defineChannel('sessionLog.teamRead', teamSessionLogReadRequestSchema, teamSessionLogReadResponseSchema),
   },
   xpath: soapChannels.xpath,
   validate: soapChannels.validate,

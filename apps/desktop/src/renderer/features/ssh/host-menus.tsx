@@ -238,6 +238,7 @@ export function HostActionsButton({
 function GroupItems({ group, kit: M }: { readonly group: GroupEntryWire; readonly kit: MenuKit }) {
   const { file, save, openDialog, groupFilter, setGroupFilter } = useHostsStore();
   const switches = useLogSwitchesStore((s) => s.switches);
+  const team = useLogSwitchesStore((s) => s.team);
   const empty = group.groups.length === 0 && group.hosts.length === 0;
   const logged = groupLogged(file, switches, group.id);
   const only = groupFilter === group.id;
@@ -269,12 +270,14 @@ function GroupItems({ group, kit: M }: { readonly group: GroupEntryWire; readonl
       </M.Item>
       <M.CheckboxItem
         className={ITEM_CLASS}
-        checked={logged}
+        checked={team || logged}
         onCheckedChange={(checked) => {
+          // The team's recording is not this machine's to turn off.
+          if (team) return;
           void useLogSwitchesStore.getState().set({ kind: 'group', id: group.id }, checked);
         }}
       >
-        Log sessions
+        {team ? 'Log sessions (recorded by your team)' : 'Log sessions'}
         <M.ItemIndicator className="ml-auto pl-3">
           <Check size={12} aria-hidden="true" />
         </M.ItemIndicator>

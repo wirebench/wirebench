@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Team session logs.** A workspace admin on an Enterprise server can turn on **Record SSH
+  sessions** for a shared workspace: every member's SSH sessions on its hosts are then logged, masked
+  as local session logs are, and streamed to the server while they run. **Terminal: Team Session
+  Logs…** lists and reads them, filtered by host or member; each read is audited, logs are kept as long
+  as audit events, and an admin can delete one sooner (#430).
 - **Device keys.** **Generate key…** can make an SSH key in this machine's secure hardware: the Secure
   Enclave on macOS (`ecdsa-sha2-nistp256`), or Windows Hello on Windows (RSA, experimental). The keychain
   stores only a handle that this device alone can use, and every sign-in asks for Touch ID or your password

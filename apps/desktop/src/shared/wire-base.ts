@@ -2990,6 +2990,8 @@ export const teamWorkspaceWireSchema = z.object({
   createdAt: z.string(),
   /** Restates the engine's `TeamWorkspace.recordDesktopActivity` (desktop audit events §2.1). */
   recordDesktopActivity: z.boolean(),
+  /** Restates the engine's `TeamWorkspace.recordSessionLogs` (#430); absent from an older server. */
+  recordSessionLogs: z.boolean().optional(),
 });
 export type TeamWorkspaceWire = z.infer<typeof teamWorkspaceWireSchema>;
 export const accessEntryWireSchema = z.object({
@@ -3040,6 +3042,7 @@ export const teamUpdateWorkspaceRequestWireSchema = z.object({
   name: z.string().optional(),
   defaultRole: defaultRoleWireSchema.optional(),
   recordDesktopActivity: z.boolean().optional(),
+  recordSessionLogs: z.boolean().optional(),
 });
 export const teamSetAccessRequestWireSchema = z.object({
   url: z.string(),
@@ -3058,6 +3061,8 @@ export const teamListResponseWireSchema = z.object({
   serverAdmin: z.boolean(),
   /** The server's `GET /meta` lists `desktop-activity`: it stores the workspace recording setting. */
   desktopActivity: z.boolean(),
+  /** `GET /meta` lists `session-logs`: the server stores team SSH session logs (#430). */
+  sessionLogs: z.boolean().optional(),
 });
 export type TeamListResponse = z.infer<typeof teamListResponseWireSchema>;
 export const teamResponseWireSchema = z.object({ team: teamWireSchema });

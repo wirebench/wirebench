@@ -34,6 +34,7 @@ export interface WorkspaceRow {
   readonly teamName: string;
   readonly defaultRole: DefaultRole;
   readonly recordDesktopActivity: boolean;
+  readonly recordSessionLogs: boolean;
   readonly createdBy: string | null;
   readonly createdAt: string;
 }
@@ -78,7 +79,7 @@ const MEMBER_SELECT = `select m.user_id as "userId", u.email, u.display_name as 
   from team_members m join users u on u.id = m.user_id`;
 const WORKSPACE_SELECT = `select w.id, w.name, w.team_id as "teamId", t.name as "teamName",
   w.default_role as "defaultRole", w.record_desktop_activity as "recordDesktopActivity",
-  w.created_by as "createdBy", w.created_at as "createdAt"
+  w.record_session_logs as "recordSessionLogs", w.created_by as "createdBy", w.created_at as "createdAt"
   from workspaces w join teams t on t.id = w.team_id`;
 
 // ---- teams -------------------------------------------------------------------------------
@@ -300,12 +301,24 @@ export async function workspaceById(db: Querier, id: string): Promise<WorkspaceR
 export async function updateWorkspace(
   db: Querier,
   id: string,
-  patch: { readonly name?: string; readonly defaultRole?: DefaultRole; readonly recordDesktopActivity?: boolean },
+  patch: {
+    readonly name?: string;
+    readonly defaultRole?: DefaultRole;
+    readonly recordDesktopActivity?: boolean;
+    readonly recordSessionLogs?: boolean;
+  },
 ): Promise<void> {
   await db.query(
     `update workspaces set name = coalesce($2, name), default_role = coalesce($3, default_role),
-       record_desktop_activity = coalesce($4, record_desktop_activity) where id = $1`,
-    [id, patch.name ?? null, patch.defaultRole ?? null, patch.recordDesktopActivity ?? null],
+       record_desktop_activity = coalesce($4, record_desktop_activity),
+       record_session_logs = coalesce($5, record_session_logs) where id = $1`,
+    [
+      id,
+      patch.name ?? null,
+      patch.defaultRole ?? null,
+      patch.recordDesktopActivity ?? null,
+      patch.recordSessionLogs ?? null,
+    ],
   );
 }
 

@@ -29,6 +29,7 @@ edited and no route deletes one. The only way an event leaves is retention, belo
 | Exports      | Each export of the audit log itself                                                               |
 | Verification | Each run of `admin audit verify`, with its result (see _Tamper evidence_)                         |
 | Desktop      | Requests sent and test-suite runs in a workspace that records them, and a gap in that trail       |
+| Session logs | A team session log started, each read of one, and its deletion                                    |
 
 A push and a license change are recorded right after they complete. Everything else is recorded in the
 same transaction as the change, so a change that is not saved leaves no event, and an event that cannot
@@ -36,11 +37,12 @@ be saved stops the change.
 
 Desktop events arrive from the app, not from the server's own actions. See _Desktop activity_, below.
 
-Not recorded: reads, captures arriving at a catch URL, sync fetches and live sockets.
+Not recorded: reads (except reading a [team session log](/wirebench/docs/guides/hosts-and-terminals/#team-session-logs)), captures arriving at a catch URL, sync fetches and live sockets.
 
 An event carries a few details, such as the previous and new role. It never carries a secret, a token, a
 password hash, or the body of a request or response. A change to a workspace's *Record desktop activity*
 setting is recorded as `workspace.desktop_recording_changed`, with the new and previous value.
+A change to its *Record SSH sessions* setting is recorded as `workspace.session_logs_changed`.
 
 ## Desktop activity
 

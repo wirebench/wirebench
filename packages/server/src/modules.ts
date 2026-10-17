@@ -8,6 +8,7 @@ import { liveModule } from './live/module.js';
 import { ssoModule } from './sso/module.js';
 import { syncModule } from './sync/module.js';
 import { schedulesModule } from './schedules/module.js';
+import { sessionLogsModule } from './session-logs/module.js';
 import { teamsModule } from './teams/module.js';
 
 /**
@@ -26,6 +27,8 @@ import { teamsModule } from './teams/module.js';
  * call time, so fire sites in earlier modules reach it.
  * sso comes after audit-log: its migration names `teams` and `audit_events`, and its routes use identity's
  * guard, teams-access's repository and the audit hook (saml-scim spec §5).
+ * session-logs comes after them: its migration names `workspaces` and `users`, its routes use teams-access's
+ * role guard and `ctx.license`, and it records audit events (team session logs spec A1).
  */
 export const BUILTIN_MODULES: readonly ServerModule[] = [
   identityModule(),
@@ -38,4 +41,5 @@ export const BUILTIN_MODULES: readonly ServerModule[] = [
   schedulesModule(),
   auditLogModule(),
   ssoModule(),
+  sessionLogsModule(),
 ];

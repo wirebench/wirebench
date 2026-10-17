@@ -33,6 +33,7 @@ export const ACTION_GROUPS = [
   'desktop',
   'scim',
   'schedule',
+  'session_log',
 ] as const;
 export type ActionGroup = (typeof ACTION_GROUPS)[number];
 export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
@@ -48,6 +49,7 @@ export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
   desktop: 'Desktop activity',
   scim: 'Provisioning',
   schedule: 'Schedules',
+  session_log: 'Session logs',
 };
 
 export function actionLabel(action: string): string {
@@ -110,6 +112,8 @@ export function targetLabel(event: {
       return `Group ${str(d['displayName']) ?? ''}`.trim();
     case 'schedule':
       return `Schedule ${str(d['name']) ?? ''}`.trim();
+    case 'session-log':
+      return `Session log ${str(d['hostName']) ?? ''}`.trim();
     default:
       return event.target.kind;
   }

@@ -51,7 +51,7 @@ import {
   useSnippetsStore,
 } from '../features/ssh/snippets/snippets-store.js';
 import { subscribeToSshEvents } from '../features/ssh/terminal-session.js';
-import { useSessionLogsDialogStore } from '../features/ssh/session-logs-store.js';
+import { useSessionLogsDialogStore, useTeamSessionLogsDialogStore } from '../features/ssh/session-logs-store.js';
 import { useRunDialogStore } from '../features/ssh/snippets/run.js';
 import { useHostDelete } from '../features/ssh/host-delete-store.js';
 import { subscribeToForwards } from '../features/ssh/forwarding/forwards-store.js';
@@ -179,6 +179,10 @@ const SessionLogsDialog = lazy(async () => {
   const module = await import('../features/ssh/session-logs.js');
   return { default: module.SessionLogsDialog };
 });
+const TeamSessionLogsDialog = lazy(async () => {
+  const module = await import('../features/ssh/team-session-logs.js');
+  return { default: module.TeamSessionLogsDialog };
+});
 
 export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -237,6 +241,7 @@ export function AppShell() {
   const forwardAsked = useForwardsStore((state) => state.bindPrompt !== null || state.portPrompt !== null);
   const snippetRunAsked = useRunDialogStore((state) => state.request !== null);
   const sessionLogsOpen = useSessionLogsDialogStore((state) => state.open);
+  const teamSessionLogsOpen = useTeamSessionLogsDialogStore((state) => state.open);
   const closeImportDialog = useUiStore((state) => state.closeImportDialog);
 
   // The row the sidebar and the editor/console column share, and the column the editor area and
@@ -713,6 +718,11 @@ export function AppShell() {
       {sshEnabled && sessionLogsOpen && (
         <Suspense fallback={null}>
           <SessionLogsDialog />
+        </Suspense>
+      )}
+      {sshEnabled && teamSessionLogsOpen && (
+        <Suspense fallback={null}>
+          <TeamSessionLogsDialog />
         </Suspense>
       )}
       <CollectionExportReportDialog />

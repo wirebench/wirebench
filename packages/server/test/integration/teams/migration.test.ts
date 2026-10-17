@@ -31,6 +31,7 @@ describeDb('0003_teams (§4.1)', () => {
       'scheduled-runs',
       'audit-log',
       'sso',
+      'session-logs',
     ]);
   });
 

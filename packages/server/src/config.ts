@@ -139,6 +139,7 @@ const inputSchema = z.object({
   hooksKeep: integerText(1, 10_000, '500'),
   hooksMaxAgeDays: integerText(1, 365, '7'),
   auditMaxAgeDays: integerText(30, 3650, '365'),
+  sessionLogMaxMb: integerText(1, 1024, '64'),
   hooksRatePerSecond: integerText(1, 1_000, '10'),
   hooksBurst: integerText(1, 10_000, '50'),
   hooksPerWorkspace: integerText(1, 1_000, '50'),
@@ -437,7 +438,16 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     required: false,
     defaultText: '365',
     secret: false,
-    description: 'Audit events older than this many days are deleted (30–3650).',
+    description:
+      'Audit events, and team SSH session logs last written longer ago, are deleted after this many days (30–3650).',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SESSION_LOG_MAX_MB',
+    key: 'sessionLogMaxMb',
+    required: false,
+    defaultText: '64',
+    secret: false,
+    description: 'The size one team SSH session log may reach; later output of that session is not kept (1–1024).',
   },
   {
     env: 'WIREBENCH_SERVER_AUDIT_FORWARD_URL',
