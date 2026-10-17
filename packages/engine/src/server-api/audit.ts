@@ -70,6 +70,9 @@ export const AUDIT_ACTIONS = [
   'schedule.run_cancelled',
   'schedule.run_finished',
   'workspace.session_logs_changed',
+  'session_log.started',
+  'session_log.read',
+  'session_log.deleted',
 ] as const;
 export const auditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof auditActionSchema>;
