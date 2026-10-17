@@ -83,6 +83,15 @@ function optionsFor(
   return code !== undefined ? { cause, details: { code } } : { cause };
 }
 
+/**
+ * `host:port` a refused connection was aimed at, so the message can name what to check. `host` is a
+ * URL's `host`, which leaves out a default port; `port` puts it back.
+ */
+function targetOf(host: string | undefined, port: number | undefined): string | undefined {
+  if (host === undefined) return undefined;
+  return port === undefined || /:\d+$/.test(host) ? host : `${host}:${String(port)}`;
+}
+
 /** Node error codes that indicate a connection-level failure (occur during connect, before any bytes flow). */
 const CONNECT_FAILURE_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNRESET']);
 
@@ -122,7 +131,8 @@ function proxyError(err: unknown, code: string | undefined): HttpError {
  * failures and undici's proxy errors to the `proxy` code instead of `connection-refused`/`network`.
  * `host` names the peer in a `tls-untrusted` message when Node did not attach the offending
  * certificate to the error (undici's connector usually does not), so the user is always told
- * *which* server they are being asked to trust.
+ * *which* server they are being asked to trust. A refused connection carries `host:port` as
+ * `details.target`, and a failed lookup the host name as `details.host`, for the same reason.
  */
 export function toHttpError(
   err: unknown,
@@ -131,6 +141,8 @@ export function toHttpError(
     readonly deadlineHit: boolean;
     readonly hadProxy?: boolean;
     readonly host?: string;
+    /** The port the request went to, for a `host` that leaves a default port out. */
+    readonly port?: number;
     /** The limit the deadline enforced; a `timeout` carries it as `details.timeoutMs` so the app can name it. */
     readonly timeoutMs?: number;
   },
@@ -161,10 +173,22 @@ export function toHttpError(
     return proxyError(err, code);
   }
   if (code === 'ECONNREFUSED') {
-    return new HttpError('connection-refused' satisfies HttpErrorCode, 'Connection refused.', optionsFor(err, code));
+    const base = optionsFor(err, code);
+    const target = targetOf(options.host, options.port);
+    return new HttpError(
+      'connection-refused' satisfies HttpErrorCode,
+      'Connection refused.',
+      target === undefined ? base : { ...base, details: { ...base.details, target } },
+    );
   }
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
-    return new HttpError('dns' satisfies HttpErrorCode, 'DNS lookup failed.', optionsFor(err, code));
+    const base = optionsFor(err, code);
+    const host = options.host?.replace(/:\d+$/, '');
+    return new HttpError(
+      'dns' satisfies HttpErrorCode,
+      'DNS lookup failed.',
+      host === undefined ? base : { ...base, details: { ...base.details, host } },
+    );
   }
   if (code !== undefined && UNTRUSTED_CODES.has(code)) {
     const peerSubject = peerSubjectOf(err);

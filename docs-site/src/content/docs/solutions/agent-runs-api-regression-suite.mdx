@@ -1,0 +1,306 @@
+---
+title: Let your coding agent run the API regression suite
+description: Give a coding agent your Wirebench project so it runs the requests, the sequences and the baseline check itself, while accepting a changed response stays a human decision.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A coding agent that changes an API handler should find out what the change did to the API before you
+do. Wirebench can tell it: the agent sends the project's saved requests, runs its sequences, and
+compares each response with the golden committed beside its request. No model runs inside
+Wirebench. The agent is yours, and it reaches Wirebench in one of two ways: over MCP, through
+`wirebench mcp`, or from a shell, through the same `wirebench` command your pipeline runs.
+
+This guide sets that up and walks through one change from start to finish: the agent runs the suite,
+a response no longer matches its baseline, the agent reports it, and a person accepts the change.
+Every output below comes from running Wirebench's CLI and MCP server against a small order service.
+
+## The project
+
+The project is an ordinary Wirebench project folder, committed in git:
+
+```text
+shop/
+  wirebench.yaml
+  environments/local.yaml
+  apis/orders/requests/
+    get-order.request.yaml
+    get-order.golden.yaml
+    list-orders.request.yaml
+    list-orders.golden.yaml
+  apis/checkout/requests/
+    login.request.yaml
+    create-order.request.yaml
+  sequences/checkout.sequence.yaml
+```
+
+- The two `orders` requests each have a golden: the response body saved as known good, with ignore
+  rules for the fields that change on every call. Saving one is covered in
+  [Snapshot regression](/wirebench/docs/guides/snapshot-regression/).
+- The `checkout` [sequence](/wirebench/docs/guides/sequences/) logs in, lifts the token from the
+  response, and creates an order with it.
+
+The goldens are what make this work. They are plain files, so a change to one shows in `git diff`
+and in a pull request like any change to code.
+
+## Step 1: give the agent the project
+
+### Over MCP
+
+Add the server to the agent's MCP configuration: for Claude Code, a `.mcp.json` file at the top of
+the repository; for Cursor, `.cursor/mcp.json`. Both take the same shape:
+
+```json
+{
+  "mcpServers": {
+    "wirebench": {
+      "command": "npx",
+      "args": ["-y", "@wirebench/cli", "mcp", "--project", "/path/to/shop", "--allow-send", "-e", "local"]
+    }
+  }
+}
+```
+
+- `--allow-send` lets the agent send. Without it, `send` answers with a refusal it can read and
+  repeat to you:
+
+  ```json
+  { "code": "send-not-allowed", "message": "This server was started without --allow-send; send needs it" }
+  ```
+
+- `-e local` limits sends to the `local` environment. A send under any other environment is refused.
+- `--allow-write` is left out, so the agent cannot import definitions into the project.
+
+The server also refuses a send under a
+[protected environment](/wirebench/docs/guides/environments/#colour-an-environment-and-protect-it)
+unless the call passes `allowProtected: true`. The full list of tools and gates is in
+[Agents (MCP)](/wirebench/docs/guides/agents-mcp/).
+
+### From a shell
+
+An agent that can run commands needs no configuration: it runs `wirebench` (or
+`npx @wirebench/cli`) like any other tool and reads the exit code and the output. This is also the
+only way to run the whole suite in one call, as the next step explains.
+
+## Step 2: run the suite
+
+The MCP server has eight tools: `import`, `operations`, `generate`, `send`, `validate`, `query`,
+`history_list` and `history_diff`. There is no tool that runs a whole project or a sequence. Over
+MCP, the agent calls `operations` to list the saved requests, then `send` with `baseline: true` for
+each one it cares about. That suits a quick check after a small edit.
+
+For the full suite, the agent runs two commands. The first sends every request of the `orders` API
+and compares each response with its golden:
+
+```bash
+wirebench run ./shop orders -e local --baseline
+```
+
+The second runs the sequence:
+
+```bash
+wirebench run ./shop -e local --sequence checkout
+```
+
+They are two runs because sequence steps are not compared with goldens. A step's response depends
+on the steps before it, so asking for both at once is refused before anything is sent:
+
+```text
+--baseline cannot be combined with --sequence: sequence steps are not compared
+```
+
+Put both commands in the agent's instructions for the repository, so it runs them after every change
+to the API without being asked. On a clean tree, the two runs print:
+
+```text
+✓ orders/get-order  200  27 ms  baseline: matches
+✓ orders/list-orders  200  3 ms  baseline: matches
+
+2 passed, 0 failed, 0 errored, 0 skipped in 0.1s
+baseline: 2 matched, 0 differ, 0 missing
+```
+
+```text
+✓ checkout/1. Log in  200  18 ms  (no assertions)
+✓ checkout/2. Create order  201  2 ms
+
+2 passed, 0 failed, 0 errored, 0 skipped in 0.5s
+```
+
+## Step 3: read the result
+
+The exit code is the verdict, and an agent should read it before anything else:
+
+| Exit | Means |
+| --- | --- |
+| `0` | Every request passed, its baseline included. |
+| `1` | An assertion failed, or a response differs from its baseline. Nothing errored. |
+| `2` | A usage problem: a bad flag, an unknown environment. Nothing was sent. |
+| `3` | A request errored: a network failure, a missing secret, a golden that cannot be read. |
+
+For detail, `--reporter json=<file>` writes a report the agent can parse instead of the text above.
+Each request carries a `baseline` field with its status and changes, and the summary counts
+`matched`, `differs` and `missing`.
+
+## Step 4: the agent meets a changed response
+
+Say the agent was asked to make the order total carry its currency. It changes `total` from a
+number to an object, and while it is there, renames `qty` to `quantity`. The service still answers
+200, and both requests still pass their status assertions. The baseline run does not pass:
+
+```text
+✗ orders/get-order  200  30 ms
+    6 differences from the baseline
+      changed /total: 42.5 → {"amount":"42.50","currency":"EUR"}
+      removed /currency: "EUR"
+      removed /lines/0/qty: 2
+      added /lines/0/quantity: 2
+      removed /lines/1/qty: 1
+      added /lines/1/quantity: 1
+✗ orders/list-orders  200  5 ms
+    6 differences from the baseline
+      changed /items/0/total: 42.5 → {"amount":"42.50","currency":"EUR"}
+      removed /items/0/currency: "EUR"
+      removed /items/0/lines/0/qty: 2
+      added /items/0/lines/0/quantity: 2
+      removed /items/0/lines/1/qty: 1
+      added /items/0/lines/1/quantity: 1
+
+0 passed, 2 failed, 0 errored, 0 skipped in 0.1s
+baseline: 0 matched, 2 differ, 0 missing
+```
+
+The run exits 1. Over MCP, `send` with `baseline: true` reports the same difference. The send itself
+still goes out and is recorded; it is the result that fails:
+
+```json
+{
+  "item": "orders/get-order",
+  "outcome": "failed",
+  "baseline": {
+    "status": "differs",
+    "format": "json",
+    "ignored": 2,
+    "changes": [
+      { "kind": "changed", "path": "/total", "expected": "42.5", "actual": "{\"amount\":\"42.50\",\"currency\":\"EUR\"}" },
+      { "kind": "removed", "path": "/currency", "expected": "\"EUR\"" },
+      { "kind": "removed", "path": "/lines/0/qty", "expected": "2" },
+      { "kind": "added", "path": "/lines/0/quantity", "actual": "2" }
+    ]
+  }
+}
+```
+
+The last two changes are cut here for space; the agent receives all six. `ignored: 2` says the
+golden's ignore rules hid two differences, the request id and the timestamp, which change on every
+call. The result is an ordinary tool result, not an error, so the agent reads it like any other.
+
+The first change was intended. The `qty` rename was not part of the task, and it would break every
+client that reads `qty`. That is the point of the check: the agent cannot tell you "done" without
+also telling you the response changed, and exactly where.
+
+## Step 5: a person accepts the change
+
+Nothing over MCP writes a golden. The only writer on the command line is `wirebench run
+--update-baseline`, and in the app it is the Snapshot tab. An agent with a shell can still run that
+flag, so tell it not to in its instructions, and rely on the review: a golden is a file in git, and a
+changed golden is a line in the pull request that a reviewer has to read.
+
+<Steps>
+
+1. Decide what is intended. Here, the agent is asked to put `qty` back. The next baseline run then
+   shows only the `/total` and `/currency` changes.
+2. Refresh the goldens:
+
+   ```bash
+   wirebench run ./shop orders -e local --update-baseline
+   ```
+
+3. Review what was written with `git diff -- '*.golden.yaml'`, and commit it with the code change.
+
+</Steps>
+
+In the run where the agent's whole change was accepted, the update printed:
+
+```text
+✓ orders/get-order  200  26 ms  baseline: updated
+✓ orders/list-orders  200  5 ms  baseline: updated
+
+2 passed, 0 failed, 0 errored, 0 skipped in 0.1s
+baseline: 2 updated, 0 created, 0 matched, 0 not written, 0 refused
+written:
+  apis/orders/requests/get-order.golden.yaml
+  apis/orders/requests/list-orders.golden.yaml
+```
+
+- A golden that differs is replaced and keeps its ignore rules. A missing one is created. One that
+  still matches is not touched, so git shows no change for it.
+- A request whose own assertions fail is not written. Fix the request or the service first.
+- A response that holds a secret value is refused, and the request errors (exit 3):
+
+  ```text
+  ! orders/whoami  200  21 ms  (no assertions)
+      baseline not written — The response holds a secret value, so its baseline was not written.
+  ```
+
+[Snapshot baselines for an API an agent keeps changing](/wirebench/docs/solutions/snapshot-baselines-changing-api/)
+explains how the comparison and that secret check work.
+
+<Aside type="tip">
+Run `wirebench run --baseline` in CI as well. A golden the agent rewrote without review still fails
+there if the service does not match it, and a pull request that changes a golden shows it.
+</Aside>
+
+## Step 6: what the audit trail shows
+
+Every `send`, from the agent over MCP or from `wirebench send` on the command line, writes an entry
+to the same History the app uses, tagged with where it came from. `history_list` reads it back:
+
+```json
+{
+  "entries": [
+    { "id": "01M52X16QJM9W0XEBKXQRH4FS5", "item": "orders/get-order", "kind": "rest", "method": "GET", "status": 200, "ok": true, "tags": ["mcp"] },
+    { "id": "01M52X0M2X639A0VABS58R2123", "item": "orders/get-order", "kind": "rest", "method": "GET", "status": 200, "ok": true, "tags": ["cli"] }
+  ]
+}
+```
+
+In the app, an open History panel shows an agent's send at once, and typing `mcp` in its search field
+finds the agent's sends, since the search matches tags. **Compare…** on two entries diffs their
+responses, as `history_diff` does for the agent.
+
+![A Compare tab diffing two runs of Request 1 side by side, next to the History list](/wirebench/docs/images/history/diff-view.png)
+
+Three things History does not hold, and where to find them instead:
+
+- **The verdict.** `ok` reflects the HTTP status, not the assertions or the baseline. Both entries
+  above are `ok: true` although their baseline failed. The verdict is in the tool result the agent
+  read, and in a run's `--reporter junit=` or `json=` report.
+- **Runs.** `wirebench run` writes no History at all. Keep its reports as the record of a suite run.
+- **Secrets.** Entries are redacted as the HTTP Log is, and any secret value the send resolved is
+  masked.
+
+Who accepted which response is in git: each golden's `savedAt` changes when it is rewritten, and the
+commit that changed it names its author.
+
+## Checklist
+
+- [ ] Each request the suite relies on has a committed `<request>.golden.yaml`, with ignore rules for
+      ids and timestamps.
+- [ ] The MCP server runs with `--allow-send` and `-e` naming the environments the agent may use, and
+      without `--allow-write` unless the agent should import.
+- [ ] The agent's instructions name both commands: `--baseline` for the requests and `--sequence` for
+      each sequence.
+- [ ] The agent reads the exit code first: `1` is a failed assertion or a baseline difference.
+- [ ] The agent is told not to run `--update-baseline`; a person runs it and reviews the diff.
+- [ ] CI runs `--baseline` too, so an unreviewed golden still has to match the service.
+
+## Related
+
+- [Agents (MCP)](/wirebench/docs/guides/agents-mcp/): every tool, gate and redaction rule.
+- [Snapshot baselines for an API an agent keeps changing](/wirebench/docs/solutions/snapshot-baselines-changing-api/):
+  what a baseline compares, ignores and masks.
+- [Snapshot regression](/wirebench/docs/guides/snapshot-regression/): saving a golden and writing
+  ignore rules.
+- [Run in CI](/wirebench/docs/guides/run-in-ci/): the same commands in a pipeline.
+- [History](/wirebench/docs/guides/history/): browsing and comparing sends.

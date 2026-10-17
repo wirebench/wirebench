@@ -232,9 +232,12 @@ export interface RestExchangeState {
   readonly live?: RestLiveState;
   /**
    * While sending: the last response this request got, kept so the pane can show it dimmed under
-   * the Sending bar instead of going blank. Dropped when the new answer (or error) arrives.
+   * the Sending bar instead of going blank. Dropped when the new answer (or error) arrives, except
+   * a cancel (`aborted`), which keeps it on screen under a "Cancelled" bar.
    */
   readonly previous?: RestExchangeSummary;
+  /** After a cancel: how long the send ran, for the "Cancelled after …" bar. */
+  readonly cancelledAfterMs?: number;
 }
 
 /**
@@ -1147,7 +1150,19 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
 
       if (!result.ok) {
         update((draft) => {
-          draft.restByRequest[requestId] = { status: 'error', sendId, error: result.error };
+          const sending = draft.restByRequest[requestId];
+          // A cancel keeps the response that was on screen: the person stopped a send, they did
+          // not ask to lose what they were reading.
+          const cancelled = result.error.code === 'aborted';
+          const kept = cancelled ? sending?.previous : undefined;
+          const startedAt = cancelled ? sending?.startedAt : undefined;
+          draft.restByRequest[requestId] = {
+            status: 'error',
+            sendId,
+            error: result.error,
+            ...(kept !== undefined ? { previous: kept } : {}),
+            ...(startedAt !== undefined ? { cancelledAfterMs: Math.max(0, Date.now() - Date.parse(startedAt)) } : {}),
+          };
         });
         offerSecretAction(requestId, result.error);
         recordSendProblem(requestId, result.error);

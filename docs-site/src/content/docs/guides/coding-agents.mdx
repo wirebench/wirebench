@@ -1,0 +1,205 @@
+---
+title: Use Wirebench from your coding agent
+description: Connect Claude Code, Cursor or any MCP client to a Wirebench project, and what an agent can and cannot do there.
+---
+
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Wirebench has no model inside it. A coding agent you already use comes in from outside, through
+`wirebench mcp` (the Model Context Protocol server) and the `wirebench` CLI. Both speak the same
+words: send, run, baseline, contract diff, history, environments. This page sets up the connection
+and shows a working session. [Agents (MCP)](/wirebench/docs/guides/agents-mcp/) is the full reference
+for every tool, limit and redaction rule.
+
+## What the server exposes
+
+`wirebench mcp` serves one project. It lists eight fixed tools, and one more tool per imported
+contract operation.
+
+| Tool | What it does | Gate |
+| --- | --- | --- |
+| `import` | Adds a WSDL or OpenAPI document, or a folder collection or another client's export, to the project. Takes `source` and an optional `name`. | `--allow-write` |
+| `operations` | Lists SOAP operations, REST endpoints, saved WebSocket and MCP requests, with the references the other tools take. Takes an optional `container`. | none |
+| `generate` | Builds a sample SOAP envelope or REST JSON body for one `operation`. Saves nothing. | none |
+| `send` | Sends one saved request (`item`) under an `environment`, runs its assertions and records it in History. Takes `body` to override the saved body once, and `baseline: true` to compare with the saved golden. | `--allow-send` |
+| `validate` | Checks a message against the WSDL schema or the OpenAPI response schema. Reads one of `historyId`, `file` or `text`. | none |
+| `query` | Runs an XPath 3.1 or JSONPath `expression` on one of `historyId`, `file` or `text`. | none |
+| `history_list` | Lists recent sends, newest first, the app's and the agent's. Takes `item` and `limit`. | none |
+| `history_diff` | Diffs two History responses by meaning (`from`, `to`), leaving out `ignore` paths. | none |
+| One tool per contract operation | Calls a SOAP operation or REST endpoint with typed JSON arguments, such as `calculator_service_add`. | `--allow-send` |
+
+Every tool is always listed. A gated tool whose flag is off answers with an error that names the
+flag, so the agent can tell you what to allow. `-e` limits the environments `send` and the contract
+tools may use. A [protected environment](/wirebench/docs/guides/environments/#colour-an-environment-and-protect-it)
+is refused unless the call passes `allowProtected: true`.
+
+## Start the server
+
+The client starts the server for you; you only give it the command. Node.js 24 or later must be on
+the path. Try the command once in a terminal to see that the project loads:
+
+```sh
+npx -y @wirebench/cli mcp --project /absolute/path/to/project --allow-send -e local
+```
+
+It prints one line to stderr naming the project and the gates, then waits for a client on stdin.
+Press Ctrl+C to stop it. A folder that is not a project exits with code 2 before anything is served.
+
+Pick the flags for what you want the agent to do:
+
+- **Read only.** No flags. The agent can list, generate, validate, query and read History.
+- **Send.** `--allow-send` with `-e <environment>`, so sends go only to the environments you name.
+- **Import.** `--allow-write`, so `import` may add definitions to the project folder.
+- **Saved MCP requests with a local command.** `--allow-commands`, so `send` may start that command.
+
+Give the project as an absolute path. The client chooses the working directory, so a relative path
+would resolve somewhere you did not expect.
+
+## Connect your client
+
+<Tabs>
+<TabItem label="Claude Code">
+
+Add the server for the current project from a terminal. Everything after `--` is the server's own
+command line:
+
+```sh
+claude mcp add --transport stdio wirebench -- npx -y @wirebench/cli mcp --project /absolute/path/to/project --allow-send -e local
+```
+
+To share it with your team, add `--scope project`. That writes `.mcp.json` at the repository root,
+which you can also write by hand:
+
+```json
+{
+  "mcpServers": {
+    "wirebench": {
+      "command": "npx",
+      "args": ["-y", "@wirebench/cli", "mcp", "--project", "/absolute/path/to/project", "--allow-send", "-e", "local"]
+    }
+  }
+}
+```
+
+A plugin with a skill that teaches the agent this vocabulary lives in the repository under
+[`integrations/claude-code`](https://github.com/wirebench/wirebench/tree/main/integrations/claude-code).
+
+</TabItem>
+<TabItem label="Cursor">
+
+Put this in `.cursor/mcp.json` in the project, or in `~/.cursor/mcp.json` for every project:
+
+```json
+{
+  "mcpServers": {
+    "wirebench": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@wirebench/cli", "mcp", "--project", "/absolute/path/to/project", "--allow-send", "-e", "local"]
+    }
+  }
+}
+```
+
+A rules file with the same vocabulary lives in the repository under
+[`integrations/cursor`](https://github.com/wirebench/wirebench/tree/main/integrations/cursor). Copy it
+to `.cursor/rules/wirebench.mdc`.
+
+</TabItem>
+<TabItem label="Any MCP client">
+
+A client that starts local servers needs the command and its arguments:
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "@wirebench/cli", "mcp", "--project", "/absolute/path/to/project", "--allow-send", "-e", "local"]
+}
+```
+
+A client that connects by URL needs the server started with `--http <port>`. It serves
+`http://127.0.0.1:<port>/mcp` on loopback only and needs a bearer token; see
+[Connect over HTTP](/wirebench/docs/guides/agents-mcp/#connect-over-http).
+
+</TabItem>
+</Tabs>
+
+## Approve the server
+
+A stdio server is a program on your machine, so each client asks before it runs one or its tools.
+
+<Steps>
+
+1. **Claude Code.** A server from a project's `.mcp.json` is held as pending until you approve it.
+   Start `claude` in that folder and accept the prompt. `claude mcp list` shows the state, and
+   `claude mcp reset-project-choices` asks again. A server you added with `claude mcp add` at the
+   default scope needs no approval.
+
+2. **Cursor.** Cursor asks before each tool call by default. Open the arrow beside a tool's name to
+   read its arguments before you approve. Turn the server on or off from Cursor's MCP settings.
+
+3. **Wirebench.** The flags are the second approval. Without `--allow-send` nothing is sent, and
+   without `--allow-write` nothing is written to the project, whatever the agent asks.
+
+</Steps>
+
+## One session, end to end
+
+An agent connected with `--allow-send -e local` can do this in one conversation:
+
+<Steps>
+
+1. **Find the request.** `operations` lists every saved request with the path `send` takes, such as
+   `Pets/pets/List pets`.
+
+2. **Send it and check its baseline.** `send` with `baseline: true` compares the response with the
+   golden saved beside the request in the Snapshot tab:
+
+   ```json
+   { "item": "Pets/pets/List pets", "environment": "local", "baseline": true }
+   ```
+
+   The result carries a `baseline` field with `status` `matched`, `differs`, `missing` or an error.
+   A difference sets `outcome` to `failed` and lists each change by path.
+
+3. **Read History.** `history_list` returns the send's id beside earlier ones. `history_diff` with
+   yesterday's id as `from` and today's as `to` shows what changed, leaving out paths named in
+   `ignore` such as `//timestamp`.
+
+4. **Check against the contract.** `validate` with the new `historyId` checks the response against
+   the WSDL or OpenAPI schema. `query` pulls one value out of it.
+
+5. **Run a sequence or the whole suite.** These are CLI verbs, so the agent runs them in its own
+   terminal. `wirebench run <project> --sequence <name> -e local` runs a sequence's steps in order,
+   and `wirebench run <project> --baseline -e local` checks every request against its golden. A
+   sequence is not compared with goldens, so `--baseline` and `--sequence` do not combine.
+
+6. **Diff a contract.** Also a CLI verb. `wirebench diff-contract project:<api> <new-file>` compares
+   the cached definition with a new one and marks each change breaking or compatible. It exits 1 on
+   a breaking change.
+
+</Steps>
+
+Environments are the project's own. The agent names one in `environment`, or in `-e` on the
+command line. A server started with `-e` refuses every other environment.
+
+## What it cannot do
+
+<Aside type="note" title="Nothing leaves the machine">
+The server talks to the agent over stdio, or over HTTP on `127.0.0.1` only. The only network traffic
+is the requests the agent asks `send`, a contract tool or `import` to make, under the gates you
+set. There is no account, no telemetry and no hosted copy of your project.
+</Aside>
+
+- **No model inside.** Wirebench never calls a language model. The agent and its model are yours.
+- **No secrets in or out.** Secrets come from `WIREBENCH_SECRET_<NAME>` variables in the server's
+  environment and from the workspace's secret sources. No tool takes a secret as input, and every
+  resolved secret is masked in results.
+- **No sends without the flag.** `send` and the contract tools refuse without `--allow-send`, and
+  refuse an environment outside `-e`.
+- **No writes without the flag.** `import` refuses without `--allow-write`. No tool edits, deletes or
+  saves a request, and an agent's send never trims History.
+- **No gRPC sends.** gRPC requests are listed but `send` refuses them with `unsupported-kind`.
+
+See the [CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#wirebench-mcp)
+for every flag.

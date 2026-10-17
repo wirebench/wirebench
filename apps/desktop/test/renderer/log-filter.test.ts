@@ -9,6 +9,7 @@ import {
   stageOf,
   statusClassOf,
   statusLabelOf,
+  statusTooltipOf,
   urlOf,
 } from '../../src/renderer/features/console/log-filter.js';
 import {
@@ -113,10 +114,15 @@ describe('matchesFilter', () => {
 });
 
 describe('statusLabelOf / stageOf', () => {
-  it('labels a prepare failure "Failed · before send" and a send failure by its code', () => {
-    expect(statusLabelOf({ kind: 'failure', failure: makeFailure({ stage: 'prepare' }) })).toBe('Failed · before send');
-    expect(statusLabelOf({ kind: 'failure', failure: makeFailure() })).toBe('connection-refused');
+  it('labels a failure with the title the response pane gives it, and keeps the code for the tooltip', () => {
+    const prepare = { kind: 'failure', failure: makeFailure({ stage: 'prepare' }) } as const;
+    const send = { kind: 'failure', failure: makeFailure() } as const;
+    expect(statusLabelOf(send)).toBe('Connection refused');
+    expect(statusTooltipOf(send)).toMatch(/^connection-refused: /);
+    expect(statusLabelOf(prepare)).toBe('Connection refused');
+    expect(statusTooltipOf(prepare)).toMatch(/^connection-refused · before send: /);
     expect(statusLabelOf(logExchange(makeExchange()))).toBe('200');
+    expect(statusTooltipOf(logExchange(makeExchange()))).toBe('200');
     expect(stageOf({ kind: 'failure', failure: makeFailure() })).toBe('send');
     expect(stageOf(logExchange(makeExchange()))).toBeUndefined();
   });

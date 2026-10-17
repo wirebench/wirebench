@@ -9,7 +9,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import { RestEditor, mergeQuery, referenceField } from '../../src/renderer/features/rest-editor/rest-editor.js';
+import {
+  RestEditor,
+  mergeQuery,
+  referenceField,
+  referenceFieldLabel,
+} from '../../src/renderer/features/rest-editor/rest-editor.js';
 import { restSendBlocked } from '../../src/renderer/features/rest-editor/send-blocked.js';
 import { registerRequestCommands } from '../../src/renderer/commands/register-request-commands.js';
 import { registerRestCommands } from '../../src/renderer/kinds/rest/commands.js';
@@ -614,6 +619,20 @@ describe('referenceField', () => {
     expect(referenceField(request, '${tag}')).toBe('params');
     expect(referenceField(request, '${key}')).toBe('headers');
     expect(referenceField(request, '${elsewhere}')).toBeUndefined();
+  });
+});
+
+describe('referenceFieldLabel', () => {
+  it('names the field a reference, or an unclosed ${, was written in', () => {
+    const request = restRequestWire({
+      url: '/pets/${petId}',
+      query: [{ name: 'tag', value: '${tag}', enabled: true }],
+      headers: [{ name: 'X-List', value: 'abc-${$rand', enabled: true }],
+    });
+    expect(referenceFieldLabel(request, '${petId}')).toBe('The URL');
+    expect(referenceFieldLabel(request, '${tag}')).toBe('Query parameter tag');
+    expect(referenceFieldLabel(request, '${$rand')).toBe('Header X-List');
+    expect(referenceFieldLabel(request, '${elsewhere}')).toBeUndefined();
   });
 });
 

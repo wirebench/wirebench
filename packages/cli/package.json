@@ -2,6 +2,7 @@
   "name": "@wirebench/cli",
   "version": "2.1.1",
   "license": "Apache-2.0",
+  "mcpName": "io.github.wirebench/wirebench",
   "type": "module",
   "repository": {
     "type": "git",

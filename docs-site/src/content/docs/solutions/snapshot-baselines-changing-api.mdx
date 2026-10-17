@@ -1,0 +1,261 @@
+---
+title: Snapshot baselines for an API an agent keeps changing
+description: How Wirebench's response baselines work, what they compare and what they ignore, how secrets stay out of them, and how to read a failed run when a response changes shape.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+When a coding agent edits an API several times a day, hand-written assertions fall behind: they check
+the fields someone thought of, and the agent changes the others. A baseline checks
+the whole response instead: Wirebench keeps a known-good response beside each request and reports
+every path that moved. You decide which moves were meant.
+
+This guide explains the baseline model as the code implements it, then works through a change that an
+agent made to an order service. The output comes from running Wirebench's CLI against that service.
+
+## What is snapshotted
+
+A baseline, also called a golden, is one file per request: `<request>.golden.yaml`, saved beside the
+request's own `<request>.request.yaml`. This one was written by `wirebench run --update-baseline`, and
+its ignore rules were added afterwards:
+
+```yaml
+body: |-
+  {"id":"ord-1001","status":"paid","total":42.5,"currency":"EUR","lines":[{"sku":"TEA-01","qty":2},{"sku":"MUG-07","qty":1}],"meta":{"requestId":"d6857d67-93f2-45b1-a78e-b0b755285a63","generatedAt":"2026-10-16T17:42:46.030Z"}}
+contentType: application/json
+ignore:
+  - //requestId
+  - //generatedAt
+savedAt: 2026-10-16T17:42:46.036Z
+```
+
+- **`body`** is the full response body as text, never the shortened copy kept for reports.
+- **`contentType`** is the response's `Content-Type`, used to decide how to compare.
+- **`ignore`** holds the paths left out of the comparison, described below.
+- **`savedAt`** is when the file was last written.
+
+Only the body is compared. The status and the headers are not; check those with
+[assertions](/wirebench/docs/guides/assertions/). Baselines cover SOAP and REST requests. A gRPC or
+WebSocket request has none, and sequence steps are never compared, because a step's response depends
+on the steps before it. A body with no text form, such as an image, cannot be saved as a baseline.
+
+You save a baseline in the app's **Snapshot** tab, or with `--update-baseline` on the command line.
+[Snapshot regression](/wirebench/docs/guides/snapshot-regression/) covers the tab.
+
+## How a response is compared
+
+The comparison is by meaning, so formatting never counts as a difference. The format comes from the
+golden's `contentType`, or from the response's when the golden has none: a type that contains `json`
+or `xml` decides it. Otherwise, a body that starts with `{` or `[` is JSON, one that starts with `<`
+is XML, and anything else is text.
+
+- **JSON** is compared key by key and array index by array index. Key order does not matter, and
+  numbers compare by value, so `1.0` equals `1`. Paths are JSON Pointers such as `/lines/0/qty`.
+- **XML** is compared by namespace and local name, so a different prefix for the same namespace is
+  not a difference. Comments, processing instructions, `xmlns` declarations and whitespace-only text
+  are left out. Paths use local names, with `[n]` where a name repeats and `@name` for an attribute.
+- **Text** is compared exactly, after line endings are normalised. Any difference is one change at
+  `/`.
+
+A body that does not parse as its format is compared as text, and the report says why on a line that
+starts with `compared as text:`. When either body is over 2 MB, no comparison is attempted: the
+request errors with `Too large to compare semantically.`
+
+Arrays are compared by position. An item inserted at the front of a list shifts every item after it,
+and each shifted item reports its own changes. If the order of a list is not part of the contract,
+sort it in the service or ignore the list.
+
+## Volatile fields: ignore rules
+
+Request ids and timestamps change on every call. Before its ignore rules were added, the golden above
+failed the very next compare run on exactly those:
+
+```text
+✗ orders/get-order  200  86 ms
+    2 differences from the baseline
+      changed /meta/requestId: "d6857d67-93f2-45b1-a78e-b0b755285a63" → "677b259d-7a6a-469d-a07d-faa0b95054de"
+      changed /meta/generatedAt: "2026-10-16T17:42:46.030Z" → "2026-10-16T17:42:58.759Z"
+```
+
+The two rules in the golden's `ignore` list fix that. `//requestId` ignores a `requestId` at any
+depth, so the same rule works for the list endpoint's golden. With the rules in place, the run passes
+and the JSON report counts what was hidden as `ignored: 2`.
+
+| Rule | Ignores |
+| --- | --- |
+| `/meta/generatedAt` | That field, and everything under it |
+| `/items/*/id` | `id` in every item of `items` |
+| `//requestId` | `requestId` at any depth |
+
+A segment without `[n]` matches every index, and a line that starts with `#` is a comment. Keep rules
+narrow. Each rule is a field the baseline stops watching, and an agent that changes the format of an
+ignored timestamp will not be caught.
+
+Ignore rules live in the golden file. Edit them in the Snapshot tab, where each reported difference
+has an **Ignore** button, or edit the file and commit it. `--update-baseline` keeps them when it
+rewrites the body.
+
+## How a difference is reported
+
+Each change has a kind, `changed`, `added` or `removed`, a path, and the expected and actual values as
+JSON or text. A value longer than 200 characters is cut, and the cut is marked with `…`.
+
+- **On the terminal**, a request that differs fails with one line per change, the first 20, then
+  `… and N more`.
+- **In the JSON report** and in an MCP `send` result, each request carries a `baseline` field: its
+  `status`, the `format`, `ignored`, and up to 100 `changes`, with `truncated` when there were more.
+- **In JUnit**, the difference is the `<failure>` of a `baseline` assertion, so the CI system's test
+  view lists it with the other failures.
+
+A difference makes the run exit 1. A golden that cannot be read, or a body over the size limit,
+errors the request instead, and the run exits 3.
+
+## Where the masker comes in
+
+Ignore rules decide what is compared. The masker decides what can be printed. An ignore rule never
+hides a secret.
+
+Every report passes through the masker before any reporter sees it, and every MCP result is masked
+the same way. The masker knows the secret values the run resolved for its requests and the OAuth 2.0
+tokens the run obtained. It replaces each one with a marker wherever it appears, including inside a
+difference.
+
+- **It looks for every form a value takes on the wire,** not only the value itself: percent-encoded,
+  form-encoded, XML-escaped, escaped inside a JSON string, and inside a `Basic` credential, which is
+  base64.
+- **It merges ranges.** All matches, of every value in every form, are found on the original text
+  first. Overlapping or touching matches are merged and replaced by one marker. Masking one value
+  first could hide the start of another that overlaps it and leave the rest of that one readable.
+- **It knows about cuts.** A 200-character cap can stop in the middle of a secret, leaving no whole
+  value to match. Before each `…`, the masker also hides the longest piece that is the start of a
+  known value.
+- **It skips very short values.** A value under 4 characters is never masked, since it would match
+  ordinary text everywhere.
+
+## The secret check on save
+
+Goldens are committed, so a secret in one would end up in git. When `--update-baseline` is about to
+write a body, it asks the masker whether it would change that body. If it would, the golden is not
+written, the request errors, and the run exits 3:
+
+```text
+! orders/whoami  200  21 ms  (no assertions)
+    baseline not written — The response holds a secret value, so its baseline was not written.
+```
+
+The existing file, if any, is left as it was. The message names no value. A golden that still
+matches is never checked or written, so this refusal only comes up for a body that would change.
+
+<Aside type="caution">
+The Snapshot tab in the app saves the body you are looking at and does not run this check. Read the
+response before you choose **Save as snapshot**.
+</Aside>
+
+`--update-baseline` also refuses to replace a malformed golden or to write through a symbolic link,
+and writes nothing for a request whose own assertions failed. Each write goes through a temporary
+file and a rename, so an interrupted run never leaves half a golden.
+
+## Baselines in git and across environments
+
+A golden is a plain YAML file with sorted keys, its body kept as a block of text. A change to it is a
+readable line in `git diff` and in a pull request. Because `--update-baseline` leaves matching goldens
+alone, a refresh only touches the files whose response really changed.
+
+There is one golden per request, not one per environment. `--baseline` compares the response with the
+same file whichever `-e` the run uses. A response that differs between environments for good reasons,
+such as seeded ids or host names in links, will fail against the other environment's golden. Either
+ignore those paths, or compare against one environment only, the one with stable data, and run the
+other environments without `--baseline`.
+
+A request without a golden is noted as `(no baseline)` and judged on its other assertions. In CI, add
+`--require-baseline` to make a missing golden an error, so a new request cannot slip in unchecked.
+
+Renaming or moving a request leaves its golden behind under the old name. Rename the
+`.golden.yaml` file in the same commit.
+
+## Worked example: an agent changes a response shape
+
+The order service returns orders with a numeric `total`, a separate `currency`, and `qty` on each
+line. An agent is asked to make the total carry its currency.
+
+<Steps>
+
+1. The agent changes the handler and runs the suite:
+
+   ```bash
+   wirebench run ./shop orders -e local --baseline
+   ```
+
+2. The run fails, and exits 1:
+
+   ```text
+   ✗ orders/get-order  200  30 ms
+       6 differences from the baseline
+         changed /total: 42.5 → {"amount":"42.50","currency":"EUR"}
+         removed /currency: "EUR"
+         removed /lines/0/qty: 2
+         added /lines/0/quantity: 2
+         removed /lines/1/qty: 1
+         added /lines/1/quantity: 1
+   ```
+
+3. Read it path by path:
+   - `changed /total` is one change, not one per new field, because the value changed type from a
+     number to an object. The actual value shows the new object in full. The amount is now a string,
+     `"42.50"`, which matters to any client that does arithmetic on it.
+   - `removed /currency` is the field that moved into `total`. Clients that read the top-level
+     `currency` will break.
+   - Each `qty` that became `quantity` is a `removed` and an `added` at the same position. JSON keys
+     have no identity beyond their name, so a rename always reads this way.
+   - The `requestId` and `generatedAt` differences do not appear. The ignore rules hid them, and
+     `ignored: 2` in the JSON report says so.
+
+4. The list endpoint, `orders/list-orders`, reports the same six changes under `/items/0`.
+
+</Steps>
+
+The `total` change was the task. The `qty` rename was not, and the baseline run is where it showed
+up. Once the service is what you want, refresh the goldens and review the result:
+
+```bash
+wirebench run ./shop orders -e local --update-baseline
+git diff -- '*.golden.yaml'
+```
+
+```diff
+ body: |-
+-  {"id":"ord-1001","status":"paid","total":42.5,"currency":"EUR","lines":[{"sku":"TEA-01","qty":2},{"sku":"MUG-07","qty":1}],"meta":{"requestId":"d6857d67-93f2-45b1-a78e-b0b755285a63","generatedAt":"2026-10-16T17:42:46.030Z"}}
++  {"id":"ord-1001","status":"paid","total":{"amount":"42.50","currency":"EUR"},"lines":[{"sku":"TEA-01","quantity":2},{"sku":"MUG-07","quantity":1}],"meta":{"requestId":"58b96cbd-c0bf-43e4-ae40-f230a7ac71bd","generatedAt":"2026-10-16T17:44:34.077Z"}}
+ contentType: application/json
+ ignore:
+   - //requestId
+   - //generatedAt
+-savedAt: 2026-10-16T17:42:46.036Z
++savedAt: 2026-10-16T17:44:34.090Z
+```
+
+The ignore rules survived the rewrite. The next `--baseline` run reports
+`baseline: 2 matched, 0 differ, 0 missing`.
+
+{/* TODO(screenshot): Snapshot tab on a REST response that differs from its golden, showing the differences table with kind, path, expected and actual, and the Ignore button on a row. Save as docs-site/public/images/solutions/snapshot-differences.png and cite it here. */}
+
+## Checklist
+
+- [ ] Each request you rely on has a `<request>.golden.yaml`, committed beside its request file.
+- [ ] Ids and timestamps have ignore rules, as narrow as possible; `//name` for a field at any depth.
+- [ ] Lists whose order is not part of the contract are sorted by the service or ignored.
+- [ ] Baselines are compared against one environment with stable data, or environment-specific paths
+      are ignored.
+- [ ] CI runs `--baseline --require-baseline`.
+- [ ] Goldens are refreshed with `--update-baseline` and reviewed in `git diff` before commit.
+- [ ] A refusal for a secret means the response echoes one: fix the service or the request, never the
+      golden by hand.
+
+## Related
+
+- [Let your coding agent run the API regression suite](/wirebench/docs/solutions/agent-runs-api-regression-suite/):
+  the same check driven by an agent over MCP or the CLI.
+- [Snapshot regression](/wirebench/docs/guides/snapshot-regression/): the Snapshot tab and the ignore
+  rule syntax.
+- [Run in CI](/wirebench/docs/guides/run-in-ci/): `--baseline` in a pipeline.
+- [Secrets](/wirebench/docs/guides/secrets/): where the values the masker knows come from.
