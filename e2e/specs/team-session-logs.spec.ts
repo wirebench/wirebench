@@ -72,7 +72,8 @@ test.describe('team session logs', () => {
     const terminal = page.getByTestId('ssh-terminal');
     await terminal.click();
     await page.keyboard.type('echo team-log-marker');
-    await page.keyboard.press('Enter');
+    // The fixture echoes bytes as they are; a line feed ends the line, so the log writes it.
+    await page.keyboard.press('Control+J');
     await expect(terminal).toContainText('echo team-log-marker', { timeout: 30_000 });
 
     // Streamed while the session is still open.
@@ -89,7 +90,9 @@ test.describe('team session logs', () => {
     expect(fake.sessionLogs()[0]).toMatchObject({ hostName: 'box', email: ALICE.email, ended: undefined });
 
     // Out of the terminal first: there the shortcut goes to the shell.
-    await page.getByTestId('host-row-box').click();
+    await page.evaluate(() => {
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
     await runCommand(page, 'Terminal: Team Session Logs');
     const dialog = page.getByTestId('team-session-logs-dialog');
     await expect(dialog).toBeVisible();
