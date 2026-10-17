@@ -84,6 +84,34 @@ describe('Insomnia scripts are attached', () => {
     );
   });
 
+  it('a folder with no HTTP request, inside a workspace that has one, keeps its scripts as text', () => {
+    const mapped = mapV5([
+      request('Ping', {}),
+      {
+        name: 'Live',
+        meta: { id: 'fld_1' },
+        scripts: { preRequest: "console.log('live');" },
+        children: [
+          {
+            name: 'Inner',
+            meta: { id: 'fld_2' },
+            scripts: { afterResponse: 'console.log("inner");' },
+            children: [{ name: 'Feed', url: 'wss://a.example.com/feed', meta: { id: 'ws-req_1' } }],
+          },
+        ],
+      },
+    ]);
+    expect(apiFolders(mapped.collections[0]!.rest!)).toEqual([]);
+    expect(mapped.scripts).toEqual([
+      { path: 'imported-scripts/w/live.pre.js', source: "console.log('live');" },
+      { path: 'imported-scripts/w/live-inner.post.js', source: 'console.log("inner");' },
+    ]);
+    expect(mapped.counts.scripts).toBe(2);
+    expect(mapped.report.notes).toContain(
+      'Live / Inner: its post script has no place to run in Wirebench, so it was saved to imported-scripts/w/live-inner.post.js and is never run.',
+    );
+  });
+
   it('the report says scripts were imported switched off and lists unsupported calls per request', () => {
     const mapped = mapV5([
       request('Fetch', {

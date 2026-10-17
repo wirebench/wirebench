@@ -496,15 +496,6 @@ function reportWorkspace(mapper: WorkspaceMapper, format: 4 | 5): void {
   }
 }
 
-/** Every folder below `nodes` as a level whose scripts a dropped REST API still owes. */
-function droppedFolderLevels(nodes: readonly InsNode[], trail: readonly string[]): DroppedLevel[] {
-  return nodes.flatMap((node) => {
-    if (node.kind !== 'folder') return [];
-    const path = [...trail, node.name];
-    return [{ path, pre: node.scripts.pre, post: node.scripts.post }, ...droppedFolderLevels(node.children, path)];
-  });
-}
-
 /**
  * Maps a read Insomnia export. Throws `insomnia-nothing-to-import` when it holds no request
  * Wirebench maps and no environment.
@@ -579,7 +570,8 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
 
     // HTTP: the v2.1 document, parsed and mapped as an exported one is. The other protocols' and
     // the variables' dynamic names join its own, so the report names them once.
-    const parsed = parsePostmanCollection(v21OfInsomnia(workspace, name, mapper.convertContext()));
+    const dropped: DroppedLevel[] = [];
+    const parsed = parsePostmanCollection(v21OfInsomnia(workspace, name, { ...mapper.convertContext(), dropped }));
     const dynamic = [...new Set([...(parsed.dynamicVariables ?? []), ...mapper.dynamic])];
     const http = apiFromPostmanCollection(
       { ...parsed, ...(dynamic.length > 0 ? { dynamicVariables: dynamic } : {}) },
@@ -597,12 +589,9 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
     const kinds = [http.summary.requests, grpcWalk.count, wsWalk.count].filter((n) => n > 0).length;
     const apiName = (suffix: string): string => (kinds > 1 ? `${name} (${suffix})` : name);
     const rest = http.summary.requests > 0 ? { ...http.api, order: order++ } : undefined;
-    if (rest === undefined) {
-      // No REST API is left to hold the folders' scripts: keep them as text.
-      scriptFiles.push(
-        ...droppedApiScriptFiles(slugify(name).toLowerCase(), droppedFolderLevels(workspace.items, []), report),
-      );
-    }
+    // A folder with no HTTP request below it is no folder of the REST API, or there is no REST API
+    // at all: either way its scripts have nowhere to attach, so they are kept as text.
+    scriptFiles.push(...droppedApiScriptFiles(slugify(name).toLowerCase(), dropped, report));
     const grpc: GrpcApi | undefined =
       grpcWalk.count > 0
         ? createGrpcApi(apiName('gRPC'), {
