@@ -137,7 +137,10 @@ describe('Hoppscotch scripts are attached', () => {
       'Scripts on 2 requests were imported switched off: read each on its Scripts tab, then switch them on.',
     );
     const line = mapped.report.warnings.find((w) => w.includes('call what Wirebench does not run'));
-    expect(line).toBe('The scripts of "Jar" call what Wirebench does not run: hopp.cookies, hopp.fetch');
+    expect(line).toBe('The scripts of "Jar" call what Wirebench does not run: hopp.cookies');
+    expect(mapped.report.warnings).toContain(
+      'The scripts of "Jar" call hopp.fetch, which a script cannot do: send that request as a sequence step, or use OAuth2 auth for a token',
+    );
     expect(mapped.report.warnings.join('\n')).not.toContain('"Plain" call');
   });
 });

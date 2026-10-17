@@ -299,8 +299,24 @@ describe('the Bruno layer: unsupported calls', () => {
     ['req.onFail', 'req.onFail(() => {})'],
     ['req.disableParsingResponseJson', 'req.disableParsingResponseJson()'],
     ['require', "require('lodash')"],
+    ['bru.getProcessEnv', "bru.getProcessEnv('HOME')"],
+    ['bru.runRequest', "bru.runRequest('Auth/Login')"],
+    ['bru.visualize', "bru.visualize('table', { name: 'table', data: [] })"],
+    ['bru.deleteAllVars', 'bru.deleteAllVars()'],
+    ['req.getAuthMode', 'req.getAuthMode()'],
+    ['req.setHeaders', "req.setHeaders({ 'x-a': '1' })"],
   ])('%s fails with script-unsupported', async (name, source) => {
     expect(await run('pre', source)).toMatchObject({
+      ok: false,
+      error: { code: 'script-unsupported', message: expect.stringContaining(name) as unknown },
+    });
+  });
+
+  it.each([
+    ['res.setBody', 'res.setBody({ a: 1 })'],
+    ['res.setHeader', "res.setHeader('x-a', '1')"],
+  ])('%s fails with script-unsupported', async (name, source) => {
+    expect(await run('post', source)).toMatchObject({
       ok: false,
       error: { code: 'script-unsupported', message: expect.stringContaining(name) as unknown },
     });
@@ -312,6 +328,37 @@ describe('the Bruno layer: unsupported calls', () => {
       'console.log(String(bru.cookies.then), String(bru.cookies.toJSON), typeof bru.cookies[Symbol.iterator]);',
     );
     expect(outcome).toMatchObject({ ok: true, log: { lines: ['undefined undefined undefined'] } });
+  });
+});
+
+describe('the Bruno layer: getters over the typed API', () => {
+  it('req.getName, bru.getEnvName and bru.getCollectionName', async () => {
+    const outcome = await run('pre', 'console.log(req.getName(), bru.getEnvName(), bru.getCollectionName());');
+    expect(outcome).toMatchObject({ ok: true, log: { lines: ['Create user undefined undefined'] } });
+  });
+
+  it('bru.getGlobalEnvVar and setGlobalEnvVar read vars then props and write vars', async () => {
+    const outcome = await run(
+      'pre',
+      "bru.setGlobalEnvVar('org', 'o-1'); console.log(bru.getGlobalEnvVar('org'), bru.getGlobalEnvVar('tenant'));",
+    );
+    expect(outcome).toMatchObject({ ok: true, values: [{ name: 'org', value: 'o-1' }], log: { lines: ['o-1 acme'] } });
+  });
+
+  it('res.getHeaders, getStatusText, getUrl and getSize', async () => {
+    const outcome = await run(
+      'post',
+      `test('getters', () => {
+         expect(res.getHeaders()).to.eql({ 'content-type': 'application/json' });
+         expect(res.getStatusText()).to.equal('Created');
+         expect(res.getUrl()).to.equal('https://shop.test/orgs/42/users');
+         const size = res.getSize();
+         expect(size.body).to.equal(21);
+         expect(size.header).to.equal('HTTP/1.1 201 Created\\r\\ncontent-type: application/json\\r\\n\\r\\n'.length);
+         expect(size.total).to.equal(size.body + size.header);
+       });`,
+    );
+    expect(outcome).toMatchObject({ ok: true, tests: [{ name: 'getters', passed: true }] });
   });
 });
 

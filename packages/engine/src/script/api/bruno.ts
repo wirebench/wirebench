@@ -6,8 +6,8 @@
  *
  * Every variable scope reads `vars` then `props` and writes `vars` (spec §3.3). `bru.interpolate` resolves
  * `{{name}}` through vars then props (a dynamic `{{$...}}` or `{{process.env.X}}` stays as written).
- * Sending requests, sleeping, cookies, modules and the request settings throw
- * `ScriptUnsupported` naming the call.
+ * Sending or running requests, sleeping, cookies, modules, the process environment, visual output,
+ * response writes and the request settings throw `ScriptUnsupported` naming the call.
  */
 import {
   PART_EXPECT,
@@ -51,6 +51,11 @@ define('bru', Object.freeze({
   getCollectionVar: (name) => variables.get(name),
   getFolderVar: (name) => variables.get(name),
   getRequestVar: (name) => variables.get(name),
+  getGlobalEnvVar: (name) => variables.get(name),
+  setGlobalEnvVar: (name, value) => variables.set(name, value),
+  // A run has no named environment or collection a script can see.
+  getEnvName: () => undefined,
+  getCollectionName: () => undefined,
   setNextRequest: (name) => execution.setNextRequest(name),
   runner: Object.freeze({
     skipRequest: () => execution.skipRequest(),
@@ -58,7 +63,12 @@ define('bru', Object.freeze({
   }),
   interpolate,
   sendRequest: unsupported('bru.sendRequest'),
+  runRequest: unsupported('bru.runRequest'),
   sleep: unsupported('bru.sleep'),
+  getProcessEnv: unsupported('bru.getProcessEnv'),
+  visualize: unsupported('bru.visualize'),
+  // The typed API cannot list the run's values, so there is nothing to delete them all from.
+  deleteAllVars: unsupported('bru.deleteAllVars'),
   cookies,
 }));
 
@@ -74,6 +84,9 @@ define('req', Object.freeze({
   getBody: requestBody,
   setBody: (body) => setRequestBody('req.setBody', body),
   getHeaders: () => requestHeaders.toObject(),
+  setHeaders: unsupported('req.setHeaders'),
+  getName: () => input.info.requestName,
+  getAuthMode: unsupported('req.getAuthMode'),
   setTimeout: unsupported('req.setTimeout'),
   getTimeout: unsupported('req.getTimeout'),
   setMaxRedirects: unsupported('req.setMaxRedirects'),
@@ -97,6 +110,19 @@ if (responseView !== undefined) {
     getBody: () => responseView.body(),
     getHeader: (name) => headers[String(name).toLowerCase()],
     getResponseTime: () => responseView.durationMs,
+    getHeaders: () => Object.freeze({ ...headers }),
+    getStatusText: () => responseView.statusText,
+    // No redirect reaches a script, so the response URL is the request's.
+    getUrl: requestUrl,
+    // https://github.com/usebruno/bruno/blob/1b932553772cb671f9932dcbea0bde003489707a/packages/bruno-js/src/bruno-response.js#L82
+    getSize: () => {
+      const lines = ['HTTP/1.1 ' + responseView.status + ' ' + responseView.statusText, ...Object.entries(headers).map(([k, v]) => k + ': ' + v), '', ''];
+      const header = utf8Length(lines.join('\r\n'));
+      const body = utf8Length(responseView.text);
+      return { header, body, total: header + body };
+    },
+    setBody: unsupported('res.setBody'),
+    setHeader: unsupported('res.setHeader'),
   }));
 } else {
   define('res', undefined);

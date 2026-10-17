@@ -274,14 +274,22 @@ Insomnia import, of a dropped folder too).
 | --- | --- |
 | `test`, `expect` with the common chai chains | Supported |
 | `expect(x).to.have.jsonSchema(schema)`, also after `.not` | Supported; see [below](#jsonschema) |
-| `res.status`, `res.body`, `res.headers`, `res.responseTime`, `getStatus()`, `getBody()`, `getHeader()`, `getResponseTime()` | Supported; `res.body` is parsed JSON for a JSON response and text otherwise, and `res.headers` has lower-case names |
-| `req.getUrl`, `setUrl`, `getMethod`, `setMethod`, `getHeader`, `getHeaders`, `setHeader`, `deleteHeader`, `getBody`, `setBody` | Supported |
-| `bru.getVar`, `setVar`, `hasVar`, `deleteVar`, `getEnvVar`, `setEnvVar`, `getCollectionVar`, `getFolderVar`, `getRequestVar` | Supported; reads check `vars` then `props`, writes go to `vars` |
+| `res.status`, `res.body`, `res.headers`, `res.responseTime`, `getStatus()`, `getBody()`, `getHeader()`, `getHeaders()`, `getStatusText()`, `getResponseTime()` | Supported; `res.body` is parsed JSON for a JSON response and text otherwise, and `res.headers` has lower-case names |
+| `res.getUrl()` | Supported; the request's URL, since a script sees no redirect |
+| `res.getSize()` | Supported; `{ header, body, total }` in bytes, the header size counted from the status line and headers |
+| `res.setBody`, `res.setHeader` | `script-unsupported`; a script cannot change the response |
+| `req.getUrl`, `setUrl`, `getMethod`, `setMethod`, `getHeader`, `getHeaders`, `setHeader`, `deleteHeader`, `getBody`, `setBody`, `getName` | Supported |
+| `req.setHeaders`, `req.getAuthMode` | `script-unsupported` |
+| `bru.getVar`, `setVar`, `hasVar`, `deleteVar`, `getEnvVar`, `setEnvVar`, `getGlobalEnvVar`, `setGlobalEnvVar`, `getCollectionVar`, `getFolderVar`, `getRequestVar` | Supported; reads check `vars` then `props`, writes go to `vars` |
+| `bru.getEnvName`, `bru.getCollectionName` | Supported; both give `undefined`, since a run has no named environment or collection a script can see |
+| `bru.deleteAllVars` | `script-unsupported` |
+| `bru.getProcessEnv` | `script-unsupported`; a script cannot read the machine's environment |
+| `bru.visualize` | `script-unsupported` |
 | `bru.interpolate` | Supported with limits; see [below](#interpolate) |
 | `bru.setNextRequest`, `bru.runner.skipRequest`, `bru.runner.stopExecution` | Supported; obeyed in API and folder runs only |
 | `req.setTimeout`, `getTimeout`, `setMaxRedirects`, `onFail`, `disableParsingResponseJson` | `script-unsupported`; use the request's **Settings** |
 | `bru.cookies` | `script-unsupported` |
-| `bru.sendRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step or OAuth2 auth |
+| `bru.sendRequest`, `bru.runRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step or OAuth2 auth |
 | `bru.sleep` | `script-unsupported` |
 | `require` | `script-unsupported` |
 
