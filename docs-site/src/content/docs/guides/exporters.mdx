@@ -44,8 +44,10 @@ The workspace's environments and properties are exported with the project's own.
   no auth, with a warning. Digest and AWS Signature v4 keep their type, username, region and service
   in a Postman Collection; OpenCollection has no form for them, so they are written as no auth, with a
   warning.
-- **Scripts.** Every pre-request and post-response script, as text. A script written against
-  Wirebench's own script API is flagged: the other tool will not run it.
+- **Scripts.** Every pre-request and post-response script, as text. A script written for an API the
+  other tool does not run is flagged, naming the API: a Postman Collection runs Postman scripts, an
+  OpenCollection runs Bruno scripts, and anything else (Wirebench's own, or another client's) will not
+  run there.
 - **SOAP.** Each SOAP request becomes an HTTP POST of its envelope to its endpoint, with its
   `Content-Type` and `SOAPAction`. WS-Security, WS-Addressing, attachments and MTOM are reported.
 

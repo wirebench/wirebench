@@ -25,7 +25,7 @@ import type {
 } from '../rest/model.js';
 import { exampleBodyExtension, restApisOf } from '../rest/model.js';
 import { joinBase, splitQueryKeepingReferences } from '../rest/url.js';
-import type { RequestScripts } from '../script/model.js';
+import type { RequestScripts, ScriptApi } from '../script/model.js';
 import type { WsApi, WsFolder, WsRequestDef } from '../ws/model.js';
 import type { CollectionExportEnvironment, CollectionExportInput } from './model.js';
 import { colonPath, ExportContext, isSecretOnly } from './shared.js';
@@ -154,16 +154,32 @@ const byOrder = <T extends { readonly order: number }>(list: readonly T[]): T[] 
 const hasName = (rows: readonly { readonly name: string }[], name: string): boolean =>
   rows.some((row) => row.name.toLowerCase() === name.toLowerCase());
 
-/** Builds the tree; the report lines go to `ctx`. */
-export function buildTree(input: CollectionExportInput, ctx: ExportContext): XCollection {
-  return new TreeBuilder(ctx).build(input);
+/** What each script API is called in a report line. */
+const SCRIPT_API_NAMES: Record<ScriptApi, string> = {
+  wirebench: 'Wirebench',
+  postman: 'Postman',
+  insomnia: 'Insomnia',
+  bruno: 'Bruno',
+  hoppscotch: 'Hoppscotch',
+  'thunder-client': 'Thunder Client',
+};
+
+/**
+ * Builds the tree; the report lines go to `ctx`. `runs` is the script API the target format's tool
+ * runs: scripts written for any other are exported as they are, with a warning.
+ */
+export function buildTree(input: CollectionExportInput, ctx: ExportContext, runs: ScriptApi): XCollection {
+  return new TreeBuilder(ctx, runs).build(input);
 }
 
 class TreeBuilder {
   private requests = 0;
   private folders = 0;
 
-  constructor(private readonly ctx: ExportContext) {}
+  constructor(
+    private readonly ctx: ExportContext,
+    private readonly runs: ScriptApi,
+  ) {}
 
   build(input: CollectionExportInput): XCollection {
     const { project, target } = input;
@@ -683,8 +699,10 @@ class TreeBuilder {
       out[phase] = source.text;
     }
     if (out.pre === undefined && out.post === undefined) return out;
-    if (scripts.api === 'wirebench') {
-      this.ctx.report.warn(`${label}: its scripts use Wirebench's script API; the target tool will not run them.`);
+    if (scripts.api !== this.runs) {
+      this.ctx.report.warn(
+        `${label}: its scripts use ${SCRIPT_API_NAMES[scripts.api]}'s script API; the target tool will not run them.`,
+      );
     }
     if (!scripts.enabled) {
       this.ctx.report.note(`${label}: its scripts were switched off in Wirebench; the target tool runs them.`);

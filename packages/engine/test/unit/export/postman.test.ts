@@ -168,6 +168,30 @@ describe('Postman export: API and folder scripts (#334)', () => {
   });
 });
 
+describe('Postman export: scripts written for another API', () => {
+  const withApi = (api: 'postman' | 'insomnia' | 'bruno') => {
+    const rest = restApisOf(project)[0]!;
+    const scripts = { pre: { text: 'run();' }, api, enabled: true, secrets: [] } as const;
+    return withRestApis(project, [{ ...rest, folders: [{ ...rest.folders[0]!, scripts }] }]);
+  };
+  const warnings = (api: 'postman' | 'insomnia' | 'bruno') =>
+    exportCollection('postman', { project: withApi(api), target: { kind: 'container', id: restId }, newId }).report
+      .warnings;
+
+  it('warns, naming the API and the folder, for Bruno and Insomnia scripts', () => {
+    expect(warnings('bruno')).toContain(
+      "Pets / Users: its scripts use Bruno's script API; the target tool will not run them.",
+    );
+    expect(warnings('insomnia')).toContain(
+      "Pets / Users: its scripts use Insomnia's script API; the target tool will not run them.",
+    );
+  });
+
+  it('does not warn for Postman scripts', () => {
+    expect(warnings('postman').some((w) => w.includes('script API'))).toBe(false);
+  });
+});
+
 describe('Postman export: a GraphQL body (#77)', () => {
   const graphql: RestRequestDef = {
     ...createRestRequest('Product', { id: 'req-gql', slug: 'product', method: 'POST', url: '/graphql' }),
