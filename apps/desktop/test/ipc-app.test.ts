@@ -78,7 +78,7 @@ describe('app.* IPC', () => {
     registerAppChannels(undefined, undefined, undefined, ['explorer', 'history']);
     expect(await invoke('app.areas', undefined, webContents())).toEqual({
       ok: true,
-      value: { enabled: ['explorer', 'history'], localTerminal: false },
+      value: { enabled: ['explorer', 'history'], localTerminal: false, telnet: false },
     });
   });
 
@@ -86,7 +86,15 @@ describe('app.* IPC', () => {
     registerAppChannels(undefined, undefined, undefined, ['explorer', 'ssh'], undefined, false);
     expect(await invoke('app.areas', undefined, webContents())).toEqual({
       ok: true,
-      value: { enabled: ['explorer', 'ssh'], localTerminal: false },
+      value: { enabled: ['explorer', 'ssh'], localTerminal: false, telnet: true },
+    });
+  });
+
+  it('app.areas says whether Telnet hosts connect (#425)', async () => {
+    registerAppChannels(undefined, undefined, undefined, ['explorer', 'ssh'], undefined, true, false);
+    expect(await invoke('app.areas', undefined, webContents())).toEqual({
+      ok: true,
+      value: { enabled: ['explorer', 'ssh'], localTerminal: true, telnet: false },
     });
   });
 

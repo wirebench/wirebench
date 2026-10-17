@@ -51,6 +51,7 @@ import { registerAppChannels } from './ipc/app.js';
 import {
   enabledAreasFromEnv,
   localTerminalFromEnv,
+  telnetFromEnv,
   hostsOnFileChange,
   hostsOnWorkspaceChange,
   registerEnabledAreaChannels,
@@ -534,6 +535,7 @@ const secretScans = scoped(scopes, (scope) => scope.secretScans);
 const enabledAreas = enabledAreasFromEnv();
 /** Whether the local terminal tab (#410) is on: with the SSH area, unless `local-terminal=off`. */
 const localTerminalOn = localTerminalFromEnv();
+const telnetOn = telnetFromEnv();
 
 /**
  * The kinds `WIREBENCH_KINDS` leaves switched on (see `kinds/enabled-kinds.ts`), and the engine
@@ -576,6 +578,7 @@ const sessionLogs = new SessionLogStore({
 });
 const sshService = new SshService({
   ...sshConnectDeps,
+  telnet: telnetOn,
   // Mosh hosts (#419): mosh-server is started over SSH, then the installed mosh-client runs in a pty.
   openMosh: (options) =>
     openMoshSession(
@@ -1005,6 +1008,7 @@ void app.whenReady().then(() => {
     enabledAreas,
     enabledKinds,
     localTerminalOn,
+    telnetOn,
   );
   // The calling window's open projects' folders: the containment roots a renderer-named import path may sit in.
   const openProjectDirs = (): readonly string[] =>
