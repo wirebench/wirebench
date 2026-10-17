@@ -121,6 +121,34 @@ describe('update-request-scripts', () => {
     expect(scripts?.pre?.text).toBe(OFF.pre?.text);
   });
 
+  it('keeps an API’s post-response order through the wire and across later edits', async () => {
+    let { project } = await applyChange(
+      build(),
+      {
+        kind: 'update-request-scripts',
+        requestId: 'api-1',
+        scripts: { post: 'log(1);', postResponseOrder: 'inner-first' },
+      },
+      deps,
+    );
+    expect(restApisOf(project)[0]?.scripts?.postResponseOrder).toBe('inner-first');
+    expect(toRequestScriptsWire(restApisOf(project)[0]?.scripts)?.postResponseOrder).toBe('inner-first');
+
+    ({ project } = await applyChange(
+      project,
+      { kind: 'update-request-scripts', requestId: 'api-1', scripts: { post: 'log(2);' } },
+      deps,
+    ));
+    expect(restApisOf(project)[0]?.scripts?.postResponseOrder).toBe('inner-first');
+
+    ({ project } = await applyChange(
+      project,
+      { kind: 'update-request-scripts', requestId: 'api-1', scripts: { postResponseOrder: 'outer-first' } },
+      deps,
+    ));
+    expect(toRequestScriptsWire(restApisOf(project)[0]?.scripts)?.postResponseOrder).toBe('outer-first');
+  });
+
   it('removes the scripts with null, and when nothing is left', async () => {
     const removed = await applyChange(
       build(),

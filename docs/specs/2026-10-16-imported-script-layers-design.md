@@ -189,22 +189,32 @@ The layer defines these:
 Unsupported: `bru.sendRequest`, `bru.sleep`, `require`, `bru.cookies` and `.jsonSchema` if the
 validator cannot run in the sandbox.
 
-**Script order (decision 5).** Bruno's `scripts.flow` defaults to `sandwich`. The research note
-says that runs post-response scripts innermost first: request, then folder, then collection. Wirebench
-runs them outermost first. The Bruno PR first confirms both flow values in Bruno's source
-(`prepare-request.js:394`) and records what it found here. If `sandwich` is innermost-first:
+**Script order (decision 5).** Bruno's `scripts.flow` defaults to `sandwich`; Wirebench runs
+post-response scripts outermost first. Bruno's source (commit `1b932553`, 2026-10-17) confirms both
+flow values:
+
+- `prepare-request.js` reads `collection.brunoConfig.scripts.flow`, defaulting to `'sandwich'`, and
+  hands it to `mergeScripts` ([prepare-request.js:395-399](https://github.com/usebruno/bruno/blob/1b932553772cb671f9932dcbea0bde003489707a/packages/bruno-electron/src/ipc/network/prepare-request.js#L395-L399)).
+- `mergeScripts` always runs pre-request scripts collection, then folders (outermost first), then the
+  request ([collection.js:384-392](https://github.com/usebruno/bruno/blob/1b932553772cb671f9932dcbea0bde003489707a/packages/bruno-electron/src/utils/collection.js#L384-L392)).
+- With `sequential`, post-response scripts run in that same order: collection, folders, request
+  ([collection.js:395-405](https://github.com/usebruno/bruno/blob/1b932553772cb671f9932dcbea0bde003489707a/packages/bruno-electron/src/utils/collection.js#L395-L405)).
+- With anything else, so `sandwich` and an absent flow, they run innermost first: request, then the
+  folders reversed, then the collection ([collection.js:406-418](https://github.com/usebruno/bruno/blob/1b932553772cb671f9932dcbea0bde003489707a/packages/bruno-electron/src/utils/collection.js#L406-L418)).
+  Tests follow the same rule ([collection.js:433-455](https://github.com/usebruno/bruno/blob/1b932553772cb671f9932dcbea0bde003489707a/packages/bruno-electron/src/utils/collection.js#L433-L455)).
+
+So `sandwich` differs from Wirebench's order, and the setting is added:
 
 - The API-level script settings gain `postResponseOrder: 'outer-first' | 'inner-first'`. It is
   optional, and `outer-first` is the default, so existing projects do not change. Pre-request
   scripts always run outermost first.
-- The level runner (`script/levels.ts`) reverses the post-response levels when the setting is
-  `inner-first`.
+- The post-response loop and the type-check order (`run/script-support.ts`,
+  `script/request-scripts.ts`) reverse the levels when the API's setting is `inner-first`. Only the
+  API's setting counts; a folder's or a request's is ignored.
 - A Bruno import sets `inner-first` when the collection's flow is `sandwich` or absent, and
   `outer-first` for `sequential`.
-- The setting is shown and editable with the API's scripts. The format version bump in §3.1 covers it.
-
-If the source shows Wirebench's order already matches, no setting is added and this paragraph is
-replaced with what was found.
+- The setting is shown as a select in the API's Scripts settings, next to the enabled toggle. The
+  format version bump in §3.1 covers it.
 
 ## 6. Hoppscotch (PR 3)
 

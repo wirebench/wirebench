@@ -35,6 +35,7 @@ export function patchedScripts(
   const pre = phase('pre');
   const post = phase('post');
   const timeoutMs = patch.timeoutMs === null ? undefined : (patch.timeoutMs ?? scripts?.timeoutMs);
+  const postResponseOrder = patch.postResponseOrder ?? scripts?.postResponseOrder;
   const secrets = patch.secrets ?? scripts?.secrets ?? [];
   if (pre === undefined && post === undefined && secrets.length === 0) {
     return undefined;
@@ -46,7 +47,7 @@ export function patchedScripts(
     enabled: patch.enabled ?? scripts?.enabled ?? true,
     secrets: [...new Set(secrets)],
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-    ...(scripts?.postResponseOrder !== undefined ? { postResponseOrder: scripts.postResponseOrder } : {}),
+    ...(postResponseOrder !== undefined ? { postResponseOrder } : {}),
   };
 }
 

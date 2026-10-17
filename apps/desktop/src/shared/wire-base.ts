@@ -548,6 +548,8 @@ export const requestScriptsWireSchema = z.object({
   /** The secrets a script may read with `secrets.get`, named as the engine's `SECRET_NAME_PATTERN` allows. */
   secrets: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)),
   timeoutMs: z.number().int().positive().max(10_000).optional(),
+  /** An API's: which level's post-response script runs first; absent means outermost first. */
+  postResponseOrder: z.enum(['outer-first', 'inner-first']).optional(),
   /** Set when a script file could not be used; the request refuses to send until it is fixed. */
   problems: z
     .array(z.object({ phase: z.enum(['pre', 'post']), code: z.enum(['script-file-missing', 'script-too-large']) }))
@@ -571,6 +573,7 @@ export const requestScriptsPatchSchema = z.object({
     .max(100)
     .optional(),
   timeoutMs: z.number().int().positive().max(10_000).nullable().optional(),
+  postResponseOrder: z.enum(['outer-first', 'inner-first']).optional(),
 });
 export type RequestScriptsPatchWire = z.infer<typeof requestScriptsPatchSchema>;
 

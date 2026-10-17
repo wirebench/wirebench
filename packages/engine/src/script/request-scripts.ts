@@ -156,6 +156,18 @@ export function scriptLevels(request: ScriptedRequest): readonly ScriptRunLevel[
   ];
 }
 
+/**
+ * The levels in the order their post-response scripts run: as `levels`, outermost first, unless
+ * the API level's scripts say `inner-first`. Only the API's setting counts; a folder's or a
+ * request's is ignored. Pre-request scripts always run in `levels` order.
+ */
+export function postResponseLevels<L extends { readonly level: ScriptLevelKind; readonly scripts: RequestScripts }>(
+  levels: readonly L[],
+): readonly L[] {
+  const api = levels.find((level) => level.level === 'api');
+  return api?.scripts.postResponseOrder === 'inner-first' ? [...levels].reverse() : levels;
+}
+
 /** The scripts of every level that will run: switched on, with a script. Outermost first. */
 export function activeLevels(levels: readonly ScriptLevel[]): ScriptLevel[] {
   return levels.flatMap((level) => {
@@ -249,16 +261,18 @@ export class RequestScripting {
     for (const level of levels) assertScriptsUsable(level.scripts, request.path, levelOwner(level));
     const errors: { file: string; diagnostic: ScriptDiagnostic }[] = [];
     let typed = false;
-    for (const level of levels) {
-      for (const phase of ['pre', 'post'] as const) {
-        const source = level.scripts[phase];
-        if (source === undefined) continue;
-        const file = this.fileOf(level, phase);
-        for (const diagnostic of await this.diagnostics(request, level, phase, source)) {
-          if (diagnostic.severity !== 'error') continue;
-          errors.push({ file, diagnostic });
-          typed ||= level.scripts.api === 'wirebench';
-        }
+    const order = [
+      ...levels.map((level) => [level, 'pre'] as const),
+      ...postResponseLevels(levels).map((level) => [level, 'post'] as const),
+    ];
+    for (const [level, phase] of order) {
+      const source = level.scripts[phase];
+      if (source === undefined) continue;
+      const file = this.fileOf(level, phase);
+      for (const diagnostic of await this.diagnostics(request, level, phase, source)) {
+        if (diagnostic.severity !== 'error') continue;
+        errors.push({ file, diagnostic });
+        typed ||= level.scripts.api === 'wirebench';
       }
     }
     if (errors.length > 0) {
