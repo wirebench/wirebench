@@ -55,6 +55,7 @@ export const COMMAND_IDS = [
   'ssh.newLocalTerminal',
   'ssh.sessionLogs',
   'ssh.teamSessionLogs',
+  'ssh.joinShare',
   'sftp.refresh',
   'sftp.newFolder',
   'sftp.rename',

@@ -27,6 +27,7 @@ function actions(): Record<keyof TerminalMenuActions, Spy> {
     runSnippet: vi.fn<() => void>(),
     openFiles: vi.fn<() => void>(),
     reconnect: vi.fn<() => void>(),
+    share: vi.fn<() => void>(),
   };
 }
 
@@ -44,6 +45,17 @@ afterEach(() => {
 });
 
 describe('terminalMenuGroups', () => {
+  it('offers Share session only where sharing is available, and Stop sharing while shared (#429)', () => {
+    const last = (state: Parameters<typeof terminalMenuGroups>[1]) =>
+      terminalMenuGroups('mac', state, actions())
+        .at(-1)!
+        .map((item) => [item.label, item.disabled]);
+    expect(last(CONNECTED)).not.toContainEqual(['Share session', false]);
+    expect(last({ ...CONNECTED, share: 'available' })).toEqual([['Share session', false]]);
+    expect(last({ hasSelection: false, connected: false, share: 'available' })).toEqual([['Share session', true]]);
+    expect(last({ ...CONNECTED, share: 'sharing' })).toEqual([['Stop sharing', false]]);
+  });
+
   it('lists the items in order, each with its shortcut, on a Mac', () => {
     const groups = terminalMenuGroups('mac', CONNECTED, actions());
     expect(groups.map((group) => group.map((item) => [item.label, item.shortcut]))).toEqual([

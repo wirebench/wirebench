@@ -16,6 +16,7 @@ import type { SshService } from '../ssh-service.js';
 import { registerLayoutChannels } from './layout-channels.js';
 import { registerForwardChannels } from './forward-channels.js';
 import { registerSessionLogChannels } from './session-log-channels.js';
+import { registerTerminalShareChannels } from './terminal-share-channels.js';
 import { registerSftpChannels } from './sftp-channels.js';
 
 export function registerSshChannels(deps: {
@@ -46,6 +47,7 @@ export function registerSshChannels(deps: {
   edits: Parameters<typeof registerSftpChannels>[0]['edits'];
   forward: Parameters<typeof registerForwardChannels>[0]['forward'] & Pick<ForwardService, 'hostsChanged'>;
   sessionLogs: Parameters<typeof registerSessionLogChannels>[0];
+  terminalShares: Parameters<typeof registerTerminalShareChannels>[0];
   /** Serial consoles (#426): this machine's ports, and the device it opens for each serial host. */
   serial: {
     ports: () => Promise<readonly SerialPortEntry[]>;
@@ -150,4 +152,6 @@ export function registerSshChannels(deps: {
   registerForwardChannels({ forward: deps.forward });
   // Session logs too: off with the area, no `sessionLog.*` channel exists.
   registerSessionLogChannels(deps.sessionLogs);
+  // Shared terminals too (#429).
+  registerTerminalShareChannels(deps.terminalShares);
 }

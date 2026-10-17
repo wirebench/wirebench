@@ -8,6 +8,8 @@
 import {
   sessionLogChunkResponseSchema,
   sessionLogOpenResponseSchema,
+  terminalShareCreateResponseSchema,
+  terminalShareInfoSchema,
   sessionLogPageSchema,
   sessionLogTextResponseSchema,
 } from '@wirebench/engine';
@@ -20,6 +22,9 @@ import type {
   SessionLogPage,
   SessionLogsQuery,
   SessionLogTextResponse,
+  TerminalShareCreateRequest,
+  TerminalShareCreateResponse,
+  TerminalShareInfo,
 } from '@wirebench/engine';
 import {
   accessResponseSchema,
@@ -920,6 +925,32 @@ export class ServerClient {
       token,
       schema: sessionLogTextResponseSchema,
       timeoutMs: SYNC_TRANSFER_TIMEOUT_MS,
+    });
+  }
+
+  /** Starts sharing a terminal (#429): the share waits 30 s for its owner's socket. */
+  createTerminalShare(
+    url: string,
+    token: string,
+    workspaceId: string,
+    body: TerminalShareCreateRequest,
+  ): Promise<TerminalShareCreateResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: `${workspacePath(workspaceId)}/terminal-shares`,
+      token,
+      body,
+      schema: terminalShareCreateResponseSchema,
+    });
+  }
+
+  /** What a share is before joining it; 404 `terminal-share-not-found` once it ended. */
+  terminalShareInfo(url: string, token: string, workspaceId: string, shareId: string): Promise<TerminalShareInfo> {
+    return this.call(url, {
+      method: 'GET',
+      path: `${workspacePath(workspaceId)}/terminal-shares/${encodeURIComponent(shareId)}`,
+      token,
+      schema: terminalShareInfoSchema,
     });
   }
 

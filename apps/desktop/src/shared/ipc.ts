@@ -69,6 +69,22 @@ import {
   teamSessionLogReadResponseSchema,
 } from './session-log-wire.js';
 import {
+  terminalShareAvailableResponseSchema,
+  terminalShareInputRequestSchema,
+  terminalShareJoinRequestSchema,
+  terminalShareJoinResponseSchema,
+  terminalShareLinkRequestSchema,
+  terminalSharePreviewResponseSchema,
+  terminalShareSessionRequestSchema,
+  terminalShareStartRequestSchema,
+  terminalShareStartResponseSchema,
+  terminalShareStateEventSchema,
+  terminalShareUserRequestSchema,
+  terminalShareViewRequestSchema,
+  terminalShareViewerDataEventSchema,
+  terminalShareViewerStateEventSchema,
+} from './terminal-share-wire.js';
+import {
   sshListSnippetsResponseSchema,
   sshPreviewSnippetRequestSchema,
   sshPreviewSnippetResponseSchema,
@@ -1255,6 +1271,22 @@ export const channels = {
     teamList: defineChannel('sessionLog.teamList', teamSessionLogListRequestSchema, teamSessionLogListResponseSchema),
     teamRead: defineChannel('sessionLog.teamRead', teamSessionLogReadRequestSchema, teamSessionLogReadResponseSchema),
   },
+  // Shared terminals (#429): the owner's side acts on its own SSH session, the viewer's on a view id.
+  terminalShare: {
+    available: defineChannel('terminalShare.available', z.object({}), terminalShareAvailableResponseSchema),
+    start: defineChannel('terminalShare.start', terminalShareStartRequestSchema, terminalShareStartResponseSchema),
+    stop: defineChannel('terminalShare.stop', terminalShareSessionRequestSchema, z.object({})),
+    grant: defineChannel('terminalShare.grant', terminalShareUserRequestSchema, z.object({})),
+    decline: defineChannel('terminalShare.decline', terminalShareUserRequestSchema, z.object({})),
+    remove: defineChannel('terminalShare.remove', terminalShareUserRequestSchema, z.object({})),
+    takeBack: defineChannel('terminalShare.takeBack', terminalShareSessionRequestSchema, z.object({})),
+    preview: defineChannel('terminalShare.preview', terminalShareLinkRequestSchema, terminalSharePreviewResponseSchema),
+    join: defineChannel('terminalShare.join', terminalShareJoinRequestSchema, terminalShareJoinResponseSchema),
+    leave: defineChannel('terminalShare.leave', terminalShareViewRequestSchema, z.object({})),
+    input: defineChannel('terminalShare.input', terminalShareInputRequestSchema, z.object({})),
+    requestControl: defineChannel('terminalShare.requestControl', terminalShareViewRequestSchema, z.object({})),
+    release: defineChannel('terminalShare.release', terminalShareViewRequestSchema, z.object({})),
+  },
   xpath: soapChannels.xpath,
   validate: soapChannels.validate,
   // The WS-I catalogue, both runners and the HTML renderer live in the engine, which is a
@@ -1294,6 +1326,14 @@ export const events = {
     connectProgress: defineEvent('ssh.connectProgress', sshConnectProgressEventSchema),
     /** The machine woke from sleep: a terminal waiting to reconnect tries at once. To every window. */
     resumed: defineEvent('ssh.resumed', z.object({})),
+  },
+  terminalShare: {
+    /** A share this window owns changed (presence, control) or ended. */
+    state: defineEvent('terminalShare.state', terminalShareStateEventSchema),
+    /** Output of a shared terminal this window views, base64. */
+    viewerData: defineEvent('terminalShare.viewerData', terminalShareViewerDataEventSchema),
+    /** A view's presence, control or end. */
+    viewerState: defineEvent('terminalShare.viewerState', terminalShareViewerStateEventSchema),
   },
   localTerminal: {
     /** The local shell's output, base64, to the window that opened it only. */

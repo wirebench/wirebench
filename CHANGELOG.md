@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Share a live terminal.** On an Enterprise server, **Share session** in an SSH terminal's menu lets
+  members of the shared workspace watch it: they join from an invite link with **Terminal: Join Shared
+  Terminal…** and see the screen as it is, masked the same way. A viewer can ask for control; the owner
+  approves, takes it back or stops sharing in one click. The server relays the screen and stores
+  nothing but audit rows (#429).
 - **Team session logs.** A workspace admin on an Enterprise server can turn on **Record SSH
   sessions** for a shared workspace: every member's SSH sessions on its hosts are then logged, masked
   as local session logs are, and streamed to the server while they run. **Terminal: Team Session

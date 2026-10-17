@@ -93,6 +93,7 @@ describe('buildApi', () => {
       'sync',
       'team',
       'teamSecrets',
+      'terminalShare',
       'theme',
       'validate',
       'workspace',

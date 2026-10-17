@@ -75,6 +75,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Terminal: New Local Terminal | <kbd>⌘⌥T</kbd> | <kbd>Ctrl+Alt+T</kbd> |
 | Terminal: Session Logs… | — | — |
 | Terminal: Team Session Logs… | — | — |
+| Terminal: Join Shared Terminal… | — | — |
 | Files: Refresh | — | — |
 | Files: New Folder | — | — |
 | Files: Rename | — | — |

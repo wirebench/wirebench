@@ -428,6 +428,31 @@ describe('SshService', () => {
     });
   });
 
+  it("a tap gets the masked output and the resizes of its window's session, and its end (#429)", async () => {
+    const { service, fake } = make({ known: [KEY] });
+    const s = sender(1);
+    const { sessionId } = await service.connect(as(s), CONNECT);
+    expect(() => service.tap(as(sender(2)), sessionId, { data: vi.fn(), resize: vi.fn(), end: vi.fn() })).toThrow(
+      expect.objectContaining({ code: 'ssh-session-unknown' }) as Error,
+    );
+    fake.pushData(Buffer.from('before '));
+    const tap = { data: vi.fn(), resize: vi.fn(), end: vi.fn() };
+    const untap = service.tap(as(s), sessionId, tap);
+    fake.pushData(Buffer.from('hi'));
+    expect(tap.data.mock.calls.map(([bytes]) => Buffer.from(bytes as Uint8Array).toString())).toEqual([
+      'before ',
+      'hi',
+    ]);
+    service.resize(as(s), { sessionId, cols: 100, rows: 30 });
+    expect(tap.resize).toHaveBeenCalledWith(100, 30);
+    const other = { data: vi.fn(), resize: vi.fn(), end: vi.fn() };
+    service.tap(as(s), sessionId, other);
+    untap();
+    service.close(as(s), { sessionId });
+    expect(tap.end).not.toHaveBeenCalled();
+    expect(other.end).toHaveBeenCalledOnce();
+  });
+
   it("sends the connect's progress to the window under the renderer's attempt id (#528)", async () => {
     const { service, open, emit } = make({ known: [KEY] });
     const s = sender(1);

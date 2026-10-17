@@ -36,6 +36,7 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
       'audit-log',
       'sso',
       'session-logs',
+      'terminal-shares',
     ]);
   });
 

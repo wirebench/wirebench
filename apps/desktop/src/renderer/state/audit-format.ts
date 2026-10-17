@@ -34,6 +34,7 @@ export const ACTION_GROUPS = [
   'scim',
   'schedule',
   'session_log',
+  'terminal_share',
 ] as const;
 export type ActionGroup = (typeof ACTION_GROUPS)[number];
 export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
@@ -50,6 +51,7 @@ export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
   scim: 'Provisioning',
   schedule: 'Schedules',
   session_log: 'Session logs',
+  terminal_share: 'Shared terminals',
 };
 
 export function actionLabel(action: string): string {
@@ -114,6 +116,8 @@ export function targetLabel(event: {
       return `Schedule ${str(d['name']) ?? ''}`.trim();
     case 'session-log':
       return `Session log ${str(d['hostName']) ?? ''}`.trim();
+    case 'terminal-share':
+      return `Shared terminal ${str(d['hostName']) ?? ''}`.trim();
     default:
       return event.target.kind;
   }
