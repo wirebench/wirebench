@@ -14,14 +14,23 @@ const unsupported = (name) => () => {
 };
 `;
 
-/** Declares `asValue` and `variables`: a variable scope over `vars` and `props`. */
+/**
+ * Declares `asValue`, `removed` and `variables`: a variable scope over `vars` and `props`. `unset`
+ * writes `''`, so later scripts see the value cleared, and records the name, so for the rest of this
+ * script it reads as absent (`get` is undefined, `has` false) until it is set again.
+ */
 export const PART_VARIABLES = String.raw`
 const asValue = (value) => (value === undefined || value === null ? '' : typeof value === 'object' ? JSON.stringify(value) : value);
+const removed = new Set();
 const variables = Object.freeze({
-  get: (name) => { const v = vars.get(name); return v !== undefined ? v : props.get(name); },
-  set: (name, value) => vars.set(name, asValue(value)),
-  unset: (name) => vars.set(name, ''),
-  has: (name) => vars.get(name) !== undefined || props.get(name) !== undefined,
+  get: (name) => {
+    if (removed.has(String(name))) return undefined;
+    const v = vars.get(name);
+    return v !== undefined ? v : props.get(name);
+  },
+  set: (name, value) => { vars.set(name, asValue(value)); removed.delete(String(name)); },
+  unset: (name) => { vars.set(name, ''); removed.add(String(name)); },
+  has: (name) => !removed.has(String(name)) && (vars.get(name) !== undefined || props.get(name) !== undefined),
   clear: unsupported('Clearing variables'),
   toObject: () => ({}),
   replaceIn: (text) => String(text).replace(/\{\{\s*([^{}]*?)\s*\}\}/g, (whole, name) => {

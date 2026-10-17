@@ -349,13 +349,23 @@ describe('the Bruno layer: more members', () => {
   it('hasVar and deleteVar', async () => {
     const outcome = await run(
       'pre',
-      "console.log(bru.hasVar('tenant'), bru.hasVar('nope')); bru.deleteVar('tenant'); console.log(bru.getVar('tenant'));",
+      "console.log(bru.hasVar('tenant'), bru.hasVar('nope')); bru.deleteVar('tenant'); console.log(bru.hasVar('tenant'), bru.getVar('tenant'));",
     );
+    // A deleted name reads as absent for the rest of the script, props included; the run value is
+    // cleared to '' so later scripts do not see the old one.
     expect(outcome).toMatchObject({
       ok: true,
       values: [{ name: 'tenant', value: '' }],
-      log: { lines: ['true false', ''] },
+      log: { lines: ['true false', 'false undefined'] },
     });
+  });
+
+  it('a variable set again after deleteVar reads back', async () => {
+    const outcome = await run(
+      'pre',
+      "bru.setVar('a', '1'); bru.deleteVar('a'); bru.setVar('a', '2'); console.log(bru.hasVar('a'), bru.getVar('a'));",
+    );
+    expect(outcome).toMatchObject({ ok: true, values: [{ name: 'a', value: '2' }], log: { lines: ['true 2'] } });
   });
 
   it('req.getHeaders returns the headers', async () => {

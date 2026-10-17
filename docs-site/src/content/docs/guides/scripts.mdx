@@ -195,7 +195,10 @@ first, then the read-only `props`. A write goes to `vars`, whatever scope the sc
 requests read it as `${#Sequence#name}`, and it is never written to a project or environment file. A
 script that relied on a write surviving after the app closed loses that. A request that read
 `{{ name }}` in the client keeps reading `${name}` after the import, which is a project property or
-environment variable; point it at `${#Sequence#name}` to read a value a script set.
+environment variable; point it at `${#Sequence#name}` to read a value a script set. A delete
+(`unset`, `deleteVar`, `env.delete`) writes an empty value to `vars`, so later scripts see it cleared;
+for the rest of the script that deleted it, the name reads as absent (`has` is false, and `get` gives
+what the client gives for a missing name) until it is set again.
 
 **Unsupported calls.** A call the sandbox cannot honour — sending requests, loading modules, reading
 files, waiting, cookie writes, the vault — fails when it is called, with `script-unsupported` naming it.
