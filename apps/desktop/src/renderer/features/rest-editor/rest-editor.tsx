@@ -401,6 +401,10 @@ export function RestEditor({ requestId }: RestEditorProps) {
         setTab('settings');
       }}
       onRevealReference={revealReference}
+      describeReferenceField={(ref) => {
+        const current = useProjectStore.getState().restRequests[requestId];
+        return current === undefined ? undefined : referenceFieldLabel(current, ref);
+      }}
     />
   );
 
@@ -529,6 +533,33 @@ export function referenceField(
     return 'auth';
   }
   return undefined;
+}
+
+/** The field `ref` is written in, as a person would name it ("Header X-List"); undefined when it is in none. */
+export function referenceFieldLabel(
+  request: Pick<RestRequestWire, 'url' | 'query' | 'pathParams' | 'headers' | 'body' | 'auth'>,
+  ref: string,
+): string | undefined {
+  const rowName = (rows: readonly { readonly name: string; readonly value: string }[]): string | undefined =>
+    rows.find((row) => row.name.includes(ref) || row.value.includes(ref))?.name;
+  switch (referenceField(request, ref)) {
+    case 'url':
+      return 'The URL';
+    case 'params': {
+      const query = rowName(request.query);
+      return query !== undefined
+        ? `Query parameter ${query}`
+        : `Path parameter ${rowName(request.pathParams) ?? ''}`.trim();
+    }
+    case 'headers':
+      return `Header ${rowName(request.headers) ?? ''}`.trim();
+    case 'body':
+      return 'The body';
+    case 'auth':
+      return 'The auth settings';
+    default:
+      return undefined;
+  }
 }
 
 /**

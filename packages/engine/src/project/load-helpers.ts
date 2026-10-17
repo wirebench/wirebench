@@ -18,7 +18,7 @@ import { readFileIfExists, readdirIfExists } from './fs.js';
 import type { ProjectProblem } from './load.js';
 import type { AuthConfig, DefinitionAuth } from './model.js';
 import { isExamplesDir } from './managed-files.js';
-import { FOLDER_FILE, FOLDER_SCRIPT_STEM, MAX_FOLDER_DEPTH, REQUEST_SUFFIX } from './paths.js';
+import { FOLDER_FILE, FOLDER_SCRIPT_STEM, GOLDEN_SUFFIX, MAX_FOLDER_DEPTH, REQUEST_SUFFIX } from './paths.js';
 import { parseFile, restFolderFileSchema } from './schema-parts.js';
 import type { KeyValueEntryFile, scriptsSchema } from './schema-parts.js';
 import { parseYaml } from './yaml.js';
@@ -258,6 +258,8 @@ export async function loadFolderContents<R extends TreeRequest>(
   for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
     if (entry.isFile && entry.name.endsWith(REQUEST_SUFFIX)) {
       requests.push(await readRequest(dir, entry.name, unclaimed));
+      // A request's golden sidecar (#34) belongs to it whatever its protocol.
+      unclaimed.delete(`${entry.name.slice(0, -REQUEST_SUFFIX.length)}${GOLDEN_SUFFIX}`);
       continue;
     }
     if (!entry.isDirectory || (await isExamplesDir(fs, root, dir, entry.name, requestSlugs))) {

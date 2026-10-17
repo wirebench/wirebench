@@ -1,0 +1,43 @@
+{
+  "name": "wirebench",
+  "displayName": "Wirebench",
+  "version": "0.1.0",
+  "description": "Send, check and diff API requests in a local Wirebench project through its MCP server. No model runs inside Wirebench; nothing leaves the machine except the requests you allow.",
+  "author": {
+    "name": "Wirebench",
+    "url": "https://github.com/wirebench/wirebench"
+  },
+  "homepage": "https://wirebench.github.io/wirebench/docs/guides/coding-agents/",
+  "repository": "https://github.com/wirebench/wirebench",
+  "license": "Apache-2.0",
+  "keywords": ["api", "soap", "rest", "mcp", "testing", "contract"],
+  "userConfig": {
+    "project": {
+      "type": "directory",
+      "title": "Wirebench project",
+      "description": "The project folder (the one holding wirebench.yaml), as an absolute path.",
+      "required": true
+    },
+    "environment": {
+      "type": "string",
+      "title": "Environment",
+      "description": "The one environment the agent may send under, by name. Every other environment is refused.",
+      "required": true
+    }
+  },
+  "mcpServers": {
+    "wirebench": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@wirebench/cli",
+        "mcp",
+        "--project",
+        "${user_config.project}",
+        "--allow-send",
+        "-e",
+        "${user_config.environment}"
+      ]
+    }
+  }
+}

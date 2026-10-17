@@ -5,6 +5,9 @@
  * and each says what it is about even when there is nothing to show, because "no cookies" and "no
  * response yet" are different answers and the user is entitled to tell them apart.
  *
+ * A cancel keeps the response that was on screen, under a one-line "Cancelled after …" bar: the
+ * person stopped a send, they did not ask to lose what they were reading.
+ *
  * *Save response* goes through a channel that takes only the send id: the bytes stay in main and the
  * file is chosen by the user in a native dialog, exactly as a SOAP attachment's save does.
  */
@@ -21,6 +24,7 @@ import { InspectorIconButton } from '../../request-editor/inspectors/inspector-s
 import { SslInspector } from '../../request-editor/inspectors/ssl-inspector.js';
 import { QueryView } from '../../request-editor/views/lazy-views.js';
 import { TimingsBar } from '../../console/timings-bar.js';
+import { formatDuration } from '../../../lib/format-size.js';
 import { BodyView } from './body-view.js';
 import { EventsView, eventsDocument } from './events-view.js';
 import { CookiesView } from './cookies-view.js';
@@ -64,6 +68,8 @@ export interface RestResponsePaneProps {
   readonly onOpenTimeoutSetting?: (() => void) | undefined;
   /** Shows the field an unresolved `${name}` was written in. */
   readonly onRevealReference?: ((ref: string) => void) | undefined;
+  /** Names the field a reference was written in, for an unclosed `${`. */
+  readonly describeReferenceField?: ((ref: string) => string | undefined) | undefined;
 }
 
 /** The response pane. */
@@ -74,13 +80,16 @@ export function RestResponsePane({
   retryDisabledReason,
   onOpenTimeoutSetting,
   onRevealReference,
+  describeReferenceField,
 }: RestResponsePaneProps) {
   const [tab, setTab] = useState<TabId>('body');
   const sending = state?.status === 'sending';
   // While a plain send is out, the last response stays on screen, dimmed under the Sending bar,
   // rather than the pane going blank until the new one lands.
   const stale = sending && state?.exchange === undefined && state?.live === undefined ? state?.previous : undefined;
-  const exchange = state?.exchange ?? stale;
+  // A cancel keeps that response on screen, under a slim "Cancelled" bar instead of the error panel.
+  const kept = state?.status === 'error' && state.error?.code === 'aborted' ? state.previous : undefined;
+  const exchange = state?.exchange ?? stale ?? kept;
   // While an event stream is open there is no exchange yet, only the live half; once the send
   // resolves the exchange's `stream` replaces it with the same rows.
   const live = exchange === undefined ? state?.live : undefined;
@@ -164,7 +173,7 @@ export function RestResponsePane({
         <div className="min-w-0 flex-1">
           <StatusLine
             {...(exchange !== undefined ? { exchange } : {})}
-            {...(state?.error !== undefined ? { error: state.error } : {})}
+            {...(state?.error !== undefined && kept === undefined ? { error: state.error } : {})}
             sending={sending}
             live={live}
             startedAt={state?.startedAt}
@@ -176,7 +185,7 @@ export function RestResponsePane({
             setShown({ exampleId, sendId: state?.sendId });
           }}
         />
-        {exchange !== undefined && stale === undefined && shownExample === undefined && (
+        {exchange !== undefined && stale === undefined && kept === undefined && shownExample === undefined && (
           <InspectorIconButton
             label="Save response…"
             data-testid="rest-response-save"
@@ -235,6 +244,7 @@ export function RestResponsePane({
           retryDisabledReason={retryDisabledReason}
           onOpenTimeoutSetting={onOpenTimeoutSetting}
           onRevealReference={onRevealReference}
+          describeReferenceField={describeReferenceField}
         />
       ) : exchange === undefined ? (
         // The bar above already says "Sending…"; the pane says it only once.
@@ -247,6 +257,13 @@ export function RestResponsePane({
           className={`flex min-h-0 flex-1 flex-col transition-opacity ${stale !== undefined ? 'opacity-50' : ''}`}
           {...(stale !== undefined ? { 'aria-busy': true, 'data-stale': '' } : {})}
         >
+          {kept !== undefined && (
+            <CancelledBar
+              afterMs={state?.cancelledAfterMs}
+              onRetry={onRetry}
+              retryDisabledReason={retryDisabledReason}
+            />
+          )}
           <Tabs label="Response tabs" items={items} active={activeTab} onSelect={setTab} />
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {activeTab === 'events' && stream !== undefined && (
@@ -311,6 +328,42 @@ export function RestResponsePane({
         </div>
       )}
     </section>
+  );
+}
+
+/** The one line a cancel leaves above the response it kept: how long the send ran, and Retry. */
+function CancelledBar({
+  afterMs,
+  onRetry,
+  retryDisabledReason,
+}: {
+  readonly afterMs: number | undefined;
+  readonly onRetry: (() => void) | undefined;
+  readonly retryDisabledReason: string | undefined;
+}) {
+  return (
+    <p
+      role="status"
+      data-testid="rest-response-cancelled"
+      className="flex h-6 shrink-0 items-center gap-1 border-b border-hairline bg-surface-raised px-2 text-xs text-fg-muted"
+    >
+      {afterMs !== undefined ? `Cancelled after ${formatDuration(afterMs)}` : 'Cancelled'}
+      {onRetry !== undefined && (
+        <>
+          {' · '}
+          <button
+            type="button"
+            data-testid="rest-response-cancelled-retry"
+            className="text-accent hover:underline disabled:text-fg-subtle disabled:no-underline"
+            disabled={retryDisabledReason !== undefined}
+            title={retryDisabledReason}
+            onClick={onRetry}
+          >
+            Retry
+          </button>
+        </>
+      )}
+    </p>
   );
 }
 

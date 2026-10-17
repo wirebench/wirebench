@@ -150,6 +150,54 @@ describe('RestResponsePane', () => {
     expect(screen.queryByTestId('send-error-retry')).toBeNull();
   });
 
+  it('names the host and port refused, and says "Connection refused" once in the panel', () => {
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{
+            status: 'error',
+            sendId: 's1',
+            error: { code: 'connection-refused', message: 'Connection refused.', details: { target: '127.0.0.1:9' } },
+          }}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByTestId('rest-response-status').textContent).toBe('Connection refused');
+    expect(screen.getByTestId('send-error-title').textContent).toBe("Couldn't connect to 127.0.0.1:9");
+    // The engine's "Connection refused." says nothing the title does not.
+    expect(screen.queryByTestId('send-error-message')).toBeNull();
+  });
+
+  it('names the field an unclosed ${ sits in, and links to it', () => {
+    const onRevealReference = vi.fn();
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{
+            status: 'error',
+            sendId: 's1',
+            error: {
+              code: 'rest-unresolved-properties',
+              message: '"/x" has property references nothing resolves: ${$rand',
+              details: { unresolved: ['${$rand'] },
+            },
+          }}
+          onRevealReference={onRevealReference}
+          describeReferenceField={(ref) => (ref === '${$rand' ? 'Header X-List' : undefined)}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByTestId('send-error-title').textContent).toBe('Unclosed ${');
+    expect(screen.getByTestId('send-error-unclosed').textContent).toMatch(
+      /^Header X-List has a \$\{ that is never closed/,
+    );
+    expect(screen.queryByText(/active environment/)).toBeNull();
+    fireEvent.click(screen.getByTestId('send-error-reference'));
+    expect(onRevealReference).toHaveBeenCalledWith('${$rand');
+  });
+
   it('retries from the panel, and holds Retry back for the reason Send is held', () => {
     const onRetry = vi.fn();
     const state = {
@@ -186,6 +234,32 @@ describe('RestResponsePane', () => {
     expect(status.textContent).toBe('Cancelled');
     expect(status.className).not.toContain('danger');
     expect(screen.getByTestId('send-error-title').className).not.toContain('danger');
+  });
+
+  it('keeps the response a cancel left on screen, under a "Cancelled after" bar with Retry', () => {
+    const onRetry = vi.fn();
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{
+            status: 'error',
+            sendId: 's2',
+            error: { code: 'aborted', message: 'The request was aborted.' },
+            previous: makeRestExchange(),
+            cancelledAfterMs: 818,
+          }}
+          onRetry={onRetry}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.queryByTestId('send-error-panel')).toBeNull();
+    expect(screen.getByTestId('rest-response-cancelled').textContent).toBe('Cancelled after 818 ms · Retry');
+    // The kept response reads as it did, not dimmed and not as an error.
+    expect(screen.getByTestId('rest-response-view').hasAttribute('data-stale')).toBe(false);
+    expect(screen.getByTestId('rest-response-status').textContent).toMatch(/^200/);
+    fireEvent.click(screen.getByTestId('rest-response-cancelled-retry'));
+    expect(onRetry).toHaveBeenCalledOnce();
   });
 
   it('names the timeout and links its setting, and links each unresolved reference', () => {

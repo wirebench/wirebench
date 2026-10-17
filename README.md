@@ -24,6 +24,7 @@
   GraphQL, WebSocket and MCP servers, in one project with one set of environments, one history and one HTTP stack.
 - **Agent-ready, not AI-washed.** The `wirebench` CLI runs saved requests in CI, and `wirebench mcp` lets a coding agent
   import, generate, send, validate and query over the Model Context Protocol. No model runs inside the app.
+  [Use Wirebench from your coding agent](https://wirebench.github.io/wirebench/docs/guides/coding-agents/) sets it up.
 - **One window for the whole wire.** SSH hosts, terminals, SFTP, port forwarding and snippets live beside the API
   requests, so the service you call and the machine it runs on are in the same window.
 
