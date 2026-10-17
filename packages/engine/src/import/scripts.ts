@@ -82,7 +82,18 @@ const UNSUPPORTED_CALLS: Record<LayeredApi, readonly [RegExp, string][]> = {
     [/(?<![\w$.])require\s*\(/, 'require'],
     [TOP_LEVEL_IMPORT, 'import'],
   ],
-  'thunder-client': [],
+  'thunder-client': [
+    [/(?<![\w$.])tc\.runRequest\b/, 'tc.runRequest'],
+    [/(?<![\w$.])tc\.retryRequest\b/, 'tc.retryRequest'],
+    [/(?<![\w$.])tc\.loadModule\b/, 'tc.loadModule'],
+    [/(?<![\w$.])tc\.loadFromPath\b/, 'tc.loadFromPath'],
+    [/(?<![\w$.])tc\.readFile\b/, 'tc.readFile'],
+    [/(?<![\w$.])tc\.exec\b/, 'tc.exec'],
+    [/(?<![\w$.])tc\.delay\b/, 'tc.delay'],
+    [/(?<![\w$.])tc\.skipRequest\s*\(\s*[^\s)]/, 'tc.skipRequest with a request name'],
+    [/(?<![\w$.])require\s*\(\s*['"`]thunder-tests\//, 'require("thunder-tests/...")'],
+    [/(?<![\w$.])require\s*\((?!\s*['"`]thunder-tests\/)/, 'require'],
+  ],
 };
 
 export function unsupportedCalls(text: string, api: LayeredApi): string[] {
@@ -105,6 +116,7 @@ const RUN_CONTROL_CALLS: Partial<Record<LayeredApi, readonly [RegExp, string][]>
     [/(?<![\w$.])bru\.runner\.skipRequest\b/, 'bru.runner.skipRequest'],
     [/(?<![\w$.])bru\.runner\.stopExecution\b/, 'bru.runner.stopExecution'],
   ],
+  'thunder-client': [[/(?<![\w$.])tc\.skipRequest\s*\(\s*\)/, 'tc.skipRequest']],
 };
 
 export function runControlCalls(text: string, api: LayeredApi = 'postman'): string[] {

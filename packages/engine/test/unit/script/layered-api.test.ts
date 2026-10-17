@@ -4,7 +4,6 @@ import type { RestRequestSnapshot } from '../../../src/rest/scripting.js';
 import { checkOnce } from '../../../src/script/check/service.js';
 import { isLayeredApi, scriptFileName, type ScriptApi } from '../../../src/script/model.js';
 import { SCRIPT_LAYERS } from '../../../src/script/api/layers.js';
-import { runScript } from '../../../src/script/run.js';
 import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
 
 const sandbox = createScriptSandbox();
@@ -22,6 +21,10 @@ const REQUEST: RestRequestSnapshot = {
 };
 
 describe('the layered script APIs', () => {
+  it('every layered api has a layer', () => {
+    for (const api of LAYERED) if (isLayeredApi(api)) expect(SCRIPT_LAYERS[api]).toBeTypeOf('string');
+  });
+
   it('isLayeredApi is false only for wirebench', () => {
     expect(isLayeredApi('wirebench')).toBe(false);
     for (const api of LAYERED) expect(isLayeredApi(api)).toBe(true);
@@ -40,12 +43,14 @@ describe('the layered script APIs', () => {
     }
   });
 
-  const unlayered = LAYERED.find((api) => !(api in SCRIPT_LAYERS));
-
-  it.skipIf(unlayered === undefined)('a layered api with no layer fails with script-unsupported', async () => {
-    const api = unlayered!;
+  // Every layered API has a layer now, so the lookup is run against an empty table.
+  it('a layered api with no layer fails with script-unsupported', async () => {
+    vi.resetModules();
+    vi.doMock('../../../src/script/api/layers.js', () => ({ SCRIPT_LAYERS: {} }));
+    const { runScript: runUnlayered } = await import('../../../src/script/run.js');
+    const api: ScriptApi = 'thunder-client';
     const onSecretValue = vi.fn();
-    const outcome = await runScript({
+    const outcome = await runUnlayered({
       sandbox,
       phase: 'pre',
       api,
@@ -67,5 +72,7 @@ describe('the layered script APIs', () => {
         message: `${api} scripts are not supported yet`,
       });
     }
+    vi.doUnmock('../../../src/script/api/layers.js');
+    vi.resetModules();
   });
 });

@@ -10,6 +10,7 @@ import { BRUNO_LAYER } from '../../../src/script/api/bruno.js';
 import { HOPPSCOTCH_LAYER } from '../../../src/script/api/hoppscotch.js';
 import { INSOMNIA_LAYER } from '../../../src/script/api/insomnia.js';
 import { POSTMAN_LAYER } from '../../../src/script/api/postman.js';
+import { THUNDER_CLIENT_LAYER } from '../../../src/script/api/thunder-client.js';
 import {
   PART_CRYPTO,
   PART_EXPECT,
@@ -149,5 +150,12 @@ describe('the shared layer parts', () => {
     const ctx = makeContext(defined);
     expect(() => void runInContext(HOPPSCOTCH_LAYER, ctx)).not.toThrow();
     expect(defined).toEqual(expect.arrayContaining(['pw', 'hopp', 'pm', 'require', 'CryptoJS', 'btoa', 'atob']));
+  });
+
+  it('the Thunder Client layer runs over the parts in one scope', () => {
+    const defined: string[] = [];
+    const ctx = makeContext(defined);
+    expect(() => void runInContext(THUNDER_CLIENT_LAYER, ctx)).not.toThrow();
+    expect(defined).toEqual(expect.arrayContaining(['expect', 'tc', 'require']));
   });
 });
