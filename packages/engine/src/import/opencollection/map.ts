@@ -324,9 +324,11 @@ class Mapper {
   }
 
   /**
-   * The scripts of an API that holds them (REST and gRPC): the collection's own, and the order
-   * post-response scripts run in, which Bruno's `scripts.flow` sets: `sandwich` (and no flow at
-   * all) runs them innermost first. Nothing is stored for a collection that has no script at all.
+   * The scripts each API of the collection gets (REST and gRPC alike): the collection's own, and the
+   * order post-response scripts run in, which Bruno's `scripts.flow` sets: `sandwich` (and no flow
+   * at all) runs them innermost first. The decision is the collection's, not the API's: once any
+   * level of the collection has a script, whichever API it is in, every API gets the order; a
+   * collection with no script anywhere stores nothing.
    */
   apiScripts(collection: OcCollection, name: string, hasApi: boolean): RequestScripts | undefined {
     if (!hasApi) return undefined;

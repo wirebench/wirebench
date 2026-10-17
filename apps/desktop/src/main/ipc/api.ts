@@ -894,8 +894,8 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
 
   /**
    * A Hoppscotch collections export (spec 2026-10-15 §6): each top-level collection's REST API in the
-   * chosen project, its collection and folder variables as project properties, its scripts as text
-   * (never run). An environments file is refused by the reader: it goes to `api.importClientEnvironments`.
+   * chosen project, its collection and folder variables as project properties, its scripts attached
+   * switched off (a dropped collection's or folder's kept as text). An environments file is refused by the reader: it goes to `api.importClientEnvironments`.
    */
   registerHandler(channels.api.importHoppscotch, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
@@ -909,8 +909,8 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
   /**
    * A Thunder Client collection export, or a `thunder-tests` folder picked with Folder… (spec
    * 2026-10-15 §7): each collection's REST API in the chosen project, its tests as assertions where
-   * they fit, its scripts as text (never run), and a folder's environments in the workspace, never
-   * activated.
+   * they fit, its scripts attached switched off (a dropped collection's or folder's kept as text), and
+   * a folder's environments in the workspace, never activated.
    */
   registerHandler(channels.api.importThunderClient, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);

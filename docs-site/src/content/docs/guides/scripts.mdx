@@ -257,7 +257,10 @@ id outside any script.
 A Bruno collection's scripts are imported where they were: `collection.bru` on the API (on both the
 REST and the gRPC API when it has both), each `folder.bru` on its folder, and each request on the
 request. A request's `script:post-response` and its `tests` block become one post-response script,
-the tests after the script.
+the tests after the script; a folder's and a collection's do the same on their level. Bruno runs every
+level's post-response script before any level's tests, but here the tests run with their own level's
+script, so in the default innermost-first order a collection's post-response script runs after the
+request's tests.
 
 Bruno's layers run in an order set by `scripts.flow` in `bruno.json`. Wirebench stores it as the
 API's [post-response order](#post-response-order): `sandwich`, or no flow, runs post-response scripts
