@@ -182,8 +182,9 @@ one. Enter each on its **Auth** tab; Wirebench stores it encrypted outside the p
 
 `wirebench import <folder>` reads a Bruno collection from its folder, its `bruno.json` or a JSON
 export, and adds its APIs and its plain collection and folder variables as project properties. It
-has no secret store, workspace or script folder, so it lists secret variables, environments,
-scripts and `.proto` files as not imported.
+attaches its scripts to their requests, folders and APIs switched off, as the desktop does. It has no
+secret store, workspace or script folder, so it lists secret variables, environments, module `.js`
+files and `.proto` files as not imported.
 
 ## Limits
 

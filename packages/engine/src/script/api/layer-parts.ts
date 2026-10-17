@@ -97,9 +97,10 @@ const chain = (actual, flags) => {
   if (flags.schema) {
     self.jsonSchema = (schema) => {
       const problems = jsonSchema(actual, schema);
-      if ((problems.length > 0) !== Boolean(flags.not)) {
-        if (flags.not) throw new ExpectationFailed('expected the value not to match the JSON schema');
-        const stopped = problems.some((p) => p.keyword === 'budget');
+      const stopped = problems.some((p) => p.keyword === 'budget');
+      // A check that ran out of budget proved nothing, so it fails with or without .not.
+      if (stopped || (problems.length > 0) !== Boolean(flags.not)) {
+        if (flags.not && !stopped) throw new ExpectationFailed('expected the value not to match the JSON schema');
         throw new ExpectationFailed('the value does not match the JSON schema' + (stopped ? ' (the check could not finish): ' : ': ')
           + problems.map((p) => (p.path === '' ? '/' : p.path) + ' ' + p.keyword + ': ' + p.message).join('; '));
       }

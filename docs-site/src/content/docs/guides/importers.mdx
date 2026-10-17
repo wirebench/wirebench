@@ -370,7 +370,7 @@ files kept as text, then lists the environments and project properties added and
   `secret: true` variable, and a literal value whose name looks like a credential, become secrets
   in the [secret store](/wirebench/docs/guides/secrets/).
 - **Scripts** are attached to their requests, folders and APIs, switched off, and run once you switch
-  them on, against the same `bru`, `req` and `res` names as a Bruno import. Script file items are
+  them on, against the same `bru`, `req` and `res` names as a Bruno import. Script file items, and a script on a level that cannot hold one, are
   saved as text under `imported-scripts/` and never run. See
   [Scripts from other clients](/wirebench/docs/guides/scripts/#bruno-scripts).
 - **Assertions** on the status, the response time and JSON body paths become request assertions.

@@ -175,6 +175,9 @@ describe('imported Bruno scripts in a run', () => {
           .replace(/^( {2}url: ).*$/m, `$1${rest.url}/echo`)
           // The echo has no `id`: capture the method it answers with instead.
           .replaceAll('res.body.id', 'res.body.method')
+          // The echo answers 200 with the method, not 201 with the created user.
+          .replaceAll('201', '200')
+          .replace('res.body.name: Ada', 'res.body.method: POST')
           .replace('id: {{userId}}', 'id: 7')
           // Digest auth keeps its password as a secret, which a run has no store for.
           .replace('auth: digest', 'auth: none'),
@@ -206,6 +209,8 @@ describe('imported Bruno scripts in a run', () => {
       scripting: new RequestScripting({ sandbox, checker }),
     });
     expect(result.requests.map((r) => r.name)).toEqual(['Create user', 'Get user']);
+    // The imported assertions and tests of the first request pass too, not left failing silently.
+    expect(result.requests[0]!.assertions.map((a) => a.outcome)).toEqual(['passed', 'passed', 'passed']);
     expect(outcomes(result.requests[1]!)).toEqual([['sent the captured id', 'passed']]);
   });
 

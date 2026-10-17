@@ -48,7 +48,7 @@ function writeCollection(url: string): string {
     request(
       'Get user',
       2,
-      'tests {\n  test("sees the id the first request stored", function () {\n    expect(bru.getVar("userId")).to.equal("u-200");\n  });\n}\n',
+      'tests {\n  test("sees the id the first request stored", function () {\n    expect(bru.getVar("userId")).to.equal("u-200");\n  });\n  test("has a JSON object body", function () {\n    expect(res.body).to.have.jsonSchema({ type: "object" });\n  });\n}\n',
     ),
   );
   return root;
@@ -102,4 +102,12 @@ test('imported Bruno scripts, once switched on, share a value across a run', asy
   await tab.getByTestId('runner-run').click();
   // Two requests, both passing: the second one's test only passes if the first one's script ran.
   await expect(tab.getByTestId('runner-status')).toContainText('2 passed, 0 failed, 0 errored', { timeout: 30_000 });
+  // "2 passed" would hold with no script run, so check the script's own test rows. They sit in a closed
+  // <details>, hence the attribute rather than visibility.
+  for (const label of ['sees the id the first request stored', 'has a JSON object body']) {
+    await expect(tab.getByTestId('runner-result-assertion').filter({ hasText: label })).toHaveAttribute(
+      'data-outcome',
+      'passed',
+    );
+  }
 });

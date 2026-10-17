@@ -267,6 +267,27 @@ describe('the Bruno layer: test and expect', () => {
   });
 });
 
+describe('the Bruno layer: .not.jsonSchema and the budget', () => {
+  it('.not.jsonSchema fails, rather than passes, when the check cannot finish', async () => {
+    const rows = Array.from({ length: 12_000 }, (_, i) => i);
+    const outcome = await run(
+      'post',
+      `test('big', () => expect(res.body).not.to.have.jsonSchema({ type: 'array', items: { type: 'integer' } }));`,
+      { response: { ...RESPONSE, text: JSON.stringify(rows) } },
+    );
+    expect(outcome).toMatchObject({
+      ok: true,
+      tests: [
+        {
+          name: 'big',
+          passed: false,
+          message: expect.stringMatching(/could not finish.*stopped after 10000 nodes/) as unknown,
+        },
+      ],
+    });
+  });
+});
+
 describe('the Bruno layer: unsupported calls', () => {
   it.each([
     ['bru.sendRequest', "bru.sendRequest({ url: 'https://x.test' })"],

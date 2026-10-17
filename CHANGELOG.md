@@ -14,13 +14,13 @@ All notable changes to this project are documented here. The format follows
   `bru.sendRequest`, `bru.sleep`, `bru.cookies`, `require` and the request-settings calls fail with
   `script-unsupported`, and the import report lists them. An API's new **Post-response order** setting
   (Outermost first or Innermost first) takes `bruno.json`'s `scripts.flow`. Module `.js` files and
-  scripts on a level that cannot hold one stay under `imported-scripts/`. `wirebench import` attaches
-  them too.
+  scripts on a level that cannot hold one stay under `imported-scripts/`. OpenCollection imports attach
+  their scripts the same way, as `bruno`, switched off. `wirebench import` attaches them too.
 - **Run imported Insomnia scripts.** An Insomnia export's pre-request and after-response scripts are
   attached to their requests and folders, switched off, instead of being saved as text. Once switched on
   they run against an `insomnia` object (`insomnia.test`, `insomnia.expect`, `insomnia.response`,
   `insomnia.request` and the variable scopes); `sendRequest`, `require`, cookie writes and the vault fail
-  with `script-unsupported`, and the import report lists them. Project format 11.
+  with `script-unsupported`, and the import report lists them.
 - **Import Insomnia exports.** **Import…** reads Insomnia's export formats 4 (JSON or YAML) and 5
   (YAML), and detects a picked file by its content. Each workspace becomes a REST, a gRPC and a
   WebSocket API in the chosen project, in Insomnia's order, with folder headers and auth. The base and
