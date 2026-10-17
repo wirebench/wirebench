@@ -305,26 +305,34 @@ A Hoppscotch collection's scripts are imported where they were: the collection's
 folder's on its folder, each request's on the request. A request's test script becomes its
 post-response script. Pre-request scripts run outermost first, as in every layer.
 
-`pw` and `hopp` are the Hoppscotch names; `pm` is the Postman object without `collectionVariables`,
-`iterationData`, `visualizer` and the run-control calls.
+`pw` and `hopp` are the Hoppscotch names; `pm` is the Postman object without `collectionVariables` and
+`iterationData`, whose members are unsupported, with `pm.visualizer.set` and the run-control calls
+`pm.execution.setNextRequest` and `skipRequest` unsupported too.
 
 | Hoppscotch | In Wirebench |
 | --- | --- |
-| `pw.test`, `hopp.test`, `pw.expect`, `hopp.expect` | Supported; `hopp.expect` takes both the chai chain and the Jest matchers (`toBe`, `toEqual`, `toBeType` and the rest) |
-| `pw.response`, `hopp.response` (`status`, `statusText`, `headers`, `body`, `responseTime`) | Supported; headers are a list of `{ key, value }` rows, and `body` is parsed JSON for a JSON response and text otherwise |
-| `pw.env`, `hopp.env` (`get`, `getRaw`, `set`, `unset`, `resolve`) | Supported; a name that is not set reads as `null`, writes go to `vars`, and `resolve` expands `<<name>>` (an unset name becomes empty, nested names up to 10 levels) |
-| `hopp.request` (`url`, `method`, `headers`, `params`, `body`, `setUrl`, `setMethod`, `setHeader`, `setHeaders`, `removeHeader`, `setParams`, `removeParam`, `setBody`) | Supported in a pre-request script only; `setBody({ contentType, body })` also sets `Content-Type` |
-| `pm.*` | Supported as in the Postman layer |
+| `pw.test`, `hopp.test` | Supported |
+| `pw.expect` | Supported; the Jest matchers `toBe`, `toBeType`, `toInclude`, `toHaveLength` and `toBeLevel2xx` to `toBeLevel5xx`, each with `.not` |
+| `hopp.expect` | Supported; the same Jest matchers and the chai chain (`.to.equal` and the rest) |
+| `pw.response` | Supported; `status`, `headers` (a list of `{ key, value }` rows) and `body`, parsed JSON for a JSON response and text otherwise |
+| `hopp.response` | Supported; `statusCode`, `statusText`, `headers`, `responseTime`, and `body.asJSON()` and `body.asText()` |
+| `hopp.response.body.bytes` | `script-unsupported` |
+| `pw.env` | Supported; `get`, `set`, `unset`, `resolve` and `getResolve`. `get` is plain: an unset name gives `undefined` and `<<name>>` is not expanded. `resolve` expands `<<name>>` (an unset name becomes empty, nested names up to 10 levels). Writes go to `vars` |
+| `hopp.env`, `hopp.env.active`, `hopp.env.global` | Supported; `get`, `getRaw`, `set` and `delete`. `get` expands `<<name>>`, `getRaw` does not, and both give `null` for an unset name |
+| `hopp.env.reset`, `getInitialRaw`, `setInitial` | `script-unsupported` |
+| `hopp.request` reads: `url`, `method`, `headers`, `params`, `body`, `variables` | Supported; `headers` and `params` are lists of `{ key, value }` rows, `body` is `{ contentType, body }` |
+| `hopp.request` writes: `setUrl`, `setMethod`, `setHeader`, `setHeaders`, `removeHeader`, `setParam`, `setParams`, `removeParam`, `setBody`, `variables.set` | Supported in a pre-request script only; `setBody({ contentType, body })` also sets `Content-Type` |
+| `hopp.request.setAuth`, `hopp.request.auth` | `script-unsupported`; use the request's **Auth** tab |
+| `pm.*` | Supported as in the Postman layer, except the rows below |
+| `pm.collectionVariables`, `pm.iterationData`, `pm.visualizer`, `pm.execution.setNextRequest`, `pm.execution.skipRequest` | `script-unsupported` |
 | `hopp.cookies`, `pm.cookies.jar` | `script-unsupported` |
 | `hopp.fetch`, `pm.sendRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step or OAuth2 auth |
-| `hopp.env.reset`, `getInitialRaw`, `setInitial` | `script-unsupported` |
-| `hopp.request.setAuth`, `hopp.request.auth` | `script-unsupported`; use the request's **Auth** tab |
-| `hopp.response.body.bytes` | `script-unsupported` |
 | `pm.vault`, `pm.require`, `require` | `script-unsupported` |
 | A top-level `import` | Refused before the script runs; a bare `export {};` line is ignored |
 
-As with every layer, a value a script stores lasts for the run and the next request reads it as
-`${#Sequence#name}`; a `<<name>>` in a request becomes `${name}`, which reads the environment.
+A value a script stores lasts for the run; see [Values for later
+requests](#values-for-later-requests). A `<<name>>` in a request becomes `${name}`, which reads the
+environment, so the next request reads a stored value as `${#Sequence#name}`.
 
 ## Steer a run
 
