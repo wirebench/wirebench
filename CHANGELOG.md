@@ -42,8 +42,8 @@ All notable changes to this project are documented here. The format follows
   becomes a REST API in the chosen project, GraphQL requests with a GraphQL body, saved responses as
   examples; collection and folder variables become project properties, a secret one with no value.
   An environments file goes to the workspace, never made active, its `Global` environment into
-  Globals. Scripts are saved as text and never run. `wirebench import` reads collections files
-  (#588).
+  Globals. Scripts are attached to their requests, folders and API switched off, so they run
+  once you read and switch them on. `wirebench import` reads collections files (#588).
 - **Import Thunder Client exports.** **Import…** reads Thunder Client collection and environment
   exports, a `thunder-tests` folder (picked with **Folder…**) and the older four-file folder. Each
   collection becomes a REST API with its base URL as the server, its folders and requests in order;

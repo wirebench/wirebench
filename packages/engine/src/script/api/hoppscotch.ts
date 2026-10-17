@@ -159,6 +159,8 @@ const hoppRequest = Object.freeze({
   removeParam: (name) => request.query.delete(String(name)),
   setBody: (body) => {
     if (body === null || typeof body !== 'object' || !('body' in body)) throw new TypeError('hopp.request.setBody takes { contentType, body }');
+    // The typed request API has no body language to set, so contentType travels as the Content-Type header.
+    if (typeof body.contentType === 'string' && body.contentType !== '') request.headers.set('Content-Type', body.contentType);
     if (typeof body.body === 'string') request.body.text = body.body;
     else request.body.json = body.body;
   },

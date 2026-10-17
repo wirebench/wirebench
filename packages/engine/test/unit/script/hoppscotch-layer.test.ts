@@ -191,6 +191,14 @@ describe('the Hoppscotch layer: hopp', () => {
     });
   });
 
+  it('hopp.env get and getRaw answer null for a name that is not set', async () => {
+    const outcome = await run(
+      'pre',
+      `console.log(hopp.env.get('nope'), hopp.env.getRaw('nope'), hopp.env.active.get('nope'), hopp.env.global.getRaw('nope'));`,
+    );
+    expect(outcome).toMatchObject({ ok: true, log: { lines: ['null null null null'] } });
+  });
+
   it('hopp.expect takes the chai chains and the jest matchers', async () => {
     const outcome = await run(
       'post',
@@ -267,6 +275,21 @@ describe('the Hoppscotch layer: hopp', () => {
       log: { lines: ['PUT https://shop.test/v2'] },
       request: { method: 'PUT', url: 'https://shop.test/v2' },
     });
+  });
+
+  it('hopp.request.setBody sets the Content-Type header from contentType, and leaves it alone when there is none', async () => {
+    const withType = await run(
+      'pre',
+      `hopp.request.setBody({ contentType: 'text/plain', body: 'x' });
+       console.log(hopp.request.body.contentType, JSON.stringify(hopp.request.headers));`,
+    );
+    expect(withType).toMatchObject({
+      ok: true,
+      log: { lines: ['text/plain [{"key":"Content-Type","value":"text/plain"}]'] },
+      request: { headers: [['Content-Type', 'text/plain']], body: { kind: 'text', text: 'x' } },
+    });
+    const without = await run('pre', `hopp.request.setBody({ contentType: null, body: 'y' });`);
+    expect(without).toMatchObject({ ok: true, request: { headers: [['Content-Type', 'application/json']] } });
   });
 
   it('hopp.request setters fail in the post phase', async () => {
