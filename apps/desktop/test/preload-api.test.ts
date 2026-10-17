@@ -45,6 +45,7 @@ describe('buildApi', () => {
       'account',
       'api',
       'app',
+      'appLock',
       'attachments',
       'audit',
       'auth',

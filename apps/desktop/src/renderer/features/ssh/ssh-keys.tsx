@@ -7,7 +7,12 @@ import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { create } from 'zustand';
 import { Button } from '../../components/button.js';
-import type { SshCertificateWire, SshKeyAlgorithmWire, SshKeyWire } from '../../../shared/ssh-keys-wire.js';
+import type {
+  SshCertificateWire,
+  SshDeviceKeyStatus,
+  SshKeyAlgorithmWire,
+  SshKeyWire,
+} from '../../../shared/ssh-keys-wire.js';
 import type { ResolvedHostWire } from '../../../shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
 import { findHost, upsertHost, useHostsStore } from './hosts-store.js';
@@ -26,6 +31,7 @@ const KEY_BITS: Readonly<Record<SshKeyAlgorithmWire, readonly number[]>> = {
   rsa: [4096, 3072, 2048],
   'ed25519-sk': [],
   'ecdsa-sk': [],
+  device: [],
 };
 const ALGORITHMS: readonly { id: SshKeyAlgorithmWire; label: string }[] = [
   { id: 'ed25519', label: 'Ed25519' },
@@ -36,6 +42,31 @@ const ALGORITHMS: readonly { id: SshKeyAlgorithmWire; label: string }[] = [
 ];
 const isSecurityKey = (algorithm: SshKeyAlgorithmWire): boolean =>
   algorithm === 'ed25519-sk' || algorithm === 'ecdsa-sk';
+
+/** What a device key (#428) is called on each platform, and what it asks for at each sign-in. */
+export const DEVICE_KEY_WORDS: Readonly<
+  Record<NonNullable<SshDeviceKeyStatus['platform']>, { readonly name: string; readonly prompt: string }>
+> = {
+  'macos-secure-enclave': { name: 'This Mac’s Secure Enclave', prompt: 'Touch ID or your password' },
+  'windows-hello': { name: 'Windows Hello', prompt: 'Windows Hello' },
+};
+
+/** Whether this machine can make device keys; undefined until main has answered. */
+export function useDeviceKeyStatus(): SshDeviceKeyStatus | undefined {
+  const [status, setStatus] = useState<SshDeviceKeyStatus>();
+  useEffect(() => {
+    let live = true;
+    void ipc()
+      .ssh.deviceKeyStatus(undefined)
+      .then((result) => {
+        if (live) setStatus(result.ok ? result.value : { supported: false, reason: result.error.message });
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+  return status;
+}
 const NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
@@ -189,8 +220,16 @@ export function AttachCertificateDialog({
  * The name a new key of `algorithm` starts with: OpenSSH's file name for it (`id_ed25519`), or the first
  * `id_ed25519_2`, `_3`… that no secret in `taken` has.
  */
-export function defaultKeyName(algorithm: SshKeyAlgorithmWire, taken: readonly string[] = []): string {
-  const base = `id_${algorithm.replace('-', '_')}`;
+export function defaultKeyName(
+  algorithm: SshKeyAlgorithmWire,
+  taken: readonly string[] = [],
+  deviceKeyType?: string,
+): string {
+  // A device key is named for the type it makes: id_ecdsa_device (Secure Enclave), id_rsa_device (Windows Hello).
+  const base =
+    algorithm === 'device'
+      ? `id_${deviceKeyType === 'ssh-rsa' ? 'rsa' : 'ecdsa'}_device`
+      : `id_${algorithm.replace('-', '_')}`;
   const used = new Set(taken);
   if (!used.has(base)) return base;
   let n = 2;
@@ -237,6 +276,9 @@ function GenerateKeyBody({
   const [verifyRequired, setVerifyRequired] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const deviceStatus = useDeviceKeyStatus();
+  const deviceWords = deviceStatus?.platform === undefined ? undefined : DEVICE_KEY_WORDS[deviceStatus.platform];
+  const nameFor = (id: SshKeyAlgorithmWire): string => defaultKeyName(id, taken, deviceStatus?.keyType);
 
   const sizes = KEY_BITS[algorithm];
   const chosenBits = bits ?? sizes[0];
@@ -245,7 +287,8 @@ function GenerateKeyBody({
   // Why Generate is off, said beside it rather than left to guess.
   const nameProblem =
     trimmed === '' ? 'Name is required' : nameOk ? undefined : 'Use letters, digits and _, not starting with a digit';
-  const mismatch = passphrase !== repeat;
+  const device = algorithm === 'device';
+  const mismatch = !device && passphrase !== repeat;
   const securityKey = isSecurityKey(algorithm);
   // A key that asks for the PIN at every sign-in is made with it.
   const pinMissing = securityKey && verifyRequired && pin === '';
@@ -258,7 +301,7 @@ function GenerateKeyBody({
       algorithm,
       ...(chosenBits === undefined ? {} : { bits: chosenBits }),
       ...(comment.trim() === '' ? {} : { comment: comment.trim() }),
-      ...(passphrase === '' ? {} : { passphrase }),
+      ...(passphrase === '' || device ? {} : { passphrase }),
       ...(securityKey && pin !== '' ? { pin } : {}),
       ...(securityKey && verifyRequired ? { verifyRequired: true } : {}),
     });
@@ -318,7 +361,7 @@ function GenerateKeyBody({
                       checked={algorithm === a.id}
                       onChange={() => {
                         // A name still as it started follows the type (id_ed25519 → id_rsa); one typed stays.
-                        if (name === defaultKeyName(algorithm, taken)) setName(defaultKeyName(a.id, taken));
+                        if (name === nameFor(algorithm)) setName(nameFor(a.id));
                         setAlgorithm(a.id);
                         setBits(undefined);
                       }}
@@ -326,6 +369,24 @@ function GenerateKeyBody({
                     {a.label}
                   </label>
                 ))}
+                <label
+                  className={`flex items-center gap-1.5 text-sm ${deviceStatus?.supported === true ? 'text-fg-default' : 'text-fg-subtle'}`}
+                  title={deviceStatus?.supported === false ? deviceStatus.reason : undefined}
+                >
+                  <input
+                    type="radio"
+                    name="key-type"
+                    data-testid="generate-key-device"
+                    checked={device}
+                    disabled={deviceStatus?.supported !== true}
+                    onChange={() => {
+                      if (name === nameFor(algorithm)) setName(nameFor('device'));
+                      setAlgorithm('device');
+                      setBits(undefined);
+                    }}
+                  />
+                  {deviceWords === undefined ? 'Device key' : `Device key (${deviceWords.name})`}
+                </label>
                 {sizes.length > 0 && (
                   <label className="ml-auto flex items-center gap-1.5 text-sm text-fg-default">
                     Size
@@ -347,6 +408,23 @@ function GenerateKeyBody({
                 )}
               </div>
             </fieldset>
+            {deviceStatus?.supported === false && (
+              <p className="text-xs text-fg-subtle" data-testid="generate-key-device-unavailable">
+                Device keys: {deviceStatus.reason}
+              </p>
+            )}
+            {device && deviceWords !== undefined && (
+              <div className="flex flex-col gap-2" data-testid="generate-key-device-notes">
+                <p className="text-xs text-fg-subtle">
+                  Made and kept by {deviceWords.name}: the keychain stores only a handle that this device alone can use,
+                  and each sign-in asks for {deviceWords.prompt}. Its type is {keyTypeLabel(deviceStatus?.keyType)}.
+                </p>
+                <p role="note" className="text-xs text-status-warning">
+                  This key cannot be copied off this device or recovered. Keep a second way into the same hosts, such as
+                  another key or a security key.
+                </p>
+              </div>
+            )}
             {securityKey && (
               <div className="flex flex-col gap-2" data-testid="generate-key-security">
                 <p className="text-xs text-fg-subtle">
@@ -390,41 +468,50 @@ function GenerateKeyBody({
                 }}
               />
             </label>
-            <div className="flex gap-2">
-              <label className={`${LABEL_CLASS} flex-1`}>
-                Passphrase (optional)
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  className={INPUT_CLASS}
-                  value={passphrase}
-                  onChange={(e) => {
-                    setPassphrase(e.target.value);
-                  }}
-                />
-              </label>
-              <label className={`${LABEL_CLASS} flex-1`}>
-                Repeat passphrase
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  className={INPUT_CLASS}
-                  value={repeat}
-                  onChange={(e) => {
-                    setRepeat(e.target.value);
-                  }}
-                />
-              </label>
-            </div>
-            <p className="text-xs text-fg-subtle">
-              {passphrase === ''
-                ? 'Without a passphrase the key is stored unencrypted in the keychain.'
-                : `The passphrase is stored as ${trimmed || 'NAME'}_passphrase, so hosts can sign in with the key unattended.`}
-            </p>
+            {!device && (
+              <div className="flex gap-2">
+                <label className={`${LABEL_CLASS} flex-1`}>
+                  Passphrase (optional)
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    className={INPUT_CLASS}
+                    value={passphrase}
+                    onChange={(e) => {
+                      setPassphrase(e.target.value);
+                    }}
+                  />
+                </label>
+                <label className={`${LABEL_CLASS} flex-1`}>
+                  Repeat passphrase
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    className={INPUT_CLASS}
+                    value={repeat}
+                    onChange={(e) => {
+                      setRepeat(e.target.value);
+                    }}
+                  />
+                </label>
+              </div>
+            )}
+            {!device && (
+              <p className="text-xs text-fg-subtle">
+                {passphrase === ''
+                  ? 'Without a passphrase the key is stored unencrypted in the keychain.'
+                  : `The passphrase is stored as ${trimmed || 'NAME'}_passphrase, so hosts can sign in with the key unattended.`}
+              </p>
+            )}
             {mismatch && repeat !== '' && <p className="text-sm text-status-danger">The passphrases differ.</p>}
             {busy && securityKey && (
               <p role="status" className="text-sm text-status-warning">
                 Touch your security key when it blinks.
+              </p>
+            )}
+            {busy && device && deviceStatus?.platform === 'windows-hello' && (
+              <p role="status" className="text-sm text-status-warning">
+                Confirm with Windows Hello.
               </p>
             )}
             {error !== undefined && (

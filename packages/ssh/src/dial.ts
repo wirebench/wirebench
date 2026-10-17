@@ -7,6 +7,14 @@ import { certificateAuth } from './cert-auth.js';
 import type { CertificateAuth } from './cert-auth.js';
 import { HopProgress, connectFailureOf } from './connect-progress.js';
 import type { ConnectFailure, ConnectProgress } from './connect-progress.js';
+import {
+  defaultDeviceKeySigner,
+  deviceSignatureAlgorithm,
+  deviceSignatureBlob,
+  isDeviceKeySecret,
+  parseDeviceKey,
+} from './device-key.js';
+import type { DeviceKeySigner, ParsedDeviceKey } from './device-key.js';
 import { SshModelError } from './errors.js';
 import type { FidoTransport } from './fido/authenticator.js';
 import { fingerprintOf, keyTypeOf } from './known-hosts.js';
@@ -74,6 +82,12 @@ export interface DialOptions {
   readonly onProgress?: (event: ConnectProgress) => void;
   /** Where security keys are found (#420); node-hid unless a test injects a software authenticator. */
   readonly fido?: FidoTransport;
+  /**
+   * Signs with a device key (#428): the desktop's way to this machine's secure hardware. Defaults to the
+   * process's signer (`setDeviceKeySigner`); with neither (the CLI, the runner) a hop whose key is a
+   * device key fails with `ssh-device-key-unavailable`.
+   */
+  readonly deviceKeys?: DeviceKeySigner;
 }
 
 /**
@@ -96,7 +110,8 @@ export interface DialledChain {
 /**
  * ssh-host-key-new {host,keyType,fingerprint,hop} · ssh-auth-failed {host,method,hop,tried,allowed,key?} ·
  * ssh-connect-failed {host,hop,reason,phase?,timeout?,proxy?,proxyType?,proxyReason?,proxyDetail?} · ssh-cert-expired {host,validity,validAfter,validBefore,window} · ssh-cert-invalid · ssh-cert-mismatch {host} ·
- * ssh-sk-pin {host,hop,reason,retries?} · ssh-sk-no-device · ssh-sk-not-touched · ssh-sk-unavailable · ssh-sk-failed {host,hop}
+ * ssh-sk-pin {host,hop,reason,retries?} · ssh-sk-no-device · ssh-sk-not-touched · ssh-sk-unavailable · ssh-sk-failed {host,hop} ·
+ * ssh-device-key-unavailable {host,hop,key?} · ssh-device-key-missing {host,hop,key?,device} · ssh-device-key-cancelled {host,hop}
  */
 export class SshConnectError extends SshModelError {}
 
@@ -402,7 +417,9 @@ async function securityKeyAuth(
 ): Promise<SkAuth | undefined> {
   const host = hostOf(hop);
   let signers: SkSigner[];
-  if (hop.auth.kind === 'key' && isSkPrivateKey(hop.auth.privateKey)) {
+  if (hop.auth.kind === 'key' && isDeviceKeySecret(hop.auth.privateKey)) {
+    signers = [deviceKeySigner(hop, index, options, progress)];
+  } else if (hop.auth.kind === 'key' && isSkPrivateKey(hop.auth.privateKey)) {
     const { auth } = hop;
     const refuse = (error: unknown): never => {
       const { code, message, details } = error as SshModelError;
@@ -436,12 +453,71 @@ async function securityKeyAuth(
     return undefined;
   }
   return skAuth(hop.user, signers, (signer) => {
+    if (signer.via === 'device') return; // the device signer logs its own prompt
     progress.log(
       signer.via === 'agent'
         ? `Signing with ${signer.label}: touch it if it blinks`
         : `Signing with ${signer.label}${hop.auth.kind === 'key' && hop.auth.pin ? ' and its PIN' : ''}`,
     );
   });
+}
+
+/** What the OS calls its prompt on each platform. */
+const PROMPT_WORDS: Readonly<Record<ParsedDeviceKey['platform'], string>> = {
+  'macos-secure-enclave': 'Touch ID or your password',
+  'windows-hello': 'Windows Hello',
+};
+
+/**
+ * The hop's device key (#428) as a signer that asks this machine's hardware through `options.deviceKeys`. The
+ * block is read here, before any network, so a bad or unusable key fails the connect at once.
+ */
+function deviceKeySigner(hop: HopCredentials, index: number, options: DialOptions, progress: HopProgress): SkSigner {
+  const host = hostOf(hop);
+  const auth = hop.auth as Extract<HopCredentials['auth'], { kind: 'key' }>;
+  const name = auth.label === undefined ? 'the device key' : `device key ${auth.label}`;
+  const refuse = (error: SshModelError): never => {
+    throw new SshConnectError(error.code, `${host}: ${error.message}`, {
+      ...error.details,
+      host,
+      hop: index,
+      ...(auth.label === undefined ? {} : { key: auth.label }),
+    });
+  };
+  let key: ParsedDeviceKey | undefined;
+  try {
+    key = parseDeviceKey(auth.privateKey);
+  } catch (error) {
+    return refuse(error as SshModelError);
+  }
+  if (key === undefined) return refuse(new SshModelError('ssh-key-invalid', 'This is not a device key'));
+  if (auth.certificate !== undefined) {
+    refuse(new SshModelError('ssh-cert-invalid', 'A certificate for a device key cannot be used yet'));
+  }
+  const signer = options.deviceKeys ?? defaultDeviceKeySigner();
+  if (signer === undefined) {
+    refuse(
+      new SshModelError(
+        'ssh-device-key-unavailable',
+        `${name[0]?.toUpperCase() ?? ''}${name.slice(1)} is held by a device; only the Wirebench app can use it`,
+      ),
+    );
+  }
+  const device = key;
+  const words = PROMPT_WORDS[device.platform];
+  return {
+    keyType: device.keyType,
+    algorithm: deviceSignatureAlgorithm(device),
+    publicBlob: device.publicBlob,
+    label: name,
+    via: 'device',
+    sign: async (data) => {
+      progress.start('auth', `confirm with ${words}`);
+      progress.log(`Confirm with ${words} to sign in with ${name}`);
+      const raw = await (signer as DeviceKeySigner).sign(device, data, `sign in to ${hop.user}@${hop.address}`);
+      return deviceSignatureBlob(device, raw);
+    },
+  };
 }
 
 function handshake(
@@ -466,6 +542,7 @@ function handshake(
       host: hop.address,
       port: hop.port,
       username: hop.user,
+      // A device key's prompt waits for the person as a security key's touch does.
       readyTimeout: (hop.connectTimeout + (sk ? SK_TOUCH_SECONDS : 0)) * 1000,
       keepaliveInterval: hop.keepAlive > 0 ? hop.keepAlive * 1000 : 0,
       ...(hop.auth.kind === 'password' ? { password: hop.auth.password } : {}),

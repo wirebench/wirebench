@@ -12,6 +12,7 @@ const generateKey = vi.fn();
 const installKey = vi.fn();
 const trustHostKey = vi.fn();
 const attachCertificate = vi.fn();
+const deviceKeyStatus = vi.fn();
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({
   ipc: () => ({
     ssh: {
@@ -25,6 +26,7 @@ vi.mock('../../src/renderer/state/ipc-client.js', () => ({
       installKey,
       trustHostKey,
       attachCertificate,
+      deviceKeyStatus,
     },
   }),
 }));
@@ -96,6 +98,10 @@ beforeEach(() => {
   );
   useHostsStore.setState({ file: FILE, resolved: RESOLVED, problems: [], loaded: true, homeView: 'keychain' });
   useKeyInstall.setState({ target: null });
+  deviceKeyStatus.mockResolvedValue({
+    ok: true,
+    value: { supported: false, reason: 'Device keys are not available on this OS' },
+  });
 });
 afterEach(cleanup);
 
@@ -365,5 +371,58 @@ describe('Install public key on host', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Install' }));
     expect((await within(dialog).findByRole('alert')).textContent).toContain('could not be added');
     expect(within(dialog).getByRole('button', { name: 'Install' })).toHaveProperty('disabled', false);
+  });
+});
+
+describe('device keys (#428)', () => {
+  const ENCLAVE = { supported: true, platform: 'macos-secure-enclave', keyType: 'ecdsa-sha2-nistp256' } as const;
+
+  it('offers a device key where the hardware makes one: no passphrase, the recovery warning, its own name', async () => {
+    deviceKeyStatus.mockResolvedValue({ ok: true, value: ENCLAVE });
+    generateKey.mockResolvedValue({ ok: true, value: { ...KEY, name: 'id_ecdsa_device' } });
+    render(<SshHome />);
+    await userEvent.click(screen.getByRole('button', { name: /Generate key/ }));
+    const dialog = await screen.findByTestId('generate-key-dialog');
+    const choice = await within(dialog).findByRole('radio', { name: 'Device key (This Mac’s Secure Enclave)' });
+    expect(choice).toHaveProperty('disabled', false);
+    expect(within(dialog).queryByTestId('generate-key-device-notes')).toBeNull();
+    await userEvent.click(choice);
+    expect(within(dialog).getByLabelText('Secret name')).toHaveProperty('value', 'id_ecdsa_device');
+    expect(within(dialog).queryByLabelText('Passphrase (optional)')).toBeNull();
+    const notes = within(dialog).getByTestId('generate-key-device-notes');
+    expect(notes.textContent).toContain('Touch ID or your password');
+    expect(within(notes).getByRole('note').textContent).toContain('cannot be copied off this device or recovered');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Generate' }));
+    expect(generateKey).toHaveBeenCalledWith({ name: 'id_ecdsa_device', algorithm: 'device' });
+  });
+
+  it('disables the device key choice and says why where there is none', async () => {
+    render(<SshHome />);
+    await userEvent.click(screen.getByRole('button', { name: /Generate key/ }));
+    const dialog = await screen.findByTestId('generate-key-dialog');
+    expect(await within(dialog).findByTestId('generate-key-device-unavailable')).toBeDefined();
+    expect(within(dialog).getByRole('radio', { name: 'Device key' })).toHaveProperty('disabled', true);
+    expect(within(dialog).getByTestId('generate-key-device-unavailable').textContent).toContain(
+      'not available on this OS',
+    );
+  });
+
+  it('marks a device key as this device’s or another device’s', async () => {
+    sshKeys.mockResolvedValue({
+      ok: true,
+      value: {
+        keys: [
+          { ...KEY, device: { platform: 'macos-secure-enclave', madeOn: 'work-laptop', here: true } },
+          {
+            ...KEY,
+            name: 'old',
+            device: { platform: 'macos-secure-enclave', madeOn: 'other-mac', here: false },
+          },
+        ],
+      },
+    });
+    render(<SshHome />);
+    expect((await screen.findByTestId('device-key-deploy')).textContent).toBe('this device');
+    expect((await screen.findByTestId('device-key-old')).textContent).toBe('other device (other-mac)');
   });
 });
