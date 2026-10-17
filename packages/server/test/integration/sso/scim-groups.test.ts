@@ -5,7 +5,7 @@ import { ssoModule } from '../../../src/sso/module.js';
 import { recordingAudit } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
 import { signedInUser, type IdentityHarness, type SignedInUser } from '../../helpers/identity.js';
-import { license, licensingHarness, testKeys } from '../../helpers/licensing.js';
+import { license, licenseInstallRecorded, licensingHarness, testKeys } from '../../helpers/licensing.js';
 
 const PATCH_OP = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
 const GROUP = 'urn:ietf:params:scim:schemas:core:2.0:Group';
@@ -41,6 +41,7 @@ describeDb('SCIM groups (saml-scim spec §3.5)', () => {
       headers: admin.headers,
       payload: { license: license(keys, { edition: 'enterprise' }) },
     });
+    await licenseInstallRecorded(h);
     bearer = (
       await h.app.inject({
         method: 'POST',

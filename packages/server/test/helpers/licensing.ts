@@ -4,6 +4,7 @@
  */
 import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import type { LicensePayload } from '@wirebench/engine';
+import { expect, vi } from 'vitest';
 import { AUDIT_LOG_MIGRATIONS_DIR } from '../../src/audit-log/module.js';
 import { ciTokensModule } from '../../src/ci-tokens/module.js';
 import type { ServerModule } from '../../src/context.js';
@@ -85,4 +86,19 @@ export function licensingHarness(
       ];
     },
   });
+}
+
+/**
+ * Waits for the audit row of a license install made through `PUT /license`. The audit-log module writes it
+ * after the answer, from the `licenseChanged` announcement (audit-log spec §3.2), so a test that starts
+ * recording audit events straight after the install can otherwise catch it as its first event.
+ */
+export async function licenseInstallRecorded(h: IdentityHarness): Promise<void> {
+  await vi.waitFor(
+    async () => {
+      const row = await h.db.query(`select 1 from audit_events where action = 'license.installed'`);
+      expect(row.rows).not.toHaveLength(0);
+    },
+    { timeout: 5_000, interval: 20 },
+  );
 }
