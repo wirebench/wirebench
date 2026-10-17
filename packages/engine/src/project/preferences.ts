@@ -267,6 +267,10 @@ export interface SshPreferences {
   readonly keepAlive: number;
   /** Seconds to wait for a server to answer before giving up. */
   readonly connectTimeout: number;
+  /** The character set a host's terminal reads and writes (#427); an id the SSH package does not know is passed over. */
+  readonly charset: string;
+  /** The terminal type a host's pty request names (#427). */
+  readonly term: string;
 }
 
 /** The whole preferences document. */
@@ -361,7 +365,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     sessionLogRaw: false,
     localShell: '',
   }),
-  ssh: Object.freeze({ keepAlive: 15, connectTimeout: 20 }),
+  ssh: Object.freeze({ keepAlive: 15, connectTimeout: 20, charset: 'utf-8', term: 'xterm-256color' }),
   shortcuts: Object.freeze({}),
 });
 
@@ -591,6 +595,14 @@ export const preferencesSchema = z.object({
       user: z.string().optional(),
       keepAlive: limited('ssh.keepAlive').optional(),
       connectTimeout: limited('ssh.connectTimeout').optional(),
+      charset: z
+        .string()
+        .regex(/^[a-z0-9][a-z0-9-]*$/)
+        .optional(),
+      term: z
+        .string()
+        .regex(/^[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}$/)
+        .optional(),
     })
     .optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),

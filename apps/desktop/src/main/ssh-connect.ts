@@ -12,6 +12,7 @@ import {
   serialLineOf,
 } from '@wirebench/ssh';
 import type {
+  Charset,
   DialOptions,
   HopCredentials,
   HostsFile,
@@ -178,6 +179,12 @@ export interface SshConnector {
     forwardAgent?: { readonly socket?: string };
     /** Set when the target's protocol is `mosh` (#419): the session starts a mosh server, then runs over UDP. */
     mosh?: { readonly settings?: MoshSettings };
+    /**
+     * The target's terminal type and character set (#427): SSH shells and Telnet use both, a serial console
+     * the character set only; Mosh is always UTF-8.
+     */
+    term: string;
+    charset: Charset;
     /**
      * Set when the target's protocol is `telnet` (#425): `hops` are then the SSH jump hosts only, and the
      * target is reached over TCP from the last of them (or straight, through its own proxy). `login` is typed
@@ -458,12 +465,14 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
 
     async prepareShell(sender, hostId, abandoned = () => false, user, quick) {
       const { chain, getSecret, hops, telnet, serial } = await prepare(sender, hostId, abandoned, user, quick, true);
-      if (serial !== undefined) return { hops, env: {}, secrets: [], serial };
+      const target = chain[chain.length - 1] as ResolvedHost;
+      const terminal = { term: target.ssh.term.value, charset: target.ssh.charset.value };
+      if (serial !== undefined) return { hops, env: {}, secrets: [], serial, ...terminal };
       // A Telnet device gets no environment: Telnet has no way to pass it.
       if (telnet !== undefined) {
-        return { hops, env: {}, secrets: telnet.login.password === undefined ? [] : [telnet.login.password], telnet };
+        const secrets = telnet.login.password === undefined ? [] : [telnet.login.password];
+        return { hops, env: {}, secrets, telnet, ...terminal };
       }
-      const target = chain[chain.length - 1] as ResolvedHost;
       const socket = target.ssh.forwardAgent.value ? deps.agentSocket() : undefined;
       return {
         hops,
@@ -472,6 +481,7 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
         ...(target.ssh.protocol.value === 'mosh'
           ? { mosh: target.ssh.mosh.value === undefined ? {} : { settings: target.ssh.mosh.value } }
           : {}),
+        ...terminal,
       };
     },
 

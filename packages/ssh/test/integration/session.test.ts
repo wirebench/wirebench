@@ -72,6 +72,37 @@ describe('openSession', () => {
     expect(await echoed).toContain('still here');
   });
 
+  it('names xterm-256color in the pty request unless a terminal type is given (#427)', async () => {
+    const f = await fixture('pw');
+    session = await openSession({ hops: [hop(f.port, 'pw')], cols: 80, rows: 24, verifyHostKey: accept });
+    expect(f.lastTerm).toBe('xterm-256color');
+    session.close();
+    session = await openSession({
+      hops: [hop(f.port, 'pw')],
+      cols: 80,
+      rows: 24,
+      verifyHostKey: accept,
+      term: 'vt220',
+    });
+    expect(f.lastTerm).toBe('vt220');
+  });
+
+  it('sends input in the host character set and hands its output back as UTF-8 (#427)', async () => {
+    const f = await fixture('pw');
+    session = await openSession({
+      hops: [hop(f.port, 'pw')],
+      cols: 80,
+      rows: 24,
+      verifyHostKey: accept,
+      charset: 'iso-8859-15',
+    });
+    const echoed = until(session, (t) => t.includes('€'));
+    session.write(Buffer.from('café €', 'utf8'));
+    // The echo server sends back what it read: Latin-9 bytes, decoded to UTF-8 on the way in.
+    expect(await echoed).toBe('café €');
+    expect(f.shellInput).toEqual([...Buffer.from('caf'), 0xe9, 0x20, 0xa4]);
+  });
+
   it('sends no env request without env', async () => {
     const f = await fixture('pw');
     session = await openSession({ hops: [hop(f.port, 'pw')], cols: 80, rows: 24, verifyHostKey: accept, env: {} });
