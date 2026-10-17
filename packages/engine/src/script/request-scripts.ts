@@ -109,10 +109,10 @@ export interface RequestScriptingOptions {
   readonly registry?: ProtocolRegistry;
 }
 
-/** Where a script sits (#334): above the request, on its API, interface or a folder, or on the request. */
 /** Which level's post-response script runs first. */
 export type PostResponseOrder = NonNullable<RequestScripts['postResponseOrder']>;
 
+/** Where a script sits (#334): above the request, on its API, interface or a folder, or on the request. */
 export type ScriptLevelKind = 'api' | 'interface' | 'folder' | 'request';
 
 /** The scripts of one level above a request (#334). */

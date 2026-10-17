@@ -170,7 +170,6 @@ The layer defines these:
 - **`bru`:**
   - `getEnvVar` / `setEnvVar`, `getVar` / `setVar`, `getCollectionVar`, `getFolderVar` and
     `getRequestVar`, all through §3.3;
-  - `interpolate`, through the run's resolver;
   - `setNextRequest`, mapped to `execution.setNextRequest`;
   - `runner.skipRequest`, mapped to `execution.skipRequest`;
   - `runner.stopExecution`, mapped to `execution.setNextRequest(null)`.
@@ -211,10 +210,15 @@ So `.jsonSchema` is supported. The tests assert these bounds:
 - `test/perf/json-schema-part.perf.test.ts` (perf project, gate scaled for CI): the part adds under
   10 ms and under 1 MiB to a run, and the 1 MiB check takes under 100 ms.
 
-How `.jsonSchema` treats a `budget` problem (fail, pass with a note, or a higher cap for scripts)
-is decided with the Bruno layer.
+A `budget` problem makes the expectation fail, and its message says the check could not finish and
+names the node cap; it never passes silently, and scripts have no higher cap. Any other problems fail
+the expectation and list path, keyword and message, at most the validator's 20. `.jsonSchema` is
+available on `expect(...)` and after `.to`, `.have` and the other filler words; after `.not` it is
+not (a negated schema check has no use in a collection).
 
-Unsupported: `bru.sendRequest`, `bru.sleep`, `require` and `bru.cookies`.
+Unsupported: `bru.interpolate`, `bru.sendRequest`, `bru.sleep`, `bru.cookies`, `require` and
+`req.setTimeout`. `bru.interpolate` was planned "through the run's resolver", but the typed script
+API gives a script no resolver or template expansion, and the layer does not invent one.
 
 **Script order (decision 5).** Bruno's `scripts.flow` defaults to `sandwich`; Wirebench runs
 post-response scripts outermost first. Bruno's source (commit `1b932553`, 2026-10-17) confirms both

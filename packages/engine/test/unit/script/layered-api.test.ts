@@ -44,7 +44,7 @@ describe('the layered script APIs', () => {
     const outcome = await runScript({
       sandbox,
       phase: 'pre',
-      api: 'bruno',
+      api: 'hoppscotch',
       source: 'log("hi");',
       filename: 'X.pre.js',
       request: REQUEST,
@@ -58,7 +58,10 @@ describe('the layered script APIs', () => {
     expect(outcome.log.lines).toEqual([]);
     expect(onSecretValue).not.toHaveBeenCalled();
     if (!outcome.ok) {
-      expect(outcome.error).toEqual({ code: 'script-unsupported', message: 'bruno scripts are not supported yet' });
+      expect(outcome.error).toEqual({
+        code: 'script-unsupported',
+        message: 'hoppscotch scripts are not supported yet',
+      });
     }
   });
 });

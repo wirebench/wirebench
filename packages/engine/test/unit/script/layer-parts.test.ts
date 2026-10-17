@@ -6,6 +6,7 @@
  */
 import { createContext, runInContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { BRUNO_LAYER } from '../../../src/script/api/bruno.js';
 import { INSOMNIA_LAYER } from '../../../src/script/api/insomnia.js';
 import { POSTMAN_LAYER } from '../../../src/script/api/postman.js';
 import {
@@ -130,5 +131,12 @@ describe('the shared layer parts', () => {
     const ctx = makeContext(defined);
     expect(() => void runInContext(INSOMNIA_LAYER, ctx)).not.toThrow();
     expect(defined).toEqual(expect.arrayContaining(['insomnia', '$', 'CryptoJS', 'btoa', 'atob']));
+  });
+
+  it('the Bruno layer runs over the parts in one scope', () => {
+    const defined: string[] = [];
+    const ctx = makeContext(defined);
+    expect(() => void runInContext(BRUNO_LAYER, ctx)).not.toThrow();
+    expect(defined).toEqual(expect.arrayContaining(['expect', 'bru', 'req', 'res', 'require']));
   });
 });

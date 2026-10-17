@@ -241,7 +241,7 @@ export function apiFromPostmanCollection(
   }
   for (const [path, calls] of unsupported) {
     // A request a script sends is the one call people most often need, so its warning says what to do instead.
-    const sends = ['pm.sendRequest', 'insomnia.sendRequest'].find((name) => calls.delete(name));
+    const sends = ['pm.sendRequest', 'insomnia.sendRequest', 'bru.sendRequest'].find((name) => calls.delete(name));
     if (sends !== undefined) {
       warnings.push(
         `The scripts of "${path}" call ${sends}, which a script cannot do: send that request as a sequence step, or use OAuth2 auth for a token`,
@@ -849,7 +849,14 @@ const UNSUPPORTED_CALLS: Record<LayeredApi, readonly [RegExp, string][]> = {
     [/(?<![\w$.])(?:insomnia|\$)\.cookies\.(?:set|unset|clear)\b/, 'insomnia.cookies writes'],
     [/(?<![\w$.])(?:insomnia|\$)\.vault\b/, 'insomnia.vault'],
   ],
-  bruno: [],
+  bruno: [
+    [/(?<![\w$.])bru\.interpolate\b/, 'bru.interpolate'],
+    [/(?<![\w$.])bru\.sendRequest\b/, 'bru.sendRequest'],
+    [/(?<![\w$.])bru\.sleep\b/, 'bru.sleep'],
+    [/(?<![\w$.])bru\.cookies\b/, 'bru.cookies'],
+    [/(?<![\w$.])req\.setTimeout\b/, 'req.setTimeout'],
+    [/(?<![\w$.])require\s*\(/, 'require'],
+  ],
   hoppscotch: [],
   'thunder-client': [],
 };
@@ -868,6 +875,11 @@ const RUN_CONTROL_CALLS: Partial<Record<LayeredApi, readonly [RegExp, string][]>
   insomnia: [
     [/(?<![\w$.])(?:insomnia|\$)\.execution\.setNextRequest\b/, 'insomnia.execution.setNextRequest'],
     [/(?<![\w$.])(?:insomnia|\$)\.execution\.skipRequest\b/, 'insomnia.execution.skipRequest'],
+  ],
+  bruno: [
+    [/(?<![\w$.])bru\.setNextRequest\b/, 'bru.setNextRequest'],
+    [/(?<![\w$.])bru\.runner\.skipRequest\b/, 'bru.runner.skipRequest'],
+    [/(?<![\w$.])bru\.runner\.stopExecution\b/, 'bru.runner.stopExecution'],
   ],
 };
 

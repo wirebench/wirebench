@@ -4,10 +4,12 @@
  * yet, and a script written against it fails before it runs.
  */
 import type { LayeredApi } from '../model.js';
+import { BRUNO_LAYER } from './bruno.js';
 import { INSOMNIA_LAYER } from './insomnia.js';
 import { POSTMAN_LAYER } from './postman.js';
 
 export const SCRIPT_LAYERS: Partial<Record<LayeredApi, string>> = {
   postman: POSTMAN_LAYER,
   insomnia: INSOMNIA_LAYER,
+  bruno: BRUNO_LAYER,
 };
