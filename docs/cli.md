@@ -739,8 +739,8 @@ Details that are easy to get wrong:
   keeps its value (`property-kept`); secret variables are named, not stored
   (`secret-not-imported`; an Insomnia vault secret counts as one); environments and globals are
   named, not imported (`environments-not-imported`). An Insomnia export's scripts are attached to their
-  requests and folders switched off: switch them on in the desktop, or set `enabled` in the request
-  file. Other formats' scripts are not saved (`scripts-not-saved`, with their count); import the file in
+  requests and folders switched off: switch them on in the desktop, or delete the `enabled: false` line (or set it to `true`) under
+  `scripts:` in the request's or folder's `.yaml` (a folder's scripts live in its folder file). Other formats' scripts are not saved (`scripts-not-saved`, with their count); import the file in
   the desktop to keep them as text.
   gRPC APIs are added without the export's `.proto` files, which are named
   (`definition-not-imported`). Everything else the importer and its variable plan say arrives as

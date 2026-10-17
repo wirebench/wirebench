@@ -64,7 +64,7 @@ function insomniaExport(): string {
 }
 
 function projectFrom(api: RestApi): Project {
-  return {
+  const project = {
     formatVersion: FORMAT_VERSION,
     id: 'proj-client-scripts',
     name: 'Client scripts',
@@ -76,7 +76,8 @@ function projectFrom(api: RestApi): Project {
     keystores: [],
     sequences: [],
     mocks: [],
-  } as unknown as Project;
+  } satisfies Project;
+  return project;
 }
 
 function importProject(enable: boolean): Project {

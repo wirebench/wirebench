@@ -408,7 +408,9 @@ recognized as **Insomnia environments**.
 </Steps>
 
 The summary counts the APIs, requests and folders and the scripts kept as text, then lists the
-environments and project properties added and the secrets stored.
+environments and project properties added and the secrets stored. Insomnia scripts are not kept as
+text: they are attached switched off, and the report's warnings name the folders and requests that
+have them.
 
 - **Environments.** The base and folder environments become project properties; a name the
   project already has keeps its value. Each sub-environment becomes a workspace environment,
@@ -429,7 +431,8 @@ environments and project properties added and the secrets stored.
 - **Refused.** Formats 1 to 3, mock server and MCP client files, and a file over 50 MB.
 
 From the command line, `wirebench import <file>` adds the same APIs and the plain variables, and
-lists secrets, environments, scripts and `.proto` files as not imported. See
+attaches an Insomnia export's scripts switched off, and lists secrets, environments and `.proto`
+files as not imported. See
 [From Insomnia](/wirebench/docs/switching/insomnia/) for every rule, and what does not come across.
 
 ## Bruno collections

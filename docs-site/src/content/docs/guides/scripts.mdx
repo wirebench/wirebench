@@ -221,12 +221,13 @@ Insomnia has no script level above a folder, so there is none on the API.
 | `insomnia.test`, `insomnia.expect` | Supported, as `pm.test` and `pm.expect` |
 | `insomnia.response` (`code`, `status`, `headers`, `json()`, `text()`, `responseTime`) | Supported |
 | `insomnia.request` (`url`, headers, `body`) | Supported |
-| `insomnia.variables`, `environment`, `baseEnvironment`, `collectionVariables`, `globals`, `iterationData` | Supported; reads check `vars` then `props`, writes go to `vars` |
+| `insomnia.variables`, `environment`, `baseEnvironment`, `collectionVariables`, `globals` | Supported; reads check `vars` then `props`, writes go to `vars` |
+| `insomnia.iterationData` | Supported; reads the current data row of a [data-driven run](/wirebench/docs/guides/runner/), and has no `set` |
 | `insomnia.info.requestName` | Supported |
 | `insomnia.execution.setNextRequest`, `skipRequest` | Supported; obeyed in API and folder runs only |
 | `insomnia.cookies` reads | Supported; they return nothing, as no cookie is visible to a script |
 | `insomnia.cookies` writes (`set`, `unset`, `clear`) | `script-unsupported` |
-| `insomnia.vault` | `script-unsupported` |
+| `insomnia.vault.get` | `script-unsupported` |
 | `insomnia.sendRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step or OAuth2 auth |
 | `insomnia.require`, `require` | `script-unsupported` |
 

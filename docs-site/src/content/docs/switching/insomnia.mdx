@@ -141,9 +141,9 @@ folder. It runs against an `insomnia` object that covers `insomnia.test`, `insom
   [sequence](/wirebench/docs/guides/sequences/) step with a transfer.
 - `insomnia.require` and `require`.
 - `insomnia.cookies.set`, `unset` and `clear`; cookie reads return nothing.
-- `insomnia.vault`.
+- `insomnia.vault.get`.
 
-Two things change from Insomnia. A variable a script sets lasts for the run and is never written to an
+Three things change from Insomnia. A variable a script sets lasts for the run and is never written to an
 environment file, and the next request reads it as `${#Sequence#name}`; a `{{ _.name }}` in a request
 becomes `${name}`, which reads the environment, so change it where a script's value is meant.
 A project imported before this behaviour keeps its `imported-scripts/` files untouched; import the
@@ -174,8 +174,9 @@ tab; Wirebench stores it encrypted outside the project.
 ## The command line
 
 `wirebench import <file>` reads an Insomnia export and adds its APIs and its plain base and folder
-variables as project properties. It has no secret store, workspace or script folder, so it lists
-secret variables, environments, scripts and `.proto` files as not imported. A file of environments
+variables as project properties, and attaches its scripts to their requests and folders switched
+off, as the desktop does. It has no secret store or workspace, so it lists secret variables,
+environments and `.proto` files as not imported. A file of environments
 alone is refused.
 
 ## Limits
