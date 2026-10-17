@@ -125,7 +125,7 @@ under in an export. A folder's script is read from its `settings.preReq` and `se
 collection's post-request script from `settings.postReq`. If an export keeps them elsewhere, they are
 not found, and nothing is attached.
 
-A script with no place to run, because its collection or folder holds no HTTP request and is left out of
+A script with no place to run, because its collection holds no HTTP request and is left out of
 the import, is saved as text under `imported-scripts/` and never run. An existing file is never
 overwritten: a repeat adds a number to the name, and the notes list where each script went.
 

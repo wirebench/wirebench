@@ -117,6 +117,26 @@ describe('Thunder Client scripts are attached', () => {
     );
   });
 
+  it('two dropped collections whose names slugify alike keep their files apart', () => {
+    let n = 0;
+    const idle = (colName: string, script: string) => ({
+      colName,
+      settings: { preReq: inline([script]) },
+      folders: [],
+      requests: [],
+    });
+    const files = new Map([
+      ['collections/tc_col_a.json', JSON.stringify(idle('Idle', 'tc.setVar("a", "1");'))],
+      ['collections/tc_col_b.json', JSON.stringify(idle('idle', 'tc.setVar("b", "2");'))],
+      ['collections/tc_col_c.json', JSON.stringify({ colName: 'Busy', folders: [], requests: [request('Ping')] })],
+    ]);
+    const mapped = mapThunderClient(parseThunderFolder(files), { newId: () => `id${String((n += 1))}` });
+    expect(mapped.scripts).toEqual([
+      { path: 'imported-scripts/idle/idle.pre.js', source: 'tc.setVar("a", "1");' },
+      { path: 'imported-scripts/idle/idle-2.pre.js', source: 'tc.setVar("b", "2");' },
+    ]);
+  });
+
   it('declarative test rows are unchanged', () => {
     const mapped = mapCollection({
       requests: [

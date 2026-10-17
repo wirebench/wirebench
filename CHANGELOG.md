@@ -14,8 +14,9 @@ All notable changes to this project are documented here. The format follows
   `tc.request`, `tc.response`, `tc.info` and `tc.skipRequest()`); `tc.runRequest`, the cookie calls,
   `tc.loadModule`, `require`, the global `assert` and the rest fail with `script-unsupported`, and the
   import report lists them. `tc.request.url` is a plain string, so `url.getParam` and `setParam` are a
-  known gap. In every client, the scripts of a collection or folder the import drops for having no HTTP
-  request are saved as text under `imported-scripts/`, with a note naming the file. `wirebench import`
+  known gap. In every client, the scripts of a collection the import drops for having no HTTP request
+  (and, for Insomnia, of a dropped folder) are saved as text under `imported-scripts/`, with a note
+  naming the file. `wirebench import`
   attaches them too.
 - **Run imported Hoppscotch scripts.** A Hoppscotch export's pre-request and test scripts are attached
   to their requests, folders and API, switched off, instead of being saved as text. Once switched on

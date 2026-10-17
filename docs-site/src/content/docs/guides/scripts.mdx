@@ -264,7 +264,8 @@ either way.
 Three things stay as text under `imported-scripts/`, with a note in the report naming the file: the
 `.js` module files a collection holds, scripts on a level that cannot hold one (a WebSocket request or
 a WebSocket-only folder, or a collection script when the collection has no REST or gRPC request), and,
-in every client, the scripts of a collection or folder the import drops for having no HTTP request.
+in every client, the scripts of a collection the import drops for having no HTTP request (in an
+Insomnia import, of a dropped folder too).
 
 | Bruno | In Wirebench |
 | --- | --- |
@@ -348,7 +349,7 @@ post-request script becomes its post-response script.
 | `tc.replaceVars` | Supported; `{{name}}` through `vars`, then `props`; an unset name is left as written |
 | `tc.response` | Supported in a post-response script; `status`, `time`, `size` (bytes), `contentType`, `text`, `json` and `headers` (a list of `{ name, value }` rows, original casing) and `getHeader`. `json` is parsed when the body is JSON and `undefined` when it does not parse |
 | `tc.response` in a pre-request script | `script-unsupported` |
-| `tc.request` reads: `name`, `url`, `method`, `headers`, `body`, `getHeader` | Supported; `headers` is a list of `{ name, value, isDisabled }` rows, `body` is parsed JSON or text; `id` is `undefined` |
+| `tc.request` reads: `name`, `url`, `method`, `headers`, `body`, `getHeader` | Supported; `headers` is a list of `{ name, value, isDisabled }` rows of the headers being sent, so `isDisabled` is always `false`, `body` is parsed JSON or text, `undefined` when there is none; `id` is `undefined` |
 | `tc.request` writes: `setHeader`, `setBody`, and `tc.setParam` | Supported in a pre-request script only |
 | `tc.request.url.getParam`, `setParam` | A `TypeError`: `tc.request.url` is a plain string. The import report names them; edit the URL with `tc.setParam` or the request's **Params** table |
 | `tc.info` | Supported; `requestName`, `currentIteration` and `totalIterations`. `environmentName`, `collectionName` and `folderName` are `undefined` |

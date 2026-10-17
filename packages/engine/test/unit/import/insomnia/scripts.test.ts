@@ -84,6 +84,27 @@ describe('Insomnia scripts are attached', () => {
     );
   });
 
+  it('two dropped workspaces whose names slugify alike keep their files apart', () => {
+    let n = 0;
+    const workspace = (id: string, name: string, script: string): Record<string, unknown>[] => [
+      { _id: id, parentId: null, name, scope: 'collection', _type: 'workspace' },
+      { _id: `${id}_f`, parentId: id, _type: 'request_group', name: 'Live', metaSortKey: 1, preRequestScript: script },
+    ];
+    const busy = [
+      { _id: 'wrk_3', parentId: null, name: 'Busy', scope: 'collection', _type: 'workspace' },
+      { _id: 'req_1', parentId: 'wrk_3', _type: 'request', name: 'Ping', method: 'GET', url: 'https://a.test/x' },
+    ];
+    const text = JSON.stringify({
+      __export_format: 4,
+      resources: [...workspace('wrk_1', 'Idle', 'a();'), ...workspace('wrk_2', 'idle', 'b();'), ...busy],
+    });
+    const mapped = mapInsomnia(parseInsomnia(text), { newId: () => `id${String((n += 1))}` });
+    expect(mapped.scripts.map((file) => file.path)).toEqual([
+      'imported-scripts/idle/live.pre.js',
+      'imported-scripts/idle/live-2.pre.js',
+    ]);
+  });
+
   it('a folder with no HTTP request, inside a workspace that has one, keeps its scripts as text', () => {
     const mapped = mapV5([
       request('Ping', {}),
