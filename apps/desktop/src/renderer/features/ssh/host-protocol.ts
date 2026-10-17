@@ -9,9 +9,10 @@ export const protocolOf = (host: ResolvedHostWire | undefined): SshProtocolWire 
 
 /**
  * Whether the host is reached over SSH itself: only then do Files, port forwarding, keys, the agent and the
- * `ssh` command apply. A Mosh host signs in over SSH, so it has them; a Telnet host (#425) does not.
+ * `ssh` command apply. A Mosh host signs in over SSH, so it has them; a Telnet host (#425) or a serial console
+ * (#426) does not.
  */
-export const hasSshFeatures = (protocol: SshProtocolWire): boolean => protocol !== 'telnet';
+export const hasSshFeatures = (protocol: SshProtocolWire): boolean => protocol === 'ssh' || protocol === 'mosh';
 
 /** The protocol of `hostId` as the hosts store has it now. */
 export function hostProtocol(hostId: string): SshProtocolWire {

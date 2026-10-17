@@ -21,7 +21,7 @@ export const sshAuthWireSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('agent') }),
 ]);
 
-export const sshProtocolWireSchema = z.enum(['ssh', 'mosh', 'telnet']);
+export const sshProtocolWireSchema = z.enum(['ssh', 'mosh', 'telnet', 'serial']);
 export type SshProtocolWire = z.infer<typeof sshProtocolWireSchema>;
 
 /** `ssh.mosh`, taken whole from the nearest level: the remote server command and the UDP port or range. */
@@ -30,6 +30,16 @@ export const moshSettingsWireSchema = z.strictObject({
   ports: z.string().optional(),
 });
 export type MoshSettingsWire = z.infer<typeof moshSettingsWireSchema>;
+
+/** `ssh.serial` (#426), taken whole from the nearest level: a serial console's line settings. */
+export const serialSettingsWireSchema = z.strictObject({
+  baud: z.number().optional(),
+  dataBits: z.union([z.literal(5), z.literal(6), z.literal(7), z.literal(8)]).optional(),
+  parity: z.enum(['none', 'even', 'odd', 'mark', 'space']).optional(),
+  stopBits: z.union([z.literal(1), z.literal(1.5), z.literal(2)]).optional(),
+  flowControl: z.enum(['none', 'rtscts', 'xonxoff']).optional(),
+});
+export type SerialSettingsWire = z.infer<typeof serialSettingsWireSchema>;
 /** A proxy the first hop is dialled through (#417); its password is a secret NAME, never a value. */
 export const sshProxyWireSchema = z.strictObject({
   type: z.enum(['socks5', 'http']),
@@ -52,6 +62,7 @@ export const sshSettingsWireSchema = z.strictObject({
   /** `mosh` starts a mosh server over SSH, then runs the session over UDP (#419). */
   protocol: sshProtocolWireSchema.optional(),
   mosh: moshSettingsWireSchema.optional(),
+  serial: serialSettingsWireSchema.optional(),
   /** `false` connects directly though a group above sets a proxy. */
   proxy: z.union([z.literal(false), sshProxyWireSchema]).optional(),
 });
@@ -224,6 +235,8 @@ export const resolvedHostWireSchema = z.object({
     /** Main always sends both; absent reads as SSH with no mosh block. */
     protocol: prov(sshProtocolWireSchema).optional(),
     mosh: prov(moshSettingsWireSchema.optional()).optional(),
+    /** A serial console's line settings (#426); main always sends it. */
+    serial: prov(serialSettingsWireSchema.optional()).optional(),
     /** Used when this host is the first hop; `undefined` connects directly. */
     proxy: prov(sshProxyWireSchema.optional()),
   }),

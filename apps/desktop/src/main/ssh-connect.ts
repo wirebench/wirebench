@@ -408,6 +408,9 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     const chain = await chainFor(sender, hostId, user, quick);
     if (abandoned()) throw new WirebenchError('ssh-session-closed', 'The session closed before it opened');
     const target = chain[chain.length - 1] as ResolvedHost;
+    if (target.ssh.protocol.value === 'serial') {
+      throw new WirebenchError('serial-unavailable', 'Serial consoles are not available in this build yet');
+    }
     if (target.ssh.protocol.value === 'telnet') {
       // Files, port forwarding and keys all need an SSH connection to the host itself.
       if (!shell) {

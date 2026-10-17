@@ -3,7 +3,12 @@ import { useUiStore } from '../../state/ui.js';
 import type { GroupEntryWire, MoshSettingsWire, SshProtocolWire } from '../../../shared/ssh-wire.js';
 import { INPUT_CLASS, sourceText, type Provenance } from './inherited-field.js';
 
-export const PROTOCOL_LABELS: Record<SshProtocolWire, string> = { ssh: 'SSH', mosh: 'Mosh', telnet: 'Telnet' };
+export const PROTOCOL_LABELS: Record<SshProtocolWire, string> = {
+  ssh: 'SSH',
+  mosh: 'Mosh',
+  telnet: 'Telnet',
+  serial: 'Serial',
+};
 const PORTS = /^(\d{1,5})(?::(\d{1,5}))?$/;
 
 /** The protocol the enclosing groups (outermost first) set: the nearest that says, else SSH. */
