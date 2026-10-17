@@ -2051,7 +2051,7 @@ export const preferencesWireSchema = z.object({
   }),
   updates: z.object({ checkOnLaunch: z.boolean() }),
   accounts: z.object({ showInStatusBar: z.boolean() }),
-  secrets: z.object({ sourceCacheSeconds: z.number() }),
+  secrets: z.object({ sourceCacheSeconds: z.number(), appLock: z.boolean(), appLockIdleMinutes: z.number() }),
   mocks: z.object({ listenOnAllInterfaces: z.boolean() }),
   terminal: z.object({
     confirmMultilinePaste: z.boolean(),

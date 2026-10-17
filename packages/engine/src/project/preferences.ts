@@ -212,6 +212,10 @@ export interface AccountPreferences {
 export interface SecretsPreferences {
   /** How long a value fetched from a secret manager stays in memory, in seconds; 0 fetches it on every send. */
   readonly sourceCacheSeconds: number;
+  /** The app lock (#428): ask for biometrics or the OS password before SSH secrets are used. */
+  readonly appLock: boolean;
+  /** Minutes without input on the machine after which the app lock asks again. */
+  readonly appLockIdleMinutes: number;
 }
 
 /** Mock services (#59). */
@@ -345,7 +349,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   }),
   updates: Object.freeze({ checkOnLaunch: false }),
   accounts: Object.freeze({ showInStatusBar: true }),
-  secrets: Object.freeze({ sourceCacheSeconds: 300 }),
+  secrets: Object.freeze({ sourceCacheSeconds: 300, appLock: false, appLockIdleMinutes: 15 }),
   mocks: Object.freeze({ listenOnAllInterfaces: false }),
   terminal: Object.freeze({
     confirmMultilinePaste: true,
@@ -397,6 +401,7 @@ export const PREFERENCE_NUMBER_LIMITS = {
   'ui.historyCap': { min: 1, max: 100_000, integer: true },
   'ui.logSize': { min: LOG_SIZE_MIN, max: LOG_SIZE_MAX, integer: true },
   'secrets.sourceCacheSeconds': { min: 0, max: 3600, integer: true },
+  'secrets.appLockIdleMinutes': { min: 1, max: 240, integer: true },
   'terminal.reconnectAttempts': { min: 1, max: 100, integer: true },
   'terminal.fontSize': { min: 6, max: 72, integer: true },
   'terminal.lineHeight': { min: 1, max: 2, integer: false },
@@ -557,7 +562,13 @@ export const preferencesSchema = z.object({
     .optional(),
   updates: z.object({ checkOnLaunch: z.boolean().optional() }).optional(),
   accounts: z.object({ showInStatusBar: z.boolean().optional() }).optional(),
-  secrets: z.object({ sourceCacheSeconds: limited('secrets.sourceCacheSeconds').optional() }).optional(),
+  secrets: z
+    .object({
+      sourceCacheSeconds: limited('secrets.sourceCacheSeconds').optional(),
+      appLock: z.boolean().optional(),
+      appLockIdleMinutes: limited('secrets.appLockIdleMinutes').optional(),
+    })
+    .optional(),
   mocks: z.object({ listenOnAllInterfaces: z.boolean().optional() }).optional(),
   terminal: z
     .object({

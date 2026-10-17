@@ -69,7 +69,13 @@ const NO_SERIAL = {
   workspaceOf: (): string | undefined => undefined,
 };
 const NO_IMPORT = { preview: vi.fn(), apply: vi.fn() };
-const NO_KEYS = { generate: vi.fn(), keys: vi.fn(), install: vi.fn(), attachCertificate: vi.fn() };
+const NO_KEYS = {
+  generate: vi.fn(),
+  keys: vi.fn(),
+  install: vi.fn(),
+  attachCertificate: vi.fn(),
+  deviceKeyStatus: vi.fn(),
+};
 const NO_SFTP = {
   open: vi.fn(),
   close: vi.fn(),
@@ -741,6 +747,7 @@ describe('ssh key channels', () => {
       keys: vi.fn(() => Promise.resolve([{ name: 'k', locked: true }])),
       install: vi.fn(() => Promise.resolve({ result: 'added' as const })),
       attachCertificate: vi.fn(),
+      deviceKeyStatus: vi.fn(() => Promise.resolve({ supported: false, reason: 'none here' })),
     };
     registerSshChannels({
       hosts: NO_HOSTS,
@@ -775,6 +782,10 @@ describe('ssh key channels', () => {
       value: { name: 'k', locked: false },
     });
     expect(keys.attachCertificate).toHaveBeenCalledWith(window, { secret: 'k', certificate: 'c' });
+    expect(await invokeAs(window, 'ssh.deviceKeyStatus', undefined)).toEqual({
+      ok: true,
+      value: { supported: false, reason: 'none here' },
+    });
     const stray = (await invoke('ssh.generateKey', { name: 'k', algorithm: 'ed25519', privateKey: 'x' })) as {
       ok: boolean;
     };
