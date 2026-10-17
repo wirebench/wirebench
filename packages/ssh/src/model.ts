@@ -75,7 +75,7 @@ const settingsSchema = z
     connectTimeout: z.number().int().min(1).optional(),
     /** Off by default; a nearer `false` turns an inherited `true` off. */
     forwardAgent: z.boolean().optional(),
-    /** `mosh` starts a mosh server over SSH and runs the session over UDP (#419); `ssh` by default. */
+    /** `mosh` starts a mosh server over SSH and runs the session over UDP (#419); `telnet` is plain text (#425); `ssh` by default. */
     protocol: protocolSchema,
     /** Taken whole from the nearest level that sets it. */
     mosh: moshSchema,

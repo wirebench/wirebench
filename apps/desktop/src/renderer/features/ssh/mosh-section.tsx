@@ -2,7 +2,7 @@ import { useId } from 'react';
 import type { GroupEntryWire, MoshSettingsWire, SshProtocolWire } from '../../../shared/ssh-wire.js';
 import { INPUT_CLASS, sourceText, type Provenance } from './inherited-field.js';
 
-const PROTOCOL_LABELS: Record<SshProtocolWire, string> = { ssh: 'SSH', mosh: 'Mosh' };
+const PROTOCOL_LABELS: Record<SshProtocolWire, string> = { ssh: 'SSH', mosh: 'Mosh', telnet: 'Telnet' };
 const PORTS = /^(\d{1,5})(?::(\d{1,5}))?$/;
 
 /** The protocol the enclosing groups (outermost first) set: the nearest that says, else SSH. */
