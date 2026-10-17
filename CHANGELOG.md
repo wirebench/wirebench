@@ -61,6 +61,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Assertions chained after `.property(...)` in imported scripts now fail when they should.** In the
+  Postman, Insomnia and Bruno layers, `expect(x).to.have.property('a').that.equals(5)` passed whatever
+  `a` held, because the check after `.property(...)` could not fail.
 - **WSDL import goes through your proxy and CA bundle.** Importing a WSDL by URL, re-fetching it when a
   project reopens, and fetching a definition a legacy SOAP project file holds no copy of now use the
   proxy and CA bundle from Settings, as sends and OpenAPI imports already did, with Basic or Kerberos

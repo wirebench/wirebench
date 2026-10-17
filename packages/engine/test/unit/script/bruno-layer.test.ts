@@ -415,3 +415,10 @@ describe('the Bruno layer: sandbox limits (spec §10)', () => {
     expect(outcome.log.lines).toHaveLength(SCRIPT_LIMITS.logLines);
   });
 });
+
+describe('assertions chained after .property(...)', () => {
+  it('fail when the follow-on check is wrong', async () => {
+    const outcome = await run('post', "test('wrong', () => expect({ a: 1 }).to.have.property('a').that.equals(5));");
+    expect(outcome).toMatchObject({ ok: true, tests: [{ name: 'wrong', passed: false }] });
+  });
+});

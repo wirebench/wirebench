@@ -69,7 +69,7 @@ const chain = (actual, flags) => {
   self.property = (name, ...value) => {
     const has = actual !== null && actual !== undefined && typeof actual === 'object' && name in actual;
     assert(has && (value.length === 0 || same(actual[name], value[0])), 'to have property ' + name + (value.length === 0 ? '' : ' of ' + show(value[0])));
-    return has && !flags.not ? chain(actual[name], { schema: flags.schema }) : self;
+    return has && !flags.not ? chain(actual[name], { not: false, deep: false, schema: flags.schema }) : self;
   };
   self.above = self.gt = self.greaterThan = (n) => assert(actual > n, 'to be above ' + n);
   self.below = self.lt = self.lessThan = (n) => assert(actual < n, 'to be below ' + n);
