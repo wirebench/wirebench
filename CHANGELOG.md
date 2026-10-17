@@ -15,6 +15,12 @@ All notable changes to this project are documented here. The format follows
   details panel and the terminal all say the session is not encrypted, and Files, port forwarding, agent
   forwarding and keys are hidden for these hosts. `WIREBENCH_AREAS=telnet=off` switches Telnet off for a
   build (#425).
+- **Serial consoles.** A host or group can set `protocol: serial` to open a serial port on this computer
+  (a USB serial adapter or a built-in port) in the same terminal tab, with panes, find, snippets and session
+  logs. The line settings (baud, data bits, parity, stop bits and flow control) live in `hosts.yaml`; the
+  device each console opens is remembered per computer, picked in the host form from this computer's ports
+  or on the connection screen the first time. Address, sign-in, jump host, proxy and the SSH-only features
+  are hidden for these hosts. `WIREBENCH_AREAS=serial=off` switches serial consoles off for a build (#426).
 - **Make secret on credential-like variables.** A variable named like a credential (`token`,
   `password`, `apiKey`…) with a plain value now offers **Make secret** in its row: the value is stored
   as a project secret on this machine and the row keeps `${secret:name}`. On a workspace scope it is

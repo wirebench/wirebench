@@ -66,11 +66,15 @@ hosts:
   which says so instead of guessing.
 
 The device a serial host opens on this machine is kept in `<userData>/serial-devices.json`, keyed by the
-workspace's folder and the host id:
+workspace's id and the host id (the id, not the folder, so moving a workspace keeps its devices), as the
+saved terminal layouts are:
 
 ```json
-{ "version": 1, "devices": { "/Users/me/ops\nlab-console": "/dev/tty.usbserial-A10KJ3" } }
+{ "version": 1, "devices": { "4f1c…\nlab-console": "/dev/tty.usbserial-A10KJ3" } }
 ```
+
+Three channels serve it: `ssh.serialPorts` lists this machine's ports, `ssh.serialDevice` reads a host's
+device and `ssh.setSerialDevice` sets or (with `null`) forgets it, each for the calling window's workspace.
 
 ## Telnet
 
@@ -151,5 +155,7 @@ implement.
   through the SOCKS5 fixture.
 - Desktop: the serial session over `@serialport/binding-mock`; the device store; the connector's Telnet
   and serial branches; the off switches; the form and the connection screen's port picker.
-- e2e (Docker, headless): a Telnet host signs in at the fixture's prompts and runs a command. Serial has no
-  headless e2e (no port in a container); a manual test with a USB serial adapter is recorded in the PR.
+- e2e (Docker, headless): a Telnet host signs in at the fixture's prompts and runs a command. A serial
+  console opens one end of a virtual serial line (`socat` linking two pseudo-terminals, the test playing the
+  device on the other end), is asked for its port on the connection screen and talks over the line; it skips
+  where `socat` is not installed. A manual test with a USB serial adapter is recorded in the PR.
