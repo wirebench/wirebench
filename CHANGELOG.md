@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Terminal type and character set per host.** A host or group's `ssh` settings take `term`, the
+  terminal type the shell is opened with (`xterm-256color` by default, for example `vt100` or
+  `vt220`), and `charset`, the character set its text is read and written in: UTF-8 by default, or
+  one of ISO-8859-1/2/5/7/9/15, Windows-1250/1251/1252/1253/1254/1257, CP850 and KOI8-R. Both
+  inherit like the other host settings and fall back to new **Settings → SSH** defaults; the host
+  form shows them under **Advanced**. They apply to SSH shells; Mosh stays UTF-8 (#427).
 - **Make secret on credential-like variables.** A variable named like a credential (`token`,
   `password`, `apiKey`…) with a plain value now offers **Make secret** in its row: the value is stored
   as a project secret on this machine and the row keeps `${secret:name}`. On a workspace scope it is
