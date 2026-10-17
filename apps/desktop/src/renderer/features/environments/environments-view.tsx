@@ -19,6 +19,7 @@ import {
   openEnvironmentTab,
   setProjectEnvironment,
 } from './environment-actions.js';
+import { EnvBadge } from './env-badge.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
@@ -232,7 +233,11 @@ function EnvironmentRow({
                 }}
               />
             ) : (
-              <span className="min-w-0 flex-1 truncate">{environment.name}</span>
+              <>
+                {/* The switcher's dot and lock, so a protected production reads as one here too. */}
+                <EnvBadge color={environment.color} guarded={environment.protected === true} />
+                <span className="min-w-0 flex-1 truncate">{environment.name}</span>
+              </>
             )}
             {chips !== undefined &&
               !renaming &&

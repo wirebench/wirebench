@@ -34,6 +34,7 @@ function titleFor(contribution: TabContribution, id: string): string | undefined
     project: useProjectStore.getState(),
     workspaceEnvironments: useWorkspaceStore.getState().workspace?.environments ?? [],
     hookNames: {},
+    scheduleNames: {},
   });
 }
 
@@ -131,31 +132,39 @@ function focusedTab(editors: {
   return editors.activeId === undefined ? undefined : editors.tabs.find((tab) => tab.id === editors.activeId);
 }
 
-/** `lastProjectId` while it still names a project of the open workspace. */
-function lastProjectOf(state: {
+/**
+ * The current project when the focused tab names none: `lastProjectId` while it still names a
+ * project of the open workspace, else the workspace's only project. A workspace of one project
+ * has no other a pick could be for, so the switcher names it from the start instead of reading
+ * "No project" until a request opens; with several, it waits for a tab to say which.
+ */
+export function fallbackProjectOf(state: {
   readonly workspace: WorkspaceWire | null;
   readonly lastProjectId?: string | undefined;
 }): string | undefined {
+  const projects = state.workspace?.projects ?? [];
   const last = state.lastProjectId;
-  return last !== undefined && state.workspace?.projects.some((project) => project.id === last) === true
-    ? last
-    : undefined;
+  if (last !== undefined && projects.some((project) => project.id === last)) {
+    return last;
+  }
+  return projects.length === 1 ? projects[0]?.id : undefined;
 }
 
 /**
  * The current project (#468), read outside React: the focused tab's project, else the last project
- * a focused tab had (see {@link rememberFocusedProject}). `undefined` before any project tab was focused.
+ * a focused tab had (see {@link rememberFocusedProject}), else the workspace's only project.
+ * `undefined` while several projects are open and no project tab was focused.
  */
 export function currentProjectId(): string | undefined {
   const focused = projectOfTab(focusedTab(useEditorsStore.getState()), useProjectStore.getState().projectOf);
-  return focused ?? lastProjectOf(useWorkspaceStore.getState());
+  return focused ?? fallbackProjectOf(useWorkspaceStore.getState());
 }
 
 /** {@link currentProjectId}, kept current: what the title-bar switcher acts on. */
 export function useCurrentProjectId(): string | undefined {
   const tab = useEditorsStore((state) => focusedTab(state));
   const focused = useProjectStore((state) => projectOfTab(tab, state.projectOf));
-  const last = useWorkspaceStore(lastProjectOf);
+  const last = useWorkspaceStore(fallbackProjectOf);
   return focused ?? last;
 }
 

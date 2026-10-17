@@ -314,7 +314,9 @@ function OperationPane({
   return (
     <div data-testid="mock-operation" className="flex min-w-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="font-mono text-sm text-fg-default">{operation.operation}</span>
+        <span data-testid="mock-operation-title" className="font-mono text-sm text-fg-default">
+          {operationTitle(operation.operation)}
+        </span>
         <label className="flex items-center gap-1 text-sm text-fg-muted">
           Pick a response
           <SelectField
@@ -455,6 +457,17 @@ function OperationPane({
 }
 
 /** One mock's page. */
+/** The HTTP methods an operation key can start with. */
+const HTTP_METHOD = /^(get|put|post|delete|patch|head|options|trace)(\s+)/i;
+
+/**
+ * An operation as its detail header shows it: a REST operation key (`get /json`) with its method
+ * uppercase, as methods read everywhere else. A SOAP operation's name is left as it is.
+ */
+export function operationTitle(operation: string): string {
+  return operation.replace(HTTP_METHOD, (_match, method: string, space: string) => method.toUpperCase() + space);
+}
+
 export function MockTab({ mockId }: MockTabProps) {
   const mock = useProjectStore((state) => state.mocks[mockId]);
   const container = useProjectStore((state) => {
@@ -490,10 +503,13 @@ export function MockTab({ mockId }: MockTabProps) {
         <NumberSetting
           label="Port"
           testId="mock-port"
-          value={mock.port}
+          // Port 0 means "any free port": shown as the empty field's placeholder rather than a bare 0,
+          // and clearing the field is how to ask for it.
+          value={mock.port === 0 ? undefined : mock.port}
+          placeholder="any free port"
           min={0}
           max={65_535}
-          hint="0 takes any free port."
+          hint="Empty or 0 takes any free port."
           onCommit={(port) => handlers.mock({ port: port ?? 0 })}
         />
         <TextSetting

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Command } from 'cmdk';
 import type { CommandCategory } from '@shared/commands.js';
@@ -143,6 +143,27 @@ function groupByCategory(rows: readonly PaletteCommand[]): readonly (readonly [C
   }
   return [...groups.entries()];
 }
+
+/**
+ * A group's rows split into the ones that can run and the ones listed greyed with a reason, each part
+ * in its given order. The palette draws the second part after the first: cmdk sorts only the items it
+ * can select, moving each to the end of its group as it ranks them, so a disabled item it leaves where
+ * it was ends up above every enabled one ("REST" listed REST: Lint Definition first, greyed).
+ */
+export function availableFirst<T extends { readonly disabledReason?: string }>(
+  rows: readonly T[],
+): readonly [readonly T[], readonly T[]] {
+  return [
+    rows.filter((row) => row.disabledReason === undefined),
+    rows.filter((row) => row.disabledReason !== undefined),
+  ];
+}
+
+/**
+ * The trailing group of a category's disabled commands repeats the category's heading, shown only
+ * when the group above it (the same category's enabled commands) has nothing that matches the search.
+ */
+const UNAVAILABLE_GROUP_CLASS = `${GROUP_CLASS} [[cmdk-group]:not([hidden])+&_[cmdk-group-heading]]:hidden`;
 
 /** What {@link rankGroups} scores an item by. */
 interface PaletteNamed {
@@ -566,38 +587,57 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                 </Command.Group>
               )}
               {!picker &&
-                rankedGroups.map(([category, rows]) => (
-                  <Command.Group key={category} heading={category} className={GROUP_CLASS}>
-                    {rows.map(({ command, disabledReason }) => {
-                      const shortcut = effectiveShortcut(command);
-                      return (
-                        <Command.Item
-                          key={command.id}
-                          value={`${command.category} ${command.label}`}
-                          keywords={paletteKeywords(command)}
-                          // A command that cannot run here stays listed, greyed, saying why.
-                          disabled={disabledReason !== undefined}
-                          data-testid="palette-command"
-                          onSelect={() => {
-                            onOpenChange(false);
-                            void runCommand(command.id, context);
-                          }}
-                          className="flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-1.5 text-md text-fg-muted data-[disabled=true]:text-fg-faint data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"
+                rankedGroups.map(([category, rows]) => {
+                  const [available, unavailable] = availableFirst(rows);
+                  const item = ({ command, disabledReason }: PaletteCommand) => {
+                    const shortcut = effectiveShortcut(command);
+                    return (
+                      <Command.Item
+                        key={command.id}
+                        value={`${command.category} ${command.label}`}
+                        keywords={paletteKeywords(command)}
+                        // A command that cannot run here stays listed, greyed, saying why.
+                        disabled={disabledReason !== undefined}
+                        data-testid="palette-command"
+                        onSelect={() => {
+                          onOpenChange(false);
+                          void runCommand(command.id, context);
+                        }}
+                        className="flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-1.5 text-md text-fg-muted data-[disabled=true]:text-fg-faint data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"
+                      >
+                        <span className="min-w-0 truncate">{command.label}</span>
+                        {disabledReason !== undefined && (
+                          <span className="min-w-0 truncate text-xs text-fg-faint">{disabledReason}</span>
+                        )}
+                        {disabledReason === undefined && shortcut !== undefined && (
+                          <span className="font-mono text-xs text-fg-subtle">
+                            {formatKeybinding(shortcut, context.platform)}
+                          </span>
+                        )}
+                      </Command.Item>
+                    );
+                  };
+                  // The disabled commands follow the enabled ones in a group of their own (see
+                  // availableFirst), which cmdk keeps after it in the order rendered.
+                  return (
+                    <Fragment key={category}>
+                      {available.length > 0 && (
+                        <Command.Group heading={category} className={GROUP_CLASS}>
+                          {available.map(item)}
+                        </Command.Group>
+                      )}
+                      {unavailable.length > 0 && (
+                        <Command.Group
+                          heading={category}
+                          data-testid="palette-unavailable-group"
+                          className={available.length > 0 ? UNAVAILABLE_GROUP_CLASS : GROUP_CLASS}
                         >
-                          <span className="min-w-0 truncate">{command.label}</span>
-                          {disabledReason !== undefined && (
-                            <span className="min-w-0 truncate text-xs text-fg-faint">{disabledReason}</span>
-                          )}
-                          {disabledReason === undefined && shortcut !== undefined && (
-                            <span className="font-mono text-xs text-fg-subtle">
-                              {formatKeybinding(shortcut, context.platform)}
-                            </span>
-                          )}
-                        </Command.Item>
-                      );
-                    })}
-                  </Command.Group>
-                ))}
+                          {unavailable.map(item)}
+                        </Command.Group>
+                      )}
+                    </Fragment>
+                  );
+                })}
             </Command.List>
           </Command>
         </Dialog.Content>

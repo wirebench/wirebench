@@ -66,13 +66,23 @@ export interface QuerySource {
 const HISTORY_LIMIT = 10;
 
 /**
- * Quick examples shown in the empty state, before the user has run anything — per document kind,
- * because an XPath over an envelope is no help at all in front of a JSON body.
+ * Quick examples shown in the empty state, before the user has run anything — per query language
+ * and document kind. Keyed by language because a chip runs in the language picked: an XPath map
+ * lookup offered under JSONPath only fails, and an envelope path is no help in front of a JSON body.
  */
-const EXAMPLES: Readonly<Record<'xml' | 'json', readonly string[]>> = {
-  xml: ['//tem:AddResult/text()', 'count(//*)', 'for $x in //* return name($x)'],
-  json: ['$..id', '$.items[?(@.status=="open")].id', '?items?*?id', 'count(?items?*)'],
-};
+export function examplesFor(language: QueryLanguageWire, documentKind: 'xml' | 'json'): readonly string[] {
+  if (language === 'jsonpath') {
+    return ['$..id', '$.items[?(@.status=="open")].id', '$.items[0]'];
+  }
+  if (documentKind === 'json') {
+    return language === 'xpath'
+      ? ['?items?*?id', '?items?*[?status = "open"]?id', 'count(?items?*)']
+      : ['for $i in ?items?* return $i?id', 'count(?items?*)'];
+  }
+  return language === 'xpath'
+    ? ['//tem:AddResult/text()', 'count(//*)']
+    : ['for $x in //* return name($x)', 'count(//*)'];
+}
 
 /** In-memory expression history per request draft — survives this view remounting (e.g. a tab
  * switch) but not an app restart, matching the brief's "in-memory" history. */
@@ -372,7 +382,7 @@ export function QueryView({ requestId, xml, documentKind = 'xml', onReveal, sour
         {result === undefined ? (
           <EmptyState title="Query the response" description="Try one of these, or write your own.">
             <div className="flex flex-col gap-1">
-              {EXAMPLES[documentKind].map((example) => (
+              {examplesFor(effectiveLanguage, documentKind).map((example) => (
                 <button
                   key={example}
                   type="button"

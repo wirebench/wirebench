@@ -12,16 +12,23 @@
  */
 
 import { z } from 'zod';
+import { defaultUserAgent, isDefaultUserAgent } from '../http/default-headers.js';
 
 /** HTTP transport preferences applied to every send. */
 export interface HttpPreferences {
   /** Reserved: only HTTP/1.1 is implemented. */
   readonly version: '1.1';
-  /** `User-Agent` added to a request that does not set one itself. */
+  /**
+   * `User-Agent` added to a request that does not set one itself. A default one (`Wirebench`, or
+   * `Wirebench/<version>`) follows the running app's version: see {@link withAppUserAgent}.
+   */
   readonly userAgent: string;
   /** `gzip` compresses the request body and sets `Content-Encoding: gzip`. */
   readonly requestCompression: 'none' | 'gzip';
-  /** Advertise `Accept-Encoding: gzip, deflate` so servers may compress the response. */
+  /**
+   * Advertise `Accept-Encoding` so servers may compress the response: `REST_ACCEPT_ENCODING` on a
+   * REST request, `SOAP_ACCEPT_ENCODING` on a SOAP one.
+   */
   readonly responseCompression: boolean;
   /** Send `Connection: close` instead of reusing the keep-alive pool. */
   readonly closeConnections: boolean;
@@ -287,7 +294,7 @@ export interface Preferences {
 export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   http: Object.freeze({
     version: '1.1',
-    userAgent: 'Wirebench/0.1',
+    userAgent: defaultUserAgent(),
     requestCompression: 'none',
     responseCompression: true,
     closeConnections: false,
@@ -712,4 +719,18 @@ export function resetPreferences(current: Preferences, section?: PreferencesSect
     return DEFAULT_PREFERENCES;
   }
   return { ...current, [section]: DEFAULT_PREFERENCES[section] };
+}
+
+/**
+ * `preferences` with a default `User-Agent` moved to `version`'s, so it names the release that
+ * sends it. One the user wrote, or cleared to send none, is theirs and stays. The preferences file
+ * holds the whole document, so without this every saved file would keep sending whichever version
+ * wrote it first.
+ */
+export function withAppUserAgent(preferences: Preferences, version: string): Preferences {
+  const userAgent = defaultUserAgent(version);
+  if (!isDefaultUserAgent(preferences.http.userAgent) || preferences.http.userAgent === userAgent) {
+    return preferences;
+  }
+  return { ...preferences, http: { ...preferences.http, userAgent } };
 }

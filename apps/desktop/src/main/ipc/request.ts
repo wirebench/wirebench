@@ -977,17 +977,18 @@ function bodyToWire(body: RestBody): NonNullable<RestRequestPatchWire['body']> {
 }
 
 /**
- * What an imported REST request is called when the caller gives no name: its method and path
- * (`GET /pets/{petId}`), so a few imports in a row can be told apart in the explorer. The path
- * leaves out the query and, for a URL outside the API's base, the scheme and host.
+ * What an imported REST request is called when the caller gives no name: its path (`/pets/{petId}`),
+ * so a few imports in a row can be told apart in the explorer. The method is left out because every
+ * list shows it in a badge beside the name. The path leaves out the query and, for a URL outside the
+ * API's base, the scheme and host.
  */
-export function importedRequestName(method: string | undefined, url: string | undefined): string | undefined {
+export function importedRequestName(url: string | undefined): string | undefined {
   if (url === undefined || url === '') {
     return undefined;
   }
   const withoutQuery = url.split(/[?#]/, 1)[0] ?? '';
   const path = withoutQuery.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, '');
-  return `${method ?? 'GET'} ${path === '' ? '/' : path}`;
+  return path === '' ? '/' : path;
 }
 
 /**
@@ -1008,7 +1009,7 @@ async function importCurlAsRest(
   const api = project.projectSnapshot?.(owner)?.apis.find((candidate) => candidate.id === target.apiId);
 
   const parsed = fromRestCurl(request.command, api?.baseUrl !== undefined ? { baseUrl: api.baseUrl } : {});
-  const name = request.name ?? importedRequestName(parsed.request.method, parsed.request.url);
+  const name = request.name ?? importedRequestName(parsed.request.url);
 
   const created = await project.projectMutate(owner, {
     kind: 'add-rest-request',

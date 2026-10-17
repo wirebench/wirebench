@@ -2,6 +2,7 @@ import { lazy } from 'react';
 import type { HistoryEntryWire } from '../../../shared/wire-types.js';
 import { isSseExchange } from '../../features/console/log-row-actions.js';
 import { MethodBadge } from '../../features/rest-api/method-badge.js';
+import { requestDisplayName } from '../../features/rest-api/request-display-name.js';
 import { openRestRequestTab } from '../../features/rest-editor/rest-actions.js';
 import { ContractChip } from '../../features/rest-editor/response/contract-chip.js';
 import { useExchangesStore } from '../../state/exchanges.js';
@@ -35,7 +36,11 @@ function RestHistoryBadge({ entry, place }: { readonly entry: HistoryEntryWire; 
     return <span className={place === 'row' ? 'w-12 shrink-0 text-fg-faint' : 'text-xs text-fg-faint'}>REST</span>;
   }
   return place === 'row' ? (
-    <MethodBadge method={entry.method} title={`${entry.method} ${entry.requestName}`} className="w-12 text-left" />
+    <MethodBadge
+      method={entry.method}
+      title={`${entry.method} ${requestDisplayName(entry.requestName, entry.method)}`}
+      className="w-12 text-left"
+    />
   ) : (
     <MethodBadge method={entry.method} className="w-auto" />
   );
