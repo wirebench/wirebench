@@ -1006,6 +1006,7 @@ describe('serial channels (#426)', () => {
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
       serial,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });

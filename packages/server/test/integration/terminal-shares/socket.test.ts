@@ -152,7 +152,7 @@ describeDb('terminal shares (#429)', () => {
     const shareId = await create();
     expect(shareId).toMatch(/^[a-z2-7]{26}$/);
     await expect
-      .poll(() => events.at(-1))
+      .poll(() => events.at(-1), { timeout: WAIT_MS })
       .toMatchObject({
         action: 'terminal_share.started',
         target: { kind: 'terminal-share', id: shareId },
@@ -212,7 +212,7 @@ describeDb('terminal shares (#429)', () => {
     expect(await viewer.closed).toBe(TERMINAL_SHARE_CLOSE.ended);
     expect(await owner.closed).toBe(TERMINAL_SHARE_CLOSE.ended);
     await expect
-      .poll(actions)
+      .poll(actions, { timeout: WAIT_MS })
       .toEqual(
         expect.arrayContaining([
           'terminal_share.joined',
@@ -237,7 +237,7 @@ describeDb('terminal shares (#429)', () => {
     expect(await viewer.closed).toBe(TERMINAL_SHARE_CLOSE.forbidden);
     const again = await openShare(port, auth(bo.token, shareId));
     expect(await again.closed).toBe(TERMINAL_SHARE_CLOSE.forbidden);
-    await expect.poll(actions).toContain('terminal_share.viewer_removed');
+    await expect.poll(actions, { timeout: WAIT_MS }).toContain('terminal_share.viewer_removed');
     owner.send({ type: 'end' });
     await owner.closed;
   });
@@ -265,7 +265,7 @@ describeDb('terminal shares (#429)', () => {
     expect(timers.fire(30_000)).toBeGreaterThan(0);
     expect((await call<{ code: string }>(h, bo, 'GET', `${base}/${shareId}`)).status).toBe(404);
     await expect
-      .poll(() => events.at(-1))
+      .poll(() => events.at(-1), { timeout: WAIT_MS })
       .toMatchObject({ action: 'terminal_share.ended', details: { reason: 'owner-left' } });
   });
 });
