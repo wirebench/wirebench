@@ -8,6 +8,7 @@ import { projectRowActions } from './project-actions.js';
 import type { ExplorerNode } from './tree-nodes.js';
 import { webhooksActions } from '../webhooks/webhooks-actions.js';
 import { openRunnerTab } from '../runner/runner-actions.js';
+import { canManageSchedules, openScheduleTab, schedulesActions } from '../schedules/schedules-actions.js';
 
 /**
  * The OS file manager's own name for itself, so the menu reads the way the platform does.
@@ -62,6 +63,15 @@ function runItem(targetId: string, label: string): ExplorerMenuItem {
   return { key: 'runner', label: 'Run…', run: () => openRunnerTab(targetId, label) };
 }
 
+/**
+ * **Schedule…**: a new server schedule that runs this row (#517). Only a workspace admin of a server that
+ * runs schedules is offered it; a linked project lives off the server, so none of its rows are.
+ */
+function scheduleItems(entityId: string, linked = false): readonly ExplorerMenuItem[] {
+  if (linked || !canManageSchedules()) return [];
+  return [{ key: 'schedule', label: 'Schedule…', run: () => void schedulesActions.scheduleEntity(entityId) }];
+}
+
 /** The kinds whose folders carry scripts (#334). */
 const SCRIPTED_FOLDER_KINDS: ReadonlySet<string> = new Set(['rest', 'grpc']);
 
@@ -71,7 +81,9 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
   if (role !== undefined) {
     const menu = role.menu?.(node) ?? [];
     const target = role.runTarget?.(node);
-    return target === undefined ? menu : [...menu.slice(0, 1), [runItem(target, node.label)], ...menu.slice(1)];
+    return target === undefined
+      ? menu
+      : [...menu.slice(0, 1), [runItem(target, node.label), ...scheduleItems(target)], ...menu.slice(1)];
   }
 
   if (node.kind === 'project' && node.projectId !== undefined) {
@@ -88,7 +100,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
         { key: 'new-webhook', label: 'New Webhook', run: () => explorerActions.newWebhook(projectId) },
         { key: 'new-sequence', label: 'New Sequence', run: () => explorerActions.newSequence(projectId) },
       ],
-      [runItem(projectId, node.label)],
+      [runItem(projectId, node.label), ...scheduleItems(projectId, node.linked === true)],
       [
         { key: 'settings', label: 'Settings…', run: () => projectRowActions.settings(projectId) },
         // Only a linked project has environments of its own; an internal project's environments
@@ -241,6 +253,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
         { key: 'open', label: 'Open', run: () => explorerActions.openSequence(sequenceId) },
         { key: 'run', label: 'Run', run: () => explorerActions.runSequence(sequenceId) },
         runItem(sequenceId, node.label),
+        ...scheduleItems(sequenceId),
         { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateSequence(sequenceId) },
       ],
       [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('sequence', sequenceId) }],
@@ -272,6 +285,37 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
           ]
         : [],
       editor ? [{ key: 'delete', label: 'Delete', run: () => webhooksActions.confirm('delete', hookId) }] : [],
+    );
+  }
+
+  // #517: everyone reads schedules; a workspace admin changes them.
+  if (node.kind === 'schedules') {
+    return groups(
+      node.canEdit === true
+        ? [{ key: 'new-schedule', label: 'New schedule…', run: () => schedulesActions.newSchedule() }]
+        : [],
+    );
+  }
+
+  if (node.kind === 'schedule' && node.scheduleId !== undefined) {
+    const scheduleId = node.scheduleId;
+    const admin = node.canEdit === true;
+    const paused = node.scheduleState === 'paused';
+    return groups(
+      [{ key: 'open', label: 'Open', run: () => openScheduleTab(scheduleId) }],
+      admin
+        ? [
+            { key: 'run-now', label: 'Run now', run: () => void schedulesActions.runNow(scheduleId) },
+            {
+              key: 'toggle',
+              label: paused ? 'Resume' : 'Pause',
+              run: () => void schedulesActions.setEnabled(scheduleId, paused),
+            },
+            { key: 'edit', label: 'Edit…', run: () => schedulesActions.edit(scheduleId) },
+            { key: 'secrets', label: 'Secrets…', run: () => schedulesActions.secrets(scheduleId) },
+          ]
+        : [],
+      admin ? [{ key: 'delete', label: 'Delete', run: () => schedulesActions.confirmDelete(scheduleId) }] : [],
     );
   }
 

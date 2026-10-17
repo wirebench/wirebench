@@ -71,8 +71,9 @@ export function WsApiTab({ apiId }: WsApiTabProps) {
             patch({ description: description === '' ? null : description });
           }}
         />
-        <div className="flex items-center gap-2 py-0.5">
-          <label htmlFor="ws-api-url" className="w-44 shrink-0 truncate text-sm text-fg-muted">
+        {/* Top-aligned, the label kept to the input's height: the line under the input must not pull it down. */}
+        <div className="flex items-start gap-2 py-0.5">
+          <label htmlFor="ws-api-url" className="flex h-row w-44 shrink-0 items-center truncate text-sm text-fg-muted">
             URL
           </label>
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -129,6 +130,7 @@ export function WsApiTab({ apiId }: WsApiTabProps) {
       >
         <AuthFields
           scope="API"
+          labels="settings"
           auth={api.auth === undefined || api.auth.type === 'inherit' ? undefined : api.auth}
           onChange={(auth: AuthConfigWire | null) => {
             patch({ auth });

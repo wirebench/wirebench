@@ -4,6 +4,7 @@ import { WirebenchError, type MetaResponse } from '@wirebench/engine';
 import type { LiveEvent } from '../../src/main/live/live-client.js';
 import {
   SchedulesService,
+  toScheduleResult,
   type SchedulesChangedEvent,
   type SchedulesServiceDeps,
 } from '../../src/main/schedules/schedules-service.js';
@@ -46,7 +47,7 @@ function harness(options: { token?: string | undefined; meta?: MetaResponse } = 
     testScheduleAlerts: resolved({ results: [] }),
     runScheduleNow: resolved({}),
     listScheduleRuns: resolved({ runs: [] }),
-    getScheduleRun: resolved({}),
+    getScheduleRun: resolved({ results: [] }),
     cancelScheduleRun: resolved(undefined),
   };
   const markSignedOut = vi.fn();
@@ -151,5 +152,36 @@ describe('SchedulesService', () => {
     service.watch(SERVER, WS);
     service.dispose();
     expect(stops[1]).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('toScheduleResult', () => {
+  it('keeps the run report fields the result rows show and drops the rest', () => {
+    const entry = {
+      path: 'CountryInfo/a.yaml',
+      name: 'List',
+      protocol: 'rest',
+      outcome: 'failed',
+      status: 500,
+      durationMs: 12,
+      assertions: [
+        { type: 'status', outcome: 'failed', expected: '200', actual: '500' },
+        { type: 'body', outcome: 'odd' },
+      ],
+      error: { code: 'http', message: 'boom' },
+      scriptLog: ['a', 3],
+      extra: 'ignored',
+    } as unknown as Parameters<typeof toScheduleResult>[0];
+    expect(toScheduleResult(entry)).toEqual({
+      path: 'CountryInfo/a.yaml',
+      name: 'List',
+      protocol: 'rest',
+      outcome: 'failed',
+      status: 500,
+      durationMs: 12,
+      assertions: [{ type: 'status', label: 'status', outcome: 'failed', expected: '200', actual: '500' }],
+      error: { code: 'http', message: 'boom' },
+      scriptLog: ['a'],
+    });
   });
 });

@@ -2,8 +2,8 @@
  * The HTTP method badge that precedes a REST request's name in the explorer, in history rows, and
  * in the request editor's breadcrumbs and responses.
  *
- * Styled like Postman: sleek, compact coloured text aligned to a fixed column, with no bulky
- * filled background, keeping the explorer tree clean and readable.
+ * Compact coloured text aligned to a fixed column, with no bulky filled background, keeping the
+ * explorer tree clean and readable.
  * An optional `variant="chip"` renders the filled pill badge if needed.
  */
 
@@ -42,6 +42,13 @@ const SHORT_LABEL: Readonly<Record<string, string>> = {
 /** The longest label the compact column shows before it is cut short. */
 const MAX_COMPACT_LABEL = 4;
 
+/**
+ * The compact badge is as wide as its longest label, left-aligned: GET, POST and DEL then all start in
+ * one column, where a badge as wide as its own text, right-aligned in the gutter, started POST a
+ * character left of GET.
+ */
+const COMPACT_CLASS = 'inline-block w-[4ch] text-left text-2xs';
+
 /** One method as the compact column spells it: `DELETE` is `DEL`, `GET` and `PATCH` unchanged. */
 export function compactMethodLabel(method: string): string {
   const label = method.toUpperCase();
@@ -55,7 +62,7 @@ export interface MethodBadgeProps {
   /** Adds the method to the accessible name, for a row whose text alone would not carry it. */
   readonly title?: string;
   readonly className?: string;
-  /** Visual variant: 'text' (Postman-style, default) or 'chip' (filled pill). */
+  /** Visual variant: 'text' (coloured text, default) or 'chip' (filled pill). */
   readonly variant?: 'text' | 'chip';
   /** Spells long methods short, for the explorer's fixed-width method column. */
   readonly compact?: boolean;
@@ -98,7 +105,7 @@ export function MethodBadge({ method, title, className, variant = 'text', compac
       data-testid="method-badge"
       data-method={label}
       {...(title !== undefined ? { title } : {})}
-      className={`shrink-0 font-mono ${compact ? 'text-2xs' : 'text-xs'} font-bold leading-none ${methodColorClass(method)} ${className ?? ''}`}
+      className={`shrink-0 font-mono ${compact ? COMPACT_CLASS : 'text-xs'} font-bold leading-none ${methodColorClass(method)} ${className ?? ''}`}
     >
       {truncatedLabel}
     </span>

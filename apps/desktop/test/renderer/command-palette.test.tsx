@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
-import { CommandPalette } from '../../src/renderer/shell/command-palette.js';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { availableFirst, CommandPalette } from '../../src/renderer/shell/command-palette.js';
 import { registerCommand, resetCommands } from '../../src/renderer/lib/commands.js';
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
@@ -60,5 +60,53 @@ describe('CommandPalette', () => {
     rerender(<CommandPalette open onOpenChange={() => undefined} context={context} />);
 
     expect(screen.getByText('Switch Workspace…')).toBeDefined();
+  });
+
+  it('lists a group’s disabled commands after its enabled ones, searched or not (#633)', async () => {
+    // Labels that sort a disabled command first, as "REST: Lint Definition" sorts before "REST: New Request".
+    registerCommand({
+      id: 'rest.lintDefinition',
+      label: 'REST: Lint Definition',
+      category: 'Explorer',
+      when: () => false,
+      unavailable: () => 'No definition',
+      run: () => undefined,
+    });
+    registerCommand({ id: 'rest.newRequest', label: 'REST: New Request', category: 'Explorer', run: () => undefined });
+    registerCommand({
+      id: 'rest.updateDefinition',
+      label: 'REST: Update Definition…',
+      category: 'Explorer',
+      when: () => false,
+      unavailable: () => 'No definition',
+      run: () => undefined,
+    });
+    registerCommand({ id: 'rest.newFolder', label: 'REST: New Folder', category: 'Explorer', run: () => undefined });
+    render(<CommandPalette open onOpenChange={() => undefined} context={context} />);
+
+    const order = () =>
+      screen.getAllByRole('option').map((option) => [option.textContent, option.getAttribute('aria-disabled')]);
+    const expected = [
+      [expect.stringContaining('New Folder'), 'false'],
+      [expect.stringContaining('New Request'), 'false'],
+      [expect.stringContaining('Lint Definition'), 'true'],
+      [expect.stringContaining('Update Definition'), 'true'],
+    ];
+    expect(order()).toEqual(expected);
+
+    // cmdk ranks only the items it can select; the disabled ones still come last.
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'REST' } });
+    await waitFor(() => expect(order()).toEqual(expected));
+    expect(screen.getByRole('option', { selected: true }).textContent).toContain('New Folder');
+  });
+});
+
+describe('availableFirst', () => {
+  it('keeps each part in its order, the enabled rows first', () => {
+    const rows = [{ id: 'a', disabledReason: 'x' }, { id: 'b' }, { id: 'c', disabledReason: 'y' }, { id: 'd' }];
+    expect(availableFirst(rows).map((part) => part.map((row) => row.id))).toEqual([
+      ['b', 'd'],
+      ['a', 'c'],
+    ]);
   });
 });

@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import userEvent from '@testing-library/user-event';
 import { HistoryView } from '../../src/renderer/features/history/history-view.js';
 import { historyTabTitle } from '../../src/renderer/features/history/history-row-text.js';
+import { formatClockTime } from '../../src/renderer/lib/format-size.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useHistoryStore } from '../../src/renderer/state/history.js';
@@ -190,6 +191,49 @@ describe('HistoryView', () => {
     expect(tabs[0]?.diff?.leftLabel).toContain('First');
     expect(tabs[0]?.diff?.rightLabel).toContain('Second');
     expect(activeId).toBe('diff');
+  });
+
+  it('opens the ⋯ menu on a right-click on the row (#633)', async () => {
+    useHistoryStore.setState({ entries: [makeEntry({ id: 'a', requestName: 'First' })], total: 1 });
+    render(<HistoryView />);
+
+    fireEvent.contextMenu(screen.getByTestId('history-row'));
+
+    expect((await screen.findAllByRole('menuitem')).map((item) => item.textContent)).toEqual([
+      'Re-send',
+      'Compare…',
+      'Compare with current',
+      'Delete',
+    ]);
+  });
+
+  it('says which entry Compare… picked, takes a click on another row as the second, and cancels (#633)', async () => {
+    useHistoryStore.setState({
+      entries: [makeEntry({ id: 'a', requestName: 'First' }), makeEntry({ id: 'b', requestName: 'Second' })],
+      total: 2,
+    });
+    render(<HistoryView />);
+    expect(screen.queryByTestId('history-compare-banner')).toBeNull();
+
+    await chooseRowAction('First', 'Compare…');
+    const banner = screen.getByTestId('history-compare-banner');
+    expect(banner.textContent).toContain(`Comparing with First · ${formatClockTime('2026-01-01T10:00:00.000Z')}`);
+    expect(banner.textContent).toContain('pick another entry');
+
+    // Cancel drops the pick: the banner goes and the row is no longer tinted.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByTestId('history-compare-banner')).toBeNull();
+    expect(screen.getAllByTestId('history-row')[0]?.getAttribute('data-compare-armed')).toBeNull();
+
+    // Picked again, a plain click on the other row opens the comparison rather than the entry.
+    await chooseRowAction('First', 'Compare…');
+    fireEvent.click(screen.getByRole('button', { name: 'Open Second' }));
+    const { tabs } = useEditorsStore.getState();
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0]?.kind).toBe('diff');
+    expect(tabs[0]?.diff?.leftLabel).toContain('First');
+    expect(tabs[0]?.diff?.rightLabel).toContain('Second');
+    expect(screen.queryByTestId('history-compare-banner')).toBeNull();
   });
 
   it('offers no project filter with one project open, and keeps search on its own row (N03)', () => {

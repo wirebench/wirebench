@@ -4,6 +4,7 @@ import { forwardRef } from 'react';
 import { ListOuterElement, Tree } from 'react-arborist';
 import {
   Box,
+  CalendarClock,
   ChevronDown,
   ChevronRight,
   FileDown,
@@ -31,6 +32,7 @@ import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { MethodBadge } from '../rest-api/method-badge.js';
+import { requestDisplayName } from '../rest-api/request-display-name.js';
 import { EXPLORER_DIALOGS, TAB_KINDS, entityIdOf, explorerDeletion, explorerRole } from '../../kinds/index.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { kindLabel } from '../../kinds/placeholders.js';
@@ -40,11 +42,14 @@ import { explorerActions } from './explorer-actions.js';
 import { openProjectTab, projectRowActions } from './project-actions.js';
 import { isDropDisabled, planMoves } from './drag-drop.js';
 import { getExplorerTree, registerExplorerTree, revealNode } from './explorer-api.js';
-import type { ExplorerNode, ExplorerProject, ExplorerWebhooks } from './tree-nodes.js';
-import { buildExplorerTree, nodeProjectId } from './tree-nodes.js';
+import type { ExplorerNode, ExplorerProject, ExplorerSchedules, ExplorerWebhooks } from './tree-nodes.js';
+import { buildExplorerTree, nodeProjectId, schedulesNode } from './tree-nodes.js';
 import { openCatchUrlTab, webhooksActions } from '../webhooks/webhooks-actions.js';
 import { useSyncStore } from '../../state/sync.js';
 import { useWebhooksStore } from '../../state/webhooks.js';
+import { scheduleStateOf, schedulesShown, useSchedulesStore } from '../../state/schedules.js';
+import { describeCron, STATE_DOT, STATE_LABEL } from '../schedules/schedule-format.js';
+import { openScheduleTab, schedulesActions } from '../schedules/schedules-actions.js';
 import { useScriptValuesStore } from '../../state/script-values.js';
 import { EnableScriptsDialog } from '../scripts/enable-scripts-dialog.js';
 
@@ -82,6 +87,7 @@ const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size
   'webhook-request': Forward,
   webhooks: Webhook,
   'catch-url': Inbox,
+  schedules: CalendarClock,
   sequences: Folder,
   sequence: ListOrdered,
   mocks: Folder,
@@ -116,6 +122,8 @@ const ROW_TESTID: Partial<Record<ExplorerNode['kind'], string>> = {
   'webhook-request': 'webhook-request-row',
   webhooks: 'webhooks-row',
   'catch-url': 'catch-url-row',
+  schedules: 'schedules-row',
+  schedule: 'schedule-row',
   sequences: 'sequences-group-row',
   sequence: 'sequence-row',
   mocks: 'mocks-group-row',
@@ -159,6 +167,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   const Icon = role?.icon ?? NODE_ICON[node.data.kind];
   const indent = typeof style.paddingLeft === 'number' ? style.paddingLeft : 0;
   const rowStyle = { ...style, paddingLeft: indent + ROW_PADDING_LEFT };
+  const label = requestDisplayName(node.data.label, node.data.method);
   return (
     <ExplorerContextMenu node={node.data}>
       <div
@@ -182,6 +191,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             role?.click === 'open' ||
             node.data.kind === 'webhook-request' ||
             node.data.kind === 'catch-url' ||
+            node.data.kind === 'schedule' ||
             node.data.kind === 'sequence' ||
             node.data.kind === 'mock'
           ) {
@@ -228,17 +238,22 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             ))}
         </span>
         {/* One gutter of fixed width carries whatever marks the row — a kind icon or the method —
-            hard against the name. Right-aligning it lines the method labels up with each other and
-            every name in the tree with every other, however wide GET, DELETE or PROPFIND is. */}
+            hard against the name, so every name in the tree lines up with every other. A method
+            badge fills the gutter at a fixed width, left-aligned, so GET, POST and DEL start in one
+            column too. */}
         <span className="flex w-6 shrink-0 items-center justify-end overflow-hidden" data-testid="explorer-row-gutter">
           {role?.Gutter !== undefined ? (
             <role.Gutter node={node.data} />
           ) : node.data.kind === 'webhook-request' && node.data.method !== undefined ? (
-            <MethodBadge
-              method={node.data.method}
-              title={`${node.data.method} ${node.data.label}`}
-              compact
-              className="w-auto"
+            <MethodBadge method={node.data.method} title={`${node.data.method} ${label}`} compact />
+          ) : node.data.kind === 'schedule' && node.data.scheduleState !== undefined ? (
+            <span
+              role="img"
+              data-testid="schedule-dot"
+              data-state={node.data.scheduleState}
+              aria-label={STATE_LABEL[node.data.scheduleState]}
+              title={STATE_LABEL[node.data.scheduleState]}
+              className={`mr-1 h-2 w-2 rounded-full ${STATE_DOT[node.data.scheduleState]}`}
             />
           ) : (
             Icon !== undefined && <Icon size={13} />
@@ -271,14 +286,18 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
                   ? 'text-fg-faint'
                   : ''
             }`}
-            {...(node.data.kind === 'placeholder' ? { title: node.data.message } : {})}
+            title={node.data.kind === 'placeholder' ? node.data.message : label}
           >
-            {node.data.label}
+            {label}
           </span>
         )}
         {node.data.kind === 'mock' && node.data.mockId !== undefined && <MockRunningBadge mockId={node.data.mockId} />}
         {node.data.suffix !== undefined && (
-          <span className="shrink-0 truncate pl-1 text-xs text-fg-subtle" data-testid="explorer-row-suffix">
+          <span
+            className="min-w-0 max-w-[50%] shrink truncate pl-1 text-xs text-fg-subtle"
+            data-testid="explorer-row-suffix"
+            title={node.data.suffix}
+          >
             · {node.data.suffix}
           </span>
         )}
@@ -383,6 +402,18 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             off
           </span>
         )}
+        {node.data.kind === 'schedule' && node.data.when !== undefined && (
+          <span className="min-w-0 shrink truncate text-xs text-fg-subtle">{node.data.when}</span>
+        )}
+        {(node.data.kind === 'schedule' || node.data.kind === 'schedules') && (node.data.failing ?? 0) > 0 && (
+          <span
+            data-testid="schedule-failing"
+            title={node.data.kind === 'schedule' ? 'Failing runs in a row' : 'Schedules failing now'}
+            className="shrink-0 rounded-full bg-status-danger px-1.5 text-xs text-fg-on-accent"
+          >
+            {String(node.data.failing)}
+          </span>
+        )}
         {node.data.kind === 'catch-url' && (node.data.unseen ?? 0) > 0 && (
           <span
             data-testid="catch-url-unseen"
@@ -433,6 +464,9 @@ export function ExplorerView() {
   const hooksMeta = useWebhooksStore((state) => state.meta);
   const catchUrls = useWebhooksStore((state) => state.hooks);
   const unseen = useWebhooksStore((state) => state.unseen);
+  const schedulesAvailable = useSchedulesStore((state) => state.available);
+  const schedulesError = useSchedulesStore((state) => state.error);
+  const scheduleList = useSchedulesStore((state) => state.schedules);
 
   const [containerRef, size] = useElementSize<HTMLDivElement>();
   const [treeRef, setTreeRef] = useState<import('react-arborist').TreeApi<ExplorerNode> | null | undefined>(undefined);
@@ -462,7 +496,23 @@ export function ExplorerView() {
           })),
         }
       : undefined;
-  const data = buildExplorerTree(
+  // #517: the Schedules root, when the workspace's server runs schedules; every role sees it.
+  const schedules: ExplorerSchedules | undefined = schedulesShown({
+    available: schedulesAvailable,
+    error: schedulesError,
+  })
+    ? {
+        canEdit: role === 'admin',
+        schedules: scheduleList.map((schedule) => ({
+          id: schedule.id,
+          name: schedule.name,
+          state: scheduleStateOf(schedule),
+          failureStreak: schedule.failureStreak,
+          when: describeCron(schedule.cron),
+        })),
+      }
+    : undefined;
+  const tree = buildExplorerTree(
     roots,
     order,
     interfaces,
@@ -479,6 +529,7 @@ export function ExplorerView() {
     Object.fromEntries(Object.entries(projects).map(([id, project]) => [id, project.unsupported ?? []])),
     mcp,
   );
+  const data = schedules === undefined ? tree : [...tree, schedulesNode(schedules)];
 
   useEffect(() => {
     registerExplorerTree(treeRef ?? null);
@@ -598,6 +649,12 @@ export function ExplorerView() {
               // folder › request — marching a request off to the right.
               indent={12}
               outerElementType={FocusableListOuter}
+              // The tree never scrolls sideways: react-arborist lets a row grow to its content
+              // (`min-width: max-content`), which at a narrow sidebar pushed a long name such as
+              // "DELETE /pets/{id}" past the edge behind a horizontal scrollbar. Held to the
+              // tree's width, a row's name truncates with an ellipsis and its title says it in full.
+              className="overflow-x-hidden!"
+              rowClassName="min-w-0!"
               openByDefault={false}
               initialOpenState={{ ...Object.fromEntries(data.map((root) => [root.id, true])), ...storedOpen() }}
               onToggle={(id) => {
@@ -692,6 +749,13 @@ export function ExplorerView() {
                 }
                 if (node.data.kind === 'catch-url') {
                   if (node.data.hookId !== undefined) openCatchUrlTab(node.data.hookId);
+                  return;
+                }
+                if (node.data.kind === 'schedules') {
+                  return;
+                }
+                if (node.data.kind === 'schedule') {
+                  if (node.data.scheduleId !== undefined) openScheduleTab(node.data.scheduleId);
                   return;
                 }
                 if (node.data.kind === 'sequence') {
@@ -807,6 +871,12 @@ export function ExplorerView() {
                     node.data.hookId !== undefined
                   ) {
                     webhooksActions.confirm('delete', node.data.hookId);
+                  } else if (
+                    node.data.kind === 'schedule' &&
+                    node.data.canEdit === true &&
+                    node.data.scheduleId !== undefined
+                  ) {
+                    schedulesActions.confirmDelete(node.data.scheduleId);
                   } else if (node.data.kind === 'sequence') {
                     explorerActions.removeSequence(node.data.sequenceId);
                   } else if (node.data.kind === 'mock') {
