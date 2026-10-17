@@ -30,6 +30,7 @@ edited and no route deletes one. The only way an event leaves is retention, belo
 | Verification | Each run of `admin audit verify`, with its result (see _Tamper evidence_)                         |
 | Desktop      | Requests sent and test-suite runs in a workspace that records them, and a gap in that trail       |
 | Session logs | A team session log started, each read of one, and its deletion                                    |
+| Shared terminals | A terminal shared, each join, control granted or returned, a viewer removed, and the end |
 
 A push and a license change are recorded right after they complete. Everything else is recorded in the
 same transaction as the change, so a change that is not saved leaves no event, and an event that cannot

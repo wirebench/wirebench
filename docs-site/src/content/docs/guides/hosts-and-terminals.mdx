@@ -1227,6 +1227,31 @@ admin can delete a log sooner, and that is recorded too. One log keeps at most
 `WIREBENCH_SERVER_SESSION_LOG_MAX_MB` (64 MB by default); past it the rest is not stored, and the log is
 marked as cut.
 
+## Sharing a live terminal
+
+On a server with an Enterprise license, a member of a shared workspace can let teammates watch an SSH
+session as it runs. Right-click the terminal and choose **Share session**. A strip above the terminal
+shows who is watching, and **Copy invite link** copies a `wirebench://terminal-share/…` link to send to
+them. Only members of the workspace can join, and the link works only while you share.
+
+**Joining.** **Terminal: Join Shared Terminal…** in the palette asks for the link, shows whose terminal
+it is, and opens it in a tab. The tab is read only: it shows the terminal at its owner's size, starting
+with the last screenful or so of output.
+
+**Control.** A viewer can **Request control**. The owner sees the request in the strip and can
+**Approve** or **Decline** it. One viewer at a time holds control, and what they type goes to the
+owner's session as if the owner had typed it. **Take back control** ends it at once, and the viewer can
+**Release control**.
+
+**Ending.** **Stop sharing** (in the strip or the terminal's menu), closing the tab, or the session
+ending stops the share for everyone. A viewer can be removed with the × beside their name, and cannot
+join that share again. Viewers see why the share ended.
+
+**What viewers see.** Exactly what your screen shows: the same masking applies, so a password, a key, a
+snippet secret or a secret variable is `••••` for them too. The server relays the screen without
+storing it. Every share, join, change of control, removal and end is recorded in the server's [audit
+log](/wirebench/docs/guides/server-audit-log/); the screen and the keystrokes never are.
+
 ## Host keys
 
 Wirebench keeps the host keys it has trusted in `ssh-known-hosts.json` in its own data folder, per

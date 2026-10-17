@@ -7,6 +7,7 @@ import {
   LIVE_CAPABILITY,
   LIVE_CLOSE,
   LIVE_PATH,
+  TERMINAL_SHARE_PATH,
   liveClientMessageSchema,
   signatureSchemeSchema,
   toSignatureScheme,
@@ -16,7 +17,7 @@ import {
   type SignatureScheme,
   type SignatureVerdict,
 } from '@wirebench/engine';
-import { startTestWsServer, type TestWsServerOptions } from '@wirebench/engine/test-helpers';
+import { startTestWsServer, type TestWsPeer, type TestWsServerOptions } from '@wirebench/engine/test-helpers';
 
 type TeamRole = 'member' | 'admin';
 type WorkspaceRole = 'viewer' | 'editor' | 'admin';
@@ -88,6 +89,11 @@ export interface FakeServerOptions {
    * answer. A workspace records only once {@link FakeServer.setRecordSessionLogs} turns it on.
    */
   readonly sessionLogs?: boolean;
+  /**
+   * Relay shared terminals (team sessions spec B1, #429): `/meta` lists `terminal-sharing`, and the share
+   * routes and socket answer, enough for an owner and viewers: replay, presence, control and input.
+   */
+  readonly terminalShares?: boolean;
 }
 
 /** One team session log as the fake holds it. */
@@ -138,6 +144,8 @@ export interface FakeServer {
   setRecordSessionLogs(workspaceId: string, on: boolean): void;
   /** Every team session log the app streamed, oldest first. */
   sessionLogs(): readonly FakeSessionLog[];
+  /** The shares still live: who owns each and the emails watching it. */
+  terminalShares(): readonly { readonly id: string; readonly owner: string; readonly viewers: readonly string[] }[];
   /**
    * Gives `email` a grant on a workspace, as a workspace admin would, and sends `access` to their `/live`
    * sockets on it.
@@ -411,6 +419,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     ...(options.capabilities ?? ['sync', LIVE_CAPABILITY]),
     ...(options.schedules === true ? ['scheduled-runs'] : []),
     ...(options.sessionLogs === true ? ['session-logs'] : []),
+    ...(options.terminalShares === true ? ['terminal-sharing'] : []),
   ];
   const sessionLogs = new Map<
     string,
@@ -1403,6 +1412,195 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
   const bearer = (request: IncomingMessage): string | undefined =>
     request.headers.authorization?.replace(/^Bearer /, '');
 
+  /*
+   * Shared terminals (#429), as the server's registry relays them, without its limits or audit rows: the
+   * owner's binary frames go to every viewer and into a replay; one viewer at a time holds control after
+   * the owner grants a request, and only that viewer's input reaches the owner.
+   */
+  interface FakeShare {
+    readonly id: string;
+    readonly workspaceId: string;
+    readonly ownerEmail: string;
+    readonly hostName: string;
+    cols: number;
+    rows: number;
+    owner: TestWsPeer | undefined;
+    readonly viewers: Map<TestWsPeer, { email: string; requesting: boolean }>;
+    control: TestWsPeer | undefined;
+    replay: Buffer;
+  }
+  const shares = new Map<string, FakeShare>();
+  const sharePeers = new Map<TestWsPeer, FakeShare>();
+  const shareSend = (peer: TestWsPeer | undefined, message: unknown): void => {
+    peer?.sendText(JSON.stringify(message));
+  };
+  const shareEveryone = (share: FakeShare): TestWsPeer[] => [
+    ...(share.owner === undefined ? [] : [share.owner]),
+    ...share.viewers.keys(),
+  ];
+  const sharePresence = (share: FakeShare): void => {
+    const owner = userOf(share.ownerEmail);
+    const message = {
+      type: 'presence',
+      owner: { userId: owner.id, name: owner.displayName },
+      viewers: [...share.viewers.entries()].map(([peer, viewer]) => ({
+        userId: userOf(viewer.email).id,
+        name: userOf(viewer.email).displayName,
+        control: share.control === peer,
+        requesting: viewer.requesting,
+      })),
+    };
+    for (const peer of shareEveryone(share)) shareSend(peer, message);
+  };
+  const shareControl = (share: FakeShare): void => {
+    const holder = share.control === undefined ? undefined : share.viewers.get(share.control);
+    const message = { type: 'control', userId: holder === undefined ? null : userOf(holder.email).id };
+    for (const peer of shareEveryone(share)) shareSend(peer, message);
+    sharePresence(share);
+  };
+  const shareEnd = (share: FakeShare, reason: string): void => {
+    if (!shares.delete(share.id)) return;
+    for (const peer of shareEveryone(share)) {
+      sharePeers.delete(peer);
+      shareSend(peer, { type: 'ended', reason });
+      peer.close(4410, reason);
+    }
+  };
+  const onShareText = (text: string, peer: TestWsPeer): void => {
+    const message = JSON.parse(text) as Record<string, unknown>;
+    const share = sharePeers.get(peer);
+    if (message['type'] === 'auth' && share === undefined) {
+      const email = sessions.get(String(message['token']));
+      const target = shares.get(String(message['shareId']));
+      if (email === undefined) return peer.close(4401, 'unauthenticated');
+      if (target === undefined || target.workspaceId !== message['workspaceId']) return peer.close(4404, 'not found');
+      sharePeers.set(peer, target);
+      if (email === target.ownerEmail) {
+        target.owner = peer;
+        shareSend(peer, { type: 'ready', role: 'owner' });
+      } else {
+        target.viewers.set(peer, { email, requesting: false });
+        const owner = userOf(target.ownerEmail);
+        shareSend(peer, {
+          type: 'viewer-ready',
+          hostName: target.hostName,
+          ownerName: owner.displayName,
+          cols: target.cols,
+          rows: target.rows,
+        });
+        if (target.replay.length > 0) peer.sendBinary(target.replay);
+        shareSend(peer, { type: 'control', userId: null });
+      }
+      sharePresence(target);
+      return;
+    }
+    if (share === undefined) return peer.close(4400, 'out of order');
+    const viewer = share.viewers.get(peer);
+    switch (message['type']) {
+      case 'ping':
+        return shareSend(peer, { type: 'pong' });
+      case 'resize':
+        share.cols = Number(message['cols']);
+        share.rows = Number(message['rows']);
+        for (const other of share.viewers.keys()) shareSend(other, message);
+        return;
+      case 'grant': {
+        const entry = [...share.viewers.entries()].find(
+          ([, v]) => userOf(v.email).id === message['userId'] && v.requesting,
+        );
+        if (entry === undefined) return;
+        entry[1].requesting = false;
+        share.control = entry[0];
+        return shareControl(share);
+      }
+      case 'decline':
+        for (const [other, v] of share.viewers) {
+          if (userOf(v.email).id === message['userId'] && v.requesting) {
+            v.requesting = false;
+            shareSend(other, { type: 'declined' });
+          }
+        }
+        return sharePresence(share);
+      case 'take-back':
+        share.control = undefined;
+        return shareControl(share);
+      case 'end':
+        return shareEnd(share, 'ended');
+      case 'request-control':
+        if (viewer !== undefined && share.control !== peer) viewer.requesting = true;
+        return sharePresence(share);
+      case 'release':
+        if (share.control === peer) share.control = undefined;
+        return shareControl(share);
+      case 'input':
+        if (viewer === undefined || share.control !== peer) return;
+        return shareSend(share.owner, { type: 'input', userId: userOf(viewer.email).id, data: message['data'] });
+      default:
+        return;
+    }
+  };
+  const shareWsServer = await startTestWsServer({
+    onText: onShareText,
+    onBinary: (payload, peer) => {
+      const share = sharePeers.get(peer);
+      if (share?.owner !== peer) return;
+      share.replay = Buffer.concat([share.replay, payload]).subarray(-256 * 1024);
+      for (const viewer of share.viewers.keys()) viewer.sendBinary(payload);
+    },
+    onClosed: (peer) => {
+      const share = sharePeers.get(peer);
+      if (share === undefined) return;
+      sharePeers.delete(peer);
+      if (share.owner === peer) return shareEnd(share, 'owner-left');
+      share.viewers.delete(peer);
+      if (share.control === peer) {
+        share.control = undefined;
+        shareControl(share);
+      } else sharePresence(share);
+    },
+  });
+  /** `POST` and `GET` under `/workspaces/:id/terminal-shares`. */
+  const terminalSharesApi = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    ws: WorkspaceRow,
+    email: string,
+    segments: readonly string[],
+  ): Promise<void> => {
+    const shareId = segments[3];
+    if (shareId === undefined && request.method === 'POST') {
+      const body = JSON.parse((await readBody(request)).toString('utf8')) as Record<string, unknown>;
+      const id = createHash('sha256')
+        .update(`${ws.id}-${String(shares.size)}-${String(Date.now())}`)
+        .digest('hex')
+        .replace(/[^a-z]/g, '')
+        .padEnd(26, 'a')
+        .slice(0, 26);
+      shares.set(id, {
+        id,
+        workspaceId: ws.id,
+        ownerEmail: email,
+        hostName: String(body['hostName']),
+        cols: Number(body['cols']),
+        rows: Number(body['rows']),
+        owner: undefined,
+        viewers: new Map(),
+        control: undefined,
+        replay: Buffer.alloc(0),
+      });
+      return send(response, 201, { shareId: id });
+    }
+    const share = shareId === undefined ? undefined : shares.get(shareId);
+    if (request.method !== 'GET' || share === undefined || share.workspaceId !== ws.id) {
+      return problem(response, 404, 'terminal-share-not-found');
+    }
+    send(response, 200, {
+      hostName: share.hostName,
+      ownerName: userOf(share.ownerEmail).displayName,
+      viewers: share.viewers.size,
+    });
+  };
+
   const wsServer = await startTestWsServer({ onText: onLiveText });
   const server: Server = createServer((request, response) => {
     void (async () => {
@@ -1668,6 +1866,13 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
           if (ws === undefined || access === undefined) return problem(response, 404, 'teams-workspace-not-found');
           return await schedulesApi(request, response, ws, access.role, segments);
         }
+        if (segments[0] === 'workspaces' && segments[2] === 'terminal-shares') {
+          if (options.terminalShares !== true) return problem(response, 404, 'not-found');
+          const ws = workspaces.get(segments[1] ?? '');
+          const access = ws === undefined ? undefined : effective(ws, email);
+          if (ws === undefined || access === undefined) return problem(response, 404, 'teams-workspace-not-found');
+          return await terminalSharesApi(request, response, ws, email, segments);
+        }
         if (segments[0] === 'workspaces' && segments[2] === 'session-logs') {
           if (options.sessionLogs !== true) return problem(response, 404, 'not-found');
           const ws = workspaces.get(segments[1] ?? '');
@@ -1697,6 +1902,10 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     socket.on('error', () => socket.destroy());
     // A server without live has no socket: a plain 404. The client never gets here without `live`
     // in meta; with it, a 404 is a refused upgrade and backs off like any other (§3.4).
+    if (path === TERMINAL_SHARE_PATH && options.terminalShares === true) {
+      pipeUpgrade(request, socket, head, shareWsServer.port);
+      return;
+    }
     if (path !== LIVE_PATH || !capabilities.includes(LIVE_CAPABILITY)) {
       socket.end('HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n');
       return;
@@ -1802,6 +2011,12 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
       // As the server's workspace patch does: an `access` nudge, so the desktops fetch the head again.
       for (const user of users.values()) announceAccess(user.email, (ws) => ws.id === workspaceId);
     },
+    terminalShares: () =>
+      [...shares.values()].map((share) => ({
+        id: share.id,
+        owner: share.ownerEmail,
+        viewers: [...share.viewers.values()].map((v) => v.email),
+      })),
     sessionLogs: () =>
       [...sessionLogs.values()].map((log) => ({
         id: log.id,
@@ -1881,6 +2096,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
       // Upgraded sockets are no longer the HTTP server's to drain, so they would hold its close open.
       for (const socket of upgraded) socket.destroy();
       await wsServer.close();
+      await shareWsServer.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };
