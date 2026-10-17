@@ -19,6 +19,7 @@ export * from './sftp.js';
 export * from './openssh-config/index.js';
 export * from './host-import/index.js';
 export * from './os-release.js';
+export * from './device-key.js';
 export * from './keygen.js';
 export * from './certificate.js';
 export * from './install.js';
