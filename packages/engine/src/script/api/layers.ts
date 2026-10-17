@@ -5,6 +5,7 @@
  */
 import type { LayeredApi } from '../model.js';
 import { BRUNO_LAYER } from './bruno.js';
+import { HOPPSCOTCH_LAYER } from './hoppscotch.js';
 import { INSOMNIA_LAYER } from './insomnia.js';
 import { POSTMAN_LAYER } from './postman.js';
 
@@ -12,4 +13,5 @@ export const SCRIPT_LAYERS: Partial<Record<LayeredApi, string>> = {
   postman: POSTMAN_LAYER,
   insomnia: INSOMNIA_LAYER,
   bruno: BRUNO_LAYER,
+  hoppscotch: HOPPSCOTCH_LAYER,
 };

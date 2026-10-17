@@ -13,6 +13,7 @@ import type { ResponseSnapshot } from '../protocols.js';
 import { TRANSFER_NAME_PATTERN } from '../sequence/model.js';
 import { applyRequestChanges } from './apply.js';
 import { buildPrelude } from './api/prelude.js';
+import { MODULE_MARKER, TOP_LEVEL_IMPORT } from './api/hoppscotch.js';
 import { SCRIPT_LAYERS } from './api/layers.js';
 import { scriptingOf } from './lookup.js';
 import {
@@ -160,6 +161,7 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
   let code: string;
   try {
     code = input.api === 'wirebench' ? stripTypes(input.source) : input.source;
+    if (input.api === 'hoppscotch') code = code.replace(MODULE_MARKER, '');
   } catch (error) {
     return {
       ok: false,
@@ -173,6 +175,18 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
     return {
       ok: false,
       error: { code: 'script-unsupported', message: `${input.api} scripts are not supported yet` },
+      ...empty,
+    };
+  }
+
+  // A top-level import is a syntax error, not a call: refuse it by name so the user learns why.
+  if (input.api === 'hoppscotch' && TOP_LEVEL_IMPORT.test(code)) {
+    return {
+      ok: false,
+      error: {
+        code: 'script-unsupported',
+        message: 'import is not supported: a script cannot load modules, so remove the import statement',
+      },
       ...empty,
     };
   }

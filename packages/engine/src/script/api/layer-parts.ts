@@ -308,3 +308,30 @@ const jsonSchema = (() => {
   return (value, schema) => validateJsonSchema(value, schema);
 })();
 `;
+
+/**
+ * Declares `jestMatchers` and `jestExpect`: the jest-style matchers (`toBe`, `toBeType`, `toInclude`,
+ * `toBeLevel2xx` to `toBeLevel5xx`, `toHaveLength`, each with `.not`). `jestMatchers(actual, negated)`
+ * returns the matchers alone, for a layer that merges them into another chain; `jestExpect(actual)`
+ * returns them with `.not`. Needs `ExpectationFailed` and `show` from the common API only.
+ */
+export const PART_JEST_EXPECT = String.raw`
+// --- expect: the jest-style matchers -------------------------------------------------------------
+const jestMatchers = (actual, negated) => {
+  const check = (passed, message) => {
+    if (passed === negated) throw new ExpectationFailed('expected ' + show(actual) + (negated ? ' not ' : ' ') + message);
+  };
+  const level = (hundred) => () => check(typeof actual === 'number' && actual >= hundred && actual <= hundred + 99, 'to be a ' + String(hundred / 100) + 'xx status');
+  return {
+    toBe: (expected) => check(actual === expected, 'to be ' + show(expected)),
+    toBeType: (type) => check((actual instanceof Date ? 'date' : typeof actual) === String(type), 'to be of type ' + show(type)),
+    toInclude: (needle) => check((typeof actual === 'string' || Array.isArray(actual)) && actual.includes(needle), 'to include ' + show(needle)),
+    toHaveLength: (length) => check(actual !== null && actual !== undefined && actual.length === length, 'to have length ' + String(length)),
+    toBeLevel2xx: level(200),
+    toBeLevel3xx: level(300),
+    toBeLevel4xx: level(400),
+    toBeLevel5xx: level(500),
+  };
+};
+const jestExpect = (actual) => Object.defineProperty(jestMatchers(actual, false), 'not', { get: () => jestMatchers(actual, true) });
+`;

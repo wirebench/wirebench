@@ -2,6 +2,7 @@
  * Scripts an importer keeps as text (spec §7.4, §6.2): written under `imported-scripts/` by the
  * desktop main process, never read back or run. The path rule here is pure.
  */
+import { TOP_LEVEL_IMPORT } from '../script/api/hoppscotch.js';
 import type { LayeredApi, RequestScripts } from '../script/model.js';
 
 /** The folder imported scripts are written to. Nothing in Wirebench reads it. */
@@ -60,7 +61,18 @@ const UNSUPPORTED_CALLS: Record<LayeredApi, readonly [RegExp, string][]> = {
     [/(?<![\w$.])req\.disableParsingResponseJson\b/, 'req.disableParsingResponseJson'],
     [/(?<![\w$.])require\s*\(/, 'require'],
   ],
-  hoppscotch: [],
+  hoppscotch: [
+    [/(?<![\w$.])hopp\.cookies\b/, 'hopp.cookies'],
+    [/(?<![\w$.])hopp\.fetch\b/, 'hopp.fetch'],
+    [/(?<![\w$.])pm\.sendRequest\b/, 'pm.sendRequest'],
+    [/(?<![\w$.])pm\.collectionVariables\b/, 'pm.collectionVariables'],
+    [/(?<![\w$.])pm\.iterationData\b/, 'pm.iterationData'],
+    [/(?<![\w$.])pm\.visualizer\b/, 'pm.visualizer'],
+    [/(?<![\w$.])pm\.execution\.setNextRequest\b/, 'pm.execution.setNextRequest'],
+    [/(?<![\w$.])pm\.execution\.skipRequest\b/, 'pm.execution.skipRequest'],
+    [/(?<![\w$.])require\s*\(/, 'require'],
+    [TOP_LEVEL_IMPORT, 'import'],
+  ],
   'thunder-client': [],
 };
 
