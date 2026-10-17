@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Device keys.** **Generate key…** can make an SSH key in this machine's secure hardware: the Secure
+  Enclave on macOS (`ecdsa-sha2-nistp256`), or Windows Hello on Windows (RSA, experimental). The keychain
+  stores only a handle that this device alone can use, and every sign-in asks for Touch ID or your password
+  (Windows Hello on Windows). Its public key installs on hosts like any other. On another machine the key is
+  marked "other device" and a connect says where it was made. The key cannot be copied or recovered, so the
+  dialog suggests keeping a second way into the same hosts. The CLI cannot use device keys (#428).
+- **App lock.** **Settings → Secrets → App lock** asks for biometrics or your password before the first SSH
+  secret is used after launch, again after a set idle time (15 minutes by default) and after the screen
+  locks. It is off by default. Turning it on asks once, and the rest of the app stays usable while it is
+  locked (#428).
 - **Make secret on credential-like variables.** A variable named like a credential (`token`,
   `password`, `apiKey`…) with a plain value now offers **Make secret** in its row: the value is stored
   as a project secret on this machine and the row keeps `${secret:name}`. On a workspace scope it is
