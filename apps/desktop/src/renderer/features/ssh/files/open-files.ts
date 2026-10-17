@@ -1,5 +1,6 @@
 import { useEditorsStore } from '../../../state/editors.js';
 import { openTerminalFor } from '../connect.js';
+import { hasSshFeatures, hostProtocol } from '../host-protocol.js';
 import { findHost, useHostsStore } from '../hosts-store.js';
 import { useFilesStore } from './files-store.js';
 
@@ -24,6 +25,8 @@ export function filesTitle(name: string): string {
  * connection failed or ended connects again, as Connect does for a terminal.
  */
 export function openFiles(hostId: string): void {
+  // A Telnet host has no SFTP (#425): the menus do not offer it, and a shortcut does nothing.
+  if (!hasSshFeatures(hostProtocol(hostId))) return;
   const id = filesTabId(hostId);
   const editors = useEditorsStore.getState();
   const open = editors.tabs.some((t) => t.id === id);

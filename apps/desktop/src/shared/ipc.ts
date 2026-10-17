@@ -27,6 +27,10 @@ import {
   sshForgetHostKeyRequestSchema,
   sshHostOsResponseSchema,
   sshSetHostOsRequestSchema,
+  sshSerialDeviceRequestSchema,
+  sshSerialDeviceResponseSchema,
+  sshSerialPortsResponseSchema,
+  sshSetSerialDeviceRequestSchema,
   sshWriteManyRequestSchema,
   sshWriteManyResponseSchema,
   sshWriteRequestSchema,
@@ -489,11 +493,17 @@ export const channels = {
      */
     checkForUpdates: defineChannel('app.checkForUpdates', z.undefined(), appUpdateStatusSchema),
     /** The sidebar areas this run has switched on (`WIREBENCH_AREAS`); the renderer hides the rest. */
-    // `localTerminal`: whether the local terminal tab (#410) is on; it rides with the SSH area.
+    // `localTerminal`: whether the local terminal tab (#410) is on; it rides with the SSH area. `telnet` and
+    // `serial`: whether Telnet hosts (#425) and serial consoles (#426) connect; main always sends both.
     areas: defineChannel(
       'app.areas',
       z.undefined(),
-      z.object({ enabled: z.array(z.string()), localTerminal: z.boolean() }),
+      z.object({
+        enabled: z.array(z.string()),
+        localTerminal: z.boolean(),
+        telnet: z.boolean().optional(),
+        serial: z.boolean().optional(),
+      }),
     ),
     /** The protocol kinds this run has switched on (`WIREBENCH_KINDS`); the renderer shows the rest as placeholders. */
     kinds: defineChannel('app.kinds', z.undefined(), z.object({ enabled: z.array(z.string()) })),
@@ -1135,6 +1145,10 @@ export const channels = {
     knownHosts: defineChannel('ssh.knownHosts', z.undefined(), sshKnownHostsResponseSchema),
     forgetHostKey: defineChannel('ssh.forgetHostKey', sshForgetHostKeyRequestSchema, z.object({})),
     hostOs: defineChannel('ssh.hostOs', z.undefined(), sshHostOsResponseSchema),
+    // Serial consoles (#426): this machine's ports, and the one it opens for each serial host.
+    serialPorts: defineChannel('ssh.serialPorts', z.undefined(), sshSerialPortsResponseSchema),
+    serialDevice: defineChannel('ssh.serialDevice', sshSerialDeviceRequestSchema, sshSerialDeviceResponseSchema),
+    setSerialDevice: defineChannel('ssh.setSerialDevice', sshSetSerialDeviceRequestSchema, z.object({})),
     setHostOs: defineChannel('ssh.setHostOs', sshSetHostOsRequestSchema, z.object({})),
     importPreview: defineChannel('ssh.importPreview', sshImportPreviewRequestSchema, sshImportPreviewResponseSchema),
     importApply: defineChannel('ssh.importApply', sshImportApplyRequestSchema, sshImportApplyResponseSchema),

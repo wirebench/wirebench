@@ -27,6 +27,8 @@
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
     "@lydell/node-pty": "1.1.0",
+    "@serialport/bindings-cpp": "13.0.1",
+    "@serialport/stream": "13.0.0",
     "@wirebench/engine": "workspace:*",
     "@wirebench/ssh": "workspace:*",
     "@xterm/addon-search": "0.16.0",
@@ -48,6 +50,7 @@
     "@radix-ui/react-scroll-area": "^1.2.18",
     "@radix-ui/react-tabs": "^1.1.21",
     "@radix-ui/react-tooltip": "^1.2.16",
+    "@serialport/binding-mock": "10.2.2",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-virtual": "^3.14.11",
     "@types/react": "^19.3.0",

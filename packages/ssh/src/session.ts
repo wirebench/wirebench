@@ -58,6 +58,35 @@ export interface SessionExit {
   readonly reason: SessionEndReason;
 }
 
+/**
+ * A session whose server speaks `charset` (#427), as one that speaks UTF-8: `onData` decodes, `write` encodes.
+ * For Telnet and serial consoles, which have no SSH channel of their own; {@link openSession} converts itself.
+ */
+export function withCharset(session: SshSession, charset: Charset | undefined): SshSession {
+  if (charset === undefined || charset === 'utf-8') return session;
+  const codec = terminalCodec(charset);
+  return {
+    get id() {
+      return session.id;
+    },
+    get agentForwarding() {
+      return session.agentForwarding;
+    },
+    write: (data) => {
+      session.write(codec.encode(data));
+    },
+    resize: (cols, rows) => {
+      session.resize(cols, rows);
+    },
+    close: () => {
+      session.close();
+    },
+    exec: (command, timeoutMs) => session.exec(command, timeoutMs),
+    onData: (listener) => session.onData((data) => listener(codec.decode(data))),
+    onExit: (listener) => session.onExit(listener),
+  };
+}
+
 /** ssh2's message when the server refuses `auth-agent-req@openssh.com`. */
 const AGENT_REFUSED = /agent forwarding/i;
 

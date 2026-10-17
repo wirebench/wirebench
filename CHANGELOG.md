@@ -13,7 +13,21 @@ All notable changes to this project are documented here. The format follows
   `vt220`), and `charset`, the character set its text is read and written in: UTF-8 by default, or
   one of ISO-8859-1/2/5/7/9/15, Windows-1250/1251/1252/1253/1254/1257, CP850 and KOI8-R. Both
   inherit like the other host settings and fall back to new **Settings → SSH** defaults; the host
-  form shows them under **Advanced**. They apply to SSH shells; Mosh stays UTF-8 (#427).
+  form shows them under **Advanced**. They apply to SSH shells and Telnet; a serial console
+  uses the character set; Mosh stays UTF-8 (#427).
+- **Telnet hosts.** A host or group can set `protocol: telnet` to open a Telnet session in the same
+  terminal tab, with panes, find, snippets and session logs. Wirebench negotiates the terminal type and
+  window size, and types the host's user and password at the device's login and password prompts when they
+  are set. It connects straight, through the host's proxy, or through an SSH jump host. The form, the
+  details panel and the terminal all say the session is not encrypted, and Files, port forwarding, agent
+  forwarding and keys are hidden for these hosts. `WIREBENCH_AREAS=telnet=off` switches Telnet off for a
+  build (#425).
+- **Serial consoles.** A host or group can set `protocol: serial` to open a serial port on this computer
+  (a USB serial adapter or a built-in port) in the same terminal tab, with panes, find, snippets and session
+  logs. The line settings (baud, data bits, parity, stop bits and flow control) live in `hosts.yaml`; the
+  device each console opens is remembered per computer, picked in the host form from this computer's ports
+  or on the connection screen the first time. Address, sign-in, jump host, proxy and the SSH-only features
+  are hidden for these hosts. `WIREBENCH_AREAS=serial=off` switches serial consoles off for a build (#426).
 - **Make secret on credential-like variables.** A variable named like a credential (`token`,
   `password`, `apiKey`…) with a plain value now offers **Make secret** in its row: the value is stored
   as a project secret on this machine and the row keeps `${secret:name}`. On a workspace scope it is
@@ -76,6 +90,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **An imported form-data file part with no file no longer stops the project from opening.** A
+  collection whose multipart body has a file part without a file, from Postman, Insomnia, Thunder
+  Client or Hoppscotch, now keeps that row as a switched-off text part, and the import report names
+  the request and tells you to pick the file again on the Body tab.
+- **An imported file body with no file no longer stops the project from opening.** A request whose
+  whole body is a file but carries no file, from Postman, Insomnia or Thunder Client, now imports with
+  no body, and the import report names the request and tells you to pick the file on the Body tab.
+  Hoppscotch file bodies now get the same warning.
 - **No orphan warning for a saved golden.** Opening a project, or `wirebench run`, no longer warns
   `"<request>.golden.yaml" does not belong to any request` for a golden saved beside its request, in
   any protocol. A golden whose request is gone is still reported.

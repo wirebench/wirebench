@@ -170,6 +170,8 @@ export interface SaveCheck {
    * Editing does not ask for them, so an older entry stays editable.
    */
   readonly needsLogin: boolean;
+  /** `false` for a serial console (#426), which is opened on this machine and has no address; default true. */
+  readonly needsAddress?: boolean;
   readonly name: string;
   readonly address: string;
   readonly user: string | undefined;
@@ -189,7 +191,7 @@ export interface SaveCheck {
 export function missingFields(check: SaveCheck): string[] {
   const out: string[] = [];
   if (check.name.trim() === '') out.push('Name is required');
-  if (check.isHost && check.address.trim() === '') out.push('Address is required');
+  if (check.isHost && check.needsAddress !== false && check.address.trim() === '') out.push('Address is required');
   const user = check.user === undefined || check.user === '' ? check.inheritedUser : check.user;
   if (check.needsLogin && (user === undefined || user.trim() === '')) out.push('User is required');
   const auth = check.auth ?? check.inheritedAuth;

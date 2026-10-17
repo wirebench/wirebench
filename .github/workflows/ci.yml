@@ -177,10 +177,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      # mosh: the Mosh spec runs a real mosh-server and mosh-client; elsewhere it skips.
-      - name: Install xvfb and mosh
+      # mosh: the Mosh spec runs a real mosh-server and mosh-client; elsewhere it skips. socat: the serial
+      # console spec opens one end of a virtual serial line; elsewhere it skips.
+      - name: Install xvfb, mosh and socat
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y xvfb mosh
+        run: sudo apt-get update && sudo apt-get install -y xvfb mosh socat
       - name: Run e2e (Linux, headless via xvfb)
         if: runner.os == 'Linux'
         run: xvfb-run -a pnpm test:e2e

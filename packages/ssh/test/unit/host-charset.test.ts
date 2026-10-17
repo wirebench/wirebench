@@ -7,7 +7,9 @@ import {
   resolveSettings,
   serializeHostsFile,
   terminalCodec,
+  withCharset,
 } from '../../src/index.js';
+import type { SshSession } from '../../src/index.js';
 import { HIGH_HALVES } from '../../src/charset-tables.js';
 
 const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
@@ -118,5 +120,34 @@ describe('charset and term on hosts and groups (#427)', () => {
     expect(() => parseHostsFile(host('{ term: "xterm 256" }'))).toThrow(/term/);
     expect(() => parseHostsFile(host('{ term: "-x" }'))).toThrow(/term/);
     expect(() => parseHostsFile(host(`{ term: ${'x'.repeat(65)} }`))).toThrow(/term/);
+  });
+});
+
+describe('withCharset (#427)', () => {
+  it('decodes what a session hands out and encodes what is written to it; UTF-8 leaves it as is', () => {
+    const written: Uint8Array[] = [];
+    let listener: ((data: Uint8Array) => void) | undefined;
+    const raw: SshSession = {
+      id: 's1',
+      agentForwarding: 'off',
+      write: (data) => written.push(data),
+      resize: () => undefined,
+      close: () => undefined,
+      exec: () => Promise.resolve(''),
+      onData: (l) => {
+        listener = l;
+        return () => undefined;
+      },
+      onExit: () => () => undefined,
+    };
+    expect(withCharset(raw, 'utf-8')).toBe(raw);
+    const session = withCharset(raw, 'cp850');
+    expect(session.id).toBe('s1');
+    const seen: string[] = [];
+    session.onData((data) => seen.push(text(data)));
+    listener?.(Uint8Array.of(0x82));
+    expect(seen).toEqual(['é']);
+    session.write(utf8('é'));
+    expect([...(written[0] ?? [])]).toEqual([0x82]);
   });
 });

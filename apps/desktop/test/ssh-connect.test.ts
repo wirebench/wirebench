@@ -31,6 +31,7 @@ function make(
     now?: () => number;
     file?: typeof FILE;
     agent?: string;
+    secretsFor?: () => (ref: string) => Promise<string | undefined>;
   } = {},
 ) {
   const knownHostsFile = join(mkdtempSync(join(tmpdir(), 'wb-connect-')), 'ssh-known-hosts.json');
@@ -42,7 +43,9 @@ function make(
       list: (): Promise<SshListHostsResponse> =>
         Promise.resolve({ file: { version: 1, groups: [], hosts: [] }, resolved: [], problems: [] }),
     }),
-    secretsFor: () => (ref: string) => Promise.resolve(ref.startsWith('secret:') ? secrets[ref.slice(7)] : undefined),
+    secretsFor:
+      opts.secretsFor ??
+      (() => (ref: string) => Promise.resolve(ref.startsWith('secret:') ? secrets[ref.slice(7)] : undefined)),
     knownHostsFile,
     agentSocket: () => opts.agent,
   };
@@ -118,6 +121,72 @@ describe('createSshConnector', () => {
     await expect(
       connector.prepareShell(sender(1), 'quick-2', undefined, undefined, { address: 'b.example', port: 22 }),
     ).rejects.toMatchObject({ code: 'ssh-host-incomplete', details: { hostId: 'quick-2', field: 'user' } });
+  });
+
+  it('reaches a Telnet target over TCP from the last jump host, with its sign-in (#425)', async () => {
+    const file = parseHostsFile(
+      [
+        'version: 1',
+        'hosts:',
+        "  - { id: j, name: j, address: 10.0.0.9, ssh: { user: jb, auth: { password: '${secret:jump_pw}' } } }",
+        "  - { id: t, name: t, address: 10.0.0.2, ssh: { protocol: telnet, jump: j, user: admin, auth: { password: '${secret:a_pw}' } } }",
+        '  - { id: bare, name: bare, address: 10.0.0.3, ssh: { protocol: telnet, port: 2323 } }',
+        '  - { id: k, name: k, address: 10.0.0.4, ssh: { protocol: telnet, user: u, auth: { agent: true } } }',
+        '  - { id: via, name: via, address: 10.0.0.5, ssh: { user: u, auth: { agent: true }, jump: t } }',
+        '',
+      ].join('\n'),
+    );
+    const { connector } = make({ file });
+    const viaJump = await connector.prepareShell(sender(1), 't');
+    expect(viaJump.hops.map((h) => h.address)).toEqual(['10.0.0.9']);
+    expect(viaJump.telnet).toEqual({
+      target: { address: '10.0.0.2', port: 23, connectTimeout: 20 },
+      login: { user: 'admin', password: 'apw' },
+    });
+    expect(viaJump.secrets).toEqual(['apw']);
+    expect(viaJump.env).toEqual({});
+    const bare = await connector.prepareShell(sender(1), 'bare');
+    expect(bare).toMatchObject({ hops: [], secrets: [], telnet: { target: { port: 2323 }, login: {} } });
+    // An agent is no way to sign in to a Telnet device: no socket is asked for, and the service says so.
+    expect((await connector.prepareShell(sender(1), 'k')).telnet).toMatchObject({
+      login: { user: 'u' },
+      unusedAuth: 'agent',
+    });
+    await expect(connector.prepareShell(sender(1), 'via')).rejects.toMatchObject({ code: 'ssh-jump-not-ssh' });
+    await expect(connector.prepareHops(sender(1), 't')).rejects.toMatchObject({ code: 'ssh-protocol-unsupported' });
+  });
+
+  it('opens a serial target with its line and nothing else, refuses it as a jump and for Files (#426)', async () => {
+    const file = parseHostsFile(
+      [
+        'version: 1',
+        'hosts:',
+        "  - { id: j, name: j, address: 10.0.0.9, ssh: { user: jb, auth: { password: '${secret:jump_pw}' } } }",
+        '  - { id: c, name: c, ssh: { protocol: serial, jump: j, serial: { baud: 9600, flowControl: rtscts } } }',
+        '  - { id: via, name: via, address: 10.0.0.5, ssh: { user: u, auth: { agent: true }, jump: c } }',
+        '',
+      ].join('\n'),
+    );
+    const getSecret = vi.fn<(ref: string) => Promise<string | undefined>>(() => Promise.resolve('pw'));
+    const { connector } = make({ file, secretsFor: () => getSecret });
+    expect(await connector.prepareShell(sender(1), 'c')).toEqual({
+      hops: [],
+      env: {},
+      secrets: [],
+      serial: { line: { baud: 9600, dataBits: 8, parity: 'none', stopBits: 1, flowControl: 'rtscts' } },
+      term: 'xterm-256color',
+      charset: 'utf-8',
+    });
+    // The jump is not dialled, so its password is never read.
+    expect(getSecret).not.toHaveBeenCalled();
+    await expect(connector.prepareHops(sender(1), 'c')).rejects.toMatchObject({
+      code: 'ssh-protocol-unsupported',
+      details: { protocol: 'serial' },
+    });
+    await expect(connector.prepareShell(sender(1), 'via')).rejects.toMatchObject({
+      code: 'ssh-jump-not-ssh',
+      details: { protocol: 'serial' },
+    });
   });
 
   it('says a Mosh target is Mosh, with its block, and leaves an SSH one alone (#419)', async () => {

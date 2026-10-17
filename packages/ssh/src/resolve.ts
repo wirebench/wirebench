@@ -4,7 +4,9 @@ import { walk } from './tree.js';
 import type { ForwardEntry, ForwardType } from './forward-rules.js';
 import { DEFAULT_CHARSET, DEFAULT_TERM } from './host-charset.js';
 import type { Charset } from './host-charset.js';
+import { signsInOverSsh, TELNET_PORT } from './host-mosh.js';
 import type { MoshSettings, SessionProtocol } from './host-mosh.js';
+import type { SerialSettings } from './host-serial.js';
 import type { GroupEntry, HostEntry, HostsFile, IdentityEntry, SshAuth, SshProxy, SshSettings } from './model.js';
 
 /**
@@ -59,6 +61,7 @@ export interface ResolvedHost {
     /** The nearest `identity:` (#416); it supplies `user` and `auth` where its own level sets neither. */
     readonly identity: Provenance<string | undefined>;
     readonly user: LoginProvenance<string | undefined>;
+    /** 22, or 23 when the protocol is `telnet` (#425). */
     readonly port: Provenance<number>;
     readonly auth: LoginProvenance<SshAuth | undefined>;
     readonly jump: Provenance<string | undefined>;
@@ -66,10 +69,15 @@ export interface ResolvedHost {
     readonly connectTimeout: Provenance<number>;
     /** Whether the target's shell forwards the local agent; never a jump host's. */
     readonly forwardAgent: Provenance<boolean>;
-    /** `ssh` by default; `mosh` bootstraps a mosh server over SSH, then runs over UDP (#419). */
+    /**
+     * `ssh` by default; `mosh` bootstraps a mosh server over SSH, then runs over UDP (#419); `telnet` connects
+     * in plain text (#425).
+     */
     readonly protocol: Provenance<SessionProtocol>;
     /** The nearest level's block, whole; read only when the protocol is `mosh`. */
     readonly mosh: Provenance<MoshSettings | undefined>;
+    /** The nearest level's line settings, whole; read only when the protocol is `serial` (#426). */
+    readonly serial: Provenance<SerialSettings | undefined>;
     /**
      * The proxy this host is dialled through when it is the first hop; `undefined` connects directly (a
      * nearer `proxy: false` gives that, with its level as `from`). A jump host's own setting is the one used
@@ -81,6 +89,7 @@ export interface ResolvedHost {
     /** The terminal type the pty request names (#427). */
     readonly term: Provenance<string>;
   };
+  /** Only an SSH or Mosh target needs a user and a way in: a Telnet host may be signed in to by hand. */
   readonly incomplete?: { readonly field: 'user' | 'auth' };
   /** Merged by id root to leaf: a nearer rule replaces a farther one whole; an off form switches it off. */
   readonly forwards: readonly ResolvedForward[];
@@ -272,6 +281,7 @@ export function resolveSettings(file: HostsFile, id: string): SshSettings {
     'forwardAgent',
     'protocol',
     'mosh',
+    'serial',
     'proxy',
     'charset',
     'term',
@@ -288,23 +298,26 @@ export function resolveHost(file: HostsFile, id: string, defaults?: SshDefaults)
 }
 
 function resolveLocated(located: Located): ResolvedHost {
+  const protocol = pick(located, 'protocol', DEFAULTS.protocol) as Provenance<SessionProtocol>;
   const ssh = {
     identity: pick(located, 'identity', undefined),
     user: pickLogin(located, 'user'),
-    port: pick(located, 'port', DEFAULTS.port) as Provenance<number>,
+    port: pick(located, 'port', protocol.value === 'telnet' ? TELNET_PORT : DEFAULTS.port) as Provenance<number>,
     auth: pickLogin(located, 'auth'),
     jump: pick(located, 'jump', undefined),
     keepAlive: pick(located, 'keepAlive', DEFAULTS.keepAlive) as Provenance<number>,
     connectTimeout: pick(located, 'connectTimeout', DEFAULTS.connectTimeout) as Provenance<number>,
     forwardAgent: pick(located, 'forwardAgent', DEFAULTS.forwardAgent) as Provenance<boolean>,
-    protocol: pick(located, 'protocol', DEFAULTS.protocol) as Provenance<SessionProtocol>,
+    protocol,
     mosh: pick(located, 'mosh', undefined),
+    serial: pick(located, 'serial', undefined),
     proxy: proxyOf(pick(located, 'proxy', undefined)),
     charset: pick(located, 'charset', DEFAULTS.charset) as Provenance<Charset>,
     term: pick(located, 'term', DEFAULTS.term) as Provenance<string>,
   };
-  const incomplete =
-    ssh.user.value === undefined
+  const incomplete = !signsInOverSsh(protocol.value)
+    ? undefined
+    : ssh.user.value === undefined
       ? { field: 'user' as const }
       : ssh.auth.value === undefined
         ? { field: 'auth' as const }

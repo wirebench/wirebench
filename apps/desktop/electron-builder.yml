@@ -52,6 +52,11 @@ files:
   # when none fits are never used.
   - '!**/node_modules/node-hid/{hidapi,src}/**'
   - '!**/node_modules/node-hid/binding.gyp'
+  # The serial-port binding (serial consoles, #426) likewise: its C++ sources and the Android prebuilds
+  # are never loaded.
+  - '!**/node_modules/@serialport/bindings-cpp/binding.gyp'
+  - '!**/node_modules/@serialport/bindings-cpp/src/**'
+  - '!**/node_modules/@serialport/bindings-cpp/prebuilds/android-*/**'
 
 # Flips the Electron fuses on the packed binary (see `scripts/fuses.ts`), before signing. The
 # entry lives inside this package because electron-builder refuses hook paths that resolve
@@ -79,6 +84,8 @@ asarUnpack:
   - 'build-resources/node-pty/**'
   # node-hid's binding is a native `.node` the OS loader maps.
   - '**/node_modules/node-hid/**'
+  # So is the serial-port binding's.
+  - '**/node_modules/@serialport/bindings-cpp/**'
 
 # pnpm's store is already exactly what should ship. The one native module, the Kerberos binding, is
 # vendored per architecture instead of rebuilt (ADR-0019); running npm against a symlinked tree only
@@ -110,8 +117,9 @@ mac:
   # builds, and @electron/universal already skips identical fat Mach-O files; this only matters if
   # the prebuild ever stops being universal.
   # The same goes for the pty bindings: both darwin folders are in both builds, thin and identical.
-  # node-hid ships both darwin prebuilds in one package, so they too are thin and identical in both builds.
-  x64ArchFiles: '{Contents/Resources/kerberos/**,Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-*/**,Contents/Resources/app.asar.unpacked/node_modules/node-hid/prebuilds/**}'
+  # node-hid and the serial-port binding ship both darwin prebuilds in one package, so they too are thin
+  # and identical in both builds.
+  x64ArchFiles: '{Contents/Resources/kerberos/**,Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-*/**,Contents/Resources/app.asar.unpacked/node_modules/node-hid/prebuilds/**,Contents/Resources/app.asar.unpacked/node_modules/@serialport/bindings-cpp/prebuilds/**}'
   # Both pty bindings in every mac build, for the same reason as the Kerberos folders below.
   files:
     - from: build-resources/node-pty
