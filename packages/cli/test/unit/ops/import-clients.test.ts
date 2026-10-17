@@ -1,6 +1,6 @@
-import { writeFile } from 'node:fs/promises';
+import { readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { grpcApisOf, loadProject, restApisOf, wsApisOf } from '@wirebench/engine';
+import { apiRequests, grpcApisOf, loadProject, restApisOf, wsApisOf } from '@wirebench/engine';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runOp } from '../../../src/ops/context.js';
 import { importOp } from '../../../src/ops/import.js';
@@ -46,13 +46,32 @@ describe('op import: an Insomnia export', () => {
     expect(project.properties).toMatchObject({ baseUrl: 'https://api.example.com', 'db.host': 'localhost' });
   });
 
-  it('reports environments, scripts and .proto files as not imported', async () => {
+  it('reports environments and .proto files as not imported, and no script as unsaved', async () => {
     const fixture = await emptyProject();
     const result = await runOp(importOp, { source: join(INSOMNIA, 'v4.json') }, fixture.base());
     const codes = result.problems.map((problem) => problem.code);
     expect(codes).toContain('environments-not-imported');
-    expect(codes).toContain('scripts-not-saved');
+    expect(codes).not.toContain('scripts-not-saved');
     expect(codes).toContain('definition-not-imported');
+  });
+
+  it('wirebench import of an Insomnia file writes the script beside its request', async () => {
+    const fixture = await emptyProject();
+    await runOp(importOp, { source: join(INSOMNIA, 'v5-collection.yaml') }, fixture.base());
+    const { project } = await loadProject(fixture.dir);
+    const create = restApisOf(project)
+      .flatMap((api) => apiRequests(api))
+      .find((request) => request.name === 'Create order');
+    expect(create?.scripts).toMatchObject({ api: 'insomnia', enabled: false });
+    expect(create?.scripts?.pre?.text).toContain('requestedAt');
+    const files = await readdir(fixture.dir, { recursive: true });
+    expect(files).toEqual(
+      expect.arrayContaining([
+        'apis/Orders API/requests/Orders/Create order.pre.js',
+        'apis/Orders API/requests/Orders/Create order.post.js',
+      ]),
+    );
+    expect(files.some((file) => file.includes('imported-scripts'))).toBe(false);
   });
 
   it('leaves secrets out and names them', async () => {

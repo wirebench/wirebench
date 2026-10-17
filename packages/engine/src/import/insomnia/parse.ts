@@ -625,6 +625,9 @@ function parseV5(root: Rec, kind: string): InsDocument {
     {
       id: v5Id(root),
       name: nonEmpty(root['name']) ?? 'Imported workspace',
+      ...(v5Scripts(root['scripts']).pre !== '' || v5Scripts(root['scripts']).post !== ''
+        ? { scripts: v5Scripts(root['scripts']) }
+        : {}),
       items: v5Nodes({ report, budget: { nodes: 0 }, visited: new WeakSet() }, root['collection'], 0),
       ...(isRecord(envs) ? { baseEnv: environment(envs, v5Meta(envs)['isPrivate'], 'Base Environment') } : {}),
       subEnvs: subs.map((env) => environment(env, v5Meta(env)['isPrivate'], 'Environment')),

@@ -417,17 +417,15 @@ describe('mapInsomnia: environments', () => {
 });
 
 describe('mapInsomnia: scripts and the report', () => {
-  it('saves request and folder scripts as text and attaches none', () => {
+  it('attaches the fixture scripts, switched off, and saves no file', () => {
     const mapped = mapText(insomniaFixture('v5-collection.yaml'));
-    expect(mapped.scripts.map((s) => s.path)).toEqual([
-      'imported-scripts/orders api/orders.pre.js',
-      'imported-scripts/orders api/orders-create order.pre.js',
-      'imported-scripts/orders api/orders-create order.post.js',
-    ]);
-    expect(apiRequests(mapped.collections[0]!.rest!).every((r) => r.scripts === undefined)).toBe(true);
-    expect(mapped.counts.scripts).toBe(3);
+    expect(mapped.scripts).toEqual([]);
+    expect(mapped.counts.scripts).toBe(0);
+    const rest = mapped.collections[0]!.rest!;
+    const create = apiRequests(rest).find((r) => r.name === 'Create order')!;
+    expect(create.scripts).toMatchObject({ api: 'insomnia', enabled: false });
     expect(mapped.report.warnings).toContain(
-      'The saved scripts call insomnia.; Wirebench does not run them. Port what they do to Wirebench scripts by hand.',
+      'Scripts on 1 folder and 1 request were imported switched off: read each on its Scripts tab, then switch them on',
     );
   });
 

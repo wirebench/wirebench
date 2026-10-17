@@ -1,15 +1,37 @@
 /**
  * An Insomnia workspace's HTTP requests written as the v2.1 collection document they mean (spec
  * 2026-10-15 §4.2), so they go through the same parser and mapper as an exported v2.1 collection.
- * Templates are rewritten to `{{name}}` here, by the Insomnia dialect. No `event` is ever written:
- * scripts are saved as text by the caller. What the v2.1 document cannot say is reported.
+ * Templates are rewritten to `{{name}}` here, by the Insomnia dialect. The one `event` this document
+ * carries is Insomnia's own scripts, which the mapper attaches switched off. What the v2.1 document
+ * cannot say is reported.
  */
 
 import { V21_SCHEMA } from '../collection-v3/convert.js';
 import type { ReportBuilder } from '../report.js';
-import type { InsBody, InsFolder, InsHttp, InsNode, InsOtherSetting, InsRec, InsRow, InsWorkspace } from './model.js';
+import type {
+  InsBody,
+  InsFolder,
+  InsHttp,
+  InsNode,
+  InsOtherSetting,
+  InsRec,
+  InsRow,
+  InsScripts,
+  InsWorkspace,
+} from './model.js';
 
 type Json = Record<string, unknown>;
+
+/** A script pair as v2.1 `event` entries: `prerequest` first, then `test` (the after-response script). */
+function eventsOf(scripts: InsScripts | undefined): { event: Json[] } | Record<string, never> {
+  if (scripts === undefined) return {};
+  const event: Json[] = [];
+  if (scripts.pre.trim() !== '')
+    event.push({ listen: 'prerequest', script: { type: 'text/javascript', exec: scripts.pre } });
+  if (scripts.post.trim() !== '')
+    event.push({ listen: 'test', script: { type: 'text/javascript', exec: scripts.post } });
+  return event.length > 0 ? { event } : {};
+}
 
 /** Rewrites one value's templates, adding each construct it keeps as written to `kept`. */
 export type InsomniaDialect = (text: string, kept: Set<string>) => string;
@@ -349,6 +371,7 @@ function httpItem(
       ...(body !== undefined ? { body } : {}),
       ...(auth !== undefined ? { auth } : {}),
     },
+    ...eventsOf(request.scripts),
     ...(behaviour !== undefined ? { protocolProfileBehavior: behaviour } : {}),
   };
   templates.done();
@@ -384,6 +407,7 @@ function items(
       ...(node.description !== undefined ? { description: node.description } : {}),
       item: inner,
       ...(auth !== undefined ? { auth } : {}),
+      ...eventsOf(node.scripts),
     });
   }
   return out;
@@ -398,5 +422,6 @@ export function v21OfInsomnia(workspace: InsWorkspace, name: string, context: In
       ...(workspace.description !== undefined ? { description: workspace.description } : {}),
     },
     item: items(workspace.items, [], new Map(), context),
+    ...eventsOf(workspace.scripts),
   };
 }

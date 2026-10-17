@@ -12,7 +12,7 @@ import { entry } from '../../http/entries.js';
 import type { KeyValueEntry } from '../../http/entries.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
-import { slugify, SlugSet, uniqueSlug } from '../../project/paths.js';
+import { SlugSet, uniqueSlug } from '../../project/paths.js';
 import { folderRequests } from '../../rest/model.js';
 import { apiFromPostmanCollection, hasCredentials, mapPostmanAuth } from '../../rest/postman/map.js';
 import { parsePostmanAuth, parsePostmanCollection } from '../../rest/postman/parse.js';
@@ -20,13 +20,12 @@ import { splitQueryKeepingReferences } from '../../rest/url.js';
 import type { WsApi, WsFolder, WsRequestDef } from '../../ws/model.js';
 import { createWsApi, createWsFolder, createWsRequest, createWsSavedMessage } from '../../ws/model.js';
 import type { MappedClientEntry, MappedClientImport, MappedProtoSet } from '../client-import.js';
-import { flattenValue, ScriptCollector } from '../client-import.js';
+import { flattenValue } from '../client-import.js';
 import { GRPC_METHOD, grpcTarget } from '../collection-v3/map.js';
 import { blankIfLiteral, blankUrlCredentials } from '../credential-values.js';
 import { isCredentialName } from '../credentials.js';
 import { ReportBuilder } from '../report.js';
 import { stripUserinfo } from '../values.js';
-import type { ImportedScriptFile } from '../scripts.js';
 import { insomniaTemplates, unshieldTemplates } from '../template-dialects.js';
 import { rewriteMustache } from '../templates.js';
 import type { ImportedVariable, ImportedVariableSet } from '../variables.js';
@@ -414,23 +413,6 @@ class WorkspaceMapper {
   }
 }
 
-/** Saves every request's and folder's scripts as text, in tree order. */
-function collectScripts(
-  nodes: readonly InsNode[],
-  trail: readonly string[],
-  mapper: WorkspaceMapper,
-  scripts: ScriptCollector,
-): void {
-  for (const node of nodes) {
-    if (node.kind !== 'folder' && node.kind !== 'http') continue;
-    const path = [...trail, node.name];
-    const slug = slugify(path.join('-')).toLowerCase();
-    scripts.add(slug, 'pre', node.scripts.pre, mapper.label(path));
-    scripts.add(slug, 'post', node.scripts.post, mapper.label(path));
-    if (node.kind === 'folder') collectScripts(node.children, path, mapper, scripts);
-  }
-}
-
 /** Reports skipped items and records each request's path by id. */
 function surveyNodes(nodes: readonly InsNode[], trail: readonly string[], mapper: WorkspaceMapper): void {
   for (const node of nodes) {
@@ -525,7 +507,6 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
   const properties = new VariableSetBuilder('Project properties', variableReport);
   const globals = new VariableSetBuilder('Globals', variableReport);
   const environments: ImportedVariableSet[] = [];
-  const scripts: ImportedScriptFile[] = [];
   const collections: MappedClientEntry[] = [];
   let order = options.firstOrder ?? 0;
   let requests = 0;
@@ -566,9 +547,6 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
       variableReport.warn(`${mapper.prefix}${VAULT_SECRETS_LINE} ${mapper.vaultNames.join(', ')}`);
     }
 
-    const collector = new ScriptCollector(slugify(name).toLowerCase(), report);
-    collectScripts(workspace.items, [], mapper, collector);
-
     const grpcWalk = mapper.walk<GrpcFolder, GrpcRequestDef>(workspace.items, [], new Map(), {
       folder: (folder, trail, input) => {
         mapper.grpcFolders += 1;
@@ -592,7 +570,7 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
     const dynamic = [...new Set([...(parsed.dynamicVariables ?? []), ...mapper.dynamic])];
     const http = apiFromPostmanCollection(
       { ...parsed, ...(dynamic.length > 0 ? { dynamicVariables: dynamic } : {}) },
-      { newId, name },
+      { newId, name, scriptApi: 'insomnia' },
     );
     for (const warning of http.summary.warnings ?? []) report.warn(`${mapper.prefix}${warning}`);
     if (mapper.credentials > 0) {
@@ -634,8 +612,6 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
       );
     }
     reportWorkspace(mapper, doc.format);
-    collector.reportDialects();
-    scripts.push(...collector.files());
 
     requests += http.summary.requests + grpcWalk.count + wsWalk.count;
     folders += http.summary.folders + mapper.grpcFolders + mapper.wsFolders;
@@ -670,8 +646,9 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
       ...(projectProperties.variables.length > 0 ? { projectProperties } : {}),
       report: variableReport.build(),
     },
-    scripts,
-    counts: { collections: collections.length, requests, folders, examples, assertions: 0, scripts: scripts.length },
+    // Scripts are attached to the requests, folders and API, switched off: no file is saved.
+    scripts: [],
+    counts: { collections: collections.length, requests, folders, examples, assertions: 0, scripts: 0 },
     report: report.build(),
   });
 }
