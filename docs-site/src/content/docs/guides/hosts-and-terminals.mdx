@@ -374,7 +374,83 @@ groups:
 - The details panel shows the protocol with its source. Closing the tab ends the session on the host too.
 
 In the host form, **Protocol** sits under **Advanced**; choosing **Mosh** shows the server command and the
-UDP ports.
+UDP ports. **Telnet** is described next.
+
+## Telnet
+
+Network gear, old appliances and lab equipment often speak only Telnet. A Telnet host opens in the same
+terminal tab as any other, with split panes, find, snippets and session logs.
+
+```yaml
+groups:
+  - id: switches
+    name: Switches
+    ssh:
+      protocol: telnet
+      jump: bastion # optional: SSH to the bastion, then on to the switch
+    hosts:
+      - id: core-sw
+        name: Core switch
+        address: 10.0.0.2
+        ssh:
+          user: admin # optional: typed at the login prompt
+          auth:
+            password: ${secret:core_sw} # optional: typed at the password prompt
+```
+
+- Telnet is **not encrypted**: everything you type and see, passwords included, travels in plain text. The
+  host form, the details panel and the terminal say so. Use it only on a network you trust, or reach the
+  device through an SSH jump host, so that only the last leg is plain text.
+- The port is 23 unless the host or a group sets another.
+- With a user and a password set, Wirebench types them at the device's login and password prompts, once
+  each, during the first 30 seconds; typing anything yourself first hands the sign-in to you. With neither
+  set, you sign in yourself. A key or the SSH agent cannot sign in to a Telnet device.
+- Wirebench negotiates the terminal type (`xterm-256color`) and the window size, and sends it again when you
+  resize the pane.
+- A proxy set for the host is used when it is the first hop. A jump host must itself be an SSH host.
+- Files, port forwarding, agent forwarding, environment variables and **Install public key** need SSH, so a
+  Telnet host does not show them.
+- An administrator can switch Telnet off for a build with `WIREBENCH_AREAS=telnet=off`: Telnet hosts then
+  refuse to connect and the form no longer offers Telnet.
+
+## Serial consoles
+
+Switches, routers and embedded boards are set up over a console cable. A serial console is a host like any
+other, in a group, with tags, and opens in the same terminal tab, with split panes, find, snippets and
+session logs.
+
+```yaml
+groups:
+  - id: lab
+    name: Lab consoles
+    ssh:
+      protocol: serial
+      serial: # optional; taken whole from the nearest level that sets it
+        baud: 9600 # default 115200
+    hosts:
+      - id: core-sw-console
+        name: Core switch console
+      - id: dev-board
+        name: Dev board
+        ssh:
+          serial: { baud: 115200, dataBits: 8, parity: none, stopBits: 1, flowControl: rtscts }
+```
+
+- In the host form, open **Advanced** and set **Protocol** to **Serial console**. Address, port, sign-in,
+  jump host and proxy go: a serial line has none. The form shows **Device on this computer** with the ports
+  this computer has (with a **Refresh** for an adapter plugged in since, or a path you type) and the line
+  settings: baud, data bits, parity (`none`, `even`, `odd`, `mark`, `space`), stop bits (`1`, `1.5`, `2`)
+  and flow control (`none`, `rtscts` for RTS/CTS, `xonxoff` for XON/XOFF).
+- The line settings live in `hosts.yaml` and are shared. The device does not: the same console is `COM3` on
+  one computer and `/dev/ttyUSB0` on the next, so each computer remembers its own. A console with no device
+  on this computer yet asks for one when you connect, and so does one whose adapter is not plugged in.
+- Bytes go both ways unchanged. Unplugging the adapter ends the session as lost, and reconnecting offers
+  itself as it does for a dropped SSH connection.
+- On Linux, opening a serial port needs the `dialout` group: `sudo usermod -aG dialout $USER`, then sign out
+  and in again. A port another program has open is refused until that program lets go.
+- Files, port forwarding, agent forwarding, environment variables and **Install public key** need SSH, so a
+  serial console does not show them.
+- An administrator can switch serial consoles off for a build with `WIREBENCH_AREAS=serial=off`.
 
 ## Opening a terminal
 

@@ -2,7 +2,9 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { MoreHorizontal } from 'lucide-react';
 import { openFiles } from '../files/open-files.js';
 import { AgentForwardingMark, agentForwardingOf } from '../agent-forwarding.js';
+import { hasSshFeatures, useHostProtocol } from '../host-protocol.js';
 import { findHost, useHostsStore } from '../hosts-store.js';
+import { PlainTextMark } from '../plain-text-mark.js';
 import { quickHostName } from '../quick-hosts.js';
 import { RecordingMark, recordingOf } from '../recording-mark.js';
 import { sessionStatus } from '../session-status.js';
@@ -46,6 +48,7 @@ export function PaneHeader({
   const recording = useHostsStore((s) => recordingOf(s.panes, [paneId]));
   const mark = useTerminalMarksStore((s) => s.marks[paneId]);
   const broadcast = useTabBroadcast(tabId);
+  const protocol = useHostProtocol(hostId);
   return (
     <div
       className={`flex h-6 shrink-0 items-center gap-1.5 border-b border-hairline px-2 text-xs ${
@@ -57,6 +60,7 @@ export function PaneHeader({
         ●
       </span>
       <span className="min-w-0 flex-1 truncate">{name}</span>
+      {protocol === 'telnet' && <PlainTextMark />}
       {mark !== undefined && <TerminalMarkIcon mark={mark} />}
       {recording && <RecordingMark />}
       {forwarding !== undefined && <AgentForwardingMark state={forwarding} />}
@@ -99,14 +103,16 @@ export function PaneHeader({
             >
               Split down
             </DropdownMenu.Item>
-            <DropdownMenu.Item
-              className={ITEM_CLASS}
-              onSelect={() => {
-                openFiles(hostId);
-              }}
-            >
-              Files
-            </DropdownMenu.Item>
+            {hasSshFeatures(protocol) && (
+              <DropdownMenu.Item
+                className={ITEM_CLASS}
+                onSelect={() => {
+                  openFiles(hostId);
+                }}
+              >
+                Files
+              </DropdownMenu.Item>
+            )}
             <DropdownMenu.Separator className="my-1 h-px bg-hairline" />
             <DropdownMenu.Item
               className={ITEM_CLASS}

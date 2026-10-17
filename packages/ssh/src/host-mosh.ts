@@ -1,7 +1,17 @@
 import { z } from 'zod';
 
-/** How a host reaches its shell: SSH all the way, or SSH to start a mosh server and UDP after it (#419). */
-export type SessionProtocol = 'ssh' | 'mosh';
+/**
+ * How a host reaches its shell: SSH all the way, SSH to start a mosh server and UDP after it (#419), or Telnet
+ * (#425), plain text, straight or through a channel from an SSH jump host, or a serial console on this machine
+ * (#426).
+ */
+export type SessionProtocol = 'ssh' | 'mosh' | 'telnet' | 'serial';
+
+/** The protocols whose target signs in over SSH: only they need a user and a way in. */
+export const signsInOverSsh = (protocol: SessionProtocol): boolean => protocol === 'ssh' || protocol === 'mosh';
+
+/** Telnet's port when a host sets none. */
+export const TELNET_PORT = 23;
 
 /** `ssh.mosh` on a host or group: taken whole from the nearest level that sets it. */
 export interface MoshSettings {
@@ -23,7 +33,7 @@ export function parseMoshPorts(text: string): readonly [number, number] | undefi
   return [low, high];
 }
 
-export const protocolSchema = z.enum(['ssh', 'mosh']).optional();
+export const protocolSchema = z.enum(['ssh', 'mosh', 'telnet', 'serial']).optional();
 
 /** Matches a control character: a server command holding one is refused, not run. */
 const CONTROL = /[\u0000-\u001f\u007f]/;

@@ -33,6 +33,8 @@ export interface TerminalMenuState {
   readonly connected: boolean;
   /** Whether the session can be shared (#429): offered only on a server that relays shared terminals. */
   readonly share?: 'available' | 'sharing';
+  /** Whether the host has Files (SFTP); a Telnet host does not (#425). Offered unless false. */
+  readonly files?: boolean;
 }
 
 export interface TerminalMenuItem {
@@ -103,7 +105,7 @@ export function terminalMenuGroups(
     ],
     [
       item('runSnippet', 'Run snippet…', command('ssh.snippetPicker'), !state.connected),
-      item('openFiles', 'Open files', command('ssh.openFiles')),
+      ...(state.files === false ? [] : [item('openFiles', 'Open files', command('ssh.openFiles'))]),
       item('reconnect', 'Reconnect', undefined),
     ],
     ...(state.share === undefined

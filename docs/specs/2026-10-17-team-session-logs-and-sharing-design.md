@@ -87,7 +87,7 @@ Routes, all under `/api/v1/workspaces/:workspaceId/session-logs`. Each is guarde
 | Route                      | Who               | What                                                                                                                                                                                                                                                                                       |
 | -------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `POST /`                   | any member        | Opens a log: `{clientLogId, hostId, hostName, address, port, user, startedAt}`. 409 `session-logs-recording-off` unless the switch is on. Idempotent on `(workspace, caller, clientLogId)`: a repeat answers 200 with the existing `{id, size}`. Audited `session_log.started`.            |
-| `POST /:logId/chunks`      | the uploader only | `{offset, data}` (base64, ≤ 512 KB decoded). `offset` must equal the stored size, else 409 `session-logs-offset` with the size so the client resyncs. Past `WIREBENCH_SERVER_SESSION_LOG_MAX_MB` (default 64) the log is marked `truncated` and further bytes are dropped (204). Not audited. |
+| `POST /:logId/chunks`      | the uploader only | `{offset, data}` (base64, ≤ 512 KB decoded). `offset` must equal the stored size, else 409 `session-logs-offset`; the client reopens the log to learn the stored size. Answers `{size, truncated}`; past `WIREBENCH_SERVER_SESSION_LOG_MAX_MB` (default 64) the log is marked `truncated` and further bytes are dropped. Not audited. |
 | `POST /:logId/end`         | the uploader only | `{endedAt, exitCode?, signal?, reason}`. Once ended, chunks are refused (409 `session-logs-ended`).                                                                                                                                                                                        |
 | `GET /`                    | any member        | Metadata only, newest first, `?hostId=&userId=&before=&limit=` (limit ≤ 200). Each row names the member (`userId`, display name) and whether it is still live. Not audited (no content).                                                                                                  |
 | `GET /:logId/text?offset=` | any member        | The text from `offset` (default 0), at most 4 MB per answer, with `size`, `truncated` and `live`. Audited `session_log.read` with `{offset, bytes}`.                                                                                                                                       |
@@ -114,7 +114,7 @@ not audited, the same as audit rows ageing out.
   target it writes `<id>.upload.json` next to the log (`{url, workspaceId, serverLogId?, sent, ended}`),
   opens the server log, then sends what the append-only `<id>.log` holds past `sent` in chunks of up to
   512 KB, two seconds after the last write (debounced) and at the end, followed by `end`. Failures back off
-  5 s → 300 s. A 409 offset answer moves `sent` to the server's size. On start the uploader resumes every
+  5 s → 300 s. A 409 offset answer reopens the log, whose answer moves `sent` to the server's size. On start the uploader resumes every
   `upload.json` not marked done: a log with no `endedAt` in its sidecar (the app crashed) is ended with
   `reason: lost`. A 403/404 for the workspace, a 409 recording-off or a deleted log stop that log's upload
   for good and say so in the main log. The local size cap (#414 R3) still applies; a pruned log stops
@@ -193,7 +193,7 @@ second.
 
 ## Errors
 
-New problem codes: `session-logs-recording-off` (409), `session-logs-offset` (409, with `size`),
+New problem codes: `session-logs-recording-off` (409), `session-logs-offset` (409; reopen to learn the size),
 `session-logs-ended` (409), `session-logs-not-found` (404), `terminal-share-not-found` (404),
 `terminal-share-full` (409). Socket close codes reuse `LIVE_CLOSE` where they mean the same, plus 4403
 (not allowed: removed, no feature, no access) and 4410 (share ended).

@@ -55,6 +55,8 @@ import {
 import { useLayoutsStore } from './panes/layouts-store.js';
 import { MissingHostPane } from './panes/missing-host-pane.js';
 import { PaneHeader } from './panes/pane-header.js';
+import { hasSshFeatures, useHostProtocol } from './host-protocol.js';
+import { PlainTextStrip } from './plain-text-mark.js';
 import { SaveLayoutDialog } from './panes/save-layout-dialog.js';
 import { leaves, type PaneLeaf, type PaneNode } from './panes/pane-tree.js';
 import { PaneView } from './panes/pane-view.js';
@@ -356,6 +358,7 @@ function TerminalPane({
   readonly split: boolean;
 }) {
   const { paneId, hostId } = pane;
+  const protocol = useHostProtocol(hostId);
   const holder = useRef<HTMLDivElement>(null);
   const live = useRef<Live | null>(null);
   /** The session keystrokes go to; unset until attached and again once the session has ended. */
@@ -914,6 +917,7 @@ function TerminalPane({
           </button>
         </div>
       )}
+      {!split && protocol === 'telnet' && <PlainTextStrip />}
       {/* A strip above the terminal, pushing it down: it never covers the text or a notice on the screen. */}
       <TerminalFindBar
         open={findOpen}
@@ -931,9 +935,10 @@ function TerminalPane({
           state={() => ({
             hasSelection: live.current?.term.hasSelection() ?? false,
             connected: target.current !== undefined,
+            files: hasSshFeatures(protocol),
             ...(share !== undefined
               ? { share: 'sharing' as const }
-              : shareAvailable === true
+              : shareAvailable === true && hasSshFeatures(protocol)
                 ? { share: 'available' as const }
                 : {}),
           })}

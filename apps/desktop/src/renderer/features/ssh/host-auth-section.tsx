@@ -32,8 +32,10 @@ export function HostAuthSection(props: {
   readonly onPasswordChange?: (password: string) => void;
   /** Names the no-value choice in place of Inherit, with nothing inherited shown: an identity's own form (#416). */
   readonly noneLabel?: string;
+  /** A Telnet host (#425) signs in with a password only: key and agent are not offered unless already chosen. */
+  readonly passwordOnly?: boolean;
 }) {
-  const { value, inherited, onChange, password = '', onPasswordChange, noneLabel } = props;
+  const { value, inherited, onChange, password = '', onPasswordChange, noneLabel, passwordOnly = false } = props;
   const radioName = useId();
   const { names, reload: loadNames } = useSecretNames();
   const [setting, setSetting] = useState<{ name: string; value: string; error?: string } | undefined>(undefined);
@@ -56,7 +58,9 @@ export function HostAuthSection(props: {
   const kind: Kind = value?.kind ?? 'inherit';
   const kinds = KINDS.filter(
     (k) => k.id !== 'inherit' || inherited.value !== undefined || value === undefined || noneLabel !== undefined,
-  ).map((k) => (k.id === 'inherit' && noneLabel !== undefined ? { ...k, label: noneLabel } : k));
+  )
+    .filter((k) => !passwordOnly || k.id === 'inherit' || k.id === 'password' || k.id === kind)
+    .map((k) => (k.id === 'inherit' && noneLabel !== undefined ? { ...k, label: noneLabel } : k));
   const pick = (next: Kind): void => {
     if (next === 'inherit') onChange(undefined);
     else if (next === 'agent') onChange({ kind: 'agent' });
