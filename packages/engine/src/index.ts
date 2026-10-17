@@ -2313,6 +2313,34 @@ export type {
   SessionLogsQuery,
 } from './server-api/session-logs.js';
 export {
+  TERMINAL_SHARE_CAPABILITY,
+  TERMINAL_SHARE_CLOSE,
+  TERMINAL_SHARE_END_REASONS,
+  TERMINAL_SHARE_ID_PATTERN,
+  TERMINAL_SHARE_LIMITS,
+  TERMINAL_SHARE_PATH,
+  formatTerminalShareInvite,
+  parseTerminalShareInvite,
+  terminalShareClientMessageSchema,
+  terminalShareCreateRequestSchema,
+  terminalShareCreateResponseSchema,
+  terminalShareIdSchema,
+  terminalShareInfoSchema,
+  terminalShareParamsSchema,
+  terminalSharePresenceEntrySchema,
+  terminalShareServerMessageSchema,
+} from './server-api/terminal-share.js';
+export type {
+  TerminalShareClientMessage,
+  TerminalShareCreateRequest,
+  TerminalShareCreateResponse,
+  TerminalShareEndReason,
+  TerminalShareInfo,
+  TerminalShareInvite,
+  TerminalSharePresenceEntry,
+  TerminalShareServerMessage,
+} from './server-api/terminal-share.js';
+export {
   COMMUNITY_SEATS,
   EDITIONS,
   FEATURES,

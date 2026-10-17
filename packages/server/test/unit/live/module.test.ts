@@ -21,6 +21,7 @@ describe('live-updates module wiring (§5.1)', () => {
       'audit-log',
       'sso',
       'session-logs',
+      'terminal-shares',
     ]);
   });
 
