@@ -13,6 +13,7 @@ import {
   enabledProperties,
   overlayCurrent,
   type ConnectOptions,
+  type ConnectedWebSocket,
   type GetSecret,
 } from '@wirebench/engine';
 import { app, BrowserWindow, dialog, powerMonitor, protocol, safeStorage, session, shell } from 'electron';
@@ -71,6 +72,8 @@ import {
   sessionLogPlanner,
 } from './session-logs.js';
 import { SessionLogUploader } from './session-log-uploader.js';
+import { TerminalShareOwner } from './terminal-share/owner.js';
+import { TerminalShareViewer } from './terminal-share/viewer.js';
 import { SshService, forwardResume } from './ssh-service.js';
 import { localShell, localShellCwd, localShellEnv } from './local-shell.js';
 import { LocalTerminalService } from './local-terminal-service.js';
@@ -634,6 +637,41 @@ const sshService = new SshService({
     },
     hosts: sshConnectDeps.hosts,
   }),
+});
+
+/**
+ * Shared terminals (#429): the owner's side taps a session's masked output and relays it through the
+ * workspace's server; the viewer's side watches a teammate's. Both use `serverClient`'s TLS and proxy.
+ */
+const shareConnect = (wsUrl: string): ConnectedWebSocket => {
+  const options: ConnectOptions = serverConnectOptions.get(new URL(wsUrl.replace(/^ws/, 'http')).origin) ?? {};
+  return connectWebSocket(wsUrl, options);
+};
+const terminalShareOwner = new TerminalShareOwner({
+  client: serverClient,
+  accounts: accountService,
+  connect: shareConnect,
+  target: (sender) => {
+    const target = sshScopeOf(scopes, sender).workspace.auditTarget();
+    return target ? { url: target.url, workspaceId: target.workspaceId } : undefined;
+  },
+  ssh: sshService,
+  emit: (sender, state) => {
+    emitEvent(sender, events.terminalShare.state, state);
+  },
+});
+const terminalShareViewer = new TerminalShareViewer({
+  client: serverClient,
+  accounts: accountService,
+  connect: shareConnect,
+  emit: {
+    data: (sender, event) => {
+      emitEvent(sender, events.terminalShare.viewerData, event);
+    },
+    state: (sender, event) => {
+      emitEvent(sender, events.terminalShare.viewerState, event);
+    },
+  },
 });
 /**
  * The local terminal tabs' shells (#410), owned per window like the SSH terminals. The pty binding is native and
@@ -1462,6 +1500,7 @@ void app.whenReady().then(() => {
         shell.showItemInFolder(path);
       },
     },
+    terminalShares: { owner: terminalShareOwner, viewer: terminalShareViewer },
     keys: sshKeys,
     localTerminal: localTerminalOn ? localTerminals : undefined,
     importer: new SshImportService<WebContents>({
@@ -1631,6 +1670,8 @@ app.on('before-quit', (event) => {
   hooksService.dispose();
   schedulesService.dispose();
   // SSH sessions end with the app; closing never throws or waits.
+  terminalShareOwner.disposeAll();
+  terminalShareViewer.disposeAll();
   sshService.disposeAll();
   sftpTransfers.disposeAll();
   // The copies go with their edits; not awaited, and start-up sweeps whatever a quit leaves.

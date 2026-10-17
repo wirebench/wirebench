@@ -51,6 +51,7 @@ import {
   useSnippetsStore,
 } from '../features/ssh/snippets/snippets-store.js';
 import { subscribeToSshEvents } from '../features/ssh/terminal-session.js';
+import { subscribeToShareEvents, useTerminalShareStore } from '../features/ssh/terminal-share-store.js';
 import { useSessionLogsDialogStore, useTeamSessionLogsDialogStore } from '../features/ssh/session-logs-store.js';
 import { useRunDialogStore } from '../features/ssh/snippets/run.js';
 import { useHostDelete } from '../features/ssh/host-delete-store.js';
@@ -179,6 +180,11 @@ const SessionLogsDialog = lazy(async () => {
   const module = await import('../features/ssh/session-logs.js');
   return { default: module.SessionLogsDialog };
 });
+const JoinShareDialog = lazy(async () => {
+  const module = await import('../features/ssh/join-share-dialog.js');
+  return { default: module.JoinShareDialog };
+});
+
 const TeamSessionLogsDialog = lazy(async () => {
   const module = await import('../features/ssh/team-session-logs.js');
   return { default: module.TeamSessionLogsDialog };
@@ -242,6 +248,7 @@ export function AppShell() {
   const snippetRunAsked = useRunDialogStore((state) => state.request !== null);
   const sessionLogsOpen = useSessionLogsDialogStore((state) => state.open);
   const teamSessionLogsOpen = useTeamSessionLogsDialogStore((state) => state.open);
+  const joinShareOpen = useTerminalShareStore((state) => state.joinOpen);
   const closeImportDialog = useUiStore((state) => state.closeImportDialog);
 
   // The row the sidebar and the editor/console column share, and the column the editor area and
@@ -399,6 +406,7 @@ export function AppShell() {
   useEffect(() => (sshEnabled ? subscribeToForwards() : undefined), [sshEnabled]);
   useEffect(() => subscribeToSnippets(), []);
   useEffect(() => subscribeToSshEvents(), []);
+  useEffect(() => subscribeToShareEvents(), []);
   useEffect(() => subscribeToWebhooks(), []);
   useEffect(() => subscribeToSchedules(), []);
   useEffect(() => subscribeToAccounts(), []);
@@ -721,6 +729,11 @@ export function AppShell() {
       {sshEnabled && teamSessionLogsOpen && (
         <Suspense fallback={null}>
           <TeamSessionLogsDialog />
+        </Suspense>
+      )}
+      {sshEnabled && joinShareOpen && (
+        <Suspense fallback={null}>
+          <JoinShareDialog />
         </Suspense>
       )}
       <CollectionExportReportDialog />

@@ -82,7 +82,8 @@ export interface EditorTab {
     | 'cookies'
     | 'ssh-terminal'
     | 'ssh-files'
-    | 'local-terminal';
+    | 'local-terminal'
+    | 'terminal-share';
   readonly title: string;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;

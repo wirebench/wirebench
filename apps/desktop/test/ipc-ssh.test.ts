@@ -63,6 +63,25 @@ const NO_SESSION_LOGS = {
   workspaceOf: (): string | undefined => undefined,
   reveal: vi.fn(),
 };
+const NO_SHARES = {
+  owner: {
+    available: vi.fn(),
+    start: vi.fn(),
+    stop: vi.fn(),
+    grant: vi.fn(),
+    decline: vi.fn(),
+    remove: vi.fn(),
+    takeBack: vi.fn(),
+  },
+  viewer: {
+    preview: vi.fn(),
+    join: vi.fn(),
+    leave: vi.fn(),
+    input: vi.fn(),
+    requestControl: vi.fn(),
+    release: vi.fn(),
+  },
+};
 const NO_IMPORT = { preview: vi.fn(), apply: vi.fn() };
 const NO_KEYS = { generate: vi.fn(), keys: vi.fn(), install: vi.fn(), attachCertificate: vi.fn() };
 const NO_SFTP = {
@@ -97,6 +116,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -128,6 +148,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -149,6 +170,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -180,6 +202,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -208,6 +231,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -230,6 +254,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -257,6 +282,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -278,6 +304,7 @@ describe('ssh channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -314,6 +341,7 @@ describe('ssh channels', () => {
         layouts: NO_LAYOUTS,
         forward: NO_FORWARD,
         sessionLogs: NO_SESSION_LOGS,
+        terminalShares: NO_SHARES,
         transfers: NO_TRANSFERS,
         edits: NO_EDITS,
       });
@@ -390,6 +418,7 @@ describe('known hosts channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -415,6 +444,7 @@ describe('known hosts channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -446,6 +476,7 @@ describe('host OS channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -470,6 +501,7 @@ describe('host OS channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -495,6 +527,7 @@ describe('ssh snippet run channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -528,6 +561,7 @@ describe('ssh import channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -556,6 +590,7 @@ describe('ssh import channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -578,6 +613,7 @@ describe('ssh import channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -614,6 +650,7 @@ describe('ssh import channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -653,6 +690,7 @@ describe('ssh import channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
     });
     const window = { id: 4 };
     const copy = {
@@ -693,6 +731,7 @@ describe('ssh import channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
     });
     const window = { id: 4 };
     const request = { sessionId: 's1', path: '/etc/app.conf', confirmedLarge: true };
@@ -729,6 +768,7 @@ describe('ssh key channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -779,6 +819,7 @@ describe('snippet channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
     });
     expect(await invoke('ssh.listSnippets', undefined)).toEqual({ ok: true, value: EMPTY_SNIPPETS });
     await invoke('ssh.saveSnippets', { file: EMPTY_SNIPPETS.file });
@@ -801,6 +842,7 @@ describe('snippet channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs: NO_SESSION_LOGS,
+      terminalShares: NO_SHARES,
     });
     const snippet = { id: 'Bad Id', name: 'x', tags: [], variables: [], script: 'ls', enter: true, confirm: false };
     const refused = (await invoke('ssh.saveSnippets', {
@@ -831,6 +873,7 @@ describe('session log channels', () => {
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       sessionLogs,
+      terminalShares: NO_SHARES,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });

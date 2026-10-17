@@ -60,6 +60,11 @@ const LocalTerminalTab = lazy(async () => {
   return { default: module.LocalTerminalTab };
 });
 
+const ShareViewTab = lazy(async () => {
+  const module = await import('../features/ssh/share-view-tab.js');
+  return { default: module.ShareViewTab };
+});
+
 const FilesTab = lazy(async () => {
   const module = await import('../features/ssh/files/files-tab.js');
   return { default: module.FilesTab };
@@ -177,6 +182,7 @@ export function EditorArea() {
   const filesPanes = useFilesStore((state) => state.panes);
   // Local terminals too (#410): each holds its own shell.
   const localTabs = allTabs.filter((tab) => tab.kind === 'local-terminal');
+  const shareTabs = allTabs.filter((tab) => tab.kind === 'terminal-share');
   const localSessions = useLocalTerminalsStore((state) => state.sessions);
   const terminalMarks = useTerminalMarksStore((state) => state.marks);
   /** A terminal tab's mark (#422): the worst of its panes', drawn while the tab is behind another. */
@@ -659,6 +665,13 @@ export function EditorArea() {
           <div key={tab.id} hidden={tab.id !== activeId} className="h-full">
             <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading terminal…</p>}>
               <LocalTerminalTab tabId={tab.id} active={tab.id === activeId} />
+            </Suspense>
+          </div>
+        ))}
+        {shareTabs.map((tab) => (
+          <div key={tab.id} hidden={tab.id !== activeId} className="h-full">
+            <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading terminal…</p>}>
+              <ShareViewTab tabId={tab.id} />
             </Suspense>
           </div>
         ))}

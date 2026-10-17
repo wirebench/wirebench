@@ -103,6 +103,10 @@ describe('area channels', () => {
       'sessionLog.teamRead',
     ]);
   });
+  it('the SSH area registers its terminalShare.* channels (#429)', () => {
+    expect(channelsFor('').filter((n) => n.startsWith('terminalShare.'))).toHaveLength(13);
+    expect(channelsFor('ssh=off').filter((n) => n.startsWith('terminalShare.'))).toEqual([]);
+  });
   it('with ssh=off no ssh.*, sftp.*, forward.*, layout.* or sessionLog.* channel exists', () => {
     expect(
       channelsFor('ssh=off').filter(

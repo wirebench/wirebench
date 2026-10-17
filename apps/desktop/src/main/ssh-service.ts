@@ -169,8 +169,22 @@ export function forwardResume(
   powerMonitor.on('resume', broadcast);
 }
 
+/** A listener on one session's output as its window sees it, after the masker (a shared terminal, #429). */
+export interface SessionTap {
+  data(bytes: Uint8Array): void;
+  resize(cols: number, rows: number): void;
+  /** The session closed; the tap is gone. */
+  end(): void;
+}
+
+/** How much recent masked output a session keeps, so a tap starts with the screen as it stands (#429). */
+const RECENT_OUTPUT_BYTES = 256 * 1024;
+
 interface Live {
   readonly session: SshSession;
+  readonly taps: Set<SessionTap>;
+  /** The last {@link RECENT_OUTPUT_BYTES} the window was shown, oldest first. */
+  readonly recent: { chunks: Uint8Array[]; size: number };
   readonly sender: WebContents;
   readonly hostId: string;
   /** Masks the secret values a snippet typed into this session, for the session's life. */
@@ -293,9 +307,17 @@ export class SshService {
     }
     const recording = log !== undefined;
     let quiet: ReturnType<typeof setTimeout> | undefined;
+    const taps = new Set<SessionTap>();
+    const recent = { chunks: [] as Uint8Array[], size: 0 };
     const send = (data: Uint8Array): void => {
       if (data.length === 0) return;
       log?.push(data);
+      recent.chunks.push(Uint8Array.from(data));
+      recent.size += data.length;
+      while (recent.size - (recent.chunks[0]?.length ?? 0) >= RECENT_OUTPUT_BYTES) {
+        recent.size -= recent.chunks.shift()?.length ?? 0;
+      }
+      for (const tap of taps) tap.data(data);
       this.deps.emit(sender, events.ssh.data, { sessionId, data: Buffer.from(data).toString('base64') });
     };
     const release = (): void => {
@@ -323,6 +345,8 @@ export class SshService {
     });
     this.live.set(sessionId, {
       session,
+      taps,
+      recent,
       sender,
       hostId: request.hostId,
       masker,
@@ -504,7 +528,25 @@ export class SshService {
 
   /** @throws WirebenchError `ssh-session-unknown` for a foreign or dead session. */
   resize(sender: WebContents, request: SshResizeRequest): void {
-    this.owned(sender, request.sessionId).session.resize(request.cols, request.rows);
+    const live = this.owned(sender, request.sessionId);
+    live.session.resize(request.cols, request.rows);
+    for (const tap of live.taps) tap.resize(request.cols, request.rows);
+  }
+
+  /**
+   * Hands `tap` what the window is shown of a session it owns, masked: about the last 256 KB at once, then
+   * what follows, until the returned function is called or the session closes (then `end`).
+   *
+   * @throws WirebenchError `ssh-session-unknown` for a foreign or dead session.
+   */
+  tap(sender: WebContents, sessionId: string, tap: SessionTap): () => void {
+    const { taps, recent } = this.owned(sender, sessionId);
+    // The screen as it stands first, so a viewer sees what was printed before the share began.
+    if (recent.size > 0) tap.data(Buffer.concat(recent.chunks));
+    taps.add(tap);
+    return () => {
+      taps.delete(tap);
+    };
   }
 
   /** Idempotent: a session already gone, or another window's, is left as it is. */
@@ -610,6 +652,8 @@ export class SshService {
     if (!live) return;
     live.stop();
     this.live.delete(sessionId);
+    for (const tap of [...live.taps]) tap.end();
+    live.taps.clear();
     if (!live.sender.isDestroyed()) this.deps.emit(live.sender, events.ssh.state, { sessionId, state: 'closed' });
     this.sessionsChanged(live.sender, live.hostId);
   }

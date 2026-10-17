@@ -65,6 +65,8 @@ const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 const size = z.number().int().min(1).max(1000);
 const hostName = z.string().min(1).max(TERMINAL_SHARE_LIMITS.maxHostNameLength);
 const userId = teamsIdSchema;
+/** A user id the server reports: taken as given, so a client never drops a message over an id's shape. */
+const reportedUserId = z.string().min(1).max(128);
 const inputData = z
   .string()
   .max(Math.ceil(TERMINAL_SHARE_LIMITS.maxInputBytes / 3) * 4)
@@ -110,7 +112,7 @@ export const terminalShareClientMessageSchema = z.discriminatedUnion('type', [
 export type TerminalShareClientMessage = z.infer<typeof terminalShareClientMessageSchema>;
 
 export const terminalSharePresenceEntrySchema = z.object({
-  userId,
+  userId: reportedUserId,
   name: z.string(),
   /** Holds control: their keystrokes reach the session. */
   control: z.boolean(),
@@ -130,13 +132,13 @@ export const terminalShareServerMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('presence'),
-    owner: z.object({ userId, name: z.string() }),
+    owner: z.object({ userId: reportedUserId, name: z.string() }),
     viewers: z.array(terminalSharePresenceEntrySchema),
   }),
   /** To the owner: the holder typed this. */
-  z.object({ type: z.literal('input'), userId, data: inputData }),
+  z.object({ type: z.literal('input'), userId: reportedUserId, data: inputData }),
   z.object({ type: z.literal('resize'), cols: size, rows: size }),
-  z.object({ type: z.literal('control'), userId: userId.nullable() }),
+  z.object({ type: z.literal('control'), userId: reportedUserId.nullable() }),
   /** To a viewer: the owner declined their request. */
   z.object({ type: z.literal('declined') }),
   z.object({ type: z.literal('ended'), reason: z.enum(TERMINAL_SHARE_END_REASONS) }),

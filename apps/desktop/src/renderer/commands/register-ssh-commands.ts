@@ -12,6 +12,7 @@ import { startGroup, stopGroup } from '../features/ssh/forwarding/forward-groups
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import { openLocalTerminal } from '../features/ssh/local-terminal.js';
 import { showSessionLogs, showTeamSessionLogs } from '../features/ssh/session-logs-store.js';
+import { openJoinShare } from '../features/ssh/terminal-share-store.js';
 import {
   activeTerminal,
   closePane,
@@ -238,6 +239,12 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     ...catalogEntry('ssh.teamSessionLogs'),
     run: () => {
       showTeamSessionLogs();
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ssh.joinShare'),
+    run: () => {
+      openJoinShare();
     },
   });
   registerCommand({
