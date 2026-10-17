@@ -205,7 +205,45 @@ describe('the Bruno layer: test and expect', () => {
     );
     expect(outcome).toMatchObject({
       ok: true,
-      tests: [{ name: 'shape', passed: false, message: expect.stringMatching(/\/id type: .*string/) as unknown }],
+      tests: [
+        {
+          name: 'shape',
+          passed: false,
+          message: expect.stringMatching(/^the value does not match the JSON schema: \/id type: .*string/) as unknown,
+        },
+      ],
+    });
+  });
+
+  it('.not.to.have.jsonSchema passes on a mismatch and fails on a match', async () => {
+    const outcome = await run(
+      'post',
+      `test('mismatch', () => expect(res.body).not.to.have.jsonSchema({ type: 'string' }));
+       test('match', () => expect(res.body).not.to.have.jsonSchema({ type: 'object' }));`,
+    );
+    expect(outcome).toMatchObject({
+      ok: true,
+      tests: [
+        { name: 'mismatch', passed: true },
+        { name: 'match', passed: false },
+      ],
+    });
+  });
+
+  it('.jsonSchema works on a property sub-chain', async () => {
+    const response = { ...RESPONSE, text: '{"data":{"id":7}}' };
+    const outcome = await run(
+      'post',
+      `test('ok', () => expect(res.body).to.have.property('data').that.has.jsonSchema({ type: 'object', required: ['id'] }));
+       test('bad', () => expect(res.body).to.have.property('data').that.has.jsonSchema({ type: 'array' }));`,
+      { response },
+    );
+    expect(outcome).toMatchObject({
+      ok: true,
+      tests: [
+        { name: 'ok', passed: true },
+        { name: 'bad', passed: false },
+      ],
     });
   });
 
@@ -230,19 +268,126 @@ describe('the Bruno layer: test and expect', () => {
 });
 
 describe('the Bruno layer: unsupported calls', () => {
-  it('fails each with script-unsupported naming the call', async () => {
-    for (const [name, source] of [
-      ['bru.interpolate', "bru.interpolate('{{baseUrl}}/x')"],
-      ['bru.sendRequest', "bru.sendRequest({ url: 'https://x.test' })"],
-      ['bru.sleep', 'bru.sleep(10)'],
-      ['bru.cookies', 'bru.cookies.jar()'],
-      ['req.setTimeout', 'req.setTimeout(500)'],
-      ['require', "require('lodash')"],
-    ] as const) {
-      expect(await run('pre', source)).toMatchObject({
-        ok: false,
-        error: { code: 'script-unsupported', message: expect.stringContaining(name) as unknown },
+  it.each([
+    ['bru.sendRequest', "bru.sendRequest({ url: 'https://x.test' })"],
+    ['bru.sleep', 'bru.sleep(10)'],
+    ['bru.cookies', 'bru.cookies.jar()'],
+    ['req.setTimeout', 'req.setTimeout(500)'],
+    ['req.getTimeout', 'req.getTimeout()'],
+    ['req.setMaxRedirects', 'req.setMaxRedirects(2)'],
+    ['req.onFail', 'req.onFail(() => {})'],
+    ['req.disableParsingResponseJson', 'req.disableParsingResponseJson()'],
+    ['require', "require('lodash')"],
+  ])('%s fails with script-unsupported', async (name, source) => {
+    expect(await run('pre', source)).toMatchObject({
+      ok: false,
+      error: { code: 'script-unsupported', message: expect.stringContaining(name) as unknown },
+    });
+  });
+
+  it('touching a cookies member the way a promise or JSON.stringify does is not an error', async () => {
+    const outcome = await run(
+      'pre',
+      'console.log(String(bru.cookies.then), String(bru.cookies.toJSON), typeof bru.cookies[Symbol.iterator]);',
+    );
+    expect(outcome).toMatchObject({ ok: true, log: { lines: ['undefined undefined undefined'] } });
+  });
+});
+
+describe('the Bruno layer: bru.interpolate', () => {
+  it('resolves {{name}} with a var shadowing a prop, and leaves an unknown name as written', async () => {
+    const outcome = await run(
+      'pre',
+      "bru.setVar('tenant', 'beta'); console.log(bru.interpolate('{{baseUrl}}/{{tenant}}/{{nope}}/{{$guid}}'));",
+    );
+    expect(outcome).toMatchObject({ ok: true, log: { lines: ['https://shop.test/beta/{{nope}}/{{$guid}}'] } });
+  });
+
+  it('walks an object and an array, returning new values', async () => {
+    const outcome = await run(
+      'pre',
+      `const o = { u: '{{baseUrl}}', n: 3, a: ['{{tenant}}', { k: '{{tenant}}' }] };
+       const r = bru.interpolate(o);
+       console.log(JSON.stringify(r), o.u, JSON.stringify(bru.interpolate(['{{tenant}}', 1, null])));`,
+    );
+    expect(outcome).toMatchObject({
+      ok: true,
+      log: {
+        lines: ['{"u":"https://shop.test","n":3,"a":["acme",{"k":"acme"}]} {{baseUrl}} ["acme",1,null]'],
+      },
+    });
+  });
+
+  it('returns a number as it is', async () => {
+    const outcome = await run('pre', 'console.log(bru.interpolate(5), bru.interpolate(true), bru.interpolate(null));');
+    expect(outcome).toMatchObject({ ok: true, log: { lines: ['5 true null'] } });
+  });
+});
+
+describe('the Bruno layer: more members', () => {
+  it('hasVar and deleteVar', async () => {
+    const outcome = await run(
+      'pre',
+      "console.log(bru.hasVar('tenant'), bru.hasVar('nope')); bru.deleteVar('tenant'); console.log(bru.getVar('tenant'));",
+    );
+    expect(outcome).toMatchObject({
+      ok: true,
+      values: [{ name: 'tenant', value: '' }],
+      log: { lines: ['true false', ''] },
+    });
+  });
+
+  it('req.getHeaders returns the headers', async () => {
+    const outcome = await run('pre', 'console.log(JSON.stringify(req.getHeaders()));');
+    expect(outcome).toMatchObject({ ok: true, log: { lines: ['{"Content-Type":"application/json"}'] } });
+  });
+
+  it('res.getResponseTime is the response time', async () => {
+    expect(await run('post', 'console.log(res.getResponseTime());')).toMatchObject({
+      ok: true,
+      log: { lines: ['42'] },
+    });
+  });
+
+  it('runs the fixture line that captures a created id', async () => {
+    const outcome = await run('post', 'bru.setVar("userId", res.body.id);');
+    expect(outcome).toMatchObject({ ok: true, values: [{ name: 'userId', value: '7' }] });
+  });
+
+  it('res.headers has lower-cased keys, repeated names joined, and getHeader ignores case', async () => {
+    const outcome = await run(
+      'post',
+      "console.log(res.headers['content-type'], res.headers['x-multi'], res.getHeader('X-MULTI'), res.getHeader('nope'));",
+      {
+        response: {
+          ...RESPONSE,
+          headers: [
+            ['Content-Type', 'application/json'],
+            ['X-Multi', 'a'],
+            ['x-multi', 'b'],
+          ],
+        },
+      },
+    );
+    expect(outcome).toMatchObject({ ok: true, log: { lines: ['application/json a, b a, b undefined'] } });
+  });
+
+  it('.jsonSchema is not on the Postman or Insomnia expect', async () => {
+    for (const api of ['postman', 'insomnia'] as const) {
+      const outcome = await runScript({
+        sandbox,
+        phase: 'post',
+        api,
+        source: `console.log(typeof ${api === 'postman' ? 'pm' : 'insomnia'}.expect(1).to.have.jsonSchema);`,
+        filename: 'X.post.js',
+        request: REQUEST,
+        response: RESPONSE,
+        vars: {},
+        props: {},
+        secrets: {},
+        requestName: 'X',
       });
+      expect(outcome).toMatchObject({ ok: true, log: { lines: ['undefined'] } });
     }
   });
 });

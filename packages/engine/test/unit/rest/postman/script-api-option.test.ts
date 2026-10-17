@@ -44,10 +44,21 @@ describe('MapPostmanOptions.scriptApi', () => {
 
   it('the Bruno list names each unsupported call once, and require does not double-report', () => {
     const text =
-      "bru.sendRequest(x); bru.sleep(1); bru.cookies.jar(); bru.interpolate('{{a}}'); req.setTimeout(5); require('x');";
+      "bru.sendRequest(x); bru.sleep(1); bru.cookies.jar(); req.setTimeout(5); req.getTimeout(); req.setMaxRedirects(1); req.onFail(f); req.disableParsingResponseJson(); require('x');";
     expect(unsupportedCalls(text, 'bruno').sort()).toEqual(
-      ['bru.cookies', 'bru.interpolate', 'bru.sendRequest', 'bru.sleep', 'req.setTimeout', 'require'].sort(),
+      [
+        'bru.cookies',
+        'bru.sendRequest',
+        'bru.sleep',
+        'req.disableParsingResponseJson',
+        'req.getTimeout',
+        'req.onFail',
+        'req.setMaxRedirects',
+        'req.setTimeout',
+        'require',
+      ].sort(),
     );
+    expect(unsupportedCalls("bru.interpolate('{{a}}')", 'bruno')).toEqual([]);
     expect(unsupportedCalls('const nobru = 1; mybru.sleep(1); x.require(1)', 'bruno')).toEqual([]);
   });
 

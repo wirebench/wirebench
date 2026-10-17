@@ -170,16 +170,20 @@ The layer defines these:
 - **`bru`:**
   - `getEnvVar` / `setEnvVar`, `getVar` / `setVar`, `getCollectionVar`, `getFolderVar` and
     `getRequestVar`, all through §3.3;
+  - `interpolate`, which resolves `{{name}}` through vars then props (§3.3), for a string, and for the
+    string leaves of an array or plain object; dynamic `{{$…}}` and `{{process.env.X}}` stay literal;
+  - `hasVar` and `deleteVar`;
   - `setNextRequest`, mapped to `execution.setNextRequest`;
   - `runner.skipRequest`, mapped to `execution.skipRequest`;
   - `runner.stopExecution`, mapped to `execution.setNextRequest(null)`.
 - **`req`:**
   - `getUrl` / `setUrl`, `getMethod` / `setMethod`, `getHeader` / `setHeader` / `deleteHeader` and
-    `getBody` / `setBody`, over `request`;
-  - `setTimeout` and the other request settings, which are unsupported.
+    `getBody` / `setBody` and `getHeaders`, over `request`;
+  - `setTimeout`, `getTimeout`, `setMaxRedirects`, `onFail` and `disableParsingResponseJson`, which
+    are unsupported.
 - **`res`:**
-  - `status`, `headers`, `body` (parsed as JSON when the response is JSON) and `responseTime`;
-  - `getStatus`, `getBody` and `getHeader`.
+  - `status`, `headers` (lower-cased keys, repeated names joined with `, `), `body` (parsed as JSON when the response is JSON) and `responseTime`;
+  - `getStatus`, `getBody`, `getHeader` (case-insensitive) and `getResponseTime`.
 - **`test` and `expect`:** the shared ones, plus `.jsonSchema` (decision 6), which checks the
   value against the schema in the script.
 
@@ -212,13 +216,12 @@ So `.jsonSchema` is supported. The tests assert these bounds:
 
 A `budget` problem makes the expectation fail, and its message says the check could not finish and
 names the node cap; it never passes silently, and scripts have no higher cap. Any other problems fail
-the expectation and list path, keyword and message, at most the validator's 20. `.jsonSchema` is
-available on `expect(...)` and after `.to`, `.have` and the other filler words; after `.not` it is
-not (a negated schema check has no use in a collection).
+the expectation and list path, keyword and message, at most the validator's 20. `.jsonSchema` works
+anywhere in a chain, including after `.not`, `.deep` and `.property(...)`; only the Bruno layer has it.
 
-Unsupported: `bru.interpolate`, `bru.sendRequest`, `bru.sleep`, `bru.cookies`, `require` and
-`req.setTimeout`. `bru.interpolate` was planned "through the run's resolver", but the typed script
-API gives a script no resolver or template expansion, and the layer does not invent one.
+Unsupported: `bru.sendRequest`, `bru.sleep`, `bru.cookies`, `require` and the request settings
+`req.setTimeout`, `req.getTimeout`, `req.setMaxRedirects`, `req.onFail` and
+`req.disableParsingResponseJson`.
 
 **Script order (decision 5).** Bruno's `scripts.flow` defaults to `sandwich`; Wirebench runs
 post-response scripts outermost first. Bruno's source (commit `1b932553`, 2026-10-17) confirms both

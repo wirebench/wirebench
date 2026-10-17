@@ -1,12 +1,12 @@
 /**
- * The Bruno layer (spec §5): `bru`, `req`, `res` and a `expect` with `.jsonSchema`, as JavaScript that
+ * The Bruno layer (spec §5): `bru`, `req`, `res` and an `expect` with `.jsonSchema`, as JavaScript that
  * runs inside the sandbox after the API and before an imported script. Bruno's `test` is the typed
  * API's own. It is written over `vars`, `props`, `request`, `response` and `execution`, so it can do
  * nothing a typed script cannot.
  *
- * Every variable scope reads `vars` then `props` and writes `vars` (spec §3.3). `bru.interpolate` is
- * unsupported: the typed script API gives a script no template resolver, and the layer does not
- * invent one. Sending requests, sleeping, cookies, modules and the request settings throw
+ * Every variable scope reads `vars` then `props` and writes `vars` (spec §3.3). `bru.interpolate` resolves
+ * `{{name}}` through vars then props (a dynamic `{{$...}}` or `{{process.env.X}}` stays as written).
+ * Sending requests, sleeping, cookies, modules and the request settings throw
  * `ScriptUnsupported` naming the call.
  */
 import { PART_EXPECT, PART_JSON_SCHEMA, PART_UNSUPPORTED, PART_VARIABLES } from './layer-parts.js';
@@ -18,28 +18,27 @@ export const BRUNO_LAYER =
   PART_JSON_SCHEMA +
   String.raw`
 // --- expect, with .jsonSchema ---------------------------------------------------------------------
-const brunoExpect = (actual) => {
-  const expectation = chaiExpect(actual);
-  expectation.jsonSchema = (schema) => {
-    const problems = jsonSchema(actual, schema);
-    if (problems.length > 0) {
-      const detail = problems.map((p) => (p.path === '' ? '/' : p.path) + ' ' + p.keyword + ': ' + p.message).join('; ');
-      const stopped = problems.some((p) => p.keyword === 'budget');
-      throw new ExpectationFailed('expected ' + show(actual) + ' to match the JSON schema' + (stopped ? ' (the check could not finish): ' : ': ') + detail);
-    }
-    return expectation;
-  };
-  return expectation;
-};
-define('expect', brunoExpect);
+define('expect', chaiExpectSchema);
 
 // --- bru ----------------------------------------------------------------------------------------
-const cookies = new Proxy({}, { get: (target, name) => unsupported('bru.cookies.' + String(name)) });
+const cookies = new Proxy({}, {
+  get: (target, name) => (typeof name === 'symbol' || name === 'then' || name === 'toJSON' ? undefined : unsupported('bru.cookies.' + name)),
+});
+const interpolate = (value) => {
+  if (typeof value === 'string') return variables.replaceIn(value);
+  if (Array.isArray(value)) return value.map(interpolate);
+  if (value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, interpolate(item)]));
+  }
+  return value;
+};
 define('bru', Object.freeze({
   getEnvVar: (name) => variables.get(name),
   setEnvVar: (name, value) => variables.set(name, value),
   getVar: (name) => variables.get(name),
   setVar: (name, value) => variables.set(name, value),
+  hasVar: (name) => variables.has(name),
+  deleteVar: (name) => variables.unset(name),
   getCollectionVar: (name) => variables.get(name),
   getFolderVar: (name) => variables.get(name),
   getRequestVar: (name) => variables.get(name),
@@ -48,7 +47,7 @@ define('bru', Object.freeze({
     skipRequest: () => execution.skipRequest(),
     stopExecution: () => execution.setNextRequest(null),
   }),
-  interpolate: unsupported('bru.interpolate'),
+  interpolate,
   sendRequest: unsupported('bru.sendRequest'),
   sleep: unsupported('bru.sleep'),
   cookies,
@@ -73,26 +72,43 @@ define('req', Object.freeze({
     if (typeof body === 'string') request.body.text = body;
     else request.body.json = body;
   },
+  getHeaders: () => request.headers.toObject(),
   setTimeout: unsupported('req.setTimeout'),
+  getTimeout: unsupported('req.getTimeout'),
+  setMaxRedirects: unsupported('req.setMaxRedirects'),
+  onFail: unsupported('req.onFail'),
+  disableParsingResponseJson: unsupported('req.disableParsingResponseJson'),
 }));
 
 // --- res ------------------------------------------------------------------------------------------
 if (input.phase === 'post') {
-  const contentType = response.headers.get('content-type');
-  const bodyValue = (() => {
-    if (contentType !== undefined && /json/i.test(contentType)) {
-      try { return response.json(); } catch { return response.text; }
+  const headers = {};
+  for (const { name, value } of response.headers.list()) {
+    const key = name.toLowerCase();
+    headers[key] = key in headers ? headers[key] + ', ' + value : value;
+  }
+  let body;
+  let parsed = false;
+  const bodyValue = () => {
+    if (!parsed) {
+      parsed = true;
+      const type = headers['content-type'];
+      body = response.text;
+      if (type !== undefined && /json/i.test(type)) {
+        try { body = response.json(); } catch { body = response.text; }
+      }
     }
-    return response.text;
-  })();
+    return body;
+  };
   define('res', Object.freeze({
     status: response.status,
-    headers: response.headers.toObject(),
-    body: bodyValue,
+    headers: Object.freeze(headers),
+    get body() { return bodyValue(); },
     responseTime: response.durationMs,
     getStatus: () => response.status,
-    getBody: () => bodyValue,
-    getHeader: (name) => response.headers.get(name),
+    getBody: () => bodyValue(),
+    getHeader: (name) => headers[String(name).toLowerCase()],
+    getResponseTime: () => response.durationMs,
   }));
 } else {
   define('res', undefined);
