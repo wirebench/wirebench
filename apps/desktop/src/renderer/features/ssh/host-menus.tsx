@@ -64,7 +64,8 @@ function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly ki
   const parent = ancestorsOf(file, 'host', host.id).at(-1);
   const targets = flattenGroups(file).filter(({ group }) => group.id !== parent?.id);
   // Files and keys need an SSH connection to the host itself; a Telnet host has none (#425).
-  const sshFeatures = hasSshFeatures(useHostProtocol(host.id));
+  const protocol = useHostProtocol(host.id);
+  const sshFeatures = hasSshFeatures(protocol);
   const duplicate = (): void => {
     const entry = findHost(file, host.id);
     if (entry === undefined) return;
@@ -140,14 +141,16 @@ function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly ki
           </M.SubContent>
         </M.Portal>
       </M.Sub>
-      <M.Item
-        className={ITEM_CLASS}
-        onSelect={() => {
-          void navigator.clipboard.writeText(host.address);
-        }}
-      >
-        Copy address
-      </M.Item>
+      {protocol !== 'serial' && (
+        <M.Item
+          className={ITEM_CLASS}
+          onSelect={() => {
+            void navigator.clipboard.writeText(host.address);
+          }}
+        >
+          Copy address
+        </M.Item>
+      )}
       {sshFeatures && (
         <M.Item
           className={ITEM_CLASS}

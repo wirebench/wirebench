@@ -440,6 +440,7 @@ export function AppShell() {
         useUiStore.getState().setEnabledAreas(toAreaIds(result.value.enabled));
         useUiStore.getState().setLocalTerminalEnabled(result.value.localTerminal);
         useUiStore.getState().setTelnetEnabled(result.value.telnet ?? true);
+        useUiStore.getState().setSerialEnabled(result.value.serial ?? true);
         registerShellCommands(openPalette); // resetCommands() at its top makes re-registration safe
         void syncAppMenu();
       });

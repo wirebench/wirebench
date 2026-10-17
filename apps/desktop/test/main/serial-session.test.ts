@@ -1,6 +1,6 @@
 import * as mock from '@serialport/binding-mock';
 import * as stream from '@serialport/stream';
-import { SERIAL_DEFAULTS, type SessionExit } from '@wirebench/ssh';
+import { SERIAL_BAUD_RATES, SERIAL_DEFAULTS, serialLineText, type SessionExit } from '@wirebench/ssh';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   listSerialPorts,
@@ -9,6 +9,7 @@ import {
   type SerialBinding,
   type SerialModules,
 } from '../../src/main/serial-session.js';
+import * as form from '../../src/renderer/features/ssh/serial-section.js';
 
 // The packages' typings do not resolve through their `exports`: what the tests use of them, typed.
 interface MockPort {
@@ -129,5 +130,20 @@ describe('serial ports (#426)', () => {
     expect(serialOpenErrorCode('Error: Resource busy, cannot open /dev/tty.usbserial')).toBe('serial-device-busy');
     expect(serialOpenErrorCode('Opening COM3: Access denied')).toBe('serial-device-busy');
     expect(serialOpenErrorCode('Error: Permission denied, cannot open /dev/ttyUSB0')).toBe('serial-permission');
+  });
+});
+
+describe('the host form’s serial defaults', () => {
+  it('equal the ones a connect fills in, and label the line the same way', () => {
+    expect(form.SERIAL_DEFAULTS).toEqual(SERIAL_DEFAULTS);
+    expect(form.SERIAL_BAUD_RATES).toEqual([...SERIAL_BAUD_RATES]);
+    const line = {
+      ...SERIAL_DEFAULTS,
+      baud: 9600,
+      dataBits: 7 as const,
+      parity: 'mark' as const,
+      flowControl: 'rtscts' as const,
+    };
+    expect(form.serialLabel(line)).toBe(serialLineText(line));
   });
 });
