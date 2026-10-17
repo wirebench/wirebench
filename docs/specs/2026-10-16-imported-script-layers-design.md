@@ -1,7 +1,8 @@
 # Spec: Running scripts imported from Insomnia, Bruno, Hoppscotch and Thunder Client
 
 **Date:** 2026-10-16
-**Status:** draft (under review)
+**Status:** decisions settled (under review)
+**Milestone:** 6.1 — Team operations
 **Scope:** making the scripts that the #588 importers save as text runnable. This spec also outlines
 a later "Convert to Wirebench script" action.
 
@@ -58,6 +59,10 @@ Owner decisions, 2026-10-16:
 | 2 | State on import | Scripts are attached switched off until reviewed, as Postman scripts are today. |
 | 3 | Clients | All four: Insomnia, Bruno, Hoppscotch and Thunder Client. |
 | 4 | Projects imported before this ships | Re-import only. Existing `imported-scripts/` folders are left as they are, and the docs say to re-import. |
+| 5 | Bruno post-response order | An API-level order setting honours Bruno's `sandwich` flow, after its meaning is confirmed in Bruno's source (§5). |
+| 6 | Bruno `.jsonSchema` | A spike in the Bruno PR runs the validator in the sandbox; if it does not fit the limits, the call is unsupported. |
+| 7 | Phase 2 scope | "Convert to Wirebench script" covers Postman scripts too. |
+| 8 | Milestone | 6.1 — Team operations. |
 
 ## 3. Shared design
 
@@ -176,16 +181,30 @@ The layer defines these:
 - **`res`:**
   - `status`, `headers`, `body` (parsed as JSON when the response is JSON) and `responseTime`;
   - `getStatus`, `getBody` and `getHeader`.
-- **`test` and `expect`:** the shared ones, plus `.jsonSchema`. That is checked against a schema in
-  the script, with the same validator assertions use, if it can run in the sandbox. Otherwise it is
-  unsupported.
+- **`test` and `expect`:** the shared ones, plus `.jsonSchema` (decision 6). The Bruno PR opens
+  with a spike: run the validator assertions use inside the sandbox, within the 64 MiB and 1 s
+  limits. If it fits, `.jsonSchema` checks against the schema in the script. If not, it is
+  unsupported, and the spike's result is recorded here.
 
 Unsupported: `bru.sendRequest`, `bru.sleep`, `require`, `bru.cookies` and `.jsonSchema` if the
 validator cannot run in the sandbox.
 
-**Script order.** Bruno's `scripts.flow` defaults to `sandwich`. The research note says that runs
-post-response scripts innermost first: request, then folder, then collection. Wirebench runs them
-outermost first. See open question 1.
+**Script order (decision 5).** Bruno's `scripts.flow` defaults to `sandwich`. The research note
+says that runs post-response scripts innermost first: request, then folder, then collection. Wirebench
+runs them outermost first. The Bruno PR first confirms both flow values in Bruno's source
+(`prepare-request.js:394`) and records what it found here. If `sandwich` is innermost-first:
+
+- The API-level script settings gain `postResponseOrder: 'outer-first' | 'inner-first'`. It is
+  optional, and `outer-first` is the default, so existing projects do not change. Pre-request
+  scripts always run outermost first.
+- The level runner (`script/levels.ts`) reverses the post-response levels when the setting is
+  `inner-first`.
+- A Bruno import sets `inner-first` when the collection's flow is `sandwich` or absent, and
+  `outer-first` for `sequential`.
+- The setting is shown and editable with the API's scripts. The format version bump in §3.1 covers it.
+
+If the source shows Wirebench's order already matches, no setting is added and this paragraph is
+replaced with what was found.
 
 ## 6. Hoppscotch (PR 3)
 
@@ -222,7 +241,7 @@ Unsupported: `tc.runRequest`, `tc.retryRequest`, `tc.loadModule`, `tc.loadFromPa
 
 ## 8. Phase 2: "Convert to Wirebench script" (outline)
 
-A later action on any layered script, Postman included (open question 3), rewrites it into a typed
+A later action on any layered script, Postman included (decision 7), rewrites it into a typed
 Wirebench script.
 
 - **Mechanical calls are rewritten** when the layer maps them one to one, for example
@@ -275,7 +294,7 @@ shared scripts guide table.
   named `script-unsupported`. Imported scripts are switched off. Postman behaviour and tests stay as
   they are.
 - **Ask first:** any new sandbox capability, including a request-sending bridge for `sendRequest` or
-  `runRequest`. Also ask before any change to level order (open question 1), or before turning
+  `runRequest`. Also ask before any change to level order beyond decision 5, or before turning
   imported scripts on by default.
 - **Never:** run a script on import. Write a script's variable to a project or environment file. Load
   npm modules or files from a script. Name in docs or code which product inspired a feature
@@ -293,14 +312,4 @@ shared scripts guide table.
 
 ## 14. Open questions
 
-1. **Bruno post-response order.** Should Bruno's `sandwich` flow be honoured by adding an API-level
-   `postOrder: 'outer-first' | 'inner-first'` to the script model, set to `inner-first` on Bruno
-   imports? The alternative is to keep Wirebench's order and report the difference. The meaning of
-   `sandwich` must first be confirmed in Bruno's source (`prepare-request.js:394`). Recommendation:
-   confirm it, then add the setting, because a token captured in a folder post-script that a request
-   post-script reads would otherwise break.
-2. **Bruno `.jsonSchema`.** Can the assertion validator run inside the QuickJS sandbox within the
-   64 MiB limit, or is it unsupported? This needs a spike in PR 2.
-3. **Phase 2 scope.** Should "Convert to Wirebench script" also cover Postman scripts? Recommendation:
-   yes, since the Postman layer is the largest and oldest.
-4. **Milestone.** 6.1 (Team operations), or "Later — demand-driven"?
+None. Decisions 5 to 8 settled the four questions the first draft raised.
