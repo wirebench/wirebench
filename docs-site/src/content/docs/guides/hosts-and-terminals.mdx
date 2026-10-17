@@ -413,6 +413,45 @@ groups:
 - An administrator can switch Telnet off for a build with `WIREBENCH_AREAS=telnet=off`: Telnet hosts then
   refuse to connect and the form no longer offers Telnet.
 
+## Serial consoles
+
+Switches, routers and embedded boards are set up over a console cable. A serial console is a host like any
+other, in a group, with tags, and opens in the same terminal tab, with split panes, find, snippets and
+session logs.
+
+```yaml
+groups:
+  - id: lab
+    name: Lab consoles
+    ssh:
+      protocol: serial
+      serial: # optional; taken whole from the nearest level that sets it
+        baud: 9600 # default 115200
+    hosts:
+      - id: core-sw-console
+        name: Core switch console
+      - id: dev-board
+        name: Dev board
+        ssh:
+          serial: { baud: 115200, dataBits: 8, parity: none, stopBits: 1, flowControl: rtscts }
+```
+
+- In the host form, open **Advanced** and set **Protocol** to **Serial console**. Address, port, sign-in,
+  jump host and proxy go: a serial line has none. The form shows **Device on this computer** with the ports
+  this computer has (with a **Refresh** for an adapter plugged in since, or a path you type) and the line
+  settings: baud, data bits, parity (`none`, `even`, `odd`, `mark`, `space`), stop bits (`1`, `1.5`, `2`)
+  and flow control (`none`, `rtscts` for RTS/CTS, `xonxoff` for XON/XOFF).
+- The line settings live in `hosts.yaml` and are shared. The device does not: the same console is `COM3` on
+  one computer and `/dev/ttyUSB0` on the next, so each computer remembers its own. A console with no device
+  on this computer yet asks for one when you connect, and so does one whose adapter is not plugged in.
+- Bytes go both ways unchanged. Unplugging the adapter ends the session as lost, and reconnecting offers
+  itself as it does for a dropped SSH connection.
+- On Linux, opening a serial port needs the `dialout` group: `sudo usermod -aG dialout $USER`, then sign out
+  and in again. A port another program has open is refused until that program lets go.
+- Files, port forwarding, agent forwarding, environment variables and **Install public key** need SSH, so a
+  serial console does not show them.
+- An administrator can switch serial consoles off for a build with `WIREBENCH_AREAS=serial=off`.
+
 ## Opening a terminal
 
 Open the **Hosts** view from the activity bar (or **Show Hosts** in the palette). Groups and hosts

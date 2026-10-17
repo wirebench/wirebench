@@ -4,6 +4,7 @@ import { walk } from './tree.js';
 import type { ForwardEntry, ForwardType } from './forward-rules.js';
 import { signsInOverSsh, TELNET_PORT } from './host-mosh.js';
 import type { MoshSettings, SessionProtocol } from './host-mosh.js';
+import type { SerialSettings } from './host-serial.js';
 import type { GroupEntry, HostEntry, HostsFile, IdentityEntry, SshAuth, SshProxy, SshSettings } from './model.js';
 
 /**
@@ -73,6 +74,8 @@ export interface ResolvedHost {
     readonly protocol: Provenance<SessionProtocol>;
     /** The nearest level's block, whole; read only when the protocol is `mosh`. */
     readonly mosh: Provenance<MoshSettings | undefined>;
+    /** The nearest level's line settings, whole; read only when the protocol is `serial` (#426). */
+    readonly serial: Provenance<SerialSettings | undefined>;
     /**
      * The proxy this host is dialled through when it is the first hop; `undefined` connects directly (a
      * nearer `proxy: false` gives that, with its level as `from`). A jump host's own setting is the one used
@@ -259,6 +262,7 @@ export function resolveSettings(file: HostsFile, id: string): SshSettings {
     'forwardAgent',
     'protocol',
     'mosh',
+    'serial',
     'proxy',
   ] as const) {
     const { value } = pick(located, key, undefined);
@@ -285,6 +289,7 @@ function resolveLocated(located: Located): ResolvedHost {
     forwardAgent: pick(located, 'forwardAgent', DEFAULTS.forwardAgent) as Provenance<boolean>,
     protocol,
     mosh: pick(located, 'mosh', undefined),
+    serial: pick(located, 'serial', undefined),
     proxy: proxyOf(pick(located, 'proxy', undefined)),
   };
   const incomplete = !signsInOverSsh(protocol.value)

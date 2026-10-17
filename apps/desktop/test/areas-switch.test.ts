@@ -7,6 +7,7 @@ import {
   localTerminalFromEnv,
   parseAreaSwitches,
   registerEnabledAreaChannels,
+  serialFromEnv,
   telnetFromEnv,
 } from '../src/main/areas.js';
 
@@ -183,5 +184,16 @@ describe('hostsOnFileChange', () => {
     hostsOnFileChange(['explorer'], off, notifyOff);
     expect(off.invalidate).toHaveBeenCalledTimes(1);
     expect(notifyOff).not.toHaveBeenCalled();
+  });
+});
+
+describe('the serial switch (#426)', () => {
+  it('is on with the SSH area, off with it, and serial=off switches it off on its own', () => {
+    expect(serialFromEnv({})).toBe(true);
+    expect(serialFromEnv({ WIREBENCH_AREAS: 'ssh=off' })).toBe(false);
+    const env = { WIREBENCH_AREAS: 'serial=off' };
+    expect(serialFromEnv(env)).toBe(false);
+    expect(telnetFromEnv(env)).toBe(true);
+    expect(enabledAreasFromEnv(env)).toContain('ssh');
   });
 });

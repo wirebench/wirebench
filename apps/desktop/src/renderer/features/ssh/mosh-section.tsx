@@ -3,7 +3,12 @@ import { useUiStore } from '../../state/ui.js';
 import type { GroupEntryWire, MoshSettingsWire, SshProtocolWire } from '../../../shared/ssh-wire.js';
 import { INPUT_CLASS, sourceText, type Provenance } from './inherited-field.js';
 
-export const PROTOCOL_LABELS: Record<SshProtocolWire, string> = { ssh: 'SSH', mosh: 'Mosh', telnet: 'Telnet' };
+export const PROTOCOL_LABELS: Record<SshProtocolWire, string> = {
+  ssh: 'SSH',
+  mosh: 'Mosh',
+  telnet: 'Telnet',
+  serial: 'Serial console',
+};
 const PORTS = /^(\d{1,5})(?::(\d{1,5}))?$/;
 
 /** The protocol the enclosing groups (outermost first) set: the nearest that says, else SSH. */
@@ -62,9 +67,9 @@ export interface MoshSectionProps {
 
 /**
  * The host and group form's protocol (#419): SSH, Mosh, which starts a mosh server over SSH and then runs the
- * session over UDP with the installed mosh-client, or Telnet (#425), in plain text. For Mosh, the server command
- * and UDP ports, as one block that replaces a group's whole. Telnet is offered only while this build allows it,
- * and stays shown on an entry already set to it.
+ * session over UDP with the installed mosh-client, Telnet (#425), in plain text, or a serial console (#426) on
+ * this computer. For Mosh, the server command and UDP ports, as one block that replaces a group's whole. Telnet
+ * and serial are offered only while this build allows them, and stay shown on an entry already set to them.
  */
 export function MoshSection({
   protocol,
@@ -77,6 +82,7 @@ export function MoshSection({
   const serverId = useId();
   const portsId = useId();
   const telnetAllowed = useUiStore((s) => s.telnetEnabled);
+  const serialAllowed = useUiStore((s) => s.serialEnabled);
   const fromGroup = typeof inheritedP.from === 'object';
   const effective = protocol ?? inheritedP.value ?? 'ssh';
   const inheritedLabel = PROTOCOL_LABELS[inheritedP.value ?? 'ssh'];
@@ -109,6 +115,9 @@ export function MoshSection({
           {(telnetAllowed || protocol === 'telnet') && (
             <option value="telnet">{telnetAllowed ? 'Telnet' : 'Telnet (switched off)'}</option>
           )}
+          {(serialAllowed || protocol === 'serial') && (
+            <option value="serial">{serialAllowed ? 'Serial console' : 'Serial console (switched off)'}</option>
+          )}
         </select>
       </label>
       {effective === 'telnet' && (
@@ -116,6 +125,13 @@ export function MoshSection({
           Telnet is not encrypted: everything typed and shown, the password included, travels in plain text. Use it only
           on a network you trust, or reach the device through an SSH jump host.
           {!telnetAllowed && ' This build of Wirebench has Telnet switched off, so the host does not connect.'}
+        </p>
+      )}
+      {effective === 'serial' && (
+        <p role="note" className="text-xs text-fg-subtle">
+          Opens a serial port on this computer, through a USB serial adapter or a built-in port. No network, no sign-in:
+          the device's own prompt shows in the terminal.
+          {!serialAllowed && ' This build of Wirebench has serial consoles switched off, so the host does not connect.'}
         </p>
       )}
       {effective === 'mosh' && (

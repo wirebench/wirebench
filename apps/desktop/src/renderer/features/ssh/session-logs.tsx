@@ -69,6 +69,11 @@ export function logSummary(entry: SessionLogEntryWire): string {
 }
 
 /** Says why a call failed, once, as a toast. */
+/** `user@address:port`; a serial console's log (#426) names only its device. */
+export function logTarget(entry: Pick<SessionLogEntryWire, 'user' | 'address' | 'port'>): string {
+  return `${entry.user === '' ? '' : `${entry.user}@`}${entry.address}${entry.port === 0 ? '' : `:${String(entry.port)}`}`;
+}
+
 function failed(result: { ok: false; error: { message: string } }): void {
   showToast(result.error.message);
 }
@@ -244,7 +249,7 @@ function LogList({
                     {showHost && <span className="min-w-0 shrink truncate">{entry.hostName}</span>}
                     <button
                       type="button"
-                      title={`${when(entry.startedAt)} · ${entry.user}@${entry.address}`}
+                      title={`${when(entry.startedAt)} · ${logTarget({ ...entry, port: 0 })}`}
                       className="shrink-0 text-left whitespace-nowrap tabular-nums hover:underline"
                       onClick={() => {
                         setOpened(entry);
@@ -508,7 +513,7 @@ function LogViewerBody({
         {entry.hostName} · {when(entry.startedAt)}
       </Dialog.Title>
       <Dialog.Description className="text-xs text-fg-subtle">
-        {entry.user}@{entry.address}:{String(entry.port)} · {ending(entry)}
+        {logTarget(entry)} · {ending(entry)}
         {entry.live ? null : ` · ${size(entry.bytes)}`}
         {text !== undefined && 'truncated' in text && text.truncated && ' · showing the end of a longer log'}
       </Dialog.Description>
