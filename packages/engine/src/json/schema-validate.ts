@@ -45,6 +45,11 @@ export interface ValidateJsonOptions {
  * ECMAScript library: no imports and no module-level names. So `jsonSchemaValidator.toString()` is
  * source that runs as it is in the script sandbox (`PART_JSON_SCHEMA`), and the scripts' check is
  * this one, not a copy. Keep it that way when changing it; the sandbox test fails if it is not.
+ *
+ * Because its source is embedded with `toString()`, never build the engine with esbuild `keepNames`
+ * or istanbul coverage instrumentation: both inject names from outside the function into its body.
+ *
+ * @internal
  */
 export function jsonSchemaValidator() {
   const MAX_VALIDATE_NODES = 10_000;
@@ -681,16 +686,29 @@ export function jsonSchemaValidator() {
     MAX_VALIDATE_DEPTH,
     validateJsonSchema,
     unsupportedKeywordsIn,
-  };
+  } as const;
 }
 
 const validator = jsonSchemaValidator();
 
-export const {
-  MAX_VALIDATE_NODES,
-  MAX_VALIDATE_PROBLEMS,
-  UNSUPPORTED_JSON_SCHEMA_KEYWORDS,
-  MAX_VALIDATE_DEPTH,
-  validateJsonSchema,
-  unsupportedKeywordsIn,
-} = validator;
+/** How many schema nodes one `validateJsonSchema` call visits before it stops with a `budget` problem. */
+export const MAX_VALIDATE_NODES: 10_000 = validator.MAX_VALIDATE_NODES;
+
+/** How many problems one `validateJsonSchema` call collects before it stops. */
+export const MAX_VALIDATE_PROBLEMS: 20 = validator.MAX_VALIDATE_PROBLEMS;
+
+/** Keywords this validator recognises but never asserts; a document using one gets a summary line. */
+export const UNSUPPORTED_JSON_SCHEMA_KEYWORDS: readonly string[] = validator.UNSUPPORTED_JSON_SCHEMA_KEYWORDS;
+
+/** Nested `walk` calls past this stop the walk (as the node cap does) instead of the stack. */
+export const MAX_VALIDATE_DEPTH: 256 = validator.MAX_VALIDATE_DEPTH;
+
+/** Validates `value` against `schema`, returning every problem found (bounded by `options`). */
+export const validateJsonSchema: (
+  value: unknown,
+  schema: unknown,
+  options?: ValidateJsonOptions,
+) => JsonSchemaProblem[] = validator.validateJsonSchema;
+
+/** Every keyword this validator does not assert, found anywhere in `schema` (deduplicated, sorted). */
+export const unsupportedKeywordsIn: (schema: unknown) => string[] = validator.unsupportedKeywordsIn;

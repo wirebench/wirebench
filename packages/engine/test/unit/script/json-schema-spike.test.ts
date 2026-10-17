@@ -61,7 +61,7 @@ describe('PART_JSON_SCHEMA in the sandbox', () => {
     const result = await sandbox.run({
       prelude: PRELUDE,
       code: SCRIPT,
-      filename: 'Rows.post.js',
+      filename: 'Record.post.js',
       input: { body, schema: SCHEMA },
       timeoutMs: SCRIPT_LIMITS.defaultTimeoutMs,
     });
@@ -74,7 +74,7 @@ describe('PART_JSON_SCHEMA in the sandbox', () => {
     const result = await sandbox.run({
       prelude: PRELUDE,
       code: SCRIPT,
-      filename: 'Rows.post.js',
+      filename: 'Record.post.js',
       input: { body: JSON.stringify(broken), schema: SCHEMA },
       timeoutMs: SCRIPT_LIMITS.defaultTimeoutMs,
     });
@@ -113,7 +113,6 @@ globalThis.problems = JSON.stringify(jsonSchema(parsed, input.schema));
       const memory = runtime.computeMemoryUsage();
       const used = (context.dump(memory) as { memory_used_size: number }).memory_used_size;
       memory.dispose();
-      console.info(`[spike] jsonSchema over a 1 MiB body: ${(used / 1024 / 1024).toFixed(1)} MiB in use`);
       expect(used).toBeLessThan(SCRIPT_LIMITS.memoryBytes / 2);
     } finally {
       context.dispose();

@@ -185,24 +185,34 @@ The layer defines these:
   value against the schema in the script.
 
 **`.jsonSchema` in the sandbox (spike result).** The validator the response assertions use is the
-engine's own (`json/schema-validate.ts`; R12 rules out the dev-only one). It now lives in one
-self-contained function, `jsonSchemaValidator`, and `PART_JSON_SCHEMA` embeds its
-`toString()`. So the sandbox runs the same code, with no copy and no build step. It compiles
-nothing at run time (no `new Function` or `eval`). Its unit tests run twice, once against the
-module and once against that source in a fresh realm, so a reference outside the function fails a
-test. Measured in QuickJS under the real limits, on a developer laptop:
+engine's own (`json/schema-validate.ts`), so `.jsonSchema` needs no new dependency; the validator
+the engine has only as a development dependency is not used. It now lives in one self-contained
+function, `jsonSchemaValidator`, and `PART_JSON_SCHEMA` embeds its `toString()`. So the sandbox
+runs the same code, with no copy and no build step. It compiles nothing at run time (no
+`new Function` or `eval`). Its unit tests run twice, once against the module and once against that
+source in a fresh realm, so a reference outside the function fails a test. Measured in QuickJS
+under the real limits, on a developer laptop:
 
 - A 1 MiB body that is one 50-property object checks in 13.7 ms in all. Parsing the JSON takes
   13.2 ms of that, the check about 0.5 ms. With the input, the body and its parse held, the runtime
-  uses 2.1 MiB, and the run succeeds under half the 64 MiB limit.
+  uses 2.1 MiB.
 - The part adds 1.2 ms (1.5 ms against 0.3 ms) and 38 KiB to every run of a layer that includes it,
   called or not. Loading it lazily would gain nothing.
 - The node cap holds in scripts too: the validator stops after 10,000 schema nodes with one `budget`
-  problem. A 1 MiB array of 1,253 rows of 50 properties gets that `budget` problem after about 200
-  rows, in 66 ms. Without the cap it checks in full in 277 ms, still inside 1 s.
+  problem. In a one-off measurement that no test repeats, a 1 MiB array of 1,253 rows of 50
+  properties got that `budget` problem after about 200 rows, in 66 ms; without the cap it checked
+  in full in 277 ms, still inside 1 s.
 
-So `.jsonSchema` is supported. The unit test (`test/unit/script/json-schema-spike.test.ts`) and
-the perf test (`test/perf/json-schema-part.perf.test.ts`) keep these measurements as assertions.
+So `.jsonSchema` is supported. The tests assert these bounds:
+
+- `test/unit/script/json-schema-spike.test.ts`: the 1 MiB object checks with no problems in the
+  real sandbox at the default 1 s and 64 MiB limits; the sandbox finds the same problems as the
+  host validator; and the check succeeds with the memory limit halved to 32 MiB.
+- `test/perf/json-schema-part.perf.test.ts` (perf project, gate scaled for CI): the part adds under
+  10 ms and under 1 MiB to a run, and the 1 MiB check takes under 100 ms.
+
+How `.jsonSchema` treats a `budget` problem (fail, pass with a note, or a higher cap for scripts)
+is decided with the Bruno layer.
 
 Unsupported: `bru.sendRequest`, `bru.sleep`, `require` and `bru.cookies`.
 
