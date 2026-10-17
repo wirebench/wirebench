@@ -172,7 +172,7 @@ describe('sendThroughEngine for a SOAP request', () => {
   ];
   const sentHeaders = [
     { name: 'X-Trace', value: 'abc' },
-    { name: 'User-Agent', value: 'Wirebench/0.1' },
+    { name: 'User-Agent', value: 'Wirebench' },
     { name: 'Accept-Encoding', value: 'gzip, deflate' },
   ];
 
@@ -229,7 +229,7 @@ describe('sendThroughEngine for a SOAP request', () => {
         rawRequestBase64:
           'POST /calc HTTP/1.1\r\nhost: ' +
           host +
-          '\r\ncontent-type: text/xml;charset=UTF-8\r\nSOAPAction: "urn:calc:Add"\r\nX-Trace: abc\r\nUser-Agent: Wirebench/0.1\r\nAccept-Encoding: gzip, deflate\r\ncontent-length: 63\r\n\r\n<soap:Envelope><soap:Body>ada draft</soap:Body></soap:Envelope>',
+          '\r\ncontent-type: text/xml;charset=UTF-8\r\nSOAPAction: "urn:calc:Add"\r\nX-Trace: abc\r\nUser-Agent: Wirebench\r\nAccept-Encoding: gzip, deflate\r\ncontent-length: 63\r\n\r\n<soap:Envelope><soap:Body>ada draft</soap:Body></soap:Envelope>',
         rawResponseBase64:
           'HTTP/1.1 200 OK\r\ncontent-type: text/xml;charset=UTF-8\r\ndate: -\r\nconnection: keep-alive\r\nkeep-alive: timeout=5\r\ntransfer-encoding: chunked\r\n\r\n<soap:Envelope><soap:Body>ada draft</soap:Body></soap:Envelope>',
         truncated: false,
@@ -242,7 +242,7 @@ describe('sendThroughEngine for a SOAP request', () => {
             'content-type': 'text/xml;charset=UTF-8',
             SOAPAction: '"urn:calc:Add"',
             'X-Trace': 'abc',
-            'User-Agent': 'Wirebench/0.1',
+            'User-Agent': 'Wirebench',
             'Accept-Encoding': 'gzip, deflate',
           },
         },
@@ -270,7 +270,7 @@ describe('sendThroughEngine for a SOAP request', () => {
       envelopeXml: '<Envelope>${#Global#g}</Envelope>',
       soapVersion: '1.1',
       // As a resend's recorded headers carry them: the preferences' own headers were applied when it was sent.
-      headers: { 'X-Trace': 'abc', 'User-Agent': 'Wirebench/0.1', 'Accept-Encoding': 'gzip, deflate' },
+      headers: { 'X-Trace': 'abc', 'User-Agent': 'Wirebench', 'Accept-Encoding': 'gzip, deflate' },
     };
     const resend = { ...META, requestName: 'Gone', projectId: 'p1' };
     const host = server.url.replace('http://', '');
@@ -296,7 +296,7 @@ describe('sendThroughEngine for a SOAP request', () => {
         rawRequestBase64:
           'POST /adhoc HTTP/1.1\r\nhost: ' +
           host +
-          '\r\ncontent-type: text/xml;charset=UTF-8\r\nSOAPAction: ""\r\nX-Trace: abc\r\nUser-Agent: Wirebench/0.1\r\nAccept-Encoding: gzip, deflate\r\ncontent-length: 26\r\n\r\n<Envelope>globe</Envelope>',
+          '\r\ncontent-type: text/xml;charset=UTF-8\r\nSOAPAction: ""\r\nX-Trace: abc\r\nUser-Agent: Wirebench\r\nAccept-Encoding: gzip, deflate\r\ncontent-length: 26\r\n\r\n<Envelope>globe</Envelope>',
         rawResponseBase64:
           'HTTP/1.1 200 OK\r\ncontent-type: text/xml;charset=UTF-8\r\ndate: -\r\nconnection: keep-alive\r\nkeep-alive: timeout=5\r\ntransfer-encoding: chunked\r\n\r\n<Envelope>globe</Envelope>',
         truncated: false,
@@ -309,7 +309,7 @@ describe('sendThroughEngine for a SOAP request', () => {
             'content-type': 'text/xml;charset=UTF-8',
             SOAPAction: '""',
             'X-Trace': 'abc',
-            'User-Agent': 'Wirebench/0.1',
+            'User-Agent': 'Wirebench',
             'Accept-Encoding': 'gzip, deflate',
           },
         },

@@ -108,7 +108,7 @@ describe('toSoapSendInput timeout precedence', () => {
 describe('toSoapSendInput headers', () => {
   it('adds the preferred User-Agent and Accept-Encoding', () => {
     const input = build();
-    expect(input.headers?.['User-Agent']).toBe('Wirebench/0.1');
+    expect(input.headers?.['User-Agent']).toBe('Wirebench');
     expect(input.headers?.['Accept-Encoding']).toBe('gzip, deflate');
     expect(input.headers?.['Connection']).toBeUndefined();
   });

@@ -123,6 +123,7 @@ export function GrpcApiTab({ apiId }: GrpcApiTabProps) {
       >
         <AuthFields
           scope="API"
+          labels="settings"
           auth={api.auth === undefined || api.auth.type === 'inherit' ? undefined : api.auth}
           onChange={(auth: AuthConfigWire | null) => {
             patch({ auth });
@@ -133,10 +134,8 @@ export function GrpcApiTab({ apiId }: GrpcApiTabProps) {
         />
       </SettingsGroup>
 
-      <SettingsGroup
-        title="Scripts"
-        hint="Run around every call in this API, before any folder’s and the request’s own (#334)."
-      >
+      {/* The scripts tab says when a level's scripts run; the group repeats none of it. */}
+      <SettingsGroup title="Scripts">
         <div data-testid="grpc-api-scripts" className="flex h-[28rem] flex-col rounded-md border border-hairline">
           <ScriptsTab requestId={apiId} scripts={api.scripts} level="API" />
         </div>

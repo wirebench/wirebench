@@ -458,7 +458,7 @@ describe('request.importCurl into an API', () => {
     expect(result.problems).toContain('Ignored --retry');
   });
 
-  it('names a request it was given no name for from its method and path', async () => {
+  it('names a request it was given no name for from its path', async () => {
     const changes: ProjectChange[] = [];
     setup({ changes });
 
@@ -467,7 +467,7 @@ describe('request.importCurl into an API', () => {
       target: { kind: 'rest', apiId: 'api-1' },
     });
 
-    expect(changes[0]).toMatchObject({ kind: 'add-rest-request', name: 'DELETE /pets/{petId}' });
+    expect(changes[0]).toMatchObject({ kind: 'add-rest-request', name: '/pets/{petId}' });
   });
 
   it('refuses text that is not a curl command and creates nothing', async () => {
@@ -528,11 +528,10 @@ describe('request.curl — Digest and AWS Signature v4', () => {
 });
 
 describe('importedRequestName', () => {
-  it('is the method and path, without the query or a foreign origin', () => {
-    expect(importedRequestName('GET', '/pets?limit=1')).toBe('GET /pets');
-    expect(importedRequestName('POST', 'https://other.test/v1/pets#x')).toBe('POST /v1/pets');
-    expect(importedRequestName('GET', 'https://other.test')).toBe('GET /');
-    expect(importedRequestName(undefined, '/pets')).toBe('GET /pets');
-    expect(importedRequestName('GET', undefined)).toBeUndefined();
+  it('is the path, without the method, the query or a foreign origin', () => {
+    expect(importedRequestName('/pets?limit=1')).toBe('/pets');
+    expect(importedRequestName('https://other.test/v1/pets#x')).toBe('/v1/pets');
+    expect(importedRequestName('https://other.test')).toBe('/');
+    expect(importedRequestName(undefined)).toBeUndefined();
   });
 });

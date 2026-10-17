@@ -229,6 +229,8 @@ const scopes = new WindowScopes<WindowScope>();
 const preferencesService = new PreferencesService(app.getPath('userData'), {
   // Managed machines: an administrator's policy file locks the settings it names (see `policy.ts`).
   policyFile: policyFilePath({ platform: process.platform, env: process.env, isPackaged: app.isPackaged }),
+  // A default User-Agent names the release that sends it.
+  appVersion: appVersion(),
 });
 
 /**
@@ -1151,7 +1153,12 @@ void app.whenReady().then(() => {
   registerProvisioningChannels({ client: serverClient, accounts: accountService });
   registerAuditChannels({ client: serverClient, accounts: accountService, picks: dialogPicks });
   registerHooksChannels({ hooks: hooksService });
-  registerSchedulesChannels({ schedules: schedulesService });
+  registerSchedulesChannels({
+    schedules: schedulesService,
+    modelOf: (entityId) => workspaceService.hostOfEntity(entityId).model(),
+    registryOf: (entityId) => workspaceService.hostOfEntity(entityId).runContextFor(entityId)?.registry,
+    environmentsOf: (projectId) => workspaceService.hostOfEntity(projectId).sendEnvironments().environments,
+  });
   accountService.onChange((servers) => broadcast(events.account.changed, { servers: servers.map(toAccountWire) }));
   // Signing in to a window's workspace's server sends what its audit outbox kept while signed out.
   accountService.onChange((servers) => {

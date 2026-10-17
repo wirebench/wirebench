@@ -7,11 +7,12 @@ import {
   preferencesPatchProblems,
   preferencesSchema,
   resetPreferences,
+  withAppUserAgent,
 } from '../../../src/project/preferences.js';
 
 describe('DEFAULT_PREFERENCES', () => {
   it('carries the documented defaults', () => {
-    expect(DEFAULT_PREFERENCES.http.userAgent).toBe('Wirebench/0.1');
+    expect(DEFAULT_PREFERENCES.http.userAgent).toBe('Wirebench');
     expect(DEFAULT_PREFERENCES.http.socketTimeoutMs).toBe(60_000);
     expect(DEFAULT_PREFERENCES.editor.fontSize).toBe(13);
     expect(DEFAULT_PREFERENCES.editor.tabSize).toBe(3);
@@ -441,5 +442,29 @@ describe('loading a file written before the limits were tightened', () => {
     const merged = mergePreferences({ ...OLD_FILE, editor: { fontSize: 'big', tabSize: 2 } });
     expect(merged.editor).toEqual(DEFAULT_PREFERENCES.editor);
     expect(merged.proxy.port).toBe(65_535);
+  });
+});
+
+describe('withAppUserAgent', () => {
+  const withUserAgent = (userAgent: string) => mergePreferences({ http: { userAgent } });
+
+  it('moves a default User-Agent, of this release or an earlier one, to the running version', () => {
+    for (const stale of ['Wirebench', 'Wirebench/0.1', 'Wirebench/6.0.0', 'Wirebench/6.1.0-rc.3']) {
+      expect(withAppUserAgent(withUserAgent(stale), '6.1.0').http.userAgent).toBe('Wirebench/6.1.0');
+    }
+  });
+
+  it('keeps a User-Agent the user wrote, and an empty one that sends none', () => {
+    for (const own of ['Wirebench/6.1.0 (ci)', 'Mozilla/5.0', 'wirebench-bot', '']) {
+      expect(withAppUserAgent(withUserAgent(own), '6.1.0').http.userAgent).toBe(own);
+    }
+  });
+
+  it('returns the same document when nothing changes, and leaves every other setting alone', () => {
+    const current = withUserAgent('Wirebench/6.1.0');
+    expect(withAppUserAgent(current, '6.1.0')).toBe(current);
+    const moved = withAppUserAgent(withUserAgent('Wirebench/0.1'), '6.1.0');
+    expect(moved.http.socketTimeoutMs).toBe(DEFAULT_PREFERENCES.http.socketTimeoutMs);
+    expect(moved.editor).toEqual(DEFAULT_PREFERENCES.editor);
   });
 });

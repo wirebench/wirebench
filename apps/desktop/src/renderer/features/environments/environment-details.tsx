@@ -6,25 +6,33 @@
  * the variables. The right rail's icon, its close icon and Escape put the panel away.
  */
 import type { ReactNode } from 'react';
-import { create } from 'zustand';
 import { EnvironmentColour } from './environment-look.js';
 import { queueEnvironmentPatch } from './environment-queue.js';
 import type { WorkspaceEnvironmentWire, WorkspaceProjectWire } from '../../../shared/wire-base.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { appliesToProject } from '../../state/environment-scope.js';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
+import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 
-/** Whether the panel is wanted. Open by default, so an environment's colour is in view when it opens. */
-export const useEnvironmentDetailsStore = create<{
-  readonly open: boolean;
-  readonly setOpen: (open: boolean) => void;
-}>((set) => ({
-  open: true,
-  setOpen: (open) => {
-    set({ open });
-  },
-}));
+/**
+ * Whether the panel is wanted. Kept with the window layout (`slideOver.environmentDetailsOpen`), as
+ * Host details is, so it stays as it was left when you come back to an environment, after a restart
+ * too. Open until it is first put away, so an environment's colour is in view when it opens.
+ */
+export function useEnvironmentDetailsOpen(): boolean {
+  return useUiStore((state) => state.slideOver.environmentDetailsOpen !== false);
+}
+
+/** {@link useEnvironmentDetailsOpen}, read outside React. */
+export function environmentDetailsOpen(): boolean {
+  return useUiStore.getState().slideOver.environmentDetailsOpen !== false;
+}
+
+/** Shows or puts away the panel, and remembers it. */
+export function setEnvironmentDetailsOpen(open: boolean): void {
+  useUiStore.getState().setEnvironmentDetailsOpen(open);
+}
 
 /**
  * The real environment the tab in front edits: `undefined` on Globals, Workspace, the SSH area,
@@ -43,7 +51,7 @@ export function useOpenEnvironmentId(): string | undefined {
 /** Whether the panel is in front: an environment that still exists is open, and the panel was not put away. */
 export function useEnvironmentDetailsShown(): boolean {
   const environmentId = useOpenEnvironmentId();
-  const open = useEnvironmentDetailsStore((state) => state.open);
+  const open = useEnvironmentDetailsOpen();
   const inWorkspace = useWorkspaceStore(
     (state) =>
       environmentId !== undefined &&
