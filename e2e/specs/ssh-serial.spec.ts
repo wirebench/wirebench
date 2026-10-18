@@ -90,10 +90,14 @@ test('a serial console asks for its port on this computer, then talks over the l
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog).toBeHidden();
 
-  // No device picked on this computer yet: the connection screen asks for one.
+  // No device picked on this computer yet: the connection screen asks for one, as a step, not a failure.
   await page.getByTestId('host-row-router-console').dblclick();
   const picker = page.getByTestId('connect-serial-device');
   await expect(picker).toBeVisible({ timeout: 30_000 });
+  const screen = page.getByTestId('connect-screen');
+  await expect(screen).toHaveAttribute('data-state', 'choose-port');
+  await expect(screen.getByRole('heading', { name: 'Choose the port for router console' })).toBeVisible();
+  await expect(screen.getByRole('button', { name: 'Retry' })).toHaveCount(0);
   await picker.getByLabel('Serial port path').fill(port);
   await picker.getByRole('button', { name: 'Use and connect' }).click();
 

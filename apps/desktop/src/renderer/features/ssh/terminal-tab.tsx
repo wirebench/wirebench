@@ -221,6 +221,8 @@ export function TerminalTab({
   usePanesStore((s) => s.focused[tabId]);
   const focused = focusedPaneOf(tabId, panes);
   const focusedHost = leaves(panes).find((leaf) => leaf.paneId === focused)?.hostId;
+  // Files is SFTP: a Telnet host or a serial console has none (#688).
+  const focusedProtocol = useHostProtocol(focusedHost ?? '');
   const picker = usePanesStore((s) => (s.picker?.tabId === tabId ? s.picker : undefined));
   const split = panes.kind === 'split';
   // A pane whose host left `hosts.yaml` (a layout saved before) shows so instead of connecting; known only once
@@ -281,15 +283,17 @@ export function TerminalTab({
         >
           <Radio size={13} aria-hidden="true" className={broadcasting ? 'text-status-danger' : undefined} /> Broadcast
         </button>
-        <button
-          type="button"
-          className={TOOL_CLASS}
-          onClick={() => {
-            if (focusedHost !== undefined) openFiles(focusedHost);
-          }}
-        >
-          <FolderOpen size={13} aria-hidden="true" /> Files
-        </button>
+        {hasSshFeatures(focusedProtocol) && (
+          <button
+            type="button"
+            className={TOOL_CLASS}
+            onClick={() => {
+              if (focusedHost !== undefined) openFiles(focusedHost);
+            }}
+          >
+            <FolderOpen size={13} aria-hidden="true" /> Files
+          </button>
+        )}
         <button
           type="button"
           className={TOOL_CLASS}

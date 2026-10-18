@@ -41,6 +41,7 @@ export const DOCS_LINKS = {
   managedPreferences: 'guides/managed-preferences',
   agentsMcp: 'guides/agents-mcp',
   codingAgents: 'guides/coding-agents',
+  teaching: 'guides/teaching',
   codeSigningPolicy: 'help/code-signing-policy',
   projectFormat: 'reference/project-format',
 } as const;

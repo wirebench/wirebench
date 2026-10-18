@@ -1,0 +1,7 @@
+endpoints: {}
+id: TEACH00ENVCOURSE
+name: Course
+order: 0
+properties:
+  baseUrl: https://jsonplaceholder.typicode.com
+  userId: "1"

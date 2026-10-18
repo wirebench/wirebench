@@ -1,0 +1,6 @@
+baseUrl: ${baseUrl}
+description: A free public practice API with users, posts and comments. It accepts writes but never stores them.
+id: TEACH00API
+kind: rest
+name: Practice API
+order: 0

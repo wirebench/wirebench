@@ -1,0 +1,18 @@
+assertions:
+  - equals: 200
+    type: status
+auth:
+  type: inherit
+body:
+  kind: none
+description: Lesson 2. The second step of the sequence. Its postId is the value the first step lifted from its response.
+id: TEACH00REQ08
+kind: rest
+method: GET
+name: Comments on a post
+order: 0
+query:
+  - description: Set by the sequence from the first step's response
+    name: postId
+    value: ${#Sequence#postId}
+url: /comments

@@ -1,0 +1,4 @@
+description: Requests that only work inside a sequence, because they read a value an earlier step lifted.
+id: TEACH00FOLDERSTEPS
+name: Sequence steps
+order: 2

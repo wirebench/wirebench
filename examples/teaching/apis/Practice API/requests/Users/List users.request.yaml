@@ -1,0 +1,18 @@
+assertions:
+  - equals: 200
+    type: status
+  - exists: true
+    expression: $[0].email
+    language: jsonpath
+    type: match
+auth:
+  type: inherit
+body:
+  kind: none
+description: Lesson 1. A GET with no parameters returns every user as a JSON array.
+id: TEACH00REQ01
+kind: rest
+method: GET
+name: List users
+order: 0
+url: /users
