@@ -1,0 +1,183 @@
+---
+title: Teach APIs with Wirebench
+description: Use Wirebench in a bootcamp or university course. Why it suits a classroom, how to install it in a lab, a ready-made sample project, a three-session lesson plan and grading with the command-line runner.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Wirebench is free for teaching, as it is for everything else. This page is for instructors who want
+students to learn HTTP APIs on a real tool rather than on slides: what makes it fit a classroom, how
+to put it on lab machines, a sample project students can open in a minute, a lesson plan for three
+sessions, and how to grade their work from a terminal.
+
+## Why it fits a classroom
+
+- **Free, with nothing to buy later.** Wirebench is open source under the Apache 2.0 licence. There is
+  no seat count, no trial and no student plan that ends at graduation. What students learn on, they
+  can keep using in their first job.
+- **No account.** Students open the app and start. There is no sign-up on the first morning, no
+  password resets, and no student data handed to a vendor.
+- **Nothing leaves the machine.** Wirebench sends no telemetry and no usage data. A request goes to the
+  API the student called and nowhere else. Projects, history and secrets stay on the computer.
+- **Every protocol in one window.** REST, SOAP, GraphQL, gRPC, WebSocket and MCP sit side by side, with
+  the same environments, assertions and history. A course can move from REST to a second protocol
+  without a second tool.
+- **Work is plain files.** A project is a folder of small YAML and JSON files, one per request. Students
+  can hand it in through git, you can read a diff of what changed, and the same files run in the
+  command-line runner.
+
+## Install it in a lab
+
+Every release is on the [releases page](https://github.com/wirebench/wirebench/releases/latest), for
+macOS, Windows and Linux. [Install and first run](/wirebench/docs/getting-started/installation/) has
+the details per system. For a lab, these are the parts that matter:
+
+| Situation | What to use |
+| --- | --- |
+| Windows machines you manage | The `.msi` installs for every user, silently: `msiexec /i Wirebench-<version>-windows-x64.msi /qn`. See [Deploy to a fleet](/wirebench/docs/getting-started/installation/#deploy-to-a-fleet) |
+| Machines where students cannot install software | The Windows portable `.zip` runs from any writable folder or a USB stick, with no administrator rights. See [Portable copy](/wirebench/docs/getting-started/installation/#portable-copy) |
+| macOS | Deploy the signed app from the `.dmg` or `.zip` with your management tool |
+| Linux | The `.deb` or `.rpm` with your package tooling, or the AppImage with no install at all |
+| A campus proxy or a private CA | A [policy file](/wirebench/docs/guides/managed-preferences/) sets the proxy and the CA bundle for every user, and can turn off update checks |
+
+There is no licence server to reach, no activation and no sign-in, so a lab image works offline and
+every student on a shared machine gets their own data folder under their own user account.
+
+<Aside type="tip" title="Check the network once">
+The sample project calls a public API over HTTPS. Before the first session, open it on one lab
+machine and send **List users**. If it cannot connect, the lab needs a proxy: set it in the policy
+file rather than on every machine.
+</Aside>
+
+## The sample project
+
+The repository holds a ready-made course project in
+[`examples/teaching`](https://github.com/wirebench/wirebench/tree/main/examples/teaching). It talks to
+JSONPlaceholder, a free public practice API with users, posts and comments, which needs no key and
+never stores what students send. So thirty students can all create and delete at once.
+
+It holds:
+
+- a **Course** environment with `baseUrl` and `userId`;
+- seven requests covering `GET`, `POST` and `DELETE`, path and query parameters, a JSON body and a
+  negative test that expects `404`, each with assertions;
+- a sequence, **First post and its comments**, whose first step lifts a post id out of its response
+  for the second step to send, and the one request that second step uses.
+
+Students open it from the workspace picker with **Add project folder…**, which copies it into their
+own workspace and leaves the original untouched. Its
+[README](https://github.com/wirebench/wirebench/blob/main/examples/teaching/README.md) walks a student
+through it in about an hour, in five parts with a question at the end of each. It is also the
+self-study for anyone who missed a session.
+
+The project is kept in the oldest project format that carries assertions, so the current release
+and the ones before it all open it.
+
+## A lesson plan for three sessions
+
+Each session is planned for about 90 minutes: a short demonstration, then students working through
+the sample project in pairs, then a discussion of the questions in its README.
+
+### Session 1: REST basics
+
+**Goal.** Students can read and send an HTTP request and explain every part of the response.
+
+<Steps>
+
+1. **Demonstrate (20 min).** Send **List users** and walk through the response: status line, headers,
+   body, time and size. Open the **HTTP Log** to show the exact bytes that went over the wire.
+2. **Practise (45 min).** Part 1 of the README: a path parameter, a query parameter, a `POST` with a
+   JSON body and a `DELETE`. Students change the post's title and send again.
+3. **Discuss (15 min).** Methods and what they promise, status code families (2xx, 4xx, 5xx), and why
+   **Create a post** answers `201` rather than `200`.
+4. **Extend (10 min).** Students build one request of their own from nothing: **New request** under
+   the API, method `GET`, path `/todos/1`.
+
+</Steps>
+
+### Session 2: environments and assertions
+
+**Goal.** Students can make a request reusable across targets and turn "it answered" into "it answered
+correctly".
+
+<Steps>
+
+1. **Demonstrate (15 min).** Change `userId` in the **Course** environment and send the same two
+   requests again. Then add a second environment and switch between them in the title bar.
+2. **Practise (40 min).** Parts 2 and 3 of the README: read the assertions on **Get a post**, break one
+   on purpose and read the failure, send the negative test, add an assertion of their own.
+3. **Chain (20 min).** Part 4: run the sequence and follow the post id from the first step into the
+   second. Point out why **Comments on a post** fails when sent on its own.
+4. **Discuss (15 min).** What makes a good assertion? Status alone, a value in the body, a response
+   time? Why should a test suite include requests that are meant to fail?
+
+</Steps>
+
+[Assertions](/wirebench/docs/guides/assertions/), [Environments and
+properties](/wirebench/docs/guides/environments/) and [Sequences](/wirebench/docs/guides/sequences/)
+cover each topic in depth.
+
+### Session 3: a second protocol
+
+**Goal.** Students see that the ideas from sessions 1 and 2 carry over: a request, a response,
+variables and assertions, whatever the wire format.
+
+Pick one of these. Both are public, need no key, and answered when this page was written.
+
+- **SOAP.** Import the public calculator service from its WSDL,
+  `http://www.dneonline.com/calculator.asmx?WSDL`, exactly as in part 1 of the
+  [ten-minute walkthrough](/wirebench/docs/getting-started/walkthrough/). Students compare a generated
+  XML envelope with the JSON bodies from session 1, fill in the numbers on the **Form** tab, and add an
+  XPath assertion that `AddResult` holds the right sum. A good discussion: what does a contract give you, and what does it
+  cost?
+- **GraphQL.** Add a GraphQL request with the endpoint `https://countries.trevorblades.com/` and the
+  query `{ country(code: "AT") { name capital currency } }`. Students change the fields they ask for
+  and watch the response change shape, then add a JSONPath assertion on `$.data.country.capital`. A
+  good discussion: one endpoint and a query, against many endpoints with fixed answers. See
+  [GraphQL](/wirebench/docs/guides/graphql/).
+
+A class that is further along can try [gRPC](/wirebench/docs/guides/grpc/) or
+[WebSocket](/wirebench/docs/guides/websocket/) against a server you run in the lab.
+
+## For instructors: grading with the command-line runner
+
+The `wirebench` command runs the requests saved in a project and turns the result into an exit code and
+a report, with no window. It reads the same files the app writes, so a student's submitted project is
+exactly what you grade. It needs [Node.js](https://nodejs.org) 24 or later.
+
+Run a student's requests, with every request required to carry assertions. The two folders are the
+sample's folders of plain requests:
+
+```bash
+npx --yes @wirebench/cli run ./submissions/alex -e Course --require-assertions "apis/Practice API/requests/Users" "apis/Practice API/requests/Posts" --reporter junit=reports/alex.xml
+```
+
+Run their sequence on its own:
+
+```bash
+npx --yes @wirebench/cli run ./submissions/alex -e Course --sequence "First post and its comments"
+```
+
+What the result tells you:
+
+| Exit code | Means |
+| --- | --- |
+| `0` | Every selected request passed its assertions |
+| `1` | At least one assertion failed |
+| `2` | The project did not load, or the environment or a selector does not exist. Nothing was sent |
+| `3` | At least one request could not be sent, for example an unresolved `${…}` |
+
+Some ways to use it:
+
+- **Grade a whole class.** Loop over the submission folders and keep one report per student.
+  `--reporter json=<file>` writes a stable JSON report with every assertion and its outcome, easy to
+  turn into a mark. `--reporter html=<file>` writes a page students can read.
+- **Set the target yourself.** `--var baseUrl=<url>` points every student's project at the same server,
+  for example one you run for an exam, whatever their environment says.
+- **Grade on push.** If students hand in through git, the same command runs in a pipeline. See
+  [Run in CI](/wirebench/docs/guides/run-in-ci/) for a ready-made GitHub Action and GitLab template.
+
+A request whose URL reads a value from a sequence step, like **Comments on a post** in the sample, only
+resolves inside its sequence: run on its own it errors, with exit code `3`. That is why the first
+command names the folders of plain requests rather than the whole project, and the sequence runs
+separately.
