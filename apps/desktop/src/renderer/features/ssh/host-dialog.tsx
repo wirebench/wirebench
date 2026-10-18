@@ -18,7 +18,7 @@ import { EnvSection, envProblem, inheritedEnv } from './env-section.js';
 import { AgentForwardingSection, inheritedForwardAgent } from './agent-forwarding.js';
 import { inheritedMosh, inheritedProtocol, MoshSection, moshProblem } from './mosh-section.js';
 import { TELNET_PORT } from './host-protocol.js';
-import { inheritedSerial, SerialDeviceField, SerialLineSection, serialProblem } from './serial-section.js';
+import { inheritedSerial, SerialDeviceField, serialLabel, SerialLineSection, serialProblem } from './serial-section.js';
 import { cleanProxy, proxyProblem, ProxySection } from './proxy-section.js';
 import { OS_LABELS } from './os-icon.js';
 import { HostAuthSection } from './host-auth-section.js';
@@ -35,6 +35,7 @@ import {
   upsertGroup,
   upsertHost,
   useHostsStore,
+  type HostsDialog,
 } from './hosts-store.js';
 import { INPUT_CLASS, InheritedField, InheritedSelect, InheritedSwitch, sourceText } from './inherited-field.js';
 import { useRevealMissing } from './reveal-missing.js';
@@ -86,7 +87,7 @@ function useLocalUser(): string {
 const FIELD_CLASS = 'flex flex-col gap-1 text-xs';
 
 export function HostForm({ file, dialog, embedded = false }: FormProps) {
-  const { save, closeDialog, problems, resolved, groupFilter } = useHostsStore();
+  const { save, closeDialog, leaveForm, noteForm, selectHost, problems, resolved, groupFilter } = useHostsStore();
   const isHost = dialog.mode === 'new-host' || dialog.mode === 'edit-host';
   const editing = dialog.mode === 'edit-host' || dialog.mode === 'edit-group';
   const existing =
@@ -108,14 +109,19 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
     dialog.mode === 'edit-group' ? ancestorsOf(file, 'group', dialog.id) : chainOf(file, groupId);
 
   const prefill = dialog.mode === 'new-host' ? dialog.prefill : undefined;
-  const [name, setName] = useState(existing?.name ?? prefill?.name ?? '');
-  const [address, setAddress] = useState(
-    existing !== undefined && 'address' in existing ? existing.address : (prefill?.address ?? ''),
+  // Duplicate starts a new host from a copy of another, which Save writes under a fresh id.
+  const copy = dialog.mode === 'new-host' && dialog.copyOf !== undefined ? findHost(file, dialog.copyOf) : undefined;
+  const start = existing ?? copy;
+  const [name, setName] = useState(
+    existing?.name ?? (copy === undefined ? undefined : `${copy.name} copy`) ?? prefill?.name ?? '',
   );
-  const [tags, setTags] = useState((existing?.tags ?? []).join(', '));
+  const [address, setAddress] = useState(
+    start !== undefined && 'address' in start ? start.address : (prefill?.address ?? ''),
+  );
+  const [tags, setTags] = useState((start?.tags ?? []).join(', '));
   // A one-off server signed in with the agent; its port is kept only when it is not the default.
   const [ssh, setSsh] = useState<SshSettingsWire>(
-    existing?.ssh ??
+    start?.ssh ??
       (prefill === undefined
         ? {}
         : {
@@ -126,10 +132,10 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   );
   const [password, setPassword] = useState('');
   const [proxyPassword, setProxyPassword] = useState('');
-  const [protectedHere, setProtectedHere] = useState<boolean | undefined>(existing?.protected);
-  const [forwards, setForwards] = useState<ForwardEntryWire[]>(existing?.forwards ?? []);
-  const [env, setEnv] = useState<EnvVarWire[]>(existing?.env ?? []);
-  const [terminal, setTerminal] = useState<TerminalEntryWire>(existing?.terminal ?? {});
+  const [protectedHere, setProtectedHere] = useState<boolean | undefined>(start?.protected);
+  const [forwards, setForwards] = useState<ForwardEntryWire[]>(start?.forwards ?? []);
+  const [env, setEnv] = useState<EnvVarWire[]>(start?.env ?? []);
+  const [terminal, setTerminal] = useState<TerminalEntryWire>(start?.terminal ?? {});
   const terminalPrefs = usePreferencesStore((s) => s.preferences.terminal);
   const storedSshPrefs = usePreferencesStore((s) => s.preferences.ssh);
   const sshPrefs = useMemo(() => sshPreferenceDefaults(storedSshPrefs), [storedSshPrefs]);
@@ -175,8 +181,13 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
 
   // A new host starts from what its group does not supply: this machine's login name, and a typed password.
   // Both follow the Group select until the field is touched.
+  // A copy keeps the user and sign-in it was given.
   const [touched, setTouched] = useState<{ user?: true; auth?: true }>(() =>
-    prefill === undefined ? {} : { ...(prefill.user === undefined ? {} : { user: true }), auth: true },
+    copy !== undefined
+      ? { user: true, auth: true }
+      : prefill === undefined
+        ? {}
+        : { ...(prefill.user === undefined ? {} : { user: true }), auth: true },
   );
   // What the groups and identities give this entry when it sets no user or auth of its own (#416).
   const loginUser = inheritedLogin(file.identities, chain, ssh.identity, 'user', sshPrefs);
@@ -185,14 +196,20 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const groupHasAuth = loginAuth.value !== undefined;
   const fresh = dialog.mode === 'new-host';
   // A device's login is not this machine's: a new Telnet host or serial console starts with neither.
+  // What the form held before the user changed anything: the defaults below fill it in as well, so they
+  // alone never count as a change that leaving the form would drop.
+  const [baseline, setBaseline] = useState<SshSettingsWire>(ssh);
   useEffect(() => {
     if (!fresh || touched.user === true) return;
     const user = groupUser === undefined && localUser !== '' && viaSsh ? localUser : undefined;
     setSsh((prev) => withField(prev, 'user', user));
+    setBaseline((prev) => withField(prev, 'user', user));
   }, [fresh, touched.user, groupUser, localUser, viaSsh]);
   useEffect(() => {
     if (!fresh || touched.auth === true) return;
-    setSsh((prev) => withField(prev, 'auth', groupHasAuth || !viaSsh ? undefined : { kind: 'password', secret: '' }));
+    const auth = groupHasAuth || !viaSsh ? undefined : { kind: 'password' as const, secret: '' };
+    setSsh((prev) => withField(prev, 'auth', auth));
+    setBaseline((prev) => withField(prev, 'auth', auth));
   }, [fresh, touched.auth, groupHasAuth, viaSsh]);
 
   const set = (key: Inheritable | 'auth') => (value: unknown) => {
@@ -234,7 +251,8 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   ];
   const missing = missingFields({
     isHost,
-    needsLogin: fresh && viaSsh,
+    // A copy saves as its original was: it asks for no sign-in the original did without.
+    needsLogin: fresh && viaSsh && copy === undefined,
     needsAddress: !serial,
     name,
     address,
@@ -252,13 +270,52 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const { revealed, reveal, onBlur } = useRevealMissing();
   const shown = revealed ? missing : sectionProblems;
 
+  // Whether leaving now would drop something typed; the New host form also draws its draft card from this.
+  const [startedAs] = useState(() =>
+    JSON.stringify([name, address, tags, protectedHere, forwards, env, terminal, os, groupId]),
+  );
+  const dirty =
+    JSON.stringify([name, address, tags, protectedHere, forwards, env, terminal, os, groupId]) !== startedAs ||
+    JSON.stringify(ssh) !== JSON.stringify(baseline) ||
+    password !== '' ||
+    proxyPassword !== '' ||
+    device.trim() !== savedDevice;
+  const hostForm = dialog.mode === 'new-host' || dialog.mode === 'edit-host';
+  const draftTarget = serial
+    ? `Serial · ${serialLabel(ssh.serial ?? inheritedSerial(chain).value)}`
+    : draftTargetText(address.trim(), ssh.user ?? loginUser.value, ssh.port ?? inheritedPort.value);
+  const draftName = name.trim();
+  // A form that goes (its tab left for another) has nothing left to drop.
+  useEffect(
+    () => () => {
+      if (useHostsStore.getState().formDirty) useHostsStore.setState({ formDirty: false });
+    },
+    [],
+  );
+  useEffect(() => {
+    if (!hostForm) return;
+    noteForm(
+      dirty,
+      fresh ? { name: draftName, target: draftTarget, ...(groupId === undefined ? {} : { groupId }) } : undefined,
+    );
+  }, [hostForm, fresh, dirty, draftName, draftTarget, groupId, noteForm]);
+  // Cancel and Escape leave a form in the details panel the way putting the panel away does: asking first.
+  const cancel = (): void => {
+    if (embedded && hostForm) leaveForm();
+    else closeDialog();
+  };
+
   const submit = async (): Promise<void> => {
-    const id = existing?.id ?? freeId(file, slug(name));
+    // A copy keeps its original's id with `-copy` while it keeps the name it was given.
+    const copyId = copy !== undefined && name.trim() === `${copy.name} copy` ? `${copy.id}-copy` : undefined;
+    const id = existing?.id ?? freeId(file, copyId ?? slug(name));
     let clean = dropEmpty(ssh);
     // A typed password goes to this machine's secret store first; the file only ever gets its name.
     if (clean.auth?.kind === 'password' && password !== '') {
+      // A copy's typed password is its own: writing it to the original's secret would change that host too.
+      const copied = copy?.ssh.auth?.kind === 'password' && copy.ssh.auth.secret === clean.auth.secret;
       const secret =
-        clean.auth.secret !== ''
+        clean.auth.secret !== '' && !copied
           ? clean.auth.secret
           : passwordSecretName(
               id,
@@ -279,8 +336,12 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
     if (proxy !== undefined) clean = { ...clean, proxy };
     // The proxy's typed password, the same way: stored first, then only its name is written.
     if (proxy !== undefined && proxy !== false && proxyPassword !== '') {
+      const copiedProxy =
+        copy?.ssh.proxy !== undefined &&
+        copy.ssh.proxy !== false &&
+        copy.ssh.proxy.passwordSecret === proxy.passwordSecret;
       const secret =
-        proxy.passwordSecret ??
+        (copiedProxy ? undefined : proxy.passwordSecret) ??
         passwordSecretName(
           id,
           secretNames.map((n) => n.name),
@@ -356,14 +417,38 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
       await ipc().ssh.setHostOs({ host: key, os: chosen });
     }
     closeDialog();
+    // The draft card becomes the saved host's, picked so its details show where the form was.
+    if (fresh) selectHost(id);
   };
 
   const label = `${editing ? 'Edit' : 'New'} ${isHost ? 'host' : 'group'}`;
   const groups = flattenGroups(file);
+  const protocolSection = (
+    <MoshSection
+      protocol={ssh.protocol}
+      mosh={ssh.mosh}
+      inheritedProtocol={inheritedProtocol(chain)}
+      inheritedMosh={inheritedMosh(chain)}
+      onProtocol={(next) => {
+        setSsh((prev) => withField(prev, 'protocol', next));
+      }}
+      onMosh={(next) => {
+        setSsh((prev) => withField(prev, 'mosh', next));
+      }}
+    />
+  );
   return (
+    // A container, so a narrow details panel stacks the paired fields rather than squeezing them.
     <form
-      className="flex flex-col gap-3"
+      className="@container flex flex-col gap-3"
       onBlur={onBlur}
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape' || !embedded || !hostForm || e.defaultPrevented) return;
+        // The panel's own Escape would put it away as well: the form decides, asking first.
+        e.preventDefault();
+        e.stopPropagation();
+        cancel();
+      }}
       onSubmit={(e) => {
         e.preventDefault();
         if (valid) void submit();
@@ -371,7 +456,8 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
       }}
     >
       {embedded ? (
-        <h2 className="text-md font-medium text-fg-default">{label}</h2>
+        // The panel's header already says New host.
+        <h2 className={fresh ? 'sr-only' : 'text-md font-medium text-fg-default'}>{label}</h2>
       ) : (
         <>
           <Dialog.Title className="text-md font-medium text-fg-default">{label}</Dialog.Title>
@@ -389,6 +475,8 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
           }}
         />
       </label>
+      {/* Protocol reshapes the rest of the form, so it comes before what it changes. */}
+      {protocolSection}
       {isHost && !serial && (
         <label className={FIELD_CLASS}>
           <span className="text-fg-subtle">Address</span>
@@ -469,7 +557,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
         </>
       ) : (
         <>
-          <div className="grid grid-cols-[minmax(0,1fr)_9rem] gap-2">
+          <div className="grid grid-cols-1 gap-2 @min-[22rem]:grid-cols-[minmax(0,1fr)_9rem]">
             <InheritedField label="User" provenance={loginUser} override={ssh.user} onChange={set('user')} />
             <InheritedField
               label="Port"
@@ -576,7 +664,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             </label>
           )}
           {!serial && (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 @min-[22rem]:grid-cols-2">
               {!telnet && (
                 <InheritedField
                   label="Keep-alive (s)"
@@ -595,7 +683,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
               />
             </div>
           )}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 @min-[22rem]:grid-cols-2">
             {!serial && (
               <InheritedField
                 label="Terminal type"
@@ -613,18 +701,6 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
               onChange={set('charset')}
             />
           </div>
-          <MoshSection
-            protocol={ssh.protocol}
-            mosh={ssh.mosh}
-            inheritedProtocol={inheritedProtocol(chain)}
-            inheritedMosh={inheritedMosh(chain)}
-            onProtocol={(next) => {
-              setSsh((prev) => withField(prev, 'protocol', next));
-            }}
-            onMosh={(next) => {
-              setSsh((prev) => withField(prev, 'mosh', next));
-            }}
-          />
           {!serial && (
             <ProxySection
               own={ssh.proxy}
@@ -670,7 +746,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             ))}
           </ul>
         )}
-        <Button onClick={closeDialog}>Cancel</Button>
+        <Button onClick={cancel}>Cancel</Button>
         <Button
           type="submit"
           variant="primary"
@@ -684,9 +760,23 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   );
 }
 
+/** Whether `dialog` is a group's form, the one the centred dialog holds. */
+export function isGroupForm(
+  dialog: HostsDialog,
+): dialog is Extract<NonNullable<HostsDialog>, { mode: 'new-group' | 'edit-group' }> {
+  return dialog?.mode === 'new-group' || dialog?.mode === 'edit-group';
+}
+
+/** `user@address:port` for the draft card, leaving out what is not known yet and the default port. */
+function draftTargetText(address: string, user: string | undefined, port: number | undefined): string {
+  return `${user === undefined || user === '' ? '' : `${user}@`}${address}${
+    port === undefined || port === SSH_DEFAULTS.port ? '' : `:${String(port)}`
+  }`;
+}
+
 /**
- * The host / group form. Each setting shows what it inherits and from which group; Override edits it here.
- * Editing a host is the exception: its form opens in the details panel (`host-details.tsx`) instead.
+ * The group form. Each setting shows what it inherits and from which group; Override edits it here.
+ * A host's form, new or edited, opens in the details panel (`host-details.tsx`) instead.
  */
 export function HostDialog() {
   const dialog = useHostsStore((s) => s.dialog);
@@ -694,7 +784,7 @@ export function HostDialog() {
   const closeDialog = useHostsStore((s) => s.closeDialog);
   return (
     <Dialog.Root
-      open={dialog !== null && dialog.mode !== 'edit-host'}
+      open={isGroupForm(dialog)}
       onOpenChange={(open) => {
         if (!open) closeDialog();
       }}
@@ -705,9 +795,7 @@ export function HostDialog() {
           data-testid="host-dialog"
           className="fixed top-1/2 left-1/2 max-h-[85vh] w-[34rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-auto rounded-md bg-surface-raised p-4 shadow-lg"
         >
-          {dialog !== null && dialog.mode !== 'edit-host' && (
-            <HostForm key={JSON.stringify(dialog)} file={file} dialog={dialog} />
-          )}
+          {isGroupForm(dialog) && <HostForm key={JSON.stringify(dialog)} file={file} dialog={dialog} />}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

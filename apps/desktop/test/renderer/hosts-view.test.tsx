@@ -136,6 +136,9 @@ beforeEach(() => {
     groupFilter: undefined,
     osByHost: {},
     dialog: null,
+    draft: undefined,
+    formDirty: false,
+    discardAsk: null,
     panes: {},
     homeView: 'hosts',
     selectedHostId: undefined,
@@ -528,14 +531,59 @@ describe('Hosts tab', () => {
     await userEvent.type(screen.getByLabelText('Address'), 'gamma.example');
     await userEvent.type(screen.getByLabelText('Password', { selector: 'input[type="password"]' }), 'pw');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-    expect((await screen.findByRole('alert')).textContent).toContain('Open a workspace first');
+    expect(await screen.findByText('The password was not stored: Open a workspace first')).toBeDefined();
     expect(saveHosts).not.toHaveBeenCalled();
+  });
+  it('Duplicate opens New host filled in from the host, and writes nothing until Save', async () => {
+    render(<SshArea />);
+    fireEvent.contextMenu(screen.getByTestId('host-row-b'));
+    await userEvent.click(await screen.findByText('Duplicate'));
+    expect(screen.getByLabelText<HTMLInputElement>('Name').value).toBe('beta copy');
+    expect(screen.getByTestId('host-draft-card').textContent).toContain('beta copy');
+    expect(saveHosts).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const sent = saveHosts.mock.calls[0]?.[0] as { file: typeof STATE.file };
+    const copy = sent.file.hosts.find((h) => h.id === 'b-copy');
+    const original = STATE.file.hosts.find((h) => h.id === 'b');
+    expect(copy).toEqual({ ...original, id: 'b-copy', name: 'beta copy' });
+  });
+  it('a password typed in a copy is stored as its own secret, never over the original’s', async () => {
+    const withPassword = {
+      ...STATE.file,
+      hosts: [
+        {
+          id: 'b',
+          name: 'beta',
+          address: 'beta.example',
+          tags: [],
+          ssh: { user: 'me', auth: { kind: 'password' as const, secret: 'DEPLOY_KEY' } },
+        },
+      ],
+    };
+    useHostsStore.setState({ file: withPassword });
+    listHosts.mockResolvedValue({ ok: true, value: { file: withPassword, resolved: STATE.resolved, problems: [] } });
+    render(<SshArea />);
+    fireEvent.contextMenu(screen.getByTestId('host-row-b'));
+    await userEvent.click(await screen.findByText('Duplicate'));
+    const field = screen.getByTestId('host-dialog').querySelector<HTMLInputElement>('input[type="password"]');
+    if (field === null) throw new Error('no password field');
+    await userEvent.type(field, 'other');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await vi.waitFor(() => {
+      expect(saveHosts).toHaveBeenCalled();
+    });
+    expect(setSecret).toHaveBeenCalledTimes(1);
+    expect(setSecret.mock.calls[0]?.[0]).not.toMatchObject({ name: 'DEPLOY_KEY' });
+    const sent = saveHosts.mock.calls[0]?.[0] as { file: typeof withPassword };
+    expect(sent.file.hosts.find((h) => h.id === 'b')?.ssh.auth).toEqual({ kind: 'password', secret: 'DEPLOY_KEY' });
+    expect(sent.file.hosts.find((h) => h.id === 'b-copy')?.ssh.auth?.secret).not.toBe('DEPLOY_KEY');
   });
   it('duplicating twice makes two distinct copies', async () => {
     render(<SshArea />);
     for (let i = 0; i < 2; i++) {
       fireEvent.contextMenu(screen.getByTestId('host-row-b'));
       await userEvent.click(await screen.findByText('Duplicate'));
+      await userEvent.click(await screen.findByRole('button', { name: 'Save' }));
       const sent = saveHosts.mock.calls[i]?.[0] as { file: typeof STATE.file };
       useHostsStore.setState({ file: sent.file });
     }
@@ -897,10 +945,92 @@ describe('Editing in the details panel', () => {
     useHostsStore.getState().setDetailsOpen(false);
     expect(useHostsStore.getState().dialog).toBeNull();
   });
-  it('New host still opens the dialog', async () => {
+  it('New host opens in the panel, with a draft card that follows the typing', async () => {
+    useHostsStore.setState({ selectedHostId: 'b' });
     render(<SshArea />);
     await userEvent.click(screen.getByRole('button', { name: /^New host/ }));
-    expect(await screen.findByTestId('host-dialog')).toBeDefined();
+    const form = await screen.findByTestId('host-dialog');
+    // Not a modal: the cards stay usable beside it.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const draft = screen.getByTestId('host-draft-card');
+    expect(draft.textContent).toContain('New host');
+    expect(within(screen.getByRole('list', { name: 'Hosts in Ungrouped' })).getByTestId('host-draft-card')).toBe(draft);
+    // The draft is the picked card while the form is open.
+    expect(screen.getByTestId('host-row-b').dataset['selected']).toBeUndefined();
+    await userEvent.type(within(form).getByLabelText('Name'), 'gamma');
+    await userEvent.type(within(form).getByLabelText('Address'), 'gamma.example');
+    expect(screen.getByTestId('host-draft-card').textContent).toContain('gamma');
+    expect(screen.getByTestId('host-draft-card').textContent).toContain('me@gamma.example');
+  });
+  it('the draft sits in the group it will be saved to, and moves with the Group select', async () => {
+    render(<SshArea />);
+    await userEvent.click(screen.getByRole('button', { name: 'Add a host to Production' }));
+    const production = screen.getByRole('list', { name: 'Hosts in Production' });
+    expect(within(production).getByTestId('host-draft-card')).toBeDefined();
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Group' }), '');
+    expect(
+      within(screen.getByRole('list', { name: 'Hosts in Ungrouped' })).getByTestId('host-draft-card'),
+    ).toBeDefined();
+  });
+  it('Save turns the draft into the saved host and picks it', async () => {
+    render(<SshArea />);
+    await userEvent.click(screen.getByRole('button', { name: /^New host/ }));
+    await userEvent.type(screen.getByLabelText('Name'), 'gamma');
+    await userEvent.type(screen.getByLabelText('Address'), 'gamma.example');
+    await userEvent.type(screen.getByLabelText('Password', { selector: 'input[type="password"]' }), 'pw');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await vi.waitFor(() => {
+      expect(useHostsStore.getState().dialog).toBeNull();
+    });
+    const sent = saveHosts.mock.calls[0]?.[0] as { file: typeof STATE.file };
+    expect(sent.file.hosts.at(-1)).toMatchObject({ id: 'gamma', name: 'gamma', address: 'gamma.example' });
+    expect(useHostsStore.getState().selectedHostId).toBe('gamma');
+    expect(screen.queryByTestId('host-draft-card')).toBeNull();
+  });
+  it('Cancel on an untouched form drops the draft without asking', async () => {
+    render(<SshArea />);
+    await userEvent.click(screen.getByRole('button', { name: /^New host/ }));
+    await screen.findByTestId('host-draft-card');
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByTestId('host-discard')).toBeNull();
+    expect(screen.queryByTestId('host-draft-card')).toBeNull();
+    expect(useHostsStore.getState().dialog).toBeNull();
+  });
+  it('leaving a New host form with typing asks first; Discard drops it, Cancel keeps it', async () => {
+    render(<SshArea />);
+    await userEvent.click(screen.getByRole('button', { name: /^New host/ }));
+    await userEvent.type(screen.getByLabelText('Name'), 'gamma');
+    // Escape in a field leaves the form the same way.
+    await userEvent.keyboard('{Escape}');
+    const ask = await screen.findByTestId('host-discard');
+    expect(ask.textContent).toContain('Discard changes?');
+    await userEvent.click(within(ask).getByRole('button', { name: 'Cancel' }));
+    expect(useHostsStore.getState().dialog?.mode).toBe('new-host');
+    expect(screen.getByLabelText<HTMLInputElement>('Name').value).toBe('gamma');
+    // Putting the panel away asks too.
+    act(() => {
+      useHostsStore.getState().setDetailsOpen(false);
+    });
+    await userEvent.click(within(await screen.findByTestId('host-discard')).getByRole('button', { name: 'Discard' }));
+    expect(useHostsStore.getState().dialog).toBeNull();
+    expect(screen.queryByTestId('host-draft-card')).toBeNull();
+    // The panel is left as it was: New host only borrowed it.
+    expect(detailsOpen()).toBe(false);
+  });
+  it('Edit host with changes asks before picking another host drops them', async () => {
+    render(<SshArea />);
+    fireEvent.contextMenu(screen.getByTestId('host-row-b'));
+    await userEvent.click(await screen.findByText('Edit…'));
+    await vi.waitFor(() => {
+      expect(screen.queryByRole('menu')).toBeNull();
+    });
+    await userEvent.type(screen.getByLabelText('Name'), ' two');
+    await userEvent.click(screen.getByTestId('host-row-a'));
+    const ask = await screen.findByTestId('host-discard');
+    expect(useHostsStore.getState().selectedHostId).toBe('b');
+    await userEvent.click(within(ask).getByRole('button', { name: 'Discard' }));
+    expect(useHostsStore.getState().dialog).toBeNull();
+    expect(useHostsStore.getState().selectedHostId).toBe('a');
   });
 });
 

@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../../components/button.js';
 import { showToast } from '../../../components/toast.js';
+import { newHost } from '../connect.js';
 import { findHost, upsertHost, useHostsStore } from '../hosts-store.js';
 import { INPUT_CLASS } from '../inherited-field.js';
 import { ForwardForm, forwardProblem, type ForwardFullEntry } from './forward-form.js';
@@ -96,7 +97,7 @@ export function NewRuleDialog({
                 variant="primary"
                 onClick={() => {
                   onOpenChange(false);
-                  useHostsStore.getState().openDialog({ mode: 'new-host' });
+                  newHost();
                 }}
               >
                 New host…

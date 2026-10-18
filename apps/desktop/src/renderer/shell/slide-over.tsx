@@ -30,6 +30,11 @@ function isTextEntry(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement && !NON_TEXT_INPUTS.has(target.type);
 }
 
+/** Whether `target` is inside a dialog, which handles its own Escape. */
+function inDialog(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[role="dialog"], [role="alertdialog"]') !== null;
+}
+
 const NON_TEXT_INPUTS = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file']);
 
 /**
@@ -48,9 +53,9 @@ export function SlideOver({ label, open, width, onWidthChange, onToggle, onClose
       return;
     }
     const onKeyDown = (event: KeyboardEvent): void => {
-      // Escape in a text field cancels that edit (a variable's value, a custom colour); it does
-      // not also put the panel away.
-      if (event.key === 'Escape' && !isTextEntry(event.target)) {
+      // Escape in a text field cancels that edit (a variable's value, a custom colour), and Escape in a
+      // dialog over the panel closes that dialog; neither also puts the panel away.
+      if (event.key === 'Escape' && !isTextEntry(event.target) && !inDialog(event.target)) {
         onClose();
       }
     };

@@ -79,8 +79,8 @@ export function HostsView() {
   const secretsRevision = useHostsStore((s) => s.secretsRevision);
   const [counts, setCounts] = useState<{ keychain?: number; knownHosts?: number }>({});
   const localTerminal = useUiStore((s) => s.localTerminalEnabled);
-  // Editing a host happens in its details panel, not in this dialog.
-  const hostDialogOpen = useHostsStore((s) => s.dialog !== null && s.dialog.mode !== 'edit-host');
+  // Only a group's form is a dialog: a host's, new or edited, opens in the details panel.
+  const hostDialogOpen = useHostsStore((s) => s.dialog?.mode === 'new-group' || s.dialog?.mode === 'edit-group');
   const importOpen = useHostsStore((s) => s.importOpen);
   const knownHostsImportOpen = useHostsStore((s) => s.knownHostsImportOpen);
 

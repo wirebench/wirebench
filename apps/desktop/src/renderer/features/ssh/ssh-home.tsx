@@ -29,6 +29,7 @@ import { ForwardingPanel } from './forwarding/forwarding-view.js';
 import { LayoutsPanel } from './panes/layouts-view.js';
 import { SnippetsPanel } from './snippets/snippets-panel.js';
 import { useHostsPrefs, type HostsSort } from './hosts-prefs.js';
+import { newHost } from './connect.js';
 import { flattenGroups, osKeyOf, useHostsStore } from './hosts-store.js';
 import { IdentitiesSection } from './identities-section.js';
 import { RecentSection } from './recent-section.js';
@@ -193,7 +194,7 @@ function HostsPanel() {
                 variant="primary"
                 className={SPLIT_HEAD_CLASS}
                 onClick={() => {
-                  openDialog({ mode: 'new-host' });
+                  newHost();
                 }}
               >
                 <Plus size={13} aria-hidden /> New host
@@ -209,7 +210,7 @@ function HostsPanel() {
                     <DropdownMenu.Item
                       className={MENU_ITEM_CLASS}
                       onSelect={() => {
-                        openDialog({ mode: 'new-host' });
+                        newHost();
                       }}
                     >
                       <Server size={13} aria-hidden="true" /> New host
