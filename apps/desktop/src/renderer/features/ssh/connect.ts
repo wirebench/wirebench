@@ -1,7 +1,7 @@
 import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProblemsStore } from '../../state/problems.js';
-import { findHost, useHostsStore } from './hosts-store.js';
+import { findHost, useHostsStore, type HostPrefill } from './hosts-store.js';
 import { hasHost, leaves, onePane } from './panes/pane-tree.js';
 import type { PaneLeaf } from './panes/pane-tree.js';
 import {
@@ -284,18 +284,44 @@ export function openInNewTab(hostId: string): string {
 
 /**
  * Opens the host's settings for editing in the details panel, bringing the Hosts tab to the front and
- * picking the host first: the panel only shows there.
+ * picking the host first: the panel only shows there. A host form with changes already open asks first.
  */
 export function editHost(hostId: string): void {
+  const hosts = useHostsStore.getState();
+  const dialog = hosts.dialog;
+  if (dialog?.mode === 'edit-host' && dialog.id === hostId) {
+    showHostsTab();
+    hosts.setDetailsOpen(true);
+    return;
+  }
+  hosts.leaveForm(() => {
+    showHostsTab();
+    const after = useHostsStore.getState();
+    after.selectHost(hostId);
+    // The form lives in the details panel, so Edit opens it even when it was put away.
+    after.setDetailsOpen(true);
+    after.openDialog({ mode: 'edit-host', id: hostId });
+  });
+}
+
+/**
+ * Opens New host in the details panel on the Hosts tab, its draft card in the group it will be saved to.
+ * A host form with changes already open asks first. `from` says where it starts: a group, a one-off
+ * server's address, or a host to duplicate.
+ */
+export function newHost(from: { parent?: string; prefill?: HostPrefill; copyOf?: string } = {}): void {
+  useHostsStore.getState().leaveForm(() => {
+    showHostsTab();
+    useHostsStore.getState().openDialog({ mode: 'new-host', ...from });
+  });
+}
+
+/** Brings the SSH area's fixed tab to the front on its Hosts view, where the details panel shows. */
+function showHostsTab(): void {
   const editors = useEditorsStore.getState();
   editors.showSet('ssh');
   editors.showStart();
-  const hosts = useHostsStore.getState();
-  hosts.setHomeView('hosts');
-  hosts.selectHost(hostId);
-  // The form lives in the details panel, so Edit opens it even when it was put away.
-  hosts.setDetailsOpen(true);
-  hosts.openDialog({ mode: 'edit-host', id: hostId });
+  useHostsStore.getState().setHomeView('hosts');
 }
 
 /**
@@ -309,13 +335,7 @@ export function connectQuick(target: SshQuickTarget, newTab = false): string {
 
 /** Opens New host on the Hosts tab, filled in from a one-off server: Save then keeps it in hosts.yaml. */
 export function saveQuickAsHost(target: SshQuickTarget): void {
-  const editors = useEditorsStore.getState();
-  editors.showSet('ssh');
-  editors.showStart();
-  const hosts = useHostsStore.getState();
-  hosts.setHomeView('hosts');
-  hosts.openDialog({
-    mode: 'new-host',
+  newHost({
     prefill: {
       name: target.address,
       address: target.address,

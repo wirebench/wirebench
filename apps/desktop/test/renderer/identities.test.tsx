@@ -13,7 +13,7 @@ vi.mock('../../src/renderer/state/ipc-client.js', () => ({
   ipc: () => ({ ssh: { listHosts, saveHosts, secretNames, setSecret, setHostOs, keys: sshKeys, localUser } }),
 }));
 import type { HostsFileWire, ResolvedHostWire } from '../../src/shared/ssh-wire.js';
-import { HostDialog, HostForm } from '../../src/renderer/features/ssh/host-dialog.js';
+import { HostForm } from '../../src/renderer/features/ssh/host-dialog.js';
 import {
   inheritedFrom,
   inheritedLogin,
@@ -117,6 +117,12 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+/** The New host form as the details panel draws it, for the dialog in the store. */
+const renderNewHost = () => {
+  const { file, dialog } = useHostsStore.getState();
+  if (dialog === null) throw new Error('no form open');
+  return render(<HostForm file={file} dialog={dialog} embedded />);
+};
 const sentFile = (call = 0): HostsFileWire => (saveHosts.mock.calls[call]?.[0] as { file: HostsFileWire }).file;
 
 describe('identity helpers', () => {
@@ -218,7 +224,7 @@ describe('host form: terminal type and character set (#427)', () => {
 describe('host form: Identity', () => {
   it('picking an identity hands it the user and sign-in, and saves only its id', async () => {
     useHostsStore.setState({ dialog: { mode: 'new-host' } });
-    render(<HostDialog />);
+    renderNewHost();
     await vi.waitFor(() => {
       expect(screen.getByLabelText<HTMLInputElement>('User').value).toBe('me');
     });
@@ -234,7 +240,7 @@ describe('host form: Identity', () => {
   });
   it('a group’s identity shows as the source, and the select offers Inherit', async () => {
     useHostsStore.setState({ dialog: { mode: 'new-host', parent: 'g' } });
-    render(<HostDialog />);
+    renderNewHost();
     const select = await screen.findByRole<HTMLSelectElement>('combobox', { name: 'Identity' });
     expect(select.value).toBe('');
     expect(within(select).getByRole('option', { name: 'Inherit' })).toBeDefined();
@@ -243,7 +249,7 @@ describe('host form: Identity', () => {
   });
   it('is not shown while the file has no identities', async () => {
     useHostsStore.setState({ file: { ...FILE, identities: [], groups: [], hosts: [] }, dialog: { mode: 'new-host' } });
-    render(<HostDialog />);
+    renderNewHost();
     await screen.findByLabelText('Name');
     expect(screen.queryByRole('combobox', { name: 'Identity' })).toBeNull();
   });
@@ -252,7 +258,7 @@ describe('host form: Identity', () => {
       file: { ...FILE, identities: [], groups: [], hosts: [] },
       dialog: { mode: 'new-host', prefill: { name: 'db.example', address: 'db.example', port: 2222, user: 'ops' } },
     });
-    render(<HostDialog />);
+    renderNewHost();
     expect((await screen.findByLabelText<HTMLInputElement>('Name')).value).toBe('db.example');
     expect(screen.getByLabelText<HTMLInputElement>('User').value).toBe('ops');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));

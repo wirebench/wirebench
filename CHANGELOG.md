@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **New host opens in the right panel, with a draft card in Hosts.** New host (the Hosts button and its
+  menu, a group's Add host, the empty state, **Hosts: New Host…** and **Save as host…**) opens its form in
+  the right panel, where Edit host already was, instead of a dialog over the hosts. While it is open, a
+  dashed **New** card stands in the group the form names, picked, and shows the name and address or
+  serial line as they are typed; Save turns it into the host's card. **Duplicate** now opens the same form
+  filled in from the host and writes nothing until Save. Leaving a New host or Edit host form with changes
+  in it (Cancel, <kbd>Esc</kbd>, closing the panel, picking another host) asks first. **Protocol** moves up
+  under **Name** in the host and group forms, since it changes the fields below it (#674).
+
 ## [6.1.0] - 2026-10-18
 
 ### Added

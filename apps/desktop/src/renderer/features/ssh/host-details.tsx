@@ -8,6 +8,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Copy, FolderOpen, Pencil, TriangleAlert } from 'lucide-react';
 import { Button } from '../../components/button.js';
+import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import type { ResolvedHostWire, SshKnownHostWire, SshSecretNameWire } from '../../../shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
 import { editHost, openTerminalFor } from './connect.js';
@@ -86,7 +87,47 @@ export function sshCommandOf(host: ResolvedHostWire, jumpAddress: string | undef
   return parts.join(' ');
 }
 
+/**
+ * The panel's content: the picked host's details, or a host form (New host, or Edit host for the picked
+ * one), with the "Discard changes?" prompt leaving a form with changes asks through.
+ */
 export function HostDetails() {
+  const dialog = useHostsStore((s) => s.dialog);
+  const file = useHostsStore((s) => s.file);
+  const discardAsk = useHostsStore((s) => s.discardAsk);
+  return (
+    <>
+      {dialog?.mode === 'new-host' ? (
+        // Keeps the test id the centred dialog had, so the end-to-end helpers find the form where it moved.
+        <div data-testid="host-dialog" className="px-1 py-3">
+          <HostForm key={JSON.stringify(dialog)} file={file} dialog={dialog} embedded />
+        </div>
+      ) : (
+        <PickedHost />
+      )}
+      <ConfirmDialog
+        open={discardAsk !== null}
+        onOpenChange={(open) => {
+          if (!open) useHostsStore.setState({ discardAsk: null });
+        }}
+        title="Discard changes?"
+        description={
+          dialog?.mode === 'new-host'
+            ? 'The new host has not been saved. Discarding it drops what you typed.'
+            : 'This host has changes that have not been saved. Discarding them keeps it as it was.'
+        }
+        confirmLabel="Discard"
+        destructive
+        testId="host-discard"
+        onConfirm={() => {
+          discardAsk?.();
+        }}
+      />
+    </>
+  );
+}
+
+function PickedHost() {
   const selectedHostId = useHostsStore((s) => s.selectedHostId);
   const file = useHostsStore((s) => s.file);
   const resolved = useHostsStore((s) => s.resolved);

@@ -9,20 +9,11 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Check, MoreHorizontal } from 'lucide-react';
 import type { ComponentType, CSSProperties, ReactElement, ReactNode } from 'react';
 import type { GroupEntryWire, HostEntryWire } from '../../../shared/ssh-wire.js';
-import { editHost, openInNewTab, openTerminalFor } from './connect.js';
+import { editHost, newHost, openInNewTab, openTerminalFor } from './connect.js';
 import { takeSecondPress } from './double-press.js';
 import { openFiles } from './files/open-files.js';
 import { useHostDelete } from './host-delete-store.js';
-import {
-  ancestorsOf,
-  findHost,
-  flattenGroups,
-  freeId,
-  moveHost,
-  removeGroup,
-  upsertHost,
-  useHostsStore,
-} from './hosts-store.js';
+import { ancestorsOf, flattenGroups, moveHost, removeGroup, useHostsStore } from './hosts-store.js';
 import { groupLogged, useLogSwitchesStore } from './session-log-switches.js';
 import { useKeyInstall } from './ssh-keys.js';
 import { hasSshFeatures, useHostProtocol } from './host-protocol.js';
@@ -66,12 +57,9 @@ function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly ki
   // Files and keys need an SSH connection to the host itself; a Telnet host has none (#425).
   const protocol = useHostProtocol(host.id);
   const sshFeatures = hasSshFeatures(protocol);
+  // A copy opens in New host, its draft beside the original, and is written only on Save.
   const duplicate = (): void => {
-    const entry = findHost(file, host.id);
-    if (entry === undefined) return;
-    void save(
-      upsertHost(file, { ...entry, id: freeId(file, `${entry.id}-copy`), name: `${entry.name} copy` }, parent?.id),
-    );
+    newHost({ copyOf: host.id, ...(parent === undefined ? {} : { parent: parent.id }) });
   };
   return (
     <>
@@ -255,7 +243,7 @@ function GroupItems({ group, kit: M }: { readonly group: GroupEntryWire; readonl
       <M.Item
         className={ITEM_CLASS}
         onSelect={() => {
-          openDialog({ mode: 'new-host', parent: group.id });
+          newHost({ parent: group.id });
         }}
       >
         New host here…

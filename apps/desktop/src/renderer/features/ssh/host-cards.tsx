@@ -10,13 +10,20 @@ import { ChevronRight, Plus, Server } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { SELECTED_CLASS } from '../../components/selection.js';
 import type { GroupEntryWire, HostEntryWire, HostsFileWire, ResolvedHostWire } from '../../../shared/ssh-wire.js';
-import { openTerminalFor } from './connect.js';
+import { newHost, openTerminalFor } from './connect.js';
 import { hintDetailsOnce } from './details-hint.js';
 import { noteFirstPress, swallowsClick, takeSecondPress } from './double-press.js';
 import { GroupActionsButton, GroupMenu, HostActionsButton, HostMenu } from './host-menus.js';
 import { TOP_LEVEL, type HostsLayout, type HostsPrefs, type HostsSort } from './hosts-prefs.js';
 import { serialTargetText } from './serial-section.js';
-import { flattenGroups, hostStatusOf, osKeyOf, useHostsStore, type PaneSession } from './hosts-store.js';
+import {
+  flattenGroups,
+  hostStatusOf,
+  osKeyOf,
+  useHostsStore,
+  type NewHostDraft,
+  type PaneSession,
+} from './hosts-store.js';
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
 import { ProtectedMark } from './protected-mark.js';
 import { lastConnectedOf, useRecentConnections } from './recent-connections.js';
@@ -162,7 +169,8 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
           hintDetailsOnce();
         }}
         onFocus={(e) => {
-          if (e.target === e.currentTarget) onSelect();
+          // Focus coming back from a menu (Duplicate, Edit…) is not a pick: it would leave the form just opened.
+          if (e.target === e.currentTarget && useHostsStore.getState().dialog === null) onSelect();
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && e.target === e.currentTarget) connect();
@@ -216,6 +224,57 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
   );
 }
 
+/** The draft card's place among the hosts: no saved host has an id with a space in it. */
+const DRAFT_ID = 'new host';
+
+/** What the draft sorts by, as if it were a host. */
+function draftEntry(draft: NewHostDraft): HostEntryWire {
+  return { id: DRAFT_ID, name: draft.name === '' ? 'New host' : draft.name, address: draft.target, tags: [], ssh: {} };
+}
+
+/**
+ * The host New host is making, drawn where Save will put it while its form is open in the details panel:
+ * dashed, picked, and following the name and address as they are typed. Nothing to connect to yet.
+ */
+function DraftCard({ draft, layout }: { readonly draft: NewHostDraft; readonly layout: HostsLayout }) {
+  const grid = layout === 'grid';
+  const ref = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView?.({ block: 'nearest' });
+  }, []);
+  return (
+    <li
+      ref={ref}
+      data-testid="host-draft-card"
+      data-selected
+      aria-current="true"
+      className={`flex min-w-0 cursor-default items-center border border-dashed border-accent bg-accent-muted ${
+        grid ? 'gap-2.5 rounded-md p-2' : 'gap-3 rounded-md px-3 py-1'
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`flex shrink-0 items-center justify-center rounded-md border border-dashed border-accent text-accent ${
+          grid ? 'size-7' : 'size-6'
+        }`}
+      >
+        <Plus size={grid ? 16 : 14} />
+      </span>
+      <span className={`flex min-w-0 flex-1 ${grid ? 'flex-col' : 'items-baseline gap-3'}`}>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-sm leading-5 font-medium text-fg-default">
+            {draft.name === '' ? 'New host' : draft.name}
+          </span>
+          <span className="shrink-0 rounded-full border border-accent px-1.5 text-[10px] leading-4 text-accent">
+            New
+          </span>
+        </span>
+        <span className="truncate font-mono text-xs leading-4 text-fg-subtle">{draft.target}</span>
+      </span>
+    </li>
+  );
+}
+
 /** The card a keystroke moves to from `from`, by what is drawn: the grid is measured, rows are a line. */
 function nextCard(cards: readonly HTMLElement[], from: HTMLElement, key: string): HTMLElement | undefined {
   const index = cards.indexOf(from);
@@ -258,7 +317,8 @@ export function HostCards({
   const selectedTags = useHostsStore((s) => s.selectedTags);
   const groupFilter = useHostsStore((s) => s.groupFilter);
   const visibleHosts = useHostsStore((s) => s.visibleHosts);
-  const openDialog = useHostsStore((s) => s.openDialog);
+  const drafting = useHostsStore((s) => s.dialog?.mode === 'new-host');
+  const storedDraft = useHostsStore((s) => s.draft);
   const selected = useHostsStore((s) => s.selectedHostId);
   const selectHost = useHostsStore((s) => s.selectHost);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -280,7 +340,10 @@ export function HostCards({
     };
   }, []);
 
-  if (file.groups.length === 0 && file.hosts.length === 0) {
+  // Until the form reports what is typed, the draft is a blank new host at the top level.
+  const draft: NewHostDraft | undefined = drafting ? (storedDraft ?? { name: '', target: '' }) : undefined;
+
+  if (file.groups.length === 0 && file.hosts.length === 0 && draft === undefined) {
     return (
       <SshEmptyState
         icon={Server}
@@ -290,7 +353,7 @@ export function HostCards({
         <Button
           variant="primary"
           onClick={() => {
-            openDialog({ mode: 'new-host' });
+            newHost();
           }}
         >
           <Plus size={13} aria-hidden /> Add host
@@ -317,8 +380,18 @@ export function HostCards({
     groupFilter !== undefined && flattenGroups(file).some(({ group }) => group.id === groupFilter)
       ? groupFilter
       : undefined;
+  // The draft shows whatever the search, in the section of the group it will be saved to.
+  const draftKey = draft === undefined ? undefined : (draft.groupId ?? TOP_LEVEL);
   const sections = sectionsOf(file, only)
-    .map((section) => ({ ...section, hosts: sortHosts(section.hosts.filter(shown), prefs.sort, panes, lastConnected) }))
+    .map((section) => {
+      const withDraft = draft !== undefined && (section.group?.id ?? TOP_LEVEL) === draftKey;
+      const hosts = section.hosts.filter(shown);
+      return {
+        ...section,
+        count: hosts.length,
+        hosts: sortHosts(withDraft ? [...hosts, draftEntry(draft)] : hosts, prefs.sort, panes, lastConnected),
+      };
+    })
     // The top level needs no heading when it is all there is; an empty group keeps its heading
     // (its menu is how a host gets into it) unless a filter is narrowing.
     .filter((section) =>
@@ -326,7 +399,7 @@ export function HostCards({
     );
   const headed = file.groups.length > 0;
   // A search shows every match, folded or not.
-  const folded = (key: string): boolean => headed && !narrowed && prefs.collapsed.includes(key);
+  const folded = (key: string): boolean => headed && !narrowed && key !== draftKey && prefs.collapsed.includes(key);
   const toggle = (key: string): void => {
     onPrefs({
       collapsed: prefs.collapsed.includes(key) ? prefs.collapsed.filter((id) => id !== key) : [...prefs.collapsed, key],
@@ -344,7 +417,9 @@ export function HostCards({
     );
   }
 
-  const order = sections.flatMap((s) => (folded(s.group?.id ?? TOP_LEVEL) ? [] : s.hosts.map((h) => h.id)));
+  const order = sections.flatMap((s) =>
+    folded(s.group?.id ?? TOP_LEVEL) ? [] : s.hosts.map((h) => h.id).filter((id) => id !== DRAFT_ID),
+  );
   const tabbableId = selected !== undefined && order.includes(selected) ? selected : order[0];
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
@@ -381,7 +456,7 @@ export function HostCards({
                   className={`transition-transform ${isFolded ? '' : 'rotate-90'}`}
                 />
                 <span className="truncate">{section.title}</span>
-                <span className="font-normal">{section.hosts.length}</span>
+                <span className="font-normal">{section.count}</span>
               </button>
             </h3>
             {section.group !== undefined && (
@@ -394,9 +469,7 @@ export function HostCards({
               type="button"
               aria-label={`Add a host to ${section.title}`}
               onClick={() => {
-                openDialog(
-                  section.group === undefined ? { mode: 'new-host' } : { mode: 'new-host', parent: section.group.id },
-                );
+                newHost(section.group === undefined ? {} : { parent: section.group.id });
               }}
               className="ml-auto flex items-center gap-1 rounded px-1 text-xs text-fg-subtle opacity-0 group-hover/section:opacity-100 hover:text-fg-default focus-visible:opacity-100"
             >
@@ -418,20 +491,25 @@ export function HostCards({
                     : 'flex flex-col gap-1'
                 }
               >
-                {section.hosts.map((host) => (
-                  <HostCard
-                    key={host.id}
-                    host={host}
-                    resolved={hostsById.get(host.id)}
-                    hue={hueFor(host)}
-                    layout={prefs.layout}
-                    selected={selected === host.id}
-                    tabbable={tabbableId === host.id}
-                    onSelect={() => {
-                      selectHost(host.id);
-                    }}
-                  />
-                ))}
+                {section.hosts.map((host) =>
+                  host.id === DRAFT_ID && draft !== undefined ? (
+                    <DraftCard key={DRAFT_ID} draft={draft} layout={prefs.layout} />
+                  ) : (
+                    <HostCard
+                      key={host.id}
+                      host={host}
+                      resolved={hostsById.get(host.id)}
+                      hue={hueFor(host)}
+                      layout={prefs.layout}
+                      // The draft is the picked card while New host is open.
+                      selected={!drafting && selected === host.id}
+                      tabbable={tabbableId === host.id}
+                      onSelect={() => {
+                        selectHost(host.id);
+                      }}
+                    />
+                  ),
+                )}
               </ul>
             )}
           </section>

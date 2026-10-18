@@ -2,8 +2,9 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import type { SshFixture } from '@wirebench/ssh/test-helpers';
 
 /**
- * Fills the essentials of an open New host dialog: name, address 127.0.0.1, port, user and an inline
- * password, which Save stores as the workspace secret `<name>_password`. Leaves the dialog open.
+ * Fills the essentials of an open New host form (in the details panel, test id `host-dialog`): name, address
+ * 127.0.0.1, port, user and an inline password, which Save stores as the workspace secret `<name>_password`.
+ * Leaves the form open.
  */
 export async function fillNewHost(
   dialog: Locator,
@@ -18,7 +19,7 @@ export async function fillNewHost(
   if (options.password !== undefined) await dialog.locator('input[type="password"]').fill(options.password);
 }
 
-/** Unfolds the host dialog's Advanced section, where tags, terminal and forwarding settings live. */
+/** Unfolds a host form's Advanced section, where tags, terminal and forwarding settings live. */
 export async function openAdvanced(dialog: Locator): Promise<void> {
   const advanced = dialog.getByTestId('host-advanced');
   if (!(await advanced.evaluate((el) => (el as HTMLDetailsElement).open))) {
@@ -27,10 +28,10 @@ export async function openAdvanced(dialog: Locator): Promise<void> {
 }
 
 /**
- * Adds host `name` for the fixture's password user from the Hosts view's New host dialog, typing the
- * password inline; Save stores it as the workspace secret `<name>_password`. `password` and `port` default
- * to the fixture's (`pw`, its port); a different one makes a host that fails to sign in or to connect.
- * `beforeSave` fills more of the dialog (forwarding rules, under Advanced) before Save.
+ * Adds host `name` for the fixture's password user from the Hosts view's New host form, which opens in the
+ * details panel, typing the password inline; Save stores it as the workspace secret `<name>_password`.
+ * `password` and `port` default to the fixture's (`pw`, its port); a different one makes a host that fails
+ * to sign in or to connect. `beforeSave` fills more of the form (forwarding rules, under Advanced) before Save.
  */
 export async function addPasswordHost(
   page: Page,

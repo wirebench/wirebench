@@ -8,14 +8,16 @@ import { useForwardsStore } from './forwarding/forwards-store.js';
 import { useHostsStore } from './hosts-store.js';
 
 /**
- * Whether the details slide-over is in front: the Hosts tab is showing and the panel was not put away.
- * With no host picked (after a restart, say) it still shows, and asks for one.
+ * Whether the details slide-over is in front: the Hosts tab is showing and the panel was not put away,
+ * or New host borrows it (whether it shows otherwise stays as the user left it). With no host picked
+ * (after a restart, say) it still shows, and asks for one.
  */
 export function useHostDetailsShown(): boolean {
   const homeInFront = useEditorsStore((s) => s.displayedSet === 'ssh' && s.activeId === undefined);
   const onHosts = useHostsStore((s) => s.homeView === 'hosts');
   const open = useUiStore((s) => s.slideOver.hostDetailsOpen === true);
-  return homeInFront && onHosts && open;
+  const newHost = useHostsStore((s) => s.dialog?.mode === 'new-host');
+  return homeInFront && onHosts && (open || newHost);
 }
 
 /** The picked forward row: its host and rule as `hosts.yaml` resolves them, and what runs of it. */
