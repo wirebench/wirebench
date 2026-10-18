@@ -382,6 +382,30 @@ A value a script stores lasts for the run; see [Values for later
 requests](#values-for-later-requests). A `{{name}}` in a request becomes `${name}`, which reads the
 environment, so the next request reads a stored value as `${#Sequence#name}`.
 
+### Convert imported scripts
+
+`wirebench scripts convert` rewrites imported scripts to the typed API from a terminal.
+
+```bash
+wirebench scripts convert ./project [selector…] [--write]
+```
+
+A selector is a display path (`Shop/Carts`) or a path on disk, and covers the levels at or below it.
+With none, every level that has imported scripts is covered.
+
+Without `--write` the command only previews. For each level it prints the path and the dialect, a
+unified diff for each phase, the TODOs left in the converted text, and a total. Nothing is written.
+
+With `--write` it backs up each phase's imported text to `imported-scripts/<api>/<owner>.<phase>.js`
+(it never overwrites a file), switches the level to the typed API, keeping `enabled`, `secrets`,
+`timeoutMs` and the post-response order, and saves the project. A level whose script does not parse is
+listed and skipped. A backup that cannot be written stops the command before the save.
+
+It exits 0 when done, 2 for a usage error such as a selector that matches nothing, and 3 when the project
+cannot be loaded, a backup cannot be written or the project cannot be saved. See the
+[CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#convert-imported-scripts)
+for an example of each mode.
+
 ## Steer a run
 
 In an API or folder run (`wirebench run`), a script can choose what the run sends next:
