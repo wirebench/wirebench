@@ -19,6 +19,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Lint findings no longer count as Problems.** After importing an OpenAPI definition, its lint findings
+  get their own status bar item (**57 lint findings**, with errors and warnings named in the tooltip),
+  which is never coloured and opens the Problems panel. The **Problems** item and the **Console** badge
+  count only what went wrong, so a clean import of a real-world spec no longer turns the status bar red.
+  The import summary names the findings by severity (**Lint: 2 errors, 55 warnings**) and links to them
+  (#682).
 - **Telnet and serial terminals no longer offer Files.** The terminal tab's toolbar shows **Files** only
   when the focused pane's host is reached over SSH or Mosh, as the pane's own menu already did (#688).
 - **Telnet and serial connects list their own steps.** A serial console's connection screen shows
