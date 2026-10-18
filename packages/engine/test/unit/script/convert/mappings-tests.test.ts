@@ -187,6 +187,42 @@ describe('.not placement and the dropped filler words', () => {
     expectTodo('postman', statement, 'pm.expect');
   });
 
+  it.each([
+    'pm.expect(a).to.constructor(1);',
+    'pm.expect(a).to.toString(1);',
+    'pm.expect(a).to.hasOwnProperty(1);',
+    'pm.expect(a).to.be.constructor;',
+    'pm.expect(a).to.be.__proto__;',
+    'pm.expect(a).to.be.valueOf;',
+  ])('a chai word on the object prototype is not in the tables: %s', (statement) => {
+    expectTodo('postman', statement, 'pm.expect');
+  });
+
+  it.each([
+    'pw.expect(a).constructor(1);',
+    'pw.expect(a).toString(1);',
+    'pw.expect(a).constructor();',
+    'pw.expect(a).hasOwnProperty();',
+  ])('a Jest matcher on the object prototype is not in the tables: %s', (statement) => {
+    expectTodo('hoppscotch', statement, 'pw.expect');
+  });
+
+  it.each([
+    'pm.expect(data).to.include({ id: 1 });',
+    'pm.expect(data).to.includes({ id: 1 });',
+    'pm.expect(data).to.contain({ id: 1 });',
+    'pm.expect(data).to.contains({ id: 1 });',
+    'pm.expect(data).to.not.include({});',
+    'pm.expect(data).to.include(({ id: 1 }));',
+  ])('an object literal given to include or contain (a subset match) is not mapped: %s', (statement) => {
+    expectTodo('postman', statement, 'pm.expect');
+  });
+
+  it('include and contain keep any other argument', () => {
+    expectEverywhere('postman', 'pm.expect(data).to.include(item);', 'expect(data).toContain(item);');
+    expectEverywhere('postman', 'pm.expect(data).to.contain([1]);', 'expect(data).toContain([1]);');
+  });
+
   it('names the call as written for each root', () => {
     expectTodo('bruno', 'expect(a).to.be.empty;', 'expect');
     expectTodo('insomnia', '$.expect(a).to.be.empty;', '$.expect');
@@ -362,6 +398,14 @@ describe('tc.test with a boolean, a function literal and a variable', () => {
     ["tc.test('ok', check);", "test('ok', () => expect<unknown>((check)()).not.toBe(false));"],
     ["tc.test('ok', checks.status);", "test('ok', () => expect<unknown>((checks.status)()).not.toBe(false));"],
   ])('%s', (from, to) => {
+    expectEverywhere('thunder-client', from, to);
+  });
+
+  it.each([
+    ["tc.test('ok', async () => { await x; });", "test('ok', async () => { await x; });"],
+    ["tc.test('ok', async function () { await x; });", "test('ok', async function () { await x; });"],
+    ["tc.test('ok', (async () => x));", "test('ok', (async () => x));"],
+  ])('an async callback is the test itself, so a rejection fails it: %s', (from, to) => {
     expectEverywhere('thunder-client', from, to);
   });
 

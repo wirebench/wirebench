@@ -62,6 +62,14 @@ function argumentsOf(call: ts.CallExpression | undefined, count: number): readon
   return call.arguments.some((arg) => ts.isSpreadElement(arg)) ? undefined : call.arguments;
 }
 
+/** `node` without the parentheses around it. */
+function skipParentheses(node: ts.Expression): ts.Expression {
+  const ts = typescript();
+  let inner = node;
+  while (ts.isParenthesizedExpression(inner)) inner = inner.expression;
+  return inner;
+}
+
 /**
  * `text` ready to stand after `typeof` or before `/`: as it is when it parses as a name, a member
  * access, a call, a literal or a parenthesised expression; in parentheses otherwise.
@@ -104,6 +112,11 @@ export interface ExpectStyle {
 /** The reason on Bruno's `.jsonSchema` TODO. */
 export const JSON_SCHEMA_REASON = "the typed API has no JSON Schema check; use the request's JSON Schema assertion";
 
+/** `table[name]` when the table holds it as its own key; a name on the object prototype is not one. */
+function lookup<T>(table: Readonly<Record<string, T>>, name: string): T | undefined {
+  return Object.hasOwn(table, name) ? table[name] : undefined;
+}
+
 /** The chai words that only read better (spec §6.4); a chain may hold any number of them. */
 const FILLER = new Set(['to', 'be', 'been', 'is', 'that', 'which', 'and', 'has', 'have', 'with', 'at', 'of', 'does']);
 
@@ -128,6 +141,12 @@ const CHAI_CALLS: Readonly<Record<string, string>> = {
   lt: 'toBeLessThan',
   lessThan: 'toBeLessThan',
 };
+
+/**
+ * The chai calls that match a subset when given an object (`.include({ id: 1 })`). The typed
+ * `toContain` does not, so an object literal there is left as a TODO.
+ */
+const SUBSET_CALLS = new Set(['include', 'includes', 'contain', 'contains']);
 
 /** The chai calls `.deep` may come before: their typed form is `toEqual`. */
 const DEEP_CALLS = new Set(['equal', 'equals', 'eq', 'eql', 'eqls']);
@@ -167,7 +186,7 @@ function chaiAssertion(step: Step, deep: boolean): Assertion | undefined {
   const ts = typescript();
   const args = step.args;
   if (args === undefined) {
-    const matcher = deep ? undefined : CHAI_WORDS[step.name];
+    const matcher = deep ? undefined : lookup(CHAI_WORDS, step.name);
     return matcher === undefined ? undefined : (subject, not, text) => `expect(${text(subject)})${not}.${matcher}`;
   }
   if (deep && !DEEP_CALLS.has(step.name)) return undefined;
@@ -187,8 +206,9 @@ function chaiAssertion(step: Step, deep: boolean): Assertion | undefined {
     if (!ts.isStringLiteralLike(only) || !TYPEOF_NAMES.has(only.text)) return undefined;
     return (subject, not, text) => `expect(typeof ${operand(text(subject))})${not}.toBe(${text(only)})`;
   }
-  const matcher = deep ? 'toEqual' : CHAI_CALLS[step.name];
+  const matcher = deep ? 'toEqual' : lookup(CHAI_CALLS, step.name);
   if (matcher === undefined) return undefined;
+  if (SUBSET_CALLS.has(step.name) && ts.isObjectLiteralExpression(skipParentheses(only))) return undefined;
   return (subject, not, text) => `expect(${text(subject)})${not}.${matcher}(${text(only)})`;
 }
 
@@ -196,7 +216,7 @@ function chaiAssertion(step: Step, deep: boolean): Assertion | undefined {
 function jestAssertion(step: Step): Assertion | undefined {
   const args = step.args;
   if (args === undefined) return undefined;
-  const level = JEST_LEVELS[step.name];
+  const level = lookup(JEST_LEVELS, step.name);
   if (level !== undefined) {
     return args.length === 0
       ? (subject, not, text) => `expect(Math.floor(${operand(text(subject))} / 100))${not}.toBe(${String(level)})`
@@ -207,7 +227,7 @@ function jestAssertion(step: Step): Assertion | undefined {
   if (step.name === 'toBeType') {
     return (subject, not, text) => `expect(typeof ${operand(text(subject))})${not}.toBe(${text(only)})`;
   }
-  const matcher = JEST_CALLS[step.name];
+  const matcher = lookup(JEST_CALLS, step.name);
   return matcher === undefined
     ? undefined
     : (subject, not, text) => `expect(${text(subject)})${not}.${matcher}(${text(only)})`;
@@ -251,6 +271,8 @@ export function expectChain(style: ExpectStyle): Chain {
  * `tc.test(n, v)`: a function (a literal, or a name or member that holds one) is called and passes
  * unless it returns false; any other value passes when it is true (spec §6.4). The call's result is
  * checked as `unknown`: a callback that returns nothing is `void`, which `.toBe(false)` cannot take.
+ * An `async` function literal is the test itself, `test(n, f)`: the typed `test` awaits it, so a
+ * rejection fails the test, where checking the promise it returns would always pass.
  */
 export const tcTest: Chain = (ref, context) => {
   const ts = typescript();
@@ -258,8 +280,10 @@ export const tcTest: Chain = (ref, context) => {
   if (ref.call === undefined || args === undefined) return undefined;
   const [name, value] = args;
   if (name === undefined || value === undefined) return undefined;
-  let inner: ts.Expression = value;
-  while (ts.isParenthesizedExpression(inner)) inner = inner.expression;
+  const inner = skipParentheses(value);
+  const isAsync =
+    (ts.isArrowFunction(inner) || ts.isFunctionExpression(inner)) &&
+    inner.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword) === true;
   const callable =
     ts.isArrowFunction(inner) ||
     ts.isFunctionExpression(inner) ||
@@ -268,12 +292,10 @@ export const tcTest: Chain = (ref, context) => {
     ts.isElementAccessExpression(inner);
   const n = context.text(name);
   const v = context.text(value);
-  return {
-    node: ref.call,
-    text: callable
-      ? `test(${n}, () => expect<unknown>((${v})()).not.toBe(false))`
-      : `test(${n}, () => expect(${v}).toBe(true))`,
-  };
+  let text = `test(${n}, () => expect(${v}).toBe(true))`;
+  if (isAsync) text = `test(${n}, ${v})`;
+  else if (callable) text = `test(${n}, () => expect<unknown>((${v})()).not.toBe(false))`;
+  return { node: ref.call, text };
 };
 
 // --- CryptoJS -------------------------------------------------------------------------------------
