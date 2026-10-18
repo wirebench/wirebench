@@ -9,6 +9,7 @@
  */
 import { UNSUPPORTED_WHY } from '../api/layer-parts.js';
 import { SKIP_REQUEST_PRE_ONLY } from '../api/prelude.js';
+import { cryptoHash, cryptoHmac, expectChain, tcTest, type Chain, type ExpectStyle } from './chains.js';
 import type { LayeredApi, ScriptPhase } from '../model.js';
 import type { ConvertProtocol } from './roots.js';
 
@@ -60,6 +61,11 @@ export interface MappingRow {
    * TODO although the scan list (`UNSUPPORTED_CALLS`) does not name it. A row with it has no `to`.
    */
   readonly refuse?: string;
+  /**
+   * The rewrite covers more than the call (`chains.ts`): an expectation's whole chain, a CryptoJS
+   * digest with its `.toString(…)`. It replaces `shape` and `arity`; the template gets its text.
+   */
+  readonly chain?: Chain;
   readonly to: Partial<Record<ConvertProtocol, Template>>;
 }
 
@@ -227,5 +233,50 @@ export const VARIABLE_AND_RUN_MAPPINGS: readonly MappingRow[] = [
   },
 ];
 
+/** A chain row's template: the chain's own text, the same on every protocol. */
+const chainText: Template = ([text]) => String(text);
+const testCall: Template = ([name, check]) => `test(${String(name)}, ${String(check)})`;
+
+/** An expectation row: `calls` with the matchers `style` names. */
+const expectRow = (dialects: readonly LayeredApi[], calls: readonly string[], style: ExpectStyle): MappingRow => ({
+  calls,
+  dialects,
+  chain: expectChain(style),
+  to: everyProtocol(chainText),
+});
+const CHAI: ExpectStyle = { chai: true, jest: false };
+
+/** §6.4 tests and expectations, and §6.7 encoding and crypto. */
+export const TEST_AND_CRYPTO_MAPPINGS: readonly MappingRow[] = [
+  // --- §6.4 tests
+  { calls: pmShaped('test'), dialects: PM_DIALECTS, arity: 2, to: everyProtocol(testCall) },
+  { calls: ['pw.test', 'hopp.test'], dialects: ['hoppscotch'], arity: 2, to: everyProtocol(testCall) },
+  // Bruno's and Thunder Client's test is the typed one already; the row only counts it as converted.
+  { calls: ['test'], dialects: ['bruno', 'thunder-client'], arity: 2, to: everyProtocol(testCall) },
+  { calls: ['tc.test'], dialects: ['thunder-client'], chain: tcTest, to: everyProtocol(chainText) },
+  // --- §6.4 expectations
+  expectRow(PM_DIALECTS, pmShaped('expect'), CHAI),
+  expectRow(['hoppscotch'], ['hopp.expect'], { chai: true, jest: true }),
+  expectRow(['hoppscotch'], ['pw.expect'], { chai: false, jest: true }),
+  expectRow(['bruno'], ['expect'], { chai: true, jest: false, jsonSchema: true }),
+  expectRow(['thunder-client'], ['expect', 'tc.expect'], CHAI),
+  // --- §6.7 encoding
+  { calls: ['btoa'], dialects: ['postman'], arity: 1, to: everyProtocol(([x]) => `encoding.base64(${String(x)})`) },
+  { calls: ['atob'], dialects: ['postman'], arity: 1, to: everyProtocol(([x]) => `encoding.fromBase64(${String(x)})`) },
+  // --- §6.7 crypto: only the whole `CryptoJS.X(…).toString(…)` chain
+  ...(['MD5', 'SHA1', 'SHA256', 'SHA512'] as const).map((name): MappingRow => ({
+    calls: [`CryptoJS.${name}`],
+    dialects: ['postman'],
+    chain: cryptoHash(name.toLowerCase()),
+    to: everyProtocol(chainText),
+  })),
+  ...(['SHA1', 'SHA256', 'SHA512'] as const).map((name): MappingRow => ({
+    calls: [`CryptoJS.Hmac${name}`],
+    dialects: ['postman'],
+    chain: cryptoHmac(name.toLowerCase()),
+    to: everyProtocol(chainText),
+  })),
+];
+
 /** The whole table. Later sections add their rows here. */
-export const MAPPINGS: readonly MappingRow[] = [...VARIABLE_AND_RUN_MAPPINGS];
+export const MAPPINGS: readonly MappingRow[] = [...VARIABLE_AND_RUN_MAPPINGS, ...TEST_AND_CRYPTO_MAPPINGS];

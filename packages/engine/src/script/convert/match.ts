@@ -8,7 +8,10 @@ import { MAPPINGS, type MappingRow } from './mappings.js';
 import type { DialectRef, Matcher } from './roots.js';
 import { typescript } from './typescript.js';
 
-/** A matcher over `rows`; the first row whose name, dialect and shape fit answers. */
+/**
+ * A matcher over `rows`; the first row whose name, dialect and shape fit answers, and its answer is
+ * final. A chain row fits on name and dialect, and its chain decides the rest.
+ */
 export function tableMatcher(rows: readonly MappingRow[]): Matcher {
   const byName = new Map<string, MappingRow[]>();
   for (const row of rows) {
@@ -21,13 +24,21 @@ export function tableMatcher(rows: readonly MappingRow[]): Matcher {
         if (ref.call !== undefined) return { refused: row.refuse };
         continue;
       }
-      const target = shapeOf(row, ref);
-      if (target === undefined) continue;
+      // A chain row reads its own shape; any other row is passed over when the shape differs.
+      const target = row.chain === undefined ? shapeOf(row, ref) : undefined;
+      if (row.chain === undefined && target === undefined) continue;
       if (row.phase !== undefined && row.phase !== context.phase) {
         return row.otherPhase !== undefined ? { refused: row.otherPhase } : undefined;
       }
       const template = row.to[context.protocol];
       if (template === undefined) return undefined;
+      if (row.chain !== undefined) {
+        const answer = row.chain(ref, context);
+        return answer === undefined || 'refused' in answer
+          ? answer
+          : { node: answer.node, text: template([answer.text]) };
+      }
+      if (target === undefined) return undefined;
       const text = template(target.args.map((arg) => context.text(arg)));
       return { node: target.node, text: row.loose === true && !separated(target.node) ? `(${text})` : text };
     }

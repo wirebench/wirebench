@@ -52,10 +52,12 @@ export interface Replacement {
 
 /**
  * The mapping table's answer that a call stays a TODO with the layer's reason, although the layer
- * runs it elsewhere: `skipRequest` in a post-response script.
+ * runs it elsewhere: `skipRequest` in a post-response script. With `kind: 'not-mapped'` the layer
+ * runs the call and the reason says what to use instead (Bruno's `.jsonSchema`).
  */
 export interface Refusal {
   readonly refused: string;
+  readonly kind?: 'not-mapped';
 }
 
 /**

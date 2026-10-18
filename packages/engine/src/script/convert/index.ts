@@ -160,7 +160,8 @@ export function convertScript(
         continue;
       }
       if ('refused' in replacement) {
-        unconverted.set(ref.node, { node: ref.node, call: ref.name, kind: 'unsupported', reason: replacement.refused });
+        const kind = replacement.kind ?? 'unsupported';
+        unconverted.set(ref.node, { node: ref.node, call: ref.name, kind, reason: replacement.refused });
         continue;
       }
       checkReplacement(ref, replacement.node, handed, { from: cursor, to }, refs, dialect, source);
