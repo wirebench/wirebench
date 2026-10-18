@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Comments in a JSON body.** <kbd>Cmd/Ctrl+/</kbd> toggles `//` on the selected lines of a Raw JSON
+  body and <kbd>Shift+Alt+A</kbd> toggles `/* */`; comments are coloured as comments and saved with the
+  request. They are removed before the body is sent, with any comma a commented-out last field leaves
+  behind, so the server still receives valid JSON; slashes inside strings stay, and a `${…}` inside a
+  comment is never resolved. Desktop and CLI sends, MCP, runs, **Copy as cURL**, generated code,
+  History and the HTTP log all use the body without comments. GraphQL variables accept them too.
+  **Format** and the JSON form refuse a body with comments instead of dropping them (#702).
+
 ### Changed
 
 - **New host opens in the right panel, with a draft card in Hosts.** New host (the Hosts button and its

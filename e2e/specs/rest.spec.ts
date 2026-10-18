@@ -177,6 +177,57 @@ test.describe('REST: make an API, send a request, read the response', () => {
     await expect(page.getByTestId('rest-response-body')).toContainText('application/json');
   });
 
+  test('comments out a JSON field with Mod+/, and the server receives valid JSON without it', async () => {
+    server = await startTestRestServer();
+    launched = await launchApp();
+    const page = launched.window;
+
+    await createWorkspace(page, 'REST');
+    await createProject(page, 'Pets');
+    await createApi(page, 'Petstore', server.url);
+    await createRestRequest(page, 'Petstore', 'Create');
+    await setMethodAndUrl(page, 'POST', '/echo');
+
+    await openRequestTab(page, 'Body');
+    await page.getByTestId('rest-body-kind').selectOption('raw');
+    await setMonacoText(
+      page,
+      'Request body',
+      '{\n  "name": "Fido",\n  "home": "http://pets.test/fido",\n  /* "age": 3, */\n  "tag": "x"\n}',
+    );
+    // The caret on the last field's line, then the toggle-comment chord a developer reaches for.
+    await page.evaluate(() => {
+      const monaco = (
+        globalThis as unknown as {
+          __wirebenchMonaco?: {
+            editor: {
+              getEditors(): {
+                getDomNode(): { querySelector(selector: string): unknown } | null;
+                setPosition(position: { lineNumber: number; column: number }): void;
+                focus(): void;
+              }[];
+            };
+          };
+        }
+      ).__wirebenchMonaco;
+      const editor = monaco?.editor
+        .getEditors()
+        .find((candidate) => candidate.getDomNode()?.querySelector('[aria-label="Request body"]') != null);
+      editor?.setPosition({ lineNumber: 5, column: 3 });
+      editor?.focus();
+    });
+    await page.keyboard.press('ControlOrMeta+Slash');
+    await expect.poll(() => monacoModelText(page)).toContain('// "tag": "x"');
+
+    await sendRestByKeyboard(page);
+
+    await expect(responseStatus(page)).toContainText('200');
+    const received = server.requests.filter((request) => request.url === '/echo' && request.method === 'POST');
+    expect(received).toHaveLength(1);
+    // Both comments are gone, the comma the last field left is too, and the URL's `//` is intact.
+    expect(JSON.parse(received[0]!.body.toString('utf8'))).toEqual({ name: 'Fido', home: 'http://pets.test/fido' });
+  });
+
   test('refuses to send a request whose URL is not finished, and says why', async () => {
     server = await startTestRestServer();
     launched = await launchApp();
