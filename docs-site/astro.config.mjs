@@ -88,6 +88,7 @@ export default defineConfig({
             { label: 'SSH with a security key', slug: 'solutions/ssh-security-key-sign-in' },
             { label: 'Coding agent runs the regression suite', slug: 'solutions/agent-runs-api-regression-suite' },
             { label: 'Snapshot baselines for a changing API', slug: 'solutions/snapshot-baselines-changing-api' },
+            { label: 'API suites in CI with a baseline gate', slug: 'solutions/api-suites-in-ci-baseline-gate' },
           ],
         },
         {

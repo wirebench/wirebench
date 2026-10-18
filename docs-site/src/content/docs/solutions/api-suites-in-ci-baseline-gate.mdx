@@ -1,0 +1,355 @@
+---
+title: Run your API suites in CI and fail the build on a baseline difference
+description: Commit a Wirebench project with its goldens, run it in GitHub Actions or GitLab CI with --baseline, pass secrets as WIREBENCH_SECRET_* variables, read the report, and accept an intended change with --update-baseline.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+An API suite that only runs on a developer's laptop catches nothing on the pull request that broke the
+API. Wirebench's command-line runner, `wirebench run`, sends the requests saved in a project and
+compares each response with the golden committed beside it. A difference fails the job. The secrets
+come from the CI system's own variables, and every report masks them.
+
+This guide sets up that gate for a small order service and breaks it on purpose. All output below is
+from running `wirebench` against that service.
+
+## What you commit
+
+A Wirebench project is a folder of plain files, so the suite lives in the same repository as the
+service, or in a repository of its own:
+
+```text
+shop/
+  wirebench.yaml
+  environments/ci.yaml
+  apis/Orders/
+    api.yaml
+    definition/openapi.yaml
+    requests/orders/
+      listOrders.request.yaml
+      listOrders.golden.yaml
+      getOrder.request.yaml
+      getOrder.golden.yaml
+      createOrder.request.yaml
+      createOrder.body.json
+      createOrder.golden.yaml
+```
+
+- **The requests** each carry their own assertions, such as a status check.
+- **The goldens** are the known-good response bodies, one `<request>.golden.yaml` per request. What
+  they compare and ignore is covered in
+  [Snapshot baselines for an API an agent keeps changing](/wirebench/docs/solutions/snapshot-baselines-changing-api/).
+- **The environment** holds the base URL the pipeline calls. `api.yaml` sends it as `${baseUrl}`.
+- **No secret** is in any of these files. The API's bearer token is only a reference with a name for
+  CI:
+
+  ```yaml
+  # apis/Orders/api.yaml (part)
+  auth:
+    tokenEnv: SHOP_TOKEN
+    tokenRef: sec_shop_token
+    type: bearer
+  baseUrl: ${baseUrl}
+  ```
+
+To write the first goldens, run the suite once with `--update-baseline` against a service you trust,
+then add ignore rules for the fields that change on every call:
+
+```text
+✓ Orders/orders/listOrders  200  10 ms  baseline: created
+✓ Orders/orders/createOrder  201  2 ms  baseline: created
+✓ Orders/orders/getOrder  200  1 ms  baseline: created
+
+3 passed, 0 failed, 0 errored, 0 skipped in 0.0s
+baseline: 0 updated, 3 created, 0 matched, 0 not written, 0 refused
+written:
+  apis/Orders/requests/orders/listOrders.golden.yaml
+  apis/Orders/requests/orders/createOrder.golden.yaml
+  apis/Orders/requests/orders/getOrder.golden.yaml
+```
+
+## Secrets as environment variables
+
+In a pipeline there is no keychain. The runner reads each secret from a variable named
+`WIREBENCH_SECRET_<NAME>`, and from nowhere else unless the project's workspace defines
+[secret sources](/wirebench/docs/guides/secrets/). Ask the project which names it needs:
+
+```bash
+wirebench secrets list ./shop -e ci
+```
+
+```text
+VARIABLE                     STATE    SOURCE  PURPOSE       USED BY
+WIREBENCH_SECRET_SHOP_TOKEN  missing  —       bearer token  Orders/orders/listOrders, Orders/orders/createOrder, Orders/orders/getOrder
+```
+
+It exits 3 while a variable is missing, and 0 once all are set. It never prints a value. The name
+comes from `tokenEnv`. A reference without such a name is read from `WIREBENCH_SECRET_` plus the
+reference in capitals, here `WIREBENCH_SECRET_SEC_SHOP_TOKEN`. A run without the variable sends
+nothing for the requests that need it:
+
+```text
+! Orders/orders/listOrders
+    secret-missing: Set WIREBENCH_SECRET_SHOP_TOKEN (or WIREBENCH_SECRET_SEC_SHOP_TOKEN) to run "Orders/orders/listOrders".
+```
+
+Once set, the value is masked wherever a report could show it. In the JUnit file of the failing run
+below, the request carries `Authorization: <redacted>`, and the token appears in no report.
+
+## The CI command
+
+```bash
+wirebench run ./shop -e ci --baseline --require-baseline \
+  --reporter cli --reporter junit=out/wirebench.xml --reporter json=out/wirebench.json
+```
+
+- **`-e ci`** picks the environment. A project that defines environments refuses a run without one.
+- **`--baseline`** compares each SOAP and REST response with its golden.
+- **`--require-baseline`** makes a request without a golden an error, so a new request cannot reach
+  main unchecked. Without it, such a request is noted as `(no baseline)` and judged on its assertions.
+- **`--reporter`** can repeat. `cli` writes to the job log, and each `<kind>=<file>` writes a report.
+  A report's folder is created if it is missing.
+
+`--refuse-protected` is worth adding when a pipeline must never touch a
+[protected environment](/wirebench/docs/guides/environments/#colour-an-environment-and-protect-it).
+Without it, a protected environment only prints a warning.
+
+Three combinations are refused before anything is sent, with exit 2: `--update-baseline` with
+`--baseline`, `--baseline` with `--sequence`, and `--data` or `--iterations` with either baseline
+flag. A golden belongs to one request, not to a sequence step or a data row. Run sequences and
+data-driven runs as separate commands without `--baseline`.
+
+## The exit codes
+
+The job's result is the process's exit code.
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Every selected request passed, and every compared response matched. |
+| `1` | An assertion failed, or a response differs from its golden. Nothing errored. |
+| `2` | A usage or load problem: a bad flag, an unknown environment or selector, a project that does not load, a report that cannot be written. Nothing was sent. |
+| `3` | A request errored: a missing secret, a network or TLS failure, an unreadable or malformed golden, a golden over 2 MB, a missing golden under `--require-baseline`. |
+| `130` | The run was interrupted. The reports hold what ran. |
+
+An error outranks a failure, so a run with both exits 3. A pipeline that could not reach the service
+has learned nothing about it. A golden that has been edited by hand into invalid YAML shows up as
+an error, not a difference:
+
+```text
+! Orders/orders/getOrder  200  1 ms
+    baseline — The saved baseline cannot be read (malformed).
+```
+
+## A complete GitHub Actions workflow
+
+The [Wirebench action](/wirebench/docs/guides/run-in-ci/) has no input for `--baseline`, so this
+workflow runs the published package with `npx`. That is the same package the action runs.
+
+```yaml
+# .github/workflows/api-suite.yml
+name: API suite
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  wirebench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Run the suite against its goldens
+        env:
+          WIREBENCH_SECRET_SHOP_TOKEN: ${{ secrets.SHOP_TOKEN }}
+        run: >-
+          npx --yes @wirebench/cli@6.1.0 run ./shop -e ci
+          --baseline --require-baseline --refuse-protected
+          --reporter cli
+          --reporter junit=out/wirebench.xml
+          --reporter json=out/wirebench.json
+          --reporter html=out/wirebench.html
+
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wirebench-reports
+          path: out/
+```
+
+- **Pin the version.** The CLI needs Node 24. Pinning `@wirebench/cli` keeps a new release from
+  changing a pull request's result.
+- **`if: always()`** keeps the reports of a red run, which is when you need them.
+- **The service.** `environments/ci.yaml` names the base URL the job calls. To test a service the
+  job starts itself, start it in an earlier step, wait until it answers, and override the address
+  with `--var baseUrl=http://127.0.0.1:4010`.
+
+If you prefer the action for its other inputs, its `exit-code` output still carries the CLI's code.
+Use the plain command when you need the baseline gate.
+
+## The same in GitLab CI
+
+The GitLab template runs the CLI's container image and passes `WIREBENCH_ARGS` through unchanged, so
+the baseline flags go there:
+
+```yaml
+include:
+  - remote: https://raw.githubusercontent.com/wirebench/wirebench/v6.1.0/templates/gitlab/wirebench.gitlab-ci.yml
+
+api-suite:
+  extends: .wirebench-run
+  variables:
+    WIREBENCH_VERSION: '6.1.0'
+    WIREBENCH_PROJECT: shop
+    WIREBENCH_ENV: ci
+    WIREBENCH_ARGS: '--baseline --require-baseline --refuse-protected'
+```
+
+- The template always writes the `cli` report and a JUnit file, `wirebench-junit.xml` by default.
+  It collects the JUnit file as a test report with `when: always`, so the merge request's test view
+  lists each difference.
+- Set `WIREBENCH_VERSION` yourself. The template's own default is `latest`.
+- Add `SHOP_TOKEN` as a masked CI/CD variable named `WIREBENCH_SECRET_SHOP_TOKEN` under
+  **Settings → CI/CD → Variables**.
+
+## Reading a failed run
+
+A change to the service renames `qty` to `quantity` on every order line. The pull request's job fails
+with exit 1:
+
+```text
+✗ Orders/orders/listOrders  200  17 ms
+    4 differences from the baseline
+      removed /items/0/lines/0/qty: 2
+      added /items/0/lines/0/quantity: 2
+      removed /items/0/lines/1/qty: 1
+      added /items/0/lines/1/quantity: 1
+✓ Orders/orders/createOrder  201  2 ms  baseline: matches
+✗ Orders/orders/getOrder  200  1 ms
+    4 differences from the baseline
+      removed /lines/0/qty: 2
+      added /lines/0/quantity: 2
+      removed /lines/1/qty: 1
+      added /lines/1/quantity: 1
+
+1 passed, 2 failed, 0 errored, 0 skipped in 0.0s
+baseline: 1 matched, 2 differ, 0 missing
+```
+
+- **The job log** lists each change as `changed`, `added` or `removed`, with its JSON Pointer path,
+  the first 20 per request. A rename always reads as a `removed` and an `added` at the same place.
+- **The JUnit file** turns each difference into a `<failure type="baseline">` with the changes as its
+  text. The request and response follow in `<system-out>`, redacted:
+
+  ```xml
+  <testcase classname="Orders/orders" name="getOrder" time="0.001"><failure message="4 differences from the baseline" type="baseline">removed /lines/0/qty: 2
+  added /lines/0/quantity: 2
+  removed /lines/1/qty: 1
+  added /lines/1/quantity: 1</failure>
+  ```
+
+- **The JSON report** is for scripts. Each request has a `baseline` object, and the summary counts
+  `matched`, `differs` and `missing`. `ignored` says how many paths the golden's ignore rules hid,
+  here the `requestId` and the `generatedAt` of each response:
+
+  ```json
+  {
+    "path": "Orders/orders/getOrder",
+    "outcome": "failed",
+    "status": 200,
+    "baseline": {
+      "status": "differs",
+      "format": "json",
+      "ignored": 2,
+      "changes": [
+        { "kind": "removed", "path": "/lines/0/qty", "expected": "2" },
+        { "kind": "added", "path": "/lines/0/quantity", "actual": "2" }
+      ]
+    }
+  }
+  ```
+
+  The two other changes are left out here. The report lists up to 100 changes per request.
+
+{/* TODO(screenshot): a pull request's failed "API suite" check, with the job log open on the baseline differences. Save as docs-site/public/images/solutions/ci-baseline-failure.png and cite it here. */}
+
+## Accepting an intended change
+
+If the rename was meant, the goldens have to follow it. Nothing in CI writes a golden. A person runs
+the update against the changed service and commits the result with the code:
+
+<Steps>
+
+1. Run the suite with `--update-baseline` instead of `--baseline`:
+
+   ```bash
+   wirebench run ./shop -e ci --update-baseline
+   ```
+
+   ```text
+   ✓ Orders/orders/listOrders  200  10 ms  baseline: updated
+   ✓ Orders/orders/createOrder  201  2 ms  baseline: matches
+   ✓ Orders/orders/getOrder  200  1 ms  baseline: updated
+
+   3 passed, 0 failed, 0 errored, 0 skipped in 0.0s
+   baseline: 2 updated, 0 created, 1 matched, 0 not written, 0 refused
+   written:
+     apis/Orders/requests/orders/listOrders.golden.yaml
+     apis/Orders/requests/orders/getOrder.golden.yaml
+   ```
+
+2. Review what changed with `git diff -- '*.golden.yaml'`:
+
+   ```diff
+    body: |-
+   -  {"id":"ord-1001","status":"paid","total":42.5,"currency":"EUR","lines":[{"sku":"TEA-01","qty":2},{"sku":"MUG-07","qty":1}],"meta":{"requestId":"f20e1b53-38f4-48f0-8d3d-f175c5cb064b","generatedAt":"2026-10-18T16:19:56.239Z"}}
+   +  {"id":"ord-1001","status":"paid","total":42.5,"currency":"EUR","lines":[{"sku":"TEA-01","quantity":2},{"sku":"MUG-07","quantity":1}],"meta":{"requestId":"d82fdef5-4b1e-4a2a-952d-3a6fc58441db","generatedAt":"2026-10-18T16:20:50.490Z"}}
+    contentType: application/json
+    ignore:
+      - //requestId
+      - //generatedAt
+   -savedAt: 2026-10-18T16:19:56.240Z
+   +savedAt: 2026-10-18T16:20:50.492Z
+   ```
+
+3. Commit the goldens in the same pull request as the service change. The next CI run reports
+   `baseline: 3 matched, 0 differ, 0 missing` and exits 0.
+
+</Steps>
+
+- A golden that still matches is not touched, so `createOrder` shows no change in git.
+- The ignore rules survive the rewrite.
+- A request whose own assertions fail is not written. A response that holds a known secret value is
+  refused, and that request errors with exit 3.
+
+<Aside type="caution">
+Do not run `--update-baseline` in the pipeline itself. A job that rewrites its own goldens before
+comparing them can never fail. The review of the golden diff in the pull request is the approval.
+</Aside>
+
+## Checklist
+
+- [ ] Every request the suite relies on has a committed `.golden.yaml`, with ignore rules for ids and
+      timestamps.
+- [ ] `wirebench secrets list` exits 0 on the runner. Each name is a masked CI variable.
+- [ ] The job runs `--baseline --require-baseline` and keeps its reports with `if: always()` or
+      `when: always`.
+- [ ] The CLI version is pinned.
+- [ ] Sequences and data-driven runs have their own commands, without `--baseline`.
+- [ ] Goldens change only through `--update-baseline` on a developer's machine, reviewed in the pull
+      request.
+
+## Related
+
+- [Run in CI](/wirebench/docs/guides/run-in-ci/): the action, the GitLab template, the image and
+  `npx`, with every input.
+- [Snapshot baselines for an API an agent keeps changing](/wirebench/docs/solutions/snapshot-baselines-changing-api/):
+  what a golden compares, ignores and masks.
+- [Snapshot regression](/wirebench/docs/guides/snapshot-regression/): saving a golden in the app.
+- [Secrets](/wirebench/docs/guides/secrets/): references, `${secret:name}` and secret sources.
