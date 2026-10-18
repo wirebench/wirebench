@@ -1,6 +1,14 @@
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, posix, relative, resolve, sep } from 'node:path';
-import { applyConversions, proposeConversions, runSelectorOf, saveProject, selectRequests } from '@wirebench/engine';
+import {
+  applyConversions,
+  normaliseSelector,
+  proposeConversions,
+  runSelectorOf,
+  saveProject,
+  selectorCovers,
+  selectRequests,
+} from '@wirebench/engine';
 import type { LevelProposal, Project } from '@wirebench/engine';
 import type { ScriptsConvertArgs } from '../args.js';
 import { ExitCode } from '../exit-codes.js';
@@ -175,18 +183,6 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** As `wirebench run` reads a selector (`run/select.ts`). */
-function normalise(selector: string): string {
-  return selector
-    .replace(/\\/g, '/')
-    .replace(/^\.\//, '')
-    .replace(/\.request\.yaml$/, '')
-    .replace(/\/$/, '');
-}
-
-const covers = (selector: string, candidate: string | undefined): boolean =>
-  candidate !== undefined && (candidate === selector || candidate.startsWith(`${selector}/`));
-
 /**
  * The levels the selectors cover, in explorer order, each once. A selector is a display path or a
  * path on disk, as `wirebench run` takes it, and covers the levels at or below it: `Shop` covers the
@@ -202,13 +198,13 @@ function selectLevels(
   selectors: readonly string[],
 ): readonly LevelProposal[] | { readonly unmatched: readonly string[] } {
   if (selectors.length === 0) return all;
-  const wanted = selectors.map(normalise);
+  const wanted = selectors.map(normaliseSelector);
   const located = all.map((level) => {
     const display = level.path.join('/');
     return { level, display, disk: diskPathOf(project, level.ownerId, display) };
   });
   const matches = (selector: string, at: (typeof located)[number]): boolean =>
-    covers(selector, at.display) || covers(selector, at.disk);
+    selectorCovers(selector, at.display) || (at.disk !== undefined && selectorCovers(selector, at.disk));
   const unmatched = selectors.filter(
     (selector, index) =>
       !located.some((at) => matches(wanted[index]!, at)) && selectRequests(project, [selector]).unmatched.length > 0,
