@@ -171,7 +171,7 @@ exports[`Hoppscotch golden > maps legacy-v0.json 1`] = `
   "report": {
     "notes": [],
     "warnings": [
-      "Scripts on 1 request were imported switched off: read each on its Scripts tab, then switch them on",
+      "Scripts on 1 request were imported switched off: read each on its Scripts tab, then switch them on.",
       "Credentials are not copied from the collection; re-enter them for 1 auth configuration",
     ],
   },
@@ -835,7 +835,7 @@ exports[`Hoppscotch golden > maps v12-r17.json 1`] = `
       "Upload avatar: the file part "file" has no file, so it was kept switched off as a text part; pick its file on the Body tab.",
       "Signed: its body is a file with no file, so it has no body; pick the file on the Body tab.",
       "JWT: the secret or key is not copied; set the secret (HS*) or key (RS*/ES*/PS*) before sending",
-      "Scripts on the API and 2 requests were imported switched off: read each on its Scripts tab, then switch them on",
+      "Scripts on the API and 2 requests were imported switched off: read each on its Scripts tab, then switch them on.",
       "Credentials are not copied from the collection; re-enter them for 4 auth configurations",
     ],
   },

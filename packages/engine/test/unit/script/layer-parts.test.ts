@@ -10,6 +10,7 @@ import { BRUNO_LAYER } from '../../../src/script/api/bruno.js';
 import { HOPPSCOTCH_LAYER } from '../../../src/script/api/hoppscotch.js';
 import { INSOMNIA_LAYER } from '../../../src/script/api/insomnia.js';
 import { POSTMAN_LAYER } from '../../../src/script/api/postman.js';
+import { THUNDER_CLIENT_LAYER } from '../../../src/script/api/thunder-client.js';
 import {
   PART_CRYPTO,
   PART_EXPECT,
@@ -17,6 +18,8 @@ import {
   PART_JSON_SCHEMA,
   PART_PAIRS,
   PART_PM,
+  PART_REQUEST,
+  PART_RESPONSE,
   PART_UNSUPPORTED,
   PART_VARIABLES,
 } from '../../../src/script/api/layer-parts.js';
@@ -30,6 +33,8 @@ const PARTS: ReadonlyArray<readonly [string, string]> = [
   ['PART_PM', PART_PM],
   ['PART_JSON_SCHEMA', PART_JSON_SCHEMA],
   ['PART_JEST_EXPECT', PART_JEST_EXPECT],
+  ['PART_REQUEST', PART_REQUEST],
+  ['PART_RESPONSE', PART_RESPONSE],
 ];
 
 interface Evaluated {
@@ -56,7 +61,7 @@ const makeContext = (defined: string[]) => {
     encoding: {},
     request: {},
     response: {},
-    input: { phase: 'pre', info: { requestName: 'x' } },
+    input: { phase: 'pre', info: { requestName: 'x' }, request: {} },
     iteration: { index: 0, count: 1 },
     execution: {},
     test: () => undefined,
@@ -93,8 +98,8 @@ const evaluate = (index: number): Evaluated => {
 };
 
 const EXPECTED: ReadonlyArray<{ declared: string[]; defined: string[] }> = [
-  { declared: ['unsupported'], defined: [] },
-  { declared: ['asValue', 'variables'], defined: [] },
+  { declared: ['WHY', 'unsupported'], defined: [] },
+  { declared: ['asValue', 'removed', 'variables'], defined: [] },
   { declared: ['typeName', 'same', 'chain', 'chaiExpect', 'chaiExpectSchema'], defined: [] },
   { declared: ['pairs'], defined: [] },
   {
@@ -104,6 +109,25 @@ const EXPECTED: ReadonlyArray<{ declared: string[]; defined: string[] }> = [
   { declared: ['pmExpect', 'pmRequest', 'pmResponse', 'pmObject', 'pmResponseValue'], defined: [] },
   { declared: ['jsonSchema'], defined: [] },
   { declared: ['TYPES', 'jestMatchers', 'jestExpect'], defined: [] },
+  {
+    declared: [
+      'noPairs',
+      'cannot',
+      'requestHeaders',
+      'noQuery',
+      'requestQuery',
+      'requestUrl',
+      'hasMessage',
+      'restBody',
+      'requestBody',
+      'requestText',
+      'setRequestBody',
+      'setRequestUrl',
+      'setRequestMethod',
+    ],
+    defined: [],
+  },
+  { declared: ['responseView'], defined: [] },
 ];
 
 describe('the shared layer parts', () => {
@@ -149,5 +173,12 @@ describe('the shared layer parts', () => {
     const ctx = makeContext(defined);
     expect(() => void runInContext(HOPPSCOTCH_LAYER, ctx)).not.toThrow();
     expect(defined).toEqual(expect.arrayContaining(['pw', 'hopp', 'pm', 'require', 'CryptoJS', 'btoa', 'atob']));
+  });
+
+  it('the Thunder Client layer runs over the parts in one scope', () => {
+    const defined: string[] = [];
+    const ctx = makeContext(defined);
+    expect(() => void runInContext(THUNDER_CLIENT_LAYER, ctx)).not.toThrow();
+    expect(defined).toEqual(expect.arrayContaining(['expect', 'tc', 'require']));
   });
 });

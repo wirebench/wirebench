@@ -1,7 +1,7 @@
 # Spec: Running scripts imported from Insomnia, Bruno, Hoppscotch and Thunder Client
 
 **Date:** 2026-10-16
-**Status:** decisions settled (under review)
+**Status:** implemented
 **Milestone:** 6.1 — Team operations
 **Scope:** making the scripts that the #588 importers save as text runnable. This spec also outlines
 a later "Convert to Wirebench script" action.
@@ -144,8 +144,12 @@ calls.
 - **What still goes to `imported-scripts/`:** Bruno's `.js` helper files, which a script would
   `require`; they stay text, because `require` is unsupported. Also a script on a level that cannot
   hold one: a WebSocket item (or a folder holding only WebSocket items), and a collection script when
-  the import makes no REST or gRPC API. Each is saved as `<owner>.<phase>.js` and named in the report,
-  so no script is lost. REST and gRPC items, folders and APIs all hold scripts.
+  the import makes no REST or gRPC API. In every client, the scripts of a collection the import drops
+  for having no HTTP request are kept the same way, and so are those of a folder Insomnia's import
+  drops (Thunder Client and Hoppscotch keep their empty folders). Each is saved as
+  `imported-scripts/<api>/<owner>.<phase>.js` and named in the report, so no script is lost. REST
+  items, folders and APIs hold scripts; so do gRPC items, folders and APIs, and a collection's scripts
+  go on each of the two. A WebSocket item, or a folder that holds only WebSocket items, has no slot.
 - **Bruno's collection scripts and order go on every API the import makes** that can hold them
   (REST and gRPC), because Bruno runs them for every request type.
 
@@ -260,33 +264,62 @@ So `sandwich` differs from Wirebench's order, and the setting is added:
 Hoppscotch scripts carry no language marker and may mix `pw.*`, `hopp.*` and Hoppscotch's own
 `pm.*`. The one `hoppscotch` layer defines all three:
 
-- **`pw`:** `env.get` / `set` / `unset` / `resolve`, `response.status` / `body` / `headers`, `test`,
-  and `expect` with the jest-style matchers `toBe`, `toBeType`, `toInclude`, `toBeLevel2xx` to
-  `toBeLevel5xx` and `toHaveLength`.
-- **`hopp`:** `env.*`; `request.*`, whose setters work only in the pre-request phase; `response`
-  `statusCode`, `headers` and `body.asJSON()` / `asText()`; and `test` and `expect`. Its `expect`
-  takes both the chai chains and the jest matchers.
+- **`pw`:** `env.get` / `set` / `unset` / `resolve` / `getResolve`, `response.status` / `body` /
+  `headers` (`{ key, value }` rows), `test`, and `expect` with the jest-style matchers `toBe`,
+  `toBeType`, `toInclude`, `toBeLevel2xx` to `toBeLevel5xx` and `toHaveLength`. `env.get` is plain: an
+  unset name gives `undefined` and `<<name>>` is not expanded. `env.resolve` expands `<<name>>`
+  again inside what it found, up to 10 levels, and an unset name becomes empty.
+- **`hopp`:** `env`, `env.active` and `env.global` with `get` (expanded, `null` when unset), `getRaw`,
+  `set` and `delete`; `request` reads `url`, `method`, `headers`, `params` (`{ key, value }` rows),
+  `body` (`{ contentType, body }`) and `variables`; its setters (`setUrl`, `setMethod`, `setHeader`,
+  `setHeaders`, `removeHeader`, `setParam`, `setParams`, `removeParam`, `setBody({ contentType, body })`,
+  `variables.set`) work only in the pre-request phase, and `setBody` also sets `Content-Type`;
+  `response` `statusCode`, `statusText`, `headers`, `responseTime` and `body.asJSON()` / `asText()`;
+  and `test` and `expect`. Its `expect` takes both the chai chains and the jest matchers.
 - **`pm`:** the Postman layer's object, minus what Hoppscotch itself does not support.
 
-Unsupported: `hopp.cookies`, top-level `import`, and anything Hoppscotch's own sandbox refuses.
+Unsupported: `hopp.cookies`, `hopp.fetch`, `hopp.env.reset` / `getInitialRaw` / `setInitial`,
+`hopp.request.setAuth` and `auth`, `hopp.response.body.bytes`, a top-level `import`, and anything
+Hoppscotch's own sandbox refuses (`pm.collectionVariables`, `pm.iterationData`,
+`pm.execution.setNextRequest` and `skipRequest`).
 
 ## 7. Thunder Client (PR 4)
 
 The layer defines `tc`:
 
-- `getVar` and `setVar(name, value, scope)`. Every scope (`local`, `global`, `request`) writes
-  `vars` (§3.3).
-- `replaceVars`, through the run's resolver.
-- `request.*` and `response.{status, json, text, headers, time}`.
-- `test`.
-- `skipRequest`, which maps to `execution.skipRequest` only for the current request. A name argument
-  for another request is unsupported.
+- `getVar` and `setVar(name, value, scope)`. Every scope (`local`, `global`, `request`) reads `vars`
+  then `props` and writes `vars` (§3.3).
+- `replaceVars`, which expands `{{name}}` through `vars` and then `props`; a name nothing holds is left
+  as written.
+- `request`: `name`, `url` (a plain string), `method`, `headers` (`{ name, value, isDisabled }` rows of the headers being sent, so `isDisabled` is always false),
+  `body` (parsed JSON or text), `getHeader`, and `id`, which is `undefined`. The setters `setHeader`,
+  `setBody` and `tc.setParam` work only in the pre-request phase.
+- `response`, in a post-response script: `status`, `json` (a property; `undefined` when the body does
+  not parse), `text`, `headers` (`{ name, value }` rows), `getHeader`, `time`, `size` (bytes) and
+  `contentType`. In a pre-request script every member is unsupported.
+- `info`: `requestName`, `currentIteration` and `totalIterations`; `environmentName`,
+  `collectionName` and `folderName` are `undefined`.
+- `test(name, result)`, where `result` is a boolean or a function; and `expect`, as a global and as
+  `tc.expect`.
+- `skipRequest()`, which maps to `execution.skipRequest` only for the current request. A call with any
+  argument names another request and is unsupported.
 
 Thunder Client stores scripts as arrays of lines. The converter joins them with `\n`. Declarative
 test rows keep going through `thunder/tests.ts`; this spec does not change them.
 
 Unsupported: `tc.runRequest`, `tc.retryRequest`, `tc.loadModule`, `tc.loadFromPath`, `tc.readFile`,
-`tc.exec`, `tc.delay` and `require("thunder-tests/...")`.
+`tc.getAbsolutePath`, `tc.exec`, `tc.delay`, `require`, `require("thunder-tests/...")`, the cookies
+(`tc.getCookies`, `tc.setCookie`, `tc.clearCookies`, `tc.response.cookies`), `tc.response.getBinary`,
+`tc.response.passed`, `tc.chartHTML`, `tc.request.auth`, the global `assert` and `tc.skipRequest` with
+an argument.
+
+Known gap: `tc.request.url` is a plain string, so the page's `url.getParam` and `url.setParam` fail with
+a `TypeError` at run time. The import report names a script that uses them.
+
+Folder and collection scripts: the documented levels are kept, but the export key for a folder's
+scripts (`settings.preReq`, `settings.postReq`) and a collection's post-request script
+(`settings.postReq`) is inferred from the collection's confirmed `settings.preReq`. An absent key
+attaches nothing.
 
 ## 8. Phase 2: "Convert to Wirebench script" (outline)
 
@@ -322,7 +355,7 @@ matter.
   variable reads and writes across phases (§3.3).
 - **Postman layer:** its existing tests pass unchanged after §3.2 moves the shared parts.
 - **Importers:** each importer's golden snapshot shows scripts attached with the right `api`,
-  level, phase and `enabled: false`. No `imported-scripts/` entries appear, except Bruno helpers.
+  level, phase and `enabled: false`. No `imported-scripts/` entries appear, except Bruno helpers, scripts on a level with no slot, and the scripts of a collection or folder the import drops. Two dropped collections whose names slugify alike keep separate files.
   The importer tests also check the report's unsupported list.
 - **Fixtures:** the existing crafted script fixtures for each client run end to end. Parse, map,
   enable, then send against a local echo server with the real worker.
@@ -355,7 +388,7 @@ shared scripts guide table.
   and variables, with no edits to the script text.
 - Every unsupported call in §4–7 fails with `script-unsupported` and its client name, and the
   import report lists it before the user turns the script on.
-- New imports write no `imported-scripts/` files, except Bruno helper modules.
+- New imports write no `imported-scripts/` files, except Bruno helper modules, scripts on a level that cannot hold one, and the scripts of a collection (or an Insomnia folder) the import drops for having no HTTP request.
 - The Postman layer's tests and the Postman, v3 and OpenCollection golden snapshots are unchanged.
 - `WIREBENCH_SKIP_PERF=1 pnpm check` and `pnpm test:perf` are green on every PR.
 

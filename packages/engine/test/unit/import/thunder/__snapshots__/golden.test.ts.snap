@@ -464,6 +464,16 @@ Adds an order.",
             "order": 1,
             "pathParams": [],
             "query": [],
+            "scripts": {
+              "api": "thunder-client",
+              "enabled": false,
+              "post": {
+                "text": "var json = tc.response.json;
+tc.setVar("firstName", json.data.product.name);
+",
+              },
+              "secrets": [],
+            },
             "settings": {},
             "slug": "Product by id",
             "url": "/graphql",
@@ -512,7 +522,7 @@ Adds an order.",
     "examples": 0,
     "folders": 3,
     "requests": 9,
-    "scripts": 1,
+    "scripts": 0,
   },
   "report": {
     "notes": [
@@ -521,7 +531,6 @@ Adds an order.",
       "lost / Bucket: its body is the file ../input/file.zip, a path on the machine it was exported from.",
       "admin: its headers were copied onto the requests below it that do not set them.",
       "Upload picture: the file part "picture" points at ../assets/front.webp, a path on the machine it was exported from.",
-      "Product by id: its after-response script was saved to imported-scripts/shop api/product by id.post.js and is never run.",
     ],
     "warnings": [
       "Shop API: the test "Content-Type contains json" has no Wirebench equivalent and was not imported.",
@@ -530,17 +539,11 @@ Adds an order.",
       "admin / orders / Create order: the test "set-env-var json.id setto {{lastItemId}}" sets a variable from the response, which was not imported; use a capture or a script.",
       "Product by id: it runs other requests first (request chaining), which was not imported; build the chain as a sequence.",
       "Socket: its request type "ws" has no published file shape, so it was not imported.",
-      "The saved scripts call tc.; Wirebench does not run them. Port what they do to Wirebench scripts by hand.",
+      "Scripts on 1 request were imported switched off: read each on its Scripts tab, then switch them on.",
       "Credentials are not copied from the collection; re-enter them for 6 auth configurations",
     ],
   },
-  "scripts": [
-    {
-      "path": "imported-scripts/shop api/product by id.post.js",
-      "source": "var json = tc.response.json;
-tc.setVar("firstName", json.data.product.name);",
-    },
-  ],
+  "scripts": [],
   "variables": {
     "environments": [],
     "report": {

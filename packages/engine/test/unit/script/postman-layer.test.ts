@@ -182,6 +182,26 @@ describe('the Postman layer', () => {
   });
 });
 
+describe('the Postman layer: unset', () => {
+  it('pm.environment.unset makes the name read as absent', async () => {
+    const outcome = await run(
+      'pre',
+      `pm.environment.set('token', 'x');
+       pm.environment.unset('token');
+       pm.collectionVariables.unset('baseUrl');
+       console.log(pm.environment.has('token'), pm.environment.get('token'), pm.variables.has('baseUrl'), pm.variables.get('baseUrl'));`,
+    );
+    expect(outcome).toMatchObject({
+      ok: true,
+      values: [
+        { name: 'token', value: '' },
+        { name: 'baseUrl', value: '' },
+      ],
+      log: { lines: ['false undefined false undefined'] },
+    });
+  });
+});
+
 describe('assertions chained after .property(...)', () => {
   it('fail when the follow-on check is wrong', async () => {
     const outcome = await run(

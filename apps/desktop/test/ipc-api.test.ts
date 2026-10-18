@@ -1931,7 +1931,7 @@ describe('api.importThunderClient', () => {
   };
 
   it('imports a pasted collection export, its tests as assertions', async () => {
-    const { addApi, fake } = setupPicked();
+    const { addApi, deps, fake } = setupPicked();
     const response = await value<ClientResponse>('api.importThunderClient', {
       target: { projectId: 'p1' },
       source: { kind: 'text', text: readFileSync(join(THUNDER, 'collection-1.2.json'), 'utf8') },
@@ -1941,7 +1941,14 @@ describe('api.importThunderClient', () => {
       source: 'inline:thunder-client',
       declaredVersion: 'thunder-client',
     });
-    expect(response.counts).toMatchObject({ requests: 9, assertions: 7 });
+    expect(response.counts).toMatchObject({ requests: 9, assertions: 7, scripts: 0 });
+    // The script rides on the REST API, switched off: no text file is written.
+    expect(deps.router.writeImportedScripts).not.toHaveBeenCalled();
+    const requests = apiRequests((addApi.mock.calls[0]![1] as { api: RestApi }).api);
+    expect(requests.find((request) => request.name === 'Product by id')?.scripts).toMatchObject({
+      api: 'thunder-client',
+      enabled: false,
+    });
     expect(fake.environments).toEqual([]);
   });
 

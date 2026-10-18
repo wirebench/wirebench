@@ -12,8 +12,9 @@ project you choose. Its folders and requests keep their order. Its tests become 
 Wirebench has the same check.
 
 Environments become workspace environments, and the global one merges into Globals. Scripts are
-kept as text and never run. Credentials do not come across as plain text. The import summary lists
-everything that was left out or changed.
+attached to their requests, folders and API, switched off, and run once you switch them on.
+Credentials do not come across as plain text. The import summary lists everything that was left out
+or changed.
 
 <Aside type="caution" title="An unpublished format">
 Thunder Client does not publish its file format. Wirebench reads it from exported files and the
@@ -112,10 +113,24 @@ note.
 
 ### Scripts
 
-Every pre-request and post-request script, on a request or a collection, is written as it is to
-`imported-scripts/` in the project folder, and never read back or run. An existing file is never
-overwritten: a second import adds a number to the name. The notes list where each script went, and
-a warning names the script API they call.
+Every pre-request and post-request script is attached where it was: a collection's to the API, a
+folder's to the folder, a request's to the request. A request's post-request script becomes its
+post-response script. The scripts are **switched off**, so they run once you read them and switch
+them on, against the `tc` object Thunder Client gives them. The summary lists, per request, the calls
+Wirebench cannot run. See [Scripts from other clients](/wirebench/docs/guides/scripts/#thunder-client-scripts)
+for what is supported.
+
+Thunder Client documents scripts on a folder and on a collection, but not the key they are stored
+under in an export. A folder's script is read from its `settings.preReq` and `settings.postReq`, and a
+collection's post-request script from `settings.postReq`. If an export keeps them elsewhere, they are
+not found, and nothing is attached.
+
+A script with no place to run, because its collection holds no HTTP request and is left out of
+the import, is saved as text under `imported-scripts/` and never run. An existing file is never
+overwritten: a repeat adds a number to the name, and the notes list where each script went.
+
+`tc.request.url` is a plain string, so the documented `tc.request.url.getParam` and `setParam` fail
+with a `TypeError` when called. The import report names a script that uses them.
 
 ## Credentials
 
@@ -137,8 +152,9 @@ each on its **Auth** tab; Wirebench stores it encrypted outside the project.
 ## The command line
 
 `wirebench import <file-or-folder>` reads a collection export or a `thunder-tests` folder and adds
-its APIs. It has no secret store, workspace or script folder, so it lists environments and scripts
-as not imported. An environment export is refused.
+its APIs, with their scripts attached switched off: delete the `enabled: false` line (or set it to
+`true`) under `scripts:` in the request's, folder's or API's `.yaml` to switch them on. It has no
+secret store or workspace, so it lists environments as not imported. An environment export is refused.
 
 ## Limits
 
@@ -158,7 +174,7 @@ as not imported. An environment export is refused.
 
 </Steps>
 
-<Aside type="note" title="Scripts are kept, not translated">
-An imported script is text written against another client's scripting API. Wirebench never runs it;
-rewrite what you need as a Wirebench script or as assertions.
+<Aside type="note" title="Scripts are off until you switch them on">
+An imported script is code nobody on your team has read yet. Read it, then switch it on. A call
+Wirebench cannot run, such as `tc.runRequest` or `tc.getCookies`, fails with `script-unsupported`.
 </Aside>

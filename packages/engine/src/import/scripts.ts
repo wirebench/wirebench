@@ -2,8 +2,10 @@
  * Scripts an importer keeps as text (spec §7.4, §6.2): written under `imported-scripts/` by the
  * desktop main process, never read back or run. The path rule here is pure.
  */
+import { slugify } from '../project/paths.js';
 import { TOP_LEVEL_IMPORT } from '../script/module-syntax.js';
 import type { LayeredApi, RequestScripts } from '../script/model.js';
+import type { ReportBuilder } from './report.js';
 
 /** The folder imported scripts are written to. Nothing in Wirebench reads it. */
 export const IMPORTED_SCRIPTS_DIR = 'imported-scripts';
@@ -23,6 +25,61 @@ export function importedScriptPath(apiSlug: string, itemSlug: string, fileTail: 
       return path;
     }
   }
+}
+
+/**
+ * A level's scripts as v2.1 `event` entries, for a converter that writes the collection document the
+ * shared mapper reads: `prerequest` first, then `test` (the after-response script). A blank script
+ * is skipped, and a level with none has no `event` at all.
+ */
+export function eventsOf(scripts: {
+  readonly pre?: string;
+  readonly post?: string;
+}): { event: Record<string, unknown>[] } | Record<string, never> {
+  const event: Record<string, unknown>[] = [];
+  if (scripts.pre !== undefined && scripts.pre.trim() !== '')
+    event.push({ listen: 'prerequest', script: { type: 'text/javascript', exec: scripts.pre } });
+  if (scripts.post !== undefined && scripts.post.trim() !== '')
+    event.push({ listen: 'test', script: { type: 'text/javascript', exec: scripts.post } });
+  return event.length > 0 ? { event } : {};
+}
+
+/** One level of a dropped API that held scripts: its names from the API down and its two scripts. */
+export interface DroppedLevel {
+  readonly path: readonly string[];
+  readonly pre?: string;
+  readonly post?: string;
+}
+
+/**
+ * The text files for the scripts of an API dropped because it holds no HTTP request: no tree is
+ * left to attach them to, so each is saved as `imported-scripts/<api>/<owner>.<phase>.js`, as the
+ * OpenCollection importer saves its loose scripts, and the report names the file. A blank script
+ * is skipped. `taken` is the set of paths this import already wrote and is shared by every call of
+ * one import, so two dropped APIs whose names slugify alike (`Idle`, `idle`) never write one path.
+ */
+export function droppedApiScriptFiles(
+  apiSlug: string,
+  levels: readonly DroppedLevel[],
+  report: ReportBuilder,
+  taken: Set<string>,
+): ImportedScriptFile[] {
+  const files: ImportedScriptFile[] = [];
+  for (const { path: names, pre, post } of levels) {
+    const owner = names.join(' / ');
+    for (const [phase, source] of [
+      ['pre', pre],
+      ['post', post],
+    ] as const) {
+      if (source === undefined || source.trim() === '') continue;
+      const path = importedScriptPath(apiSlug, slugify(names.join('-')).toLowerCase(), `${phase}.js`, taken);
+      report.note(
+        `${owner}: its ${phase} script has no place to run in Wirebench, so it was saved to ${path} and is never run.`,
+      );
+      files.push({ path, source });
+    }
+  }
+  return files;
 }
 
 /** A level's scripts of one kind, in the order the client runs them; two of one kind are joined. */
@@ -52,6 +109,14 @@ const UNSUPPORTED_CALLS: Record<LayeredApi, readonly [RegExp, string][]> = {
   ],
   bruno: [
     [/(?<![\w$.])bru\.sendRequest\b/, 'bru.sendRequest'],
+    [/(?<![\w$.])bru\.runRequest\b/, 'bru.runRequest'],
+    [/(?<![\w$.])bru\.getProcessEnv\b/, 'bru.getProcessEnv'],
+    [/(?<![\w$.])bru\.visualize\b/, 'bru.visualize'],
+    [/(?<![\w$.])bru\.deleteAllVars\b/, 'bru.deleteAllVars'],
+    [/(?<![\w$.])req\.getAuthMode\b/, 'req.getAuthMode'],
+    [/(?<![\w$.])req\.setHeaders\b/, 'req.setHeaders'],
+    [/(?<![\w$.])res\.setBody\b/, 'res.setBody'],
+    [/(?<![\w$.])res\.setHeader\b/, 'res.setHeader'],
     [/(?<![\w$.])bru\.sleep\b/, 'bru.sleep'],
     [/(?<![\w$.])bru\.cookies\b/, 'bru.cookies'],
     [/(?<![\w$.])req\.setTimeout\b/, 'req.setTimeout'],
@@ -82,7 +147,30 @@ const UNSUPPORTED_CALLS: Record<LayeredApi, readonly [RegExp, string][]> = {
     [/(?<![\w$.])require\s*\(/, 'require'],
     [TOP_LEVEL_IMPORT, 'import'],
   ],
-  'thunder-client': [],
+  'thunder-client': [
+    [/(?<![\w$.])tc\.runRequest\b/, 'tc.runRequest'],
+    [/(?<![\w$.])tc\.retryRequest\b/, 'tc.retryRequest'],
+    [/(?<![\w$.])tc\.loadModule\b/, 'tc.loadModule'],
+    [/(?<![\w$.])tc\.loadFromPath\b/, 'tc.loadFromPath'],
+    [/(?<![\w$.])tc\.readFile\b/, 'tc.readFile'],
+    [/(?<![\w$.])tc\.exec\b/, 'tc.exec'],
+    [/(?<![\w$.])tc\.delay\b/, 'tc.delay'],
+    [/(?<![\w$.])tc\.skipRequest\s*\(\s*[^\s)]/, 'tc.skipRequest with a request name'],
+    [/(?<![\w$.])tc\.getAbsolutePath\b/, 'tc.getAbsolutePath'],
+    [/(?<![\w$.])tc\.getCookies\b/, 'tc.getCookies'],
+    [/(?<![\w$.])tc\.setCookie\b/, 'tc.setCookie'],
+    [/(?<![\w$.])tc\.clearCookies\b/, 'tc.clearCookies'],
+    [/(?<![\w$.])tc\.chartHTML\b/, 'tc.chartHTML'],
+    [/(?<![\w$.])tc\.response\.cookies\b/, 'tc.response.cookies'],
+    [/(?<![\w$.])tc\.response\.getBinary\b/, 'tc.response.getBinary'],
+    [/(?<![\w$.])tc\.response\.passed\b/, 'tc.response.passed'],
+    [/(?<![\w$.])tc\.request\.auth\b/, 'tc.request.auth'],
+    [/(?<![\w$.])tc\.request\.url\.getParam\b/, 'tc.request.url.getParam'],
+    [/(?<![\w$.])tc\.request\.url\.setParam\b/, 'tc.request.url.setParam'],
+    [/(?<![\w$.])assert\s*[.(]/, 'assert'],
+    [/(?<![\w$.])require\s*\(\s*['"`]thunder-tests\//, 'require("thunder-tests/...")'],
+    [/(?<![\w$.])require\s*\((?!\s*['"`]thunder-tests\/)/, 'require'],
+  ],
 };
 
 export function unsupportedCalls(text: string, api: LayeredApi): string[] {
@@ -105,10 +193,27 @@ const RUN_CONTROL_CALLS: Partial<Record<LayeredApi, readonly [RegExp, string][]>
     [/(?<![\w$.])bru\.runner\.skipRequest\b/, 'bru.runner.skipRequest'],
     [/(?<![\w$.])bru\.runner\.stopExecution\b/, 'bru.runner.stopExecution'],
   ],
+  'thunder-client': [[/(?<![\w$.])tc\.skipRequest\s*\(\s*\)/, 'tc.skipRequest']],
 };
 
 export function runControlCalls(text: string, api: LayeredApi = 'postman'): string[] {
   return (RUN_CONTROL_CALLS[api] ?? []).filter(([pattern]) => pattern.test(text)).map(([, name]) => name);
+}
+
+/** The calls that send another request, whose warning says what to do instead. */
+const SEND_CALLS = [
+  'pm.sendRequest',
+  'insomnia.sendRequest',
+  'bru.sendRequest',
+  'bru.runRequest',
+  'hopp.fetch',
+  'tc.runRequest',
+  'tc.retryRequest',
+];
+
+/** `a`, `a and b`, `a, b and c`. */
+function listed(items: readonly string[]): string {
+  return items.length === 1 ? items[0]! : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]!}`;
 }
 
 /** The level of a project tree a script sits on. */
@@ -158,16 +263,16 @@ export class ScriptImportLog {
       ...(requests > 0 ? [`${String(requests)} ${requests === 1 ? 'request' : 'requests'}`] : []),
     ];
     if (places.length > 0) {
-      const listed =
-        places.length === 1 ? places[0]! : `${places.slice(0, -1).join(', ')} and ${places[places.length - 1]!}`;
-      out.push(`Scripts on ${listed} were imported switched off: read each on its Scripts tab, then switch them on`);
+      out.push(
+        `Scripts on ${listed(places)} were imported switched off: read each on its Scripts tab, then switch them on.`,
+      );
     }
     for (const [path, calls] of this.unsupported) {
       // A request a script sends is the one call people most often need, so its warning says what to do instead.
-      const sends = ['pm.sendRequest', 'insomnia.sendRequest', 'bru.sendRequest'].find((name) => calls.delete(name));
-      if (sends !== undefined) {
+      const sends = SEND_CALLS.filter((name) => calls.delete(name)).sort();
+      if (sends.length > 0) {
         out.push(
-          `The scripts of "${path}" call ${sends}, which a script cannot do: send that request as a sequence step, or use OAuth2 auth for a token`,
+          `The scripts of "${path}" call ${listed(sends)}, which a script cannot do: send that request as a sequence step, or use OAuth2 auth for a token`,
         );
       }
       if (calls.size > 0) {

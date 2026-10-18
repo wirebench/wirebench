@@ -64,6 +64,75 @@ describe('Insomnia scripts are attached', () => {
     expect(mapped.report.notes.some((n) => n.includes('imported-scripts'))).toBe(false);
   });
 
+  it('a workspace with no HTTP request keeps its folder scripts as text', () => {
+    const mapped = mapV5([
+      {
+        name: 'Live',
+        meta: { id: 'fld_1' },
+        scripts: { preRequest: "console.log('folder');", afterResponse: 'console.log("after");' },
+        children: [{ name: 'Feed', url: 'wss://a.example.com/feed', meta: { id: 'ws-req_1' } }],
+      },
+    ]);
+    expect(mapped.collections[0]!.rest).toBeUndefined();
+    expect(mapped.scripts).toEqual([
+      { path: 'imported-scripts/w/live.pre.js', source: "console.log('folder');" },
+      { path: 'imported-scripts/w/live.post.js', source: 'console.log("after");' },
+    ]);
+    expect(mapped.counts.scripts).toBe(2);
+    expect(mapped.report.notes).toContain(
+      'Live: its pre script has no place to run in Wirebench, so it was saved to imported-scripts/w/live.pre.js and is never run.',
+    );
+  });
+
+  it('two dropped workspaces whose names slugify alike keep their files apart', () => {
+    let n = 0;
+    const workspace = (id: string, name: string, script: string): Record<string, unknown>[] => [
+      { _id: id, parentId: null, name, scope: 'collection', _type: 'workspace' },
+      { _id: `${id}_f`, parentId: id, _type: 'request_group', name: 'Live', metaSortKey: 1, preRequestScript: script },
+    ];
+    const busy = [
+      { _id: 'wrk_3', parentId: null, name: 'Busy', scope: 'collection', _type: 'workspace' },
+      { _id: 'req_1', parentId: 'wrk_3', _type: 'request', name: 'Ping', method: 'GET', url: 'https://a.test/x' },
+    ];
+    const text = JSON.stringify({
+      __export_format: 4,
+      resources: [...workspace('wrk_1', 'Idle', 'a();'), ...workspace('wrk_2', 'idle', 'b();'), ...busy],
+    });
+    const mapped = mapInsomnia(parseInsomnia(text), { newId: () => `id${String((n += 1))}` });
+    expect(mapped.scripts.map((file) => file.path)).toEqual([
+      'imported-scripts/idle/live.pre.js',
+      'imported-scripts/idle/live-2.pre.js',
+    ]);
+  });
+
+  it('a folder with no HTTP request, inside a workspace that has one, keeps its scripts as text', () => {
+    const mapped = mapV5([
+      request('Ping', {}),
+      {
+        name: 'Live',
+        meta: { id: 'fld_1' },
+        scripts: { preRequest: "console.log('live');" },
+        children: [
+          {
+            name: 'Inner',
+            meta: { id: 'fld_2' },
+            scripts: { afterResponse: 'console.log("inner");' },
+            children: [{ name: 'Feed', url: 'wss://a.example.com/feed', meta: { id: 'ws-req_1' } }],
+          },
+        ],
+      },
+    ]);
+    expect(apiFolders(mapped.collections[0]!.rest!)).toEqual([]);
+    expect(mapped.scripts).toEqual([
+      { path: 'imported-scripts/w/live.pre.js', source: "console.log('live');" },
+      { path: 'imported-scripts/w/live-inner.post.js', source: 'console.log("inner");' },
+    ]);
+    expect(mapped.counts.scripts).toBe(2);
+    expect(mapped.report.notes).toContain(
+      'Live / Inner: its post script has no place to run in Wirebench, so it was saved to imported-scripts/w/live-inner.post.js and is never run.',
+    );
+  });
+
   it('the report says scripts were imported switched off and lists unsupported calls per request', () => {
     const mapped = mapV5([
       request('Fetch', {
@@ -72,7 +141,7 @@ describe('Insomnia scripts are attached', () => {
       request('Plain', { preRequest: 'insomnia.variables.set("a", 1);' }),
     ]);
     expect(mapped.report.warnings).toContain(
-      'Scripts on 2 requests were imported switched off: read each on its Scripts tab, then switch them on',
+      'Scripts on 2 requests were imported switched off: read each on its Scripts tab, then switch them on.',
     );
     const line = mapped.report.warnings.find((w) => w.includes('call what Wirebench does not run'));
     expect(line).toBe('The scripts of "Fetch" call what Wirebench does not run: insomnia.vault, require');

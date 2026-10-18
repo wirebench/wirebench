@@ -994,7 +994,7 @@ const apiImportClientResponseObject = z.object({
     folders: z.number(),
     examples: z.number(),
     assertions: z.number(),
-    /** Scripts written under `imported-scripts/`, never run. */
+    /** Script files kept as text under `imported-scripts/`; attached scripts are not counted here. */
     scripts: z.number(),
   }),
   /** What became of the environments and variables; absent when there were none. Never a value. */

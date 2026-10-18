@@ -410,10 +410,10 @@ recognized as **Insomnia environments**.
 
 </Steps>
 
-The summary counts the APIs, requests and folders and the scripts kept as text, then lists the
-environments and project properties added and the secrets stored. Insomnia scripts are not kept as
-text: they are attached switched off, and the report's warnings name the folders and requests that
-have them.
+The summary counts the APIs, requests and folders and the script files kept as text, then lists the
+environments and project properties added and the secrets stored. Insomnia scripts are attached
+switched off, and the report's warnings name the folders and requests that have them; only the scripts
+of a collection or folder the import drops are kept as text, and counted.
 
 - **Environments.** The base and folder environments become project properties; a name the
   project already has keeps its value. Each sub-environment becomes a workspace environment,
@@ -542,12 +542,15 @@ by its files.
 - **Environments.** Each becomes a workspace environment, **never made active**; the global one
   merges into Globals. Encrypted values and `.env` files cannot be read, and are listed.
 - **Request chaining** and run options are reported, not imported.
-- **Scripts** are saved as text under `imported-scripts/` and never run.
+- **Scripts** are attached to their requests, folders and APIs, switched off, and run once you switch
+  them on, against the `tc` object. The summary lists the calls Wirebench cannot run. The scripts of a
+  collection with no HTTP request are saved as text under `imported-scripts/`. See
+  [Scripts from other clients](/wirebench/docs/guides/scripts/#thunder-client-scripts).
 - **Credentials** are never imported as plain text.
 - **A folder that keeps one file per request** is refused: export the collection instead.
 
-From the command line, `wirebench import <file-or-folder>` adds the same APIs, and lists
-environments and scripts as not imported; an environment export is refused. See
+From the command line, `wirebench import <file-or-folder>` adds the same APIs and their scripts, and
+lists environments as not imported; an environment export is refused. See
 [From Thunder Client](/wirebench/docs/switching/thunder-client/) for every rule, and what does not
 come across.
 

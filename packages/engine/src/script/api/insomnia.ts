@@ -20,19 +20,19 @@ const insomniaObject = Object.freeze({
   ...pmObject,
   baseEnvironment: variables,
   parentFolders: variables,
-  sendRequest: unsupported('insomnia.sendRequest'),
-  require: unsupported('insomnia.require'),
+  sendRequest: unsupported('insomnia.sendRequest', WHY.send),
+  require: unsupported('insomnia.require', WHY.modules),
   cookies: Object.freeze({
     get: () => undefined,
     has: () => false,
     toObject: () => ({}),
-    set: unsupported('insomnia.cookies.set'),
-    unset: unsupported('insomnia.cookies.unset'),
-    clear: unsupported('insomnia.cookies.clear'),
+    set: unsupported('insomnia.cookies.set', WHY.cookies),
+    unset: unsupported('insomnia.cookies.unset', WHY.cookies),
+    clear: unsupported('insomnia.cookies.clear', WHY.cookies),
   }),
-  vault: Object.freeze({ get: unsupported('insomnia.vault') }),
+  vault: Object.freeze({ get: unsupported('insomnia.vault', WHY.vault) }),
 });
 define('insomnia', insomniaObject);
 define('$', insomniaObject);
-define('require', unsupported('require'));
+define('require', unsupported('require', WHY.modules));
 `;

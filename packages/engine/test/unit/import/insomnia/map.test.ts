@@ -425,7 +425,7 @@ describe('mapInsomnia: scripts and the report', () => {
     const create = apiRequests(rest).find((r) => r.name === 'Create order')!;
     expect(create.scripts).toMatchObject({ api: 'insomnia', enabled: false });
     expect(mapped.report.warnings).toContain(
-      'Scripts on 1 folder and 1 request were imported switched off: read each on its Scripts tab, then switch them on',
+      'Scripts on 1 folder and 1 request were imported switched off: read each on its Scripts tab, then switch them on.',
     );
   });
 

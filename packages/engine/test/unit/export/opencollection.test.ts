@@ -163,3 +163,23 @@ describe('OpenCollection export: API and folder scripts (#334)', () => {
     expect(doc.items[0]?.request?.scripts).toEqual([{ type: 'after-response', code: 'folder();' }]);
   });
 });
+
+describe('OpenCollection export: scripts written for another API', () => {
+  const warnings = (api: 'postman' | 'bruno') => {
+    const rest = restApisOf(project)[0]!;
+    const scripts = { pre: { text: 'run();' }, api, enabled: true, secrets: [] } as const;
+    const levelled = withRestApis(project, [{ ...rest, scripts, folders: [] }]);
+    return exportCollection('opencollection', { project: levelled, target: { kind: 'container', id: rest.id } }).report
+      .warnings;
+  };
+
+  it('warns, naming the API, for Postman scripts', () => {
+    expect(warnings('postman').filter((w) => w.includes('script API'))).toEqual([
+      "Pets: its scripts use Postman's script API; the target tool will not run them.",
+    ]);
+  });
+
+  it('does not warn for Bruno scripts', () => {
+    expect(warnings('bruno').some((w) => w.includes('script API'))).toBe(false);
+  });
+});

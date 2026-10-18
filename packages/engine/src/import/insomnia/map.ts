@@ -13,7 +13,7 @@ import { entry } from '../../http/entries.js';
 import type { KeyValueEntry } from '../../http/entries.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
-import { SlugSet, uniqueSlug } from '../../project/paths.js';
+import { slugify, SlugSet, uniqueSlug } from '../../project/paths.js';
 import { folderRequests } from '../../rest/model.js';
 import { apiFromPostmanCollection, hasCredentials, mapPostmanAuth } from '../../rest/postman/map.js';
 import { parsePostmanAuth, parsePostmanCollection } from '../../rest/postman/parse.js';
@@ -22,6 +22,8 @@ import type { WsApi, WsFolder, WsRequestDef } from '../../ws/model.js';
 import { createWsApi, createWsFolder, createWsRequest, createWsSavedMessage } from '../../ws/model.js';
 import type { MappedClientEntry, MappedClientImport, MappedProtoSet } from '../client-import.js';
 import { flattenValue } from '../client-import.js';
+import type { DroppedLevel, ImportedScriptFile } from '../scripts.js';
+import { droppedApiScriptFiles } from '../scripts.js';
 import { GRPC_METHOD, grpcTarget } from '../collection-v3/map.js';
 import { blankIfLiteral, blankUrlCredentials } from '../credential-values.js';
 import { isCredentialName } from '../credentials.js';
@@ -509,6 +511,8 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
   const globals = new VariableSetBuilder('Globals', variableReport);
   const environments: ImportedVariableSet[] = [];
   const collections: MappedClientEntry[] = [];
+  const scriptFiles: ImportedScriptFile[] = [];
+  const takenScriptPaths = new Set<string>();
   let order = options.firstOrder ?? 0;
   let requests = 0;
   let folders = 0;
@@ -567,7 +571,8 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
 
     // HTTP: the v2.1 document, parsed and mapped as an exported one is. The other protocols' and
     // the variables' dynamic names join its own, so the report names them once.
-    const parsed = parsePostmanCollection(v21OfInsomnia(workspace, name, mapper.convertContext()));
+    const dropped: DroppedLevel[] = [];
+    const parsed = parsePostmanCollection(v21OfInsomnia(workspace, name, { ...mapper.convertContext(), dropped }));
     const dynamic = [...new Set([...(parsed.dynamicVariables ?? []), ...mapper.dynamic])];
     const http = apiFromPostmanCollection(
       { ...parsed, ...(dynamic.length > 0 ? { dynamicVariables: dynamic } : {}) },
@@ -585,6 +590,9 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
     const kinds = [http.summary.requests, grpcWalk.count, wsWalk.count].filter((n) => n > 0).length;
     const apiName = (suffix: string): string => (kinds > 1 ? `${name} (${suffix})` : name);
     const rest = http.summary.requests > 0 ? { ...http.api, order: order++ } : undefined;
+    // A folder with no HTTP request below it is no folder of the REST API, or there is no REST API
+    // at all: either way its scripts have nowhere to attach, so they are kept as text.
+    scriptFiles.push(...droppedApiScriptFiles(slugify(name).toLowerCase(), dropped, report, takenScriptPaths));
     const grpc: GrpcApi | undefined =
       grpcWalk.count > 0
         ? createGrpcApi(apiName('gRPC'), {
@@ -647,9 +655,17 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
       ...(projectProperties.variables.length > 0 ? { projectProperties } : {}),
       report: variableReport.build(),
     },
-    // Scripts are attached to the requests, folders and API, switched off: no file is saved.
-    scripts: [],
-    counts: { collections: collections.length, requests, folders, examples, assertions: 0, scripts: 0 },
+    // Scripts are attached to the requests, folders and API, switched off; only those of a workspace
+    // with no HTTP request are saved, as text.
+    scripts: scriptFiles,
+    counts: {
+      collections: collections.length,
+      requests,
+      folders,
+      examples,
+      assertions: 0,
+      scripts: scriptFiles.length,
+    },
     report: report.build(),
   });
 }

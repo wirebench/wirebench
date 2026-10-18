@@ -90,6 +90,20 @@ function blockedBy(level: string | undefined): string {
   return level === undefined ? 'the request will not send' : `no request in this ${level} will send`;
 }
 
+/**
+ * What a level's Scripts tab says about when its scripts run. Pre-request scripts always run outer
+ * levels first. The post-response order is the API's setting: an API states its own, and a folder or
+ * an interface points at it, since the order is not its to set.
+ */
+export function levelHint(level: string, order: RequestScriptsWire['postResponseOrder']): string {
+  if (level !== 'API') {
+    return `Runs for every request in this ${level}: its pre-request script before the request’s own; its post-response script in the order the API’s Post-response order sets.`;
+  }
+  return order === 'inner-first'
+    ? 'Runs for every request in this API: its pre-request script before the request’s own, its post-response script after the request’s own and its folders’.'
+    : 'Runs for every request in this API, outer levels first: its pre-request script before the request’s own, its post-response script before the request’s own too.';
+}
+
 /** The Scripts tab. */
 export function ScriptsTab({ requestId, scripts, level }: ScriptsTabProps) {
   const updateRequestScripts = useProjectStore((state) => state.updateRequestScripts);
@@ -136,8 +150,7 @@ export function ScriptsTab({ requestId, scripts, level }: ScriptsTabProps) {
           data-testid="scripts-level-hint"
           className="shrink-0 border-b border-hairline px-3 py-1 text-xs text-fg-subtle"
         >
-          Runs for every request in this {level}, outer levels first: its pre-request script before the request’s own,
-          its post-response script before the request’s own too.
+          {levelHint(level, scripts?.postResponseOrder)}
         </p>
       )}
       {scripts?.problems?.map((problem) => (

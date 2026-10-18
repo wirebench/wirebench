@@ -21,6 +21,8 @@ import {
   PART_JEST_EXPECT,
   PART_PAIRS,
   PART_PM,
+  PART_REQUEST,
+  PART_RESPONSE,
   PART_UNSUPPORTED,
   PART_VARIABLES,
 } from './layer-parts.js';
@@ -33,6 +35,8 @@ export const HOPPSCOTCH_LAYER =
   PART_CRYPTO +
   PART_PM +
   PART_JEST_EXPECT +
+  PART_REQUEST +
+  PART_RESPONSE +
   String.raw`
 // --- shared by pw and hopp ----------------------------------------------------------------------
 // Hoppscotch expands <<name>> again inside what it found, up to 10 levels (research §5.1); a name with
@@ -56,38 +60,26 @@ const env = {
   resolve,
   getResolve: (name) => { const value = variables.get(name); return value === undefined ? undefined : resolve(value); },
 };
-const refused = (name) => new Proxy({}, {
-  get: (target, member) => (typeof member === 'symbol' || member === 'then' || member === 'toJSON' ? undefined : unsupported(name + '.' + member)),
+const refused = (name, reason) => new Proxy({}, {
+  get: (target, member) => (typeof member === 'symbol' || member === 'then' || member === 'toJSON' ? undefined : unsupported(name + '.' + member, reason)),
 });
 
 // --- the response: Hoppscotch's own shape -------------------------------------------------------
 let pwResponse;
 let hoppResponse;
-if (input.phase === 'post') {
-  const headers = response.headers.list().map(({ name, value }) => Object.freeze({ key: name, value }));
-  let body;
-  let parsed = false;
-  const bodyValue = () => {
-    if (!parsed) {
-      parsed = true;
-      const type = response.headers.get('content-type');
-      body = response.text;
-      if (type !== undefined && /json/i.test(type)) {
-        try { body = response.json(); } catch { body = response.text; }
-      }
-    }
-    return body;
-  };
+if (responseView !== undefined) {
+  const headers = responseView.headers.list().map(({ name, value }) => Object.freeze({ key: name, value }));
+  const bodyValue = responseView.body;
   pwResponse = Object.freeze({
-    status: response.status,
+    status: responseView.status,
     headers: Object.freeze(headers),
     get body() { return bodyValue(); },
   });
   hoppResponse = Object.freeze({
-    statusCode: response.status,
-    statusText: response.statusText,
+    statusCode: responseView.status,
+    statusText: responseView.statusText,
     headers: Object.freeze(headers),
-    responseTime: response.durationMs,
+    responseTime: responseView.durationMs,
     body: Object.freeze({
       asJSON: () => {
         const value = bodyValue();
@@ -101,7 +93,7 @@ if (input.phase === 'post') {
         const value = bodyValue();
         return value === null || value === undefined ? '' : typeof value === 'string' ? value : JSON.stringify(value);
       },
-      bytes: unsupported('hopp.response.body.bytes'),
+      bytes: unsupported('hopp.response.body.bytes', WHY.binary),
     }),
   });
 }
@@ -131,40 +123,43 @@ const scope = Object.freeze({
   getRaw: (name) => { const value = variables.get(name); return value === undefined ? null : value; },
   set: env.set,
   delete: env.unset,
-  reset: unsupported('hopp.env.reset'),
-  getInitialRaw: unsupported('hopp.env.getInitialRaw'),
-  setInitial: unsupported('hopp.env.setInitial'),
+  reset: unsupported('hopp.env.reset', WHY.initial),
+  getInitialRaw: unsupported('hopp.env.getInitialRaw', WHY.initial),
+  setInitial: unsupported('hopp.env.setInitial', WHY.initial),
 });
 const rows = (list) => list.list().map(({ name, value }) => ({ key: name, value }));
 const eachRow = (list, apply) => {
   if (!Array.isArray(list)) throw new TypeError('Expected a list of { key, value } rows');
   for (const row of list) apply(row.key, row.value);
 };
-const bodyKind = () => request.headers.get('content-type') ?? (() => { try { JSON.parse(request.body.text); return 'application/json'; } catch { return 'text/plain'; } })();
+const bodyKind = () => requestHeaders.get('content-type') ?? (() => { try { JSON.parse(requestText()); return 'application/json'; } catch { return 'text/plain'; } })();
 const hoppRequest = Object.freeze({
-  get url() { return request.url; },
+  get url() { return requestUrl(); },
   get method() { return request.method; },
-  get headers() { return rows(request.headers); },
-  get params() { return rows(request.query); },
+  get headers() { return rows(requestHeaders); },
+  get params() { return rows(requestQuery('hopp.request.params')); },
   // { contentType, body } as Hoppscotch has it; a body a script cannot read (a form) throws the typed API's own error.
-  get body() { return request.body.kind === 'none' ? { contentType: null, body: null } : { contentType: bodyKind(), body: request.body.text }; },
-  get auth() { return unsupported('hopp.request.auth')(); },
-  setUrl: (url) => { request.url = url; },
-  setMethod: (method) => { request.method = method; },
-  setHeader: (name, value) => request.headers.set(String(name), String(value)),
-  setHeaders: (list) => eachRow(list, (key, value) => request.headers.set(String(key), String(value))),
-  removeHeader: (name) => request.headers.delete(String(name)),
-  setParam: (name, value) => request.query.set(String(name), String(value)),
-  setParams: (list) => eachRow(list, (key, value) => request.query.set(String(key), String(value))),
-  removeParam: (name) => request.query.delete(String(name)),
+  get body() {
+    const text = requestText();
+    return text === undefined ? { contentType: null, body: null } : { contentType: bodyKind(), body: text };
+  },
+  get auth() { return unsupported('hopp.request.auth', WHY.auth)(); },
+  setUrl: (url) => setRequestUrl('hopp.request.setUrl', url),
+  setMethod: (method) => setRequestMethod('hopp.request.setMethod', method),
+  setHeader: (name, value) => requestHeaders.set(String(name), String(value)),
+  setHeaders: (list) => eachRow(list, (key, value) => requestHeaders.set(String(key), String(value))),
+  removeHeader: (name) => requestHeaders.delete(String(name)),
+  setParam: (name, value) => requestQuery('hopp.request.setParam').set(String(name), String(value)),
+  setParams: (list) => eachRow(list, (key, value) => requestQuery('hopp.request.setParams').set(String(key), String(value))),
+  removeParam: (name) => requestQuery('hopp.request.removeParam').delete(String(name)),
   setBody: (body) => {
     if (body === null || typeof body !== 'object' || !('body' in body)) throw new TypeError('hopp.request.setBody takes { contentType, body }');
-    // The typed request API has no body language to set, so contentType travels as the Content-Type header.
-    if (typeof body.contentType === 'string' && body.contentType !== '') request.headers.set('Content-Type', body.contentType);
-    if (typeof body.body === 'string') request.body.text = body.body;
-    else request.body.json = body.body;
+    // The typed request API has no body language to set, so contentType travels as the Content-Type
+    // header; a gRPC message has no content type to carry.
+    if (!hasMessage && typeof body.contentType === 'string' && body.contentType !== '') requestHeaders.set('Content-Type', body.contentType);
+    setRequestBody('hopp.request.setBody', body.body);
   },
-  setAuth: unsupported('hopp.request.setAuth'),
+  setAuth: unsupported('hopp.request.setAuth', WHY.auth),
   variables: Object.freeze({ get: (name) => variables.get(name), set: (name, value) => variables.set(name, value) }),
 });
 define('hopp', Object.freeze({
@@ -173,19 +168,20 @@ define('hopp', Object.freeze({
   response: hoppResponse,
   test: (name, check) => test(name, () => check()),
   expect: hoppExpect,
-  cookies: refused('hopp.cookies'),
-  fetch: unsupported('hopp.fetch'),
+  cookies: refused('hopp.cookies', WHY.cookies),
+  fetch: unsupported('hopp.fetch', WHY.send),
 }));
 
 // --- pm: Postman's object, minus what Hoppscotch's own pm does not have ------------------------------
+const NOT_IN_CLIENT = 'the pm object of these scripts does not have it';
 define('pm', Object.freeze({
   ...pmObject,
-  collectionVariables: refused('pm.collectionVariables'),
-  iterationData: refused('pm.iterationData'),
+  collectionVariables: refused('pm.collectionVariables', NOT_IN_CLIENT),
+  iterationData: refused('pm.iterationData', NOT_IN_CLIENT),
   execution: Object.freeze({
-    setNextRequest: unsupported('pm.execution.setNextRequest'),
-    skipRequest: unsupported('pm.execution.skipRequest'),
+    setNextRequest: unsupported('pm.execution.setNextRequest', NOT_IN_CLIENT),
+    skipRequest: unsupported('pm.execution.skipRequest', NOT_IN_CLIENT),
   }),
 }));
-define('require', unsupported('require'));
+define('require', unsupported('require', WHY.modules));
 `;
