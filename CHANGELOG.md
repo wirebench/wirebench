@@ -17,6 +17,12 @@ All notable changes to this project are documented here. The format follows
   in it (Cancel, <kbd>Esc</kbd>, closing the panel, picking another host) asks first. **Protocol** moves up
   under **Name** in the host and group forms, since it changes the fields below it (#674).
 
+### Fixed
+
+- **A large REST response scrolls smoothly in Raw.** Scrolling the Raw view of a multi-megabyte body
+  draws the new lines in the next frame and moves them without a layout pass, so it no longer drops
+  frames on a slower machine.
+
 ## [6.1.0] - 2026-10-18
 
 ### Added

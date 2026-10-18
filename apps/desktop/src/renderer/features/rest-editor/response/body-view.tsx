@@ -358,6 +358,9 @@ function RawBody({
     getScrollElement: () => scrollRef.current,
     estimateSize: () => RAW_LINE_HEIGHT,
     overscan: 20,
+    // A scroll re-renders in the next frame instead of synchronously inside the scroll event: on a slow
+    // machine the synchronous render of a screenful of lines overran the frame (the 5 MB scroll budget).
+    useFlushSync: false,
   });
 
   useEffect(() => {
@@ -377,7 +380,15 @@ function RawBody({
           <div
             key={item.key}
             data-testid="rest-response-raw-line"
-            style={{ position: 'absolute', top: item.start, height: item.size, left: 0, right: 0 }}
+            // Moved by a transform, not `top`, so a scroll repositions the lines without a layout pass.
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: item.size,
+              transform: `translateY(${String(item.start)}px)`,
+            }}
             className="truncate whitespace-pre text-fg-default"
           >
             {lines[item.index]}
