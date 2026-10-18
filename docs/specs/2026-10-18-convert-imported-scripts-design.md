@@ -36,7 +36,7 @@ does the level switch to `api: 'wirebench'`, and the type check reports what is 
 
 - My Bruno login request runs `bru.setVar("userId", res.body.id)` and a `tests` block with
   `expect(res.getStatus()).to.equal(201)`. I click Convert on its Scripts tab and see
-  `vars.set("userId", response.json().id)` and `expect(response.status).toBe(201)` in a diff. I
+  `vars.set("userId", (response.json() as any).id)` and `expect(response.status).toBe(201)` in a diff. I
   accept. The request now holds `create-user.post.ts`, the old `.js` sits under
   `imported-scripts/`, and the test still passes.
 - A Postman collection imported 40 requests with scripts. I choose "Convert scripts…" on the API,
@@ -221,7 +221,7 @@ Notes:
 | Dialect call | Wirebench |
 | --- | --- |
 | `pm.test(n, f)`, `pw.test(n, f)`, `hopp.test(n, f)`, Bruno's `test(n, f)` | `test(n, f)` |
-| `tc.test(n, f)` with a function literal | `test(n, () => expect((f)()).not.toBe(false))` |
+| `tc.test(n, f)` with a function literal | `test(n, () => expect<unknown>((f)()).not.toBe(false))` |
 | `tc.test(n, b)` with any other value | `test(n, () => expect(b).toBe(true))` |
 | `pm.expect(x)`, `hopp.expect(x)`, `pw.expect(x)`, Bruno's and Thunder Client's `expect(x)`, `tc.expect(x)` | `expect(x)`, then the chain below |
 
@@ -273,8 +273,8 @@ Notes:
 | Dialect call | REST | SOAP | gRPC | MCP |
 | --- | --- | --- | --- | --- |
 | `pm.response.code`, `res.status`, `res.getStatus()`, `pw.response.status`, `hopp.response.statusCode`, `tc.response.status` | `response.status` | `response.status` | `response.status.code` | — |
-| `pm.response.json()`, `hopp.response.body.asJSON()`, `tc.response.json` | `response.json()` | — | `response.message` | — |
-| `res.body`, `res.getBody()`, `pw.response.body` | `response.json()` | `response.text` | `response.message` | — |
+| `pm.response.json()`, `hopp.response.body.asJSON()`, `tc.response.json` | `response.json() as any` | — | `response.message` | — |
+| `res.body`, `res.getBody()`, `pw.response.body` | `response.json() as any` | `response.text` | `response.message` | — |
 | `pm.response.text()`, `hopp.response.body.asText()`, `tc.response.text` | `response.text` | `response.text` | `JSON.stringify(response.message)` | — |
 | `pm.response.headers.get(n)`, `res.getHeader(n)`, `tc.response.getHeader(n)` | `response.headers.get(n)` | `response.headers.get(n)` | `response.metadata.get(n)` | — |
 | `pm.response.responseTime`, `res.responseTime`, `res.getResponseTime()`, `hopp.response.responseTime`, `tc.response.time` | `response.durationMs` | `response.durationMs` | `response.durationMs` | `response.durationMs` |
@@ -289,8 +289,12 @@ Notes:
   Client's `tc.response.json` give the text, or `undefined`, when the body does not parse. The typed
   REST `response.json()` throws instead. A converted script on a non-JSON response therefore fails
   with `script-error` where it used to read the text or `undefined`. That failure is loud, and the
-  docs say so. On REST, `response.json()` is also typed from the contract, which is the point of
-  converting.
+  docs say so.
+- **An untyped body.** Without a contract the typed `response.json()` is `unknown`, and an imported
+  request has none, so `res.body.id` would not type-check. The layers read the body untyped, and so
+  does the converted script: `response.json() as any`, parenthesised where a property follows
+  (`(response.json() as any).id`). The cast is erased before the script runs. Linking the request to
+  a contract later and deleting the cast types the body from it.
 - **Repeated headers.** Bruno's `res.getHeader` joins repeated names with `, `. The typed
   `headers.get` gives the first one. The docs name the difference; `headers.getAll(n).join(', ')` is
   the exact form, and Convert does not write it.
@@ -307,13 +311,21 @@ Notes:
 | `pm.request.headers.upsert({ key: k, value: v })`, `req.setHeader(k, v)`, `hopp.request.setHeader(k, v)` | pre | `request.headers.set(k, v)` | `request.headers.set(k, v)` | `request.metadata.set(k, v)` | — |
 | `pm.request.headers.remove(k)` (a string), `req.deleteHeader(k)`, `hopp.request.removeHeader(k)` | pre | `request.headers.delete(k)` | `request.headers.delete(k)` | `request.metadata.delete(k)` | — |
 | `pm.request.headers.get(k)`, `req.getHeader(k)` | both | `request.headers.get(k)` | `request.headers.get(k)` | `request.metadata.get(k)` | — |
-| `req.getUrl()`, `pm.request.url.toString()` | both | `request.url` | `request.endpoint` | `request.target` | `request.url` |
+| `req.getUrl()` | both | `request.url` | `request.endpoint` | `request.target` | `request.url` |
+| `pm.request.url.toString()` | both | `request.url` | — | `request.target` | `request.url` |
 | `req.setUrl(u)` | pre | `request.url = u` | — | — | — |
 | `req.getMethod()`, `pm.request.method` (read) | both | `request.method` | — | `request.method` | `request.method` |
 | `req.setMethod(m)` | pre | `request.method = m` | — | — | — |
 
 Notes:
 
+- **Header values.** Every layer passes a header's name and value through `String(…)`. The typed
+  writers take strings, so a `k` or `v` that is not a string literal is written `String(k)`,
+  `String(v)`: the run is the same, and a variable read (`string | undefined`) or a number
+  type-checks.
+- **The URL on SOAP.** The `pm`-shaped layers read the URL as `String(request.url)`, which is
+  `'undefined'` on SOAP, so `pm.request.url.toString()` is a TODO there. Bruno's `req.getUrl()` reads
+  the endpoint.
 - **Writes need a statement.** `request.url = u` and `request.method = m` are assignments. A
   `req.setUrl(u)` used as a value (rare) becomes a TODO.
 - **Read-only in post-response.** The typed post-response `request` is read-only, as the layers'
