@@ -100,9 +100,12 @@ test('imported Bruno scripts, once switched on, share a value across a run', asy
   await expect(tab).toBeVisible({ timeout: 20_000 });
   await expect(tab.getByTestId('runner-request')).toHaveCount(2);
   await tab.getByTestId('runner-run').click();
-  // Two requests, both passing: the second one's test only passes if the first one's script ran.
-  await expect(tab.getByTestId('runner-status')).toContainText('2 passed, 0 failed, 0 errored', { timeout: 30_000 });
-  // "2 passed" would hold with no script run, so check the script's own test rows. They sit in a closed
+  // The first request only sets a value and has no test; the second one's test only passes if the first
+  // one's script ran.
+  await expect(tab.getByTestId('runner-status')).toContainText('1 passed, 0 failed, 0 errored, 1 without checks', {
+    timeout: 30_000,
+  });
+  // "1 passed" would hold with no script run, so check the script's own test rows. They sit in a closed
   // <details>, hence the attribute rather than visibility.
   for (const label of ['sees the id the first request stored', 'has a JSON object body']) {
     await expect(tab.getByTestId('runner-result-assertion').filter({ hasText: label })).toHaveAttribute(
