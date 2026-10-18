@@ -22,6 +22,10 @@ All notable changes to this project are documented here. The format follows
 - **A large REST response scrolls smoothly in Raw.** Scrolling the Raw view of a multi-megabyte body
   draws the new lines in the next frame and moves them without a layout pass, so it no longer drops
   frames on a slower machine.
+- **The split-pane host picker opens the host you type.** Typing another host's name in Split right's
+  picker now selects that host, from either group, and Enter connects the new pane to it. Before, the
+  current host stayed selected (its id matched the typed digits), so the new pane opened on the wrong
+  machine. The picker matches on name, address, group path and tags only (#687).
 
 ## [6.1.0] - 2026-10-18
 
