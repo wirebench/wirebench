@@ -3,7 +3,7 @@
  * **Move to project…**, and reordered among its project's APIs by a drag. Its requests open from the
  * new place, and Undo puts it back.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace } from '../helpers/project.js';
 import { apiRow, chooseContextMenuItem, createApi, createRestRequest, restRequestRow } from '../helpers/rest.js';
@@ -22,6 +22,28 @@ async function expectAbove(page: Page, first: string, second: string): Promise<v
     expect(above).toBeGreaterThanOrEqual(0);
     expect(below).toBeGreaterThan(above);
   }).toPass({ timeout: 20_000 });
+}
+
+/**
+ * Drags `source` to `target` the way a hand does: press, a few moves to get the drag going, then
+ * many small moves to the drop point, so the tree's HTML5 drag sees enough `dragover` events to
+ * settle on a drop. A single-step `dragTo` sometimes ends the drag before the tree has a target.
+ * `at` is the drop point within the target, its middle by default (a drop onto the row).
+ */
+async function dragRow(page: Page, source: Locator, target: Locator, at?: { x: number; y: number }): Promise<void> {
+  const from = await source.boundingBox();
+  const to = await target.boundingBox();
+  if (from === null || to === null) throw new Error('A row to drag is not on screen');
+  const startX = from.x + from.width / 2;
+  const startY = from.y + from.height / 2;
+  const endX = to.x + (at?.x ?? to.width / 2);
+  const endY = to.y + (at?.y ?? to.height / 2);
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 4, startY + 4, { steps: 4 });
+  await page.mouse.move(endX, endY, { steps: 20 });
+  await page.mouse.move(endX, endY, { steps: 2 });
+  await page.mouse.up();
 }
 
 function projectRow(page: Page, name: string) {
@@ -47,13 +69,13 @@ test.describe('Explorer: move an API to another project', () => {
     await expectAbove(page, 'Pets', 'Orders');
 
     // --- reorder: Orders dragged to the top edge of Pets lands before it ------------------
-    await apiRow(page, 'Orders').dragTo(apiRow(page, 'Pets'), { targetPosition: { x: 40, y: 1 } });
+    await dragRow(page, apiRow(page, 'Orders'), apiRow(page, 'Pets'), { x: 40, y: 2 });
     await expectAbove(page, 'Orders', 'Pets');
 
     // --- move by drag: Pets dropped on Beta's row goes there, ids and all ------------------
     // Beta is the last project, so a row below it is under it.
     await createProject(page, 'Beta');
-    await apiRow(page, 'Pets').dragTo(projectRow(page, 'Beta'));
+    await dragRow(page, apiRow(page, 'Pets'), projectRow(page, 'Beta'));
     await expect(page.getByTestId('toast-viewport')).toContainText('Moved to “Beta”', { timeout: 20_000 });
     await expectAbove(page, 'Beta', 'Pets');
     // The tab opened on the request before the move is still the request's.
