@@ -158,6 +158,13 @@ calls.
 `wirebench import` attaches scripts switched off, the same way. Running is unchanged. A switched-off
 script never runs from `wirebench run` or the MCP server.
 
+### 3.7 Export
+
+Exporting keeps a script's text as it is. When the target format's tool runs a different dialect
+than the script was written in (a Postman export runs `postman`, an OpenCollection export
+runs `bruno`), the export report warns, per request, folder or API, that its scripts use another
+client's script API and the target tool will not run them.
+
 ## 4. Insomnia (PR 1)
 
 Insomnia's API is deliberately Postman-shaped (research note §4.7). The layer defines `insomnia` and
@@ -254,6 +261,9 @@ So `sandwich` differs from Wirebench's order, and the setting is added:
 - The post-response loop and the type-check order (`run/script-support.ts`,
   `script/request-scripts.ts`) reverse the levels when the API's setting is `inner-first`. Only the
   API's setting counts; a folder's or a request's is ignored.
+- The setting is read from the API's stored scripts before switched-off levels are dropped, so it
+  holds while the API's own scripts are off, and an API whose `scripts` key holds only the order is
+  valid.
 - A Bruno import sets `inner-first` when the collection's flow is `sandwich` or absent, and
   `outer-first` for `sequential`.
 - The setting is shown as a select in the API's Scripts settings, next to the enabled toggle. The
@@ -361,8 +371,9 @@ matter.
   enable, then send against a local echo server with the real worker.
 - **Limits:** a layered script hits the same time, memory and log limits as a Wirebench script. One
   test per limit uses the Bruno layer.
-- **e2e,** CI only: import the Bruno crafted collection, turn the login script on, send, and see the
-  captured variable used by the next request.
+- **e2e,** CI only: import a Bruno collection, turn both requests' scripts on, and run the API. The
+  first request's script sets a value and the second one's test passes only if it reads it, so the
+  Runner reads 1 passed and 1 without checks, and the script's own test rows are present.
 
 ## 11. Delivery
 
@@ -392,6 +403,23 @@ shared scripts guide table.
 - The Postman layer's tests and the Postman, v3 and OpenCollection golden snapshots are unchanged.
 - `WIREBENCH_SKIP_PERF=1 pnpm check` and `pnpm test:perf` are green on every PR.
 
-## 14. Open questions
+## 14. Known limitations
+
+Found after phase 1 shipped. Each has its own follow-up.
+
+- **An async test callback always passes.** `test(name, async () => …)`, and the same call in every
+  layer, records a pass even when the callback throws or an expectation fails, because the sandbox
+  never awaits the returned promise. The typed `test` has the same gap.
+- **An OpenCollection round trip loses the script API.** The export writes no dialect marker, so a
+  re-import attaches every script as `bruno`; the export report warns about it (§3.7).
+- **`pm.request` in a gRPC pre-request script** throws a plain `TypeError` instead of a named
+  `script-unsupported`, in the Postman and Insomnia layers and in Hoppscotch's `pm`. This falls short
+  of §13's second criterion.
+- **The import scan has false positives.** It lists `pm.iterationData`, which the Postman layer
+  supports, and it flags `assert` in a Thunder Client script that declares its own `assert`.
+- **`tc.request.url`** is a plain string, so `url.getParam` and `url.setParam` are not available
+  (§7).
+
+## 15. Open questions
 
 None. Decisions 5 to 8 settled the four questions the first draft raised.
