@@ -7,6 +7,7 @@ import {
   LIVE_CAPABILITY,
   LIVE_CLOSE,
   LIVE_PATH,
+  TERMINAL_SHARE_PATH,
   liveClientMessageSchema,
   signatureSchemeSchema,
   toSignatureScheme,
@@ -16,7 +17,7 @@ import {
   type SignatureScheme,
   type SignatureVerdict,
 } from '@wirebench/engine';
-import { startTestWsServer, type TestWsServerOptions } from '@wirebench/engine/test-helpers';
+import { startTestWsServer, type TestWsPeer, type TestWsServerOptions } from '@wirebench/engine/test-helpers';
 
 type TeamRole = 'member' | 'admin';
 type WorkspaceRole = 'viewer' | 'editor' | 'admin';
@@ -71,12 +72,39 @@ export interface FakeServerOptions {
    */
   readonly hooks?: boolean;
   /**
+   * Serve scheduled runs (scheduled-runs spec §3): `/meta` lists `scheduled-runs` and reports an
+   * Enterprise edition, and the schedule routes answer. Nothing fires on a clock: **Run now** finishes
+   * its run at once, as {@link FakeServer.setScheduleOutcome} says, and announces it over `/live`.
+   */
+  readonly schedules?: boolean;
+  /**
    * Offer SAML sign-in (saml-scim spec §3.2). The fake IdP signs `email` in at once: the authorization URL
    * redirects straight to the app's loopback with a grant, so whatever opens it plays the browser.
    */
   readonly saml?: { readonly email: string; readonly displayName?: string };
   /** SCIM groups the IdP has pushed, as the Provisioning tab lists them (§3.7). */
   readonly scimGroups?: readonly { readonly displayName: string; readonly memberCount: number }[];
+  /**
+   * Store team SSH session logs (team session logs spec A1): `/meta` lists `session-logs` and the log routes
+   * answer. A workspace records only once {@link FakeServer.setRecordSessionLogs} turns it on.
+   */
+  readonly sessionLogs?: boolean;
+  /**
+   * Relay shared terminals (team sessions spec B1, #429): `/meta` lists `terminal-sharing`, and the share
+   * routes and socket answer, enough for an owner and viewers: replay, presence, control and input.
+   */
+  readonly terminalShares?: boolean;
+}
+
+/** One team session log as the fake holds it. */
+export interface FakeSessionLog {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly email: string;
+  readonly hostName: string;
+  readonly text: string;
+  /** The end reason, once ended. */
+  readonly ended: string | undefined;
 }
 
 /** One request the fake answered, for specs that assert what the app sent (or did not). */
@@ -112,6 +140,12 @@ export interface FakeServer {
   readonly requests: readonly FakeRequest[];
   /** The id of the server workspace called `name`. @throws when there is none. */
   workspaceId(name: string): string;
+  /** Turns a workspace's SSH session recording on or off, as its admin would (#430). */
+  setRecordSessionLogs(workspaceId: string, on: boolean): void;
+  /** Every team session log the app streamed, oldest first. */
+  sessionLogs(): readonly FakeSessionLog[];
+  /** The shares still live: who owns each and the emails watching it. */
+  terminalShares(): readonly { readonly id: string; readonly owner: string; readonly viewers: readonly string[] }[];
   /**
    * Gives `email` a grant on a workspace, as a workspace admin would, and sends `access` to their `/live`
    * sockets on it.
@@ -157,6 +191,8 @@ export interface FakeServer {
   liveConnections(): FakeLiveConnection[];
   /** The full catch URL of the workspace's catch URL called `name`. @throws when there is none. */
   catchUrlOf(workspaceId: string, name: string): string;
+  /** How the next **Run now** of a schedule ends; `failed` until set. */
+  setScheduleOutcome(outcome: 'passed' | 'failed'): void;
   close(): Promise<void>;
 }
 
@@ -255,6 +291,8 @@ interface WorkspaceRow {
   readonly grants: Map<string, WorkspaceRole>;
   /** Oldest first; the last one is the head. */
   readonly history: FakeCommit[];
+  /** The workspace's `recordSessionLogs` switch (#430). */
+  recordSessionLogs?: boolean;
 }
 
 interface FakeCapture {
@@ -377,7 +415,23 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     (options.users ?? []).map((user) => [user.email.toLowerCase(), { ...user, id: `u-${user.email}` }]),
   );
   const invitations = new Map<string, FakeInvitation>(Object.entries(options.invitations ?? {}));
-  const capabilities = [...(options.capabilities ?? ['sync', LIVE_CAPABILITY])];
+  const capabilities = [
+    ...(options.capabilities ?? ['sync', LIVE_CAPABILITY]),
+    ...(options.schedules === true ? ['scheduled-runs'] : []),
+    ...(options.sessionLogs === true ? ['session-logs'] : []),
+    ...(options.terminalShares === true ? ['terminal-sharing'] : []),
+  ];
+  const sessionLogs = new Map<
+    string,
+    {
+      readonly id: string;
+      readonly workspaceId: string;
+      readonly email: string;
+      readonly open: Record<string, unknown>;
+      bytes: Buffer;
+      ended: string | undefined;
+    }
+  >();
   const sessions = new Map<string, string>(); // token → email
   const issued: { readonly token: string; readonly email: string }[] = [];
   const tokens: string[] = [];
@@ -686,6 +740,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         commits: ws.history.length,
         ...(from !== null ? { behind } : {}),
         role,
+        recordSessionLogs: ws.recordSessionLogs === true,
       });
       return;
     }
@@ -1087,6 +1142,214 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     problem(response, 404, 'not-found');
   };
 
+  /*
+   * Scheduled runs (scheduled-runs spec §3.1), with `schedules: true`: enough of the API for
+   * `server-schedules.spec.ts`. Run now finishes its run at once with one request's result, so the run
+   * detail has something to show; the real routes are covered by `packages/server`'s integration suite.
+   */
+  interface FakeSchedule {
+    readonly id: string;
+    readonly workspaceId: string;
+    body: Record<string, unknown>;
+    secrets: Map<string, string>;
+    alertTargets: unknown[];
+    alertState: 'ok' | 'failing';
+    failureStreak: number;
+    readonly createdAt: string;
+    updatedAt: string;
+    readonly runs: { run: Record<string, unknown>; results: unknown[] }[];
+  }
+  const schedules = new Map<string, FakeSchedule>();
+  let scheduleOutcome: 'passed' | 'failed' = 'failed';
+  const alertTargetOf = (target: { kind: string; to?: string[]; url?: string; secret?: string }): unknown => {
+    if (target.kind === 'email') return { kind: 'email', to: target.to ?? [] };
+    const parsed = new URL(target.url ?? '');
+    const hint = (target.url ?? '').slice(-4);
+    return target.kind === 'webhook'
+      ? { kind: 'webhook', host: parsed.host, hint, signed: target.secret !== undefined }
+      : { kind: target.kind, host: parsed.host, hint };
+  };
+  const toSchedule = (schedule: FakeSchedule) => {
+    const body = schedule.body as { name: string; schedule: string; timeZone?: string; enabled?: boolean };
+    return {
+      id: schedule.id,
+      workspaceId: schedule.workspaceId,
+      name: body.name,
+      cron: body.schedule === 'every 5m' ? '*/5 * * * *' : body.schedule,
+      timeZone: body.timeZone ?? 'UTC',
+      target: schedule.body.target,
+      options: {
+        timeoutMinutes: 15,
+        allowProtected: false,
+        insecureTls: false,
+        bail: false,
+        ...(schedule.body.options as object | undefined),
+      },
+      alerts: {
+        targets: schedule.alertTargets,
+        muteAfter: (schedule.body.alerts as { muteAfter?: number } | undefined)?.muteAfter ?? 3,
+      },
+      secrets: [...schedule.secrets].map(([name, value]) => ({
+        name,
+        hint: value.length >= 8 ? value.slice(-4) : null,
+      })),
+      enabled: body.enabled ?? true,
+      nextRunAt: body.enabled === false ? null : new Date(Date.now() + 300_000).toISOString(),
+      alertState: schedule.alertState,
+      failureStreak: schedule.failureStreak,
+      createdBy: null,
+      createdAt: schedule.createdAt,
+      updatedAt: schedule.updatedAt,
+      lastRun: schedule.runs.at(-1)?.run ?? null,
+    };
+  };
+  const setAlerts = (schedule: FakeSchedule, alerts: unknown): void => {
+    if (alerts === undefined) return;
+    const targets = (alerts as { targets?: { kind: string }[] }).targets ?? [];
+    schedule.alertTargets = targets.map(alertTargetOf);
+  };
+
+  const schedulesApi = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    ws: WorkspaceRow,
+    role: WorkspaceRole,
+    segments: readonly string[],
+  ): Promise<void> => {
+    const method = request.method ?? 'GET';
+    // workspaces / :workspaceId / schedules / :scheduleId / (secrets | alerts/test | runs / :runId)
+    const [, , , scheduleId, sub, runId] = segments;
+    const admin = role === 'admin';
+    if (scheduleId === undefined && method === 'GET') {
+      const mine = [...schedules.values()].filter((schedule) => schedule.workspaceId === ws.id);
+      return send(response, 200, mine.map(toSchedule));
+    }
+    if (scheduleId === undefined && method === 'POST') {
+      if (!admin) return problem(response, 403, 'teams-forbidden');
+      const body = (await readJson(request)) as Record<string, unknown>;
+      const schedule: FakeSchedule = {
+        id: generateId(),
+        workspaceId: ws.id,
+        body,
+        secrets: new Map(),
+        alertTargets: [],
+        alertState: 'ok',
+        failureStreak: 0,
+        createdAt: at(),
+        updatedAt: at(),
+        runs: [],
+      };
+      setAlerts(schedule, body.alerts);
+      schedules.set(schedule.id, schedule);
+      return send(response, 201, toSchedule(schedule));
+    }
+    const schedule = scheduleId === undefined ? undefined : schedules.get(scheduleId);
+    if (schedule === undefined || schedule.workspaceId !== ws.id) return problem(response, 404, 'schedules-not-found');
+    if (sub === undefined && method === 'GET') return send(response, 200, toSchedule(schedule));
+    if (sub === undefined && method === 'PATCH') {
+      if (!admin) return problem(response, 403, 'teams-forbidden');
+      const patch = (await readJson(request)) as Record<string, unknown>;
+      schedule.body = { ...schedule.body, ...patch };
+      setAlerts(schedule, patch.alerts);
+      schedule.updatedAt = at();
+      return send(response, 200, toSchedule(schedule));
+    }
+    if (sub === undefined && method === 'DELETE') {
+      if (!admin) return problem(response, 403, 'teams-forbidden');
+      schedules.delete(schedule.id);
+      return send(response, 204);
+    }
+    if (sub === 'secrets' && method === 'PUT') {
+      if (!admin) return problem(response, 403, 'teams-forbidden');
+      const body = (await readJson(request)) as Record<string, string | null>;
+      for (const [name, value] of Object.entries(body)) {
+        if (value === null) schedule.secrets.delete(name);
+        else schedule.secrets.set(name, value);
+      }
+      return send(response, 200, toSchedule(schedule));
+    }
+    if (sub === 'alerts' && method === 'POST') {
+      if (!admin) return problem(response, 403, 'teams-forbidden');
+      return send(response, 200, {
+        results: schedule.alertTargets.map((target, index) => ({
+          index,
+          kind: (target as { kind: string }).kind,
+          ok: true,
+        })),
+      });
+    }
+    if (sub === 'runs' && runId === undefined && method === 'POST') {
+      if (!admin) return problem(response, 403, 'teams-forbidden');
+      const queuedAt = at();
+      const id = generateId();
+      const queued = {
+        id,
+        scheduleId: schedule.id,
+        trigger: 'manual',
+        status: 'queued',
+        reason: null,
+        commit: null,
+        environment: null,
+        queuedAt,
+        startedAt: null,
+        finishedAt: null,
+        summary: null,
+      };
+      const failed = scheduleOutcome === 'failed';
+      const finished = {
+        ...queued,
+        status: scheduleOutcome,
+        startedAt: queuedAt,
+        finishedAt: at(),
+        summary: { total: 1, passed: failed ? 0 : 1, failed: failed ? 1 : 0, errored: 0, skipped: 0, durationMs: 42 },
+      };
+      const results = [
+        {
+          path: 'Demo/check.yaml',
+          group: 'Demo',
+          name: 'Health check',
+          protocol: 'rest',
+          outcome: scheduleOutcome,
+          status: failed ? 500 : 200,
+          durationMs: 42,
+          assertions: [
+            {
+              type: 'status',
+              outcome: scheduleOutcome,
+              expected: '200',
+              actual: failed ? '500' : '200',
+              ...(failed ? { message: 'expected status 200, got 500' } : {}),
+            },
+          ],
+        },
+      ];
+      schedule.runs.push({ run: finished, results });
+      schedule.failureStreak = failed ? schedule.failureStreak + 1 : 0;
+      schedule.alertState = failed ? 'failing' : 'ok';
+      send(response, 201, queued);
+      // After the answer, as a worker finishing the run would announce it (§3.5).
+      setTimeout(() => {
+        liveSendTo(subscribersOf(ws.id), {
+          type: 'schedule-run',
+          workspaceId: ws.id,
+          scheduleId: schedule.id,
+          runId: id,
+          status: scheduleOutcome,
+        });
+      }, 100);
+      return;
+    }
+    if (sub === 'runs' && runId === undefined && method === 'GET') {
+      return send(response, 200, { runs: [...schedule.runs].reverse().map((entry) => entry.run) });
+    }
+    const entry = schedule.runs.find((candidate) => candidate.run.id === runId);
+    if (entry === undefined) return problem(response, 404, 'schedules-run-not-found');
+    if (sub === 'runs' && method === 'GET')
+      return send(response, 200, { ...entry.run, results: entry.results, alerts: [] });
+    if (sub === 'runs' && method === 'DELETE') return problem(response, 409, 'schedules-run-finished');
+    problem(response, 404, 'not-found');
+  };
+
   /**
    * `ANY /hooks/<secret>[/<subpath>]` (§3.3): verify the signature when a scheme is set, store, nudge the
    * workspace, and answer the configured response — or 401 for an unverified one the catch URL rejects.
@@ -1149,6 +1412,195 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
   const bearer = (request: IncomingMessage): string | undefined =>
     request.headers.authorization?.replace(/^Bearer /, '');
 
+  /*
+   * Shared terminals (#429), as the server's registry relays them, without its limits or audit rows: the
+   * owner's binary frames go to every viewer and into a replay; one viewer at a time holds control after
+   * the owner grants a request, and only that viewer's input reaches the owner.
+   */
+  interface FakeShare {
+    readonly id: string;
+    readonly workspaceId: string;
+    readonly ownerEmail: string;
+    readonly hostName: string;
+    cols: number;
+    rows: number;
+    owner: TestWsPeer | undefined;
+    readonly viewers: Map<TestWsPeer, { email: string; requesting: boolean }>;
+    control: TestWsPeer | undefined;
+    replay: Buffer;
+  }
+  const shares = new Map<string, FakeShare>();
+  const sharePeers = new Map<TestWsPeer, FakeShare>();
+  const shareSend = (peer: TestWsPeer | undefined, message: unknown): void => {
+    peer?.sendText(JSON.stringify(message));
+  };
+  const shareEveryone = (share: FakeShare): TestWsPeer[] => [
+    ...(share.owner === undefined ? [] : [share.owner]),
+    ...share.viewers.keys(),
+  ];
+  const sharePresence = (share: FakeShare): void => {
+    const owner = userOf(share.ownerEmail);
+    const message = {
+      type: 'presence',
+      owner: { userId: owner.id, name: owner.displayName },
+      viewers: [...share.viewers.entries()].map(([peer, viewer]) => ({
+        userId: userOf(viewer.email).id,
+        name: userOf(viewer.email).displayName,
+        control: share.control === peer,
+        requesting: viewer.requesting,
+      })),
+    };
+    for (const peer of shareEveryone(share)) shareSend(peer, message);
+  };
+  const shareControl = (share: FakeShare): void => {
+    const holder = share.control === undefined ? undefined : share.viewers.get(share.control);
+    const message = { type: 'control', userId: holder === undefined ? null : userOf(holder.email).id };
+    for (const peer of shareEveryone(share)) shareSend(peer, message);
+    sharePresence(share);
+  };
+  const shareEnd = (share: FakeShare, reason: string): void => {
+    if (!shares.delete(share.id)) return;
+    for (const peer of shareEveryone(share)) {
+      sharePeers.delete(peer);
+      shareSend(peer, { type: 'ended', reason });
+      peer.close(4410, reason);
+    }
+  };
+  const onShareText = (text: string, peer: TestWsPeer): void => {
+    const message = JSON.parse(text) as Record<string, unknown>;
+    const share = sharePeers.get(peer);
+    if (message['type'] === 'auth' && share === undefined) {
+      const email = sessions.get(String(message['token']));
+      const target = shares.get(String(message['shareId']));
+      if (email === undefined) return peer.close(4401, 'unauthenticated');
+      if (target === undefined || target.workspaceId !== message['workspaceId']) return peer.close(4404, 'not found');
+      sharePeers.set(peer, target);
+      if (email === target.ownerEmail) {
+        target.owner = peer;
+        shareSend(peer, { type: 'ready', role: 'owner' });
+      } else {
+        target.viewers.set(peer, { email, requesting: false });
+        const owner = userOf(target.ownerEmail);
+        shareSend(peer, {
+          type: 'viewer-ready',
+          hostName: target.hostName,
+          ownerName: owner.displayName,
+          cols: target.cols,
+          rows: target.rows,
+        });
+        if (target.replay.length > 0) peer.sendBinary(target.replay);
+        shareSend(peer, { type: 'control', userId: null });
+      }
+      sharePresence(target);
+      return;
+    }
+    if (share === undefined) return peer.close(4400, 'out of order');
+    const viewer = share.viewers.get(peer);
+    switch (message['type']) {
+      case 'ping':
+        return shareSend(peer, { type: 'pong' });
+      case 'resize':
+        share.cols = Number(message['cols']);
+        share.rows = Number(message['rows']);
+        for (const other of share.viewers.keys()) shareSend(other, message);
+        return;
+      case 'grant': {
+        const entry = [...share.viewers.entries()].find(
+          ([, v]) => userOf(v.email).id === message['userId'] && v.requesting,
+        );
+        if (entry === undefined) return;
+        entry[1].requesting = false;
+        share.control = entry[0];
+        return shareControl(share);
+      }
+      case 'decline':
+        for (const [other, v] of share.viewers) {
+          if (userOf(v.email).id === message['userId'] && v.requesting) {
+            v.requesting = false;
+            shareSend(other, { type: 'declined' });
+          }
+        }
+        return sharePresence(share);
+      case 'take-back':
+        share.control = undefined;
+        return shareControl(share);
+      case 'end':
+        return shareEnd(share, 'ended');
+      case 'request-control':
+        if (viewer !== undefined && share.control !== peer) viewer.requesting = true;
+        return sharePresence(share);
+      case 'release':
+        if (share.control === peer) share.control = undefined;
+        return shareControl(share);
+      case 'input':
+        if (viewer === undefined || share.control !== peer) return;
+        return shareSend(share.owner, { type: 'input', userId: userOf(viewer.email).id, data: message['data'] });
+      default:
+        return;
+    }
+  };
+  const shareWsServer = await startTestWsServer({
+    onText: onShareText,
+    onBinary: (payload, peer) => {
+      const share = sharePeers.get(peer);
+      if (share?.owner !== peer) return;
+      share.replay = Buffer.concat([share.replay, payload]).subarray(-256 * 1024);
+      for (const viewer of share.viewers.keys()) viewer.sendBinary(payload);
+    },
+    onClosed: (peer) => {
+      const share = sharePeers.get(peer);
+      if (share === undefined) return;
+      sharePeers.delete(peer);
+      if (share.owner === peer) return shareEnd(share, 'owner-left');
+      share.viewers.delete(peer);
+      if (share.control === peer) {
+        share.control = undefined;
+        shareControl(share);
+      } else sharePresence(share);
+    },
+  });
+  /** `POST` and `GET` under `/workspaces/:id/terminal-shares`. */
+  const terminalSharesApi = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    ws: WorkspaceRow,
+    email: string,
+    segments: readonly string[],
+  ): Promise<void> => {
+    const shareId = segments[3];
+    if (shareId === undefined && request.method === 'POST') {
+      const body = JSON.parse((await readBody(request)).toString('utf8')) as Record<string, unknown>;
+      const id = createHash('sha256')
+        .update(`${ws.id}-${String(shares.size)}-${String(Date.now())}`)
+        .digest('hex')
+        .replace(/[^a-z]/g, '')
+        .padEnd(26, 'a')
+        .slice(0, 26);
+      shares.set(id, {
+        id,
+        workspaceId: ws.id,
+        ownerEmail: email,
+        hostName: String(body['hostName']),
+        cols: Number(body['cols']),
+        rows: Number(body['rows']),
+        owner: undefined,
+        viewers: new Map(),
+        control: undefined,
+        replay: Buffer.alloc(0),
+      });
+      return send(response, 201, { shareId: id });
+    }
+    const share = shareId === undefined ? undefined : shares.get(shareId);
+    if (request.method !== 'GET' || share === undefined || share.workspaceId !== ws.id) {
+      return problem(response, 404, 'terminal-share-not-found');
+    }
+    send(response, 200, {
+      hostName: share.hostName,
+      ownerName: userOf(share.ownerEmail).displayName,
+      viewers: share.viewers.size,
+    });
+  };
+
   const wsServer = await startTestWsServer({ onText: onLiveText });
   const server: Server = createServer((request, response) => {
     void (async () => {
@@ -1180,7 +1632,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
               : {}),
           },
           capabilities,
-          edition: installedLicense?.edition ?? 'community',
+          edition: installedLicense?.edition ?? (options.schedules === true ? 'enterprise' : 'community'),
           ...(options.hooks === true ? { hooks: HOOKS_META } : {}),
         });
         return;
@@ -1407,6 +1859,27 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
           if (ws === undefined || access === undefined) return problem(response, 404, 'teams-workspace-not-found');
           return await syncApi(request, response, ws, access.role, segments[3], path.searchParams, email, token);
         }
+        if (segments[0] === 'workspaces' && segments[2] === 'schedules') {
+          if (options.schedules !== true) return problem(response, 404, 'not-found');
+          const ws = workspaces.get(segments[1] ?? '');
+          const access = ws === undefined ? undefined : effective(ws, email);
+          if (ws === undefined || access === undefined) return problem(response, 404, 'teams-workspace-not-found');
+          return await schedulesApi(request, response, ws, access.role, segments);
+        }
+        if (segments[0] === 'workspaces' && segments[2] === 'terminal-shares') {
+          if (options.terminalShares !== true) return problem(response, 404, 'not-found');
+          const ws = workspaces.get(segments[1] ?? '');
+          const access = ws === undefined ? undefined : effective(ws, email);
+          if (ws === undefined || access === undefined) return problem(response, 404, 'teams-workspace-not-found');
+          return await terminalSharesApi(request, response, ws, email, segments);
+        }
+        if (segments[0] === 'workspaces' && segments[2] === 'session-logs') {
+          if (options.sessionLogs !== true) return problem(response, 404, 'not-found');
+          const ws = workspaces.get(segments[1] ?? '');
+          const access = ws === undefined ? undefined : effective(ws, email);
+          if (ws === undefined || access === undefined) return problem(response, 404, 'teams-workspace-not-found');
+          return await sessionLogsApi(request, response, ws, email, segments, path.searchParams);
+        }
         if (segments[0] === 'workspaces' && segments[2] === 'hooks') {
           if (options.hooks !== true) return problem(response, 404, 'not-found');
           const ws = workspaces.get(segments[1] ?? '');
@@ -1429,6 +1902,10 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     socket.on('error', () => socket.destroy());
     // A server without live has no socket: a plain 404. The client never gets here without `live`
     // in meta; with it, a 404 is a refused upgrade and backs off like any other (§3.4).
+    if (path === TERMINAL_SHARE_PATH && options.terminalShares === true) {
+      pipeUpgrade(request, socket, head, shareWsServer.port);
+      return;
+    }
     if (path !== LIVE_PATH || !capabilities.includes(LIVE_CAPABILITY)) {
       socket.end('HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n');
       return;
@@ -1437,9 +1914,118 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   url = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+  /** The team session-log routes (team session logs spec A1), without the audit trail. */
+  const sessionLogsApi = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    ws: WorkspaceRow,
+    email: string,
+    segments: readonly string[],
+    query: URLSearchParams,
+  ): Promise<void> => {
+    const method = request.method ?? 'GET';
+    const [, , , logId, action] = segments;
+    const toWire = (log: NonNullable<ReturnType<typeof sessionLogs.get>>) => ({
+      id: log.id,
+      workspaceId: log.workspaceId,
+      userId: `u-${log.email}`,
+      userName: users.get(log.email)?.displayName ?? log.email,
+      clientLogId: log.open['clientLogId'],
+      hostId: log.open['hostId'],
+      hostName: log.open['hostName'],
+      address: log.open['address'],
+      port: log.open['port'],
+      user: log.open['user'],
+      startedAt: log.open['startedAt'],
+      endedAt: log.ended === undefined ? null : new Date().toISOString(),
+      exitCode: null,
+      signal: null,
+      reason: log.ended ?? null,
+      size: log.bytes.length,
+      truncated: false,
+      live: log.ended === undefined,
+    });
+    if (logId === undefined) {
+      if (method === 'GET') {
+        const hostId = query.get('hostId');
+        const logs = [...sessionLogs.values()]
+          .filter((l) => l.workspaceId === ws.id && (hostId === null || l.open['hostId'] === hostId))
+          .reverse()
+          .map(toWire);
+        return send(response, 200, { logs, next: null });
+      }
+      if (ws.recordSessionLogs !== true) return problem(response, 409, 'session-logs-recording-off');
+      const open = JSON.parse((await readBody(request)).toString('utf8')) as Record<string, unknown>;
+      const existing = [...sessionLogs.values()].find(
+        (l) => l.workspaceId === ws.id && l.email === email && l.open['clientLogId'] === open['clientLogId'],
+      );
+      const log = existing ?? {
+        id: `01K${String(sessionLogs.size + 1).padStart(23, '0')}`,
+        workspaceId: ws.id,
+        email,
+        open,
+        bytes: Buffer.alloc(0),
+        ended: undefined,
+      };
+      sessionLogs.set(log.id, log);
+      return send(response, existing ? 200 : 201, {
+        id: log.id,
+        size: log.bytes.length,
+        ended: log.ended !== undefined,
+      });
+    }
+    const log = sessionLogs.get(logId);
+    if (log === undefined || log.workspaceId !== ws.id) return problem(response, 404, 'session-logs-not-found');
+    if (method === 'GET' && action === 'text') {
+      const offset = Number(query.get('offset') ?? '0');
+      const text = log.bytes.subarray(offset).toString('utf8');
+      return send(response, 200, {
+        offset,
+        text,
+        next: log.bytes.length,
+        size: log.bytes.length,
+        truncated: false,
+        live: log.ended === undefined,
+      });
+    }
+    if (log.email !== email) return problem(response, 404, 'session-logs-not-found');
+    const body = JSON.parse((await readBody(request)).toString('utf8')) as Record<string, unknown>;
+    if (action === 'chunks') {
+      if (log.ended !== undefined) return problem(response, 409, 'session-logs-ended');
+      if (body['offset'] !== log.bytes.length) return problem(response, 409, 'session-logs-offset');
+      log.bytes = Buffer.concat([log.bytes, Buffer.from(String(body['data']), 'base64')]);
+      return send(response, 200, { size: log.bytes.length, truncated: false });
+    }
+    if (action === 'end') {
+      log.ended ??= String(body['reason']);
+      return send(response, 204);
+    }
+    problem(response, 404, 'not-found');
+  };
+
   return {
     url,
     tokens,
+    setRecordSessionLogs: (workspaceId, on) => {
+      workspaceOf(workspaceId).recordSessionLogs = on;
+      // As the server's workspace patch does: an `access` nudge, so the desktops fetch the head again.
+      for (const user of users.values()) announceAccess(user.email, (ws) => ws.id === workspaceId);
+    },
+    terminalShares: () =>
+      [...shares.values()].map((share) => ({
+        id: share.id,
+        owner: share.ownerEmail,
+        viewers: [...share.viewers.values()].map((v) => v.email),
+      })),
+    sessionLogs: () =>
+      [...sessionLogs.values()].map((log) => ({
+        id: log.id,
+        workspaceId: log.workspaceId,
+        email: log.email,
+        hostName: String(log.open['hostName']),
+        text: log.bytes.toString('utf8'),
+        ended: log.ended,
+      })),
     signOuts,
     requests,
     workspaceId: (name) => {
@@ -1496,6 +2082,9 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         email: connection.email,
         workspaces: [...connection.subscriptions],
       })),
+    setScheduleOutcome: (outcome) => {
+      scheduleOutcome = outcome;
+    },
     catchUrlOf: (workspaceId, name) => {
       const hook = [...catchUrls.values()].find(
         (candidate) => candidate.workspaceId === workspaceId && candidate.name === name,
@@ -1507,6 +2096,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
       // Upgraded sockets are no longer the HTTP server's to drain, so they would hold its close open.
       for (const socket of upgraded) socket.destroy();
       await wsServer.close();
+      await shareWsServer.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };

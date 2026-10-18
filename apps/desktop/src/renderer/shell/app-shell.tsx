@@ -5,6 +5,7 @@ import { SecretReviewDialog } from '../components/secret-review-dialog.js';
 import { SignInDialog } from '../features/account/sign-in-dialog.js';
 import { TeamDialog } from '../features/team/team-dialog.js';
 import { WebhooksDialogs } from '../features/webhooks/webhooks-dialogs.js';
+import { SchedulesDialogs } from '../features/schedules/schedules-dialogs.js';
 import { ImportWebhooksDialog } from '../features/webhook-items/import-webhooks-dialog.js';
 import { SaveAsWebhookDialog } from '../features/webhook-items/save-as-webhook-dialog.js';
 import { WebhookSettingsDialog } from '../features/webhook-items/webhook-settings-dialog.js';
@@ -43,19 +44,21 @@ import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
 import { subscribeToSync } from '../state/sync.js';
 import { subscribeToHosts } from '../features/ssh/hosts-store.js';
-import { subscribeConsoleToFirstSend } from '../state/console-first-send.js';
+import { collapseConsoleInShortWindow, subscribeConsoleToFirstSend } from '../state/console-first-send.js';
 import {
   subscribeToSnippets,
   useSnippetEditorShown,
   useSnippetsStore,
 } from '../features/ssh/snippets/snippets-store.js';
 import { subscribeToSshEvents } from '../features/ssh/terminal-session.js';
-import { useSessionLogsDialogStore } from '../features/ssh/session-logs-store.js';
+import { subscribeToShareEvents, useTerminalShareStore } from '../features/ssh/terminal-share-store.js';
+import { useSessionLogsDialogStore, useTeamSessionLogsDialogStore } from '../features/ssh/session-logs-store.js';
 import { useRunDialogStore } from '../features/ssh/snippets/run.js';
 import { useHostDelete } from '../features/ssh/host-delete-store.js';
 import { subscribeToForwards } from '../features/ssh/forwarding/forwards-store.js';
 import { subscribeToTeamSecrets } from '../state/team-secrets.js';
 import { subscribeToWebhooks } from '../state/webhooks.js';
+import { subscribeToSchedules } from '../state/schedules.js';
 import { WorkspacePicker } from '../features/workspace/picker-screen.js';
 import { NewProjectDialog } from '../features/workspace/new-project-dialog.js';
 import { CreateWorkspaceDialog } from '../features/workspace/create-workspace-dialog.js';
@@ -93,8 +96,9 @@ import { ImportCurlFromTarget } from '../features/request-editor/import-curl-fro
 import { PanelHandle } from './panel-handle.js';
 import {
   EnvironmentDetailsPanel,
+  environmentDetailsOpen,
+  setEnvironmentDetailsOpen,
   useEnvironmentDetailsShown,
-  useEnvironmentDetailsStore,
 } from '../features/environments/environment-details.js';
 import { rightPanelFor } from './right-panel.js';
 import { RightRail } from './right-rail.js';
@@ -176,6 +180,15 @@ const SessionLogsDialog = lazy(async () => {
   const module = await import('../features/ssh/session-logs.js');
   return { default: module.SessionLogsDialog };
 });
+const JoinShareDialog = lazy(async () => {
+  const module = await import('../features/ssh/join-share-dialog.js');
+  return { default: module.JoinShareDialog };
+});
+
+const TeamSessionLogsDialog = lazy(async () => {
+  const module = await import('../features/ssh/team-session-logs.js');
+  return { default: module.TeamSessionLogsDialog };
+});
 
 export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -217,11 +230,10 @@ export function AppShell() {
   // In the Environments area it holds the open environment's colour and Applies to.
   const environmentDetailsShown = useEnvironmentDetailsShown();
   const closeEnvironmentDetails = useCallback(() => {
-    useEnvironmentDetailsStore.getState().setOpen(false);
+    setEnvironmentDetailsOpen(false);
   }, []);
   const toggleEnvironmentDetails = useCallback(() => {
-    const details = useEnvironmentDetailsStore.getState();
-    details.setOpen(!details.open);
+    setEnvironmentDetailsOpen(!environmentDetailsOpen());
   }, []);
   // On the Snippets view it holds the snippet being edited.
   const snippetEditorShown = useSnippetEditorShown();
@@ -235,6 +247,8 @@ export function AppShell() {
   const forwardAsked = useForwardsStore((state) => state.bindPrompt !== null || state.portPrompt !== null);
   const snippetRunAsked = useRunDialogStore((state) => state.request !== null);
   const sessionLogsOpen = useSessionLogsDialogStore((state) => state.open);
+  const teamSessionLogsOpen = useTeamSessionLogsDialogStore((state) => state.open);
+  const joinShareOpen = useTerminalShareStore((state) => state.joinOpen);
   const closeImportDialog = useUiStore((state) => state.closeImportDialog);
 
   // The row the sidebar and the editor/console column share, and the column the editor area and
@@ -387,11 +401,14 @@ export function AppShell() {
   useEffect(() => subscribeToTeamSecrets(), []);
   useEffect(() => subscribeToHosts(), []);
   useEffect(() => subscribeConsoleToFirstSend(), []);
+  useEffect(() => collapseConsoleInShortWindow(), []);
   // The `forward.*` channels exist only while the SSH area is on.
   useEffect(() => (sshEnabled ? subscribeToForwards() : undefined), [sshEnabled]);
   useEffect(() => subscribeToSnippets(), []);
   useEffect(() => subscribeToSshEvents(), []);
+  useEffect(() => subscribeToShareEvents(), []);
   useEffect(() => subscribeToWebhooks(), []);
+  useEffect(() => subscribeToSchedules(), []);
   useEffect(() => subscribeToAccounts(), []);
   useEffect(() => {
     void useAccountStore.getState().load();
@@ -435,6 +452,8 @@ export function AppShell() {
         if (cancelled || !result.ok) return;
         useUiStore.getState().setEnabledAreas(toAreaIds(result.value.enabled));
         useUiStore.getState().setLocalTerminalEnabled(result.value.localTerminal);
+        useUiStore.getState().setTelnetEnabled(result.value.telnet ?? true);
+        useUiStore.getState().setSerialEnabled(result.value.serial ?? true);
         registerShellCommands(openPalette); // resetCommands() at its top makes re-registration safe
         void syncAppMenu();
       });
@@ -668,6 +687,7 @@ export function AppShell() {
       <SignInDialog />
       <TeamDialog />
       <WebhooksDialogs />
+      <SchedulesDialogs />
       <WebhookSettingsDialog />
       <ImportWebhooksDialog />
       <SaveAsWebhookDialog />
@@ -706,6 +726,16 @@ export function AppShell() {
       {sshEnabled && sessionLogsOpen && (
         <Suspense fallback={null}>
           <SessionLogsDialog />
+        </Suspense>
+      )}
+      {sshEnabled && teamSessionLogsOpen && (
+        <Suspense fallback={null}>
+          <TeamSessionLogsDialog />
+        </Suspense>
+      )}
+      {sshEnabled && joinShareOpen && (
+        <Suspense fallback={null}>
+          <JoinShareDialog />
         </Suspense>
       )}
       <CollectionExportReportDialog />

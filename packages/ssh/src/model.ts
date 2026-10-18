@@ -9,8 +9,10 @@ import {
   forwardGroupSchema,
   serializeForwardGroup,
 } from './forward-groups.js';
+import { charsetSchema, termSchema } from './host-charset.js';
 import { envSchema } from './host-env.js';
 import { moshSchema, protocolSchema } from './host-mosh.js';
+import { serialSchema } from './host-serial.js';
 import { terminalSchema } from './host-terminal.js';
 import type { TerminalEntry } from './host-terminal.js';
 import { resolveSettings } from './resolve.js';
@@ -75,12 +77,18 @@ const settingsSchema = z
     connectTimeout: z.number().int().min(1).optional(),
     /** Off by default; a nearer `false` turns an inherited `true` off. */
     forwardAgent: z.boolean().optional(),
-    /** `mosh` starts a mosh server over SSH and runs the session over UDP (#419); `ssh` by default. */
+    /** `mosh` starts a mosh server over SSH and runs the session over UDP (#419); `telnet` is plain text (#425); `ssh` by default. */
     protocol: protocolSchema,
     /** Taken whole from the nearest level that sets it. */
     mosh: moshSchema,
+    /** A serial console's line settings (#426), taken whole from the nearest level; the device is per machine. */
+    serial: serialSchema,
     /** `false` connects directly though a group above sets a proxy. */
     proxy: z.union([z.literal(false), proxySchema]).optional(),
+    /** How the terminal's bytes are read and written (#427); UTF-8 by default. */
+    charset: charsetSchema,
+    /** The terminal type the pty request names (#427); `xterm-256color` by default. */
+    term: termSchema,
   })
   .default({});
 
@@ -98,7 +106,12 @@ const identitySchema = z.strictObject({
 const hostSchema = z.strictObject({
   id: z.string().regex(ID),
   name: z.string().min(1),
-  address: z.string().min(1),
+  /** Required unless the host is a serial console (#426), which has none: `''` then. */
+  address: z
+    .string()
+    .min(1)
+    .optional()
+    .transform((a) => a ?? ''),
   tags: z.array(z.string().min(1)).default([]),
   protected: z.boolean().optional(),
   ssh: settingsSchema,
@@ -255,6 +268,7 @@ export function parseHostsFile(text: string): HostsFile {
     );
   }
   checkIds(parsed.data);
+  checkAddresses(parsed.data);
   checkIdentities(parsed.data);
   checkJumps(parsed.data);
   checkForwards(parsed.data);
@@ -273,6 +287,19 @@ function checkIds(file: HostsFile): void {
       });
     }
     seen.set(entry.id, path);
+  }
+}
+
+/** Every host has an address, except a serial console (#426): its protocol, its own or inherited, says so. */
+function checkAddresses(file: HostsFile): void {
+  for (const { entry, kind, path } of walk(file)) {
+    if (kind !== 'host' || (entry as HostEntry).address !== '') continue;
+    if (resolveSettings(file, entry.id).protocol === 'serial') continue;
+    const where = pathString([...path, entry.id]);
+    throw new SshModelError('ssh-hosts-invalid', `hosts.yaml: host "${entry.id}" needs an address`, {
+      path: where,
+      issues: [{ path: where, message: 'needs an address' }],
+    });
   }
 }
 
@@ -379,6 +406,9 @@ function settings(ssh: SshSettings): Record<string, unknown> {
   if (ssh.forwardAgent !== undefined) out['forwardAgent'] = ssh.forwardAgent;
   if (ssh.protocol !== undefined) out['protocol'] = ssh.protocol;
   if (ssh.mosh !== undefined) out['mosh'] = { ...ssh.mosh };
+  if (ssh.charset !== undefined) out['charset'] = ssh.charset;
+  if (ssh.term !== undefined) out['term'] = ssh.term;
+  if (ssh.serial !== undefined) out['serial'] = { ...ssh.serial };
   if (ssh.proxy === false) out['proxy'] = false;
   else if (ssh.proxy !== undefined) {
     const { type, host, port, user, password } = ssh.proxy;
@@ -395,7 +425,7 @@ function settings(ssh: SshSettings): Record<string, unknown> {
 
 function head(entry: HostEntry | GroupEntry): Record<string, unknown> {
   const out: Record<string, unknown> = { id: entry.id, name: entry.name };
-  if ('address' in entry) out['address'] = entry.address;
+  if ('address' in entry && entry.address !== '') out['address'] = entry.address;
   if (entry.tags.length > 0) out['tags'] = entry.tags;
   if (entry.protected !== undefined) out['protected'] = entry.protected;
   const ssh = settings(entry.ssh);

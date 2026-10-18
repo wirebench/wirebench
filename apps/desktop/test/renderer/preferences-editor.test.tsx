@@ -810,14 +810,15 @@ describe('PreferencesEditor — search', () => {
     expect(screen.getByLabelText<HTMLInputElement>('Search settings').value).toBe('');
   });
 
-  it('finds the Terminal and SSH settings by "ssh" (#537, #571)', () => {
+  it('finds the Terminal and SSH settings, and the app lock, by "ssh" (#537, #571, #428)', () => {
     render(<PreferencesEditor />);
     search('ssh');
     const crumbs = within(screen.getByTestId('settings-search-results'))
       .getAllByTestId('setting-crumb')
       .map((crumb) => crumb.textContent);
     expect(crumbs.length).toBeGreaterThan(0);
-    expect(new Set(crumbs)).toEqual(new Set(['Workspace › Terminal', 'Workspace › SSH']));
+    // The app lock under Secrets guards SSH secrets, so it matches too.
+    expect(new Set(crumbs)).toEqual(new Set(['Workspace › Terminal', 'Workspace › SSH', 'Workspace › Secrets']));
   });
 
   it('says so when nothing matches', () => {

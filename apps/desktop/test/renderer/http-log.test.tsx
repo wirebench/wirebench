@@ -89,7 +89,8 @@ describe('HttpLog', () => {
     expect(row.getAttribute('data-kind')).toBe('failure');
     expect(row.getAttribute('title')).toBe('Connection refused.');
     const status = within(row).getByTestId('http-log-status');
-    expect(status.textContent).toBe('connection-refused');
+    expect(status.textContent).toBe('Connection refused');
+    expect(status.getAttribute('title')).toMatch(/^connection-refused: /);
     expect(status.className).toContain('text-status-danger');
     expect(row.textContent).toContain('GET');
     expect(row.textContent).toContain('rest');
@@ -370,7 +371,7 @@ describe('HttpLog — prepare-stage failures', () => {
     cleanup();
   });
 
-  it('shows a prepare failure as "Failed · before send" and says it never went on the wire', async () => {
+  it('shows a prepare failure by its title and says it never went on the wire', async () => {
     useExchangesStore.setState({
       log: [
         {
@@ -380,7 +381,7 @@ describe('HttpLog — prepare-stage failures', () => {
       ],
     });
     render(<HttpLog />);
-    expect(within(rows()[0]!).getByTestId('http-log-status').textContent).toBe('Failed · before send');
+    expect(within(rows()[0]!).getByTestId('http-log-status').textContent).toBe('Invalid URL');
     await userEvent.click(rows()[0]!);
     await userEvent.click(logTab('Response'));
     expect(screen.getByTestId('log-detail-error').textContent).toMatch(/never went on the wire/);

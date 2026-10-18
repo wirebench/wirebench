@@ -9,7 +9,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import { RestEditor, mergeQuery, referenceField } from '../../src/renderer/features/rest-editor/rest-editor.js';
+import {
+  RestEditor,
+  mergeQuery,
+  referenceField,
+  referenceFieldLabel,
+} from '../../src/renderer/features/rest-editor/rest-editor.js';
 import { restSendBlocked } from '../../src/renderer/features/rest-editor/send-blocked.js';
 import { registerRequestCommands } from '../../src/renderer/commands/register-request-commands.js';
 import { registerRestCommands } from '../../src/renderer/kinds/rest/commands.js';
@@ -218,11 +223,22 @@ describe('RestEditor', () => {
     });
   });
 
+  it('dots the Body tab while the request has a body, and clears it with None (#637)', () => {
+    seed(restRequestWire({ body: { kind: 'raw', language: 'json', text: '{"a":1}' } }));
+    mount();
+
+    const body = screen.getByRole('tab', { name: /^Body/ });
+    expect(body.textContent).toBe('Body●');
+    fireEvent.click(body);
+    fireEvent.change(screen.getByTestId('rest-body-kind'), { target: { value: 'none' } });
+    expect(screen.getByRole('tab', { name: /^Body/ }).textContent).toBe('Body');
+  });
+
   it('keeps each body kind draft while the switch moves between them', () => {
     seed(restRequestWire({ body: { kind: 'raw', language: 'json', text: '{"a":1}' } }));
     mount();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Body' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Body/ }));
     fireEvent.change(screen.getByTestId('rest-body-kind'), { target: { value: 'none' } });
     expect(staged()?.['body']).toEqual({ kind: 'none' });
 
@@ -584,7 +600,7 @@ describe('RestEditor Mod+S in the body editor', () => {
     const saveRestRequest = vi.fn().mockResolvedValue(undefined);
     useProjectStore.setState({ saveRestRequest });
     mount();
-    fireEvent.click(screen.getByRole('tab', { name: 'Body' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Body/ }));
 
     fireEvent.keyDown(screen.getByLabelText('Request body'), { key: 's', ctrlKey: true });
 
@@ -603,6 +619,20 @@ describe('referenceField', () => {
     expect(referenceField(request, '${tag}')).toBe('params');
     expect(referenceField(request, '${key}')).toBe('headers');
     expect(referenceField(request, '${elsewhere}')).toBeUndefined();
+  });
+});
+
+describe('referenceFieldLabel', () => {
+  it('names the field a reference, or an unclosed ${, was written in', () => {
+    const request = restRequestWire({
+      url: '/pets/${petId}',
+      query: [{ name: 'tag', value: '${tag}', enabled: true }],
+      headers: [{ name: 'X-List', value: 'abc-${$rand', enabled: true }],
+    });
+    expect(referenceFieldLabel(request, '${petId}')).toBe('The URL');
+    expect(referenceFieldLabel(request, '${tag}')).toBe('Query parameter tag');
+    expect(referenceFieldLabel(request, '${$rand')).toBe('Header X-List');
+    expect(referenceFieldLabel(request, '${elsewhere}')).toBeUndefined();
   });
 });
 

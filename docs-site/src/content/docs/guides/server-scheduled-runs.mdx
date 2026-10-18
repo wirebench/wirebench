@@ -162,6 +162,32 @@ The app's live connection gets a `schedule-run` message as each run ends. Runs o
 `WIREBENCH_SERVER_SCHEDULES_MAX_AGE_DAYS` are deleted with their results, and sent or given-up alerts
 after a week.
 
+## In the app
+
+When the workspace is shared on a server that runs schedules, the Explorer shows a **Schedules** node
+after the **Webhook inbox**. Everyone with a role in the workspace sees it; it is hidden on a server
+without the Enterprise edition.
+
+- **Each schedule** is a row with a dot: green when its last run passed, red while it is failing, grey
+  when paused, and hollow before its first run. A failing schedule shows how many runs have failed in a
+  row, and the **Schedules** node how many schedules are failing. There is no pop-up or system
+  notification; the alerts are for that.
+- **Open a schedule** to see when it runs, what it runs, its alerts and secrets, and its runs, newest
+  first, filtered by status. Pick a run to see each request's result and assertions, as the Runner shows
+  them, with the request and response of a failed one, and how each alert was delivered. A run that
+  ends while the tab is open appears without a refresh.
+- **Schedule…** on a project, API, folder, request or sequence opens a new schedule that runs it. The
+  dialog picks the project, environment, requests and sequences from the workspace as you have it open,
+  so what you pick is what the server runs once your changes are pushed. A linked project is not on the
+  server and cannot be scheduled.
+- **New schedule…** on the **Schedules** node, and **Run now**, **Pause**, **Resume**, **Edit…**,
+  **Secrets…**, **Test alerts** and **Delete** on a schedule, are a workspace admin's; others can open a
+  schedule and read its runs.
+
+Alert URLs are never read back, so a changed alert list needs each Slack, Teams or webhook URL entered
+again; leaving the alerts alone keeps them as they are. The same holds for secret values: the dialog
+shows each secret's name and last four characters, sets new values and clears the ones you remove.
+
 ## Console commands
 
 For an operator with the server's database, whatever the license:

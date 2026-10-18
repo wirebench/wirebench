@@ -7,7 +7,7 @@ import { SshModelError } from './errors.js';
 import { skSign } from './fido/authenticator.js';
 import type { SkPrompts } from './fido/authenticator.js';
 import { SshReader, isSkKeyType, skPublicBlob, sshString, uint32 } from './sk-key.js';
-import type { SkKey, SkKeyType } from './sk-key.js';
+import type { SkKey } from './sk-key.js';
 
 const { utils } = ssh2;
 
@@ -18,16 +18,22 @@ const { utils } = ssh2;
  * key ssh2 carries without reading, and that client's `authPK` is wrapped to write the request itself: the
  * sk key as the public key blob, then the signature blob the signer returns, verbatim. Signing is
  * asynchronous (it waits for a touch); the packet goes out when it is done.
+ *
+ * A device key (#428) signs in the same way: its private half is in this machine's hardware, so ssh2 cannot
+ * sign with it either, and the signature comes back from a prompt.
  */
 
 export interface SkSigner {
-  readonly keyType: SkKeyType;
+  /** The type its public blob names: an sk type, or a device key's (#428) `ecdsa-sha2-nistp256` / `ssh-rsa`. */
+  readonly keyType: string;
+  /** The signature algorithm the request names, when not the key type (`rsa-sha2-256` for a device RSA key). */
+  readonly algorithm?: string;
   readonly publicBlob: Buffer;
   /** How the progress log names it. */
   readonly label: string;
-  /** Where it signs: the security key itself, or the agent that holds it. */
-  readonly via: 'key' | 'agent';
-  /** The SSH signature blob over `data` (algorithm, signature, flags, counter). */
+  /** Where it signs: the security key itself, the agent that holds it, or this machine's hardware (#428). */
+  readonly via: 'key' | 'agent' | 'device';
+  /** The SSH signature blob over `data` (algorithm, signature and, for an sk key, flags and counter). */
   sign(data: Buffer): Promise<Buffer>;
 }
 
@@ -180,7 +186,7 @@ export function skAuth(username: string, signers: readonly SkSigner[], onSign?: 
             sshString('ssh-connection'),
             sshString('publickey'),
             Buffer.from([signed ? 1 : 0]),
-            sshString(signer.keyType),
+            sshString(signer.algorithm ?? signer.keyType),
             sshString(signer.publicBlob),
           ]);
         // ssh2 passes a signing callback (third or fourth argument) for the signed request.

@@ -12,16 +12,23 @@
  */
 
 import { z } from 'zod';
+import { defaultUserAgent, isDefaultUserAgent } from '../http/default-headers.js';
 
 /** HTTP transport preferences applied to every send. */
 export interface HttpPreferences {
   /** Reserved: only HTTP/1.1 is implemented. */
   readonly version: '1.1';
-  /** `User-Agent` added to a request that does not set one itself. */
+  /**
+   * `User-Agent` added to a request that does not set one itself. A default one (`Wirebench`, or
+   * `Wirebench/<version>`) follows the running app's version: see {@link withAppUserAgent}.
+   */
   readonly userAgent: string;
   /** `gzip` compresses the request body and sets `Content-Encoding: gzip`. */
   readonly requestCompression: 'none' | 'gzip';
-  /** Advertise `Accept-Encoding: gzip, deflate` so servers may compress the response. */
+  /**
+   * Advertise `Accept-Encoding` so servers may compress the response: `REST_ACCEPT_ENCODING` on a
+   * REST request, `SOAP_ACCEPT_ENCODING` on a SOAP one.
+   */
   readonly responseCompression: boolean;
   /** Send `Connection: close` instead of reusing the keep-alive pool. */
   readonly closeConnections: boolean;
@@ -205,6 +212,10 @@ export interface AccountPreferences {
 export interface SecretsPreferences {
   /** How long a value fetched from a secret manager stays in memory, in seconds; 0 fetches it on every send. */
   readonly sourceCacheSeconds: number;
+  /** The app lock (#428): ask for biometrics or the OS password before SSH secrets are used. */
+  readonly appLock: boolean;
+  /** Minutes without input on the machine after which the app lock asks again. */
+  readonly appLockIdleMinutes: number;
 }
 
 /** Mock services (#59). */
@@ -256,6 +267,10 @@ export interface SshPreferences {
   readonly keepAlive: number;
   /** Seconds to wait for a server to answer before giving up. */
   readonly connectTimeout: number;
+  /** The character set a host's terminal reads and writes (#427); an id the SSH package does not know is passed over. */
+  readonly charset: string;
+  /** The terminal type a host's pty request names (#427). */
+  readonly term: string;
 }
 
 /** The whole preferences document. */
@@ -287,7 +302,7 @@ export interface Preferences {
 export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   http: Object.freeze({
     version: '1.1',
-    userAgent: 'Wirebench/0.1',
+    userAgent: defaultUserAgent(),
     requestCompression: 'none',
     responseCompression: true,
     closeConnections: false,
@@ -334,7 +349,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   }),
   updates: Object.freeze({ checkOnLaunch: false }),
   accounts: Object.freeze({ showInStatusBar: true }),
-  secrets: Object.freeze({ sourceCacheSeconds: 300 }),
+  secrets: Object.freeze({ sourceCacheSeconds: 300, appLock: false, appLockIdleMinutes: 15 }),
   mocks: Object.freeze({ listenOnAllInterfaces: false }),
   terminal: Object.freeze({
     confirmMultilinePaste: true,
@@ -350,7 +365,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     sessionLogRaw: false,
     localShell: '',
   }),
-  ssh: Object.freeze({ keepAlive: 15, connectTimeout: 20 }),
+  ssh: Object.freeze({ keepAlive: 15, connectTimeout: 20, charset: 'utf-8', term: 'xterm-256color' }),
   shortcuts: Object.freeze({}),
 });
 
@@ -386,6 +401,7 @@ export const PREFERENCE_NUMBER_LIMITS = {
   'ui.historyCap': { min: 1, max: 100_000, integer: true },
   'ui.logSize': { min: LOG_SIZE_MIN, max: LOG_SIZE_MAX, integer: true },
   'secrets.sourceCacheSeconds': { min: 0, max: 3600, integer: true },
+  'secrets.appLockIdleMinutes': { min: 1, max: 240, integer: true },
   'terminal.reconnectAttempts': { min: 1, max: 100, integer: true },
   'terminal.fontSize': { min: 6, max: 72, integer: true },
   'terminal.lineHeight': { min: 1, max: 2, integer: false },
@@ -546,7 +562,13 @@ export const preferencesSchema = z.object({
     .optional(),
   updates: z.object({ checkOnLaunch: z.boolean().optional() }).optional(),
   accounts: z.object({ showInStatusBar: z.boolean().optional() }).optional(),
-  secrets: z.object({ sourceCacheSeconds: limited('secrets.sourceCacheSeconds').optional() }).optional(),
+  secrets: z
+    .object({
+      sourceCacheSeconds: limited('secrets.sourceCacheSeconds').optional(),
+      appLock: z.boolean().optional(),
+      appLockIdleMinutes: limited('secrets.appLockIdleMinutes').optional(),
+    })
+    .optional(),
   mocks: z.object({ listenOnAllInterfaces: z.boolean().optional() }).optional(),
   terminal: z
     .object({
@@ -573,6 +595,14 @@ export const preferencesSchema = z.object({
       user: z.string().optional(),
       keepAlive: limited('ssh.keepAlive').optional(),
       connectTimeout: limited('ssh.connectTimeout').optional(),
+      charset: z
+        .string()
+        .regex(/^[a-z0-9][a-z0-9-]*$/)
+        .optional(),
+      term: z
+        .string()
+        .regex(/^[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}$/)
+        .optional(),
     })
     .optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
@@ -712,4 +742,18 @@ export function resetPreferences(current: Preferences, section?: PreferencesSect
     return DEFAULT_PREFERENCES;
   }
   return { ...current, [section]: DEFAULT_PREFERENCES[section] };
+}
+
+/**
+ * `preferences` with a default `User-Agent` moved to `version`'s, so it names the release that
+ * sends it. One the user wrote, or cleared to send none, is theirs and stays. The preferences file
+ * holds the whole document, so without this every saved file would keep sending whichever version
+ * wrote it first.
+ */
+export function withAppUserAgent(preferences: Preferences, version: string): Preferences {
+  const userAgent = defaultUserAgent(version);
+  if (!isDefaultUserAgent(preferences.http.userAgent) || preferences.http.userAgent === userAgent) {
+    return preferences;
+  }
+  return { ...preferences, http: { ...preferences.http, userAgent } };
 }

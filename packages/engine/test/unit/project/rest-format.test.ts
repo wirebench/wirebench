@@ -356,6 +356,28 @@ describe('problems a damaged apis/ folder reports', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it('counts a golden sidecar as its request file, and warns about one with no request', async () => {
+    const dir = await tempProjectDir();
+    await saveProject(apiProject(), dir);
+    const requests = join(dir, APIS_DIR, 'Orders', 'requests');
+    await writeFile(
+      join(requests, 'List orders.golden.yaml'),
+      'savedAt: 2026-10-16T00:00:00.000Z\nignore: []\nbody: ok\n',
+    );
+    await writeFile(join(requests, 'Gone.golden.yaml'), 'savedAt: 2026-10-16T00:00:00.000Z\nignore: []\nbody: ok\n');
+
+    const { problems } = await loadProject(dir);
+
+    expect(problems).toEqual([
+      {
+        code: 'orphan-request-file',
+        message: '"Gone.golden.yaml" does not belong to any request',
+        file: 'apis/Orders/requests/Gone.golden.yaml',
+      },
+    ]);
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('adopts a directory someone created by hand as a folder', async () => {
     const dir = await tempProjectDir();
     await saveProject(apiProject(), dir);

@@ -1,10 +1,16 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import { resolveHost } from '@wirebench/ssh';
+import { CHARSETS, DEFAULT_CHARSET, DEFAULT_TERM, TERM_NAME, resolveHost } from '@wirebench/ssh';
 import { DEFAULT_PREFERENCES, parseSecretPseudoRef, secretPseudoRef } from '@wirebench/engine';
 import { workspaceSecretGetter, workspaceSecretLabel } from '../src/main/secret-resolver.js';
 import { SshSecretsService } from '../src/main/ssh-secrets.js';
 import { SSH_DEFAULTS } from '../src/shared/ssh-defaults.js';
+import {
+  DEFAULT_TERMINAL_CHARSET,
+  DEFAULT_TERMINAL_TYPE,
+  TERMINAL_CHARSETS,
+  TERMINAL_TYPE_PATTERN,
+} from '../src/shared/terminal-charsets.js';
 
 /** A tiny in-memory stand-in for the parts of SecretStore the SSH secrets use. */
 function fakeStore() {
@@ -104,7 +110,7 @@ describe('SSH_DEFAULTS', () => {
     );
     expect({ port: resolved.ssh.port.value }).toEqual(SSH_DEFAULTS);
   });
-  it("Preferences → SSH starts at the resolver's built-in keep-alive and timeout (#571)", () => {
+  it("Preferences → SSH starts at the resolver's built-in keep-alive, timeout, charset and term (#571, #427)", () => {
     const resolved = resolveHost(
       { version: 1, groups: [], hosts: [{ id: 'a', name: 'a', address: 'x', tags: [], ssh: {} }] },
       'a',
@@ -112,6 +118,17 @@ describe('SSH_DEFAULTS', () => {
     expect({
       keepAlive: resolved.ssh.keepAlive.value,
       connectTimeout: resolved.ssh.connectTimeout.value,
+      charset: resolved.ssh.charset.value,
+      term: resolved.ssh.term.value,
     }).toEqual(DEFAULT_PREFERENCES.ssh);
+  });
+});
+
+describe('TERMINAL_CHARSETS (#427)', () => {
+  it('lists exactly the sets the SSH package decodes, UTF-8 first, and agrees on the defaults', () => {
+    expect(TERMINAL_CHARSETS.map((c) => c.id)).toEqual([...CHARSETS]);
+    expect(DEFAULT_TERMINAL_CHARSET).toBe(DEFAULT_CHARSET);
+    expect(DEFAULT_TERMINAL_TYPE).toBe(DEFAULT_TERM);
+    expect(TERMINAL_TYPE_PATTERN.source).toBe(TERM_NAME.source);
   });
 });

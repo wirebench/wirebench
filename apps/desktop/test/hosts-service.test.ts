@@ -48,6 +48,16 @@ describe('windowHosts (multi-window)', () => {
     expect(sshListHostsResponseSchema.safeParse(await hosts.list()).success).toBe(true);
   });
 
+  it('passes the Preferences character set and terminal type on, but not a set this version lacks (#427)', () => {
+    expect(sshDefaultsOf({ keepAlive: 15, connectTimeout: 20, charset: 'cp850', term: 'vt100' })).toMatchObject({
+      charset: 'cp850',
+      term: 'vt100',
+    });
+    const newer = sshDefaultsOf({ keepAlive: 15, connectTimeout: 20, charset: 'ebcdic-37', term: '' });
+    expect(newer).not.toHaveProperty('charset');
+    expect(newer).not.toHaveProperty('term');
+  });
+
   it('a window with no workspace open is refused as workspace-not-open', async () => {
     const hosts = windowHosts(() => {
       throw new WorkspaceError('workspace-not-found', 'No workspace is open');

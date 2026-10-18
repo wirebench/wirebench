@@ -24,6 +24,7 @@ export function tabSetOf(tab: TabSetSubject): TabSet {
     case 'ssh-terminal':
     case 'ssh-files':
     case 'local-terminal':
+    case 'terminal-share':
       return 'ssh';
     default:
       return 'explorer';

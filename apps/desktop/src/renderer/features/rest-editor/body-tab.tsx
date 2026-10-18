@@ -14,7 +14,7 @@ import type { JsonSchema } from '@wirebench/engine/rest';
 import { formatXml } from '@wirebench/engine/xml';
 import { Button } from '../../components/button.js';
 import { KvTable } from '../../components/kv-table.js';
-import { showToast } from '../../components/toast.js';
+import { dismissToast, showToast } from '../../components/toast.js';
 import { CodeEditor } from '../../editor/code-editor.js';
 import { SAVE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
 import { useEditorsStore } from '../../state/editors.js';
@@ -110,6 +110,21 @@ export interface BodySchemaSource {
 
 /** How long to wait after a method or URL edit before asking main for the schema again. */
 const SCHEMA_DEBOUNCE_MS = 250;
+
+/**
+ * The "Method changed to POST" toast up for each request, by request id. Module-level for the same
+ * reason the method change is: the Body tab unmounts on every tab switch.
+ */
+const methodToasts = new Map<string, number>();
+
+/** Takes down the request's "Method changed to POST" toast, once what it says is no longer true. */
+function dismissMethodToast(requestId: string): void {
+  const id = methodToasts.get(requestId);
+  if (id !== undefined) {
+    methodToasts.delete(requestId);
+    dismissToast(id);
+  }
+}
 
 const IPC_SCHEMA_SOURCE: BodySchemaSource = {
   async load(requestId, target) {
@@ -213,6 +228,14 @@ export function BodyTab({
     };
   }, [source, requestId, method, url, saved]);
 
+  // The toast claims POST: once the method is anything else (Undo, the switch back restoring it, or a
+  // pick in the URL bar), it would be offering to undo something that is no longer there.
+  useEffect(() => {
+    if (method !== undefined && method !== 'POST') {
+      dismissMethodToast(requestId);
+    }
+  }, [method, requestId]);
+
   const formAvailable = body.kind === 'raw' && body.language === 'json' && schema !== null;
   const showForm = formAvailable && view === 'form';
 
@@ -226,6 +249,8 @@ export function BodyTab({
       return;
     }
     const next = drafts[kind] ?? emptyBody(kind);
+    // Another switch supersedes what the last one said about the method.
+    dismissMethodToast(requestId);
     // A GraphQL request is a POST: a GET or HEAD would carry no body (#77). Said out loud, with an
     // Undo, and taken back when the body leaves GraphQL.
     const change = method === undefined ? {} : methodForBodySwitch(requestId, body.kind, kind, method);
@@ -237,13 +262,15 @@ export function BodyTab({
     onChange({ body: next, method: change.method });
     const previous = change.autoChangedFrom;
     if (previous !== undefined) {
-      showToast('Method changed to POST', {
+      const id = showToast('Method changed to POST', {
         label: 'Undo',
         onClick: () => {
+          methodToasts.delete(requestId);
           forgetGraphqlMethodChange(requestId);
           onChange({ method: previous });
         },
       });
+      methodToasts.set(requestId, id);
     }
   };
 

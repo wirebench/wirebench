@@ -30,8 +30,16 @@ function publish(next: readonly Toast[]): void {
   }
 }
 
-function dismiss(id: number): void {
-  publish(toasts.filter((toast) => toast.id !== id));
+/**
+ * Takes a toast down before its time, for one whose message stopped being true. An id already gone
+ * is ignored.
+ *
+ * @param id what {@link showToast} returned
+ */
+export function dismissToast(id: number): void {
+  if (toasts.some((toast) => toast.id === id)) {
+    publish(toasts.filter((toast) => toast.id !== id));
+  }
 }
 
 /**
@@ -39,16 +47,18 @@ function dismiss(id: number): void {
  *
  * @param message what to say
  * @param action an optional single button; clicking it runs `onClick` and dismisses the toast
+ * @returns the toast's id, for {@link dismissToast}
  */
-export function showToast(message: string, action?: ToastAction): void {
+export function showToast(message: string, action?: ToastAction): number {
   const id = nextId++;
   publish([...toasts, { id, message, ...(action !== undefined ? { action } : {}) }]);
   setTimeout(
     () => {
-      dismiss(id);
+      dismissToast(id);
     },
     action === undefined ? TOAST_DURATION_MS : ACTION_TOAST_DURATION_MS,
   );
+  return id;
 }
 
 /** The live region toasts appear in; mounted once by the shell. */
@@ -82,7 +92,7 @@ export function ToastViewport() {
               className="pointer-events-auto shrink-0 rounded-sm border border-hairline px-2 py-0.5 text-sm text-fg-default hover:bg-surface-hover"
               onClick={() => {
                 const action = toast.action;
-                dismiss(toast.id);
+                dismissToast(toast.id);
                 action?.onClick();
               }}
             >

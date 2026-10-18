@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { RUNNER_OVERRUNS } from './runner-defaults.js';
+import { runnerRequestResultSchema } from './runner-wire.js';
 
 /**
  * Wire shapes of a shared workspace's schedules (scheduled-runs spec §3.7, issue #517). Main parses the
@@ -112,15 +113,11 @@ export const scheduleWireSchema = z.object({
 export type ScheduleWire = z.infer<typeof scheduleWireSchema>;
 
 /**
- * One request of a run, as the CLI's `json` report has it, already masked by the server. The fields the
- * view reads are named; the rest (`assertions`, `error`, `exchange`, …) pass through as they came.
+ * One request of a run, in the Runner's shape so the view shows it with the Runner's rows. The server
+ * stored it masked, and kept the exchange for a failed or errored request only.
  */
-export const scheduleResultWireSchema = z.looseObject({
-  path: z.string(),
-  group: z.string(),
-  name: z.string(),
-  protocol: z.string(),
-  outcome: z.enum(['passed', 'failed', 'errored', 'skipped']),
+export const scheduleResultWireSchema = runnerRequestResultSchema.extend({
+  exchange: z.object({ request: z.string(), response: z.string() }).optional(),
 });
 export type ScheduleResultWire = z.infer<typeof scheduleResultWireSchema>;
 
@@ -182,6 +179,11 @@ export const scheduleRunsRequestWireSchema = scheduleRefRequestWireSchema.extend
 });
 export const scheduleRunRequestWireSchema = scheduleRefRequestWireSchema.extend({ runId: z.string() });
 
+/** **Schedule…** on an explorer row: what that row runs. */
+export const scheduleTargetForRequestWireSchema = z.object({ entityId: z.string() });
+/** The pickers of the schedule dialog, for one project of the open workspace. */
+export const scheduleChoicesRequestWireSchema = z.object({ projectId: z.string() });
+
 // ---- responses ------------------------------------------------------------------------------------
 
 export const schedulesAvailableResponseWireSchema = z.object({ available: z.boolean() });
@@ -206,6 +208,24 @@ export const scheduleRunPageResponseWireSchema = z.object({
 });
 export type ScheduleRunPageWire = z.infer<typeof scheduleRunPageResponseWireSchema>;
 export const scheduleRunDetailResponseWireSchema = z.object({ run: scheduleRunDetailWireSchema });
+
+/** One API, folder or request the dialog can pick, with the `wirebench run` selectors that name it. */
+export const scheduleChoiceWireSchema = z.object({
+  id: z.string(),
+  kind: z.enum(['api', 'folder', 'request']),
+  label: z.string(),
+  depth: z.number().int(),
+  selectors: z.array(z.string()),
+});
+export type ScheduleChoiceWire = z.infer<typeof scheduleChoiceWireSchema>;
+export const scheduleChoicesResponseWireSchema = z.object({
+  items: z.array(scheduleChoiceWireSchema),
+  sequences: z.array(z.string()),
+  /** The environments a run of this project can use, in order; a schedule names one by id. */
+  environments: z.array(z.object({ id: z.string(), name: z.string(), protected: z.boolean().optional() })),
+});
+export type ScheduleChoicesWire = z.infer<typeof scheduleChoicesResponseWireSchema>;
+export const scheduleTargetForResponseWireSchema = z.object({ target: scheduleTargetWireSchema.nullable() });
 
 // ---- events ---------------------------------------------------------------------------------------
 

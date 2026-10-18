@@ -794,6 +794,49 @@ Tests: `packages/ssh/test/unit/sk-key.test.ts`, `packages/ssh/test/unit/fido.tes
 framing; the integration test signs in to a real `sshd`, with a `verify-required` key and through an agent.
 A hardware key has not been tried yet.
 
+## Device keys
+
+A device key (#428) is made and kept by this machine's secure hardware: the Secure Enclave on macOS
+(`ecdsa-sha2-nistp256`), or Windows Hello on Windows (RSA-2048, signing `rsa-sha2-256`; experimental until it
+is checked on a Windows machine). Linux has none.
+
+- **The secret holds a handle, not a key.** The keychain secret is a `WIREBENCH DEVICE KEY` block: the
+  platform, the host name it was made on, the public key, and a handle. On macOS the handle is CryptoKit's
+  wrapped key blob, which only that Mac's enclave can open. On Windows it is the name of a key credential in
+  that user's Hello container. Copied to another machine, by a team secret or a copied workspace, the block
+  signs nothing: the connect fails with `ssh-device-key-missing`, and the keychain marks the key "other
+  device".
+- **Every signature asks.** The key's access control asks for the person (Touch ID, or the login password) on
+  every signature on macOS; Windows Hello asks on every `RequestSignAsync`. Nothing can sign in the
+  background, Wirebench included.
+- **The helper.** Main reaches the hardware through a helper shipped beside the app (`Resources/device-
+  helper/`): a Swift program on macOS, signed with the app, and a PowerShell script on Windows, run by the
+  system's Windows PowerShell. Each request starts it once, with one JSON request and one JSON answer. A
+  handle or signature is never logged, and prompts run one at a time.
+- **Only the app.** `packages/ssh` signs with a device key only through a signer the desktop sets at start-up.
+  The CLI, the runner and the MCP server have none, so a host that signs in with a device key fails there
+  with `ssh-device-key-unavailable` rather than trying something else.
+- **No recovery.** A device key cannot be exported or backed up. **Generate key…** says so and suggests
+  keeping another way into the same hosts.
+
+Tests: `packages/ssh/test/unit/device-key.test.ts`, `packages/ssh/test/integration/device-key-auth.test.ts`
+(a real `sshd`, with a software signer for both key types), `apps/desktop/test/device-keys.test.ts`, and
+`scripts/build-device-helper.test.ts`, which builds the macOS helper and checks its answers.
+
+## App lock
+
+With **Settings → Secrets → App lock** on (`secrets.appLock`, off by default), an SSH secret is read only
+after the person has passed the OS prompt: Touch ID or the password on macOS, Windows Hello on Windows. It
+locks at launch, after `secrets.appLockIdleMinutes` (15) without input on the machine, on screen lock and on
+suspend. Every SSH secret read goes through the gate (sign-in, proxy passwords, host environment variables,
+snippets, key install). Reads waiting at the same moment share one prompt, and sessions already open stay
+open. The keychain's key list reads only public halves and is not gated. Nothing outside SSH is gated.
+
+Only main turns the lock on (`appLock.set`), after one prompt the person passes, so it is never on where it
+cannot ask. `preferences.update` refuses `secrets.appLock`, as it does the CA bundle path. Turning it off asks
+for nothing. The lock guards against someone else at an unlocked, unattended machine, not against code
+running as the user. Tests: `apps/desktop/test/app-lock.test.ts`, `apps/desktop/test/ipc-app-lock.test.ts`.
+
 ## The packaged binary
 
 Six Electron fuses are flipped into the executable at build time

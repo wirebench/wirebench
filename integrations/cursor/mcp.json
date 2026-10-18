@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "wirebench": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@wirebench/cli", "mcp", "--project", "/absolute/path/to/project", "--allow-send", "-e", "local"]
+    }
+  }
+}

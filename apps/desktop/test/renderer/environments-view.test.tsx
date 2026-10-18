@@ -77,6 +77,16 @@ describe('EnvironmentsView', () => {
     expect(rows[3]?.dataset['active']).toBe('false');
   });
 
+  it("shows an environment's colour dot and, when protected, its lock, as the switcher does", () => {
+    setUp({ environments: [dev, { ...uat, color: 'red', protected: true }] });
+    const [devRow, uatRow] = screen.getAllByTestId('environment-row').slice(2);
+    const dot = uatRow!.querySelector<HTMLElement>('[data-testid="env-color-dot"]');
+    expect(dot?.style.getPropertyValue('--env-color')).toBe('var(--wb-env-red)');
+    expect(within(uatRow!).getByRole('img', { name: 'Protected environment' })).toBeTruthy();
+    expect(devRow!.querySelector('[data-testid="env-color-dot"]')).toBeNull();
+    expect(within(devRow!).queryByRole('img', { name: 'Protected environment' })).toBeNull();
+  });
+
   it('opens the Globals editor tab from the row itself', () => {
     setUp();
     fireEvent.click(screen.getAllByTestId('environment-row')[0]!);

@@ -140,12 +140,13 @@ export function LogFilterBar({ shown, total, actions }: LogFilterBarProps) {
   return (
     <div
       data-testid="http-log-filter"
-      /* One line: a wrapped bar eats the height of a short console, and the rows are what the panel is
-         for. The choices sit in the Filters menu and the search field gives way first, so search, Reset
-         and Preserve log stay in view; the bar scrolls sideways only when even that is not enough. */
-      className="flex shrink-0 items-center gap-3 overflow-x-auto border-b border-hairline px-2 py-1"
+      /* One line where it fits: a wrapped bar eats the height of a short console, and the rows are what
+         the panel is for. The choices sit in the Filters menu, the actions are icons and the search field
+         gives way first; only a console narrower than all that (the code panel open beside it) wraps,
+         rather than scrolling Reset and the actions out of view (#636). */
+      className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-hairline px-2 py-1"
     >
-      <div className="relative flex w-64 min-w-32 shrink items-center">
+      <div className="relative flex min-w-32 max-w-64 flex-1 basis-32 items-center">
         <input
           type="search"
           aria-label="Search the log"

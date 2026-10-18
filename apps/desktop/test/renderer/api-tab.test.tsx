@@ -205,6 +205,24 @@ describe('ApiTab', () => {
     expect(updateApi).toHaveBeenCalledWith('api-1', { auth: { type: 'basic' } });
   });
 
+  it('says once when the scripts run, without an issue number', () => {
+    mount();
+
+    const section = screen.getByTestId('api-tab');
+    expect(section.textContent).not.toMatch(/#\d+/);
+    expect(screen.getAllByTestId('scripts-level-hint')).toHaveLength(1);
+    expect(section.textContent).not.toContain('before any folder');
+  });
+
+  it('sets the credential labels in the same column as Name and Description', () => {
+    mount();
+
+    const authLabel = screen.getByText('Authentication', { selector: 'span' });
+    const nameLabel = screen.getByText('Name', { selector: 'label' });
+    expect(authLabel.className).toContain('w-44');
+    expect(nameLabel.className).toContain('w-44');
+  });
+
   it('shows the definition card only for an imported API', () => {
     mount();
     expect(screen.queryByTestId('api-definition-card')).toBeNull();

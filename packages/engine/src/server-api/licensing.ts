@@ -19,7 +19,13 @@ export const editionSchema = z.enum(EDITIONS);
 export type Edition = z.infer<typeof editionSchema>;
 
 /** Names a route or module checks. Later modules add `policies`. */
-export const FEATURES = ['audit-log', 'scheduled-runs', 'sso-provisioning'] as const;
+export const FEATURES = [
+  'audit-log',
+  'scheduled-runs',
+  'sso-provisioning',
+  'session-logs',
+  'terminal-sharing',
+] as const;
 export const featureSchema = z.enum(FEATURES);
 export type Feature = z.infer<typeof featureSchema>;
 

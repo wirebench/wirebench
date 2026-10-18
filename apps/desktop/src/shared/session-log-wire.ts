@@ -14,7 +14,11 @@ const logIdSchema = z.string().min(1).max(64);
 
 export const sessionLogTargetSchema = z.strictObject({ kind: z.enum(['host', 'group']), id: hostIdSchema });
 
-export const sessionLogSwitchesResponseSchema = z.object({ switches: z.record(z.string(), z.boolean()) });
+export const sessionLogSwitchesResponseSchema = z.object({
+  switches: z.record(z.string(), z.boolean()),
+  /** The workspace's server records every SSH session (#430): the switches do not decide while this is set. */
+  team: z.boolean().optional(),
+});
 export type SessionLogSwitchesResponse = z.infer<typeof sessionLogSwitchesResponseSchema>;
 
 /** `on: null` clears the target's own switch, so it follows its group again. */
@@ -61,3 +65,54 @@ export const sessionLogMatchWireSchema = z.object({
 });
 export type SessionLogMatchWire = z.infer<typeof sessionLogMatchWireSchema>;
 export const sessionLogSearchResponseSchema = z.object({ matches: z.array(sessionLogMatchWireSchema) });
+
+// ---- team session logs (#430): the workspace server's logs, every member's -----------------------
+
+/** With no filter, every host's and member's logs in the workspace, newest first; `before` pages on. */
+export const teamSessionLogListRequestSchema = z.strictObject({
+  hostId: hostIdSchema.optional(),
+  userId: z.string().min(1).max(64).optional(),
+  before: z.string().min(1).max(64).optional(),
+});
+export type TeamSessionLogListRequest = z.infer<typeof teamSessionLogListRequestSchema>;
+
+export const teamSessionLogWireSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  userName: z.string(),
+  hostId: z.string(),
+  hostName: z.string(),
+  address: z.string(),
+  port: z.number().int(),
+  user: z.string(),
+  startedAt: z.string(),
+  endedAt: z.string().nullable(),
+  exitCode: z.number().int().nullable(),
+  reason: z.enum(['exit', 'lost', 'closed']).nullable(),
+  size: z.number().int(),
+  truncated: z.boolean(),
+  live: z.boolean(),
+});
+export type TeamSessionLogWire = z.infer<typeof teamSessionLogWireSchema>;
+
+/** `available: false` when the open workspace is not shared to a server: there is nothing to list. */
+export const teamSessionLogListResponseSchema = z.object({
+  available: z.boolean(),
+  logs: z.array(teamSessionLogWireSchema),
+  next: z.string().nullable(),
+});
+export type TeamSessionLogListResponse = z.infer<typeof teamSessionLogListResponseSchema>;
+
+export const teamSessionLogReadRequestSchema = z.strictObject({
+  id: z.string().min(1).max(64),
+  offset: z.number().int().min(0).optional(),
+});
+export type TeamSessionLogReadRequest = z.infer<typeof teamSessionLogReadRequestSchema>;
+export const teamSessionLogReadResponseSchema = z.object({
+  text: z.string(),
+  next: z.number().int(),
+  size: z.number().int(),
+  truncated: z.boolean(),
+  live: z.boolean(),
+});
+export type TeamSessionLogReadResponse = z.infer<typeof teamSessionLogReadResponseSchema>;

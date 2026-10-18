@@ -15,6 +15,7 @@ import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { Document, parse as parseYamlText } from 'yaml';
 import { z } from 'zod';
 import type { Project } from '../project/model.js';
+import { GOLDEN_SUFFIX } from '../project/paths.js';
 import { requestFileLocation } from '../project/request-location.js';
 
 export interface GoldenFile {
@@ -84,7 +85,7 @@ async function sidecarOf(
     realpathOfPrefix(folder),
   ]);
   if (!isInside(root, requestReal) || !isInside(root, folderReal) || !existsSync(requestFile)) return undefined;
-  const name = `${location.slug}.golden.yaml`;
+  const name = `${location.slug}${GOLDEN_SUFFIX}`;
   return { file: join(folderReal, name), relative: location.dir === '' ? name : `${location.dir}/${name}` };
 }
 

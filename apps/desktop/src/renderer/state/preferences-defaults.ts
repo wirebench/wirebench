@@ -13,7 +13,8 @@ import type { PreferencesWire } from '../../shared/wire-base.js';
 export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
   http: {
     version: '1.1',
-    userAgent: 'Wirebench/0.1',
+    // Main moves this to `Wirebench/<app version>` (`withAppUserAgent`); a reset sends it back there.
+    userAgent: 'Wirebench',
     requestCompression: 'none',
     responseCompression: true,
     closeConnections: false,
@@ -55,7 +56,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
   },
   updates: { checkOnLaunch: false },
   accounts: { showInStatusBar: true },
-  secrets: { sourceCacheSeconds: 300 },
+  secrets: { sourceCacheSeconds: 300, appLock: false, appLockIdleMinutes: 15 },
   mocks: { listenOnAllInterfaces: false },
   terminal: {
     confirmMultilinePaste: true,
@@ -71,6 +72,6 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     sessionLogRaw: false,
     localShell: '',
   },
-  ssh: { keepAlive: 15, connectTimeout: 20 },
+  ssh: { keepAlive: 15, connectTimeout: 20, charset: 'utf-8', term: 'xterm-256color' },
   shortcuts: {},
 };

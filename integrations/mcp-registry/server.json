@@ -1,0 +1,48 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.wirebench/wirebench",
+  "title": "Wirebench",
+  "description": "Send, check and diff SOAP, REST, WebSocket and MCP requests in a local Wirebench project.",
+  "version": "6.2.0",
+  "websiteUrl": "https://wirebench.github.io/wirebench/docs/guides/coding-agents/",
+  "repository": {
+    "url": "https://github.com/wirebench/wirebench",
+    "source": "github",
+    "subfolder": "packages/cli"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@wirebench/cli",
+      "version": "6.2.0",
+      "runtimeHint": "npx",
+      "transport": { "type": "stdio" },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp",
+          "description": "Serve the project's tools over MCP."
+        },
+        {
+          "type": "named",
+          "name": "--project",
+          "description": "The Wirebench project folder, the one holding wirebench.yaml, as an absolute path.",
+          "format": "filepath",
+          "isRequired": true
+        },
+        {
+          "type": "positional",
+          "value": "--allow-send",
+          "description": "Let send and the contract tools make requests. Without it they refuse."
+        },
+        {
+          "type": "named",
+          "name": "--env",
+          "description": "The environments send may use, comma-separated. Every other environment is refused.",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

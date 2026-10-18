@@ -15,6 +15,7 @@ import { hintDetailsOnce } from './details-hint.js';
 import { noteFirstPress, swallowsClick, takeSecondPress } from './double-press.js';
 import { GroupActionsButton, GroupMenu, HostActionsButton, HostMenu } from './host-menus.js';
 import { TOP_LEVEL, type HostsLayout, type HostsPrefs, type HostsSort } from './hosts-prefs.js';
+import { serialTargetText } from './serial-section.js';
 import { flattenGroups, hostStatusOf, osKeyOf, useHostsStore, type PaneSession } from './hosts-store.js';
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
 import { ProtectedMark } from './protected-mark.js';
@@ -68,6 +69,8 @@ function sortHosts(
 
 /** `user@address:port`, leaving out what the host does not set and the default port. */
 function targetOf(host: HostEntryWire, resolved: ResolvedHostWire | undefined): string {
+  // A serial console (#426) has no address: its line says what it is.
+  if (resolved?.ssh.protocol?.value === 'serial') return serialTargetText(resolved);
   const user = resolved?.ssh.user.value;
   const port = resolved?.ssh.port.value;
   return `${user === undefined ? '' : `${user}@`}${host.address}${port === undefined || port === 22 ? '' : `:${String(port)}`}`;

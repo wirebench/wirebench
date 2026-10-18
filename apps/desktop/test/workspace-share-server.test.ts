@@ -150,6 +150,7 @@ class StubServer {
       myRole: input.role ?? 'editor',
       source: 'default',
       recordDesktopActivity: false,
+      recordSessionLogs: false,
       createdAt: '2026-09-25T00:00:00.000Z',
     };
     const files = new Map<string, TreeFile>(input.files ?? []);
@@ -223,6 +224,7 @@ class StubServer {
         ...behind,
         role: found.row.myRole,
         recordDesktopActivity: false,
+        recordSessionLogs: false,
       };
     });
   }
