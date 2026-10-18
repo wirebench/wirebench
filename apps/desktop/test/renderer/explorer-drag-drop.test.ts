@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isDropDisabled, planMoves } from '../../src/renderer/features/explorer/drag-drop.js';
+import { isDropDisabled, planContainerDrop, planMoves } from '../../src/renderer/features/explorer/drag-drop.js';
 import type { ExplorerNode } from '../../src/renderer/features/explorer/tree-nodes.js';
 
 const api: ExplorerNode = { id: 'api:api-1', kind: 'api', label: 'Api', apiId: 'api-1' };
@@ -197,5 +197,89 @@ describe('webhook items', () => {
     const children = [hookFolder('g'), hook('a'), hook('b')];
     expect(planMoves(children, [hook('b')], 1)).toEqual([{ entityId: 'b', kind: 'webhook-request', index: 0 }]);
     expect(planMoves(children, [hookFolder('h')], 1)).toEqual([{ entityId: 'h', kind: 'webhook-folder', index: 1 }]);
+  });
+});
+
+describe('API rows (#701)', () => {
+  const project = (id: string, extra: Partial<ExplorerNode> = {}): ExplorerNode => ({
+    id: `proj:${id}`,
+    kind: 'project',
+    label: id,
+    projectId: id,
+    ...extra,
+  });
+  const iface: ExplorerNode = { id: 'iface:i-1', kind: 'interface', label: 'Iface', interfaceId: 'i-1' };
+  const grpcApi: ExplorerNode = { id: 'grpc-api:g-1', kind: 'grpc-api', label: 'Greeter', apiId: 'g-1' };
+  const mcpApi: ExplorerNode = { id: 'mcp-api:m-1', kind: 'mcp-api', label: 'Tools', apiId: 'm-1' };
+  const sequences: ExplorerNode = { id: 'sequences:p-1', kind: 'sequences', label: 'Sequences', projectId: 'p-1' };
+  const children = [iface, api, grpcApi, wsApi, sequences];
+  const base = { ancestors: [] as readonly ExplorerNode[] };
+
+  it('reorders an API of any kind among its own project’s containers', () => {
+    for (const dragged of [api, grpcApi, wsApi, mcpApi]) {
+      expect(isDropDisabled({ ...base, sameProject: true, parent: project('p-1'), children, dragged, index: 0 })).toBe(
+        false,
+      );
+    }
+    expect(
+      isDropDisabled({ ...base, sameProject: true, parent: project('p-1'), children, dragged: api, index: 4 }),
+    ).toBe(false);
+  });
+
+  it('refuses an API dropped past the containers, among the Sequences or Mocks groups', () => {
+    expect(
+      isDropDisabled({ ...base, sameProject: true, parent: project('p-1'), children, dragged: api, index: 5 }),
+    ).toBe(true);
+  });
+
+  it('takes an API dropped onto another open project', () => {
+    expect(
+      isDropDisabled({ ...base, sameProject: false, parent: project('p-2'), children: [], dragged: api, index: 0 }),
+    ).toBe(false);
+  });
+
+  it('refuses another project that is loading or missing', () => {
+    expect(
+      isDropDisabled({
+        ...base,
+        sameProject: false,
+        parent: project('p-2', { loading: true }),
+        children: [],
+        dragged: api,
+        index: 0,
+      }),
+    ).toBe(true);
+    const missing: ExplorerNode = { id: 'projmissing:p-2', kind: 'project-missing', label: 'gone', projectId: 'p-2' };
+    expect(
+      isDropDisabled({
+        ...base,
+        sameProject: false,
+        parent: project('p-2'),
+        children: [missing],
+        dragged: api,
+        index: 0,
+      }),
+    ).toBe(true);
+  });
+
+  it('refuses an API dropped into an API, a folder or an interface', () => {
+    for (const parent of [otherApi, folder('f1', 'api-2'), iface]) {
+      expect(isDropDisabled({ ...base, sameProject: true, parent, children: [], dragged: api, index: 0 })).toBe(true);
+    }
+  });
+
+  it('plans the API it lands before, skipping interfaces and itself', () => {
+    expect(planContainerDrop(project('p-1'), children, wsApi, 0)).toEqual({
+      apiId: 'ws-1',
+      targetProjectId: 'p-1',
+      beforeApiId: 'api-1',
+    });
+    expect(planContainerDrop(project('p-1'), children, api, 2)).toEqual({
+      apiId: 'api-1',
+      targetProjectId: 'p-1',
+      beforeApiId: 'g-1',
+    });
+    expect(planContainerDrop(project('p-1'), children, api, 4)).toEqual({ apiId: 'api-1', targetProjectId: 'p-1' });
+    expect(planContainerDrop(project('p-1'), children, request('a'), 0)).toBeUndefined();
   });
 });

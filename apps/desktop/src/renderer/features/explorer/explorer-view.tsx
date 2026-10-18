@@ -40,7 +40,8 @@ import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { explorerActions } from './explorer-actions.js';
 import { openProjectTab, projectRowActions } from './project-actions.js';
-import { isDropDisabled, planMoves } from './drag-drop.js';
+import { isContainerRow, isDropDisabled, planContainerDrop, planMoves } from './drag-drop.js';
+import { dropApiOnProject } from './move-api-dialog.js';
 import { getExplorerTree, registerExplorerTree, revealNode } from './explorer-api.js';
 import type { ExplorerNode, ExplorerProject, ExplorerSchedules, ExplorerWebhooks } from './tree-nodes.js';
 import { buildExplorerTree, nodeProjectId, schedulesNode } from './tree-nodes.js';
@@ -214,8 +215,13 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           e.stopPropagation();
           node.activate();
         }}
+        {...(node.willReceiveDrop ? { 'data-drop-target': 'true' } : {})}
         className={`flex h-full items-center pr-1 text-sm ${
-          node.isSelected ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'
+          node.willReceiveDrop
+            ? 'bg-accent-muted text-fg-default ring-1 ring-accent ring-inset'
+            : node.isSelected
+              ? 'bg-accent-muted text-fg-default'
+              : 'text-fg-default hover:bg-surface-raised'
         }`}
       >
         {/* The chevron's width is reserved on leaves as well, so a request's name lines up with the
@@ -672,13 +678,15 @@ export function ExplorerView() {
               }
               disableDrag={(node) =>
                 explorerRole(node.kind)?.movable !== true &&
+                explorerRole(node.kind)?.container !== true &&
                 node.kind !== 'folder' &&
                 node.kind !== 'webhook-request' &&
                 node.kind !== 'webhook-folder'
               }
               // Reordering and moving happen inside the same API: a request or folder belongs to its
               // own API definition, and cannot move into another API or project. A webhook item or
-              // folder likewise stays inside its own project's webhook collection.
+              // folder likewise stays inside its own project's webhook collection. An API row moves
+              // among its project's containers, or onto another project's row (#701).
               disableDrop={({ parentNode, dragNodes, index }) => {
                 const ancestors: ExplorerNode[] = [];
                 for (let node = parentNode?.parent ?? null; node !== null; node = node.parent) {
@@ -695,6 +703,28 @@ export function ExplorerView() {
               }}
               onMove={async ({ dragNodes, parentNode, index }) => {
                 const parent = parentNode?.data;
+                const first = dragNodes[0]?.data;
+                if (first !== undefined && isContainerRow(first)) {
+                  if (parent?.kind !== 'project') return;
+                  const drop = planContainerDrop(
+                    parent,
+                    (parentNode?.children ?? []).map((child) => child.data),
+                    first,
+                    index,
+                  );
+                  if (drop === undefined) return;
+                  if (sameProject(parent, first)) {
+                    await useProjectStore
+                      .getState()
+                      .reorderApi(drop.apiId, drop.beforeApiId)
+                      .catch((error: unknown) =>
+                        showToast(error instanceof Error ? error.message : 'Could not move it'),
+                      );
+                  } else {
+                    await dropApiOnProject(drop.apiId, drop.targetProjectId, drop.beforeApiId);
+                  }
+                  return;
+                }
                 if (
                   parent === undefined ||
                   (explorerRole(parent.kind)?.dropTarget !== true &&

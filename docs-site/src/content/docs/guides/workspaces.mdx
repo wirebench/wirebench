@@ -116,6 +116,21 @@ under **Project folders you opened before** — click one to import it the same 
 Right-click a project and choose **Export Project…** to write it out to a folder you pick,
 independent of the workspace it lives in.
 
+## Move an API to another project
+
+Drag an API (REST, gRPC, WebSocket or MCP) onto another project's row, or right-click it and choose
+**Move to project…**. Its folders, requests, scripts and mocks go with it and keep their ids, so its
+open tabs and History still find them. Both projects are saved. A project whose folder is missing
+can't take it.
+
+Before the move, Wirebench lists what the API uses at the project level that the target doesn't
+have. Project variables and this computer's `${secret:…}` values are copied to the target. Variables
+set only in this project's environments, secrets with no value on this computer, keystores and
+sequences that run its requests stay behind and are listed so you can fix them. The toast after the
+move has **Undo**, which moves it back.
+
+Drag an API up or down among its own project's APIs to change their order.
+
 ## Tabs across projects
 
 The editor's tabs belong to the workspace, not to any one project: open a request from one

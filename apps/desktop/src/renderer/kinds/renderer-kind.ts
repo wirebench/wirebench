@@ -37,6 +37,11 @@ export interface ExplorerNodeRole {
   readonly movable?: boolean;
   /** Whether rows can be dropped into this one. */
   readonly dropTarget?: boolean;
+  /**
+   * Whether the row is an API container (#701): it is dragged among its project's containers to
+   * reorder them, or onto another project's row to move there, and its menu offers **Move to project…**.
+   */
+  readonly container?: boolean;
   /** Opens the row's tab: a click on a request, a double-click on anything, Enter. */
   open?(node: ExplorerNode): void;
   /** Commits an inline rename. Unset, the row cannot be renamed inline. */

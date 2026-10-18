@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Move an API to another project.** API rows of every kind (REST, gRPC, WebSocket, MCP) offer
+  **Move to project…**, and dragging an API onto another project's row moves it there, the row
+  highlighted as the drop target. Folders, requests, scripts, mocks and the cached definition go with it
+  and keep their ids, so open tabs and History still resolve. Before the move it lists what the API uses
+  that the target lacks: project variables and this computer's `${secret:…}` values are copied, and
+  environment-only variables, unset secrets, keystores and sequences that run its requests are named.
+  Both projects are saved; a failure leaves both as they were, and the toast's **Undo** moves it back
+  (#701).
+- **Reorder APIs by dragging.** An API row dragged up or down among its project's APIs changes their
+  order (#701).
+
 ### Changed
 
 - **New host opens in the right panel, with a draft card in Hosts.** New host (the Hosts button and its

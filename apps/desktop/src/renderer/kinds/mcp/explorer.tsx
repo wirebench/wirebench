@@ -7,6 +7,7 @@ import { NewMcpServerDialog } from '../../features/mcp-api/new-server-dialog.js'
 import { McpToolPickerDialog } from '../../features/mcp-api/tool-picker-dialog.js';
 import { useProjectStore } from '../../state/project.js';
 import type { KindExplorer } from '../renderer-kind.js';
+import { useMoveApiStore } from '../../features/explorer/move-api-dialog.js';
 
 function McpGutter({ node }: { readonly node: ExplorerNode }) {
   return node.method === undefined ? null : <McpBadge method={node.method} />;
@@ -25,6 +26,7 @@ function McpDialogs() {
 export const mcpExplorer: KindExplorer = {
   nodes: {
     'mcp-api': {
+      container: true,
       icon: Plug,
       testId: 'mcp-api-row',
       badge: 'MCP',
@@ -60,7 +62,10 @@ export const mcpExplorer: KindExplorer = {
             },
           ],
           exportItems({ containerId: apiId }),
-          [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('mcp-api', apiId) }],
+          [
+            { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('mcp-api', apiId) },
+            { key: 'move-to-project', label: 'Move to project…', run: () => useMoveApiStore.getState().open(apiId) },
+          ],
           [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeMcpApi(apiId) }],
         );
       },
