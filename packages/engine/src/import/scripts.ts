@@ -5,7 +5,7 @@
 import { slugify } from '../project/paths.js';
 import { UNSUPPORTED_DEFAULT_REASON, UNSUPPORTED_WHY } from '../script/api/layer-parts.js';
 import { TOP_LEVEL_IMPORT, TOP_LEVEL_IMPORT_REASON } from '../script/module-syntax.js';
-import type { LayeredApi, RequestScripts } from '../script/model.js';
+import type { LayeredApi, RequestScripts, ScriptPhase } from '../script/model.js';
 import type { ReportBuilder } from './report.js';
 
 /** The folder imported scripts are written to. Nothing in Wirebench reads it. */
@@ -26,6 +26,20 @@ export function importedScriptPath(apiSlug: string, itemSlug: string, fileTail: 
       return path;
     }
   }
+}
+
+/**
+ * Where a level's script of `phase` is kept as text: `imported-scripts/<api>/<owner>.<phase>.js`,
+ * `<owner>` being the level's names from the API down (the API's own included) slugified and joined
+ * with `-`. A dropped API's scripts and a converted level's backups are named alike.
+ */
+export function levelScriptPath(
+  apiSlug: string,
+  names: readonly string[],
+  phase: ScriptPhase,
+  taken: Set<string>,
+): string {
+  return importedScriptPath(apiSlug, slugify(names.join('-')).toLowerCase(), `${phase}.js`, taken);
 }
 
 /**
@@ -73,7 +87,7 @@ export function droppedApiScriptFiles(
       ['post', post],
     ] as const) {
       if (source === undefined || source.trim() === '') continue;
-      const path = importedScriptPath(apiSlug, slugify(names.join('-')).toLowerCase(), `${phase}.js`, taken);
+      const path = levelScriptPath(apiSlug, names, phase, taken);
       report.note(
         `${owner}: its ${phase} script has no place to run in Wirebench, so it was saved to ${path} and is never run.`,
       );
