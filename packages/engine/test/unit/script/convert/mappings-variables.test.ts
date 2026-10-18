@@ -3,6 +3,7 @@
  * each dialect and protocol, the TODO in the phase a row does not cover, and the calls left as TODOs.
  */
 import { describe, expect, it } from 'vitest';
+import { PART_VARIABLES, UNSUPPORTED_WHY } from '../../../../src/script/api/layer-parts.js';
 import { SKIP_REQUEST_PRE_ONLY } from '../../../../src/script/api/prelude.js';
 import { convertLevelScripts, convertScript } from '../../../../src/script/convert/index.js';
 import type { ConvertProtocol } from '../../../../src/script/convert/roots.js';
@@ -239,11 +240,62 @@ describe('calls the layer refuses stay TODOs with its reason, whatever the table
   });
 });
 
+describe("clear is refused with the layer's reason", () => {
+  for (const protocol of PROTOCOLS) {
+    it.each(scoped('clear').map(([dialect, call]) => ({ dialect, call })))(
+      `$call ($dialect) on ${protocol}`,
+      ({ dialect, call }) => {
+        const result = converted(dialect, `${call}();\n`, protocol);
+        expect(result.body).toBe(`// TODO(convert): ${call} — ${UNSUPPORTED_WHY.values}\n// ${call}();\n`);
+        expect(result.todos).toEqual([
+          { phase: 'pre', line: 2, call, kind: 'unsupported', reason: UNSUPPORTED_WHY.values },
+        ]);
+      },
+    );
+  }
+
+  it('is the reason the layer throws', () => {
+    expect(PART_VARIABLES).toContain("clear: unsupported('Clearing variables', WHY.values)");
+  });
+});
+
+describe('a read writes its argument twice, so the argument must be free of side effects', () => {
+  it.each([
+    ["pm.environment.get('a')", "(vars.get('a') ?? props.get('a'))"],
+    ['pm.environment.get(name)', '(vars.get(name) ?? props.get(name))'],
+    ['pm.environment.get(cfg.keys.token)', '(vars.get(cfg.keys.token) ?? props.get(cfg.keys.token))'],
+    ["pm.environment.get(cfg['token'])", "(vars.get(cfg['token']) ?? props.get(cfg['token']))"],
+    ['pm.environment.get(keys[i])', '(vars.get(keys[i]) ?? props.get(keys[i]))'],
+    ['pm.environment.has(keys[0])', '(vars.get(keys[0]) ?? props.get(keys[0])) !== undefined'],
+  ])('%s is converted', (call, out) => {
+    expect(converted('postman', `const v = ${call};\n`).body).toBe(`const v = ${out};\n`);
+  });
+
+  it.each([
+    ['postman', 'pm.environment.get(keys.shift())'],
+    ['postman', 'pm.environment.get(`${prefix}token`)'],
+    ['postman', 'pm.environment.get(i++)'],
+    ['postman', 'pm.environment.get(keys[i++])'],
+    ['postman', "pm.environment.get(pm.environment.get('k'))"],
+    ['postman', 'pm.environment.has(next())'],
+    ['bruno', "bru.getVar('a' + n)"],
+    ['bruno', 'bru.hasVar(name())'],
+    ['thunder-client', 'tc.getVar(f())'],
+    ['hoppscotch', 'pw.env.get(f())'],
+    ['hoppscotch', 'hopp.env.getRaw(f())'],
+    ['postman', 'postman.getEnvironmentVariable(f())'],
+  ] as const)('%s: %s is a TODO', (dialect, call) => {
+    const result = converted(dialect, `const v = ${call};\n`);
+    const name = call.slice(0, call.indexOf('('));
+    expect(result.body).toBe(`// TODO(convert): ${name} — not converted yet\n// const v = ${call};\n`);
+    expect(result.todos.map(({ call: c, kind }) => [c, kind])).toEqual([[name, 'not-mapped']]);
+  });
+});
+
 describe('the calls §6.3 and §6.7 do not map become TODOs', () => {
   it.each([
     ['postman', "pm.environment.unset('a');"],
     ['insomnia', "insomnia.baseEnvironment.unset('a');"],
-    ['postman', 'pm.globals.clear();'],
     ['bruno', "bru.deleteVar('a');"],
     ['hoppscotch', "hopp.env.get('a');"],
     ['hoppscotch', "hopp.env.active.get('a');"],

@@ -7,6 +7,7 @@
  * A row may list a call the dialect's layer refuses (Hoppscotch's `pm.execution`): the converter
  * decides those before it asks the table, so they stay TODOs with the layer's reason (§6.8).
  */
+import { UNSUPPORTED_WHY } from '../api/layer-parts.js';
 import { SKIP_REQUEST_PRE_ONLY } from '../api/prelude.js';
 import type { LayeredApi, ScriptPhase } from '../model.js';
 import type { ConvertProtocol } from './roots.js';
@@ -48,6 +49,17 @@ export interface MappingRow {
    * argument, an `if` condition, an operand of `&&` or `||`).
    */
   readonly loose?: true;
+  /**
+   * The template writes an argument more than once (`vars.get(a) ?? props.get(a)`), so each one must
+   * be free of side effects: a literal, a name, or a property or element access over those. A call
+   * with any other argument is left as a TODO.
+   */
+  readonly pure?: true;
+  /**
+   * The layer refuses the call, whatever its arguments, with this reason: it is an `unsupported`
+   * TODO although the scan list (`UNSUPPORTED_CALLS`) does not name it. A row with it has no `to`.
+   */
+  readonly refuse?: string;
   readonly to: Partial<Record<ConvertProtocol, Template>>;
 }
 
@@ -106,7 +118,7 @@ export const VARIABLE_AND_RUN_MAPPINGS: readonly MappingRow[] = [
     to: everyProtocol(write),
   },
   // --- §6.3 reads
-  { calls: scopes('get'), dialects: PM_DIALECTS, arity: 1, to: everyProtocol(read) },
+  { calls: scopes('get'), dialects: PM_DIALECTS, arity: 1, pure: true, to: everyProtocol(read) },
   {
     calls: [
       'bru.getVar',
@@ -118,25 +130,30 @@ export const VARIABLE_AND_RUN_MAPPINGS: readonly MappingRow[] = [
     ],
     dialects: ['bruno'],
     arity: 1,
+    pure: true,
     to: everyProtocol(read),
   },
-  { calls: ['tc.getVar'], dialects: ['thunder-client'], arity: 1, to: everyProtocol(read) },
-  { calls: ['pw.env.get'], dialects: ['hoppscotch'], arity: 1, to: everyProtocol(read) },
+  { calls: ['tc.getVar'], dialects: ['thunder-client'], arity: 1, pure: true, to: everyProtocol(read) },
+  { calls: ['pw.env.get'], dialects: ['hoppscotch'], arity: 1, pure: true, to: everyProtocol(read) },
   {
     calls: ['postman.getEnvironmentVariable', 'postman.getGlobalVariable'],
     dialects: ['postman'],
     arity: 1,
+    pure: true,
     to: everyProtocol(read),
   },
   {
     calls: hoppEnv('getRaw'),
     dialects: ['hoppscotch'],
     arity: 1,
+    pure: true,
     to: everyProtocol(([name]) => `(vars.get(${String(name)}) ?? props.get(${String(name)}) ?? null)`),
   },
   // --- §6.3 has
-  { calls: scopes('has'), dialects: PM_DIALECTS, arity: 1, loose: true, to: everyProtocol(has) },
-  { calls: ['bru.hasVar'], dialects: ['bruno'], arity: 1, loose: true, to: everyProtocol(has) },
+  { calls: scopes('has'), dialects: PM_DIALECTS, arity: 1, pure: true, loose: true, to: everyProtocol(has) },
+  { calls: ['bru.hasVar'], dialects: ['bruno'], arity: 1, pure: true, loose: true, to: everyProtocol(has) },
+  // --- §6.3 refused: the typed API cannot list the run's values, so there is nothing to clear.
+  { calls: scopes('clear'), dialects: PM_DIALECTS, refuse: UNSUPPORTED_WHY.values, to: {} },
   // --- §6.7 run control
   {
     calls: [...pmShaped('execution.setNextRequest'), 'postman.setNextRequest'],

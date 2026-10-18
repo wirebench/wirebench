@@ -17,6 +17,10 @@ export function tableMatcher(rows: readonly MappingRow[]): Matcher {
   return (ref, context) => {
     for (const row of byName.get(ref.name) ?? []) {
       if (!row.dialects.includes(context.dialect)) continue;
+      if (row.refuse !== undefined) {
+        if (ref.call !== undefined) return { refused: row.refuse };
+        continue;
+      }
       const target = shapeOf(row, ref);
       if (target === undefined) continue;
       if (row.phase !== undefined && row.phase !== context.phase) {
@@ -58,7 +62,9 @@ function shapeOf(row: MappingRow, ref: DialectRef): { node: ts.Node; args: reado
   if (!call.arguments.slice(arity).every(inert)) return undefined;
   const first = call.arguments[0];
   if (shape === 'string-literal' && (first === undefined || !ts.isStringLiteralLike(first))) return undefined;
-  return { node: call, args: call.arguments.slice(0, arity) };
+  const args = call.arguments.slice(0, arity);
+  if (row.pure === true && !args.every(pure)) return undefined;
+  return { node: call, args };
 }
 
 /** The initializer of `name: …` in `object`, or undefined. */
@@ -92,6 +98,22 @@ function inert(node: ts.Expression): boolean {
         ts.isPropertyAssignment(property) && !ts.isComputedPropertyName(property.name) && inert(property.initializer),
     )
   );
+}
+
+/**
+ * True when evaluating `node` twice is the same as once: a literal, a name, or a property or element
+ * access over those with a literal or name key.
+ */
+function pure(node: ts.Expression): boolean {
+  const ts = typescript();
+  if (ts.isParenthesizedExpression(node)) return pure(node.expression);
+  if (ts.isIdentifier(node) || inert(node)) return !ts.isObjectLiteralExpression(node);
+  if (ts.isPropertyAccessExpression(node)) return pure(node.expression);
+  if (ts.isElementAccessExpression(node)) {
+    const key = node.argumentExpression;
+    return pure(node.expression) && (ts.isIdentifier(key) || ts.isStringLiteralLike(key) || ts.isNumericLiteral(key));
+  }
+  return false;
 }
 
 /** True when `node` is assigned to, incremented, decremented or deleted. */
