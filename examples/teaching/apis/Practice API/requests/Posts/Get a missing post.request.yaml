@@ -1,0 +1,18 @@
+assertions:
+  - equals: 404
+    type: status
+auth:
+  type: inherit
+body:
+  kind: none
+description: Lesson 2. A negative test. There is no post 9999, so the right answer is 404 and this assertion expects it.
+id: TEACH00REQ07
+kind: rest
+method: GET
+name: Get a missing post
+order: 4
+pathParams:
+  - description: An id no post has
+    name: postId
+    value: "9999"
+url: /posts/{postId}

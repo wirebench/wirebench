@@ -1,0 +1,27 @@
+assertions:
+  - equals: 201
+    type: status
+  - exists: true
+    expression: $.id
+    language: jsonpath
+    type: match
+  - equals: Hello from the lab
+    expression: $.title
+    language: jsonpath
+    type: match
+auth:
+  type: inherit
+body:
+  file: Create a post.body.json
+  kind: raw
+  language: json
+description: Lesson 1. A POST with a JSON body. The API answers 201 Created and echoes the post with a new id, but does not keep it.
+headers:
+  - name: Content-Type
+    value: application/json; charset=UTF-8
+id: TEACH00REQ05
+kind: rest
+method: POST
+name: Create a post
+order: 2
+url: /posts

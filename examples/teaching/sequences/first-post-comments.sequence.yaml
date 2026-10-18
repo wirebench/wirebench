@@ -1,0 +1,37 @@
+description: Lesson 2. Find a user's first post, then read the comments on that post. The first step lifts the post id out of its response, and the second step sends it.
+id: TEACH00SEQ01
+kind: sequence
+name: First post and its comments
+order: 0
+settings:
+  stopOnFailure: true
+steps:
+  - assertions:
+      - equals: 200
+        type: status
+      - header: Content-Type
+        matches: application/json
+        type: header
+      - exists: true
+        expression: $[0].title
+        language: jsonpath
+        type: match
+    id: TEACH00STEP01
+    name: Find the user's posts
+    request: TEACH00REQ03
+    transfers:
+      - expression: $[0].id
+        from: body
+        language: jsonpath
+        name: postId
+  - assertions:
+      - exists: true
+        expression: $[0].email
+        language: jsonpath
+        type: match
+      - maxMs: 5000
+        type: sla
+    id: TEACH00STEP02
+    name: Read its comments
+    request: TEACH00REQ08
+version: 1
