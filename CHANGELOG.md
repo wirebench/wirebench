@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A large REST response scrolls smoothly in Raw.** Scrolling the Raw view of a multi-megabyte body
+  draws the new lines in the next frame and moves them without a layout pass, so it no longer drops
+  frames on a slower machine.
+
 ## [6.1.0] - 2026-10-18
 
 ### Added
