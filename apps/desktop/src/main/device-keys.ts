@@ -163,7 +163,7 @@ export interface DeviceKeyStatus {
   readonly platform?: DevicePlatform;
   /** The key type a device key made here is. */
   readonly keyType?: string;
-  /** Why it is not supported. */
+  /** Why it is not supported, when there is more to say than what device keys need (the renderer says that). */
   readonly reason?: string;
 }
 
@@ -199,12 +199,14 @@ export class DeviceKeys implements DeviceKeySigner {
 
   private async askStatus(): Promise<DeviceKeyStatus> {
     const platform = this.platform;
-    if (platform === undefined) return { supported: false, reason: 'Device keys are not available on this OS' };
+    // No reason where there is nothing to add: the renderer already says what device keys need.
+    if (platform === undefined) return { supported: false };
     try {
       const answer = await this.helper.run('status');
       if (answer['supported'] === true) return { supported: true, platform, keyType: DEVICE_KEY_TYPE[platform] };
-      const reason = typeof answer['reason'] === 'string' ? answer['reason'] : 'This computer cannot make device keys';
-      return { supported: false, platform, reason };
+      return typeof answer['reason'] === 'string'
+        ? { supported: false, platform, reason: answer['reason'] }
+        : { supported: false, platform };
     } catch (error) {
       return { supported: false, platform, reason: (error as Error).message };
     }

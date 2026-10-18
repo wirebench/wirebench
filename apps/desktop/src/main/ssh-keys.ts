@@ -104,7 +104,7 @@ export class SshKeysService {
 
   /** Whether this machine can make device keys (#428). */
   async deviceKeyStatus(): Promise<SshDeviceKeyStatus> {
-    return (await this.deps.deviceKeys?.status()) ?? { supported: false, reason: 'Device keys are not available here' };
+    return (await this.deps.deviceKeys?.status()) ?? { supported: false };
   }
 
   /** Makes a key in this machine's hardware and stores its block, which holds no private key, as the secret. */
