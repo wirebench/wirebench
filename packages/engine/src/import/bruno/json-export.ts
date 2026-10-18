@@ -376,6 +376,7 @@ export function ocOfBrunoExport(json: unknown): { collection: OcCollection; repo
   const environments = list(json['environments']).map((env) => reader.environment(env));
   const config = rec(json['brunoConfig']);
   const configExtras = ['proxy', 'clientCertificates'].filter((key) => config?.[key] !== undefined);
+  const flow = str(rec(config?.['scripts'])?.['flow']) || undefined;
   conv.reportKept();
   return {
     collection: {
@@ -385,6 +386,7 @@ export function ocOfBrunoExport(json: unknown): { collection: OcCollection; repo
       ...(Object.keys(request).length > 0 ? { request } : {}),
       environments,
       configExtras,
+      ...(flow !== undefined ? { scriptFlow: flow } : {}),
     },
     report: conv.report.build(),
   };

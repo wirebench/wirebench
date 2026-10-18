@@ -22,6 +22,7 @@ import {
   activeLevels,
   activeScripts,
   scriptSecretNames,
+  type PostResponseOrder,
   type RequestScripting,
   type ScriptedRequest,
   type ScriptLevel,
@@ -194,6 +195,8 @@ const scriptsOf = (item: SelectedBase): RequestScripts | undefined =>
 interface ItemScripts {
   readonly own: RequestScripts | undefined;
   readonly outer: readonly ScriptLevel[];
+  /** The API's post-response order, read before its level was dropped for being off or empty. */
+  readonly postResponseOrder: PostResponseOrder | undefined;
   /** True when the request or a level above it has scripts, on or off. */
   readonly any: boolean;
 }
@@ -201,7 +204,12 @@ interface ItemScripts {
 function itemScripts(item: SelectedBase, registry: ProtocolRegistry): ItemScripts {
   const levels = registry.find(item.kind)?.run?.scriptLevels?.(item) ?? [];
   const own = activeScripts(scriptsOf(item));
-  return { own, outer: activeLevels(levels), any: scriptsOf(item) !== undefined || levels.length > 0 };
+  return {
+    own,
+    outer: activeLevels(levels),
+    postResponseOrder: levels.find((level) => level.level === 'api')?.scripts.postResponseOrder,
+    any: scriptsOf(item) !== undefined || levels.length > 0,
+  };
 }
 
 /** True when a send of `item` runs any script, at any level. */
@@ -233,6 +241,7 @@ async function scriptedOf(
     slug: item.request.slug,
     ...(scripts.own !== undefined ? { scripts: scripts.own } : {}),
     ...(scripts.outer.length > 0 ? { outer: scripts.outer } : {}),
+    ...(scripts.postResponseOrder !== undefined ? { postResponseOrder: scripts.postResponseOrder } : {}),
     types: await run.scriptTypes(item, scope),
   };
 }

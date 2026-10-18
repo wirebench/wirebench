@@ -49,7 +49,8 @@ describe('OpenCollection export: round trip through the OpenCollection importer'
     expect(getUser!.query).toEqual(original.query);
     expect(getUser!.headers).toEqual(original.headers);
     expect(getUser!.assertions).toEqual(original.assertions.slice(0, 2));
-    expect(mapped.scripts.map((s) => s.source)).toEqual(["pm.environment.set('a', '1');"]);
+    expect(mapped.scripts).toEqual([]);
+    expect(getUser!.scripts).toMatchObject({ pre: { text: "pm.environment.set('a', '1');\n" }, enabled: false });
     expect(createUser!.body).toEqual({ kind: 'raw', language: 'json', text: '{"name":"${name}"}' });
     expect(createUser!.examples?.map((e) => [e.name, e.status, e.body])).toEqual([['created', 201, '{"id":1}']]);
   });

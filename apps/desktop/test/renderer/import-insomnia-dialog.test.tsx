@@ -77,7 +77,7 @@ describe('Import dialog — Insomnia', () => {
     );
     const summary = await screen.findByTestId('import-client-summary');
     expect(screen.getByTestId('import-client-counts').textContent).toBe('3 APIs, 6 requests, 1 folder');
-    expect(screen.getByTestId('import-client-scripts').textContent).toContain('2 scripts kept as text, never run');
+    expect(screen.getByTestId('import-client-scripts').textContent).toContain('2 script files kept as text');
     expect(summary.textContent).toContain('Staging');
     expect(screen.getByTestId('import-client-report-warnings').textContent).toContain('Vault secret "apiKey"');
   });

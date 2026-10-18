@@ -234,6 +234,7 @@ export function toRequestScriptsWire(scripts: RequestScripts | undefined): Reque
     enabled: scripts.enabled,
     secrets: [...scripts.secrets],
     ...(scripts.timeoutMs !== undefined ? { timeoutMs: scripts.timeoutMs } : {}),
+    ...(scripts.postResponseOrder !== undefined ? { postResponseOrder: scripts.postResponseOrder } : {}),
     ...(problems.length > 0 ? { problems } : {}),
   };
 }

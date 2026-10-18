@@ -6,11 +6,13 @@
  */
 import { createContext, runInContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { BRUNO_LAYER } from '../../../src/script/api/bruno.js';
 import { INSOMNIA_LAYER } from '../../../src/script/api/insomnia.js';
 import { POSTMAN_LAYER } from '../../../src/script/api/postman.js';
 import {
   PART_CRYPTO,
   PART_EXPECT,
+  PART_JSON_SCHEMA,
   PART_PAIRS,
   PART_PM,
   PART_UNSUPPORTED,
@@ -24,6 +26,7 @@ const PARTS: ReadonlyArray<readonly [string, string]> = [
   ['PART_PAIRS', PART_PAIRS],
   ['PART_CRYPTO', PART_CRYPTO],
   ['PART_PM', PART_PM],
+  ['PART_JSON_SCHEMA', PART_JSON_SCHEMA],
 ];
 
 interface Evaluated {
@@ -89,13 +92,14 @@ const evaluate = (index: number): Evaluated => {
 const EXPECTED: ReadonlyArray<{ declared: string[]; defined: string[] }> = [
   { declared: ['unsupported'], defined: [] },
   { declared: ['asValue', 'variables'], defined: [] },
-  { declared: ['typeName', 'same', 'chain', 'chaiExpect'], defined: [] },
+  { declared: ['typeName', 'same', 'chain', 'chaiExpect', 'chaiExpectSchema'], defined: [] },
   { declared: ['pairs'], defined: [] },
   {
     declared: ['Hex', 'Base64', 'Utf8', 'Latin1', 'words', 'text', 'hashOf', 'hmacOf', 'CryptoJS'],
     defined: ['CryptoJS', 'btoa', 'atob'],
   },
   { declared: ['pmExpect', 'pmRequest', 'pmResponse', 'pmObject', 'pmResponseValue'], defined: [] },
+  { declared: ['jsonSchema'], defined: [] },
 ];
 
 describe('the shared layer parts', () => {
@@ -127,5 +131,12 @@ describe('the shared layer parts', () => {
     const ctx = makeContext(defined);
     expect(() => void runInContext(INSOMNIA_LAYER, ctx)).not.toThrow();
     expect(defined).toEqual(expect.arrayContaining(['insomnia', '$', 'CryptoJS', 'btoa', 'atob']));
+  });
+
+  it('the Bruno layer runs over the parts in one scope', () => {
+    const defined: string[] = [];
+    const ctx = makeContext(defined);
+    expect(() => void runInContext(BRUNO_LAYER, ctx)).not.toThrow();
+    expect(defined).toEqual(expect.arrayContaining(['expect', 'bru', 'req', 'res', 'require']));
   });
 });

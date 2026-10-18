@@ -7,6 +7,7 @@ import { resolveSecretTokens, type GetSecret } from '../secrets/resolve.js';
 import type { RequestSnapshotBase, ResponseSnapshotBase } from '../protocol/module.js';
 import type { ScriptLog, ScriptOutcome, ScriptPhase, ScriptTest, ScriptValue } from '../script/model.js';
 import {
+  postResponseLevels,
   scriptError,
   scriptLevels,
   type RequestScripting,
@@ -98,9 +99,10 @@ export interface ScriptSession {
    */
   readonly pre: <S extends RequestSnapshotBase>(before: S) => Promise<S>;
   /**
-   * Runs the post-response scripts, outermost level first, and returns what every script did. Each
-   * sees the values every script before it set. A failure is returned, not thrown, and the later
-   * levels still run (#334): the response is kept, and each level's checks stand on their own.
+   * Runs the post-response scripts, outermost level first (innermost first when the API's scripts
+   * say so), and returns what every script did. Each sees the values every script before it set. A
+   * failure is returned, not thrown, and the later levels still run (#334): the response is kept,
+   * and each level's checks stand on their own.
    */
   readonly post: (sent: RequestSnapshotBase, response: ResponseSnapshotBase) => Promise<SentScripts>;
 }
@@ -191,7 +193,7 @@ export function scriptSession(
     },
     post: async (sent, response) => {
       let first: SentScripts['error'];
-      for (const level of levels) {
+      for (const level of postResponseLevels(levels, scripted.postResponseOrder)) {
         if (level.scripts.post === undefined) continue;
         const outcome = await scripting.runLevel(scripted, level, 'post', sent, response, now());
         const error = collect(level, 'post', outcome);

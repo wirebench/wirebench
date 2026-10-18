@@ -885,8 +885,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   /**
    * Another request client's export: main converts each collection into a REST, a gRPC and a
    * WebSocket API in the chosen project, and adds its environments to the workspace without making one
-   * active. An Insomnia export's scripts are attached to their requests and folders switched off;
-   * the other clients' scripts are written under `imported-scripts/` as text and never run.
+   * active. An Insomnia or Bruno export's scripts are attached to their requests, folders and APIs
+   * switched off (Bruno's script files, and scripts on levels no API can hold, are written under
+   * `imported-scripts/` as text); the other clients' scripts are written there as text and never run.
    */
   async function importClient(
     kind: 'insomnia' | 'bruno' | 'hoppscotch' | 'thunder-client',
@@ -2438,8 +2439,9 @@ function HttpFileSummary({ value }: { readonly value: ApiImportHttpFileResponse 
 
 /**
  * What an OpenCollection import made: the APIs, requests and folders, how many assertions came
- * across, the scripts kept as text; then the environments and properties it added, and the report
- * (which already carries the variables' own lines).
+ * across, the script files kept as text (its other scripts are attached to their requests, folders
+ * and APIs, switched off); then the environments and properties it added, and the report (which
+ * already carries the variables' own lines).
  */
 function OpenCollectionSummary({ value }: { readonly value: ApiImportOpenCollectionResponse }) {
   const { counts, variables } = value;
@@ -2457,7 +2459,7 @@ function OpenCollectionSummary({ value }: { readonly value: ApiImportOpenCollect
         )}
         {counts.scripts > 0 && (
           <p data-testid="import-opencollection-scripts" className="mt-1 text-xs text-fg-subtle">
-            {plural(counts.scripts, 'script')} kept as text, never run
+            {plural(counts.scripts, 'script file')} kept as text
           </p>
         )}
         {variables !== undefined && <VariablesLines summary={variables} testId="import-opencollection" />}
@@ -2505,7 +2507,7 @@ function PostmanFolderSummary({ value }: { readonly value: ApiImportPostmanFolde
 /**
  * What another client's export made: the APIs, requests and folders (and collections, when the
  * export held several), the examples and assertions kept, the scripts saved as text (an Insomnia export's are attached switched
- * off, and the report's warnings say so); then the
+ * off, and so are a Bruno collection's, apart from its script files; the report's warnings say so); then the
  * environments and properties it added, and the report.
  */
 function ClientImportSummary({ value }: { readonly value: ApiImportClientResponse }) {
@@ -2529,7 +2531,7 @@ function ClientImportSummary({ value }: { readonly value: ApiImportClientRespons
         )}
         {counts.scripts > 0 && (
           <p data-testid="import-client-scripts" className="mt-1 text-xs text-fg-subtle">
-            {plural(counts.scripts, 'script')} kept as text, never run
+            {plural(counts.scripts, 'script file')} kept as text
           </p>
         )}
         {variables !== undefined && <VariablesLines summary={variables} testId="import-client" />}

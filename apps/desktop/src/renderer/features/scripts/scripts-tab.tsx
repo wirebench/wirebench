@@ -12,7 +12,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { OnMount } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { Button } from '../../components/button.js';
-import { BooleanSetting, NumberSetting, SettingsGroup, TextSetting } from '../../components/settings-grid.js';
+import {
+  BooleanSetting,
+  EnumSetting,
+  NumberSetting,
+  SettingsGroup,
+  TextSetting,
+} from '../../components/settings-grid.js';
 import { Tabs } from '../../components/tabs.js';
 import { showToast } from '../../components/toast.js';
 import { CodeEditor } from '../../editor/code-editor.js';
@@ -177,6 +183,22 @@ export function ScriptsTab({ requestId, scripts, level }: ScriptsTabProps) {
               void write({ enabled });
             }}
           />
+          {level === 'API' && (
+            <EnumSetting
+              label="Post-response order"
+              value={scripts?.postResponseOrder ?? 'outer-first'}
+              options={[
+                { value: 'outer-first', label: 'Outermost first' },
+                { value: 'inner-first', label: 'Innermost first' },
+              ]}
+              hint="Which level’s post-response script runs first: the API’s, then the folders’, then the request’s, or the other way round. Pre-request scripts always run outermost first."
+              display="select"
+              testId="scripts-post-order"
+              onChange={(value) => {
+                void write({ postResponseOrder: value === 'inner-first' ? 'inner-first' : 'outer-first' });
+              }}
+            />
+          )}
           <TextSetting
             label="Secrets"
             value={(scripts?.secrets ?? []).join(', ')}

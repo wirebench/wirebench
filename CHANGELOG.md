@@ -8,11 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Run imported Bruno scripts.** A Bruno collection's pre-request, post-response and `tests` scripts are
+  attached to their requests, folders and APIs, switched off, instead of being saved as text. Once
+  switched on they run against `bru`, `req`, `res`, `test` and an `expect` with `.jsonSchema`;
+  `bru.sendRequest`, `bru.sleep`, `bru.cookies`, `require` and the request-settings calls fail with
+  `script-unsupported`, and the import report lists them. An API's new **Post-response order** setting
+  (Outermost first or Innermost first) takes `bruno.json`'s `scripts.flow`. Module `.js` files and
+  scripts on a level that cannot hold one stay under `imported-scripts/`. OpenCollection imports attach
+  their scripts the same way, as `bruno`, switched off. `wirebench import` attaches them too.
 - **Run imported Insomnia scripts.** An Insomnia export's pre-request and after-response scripts are
   attached to their requests and folders, switched off, instead of being saved as text. Once switched on
   they run against an `insomnia` object (`insomnia.test`, `insomnia.expect`, `insomnia.response`,
   `insomnia.request` and the variable scopes); `sendRequest`, `require`, cookie writes and the vault fail
-  with `script-unsupported`, and the import report lists them. Project format 11.
+  with `script-unsupported`, and the import report lists them.
 - **Share a live terminal.** On an Enterprise server, **Share session** in an SSH terminal's menu lets
   members of the shared workspace watch it: they join from an invite link with **Terminal: Join Shared
   Terminal…** and see the screen as it is, masked the same way. A viewer can ask for control; the owner
@@ -77,8 +85,8 @@ All notable changes to this project are documented here. The format follows
   its `bruno.json` or a JSON export, in Bruno's order. Its requests become a REST, a gRPC and a
   WebSocket API in the chosen project, with collection and folder headers, auth and variables; each
   environment becomes a workspace environment, never made active, its `vars:secret` names secrets
-  with no value. `assert` lines become assertions where they fit, scripts and tests are saved as text
-  and never run, and a `.env` file is never read. `wirebench import` reads the same sources. The
+  with no value. `assert` lines become assertions where they fit, scripts and tests are attached to
+  their requests switched off, and a `.env` file is never read. `wirebench import` reads the same sources. The
   OpenCollection import now also maps Digest and AWS Signature v4 auth, `omitHeaders`, descriptions
   and lists of WebSocket messages (#588).
 - **Import Hoppscotch exports.** **Import…** reads Hoppscotch collections and environments files at
@@ -122,6 +130,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Assertions chained after `.property(...)` in imported scripts now fail when they should.** In the
+  Postman, Insomnia and Bruno layers, `expect(x).to.have.property('a').that.equals(5)` passed whatever
+  `a` held, because the check after `.property(...)` could not fail.
 - **A file part with no file yet no longer breaks the project.** Importing an OpenAPI document with a
   multipart upload (the petstore's "Uploads an image"), or saving a file part or binary body before
   picking its file, wrote `path: ""`, and the project then refused to load. It now loads.
@@ -160,7 +171,6 @@ All notable changes to this project are documented here. The format follows
   HTTP Log toolbar wraps instead of scrolling sideways when the code panel narrows the console, and
   **Preserve log** is now a pin icon beside the other actions. The response's status line wraps
   between its parts instead of cutting the last one short (#636).
-
 - **WSDL import goes through your proxy and CA bundle.** Importing a WSDL by URL, re-fetching it when a
   project reopens, and fetching a definition a legacy SOAP project file holds no copy of now use the
   proxy and CA bundle from Settings, as sends and OpenAPI imports already did, with Basic or Kerberos

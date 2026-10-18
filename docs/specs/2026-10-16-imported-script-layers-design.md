@@ -141,8 +141,13 @@ calls.
   Bruno `script:post-response` and a `tests` block. The tests block comes second.
 - **Report.** The one-line warning "Scripts on … were imported switched off" and the per-request
   unsupported list replace the dialect warning and the "saved to `imported-scripts/`" notes.
-- **What still goes to `imported-scripts/`:** only Bruno's `.js` helper files, which a script would
-  `require`. They stay text, because `require` is unsupported.
+- **What still goes to `imported-scripts/`:** Bruno's `.js` helper files, which a script would
+  `require`; they stay text, because `require` is unsupported. Also a script on a level that cannot
+  hold one: a WebSocket item (or a folder holding only WebSocket items), and a collection script when
+  the import makes no REST or gRPC API. Each is saved as `<owner>.<phase>.js` and named in the report,
+  so no script is lost. REST and gRPC items, folders and APIs all hold scripts.
+- **Bruno's collection scripts and order go on every API the import makes** that can hold them
+  (REST and gRPC), because Bruno runs them for every request type.
 
 ### 3.6 The command line
 
@@ -170,41 +175,85 @@ The layer defines these:
 - **`bru`:**
   - `getEnvVar` / `setEnvVar`, `getVar` / `setVar`, `getCollectionVar`, `getFolderVar` and
     `getRequestVar`, all through §3.3;
-  - `interpolate`, through the run's resolver;
+  - `interpolate`, which resolves `{{name}}` through vars then props (§3.3), for a string, and for the
+    string leaves of an array or plain object; dynamic `{{$…}}` and `{{process.env.X}}` stay literal;
+  - `hasVar` and `deleteVar`;
   - `setNextRequest`, mapped to `execution.setNextRequest`;
   - `runner.skipRequest`, mapped to `execution.skipRequest`;
   - `runner.stopExecution`, mapped to `execution.setNextRequest(null)`.
 - **`req`:**
   - `getUrl` / `setUrl`, `getMethod` / `setMethod`, `getHeader` / `setHeader` / `deleteHeader` and
-    `getBody` / `setBody`, over `request`;
-  - `setTimeout` and the other request settings, which are unsupported.
+    `getBody` / `setBody` and `getHeaders`, over `request`;
+  - `setTimeout`, `getTimeout`, `setMaxRedirects`, `onFail` and `disableParsingResponseJson`, which
+    are unsupported.
 - **`res`:**
-  - `status`, `headers`, `body` (parsed as JSON when the response is JSON) and `responseTime`;
-  - `getStatus`, `getBody` and `getHeader`.
-- **`test` and `expect`:** the shared ones, plus `.jsonSchema` (decision 6). The Bruno PR opens
-  with a spike: run the validator assertions use inside the sandbox, within the 64 MiB and 1 s
-  limits. If it fits, `.jsonSchema` checks against the schema in the script. If not, it is
-  unsupported, and the spike's result is recorded here.
+  - `status`, `headers` (lower-cased keys, repeated names joined with `, `), `body` (parsed as JSON when the response is JSON) and `responseTime`;
+  - `getStatus`, `getBody`, `getHeader` (case-insensitive) and `getResponseTime`.
+- **`test` and `expect`:** the shared ones, plus `.jsonSchema` (decision 6), which checks the
+  value against the schema in the script.
 
-Unsupported: `bru.sendRequest`, `bru.sleep`, `require`, `bru.cookies` and `.jsonSchema` if the
-validator cannot run in the sandbox.
+**`.jsonSchema` in the sandbox (spike result).** The validator the response assertions use is the
+engine's own (`json/schema-validate.ts`), so `.jsonSchema` needs no new dependency; the validator
+the engine has only as a development dependency is not used. It now lives in one self-contained
+function, `jsonSchemaValidator`, and `PART_JSON_SCHEMA` embeds its `toString()`. So the sandbox
+runs the same code, with no copy and no build step. It compiles nothing at run time (no
+`new Function` or `eval`). Its unit tests run twice, once against the module and once against that
+source in a fresh realm, so a reference outside the function fails a test. Measured in QuickJS
+under the real limits, on a developer laptop:
 
-**Script order (decision 5).** Bruno's `scripts.flow` defaults to `sandwich`. The research note
-says that runs post-response scripts innermost first: request, then folder, then collection. Wirebench
-runs them outermost first. The Bruno PR first confirms both flow values in Bruno's source
-(`prepare-request.js:394`) and records what it found here. If `sandwich` is innermost-first:
+- A 1 MiB body that is one 50-property object checks in 13.7 ms in all. Parsing the JSON takes
+  13.2 ms of that, the check about 0.5 ms. With the input, the body and its parse held, the runtime
+  uses 2.1 MiB.
+- The part adds 1.2 ms (1.5 ms against 0.3 ms) and 38 KiB to every run of a layer that includes it,
+  called or not. Loading it lazily would gain nothing.
+- The node cap holds in scripts too: the validator stops after 10,000 schema nodes with one `budget`
+  problem. In a one-off measurement that no test repeats, a 1 MiB array of 1,253 rows of 50
+  properties got that `budget` problem after about 200 rows, in 66 ms; without the cap it checked
+  in full in 277 ms, still inside 1 s.
+
+So `.jsonSchema` is supported. The tests assert these bounds:
+
+- `test/unit/script/json-schema-spike.test.ts`: the 1 MiB object checks with no problems in the
+  real sandbox at the default 1 s and 64 MiB limits; the sandbox finds the same problems as the
+  host validator; and the check succeeds with the memory limit halved to 32 MiB.
+- `test/perf/json-schema-part.perf.test.ts` (perf project, gate scaled for CI): the part adds under
+  10 ms and under 1 MiB to a run, and the 1 MiB check takes under 100 ms.
+
+A `budget` problem makes the expectation fail, and its message says the check could not finish and
+names the node cap; it never passes silently, and scripts have no higher cap. Any other problems fail
+the expectation and list path, keyword and message, at most the validator's 20. `.jsonSchema` works
+anywhere in a chain, including after `.not`, `.deep` and `.property(...)`; only the Bruno layer has it.
+
+Unsupported: `bru.sendRequest`, `bru.sleep`, `bru.cookies`, `require` and the request settings
+`req.setTimeout`, `req.getTimeout`, `req.setMaxRedirects`, `req.onFail` and
+`req.disableParsingResponseJson`.
+
+**Script order (decision 5).** Bruno's `scripts.flow` defaults to `sandwich`; Wirebench runs
+post-response scripts outermost first. Bruno's source (commit `1b932553`, 2026-10-17) confirms both
+flow values:
+
+- `prepare-request.js` reads `collection.brunoConfig.scripts.flow`, defaulting to `'sandwich'`, and
+  hands it to `mergeScripts` ([prepare-request.js:395-399](https://github.com/usebruno/bruno/blob/1b932553772cb671f9932dcbea0bde003489707a/packages/bruno-electron/src/ipc/network/prepare-request.js#L395-L399)).
+- `mergeScripts` always runs pre-request scripts collection, then folders (outermost first), then the
+  request ([collection.js:384-392](https://github.com/usebruno/bruno/blob/1b932553772cb671f9932dcbea0bde003489707a/packages/bruno-electron/src/utils/collection.js#L384-L392)).
+- With `sequential`, post-response scripts run in that same order: collection, folders, request
+  ([collection.js:395-405](https://github.com/usebruno/bruno/blob/1b932553772cb671f9932dcbea0bde003489707a/packages/bruno-electron/src/utils/collection.js#L395-L405)).
+- With anything else, so `sandwich` and an absent flow, they run innermost first: request, then the
+  folders reversed, then the collection ([collection.js:406-418](https://github.com/usebruno/bruno/blob/1b932553772cb671f9932dcbea0bde003489707a/packages/bruno-electron/src/utils/collection.js#L406-L418)).
+  Tests follow the same rule ([collection.js:433-455](https://github.com/usebruno/bruno/blob/1b932553772cb671f9932dcbea0bde003489707a/packages/bruno-electron/src/utils/collection.js#L433-L455)).
+
+So `sandwich` differs from Wirebench's order, and the setting is added:
 
 - The API-level script settings gain `postResponseOrder: 'outer-first' | 'inner-first'`. It is
   optional, and `outer-first` is the default, so existing projects do not change. Pre-request
   scripts always run outermost first.
-- The level runner (`script/levels.ts`) reverses the post-response levels when the setting is
-  `inner-first`.
+- The post-response loop and the type-check order (`run/script-support.ts`,
+  `script/request-scripts.ts`) reverse the levels when the API's setting is `inner-first`. Only the
+  API's setting counts; a folder's or a request's is ignored.
 - A Bruno import sets `inner-first` when the collection's flow is `sandwich` or absent, and
   `outer-first` for `sequential`.
-- The setting is shown and editable with the API's scripts. The format version bump in §3.1 covers it.
-
-If the source shows Wirebench's order already matches, no setting is added and this paragraph is
-replaced with what was found.
+- The setting is shown as a select in the API's Scripts settings, next to the enabled toggle. The
+  format version bump in §3.1 covers it.
 
 ## 6. Hoppscotch (PR 3)
 

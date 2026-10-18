@@ -695,7 +695,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
 
   /**
    * An OpenCollection (spec §7): a REST API for its HTTP and GraphQL items, a gRPC API and a
-   * WebSocket API for theirs, its scripts under `imported-scripts/` (never run), its environments
+   * WebSocket API for theirs, its scripts attached switched off (the rest under `imported-scripts/` as text), its environments
    * as workspace environments (never activated) and its variables as project properties. Secret
    * values go to the secret store; none is in the response.
    *

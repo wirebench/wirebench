@@ -147,3 +147,13 @@ describe('the Insomnia layer', () => {
     expect(outcome).toMatchObject({ ok: true, log: { lines: ['false undefined'] } });
   });
 });
+
+describe('assertions chained after .property(...)', () => {
+  it('fail when the follow-on check is wrong', async () => {
+    const outcome = await run(
+      'post',
+      "insomnia.test('wrong', () => insomnia.expect({ a: 1 }).to.have.property('a').that.equals(5));",
+    );
+    expect(outcome).toMatchObject({ ok: true, tests: [{ name: 'wrong', passed: false }] });
+  });
+});

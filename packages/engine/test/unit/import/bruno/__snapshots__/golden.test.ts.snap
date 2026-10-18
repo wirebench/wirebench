@@ -82,6 +82,19 @@ exports[`Bruno golden > maps the JSON export fixture 1`] = `
                   },
                 ],
                 "query": [],
+                "scripts": {
+                  "api": "bruno",
+                  "enabled": false,
+                  "post": {
+                    "text": "bru.setVar("userId", res.body.id);
+
+test("returns the created user", function() {
+  expect(res.getStatus()).to.equal(201);
+});
+",
+                  },
+                  "secrets": [],
+                },
                 "settings": {},
                 "slug": "Create user",
                 "url": "\${baseUrl}/orgs/{orgId}/users",
@@ -226,6 +239,16 @@ exports[`Bruno golden > maps the JSON export fixture 1`] = `
             "url": "https://idp.example.com/token",
           },
         ],
+        "scripts": {
+          "api": "bruno",
+          "enabled": false,
+          "postResponseOrder": "inner-first",
+          "pre": {
+            "text": "bru.setVar("startedAt", Date.now());
+",
+          },
+          "secrets": [],
+        },
         "servers": [],
         "slug": "demo-collection",
       },
@@ -237,7 +260,7 @@ exports[`Bruno golden > maps the JSON export fixture 1`] = `
     "examples": 0,
     "folders": 1,
     "requests": 4,
-    "scripts": 3,
+    "scripts": 0,
   },
   "report": {
     "notes": [
@@ -247,9 +270,6 @@ exports[`Bruno golden > maps the JSON export fixture 1`] = `
       "Create user: a disabled assertion was skipped.",
       "Get user: folder and collection default headers were added.",
       "Token: folder and collection default headers were added.",
-      "demo-collection: the before-request script was saved to imported-scripts/demo-collection/demo-collection.before-request.js and is never run.",
-      "Create user: the after-response script was saved to imported-scripts/demo-collection/create user.after-response.js and is never run.",
-      "Create user: the tests script was saved to imported-scripts/demo-collection/create user.tests.js and is never run.",
     ],
     "warnings": [
       "Create user: the post-response variables userId were not imported; they are read from the response, so set them with a script or a capture.",
@@ -257,24 +277,10 @@ exports[`Bruno golden > maps the JSON export fixture 1`] = `
       "Get user: the digest credential was not imported; set it on the request or API.",
       "Token: the oauth2 credential was not imported; set it on the request or API.",
       "The collection's proxy setting is not supported and was not imported.",
+      "Scripts on the API and 1 request were imported switched off: read each on its Scripts tab, then switch them on",
     ],
   },
-  "scripts": [
-    {
-      "path": "imported-scripts/demo-collection/demo-collection.before-request.js",
-      "source": "bru.setVar("startedAt", Date.now());",
-    },
-    {
-      "path": "imported-scripts/demo-collection/create user.after-response.js",
-      "source": "bru.setVar("userId", res.body.id);",
-    },
-    {
-      "path": "imported-scripts/demo-collection/create user.tests.js",
-      "source": "test("returns the created user", function() {
-  expect(res.getStatus()).to.equal(201);
-});",
-    },
-  ],
+  "scripts": [],
   "variables": {
     "environments": [
       {
@@ -381,6 +387,16 @@ exports[`Bruno golden > maps the folder fixture 1`] = `
         "name": "demo-collection (gRPC)",
         "order": 1,
         "requests": [],
+        "scripts": {
+          "api": "bruno",
+          "enabled": false,
+          "postResponseOrder": "inner-first",
+          "pre": {
+            "text": "bru.setVar("startedAt", Date.now());
+",
+          },
+          "secrets": [],
+        },
         "slug": "demo-collection (gRPC)",
         "target": "\${grpcHost}:80",
         "tls": false,
@@ -530,6 +546,19 @@ exports[`Bruno golden > maps the folder fixture 1`] = `
                   },
                 ],
                 "query": [],
+                "scripts": {
+                  "api": "bruno",
+                  "enabled": false,
+                  "post": {
+                    "text": "bru.setVar("userId", res.body.id);
+
+test("returns the created user", function() {
+  expect(res.getStatus()).to.equal(201);
+});
+",
+                  },
+                  "secrets": [],
+                },
                 "settings": {},
                 "slug": "Create user",
                 "url": "\${baseUrl}/orgs/{orgId}/users",
@@ -708,6 +737,16 @@ exports[`Bruno golden > maps the folder fixture 1`] = `
         "name": "demo-collection",
         "order": 0,
         "requests": [],
+        "scripts": {
+          "api": "bruno",
+          "enabled": false,
+          "postResponseOrder": "inner-first",
+          "pre": {
+            "text": "bru.setVar("startedAt", Date.now());
+",
+          },
+          "secrets": [],
+        },
         "servers": [],
         "slug": "demo-collection",
       },
@@ -781,7 +820,7 @@ exports[`Bruno golden > maps the folder fixture 1`] = `
     "examples": 0,
     "folders": 4,
     "requests": 8,
-    "scripts": 4,
+    "scripts": 1,
   },
   "report": {
     "notes": [
@@ -797,10 +836,7 @@ exports[`Bruno golden > maps the folder fixture 1`] = `
       "User via GraphQL: folder and collection default headers were added.",
       "Get user: folder and collection default headers were added.",
       "Echo socket: keepAliveInterval has no Wirebench equivalent and was ignored.",
-      "demo-collection: the before-request script was saved to imported-scripts/demo-collection/demo-collection.before-request.js and is never run.",
       "lib.js: the module script was saved to imported-scripts/demo-collection/lib.js.module.js and is never run.",
-      "Create user: the after-response script was saved to imported-scripts/demo-collection/create user.after-response.js and is never run.",
-      "Create user: the tests script was saved to imported-scripts/demo-collection/create user.tests.js and is never run.",
     ],
     "warnings": [
       "broken.bru, line 7: expected "key: value"; the format has no comments. The file was skipped.",
@@ -813,27 +849,14 @@ exports[`Bruno golden > maps the folder fixture 1`] = `
       "Upload avatar: the body file assets/a.png is relative to the collection; check its path on the request.",
       "Get user: the digest credential was not imported; set it on the request or API.",
       "The collection's proxy setting is not supported and was not imported.",
+      "Scripts on the API and 1 request were imported switched off: read each on its Scripts tab, then switch them on",
     ],
   },
   "scripts": [
     {
-      "path": "imported-scripts/demo-collection/demo-collection.before-request.js",
-      "source": "bru.setVar("startedAt", Date.now());",
-    },
-    {
       "path": "imported-scripts/demo-collection/lib.js.module.js",
       "source": "module.exports = { greet: (name) => \`hello \${name}\` };
 ",
-    },
-    {
-      "path": "imported-scripts/demo-collection/create user.after-response.js",
-      "source": "bru.setVar("userId", res.body.id);",
-    },
-    {
-      "path": "imported-scripts/demo-collection/create user.tests.js",
-      "source": "test("returns the created user", function() {
-  expect(res.getStatus()).to.equal(201);
-});",
     },
   ],
   "variables": {

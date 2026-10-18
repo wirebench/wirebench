@@ -1234,9 +1234,13 @@ describe('api.importOpenCollection', () => {
     expect(vi.mocked(deps.router.importWsApi).mock.calls[0]?.[1].api.name).toBe('Pets (WebSocket)');
     expect(response.apiIds).toEqual(['api-1', 'grpc-1', 'ws-1']);
 
+    // Only the script file item is written as text; the other script rides on its request, switched off.
     const scripts = vi.mocked(deps.router.writeImportedScripts).mock.calls[0]?.[1] ?? [];
-    expect(scripts).toHaveLength(2);
-    expect(response.counts).toMatchObject({ requests: 5, scripts: 2, assertions: 2 });
+    expect(scripts).toHaveLength(1);
+    expect(response.counts).toMatchObject({ requests: 5, scripts: 1, assertions: 2 });
+    const requests = apiRequests((addApi.mock.calls[0]![1] as { api: RestApi }).api);
+    expect(requests.filter((request) => request.scripts !== undefined)).not.toHaveLength(0);
+    expect(requests.every((request) => request.scripts === undefined || request.scripts.enabled === false)).toBe(true);
 
     // The environment under `environments/` became a workspace environment; its secret has no value.
     expect(variablesPorts).toHaveBeenCalledWith('p1');
@@ -1799,6 +1803,16 @@ describe('api.importBruno', () => {
     expect(response.apiIds).toEqual(['api-1', 'grpc-1', 'ws-1']);
     expect(fake.environments.map((environment) => environment.name)).toEqual(['Local', 'Prod']);
     expect(response.warnings.join('\n')).toContain('broken.bru, line 7');
+    // The scripts ride on their requests, switched off: only lib.js is left to write as text.
+    expect(vi.mocked(deps.router.writeImportedScripts).mock.calls[0]?.[1].map((script) => script.path)).toEqual([
+      'imported-scripts/demo-collection/lib.js.module.js',
+    ]);
+    const api = (addApi.mock.calls[0]![1] as { api: RestApi }).api;
+    expect(api.scripts).toMatchObject({ api: 'bruno', enabled: false, postResponseOrder: 'inner-first' });
+    expect(apiRequests(api).find((request) => request.name === 'Create user')?.scripts).toMatchObject({
+      api: 'bruno',
+      enabled: false,
+    });
   });
 
   it('reads a picked bruno.json as the folder it stands for', async () => {
