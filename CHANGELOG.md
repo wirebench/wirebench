@@ -139,6 +139,9 @@ All notable changes to this project are documented here. The format follows
 - **Assertions chained after `.property(...)` in imported scripts now fail when they should.** In the
   Postman, Insomnia and Bruno layers, `expect(x).to.have.property('a').that.equals(5)` passed whatever
   `a` held, because the check after `.property(...)` could not fail.
+- **A file part with no file yet no longer breaks the project.** Importing an OpenAPI document with a
+  multipart upload (the petstore's "Uploads an image"), or saving a file part or binary body before
+  picking its file, wrote `path: ""`, and the project then refused to load. It now loads.
 - **An imported form-data file part with no file no longer stops the project from opening.** A
   collection whose multipart body has a file part without a file, from Postman, Insomnia, Thunder
   Client or Hoppscotch, now keeps that row as a switched-off text part, and the import report names
