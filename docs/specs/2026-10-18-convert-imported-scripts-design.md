@@ -1,7 +1,7 @@
 # Spec: Convert imported scripts to Wirebench scripts
 
 **Date:** 2026-10-18
-**Status:** draft, awaiting owner approval
+**Status:** approved 2026-10-18; plan in `docs/plans/2026-10-18-convert-imported-scripts-plan.md`
 **Milestone:** 6.1 — Team operations
 **Scope:** phase 2 of imported scripts: a "Convert to Wirebench script" action that rewrites a level's
 layered scripts (`postman`, `insomnia`, `bruno`, `hoppscotch` or `thunder-client`) into a typed
@@ -460,7 +460,7 @@ project's scripts today.
 
 ## 13. Delivery
 
-One plan, written after this spec is approved. Proposed PRs:
+The plan is `docs/plans/2026-10-18-convert-imported-scripts-plan.md`. PRs:
 
 1. **Async test callbacks** (§9): typed `test` and every layer. No Convert code.
 2. **Engine converter:** `script/convert/` (parser, table, splice, TODOs), the §6 rows, the unit
