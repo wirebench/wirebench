@@ -116,6 +116,35 @@ export interface LoadedSelection {
 }
 
 /**
+ * Loads the project at `path` and the workspace around it, printing each load problem as a warning.
+ * Returns an exit code instead when the path is a workspace (`Usage`) or the project cannot be
+ * loaded (`loadFailure`: a usage error for `run`, a run error for `scripts convert`).
+ */
+export async function loadTarget(
+  path: string,
+  io: CliIo,
+  loadFailure: ExitCode = ExitCode.Usage,
+): Promise<{ readonly project: Project; readonly workspace?: RunWorkspace } | ExitCode> {
+  try {
+    if (!(await exists(join(path, 'wirebench.yaml'))) && (await exists(join(path, 'workspace.yaml')))) {
+      return await refuseWorkspace(path, io);
+    }
+    const loaded = await loadProject(path);
+    for (const problem of loaded.problems) {
+      io.stderr.write(`warning: ${problem.code}: ${problem.message} (${problem.file})\n`);
+    }
+    const workspace = await enclosingWorkspace(path, (line) => io.stderr.write(`warning: ${line}\n`));
+    return { project: loaded.project, ...(workspace !== undefined ? { workspace } : {}) };
+  } catch (error) {
+    if (isWirebenchError(error)) {
+      io.stderr.write(`${error.code}: ${error.message}\n`);
+      return loadFailure;
+    }
+    throw error;
+  }
+}
+
+/**
  * What `run` and `secrets list` share: load the project and the workspace around it, pick the
  * environment, select. Returns an exit code instead when the path is refused; throws `UsageError`
  * for a bad environment or selector.
@@ -129,26 +158,11 @@ export async function loadSelection(
   },
   io: CliIo,
 ): Promise<LoadedSelection | ExitCode> {
-  const { path } = args;
-  let project: Project;
-  let workspace: RunWorkspace | undefined;
-  try {
-    if (!(await exists(join(path, 'wirebench.yaml'))) && (await exists(join(path, 'workspace.yaml')))) {
-      return await refuseWorkspace(path, io);
-    }
-    const loaded = await loadProject(path);
-    project = loaded.project;
-    for (const problem of loaded.problems) {
-      io.stderr.write(`warning: ${problem.code}: ${problem.message} (${problem.file})\n`);
-    }
-    workspace = await enclosingWorkspace(path, (line) => io.stderr.write(`warning: ${line}\n`));
-  } catch (error) {
-    if (isWirebenchError(error)) {
-      io.stderr.write(`${error.code}: ${error.message}\n`);
-      return ExitCode.Usage;
-    }
-    throw error;
+  const target = await loadTarget(args.path, io);
+  if (typeof target === 'number') {
+    return target;
   }
+  const { project, workspace } = target;
 
   let selection: SuiteSelection;
   try {
