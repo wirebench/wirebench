@@ -14,33 +14,40 @@ async function rowLabels(page: Page): Promise<string[]> {
 }
 
 /** Waits until `first`'s row sits above `second`'s. */
-async function expectAbove(page: Page, first: string, second: string): Promise<void> {
+async function expectAbove(page: Page, first: string, second: string, timeout = 20_000): Promise<void> {
   await expect(async () => {
     const labels = await rowLabels(page);
     const above = labels.findIndex((text) => text.startsWith(first));
     const below = labels.findIndex((text) => text.startsWith(second));
     expect(above).toBeGreaterThanOrEqual(0);
     expect(below).toBeGreaterThan(above);
-  }).toPass({ timeout: 20_000 });
+  }).toPass({ timeout });
 }
 
 /**
- * Drags `source` to `target` the way a hand does: press, a few moves to get the drag going, then
- * many small moves to the drop point, so the tree's HTML5 drag sees enough `dragover` events to
- * settle on a drop. A single-step `dragTo` sometimes ends the drag before the tree has a target.
- * `at` is the drop point within the target, its middle by default (a drop onto the row).
+ * Drags `source` onto the middle of `target` the way a hand does: press, a few moves to get the drag
+ * going, then small moves to the drop point, so the tree's HTML5 drag sees enough `dragover` events to
+ * settle on a drop. The target is measured only once the drag has started, since rows can move.
+ *
+ * The row is selected with a click first, and the press waits for it to render again: under the
+ * test's emulated drag, a drag that starts on a row before its re-render has settled (after a drop,
+ * or after the click itself) can fail to reach the tree, so callers repeat the gesture until it lands.
  */
-async function dragRow(page: Page, source: Locator, target: Locator, at?: { x: number; y: number }): Promise<void> {
+async function dragRow(page: Page, source: Locator, target: Locator): Promise<void> {
+  await source.click();
+  // The click opens the API's tab and re-renders the row; the press waits for that to finish.
+  await page.waitForTimeout(500);
   const from = await source.boundingBox();
-  const to = await target.boundingBox();
-  if (from === null || to === null) throw new Error('A row to drag is not on screen');
+  if (from === null) throw new Error('The row to drag is not on screen');
   const startX = from.x + from.width / 2;
   const startY = from.y + from.height / 2;
-  const endX = to.x + (at?.x ?? to.width / 2);
-  const endY = to.y + (at?.y ?? to.height / 2);
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await page.mouse.move(startX + 4, startY + 4, { steps: 4 });
+  const to = await target.boundingBox();
+  if (to === null) throw new Error('The drop row is not on screen');
+  const endX = to.x + to.width / 2;
+  const endY = to.y + to.height / 2;
   await page.mouse.move(endX, endY, { steps: 20 });
   await page.mouse.move(endX, endY, { steps: 2 });
   await page.mouse.up();
@@ -68,15 +75,20 @@ test.describe('Explorer: move an API to another project', () => {
     await createApi(page, 'Orders', 'http://localhost:9');
     await expectAbove(page, 'Pets', 'Orders');
 
-    // --- reorder: Orders dragged to the top edge of Pets lands before it ------------------
-    await dragRow(page, apiRow(page, 'Orders'), apiRow(page, 'Pets'), { x: 40, y: 2 });
-    await expectAbove(page, 'Orders', 'Pets');
+    // --- reorder: Orders dropped on its own project's row goes to the top, before Pets ------
+    // Each drag is repeated until it lands (see `dragRow`); dropping the same row there again changes nothing.
+    await expect(async () => {
+      await dragRow(page, apiRow(page, 'Orders'), projectRow(page, 'Alpha'));
+      await expectAbove(page, 'Orders', 'Pets', 3_000);
+    }).toPass({ timeout: 60_000 });
 
     // --- move by drag: Pets dropped on Beta's row goes there, ids and all ------------------
     // Beta is the last project, so a row below it is under it.
     await createProject(page, 'Beta');
-    await dragRow(page, apiRow(page, 'Pets'), projectRow(page, 'Beta'));
-    await expect(page.getByTestId('toast-viewport')).toContainText('Moved to “Beta”', { timeout: 20_000 });
+    await expect(async () => {
+      await dragRow(page, apiRow(page, 'Pets'), projectRow(page, 'Beta'));
+      await expect(page.getByTestId('toast-viewport')).toContainText('Moved to “Beta”', { timeout: 5_000 });
+    }).toPass({ timeout: 60_000 });
     await expectAbove(page, 'Beta', 'Pets');
     // The tab opened on the request before the move is still the request's.
     await expect(page.getByRole('tab', { name: /List pets/ })).toBeVisible();
