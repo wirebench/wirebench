@@ -84,7 +84,7 @@ export function droppedApiScriptFiles(
 
 /** A level's scripts of one kind, in the order the client runs them; two of one kind are joined. */
 export function scriptText(texts: readonly string[]): string {
-  return texts.map((text) => `${text.replace(/\s+$/, '')}\n`).join('\n');
+  return texts.map((text) => `${text.trimEnd()}\n`).join('\n');
 }
 
 /**
