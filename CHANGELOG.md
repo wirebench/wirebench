@@ -19,6 +19,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Save stays in view in the New host and Edit host forms.** Cancel and Save sit in a footer bar at the
+  bottom of the right panel and the form scrolls above it, so a short window or an open **Advanced**
+  section no longer scrolls them away. <kbd>Enter</kbd> in a field still saves. The panel is titled
+  **Edit host** while editing, and **Group** moves below the sign-in fields so it no longer sits between
+  **Address** and **User** (#689).
 - **Telnet and serial terminals no longer offer Files.** The terminal tab's toolbar shows **Files** only
   when the focused pane's host is reached over SSH or Mosh, as the pane's own menu already did (#688).
 - **Telnet and serial connects list their own steps.** A serial console's connection screen shows
