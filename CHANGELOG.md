@@ -25,6 +25,10 @@ All notable changes to this project are documented here. The format follows
   count only what went wrong, so a clean import of a real-world spec no longer turns the status bar red.
   The import summary names the findings by severity (**Lint: 2 errors, 55 warnings**) and links to them
   (#682).
+- **A shared terminal's viewer counts themself.** Right after joining, the viewer's header reads
+  **1 watching** with their own chip, as the owner's strip does, instead of **0 watching**. Once the share
+  has ended the count and chips go, and the notice offers **Close tab**. A new share of the same session
+  has a new link, so there is no rejoin from the ended tab (#690).
 - **Telnet and serial terminals no longer offer Files.** The terminal tab's toolbar shows **Files** only
   when the focused pane's host is reached over SSH or Mosh, as the pane's own menu already did (#688).
 - **Telnet and serial connects list their own steps.** A serial console's connection screen shows
