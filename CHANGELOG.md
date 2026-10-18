@@ -19,6 +19,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Quick Open finds requests by name.** <kbd>⌘P</kbd> lists the requests and operations whose name
+  matches above those that match only by their project, API or folder, so "pet" puts Find pets first,
+  not every request in Swagger Petstore. A row listed by its path alone needs every typed word to be
+  missing from its name: "pet user" no longer lists Delete user because its API is Petstore (#683).
+- **Search heads each group with the request.** A group of Search results starts with the REST method
+  and the request name, with the project and API faint underneath, instead of a breadcrumb that cut
+  every group to the same "PAYMENTS › SWAGGER P…" (#683).
 - **Telnet and serial terminals no longer offer Files.** The terminal tab's toolbar shows **Files** only
   when the focused pane's host is reached over SSH or Mosh, as the pane's own menu already did (#688).
 - **Telnet and serial connects list their own steps.** A serial console's connection screen shows

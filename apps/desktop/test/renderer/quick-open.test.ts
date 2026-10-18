@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   quickOpenEntries,
+  quickOpenFilter,
+  quickOpenKeywords,
   quickOpenKindEntries,
+  quickOpenScore,
   quickOpenSnippetEntries,
 } from '../../src/renderer/shell/quick-open.js';
 import type { SnippetListItemWire } from '../../src/shared/snippets-wire.js';
@@ -225,5 +228,71 @@ describe('quickOpenKindEntries', () => {
     const entries = quickOpenEntries({ 'if-1': summary() }, { 'req-1': request() }, {}, {}, rest);
 
     expect(entries.map((entry) => entry.label)).toEqual(['GET List pets', 'Request 1', 'Subtract']);
+  });
+});
+
+describe('quickOpenScore', () => {
+  const petstore = quickOpenKindEntries(
+    'rest',
+    [
+      { id: 'find', tag: 'GET', name: 'Find pets by status', apiId: 'api-1', apiName: 'Swagger Petstore' },
+      { id: 'delete', tag: 'DELETE', name: 'Delete user', apiId: 'api-1', apiName: 'Swagger Petstore' },
+      {
+        id: 'order',
+        tag: 'POST',
+        name: 'Place order',
+        apiId: 'api-1',
+        apiName: 'Swagger Petstore',
+        match: '/store/order',
+      },
+    ],
+    { folders: {}, projectOf: { 'api-1': 'p-1' }, projectNames: { 'p-1': 'Payments' } },
+  );
+
+  /** The rows that match `search`, best first, as the palette lists them. */
+  const ranked = (search: string): string[] =>
+    petstore
+      .map((entry) => ({ entry, score: quickOpenFilter(entry.value, search, quickOpenKeywords(entry)) }))
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map(({ entry }) => entry.label);
+
+  it('ranks a name match above a breadcrumb-only match', () => {
+    expect(ranked('pet')).toEqual(['GET Find pets by status', 'DELETE Delete user', 'POST Place order']);
+    expect(quickOpenScore('Find pets by status', 'Swagger Petstore', 'pet')).toBeGreaterThan(0.5);
+    expect(quickOpenScore('Delete user', 'Swagger Petstore', 'pet')).toBeLessThan(0.5);
+  });
+
+  it('lists a breadcrumb-only match only when every typed word is missing from the name', () => {
+    expect(ranked('petstore delete')).toEqual([]);
+    expect(quickOpenScore('Delete user', 'Swagger Petstore', 'swagger payments')).toBe(0);
+    expect(quickOpenScore('Delete user', 'Payments › Swagger Petstore', 'swagger payments')).toBeGreaterThan(0);
+  });
+
+  it('needs each word of a breadcrumb match as typed, not spread over the path', () => {
+    expect(quickOpenScore('Delete user', 'Payments › Swagger Petstore', 'pmts')).toBe(0);
+    expect(ranked('/store/order')).toEqual(['POST Place order']);
+  });
+
+  it('matches a name fuzzily, with its method', () => {
+    expect(ranked('get fnd')).toEqual(['GET Find pets by status']);
+  });
+
+  it("keeps every row for an empty search, and cmdk's own score for a row with no name", () => {
+    expect(ranked('  ')).toHaveLength(3);
+    expect(quickOpenFilter('api-1 10.0.1.5', '10.0', [])).toBeGreaterThan(0);
+  });
+
+  it('names a SOAP request or operation without its project prefix', () => {
+    const entries = quickOpenEntries(
+      { 'if-1': summary() },
+      { 'req-1': request() },
+      { 'req-1': 'p1', 'if-1': 'p1' },
+      {
+        p1: 'Calc Project',
+      },
+    );
+
+    expect(entries.map((entry) => entry.name)).toEqual(['Request 1', 'Subtract']);
   });
 });

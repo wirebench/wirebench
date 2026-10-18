@@ -4,6 +4,7 @@ import type { SearchMatchWire, SearchScopesWire } from '../../../shared/wire-bas
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import { rendererKindOf } from '../../kinds/index.js';
+import { MethodBadge } from '../rest-api/method-badge.js';
 import { revealSearchMatch } from './search-actions.js';
 
 /** A match group's kind badge; none for SOAP. */
@@ -18,28 +19,52 @@ const DEFAULT_SCOPES: SearchScopesWire = { requestBodies: true, headers: true, d
 const CONTROL =
   'h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';
 
-/**
- * The heading a match is grouped under: `project › interface › request` (or `project ›
- * interface › location` for a definition document). Search spans every open project, so the
- * project segment — when the match carries one — comes first.
- */
-function groupOf(match: SearchMatchWire): string {
-  const breadcrumb =
-    match.kind === 'document'
-      ? `${match.interfaceName ?? 'Interface'} › ${match.location ?? ''}`
-      : `${match.interfaceName ?? 'Interface'} › ${match.requestName ?? 'Request'}${
-          match.kind === 'request-header' ? ' › Headers' : ''
-        }`;
-  return match.projectName === undefined ? breadcrumb : `${match.projectName} › ${breadcrumb}`;
+/** What heads a group of matches: the method and name on one line, the path faint under it. */
+export interface SearchGroupHeading {
+  /** Tells groups apart: two requests can share a name and a path. */
+  readonly key: string;
+  /** A REST request's method; absent for the other kinds and for a definition document. */
+  readonly method?: string;
+  /** The request's name, or the definition document's location. */
+  readonly name: string;
+  /** `project › interface`, and `› Headers` for a header match. */
+  readonly path: string;
 }
 
-function groupMatches(matches: readonly SearchMatchWire[]): readonly (readonly [string, SearchMatchWire[]])[] {
-  const groups = new Map<string, SearchMatchWire[]>();
+/**
+ * The heading a match is grouped under. The name leads, with the method before it, so a narrow sidebar
+ * still shows which request matched: a `project › interface › request` breadcrumb cut every group to the
+ * same "PAYMENTS › SWAGGER P…". Search spans every open project, so the path starts with the project when
+ * the match carries one.
+ */
+export function searchGroupHeading(match: SearchMatchWire): SearchGroupHeading {
+  const document = match.kind === 'document';
+  const path = [
+    ...(match.projectName === undefined ? [] : [match.projectName]),
+    match.interfaceName ?? 'Interface',
+    ...(match.kind === 'request-header' ? ['Headers'] : []),
+  ].join(' › ');
+  const name = document ? (match.location ?? '') : (match.requestName ?? 'Request');
+  const key = [
+    match.projectId ?? match.projectName ?? '',
+    match.protocol ?? 'soap',
+    match.kind,
+    document ? `${match.interfaceId ?? ''} ${match.location ?? ''}` : (match.requestId ?? name),
+  ].join('|');
+  return { key, ...(document || match.method === undefined ? {} : { method: match.method }), name, path };
+}
+
+function groupMatches(
+  matches: readonly SearchMatchWire[],
+): readonly (readonly [SearchGroupHeading, SearchMatchWire[]])[] {
+  const groups = new Map<string, readonly [SearchGroupHeading, SearchMatchWire[]]>();
   for (const match of matches) {
-    const key = groupOf(match);
-    groups.set(key, [...(groups.get(key) ?? []), match]);
+    const heading = searchGroupHeading(match);
+    const group = groups.get(heading.key);
+    if (group === undefined) groups.set(heading.key, [heading, [match]]);
+    else group[1].push(match);
   }
-  return [...groups.entries()];
+  return [...groups.values()];
 }
 
 /**
@@ -186,23 +211,31 @@ export function SearchView() {
           </p>
         )}
         {groups.map(([heading, group]) => (
-          <section key={heading} data-testid="search-group">
-            <h3
-              className="flex items-center gap-1.5 truncate px-3 py-1 text-xs tracking-wider text-fg-faint uppercase"
-              title={heading}
-            >
-              {/* Which protocol the group's request belongs to: two requests may share a name, and
-                  a click opens a different editor for each. */}
-              {searchBadge(group[0]?.protocol) !== undefined && (
-                <span data-testid="search-result-badge" className="rounded-full bg-surface-base px-1.5 normal-case">
-                  {searchBadge(group[0]?.protocol)}
+          <section key={heading.key} data-testid="search-group">
+            <div className="px-3 pt-1.5 pb-0.5" title={`${heading.name}\n${heading.path}`}>
+              <h3 className="flex min-w-0 items-center gap-1.5 text-xs">
+                {/* Which protocol the group's request belongs to: two requests may share a name, and
+                    a click opens a different editor for each. */}
+                {searchBadge(group[0]?.protocol) !== undefined && (
+                  <span
+                    data-testid="search-result-badge"
+                    className="shrink-0 rounded-full bg-surface-base px-1.5 text-fg-faint"
+                  >
+                    {searchBadge(group[0]?.protocol)}
+                  </span>
+                )}
+                {heading.method !== undefined && <MethodBadge method={heading.method} className="w-auto shrink-0" />}
+                <span data-testid="search-group-name" className="truncate font-medium text-fg-default">
+                  {heading.name}
                 </span>
-              )}
-              <span className="truncate">{heading}</span>
-            </h3>
+              </h3>
+              <p data-testid="search-group-path" className="truncate text-xs text-fg-faint">
+                {heading.path}
+              </p>
+            </div>
             <ul>
               {group.map((match) => (
-                <li key={`${heading}:${String(match.start)}`}>
+                <li key={`${heading.key}:${String(match.start)}`}>
                   <button
                     type="button"
                     data-testid="search-result"
