@@ -3,7 +3,8 @@
  * desktop main process, never read back or run. The path rule here is pure.
  */
 import { slugify } from '../project/paths.js';
-import { TOP_LEVEL_IMPORT } from '../script/module-syntax.js';
+import { UNSUPPORTED_DEFAULT_REASON, UNSUPPORTED_WHY } from '../script/api/layer-parts.js';
+import { TOP_LEVEL_IMPORT, TOP_LEVEL_IMPORT_REASON } from '../script/module-syntax.js';
 import type { LayeredApi, RequestScripts } from '../script/model.js';
 import type { ReportBuilder } from './report.js';
 
@@ -87,94 +88,119 @@ export function scriptText(texts: readonly string[]): string {
   return texts.map((text) => `${text.trimEnd()}\n`).join('\n');
 }
 
+/** Why Hoppscotch's layer refuses the `pm` members Hoppscotch's own `pm` does not have. */
+const NOT_IN_CLIENT = 'the pm object of these scripts does not have it';
+const WHY = UNSUPPORTED_WHY;
+
 /**
  * The calls a script makes that its API's layer does not run (spec §Postman), found by name. Each
- * other client's list is filled by its layer.
+ * other client's list is filled by its layer. The third item is the reason the layer gives when the
+ * call runs, which the converter's TODO repeats; a test holds each one to its layer's source.
+ * `undefined` marks a call this list still names although the layer now runs it (Postman's
+ * `pm.iterationData`, since data-driven runs).
  */
-const UNSUPPORTED_CALLS: Record<LayeredApi, readonly [RegExp, string][]> = {
+export const UNSUPPORTED_CALLS: Readonly<
+  Record<LayeredApi, readonly (readonly [RegExp, string, string | undefined])[]>
+> = {
   postman: [
-    [/\bpm\.sendRequest\b/, 'pm.sendRequest'],
-    [/\bpm\.cookies\.jar\b/, 'pm.cookies.jar'],
-    [/\bpm\.visualizer\b/, 'pm.visualizer'],
-    [/\brequire\s*\(/, 'require'],
-    [/\bpm\.iterationData\b/, 'pm.iterationData'],
-    [/\bpm\.vault\b/, 'pm.vault'],
+    [/\bpm\.sendRequest\b/, 'pm.sendRequest', WHY.send],
+    [/\bpm\.cookies\.jar\b/, 'pm.cookies.jar', WHY.cookies],
+    [/\bpm\.visualizer\b/, 'pm.visualizer', WHY.visual],
+    [/\brequire\s*\(/, 'require', WHY.modules],
+    [/\bpm\.iterationData\b/, 'pm.iterationData', undefined],
+    [/\bpm\.vault\b/, 'pm.vault', WHY.vault],
   ],
   insomnia: [
-    [/(?<![\w$.])(?:insomnia|\$)\.sendRequest\b/, 'insomnia.sendRequest'],
-    [/(?<![\w$.])(?:insomnia|\$)\.require\b/, 'insomnia.require'],
-    [/(?<![\w$.])require\s*\(/, 'require'],
-    [/(?<![\w$.])(?:insomnia|\$)\.cookies\.(?:set|unset|clear)\b/, 'insomnia.cookies writes'],
-    [/(?<![\w$.])(?:insomnia|\$)\.vault\b/, 'insomnia.vault'],
+    [/(?<![\w$.])(?:insomnia|\$)\.sendRequest\b/, 'insomnia.sendRequest', WHY.send],
+    [/(?<![\w$.])(?:insomnia|\$)\.require\b/, 'insomnia.require', WHY.modules],
+    [/(?<![\w$.])require\s*\(/, 'require', WHY.modules],
+    [/(?<![\w$.])(?:insomnia|\$)\.cookies\.(?:set|unset|clear)\b/, 'insomnia.cookies writes', WHY.cookies],
+    [/(?<![\w$.])(?:insomnia|\$)\.vault\b/, 'insomnia.vault', WHY.vault],
   ],
   bruno: [
-    [/(?<![\w$.])bru\.sendRequest\b/, 'bru.sendRequest'],
-    [/(?<![\w$.])bru\.runRequest\b/, 'bru.runRequest'],
-    [/(?<![\w$.])bru\.getProcessEnv\b/, 'bru.getProcessEnv'],
-    [/(?<![\w$.])bru\.visualize\b/, 'bru.visualize'],
-    [/(?<![\w$.])bru\.deleteAllVars\b/, 'bru.deleteAllVars'],
-    [/(?<![\w$.])req\.getAuthMode\b/, 'req.getAuthMode'],
-    [/(?<![\w$.])req\.setHeaders\b/, 'req.setHeaders'],
-    [/(?<![\w$.])res\.setBody\b/, 'res.setBody'],
-    [/(?<![\w$.])res\.setHeader\b/, 'res.setHeader'],
-    [/(?<![\w$.])bru\.sleep\b/, 'bru.sleep'],
-    [/(?<![\w$.])bru\.cookies\b/, 'bru.cookies'],
-    [/(?<![\w$.])req\.setTimeout\b/, 'req.setTimeout'],
-    [/(?<![\w$.])req\.getTimeout\b/, 'req.getTimeout'],
-    [/(?<![\w$.])req\.setMaxRedirects\b/, 'req.setMaxRedirects'],
-    [/(?<![\w$.])req\.onFail\b/, 'req.onFail'],
-    [/(?<![\w$.])req\.disableParsingResponseJson\b/, 'req.disableParsingResponseJson'],
-    [/(?<![\w$.])require\s*\(/, 'require'],
+    [/(?<![\w$.])bru\.sendRequest\b/, 'bru.sendRequest', WHY.send],
+    [/(?<![\w$.])bru\.runRequest\b/, 'bru.runRequest', WHY.send],
+    [/(?<![\w$.])bru\.getProcessEnv\b/, 'bru.getProcessEnv', WHY.processEnv],
+    [/(?<![\w$.])bru\.visualize\b/, 'bru.visualize', WHY.visual],
+    [/(?<![\w$.])bru\.deleteAllVars\b/, 'bru.deleteAllVars', WHY.values],
+    [/(?<![\w$.])req\.getAuthMode\b/, 'req.getAuthMode', WHY.auth],
+    [/(?<![\w$.])req\.setHeaders\b/, 'req.setHeaders', UNSUPPORTED_DEFAULT_REASON],
+    [/(?<![\w$.])res\.setBody\b/, 'res.setBody', WHY.response],
+    [/(?<![\w$.])res\.setHeader\b/, 'res.setHeader', WHY.response],
+    [/(?<![\w$.])bru\.sleep\b/, 'bru.sleep', WHY.wait],
+    [/(?<![\w$.])bru\.cookies\b/, 'bru.cookies', WHY.cookies],
+    [/(?<![\w$.])req\.setTimeout\b/, 'req.setTimeout', WHY.settings],
+    [/(?<![\w$.])req\.getTimeout\b/, 'req.getTimeout', WHY.settings],
+    [/(?<![\w$.])req\.setMaxRedirects\b/, 'req.setMaxRedirects', WHY.settings],
+    [/(?<![\w$.])req\.onFail\b/, 'req.onFail', WHY.handling],
+    [/(?<![\w$.])req\.disableParsingResponseJson\b/, 'req.disableParsingResponseJson', WHY.handling],
+    [/(?<![\w$.])require\s*\(/, 'require', WHY.modules],
   ],
   hoppscotch: [
-    [/(?<![\w$.])hopp\.cookies\b/, 'hopp.cookies'],
-    [/(?<![\w$.])hopp\.fetch\b/, 'hopp.fetch'],
-    [/(?<![\w$.])pm\.sendRequest\b/, 'pm.sendRequest'],
-    [/(?<![\w$.])pm\.collectionVariables\b/, 'pm.collectionVariables'],
-    [/(?<![\w$.])pm\.iterationData\b/, 'pm.iterationData'],
-    [/(?<![\w$.])pm\.visualizer\b/, 'pm.visualizer'],
-    [/(?<![\w$.])pm\.execution\.setNextRequest\b/, 'pm.execution.setNextRequest'],
-    [/(?<![\w$.])pm\.execution\.skipRequest\b/, 'pm.execution.skipRequest'],
-    [/(?<![\w$.])pm\.vault\b/, 'pm.vault'],
-    [/(?<![\w$.])pm\.cookies\.jar\b/, 'pm.cookies.jar'],
-    [/(?<![\w$.])pm\.require\b/, 'pm.require'],
-    [/(?<![\w$.])hopp\.env(?:\.(?:active|global))?\.reset\b/, 'hopp.env.reset'],
-    [/(?<![\w$.])hopp\.env(?:\.(?:active|global))?\.getInitialRaw\b/, 'hopp.env.getInitialRaw'],
-    [/(?<![\w$.])hopp\.env(?:\.(?:active|global))?\.setInitial\b/, 'hopp.env.setInitial'],
-    [/(?<![\w$.])hopp\.request\.setAuth\b/, 'hopp.request.setAuth'],
-    [/(?<![\w$.])hopp\.request\.auth\b/, 'hopp.request.auth'],
-    [/(?<![\w$.])hopp\.response\.body\.bytes\b/, 'hopp.response.body.bytes'],
-    [/(?<![\w$.])require\s*\(/, 'require'],
-    [TOP_LEVEL_IMPORT, 'import'],
+    [/(?<![\w$.])hopp\.cookies\b/, 'hopp.cookies', WHY.cookies],
+    [/(?<![\w$.])hopp\.fetch\b/, 'hopp.fetch', WHY.send],
+    [/(?<![\w$.])pm\.sendRequest\b/, 'pm.sendRequest', WHY.send],
+    [/(?<![\w$.])pm\.collectionVariables\b/, 'pm.collectionVariables', NOT_IN_CLIENT],
+    [/(?<![\w$.])pm\.iterationData\b/, 'pm.iterationData', NOT_IN_CLIENT],
+    [/(?<![\w$.])pm\.visualizer\b/, 'pm.visualizer', WHY.visual],
+    [/(?<![\w$.])pm\.execution\.setNextRequest\b/, 'pm.execution.setNextRequest', NOT_IN_CLIENT],
+    [/(?<![\w$.])pm\.execution\.skipRequest\b/, 'pm.execution.skipRequest', NOT_IN_CLIENT],
+    [/(?<![\w$.])pm\.vault\b/, 'pm.vault', WHY.vault],
+    [/(?<![\w$.])pm\.cookies\.jar\b/, 'pm.cookies.jar', WHY.cookies],
+    [/(?<![\w$.])pm\.require\b/, 'pm.require', WHY.modules],
+    [/(?<![\w$.])hopp\.env(?:\.(?:active|global))?\.reset\b/, 'hopp.env.reset', WHY.initial],
+    [/(?<![\w$.])hopp\.env(?:\.(?:active|global))?\.getInitialRaw\b/, 'hopp.env.getInitialRaw', WHY.initial],
+    [/(?<![\w$.])hopp\.env(?:\.(?:active|global))?\.setInitial\b/, 'hopp.env.setInitial', WHY.initial],
+    [/(?<![\w$.])hopp\.request\.setAuth\b/, 'hopp.request.setAuth', WHY.auth],
+    [/(?<![\w$.])hopp\.request\.auth\b/, 'hopp.request.auth', WHY.auth],
+    [/(?<![\w$.])hopp\.response\.body\.bytes\b/, 'hopp.response.body.bytes', WHY.binary],
+    [/(?<![\w$.])require\s*\(/, 'require', WHY.modules],
+    [TOP_LEVEL_IMPORT, 'import', TOP_LEVEL_IMPORT_REASON],
   ],
   'thunder-client': [
-    [/(?<![\w$.])tc\.runRequest\b/, 'tc.runRequest'],
-    [/(?<![\w$.])tc\.retryRequest\b/, 'tc.retryRequest'],
-    [/(?<![\w$.])tc\.loadModule\b/, 'tc.loadModule'],
-    [/(?<![\w$.])tc\.loadFromPath\b/, 'tc.loadFromPath'],
-    [/(?<![\w$.])tc\.readFile\b/, 'tc.readFile'],
-    [/(?<![\w$.])tc\.exec\b/, 'tc.exec'],
-    [/(?<![\w$.])tc\.delay\b/, 'tc.delay'],
-    [/(?<![\w$.])tc\.skipRequest\s*\(\s*[^\s)]/, 'tc.skipRequest with a request name'],
-    [/(?<![\w$.])tc\.getAbsolutePath\b/, 'tc.getAbsolutePath'],
-    [/(?<![\w$.])tc\.getCookies\b/, 'tc.getCookies'],
-    [/(?<![\w$.])tc\.setCookie\b/, 'tc.setCookie'],
-    [/(?<![\w$.])tc\.clearCookies\b/, 'tc.clearCookies'],
-    [/(?<![\w$.])tc\.chartHTML\b/, 'tc.chartHTML'],
-    [/(?<![\w$.])tc\.response\.cookies\b/, 'tc.response.cookies'],
-    [/(?<![\w$.])tc\.response\.getBinary\b/, 'tc.response.getBinary'],
-    [/(?<![\w$.])tc\.response\.passed\b/, 'tc.response.passed'],
-    [/(?<![\w$.])tc\.request\.auth\b/, 'tc.request.auth'],
-    [/(?<![\w$.])tc\.request\.url\.getParam\b/, 'tc.request.url.getParam'],
-    [/(?<![\w$.])tc\.request\.url\.setParam\b/, 'tc.request.url.setParam'],
-    [/(?<![\w$.])assert\s*[.(]/, 'assert'],
-    [/(?<![\w$.])require\s*\(\s*['"`]thunder-tests\//, 'require("thunder-tests/...")'],
-    [/(?<![\w$.])require\s*\((?!\s*['"`]thunder-tests\/)/, 'require'],
+    [/(?<![\w$.])tc\.runRequest\b/, 'tc.runRequest', WHY.send],
+    [/(?<![\w$.])tc\.retryRequest\b/, 'tc.retryRequest', WHY.send],
+    [/(?<![\w$.])tc\.loadModule\b/, 'tc.loadModule', WHY.modules],
+    [/(?<![\w$.])tc\.loadFromPath\b/, 'tc.loadFromPath', WHY.files],
+    [/(?<![\w$.])tc\.readFile\b/, 'tc.readFile', WHY.files],
+    [/(?<![\w$.])tc\.exec\b/, 'tc.exec', WHY.programs],
+    [/(?<![\w$.])tc\.delay\b/, 'tc.delay', WHY.wait],
+    [
+      /(?<![\w$.])tc\.skipRequest\s*\(\s*[^\s)]/,
+      'tc.skipRequest with a request name',
+      'a script can skip only its own request',
+    ],
+    [/(?<![\w$.])tc\.getAbsolutePath\b/, 'tc.getAbsolutePath', WHY.files],
+    [/(?<![\w$.])tc\.getCookies\b/, 'tc.getCookies', WHY.cookies],
+    [/(?<![\w$.])tc\.setCookie\b/, 'tc.setCookie', WHY.cookies],
+    [/(?<![\w$.])tc\.clearCookies\b/, 'tc.clearCookies', WHY.cookies],
+    [/(?<![\w$.])tc\.chartHTML\b/, 'tc.chartHTML', WHY.visual],
+    [/(?<![\w$.])tc\.response\.cookies\b/, 'tc.response.cookies', WHY.cookies],
+    [/(?<![\w$.])tc\.response\.getBinary\b/, 'tc.response.getBinary', WHY.binary],
+    [/(?<![\w$.])tc\.response\.passed\b/, 'tc.response.passed', UNSUPPORTED_DEFAULT_REASON],
+    [/(?<![\w$.])tc\.request\.auth\b/, 'tc.request.auth', WHY.auth],
+    [/(?<![\w$.])tc\.request\.url\.getParam\b/, 'tc.request.url.getParam', UNSUPPORTED_DEFAULT_REASON],
+    [/(?<![\w$.])tc\.request\.url\.setParam\b/, 'tc.request.url.setParam', UNSUPPORTED_DEFAULT_REASON],
+    [/(?<![\w$.])assert\s*[.(]/, 'assert', 'use expect'],
+    [/(?<![\w$.])require\s*\(\s*['"`]thunder-tests\//, 'require("thunder-tests/...")', WHY.modules],
+    [/(?<![\w$.])require\s*\((?!\s*['"`]thunder-tests\/)/, 'require', WHY.modules],
   ],
 };
 
 export function unsupportedCalls(text: string, api: LayeredApi): string[] {
   return UNSUPPORTED_CALLS[api].filter(([pattern]) => pattern.test(text)).map(([, name]) => name);
+}
+
+/**
+ * The refused call `form` is, with the layer's reason, or undefined. `form` is one call written out
+ * alone (`pm.sendRequest(x)`, `require('thunder-tests/a.js')`), so a call named in its arguments is
+ * not taken for it.
+ */
+export function unsupportedCall(form: string, api: LayeredApi): { name: string; reason: string } | undefined {
+  for (const [pattern, name, reason] of UNSUPPORTED_CALLS[api]) {
+    if (reason !== undefined && pattern.test(form)) return { name, reason };
+  }
+  return undefined;
 }
 
 /** The Postman calls that steer a run (#335), found by name: obeyed in API and folder runs only. */

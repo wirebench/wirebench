@@ -12,6 +12,9 @@
  */
 export const TOP_LEVEL_IMPORT = /^[ \t]*import(?:[ \t]+[\w{*]|[ \t]*[{*"'])/m;
 
+/** Why a top-level import is refused: the runner's message and the converter's TODO give it. */
+export const TOP_LEVEL_IMPORT_REASON = 'a script cannot load modules, so remove the import statement';
+
 /**
  * The `export {};` line Hoppscotch scripts may start with to mark a module context. It means nothing
  * here and is a syntax error in a script, so the runner blanks it (keeping the line count).
