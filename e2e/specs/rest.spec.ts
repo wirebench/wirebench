@@ -217,7 +217,8 @@ test.describe('REST: make an API, send a request, read the response', () => {
       editor?.focus();
     });
     await page.keyboard.press('ControlOrMeta+Slash');
-    await expect.poll(() => monacoModelText(page)).toContain('// "tag": "x"');
+    // Monaco may put the `//` at the line's start or after its indent; either is commented out.
+    await expect.poll(() => monacoModelText(page)).toMatch(/\/\/\s*"tag": "x"/);
 
     await sendRestByKeyboard(page);
 
