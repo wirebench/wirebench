@@ -98,14 +98,21 @@ export function proposeConversions(
 /**
  * The project with each accepted level switched; a level whose fingerprint changed is refused.
  *
- * The proposals are worked out again from `project` itself, with the same `takenBackups` the review
- * used, so a backup path and the header naming it are those the review showed. An accepted level is
- * refused as `changed` when its dialect or text differs from what was proposed, as `not-layered`
- * when it is gone or already `wirebench`, and as `syntax` when it does not convert, which covers a
- * syntax error and a script refused with line 0 (the converter's "could not convert"). The level is
- * switched to `wirebench` with the converted texts; a phase it did not have stays absent, and
- * `enabled`, `secrets`, `timeoutMs` and `postResponseOrder` are kept. `applied` lists what was
- * switched, whose backups the caller writes before it saves.
+ * The proposals are worked out again from `project` itself. `takenBackups` is a fresh listing of the
+ * project's `imported-scripts/` files taken at Accept (or `--write`) time, not the set the review
+ * used: a backup path depends on what is on disk and on every earlier layered level, which the
+ * fingerprint does not cover, so a path may get a different `-n` suffix than the review showed.
+ * Each applied level's header names the path in its `backups`, so the two always agree.
+ *
+ * An accepted level is refused as `changed` when its dialect or text differs from what was proposed,
+ * as `not-layered` when it is gone or already `wirebench`, and as `syntax` when it does not convert,
+ * which covers a syntax error and a script refused with line 0 (the converter's "could not
+ * convert"). The level is switched to `wirebench` with the converted texts; a phase it did not have
+ * stays absent, and `enabled`, `secrets`, `timeoutMs` and `postResponseOrder` are kept.
+ *
+ * The caller's contract: write exactly `applied[].backups`, each at its exact path, never
+ * overwriting an existing file; if any backup cannot be written at its path, abort before saving
+ * the project. So a saved header always names a backup that was written.
  */
 export function applyConversions(
   project: Project,
