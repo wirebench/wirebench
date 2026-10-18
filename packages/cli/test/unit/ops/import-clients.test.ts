@@ -234,10 +234,54 @@ describe('op import: a Hoppscotch collection', () => {
     expect(result.added).toEqual([expect.objectContaining({ kind: 'rest', name: 'Shop API', requests: 9 })]);
     const codes = result.problems.map((problem) => problem.code);
     expect(codes).toContain('secret-not-imported');
-    expect(codes).toContain('scripts-not-saved');
+    expect(codes).not.toContain('scripts-not-saved');
     const { project } = await loadProject(fixture.dir);
     expect(project.properties).toMatchObject({ baseUrl: 'https://api.example.test', region: 'eu' });
     expect(project.properties).not.toHaveProperty('apiKey');
+  });
+
+  it('wirebench import of a Hoppscotch file writes the scripts beside their request and folder', async () => {
+    const fixture = await emptyProject();
+    const file = join(await tempDir(), 'scripted.json');
+    const request = {
+      v: '17',
+      name: 'Create order',
+      method: 'POST',
+      endpoint: 'https://a.example.com/orders',
+      params: [],
+      headers: [],
+      body: { contentType: null, body: null },
+      auth: { authType: 'inherit', authActive: true },
+      preRequestScript: "hopp.env.set('ref', 'A-1')",
+      testScript: "hopp.test('created', () => {})",
+      requestVariables: [],
+    };
+    const folder = {
+      v: 12,
+      name: 'Orders',
+      folders: [],
+      requests: [request],
+      preRequestScript: "console.log('folder')",
+    };
+    await writeFile(file, JSON.stringify({ v: 12, name: 'Scripted', folders: [folder], requests: [] }));
+    const result = await runOp(importOp, { source: file }, fixture.base());
+    expect(result.problems.map((problem) => problem.code)).not.toContain('scripts-not-saved');
+    const { project } = await loadProject(fixture.dir);
+    const create = restApisOf(project)
+      .flatMap((api) => apiRequests(api))
+      .find((item) => item.name === 'Create order');
+    expect(create?.scripts).toMatchObject({ api: 'hoppscotch', enabled: false });
+    const files = (await readdir(fixture.dir, { recursive: true })).map((entry) => entry.replaceAll('\\', '/'));
+    expect(files).toEqual(
+      expect.arrayContaining([
+        'apis/Scripted/requests/Orders/Create order.pre.js',
+        'apis/Scripted/requests/Orders/Create order.post.js',
+        'apis/Scripted/requests/Orders/folder.pre.js',
+      ]),
+    );
+    const post = await readFile(join(fixture.dir, 'apis/Scripted/requests/Orders/Create order.post.js'), 'utf8');
+    expect(post).toContain("hopp.test('created'");
+    expect(files.some((entry) => entry.includes('imported-scripts'))).toBe(false);
   });
 
   it('refuses an environments file', async () => {

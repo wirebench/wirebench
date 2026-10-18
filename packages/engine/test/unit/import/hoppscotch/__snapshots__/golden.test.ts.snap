@@ -136,6 +136,15 @@ exports[`Hoppscotch golden > maps legacy-v0.json 1`] = `
                 "value": "x",
               },
             ],
+            "scripts": {
+              "api": "hoppscotch",
+              "enabled": false,
+              "post": {
+                "text": "pw.test("ok", () => { pw.expect(pw.response.status).toBe(200) })
+",
+              },
+              "secrets": [],
+            },
             "settings": {},
             "slug": "get-thing",
             "url": "/get",
@@ -157,23 +166,16 @@ exports[`Hoppscotch golden > maps legacy-v0.json 1`] = `
     "examples": 0,
     "folders": 0,
     "requests": 1,
-    "scripts": 1,
+    "scripts": 0,
   },
   "report": {
-    "notes": [
-      "Legacy API / get-thing: its tests script was saved to imported-scripts/legacy api/legacy api-get-thing.tests.js and is never run.",
-    ],
+    "notes": [],
     "warnings": [
-      "The saved scripts call pw.; Wirebench does not run them. Port what they do to Wirebench scripts by hand.",
+      "Scripts on 1 request were imported switched off: read each on its Scripts tab, then switch them on",
       "Credentials are not copied from the collection; re-enter them for 1 auth configuration",
     ],
   },
-  "scripts": [
-    {
-      "path": "imported-scripts/legacy api/legacy api-get-thing.tests.js",
-      "source": "pw.test("ok", () => { pw.expect(pw.response.status).toBe(200) })",
-    },
-  ],
+  "scripts": [],
   "variables": {
     "environments": [],
     "report": {
@@ -480,6 +482,19 @@ exports[`Hoppscotch golden > maps v12-r17.json 1`] = `
                     "value": "1",
                   },
                 ],
+                "scripts": {
+                  "api": "hoppscotch",
+                  "enabled": false,
+                  "post": {
+                    "text": "hopp.test('created', () => { hopp.expect(hopp.response.statusCode).toBe(201) })
+",
+                  },
+                  "pre": {
+                    "text": "hopp.env.set('orderRef', 'A-1')
+",
+                  },
+                  "secrets": [],
+                },
                 "settings": {},
                 "slug": "Create order",
                 "url": "/orders",
@@ -767,11 +782,29 @@ exports[`Hoppscotch golden > maps v12-r17.json 1`] = `
             "order": 6,
             "pathParams": [],
             "query": [],
+            "scripts": {
+              "api": "hoppscotch",
+              "enabled": false,
+              "post": {
+                "text": "pw.test('ok', () => {})
+",
+              },
+              "secrets": [],
+            },
             "settings": {},
             "slug": "Get user (GraphQL)",
             "url": "/graphql",
           },
         ],
+        "scripts": {
+          "api": "hoppscotch",
+          "enabled": false,
+          "pre": {
+            "text": "hopp.env.set('ts', String(Date.now()))
+",
+          },
+          "secrets": [],
+        },
         "servers": [
           {
             "description": "Collection Base URL",
@@ -788,46 +821,25 @@ exports[`Hoppscotch golden > maps v12-r17.json 1`] = `
     "examples": 1,
     "folders": 1,
     "requests": 9,
-    "scripts": 4,
+    "scripts": 0,
   },
   "report": {
     "notes": [
-      "Shop API: its pre-request script was saved to imported-scripts/shop api/shop api.pre.js and is never run.",
-      "Shop API / Orders / Create order: its pre-request script was saved to imported-scripts/shop api/shop api-orders-create order.pre.js and is never run.",
-      "Shop API / Orders / Create order: its tests script was saved to imported-scripts/shop api/shop api-orders-create order.tests.js and is never run.",
-      "Shop API / Get user (GraphQL): its tests script was saved to imported-scripts/shop api/shop api-get user (graphql).tests.js and is never run.",
       "The collection's headers were copied onto each request that does not set them.",
       "Shop API / Orders: its headers were copied onto the requests below it that do not set them.",
       "Shop API / Token via client credentials: its OAuth 2 extra request parameters were not imported.",
     ],
     "warnings": [
-      "The saved scripts call pw., hopp.; Wirebench does not run them. Port what they do to Wirebench scripts by hand.",
       "Shop API / Orders / Create order: request-level variables (sku) were not imported; Wirebench has no request scope.",
       "Shop API / Hawk: Hawk auth has no Wirebench equivalent, so it was set to "none".",
       "Upload avatar: the file part "file" has no file, so it was kept switched off as a text part; pick its file on the Body tab.",
       "Signed: its body is a file with no file, so it has no body; pick the file on the Body tab.",
       "JWT: the secret or key is not copied; set the secret (HS*) or key (RS*/ES*/PS*) before sending",
+      "Scripts on the API and 2 requests were imported switched off: read each on its Scripts tab, then switch them on",
       "Credentials are not copied from the collection; re-enter them for 4 auth configurations",
     ],
   },
-  "scripts": [
-    {
-      "path": "imported-scripts/shop api/shop api.pre.js",
-      "source": "hopp.env.set('ts', String(Date.now()))",
-    },
-    {
-      "path": "imported-scripts/shop api/shop api-orders-create order.pre.js",
-      "source": "hopp.env.set('orderRef', 'A-1')",
-    },
-    {
-      "path": "imported-scripts/shop api/shop api-orders-create order.tests.js",
-      "source": "hopp.test('created', () => { hopp.expect(hopp.response.statusCode).toBe(201) })",
-    },
-    {
-      "path": "imported-scripts/shop api/shop api-get user (graphql).tests.js",
-      "source": "pw.test('ok', () => {})",
-    },
-  ],
+  "scripts": [],
   "variables": {
     "environments": [],
     "projectProperties": {

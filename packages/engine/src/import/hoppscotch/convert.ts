@@ -3,19 +3,18 @@
  * collection's REST and GraphQL requests are written as the v2.1 collection document they mean and
  * go through the same parser and mapper as an exported v2.1 collection; `<<name>>` becomes
  * `{{name}}` on the way. Collection and folder variables become project properties, environments
- * workspace environments (one named `Global` merges into Globals), every script is saved as text.
+ * workspace environments (one named `Global` merges into Globals), every script rides on the document as
+ * a v2.1 `event` and is attached switched off by the mapper.
  * Pure.
  */
 
 import { HoppscotchError } from '../../errors.js';
 import type { IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
-import { slugify } from '../../project/paths.js';
 import { folderRequests } from '../../rest/model.js';
 import { apiFromPostmanCollection } from '../../rest/postman/map.js';
 import { parsePostmanCollection } from '../../rest/postman/parse.js';
 import type { MappedClientEntry, MappedClientImport } from '../client-import.js';
-import { ScriptCollector } from '../client-import.js';
 import { V21_SCHEMA } from '../collection-v3/convert.js';
 import { inlineQuery } from '../insomnia/convert.js';
 import type { ImportReport } from '../report.js';
@@ -27,6 +26,16 @@ import { credentialSafeVariable, VariableSetBuilder, warnCredentialLookingNames 
 import type { HopBody, HopCollection, HopEnvironment, HopRec, HopRequest, HopRow, HopVariable } from './model.js';
 
 type Json = Record<string, unknown>;
+
+/** A script pair as v2.1 `event` entries: `prerequest` first, then `test` (the after-response script). */
+function eventsOf(scripts: { readonly pre: string; readonly test: string }): { event: Json[] } | Record<string, never> {
+  const event: Json[] = [];
+  if (scripts.pre.trim() !== '')
+    event.push({ listen: 'prerequest', script: { type: 'text/javascript', exec: scripts.pre } });
+  if (scripts.test.trim() !== '')
+    event.push({ listen: 'test', script: { type: 'text/javascript', exec: scripts.test } });
+  return event.length > 0 ? { event } : {};
+}
 
 export interface MapHoppscotchOptions {
   readonly newId?: IdGenerator;
@@ -312,7 +321,7 @@ function graphqlItem(
   };
 }
 
-/** The running state of one export's mapping: its report, variables and scripts. */
+/** The running state of one export's mapping: its report and variables. */
 class Mapper {
   readonly report = new ReportBuilder();
   readonly variableReport = new ReportBuilder();
@@ -357,29 +366,18 @@ class Mapper {
         ...(folder.description !== undefined ? { description: folder.description } : {}),
         item: inner,
         ...(auth !== undefined ? { auth } : {}),
+        ...eventsOf(folder),
       });
     }
     for (const request of collection.requests) {
       const label = [...path, request.name].join(' / ');
-      out.push(
+      const item =
         request.kind === 'rest'
           ? restItem(request, label, inherited, this.report)
-          : graphqlItem(request, label, inherited, this.report),
-      );
+          : graphqlItem(request, label, inherited, this.report);
+      out.push({ ...item, ...eventsOf(request) });
     }
     return out;
-  }
-
-  scripts(collection: HopCollection, path: readonly string[], collector: ScriptCollector): void {
-    const slug = (names: readonly string[]): string => slugify(names.join('-')).toLowerCase();
-    collector.add(slug(path), 'pre', collection.pre, path.join(' / '));
-    collector.add(slug(path), 'tests', collection.test, path.join(' / '));
-    for (const folder of collection.folders) this.scripts(folder, [...path, folder.name], collector);
-    for (const request of collection.requests) {
-      const names = [...path, request.name];
-      collector.add(slug(names), 'pre', request.pre, names.join(' / '));
-      collector.add(slug(names), 'tests', request.test, names.join(' / '));
-    }
   }
 }
 
@@ -399,7 +397,6 @@ export function mapHoppscotch(
   for (const line of report.notes) mapper.report.note(line);
   const single = collections.length === 1;
   const entries: MappedClientEntry[] = [];
-  const scripts = [];
   let order = options.firstOrder ?? 0;
   let requests = 0;
   let folders = 0;
@@ -410,11 +407,6 @@ export function mapHoppscotch(
       single && options.name !== undefined && options.name.trim() !== '' ? options.name.trim() : collection.name;
     const prefix = single ? '' : `${collection.name}: `;
     mapper.addVariables(collection, [collection.name]);
-
-    const collector = new ScriptCollector(slugify(name).toLowerCase(), mapper.report);
-    mapper.scripts(collection, [collection.name], collector);
-    collector.reportDialects();
-    scripts.push(...collector.files());
 
     if (collection.headers.some((row) => row.active)) {
       mapper.report.note(`${prefix}The collection's headers were copied onto each request that does not set them.`);
@@ -428,8 +420,9 @@ export function mapHoppscotch(
       },
       item: mapper.items(collection, [collection.name], handDown(new Map(), collection)),
       ...(auth !== undefined ? { auth } : {}),
+      ...eventsOf(collection),
     });
-    const http = apiFromPostmanCollection(parsed, { newId, name });
+    const http = apiFromPostmanCollection(parsed, { newId, name, scriptApi: 'hoppscotch' });
     for (const warning of http.summary.warnings ?? []) mapper.report.warn(`${prefix}${warning}`);
     if (http.summary.requests === 0) continue;
     const rest = { ...http.api, order: order++ };
@@ -454,8 +447,9 @@ export function mapHoppscotch(
       ...(projectProperties.variables.length > 0 ? { projectProperties } : {}),
       report: mapper.variableReport.build(),
     },
-    scripts,
-    counts: { collections: entries.length, requests, folders, examples, assertions: 0, scripts: scripts.length },
+    // Scripts are attached to the requests, folders and API, switched off: no file is saved.
+    scripts: [],
+    counts: { collections: entries.length, requests, folders, examples, assertions: 0, scripts: 0 },
     report: mapper.report.build(),
   };
 }

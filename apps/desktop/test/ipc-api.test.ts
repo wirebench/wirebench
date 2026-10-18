@@ -1867,7 +1867,7 @@ describe('api.importHoppscotch', () => {
   };
 
   it('imports a pasted collection array, its variables as project properties', async () => {
-    const { addApi, fake } = setupVariables();
+    const { addApi, deps, fake } = setupVariables();
     const response = await value<ClientResponse>('api.importHoppscotch', {
       target: { projectId: 'p1' },
       source: { kind: 'text', text: readFileSync(join(HOPPSCOTCH, 'v12-r17.json'), 'utf8') },
@@ -1879,6 +1879,14 @@ describe('api.importHoppscotch', () => {
     });
     expect(response.apiIds).toEqual(['api-1']);
     expect(response.counts.requests).toBe(9);
+    // The scripts ride on the REST API, switched off: no text file is written.
+    expect(response.counts.scripts).toBe(0);
+    expect(deps.router.writeImportedScripts).not.toHaveBeenCalled();
+    const requests = apiRequests((addApi.mock.calls[0]![1] as { api: RestApi }).api);
+    expect(requests.find((request) => request.name === 'Create order')?.scripts).toMatchObject({
+      api: 'hoppscotch',
+      enabled: false,
+    });
     expect(fake.environments).toEqual([]);
   });
 

@@ -7,11 +7,13 @@
 import { createContext, runInContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BRUNO_LAYER } from '../../../src/script/api/bruno.js';
+import { HOPPSCOTCH_LAYER } from '../../../src/script/api/hoppscotch.js';
 import { INSOMNIA_LAYER } from '../../../src/script/api/insomnia.js';
 import { POSTMAN_LAYER } from '../../../src/script/api/postman.js';
 import {
   PART_CRYPTO,
   PART_EXPECT,
+  PART_JEST_EXPECT,
   PART_JSON_SCHEMA,
   PART_PAIRS,
   PART_PM,
@@ -27,6 +29,7 @@ const PARTS: ReadonlyArray<readonly [string, string]> = [
   ['PART_CRYPTO', PART_CRYPTO],
   ['PART_PM', PART_PM],
   ['PART_JSON_SCHEMA', PART_JSON_SCHEMA],
+  ['PART_JEST_EXPECT', PART_JEST_EXPECT],
 ];
 
 interface Evaluated {
@@ -100,6 +103,7 @@ const EXPECTED: ReadonlyArray<{ declared: string[]; defined: string[] }> = [
   },
   { declared: ['pmExpect', 'pmRequest', 'pmResponse', 'pmObject', 'pmResponseValue'], defined: [] },
   { declared: ['jsonSchema'], defined: [] },
+  { declared: ['TYPES', 'jestMatchers', 'jestExpect'], defined: [] },
 ];
 
 describe('the shared layer parts', () => {
@@ -138,5 +142,12 @@ describe('the shared layer parts', () => {
     const ctx = makeContext(defined);
     expect(() => void runInContext(BRUNO_LAYER, ctx)).not.toThrow();
     expect(defined).toEqual(expect.arrayContaining(['expect', 'bru', 'req', 'res', 'require']));
+  });
+
+  it('the Hoppscotch layer runs over the parts in one scope', () => {
+    const defined: string[] = [];
+    const ctx = makeContext(defined);
+    expect(() => void runInContext(HOPPSCOTCH_LAYER, ctx)).not.toThrow();
+    expect(defined).toEqual(expect.arrayContaining(['pw', 'hopp', 'pm', 'require', 'CryptoJS', 'btoa', 'atob']));
   });
 });
