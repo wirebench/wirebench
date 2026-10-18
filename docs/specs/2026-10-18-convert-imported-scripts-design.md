@@ -118,7 +118,12 @@ The engine already depends on `typescript` at run time (`script/check/service.ts
 `ts.createSourceFile` to parse each script as JavaScript, and nothing else from the compiler:
 
 1. **Parse.** A script that does not parse is not converted. Its row says "has a syntax error at
-   line N" and cannot be ticked.
+   line N" and cannot be ticked. A script that cannot be converted for another reason (it nests too
+   deeply to walk, or the converter hits an internal error) is reported the same way, with line 0
+   and a message that starts "could not convert:", and cannot be ticked either; Convert never throws.
+   A Hoppscotch script's `export {};` lines, which the runner blanks before it runs the script, are
+   blanked first too: the line stays, empty, so the TODO line numbers hold, and the converted script
+   does not fail on the `export` the typed runner would not blank.
 2. **Find the dialect's roots.** A dialect has fixed global roots: `pm`, `postman`, `CryptoJS`,
    `btoa` and `atob` for `postman`; `insomnia` and `$` for `insomnia`; `bru`, `req`, `res`, `test`
    and `expect` for `bruno`; `pw`, `hopp` and `pm` for `hoppscotch`; and `tc`, `test` and `expect` for
@@ -212,7 +217,10 @@ Notes:
 - **Writes.** A layer turns `null` and `undefined` into `''` and an object into its JSON. The typed
   `vars.set` takes a string, number or boolean and throws `script-value-invalid` otherwise. The type
   check reports a value whose type it cannot narrow to one of those. Convert does not wrap it in
-  `JSON.stringify`, because the type check already names the line.
+  `JSON.stringify`, because the type check already names the line. A value read from the response
+  body is the exception: the body is cast `as any` (§6.5), so `vars.set('id', response.json() as any)`
+  or a field of it type-checks, and when the value is `null`, `undefined` or an object at run time
+  `vars.set` throws `script-value-invalid` where the layer stored `''` or the JSON.
 - **Not mapped:** `unset`, `clear` and `bru.deleteVar` (the typed API has no unset), `hopp.env.get`
   and `pw.env.resolve` (they expand `<<name>>`), `replaceIn`, `bru.interpolate` and `tc.replaceVars`.
 
@@ -221,7 +229,8 @@ Notes:
 | Dialect call | Wirebench |
 | --- | --- |
 | `pm.test(n, f)`, `pw.test(n, f)`, `hopp.test(n, f)`, Bruno's `test(n, f)` | `test(n, f)` |
-| `tc.test(n, f)` with a function literal | `test(n, () => expect<unknown>((f)()).not.toBe(false))` |
+| `tc.test(n, f)` with an `async` function literal | `test(n, f)` |
+| `tc.test(n, f)` with any other function literal | `test(n, () => expect<unknown>((f)()).not.toBe(false))` |
 | `tc.test(n, b)` with any other value | `test(n, () => expect(b).toBe(true))` |
 | `pm.expect(x)`, `hopp.expect(x)`, `pw.expect(x)`, Bruno's and Thunder Client's `expect(x)`, `tc.expect(x)` | `expect(x)`, then the chain below |
 
@@ -260,10 +269,14 @@ Notes:
   failed only on key order, never the reverse.
 - **`.property` with a dotted name.** Chai reads `'a.b'` as one key, and the typed `toHaveProperty`
   splits a string on dots. The array form keeps chai's meaning.
-- **`.include` on an object** (subset match) has no typed form. The type check reports it, because
-  the typed `toContain` takes a string for a non-array value.
+- **`.include` on an object** (subset match) has no typed form. With the body cast `as any` the type
+  check would not report it, and the typed `toContain` would fail at run time where chai passed, so
+  `.include`, `.includes`, `.contain` or `.contains` given an object literal is a TODO.
 - **`tc.test` with a function value** that is not a literal (a variable) is converted the same way,
   `(f)()`.
+- **`tc.test` with an `async` function literal** becomes `test(n, f)`: the typed `test` settles the
+  promise, so a rejection fails the test. Checking the promise with `.not.toBe(false)` would pass
+  whatever it settled to.
 - **Not mapped:** `.oneOf`, `.within`, `.least` / `.gte`, `.most` / `.lte`, `.keys`, `.empty`,
   `.exist`, `.NaN`, `.string`, `.a(t)` for `object`, `array`, `null` or a non-literal `t`, and Bruno's
   `.jsonSchema`. For `.jsonSchema`, the TODO points at the request's JSON Schema assertion.

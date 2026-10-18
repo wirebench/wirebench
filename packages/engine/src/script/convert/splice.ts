@@ -1,6 +1,6 @@
 /**
- * Text edits over a script (spec §5.1 step 4): an edit replaces one span, and edits are applied from
- * the end of the text backwards so no span shifts. Everything outside an edit stays byte for byte.
+ * Text edits over a script (spec §5.1 step 4): an edit replaces one span of the original text, so no
+ * span shifts. Everything outside an edit stays byte for byte.
  */
 
 /** Replace `text[start, end)` with `text`. */
@@ -10,13 +10,19 @@ export interface Edit {
   readonly text: string;
 }
 
-/** `text` with every edit applied, from the end backwards. The edits do not overlap. */
+/**
+ * `text` with every edit applied. The edits do not overlap; the text between them is copied once, in
+ * one pass, so the time is linear in the text and the edits.
+ */
 export function applyEdits(text: string, edits: readonly Edit[]): string {
-  let out = text;
-  for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
-    out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
+  const parts: string[] = [];
+  let at = 0;
+  for (const edit of [...edits].sort((a, b) => a.start - b.start)) {
+    parts.push(text.slice(at, edit.start), edit.text);
+    at = edit.end;
   }
-  return out;
+  parts.push(text.slice(at));
+  return parts.join('');
 }
 
 const LINE_BREAK = /\r\n|\n|\r/g;

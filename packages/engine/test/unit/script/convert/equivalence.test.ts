@@ -120,7 +120,10 @@ function convert(dialect: LayeredApi, source: string, at: Run): string {
   return text;
 }
 
-/** What two runs must agree on. A test's message is compared only where both runs passed it. */
+/**
+ * What two runs must agree on. A test's message is not compared: the layers word their failures in
+ * chai's or their own terms and the typed matchers in theirs, so only each test's name and outcome are.
+ */
 const observed = (outcome: ScriptOutcome) => ({
   ok: outcome.ok,
   error: outcome.ok ? undefined : outcome.error.code,
@@ -264,6 +267,20 @@ ${root}.environment.set('trace', ${root}.request.headers.get('x-trace'));`,
     expect(typeErrors(declarations('rest', 'post'), text)).not.toEqual([]);
     expect(layered.tests).toMatchObject([{ name: 'level', passed: false }]);
     expect(typed.tests).toEqual([{ name: 'level', passed: true }]);
+  });
+
+  it('tc.test with an async callback: test(n, f), so both runs settle the promise alike', async () => {
+    const { layered, text, typed } = await both({
+      dialect: 'thunder-client',
+      protocol: 'rest',
+      phase: 'post',
+      source: `tc.test('later', async () => { await 0; expect(tc.response.status).to.equal(500); });`,
+    });
+    expect(text).toContain("test('later', async () => { await 0; expect(response.status).toBe(500); });");
+    expect(typeErrors(declarations('rest', 'post'), text)).toEqual([]);
+    // Checking the returned promise (`expect((f)()).not.toBe(false)`) would pass whatever it settles
+    // to; handing the callback to test makes the typed run settle it as the layer's test does.
+    expect(observed(typed)).toEqual(observed(layered));
   });
 
   it('tc.test with a boolean variable: the layer passes on true, the converted call fails loudly', async () => {

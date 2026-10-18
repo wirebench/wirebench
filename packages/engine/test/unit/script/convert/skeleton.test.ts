@@ -482,3 +482,79 @@ describe('the reasons a TODO gives', () => {
     });
   });
 });
+
+describe("Hoppscotch's export {} line", () => {
+  it('is dropped as the runner drops it, keeping the line count', () => {
+    const pre = 'export {};\npw.unknown(1);\n  export {}  \nconst a = 1;\n';
+    const result = convertLevelScripts({ dialect: 'hoppscotch', protocol: 'rest', pre, backups: {} });
+    expect(result).toEqual({
+      ok: true,
+      pre: [
+        '// Converted from a hoppscotch script.',
+        '',
+        '// TODO(convert): pw.unknown — not converted yet',
+        '// pw.unknown(1);',
+        '',
+        'const a = 1;',
+        '',
+      ].join('\n'),
+      todos: [{ phase: 'pre', line: 3, call: 'pw.unknown', kind: 'not-mapped', reason: 'not converted yet' }],
+      mapped: 0,
+    });
+  });
+
+  it('is kept in another dialect, whose runner does not drop it', () => {
+    const result = convertLevelScripts({ dialect: 'postman', protocol: 'rest', pre: 'export {};\n', backups: {} });
+    expect(result.ok && result.pre).toBe('// Converted from a postman script.\nexport {};\n');
+  });
+});
+
+describe('a script that cannot be converted', () => {
+  const level = (pre: string, matcher?: Matcher) =>
+    convertLevelScripts({ dialect: 'postman', protocol: 'rest', pre, backups: {} }, matcher);
+
+  it.each([
+    ['a 5 000-term concatenation', `const a = ${Array.from({ length: 5000 }, () => "'a'").join(' + ')};\n`],
+    ['5 000 chained else-ifs', `if (a) x();\n${Array.from({ length: 5000 }, () => 'else if (a) x();').join('\n')}\n`],
+    ['a 20 000-term concatenation', `const a = ${Array.from({ length: 20_000 }, () => "'a'").join(' + ')};\n`],
+  ])('is refused, not thrown, when it nests too deep: %s', (_, pre) => {
+    const result = level(pre);
+    expect(result).toMatchObject({ ok: false, phase: 'pre', line: 0, message: /^could not convert: / });
+  });
+
+  it('is refused with the phase that failed', () => {
+    const deep = `const a = ${Array.from({ length: 5000 }, () => "'a'").join(' + ')};\n`;
+    const result = convertLevelScripts({
+      dialect: 'postman',
+      protocol: 'rest',
+      pre: 'a();\n',
+      post: deep,
+      backups: {},
+    });
+    expect(result).toMatchObject({ ok: false, phase: 'post', line: 0 });
+  });
+
+  it('is refused when a replacement breaks the seam', () => {
+    const elsewhere: Matcher = (ref) =>
+      ref.name === 'pm.a' ? { node: ref.node.getSourceFile().statements[1]!, text: 'x' } : undefined;
+    expect(level('pm.a();\nfoo();\n', elsewhere)).toEqual({
+      ok: false,
+      phase: 'pre',
+      line: 0,
+      message: 'could not convert: the replacement for pm.a does not hold it',
+    });
+  });
+
+  it('a replacement that hands context.text a node holding its own reference is a clear error', () => {
+    const itself: Matcher = (ref, context) =>
+      ref.call === undefined ? undefined : { node: ref.call, text: context.text(ref.call) };
+    const text = "pm.a('x');\n";
+    expect(() => convertScript({ dialect: 'postman', protocol: 'rest', phase: 'pre', text }, itself)).toThrow(
+      'convert: the replacement for pm.a hands context.text a node that holds pm.a itself',
+    );
+    expect(level(text, itself)).toMatchObject({
+      ok: false,
+      message: 'could not convert: the replacement for pm.a hands context.text a node that holds pm.a itself',
+    });
+  });
+});

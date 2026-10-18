@@ -770,6 +770,21 @@ bru.setVar('method', req.getMethod());`,
   },
 ];
 
+/** Hoppscotch's `export {};` module marker, which the runner drops and the converter drops with it. */
+const MODULE_MARKER_CASES: readonly EquivalenceCase[] = [
+  {
+    name: 'an export {} line before and after the calls',
+    dialect: 'hoppscotch',
+    protocol: 'rest',
+    phase: 'post',
+    source: `export {};
+pw.env.set('a', 'x');
+pw.test('status', () => { pw.expect(pw.response.status).toBe(200); });
+  export {}
+`,
+  },
+];
+
 export const EQUIVALENCE_CASES: readonly EquivalenceCase[] = [
   ...VARIABLES,
   ...RUN_CONTROL,
@@ -779,4 +794,5 @@ export const EQUIVALENCE_CASES: readonly EquivalenceCase[] = [
   ...REQUEST_READ_CASES,
   ...REQUEST_WRITE_CASES,
   ...URL_AND_METHOD_WRITES,
+  ...MODULE_MARKER_CASES,
 ];

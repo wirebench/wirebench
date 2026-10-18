@@ -7,6 +7,7 @@
 import type ts from 'typescript';
 import { unsupportedCall, UNSUPPORTED_CALLS } from '../../import/scripts.js';
 import type { LayeredApi, ScriptPhase } from '../model.js';
+import { MODULE_MARKER } from '../module-syntax.js';
 import {
   declaredNames,
   DIALECT_ROOTS,
@@ -33,22 +34,35 @@ export type ConvertedLevel =
       /** How many replacements the converted scripts hold. */
       readonly mapped: number;
     }
-  | { readonly ok: false; readonly phase: ScriptPhase; readonly line: number; readonly message: string };
+  | {
+      readonly ok: false;
+      readonly phase: ScriptPhase;
+      /** 1-based for a syntax error; 0 when the script could not be converted for another reason. */
+      readonly line: number;
+      readonly message: string;
+    };
 
 /** One script converted, or the syntax error that stops it. */
 export type ConvertedScript =
   | { readonly ok: true; readonly text: string; readonly todos: readonly ConvertTodo[]; readonly mapped: number }
   | { readonly ok: false; readonly line: number; readonly message: string };
 
-/** A level's pre and post scripts converted; a phase with no script has no file. */
-export function convertLevelScripts(input: {
-  readonly dialect: LayeredApi;
-  readonly protocol: ConvertProtocol;
-  readonly pre?: string;
-  readonly post?: string;
-  /** The backup path per phase, for the header line (spec §5.3). */
-  readonly backups: { readonly pre?: string; readonly post?: string };
-}): ConvertedLevel {
+/**
+ * A level's pre and post scripts converted; a phase with no script has no file. It never throws: a
+ * script that nests too deeply to walk, or that trips one of the converter's own checks, is refused
+ * like a syntax error, with line 0 and a message that starts `could not convert:` (spec §5.1).
+ */
+export function convertLevelScripts(
+  input: {
+    readonly dialect: LayeredApi;
+    readonly protocol: ConvertProtocol;
+    readonly pre?: string;
+    readonly post?: string;
+    /** The backup path per phase, for the header line (spec §5.3). */
+    readonly backups: { readonly pre?: string; readonly post?: string };
+  },
+  matcher: Matcher = matchMappings,
+): ConvertedLevel {
   const out: { pre?: string; post?: string } = {};
   const todos: ConvertTodo[] = [];
   let mapped = 0;
@@ -56,19 +70,36 @@ export function convertLevelScripts(input: {
     const text = input[phase];
     if (text === undefined) continue;
     const backup = input.backups[phase];
-    const result = convertScript({
-      dialect: input.dialect,
-      protocol: input.protocol,
-      phase,
-      text,
-      ...(backup !== undefined ? { backup } : {}),
-    });
+    let result: ConvertedScript;
+    try {
+      result = convertScript(
+        {
+          dialect: input.dialect,
+          protocol: input.protocol,
+          phase,
+          text,
+          ...(backup !== undefined ? { backup } : {}),
+        },
+        matcher,
+      );
+    } catch (error) {
+      return { ok: false, phase, line: 0, message: notConverted(error) };
+    }
     if (!result.ok) return { ok: false, phase, line: result.line, message: result.message };
     out[phase] = result.text;
     todos.push(...result.todos);
     mapped += result.mapped;
   }
   return { ok: true, ...out, todos, mapped };
+}
+
+/** Why a script could not be converted, from what `convertScript` (or the parser under it) threw. */
+function notConverted(error: unknown): string {
+  if (error instanceof RangeError && /call stack/i.test(error.message)) {
+    return 'could not convert: the script nests too deeply';
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return `could not convert: ${message.replace(/^convert: /, '')}`;
 }
 
 /** A call left as written: what the TODO says and the node whose statement is commented out. */
@@ -79,7 +110,11 @@ interface Unconverted {
   readonly reason: string;
 }
 
-/** One script converted with `matcher` answering each reference. */
+/**
+ * One script converted with `matcher` answering each reference. It throws when the script nests too
+ * deeply to walk or a replacement breaks the seam's rules; `convertLevelScripts` turns that into a
+ * refusal. A Hoppscotch script's `export {};` lines are blanked first, as the runner blanks them.
+ */
 export function convertScript(
   input: {
     readonly dialect: LayeredApi;
@@ -91,7 +126,8 @@ export function convertScript(
   matcher: Matcher = matchMappings,
 ): ConvertedScript {
   const ts = typescript();
-  const { dialect, protocol, phase, text } = input;
+  const { dialect, protocol, phase } = input;
+  const text = dialect === 'hoppscotch' ? input.text.replace(MODULE_MARKER, '') : input.text;
   const source = ts.createSourceFile(`script.${phase}.js`, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   // The parser's own diagnostics: what createSourceFile found, before any program or type check.
   const syntax = (source as ts.SourceFile & { parseDiagnostics?: readonly ts.DiagnosticWithLocation[] })
@@ -125,6 +161,9 @@ export function convertScript(
     ts.forEachChild(node, visit);
   };
   visit(source);
+  // The references in source order, so a span's references are found by a binary search.
+  refs.sort((a, b) => a.node.getStart(source) - b.node.getStart(source));
+  const refStarts = refs.map((ref) => ref.node.getStart(source));
 
   // First pass: decide each reference. A reference the layer refuses, or one the matcher has no
   // answer for, is left as written. A replacement decides every reference inside its node: the ones
@@ -134,9 +173,11 @@ export function convertScript(
   const unconverted = new Map<ts.Node, Unconverted>(imports.map((left) => [left.node, left]));
   const probeSpan = (from: number, to: number): void => {
     let cursor = from;
-    for (const ref of refs) {
-      const start = ref.node.getStart(source);
-      if (start < from || start >= to || start < cursor) continue;
+    for (let index = firstAt(refStarts, from); index < refs.length;) {
+      const ref = refs[index] as DialectRef;
+      const start = refStarts[index] as number;
+      if (start >= to) break;
+      index += 1;
       const refused = unsupportedCall(callForm(ref, source), dialect);
       if (refused !== undefined) {
         unconverted.set(ref.node, { node: ref.node, call: refused.name, kind: 'unsupported', reason: refused.reason });
@@ -149,6 +190,12 @@ export function convertScript(
         protocol,
         source,
         text: (node) => {
+          // Probing the reference's own node again would ask the matcher about it for ever.
+          if (node.getStart(source) <= start && node.end >= ref.node.end) {
+            throw new Error(
+              `convert: the replacement for ${ref.name} hands context.text a node that holds ${ref.name} itself`,
+            );
+          }
           handed.push(node);
           probeSpan(node.getStart(source), node.end);
           return node.getText(source);
@@ -164,9 +211,19 @@ export function convertScript(
         unconverted.set(ref.node, { node: ref.node, call: ref.name, kind, reason: replacement.refused });
         continue;
       }
-      checkReplacement(ref, replacement.node, handed, { from: cursor, to }, refs, dialect, source);
+      checkReplacement(
+        ref,
+        replacement.node,
+        handed,
+        { from: cursor, to },
+        { refs, starts: refStarts },
+        dialect,
+        source,
+      );
       decided.set(ref.node, replacement.node);
+      // The references inside the replacement are decided: go on after it.
       cursor = replacement.node.end;
+      index = Math.max(index, firstAt(refStarts, cursor));
     }
   };
   probeSpan(0, text.length);
@@ -182,7 +239,8 @@ export function convertScript(
   const commented = [...groups.keys()]
     .filter((statement) => !hasAncestorIn(statement, groups))
     .sort((a, b) => a.getStart(source) - b.getStart(source));
-  const insideCommented = (node: ts.Node): boolean => hasAncestorIn(node, groups);
+  // The references inside a commented-out statement, which stay as written.
+  const insideCommented = new Set(refs.filter((ref) => hasAncestorIn(ref.node, groups)).map((ref) => ref.node));
 
   // Each TODO line carries a marker until the end, where its line number is read and it is removed.
   const marker = markerFor(text);
@@ -195,23 +253,25 @@ export function convertScript(
         return `${marker(todos.length - 1)}${todoComment(call, reason)}`;
       });
 
-  // Second pass: render a span with its commented statements and the decided replacements.
+  // Second pass: render a span with its commented statements and the decided replacements. The
+  // items are sorted once; a span finds its first one by a binary search and skips past each edit.
+  type Item = { readonly start: number; readonly statement?: ts.Statement; readonly ref?: DialectRef };
+  const items = [
+    ...commented.map((statement): Item => ({ start: statement.getStart(source), statement })),
+    ...refs
+      .filter((ref) => decided.has(ref.node) && !insideCommented.has(ref.node))
+      .map((ref): Item => ({ start: ref.node.getStart(source), ref })),
+  ].sort((a, b) => a.start - b.start || (a.statement !== undefined ? -1 : 1));
+  const itemStarts = items.map((item) => item.start);
   const replaced = new Set<ts.Node>();
   const rendered = new Set<ts.Statement>();
   const render = (from: number, to: number): string => {
-    type Item = { readonly start: number; readonly statement?: ts.Statement; readonly ref?: DialectRef };
-    const items = [
-      ...commented.map((statement): Item => ({ start: statement.getStart(source), statement })),
-      ...refs
-        .filter((ref) => decided.has(ref.node) && !insideCommented(ref.node))
-        .map((ref): Item => ({ start: ref.node.getStart(source), ref })),
-    ]
-      .filter((item) => item.start >= from && item.start < to)
-      .sort((a, b) => a.start - b.start || (a.statement !== undefined ? -1 : 1));
     const edits: Edit[] = [];
     let cursor = from;
-    for (const item of items) {
-      if (item.start < cursor) continue;
+    for (let index = firstAt(itemStarts, from); index < items.length;) {
+      const item = items[index] as Item;
+      if (item.start >= to) break;
+      index += 1;
       if (item.statement !== undefined) {
         const statement = item.statement;
         if (statement.end > to) continue;
@@ -229,6 +289,7 @@ export function convertScript(
         edits.push(edit);
         rendered.add(statement);
         cursor = edit.end;
+        index = Math.max(index, firstAt(itemStarts, cursor));
       } else if (item.ref !== undefined) {
         const replacement = matcher(item.ref, context);
         if (replacement === undefined || 'refused' in replacement || replacement.node !== decided.get(item.ref.node)) {
@@ -237,6 +298,7 @@ export function convertScript(
         edits.push({ start: replacement.node.getStart(source), end: replacement.node.end, text: replacement.text });
         replaced.add(item.ref.node);
         cursor = replacement.node.end;
+        index = Math.max(index, firstAt(itemStarts, cursor));
       }
     }
     return applyEdits(
@@ -262,7 +324,7 @@ export function convertScript(
     }
   }
   for (const ref of refs) {
-    if (decided.has(ref.node) && !insideCommented(ref.node) && !replaced.has(ref.node)) {
+    if (decided.has(ref.node) && !insideCommented.has(ref.node) && !replaced.has(ref.node)) {
       throw new Error(`convert: a replacement dropped ${ref.name}; it must pass it to context.text`);
     }
   }
@@ -310,7 +372,7 @@ function checkReplacement(
   node: ts.Node,
   handed: readonly ts.Node[],
   span: { readonly from: number; readonly to: number },
-  refs: readonly DialectRef[],
+  all: { readonly refs: readonly DialectRef[]; readonly starts: readonly number[] },
   dialect: LayeredApi,
   source: ts.SourceFile,
 ): void {
@@ -324,7 +386,9 @@ function checkReplacement(
   for (const part of handed) {
     if (!within(part, node)) throw new Error(`convert: the replacement for ${ref.name} converts text outside it`);
   }
-  for (const other of refs) {
+  for (let index = firstAt(all.starts, start); index < all.refs.length; index++) {
+    if ((all.starts[index] as number) >= node.end) break;
+    const other = all.refs[index] as DialectRef;
     if (other === ref || !within(other.node, node) || handed.some((part) => within(other.node, part))) continue;
     const refused = unsupportedCall(callForm(other, source), dialect);
     if (refused !== undefined) {
@@ -374,6 +438,18 @@ function inStatementList(statement: ts.Statement): boolean {
     ts.isCaseClause(parent) ||
     ts.isDefaultClause(parent)
   );
+}
+
+/** The index of the first of `sorted` at or after `at`, or its length when none is. */
+function firstAt(sorted: readonly number[], at: number): number {
+  let low = 0;
+  let high = sorted.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if ((sorted[middle] as number) < at) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }
 
 function hasAncestorIn(node: ts.Node, statements: ReadonlyMap<ts.Statement, unknown>): boolean {
