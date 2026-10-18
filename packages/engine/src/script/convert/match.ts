@@ -39,7 +39,7 @@ export function tableMatcher(rows: readonly MappingRow[]): Matcher {
       }
       if (target === undefined) return undefined;
       const text = template(target.args.map((arg) => context.text(arg)));
-      return { node: target.node, text: row.loose === true && !separated(target.node) ? `(${text})` : text };
+      return { node: target.node, text: isLoose(row, context) && !separated(target.node) ? `(${text})` : text };
     }
     return undefined;
   };
@@ -81,7 +81,8 @@ function prefixAnswer(
     const template = row.to[context.protocol];
     if (template === undefined) return undefined;
     // The rest holds only property names (and `?.`), so it is kept as written.
-    return { node: ref.node, text: `${template([])}${context.source.text.slice(node.end, ref.node.end)}` };
+    const head = isLoose(row, context) ? `(${template([])})` : template([]);
+    return { node: ref.node, text: `${head}${context.source.text.slice(node.end, ref.node.end)}` };
   }
   return undefined;
 }
@@ -236,6 +237,11 @@ function assignedTo(node: ts.Node): boolean {
     }
     return false;
   }
+}
+
+/** True when the row's template binds looser than a member access for the script's protocol. */
+function isLoose(row: MappingRow, context: ConvertContext): boolean {
+  return row.loose === true || (row.loose !== undefined && row.loose.includes(context.protocol));
 }
 
 /** True when `node`'s position already keeps a loose expression apart from what is around it. */

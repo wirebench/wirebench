@@ -187,7 +187,7 @@ describe('the documented differences', () => {
       response,
       source: `bru.setVar('body', res.body);`,
     });
-    expect(text).toContain("vars.set('body', response.json());");
+    expect(text).toContain("vars.set('body', response.json() as any);");
     expect(layered).toMatchObject({ ok: true, values: [{ name: 'body', value: 'plain' }] });
     expect(typed).toMatchObject({ ok: false, error: { code: 'script-error' }, values: [] });
   });

@@ -63,9 +63,10 @@ export interface MappingRow {
   /**
    * The template is a comparison or another expression that binds looser than a unary or member
    * operator. It is parenthesised unless its position already separates it (a statement, an
-   * argument, an `if` condition, an operand of `&&` or `||`).
+   * argument, an `if` condition, an operand of `&&` or `||`). A list names the protocols whose
+   * template is loose, when the others' are not.
    */
-  readonly loose?: true;
+  readonly loose?: true | readonly ConvertProtocol[];
   /**
    * The template writes an argument more than once (`vars.get(a) ?? props.get(a)`), so each one must
    * be free of side effects: a literal, a name, or a property or element access over those. A call
@@ -306,6 +307,25 @@ const calling =
   (args) =>
     `${method}(${args.map(String).join(', ')})`;
 
+/** A single string literal: '…', "…" or a template literal with no substitution. */
+const STRING_LITERAL = /^(?:'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\$]|\\.|\$(?!\{))*`)$/;
+
+/**
+ * A template that calls a header or metadata writer, which takes strings: every layer passes the
+ * name and value through `String(…)`, so an argument that is not a string literal is written so too.
+ * The run is the same, and a read (`string | undefined`) or a number type-checks.
+ */
+const writing =
+  (method: string): Template =>
+  (args) =>
+    `${method}(${args.map((arg) => (STRING_LITERAL.test(String(arg)) ? String(arg) : `String(${String(arg)})`)).join(', ')})`;
+
+/**
+ * The REST body parsed as JSON. Without a contract it is `unknown`, and an imported request has no
+ * contract, so `res.body.id` would not type-check; the layers read it untyped, and so does this.
+ */
+const REST_JSON = 'response.json() as any';
+
 /** The same template for REST and SOAP, which share headers and a numeric status, and another for gRPC. */
 const httpAndGrpc = (http: Template, grpc: Template): Partial<Record<ConvertProtocol, Template>> => ({
   rest: http,
@@ -354,7 +374,8 @@ export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
     calls: [...pmShaped('response.json'), 'hopp.response.body.asJSON'],
     dialects: PM_DIALECTS,
     phase: 'post',
-    to: { rest: fixed('response.json()'), grpc: fixed('response.message') },
+    loose: ['rest'],
+    to: { rest: fixed(REST_JSON), grpc: fixed('response.message') },
   },
   {
     calls: ['tc.response.json'],
@@ -362,7 +383,8 @@ export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
     phase: 'post',
     otherPhase: TC_NO_RESPONSE_YET,
     shape: 'property',
-    to: { rest: fixed('response.json()'), grpc: fixed('response.message') },
+    loose: ['rest'],
+    to: { rest: fixed(REST_JSON), grpc: fixed('response.message') },
   },
   // --- §6.5 the body as the layer gives it: parsed when it is JSON, the text otherwise
   {
@@ -370,20 +392,23 @@ export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
     dialects: ['bruno'],
     phase: 'post',
     shape: 'property',
-    to: { rest: fixed('response.json()'), soap: fixed('response.text'), grpc: fixed('response.message') },
+    loose: ['rest'],
+    to: { rest: fixed(REST_JSON), soap: fixed('response.text'), grpc: fixed('response.message') },
   },
   {
     calls: ['res.getBody'],
     dialects: ['bruno'],
     phase: 'post',
-    to: { rest: fixed('response.json()'), soap: fixed('response.text'), grpc: fixed('response.message') },
+    loose: ['rest'],
+    to: { rest: fixed(REST_JSON), soap: fixed('response.text'), grpc: fixed('response.message') },
   },
   {
     calls: ['pw.response.body'],
     dialects: ['hoppscotch'],
     phase: 'post',
     shape: 'property',
-    to: { rest: fixed('response.json()'), soap: fixed('response.text'), grpc: fixed('response.message') },
+    loose: ['rest'],
+    to: { rest: fixed(REST_JSON), soap: fixed('response.text'), grpc: fixed('response.message') },
   },
   // --- §6.5 the body as text; a gRPC message has none, so it is the message's JSON
   {
@@ -464,7 +489,7 @@ export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
     phase: 'pre',
     otherPhase: HEADER_SENT,
     shape: 'object-key-value',
-    to: httpAndGrpc(calling('request.headers.add'), calling('request.metadata.add')),
+    to: httpAndGrpc(writing('request.headers.add'), writing('request.metadata.add')),
   },
   {
     calls: pmShaped('request.headers.upsert'),
@@ -472,7 +497,7 @@ export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
     phase: 'pre',
     otherPhase: HEADER_SENT,
     shape: 'object-key-value',
-    to: httpAndGrpc(calling('request.headers.set'), calling('request.metadata.set')),
+    to: httpAndGrpc(writing('request.headers.set'), writing('request.metadata.set')),
   },
   {
     calls: ['req.setHeader'],
@@ -480,7 +505,7 @@ export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
     phase: 'pre',
     otherPhase: HEADER_SENT,
     arity: 2,
-    to: httpAndGrpc(calling('request.headers.set'), calling('request.metadata.set')),
+    to: httpAndGrpc(writing('request.headers.set'), writing('request.metadata.set')),
   },
   {
     calls: ['hopp.request.setHeader'],
@@ -488,7 +513,7 @@ export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
     phase: 'pre',
     otherPhase: HEADER_SENT,
     arity: 2,
-    to: httpAndGrpc(calling('request.headers.set'), calling('request.metadata.set')),
+    to: httpAndGrpc(writing('request.headers.set'), writing('request.metadata.set')),
   },
   {
     calls: pmShaped('request.headers.remove'),

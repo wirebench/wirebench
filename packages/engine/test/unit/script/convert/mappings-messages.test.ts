@@ -5,6 +5,7 @@
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from '../../../../src/grpc/scripting.js';
+import { restScriptTypes } from '../../../../src/rest/script-types.js';
 import type { RestRequestSnapshot, RestResponseSnapshot } from '../../../../src/rest/scripting.js';
 import { sentRequestReason } from '../../../../src/script/api/prelude.js';
 import { TC_NO_RESPONSE_YET, THUNDER_CLIENT_LAYER } from '../../../../src/script/api/thunder-client.js';
@@ -13,6 +14,8 @@ import type { ConvertProtocol } from '../../../../src/script/convert/roots.js';
 import type { LayeredApi, ScriptPhase } from '../../../../src/script/model.js';
 import { runScript, type ScriptRunInput } from '../../../../src/script/run.js';
 import { createScriptSandbox } from '../../../../src/script/sandbox/host.js';
+import { apiDeclarations, secretNameType } from '../../../../src/script/types/api.js';
+import { typeErrors } from '../ts-check.js';
 
 const PROTOCOLS: readonly ConvertProtocol[] = ['rest', 'soap', 'grpc', 'mcp'];
 const NOT_CONVERTED = 'not converted yet';
@@ -97,7 +100,7 @@ const RESPONSE_ROWS: readonly Row[] = [
       ['thunder-client', 'tc.response.json'],
     ],
     statement: 'const body = CALL;',
-    to: { rest: 'response.json()', grpc: 'response.message' },
+    to: { rest: 'response.json() as any', grpc: 'response.message' },
   },
   {
     name: 'body',
@@ -107,7 +110,7 @@ const RESPONSE_ROWS: readonly Row[] = [
       ['hoppscotch', 'pw.response.body'],
     ],
     statement: 'const body = CALL;',
-    to: { rest: 'response.json()', soap: 'response.text', grpc: 'response.message' },
+    to: { rest: 'response.json() as any', soap: 'response.text', grpc: 'response.message' },
   },
   {
     name: 'text',
@@ -199,12 +202,12 @@ describe('§6.5 response rows in a pre-request script are TODOs', () => {
 
 describe('§6.5 shapes', () => {
   it('reads a property chain after a response property through the template', () => {
-    expect(converted('bruno', 'const id = res.body.id;\n').body).toBe('const id = response.json().id;\n');
+    expect(converted('bruno', 'const id = res.body.id;\n').body).toBe('const id = (response.json() as any).id;\n');
     expect(converted('bruno', 'const id = res.body?.user.id;\n', 'grpc').body).toBe(
       'const id = response.message?.user.id;\n',
     );
     expect(converted('thunder-client', 'const n = tc.response.json.items.length;\n').body).toBe(
-      'const n = response.json().items.length;\n',
+      'const n = (response.json() as any).items.length;\n',
     );
     expect(converted('postman', 'const ok = pm.response.code.toString();\n', 'grpc').body).toBe(
       'const ok = response.status.code.toString();\n',
@@ -213,7 +216,7 @@ describe('§6.5 shapes', () => {
 
   it('keeps a chain on a called response through the template', () => {
     expect(converted('postman', "pm.environment.set('id', pm.response.json().id);\n").body).toBe(
-      "vars.set('id', response.json().id);\n",
+      "vars.set('id', (response.json() as any).id);\n",
     );
   });
 
@@ -258,11 +261,13 @@ describe('§6.5 shapes', () => {
   });
 
   it('still converts a read beside a write', () => {
-    expect(converted('bruno', 'x[res.body.id] = 1;\n').body).toBe('x[response.json().id] = 1;\n');
-    expect(converted('bruno', 'const [a] = [res.body.a];\n').body).toBe('const [a] = [response.json().a];\n');
-    expect(converted('bruno', 'total = res.body.items[0];\n').body).toBe('total = response.json().items[0];\n');
+    expect(converted('bruno', 'x[res.body.id] = 1;\n').body).toBe('x[(response.json() as any).id] = 1;\n');
+    expect(converted('bruno', 'const [a] = [res.body.a];\n').body).toBe('const [a] = [(response.json() as any).a];\n');
+    expect(converted('bruno', 'total = res.body.items[0];\n').body).toBe(
+      'total = (response.json() as any).items[0];\n',
+    );
     expect(converted('bruno', 'for (const x of res.body.items) log(x);\n').body).toBe(
-      'for (const x of response.json().items) log(x);\n',
+      'for (const x of (response.json() as any).items) log(x);\n',
     );
   });
 
@@ -298,6 +303,44 @@ describe('§6.5 shapes', () => {
   });
 });
 
+describe('the crafted fixtures type-check after converting, on a request with no contract', () => {
+  const untyped = (phase: ScriptPhase): string =>
+    apiDeclarations('rest', phase) + secretNameType([]) + restScriptTypes(undefined);
+
+  it('reads the JSON body untyped, as the layers do', () => {
+    for (const [dialect, text] of [
+      ['bruno', 'bru.setVar("userId", res.body.id);\n'],
+      ['postman', 'pm.environment.set("bookId", pm.response.json().id);\n'],
+      ['thunder-client', 'var json = tc.response.json;\ntc.setVar("firstName", json.data.product.name);\n'],
+      ['hoppscotch', 'const n = pw.response.body.items.length;\n'],
+    ] as const) {
+      const result = converted(dialect, text);
+      expect(result.todos, text).toEqual([]);
+      expect(typeErrors(untyped('post'), result.text), text).toEqual([]);
+    }
+    expect(converted('thunder-client', 'var json = tc.response.json;\n').body).toBe(
+      'var json = response.json() as any;\n',
+    );
+  });
+
+  it('passes a header value that is not a string literal through String(), as every layer does', () => {
+    const result = converted(
+      'postman',
+      "pm.request.headers.add({ key: 'X-Trace', value: pm.variables.get('traceId') });\n" +
+        "pm.request.headers.add({ key: 'X-Signed', value: 'yes' });\n" +
+        "pm.request.headers.upsert({ key: `X-${'n'}`, value: 2 });\n",
+      'rest',
+      'pre',
+    );
+    expect(result.body).toBe(
+      "request.headers.add('X-Trace', String((vars.get('traceId') ?? props.get('traceId'))));\n" +
+        "request.headers.add('X-Signed', 'yes');\n" +
+        "request.headers.set(String(`X-${'n'}`), String(2));\n",
+    );
+    expect(typeErrors(untyped('pre'), result.text)).toEqual([]);
+  });
+});
+
 describe('§6.5 not mapped', () => {
   it.each([
     ['postman', 'const v = pm.response.status;'],
@@ -330,9 +373,9 @@ const SETTER_ROWS: readonly (Row & {
     calls: pmShaped("request.headers.add({ key: 'X-Id', value: id })"),
     statement: 'CALL;',
     to: {
-      rest: "request.headers.add('X-Id', id)",
-      soap: "request.headers.add('X-Id', id)",
-      grpc: "request.metadata.add('X-Id', id)",
+      rest: "request.headers.add('X-Id', String(id))",
+      soap: "request.headers.add('X-Id', String(id))",
+      grpc: "request.metadata.add('X-Id', String(id))",
     },
     what: { rest: 'header', soap: 'header', grpc: 'metadata' },
   },
@@ -345,9 +388,9 @@ const SETTER_ROWS: readonly (Row & {
     ],
     statement: 'CALL;',
     to: {
-      rest: "request.headers.set('X-Id', id)",
-      soap: "request.headers.set('X-Id', id)",
-      grpc: "request.metadata.set('X-Id', id)",
+      rest: "request.headers.set('X-Id', String(id))",
+      soap: "request.headers.set('X-Id', String(id))",
+      grpc: "request.metadata.set('X-Id', String(id))",
     },
     what: { rest: 'header', soap: 'header', grpc: 'metadata' },
   },
@@ -480,12 +523,12 @@ describe('§6.6 shapes', () => {
     expect(
       converted('postman', "pm.request.headers.add({ 'value': v, key: pm.environment.get('k') });\n", 'grpc', 'pre')
         .body,
-    ).toBe("request.metadata.add((vars.get('k') ?? props.get('k')), v);\n");
+    ).toBe("request.metadata.add(String((vars.get('k') ?? props.get('k'))), String(v));\n");
   });
 
   it('takes key and value written shorthand', () => {
     expect(converted('postman', 'pm.request.headers.upsert({ key, value });\n', 'rest', 'pre').body).toBe(
-      'request.headers.set(key, value);\n',
+      'request.headers.set(String(key), String(value));\n',
     );
   });
 
