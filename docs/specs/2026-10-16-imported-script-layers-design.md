@@ -407,9 +407,10 @@ shared scripts guide table.
 
 Found after phase 1 shipped. Each has its own follow-up.
 
-- **An async test callback always passes.** `test(name, async () => …)`, and the same call in every
-  layer, records a pass even when the callback throws or an expectation fails, because the sandbox
-  never awaits the returned promise. The typed `test` has the same gap.
+- **Fixed: an async test callback used to pass.** `test(name, async () => …)`, and the same call in
+  every layer, recorded a pass even when the callback threw, because the sandbox never awaits the
+  returned promise. A callback that returns a promise now fails its test with "the test callback is
+  async, and a test cannot wait: make it synchronous".
 - **An OpenCollection round trip loses the script API.** The export writes no dialect marker, so a
   re-import attaches every script as `bruno`; the export report warns about it (§3.7).
 - **`pm.request` in a gRPC pre-request script** throws a plain `TypeError` instead of a named

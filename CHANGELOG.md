@@ -19,6 +19,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A script test with an async callback now fails.** `test(name, async () => …)` used to record a pass
+  whatever the callback did, because a script cannot wait for the promise. It now fails with "the test
+  callback is async, and a test cannot wait: make it synchronous", in the typed API and in every imported
+  script layer.
 - **A large REST response scrolls smoothly in Raw.** Scrolling the Raw view of a multi-megabyte body
   draws the new lines in the next frame and moves them without a layout pass, so it no longer drops
   frames on a slower machine.
