@@ -4,9 +4,12 @@
  * and calls left as TODOs.
  */
 import { describe, expect, it } from 'vitest';
+import { restScriptTypes } from '../../../../src/rest/script-types.js';
 import { convertScript } from '../../../../src/script/convert/index.js';
 import type { ConvertProtocol } from '../../../../src/script/convert/roots.js';
 import type { LayeredApi, ScriptPhase } from '../../../../src/script/model.js';
+import { apiDeclarations, secretNameType } from '../../../../src/script/types/api.js';
+import { typeErrors } from '../ts-check.js';
 
 const PROTOCOLS: readonly ConvertProtocol[] = ['rest', 'soap', 'grpc', 'mcp'];
 const PHASES: readonly ScriptPhase[] = ['pre', 'post'];
@@ -347,14 +350,17 @@ describe('tc.test with a boolean, a function literal and a variable', () => {
     ["tc.test('ok', code === 200);", "test('ok', () => expect(code === 200).toBe(true));"],
     ["tc.test('ok', true);", "test('ok', () => expect(true).toBe(true));"],
     ["tc.test('ok', isOk());", "test('ok', () => expect(isOk()).toBe(true));"],
-    ["tc.test('ok', () => code === 200);", "test('ok', () => expect((() => code === 200)()).not.toBe(false));"],
+    [
+      "tc.test('ok', () => code === 200);",
+      "test('ok', () => expect<unknown>((() => code === 200)()).not.toBe(false));",
+    ],
     [
       "tc.test('ok', function () { return code === 200; });",
-      "test('ok', () => expect((function () { return code === 200; })()).not.toBe(false));",
+      "test('ok', () => expect<unknown>((function () { return code === 200; })()).not.toBe(false));",
     ],
-    ["tc.test('ok', (() => true));", "test('ok', () => expect(((() => true))()).not.toBe(false));"],
-    ["tc.test('ok', check);", "test('ok', () => expect((check)()).not.toBe(false));"],
-    ["tc.test('ok', checks.status);", "test('ok', () => expect((checks.status)()).not.toBe(false));"],
+    ["tc.test('ok', (() => true));", "test('ok', () => expect<unknown>(((() => true))()).not.toBe(false));"],
+    ["tc.test('ok', check);", "test('ok', () => expect<unknown>((check)()).not.toBe(false));"],
+    ["tc.test('ok', checks.status);", "test('ok', () => expect<unknown>((checks.status)()).not.toBe(false));"],
   ])('%s', (from, to) => {
     expectEverywhere('thunder-client', from, to);
   });
@@ -363,9 +369,24 @@ describe('tc.test with a boolean, a function literal and a variable', () => {
     expectEverywhere(
       'thunder-client',
       "tc.test('ok', () => { expect(a).to.equal(1); });",
-      "test('ok', () => expect((() => { expect(a).toBe(1); })()).not.toBe(false));",
+      "test('ok', () => expect<unknown>((() => { expect(a).toBe(1); })()).not.toBe(false));",
       2,
     );
+  });
+
+  it('type-checks a callback that returns nothing, a boolean or false', () => {
+    const declarations = apiDeclarations('rest', 'post') + secretNameType([]) + restScriptTypes(undefined);
+    const script = converted(
+      'thunder-client',
+      `tc.test('void', () => { expect(1).to.equal(1); });
+tc.test('boolean', () => tc.response.status === 200);
+tc.test('false', function () { return false; });
+`,
+      'rest',
+      'post',
+    );
+    expect(script.todos).toEqual([]);
+    expect(typeErrors(declarations, script.text)).toEqual([]);
   });
 
   it('takes a name and a value', () => {

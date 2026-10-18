@@ -249,7 +249,8 @@ export function expectChain(style: ExpectStyle): Chain {
 
 /**
  * `tc.test(n, v)`: a function (a literal, or a name or member that holds one) is called and passes
- * unless it returns false; any other value passes when it is true (spec §6.4).
+ * unless it returns false; any other value passes when it is true (spec §6.4). The call's result is
+ * checked as `unknown`: a callback that returns nothing is `void`, which `.toBe(false)` cannot take.
  */
 export const tcTest: Chain = (ref, context) => {
   const ts = typescript();
@@ -269,7 +270,9 @@ export const tcTest: Chain = (ref, context) => {
   const v = context.text(value);
   return {
     node: ref.call,
-    text: callable ? `test(${n}, () => expect((${v})()).not.toBe(false))` : `test(${n}, () => expect(${v}).toBe(true))`,
+    text: callable
+      ? `test(${n}, () => expect<unknown>((${v})()).not.toBe(false))`
+      : `test(${n}, () => expect(${v}).toBe(true))`,
   };
 };
 

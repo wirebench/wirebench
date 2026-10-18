@@ -395,9 +395,16 @@ const READ_ROWS: readonly Row[] = [
   },
   {
     name: 'URL',
-    calls: [['bruno', 'req.getUrl()'], ...pmShaped('request.url.toString()')],
+    calls: [['bruno', 'req.getUrl()']],
     statement: 'const url = CALL;',
     to: { rest: 'request.url', soap: 'request.endpoint', grpc: 'request.target', mcp: 'request.url' },
+  },
+  // The pm-shaped layers read a SOAP request's url, which it has not: they give 'undefined'.
+  {
+    name: 'URL, pm-shaped',
+    calls: pmShaped('request.url.toString()'),
+    statement: 'const url = CALL;',
+    to: { rest: 'request.url', grpc: 'request.target', mcp: 'request.url' },
   },
   {
     name: 'method',

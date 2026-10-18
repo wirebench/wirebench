@@ -539,15 +539,12 @@ export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
       mcp: fixed('request.url'),
     },
   },
+  // The pm-shaped layers read `request.url`, which a SOAP request has not: they give 'undefined'
+  // there, so a SOAP endpoint would change what the script sees.
   {
     calls: pmShaped('request.url.toString'),
     dialects: PM_DIALECTS,
-    to: {
-      rest: fixed('request.url'),
-      soap: fixed('request.endpoint'),
-      grpc: fixed('request.target'),
-      mcp: fixed('request.url'),
-    },
+    to: { rest: fixed('request.url'), grpc: fixed('request.target'), mcp: fixed('request.url') },
   },
   // Only a REST request's URL can change from a script.
   {
