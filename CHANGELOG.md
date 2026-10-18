@@ -19,6 +19,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Telnet and serial terminals no longer offer Files.** The terminal tab's toolbar shows **Files** only
+  when the focused pane's host is reached over SSH or Mosh, as the pane's own menu already did (#688).
 - **A large REST response scrolls smoothly in Raw.** Scrolling the Raw view of a multi-megabyte body
   draws the new lines in the next frame and moves them without a layout pass, so it no longer drops
   frames on a slower machine.

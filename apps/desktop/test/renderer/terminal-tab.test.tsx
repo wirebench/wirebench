@@ -1,6 +1,6 @@
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 // jsdom has no canvas or layout, so the terminal is a recording stand-in.
 const xterm = vi.hoisted(() => {
@@ -298,6 +298,49 @@ describe('the terminal tab', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Files$/ }));
     expect(useEditorsStore.getState().activeId).toBe('ssh-files:a');
     expect(useEditorsStore.getState().tabs.map((t) => t.kind)).toEqual(['ssh-terminal', 'ssh-files']);
+  });
+
+  it.each(['telnet', 'serial'] as const)('a %s host’s toolbar has no Files (#688)', async (protocol) => {
+    const { resolved } = useHostsStore.getState();
+    onTestFinished(() => {
+      useHostsStore.setState({ resolved });
+    });
+    useHostsStore.setState({
+      resolved: [
+        {
+          id: 'a',
+          name: 'alpha',
+          address: 'a.example',
+          tags: [],
+          path: [],
+          protected: { value: false, from: 'default' },
+          ssh: {
+            user: { value: undefined, from: 'default' },
+            port: { value: 23, from: 'default' },
+            auth: { value: undefined, from: 'default' },
+            jump: { value: undefined, from: 'default' },
+            keepAlive: { value: 15, from: 'default' },
+            connectTimeout: { value: 20, from: 'default' },
+            forwardAgent: { value: false, from: 'default' },
+            proxy: { value: undefined, from: 'default' },
+            protocol: { value: protocol, from: 'host' },
+            mosh: { value: undefined, from: 'default' },
+          },
+          forwards: [],
+          env: [],
+        },
+      ],
+    });
+    connect.mockResolvedValueOnce(OPEN('s1'));
+    act(() => {
+      openTerminalFor('a');
+    });
+    render(<EditorArea />);
+    await waitFor(() => {
+      expect(connect).toHaveBeenCalled();
+    });
+    expect(screen.getByRole('button', { name: /Split right/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Files$/ })).toBeNull();
   });
 
   it('survives switching tabs; only closing the tab closes the session', async () => {
