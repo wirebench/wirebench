@@ -294,6 +294,7 @@ export class ServerBackend implements SyncBackend {
     await this.state.update({
       role: answer.role,
       recordDesktopActivity: answer.recordDesktopActivity === true,
+      recordSessionLogs: answer.recordSessionLogs === true,
       lastSyncAt: this.now().toISOString(),
       ...(merging
         ? {}

@@ -71,6 +71,7 @@ export default defineConfig({
             { label: 'Preferences and layout', slug: 'guides/preferences' },
             { label: 'Managed preferences', slug: 'guides/managed-preferences' },
             { label: 'Run in CI', slug: 'guides/run-in-ci' },
+            { label: 'Use Wirebench from your coding agent', slug: 'guides/coding-agents' },
             { label: 'Agents (MCP)', slug: 'guides/agents-mcp' },
           ],
         },
@@ -83,6 +84,10 @@ export default defineConfig({
             { label: 'Mutual TLS with a corporate CA', slug: 'solutions/mutual-tls-corporate-ca' },
             { label: 'SOAP through a corporate proxy', slug: 'solutions/soap-through-corporate-proxy' },
             { label: 'gRPC with server reflection', slug: 'solutions/grpc-server-reflection' },
+            { label: 'SSH agent forwarding', slug: 'solutions/ssh-agent-forwarding' },
+            { label: 'SSH with a security key', slug: 'solutions/ssh-security-key-sign-in' },
+            { label: 'Coding agent runs the regression suite', slug: 'solutions/agent-runs-api-regression-suite' },
+            { label: 'Snapshot baselines for a changing API', slug: 'solutions/snapshot-baselines-changing-api' },
           ],
         },
         {

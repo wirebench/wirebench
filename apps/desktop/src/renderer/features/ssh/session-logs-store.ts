@@ -15,3 +15,23 @@ export function showSessionLogs(): void {
 export function hideSessionLogs(): void {
   useSessionLogsDialogStore.setState({ open: false });
 }
+
+interface TeamSessionLogsDialogState {
+  open: boolean;
+  /** The host the dialog opened on, as its first filter; any host when unset. */
+  hostId: string | undefined;
+}
+
+export const useTeamSessionLogsDialogStore = create<TeamSessionLogsDialogState>()(() => ({
+  open: false,
+  hostId: undefined,
+}));
+
+/** Opens the workspace server's session logs, every member's (#430; the `ssh.teamSessionLogs` command). */
+export function showTeamSessionLogs(hostId?: string): void {
+  useTeamSessionLogsDialogStore.setState({ open: true, hostId });
+}
+
+export function hideTeamSessionLogs(): void {
+  useTeamSessionLogsDialogStore.setState({ open: false, hostId: undefined });
+}

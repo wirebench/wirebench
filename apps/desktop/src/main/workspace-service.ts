@@ -134,7 +134,7 @@ import { createSyncBackend, type ServerSyncServices } from './sync/create-backen
 import { HeldChanges } from './sync/held-changes.js';
 import type { HeldBatch } from './sync/held-changes.js';
 import { fillConflictProjectIds, planPull } from './sync/pull-plan.js';
-import { readRecordDesktopActivity, SERVER_STATE_DIR } from './sync/server-state.js';
+import { readRecordingFlags, SERVER_STATE_DIR } from './sync/server-state.js';
 import { SyncService } from './sync/sync-service.js';
 import type { SyncServiceDeps } from './sync/sync-service.js';
 import type { SyncConflictWire, SyncPulledEvent, SyncStatusWire } from './sync/types.js';
@@ -414,6 +414,8 @@ interface OpenWorkspace {
   syncReady: Promise<void>;
   /** A server share's last fetched head said `recordDesktopActivity` (kept in `server/state.yaml`). */
   recording: boolean;
+  /** A server share's last fetched head said `recordSessionLogs` (#430): every SSH session is logged and streamed. */
+  sessionLogRecording: boolean;
   /** The `lastSyncAt` of the last sync status seen: a new one means a fetch (or a push) went through. */
   lastSyncAt: string | undefined;
 }
@@ -1008,6 +1010,7 @@ export class WorkspaceService implements ProjectRouter {
       teamPulled: new Map(),
       syncReady: Promise.resolve(),
       recording: false,
+      sessionLogRecording: false,
       lastSyncAt: undefined,
     };
     this.current = open;
@@ -1084,7 +1087,9 @@ export class WorkspaceService implements ProjectRouter {
 
       await this.state.remember(id, this.now().toISOString());
       // The last fetched head's, as kept: a desktop that opens offline records as it did before.
-      open.recording = share?.kind === 'server' && (await readRecordDesktopActivity(join(dir, SERVER_STATE_DIR)));
+      const flags = share?.kind === 'server' ? await readRecordingFlags(join(dir, SERVER_STATE_DIR)) : undefined;
+      open.recording = flags?.desktopActivity === true;
+      open.sessionLogRecording = flags?.sessionLogs === true;
       this.deps.hooks?.onChanged?.(this.snapshot());
       this.deps.hooks?.onAuditTarget?.(this.auditTargetOf(open), false);
       // Never awaited: a shared workspace opens on its files alone, and git (a missing
@@ -1845,10 +1850,12 @@ export class WorkspaceService implements ProjectRouter {
    * the renderer is shown (only when it changed) and the audit reporter (always: it sends after a fetch).
    */
   private async afterServerFetch(open: OpenWorkspace): Promise<void> {
-    const recording = await readRecordDesktopActivity(join(open.dir, SERVER_STATE_DIR));
+    const flags = await readRecordingFlags(join(open.dir, SERVER_STATE_DIR));
+    const recording = flags.desktopActivity;
     if (this.stale(open)) {
       return;
     }
+    open.sessionLogRecording = flags.sessionLogs;
     if (recording !== open.recording) {
       open.recording = recording;
       this.deps.hooks?.onChanged?.(this.snapshot());
@@ -1860,6 +1867,17 @@ export class WorkspaceService implements ProjectRouter {
   auditTarget(): AuditTarget | undefined {
     const open = this.current;
     return open === undefined || open.closing ? undefined : this.auditTargetOf(open);
+  }
+
+  /**
+   * Where the open workspace's SSH session logs stream to (#430): only a server share whose last fetched head
+   * said `recordSessionLogs`; `undefined` otherwise.
+   */
+  sessionLogTarget(): { readonly url: string; readonly workspaceId: string } | undefined {
+    const open = this.current;
+    if (open === undefined || open.closing || !open.sessionLogRecording) return undefined;
+    const server = open.share?.kind === 'server' ? open.share.server : undefined;
+    return server === undefined ? undefined : { url: server.url, workspaceId: server.workspaceId };
   }
 
   private auditTargetOf(open: OpenWorkspace): AuditTarget | undefined {

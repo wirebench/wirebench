@@ -69,6 +69,8 @@ export const syncHeadResponseSchema = z.object({
   role: workspaceRoleSchema,
   /** The workspace's desktop-activity recording flag, refreshed on every fetch. */
   recordDesktopActivity: z.boolean().default(false),
+  /** The workspace's SSH session-log recording switch, refreshed on every fetch. */
+  recordSessionLogs: z.boolean().default(false),
 });
 export type SyncHeadResponse = z.infer<typeof syncHeadResponseSchema>;
 

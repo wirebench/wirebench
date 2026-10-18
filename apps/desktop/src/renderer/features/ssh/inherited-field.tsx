@@ -42,6 +42,8 @@ export interface InheritedFieldProps<T extends string | number> {
   readonly override: T | undefined;
   readonly onChange: (next: T | undefined) => void;
   readonly type?: 'text' | 'number';
+  /** Values offered as the field is typed in; any other value may still be typed. */
+  readonly suggestions?: readonly string[];
 }
 
 const SWITCH_CLASS =
@@ -58,8 +60,10 @@ export function InheritedField<T extends string | number>({
   override,
   onChange,
   type = 'text',
+  suggestions,
 }: InheritedFieldProps<T>) {
   const id = useId();
+  const listId = useId();
   // A cleared field reports `undefined` (inherit) but stays editable until the switch is turned off.
   const [editing, setEditing] = useState(false);
   const inheritable = fromGroup(provenance);
@@ -76,6 +80,7 @@ export function InheritedField<T extends string | number>({
         <input
           id={id}
           type={type}
+          list={suggestions === undefined ? undefined : listId}
           disabled={!overridden}
           className={`${INPUT_CLASS} min-w-0 flex-1`}
           placeholder={!inheritable && provenance.value !== undefined ? String(provenance.value) : undefined}
@@ -105,6 +110,13 @@ export function InheritedField<T extends string | number>({
           </button>
         )}
       </div>
+      {suggestions !== undefined && (
+        <datalist id={listId}>
+          {suggestions.map((value) => (
+            <option key={value} value={value} />
+          ))}
+        </datalist>
+      )}
       {source !== undefined && override === undefined && !editing ? (
         <span title={source} className="truncate text-fg-faint">
           {source}
@@ -161,6 +173,54 @@ export function InheritedSwitch({ label, provenance, override, onChange }: Inher
       >
         <span className="size-2.5 rounded-full bg-fg-default" />
       </button>
+    </div>
+  );
+}
+
+export interface InheritedSelectProps {
+  readonly label: string;
+  /** What the setting resolves to without a choice here, and where that came from. */
+  readonly provenance: Provenance<string>;
+  /** This entry's own choice; `undefined` means it inherits. */
+  readonly override: string | undefined;
+  readonly options: readonly { readonly id: string; readonly label: string }[];
+  readonly onChange: (next: string | undefined) => void;
+}
+
+/**
+ * {@link InheritedField} for a closed list: the first option inherits and says what and from where
+ * ("Inherit: UTF-8, from Preferences"); picking another sets it here. A value this version does not list
+ * (a file written by a newer one) stays selectable, so saving keeps it.
+ */
+export function InheritedSelect({ label, provenance, override, options, onChange }: InheritedSelectProps) {
+  const id = useId();
+  const labelOf = (value: string): string => options.find((o) => o.id === value)?.label ?? value;
+  const shown = [...options];
+  if (override !== undefined && !options.some((o) => o.id === override)) shown.push({ id: override, label: override });
+  const { from, value } = provenance;
+  const where =
+    typeof from === 'object' ? `, from ${sourceName(from)}` : from === 'preferences' ? ', from Preferences' : '';
+  const inherit = value === undefined ? 'Inherit' : `Inherit: ${labelOf(value)}${where}`;
+  return (
+    <div className="flex min-w-0 flex-col gap-1 text-xs">
+      <label htmlFor={id} title={label} className="truncate whitespace-nowrap text-fg-subtle">
+        {label}
+      </label>
+      <select
+        id={id}
+        className={`${INPUT_CLASS} min-w-0`}
+        value={override ?? ''}
+        onChange={(e) => {
+          onChange(e.target.value === '' ? undefined : e.target.value);
+        }}
+      >
+        <option value="">{inherit}</option>
+        {shown.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

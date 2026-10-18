@@ -13,7 +13,7 @@ vi.mock('../../src/renderer/state/ipc-client.js', () => ({
   ipc: () => ({ ssh: { listHosts, saveHosts, secretNames, setSecret, setHostOs, keys: sshKeys, localUser } }),
 }));
 import type { HostsFileWire, ResolvedHostWire } from '../../src/shared/ssh-wire.js';
-import { HostDialog } from '../../src/renderer/features/ssh/host-dialog.js';
+import { HostDialog, HostForm } from '../../src/renderer/features/ssh/host-dialog.js';
 import {
   inheritedFrom,
   inheritedLogin,
@@ -180,6 +180,38 @@ describe('identity helpers', () => {
     expect(inheritedFrom(group, 'keepAlive', prefs)).toEqual({ value: 5, from: { group: 'Production' } });
     expect(sshPreferenceDefaults({ user: '  ', keepAlive: 15, connectTimeout: 20 }).user).toBeUndefined();
     expect(sourceText({ value: 'alice', from: 'preferences' })).toBe('alice · from Preferences');
+  });
+});
+
+describe('host form: terminal type and character set (#427)', () => {
+  it('inherit from the nearest group, then Preferences → SSH', () => {
+    const prefs = sshPreferenceDefaults({ keepAlive: 15, connectTimeout: 20, charset: 'cp850', term: '' });
+    expect(inheritedFrom([], 'charset', prefs)).toEqual({ value: 'cp850', from: 'preferences' });
+    expect(inheritedFrom([], 'term', prefs)).toEqual({ value: 'xterm-256color', from: 'preferences' });
+    const newer = sshPreferenceDefaults({ keepAlive: 15, connectTimeout: 20, charset: 'ebcdic-37' });
+    expect(newer.charset).toBe('utf-8');
+    const group = FILE.groups.map((g) => ({ ...g, ssh: { charset: 'iso-8859-15', term: 'vt220' } }));
+    expect(inheritedFrom(group, 'charset', prefs)).toEqual({ value: 'iso-8859-15', from: { group: 'Production' } });
+    expect(inheritedFrom(group, 'term', prefs)).toEqual({ value: 'vt220', from: { group: 'Production' } });
+  });
+
+  it('save on the host only when set here; a bad terminal type blocks Save', async () => {
+    render(<HostForm file={FILE} dialog={{ mode: 'edit-host', id: 'b' }} embedded />);
+    await userEvent.click(await screen.findByText('Advanced'));
+    const charset = await screen.findByRole<HTMLSelectElement>('combobox', { name: 'Character set' });
+    expect(within(charset).getByRole('option', { name: 'Inherit: UTF-8, from Preferences' })).toBeDefined();
+    await userEvent.selectOptions(charset, 'windows-1252');
+    const term = screen.getByLabelText<HTMLInputElement>('Terminal type');
+    expect(term.disabled).toBe(true);
+    expect(screen.getByText('xterm-256color · from Preferences')).toBeDefined();
+    await userEvent.click(screen.getByRole('switch', { name: 'Override Terminal type' }));
+    await userEvent.clear(term);
+    await userEvent.type(term, 'vt 100');
+    expect(screen.getByText(/Terminal type must be a name/)).toBeDefined();
+    await userEvent.clear(term);
+    await userEvent.type(term, 'vt100');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(sentFile().hosts.find((h) => h.id === 'b')?.ssh).toMatchObject({ charset: 'windows-1252', term: 'vt100' });
   });
 });
 

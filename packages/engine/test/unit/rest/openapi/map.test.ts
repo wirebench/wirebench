@@ -416,3 +416,33 @@ describe('path parameter values (#560)', () => {
     ]);
   });
 });
+
+describe('request names (#633)', () => {
+  /** The names of every request `document` maps to, in tree order. */
+  function namesOf(document: Record<string, unknown>): string[] {
+    let next = 0;
+    const { api } = apiFromDocument(parseOpenApiDocument(document), {
+      newId: () => {
+        next += 1;
+        return `id-${String(next)}`;
+      },
+    });
+    return [...api.requests, ...api.folders.flatMap((folder) => folder.requests)].map((request) => request.name);
+  }
+
+  it('names an operation by its summary, else its operation id, else its path without the method', () => {
+    expect(
+      namesOf({
+        openapi: '3.1.0',
+        info: { title: 'T', version: '1' },
+        paths: {
+          '/pets': {
+            get: { summary: 'List pets', tags: ['pets'] },
+            post: { operationId: 'createPet', tags: ['pets'] },
+          },
+          '/pets/{id}': { delete: { tags: ['pets'] } },
+        },
+      }),
+    ).toEqual(['List pets', 'createPet', '/pets/{id}']);
+  });
+});

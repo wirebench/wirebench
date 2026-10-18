@@ -20,7 +20,7 @@ import { ipc } from './ipc-client.js';
 import { usePreferencesStore } from './preferences.js';
 import type { Problem } from './problems.js';
 import { useProblemsStore } from './problems.js';
-import { isChosenOutcome } from '../features/request-editor/send-error.js';
+import { isProblemOutcome, sendProblemText } from '../features/request-editor/send-error.js';
 import { selectRequestEndpointUrl } from './project-endpoint.js';
 import { useWorkspaceStore } from './workspace.js';
 import { useProjectStore } from './project.js';
@@ -92,11 +92,12 @@ function offerSecretAction(requestId: string, error: IpcError): void {
 
 /**
  * Puts a failed send in Problems, beside everything else wrong with the request — unless the
- * person chose it: a cancel, or a protected environment's prompt they declined, is not a problem
- * to fix and must not turn the console's counter red.
+ * person chose it (a cancel, a declined protected-environment prompt) or the network failed it
+ * (refused, DNS, timeout, TLS, proxy): neither is something to fix in the project, and the
+ * response pane already says what happened.
  */
 function recordSendProblem(requestId: string, error: IpcError): void {
-  if (isChosenOutcome(error.code)) {
+  if (!isProblemOutcome(error.code)) {
     return;
   }
   useProblemsStore.getState().add([
@@ -105,7 +106,7 @@ function recordSendProblem(requestId: string, error: IpcError): void {
       source: 'send',
       severity: 'error',
       requestId,
-      problem: { code: error.code, message: `${error.code}: ${error.message}` },
+      problem: { code: error.code, message: sendProblemText(error) },
     },
   ]);
 }
@@ -231,9 +232,12 @@ export interface RestExchangeState {
   readonly live?: RestLiveState;
   /**
    * While sending: the last response this request got, kept so the pane can show it dimmed under
-   * the Sending bar instead of going blank. Dropped when the new answer (or error) arrives.
+   * the Sending bar instead of going blank. Dropped when the new answer (or error) arrives, except
+   * a cancel (`aborted`), which keeps it on screen under a "Cancelled" bar.
    */
   readonly previous?: RestExchangeSummary;
+  /** After a cancel: how long the send ran, for the "Cancelled after …" bar. */
+  readonly cancelledAfterMs?: number;
 }
 
 /**
@@ -1146,7 +1150,19 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
 
       if (!result.ok) {
         update((draft) => {
-          draft.restByRequest[requestId] = { status: 'error', sendId, error: result.error };
+          const sending = draft.restByRequest[requestId];
+          // A cancel keeps the response that was on screen: the person stopped a send, they did
+          // not ask to lose what they were reading.
+          const cancelled = result.error.code === 'aborted';
+          const kept = cancelled ? sending?.previous : undefined;
+          const startedAt = cancelled ? sending?.startedAt : undefined;
+          draft.restByRequest[requestId] = {
+            status: 'error',
+            sendId,
+            error: result.error,
+            ...(kept !== undefined ? { previous: kept } : {}),
+            ...(startedAt !== undefined ? { cancelledAfterMs: Math.max(0, Date.now() - Date.parse(startedAt)) } : {}),
+          };
         });
         offerSecretAction(requestId, result.error);
         recordSendProblem(requestId, result.error);

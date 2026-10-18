@@ -104,6 +104,8 @@ export const teamWorkspaceSchema = z.object({
   source: roleSourceSchema,
   /** Whether the desktop uploads request and run metadata for this workspace to the audit log. */
   recordDesktopActivity: z.boolean().default(false),
+  /** Whether every SSH session on the workspace's hosts is logged and streamed to the server. */
+  recordSessionLogs: z.boolean().default(false),
   createdAt: z.string(),
 });
 export type TeamWorkspace = z.infer<typeof teamWorkspaceSchema>;
@@ -119,6 +121,7 @@ export const teamWorkspaceUpdateRequestSchema = z.object({
   name: teamsNameSchema.optional(),
   defaultRole: defaultRoleSchema.optional(),
   recordDesktopActivity: z.boolean().optional(),
+  recordSessionLogs: z.boolean().optional(),
 });
 export type TeamWorkspaceUpdateRequest = z.infer<typeof teamWorkspaceUpdateRequestSchema>;
 export const teamWorkspaceParamsSchema = z.object({ workspaceId: teamsIdSchema });

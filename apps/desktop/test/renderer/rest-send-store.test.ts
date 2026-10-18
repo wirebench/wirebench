@@ -118,6 +118,24 @@ describe('sendRest', () => {
     expect(useExchangesStore.getState().restByRequest['rest-1']?.previous).toBeUndefined();
   });
 
+  it('keeps the last response through a cancel, with how long the send ran, and drops it on a failure', async () => {
+    const previous = { ...makeRestExchange(), sendId: 'old' };
+    for (const [code, keeps] of [
+      ['aborted', true],
+      ['connection-refused', false],
+    ] as const) {
+      useExchangesStore.setState({
+        restByRequest: { 'rest-1': { status: 'done', sendId: 'old', exchange: previous } },
+      });
+      sendRest.mockResolvedValue({ ok: false, error: { code, message: 'x' } });
+      await useExchangesStore.getState().sendRest('rest-1');
+      const after = useExchangesStore.getState().restByRequest['rest-1'];
+      expect(after).toMatchObject({ status: 'error', error: { code } });
+      expect(after?.previous?.sendId).toBe(keeps ? 'old' : undefined);
+      expect(after?.cancelledAfterMs !== undefined).toBe(keeps);
+    }
+  });
+
   it('names the request only, and keeps the reply under that request', async () => {
     await useExchangesStore.getState().sendRest('rest-1');
 
@@ -161,16 +179,30 @@ describe('sendRest', () => {
     expect(useExchangesStore.getState().log).toEqual([]);
   });
 
-  it('records a failure as an error state and a Problems entry', async () => {
-    sendRest.mockResolvedValue({ ok: false, error: { code: 'dns', message: 'not found' } });
+  it('records a failure the project can fix as an error state and a Problems entry, in plain words', async () => {
+    sendRest.mockResolvedValue({
+      ok: false,
+      error: { code: 'rest-url-incomplete', message: 'The URL still needs a value for {id}' },
+    });
 
     await useExchangesStore.getState().sendRest('rest-1');
 
     expect(useExchangesStore.getState().restByRequest['rest-1']).toMatchObject({
       status: 'error',
-      error: { code: 'dns' },
+      error: { code: 'rest-url-incomplete' },
     });
-    expect(useProblemsStore.getState().items.map((item) => item.problem.code)).toContain('dns');
+    expect(useProblemsStore.getState().items.map((item) => [item.problem.code, item.problem.message])).toEqual([
+      ['rest-url-incomplete', 'Incomplete URL: The URL still needs a value for {id}'],
+    ]);
+  });
+
+  it('records no Problem for a transport failure: refused, DNS, timeout (#635)', async () => {
+    for (const code of ['connection-refused', 'dns', 'timeout', 'tls', 'proxy', 'network']) {
+      sendRest.mockResolvedValue({ ok: false, error: { code, message: 'failed' } });
+      await useExchangesStore.getState().sendRest('rest-1');
+      expect(useExchangesStore.getState().restByRequest['rest-1']).toMatchObject({ status: 'error', error: { code } });
+    }
+    expect(useProblemsStore.getState().items).toEqual([]);
   });
 
   it('records no Problem for a cancel or a declined protected-environment prompt', async () => {
@@ -199,7 +231,7 @@ describe('sendRest', () => {
   });
 
   it('clears the last send problems before the next one', async () => {
-    sendRest.mockResolvedValueOnce({ ok: false, error: { code: 'dns', message: 'not found' } });
+    sendRest.mockResolvedValueOnce({ ok: false, error: { code: 'invalid-url', message: 'Invalid URL' } });
     await useExchangesStore.getState().sendRest('rest-1');
     expect(useProblemsStore.getState().items).toHaveLength(1);
 

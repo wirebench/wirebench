@@ -471,6 +471,21 @@ function KeychainPanel() {
                     {users.length === 0 ? 'Not used by any host' : `Used by ${users.join(', ')}`}
                   </span>
                 </span>
+                {key?.device !== undefined && (
+                  <span
+                    data-testid={`device-key-${secret.name}`}
+                    title={
+                      key.device.here
+                        ? 'Held by this device’s secure hardware; each sign-in asks for you'
+                        : `Made on ${key.device.madeOn || 'another device'}; it signs in only from there`
+                    }
+                    className={`shrink-0 rounded-full border px-1.5 text-xs ${key.device.here ? 'border-hairline text-fg-subtle' : 'border-status-warning text-status-warning'}`}
+                  >
+                    {key.device.here
+                      ? 'this device'
+                      : `other device${key.device.madeOn ? ` (${key.device.madeOn})` : ''}`}
+                  </span>
+                )}
                 {key?.locked === true && (
                   <span
                     title={`Store its passphrase as ${secret.name}_passphrase to use this key here`}

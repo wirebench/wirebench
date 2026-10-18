@@ -156,6 +156,12 @@ export interface UiStore extends UiSnapshot {
   /** Whether this run has the local terminal tab on (#410; `WIREBENCH_AREAS`). Transient — answered by main. */
   readonly localTerminalEnabled: boolean;
   readonly setLocalTerminalEnabled: (enabled: boolean) => void;
+  /** Whether this run lets Telnet hosts connect (#425; `WIREBENCH_AREAS`). Transient — answered by main. */
+  readonly telnetEnabled: boolean;
+  readonly setTelnetEnabled: (enabled: boolean) => void;
+  /** Whether this run lets serial consoles connect (#426; `WIREBENCH_AREAS`). Transient — answered by main. */
+  readonly serialEnabled: boolean;
+  readonly setSerialEnabled: (enabled: boolean) => void;
   /** The protocol kinds this run has switched on (`WIREBENCH_KINDS`). Transient — answered by main. */
   readonly enabledKinds: readonly KindId[];
   readonly setEnabledKinds: (ids: readonly KindId[]) => void;
@@ -264,6 +270,7 @@ export interface UiStore extends UiSnapshot {
   readonly closeCode: () => void;
   /** Shows or hides Host details beside the SSH Hosts tab; remembered on this machine like the rest of the layout. */
   readonly setHostDetailsOpen: (open: boolean) => void;
+  readonly setEnvironmentDetailsOpen: (open: boolean) => void;
   readonly showSidebarView: (view: SidebarView) => void;
   /** Selects a sidebar view without the collapse-on-reselect behaviour of {@link showSidebarView}. */
   readonly setSidebarView: (view: SidebarView) => void;
@@ -337,6 +344,14 @@ export const useUiStore = create<UiStore>((set, get) => {
       }
     },
     localTerminalEnabled: true,
+    telnetEnabled: true,
+    setTelnetEnabled: (enabled) => {
+      set({ telnetEnabled: enabled });
+    },
+    serialEnabled: true,
+    setSerialEnabled: (enabled) => {
+      set({ serialEnabled: enabled });
+    },
     setLocalTerminalEnabled: (enabled) => {
       set({ localTerminalEnabled: enabled });
     },
@@ -574,6 +589,10 @@ export const useUiStore = create<UiStore>((set, get) => {
     setHostDetailsOpen: (open) =>
       update((draft) => {
         draft.slideOver.hostDetailsOpen = open;
+      }),
+    setEnvironmentDetailsOpen: (open) =>
+      update((draft) => {
+        draft.slideOver.environmentDetailsOpen = open;
       }),
 
     showSidebarView: (view) =>

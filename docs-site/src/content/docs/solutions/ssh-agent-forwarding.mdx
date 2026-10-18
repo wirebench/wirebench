@@ -1,0 +1,244 @@
+---
+title: SSH agent forwarding that actually works
+description: A shell on a server needs your SSH keys for git or a second hop. Forward your local agent to that host only, see whether it was granted, and fix each way it silently is not.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+You are signed in to a build server and run `git pull`. The repository wants your SSH key, and your
+key is on your laptop, not on the server. Agent forwarding solves this: the server's shell talks to
+the SSH agent on your machine through the connection you already have, and your key never leaves
+your laptop. When it works, nobody notices. When it does not, the only symptom is a `Permission
+denied (publickey)` from a command three steps later, on a machine that is not the one at fault.
+
+This guide turns forwarding on for the hosts that need it in Wirebench, shows how to tell at a glance
+whether a terminal got it, and goes through the two ways it fails: no agent on your machine, and a
+server that refuses. It ends with what forwarding exposes, which is the reason it is off by default.
+What Wirebench does is described from its SSH client and the tests that run it against a test SSH
+server.
+
+## When to forward, and when not to
+
+Forward the agent when a program **on the remote host** needs to sign in somewhere as you:
+
+- `git clone`, `git pull` or `git push` against a private repository over SSH;
+- `ssh` or `scp` from that host to another one;
+- a deployment tool on the host that connects onwards with your identity.
+
+Do not forward it just to reach a host behind a bastion. Wirebench's `jump` setting already does
+that: it signs in to the bastion and to the target from your machine, with your keys staying here,
+and the bastion only carries the encrypted connection. Forwarding is for the shell's own use of your
+keys, not for getting to the shell. See
+[Hosts and terminals](/wirebench/docs/guides/hosts-and-terminals/#the-hosts-file) for `jump`.
+
+## Step 1: have an agent running locally
+
+Forwarding hands the remote shell your local SSH agent, so there must be one, and Wirebench must be
+able to find it:
+
+- **macOS and Linux**: Wirebench uses the agent named by `SSH_AUTH_SOCK` in its own environment.
+- **Windows**: Wirebench uses Pageant.
+
+Check that the agent holds the key you need. In a local terminal:
+
+```bash
+ssh-add -l
+```
+
+If it lists no key, add it with `ssh-add` and the key's path. A key that is not in the agent cannot be
+forwarded, however forwarding is set.
+
+Wirebench reads `SSH_AUTH_SOCK` from the environment it was started with. On macOS the system starts
+an agent for every login and sets the variable for every app, so this normally just works. On Linux it
+depends on how your desktop session starts the agent: an agent started from a shell profile is visible
+to programs started from that shell, not to an app launched from the desktop's menu. If Wirebench
+reports no agent (see [No agent on this machine](#no-agent-on-this-machine)), start Wirebench from a
+terminal where `ssh-add -l` works, or set the agent up in your desktop session and restart Wirebench.
+
+## Step 2: turn it on for the hosts that need it
+
+Agent forwarding is a setting of a host, or of a group so that every host in it inherits it. It is off
+unless you turn it on.
+
+<Steps>
+
+1. Open the host's settings from the Hosts view.
+2. Find **Forward SSH agent**. It shows the value the host has now and where it comes from:
+   `off · default`, or `on · from Ops` when a group above it turns it on.
+3. Turn on the override switch to set it on this host, then set **Forward SSH agent** on or off.
+4. **Save**.
+
+</Steps>
+
+While the switch is on, the form shows a warning under it: "Anyone with root on this host can use the
+keys in your agent while you are connected. Forward it only to hosts you trust." It is the caveat this
+guide ends with, and the form repeats it every time you look.
+
+In `hosts.yaml` the setting is `forwardAgent`, inherited like the other `ssh` settings. A nearer level
+always wins, so a group can forward to its build machines and one host in it can opt out:
+
+```yaml
+groups:
+  - id: build
+    name: Build servers
+    ssh:
+      forwardAgent: true
+    hosts:
+      - id: runner-1
+        name: runner-1
+        address: 10.0.4.2
+      - id: vault
+        name: vault
+        address: 10.0.4.9
+        ssh:
+          forwardAgent: false
+```
+
+Here **runner-1** forwards and **vault** does not. Prefer turning it on host by host, or for a small
+group of machines you control, over a top-level group that covers everything.
+
+The host details panel lists **Agent forwarding** with its value and source, and the `ssh` command it
+shows for the host gains `-A`, the flag OpenSSH uses for the same thing:
+
+```bash
+ssh -A ops@10.0.0.5
+```
+
+Importing an SSH config file brings `ForwardAgent yes` and `ForwardAgent no` across as this setting. A
+`ForwardAgent` that names a socket path or a variable is not imported.
+
+## What forwarding reaches, and what it does not
+
+The forwarded agent goes to exactly one place: the terminal's shell on the target host. Everything
+else is left out, on purpose:
+
+- **Jump hosts never get it.** Through a bastion, only the last hop is asked to forward. A bastion's
+  own `forwardAgent: true` does not make the hosts behind it forward either; the setting that counts is
+  the target's.
+- **Other channels never get it.** Files tabs, port forwards and the short command Wirebench runs to
+  detect the host's operating system open their own channels, and none of them asks for the agent.
+- **Mosh sessions never get it.** Mosh signs in over SSH and then leaves the SSH connection, so there is
+  no SSH channel left to forward on. A host set to Mosh ignores `forwardAgent`.
+- **The sign-in does not change.** A host that signs in with a password or a key keeps doing so. The
+  agent you forward is not offered to the server as a way to sign in; only the shell uses it. To sign
+  in with the agent as well, choose **Agent** as the host's **Authentication**.
+
+## How to tell whether a terminal got it
+
+Open a terminal on the host. The connection screen runs through its usual steps, and the forwarding
+request is part of **Starting shell**: Wirebench asks for forwarding on the same channel that opens the
+shell.
+
+Once the shell is open, the terminal's tab carries a small key:
+
+- An **amber key** means the agent was forwarded. Its tooltip reads "SSH agent forwarded".
+- A **faint key** means forwarding was asked for and did not happen. Its tooltip says why: "SSH agent
+  not forwarded: the server refused it", or "SSH agent not forwarded: no local agent is running".
+- **No key** means the host does not forward the agent.
+
+In a split tab, each pane's header shows its own key, and the tab shows the summary: amber when any
+pane has the agent.
+
+{/* TODO(screenshot): A terminal tab with the amber key beside its title, and a split tab whose second pane header shows the faint key with its "the server refused it" tooltip open. Save as docs-site/public/images/solutions/agent-forwarding-mark.png and cite it here. */}
+
+The key tells you what the SSH server agreed to. To check from the remote side, run this in the
+remote shell:
+
+```bash
+ssh-add -l
+```
+
+It lists the keys of your local agent when forwarding works. `The agent has no identities.` means
+forwarding works but your local agent is empty: go back to
+[Step 1](#step-1-have-an-agent-running-locally). `Could not open a connection to your authentication
+agent.` means the shell has no forwarded agent.
+
+## What each failure looks like
+
+Neither failure stops the terminal. As OpenSSH's own client does, Wirebench opens the shell without
+forwarding rather than refusing to connect, because the shell is still useful. So the failure shows up
+later, as a command on the server that cannot use your key. The faint key on the tab is the place to
+look first.
+
+### No agent on this machine
+
+The tab shows the faint key with "SSH agent not forwarded: no local agent is running". Wirebench found
+no `SSH_AUTH_SOCK` in its environment, so it did not ask the server for forwarding at all.
+
+Start an agent and add your key (Step 1), then restart Wirebench if it was started before the agent
+was. Opening a new terminal is not enough while the variable is missing from Wirebench's environment.
+
+A host whose **Authentication** is **Agent** fails differently, because it needs the agent to sign in,
+not only to forward. Its connect stops before it signs in, with:
+
+```text
+No SSH agent is running on this machine. Start one, or choose another sign-in method for the host.
+```
+
+<Aside>
+Wirebench checks that an agent is named, not that it answers. When `SSH_AUTH_SOCK` points at an agent
+that is no longer running, the server still grants forwarding, the tab shows the amber key, and
+`ssh-add -l` on the remote host fails. Start the agent again, and restart Wirebench if the socket path
+changed.
+</Aside>
+
+### The server refused
+
+The tab shows the faint key with "SSH agent not forwarded: the server refused it". Wirebench asked, and
+the SSH server said no. **Show log** on the connection screen records it in the handshake log:
+
+```text
+The server refused agent forwarding; opening the shell without it
+```
+
+The decision is the server's. The usual causes, in OpenSSH's server:
+
+- `AllowAgentForwarding no` in `sshd_config`, for everyone or in a `Match` block for your user or
+  group;
+- the `no-agent-forwarding` option, or `restrict`, at the start of your key's line in the server's
+  `~/.ssh/authorized_keys`.
+
+Both are deliberate, often on hardened or shared machines. Ask the server's owner whether forwarding
+is meant to be allowed there. If it is not, give the server what it needs another way, such as a
+deploy key that can only read the one repository.
+
+## The security caveat
+
+While you are connected with forwarding on, the remote host holds a socket that signs with your keys.
+Anyone who can open that socket can use your agent for as long as the connection lasts: anyone with
+root on the host, or with access to your account there. They cannot copy your private key, but they
+can sign in to other servers as you and push to repositories as you, without you seeing it. Hosts you
+do not run, shared machines and anything internet-facing are where this matters most.
+
+To keep the exposure small:
+
+- **Forward only where it is needed.** Turn it on per host, or for a small group, and leave the
+  default off everywhere else. A host that inherits it and should not can set `forwardAgent: false`.
+- **Reach hosts through a jump host, not forwarding.** Wirebench's `jump` keeps your keys on your
+  machine for every hop.
+- **Confirm each use.** Add the key with `ssh-add -c`, and the agent asks you to confirm every
+  signature, so a use you did not start shows up as a prompt you did not expect.
+- **Hold only the keys the remote side needs.** An agent with every key you own forwards every key
+  you own.
+- **Close the terminal when you are done.** The forwarded socket goes away with the connection.
+
+## Checklist
+
+- [ ] `ssh-add -l` on your machine lists the key the remote command needs.
+- [ ] Wirebench was started after the agent, with `SSH_AUTH_SOCK` in its environment (Pageant on
+      Windows).
+- [ ] **Forward SSH agent** is on for this host, from the host or a group; the details panel's `ssh`
+      command shows `-A`.
+- [ ] The terminal's tab shows the **amber key**.
+- [ ] A **faint key** with "no local agent is running": start the agent, restart Wirebench.
+- [ ] A **faint key** with "the server refused it": `AllowAgentForwarding` or `no-agent-forwarding` on
+      the server.
+- [ ] `ssh-add -l` in the remote shell lists your keys.
+- [ ] Forwarding is off for every host you do not trust.
+
+## Related
+
+- [Hosts and terminals](/wirebench/docs/guides/hosts-and-terminals/#agent-forwarding): the setting,
+  its inheritance and the terminal marks.
+- [Sign in to SSH with a security key](/wirebench/docs/solutions/ssh-security-key-sign-in/): a key
+  that needs a touch for every signature, held by Wirebench's keychain or by your agent.

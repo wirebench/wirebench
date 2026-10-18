@@ -124,8 +124,12 @@ export function ApiTab({ apiId }: ApiTabProps) {
             patch({ description: description === '' ? null : description });
           }}
         />
-        <div className="flex items-center gap-2 py-0.5">
-          <label htmlFor="api-base-url" className="w-44 shrink-0 truncate text-sm text-fg-muted">
+        {/* Top-aligned, the label kept to the input's height: the line under the input must not pull it down. */}
+        <div className="flex items-start gap-2 py-0.5">
+          <label
+            htmlFor="api-base-url"
+            className="flex h-row w-44 shrink-0 items-center truncate text-sm text-fg-muted"
+          >
             Base URL
           </label>
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -175,6 +179,7 @@ export function ApiTab({ apiId }: ApiTabProps) {
       >
         <AuthFields
           scope="API"
+          labels="settings"
           auth={api.auth === undefined || api.auth.type === 'inherit' ? undefined : api.auth}
           onChange={(auth: AuthConfigWire | null) => {
             patch({ auth });
@@ -185,10 +190,8 @@ export function ApiTab({ apiId }: ApiTabProps) {
         />
       </SettingsGroup>
 
-      <SettingsGroup
-        title="Scripts"
-        hint="Run around every request in this API, before any folder’s and the request’s own (#334)."
-      >
+      {/* The scripts tab says when a level's scripts run; the group repeats none of it. */}
+      <SettingsGroup title="Scripts">
         <div data-testid="api-scripts" className="flex h-[28rem] flex-col rounded-md border border-hairline">
           <ScriptsTab requestId={apiId} scripts={api.scripts} level="API" />
         </div>

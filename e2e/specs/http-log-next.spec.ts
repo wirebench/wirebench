@@ -25,7 +25,7 @@ test.describe('HTTP Log: export, reuse, search, waterfall, compare', () => {
     server = undefined;
   });
 
-  test('S1: an unparseable base URL produces a "Failed · before send" row', async () => {
+  test('S1: an unparseable base URL produces a failed row named like the response pane names it', async () => {
     launched = await launchApp();
     const page = launched.window;
     await createWorkspace(page, 'Log');
@@ -39,7 +39,7 @@ test.describe('HTTP Log: export, reuse, search, waterfall, compare', () => {
 
     const row = logRows(page).last();
     await expect(row).toHaveAttribute('data-kind', 'failure');
-    await expect(row.getByTestId('http-log-status')).toHaveText('Failed · before send');
+    await expect(row.getByTestId('http-log-status')).toHaveText(/Incomplete URL|Invalid URL/);
     await selectLogRow(row);
     await selectTab(page, 'Log detail', 'Response');
     await expect(page.getByTestId('log-detail-error')).toContainText('never went on the wire');

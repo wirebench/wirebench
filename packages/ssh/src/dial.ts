@@ -7,6 +7,14 @@ import { certificateAuth } from './cert-auth.js';
 import type { CertificateAuth } from './cert-auth.js';
 import { HopProgress, connectFailureOf } from './connect-progress.js';
 import type { ConnectFailure, ConnectProgress } from './connect-progress.js';
+import {
+  defaultDeviceKeySigner,
+  deviceSignatureAlgorithm,
+  deviceSignatureBlob,
+  isDeviceKeySecret,
+  parseDeviceKey,
+} from './device-key.js';
+import type { DeviceKeySigner, ParsedDeviceKey } from './device-key.js';
 import { SshModelError } from './errors.js';
 import type { FidoTransport } from './fido/authenticator.js';
 import { fingerprintOf, keyTypeOf } from './known-hosts.js';
@@ -46,6 +54,12 @@ export interface HopCredentials {
   readonly proxy?: ProxyCredentials;
 }
 
+/**
+ * Where a session that is not SSH connects (#425): its address and port, how long to wait, and the proxy to
+ * dial it through when it is the first network hop.
+ */
+export type TcpTarget = Pick<HopCredentials, 'address' | 'port' | 'connectTimeout' | 'proxy'>;
+
 export interface DialOptions {
   /** Outermost first, target last. */
   readonly hops: readonly HopCredentials[];
@@ -68,6 +82,12 @@ export interface DialOptions {
   readonly onProgress?: (event: ConnectProgress) => void;
   /** Where security keys are found (#420); node-hid unless a test injects a software authenticator. */
   readonly fido?: FidoTransport;
+  /**
+   * Signs with a device key (#428): the desktop's way to this machine's secure hardware. Defaults to the
+   * process's signer (`setDeviceKeySigner`); with neither (the CLI, the runner) a hop whose key is a
+   * device key fails with `ssh-device-key-unavailable`.
+   */
+  readonly deviceKeys?: DeviceKeySigner;
 }
 
 /**
@@ -90,11 +110,13 @@ export interface DialledChain {
 /**
  * ssh-host-key-new {host,keyType,fingerprint,hop} · ssh-auth-failed {host,method,hop,tried,allowed,key?} ·
  * ssh-connect-failed {host,hop,reason,phase?,timeout?,proxy?,proxyType?,proxyReason?,proxyDetail?} · ssh-cert-expired {host,validity,validAfter,validBefore,window} · ssh-cert-invalid · ssh-cert-mismatch {host} ·
- * ssh-sk-pin {host,hop,reason,retries?} · ssh-sk-no-device · ssh-sk-not-touched · ssh-sk-unavailable · ssh-sk-failed {host,hop}
+ * ssh-sk-pin {host,hop,reason,retries?} · ssh-sk-no-device · ssh-sk-not-touched · ssh-sk-unavailable · ssh-sk-failed {host,hop} ·
+ * ssh-device-key-unavailable {host,hop,key?} · ssh-device-key-missing {host,hop,key?,device} · ssh-device-key-cancelled {host,hop}
  */
 export class SshConnectError extends SshModelError {}
 
-export const hostOf = (hop: HopCredentials): string => `${hop.address}:${hop.port}`;
+export const hostOf = (hop: { readonly address: string; readonly port: number }): string =>
+  `${hop.address}:${hop.port}`;
 
 /** The words a log line and a step use for an auth method. */
 function methodLabel(type: string, hop: HopCredentials): string {
@@ -195,7 +217,7 @@ function trackAuth(config: ConnectConfig, hop: HopCredentials, progress: HopProg
  * With a proxy, the connection goes to the proxy, which is then asked for a tunnel to the hop; the proxy
  * resolves the hop's name.
  */
-function openSocket(hop: HopCredentials, index: number, progress: HopProgress): Promise<Socket> {
+function openSocket(hop: TcpTarget, index: number, progress: HopProgress): Promise<Socket> {
   const host = hostOf(hop);
   const proxy = hop.proxy;
   const proxyName = proxy === undefined ? undefined : `${proxyKind(proxy)} ${proxyTargetOf(proxy.host, proxy.port)}`;
@@ -395,7 +417,9 @@ async function securityKeyAuth(
 ): Promise<SkAuth | undefined> {
   const host = hostOf(hop);
   let signers: SkSigner[];
-  if (hop.auth.kind === 'key' && isSkPrivateKey(hop.auth.privateKey)) {
+  if (hop.auth.kind === 'key' && isDeviceKeySecret(hop.auth.privateKey)) {
+    signers = [deviceKeySigner(hop, index, options, progress)];
+  } else if (hop.auth.kind === 'key' && isSkPrivateKey(hop.auth.privateKey)) {
     const { auth } = hop;
     const refuse = (error: unknown): never => {
       const { code, message, details } = error as SshModelError;
@@ -429,12 +453,71 @@ async function securityKeyAuth(
     return undefined;
   }
   return skAuth(hop.user, signers, (signer) => {
+    if (signer.via === 'device') return; // the device signer logs its own prompt
     progress.log(
       signer.via === 'agent'
         ? `Signing with ${signer.label}: touch it if it blinks`
         : `Signing with ${signer.label}${hop.auth.kind === 'key' && hop.auth.pin ? ' and its PIN' : ''}`,
     );
   });
+}
+
+/** What the OS calls its prompt on each platform. */
+const PROMPT_WORDS: Readonly<Record<ParsedDeviceKey['platform'], string>> = {
+  'macos-secure-enclave': 'Touch ID or your password',
+  'windows-hello': 'Windows Hello',
+};
+
+/**
+ * The hop's device key (#428) as a signer that asks this machine's hardware through `options.deviceKeys`. The
+ * block is read here, before any network, so a bad or unusable key fails the connect at once.
+ */
+function deviceKeySigner(hop: HopCredentials, index: number, options: DialOptions, progress: HopProgress): SkSigner {
+  const host = hostOf(hop);
+  const auth = hop.auth as Extract<HopCredentials['auth'], { kind: 'key' }>;
+  const name = auth.label === undefined ? 'the device key' : `device key ${auth.label}`;
+  const refuse = (error: SshModelError): never => {
+    throw new SshConnectError(error.code, `${host}: ${error.message}`, {
+      ...error.details,
+      host,
+      hop: index,
+      ...(auth.label === undefined ? {} : { key: auth.label }),
+    });
+  };
+  let key: ParsedDeviceKey | undefined;
+  try {
+    key = parseDeviceKey(auth.privateKey);
+  } catch (error) {
+    return refuse(error as SshModelError);
+  }
+  if (key === undefined) return refuse(new SshModelError('ssh-key-invalid', 'This is not a device key'));
+  if (auth.certificate !== undefined) {
+    refuse(new SshModelError('ssh-cert-invalid', 'A certificate for a device key cannot be used yet'));
+  }
+  const signer = options.deviceKeys ?? defaultDeviceKeySigner();
+  if (signer === undefined) {
+    refuse(
+      new SshModelError(
+        'ssh-device-key-unavailable',
+        `${name[0]?.toUpperCase() ?? ''}${name.slice(1)} is held by a device; only the Wirebench app can use it`,
+      ),
+    );
+  }
+  const device = key;
+  const words = PROMPT_WORDS[device.platform];
+  return {
+    keyType: device.keyType,
+    algorithm: deviceSignatureAlgorithm(device),
+    publicBlob: device.publicBlob,
+    label: name,
+    via: 'device',
+    sign: async (data) => {
+      progress.start('auth', `confirm with ${words}`);
+      progress.log(`Confirm with ${words} to sign in with ${name}`);
+      const raw = await (signer as DeviceKeySigner).sign(device, data, `sign in to ${hop.user}@${hop.address}`);
+      return deviceSignatureBlob(device, raw);
+    },
+  };
 }
 
 function handshake(
@@ -459,6 +542,7 @@ function handshake(
       host: hop.address,
       port: hop.port,
       username: hop.user,
+      // A device key's prompt waits for the person as a security key's touch does.
       readyTimeout: (hop.connectTimeout + (sk ? SK_TOUCH_SECONDS : 0)) * 1000,
       keepaliveInterval: hop.keepAlive > 0 ? hop.keepAlive * 1000 : 0,
       ...(hop.auth.kind === 'password' ? { password: hop.auth.password } : {}),
@@ -620,7 +704,7 @@ function handshake(
 function forwardOut(
   client: Client,
   via: HopCredentials,
-  next: HopCredentials,
+  next: TcpTarget,
   index: number,
   progress: HopProgress,
 ): Promise<Duplex> {
@@ -653,6 +737,45 @@ function forwardOut(
 
 /** Connects every hop in turn, each through a forwarded channel on the one before it. */
 export async function dialChain(options: DialOptions): Promise<DialledChain> {
+  return dialHops(options, options.hops.length);
+}
+
+/**
+ * A TCP connection to `target` for a session that is not SSH (#425): straight, through its proxy, or, with
+ * `hops`, a channel from the last SSH jump host. The connection screen shows the target as one hop more.
+ * `chain` is the jump chain, when there is one: ending the session ends it.
+ *
+ * @throws SshConnectError `ssh-connect-failed` (with `reason`), and every refusal of the jump chain's dial
+ */
+export async function dialTcp(
+  options: Omit<DialOptions, 'forwardAgent'> & { readonly target: TcpTarget },
+): Promise<{ readonly socket: Duplex; readonly chain?: DialledChain }> {
+  const total = options.hops.length + 1;
+  const index = options.hops.length;
+  const progress = new HopProgress(options.onProgress, index, total, hostOf(options.target));
+  const counted = (error: unknown): unknown =>
+    error instanceof SshModelError
+      ? new SshConnectError(error.code, error.message, { ...error.details, hops: total })
+      : error;
+  if (options.hops.length === 0) {
+    try {
+      return { socket: await openSocket(options.target, index, progress) };
+    } catch (error) {
+      throw counted(error);
+    }
+  }
+  const chain = await dialHops(options, total);
+  try {
+    const via = options.hops[index - 1] as HopCredentials;
+    return { socket: await forwardOut(chain.client, via, options.target, index, progress), chain };
+  } catch (error) {
+    chain.endAll();
+    throw counted(error);
+  }
+}
+
+/** {@link dialChain}, telling the connection screen there are `shown` hops in all. */
+async function dialHops(options: DialOptions, shown: number): Promise<DialledChain> {
   const clients: Client[] = [];
   const lostListeners = new Set<() => void>();
   // `endAll` from this side is not a lost connection: the end and close events it causes are ignored.
@@ -672,8 +795,7 @@ export async function dialChain(options: DialOptions): Promise<DialledChain> {
   };
   try {
     let sock: Duplex | undefined;
-    const count = options.hops.length;
-    const progress = options.hops.map((hop, index) => new HopProgress(options.onProgress, index, count, hostOf(hop)));
+    const progress = options.hops.map((hop, index) => new HopProgress(options.onProgress, index, shown, hostOf(hop)));
     for (const [index, hop] of options.hops.entries()) {
       const client = await connectHop(hop, index, options, sock, onLost, progress[index] as HopProgress);
       clients.push(client);
@@ -699,7 +821,7 @@ export async function dialChain(options: DialOptions): Promise<DialledChain> {
     endAll();
     // Which hop failed means more with how many there are: the screen tells a jump host from the target.
     if (error instanceof SshModelError)
-      throw new SshConnectError(error.code, error.message, { ...error.details, hops: options.hops.length });
+      throw new SshConnectError(error.code, error.message, { ...error.details, hops: shown });
     throw error;
   }
 }

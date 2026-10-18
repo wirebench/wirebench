@@ -207,8 +207,9 @@ export function apiFromPostmanCollection(
         const slug = uniqueSlug(item.name, requestSlugs);
         requestSlugs.add(slug);
 
-        const mappedRequest = mapRequest(item.name, slug, requests.length, item, newId, baseUrl, warnings);
-        const scripts = scriptsAt(item.event, [...trail, item.name].join(' / '));
+        const path = [...trail, item.name].join(' / ');
+        const mappedRequest = mapRequest(item.name, slug, requests.length, item, newId, baseUrl, warnings, path);
+        const scripts = scriptsAt(item.event, path);
         if (scripts !== undefined) scripted.requests += 1;
         const examples = mapExamples(item.response ?? [], item.responsesDropped ?? 0, item.name, newId, warnings);
         const behaviour = item.protocolProfileBehavior;
@@ -301,6 +302,7 @@ function mapRequest(
   newId: IdGenerator,
   effectiveBaseUrl: string,
   warnings?: string[],
+  label: string = name,
 ): RestRequestDef {
   const req: PostmanRequest =
     typeof item.request === 'string' ? { method: 'GET', url: item.request } : (item.request ?? {});
@@ -400,6 +402,8 @@ function mapRequest(
   const body = mapBody(
     req.body,
     rawHeaders.filter((h) => h.disabled !== true),
+    label,
+    warnings,
   );
 
   // Auth: request-level auth, or item-level auth, or inherit
@@ -488,7 +492,12 @@ function mapExamples(
   return out;
 }
 
-function mapBody(body: PostmanBody | undefined, headers: readonly PostmanHeader[]): RestBody {
+function mapBody(
+  body: PostmanBody | undefined,
+  headers: readonly PostmanHeader[],
+  label: string,
+  warnings?: string[],
+): RestBody {
   if (body === undefined) {
     return NO_BODY;
   }
@@ -516,7 +525,14 @@ function mapBody(body: PostmanBody | undefined, headers: readonly PostmanHeader[
   if (body.mode === 'formdata') {
     const parts: MultipartFormPart[] = (body.formdata ?? []).flatMap((p): MultipartFormPart[] => {
       if (p.type === 'file') {
-        const paths = typeof p.src === 'string' ? [p.src] : p.src !== undefined && p.src.length > 0 ? p.src : [''];
+        const paths = (typeof p.src === 'string' ? [p.src] : (p.src ?? [])).filter((path) => path !== '');
+        if (paths.length === 0) {
+          // A file part needs a file, and a project refuses one with no path: the row stays, switched off.
+          warnings?.push(
+            `${label}: the file part "${p.key}" has no file, so it was kept switched off as a text part; pick its file on the Body tab.`,
+          );
+          return [{ kind: 'text', name: p.key, value: '', enabled: false }];
+        }
         return paths.map((path) => ({
           kind: 'file',
           name: p.key,
@@ -544,10 +560,16 @@ function mapBody(body: PostmanBody | undefined, headers: readonly PostmanHeader[
   }
 
   if (body.mode === 'file') {
+    const src = body.file?.src ?? '';
+    if (src === '') {
+      // A binary body needs a file, and a project refuses one with no path: the request gets no body.
+      warnings?.push(`${label}: its body is a file with no file, so it has no body; pick the file on the Body tab.`);
+      return NO_BODY;
+    }
     const ctHeader = headers.find((h) => h.key.toLowerCase() === 'content-type')?.value;
     return {
       kind: 'binary',
-      source: { kind: 'path', path: body.file?.src ?? '' },
+      source: { kind: 'path', path: src },
       contentType: ctHeader ?? 'application/octet-stream',
     };
   }

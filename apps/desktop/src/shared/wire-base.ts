@@ -2053,7 +2053,7 @@ export const preferencesWireSchema = z.object({
   }),
   updates: z.object({ checkOnLaunch: z.boolean() }),
   accounts: z.object({ showInStatusBar: z.boolean() }),
-  secrets: z.object({ sourceCacheSeconds: z.number() }),
+  secrets: z.object({ sourceCacheSeconds: z.number(), appLock: z.boolean(), appLockIdleMinutes: z.number() }),
   mocks: z.object({ listenOnAllInterfaces: z.boolean() }),
   terminal: z.object({
     confirmMultilinePaste: z.boolean(),
@@ -2075,6 +2075,8 @@ export const preferencesWireSchema = z.object({
     user: z.string().optional(),
     keepAlive: z.number(),
     connectTimeout: z.number(),
+    charset: z.string(),
+    term: z.string(),
   }),
   shortcuts: z.record(z.string(), z.string()),
 });
@@ -2990,6 +2992,8 @@ export const teamWorkspaceWireSchema = z.object({
   createdAt: z.string(),
   /** Restates the engine's `TeamWorkspace.recordDesktopActivity` (desktop audit events §2.1). */
   recordDesktopActivity: z.boolean(),
+  /** Restates the engine's `TeamWorkspace.recordSessionLogs` (#430); absent from an older server. */
+  recordSessionLogs: z.boolean().optional(),
 });
 export type TeamWorkspaceWire = z.infer<typeof teamWorkspaceWireSchema>;
 export const accessEntryWireSchema = z.object({
@@ -3040,6 +3044,7 @@ export const teamUpdateWorkspaceRequestWireSchema = z.object({
   name: z.string().optional(),
   defaultRole: defaultRoleWireSchema.optional(),
   recordDesktopActivity: z.boolean().optional(),
+  recordSessionLogs: z.boolean().optional(),
 });
 export const teamSetAccessRequestWireSchema = z.object({
   url: z.string(),
@@ -3058,6 +3063,8 @@ export const teamListResponseWireSchema = z.object({
   serverAdmin: z.boolean(),
   /** The server's `GET /meta` lists `desktop-activity`: it stores the workspace recording setting. */
   desktopActivity: z.boolean(),
+  /** `GET /meta` lists `session-logs`: the server stores team SSH session logs (#430). */
+  sessionLogs: z.boolean().optional(),
 });
 export type TeamListResponse = z.infer<typeof teamListResponseWireSchema>;
 export const teamResponseWireSchema = z.object({ team: teamWireSchema });

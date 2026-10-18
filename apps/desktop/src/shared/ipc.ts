@@ -27,6 +27,10 @@ import {
   sshForgetHostKeyRequestSchema,
   sshHostOsResponseSchema,
   sshSetHostOsRequestSchema,
+  sshSerialDeviceRequestSchema,
+  sshSerialDeviceResponseSchema,
+  sshSerialPortsResponseSchema,
+  sshSetSerialDeviceRequestSchema,
   sshWriteManyRequestSchema,
   sshWriteManyResponseSchema,
   sshWriteRequestSchema,
@@ -59,7 +63,27 @@ import {
   sessionLogSearchResponseSchema,
   sessionLogSetSwitchRequestSchema,
   sessionLogSwitchesResponseSchema,
+  teamSessionLogListRequestSchema,
+  teamSessionLogListResponseSchema,
+  teamSessionLogReadRequestSchema,
+  teamSessionLogReadResponseSchema,
 } from './session-log-wire.js';
+import {
+  terminalShareAvailableResponseSchema,
+  terminalShareInputRequestSchema,
+  terminalShareJoinRequestSchema,
+  terminalShareJoinResponseSchema,
+  terminalShareLinkRequestSchema,
+  terminalSharePreviewResponseSchema,
+  terminalShareSessionRequestSchema,
+  terminalShareStartRequestSchema,
+  terminalShareStartResponseSchema,
+  terminalShareStateEventSchema,
+  terminalShareUserRequestSchema,
+  terminalShareViewRequestSchema,
+  terminalShareViewerDataEventSchema,
+  terminalShareViewerStateEventSchema,
+} from './terminal-share-wire.js';
 import {
   sshListSnippetsResponseSchema,
   sshPreviewSnippetRequestSchema,
@@ -106,6 +130,7 @@ import {
   sshInstallKeyResponseSchema,
   sshKeyWireSchema,
   sshKeysResponseSchema,
+  sshDeviceKeyStatusSchema,
 } from './ssh-keys-wire.js';
 import {
   accountAcceptInvitationRequestSchema,
@@ -419,6 +444,10 @@ import {
 } from './runner-wire.js';
 import {
   scheduleAlertTestResponseWireSchema,
+  scheduleChoicesRequestWireSchema,
+  scheduleChoicesResponseWireSchema,
+  scheduleTargetForRequestWireSchema,
+  scheduleTargetForResponseWireSchema,
   scheduleCreateRequestWireSchema,
   scheduleRefRequestWireSchema,
   scheduleResponseWireSchema,
@@ -442,6 +471,14 @@ import { restChannels, restEvents } from './kinds/rest/channels.js';
 import { grpcChannels, grpcEvents } from './kinds/grpc/channels.js';
 import { wsChannels, wsEvents } from './kinds/ws/channels.js';
 import { mcpChannels, mcpEvents } from './kinds/mcp/channels.js';
+
+/** Whether the app lock can ask on this OS, whether it is on, and whether the next SSH secret read will ask. */
+const appLockStatusSchema = z.object({
+  supported: z.boolean(),
+  reason: z.string().optional(),
+  active: z.boolean(),
+  locked: z.boolean(),
+});
 
 export { defineChannel, defineEvent } from './ipc-contract.js';
 export type { ChannelRequest, ChannelResponse, EventPayload, IpcChannel, IpcEvent } from './ipc-contract.js';
@@ -485,11 +522,17 @@ export const channels = {
      */
     checkForUpdates: defineChannel('app.checkForUpdates', z.undefined(), appUpdateStatusSchema),
     /** The sidebar areas this run has switched on (`WIREBENCH_AREAS`); the renderer hides the rest. */
-    // `localTerminal`: whether the local terminal tab (#410) is on; it rides with the SSH area.
+    // `localTerminal`: whether the local terminal tab (#410) is on; it rides with the SSH area. `telnet` and
+    // `serial`: whether Telnet hosts (#425) and serial consoles (#426) connect; main always sends both.
     areas: defineChannel(
       'app.areas',
       z.undefined(),
-      z.object({ enabled: z.array(z.string()), localTerminal: z.boolean() }),
+      z.object({
+        enabled: z.array(z.string()),
+        localTerminal: z.boolean(),
+        telnet: z.boolean().optional(),
+        serial: z.boolean().optional(),
+      }),
     ),
     /** The protocol kinds this run has switched on (`WIREBENCH_KINDS`); the renderer shows the rest as placeholders. */
     kinds: defineChannel('app.kinds', z.undefined(), z.object({ enabled: z.array(z.string()) })),
@@ -664,6 +707,14 @@ export const channels = {
     runs: defineChannel('schedules.runs', scheduleRunsRequestWireSchema, scheduleRunPageResponseWireSchema),
     run: defineChannel('schedules.run', scheduleRunRequestWireSchema, scheduleRunDetailResponseWireSchema),
     cancelRun: defineChannel('schedules.cancelRun', scheduleRunRequestWireSchema, schedulesDoneResponseWireSchema),
+    /** The dialog's pickers: one project's APIs, folders, requests, sequences and environments. */
+    choices: defineChannel('schedules.choices', scheduleChoicesRequestWireSchema, scheduleChoicesResponseWireSchema),
+    /** **Schedule…** on an explorer row: what that row runs, or `null` for nothing a run covers. */
+    targetFor: defineChannel(
+      'schedules.targetFor',
+      scheduleTargetForRequestWireSchema,
+      scheduleTargetForResponseWireSchema,
+    ),
     /** Follow the workspace's `schedule-run` messages while the Schedules view shows. */
     watch: defineChannel('schedules.watch', schedulesWorkspaceRequestWireSchema, schedulesDoneResponseWireSchema),
     unwatch: defineChannel('schedules.unwatch', schedulesWorkspaceRequestWireSchema, schedulesDoneResponseWireSchema),
@@ -904,6 +955,11 @@ export const channels = {
     /** The managed-preferences policy; read once at startup, so the renderer asks once. */
     policy: defineChannel('preferences.policy', z.undefined(), preferencesPolicyResponseSchema),
   },
+  // The app lock (#428): main turns it on only after one prompt the person passes.
+  appLock: {
+    status: defineChannel('appLock.status', z.undefined(), appLockStatusSchema),
+    set: defineChannel('appLock.set', z.strictObject({ enabled: z.boolean() }), preferencesResponseSchema),
+  },
   // The CA bundle preference has channels of its own because only main may set it: the path is
   // a file main reads on every send, so it comes from a native picker main ran, never from a
   // string the renderer sends (`preferences.update` refuses one).
@@ -1123,6 +1179,10 @@ export const channels = {
     knownHosts: defineChannel('ssh.knownHosts', z.undefined(), sshKnownHostsResponseSchema),
     forgetHostKey: defineChannel('ssh.forgetHostKey', sshForgetHostKeyRequestSchema, z.object({})),
     hostOs: defineChannel('ssh.hostOs', z.undefined(), sshHostOsResponseSchema),
+    // Serial consoles (#426): this machine's ports, and the one it opens for each serial host.
+    serialPorts: defineChannel('ssh.serialPorts', z.undefined(), sshSerialPortsResponseSchema),
+    serialDevice: defineChannel('ssh.serialDevice', sshSerialDeviceRequestSchema, sshSerialDeviceResponseSchema),
+    setSerialDevice: defineChannel('ssh.setSerialDevice', sshSetSerialDeviceRequestSchema, z.object({})),
     setHostOs: defineChannel('ssh.setHostOs', sshSetHostOsRequestSchema, z.object({})),
     importPreview: defineChannel('ssh.importPreview', sshImportPreviewRequestSchema, sshImportPreviewResponseSchema),
     importApply: defineChannel('ssh.importApply', sshImportApplyRequestSchema, sshImportApplyResponseSchema),
@@ -1140,6 +1200,8 @@ export const channels = {
     // Keychain keys (#409): only the public half crosses; the private key and passphrase stay in main.
     generateKey: defineChannel('ssh.generateKey', sshGenerateKeyRequestSchema, sshKeyWireSchema),
     keys: defineChannel('ssh.keys', z.undefined(), sshKeysResponseSchema),
+    // Device keys (#428): whether this machine's hardware can make one; a handle never crosses.
+    deviceKeyStatus: defineChannel('ssh.deviceKeyStatus', z.undefined(), sshDeviceKeyStatusSchema),
     installKey: defineChannel('ssh.installKey', sshInstallKeyRequestSchema, sshInstallKeyResponseSchema),
     // A key's OpenSSH user certificate (#421), stored as `<secret>_cert`; it is public, so it may cross.
     attachCertificate: defineChannel('ssh.attachCertificate', sshAttachCertificateRequestSchema, sshKeyWireSchema),
@@ -1205,6 +1267,25 @@ export const channels = {
     search: defineChannel('sessionLog.search', sessionLogSearchRequestSchema, sessionLogSearchResponseSchema),
     delete: defineChannel('sessionLog.delete', sessionLogRequestSchema, z.object({})),
     reveal: defineChannel('sessionLog.reveal', sessionLogRequestSchema, z.object({})),
+    // Team session logs (#430): the open workspace's server copies, every member's; each read is audited there.
+    teamList: defineChannel('sessionLog.teamList', teamSessionLogListRequestSchema, teamSessionLogListResponseSchema),
+    teamRead: defineChannel('sessionLog.teamRead', teamSessionLogReadRequestSchema, teamSessionLogReadResponseSchema),
+  },
+  // Shared terminals (#429): the owner's side acts on its own SSH session, the viewer's on a view id.
+  terminalShare: {
+    available: defineChannel('terminalShare.available', z.object({}), terminalShareAvailableResponseSchema),
+    start: defineChannel('terminalShare.start', terminalShareStartRequestSchema, terminalShareStartResponseSchema),
+    stop: defineChannel('terminalShare.stop', terminalShareSessionRequestSchema, z.object({})),
+    grant: defineChannel('terminalShare.grant', terminalShareUserRequestSchema, z.object({})),
+    decline: defineChannel('terminalShare.decline', terminalShareUserRequestSchema, z.object({})),
+    remove: defineChannel('terminalShare.remove', terminalShareUserRequestSchema, z.object({})),
+    takeBack: defineChannel('terminalShare.takeBack', terminalShareSessionRequestSchema, z.object({})),
+    preview: defineChannel('terminalShare.preview', terminalShareLinkRequestSchema, terminalSharePreviewResponseSchema),
+    join: defineChannel('terminalShare.join', terminalShareJoinRequestSchema, terminalShareJoinResponseSchema),
+    leave: defineChannel('terminalShare.leave', terminalShareViewRequestSchema, z.object({})),
+    input: defineChannel('terminalShare.input', terminalShareInputRequestSchema, z.object({})),
+    requestControl: defineChannel('terminalShare.requestControl', terminalShareViewRequestSchema, z.object({})),
+    release: defineChannel('terminalShare.release', terminalShareViewRequestSchema, z.object({})),
   },
   xpath: soapChannels.xpath,
   validate: soapChannels.validate,
@@ -1245,6 +1326,14 @@ export const events = {
     connectProgress: defineEvent('ssh.connectProgress', sshConnectProgressEventSchema),
     /** The machine woke from sleep: a terminal waiting to reconnect tries at once. To every window. */
     resumed: defineEvent('ssh.resumed', z.object({})),
+  },
+  terminalShare: {
+    /** A share this window owns changed (presence, control) or ended. */
+    state: defineEvent('terminalShare.state', terminalShareStateEventSchema),
+    /** Output of a shared terminal this window views, base64. */
+    viewerData: defineEvent('terminalShare.viewerData', terminalShareViewerDataEventSchema),
+    /** A view's presence, control or end. */
+    viewerState: defineEvent('terminalShare.viewerState', terminalShareViewerStateEventSchema),
   },
   localTerminal: {
     /** The local shell's output, base64, to the window that opened it only. */

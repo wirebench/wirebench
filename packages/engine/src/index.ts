@@ -368,6 +368,12 @@ export { isSoapFault, parseFault } from './soap/fault.js';
 export type { FaultReason, SoapFault } from './soap/fault.js';
 export { recreateRequest } from './soap/recreate.js';
 export type { RecreateOptions, RecreateResult } from './soap/recreate.js';
+export {
+  defaultUserAgent,
+  isDefaultUserAgent,
+  REST_ACCEPT_ENCODING,
+  SOAP_ACCEPT_ENCODING,
+} from './http/default-headers.js';
 export { quoteForShell, toCurl } from './http/curl.js';
 export type { CurlBody, CurlCommand, CurlHeader, CurlPart, ToCurlOptions } from './http/curl.js';
 export {
@@ -1183,6 +1189,7 @@ export {
   preferencesPatchProblems,
   preferencesSchema,
   resetPreferences,
+  withAppUserAgent,
 } from './project/preferences.js';
 export type {
   EditorPreferences,
@@ -2276,6 +2283,63 @@ export type {
   ScheduleTarget,
   ScheduleUpdate,
 } from './server-api/schedules.js';
+export {
+  SESSION_LOG_CLIENT_ID_PATTERN,
+  SESSION_LOG_LIMITS,
+  SESSION_LOG_REASONS,
+  sessionLogChunkRequestSchema,
+  sessionLogChunkResponseSchema,
+  sessionLogEndRequestSchema,
+  sessionLogOpenRequestSchema,
+  sessionLogOpenResponseSchema,
+  sessionLogPageSchema,
+  sessionLogParamsSchema,
+  sessionLogSchema,
+  sessionLogTextQuerySchema,
+  sessionLogTextResponseSchema,
+  sessionLogsQuerySchema,
+} from './server-api/session-logs.js';
+export type {
+  SessionLog,
+  SessionLogChunkRequest,
+  SessionLogChunkResponse,
+  SessionLogEndRequest,
+  SessionLogOpenRequest,
+  SessionLogOpenResponse,
+  SessionLogPage,
+  SessionLogReason,
+  SessionLogTextQuery,
+  SessionLogTextResponse,
+  SessionLogsQuery,
+} from './server-api/session-logs.js';
+export {
+  TERMINAL_SHARE_CAPABILITY,
+  TERMINAL_SHARE_CLOSE,
+  TERMINAL_SHARE_END_REASONS,
+  TERMINAL_SHARE_ID_PATTERN,
+  TERMINAL_SHARE_LIMITS,
+  TERMINAL_SHARE_PATH,
+  formatTerminalShareInvite,
+  parseTerminalShareInvite,
+  terminalShareClientMessageSchema,
+  terminalShareCreateRequestSchema,
+  terminalShareCreateResponseSchema,
+  terminalShareIdSchema,
+  terminalShareInfoSchema,
+  terminalShareParamsSchema,
+  terminalSharePresenceEntrySchema,
+  terminalShareServerMessageSchema,
+} from './server-api/terminal-share.js';
+export type {
+  TerminalShareClientMessage,
+  TerminalShareCreateRequest,
+  TerminalShareCreateResponse,
+  TerminalShareEndReason,
+  TerminalShareInfo,
+  TerminalShareInvite,
+  TerminalSharePresenceEntry,
+  TerminalShareServerMessage,
+} from './server-api/terminal-share.js';
 export {
   COMMUNITY_SEATS,
   EDITIONS,

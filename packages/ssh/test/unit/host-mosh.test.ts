@@ -51,7 +51,7 @@ describe('protocol and mosh settings', () => {
 
   it('refuse an unknown protocol, a bad port range and a blank server', () => {
     const host = (ssh: string): string => `version: 1\nhosts:\n  - { id: a, name: a, address: a, ssh: ${ssh} }\n`;
-    expect(() => parseHostsFile(host('{ protocol: telnet }'))).toThrow(/protocol/);
+    expect(() => parseHostsFile(host('{ protocol: rlogin }'))).toThrow(/protocol/);
     expect(() => parseHostsFile(host("{ mosh: { ports: '61000:60000' } }"))).toThrow(/ports/);
     expect(() => parseHostsFile(host("{ mosh: { ports: '70000' } }"))).toThrow(/ports/);
     expect(() => parseHostsFile(host("{ mosh: { server: '  ' } }"))).toThrow(/server/);

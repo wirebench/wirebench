@@ -6,12 +6,14 @@ import {
   SshModelError,
   envSecretName,
   hostsFileVersion,
+  isCharset,
   listResolvedHosts,
   parseHostsFile,
   secretNameOf,
   serializeHostsFile,
 } from '@wirebench/ssh';
 import type {
+  Charset,
   ForwardEntry,
   ForwardGroupEntry,
   GroupEntry,
@@ -44,17 +46,24 @@ import type {
 
 export const HOSTS_FILE = 'hosts.yaml';
 
-/** Preferences → SSH as the resolver's last level (#571); an empty default user is none. */
+/**
+ * Preferences → SSH as the resolver's last level (#571); an empty default user is none, and a character set
+ * this version does not know (preferences written by a newer one) leaves the built-in UTF-8.
+ */
 export function sshDefaultsOf(ssh: {
   readonly user?: string | undefined;
   readonly keepAlive: number;
   readonly connectTimeout: number;
+  readonly charset?: string | undefined;
+  readonly term?: string | undefined;
 }): SshDefaults {
   const user = ssh.user?.trim();
   return {
     ...(user === undefined || user === '' ? {} : { user }),
     keepAlive: ssh.keepAlive,
     connectTimeout: ssh.connectTimeout,
+    ...(ssh.charset !== undefined && isCharset(ssh.charset) ? { charset: ssh.charset } : {}),
+    ...(ssh.term === undefined || ssh.term === '' ? {} : { term: ssh.term }),
   };
 }
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -237,10 +246,12 @@ function settingsToWire({ auth, proxy, ...rest }: SshSettings): SshSettingsWire 
     ...(proxy === undefined ? {} : { proxy: proxy === false ? false : proxyToWire(proxy) }),
   };
 }
-function settingsFromWire({ auth, proxy, ...rest }: SshSettingsWire): SshSettings {
+function settingsFromWire({ auth, proxy, charset, ...rest }: SshSettingsWire): SshSettings {
   const model = authFromWire(auth);
   return {
     ...rest,
+    // Checked against the list when the file is parsed back before it is written.
+    ...(charset === undefined ? {} : { charset: charset as Charset }),
     ...(model ? { auth: model } : {}),
     ...(proxy === undefined ? {} : { proxy: proxyFromWire(proxy) }),
   };

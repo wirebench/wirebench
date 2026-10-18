@@ -108,6 +108,26 @@ describe('WorkspacesTab (teams-access §3.5)', () => {
     expect(screen.queryByTestId('workspace-recorded-W1')).toBeNull();
   });
 
+  it('an admin switches SSH session recording on when the server stores session logs (#430)', async () => {
+    const updateWorkspace = ok({ workspace: workspace({ myRole: 'admin', recordSessionLogs: true }) });
+    const list = ok({ teams: [team], serverAdmin: false, desktopActivity: true, sessionLogs: true });
+    await openWith([workspace({ myRole: 'admin', source: 'grant' })], { list, updateWorkspace });
+    fireEvent.click(screen.getByLabelText('Record SSH sessions'));
+    await vi.waitFor(() =>
+      expect(updateWorkspace).toHaveBeenCalledWith({ url: URL_, workspaceId: 'W1', recordSessionLogs: true }),
+    );
+    cleanup();
+    useTeamStore.getState().reset();
+    await openWith([workspace({ recordSessionLogs: true })], { list });
+    expect(screen.queryByLabelText('Record SSH sessions')).toBeNull();
+    expect(screen.getByTestId('workspace-recorded-ssh-W1').textContent).toBe('SSH sessions are recorded');
+    cleanup();
+    useTeamStore.getState().reset();
+    // A server without the capability shows neither the switch nor the note.
+    await openWith([workspace({ myRole: 'admin', source: 'grant', recordSessionLogs: true })]);
+    expect(screen.queryByLabelText('Record SSH sessions')).toBeNull();
+  });
+
   it('without the desktop-activity capability the admin sees no switch, a member no note, and nothing is sent', async () => {
     const updateWorkspace = ok({ workspace: workspace({ myRole: 'admin' }) });
     const list = ok({ teams: [team], serverAdmin: false, desktopActivity: false });

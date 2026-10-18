@@ -28,6 +28,7 @@ export type TabIdField =
   | 'mockId'
   | 'historyId'
   | 'hookId'
+  | 'scheduleId'
   | 'runnerTargetId';
 
 /** What a tab's title is read from. */
@@ -36,6 +37,8 @@ export interface TabTitleContext {
   readonly workspaceEnvironments: readonly WorkspaceEnvironmentWire[];
   /** Catch URLs' names by hook id. */
   readonly hookNames: Readonly<Record<string, string>>;
+  /** Schedules' names by schedule id. */
+  readonly scheduleNames: Readonly<Record<string, string>>;
 }
 
 export interface TabContribution {

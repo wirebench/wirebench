@@ -61,7 +61,7 @@ function sameOrigin(header: string, publicUrl: string): boolean {
  * none, but the rule costs nothing. The desktop sends no `Origin` (assumption 4). `publicUrl` is
  * already an origin (`config.ts`).
  */
-function originCheck(publicUrl: string): onRequestHookHandler {
+export function originCheck(publicUrl: string): onRequestHookHandler {
   return (request, _reply, done) => {
     const origin = request.headers.origin;
     done(origin === undefined || sameOrigin(origin, publicUrl) ? undefined : liveOriginRefused());

@@ -2,6 +2,7 @@ import ssh2 from 'ssh2';
 import { SshModelError } from './errors.js';
 import { skEnroll } from './fido/authenticator.js';
 import type { FidoTransport } from './fido/authenticator.js';
+import { parseDeviceKey } from './device-key.js';
 import { fingerprintOf } from './known-hosts.js';
 import { SK_ECDSA, SK_ED25519, encodeSkPrivateKey, isSkPrivateKey, parseSkPrivateKey, skPublicBlob } from './sk-key.js';
 
@@ -126,14 +127,23 @@ export function looksLikePrivateKey(text: string): boolean {
   return /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(text);
 }
 
+/** True when `text` is a key secret: a private key, or a device key block (#428) that names one. */
+export function looksLikeKeySecret(text: string): boolean {
+  return looksLikePrivateKey(text) || text.includes('-----BEGIN WIREBENCH DEVICE KEY-----');
+}
+
 /**
- * The public half of a private key, as {@link SshKeyInfo}. The private key and passphrase stay with the
+ * The public half of a private key or a device key block, as {@link SshKeyInfo}. The private key and passphrase stay with the
  * caller: no message here repeats either.
  *
  * @throws SshModelError `ssh-key-locked` when the key is encrypted and `passphrase` is missing or wrong |
  *   `ssh-key-invalid` when `text` is not a private key ssh2 can read
  */
 export function describePrivateKey(text: string, passphrase?: string): SshKeyInfo {
+  const device = parseDeviceKey(text);
+  if (device !== undefined) {
+    return { keyType: device.keyType, fingerprint: fingerprintOf(device.publicBlob), publicKey: device.publicKey };
+  }
   if (!looksLikePrivateKey(text)) throw new SshModelError('ssh-key-invalid', 'This secret is not a private key');
   if (isSkPrivateKey(text)) {
     const sk = parseSkPrivateKey(text, passphrase === '' ? undefined : passphrase);
