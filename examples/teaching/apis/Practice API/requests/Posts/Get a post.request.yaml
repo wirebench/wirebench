@@ -1,0 +1,22 @@
+assertions:
+  - equals: 200
+    type: status
+  - equals: 1
+    expression: $.id
+    language: jsonpath
+    type: match
+auth:
+  type: inherit
+body:
+  kind: none
+description: Lesson 1. One post by its id.
+id: TEACH00REQ04
+kind: rest
+method: GET
+name: Get a post
+order: 1
+pathParams:
+  - description: The post to fetch
+    name: postId
+    value: "1"
+url: /posts/{postId}

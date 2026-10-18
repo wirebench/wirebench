@@ -1,0 +1,22 @@
+assertions:
+  - equals: 200
+    type: status
+  - exists: true
+    expression: $.address.city
+    language: jsonpath
+    type: match
+auth:
+  type: inherit
+body:
+  kind: none
+description: Lesson 1. A path parameter picks one user. Its value comes from the environment's userId.
+id: TEACH00REQ02
+kind: rest
+method: GET
+name: Get a user
+order: 1
+pathParams:
+  - description: The user to fetch
+    name: userId
+    value: ${userId}
+url: /users/{userId}

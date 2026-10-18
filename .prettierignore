@@ -16,3 +16,5 @@ THIRD-PARTY-LICENSES.md
 docs-site/.astro
 site/.astro
 docs-site/src/content/docs/reference/commands.md
+# Project files are written by Wirebench itself; a save must give back the same bytes.
+examples/**/*.yaml
