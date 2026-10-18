@@ -25,6 +25,7 @@ import {
 } from './hosts-store.js';
 import { groupLogged, useLogSwitchesStore } from './session-log-switches.js';
 import { useKeyInstall } from './ssh-keys.js';
+import { hasSshFeatures, useHostProtocol } from './host-protocol.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-accent-muted';
@@ -62,6 +63,9 @@ function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly ki
   const { file, save } = useHostsStore();
   const parent = ancestorsOf(file, 'host', host.id).at(-1);
   const targets = flattenGroups(file).filter(({ group }) => group.id !== parent?.id);
+  // Files and keys need an SSH connection to the host itself; a Telnet host has none (#425).
+  const protocol = useHostProtocol(host.id);
+  const sshFeatures = hasSshFeatures(protocol);
   const duplicate = (): void => {
     const entry = findHost(file, host.id);
     if (entry === undefined) return;
@@ -87,14 +91,16 @@ function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly ki
       >
         Open in new tab
       </M.Item>
-      <M.Item
-        className={ITEM_CLASS}
-        onSelect={() => {
-          openFiles(host.id);
-        }}
-      >
-        Open files
-      </M.Item>
+      {sshFeatures && (
+        <M.Item
+          className={ITEM_CLASS}
+          onSelect={() => {
+            openFiles(host.id);
+          }}
+        >
+          Open files
+        </M.Item>
+      )}
       <M.Item
         className={ITEM_CLASS}
         onSelect={() => {
@@ -135,22 +141,26 @@ function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly ki
           </M.SubContent>
         </M.Portal>
       </M.Sub>
-      <M.Item
-        className={ITEM_CLASS}
-        onSelect={() => {
-          void navigator.clipboard.writeText(host.address);
-        }}
-      >
-        Copy address
-      </M.Item>
-      <M.Item
-        className={ITEM_CLASS}
-        onSelect={() => {
-          useKeyInstall.getState().open({ hostId: host.id });
-        }}
-      >
-        Install public key…
-      </M.Item>
+      {protocol !== 'serial' && (
+        <M.Item
+          className={ITEM_CLASS}
+          onSelect={() => {
+            void navigator.clipboard.writeText(host.address);
+          }}
+        >
+          Copy address
+        </M.Item>
+      )}
+      {sshFeatures && (
+        <M.Item
+          className={ITEM_CLASS}
+          onSelect={() => {
+            useKeyInstall.getState().open({ hostId: host.id });
+          }}
+        >
+          Install public key…
+        </M.Item>
+      )}
       <M.Separator className="my-1 h-px bg-hairline" />
       <M.Item
         className={DANGER_ITEM_CLASS}
@@ -228,6 +238,7 @@ export function HostActionsButton({
 function GroupItems({ group, kit: M }: { readonly group: GroupEntryWire; readonly kit: MenuKit }) {
   const { file, save, openDialog, groupFilter, setGroupFilter } = useHostsStore();
   const switches = useLogSwitchesStore((s) => s.switches);
+  const team = useLogSwitchesStore((s) => s.team);
   const empty = group.groups.length === 0 && group.hosts.length === 0;
   const logged = groupLogged(file, switches, group.id);
   const only = groupFilter === group.id;
@@ -259,12 +270,14 @@ function GroupItems({ group, kit: M }: { readonly group: GroupEntryWire; readonl
       </M.Item>
       <M.CheckboxItem
         className={ITEM_CLASS}
-        checked={logged}
+        checked={team || logged}
         onCheckedChange={(checked) => {
+          // The team's recording is not this machine's to turn off.
+          if (team) return;
           void useLogSwitchesStore.getState().set({ kind: 'group', id: group.id }, checked);
         }}
       >
-        Log sessions
+        {team ? 'Log sessions (recorded by your team)' : 'Log sessions'}
         <M.ItemIndicator className="ml-auto pl-3">
           <Check size={12} aria-hidden="true" />
         </M.ItemIndicator>

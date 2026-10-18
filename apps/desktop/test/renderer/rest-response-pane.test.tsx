@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { RestResponsePane } from '../../src/renderer/features/rest-editor/response/response-pane.js';
-import { hexLines } from '../../src/renderer/features/rest-editor/response/body-view.js';
+import { emptyBodyMessage, hexLines } from '../../src/renderer/features/rest-editor/response/body-view.js';
 import { elapsedText, statusToneClass } from '../../src/renderer/features/rest-editor/response/status-line.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
@@ -80,6 +80,17 @@ describe('RestResponsePane', () => {
     expect(screen.queryByRole('tab', { name: 'Body' })).toBeNull();
   });
 
+  it('says there is no body instead of showing an empty editor', () => {
+    mount(
+      makeRestExchange({
+        text: '',
+        http: { ...makeRestExchange().http, status: 204, statusText: 'No Content', bodyBase64: '' },
+      }),
+    );
+
+    expect(screen.getByTestId('rest-response-no-body').textContent).toBe('No body (204 No Content)');
+  });
+
   it('shows the status, the duration and the size', () => {
     mount(makeRestExchange());
 
@@ -87,6 +98,17 @@ describe('RestResponsePane', () => {
     expect(status).toContain('200 OK');
     expect(status).toContain('12 ms');
     expect(status).toContain('body');
+  });
+
+  it('wraps the status line between whole parts instead of truncating the last (#636)', () => {
+    mount(makeRestExchange());
+
+    const status = screen.getByTestId('rest-response-status');
+    expect(status.className).not.toContain('truncate');
+    const parts = [...status.children].map((part) => part.textContent);
+    expect(parts[0]).toBe('200 OK');
+    expect(parts.slice(1).every((part) => part?.startsWith('· '))).toBe(true);
+    expect([...status.children].every((part) => part.classList.contains('whitespace-nowrap'))).toBe(true);
   });
 
   it('pins a failing Assertions tab in red and counts the failures on the status line (N01)', () => {
@@ -98,7 +120,7 @@ describe('RestResponsePane', () => {
       ],
     });
 
-    expect(screen.getByTestId('rest-response-assertions-failed').textContent).toBe(' · 1 assertion failed');
+    expect(screen.getByTestId('rest-response-assertions-failed').textContent).toBe('1 assertion failed');
     const tab = screen.getByRole('tab', { name: /Assertions ✕/ });
     expect(tab.querySelector('.text-status-danger')?.textContent).toBe('1/2');
   });
@@ -126,6 +148,54 @@ describe('RestResponsePane', () => {
     expect(screen.getByTestId('send-error-code').textContent).toBe('dns');
     // No Retry without someone to send it.
     expect(screen.queryByTestId('send-error-retry')).toBeNull();
+  });
+
+  it('names the host and port refused, and says "Connection refused" once in the panel', () => {
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{
+            status: 'error',
+            sendId: 's1',
+            error: { code: 'connection-refused', message: 'Connection refused.', details: { target: '127.0.0.1:9' } },
+          }}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByTestId('rest-response-status').textContent).toBe('Connection refused');
+    expect(screen.getByTestId('send-error-title').textContent).toBe("Couldn't connect to 127.0.0.1:9");
+    // The engine's "Connection refused." says nothing the title does not.
+    expect(screen.queryByTestId('send-error-message')).toBeNull();
+  });
+
+  it('names the field an unclosed ${ sits in, and links to it', () => {
+    const onRevealReference = vi.fn();
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{
+            status: 'error',
+            sendId: 's1',
+            error: {
+              code: 'rest-unresolved-properties',
+              message: '"/x" has property references nothing resolves: ${$rand',
+              details: { unresolved: ['${$rand'] },
+            },
+          }}
+          onRevealReference={onRevealReference}
+          describeReferenceField={(ref) => (ref === '${$rand' ? 'Header X-List' : undefined)}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByTestId('send-error-title').textContent).toBe('Unclosed ${');
+    expect(screen.getByTestId('send-error-unclosed').textContent).toMatch(
+      /^Header X-List has a \$\{ that is never closed/,
+    );
+    expect(screen.queryByText(/active environment/)).toBeNull();
+    fireEvent.click(screen.getByTestId('send-error-reference'));
+    expect(onRevealReference).toHaveBeenCalledWith('${$rand');
   });
 
   it('retries from the panel, and holds Retry back for the reason Send is held', () => {
@@ -164,6 +234,32 @@ describe('RestResponsePane', () => {
     expect(status.textContent).toBe('Cancelled');
     expect(status.className).not.toContain('danger');
     expect(screen.getByTestId('send-error-title').className).not.toContain('danger');
+  });
+
+  it('keeps the response a cancel left on screen, under a "Cancelled after" bar with Retry', () => {
+    const onRetry = vi.fn();
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{
+            status: 'error',
+            sendId: 's2',
+            error: { code: 'aborted', message: 'The request was aborted.' },
+            previous: makeRestExchange(),
+            cancelledAfterMs: 818,
+          }}
+          onRetry={onRetry}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.queryByTestId('send-error-panel')).toBeNull();
+    expect(screen.getByTestId('rest-response-cancelled').textContent).toBe('Cancelled after 818 ms · Retry');
+    // The kept response reads as it did, not dimmed and not as an error.
+    expect(screen.getByTestId('rest-response-view').hasAttribute('data-stale')).toBe(false);
+    expect(screen.getByTestId('rest-response-status').textContent).toMatch(/^200/);
+    fireEvent.click(screen.getByTestId('rest-response-cancelled-retry'));
+    expect(onRetry).toHaveBeenCalledOnce();
   });
 
   it('names the timeout and links its setting, and links each unresolved reference', () => {
@@ -405,6 +501,34 @@ describe('RestResponsePane', () => {
     fireEvent.click(screen.getByTestId('rest-response-save'));
 
     expect(saveRestBody).toHaveBeenCalledWith({ sendId: 'send-1' });
+  });
+});
+
+describe('emptyBodyMessage', () => {
+  const empty = (status?: number, statusText?: string) => ({
+    text: '',
+    language: 'text' as const,
+    http: {
+      bodyBase64: '',
+      headers: {},
+      ...(status !== undefined ? { status } : {}),
+      ...(statusText !== undefined ? { statusText } : {}),
+    },
+  });
+
+  it('names the status of a response that has no body', () => {
+    expect(emptyBodyMessage(empty(204, 'No Content'))).toBe('No body (204 No Content)');
+    // HTTP/2 has no reason phrase.
+    expect(emptyBodyMessage(empty(304, ''))).toBe('No body (304)');
+  });
+
+  it('says only "No body" where there is no status, as on a captured request', () => {
+    expect(emptyBodyMessage(empty())).toBe('No body');
+  });
+
+  it('is undefined when there is a body, text or bytes', () => {
+    expect(emptyBodyMessage({ ...empty(200, 'OK'), text: '{}' })).toBeUndefined();
+    expect(emptyBodyMessage({ ...empty(200, 'OK'), http: { bodyBase64: 'AA==', headers: {} } })).toBeUndefined();
   });
 });
 

@@ -890,7 +890,7 @@ describe('ProjectHost: environments and property scopes', () => {
         skipSoapAction: true,
         localAddress: '127.0.0.1',
       });
-      expect(input?.headers?.['User-Agent']).toBe('Wirebench/0.1');
+      expect(input?.headers?.['User-Agent']).toBe('Wirebench');
       await service.close();
     });
 

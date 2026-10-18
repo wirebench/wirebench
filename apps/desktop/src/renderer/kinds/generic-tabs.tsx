@@ -36,6 +36,11 @@ const CatchUrlTab = lazy(async () => {
   return { default: ({ id }: { readonly id: string }) => <module.CatchUrlTab hookId={id} /> };
 });
 
+const ScheduleTab = lazy(async () => {
+  const module = await import('../features/schedules/schedule-tab.js');
+  return { default: ({ id }: { readonly id: string }) => <module.ScheduleTab scheduleId={id} /> };
+});
+
 function EnvironmentTab({ id }: { readonly id: string }) {
   return <EnvironmentPage target={targetFromId(id)} />;
 }
@@ -118,5 +123,15 @@ export const GENERIC_TABS: readonly TabContribution[] = [
     loading: 'Loading…',
     keyed: true,
     title: (id, { hookNames }) => hookNames[id],
+  },
+  {
+    kind: 'schedule',
+    idField: 'scheduleId',
+    prefix: 'schedule:',
+    persisted: false,
+    Component: ScheduleTab,
+    loading: 'Loading…',
+    keyed: true,
+    title: (id, { scheduleNames }) => scheduleNames[id],
   },
 ];

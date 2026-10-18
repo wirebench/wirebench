@@ -21,7 +21,7 @@ export const sshAuthWireSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('agent') }),
 ]);
 
-export const sshProtocolWireSchema = z.enum(['ssh', 'mosh']);
+export const sshProtocolWireSchema = z.enum(['ssh', 'mosh', 'telnet', 'serial']);
 export type SshProtocolWire = z.infer<typeof sshProtocolWireSchema>;
 
 /** `ssh.mosh`, taken whole from the nearest level: the remote server command and the UDP port or range. */
@@ -30,6 +30,16 @@ export const moshSettingsWireSchema = z.strictObject({
   ports: z.string().optional(),
 });
 export type MoshSettingsWire = z.infer<typeof moshSettingsWireSchema>;
+
+/** `ssh.serial` (#426), taken whole from the nearest level: a serial console's line settings. */
+export const serialSettingsWireSchema = z.strictObject({
+  baud: z.number().optional(),
+  dataBits: z.union([z.literal(5), z.literal(6), z.literal(7), z.literal(8)]).optional(),
+  parity: z.enum(['none', 'even', 'odd', 'mark', 'space']).optional(),
+  stopBits: z.union([z.literal(1), z.literal(1.5), z.literal(2)]).optional(),
+  flowControl: z.enum(['none', 'rtscts', 'xonxoff']).optional(),
+});
+export type SerialSettingsWire = z.infer<typeof serialSettingsWireSchema>;
 /** A proxy the first hop is dialled through (#417); its password is a secret NAME, never a value. */
 export const sshProxyWireSchema = z.strictObject({
   type: z.enum(['socks5', 'http']),
@@ -52,8 +62,13 @@ export const sshSettingsWireSchema = z.strictObject({
   /** `mosh` starts a mosh server over SSH, then runs the session over UDP (#419). */
   protocol: sshProtocolWireSchema.optional(),
   mosh: moshSettingsWireSchema.optional(),
+  serial: serialSettingsWireSchema.optional(),
   /** `false` connects directly though a group above sets a proxy. */
   proxy: z.union([z.literal(false), sshProxyWireSchema]).optional(),
+  /** A character set id (#427); main checks it against the list on save. */
+  charset: z.string().optional(),
+  /** The terminal type the pty request names (#427). */
+  term: z.string().optional(),
 });
 
 const forwardTypeWireSchema = z.enum(['local', 'remote', 'dynamic']);
@@ -224,8 +239,13 @@ export const resolvedHostWireSchema = z.object({
     /** Main always sends both; absent reads as SSH with no mosh block. */
     protocol: prov(sshProtocolWireSchema).optional(),
     mosh: prov(moshSettingsWireSchema.optional()).optional(),
+    /** A serial console's line settings (#426); main always sends it. */
+    serial: prov(serialSettingsWireSchema.optional()).optional(),
     /** Used when this host is the first hop; `undefined` connects directly. */
     proxy: prov(sshProxyWireSchema.optional()),
+    /** Main always sends both (#427); absent reads as UTF-8 and xterm-256color. */
+    charset: prov(z.string()).optional(),
+    term: prov(z.string()).optional(),
   }),
   incomplete: z.object({ field: z.enum(['user', 'auth']) }).optional(),
   forwards: z.array(resolvedForwardWireSchema),
@@ -428,6 +448,23 @@ export const sshHostOsSchema = z.object({
 export const sshHostOsResponseSchema = z.object({ entries: z.record(z.string(), sshHostOsSchema) });
 /** `os: null` drops the choice, going back to what was detected. */
 export const sshSetHostOsRequestSchema = z.strictObject({ host: z.string(), os: sshOsIdSchema.nullable() });
+
+/** One of this machine's serial ports (#426): its path, with the maker and serial number when the OS knows them. */
+export const sshSerialPortSchema = z.object({
+  path: z.string(),
+  label: z.string().optional(),
+  serialNumber: z.string().optional(),
+});
+export const sshSerialPortsResponseSchema = z.object({ ports: z.array(sshSerialPortSchema) });
+export const sshSerialDeviceRequestSchema = z.strictObject({ hostId: z.string() });
+/** `device` is left out while this machine has none for the host. */
+export const sshSerialDeviceResponseSchema = z.object({ device: z.string().optional() });
+/** `null` forgets the host's device on this machine. */
+export const sshSetSerialDeviceRequestSchema = z.strictObject({
+  hostId: z.string(),
+  device: z.string().max(1024).nullable(),
+});
+export type SshSerialPortWire = z.infer<typeof sshSerialPortSchema>;
 export type SshDetectedOsWire = z.infer<typeof sshDetectedOsSchema>;
 export type SshHostOsWire = z.infer<typeof sshHostOsSchema>;
 

@@ -3,14 +3,18 @@ import type { WebContents } from 'electron';
 import type { z } from 'zod';
 import { WirebenchError, nodeFs, secretPseudoRef, writeFileAtomic } from '@wirebench/engine';
 import {
+  HopProgress,
   createStreamMasker,
   detectOs,
   expandSnippet,
   findSnippet,
   listSnippets,
   openSession,
+  withCharset,
+  openTelnetSession,
   previewSnippet,
   rememberKnownHost,
+  serialLineText,
   serializeKnownHosts,
   snippetRevision,
   snippetSecrets,
@@ -47,6 +51,7 @@ import type {
 } from '../shared/ssh-wire.js';
 import { asWirebenchError } from './hosts-service.js';
 import type { OpenMoshOptions } from './mosh-session.js';
+import type { OpenSerialOptions } from './serial-session.js';
 import type { SessionLogWriter, StartSessionLog } from './session-logs.js';
 import type { SnippetsService } from './snippets-service.js';
 import { RefusalStore, createSshConnector, readKnownHosts } from './ssh-connect.js';
@@ -62,6 +67,16 @@ export interface SshServiceDeps extends SshConnectDeps {
   readonly open?: typeof openSession;
   /** Opens a host whose protocol is `mosh` (#419); without it such a host is refused. */
   readonly openMosh?: (options: OpenMoshOptions) => Promise<SshSession>;
+  /** Tests inject a fake. */
+  readonly openTelnet?: typeof openTelnetSession;
+  /** `false` when this build switched Telnet off (`WIREBENCH_AREAS=telnet=off`, #425): its hosts are refused. */
+  readonly telnet?: boolean;
+  /** Opens a host whose protocol is `serial` (#426); without it such a host is refused (`serial-unavailable`). */
+  readonly openSerial?: (options: Omit<OpenSerialOptions, 'modules'>) => Promise<SshSession>;
+  /** `false` when this build switched serial consoles off (`WIREBENCH_AREAS=serial=off`). */
+  readonly serial?: boolean;
+  /** The device this machine opens for the serial host, or `undefined` when none was picked yet. */
+  readonly serialDevice?: (sender: WebContents, hostId: string) => Promise<string | undefined>;
   /** Milliseconds; tests inject a clock. */
   readonly now?: () => number;
   /**
@@ -83,7 +98,13 @@ export interface SshServiceDeps extends SshConnectDeps {
    */
   readonly sessionLog?: (
     sender: WebContents,
-    request: { readonly hostId: string; readonly hops: readonly HopCredentials[] },
+    request: {
+      readonly hostId: string;
+      readonly hops: readonly HopCredentials[];
+      /** A Telnet target (#425), which is not one of the SSH `hops`, and the secrets it signs in with. */
+      readonly target?: { readonly address: string; readonly port: number; readonly user: string };
+      readonly secrets?: readonly string[];
+    },
   ) => Promise<StartSessionLog | undefined>;
 }
 
@@ -169,8 +190,22 @@ export function forwardResume(
   powerMonitor.on('resume', broadcast);
 }
 
+/** A listener on one session's output as its window sees it, after the masker (a shared terminal, #429). */
+export interface SessionTap {
+  data(bytes: Uint8Array): void;
+  resize(cols: number, rows: number): void;
+  /** The session closed; the tap is gone. */
+  end(): void;
+}
+
+/** How much recent masked output a session keeps, so a tap starts with the screen as it stands (#429). */
+const RECENT_OUTPUT_BYTES = 256 * 1024;
+
 interface Live {
   readonly session: SshSession;
+  readonly taps: Set<SessionTap>;
+  /** The last {@link RECENT_OUTPUT_BYTES} the window was shown, oldest first. */
+  readonly recent: { chunks: Uint8Array[]; size: number };
   readonly sender: WebContents;
   readonly hostId: string;
   /** Masks the secret values a snippet typed into this session, for the session's life. */
@@ -239,7 +274,17 @@ export class SshService {
     const closed = (): WirebenchError =>
       new WirebenchError('ssh-session-closed', 'The session closed before it opened');
     const prepared = await this.connector.prepareShell(sender, request.hostId, stale, request.user, request.quick);
-    const { env, secrets, forwardAgent, mosh } = prepared;
+    const { env, secrets, forwardAgent, mosh, telnet, serial } = prepared;
+    if (telnet !== undefined && this.deps.telnet === false) {
+      throw new WirebenchError(
+        'telnet-off',
+        'Telnet is switched off in this build of Wirebench. Connect to the device over SSH instead.',
+      );
+    }
+    if (serial !== undefined && this.deps.serial === false) {
+      throw new WirebenchError('serial-off', 'Serial consoles are switched off in this build of Wirebench.');
+    }
+    const device = serial === undefined ? undefined : await this.serialDeviceOf(sender, request.hostId);
     // The PIN goes to every key hop; only a security key reads it.
     const pin = request.skPin;
     const hops = pin
@@ -248,7 +293,19 @@ export class SshService {
     const verifyHostKey = await this.connector.verifierFor(sender);
     // A switch while the secrets were read: they must not go to the hosts of the workspace left.
     if (stale()) throw closed();
-    const startLog = await this.deps.sessionLog?.(sender, { hostId: request.hostId, hops }).catch(() => undefined);
+    const logged =
+      device !== undefined
+        ? // A serial line has no port number and no user: the log names the device.
+          { hostId: request.hostId, hops, target: { address: device, port: 0, user: '' } }
+        : telnet === undefined
+          ? { hostId: request.hostId, hops }
+          : {
+              hostId: request.hostId,
+              hops,
+              target: { address: telnet.target.address, port: telnet.target.port, user: telnet.login.user ?? '' },
+              secrets,
+            };
+    const startLog = await this.deps.sessionLog?.(sender, logged).catch(() => undefined);
     let session: SshSession;
     try {
       const options = {
@@ -259,7 +316,32 @@ export class SshService {
         ...progressTo(this.deps.emit, sender, request.attemptId),
         ...(Object.keys(env).length === 0 ? {} : { env }),
       };
-      if (mosh !== undefined) {
+      if (serial !== undefined && device !== undefined) {
+        const openSerial = this.deps.openSerial;
+        if (!openSerial) {
+          throw new WirebenchError('serial-unavailable', 'Serial consoles are not available on this computer');
+        }
+        new HopProgress(options.onProgress, 0, 1, device).log(`Opening ${device} at ${serialLineText(serial.line)}`);
+        session = withCharset(await openSerial({ path: device, line: serial.line }), prepared.charset);
+      } else if (telnet !== undefined) {
+        if (telnet.unusedAuth !== undefined) {
+          const where = `${telnet.target.address}:${String(telnet.target.port)}`;
+          new HopProgress(options.onProgress, hops.length, hops.length + 1, where).log(
+            `Telnet signs in with a password only: the ${telnet.unusedAuth === 'key' ? 'private key' : 'SSH agent'} set for this host is not used`,
+          );
+        }
+        const telnetSession = await (this.deps.openTelnet ?? openTelnetSession)({
+          hops,
+          target: telnet.target,
+          login: telnet.login,
+          cols: request.cols,
+          rows: request.rows,
+          verifyHostKey,
+          terminalType: prepared.term,
+          ...(options.onProgress === undefined ? {} : { onProgress: options.onProgress }),
+        });
+        session = withCharset(telnetSession, prepared.charset);
+      } else if (mosh !== undefined) {
         const openMosh = this.deps.openMosh;
         if (!openMosh) throw new WirebenchError('mosh-unavailable', 'Mosh sessions are not available here');
         // Agent forwarding is an SSH channel request; a Mosh session has no SSH channel to ask on.
@@ -268,6 +350,8 @@ export class SshService {
         session = await (this.deps.open ?? openSession)({
           ...options,
           ...(forwardAgent?.socket === undefined ? {} : { forwardAgent: forwardAgent.socket }),
+          term: prepared.term,
+          charset: prepared.charset,
         });
       }
     } catch (error) {
@@ -293,9 +377,17 @@ export class SshService {
     }
     const recording = log !== undefined;
     let quiet: ReturnType<typeof setTimeout> | undefined;
+    const taps = new Set<SessionTap>();
+    const recent = { chunks: [] as Uint8Array[], size: 0 };
     const send = (data: Uint8Array): void => {
       if (data.length === 0) return;
       log?.push(data);
+      recent.chunks.push(Uint8Array.from(data));
+      recent.size += data.length;
+      while (recent.size - (recent.chunks[0]?.length ?? 0) >= RECENT_OUTPUT_BYTES) {
+        recent.size -= recent.chunks.shift()?.length ?? 0;
+      }
+      for (const tap of taps) tap.data(data);
       this.deps.emit(sender, events.ssh.data, { sessionId, data: Buffer.from(data).toString('base64') });
     };
     const release = (): void => {
@@ -323,6 +415,8 @@ export class SshService {
     });
     this.live.set(sessionId, {
       session,
+      taps,
+      recent,
       sender,
       hostId: request.hostId,
       masker,
@@ -341,8 +435,10 @@ export class SshService {
     this.deps.emit(sender, events.ssh.state, { sessionId, state: 'open' });
     this.sessionsChanged(sender, request.hostId);
     const target = hops[hops.length - 1];
-    // A Mosh session has no SSH channel left to ask on: the host keeps its last known label.
-    if (target && mosh === undefined) void this.probeOs(sender, session, `${target.address}:${target.port}`);
+    // A Mosh or Telnet session has no SSH channel to ask on: the host keeps its last known label.
+    if (target && mosh === undefined && telnet === undefined) {
+      void this.probeOs(sender, session, `${target.address}:${target.port}`);
+    }
     const opened = { sessionId, ...(recording ? { recording: true as const } : {}) };
     if (forwardAgent === undefined || mosh !== undefined) return opened;
     const forwarding = forwardAgent.socket === undefined ? 'no-agent' : session.agentForwarding;
@@ -353,6 +449,20 @@ export class SshService {
    * Asks the connected host what it runs and keeps the answer. Runs beside the connect, which never waits
    * for it: any failure leaves the host unlabelled and nothing else changes.
    */
+  /**
+   * The device this machine opens for a serial host.
+   * @throws WirebenchError `serial-device-unset` when none was picked yet: the connection screen asks for one
+   */
+  private async serialDeviceOf(sender: WebContents, hostId: string): Promise<string> {
+    const device = await this.deps.serialDevice?.(sender, hostId);
+    if (device === undefined) {
+      throw new WirebenchError('serial-device-unset', 'Pick the serial port this computer opens for the console', {
+        details: { hostId },
+      });
+    }
+    return device;
+  }
+
   private async probeOs(sender: WebContents, session: SshSession, host: string): Promise<void> {
     try {
       const detected = detectOs(await session.exec(OS_PROBE, OS_PROBE_TIMEOUT_MS));
@@ -504,7 +614,25 @@ export class SshService {
 
   /** @throws WirebenchError `ssh-session-unknown` for a foreign or dead session. */
   resize(sender: WebContents, request: SshResizeRequest): void {
-    this.owned(sender, request.sessionId).session.resize(request.cols, request.rows);
+    const live = this.owned(sender, request.sessionId);
+    live.session.resize(request.cols, request.rows);
+    for (const tap of live.taps) tap.resize(request.cols, request.rows);
+  }
+
+  /**
+   * Hands `tap` what the window is shown of a session it owns, masked: about the last 256 KB at once, then
+   * what follows, until the returned function is called or the session closes (then `end`).
+   *
+   * @throws WirebenchError `ssh-session-unknown` for a foreign or dead session.
+   */
+  tap(sender: WebContents, sessionId: string, tap: SessionTap): () => void {
+    const { taps, recent } = this.owned(sender, sessionId);
+    // The screen as it stands first, so a viewer sees what was printed before the share began.
+    if (recent.size > 0) tap.data(Buffer.concat(recent.chunks));
+    taps.add(tap);
+    return () => {
+      taps.delete(tap);
+    };
   }
 
   /** Idempotent: a session already gone, or another window's, is left as it is. */
@@ -610,6 +738,8 @@ export class SshService {
     if (!live) return;
     live.stop();
     this.live.delete(sessionId);
+    for (const tap of [...live.taps]) tap.end();
+    live.taps.clear();
     if (!live.sender.isDestroyed()) this.deps.emit(live.sender, events.ssh.state, { sessionId, state: 'closed' });
     this.sessionsChanged(live.sender, live.hostId);
   }

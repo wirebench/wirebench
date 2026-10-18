@@ -144,6 +144,14 @@ jobs:
             node scripts/check-kerberos-vendor.ts linux-arm64 apps/desktop/release/linux-arm64-unpacked/resources
           fi
 
+      # Device keys (#428): every mac build carries the one universal Secure Enclave helper.
+      - name: Check the device helper
+        if: matrix.os == 'macos-latest'
+        run: |
+          for resources in apps/desktop/release/mac*/Wirebench.app/Contents/Resources; do
+            node scripts/build-device-helper.ts check darwin "$resources"
+          done
+
       # The asar holds exactly the packages the app depends on: none dropped by the `files`
       # exclusions, and none of the `prebuild-install` tree that only the unloaded `kerberos` needs.
       - name: Check the packed node_modules
@@ -352,11 +360,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # `--dir` stops after packing: the unpacked apps, fuses already flipped by afterPack.
-      - run: pnpm build && node scripts/vendor-kerberos.ts win32 && node scripts/vendor-node-pty.ts win32 && pnpm --filter @wirebench/desktop exec electron-builder --win --dir --x64 --arm64 --publish never
+      - run: pnpm build && node scripts/vendor-kerberos.ts win32 && node scripts/vendor-node-pty.ts win32 && node scripts/build-device-helper.ts win32 && pnpm --filter @wirebench/desktop exec electron-builder --win --dir --x64 --arm64 --publish never
       - run: |
           node scripts/check-kerberos-vendor.ts win32-x64 apps/desktop/release/win-unpacked/resources
           node scripts/check-kerberos-vendor.ts win32-arm64 apps/desktop/release/win-arm64-unpacked/resources
           node scripts/check-desktop-asar.ts apps/desktop/release/win-unpacked/resources apps/desktop/release/win-arm64-unpacked/resources
+          node scripts/build-device-helper.ts check win32 apps/desktop/release/win-unpacked/resources
+          node scripts/build-device-helper.ts check win32 apps/desktop/release/win-arm64-unpacked/resources
       - uses: actions/upload-artifact@v7
         id: upload
         with:

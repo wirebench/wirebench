@@ -7,11 +7,12 @@ import {
   preferencesPatchProblems,
   preferencesSchema,
   resetPreferences,
+  withAppUserAgent,
 } from '../../../src/project/preferences.js';
 
 describe('DEFAULT_PREFERENCES', () => {
   it('carries the documented defaults', () => {
-    expect(DEFAULT_PREFERENCES.http.userAgent).toBe('Wirebench/0.1');
+    expect(DEFAULT_PREFERENCES.http.userAgent).toBe('Wirebench');
     expect(DEFAULT_PREFERENCES.http.socketTimeoutMs).toBe(60_000);
     expect(DEFAULT_PREFERENCES.editor.fontSize).toBe(13);
     expect(DEFAULT_PREFERENCES.editor.tabSize).toBe(3);
@@ -95,8 +96,13 @@ describe('secrets preferences', () => {
 });
 
 describe('ssh preferences (#571)', () => {
-  it('defaults to no user, a 15 s keep-alive and a 20 s connect timeout', () => {
-    expect(DEFAULT_PREFERENCES.ssh).toEqual({ keepAlive: 15, connectTimeout: 20 });
+  it('defaults to no user, a 15 s keep-alive, a 20 s connect timeout, UTF-8 and xterm-256color', () => {
+    expect(DEFAULT_PREFERENCES.ssh).toEqual({
+      keepAlive: 15,
+      connectTimeout: 20,
+      charset: 'utf-8',
+      term: 'xterm-256color',
+    });
   });
 
   it('reads the user and both numbers, and clamps a number from disk into range', () => {
@@ -104,11 +110,23 @@ describe('ssh preferences (#571)', () => {
       user: 'alice',
       keepAlive: 0,
       connectTimeout: 5,
+      charset: 'utf-8',
+      term: 'xterm-256color',
     });
     expect(mergePreferences({ ssh: { keepAlive: 99_999, connectTimeout: 0 } }).ssh).toEqual({
       keepAlive: 3600,
       connectTimeout: 1,
+      charset: 'utf-8',
+      term: 'xterm-256color',
     });
+  });
+
+  it('reads the character set and terminal type (#427), and refuses a terminal type that is not a name', () => {
+    expect(mergePreferences({ ssh: { charset: 'cp850', term: 'vt220' } }).ssh).toMatchObject({
+      charset: 'cp850',
+      term: 'vt220',
+    });
+    expect(preferencesPatchProblems({ ssh: { term: 'xterm 256' } })).not.toEqual([]);
   });
 
   it('refuses an out-of-range patch', () => {
@@ -441,5 +459,29 @@ describe('loading a file written before the limits were tightened', () => {
     const merged = mergePreferences({ ...OLD_FILE, editor: { fontSize: 'big', tabSize: 2 } });
     expect(merged.editor).toEqual(DEFAULT_PREFERENCES.editor);
     expect(merged.proxy.port).toBe(65_535);
+  });
+});
+
+describe('withAppUserAgent', () => {
+  const withUserAgent = (userAgent: string) => mergePreferences({ http: { userAgent } });
+
+  it('moves a default User-Agent, of this release or an earlier one, to the running version', () => {
+    for (const stale of ['Wirebench', 'Wirebench/0.1', 'Wirebench/6.0.0', 'Wirebench/6.1.0-rc.3']) {
+      expect(withAppUserAgent(withUserAgent(stale), '6.1.0').http.userAgent).toBe('Wirebench/6.1.0');
+    }
+  });
+
+  it('keeps a User-Agent the user wrote, and an empty one that sends none', () => {
+    for (const own of ['Wirebench/6.1.0 (ci)', 'Mozilla/5.0', 'wirebench-bot', '']) {
+      expect(withAppUserAgent(withUserAgent(own), '6.1.0').http.userAgent).toBe(own);
+    }
+  });
+
+  it('returns the same document when nothing changes, and leaves every other setting alone', () => {
+    const current = withUserAgent('Wirebench/6.1.0');
+    expect(withAppUserAgent(current, '6.1.0')).toBe(current);
+    const moved = withAppUserAgent(withUserAgent('Wirebench/0.1'), '6.1.0');
+    expect(moved.http.socketTimeoutMs).toBe(DEFAULT_PREFERENCES.http.socketTimeoutMs);
+    expect(moved.editor).toEqual(DEFAULT_PREFERENCES.editor);
   });
 });

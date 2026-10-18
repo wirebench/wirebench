@@ -15,6 +15,8 @@ import { formatDuration, inTimeOrder, stepDuration, stepLabel } from './connect-
 import type { ConnectLogLine, ConnectPurpose, ConnectStep, ConnectView } from './connect-progress.js';
 import { TYPE_AHEAD_LIMIT, type TypeAheadState } from './type-ahead.js';
 import { storeSshSecret } from './secret-writes.js';
+import { ipc } from '../../state/ipc-client.js';
+import { portText, portsNote, RefreshPortsButton, serialTargetText, useSerialPorts } from './serial-section.js';
 
 /** How long "Connected in N ms" shows before the screen fades, and how long the fade takes. */
 export const CONNECTED_HOLD_MS = 600;
@@ -406,6 +408,83 @@ function PasswordForm({
   );
 }
 
+/**
+ * A serial console with no device on this computer, or one that is gone (#426): this machine's ports to pick
+ * from, a Refresh for an adapter plugged in since, and a path to type. The pick is kept on this machine, and
+ * the connect runs again with it.
+ */
+function SerialDeviceForm({ hostId, onConnect }: { readonly hostId: string; readonly onConnect: () => void }) {
+  const state = useSerialPorts();
+  const [typed, setTyped] = useState('');
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const use = async (device: string): Promise<void> => {
+    setBusy(true);
+    const kept = await ipc().ssh.setSerialDevice({ hostId, device });
+    setBusy(false);
+    if (!kept.ok) {
+      setError(kept.error.message);
+      return;
+    }
+    onConnect();
+  };
+  return (
+    <form
+      data-testid="connect-serial-device"
+      aria-label="Serial port"
+      className="flex flex-col gap-2 rounded-md border border-hairline bg-surface-base p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (typed.trim() !== '') void use(typed.trim());
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <span className="flex-1 text-xs text-fg-subtle">{portsNote(state)}</span>
+        <RefreshPortsButton state={state} />
+      </div>
+      {state.ports.length > 0 && (
+        <ul className="flex flex-col gap-1" aria-label="Serial ports on this computer">
+          {state.ports.map((port) => (
+            <li key={port.path} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate font-mono text-sm text-fg-default">{portText(port)}</span>
+              <Button
+                disabled={busy}
+                aria-label={`Connect on ${port.path}`}
+                onClick={() => {
+                  void use(port.path);
+                }}
+              >
+                Connect
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex items-center gap-2">
+        <input
+          aria-label="Serial port path"
+          className={`${INPUT_CLASS} min-w-0 flex-1 font-mono`}
+          placeholder="COM3 or /dev/ttyUSB0"
+          value={typed}
+          onChange={(e) => {
+            setTyped(e.target.value);
+            setError(undefined);
+          }}
+        />
+        <Button type="submit" variant="primary" disabled={busy || typed.trim() === ''}>
+          Use and connect
+        </Button>
+      </div>
+      <p className="text-xs text-fg-subtle">Kept on this computer for this console, never in hosts.yaml.</p>
+      {error !== undefined && (
+        <p role="alert" className="text-sm text-status-danger">
+          {error}
+        </p>
+      )}
+    </form>
+  );
+}
+
 /** The security key's PIN, typed here and handed straight to the next connect (#420). */
 function PinForm({ wrong, onPin }: { readonly wrong: boolean; readonly onPin: (pin: string) => void }) {
   const [pin, setPin] = useState('');
@@ -510,7 +589,9 @@ export function ConnectScreen({
   const target =
     host === undefined
       ? hostId
-      : `${user === undefined ? '' : `${user}@`}${host.address}:${String(host.ssh.port.value)}`;
+      : host.ssh.protocol?.value === 'serial'
+        ? serialTargetText(host)
+        : `${user === undefined ? '' : `${user}@`}${host.address}:${String(host.ssh.port.value)}`;
   const running = view === undefined || outcome === 'running' || outcome === 'trust';
   const steps = view?.steps;
   const total = view !== undefined && view.outcome.kind === 'connected' ? view.outcome.at - view.startedAt : undefined;
@@ -649,6 +730,7 @@ export function ConnectScreen({
         {fix?.ask === 'pin' && onPin !== undefined && view !== undefined && (
           <PinForm key={view.attemptId} wrong={fix.wrong} onPin={onPin} />
         )}
+        {fix?.ask === 'device' && <SerialDeviceForm hostId={hostId} onConnect={onRetry} />}
 
         {showActions && (
           <div className="flex flex-wrap gap-2">

@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Download, Lock, LockOpen, Trash2 } from 'lucide-react';
+import { Download, Lock, LockOpen, Pin, Trash2 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { formatBytes, formatClockTime, formatDuration } from '../../lib/format-size.js';
@@ -25,6 +25,7 @@ import {
   protocolOf,
   startedAtOf,
   statusLabelOf,
+  statusTooltipOf,
   urlOf,
 } from './log-filter.js';
 
@@ -109,7 +110,7 @@ function LogRow({ entry, selected, onSelect, onMenu, compact, names, bar }: RowP
       </span>
       <span
         data-testid="http-log-status"
-        title={statusLabelOf(entry)}
+        title={statusTooltipOf(entry)}
         className={`truncate ${bad ? 'text-status-danger' : 'text-status-success'}`}
       >
         {statusLabelOf(entry)}
@@ -334,12 +335,15 @@ export function HttpLog() {
             <Button
               variant="ghost"
               aria-pressed={preserveLog}
-              title="Keep the rows when the workspace closes or switches (never saved to disk)"
+              aria-label="Preserve log"
+              title="Preserve log: keep the rows when the workspace closes or switches (never saved to disk)"
+              className="aria-pressed:bg-surface-active aria-pressed:text-accent"
               onClick={() => {
                 setPreserveLog(!preserveLog);
               }}
             >
-              Preserve log
+              {/* An icon like the actions beside it, so the bar fits a console narrowed by the code panel (#636). */}
+              <Pin aria-hidden="true" className="size-3.5" />
             </Button>
             <Button
               variant="ghost"
@@ -355,7 +359,7 @@ export function HttpLog() {
                 })();
               }}
             >
-              {/* Icons, so search, Reset and Preserve log keep their room in a narrow console. */}
+              {/* Icons, so search and Reset keep their room in a narrow console. */}
               <Download aria-hidden="true" className="size-3.5" />
             </Button>
             <Button variant="ghost" aria-label="Clear" title="Clear the log" onClick={clearLog}>

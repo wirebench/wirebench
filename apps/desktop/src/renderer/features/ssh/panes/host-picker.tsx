@@ -3,6 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Command } from 'cmdk';
 import type { ResolvedHostWire } from '../../../../shared/ssh-wire.js';
 import { hostStatusOf, useHostsStore } from '../hosts-store.js';
+import { serialTargetText } from '../serial-section.js';
 import { sessionStatus } from '../session-status.js';
 
 /** What cmdk filters a host row on; the id at the end keeps two hosts of the same name apart. */
@@ -35,7 +36,9 @@ function HostRow({ host, onPick }: { readonly host: ResolvedHostWire; readonly o
       {host.incomplete !== undefined && (
         <span className="shrink-0 text-xs text-status-warning">needs {host.incomplete.field}</span>
       )}
-      <span className="max-w-[45%] truncate text-xs text-fg-subtle">{host.address}</span>
+      <span className="max-w-[45%] truncate text-xs text-fg-subtle">
+        {host.ssh.protocol?.value === 'serial' ? serialTargetText(host) : host.address}
+      </span>
     </Command.Item>
   );
 }

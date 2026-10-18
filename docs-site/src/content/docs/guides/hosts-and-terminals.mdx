@@ -63,11 +63,12 @@ The rules:
 - `id` is stable and unique across the whole file, made of lowercase letters, digits and hyphens
   (`api-1`, `eu`). `name` is free text and can change; the id is what `jump` points at.
 - `ssh` on a group or a host holds `user`, `port`, `jump`, `auth`, `keepAlive` and
-  `connectTimeout` (both in seconds), and `forwardAgent` (see [Agent forwarding](#agent-forwarding)).
+  `connectTimeout` (both in seconds), `forwardAgent` (see [Agent forwarding](#agent-forwarding)),
+  and `term` and `charset` (see [Terminal type and character set](#terminal-type-and-character-set)).
   Every field is optional at every level. A host must end up
   with a `user` and an `auth`, from itself or a group above it; otherwise connecting says which
-  field is missing and where it can be set. The port defaults to 22; the user, keep-alive and
-  connect timeout come from Settings → SSH when no level sets them (see
+  field is missing and where it can be set. The port defaults to 22; the user, keep-alive, connect
+  timeout, terminal type and character set come from Settings → SSH when no level sets them (see
   [Defaults in Settings](#defaults-in-settings)).
 - `tags` are plain strings. They feed the Hosts filter, the palette and quick-open, and carry no
   behaviour.
@@ -105,6 +106,8 @@ their identities set a value:
   to sign in.
 - **Keep-alive**: 15 seconds; 0 sends none.
 - **Connect timeout**: 20 seconds.
+- **Terminal type**: `xterm-256color`.
+- **Character set**: UTF-8.
 
 The host and group forms show these as `from Preferences`, with the same override switch as a
 group's value, and the host details say `from Preferences` too. They are kept per machine, like the
@@ -292,6 +295,46 @@ details panel lists them when `hosts.yaml` sets them.
 **⌘+** and **⌘−** (Ctrl on Windows and Linux) make the focused terminal's text bigger or smaller, and
 **⌘0** puts it back. The zoom applies to that pane only and lasts until it closes; nothing is saved.
 
+## Terminal type and character set
+
+Some older servers and network devices expect a particular terminal type, or send and read text in a
+legacy character set instead of UTF-8. A group or a host can set both in its `ssh` block:
+
+```yaml
+groups:
+  - id: switches
+    name: Switches
+    ssh:
+      term: vt100
+      charset: iso-8859-15
+    hosts:
+      - id: core-1
+        name: core-1
+        address: 10.0.9.1
+        ssh:
+          charset: cp850
+```
+
+- `term` is the terminal type the shell is opened with: the `TERM` the server sees. It is a terminfo
+  name (letters, digits, `.`, `+`, `_` and `-`, at most 64): `xterm-256color` (the default), `xterm`,
+  `vt100`, `vt220`, `linux`, `screen-256color`, `ansi` or any other the server knows.
+- `charset` is how the terminal's text is read and written: what the server prints is decoded from
+  it, and what you type is sent in it. One of `utf-8` (the default), `iso-8859-1`, `iso-8859-2`,
+  `iso-8859-5`, `iso-8859-7`, `iso-8859-9`, `iso-8859-15`, `windows-1250`, `windows-1251`,
+  `windows-1252`, `windows-1253`, `windows-1254`, `windows-1257`, `cp850` or `koi8-r`. A character
+  you type that the set doesn't have is sent as `?`.
+- Each comes from the nearest level that sets it, then from Settings → SSH, as other settings do.
+  On a jump chain only the target's settings count: jump hosts open no shell.
+- Session logs, find, highlighting and snippet suggestions all see the decoded text, so they read
+  the same whatever the server's character set.
+- Both apply to SSH shells and Telnet sessions, where `term` is the terminal type Wirebench answers
+  when the device asks. A serial console uses `charset` only; it has no terminal type to send. A
+  [Mosh](#mosh) session is always UTF-8, and Files lists names as the server sends them, read as UTF-8.
+
+In the host form they are under **Advanced**: **Terminal type** with the usual override switch, and
+**Character set**, whose first option inherits and says from where. The host details panel lists
+them under **Terminal** when they are not the defaults.
+
 ## Agent forwarding
 
 Agent forwarding lets a shell on the remote host use the keys in your local SSH agent: `git pull` from a
@@ -374,7 +417,83 @@ groups:
 - The details panel shows the protocol with its source. Closing the tab ends the session on the host too.
 
 In the host form, **Protocol** sits under **Advanced**; choosing **Mosh** shows the server command and the
-UDP ports.
+UDP ports. **Telnet** is described next.
+
+## Telnet
+
+Network gear, old appliances and lab equipment often speak only Telnet. A Telnet host opens in the same
+terminal tab as any other, with split panes, find, snippets and session logs.
+
+```yaml
+groups:
+  - id: switches
+    name: Switches
+    ssh:
+      protocol: telnet
+      jump: bastion # optional: SSH to the bastion, then on to the switch
+    hosts:
+      - id: core-sw
+        name: Core switch
+        address: 10.0.0.2
+        ssh:
+          user: admin # optional: typed at the login prompt
+          auth:
+            password: ${secret:core_sw} # optional: typed at the password prompt
+```
+
+- Telnet is **not encrypted**: everything you type and see, passwords included, travels in plain text. The
+  host form, the details panel and the terminal say so. Use it only on a network you trust, or reach the
+  device through an SSH jump host, so that only the last leg is plain text.
+- The port is 23 unless the host or a group sets another.
+- With a user and a password set, Wirebench types them at the device's login and password prompts, once
+  each, during the first 30 seconds; typing anything yourself first hands the sign-in to you. With neither
+  set, you sign in yourself. A key or the SSH agent cannot sign in to a Telnet device.
+- Wirebench negotiates the terminal type (`xterm-256color`) and the window size, and sends it again when you
+  resize the pane.
+- A proxy set for the host is used when it is the first hop. A jump host must itself be an SSH host.
+- Files, port forwarding, agent forwarding, environment variables and **Install public key** need SSH, so a
+  Telnet host does not show them.
+- An administrator can switch Telnet off for a build with `WIREBENCH_AREAS=telnet=off`: Telnet hosts then
+  refuse to connect and the form no longer offers Telnet.
+
+## Serial consoles
+
+Switches, routers and embedded boards are set up over a console cable. A serial console is a host like any
+other, in a group, with tags, and opens in the same terminal tab, with split panes, find, snippets and
+session logs.
+
+```yaml
+groups:
+  - id: lab
+    name: Lab consoles
+    ssh:
+      protocol: serial
+      serial: # optional; taken whole from the nearest level that sets it
+        baud: 9600 # default 115200
+    hosts:
+      - id: core-sw-console
+        name: Core switch console
+      - id: dev-board
+        name: Dev board
+        ssh:
+          serial: { baud: 115200, dataBits: 8, parity: none, stopBits: 1, flowControl: rtscts }
+```
+
+- In the host form, open **Advanced** and set **Protocol** to **Serial console**. Address, port, sign-in,
+  jump host and proxy go: a serial line has none. The form shows **Device on this computer** with the ports
+  this computer has (with a **Refresh** for an adapter plugged in since, or a path you type) and the line
+  settings: baud, data bits, parity (`none`, `even`, `odd`, `mark`, `space`), stop bits (`1`, `1.5`, `2`)
+  and flow control (`none`, `rtscts` for RTS/CTS, `xonxoff` for XON/XOFF).
+- The line settings live in `hosts.yaml` and are shared. The device does not: the same console is `COM3` on
+  one computer and `/dev/ttyUSB0` on the next, so each computer remembers its own. A console with no device
+  on this computer yet asks for one when you connect, and so does one whose adapter is not plugged in.
+- Bytes go both ways unchanged. Unplugging the adapter ends the session as lost, and reconnecting offers
+  itself as it does for a dropped SSH connection.
+- On Linux, opening a serial port needs the `dialout` group: `sudo usermod -aG dialout $USER`, then sign out
+  and in again. A port another program has open is refused until that program lets go.
+- Files, port forwarding, agent forwarding, environment variables and **Install public key** need SSH, so a
+  serial console does not show them.
+- An administrator can switch serial consoles off for a build with `WIREBENCH_AREAS=serial=off`.
 
 ## Opening a terminal
 
@@ -1202,7 +1321,55 @@ open a log to read it, filtered to the lines that contain your text. Each log ca
 the file manager, or deleted. **Terminal: Session Logs…** in the palette, or **All hosts…** in a host's
 details, lists every host's logs in one place, with a filter by host name.
 
-Logs from a workspace shared through Wirebench Server stay on this machine too: nothing is uploaded.
+Logs from a workspace shared through Wirebench Server stay on this machine too, and nothing is
+uploaded, unless the workspace's admin records sessions (below).
+
+### Team session logs
+
+On a server with an Enterprise license, a workspace admin can turn on **Record SSH sessions** for a
+shared workspace, on the **Workspaces** tab in **Account: Manage teams**. From then on every member's
+SSH sessions on that workspace's hosts are logged, whatever their own switches say: the host's details
+show **Log sessions** on and greyed, with *recorded by your team*. The log is written on the member's
+machine as above, with the same masking, and streamed to the server while the session runs, a couple of
+seconds behind the terminal. If the server cannot be reached, the upload waits and catches up later,
+also after a restart. A log ends on the server when the session ends; one that was cut off by a crash
+ends as *lost*.
+
+**Reading them.** **Terminal: Team Session Logs…** in the palette, or **Team logs…** in a host's
+details, lists the workspace's logs from the server, newest first, filtered by host or by member. Every
+member of the workspace can read every log, and each read is recorded in the server's
+[audit log](/wirebench/docs/guides/server-audit-log/). A log still running is marked as such;
+**Refresh** fetches what arrived since.
+
+**How long they are kept.** As long as audit events: `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS`. A workspace
+admin can delete a log sooner, and that is recorded too. One log keeps at most
+`WIREBENCH_SERVER_SESSION_LOG_MAX_MB` (64 MB by default); past it the rest is not stored, and the log is
+marked as cut.
+
+## Sharing a live terminal
+
+On a server with an Enterprise license, a member of a shared workspace can let teammates watch an SSH
+session as it runs. Right-click the terminal and choose **Share session**. A strip above the terminal
+shows who is watching, and **Copy invite link** copies a `wirebench://terminal-share/…` link to send to
+them. Only members of the workspace can join, and the link works only while you share.
+
+**Joining.** **Terminal: Join Shared Terminal…** in the palette asks for the link, shows whose terminal
+it is, and opens it in a tab. The tab is read only: it shows the terminal at its owner's size, starting
+with the last screenful or so of output.
+
+**Control.** A viewer can **Request control**. The owner sees the request in the strip and can
+**Approve** or **Decline** it. One viewer at a time holds control, and what they type goes to the
+owner's session as if the owner had typed it. **Take back control** ends it at once, and the viewer can
+**Release control**.
+
+**Ending.** **Stop sharing** (in the strip or the terminal's menu), closing the tab, or the session
+ending stops the share for everyone. A viewer can be removed with the × beside their name, and cannot
+join that share again. Viewers see why the share ended.
+
+**What viewers see.** Exactly what your screen shows: the same masking applies, so a password, a key, a
+snippet secret or a secret variable is `••••` for them too. The server relays the screen without
+storing it. Every share, join, change of control, removal and end is recorded in the server's [audit
+log](/wirebench/docs/guides/server-audit-log/); the screen and the keystrokes never are.
 
 ## Host keys
 
@@ -1290,9 +1457,9 @@ This part does not include:
 - running a snippet in the background on many hosts with a table of results, or running snippets from the
   command line or the MCP server,
 - sending requests through a host or a forward,
-- agent, X11 or UDP forwarding, or SOCKS with a password,
+- X11 or UDP forwarding, or SOCKS with a password,
 - audit entries for sessions,
-- SSH agent forwarding to the remote, or session recording with replay.
+- session recording with replay.
 
 ## Related
 

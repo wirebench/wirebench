@@ -6,6 +6,27 @@
  * parameter, never a field: this class holds no state and can serve several servers.
  */
 import {
+  sessionLogChunkResponseSchema,
+  sessionLogOpenResponseSchema,
+  terminalShareCreateResponseSchema,
+  terminalShareInfoSchema,
+  sessionLogPageSchema,
+  sessionLogTextResponseSchema,
+} from '@wirebench/engine';
+import type {
+  SessionLogChunkRequest,
+  SessionLogChunkResponse,
+  SessionLogEndRequest,
+  SessionLogOpenRequest,
+  SessionLogOpenResponse,
+  SessionLogPage,
+  SessionLogsQuery,
+  SessionLogTextResponse,
+  TerminalShareCreateRequest,
+  TerminalShareCreateResponse,
+  TerminalShareInfo,
+} from '@wirebench/engine';
+import {
   accessResponseSchema,
   type DesktopAuditBatch,
   captureSchema,
@@ -133,6 +154,8 @@ export const SYNC_TRANSFER_TIMEOUT_MS = 120_000;
 
 const teamPath = (teamId: string): string => `/api/v1/teams/${encodeURIComponent(teamId)}`;
 const workspacePath = (workspaceId: string): string => `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`;
+const sessionLogPath = (workspaceId: string, logId: string): string =>
+  `${workspacePath(workspaceId)}/session-logs/${encodeURIComponent(logId)}`;
 const hookPath = (workspaceId: string, hookId: string): string =>
   `${workspacePath(workspaceId)}/hooks/${encodeURIComponent(hookId)}`;
 const schedulePath = (workspaceId: string, scheduleId: string): string =>
@@ -825,6 +848,109 @@ export class ServerClient {
       path: `${workspacePath(workspaceId)}/audit/desktop-events`,
       token,
       body: batch,
+    });
+  }
+
+  // ---- team session logs (team session logs spec A1): members of a recording workspace ----------
+
+  /** Opens this account's server copy of a session log, or finds it again; answers the size the server holds. */
+  openSessionLog(
+    url: string,
+    token: string,
+    workspaceId: string,
+    body: SessionLogOpenRequest,
+  ): Promise<SessionLogOpenResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: `${workspacePath(workspaceId)}/session-logs`,
+      token,
+      body,
+      schema: sessionLogOpenResponseSchema,
+    });
+  }
+
+  /** Appends text at `offset`, which must be the size the server holds (else 409 `session-logs-offset`). */
+  appendSessionLog(
+    url: string,
+    token: string,
+    workspaceId: string,
+    logId: string,
+    body: SessionLogChunkRequest,
+  ): Promise<SessionLogChunkResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: `${sessionLogPath(workspaceId, logId)}/chunks`,
+      token,
+      body,
+      schema: sessionLogChunkResponseSchema,
+      timeoutMs: SYNC_TRANSFER_TIMEOUT_MS,
+    });
+  }
+
+  async endSessionLog(
+    url: string,
+    token: string,
+    workspaceId: string,
+    logId: string,
+    body: SessionLogEndRequest,
+  ): Promise<void> {
+    await this.call<unknown>(url, { method: 'POST', path: `${sessionLogPath(workspaceId, logId)}/end`, token, body });
+  }
+
+  listSessionLogs(url: string, token: string, workspaceId: string, query: SessionLogsQuery): Promise<SessionLogPage> {
+    return this.call(url, {
+      method: 'GET',
+      path: withQuery(`${workspacePath(workspaceId)}/session-logs`, {
+        hostId: query.hostId,
+        userId: query.userId,
+        before: query.before,
+        limit: query.limit,
+      }),
+      token,
+      schema: sessionLogPageSchema,
+    });
+  }
+
+  /** A log's text from `offset`; the server records the read in its audit log. */
+  readSessionLog(
+    url: string,
+    token: string,
+    workspaceId: string,
+    logId: string,
+    offset: number,
+  ): Promise<SessionLogTextResponse> {
+    return this.call(url, {
+      method: 'GET',
+      path: withQuery(`${sessionLogPath(workspaceId, logId)}/text`, { offset }),
+      token,
+      schema: sessionLogTextResponseSchema,
+      timeoutMs: SYNC_TRANSFER_TIMEOUT_MS,
+    });
+  }
+
+  /** Starts sharing a terminal (#429): the share waits 30 s for its owner's socket. */
+  createTerminalShare(
+    url: string,
+    token: string,
+    workspaceId: string,
+    body: TerminalShareCreateRequest,
+  ): Promise<TerminalShareCreateResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: `${workspacePath(workspaceId)}/terminal-shares`,
+      token,
+      body,
+      schema: terminalShareCreateResponseSchema,
+    });
+  }
+
+  /** What a share is before joining it; 404 `terminal-share-not-found` once it ended. */
+  terminalShareInfo(url: string, token: string, workspaceId: string, shareId: string): Promise<TerminalShareInfo> {
+    return this.call(url, {
+      method: 'GET',
+      path: `${workspacePath(workspaceId)}/terminal-shares/${encodeURIComponent(shareId)}`,
+      token,
+      schema: terminalShareInfoSchema,
     });
   }
 

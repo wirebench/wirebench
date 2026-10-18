@@ -21,6 +21,7 @@ import type { FastifyInstance } from 'fastify';
 import { announce, auditSource, recordAudit } from '../../context.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../../db/errors.js';
 import { requireUser } from '../../identity/guard.js';
+import { featureRequired } from '../../licensing/errors.js';
 import { newId } from '../../identity/tokens.js';
 import { jsonSchema } from '../../schema.js';
 import type { TeamsEnv } from '../env.js';
@@ -39,6 +40,7 @@ export function toWorkspace(row: repo.WorkspaceRow, myRole: WorkspaceRole, sourc
     myRole,
     source,
     recordDesktopActivity: row.recordDesktopActivity,
+    recordSessionLogs: row.recordSessionLogs,
     createdAt: row.createdAt,
   };
 }
@@ -162,6 +164,9 @@ export const workspaceRoutes =
         const access = request.workspaceAccess!;
         const body = request.body as TeamWorkspaceUpdateRequest;
         const name = body.name !== undefined ? cleanName(body.name) : undefined;
+        // Turning recording on needs the feature; turning it off never does, so a lapsed license can stop it.
+        if (body.recordSessionLogs === true && !(await env.ctx.license.state()).features.includes('session-logs'))
+          throw featureRequired('session-logs');
         await db
           .transaction(async (tx) => {
             const previous = await repo.workspaceById(tx, access.workspaceId);
@@ -172,6 +177,7 @@ export const workspaceRoutes =
               ...(body.recordDesktopActivity !== undefined
                 ? { recordDesktopActivity: body.recordDesktopActivity }
                 : {}),
+              ...(body.recordSessionLogs !== undefined ? { recordSessionLogs: body.recordSessionLogs } : {}),
             });
             const source = auditSource(request);
             const scope = {
@@ -206,11 +212,23 @@ export const workspaceRoutes =
                 details: { enabled: body.recordDesktopActivity, previous: previous.recordDesktopActivity },
               });
             }
+            if (body.recordSessionLogs !== undefined && body.recordSessionLogs !== previous.recordSessionLogs) {
+              await recordAudit(env.ctx.hooks, tx, {
+                ...source,
+                ...scope,
+                action: 'workspace.session_logs_changed',
+                details: { enabled: body.recordSessionLogs, previous: previous.recordSessionLogs },
+              });
+            }
           })
           .catch(conflictOr);
         // The default role moves every member on it; a rename moves no one (§3.2). The recording flag
-        // reaches the desktops through the same nudge, so they re-read the workspace.
-        if (body.defaultRole !== undefined || body.recordDesktopActivity !== undefined)
+        // and session-log flags reach the desktops through the same nudge, so they re-read the workspace.
+        if (
+          body.defaultRole !== undefined ||
+          body.recordDesktopActivity !== undefined ||
+          body.recordSessionLogs !== undefined
+        )
           announce(env.ctx.hooks.accessChanged, { workspaceId: access.workspaceId }, request.log);
         return toWorkspace((await repo.workspaceById(db, access.workspaceId))!, access.role, access.source);
       },

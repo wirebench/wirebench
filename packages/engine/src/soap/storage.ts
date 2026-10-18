@@ -14,6 +14,7 @@ import type { SoapOwnerAuth } from '../project/model.js';
 import type { Attachment, Endpoint, Interface, OperationDef, RequestProperties, SoapRequestDef } from './model.js';
 import {
   assertPathSegment,
+  GOLDEN_SUFFIX,
   INTERFACE_SCRIPT_STEM,
   INTERFACES_DIR,
   OPERATIONS_DIR,
@@ -69,6 +70,7 @@ async function loadRequests(
     }
     names.delete(entry.name);
     names.delete(`${slug}.xml`);
+    names.delete(`${slug}${GOLDEN_SUFFIX}`);
     const scripts = await loadScripts(
       fs,
       root,

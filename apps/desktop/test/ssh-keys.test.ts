@@ -1,9 +1,10 @@
 // @vitest-environment node
+import { generateKeyPairSync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { WebContents } from 'electron';
 import { secretPseudoRef } from '@wirebench/engine';
-import { generateKey } from '@wirebench/ssh';
+import { ecdsaP256Blob, encodeDeviceKey, generateKey, publicKeyLine } from '@wirebench/ssh';
 import type { HopCredentials } from '@wirebench/ssh';
 import { SoftAuthenticator, softTransport } from '@wirebench/ssh/test-helpers';
 import { SshKeysService } from '../src/main/ssh-keys.js';
@@ -274,5 +275,59 @@ describe('SshKeysService certificates (#421)', () => {
       keys.attachCertificate(sender, { secret: 'nobody', certificate: fixture('user_ed25519-cert.pub') }),
     ).rejects.toMatchObject({ code: 'secret-missing' });
     expect(chain.secrets.set).not.toHaveBeenCalled();
+  });
+});
+
+describe('device keys (#428)', () => {
+  const point = (): Buffer =>
+    generateKeyPairSync('ec', { namedCurve: 'P-256' }).publicKey.export({ format: 'der', type: 'spki' }).subarray(-65);
+  const block = (device: string): string =>
+    encodeDeviceKey({
+      platform: 'macos-secure-enclave',
+      device,
+      publicKey: publicKeyLine(ecdsaP256Blob(point()), 'me@machine'),
+      handle: `handle-of-${device}`,
+    });
+
+  it('makes a device key, stores its block and no passphrase', async () => {
+    const chain = keychain();
+    const made = block('work-laptop');
+    const deviceKeys = {
+      status: vi.fn(),
+      create: vi.fn(() => Promise.resolve(made)),
+      isHere: vi.fn(() => Promise.resolve(true)),
+    };
+    const { keys } = service(chain, { deviceKeys });
+    const key = await keys.generate({ name: 'id_ecdsa_device', algorithm: 'device', passphrase: 'ignored' });
+    expect(deviceKeys.create).toHaveBeenCalledWith('me@machine');
+    expect(chain.values.get('id_ecdsa_device')).toBe(made);
+    expect(chain.values.has('id_ecdsa_device_passphrase')).toBe(false);
+    expect(key).toMatchObject({
+      name: 'id_ecdsa_device',
+      keyType: 'ecdsa-sha2-nistp256',
+      device: { platform: 'macos-secure-enclave', madeOn: 'work-laptop', here: true },
+    });
+    expect(key.passphraseSecret).toBeUndefined();
+  });
+
+  it('refuses a device key where the machine has none, storing nothing', async () => {
+    const chain = keychain();
+    const { keys } = service(chain);
+    await expect(keys.generate({ name: 'id_ecdsa_device', algorithm: 'device' })).rejects.toMatchObject({
+      code: 'ssh-device-key-unavailable',
+    });
+    expect(chain.values.size).toBe(0);
+    await expect(keys.deviceKeyStatus()).resolves.toMatchObject({ supported: false });
+  });
+
+  it('lists device keys, telling this device’s from another’s', async () => {
+    const chain = keychain({ mine: block('work-laptop'), theirs: block('other-mac'), note: 'plain text' });
+    const isHere = vi.fn((key: { device: string }) => Promise.resolve(key.device === 'work-laptop'));
+    const { keys } = service(chain, { deviceKeys: { status: vi.fn(), create: vi.fn(), isHere } });
+    const listed = await keys.keys(sender);
+    expect(listed.map((k) => [k.name, k.device])).toEqual([
+      ['mine', { platform: 'macos-secure-enclave', madeOn: 'work-laptop', here: true }],
+      ['theirs', { platform: 'macos-secure-enclave', madeOn: 'other-mac', here: false }],
+    ]);
   });
 });

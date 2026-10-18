@@ -22,10 +22,10 @@ import type { Assertion, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService, historyFilePath } from '../src/main/history-service.js';
 import type { RequestChannelDeps } from '../src/main/ipc/request.js';
-import { RunnerService } from '../src/main/runner/runner-service.js';
+import { RunnerService, withUnchecked } from '../src/main/runner/runner-service.js';
 import { RunnerHistoryStore, RunnerSettingsStore } from '../src/main/runner/stores.js';
 import { defaultRunnerSettings } from '../src/shared/runner-defaults.js';
-import type { RunnerProgressEvent } from '../src/shared/runner-wire.js';
+import type { RunnerProgressEvent, RunnerRequestResult } from '../src/shared/runner-wire.js';
 
 let url = '';
 let userDataDir = '';
@@ -149,6 +149,28 @@ async function harness(projectId: string, files: Record<string, string> = {}, gu
 
 const ROWS = 'user,path\nann,/two\nbob,/broken\n';
 
+describe('withUnchecked (#637)', () => {
+  const summary = { total: 3, passed: 2, failed: 0, errored: 1, skipped: 0, durationMs: 5 };
+  const row = (outcome: RunnerRequestResult['outcome'], checks: number): RunnerRequestResult => ({
+    path: 'Shop/x',
+    name: 'x',
+    protocol: 'rest',
+    outcome,
+    assertions: Array.from({ length: checks }, () => ({ type: 'status', label: 'status is 200', outcome: 'passed' })),
+  });
+
+  it('counts the passes with no checks, never a failure or an error', () => {
+    expect(withUnchecked(summary, [row('passed', 0), row('passed', 1), row('errored', 0)])).toEqual({
+      ...summary,
+      unchecked: 1,
+    });
+  });
+
+  it('leaves the summary as it was when every pass was checked', () => {
+    expect(withUnchecked(summary, [row('passed', 1), row('passed', 2), row('errored', 0)])).toBe(summary);
+  });
+});
+
 describe('RunnerService', () => {
   it('describes a folder, an API, the project and a sequence', async () => {
     const { runner } = await harness('P-state');
@@ -180,6 +202,8 @@ describe('RunnerService', () => {
     expect(seen).toEqual(['/one?u=ann', '/two', '/one?u=bob', '/broken']);
     expect(result.summary).toMatchObject({ total: 4, passed: 3, failed: 1, iterations: { planned: 2, run: 2 } });
     expect(result.dataFile).toBe('rows.csv');
+    // Every request here has a check, so no pass is counted as unchecked (#637).
+    expect(result.summary.unchecked).toBeUndefined();
     expect(events.map((e) => [e.request.name, e.request.iteration?.index])).toEqual([
       ['one', 0],
       ['two', 0],

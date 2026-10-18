@@ -177,6 +177,7 @@ describe('ServerClient — teams (teams-access §3.2)', () => {
     myRole: 'admin',
     source: 'grant',
     recordDesktopActivity: false,
+    recordSessionLogs: false,
     createdAt: '2026-09-25T10:00:00.000Z',
   };
   const body = (request: HttpRequest | undefined): unknown =>
@@ -294,6 +295,7 @@ describe('ServerClient — sync (server-sync §3.2)', () => {
       commits: 0,
       role: 'editor',
       recordDesktopActivity: false,
+      recordSessionLogs: false,
     });
     expect(await c.syncHead(SERVER, TOKEN, WS_ID, A)).toEqual({
       head: B,
@@ -301,6 +303,7 @@ describe('ServerClient — sync (server-sync §3.2)', () => {
       behind: 1,
       role: 'viewer',
       recordDesktopActivity: false,
+      recordSessionLogs: false,
     });
     await c.syncHead(SERVER, TOKEN, WS_ID, null);
     expect((await c.syncLog(SERVER, TOKEN, WS_ID, 50))[0]?.subject).toBe('Add QA');

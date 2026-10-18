@@ -194,7 +194,18 @@ describe('EnvSwitcher', () => {
     expect(trigger.getAttribute('aria-label')).toBe('Active environment for Billing');
   });
 
-  it('is disabled, showing "No project", until a project tab has been focused', async () => {
+  it('names the workspace’s only project before any tab was focused, rather than "No project"', () => {
+    setUp('e1');
+    useWorkspaceStore.setState({ workspace: { ...workspaceFor('e1'), projects: [P1] }, lastProjectId: undefined });
+    render(<EnvSwitcher />);
+    const trigger = screen.getByTestId<HTMLButtonElement>('env-switcher');
+    expect(trigger.disabled).toBe(false);
+    expect(trigger.textContent).not.toContain('No project');
+    expect(screen.getByTestId('env-switcher-project').textContent).toBe('Billing');
+    expect(trigger.textContent).toContain('dev');
+  });
+
+  it('is disabled, showing "No project", while several projects are open and none was focused', async () => {
     setUp('e1');
     useWorkspaceStore.setState({ lastProjectId: undefined });
     render(<EnvSwitcher />);

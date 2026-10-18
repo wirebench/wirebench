@@ -90,5 +90,6 @@ export function runnerRequests(target: RunnerTarget, settings: RunnerSettings): 
     name: item.request.name,
     path: item.path,
     protocol: item.kind,
+    ...(item.kind === 'rest' ? { method: item.request.method } : {}),
   }));
 }

@@ -18,6 +18,8 @@ export function groupLogged(file: HostsFileWire, switches: LogSwitches, groupId:
 interface LogSwitchesState {
   /** The open workspace's switches on this machine, keyed `host:<id>` / `group:<id>`. */
   switches: LogSwitches;
+  /** The workspace's server records every SSH session (#430): the switches show as on and cannot be changed. */
+  team: boolean;
   /** Reads them again; a failure keeps what was shown. */
   load: () => Promise<void>;
   /** Sets a host's or group's own switch (`null` clears it), then reads them again. */
@@ -27,10 +29,11 @@ interface LogSwitchesState {
 /** The session-log switches (#414), shared by the host details panel and a group's menu so both stay in step. */
 export const useLogSwitchesStore = create<LogSwitchesState>()((set, get) => ({
   switches: {},
+  team: false,
   load: async () => {
     try {
       const result = await ipc().sessionLog.switches({});
-      if (result.ok) set({ switches: result.value.switches });
+      if (result.ok) set({ switches: result.value.switches, team: result.value.team === true });
     } catch {
       // Nothing to read is not worth a message: the switch shows what it showed.
     }

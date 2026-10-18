@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ProjectError } from '../../../src/errors.js';
@@ -493,6 +493,23 @@ describe('loadProject', () => {
     expect(error.code).toBe('project-file-invalid');
     expect(JSON.stringify(error.details)).toContain('formatVersion');
 
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('counts a golden sidecar as its SOAP request file, and warns about one with no request', async () => {
+    const dir = await tempProjectDir();
+    await saveProject(sampleProject(), dir);
+    const opDir = join(dir, 'interfaces', 'CountryInfo', 'operations', 'ListOfCountryNamesByCode');
+    const requestFile = (await readdir(opDir)).find((name) => name.endsWith('.request.yaml'))!;
+    const golden = 'savedAt: 2026-10-16T00:00:00.000Z\nignore: []\nbody: <x/>\n';
+    await writeFile(join(opDir, requestFile.replace('.request.yaml', '.golden.yaml')), golden);
+    await writeFile(join(opDir, 'Gone.golden.yaml'), golden);
+
+    const { problems } = await loadProject(dir);
+
+    expect(problems.map((p) => [p.code, p.file])).toEqual([
+      ['orphan-request-file', 'interfaces/CountryInfo/operations/ListOfCountryNamesByCode/Gone.golden.yaml'],
+    ]);
     await rm(dir, { recursive: true, force: true });
   });
 

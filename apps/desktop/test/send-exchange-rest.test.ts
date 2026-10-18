@@ -169,7 +169,7 @@ describe('sendThroughEngine for a REST request', () => {
         headers: {
           host,
           connection: 'keep-alive',
-          'user-agent': 'Wirebench/0.1',
+          'user-agent': 'Wirebench',
           'accept-encoding': 'gzip, deflate, br',
         },
         body: '',
@@ -215,7 +215,7 @@ describe('sendThroughEngine for a REST request', () => {
         rawHeaders,
         bodyBase64: echo('<redacted>'),
         rawBodyBase64: echo('<redacted>'),
-        rawRequestBase64: `GET /echo?x=1&api_key=%3Credacted%3E HTTP/1.1\r\nhost: ${host}\r\nUser-Agent: Wirebench/0.1\r\nAccept-Encoding: gzip, deflate, br\r\n\r\n`,
+        rawRequestBase64: `GET /echo?x=1&api_key=%3Credacted%3E HTTP/1.1\r\nhost: ${host}\r\nUser-Agent: Wirebench\r\nAccept-Encoding: gzip, deflate, br\r\n\r\n`,
         rawResponseBase64:
           `HTTP/1.1 200 OK\r\nx-server-ms: -\r\ncontent-type: application/json\r\ncontent-length: ${length}\r\n` +
           `date: -\r\nconnection: keep-alive\r\nkeep-alive: timeout=5\r\n\r\n${echo('<redacted>')}`,
@@ -225,7 +225,7 @@ describe('sendThroughEngine for a REST request', () => {
         request: {
           url,
           method: 'GET',
-          headers: { 'User-Agent': 'Wirebench/0.1', 'Accept-Encoding': 'gzip, deflate, br' },
+          headers: { 'User-Agent': 'Wirebench', 'Accept-Encoding': 'gzip, deflate, br' },
         },
         keyNames: { params: ['api_key'], headers: [] },
       },

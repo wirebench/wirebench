@@ -87,6 +87,8 @@ describe('grantedFeatures (licensing spec §2)', () => {
       'audit-log',
       'scheduled-runs',
       'sso-provisioning',
+      'session-logs',
+      'terminal-sharing',
     ]);
   });
 

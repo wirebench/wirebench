@@ -28,6 +28,7 @@ import { tabsInSet, type TabSet } from '../state/tab-sets.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore, type ProjectStore } from '../state/project.js';
 import { useWebhooksStore } from '../state/webhooks.js';
+import { useSchedulesStore } from '../state/schedules.js';
 import { useActiveEnvironment, useWorkspaceStore } from '../state/workspace.js';
 import { useCurrentProjectId } from '../state/workspace-tabs.js';
 import type { WorkspaceEnvironmentWire } from '../../shared/wire-base.js';
@@ -57,6 +58,11 @@ const TerminalTab = lazy(async () => {
 const LocalTerminalTab = lazy(async () => {
   const module = await import('../features/ssh/local-terminal-tab.js');
   return { default: module.LocalTerminalTab };
+});
+
+const ShareViewTab = lazy(async () => {
+  const module = await import('../features/ssh/share-view-tab.js');
+  return { default: module.ShareViewTab };
 });
 
 const FilesTab = lazy(async () => {
@@ -127,12 +133,14 @@ export function EditorArea() {
   const envColor = environmentColorCss(useActiveEnvironment(useCurrentProjectId())?.color);
   const enabledKinds = useUiStore((state) => state.enabledKinds);
   const catchUrls = useWebhooksStore((state) => state.hooks);
+  const schedules = useSchedulesStore((state) => state.schedules);
   // Each tab's live name and unsaved state, read through its kind's row in `TAB_KINDS`: renames
   // reach the strip before the tab's own stored title catches up.
   const titleContext = (project: ProjectStore): TabTitleContext => ({
     project,
     workspaceEnvironments,
     hookNames: Object.fromEntries(catchUrls.map((hook) => [hook.id, hook.name])),
+    scheduleNames: Object.fromEntries(schedules.map((schedule) => [schedule.id, schedule.name])),
   });
   const liveTitles = useProjectStore(
     useShallow((project) => {
@@ -174,6 +182,7 @@ export function EditorArea() {
   const filesPanes = useFilesStore((state) => state.panes);
   // Local terminals too (#410): each holds its own shell.
   const localTabs = allTabs.filter((tab) => tab.kind === 'local-terminal');
+  const shareTabs = allTabs.filter((tab) => tab.kind === 'terminal-share');
   const localSessions = useLocalTerminalsStore((state) => state.sessions);
   const terminalMarks = useTerminalMarksStore((state) => state.marks);
   /** A terminal tab's mark (#422): the worst of its panes', drawn while the tab is behind another. */
@@ -656,6 +665,13 @@ export function EditorArea() {
           <div key={tab.id} hidden={tab.id !== activeId} className="h-full">
             <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading terminal…</p>}>
               <LocalTerminalTab tabId={tab.id} active={tab.id === activeId} />
+            </Suspense>
+          </div>
+        ))}
+        {shareTabs.map((tab) => (
+          <div key={tab.id} hidden={tab.id !== activeId} className="h-full">
+            <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading terminal…</p>}>
+              <ShareViewTab tabId={tab.id} />
             </Suspense>
           </div>
         ))}

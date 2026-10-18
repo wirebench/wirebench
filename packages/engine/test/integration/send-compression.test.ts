@@ -29,7 +29,7 @@ describe('request-body compression', () => {
 
     const recorded = server.requests.at(-1);
     expect(recorded?.headers['content-encoding']).toBe('gzip');
-    expect(recorded?.headers['user-agent']).toBe('Wirebench/0.1');
+    expect(recorded?.headers['user-agent']).toBe('Wirebench');
     expect(recorded?.headers['accept-encoding']).toBe('gzip, deflate');
     // The helper gunzips what it received, so this asserts the compressed bytes were valid.
     expect(recorded?.body.toString('utf-8')).toBe(ENVELOPE);

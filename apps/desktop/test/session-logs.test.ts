@@ -238,7 +238,10 @@ describe('sessionLogPlanner', () => {
     },
   ];
 
-  function planner(switches: Record<string, boolean>, workspace: { id: string } | null = { id: WS }) {
+  function planner(
+    switches: Record<string, boolean>,
+    workspace: { id: string; upload?: { url: string; workspaceId: string } } | null = { id: WS },
+  ) {
     const started: SessionLogStart[] = [];
     const plan = sessionLogPlanner({
       store: {
@@ -280,5 +283,13 @@ describe('sessionLogPlanner', () => {
       await planner({ 'group:prod': true, 'host:web': false }).plan({} as never, { hostId: 'web', hops }),
     ).toBeUndefined();
     expect(await planner({ 'host:web': true }, null).plan({} as never, { hostId: 'web', hops })).toBeUndefined();
+  });
+
+  it('logs every session, switches or not, while the workspace server records them, and names the upload (#430)', async () => {
+    const upload = { url: 'https://wb.example', workspaceId: 'SRV' };
+    const { plan, started } = planner({ 'host:web': false }, { id: WS, upload });
+    const begin = await plan({} as never, { hostId: 'web', hops });
+    begin?.('6f1c2d3e-0000');
+    expect(started).toEqual([expect.objectContaining({ hostId: 'web', upload })]);
   });
 });

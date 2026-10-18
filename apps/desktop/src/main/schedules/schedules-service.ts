@@ -13,6 +13,7 @@
 import type {
   AlertTestResponse,
   Schedule,
+  ScheduleResult,
   ScheduleRun,
   ScheduleRunDetail,
   ScheduleRunPage,
@@ -20,6 +21,7 @@ import type {
   ScheduleSecrets,
   ScheduleUpdate,
 } from '@wirebench/engine';
+import type { ScheduleResultWire } from '../../shared/schedules-wire.js';
 import type { LiveEvent, LiveState } from '../live/live-client.js';
 import type { LiveClients } from '../live/live-clients.js';
 import { normalizeServerUrl, type ScheduleCreateInput, type ServerClient } from '../server-client.js';
@@ -76,6 +78,70 @@ interface Watch {
 }
 
 const watchKey = (url: string, workspaceId: string): string => `${url} ${workspaceId}`;
+
+const text = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+const count = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+const ASSERTION_OUTCOMES: ReadonlySet<string> = new Set(['passed', 'failed', 'errored']);
+
+/**
+ * A stored result (the CLI's `json` report entry, masked by the server) in the Runner's shape, so the
+ * view shows it with the Runner's rows. Read field by field: the server's entry is loose, and a field
+ * this app does not know is left behind rather than trusted.
+ */
+export function toScheduleResult(entry: ScheduleResult): ScheduleResultWire {
+  const record = entry as Readonly<Record<string, unknown>>;
+  const assertions = Array.isArray(record.assertions) ? (record.assertions as unknown[]) : [];
+  const error = record.error as { readonly code?: unknown; readonly message?: unknown } | undefined;
+  const exchange = record.exchange as { readonly request?: unknown; readonly response?: unknown } | undefined;
+  const iteration = record.iteration as { readonly index?: unknown; readonly count?: unknown; readonly row?: unknown };
+  const status = count(record.status);
+  const durationMs = count(record.durationMs);
+  return {
+    path: entry.path,
+    name: entry.name,
+    protocol: entry.protocol,
+    outcome: entry.outcome,
+    ...(status !== undefined ? { status } : {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
+    assertions: assertions.flatMap((item) => {
+      const assertion = item as Readonly<Record<string, unknown>>;
+      const outcome = text(assertion.outcome);
+      if (outcome === undefined || !ASSERTION_OUTCOMES.has(outcome)) return [];
+      const expected = text(assertion.expected);
+      const actual = text(assertion.actual);
+      const message = text(assertion.message);
+      return [
+        {
+          type: text(assertion.type) ?? 'unknown',
+          label: text(assertion.label) ?? text(assertion.type) ?? 'Assertion',
+          outcome: outcome as 'passed' | 'failed' | 'errored',
+          ...(expected !== undefined ? { expected } : {}),
+          ...(actual !== undefined ? { actual } : {}),
+          ...(message !== undefined ? { message } : {}),
+        },
+      ];
+    }),
+    ...(error !== undefined && text(error.code) !== undefined
+      ? { error: { code: text(error.code)!, message: text(error.message) ?? '' } }
+      : {}),
+    ...(Array.isArray(record.scriptLog)
+      ? { scriptLog: (record.scriptLog as unknown[]).flatMap((line) => text(line) ?? []) }
+      : {}),
+    ...(iteration !== undefined && count(iteration.index) !== undefined && count(iteration.count) !== undefined
+      ? {
+          iteration: {
+            index: count(iteration.index)!,
+            count: count(iteration.count)!,
+            ...(count(iteration.row) !== undefined ? { row: count(iteration.row)! } : {}),
+          },
+        }
+      : {}),
+    ...(exchange !== undefined && text(exchange.request) !== undefined && text(exchange.response) !== undefined
+      ? { exchange: { request: text(exchange.request)!, response: text(exchange.response)! } }
+      : {}),
+  };
+}
 
 export class SchedulesService {
   private readonly watches = new Map<string, Watch>();
@@ -147,10 +213,15 @@ export class SchedulesService {
     );
   }
 
-  run(ref: ScheduleRef, runId: string): Promise<ScheduleRunDetail> {
-    return withToken(this.deps, ref.url, (origin, token) =>
+  /** One run with its results in the Runner's shape, and its alert deliveries. */
+  async run(
+    ref: ScheduleRef,
+    runId: string,
+  ): Promise<Omit<ScheduleRunDetail, 'results'> & { readonly results: ScheduleResultWire[] }> {
+    const detail = await withToken(this.deps, ref.url, (origin, token) =>
       this.deps.client.getScheduleRun(origin, token, ref.workspaceId, ref.scheduleId, runId),
     );
+    return { ...detail, results: detail.results.map(toScheduleResult) };
   }
 
   async cancelRun(ref: ScheduleRef, runId: string): Promise<void> {

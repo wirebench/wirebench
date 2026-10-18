@@ -7,6 +7,8 @@ import {
   localTerminalFromEnv,
   parseAreaSwitches,
   registerEnabledAreaChannels,
+  serialFromEnv,
+  telnetFromEnv,
 } from '../src/main/areas.js';
 
 const registered = vi.hoisted(() => new Set<string>());
@@ -99,7 +101,13 @@ describe('area channels', () => {
       'sessionLog.search',
       'sessionLog.setSwitch',
       'sessionLog.switches',
+      'sessionLog.teamList',
+      'sessionLog.teamRead',
     ]);
+  });
+  it('the SSH area registers its terminalShare.* channels (#429)', () => {
+    expect(channelsFor('').filter((n) => n.startsWith('terminalShare.'))).toHaveLength(13);
+    expect(channelsFor('ssh=off').filter((n) => n.startsWith('terminalShare.'))).toEqual([]);
   });
   it('with ssh=off no ssh.*, sftp.*, forward.*, layout.* or sessionLog.* channel exists', () => {
     expect(
@@ -112,6 +120,16 @@ describe('area channels', () => {
           n.startsWith('sessionLog.'),
       ),
     ).toEqual([]);
+  });
+});
+
+describe('the Telnet switch (#425)', () => {
+  it('is on with the SSH area, off with it, and telnet=off switches it off on its own', () => {
+    expect(telnetFromEnv({})).toBe(true);
+    expect(telnetFromEnv({ WIREBENCH_AREAS: 'ssh=off' })).toBe(false);
+    const env = { WIREBENCH_AREAS: 'telnet=off' };
+    expect(telnetFromEnv(env)).toBe(false);
+    expect(enabledAreasFromEnv(env)).toContain('ssh');
   });
 });
 
@@ -172,5 +190,16 @@ describe('hostsOnFileChange', () => {
     hostsOnFileChange(['explorer'], off, notifyOff);
     expect(off.invalidate).toHaveBeenCalledTimes(1);
     expect(notifyOff).not.toHaveBeenCalled();
+  });
+});
+
+describe('the serial switch (#426)', () => {
+  it('is on with the SSH area, off with it, and serial=off switches it off on its own', () => {
+    expect(serialFromEnv({})).toBe(true);
+    expect(serialFromEnv({ WIREBENCH_AREAS: 'ssh=off' })).toBe(false);
+    const env = { WIREBENCH_AREAS: 'serial=off' };
+    expect(serialFromEnv(env)).toBe(false);
+    expect(telnetFromEnv(env)).toBe(true);
+    expect(enabledAreasFromEnv(env)).toContain('ssh');
   });
 });
