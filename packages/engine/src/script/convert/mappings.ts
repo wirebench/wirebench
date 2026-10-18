@@ -8,7 +8,7 @@
  * decides those before it asks the table, so they stay TODOs with the layer's reason (§6.8).
  */
 import { UNSUPPORTED_WHY } from '../api/layer-parts.js';
-import { SKIP_REQUEST_PRE_ONLY } from '../api/prelude.js';
+import { sentRequestReason, SKIP_REQUEST_PRE_ONLY } from '../api/prelude.js';
 import { cryptoHash, cryptoHmac, expectChain, tcTest, type Chain, type ExpectStyle } from './chains.js';
 import type { LayeredApi, ScriptPhase } from '../model.js';
 import type { ConvertProtocol } from './roots.js';
@@ -23,10 +23,10 @@ export interface MappingRow {
   /** The one phase the row works in; absent: both. */
   readonly phase?: ScriptPhase;
   /**
-   * The layer's reason for refusing the call in the other phase. With it the call is an
-   * `unsupported` TODO there; without it, "not converted yet".
+   * The layer's reason for refusing the call in the other phase, for every protocol or per protocol.
+   * With it the call is an `unsupported` TODO there; without it, "not converted yet".
    */
-  readonly otherPhase?: string;
+  readonly otherPhase?: string | Partial<Record<ConvertProtocol, string>>;
   /**
    * What is matched (default `call`):
    * - `call`: the chain called with `arity` arguments (plus up to `ignored` more); the template
@@ -35,10 +35,19 @@ export interface MappingRow {
    * - `object-key-value`: the chain called with one object literal holding `key` and `value` and
    *   nothing else; the template gets `[key, value]`.
    * - `string-literal`: as `call`, and the first argument is a string literal.
+   * - `numeric-literal`: as `call`, and the first argument is a number literal.
+   *
+   * A `property` row also answers for a longer chain read from it (`res.body.id`): the rest of the
+   * chain follows its template as written.
    */
-  readonly shape?: 'call' | 'property' | 'object-key-value' | 'string-literal';
-  /** For `call` and `string-literal`: how many arguments the template takes (default 0). */
+  readonly shape?: 'call' | 'property' | 'object-key-value' | 'string-literal' | 'numeric-literal';
+  /** For `call` and the literal shapes: how many arguments the template takes (default 0). */
   readonly arity?: number;
+  /**
+   * The call must be a statement of its own: the template is an assignment or an assertion, which
+   * has no value to stand where the call's was. Used anywhere else, it is a TODO.
+   */
+  readonly statement?: true;
   /**
    * How many more arguments may follow. They are dropped, so each must be a literal (a scope name,
    * an options object of literals); a call with any other one is left as a TODO.
@@ -278,5 +287,291 @@ export const TEST_AND_CRYPTO_MAPPINGS: readonly MappingRow[] = [
   })),
 ];
 
+/** A template with no arguments: the same text wherever it stands. */
+const fixed =
+  (text: string): Template =>
+  () =>
+    text;
+
+/** A template that calls `method` with the arguments. */
+const calling =
+  (method: string): Template =>
+  (args) =>
+    `${method}(${args.map(String).join(', ')})`;
+
+/** The same template for REST and SOAP, which share headers and a numeric status, and another for gRPC. */
+const httpAndGrpc = (http: Template, grpc: Template): Partial<Record<ConvertProtocol, Template>> => ({
+  rest: http,
+  soap: http,
+  grpc,
+});
+
+/**
+ * Why a header write fails after the request is sent, as the typed request says it: REST and SOAP
+ * name headers, gRPC metadata. An MCP request has no headers, so its setter is not mapped either way.
+ */
+const HEADER_SENT = {
+  rest: sentRequestReason('header'),
+  soap: sentRequestReason('header'),
+  grpc: sentRequestReason('metadata'),
+};
+
+/**
+ * §6.5 the response (post-response only) and §6.6 the request. A `—` cell of the spec is a protocol
+ * the row's `to` leaves out. An MCP response has no status, body or headers, so only its duration maps.
+ */
+export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
+  // --- §6.5 status
+  ...[
+    { calls: pmShaped('response.code'), dialects: PM_DIALECTS },
+    { calls: ['res.status'], dialects: ['bruno'] },
+    { calls: ['pw.response.status', 'hopp.response.statusCode'], dialects: ['hoppscotch'] },
+    { calls: ['tc.response.status'], dialects: ['thunder-client'] },
+  ].map(({ calls, dialects }): MappingRow => ({
+    calls,
+    dialects: dialects as readonly LayeredApi[],
+    phase: 'post',
+    shape: 'property',
+    to: httpAndGrpc(fixed('response.status'), fixed('response.status.code')),
+  })),
+  {
+    calls: ['res.getStatus'],
+    dialects: ['bruno'],
+    phase: 'post',
+    to: httpAndGrpc(fixed('response.status'), fixed('response.status.code')),
+  },
+  // --- §6.5 the body parsed as JSON. A SOAP body is not JSON.
+  {
+    calls: [...pmShaped('response.json'), 'hopp.response.body.asJSON'],
+    dialects: PM_DIALECTS,
+    phase: 'post',
+    to: { rest: fixed('response.json()'), grpc: fixed('response.message') },
+  },
+  {
+    calls: ['tc.response.json'],
+    dialects: ['thunder-client'],
+    phase: 'post',
+    shape: 'property',
+    to: { rest: fixed('response.json()'), grpc: fixed('response.message') },
+  },
+  // --- §6.5 the body as the layer gives it: parsed when it is JSON, the text otherwise
+  {
+    calls: ['res.body'],
+    dialects: ['bruno'],
+    phase: 'post',
+    shape: 'property',
+    to: { rest: fixed('response.json()'), soap: fixed('response.text'), grpc: fixed('response.message') },
+  },
+  {
+    calls: ['res.getBody'],
+    dialects: ['bruno'],
+    phase: 'post',
+    to: { rest: fixed('response.json()'), soap: fixed('response.text'), grpc: fixed('response.message') },
+  },
+  {
+    calls: ['pw.response.body'],
+    dialects: ['hoppscotch'],
+    phase: 'post',
+    shape: 'property',
+    to: { rest: fixed('response.json()'), soap: fixed('response.text'), grpc: fixed('response.message') },
+  },
+  // --- §6.5 the body as text; a gRPC message has none, so it is the message's JSON
+  {
+    calls: [...pmShaped('response.text'), 'hopp.response.body.asText'],
+    dialects: PM_DIALECTS,
+    phase: 'post',
+    to: httpAndGrpc(fixed('response.text'), fixed('JSON.stringify(response.message)')),
+  },
+  {
+    calls: ['tc.response.text'],
+    dialects: ['thunder-client'],
+    phase: 'post',
+    shape: 'property',
+    to: httpAndGrpc(fixed('response.text'), fixed('JSON.stringify(response.message)')),
+  },
+  // --- §6.5 a header, or gRPC metadata
+  {
+    calls: pmShaped('response.headers.get'),
+    dialects: PM_DIALECTS,
+    phase: 'post',
+    arity: 1,
+    to: httpAndGrpc(calling('response.headers.get'), calling('response.metadata.get')),
+  },
+  {
+    calls: ['res.getHeader'],
+    dialects: ['bruno'],
+    phase: 'post',
+    arity: 1,
+    to: httpAndGrpc(calling('response.headers.get'), calling('response.metadata.get')),
+  },
+  {
+    calls: ['tc.response.getHeader'],
+    dialects: ['thunder-client'],
+    phase: 'post',
+    arity: 1,
+    to: httpAndGrpc(calling('response.headers.get'), calling('response.metadata.get')),
+  },
+  // --- §6.5 the duration, which every protocol has
+  ...[
+    { calls: pmShaped('response.responseTime'), dialects: PM_DIALECTS },
+    { calls: ['res.responseTime'], dialects: ['bruno'] },
+    { calls: ['hopp.response.responseTime'], dialects: ['hoppscotch'] },
+    { calls: ['tc.response.time'], dialects: ['thunder-client'] },
+  ].map(({ calls, dialects }): MappingRow => ({
+    calls,
+    dialects: dialects as readonly LayeredApi[],
+    phase: 'post',
+    shape: 'property',
+    to: everyProtocol(fixed('response.durationMs')),
+  })),
+  {
+    calls: ['res.getResponseTime'],
+    dialects: ['bruno'],
+    phase: 'post',
+    to: everyProtocol(fixed('response.durationMs')),
+  },
+  // --- §6.5 the status assertion: a statement, and only for a number
+  {
+    calls: pmShaped('response.to.have.status'),
+    dialects: PM_DIALECTS,
+    phase: 'post',
+    shape: 'numeric-literal',
+    arity: 1,
+    statement: true,
+    to: httpAndGrpc(
+      ([code]) => `expect(response.status).toBe(${String(code)})`,
+      ([code]) => `expect(response.status.code).toBe(${String(code)})`,
+    ),
+  },
+  // --- §6.6 header writes: pre-request only; a sent request's headers cannot change
+  {
+    calls: pmShaped('request.headers.add'),
+    dialects: PM_DIALECTS,
+    phase: 'pre',
+    otherPhase: HEADER_SENT,
+    shape: 'object-key-value',
+    to: httpAndGrpc(calling('request.headers.add'), calling('request.metadata.add')),
+  },
+  {
+    calls: pmShaped('request.headers.upsert'),
+    dialects: PM_DIALECTS,
+    phase: 'pre',
+    otherPhase: HEADER_SENT,
+    shape: 'object-key-value',
+    to: httpAndGrpc(calling('request.headers.set'), calling('request.metadata.set')),
+  },
+  {
+    calls: ['req.setHeader'],
+    dialects: ['bruno'],
+    phase: 'pre',
+    otherPhase: HEADER_SENT,
+    arity: 2,
+    to: httpAndGrpc(calling('request.headers.set'), calling('request.metadata.set')),
+  },
+  {
+    calls: ['hopp.request.setHeader'],
+    dialects: ['hoppscotch'],
+    phase: 'pre',
+    otherPhase: HEADER_SENT,
+    arity: 2,
+    to: httpAndGrpc(calling('request.headers.set'), calling('request.metadata.set')),
+  },
+  {
+    calls: pmShaped('request.headers.remove'),
+    dialects: PM_DIALECTS,
+    phase: 'pre',
+    otherPhase: HEADER_SENT,
+    shape: 'string-literal',
+    arity: 1,
+    to: httpAndGrpc(calling('request.headers.delete'), calling('request.metadata.delete')),
+  },
+  {
+    calls: ['req.deleteHeader'],
+    dialects: ['bruno'],
+    phase: 'pre',
+    otherPhase: HEADER_SENT,
+    arity: 1,
+    to: httpAndGrpc(calling('request.headers.delete'), calling('request.metadata.delete')),
+  },
+  {
+    calls: ['hopp.request.removeHeader'],
+    dialects: ['hoppscotch'],
+    phase: 'pre',
+    otherPhase: HEADER_SENT,
+    arity: 1,
+    to: httpAndGrpc(calling('request.headers.delete'), calling('request.metadata.delete')),
+  },
+  // --- §6.6 header reads, in both phases
+  {
+    calls: pmShaped('request.headers.get'),
+    dialects: PM_DIALECTS,
+    arity: 1,
+    to: httpAndGrpc(calling('request.headers.get'), calling('request.metadata.get')),
+  },
+  {
+    calls: ['req.getHeader'],
+    dialects: ['bruno'],
+    arity: 1,
+    to: httpAndGrpc(calling('request.headers.get'), calling('request.metadata.get')),
+  },
+  // --- §6.6 the URL: a SOAP endpoint, a gRPC target, an MCP server URL
+  {
+    calls: ['req.getUrl'],
+    dialects: ['bruno'],
+    to: {
+      rest: fixed('request.url'),
+      soap: fixed('request.endpoint'),
+      grpc: fixed('request.target'),
+      mcp: fixed('request.url'),
+    },
+  },
+  {
+    calls: pmShaped('request.url.toString'),
+    dialects: PM_DIALECTS,
+    to: {
+      rest: fixed('request.url'),
+      soap: fixed('request.endpoint'),
+      grpc: fixed('request.target'),
+      mcp: fixed('request.url'),
+    },
+  },
+  // Only a REST request's URL can change from a script.
+  {
+    calls: ['req.setUrl'],
+    dialects: ['bruno'],
+    phase: 'pre',
+    otherPhase: { rest: sentRequestReason('URL') },
+    arity: 1,
+    statement: true,
+    to: { rest: ([url]) => `request.url = ${String(url)}` },
+  },
+  // --- §6.6 the method: a SOAP request has none
+  {
+    calls: ['req.getMethod'],
+    dialects: ['bruno'],
+    to: { rest: fixed('request.method'), grpc: fixed('request.method'), mcp: fixed('request.method') },
+  },
+  {
+    calls: pmShaped('request.method'),
+    dialects: PM_DIALECTS,
+    shape: 'property',
+    to: { rest: fixed('request.method'), grpc: fixed('request.method'), mcp: fixed('request.method') },
+  },
+  // Only a REST request's method can change from a script.
+  {
+    calls: ['req.setMethod'],
+    dialects: ['bruno'],
+    phase: 'pre',
+    otherPhase: { rest: sentRequestReason('method') },
+    arity: 1,
+    statement: true,
+    to: { rest: ([method]) => `request.method = ${String(method)}` },
+  },
+];
+
 /** The whole table. Later sections add their rows here. */
-export const MAPPINGS: readonly MappingRow[] = [...VARIABLE_AND_RUN_MAPPINGS, ...TEST_AND_CRYPTO_MAPPINGS];
+export const MAPPINGS: readonly MappingRow[] = [
+  ...VARIABLE_AND_RUN_MAPPINGS,
+  ...TEST_AND_CRYPTO_MAPPINGS,
+  ...MESSAGE_MAPPINGS,
+];

@@ -5,7 +5,7 @@
  */
 import type ts from 'typescript';
 import { MAPPINGS, type MappingRow } from './mappings.js';
-import type { DialectRef, Matcher } from './roots.js';
+import type { ConvertContext, DialectRef, Matcher, Refusal, Replacement } from './roots.js';
 import { typescript } from './typescript.js';
 
 /**
@@ -18,8 +18,9 @@ export function tableMatcher(rows: readonly MappingRow[]): Matcher {
     for (const call of row.calls) byName.set(call, [...(byName.get(call) ?? []), row]);
   }
   return (ref, context) => {
-    for (const row of byName.get(ref.name) ?? []) {
-      if (!row.dialects.includes(context.dialect)) continue;
+    const rows = (byName.get(ref.name) ?? []).filter((row) => row.dialects.includes(context.dialect));
+    if (rows.length === 0) return prefixAnswer(byName, ref, context);
+    for (const row of rows) {
       if (row.refuse !== undefined) {
         if (ref.call !== undefined) return { refused: row.refuse };
         continue;
@@ -27,9 +28,7 @@ export function tableMatcher(rows: readonly MappingRow[]): Matcher {
       // A chain row reads its own shape; any other row is passed over when the shape differs.
       const target = row.chain === undefined ? shapeOf(row, ref) : undefined;
       if (row.chain === undefined && target === undefined) continue;
-      if (row.phase !== undefined && row.phase !== context.phase) {
-        return row.otherPhase !== undefined ? { refused: row.otherPhase } : undefined;
-      }
+      if (row.phase !== undefined && row.phase !== context.phase) return otherPhaseAnswer(row, context);
       const template = row.to[context.protocol];
       if (template === undefined) return undefined;
       if (row.chain !== undefined) {
@@ -49,6 +48,44 @@ export function tableMatcher(rows: readonly MappingRow[]): Matcher {
 /** The table's matcher, which the converter uses by default. */
 export const matchMappings: Matcher = tableMatcher(MAPPINGS);
 
+/** A row's answer in the phase it does not cover: the layer's reason there, or none ("not converted yet"). */
+function otherPhaseAnswer(row: MappingRow, context: ConvertContext): Refusal | undefined {
+  const reason = typeof row.otherPhase === 'string' ? row.otherPhase : row.otherPhase?.[context.protocol];
+  return reason === undefined ? undefined : { refused: reason };
+}
+
+/**
+ * A chain read past a `property` row (`res.body.id`): the row's template for the part it names, and
+ * the rest of the chain as written. Only the longest such part is asked, and its first row is final.
+ */
+function prefixAnswer(
+  byName: ReadonlyMap<string, readonly MappingRow[]>,
+  ref: DialectRef,
+  context: ConvertContext,
+): Replacement | Refusal | undefined {
+  const ts = typescript();
+  const names = ref.name.split('.');
+  let node: ts.Expression = ref.node;
+  for (let length = names.length - 1; length > 1 && ts.isPropertyAccessExpression(node); length--) {
+    node = node.expression;
+    const [row] = (byName.get(names.slice(0, length).join('.')) ?? []).filter(
+      (candidate) =>
+        candidate.dialects.includes(context.dialect) &&
+        candidate.shape === 'property' &&
+        candidate.chain === undefined &&
+        candidate.refuse === undefined,
+    );
+    if (row === undefined) continue;
+    if (written(ref.node)) return undefined;
+    if (row.phase !== undefined && row.phase !== context.phase) return otherPhaseAnswer(row, context);
+    const template = row.to[context.protocol];
+    if (template === undefined) return undefined;
+    // The rest holds only property names (and `?.`), so it is kept as written.
+    return { node: ref.node, text: `${template([])}${context.source.text.slice(node.end, ref.node.end)}` };
+  }
+  return undefined;
+}
+
 /** The node a row replaces and the arguments its template gets, or undefined when the shape differs. */
 function shapeOf(row: MappingRow, ref: DialectRef): { node: ts.Node; args: readonly ts.Node[] } | undefined {
   const ts = typescript();
@@ -58,6 +95,7 @@ function shapeOf(row: MappingRow, ref: DialectRef): { node: ts.Node; args: reado
   }
   const call = ref.call;
   if (call === undefined || call.arguments.some((arg) => ts.isSpreadElement(arg))) return undefined;
+  if (row.statement === true && !ts.isExpressionStatement(call.parent)) return undefined;
   if (shape === 'object-key-value') {
     const [only] = call.arguments;
     if (call.arguments.length !== 1 || only === undefined || !ts.isObjectLiteralExpression(only)) return undefined;
@@ -73,15 +111,20 @@ function shapeOf(row: MappingRow, ref: DialectRef): { node: ts.Node; args: reado
   if (!call.arguments.slice(arity).every(inert)) return undefined;
   const first = call.arguments[0];
   if (shape === 'string-literal' && (first === undefined || !ts.isStringLiteralLike(first))) return undefined;
+  if (shape === 'numeric-literal' && (first === undefined || !ts.isNumericLiteral(first))) return undefined;
   const args = call.arguments.slice(0, arity);
   if (row.pure === true && !args.every(pure)) return undefined;
   return { node: call, args };
 }
 
-/** The initializer of `name: …` in `object`, or undefined. */
+/** The initializer of `name: …` in `object` (the name itself for a shorthand `name`), or undefined. */
 function propertyValue(object: ts.ObjectLiteralExpression, name: string): ts.Expression | undefined {
   const ts = typescript();
   for (const property of object.properties) {
+    if (ts.isShorthandPropertyAssignment(property)) {
+      if (property.objectAssignmentInitializer === undefined && property.name.text === name) return property.name;
+      continue;
+    }
     if (!ts.isPropertyAssignment(property)) return undefined;
     if ((ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) && property.name.text === name) {
       return property.initializer;

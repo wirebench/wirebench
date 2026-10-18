@@ -1,0 +1,545 @@
+/**
+ * The mapping table's response and request rows (spec §6.5, §6.6): each call under each dialect and
+ * protocol, every `—` cell as a TODO, the response rows in a pre-request script, the request setters
+ * in a post-response script, and the argument shapes the rows insist on.
+ */
+import { afterAll, describe, expect, it } from 'vitest';
+import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from '../../../../src/grpc/scripting.js';
+import type { RestRequestSnapshot, RestResponseSnapshot } from '../../../../src/rest/scripting.js';
+import { sentRequestReason } from '../../../../src/script/api/prelude.js';
+import { convertScript } from '../../../../src/script/convert/index.js';
+import type { ConvertProtocol } from '../../../../src/script/convert/roots.js';
+import type { LayeredApi, ScriptPhase } from '../../../../src/script/model.js';
+import { runScript, type ScriptRunInput } from '../../../../src/script/run.js';
+import { createScriptSandbox } from '../../../../src/script/sandbox/host.js';
+
+const PROTOCOLS: readonly ConvertProtocol[] = ['rest', 'soap', 'grpc', 'mcp'];
+const NOT_CONVERTED = 'not converted yet';
+
+/** The converted script without its header line. */
+function converted(dialect: LayeredApi, text: string, protocol: ConvertProtocol = 'rest', phase: ScriptPhase = 'post') {
+  const result = convertScript({ dialect, protocol, phase, text });
+  if (!result.ok) throw new Error(result.message);
+  return { ...result, body: result.text.slice(result.text.indexOf('\n') + 1) };
+}
+
+/** The call a TODO names for `snippet`: its dotted chain, without the arguments. */
+const callOf = (snippet: string): string => /^[\w$]+(?:\.[\w$]+)*/.exec(snippet)?.[0] ?? snippet;
+
+/** `chain` under each `pm`-shaped root: Postman's and Hoppscotch's `pm`, Insomnia's `insomnia` and `$`. */
+const pmShaped = (chain: string): (readonly [LayeredApi, string])[] => [
+  ['postman', `pm.${chain}`],
+  ['insomnia', `insomnia.${chain}`],
+  ['insomnia', `$.${chain}`],
+  ['hoppscotch', `pm.${chain}`],
+];
+
+/**
+ * One row of the tables: the snippets that call it, the statement each is written in (`CALL` for the
+ * snippet, `OUT` for the template) and the template per protocol; a protocol it lacks is a `—`.
+ */
+interface Row {
+  readonly name: string;
+  readonly calls: readonly (readonly [LayeredApi, string])[];
+  readonly statement: string;
+  readonly to: Partial<Record<ConvertProtocol, string>>;
+}
+
+/** Each row converts on the protocols it names and is a TODO on the others. */
+function checkRow(row: Row, phase: ScriptPhase): void {
+  describe(row.name, () => {
+    for (const protocol of PROTOCOLS) {
+      const out = row.to[protocol];
+      it.each(row.calls.map(([dialect, call]) => ({ dialect, call })))(
+        `$call ($dialect) on ${protocol}${out === undefined ? ' is a TODO' : ''}`,
+        ({ dialect, call }) => {
+          const from = `${row.statement.replace('CALL', call)}\n`;
+          const result = converted(dialect, from, protocol, phase);
+          if (out === undefined) {
+            expect(result.body).toBe(`// TODO(convert): ${callOf(call)} — ${NOT_CONVERTED}\n// ${from}`);
+            expect(result.todos).toEqual([
+              { phase, line: 2, call: callOf(call), kind: 'not-mapped', reason: NOT_CONVERTED },
+            ]);
+            expect(result.mapped).toBe(0);
+          } else {
+            expect(result.body).toBe(`${row.statement.replace('CALL', out)}\n`);
+            expect(result.todos).toEqual([]);
+            expect(result.mapped).toBe(1);
+          }
+        },
+      );
+    }
+  });
+}
+
+// --- §6.5 the response --------------------------------------------------------------------------
+
+const RESPONSE_ROWS: readonly Row[] = [
+  {
+    name: 'status',
+    calls: [
+      ...pmShaped('response.code'),
+      ['bruno', 'res.status'],
+      ['bruno', 'res.getStatus()'],
+      ['hoppscotch', 'pw.response.status'],
+      ['hoppscotch', 'hopp.response.statusCode'],
+      ['thunder-client', 'tc.response.status'],
+    ],
+    statement: 'const status = CALL;',
+    to: { rest: 'response.status', soap: 'response.status', grpc: 'response.status.code' },
+  },
+  {
+    name: 'JSON body',
+    calls: [
+      ...pmShaped('response.json()'),
+      ['hoppscotch', 'hopp.response.body.asJSON()'],
+      ['thunder-client', 'tc.response.json'],
+    ],
+    statement: 'const body = CALL;',
+    to: { rest: 'response.json()', grpc: 'response.message' },
+  },
+  {
+    name: 'body',
+    calls: [
+      ['bruno', 'res.body'],
+      ['bruno', 'res.getBody()'],
+      ['hoppscotch', 'pw.response.body'],
+    ],
+    statement: 'const body = CALL;',
+    to: { rest: 'response.json()', soap: 'response.text', grpc: 'response.message' },
+  },
+  {
+    name: 'text',
+    calls: [
+      ...pmShaped('response.text()'),
+      ['hoppscotch', 'hopp.response.body.asText()'],
+      ['thunder-client', 'tc.response.text'],
+    ],
+    statement: 'const text = CALL;',
+    to: { rest: 'response.text', soap: 'response.text', grpc: 'JSON.stringify(response.message)' },
+  },
+  {
+    name: 'header',
+    calls: [
+      ...pmShaped("response.headers.get('X-Id')"),
+      ['bruno', "res.getHeader('X-Id')"],
+      ['thunder-client', "tc.response.getHeader('X-Id')"],
+    ],
+    statement: 'const id = CALL;',
+    to: {
+      rest: "response.headers.get('X-Id')",
+      soap: "response.headers.get('X-Id')",
+      grpc: "response.metadata.get('X-Id')",
+    },
+  },
+  {
+    name: 'duration',
+    calls: [
+      ...pmShaped('response.responseTime'),
+      ['bruno', 'res.responseTime'],
+      ['bruno', 'res.getResponseTime()'],
+      ['hoppscotch', 'hopp.response.responseTime'],
+      ['thunder-client', 'tc.response.time'],
+    ],
+    statement: 'const ms = CALL;',
+    to: {
+      rest: 'response.durationMs',
+      soap: 'response.durationMs',
+      grpc: 'response.durationMs',
+      mcp: 'response.durationMs',
+    },
+  },
+  {
+    name: 'status assertion',
+    calls: pmShaped('response.to.have.status(201)'),
+    statement: 'CALL;',
+    to: {
+      rest: 'expect(response.status).toBe(201)',
+      soap: 'expect(response.status).toBe(201)',
+      grpc: 'expect(response.status.code).toBe(201)',
+    },
+  },
+];
+
+describe('§6.5 response rows in a post-response script', () => {
+  for (const row of RESPONSE_ROWS) checkRow(row, 'post');
+});
+
+describe('§6.5 response rows in a pre-request script are TODOs', () => {
+  for (const row of RESPONSE_ROWS) {
+    it.each(row.calls.map(([dialect, call]) => ({ dialect, call })))(
+      `${row.name}: $call ($dialect)`,
+      ({ dialect, call }) => {
+        for (const protocol of PROTOCOLS) {
+          const from = `${row.statement.replace('CALL', call)}\n`;
+          const result = converted(dialect, from, protocol, 'pre');
+          expect(result.body).toBe(`// TODO(convert): ${callOf(call)} — ${NOT_CONVERTED}\n// ${from}`);
+          expect(result.todos.map(({ kind }) => kind)).toEqual(['not-mapped']);
+        }
+      },
+    );
+  }
+});
+
+describe('§6.5 shapes', () => {
+  it('reads a property chain after a response property through the template', () => {
+    expect(converted('bruno', 'const id = res.body.id;\n').body).toBe('const id = response.json().id;\n');
+    expect(converted('bruno', 'const id = res.body?.user.id;\n', 'grpc').body).toBe(
+      'const id = response.message?.user.id;\n',
+    );
+    expect(converted('thunder-client', 'const n = tc.response.json.items.length;\n').body).toBe(
+      'const n = response.json().items.length;\n',
+    );
+    expect(converted('postman', 'const ok = pm.response.code.toString();\n', 'grpc').body).toBe(
+      'const ok = response.status.code.toString();\n',
+    );
+  });
+
+  it('keeps a chain on a called response through the template', () => {
+    expect(converted('postman', "pm.environment.set('id', pm.response.json().id);\n").body).toBe(
+      "vars.set('id', response.json().id);\n",
+    );
+  });
+
+  it('converts a header name read from a variable', () => {
+    expect(converted('bruno', "const id = res.getHeader(fallback ?? bru.getVar('h'));\n").body).toBe(
+      "const id = response.headers.get(fallback ?? (vars.get('h') ?? props.get('h')));\n",
+    );
+  });
+
+  it('leaves a chain read past a response property as a TODO where the property is', () => {
+    expect(converted('bruno', 'const id = res.body.id;\n', 'rest', 'pre').todos.map(({ call }) => call)).toEqual([
+      'res.body.id',
+    ]);
+    expect(converted('bruno', 'const id = res.body.id;\n', 'mcp').todos.map(({ call }) => call)).toEqual([
+      'res.body.id',
+    ]);
+  });
+
+  it('leaves a written response property as a TODO', () => {
+    expect(converted('bruno', 'res.body.id = 2;\n').todos.map(({ call }) => call)).toEqual(['res.body.id']);
+    expect(converted('bruno', 'res.status = 2;\n').todos.map(({ call }) => call)).toEqual(['res.status']);
+  });
+
+  it('asserts a status only for a number literal, as a statement of its own', () => {
+    expect(converted('postman', "pm.test('ok', () => {\n  pm.response.to.have.status(200);\n});\n").body).toBe(
+      "test('ok', () => {\n  expect(response.status).toBe(200);\n});\n",
+    );
+    for (const statement of [
+      'pm.response.to.have.status(code);',
+      "pm.response.to.have.status('Created');",
+      'pm.response.to.have.status();',
+      'pm.response.to.have.status(200, 201);',
+      'const done = pm.response.to.have.status(200);',
+      'ok && pm.response.to.have.status(200);',
+    ]) {
+      const result = converted('postman', `${statement}\n`);
+      expect(result.body).toBe(`// TODO(convert): pm.response.to.have.status — ${NOT_CONVERTED}\n// ${statement}\n`);
+    }
+  });
+});
+
+describe('§6.5 not mapped', () => {
+  it.each([
+    ['postman', 'const v = pm.response.status;'],
+    ['postman', 'const v = pm.response.responseSize;'],
+    ['bruno', 'const v = res.getSize();'],
+    ['thunder-client', 'const v = tc.response.size;'],
+    ['thunder-client', 'const v = tc.response.contentType;'],
+    ['postman', 'pm.response.to.be.ok;'],
+    ['postman', "pm.response.to.have.header('X-Id');"],
+    ['postman', 'pm.response.to.have.jsonBody();'],
+    ['postman', "pm.response.to.have.body('x');"],
+  ] as const)('%s: %s', (dialect, statement) => {
+    for (const protocol of PROTOCOLS) {
+      const result = converted(dialect, `${statement}\n`, protocol);
+      expect(result.body).toBe(
+        `// TODO(convert): ${callOf(statement.replace(/^const v = /, ''))} — ${NOT_CONVERTED}\n// ${statement}\n`,
+      );
+      expect(result.todos.map(({ kind }) => kind)).toEqual(['not-mapped']);
+    }
+  });
+});
+
+// --- §6.6 the request ---------------------------------------------------------------------------
+
+const SETTER_ROWS: readonly (Row & {
+  readonly what: Partial<Record<ConvertProtocol, Parameters<typeof sentRequestReason>[0]>>;
+})[] = [
+  {
+    name: 'headers.add',
+    calls: pmShaped("request.headers.add({ key: 'X-Id', value: id })"),
+    statement: 'CALL;',
+    to: {
+      rest: "request.headers.add('X-Id', id)",
+      soap: "request.headers.add('X-Id', id)",
+      grpc: "request.metadata.add('X-Id', id)",
+    },
+    what: { rest: 'header', soap: 'header', grpc: 'metadata' },
+  },
+  {
+    name: 'header set',
+    calls: [
+      ...pmShaped("request.headers.upsert({ key: 'X-Id', value: id })"),
+      ['bruno', "req.setHeader('X-Id', id)"],
+      ['hoppscotch', "hopp.request.setHeader('X-Id', id)"],
+    ],
+    statement: 'CALL;',
+    to: {
+      rest: "request.headers.set('X-Id', id)",
+      soap: "request.headers.set('X-Id', id)",
+      grpc: "request.metadata.set('X-Id', id)",
+    },
+    what: { rest: 'header', soap: 'header', grpc: 'metadata' },
+  },
+  {
+    name: 'header delete',
+    calls: [
+      ...pmShaped("request.headers.remove('X-Id')"),
+      ['bruno', "req.deleteHeader('X-Id')"],
+      ['hoppscotch', "hopp.request.removeHeader('X-Id')"],
+    ],
+    statement: 'CALL;',
+    to: {
+      rest: "request.headers.delete('X-Id')",
+      soap: "request.headers.delete('X-Id')",
+      grpc: "request.metadata.delete('X-Id')",
+    },
+    what: { rest: 'header', soap: 'header', grpc: 'metadata' },
+  },
+  {
+    name: 'setUrl',
+    calls: [['bruno', 'req.setUrl(u)']],
+    statement: 'CALL;',
+    to: { rest: 'request.url = u' },
+    what: { rest: 'URL' },
+  },
+  {
+    name: 'setMethod',
+    calls: [['bruno', 'req.setMethod(m)']],
+    statement: 'CALL;',
+    to: { rest: 'request.method = m' },
+    what: { rest: 'method' },
+  },
+];
+
+const READ_ROWS: readonly Row[] = [
+  {
+    name: 'header read',
+    calls: [...pmShaped("request.headers.get('X-Id')"), ['bruno', "req.getHeader('X-Id')"]],
+    statement: 'const id = CALL;',
+    to: {
+      rest: "request.headers.get('X-Id')",
+      soap: "request.headers.get('X-Id')",
+      grpc: "request.metadata.get('X-Id')",
+    },
+  },
+  {
+    name: 'URL',
+    calls: [['bruno', 'req.getUrl()'], ...pmShaped('request.url.toString()')],
+    statement: 'const url = CALL;',
+    to: { rest: 'request.url', soap: 'request.endpoint', grpc: 'request.target', mcp: 'request.url' },
+  },
+  {
+    name: 'method',
+    calls: [['bruno', 'req.getMethod()'], ...pmShaped('request.method')],
+    statement: 'const method = CALL;',
+    to: { rest: 'request.method', grpc: 'request.method', mcp: 'request.method' },
+  },
+];
+
+describe('§6.6 request setters in a pre-request script', () => {
+  for (const row of SETTER_ROWS) checkRow(row, 'pre');
+});
+
+describe('§6.6 request reads in both phases', () => {
+  for (const row of READ_ROWS) {
+    checkRow(row, 'pre');
+    checkRow(row, 'post');
+  }
+});
+
+describe("§6.6 a setter in a post-response script is a TODO with the layer's reason", () => {
+  for (const row of SETTER_ROWS) {
+    for (const protocol of PROTOCOLS) {
+      const what = row.what[protocol];
+      it.each(row.calls.map(([dialect, call]) => ({ dialect, call })))(
+        `${row.name}: $call ($dialect) on ${protocol}`,
+        ({ dialect, call }) => {
+          const from = `${call};\n`;
+          const result = converted(dialect, from, protocol, 'post');
+          const name = callOf(call);
+          if (what === undefined) {
+            expect(result.body).toBe(`// TODO(convert): ${name} — ${NOT_CONVERTED}\n// ${from}`);
+            expect(result.todos).toEqual([
+              { phase: 'post', line: 2, call: name, kind: 'not-mapped', reason: NOT_CONVERTED },
+            ]);
+          } else {
+            const reason = sentRequestReason(what);
+            expect(result.body).toBe(`// TODO(convert): ${name} — ${reason}\n// ${from}`);
+            expect(result.todos).toEqual([{ phase: 'post', line: 2, call: name, kind: 'unsupported', reason }]);
+          }
+          expect(result.mapped).toBe(0);
+        },
+      );
+    }
+  }
+});
+
+describe('§6.6 shapes', () => {
+  it('writes the URL or method only as a statement of its own', () => {
+    for (const statement of ['const r = req.setUrl(u);', 'ok && req.setUrl(u);', 'log(req.setMethod(m));']) {
+      const result = converted('bruno', `${statement}\n`, 'rest', 'pre');
+      expect(result.body).toBe(
+        `// TODO(convert): ${/req\.\w+/.exec(statement)?.[0] ?? ''} — ${NOT_CONVERTED}\n// ${statement}\n`,
+      );
+    }
+    expect(converted('bruno', "if (v2) req.setUrl(bru.getVar('url'));\n", 'rest', 'pre').body).toBe(
+      "if (v2) request.url = (vars.get('url') ?? props.get('url'));\n",
+    );
+  });
+
+  it('adds or upserts a header only from an object literal of exactly key and value', () => {
+    for (const statement of [
+      'pm.request.headers.add(header);',
+      "pm.request.headers.add({ key: 'X-Id' });",
+      "pm.request.headers.add({ key: 'X-Id', value: id, disabled: true });",
+      "pm.request.headers.add({ ...base, key: 'X-Id', value: id });",
+      'pm.request.headers.upsert(header);',
+      "pm.request.headers.add('X-Id', id);",
+    ]) {
+      const result = converted('postman', `${statement}\n`, 'rest', 'pre');
+      expect(result.body).toBe(`// TODO(convert): ${callOf(statement)} — ${NOT_CONVERTED}\n// ${statement}\n`);
+    }
+    expect(
+      converted('postman', "pm.request.headers.add({ 'value': v, key: pm.environment.get('k') });\n", 'grpc', 'pre')
+        .body,
+    ).toBe("request.metadata.add((vars.get('k') ?? props.get('k')), v);\n");
+  });
+
+  it('takes key and value written shorthand', () => {
+    expect(converted('postman', 'pm.request.headers.upsert({ key, value });\n', 'rest', 'pre').body).toBe(
+      'request.headers.set(key, value);\n',
+    );
+  });
+
+  it('removes a header only by a string', () => {
+    for (const statement of ['pm.request.headers.remove(name);', "pm.request.headers.remove({ key: 'X-Id' });"]) {
+      const result = converted('postman', `${statement}\n`, 'rest', 'pre');
+      expect(result.body).toBe(`// TODO(convert): pm.request.headers.remove — ${NOT_CONVERTED}\n// ${statement}\n`);
+    }
+    expect(converted('bruno', 'req.deleteHeader(name);\n', 'rest', 'pre').body).toBe('request.headers.delete(name);\n');
+  });
+
+  it('leaves a written request method as a TODO', () => {
+    expect(converted('postman', "pm.request.method = 'PUT';\n", 'rest', 'pre').todos.map(({ call }) => call)).toEqual([
+      'pm.request.method',
+    ]);
+  });
+});
+
+describe('§6.6 not mapped', () => {
+  it.each([
+    ['bruno', 'const v = req.getBody();'],
+    ['bruno', 'req.setBody(b);'],
+    ['postman', 'const v = pm.request.body.raw;'],
+    ['hoppscotch', 'hopp.request.setBody(b);'],
+    ['thunder-client', 'tc.request.setBody(b);'],
+    ['thunder-client', "tc.request.setHeader('a', 'b');"],
+    ['hoppscotch', "hopp.request.setUrl('u');"],
+    ['postman', 'const v = pm.request.url.getHost();'],
+    ['postman', 'const v = pm.request.url.getPath();'],
+    ['postman', "pm.request.url.query.add({ key: 'a', value: 'b' });"],
+  ] as const)('%s: %s', (dialect, statement) => {
+    for (const protocol of PROTOCOLS) {
+      const result = converted(dialect, `${statement}\n`, protocol, 'pre');
+      expect(result.body).toBe(
+        `// TODO(convert): ${callOf(statement.replace(/^const v = /, ''))} — ${NOT_CONVERTED}\n// ${statement}\n`,
+      );
+      expect(result.todos.map(({ kind }) => kind)).toEqual(['not-mapped']);
+    }
+  });
+});
+
+// --- the reasons are the layers' own --------------------------------------------------------------
+
+/**
+ * `pm.request` on a gRPC call fails with a plain TypeError in every phase (layers spec §14), so the
+ * gRPC reason is pinned through the layers that reach the metadata.
+ */
+describe('a setter in a post-response script throws the reason its TODO gives', () => {
+  const sandbox = createScriptSandbox();
+  afterAll(async () => {
+    await sandbox.dispose();
+  });
+
+  const REST: RestRequestSnapshot = {
+    protocol: 'rest',
+    method: 'GET',
+    url: 'https://shop.test/a',
+    headers: [],
+    body: { kind: 'none' },
+  };
+  const REST_RESPONSE: RestResponseSnapshot = {
+    protocol: 'rest',
+    status: 200,
+    statusText: 'OK',
+    headers: [],
+    text: '',
+    durationMs: 1,
+  };
+  const GRPC: GrpcRequestSnapshot = {
+    protocol: 'grpc',
+    target: 'grpc.test:443',
+    method: 'shop.Carts/Get',
+    metadata: [],
+    message: {},
+  };
+  const GRPC_RESPONSE: GrpcResponseSnapshot = {
+    protocol: 'grpc',
+    status: { code: 0, name: 'OK', message: '' },
+    metadata: [],
+    trailers: [],
+    message: {},
+    durationMs: 1,
+  };
+
+  const messageOf = async (
+    api: LayeredApi,
+    source: string,
+    request: ScriptRunInput['request'],
+    response: NonNullable<ScriptRunInput['response']>,
+  ): Promise<string | undefined> => {
+    const outcome = await runScript({
+      sandbox,
+      phase: 'post',
+      api,
+      source,
+      filename: 'A.post.js',
+      request,
+      response,
+      vars: {},
+      props: {},
+      secrets: {},
+      requestName: 'A',
+    });
+    return outcome.ok ? undefined : outcome.error.message;
+  };
+
+  it.each([
+    ['postman', "pm.request.headers.add({ key: 'a', value: 'b' });", 'header'],
+    ['bruno', "req.setHeader('a', 'b');", 'header'],
+    ['hoppscotch', "hopp.request.removeHeader('a');", 'header'],
+    ['bruno', "req.setUrl('https://shop.test/b');", 'URL'],
+    ['bruno', "req.setMethod('PUT');", 'method'],
+  ] as const)('REST: %s %s', async (api, source, what) => {
+    expect(await messageOf(api, source, REST, REST_RESPONSE)).toContain(sentRequestReason(what));
+  });
+
+  it.each([
+    ['bruno', "req.setHeader('a', 'b');"],
+    ['hoppscotch', "hopp.request.setHeader('a', 'b');"],
+  ] as const)('gRPC: %s %s', async (api, source) => {
+    expect(await messageOf(api, source, GRPC, GRPC_RESPONSE)).toContain(sentRequestReason('metadata'));
+  });
+});
