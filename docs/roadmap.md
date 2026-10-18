@@ -42,11 +42,14 @@ the engine's project model changed shape (each protocol in its own module); it t
 to version 9.
 6.1.0 carries the SSH workspace and the REST polish that followed it: a Files tab for SFTP, port
 forwarding with forwarding groups (also as `wirebench ssh forward`), split terminals with broadcast input and saved layouts,
-snippets, a local terminal, identities, certificates and security keys, Mosh, session logs and host
-import from other SSH tools; client-signed JWT, Digest, AWS Signature v4 and more OAuth 2 grants;
+snippets, a local terminal, identities, certificates and security keys, device-bound keys and an app
+lock, Mosh, Telnet and serial console hosts, a terminal type and character set per host, session logs
+and host import from other SSH tools; client-signed JWT, Digest, AWS Signature v4 and more OAuth 2 grants;
 GraphQL requests; MCP servers as a fifth kind of container; `wirebench lint` for OpenAPI; environments
 that apply to chosen projects; HTTP/2 offered by default; and, on the server, scheduled runs and SAML
-sign-in with SCIM; and install files for Homebrew, winget and a team server compose. It took the project format to version 10.
+sign-in with SCIM, team session logs and live terminal sharing; imported scripts from other API clients
+that run against their own script API; and install files for Homebrew, winget and a team server
+compose. It took the project format to version 11.
 Everything below is what is still open, and
 [Milestones and tracking](#milestones-and-tracking) maps it to the issues and milestones that track it.
 
