@@ -219,8 +219,48 @@ export function stepDuration(step: ConnectStep): number | undefined {
   return Math.max(0, Math.round(step.endedAt - step.startedAt));
 }
 
+/**
+ * What a host's connect goes through (#688): SSH (a Mosh host signs in over it too), a Telnet device, or a
+ * serial console. Main reports SSH's stages; a Telnet connect reports the address and the TCP connection, then
+ * opens at once, and a serial line reports no stage at all, so each shows only the steps it has.
+ */
+export type ConnectRoute =
+  | { readonly kind: 'ssh' }
+  /** `signIn`: a user is set, so Wirebench types the sign-in at the device's prompts. */
+  | { readonly kind: 'telnet'; readonly signIn: boolean }
+  /** `opening`: "/dev/ttyUSB0 at 9600 8N1", the port and the line the console is opened on. */
+  | { readonly kind: 'serial'; readonly opening: string };
+
+export const SSH_ROUTE: ConnectRoute = { kind: 'ssh' };
+
+/** The steps a route lists, in order. */
+export function routeSteps(route: ConnectRoute): readonly ConnectStepId[] {
+  switch (route.kind) {
+    case 'ssh':
+      return CONNECT_STEPS;
+    case 'telnet':
+      return route.signIn ? ['resolve', 'connect', 'shell'] : ['resolve', 'connect'];
+    case 'serial':
+      return ['resolve', 'shell'];
+  }
+}
+
+/**
+ * The steps the screen shows for `route`. A step the route does not list is still shown once it failed or
+ * waits on the user, so the sentence saying why is never hidden with it.
+ */
+export function shownSteps(steps: readonly ConnectStep[], route: ConnectRoute): readonly ConnectStep[] {
+  const listed = routeSteps(route);
+  return steps.filter((step) => listed.includes(step.id) || step.state === 'failed' || step.state === 'waiting');
+}
+
 /** A step's name on the screen. */
-export function stepLabel(id: ConnectStepId, purpose: ConnectPurpose): string {
+export function stepLabel(id: ConnectStepId, purpose: ConnectPurpose, route: ConnectRoute = SSH_ROUTE): string {
+  if (route.kind === 'serial') {
+    if (id === 'resolve') return `Opening ${route.opening}`;
+    if (id === 'shell') return 'Ready';
+  }
+  if (route.kind === 'telnet' && id === 'shell') return 'Signing in at the prompt';
   switch (id) {
     case 'resolve':
       return 'Resolving address';

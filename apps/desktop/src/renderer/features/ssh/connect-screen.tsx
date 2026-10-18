@@ -11,12 +11,19 @@ import { setSignInUser, useConnectStore } from './connect-store.js';
 import { OsIcon, osOf } from './os-icon.js';
 import { saveQuickAsHost } from './connect.js';
 import { isQuickHostId, useQuickHostsStore } from './quick-hosts.js';
-import { formatDuration, inTimeOrder, stepDuration, stepLabel } from './connect-progress.js';
-import type { ConnectLogLine, ConnectPurpose, ConnectStep, ConnectView } from './connect-progress.js';
+import { formatDuration, inTimeOrder, shownSteps, SSH_ROUTE, stepDuration, stepLabel } from './connect-progress.js';
+import type { ConnectLogLine, ConnectPurpose, ConnectRoute, ConnectStep, ConnectView } from './connect-progress.js';
 import { TYPE_AHEAD_LIMIT, type TypeAheadState } from './type-ahead.js';
 import { storeSshSecret } from './secret-writes.js';
 import { ipc } from '../../state/ipc-client.js';
-import { portText, portsNote, RefreshPortsButton, serialTargetText, useSerialPorts } from './serial-section.js';
+import {
+  portText,
+  portsNote,
+  RefreshPortsButton,
+  serialLabel,
+  serialTargetText,
+  useSerialPorts,
+} from './serial-section.js';
 
 /** How long "Connected in N ms" shows before the screen fades, and how long the fade takes. */
 export const CONNECTED_HOLD_MS = 600;
@@ -586,6 +593,32 @@ export function ConnectScreen({
   }, [connected, attemptId]);
 
   const user = typedUser ?? host?.ssh.user.value;
+  const protocol = host?.ssh.protocol?.value;
+  const serialHost = protocol === 'serial';
+  // The port this computer opens for a serial console, read again for each attempt: a pick changes it.
+  const [device, setDevice] = useState<string>();
+  useEffect(() => {
+    setDevice(undefined);
+    if (!serialHost) return;
+    let live = true;
+    Promise.resolve()
+      .then(() => ipc().ssh.serialDevice({ hostId }))
+      .then((result) => {
+        if (live && result.ok) setDevice(result.value.device);
+      })
+      // Unread, the step names no port.
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [hostId, serialHost, attemptId]);
+  // Telnet and a serial console list their own steps, not SSH's (#688).
+  const route: ConnectRoute =
+    protocol === 'telnet'
+      ? { kind: 'telnet', signIn: user !== undefined && user !== '' }
+      : serialHost
+        ? { kind: 'serial', opening: `${device ?? 'the serial port'} at ${serialLabel(host?.ssh.serial?.value)}` }
+        : SSH_ROUTE;
   const target =
     host === undefined
       ? hostId
@@ -593,7 +626,7 @@ export function ConnectScreen({
         ? serialTargetText(host)
         : `${user === undefined ? '' : `${user}@`}${host.address}:${String(host.ssh.port.value)}`;
   const running = view === undefined || outcome === 'running' || outcome === 'trust';
-  const steps = view?.steps;
+  const steps = view === undefined ? undefined : shownSteps(view.steps, route);
   const total = view !== undefined && view.outcome.kind === 'connected' ? view.outcome.at - view.startedAt : undefined;
   const showActions = failed || (reconnect === undefined && view === undefined);
   // A host's settings stopped it before any step ran: the steps are not the story (#532).
@@ -681,7 +714,7 @@ export function ConnectScreen({
                           : 'text-fg-default'
                     }
                   >
-                    {stepLabel(step.id, purpose)}
+                    {stepLabel(step.id, purpose, route)}
                     <span className="sr-only">{`: ${STATE_WORDS[step.state]}`}</span>
                   </span>
                   {step.detail !== undefined && step.state !== 'pending' && (

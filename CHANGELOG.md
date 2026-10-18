@@ -21,6 +21,10 @@ All notable changes to this project are documented here. The format follows
 
 - **Telnet and serial terminals no longer offer Files.** The terminal tab's toolbar shows **Files** only
   when the focused pane's host is reached over SSH or Mosh, as the pane's own menu already did (#688).
+- **Telnet and serial connects list their own steps.** A serial console's connection screen shows
+  **Opening /dev/ttyUSB0 at 9600 8N1** then **Ready**, and a Telnet host's shows **Resolving address**,
+  **Connecting** and, when a user is set, **Signing in at the prompt**, instead of SSH's host-key,
+  authentication and shell steps (#688).
 - **A large REST response scrolls smoothly in Raw.** Scrolling the Raw view of a multi-megabyte body
   draws the new lines in the next frame and moves them without a layout pass, so it no longer drops
   frames on a slower machine.

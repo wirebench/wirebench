@@ -6,12 +6,14 @@ import {
   inTimeOrder,
   formatDuration,
   reduceProgress,
+  shownSteps,
+  SSH_ROUTE,
   startView,
   stepDuration,
   stepLabel,
   trustView,
 } from '../../src/renderer/features/ssh/connect-progress.js';
-import type { ConnectView } from '../../src/renderer/features/ssh/connect-progress.js';
+import type { ConnectRoute, ConnectView } from '../../src/renderer/features/ssh/connect-progress.js';
 import { connectFailureSentence, connectFix } from '../../src/renderer/features/ssh/connect-errors.js';
 
 type PhaseEvent = Extract<SshConnectProgressWire, { kind: 'phase' }>;
@@ -193,6 +195,68 @@ describe('the connect phase reducer', () => {
     expect(formatDuration(12)).toBe('12 ms');
     expect(formatDuration(1400)).toBe('1.4 s');
     expect(formatDuration(12_000)).toBe('12 s');
+  });
+});
+
+describe('the steps per protocol (#688)', () => {
+  const shown = (view: ConnectView, route: ConnectRoute) =>
+    shownSteps(view.steps, route).map((s) => `${stepLabel(s.id, 'terminal', route)}:${s.state}`);
+  const SERIAL: ConnectRoute = { kind: 'serial', opening: '/dev/ttyUSB0 at 9600 8N1' };
+
+  it('SSH lists all five steps', () => {
+    expect(shownSteps(startView('a1', 'terminal', 1000).steps, SSH_ROUTE)).toHaveLength(5);
+    expect(stepLabel('host-key', 'terminal')).toBe('Checking host key');
+  });
+
+  it('a serial console opens its port, then is ready: main reports no stage, only a log line', () => {
+    const start = fold(startView('a1', 'terminal', 1000), [log('Opening /dev/ttyUSB0 at 9600 8N1', 1001)]);
+    expect(shown(start, SERIAL)).toEqual(['Opening /dev/ttyUSB0 at 9600 8N1:running', 'Ready:pending']);
+    expect(shown(connectedView(start, 1020), SERIAL)).toEqual(['Opening /dev/ttyUSB0 at 9600 8N1:done', 'Ready:done']);
+  });
+
+  it('a port that will not open fails the Opening step', () => {
+    const view = failedView(
+      startView('a1', 'terminal', 1000),
+      { code: 'serial-device-busy', message: '', details: { device: '/dev/ttyUSB0' } },
+      1010,
+    );
+    expect(shown(view, SERIAL)).toEqual(['Opening /dev/ttyUSB0 at 9600 8N1:failed', 'Ready:pending']);
+  });
+
+  // What main reports for a Telnet target: the address, the TCP connection, then the session at once.
+  const TELNET: SshConnectProgressWire[] = [
+    phase('resolve', 'start', 1000),
+    phase('resolve', 'done', 1010, { detail: '10.1.1.1' }),
+    phase('tcp', 'start', 1010),
+    phase('tcp', 'done', 1030, { detail: '10.1.1.1:23' }),
+    phase('shell', 'start', 1030, { detail: 'telnet' }),
+    phase('shell', 'done', 1031, { detail: 'telnet' }),
+  ];
+
+  it('Telnet resolves, connects and signs in at the prompt when a user is set', () => {
+    const route: ConnectRoute = { kind: 'telnet', signIn: true };
+    const view = connectedView(fold(startView('a1', 'terminal', 1000), TELNET), 1032);
+    expect(shown(view, route)).toEqual(['Resolving address:done', 'Connecting:done', 'Signing in at the prompt:done']);
+  });
+
+  it('Telnet without a user leaves the sign-in to the person: no sign-in step', () => {
+    const route: ConnectRoute = { kind: 'telnet', signIn: false };
+    const view = fold(startView('a1', 'terminal', 1000), TELNET.slice(0, 3));
+    expect(shown(view, route)).toEqual(['Resolving address:done', 'Connecting:running']);
+  });
+
+  it('a step the protocol does not list still shows once it failed, so its reason is not hidden', () => {
+    const route: ConnectRoute = { kind: 'telnet', signIn: false };
+    const view = failedView(
+      fold(startView('a1', 'terminal', 1000), TELNET.slice(0, 4)),
+      { code: 'sftp-unavailable', message: '' },
+      1040,
+    );
+    expect(shown(view, route)).toEqual([
+      'Resolving address:done',
+      'Connecting:done',
+      'Signing in at the prompt:failed',
+    ]);
   });
 });
 
