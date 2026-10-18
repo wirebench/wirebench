@@ -1,0 +1,314 @@
+---
+title: Record a mock from a real service and test against it offline
+description: Record a real service's answers as Wirebench mock stubs with wirebench mock record, see what is stored and masked, add match conditions, serve the mock and point an environment at it, and know the recorder's limits.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A suite that needs the real service fails whenever that service is down or out of reach. A mock
+fixes that, but hand-written responses are slow to write and drift from what the service sends.
+`wirebench mock record` writes them from real traffic instead. It sits between a client and the
+service, passes every request through, and keeps each answer as a stub of a mock in the project.
+
+This guide records a mock of a small order service and runs the suite against it with the service
+switched off. Every output below is from running Wirebench's CLI.
+
+## Before you start
+
+The recorder routes each request to an operation of the contract, as a serving mock does. The
+project needs an imported SOAP interface or REST API, here `Orders` from an OpenAPI document, with
+its definition cached. The import caches it when the project has **Cache definitions** on. Without
+it, the recorder refuses to start with `mock-definition-missing` and exit 3. Only SOAP and REST have
+mocks.
+
+## Step 1: record a session
+
+<Steps>
+
+1. Start the recorder. `--from Orders` creates a mock called `orders-mock` from the API, with no
+   stubs yet, because the project has no mock of that name:
+
+   ```bash
+   wirebench mock record ./shop orders-mock --from Orders --target http://127.0.0.1:4012 --port 8089
+   ```
+
+   ```text
+   recording http://127.0.0.1:8089/ -> http://127.0.0.1:4012
+   ```
+
+2. Point the client at `http://127.0.0.1:8089` instead of the service, and use it as usual. Each
+   request goes on to the target, and the client gets the real response. stderr gets one line per
+   request: method, path, status, the operation it routed to, and whether it was kept.
+
+   ```text
+   GET /orders 200 get /orders recorded
+   GET /orders/ord-1001 200 get /orders/{id} recorded
+   GET /orders/ord-404 404 get /orders/{id} recorded
+   POST /orders 201 post /orders recorded
+   GET /health 404 - mock-record-unrouted
+   ```
+
+   `/health` is not in the contract, so it was passed through and not kept.
+
+3. Press Ctrl-C. The recorder adds what it kept to the mock and saves the project:
+
+   ```text
+   saved 4 stubs to mocks/orders-mock/ (0 skipped)
+   ```
+
+</Steps>
+
+The recorder exits 0 whether or not anything was kept. With nothing kept, it prints
+`nothing recorded; the project is unchanged` and writes nothing.
+
+The mock's `path` maps onto the target's path, and a request outside it gets 404 without being
+forwarded. The recorder listens on `127.0.0.1` and answers only requests addressed to a loopback
+name. An upstream proxy comes from `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`.
+
+## What gets stored
+
+Each kept response becomes one response file and one body file, under a folder per operation:
+
+```text
+mocks/orders-mock/
+  mock.yaml
+  operations/
+    GET _orders/
+      operation.yaml
+      Recorded 200.response.yaml
+      Recorded 200.body.json
+    GET _orders_{id}/
+      operation.yaml
+      Recorded 200.response.yaml
+      Recorded 200.body.json
+      Recorded 404.response.yaml
+      Recorded 404.body.json
+    POST _orders/
+      …
+```
+
+```yaml
+# operations/GET _orders_{id}/Recorded 404.response.yaml
+body: json
+headers:
+  - name: content-type
+    value: application/json
+  - name: x-request-id
+    value: 6d29ae6a-68ab-4de4-a2db-9a31dec33ee4
+  - name: set-cookie
+    value: <redacted>
+id: 01M57X6S451MY42D8TRG59EYNT
+name: Recorded 404
+order: 1
+status: 404
+```
+
+```json
+{"error":"not found","id":"ord-404"}
+```
+
+- **The status and the headers** are kept in wire order. `Date` is dropped, since a replayed date
+  would be stale. So are the headers the server computes, such as `Content-Length`, the
+  connection headers, and `Content-Encoding`, because the body is stored decompressed.
+- **The body** is stored as XML, JSON or text, by its `Content-Type`. A body in another charset is
+  stored as UTF-8, and the stored `Content-Type` says so.
+- **Each stub is named** `Recorded <status>`, then `Recorded <status> 2` and so on.
+- **A new operation** gets `dispatch: sequence`, and its first recorded stub becomes its default.
+
+Recorded files get committed, so the request is never saved, and each kept response is masked:
+
+- `Set-Cookie`, `Authorization`, `Cookie`, `X-Api-Key` and the other credential headers;
+- in JSON and form bodies, the values of keys such as `password`, `token`, `access_token`,
+  `client_secret` and `api_key`, also in a text body that parses as JSON;
+- in XML, `wsse:Password`, SAML signatures, ciphertext and Kerberos tokens;
+- every `WIREBENCH_SECRET_*` value set in the recorder's environment, 8 characters or longer, in
+  every encoded form, in headers and body.
+
+The client still gets the real, unmasked response. Masking applies only to what is kept.
+
+## Step 2: add match conditions
+
+A recording knows which operation a request called. It does not know why the service answered as it
+did. Both `/orders/{id}` recordings landed in the same operation, and `dispatch: sequence` would hand
+them out in turn: a 200, then a 404, then a 200 again, whatever id the client asked for.
+
+Tell the mock which request gets which stub. In `operation.yaml`, change the dispatch:
+
+```yaml
+# operations/GET _orders_{id}/operation.yaml
+default: 01M57X6S453PY9YBF9HV32SM0Z
+dispatch: match
+id: 01M57X6S45J0EKZCT355MPFC76
+name: GET /orders/{id}
+operation: get /orders/{id}
+order: 1
+```
+
+Then give the 404 stub a condition, and move it first:
+
+```yaml
+# operations/GET _orders_{id}/Recorded 404.response.yaml (part)
+match:
+  - equals: ord-404
+    from: path
+    name: id
+name: Recorded 404
+order: 0
+status: 404
+```
+
+The 200 stub gets `order: 1`. With `match`, the mock sends the first stub whose conditions all hold,
+in `order`. A stub with no conditions matches anything, so it goes last, as the catch-all. When
+nothing holds, the operation's `default` is sent.
+
+A condition reads one value from the request:
+
+| `from` | Reads |
+| --- | --- |
+| `body` | An XPath or JSONPath `expression`, with `language: xpath` or `jsonpath` |
+| `query` | The query parameter `name` |
+| `header` | The header `name` |
+| `path` | The REST path parameter `name` |
+
+It then checks that the value `equals` a string, `matches` a regular expression, or `exists`. The
+same edit can be made in the app's mock tab, under **Dispatch** and the response's match conditions.
+[Mock services](/wirebench/docs/guides/mock-services/) covers the tab, scenarios and dispatch
+scripts.
+
+## Editing a stub
+
+A stub is plain text, so edit it like code:
+
+- Change the body file, the `status`, a header, or add `delayMs` to slow one response down.
+- To answer with the id the client asked for instead of the recorded one, declare `values` and write
+  `{{name}}` in the body. That makes the mock `version: 2`, and the app cannot edit `values` yet.
+  [Echoing request values](/wirebench/docs/guides/mock-services/#echoing-request-values) shows how.
+
+After any edit, check the stubs against the contract. A stub whose status, `Content-Type` or body the
+OpenAPI document does not allow fails here:
+
+```bash
+wirebench mock check ./shop orders-mock
+```
+
+```text
+orders-mock: 4 stubs conform to the contract
+```
+
+It exits 1 when a stub does not conform, so it can gate a pull request like a test.
+
+## Step 3: serve the mock
+
+```bash
+wirebench mock ./shop orders-mock --port 8089
+```
+
+The mock prints a `listening` line once it is up, then one line per request: the operation and the
+stub it chose, or why none answered:
+
+```text
+listening orders-mock http://127.0.0.1:8089/
+2026-10-18T16:24:29.913Z orders-mock GET /orders 200 get /orders → Recorded 200 4ms
+2026-10-18T16:24:29.925Z orders-mock POST /orders 201 post /orders → Recorded 201 2ms
+2026-10-18T16:24:29.929Z orders-mock GET /orders/ord-1001 200 get /orders/{id} → Recorded 200 1ms
+2026-10-18T16:24:29.986Z orders-mock GET /orders/ord-404 404 get /orders/{id} → Recorded 404 0ms
+2026-10-18T16:24:29.992Z orders-mock GET /orders/ord-777 200 get /orders/{id} → Recorded 200 0ms
+2026-10-18T16:24:29.994Z orders-mock POST /orders/ord-1/cancel 404 0ms
+  mock-operation-not-found: No operation matches POST /orders/ord-1/cancel
+```
+
+`ord-404` gets the 404 and every other id gets the 200. A request the contract does not have gets a
+404 problem document. `--json` writes one JSON object per line, and SIGINT or SIGTERM stops the mock
+with exit 0. The mock never touches the network.
+
+## Step 4: point an environment at it
+
+Add an environment whose base URL is the mock:
+
+```yaml
+# environments/mocked.yaml
+endpoints: {}
+id: SHOPENV002
+name: mocked
+order: 1
+properties:
+  baseUrl: http://127.0.0.1:8089
+```
+
+The suite then runs unchanged, with the service switched off:
+
+```bash
+wirebench run ./shop -e mocked
+```
+
+```text
+✓ Orders/orders/listOrders  200  19 ms
+✓ Orders/orders/createOrder  201  3 ms
+✓ Orders/orders/getOrder  200  2 ms
+
+3 passed, 0 failed, 0 errored, 0 skipped in 0.0s
+```
+
+In the app, pick **mocked** in the environment switcher. For a SOAP interface, put the mock's URL in
+the environment's **Endpoints** table instead. In a pipeline, start the mock in the background and
+wait for its `listening` line, as [Run in CI](/wirebench/docs/guides/run-in-ci/) shows.
+
+{/* TODO(screenshot): the orders-mock tab in the app, with the GET /orders/{id} operation on "By match conditions", the Recorded 404 response's path condition, and the request log below. Save as docs-site/public/images/solutions/recorded-mock-match.png and cite it here. */}
+
+## Known limits
+
+These come from the recorder's code:
+
+- **Recording is command-line only.** The desktop app serves, edits and checks mocks, but has no
+  Record button yet.
+- **No match conditions are recorded.** Every operation's recordings replay in sequence until you add
+  conditions, as in Step 2.
+- **Stubs are literal.** A stub returns the recorded id, timestamps and `x-request-id` every time,
+  whatever the request asked for, unless you add `values` by hand.
+- **Masked headers replay as the marker.** A recorded `Set-Cookie` is sent back as
+  `set-cookie: <redacted>`. A client that needs a real cookie from the mock needs that header edited
+  or removed.
+- **Dedupe rarely fires on live services.** A recording equal to an existing stub is skipped, but
+  "equal" includes every header. A per-request header such as `x-request-id` makes every recording
+  new, so recording the same call twice adds `Recorded 200 2`. Use `--replace` to start an
+  operation's stubs over the first time a recording reaches it.
+- **Nothing is saved until the recorder stops** with Ctrl-C or SIGTERM. A recorder killed outright
+  loses the session.
+- **The save rewrites the project.** Saving writes the project the way the app does, so a file you
+  edited by hand may come back with its keys sorted.
+- **Bodies must be text and small.** A binary response, or one over 5 MiB, is relayed but not kept.
+  A relayed response over 64 MiB gets 502.
+- **Plain HTTP/1.1 on the listening side.** The target may be `https`, but the recorder itself does
+  not listen with TLS. It forwards `GET`, `POST`, `PUT`, `DELETE`, `HEAD`, `OPTIONS` and `PATCH`.
+  Any other method gets 501.
+- **Redirects are passed back, not followed,** and conditional headers such as `If-None-Match` are
+  not forwarded, so the service sends a full response instead of a 304.
+- **Requests are bounded.** A request body over 10 MiB gets 413. The target has 60 seconds to answer,
+  then the client gets 504.
+- **Short secrets are not masked by value.** A `WIREBENCH_SECRET_*` value under 8 characters is not
+  looked for, since it would match ordinary text.
+- **Definition requests are not kept.** `?wsdl` and `/openapi.json` are passed through, since the
+  mock serves its own copy of the contract.
+
+<Aside type="caution">
+Read the recorded files before you commit them. The masks cover credential headers, the known secret
+keys, WS-Security material and the values you set. A token in a custom header or a free-text body
+that the service echoes is not one of them.
+</Aside>
+
+## Checklist
+
+- [ ] The API was imported with **Cache definitions** on.
+- [ ] Every secret the session uses is set as `WIREBENCH_SECRET_*`, so its value is masked.
+- [ ] Operations with more than one stub use `dispatch: match`, with the catch-all last.
+- [ ] `wirebench mock check` exits 0 after every edit, and the files were read before commit.
+- [ ] A `mocked` environment points the suite at the mock.
+
+## Related
+
+- [Mock services](/wirebench/docs/guides/mock-services/): the mock tab, dispatch, scenarios, scripts
+  and templates.
+- [Run your API suites in CI and fail the build on a baseline difference](/wirebench/docs/solutions/api-suites-in-ci-baseline-gate/):
+  the suite this mock stands in for.
+- [Run in CI](/wirebench/docs/guides/run-in-ci/): serving a mock in a pipeline.
+- [Environments](/wirebench/docs/guides/environments/): base URLs and endpoint overrides.
