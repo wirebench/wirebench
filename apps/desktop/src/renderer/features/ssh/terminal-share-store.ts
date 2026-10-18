@@ -39,6 +39,8 @@ export const useTerminalShareStore = create<TerminalShareState>()(() => ({
 type Sink = (bytes: Uint8Array) => void;
 const sinks = new Map<string, Sink>();
 const pending = new Map<string, Uint8Array[]>();
+/** A view's latest state that came before `join` answered (the server's first presence does). */
+const pendingStates = new Map<string, TerminalShareViewerStateEvent>();
 
 /** Hands a view's output to its terminal: what arrived before now first. Returns the detach. */
 export function attachShareView(viewId: string, sink: Sink): () => void {
@@ -69,7 +71,10 @@ function onOwnedState(event: TerminalShareStateEvent): void {
 function onViewerState(event: TerminalShareViewerStateEvent): void {
   useTerminalShareStore.setState((s) => {
     const view = s.views[event.viewId];
-    if (view === undefined) return s;
+    if (view === undefined) {
+      pendingStates.set(event.viewId, event);
+      return s;
+    }
     return { views: { ...s.views, [event.viewId]: { ...view, cols: event.cols, rows: event.rows, state: event } } };
   });
 }
@@ -144,12 +149,17 @@ export async function joinShare(
   const result = await ipc().terminalShare.join({ link, viewId });
   if (!result.ok) {
     pending.delete(viewId);
+    pendingStates.delete(viewId);
     return { ok: false, message: result.error.message };
   }
   const { hostName, ownerName, cols, rows } = result.value;
-  useTerminalShareStore.setState((s) => ({
-    views: { ...s.views, [viewId]: { hostName, ownerName, cols, rows, ...(s.views[viewId] ?? {}) } },
-  }));
+  const early = pendingStates.get(viewId);
+  pendingStates.delete(viewId);
+  const view: ShareView =
+    early === undefined
+      ? { hostName, ownerName, cols, rows }
+      : { hostName, ownerName, cols: early.cols, rows: early.rows, state: early };
+  useTerminalShareStore.setState((s) => ({ views: { ...s.views, [viewId]: s.views[viewId] ?? view } }));
   useEditorsStore
     .getState()
     .open({ id: shareTabId(viewId), kind: 'terminal-share', title: shareTitle(ownerName, hostName) });
@@ -174,6 +184,7 @@ export function leaveShareView(viewId: string): void {
   void ipc().terminalShare.leave({ viewId });
   sinks.delete(viewId);
   pending.delete(viewId);
+  pendingStates.delete(viewId);
   useTerminalShareStore.setState((s) => {
     const views = { ...s.views };
     delete views[viewId];
