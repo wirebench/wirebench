@@ -16,6 +16,7 @@ import {
 import { convertLevelScripts, convertScript } from '../../../../src/script/convert/index.js';
 import type { Matcher } from '../../../../src/script/convert/roots.js';
 import { TOP_LEVEL_IMPORT_REASON } from '../../../../src/script/module-syntax.js';
+import { typescript } from '../../../../src/script/convert/typescript.js';
 
 const header = (dialect: string, path: string): string =>
   `// Converted from a ${dialect} script; the original is in ${path}.`;
@@ -320,6 +321,131 @@ describe('the matcher seam', () => {
       todos: [],
       mapped: 2,
     });
+  });
+});
+
+/** True when `text` parses as a script, the parser's own diagnostics being empty. */
+const parses = (text: string): boolean => {
+  const ts = typescript();
+  const file = ts.createSourceFile('out.js', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  return ((file as { parseDiagnostics?: readonly unknown[] }).parseDiagnostics ?? []).length === 0;
+};
+
+describe('the statement a TODO comments out', () => {
+  it('is the innermost one: an else body alone is wrapped in braces and commented out', () => {
+    const result = convertLevelScripts({
+      dialect: 'bruno',
+      protocol: 'rest',
+      pre: "if (a) {\n  x();\n} else bru.setVar('a', 1);\n",
+      backups: {},
+    });
+    expect(result.ok && result.pre).toBe(
+      [
+        '// Converted from a bruno script.',
+        'if (a) {',
+        '  x();',
+        '} else {',
+        '  // TODO(convert): bru.setVar — not converted yet',
+        "  // bru.setVar('a', 1);",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    expect(result.ok && result.todos.map((todo) => todo.line)).toEqual([5]);
+    expect(result.ok && parses(result.pre ?? '')).toBe(true);
+  });
+
+  it('keeps an if or loop valid when its body was the statement', () => {
+    const result = convertLevelScripts({
+      dialect: 'postman',
+      protocol: 'rest',
+      pre: 'if (a) pm.x();\nif (b)\n  pm.y(1,\n    2);\nelse z();\nfor (const k of ks) pm.z(k); // each\n',
+      backups: {},
+    });
+    expect(result.ok && result.pre).toBe(
+      [
+        '// Converted from a postman script.',
+        'if (a) {',
+        '  // TODO(convert): pm.x — not converted yet',
+        '  // pm.x();',
+        '}',
+        'if (b) {',
+        '  // TODO(convert): pm.y — not converted yet',
+        '  // pm.y(1,',
+        '  //   2);',
+        '}',
+        'else z();',
+        'for (const k of ks) {',
+        '  // TODO(convert): pm.z — not converted yet',
+        '  // pm.z(k);',
+        '} // each',
+        '',
+      ].join('\n'),
+    );
+    expect(result.ok && result.todos.map((todo) => todo.line)).toEqual([3, 7, 13]);
+    expect(result.ok && parses(result.pre ?? '')).toBe(true);
+  });
+});
+
+describe('what a replacement covers', () => {
+  const run = (text: string, matcher: Matcher) =>
+    convertScript({ dialect: 'postman', protocol: 'rest', phase: 'pre', text }, matcher);
+  const ts = typescript();
+
+  it('decides the references it replaces without handing on, as CryptoJS chains need', () => {
+    // A stand-in for the CryptoJS row: the whole `CryptoJS.SHA256(x).toString(CryptoJS.enc.Base64)` chain.
+    const matcher: Matcher = (ref, context) => {
+      if (ref.name !== 'CryptoJS.SHA256' || ref.call === undefined) return undefined;
+      const toString = ref.call.parent;
+      if (!ts.isPropertyAccessExpression(toString) || !ts.isCallExpression(toString.parent)) return undefined;
+      const [data] = ref.call.arguments;
+      if (data === undefined) return undefined;
+      return { node: toString.parent, text: `crypto.hash('sha256', ${context.text(data)}, 'base64')` };
+    };
+    expect(run('const h = CryptoJS.SHA256(a).toString(CryptoJS.enc.Base64);\n', matcher)).toEqual({
+      ok: true,
+      text: "// Converted from a postman script.\nconst h = crypto.hash('sha256', a, 'base64');\n",
+      todos: [],
+      mapped: 1,
+    });
+  });
+
+  it('turns the statements in a body it hands on into TODOs inside the replacement', () => {
+    const matcher: Matcher = (ref, context) =>
+      ref.name === 'pm.test' && ref.call !== undefined
+        ? { node: ref.call, text: `test(${ref.call.arguments.map((arg) => context.text(arg)).join(', ')})` }
+        : undefined;
+    const result = run("pm.test('a', () => {\n  pm.sendRequest(x);\n});\n", matcher);
+    expect(result).toEqual({
+      ok: true,
+      text: [
+        '// Converted from a postman script.',
+        "test('a', () => {",
+        '  // TODO(convert): pm.sendRequest — a script cannot send requests',
+        '  // pm.sendRequest(x);',
+        '});',
+        '',
+      ].join('\n'),
+      todos: [
+        { phase: 'pre', line: 3, call: 'pm.sendRequest', kind: 'unsupported', reason: 'a script cannot send requests' },
+      ],
+      mapped: 1,
+    });
+  });
+
+  it('refuses a replacement that copies a body instead of handing it to context.text', () => {
+    const copying: Matcher = (ref) =>
+      ref.name === 'pm.test' && ref.call !== undefined
+        ? { node: ref.call, text: `test(${ref.call.arguments.map((arg) => arg.getText()).join(', ')})` }
+        : undefined;
+    expect(() => run("pm.test('a', () => {\n  pm.sendRequest(x);\n});\n", copying)).toThrow(/pm\.sendRequest/);
+    expect(() => run("pm.test('a', () => {\n  pm.globals.get('a');\n});\n", copying)).toThrow(/pm\.globals\.get/);
+  });
+
+  it('refuses a replacement that does not hold its reference', () => {
+    const elsewhere: Matcher = (ref) =>
+      ref.name === 'pm.a' ? { node: ref.node.getSourceFile().statements[1]!, text: 'x' } : undefined;
+    expect(() => run('pm.a();\nfoo();\n', elsewhere)).toThrow(/does not hold it/);
   });
 });
 

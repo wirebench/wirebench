@@ -16,7 +16,7 @@ import {
   type DialectRef,
   type Matcher,
 } from './roots.js';
-import { applyEdits, commentOut, lineEndingAt, type Edit } from './splice.js';
+import { applyEdits, commentOut, lineEndingAt, wrapCommentedOut, type Edit } from './splice.js';
 import { headerComment, NOT_CONVERTED, shadowedReason, todoComment, type ConvertTodo } from './todo.js';
 import { typescript } from './typescript.js';
 
@@ -128,18 +128,49 @@ export function convertScript(
   };
   visit(source);
 
-  // First pass: which references are left as written. The matcher is asked with the original text
-  // of any node it builds from; the second pass asks again with the converted text.
-  const probe: ConvertContext = { dialect, phase, protocol, source, text: (node) => node.getText(source) };
-  const unconverted: Unconverted[] = [...imports];
-  for (const ref of refs) {
-    const left = leftAsWritten(ref, dialect, probe, matcher);
-    if (left !== undefined) unconverted.push(left);
-  }
+  // First pass: decide each reference. A reference the layer refuses, or one the matcher has no
+  // answer for, is left as written. A replacement decides every reference inside its node: the ones
+  // inside a node it hands to `context.text` are decided in turn, and the rest are part of what it
+  // replaced (`CryptoJS.enc.Base64` in a mapped `CryptoJS.SHA256(a).toString(CryptoJS.enc.Base64)`).
+  const decided = new Map<ts.Node, ts.Node>();
+  const unconverted = new Map<ts.Node, Unconverted>(imports.map((left) => [left.node, left]));
+  const probeSpan = (from: number, to: number): void => {
+    let cursor = from;
+    for (const ref of refs) {
+      const start = ref.node.getStart(source);
+      if (start < from || start >= to || start < cursor) continue;
+      const refused = unsupportedCall(callForm(ref, source), dialect);
+      if (refused !== undefined) {
+        unconverted.set(ref.node, { node: ref.node, call: refused.name, kind: 'unsupported', reason: refused.reason });
+        continue;
+      }
+      const handed: ts.Node[] = [];
+      const probe: ConvertContext = {
+        dialect,
+        phase,
+        protocol,
+        source,
+        text: (node) => {
+          handed.push(node);
+          probeSpan(node.getStart(source), node.end);
+          return node.getText(source);
+        },
+      };
+      const replacement = matcher(ref, probe);
+      if (replacement === undefined) {
+        unconverted.set(ref.node, { node: ref.node, call: ref.name, kind: 'not-mapped', reason: NOT_CONVERTED });
+        continue;
+      }
+      checkReplacement(ref, replacement.node, handed, { from: cursor, to }, refs, dialect, source);
+      decided.set(ref.node, replacement.node);
+      cursor = replacement.node.end;
+    }
+  };
+  probeSpan(0, text.length);
 
   // The statements to comment out, each with its TODO lines; a statement inside another is dropped.
   const groups = new Map<ts.Statement, Unconverted[]>();
-  for (const left of unconverted) {
+  for (const left of unconverted.values()) {
     const statement = statementOf(left.node);
     const group = groups.get(statement) ?? [];
     if (!group.some((other) => other.call === left.call && other.kind === left.kind)) group.push(left);
@@ -148,7 +179,7 @@ export function convertScript(
   const commented = [...groups.keys()]
     .filter((statement) => !hasAncestorIn(statement, groups))
     .sort((a, b) => a.getStart(source) - b.getStart(source));
-  const insideCommented = (node: ts.Node): boolean => hasAncestorIn(node, groups) || groups.has(node as ts.Statement);
+  const insideCommented = (node: ts.Node): boolean => hasAncestorIn(node, groups);
 
   // Each TODO line carries a marker until the end, where its line number is read and it is removed.
   const marker = markerFor(text);
@@ -161,14 +192,15 @@ export function convertScript(
         return `${marker(todos.length - 1)}${todoComment(call, reason)}`;
       });
 
-  // Second pass: render a span with its commented statements and its replacements.
+  // Second pass: render a span with its commented statements and the decided replacements.
   const replaced = new Set<ts.Node>();
+  const rendered = new Set<ts.Statement>();
   const render = (from: number, to: number): string => {
     type Item = { readonly start: number; readonly statement?: ts.Statement; readonly ref?: DialectRef };
     const items = [
       ...commented.map((statement): Item => ({ start: statement.getStart(source), statement })),
       ...refs
-        .filter((ref) => !insideCommented(ref.node))
+        .filter((ref) => decided.has(ref.node) && !insideCommented(ref.node))
         .map((ref): Item => ({ start: ref.node.getStart(source), ref })),
     ]
       .filter((item) => item.start >= from && item.start < to)
@@ -178,23 +210,28 @@ export function convertScript(
     for (const item of items) {
       if (item.start < cursor) continue;
       if (item.statement !== undefined) {
-        if (item.statement.end > to) continue;
+        const statement = item.statement;
+        if (statement.end > to) continue;
         const range = { from, to };
-        const edit = commentOut(
-          text,
-          item.statement.getStart(source),
-          item.statement.end,
-          range,
-          todoLines(item.statement),
-        );
+        const edit = inStatementList(statement)
+          ? commentOut(text, statement.getStart(source), statement.end, range, todoLines(statement))
+          : wrapCommentedOut(
+              text,
+              statement.pos,
+              statement.getStart(source),
+              statement.end,
+              range,
+              todoLines(statement),
+            );
         edits.push(edit);
+        rendered.add(statement);
         cursor = edit.end;
       } else if (item.ref !== undefined) {
         const replacement = matcher(item.ref, context);
-        if (replacement === undefined) continue;
-        const start = replacement.node.getStart(source);
-        if (start < cursor || replacement.node.end > to) continue;
-        edits.push({ start, end: replacement.node.end, text: replacement.text });
+        if (replacement === undefined || replacement.node !== decided.get(item.ref.node)) {
+          throw new Error(`convert: the matcher answered ${item.ref.name} differently the second time`);
+        }
+        edits.push({ start: replacement.node.getStart(source), end: replacement.node.end, text: replacement.text });
         replaced.add(item.ref.node);
         cursor = replacement.node.end;
       }
@@ -212,6 +249,20 @@ export function convertScript(
     text: (node) => render(node.getStart(source), node.end),
   };
   const body = render(0, text.length);
+
+  // Coverage: every statement commented out has its TODO lines in the file, and every replacement
+  // decided is in it. One missing means a replacement copied a span instead of converting it.
+  for (const statement of commented) {
+    if (!rendered.has(statement)) {
+      const calls = (groups.get(statement) ?? []).map((left) => left.call).join(', ');
+      throw new Error(`convert: a replacement dropped the statement holding ${calls}; it must pass it to context.text`);
+    }
+  }
+  for (const ref of refs) {
+    if (decided.has(ref.node) && !insideCommented(ref.node) && !replaced.has(ref.node)) {
+      throw new Error(`convert: a replacement dropped ${ref.name}; it must pass it to context.text`);
+    }
+  }
 
   // The header, then one TODO per shadowed root, then the script.
   const eol = lineEndingAt(text, 0);
@@ -246,17 +297,40 @@ export function convertScript(
   };
 }
 
-/** Why `ref` is left as written, or undefined when the matcher replaces it. */
-function leftAsWritten(
+/**
+ * Throws when a replacement breaks the seam's rules: its node holds the reference and stays inside
+ * `span`, every node it handed to `context.text` is inside it, and what it replaces without handing
+ * on holds no call the layer refuses and no statement (those must reach a TODO).
+ */
+function checkReplacement(
   ref: DialectRef,
+  node: ts.Node,
+  handed: readonly ts.Node[],
+  span: { readonly from: number; readonly to: number },
+  refs: readonly DialectRef[],
   dialect: LayeredApi,
-  context: ConvertContext,
-  matcher: Matcher,
-): Unconverted | undefined {
-  const refused = unsupportedCall(callForm(ref, context.source), dialect);
-  if (refused !== undefined) return { node: ref.node, call: refused.name, kind: 'unsupported', reason: refused.reason };
-  if (matcher(ref, context) !== undefined) return undefined;
-  return { node: ref.node, call: ref.name, kind: 'not-mapped', reason: NOT_CONVERTED };
+  source: ts.SourceFile,
+): void {
+  const start = node.getStart(source);
+  const within = (inner: ts.Node, outer: { getStart(s: ts.SourceFile): number; end: number }): boolean =>
+    inner.getStart(source) >= outer.getStart(source) && inner.end <= outer.end;
+  if (!within(ref.node, node)) throw new Error(`convert: the replacement for ${ref.name} does not hold it`);
+  if (start < span.from || node.end > span.to) {
+    throw new Error(`convert: the replacement for ${ref.name} overlaps another or leaves its span`);
+  }
+  for (const part of handed) {
+    if (!within(part, node)) throw new Error(`convert: the replacement for ${ref.name} converts text outside it`);
+  }
+  for (const other of refs) {
+    if (other === ref || !within(other.node, node) || handed.some((part) => within(other.node, part))) continue;
+    const refused = unsupportedCall(callForm(other, source), dialect);
+    if (refused !== undefined) {
+      throw new Error(`convert: the replacement for ${ref.name} drops ${refused.name}, which must stay a TODO`);
+    }
+    if (within(statementOf(other.node), node)) {
+      throw new Error(`convert: the replacement for ${ref.name} copies ${other.name} without converting it`);
+    }
+  }
 }
 
 /**
@@ -278,20 +352,25 @@ function unsupportedHeads(dialect: LayeredApi): string[] {
   return UNSUPPORTED_CALLS[dialect].flatMap(([, name]) => /^[A-Za-z_$][\w$]*/.exec(name)?.[0] ?? []);
 }
 
-/** The innermost statement holding `node` that sits in a statement list (a file, block or case). */
+/** The innermost statement holding `node` (spec §5.2). */
 function statementOf(node: ts.Node): ts.Statement {
   const ts = typescript();
   let at = node;
-  while (
-    !ts.isSourceFile(at.parent) &&
-    !ts.isBlock(at.parent) &&
-    !ts.isModuleBlock(at.parent) &&
-    !ts.isCaseClause(at.parent) &&
-    !ts.isDefaultClause(at.parent)
-  ) {
-    at = at.parent;
-  }
-  return at as ts.Statement;
+  while (!ts.isStatement(at)) at = at.parent;
+  return at;
+}
+
+/** True when `statement` is a member of a statement list (a file, block or case), not a body. */
+function inStatementList(statement: ts.Statement): boolean {
+  const ts = typescript();
+  const parent = statement.parent;
+  return (
+    ts.isSourceFile(parent) ||
+    ts.isBlock(parent) ||
+    ts.isModuleBlock(parent) ||
+    ts.isCaseClause(parent) ||
+    ts.isDefaultClause(parent)
+  );
 }
 
 function hasAncestorIn(node: ts.Node, statements: ReadonlyMap<ts.Statement, unknown>): boolean {

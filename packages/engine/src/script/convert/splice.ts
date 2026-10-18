@@ -61,19 +61,7 @@ export function commentOut(
   const ownLastLine = last <= range.to && (after.trim() === '' || after.trimStart().startsWith('//'));
   const bodyEnd = ownLastLine ? last : end;
 
-  const parts = text.slice(start, bodyEnd).split(/(\r\n|\n|\r)/);
-  let body = '';
-  for (let i = 0; i < parts.length; i += 2) {
-    const line = parts[i] ?? '';
-    const lineBreak = parts[i + 1] ?? '';
-    if (i === 0) body += `${indent}// ${line}`;
-    else if (line.trim() === '') body += `${indent}//`;
-    else {
-      const at = Math.min(indent.length, /^[ \t]*/.exec(line)?.[0].length ?? 0);
-      body += `${line.slice(0, at)}// ${line.slice(at)}`;
-    }
-    body += lineBreak;
-  }
+  const body = commentLines(text.slice(start, bodyEnd), indent, (kept) => kept);
 
   return {
     start: ownFirstLine ? first : start,
@@ -84,4 +72,62 @@ export function commentOut(
       body +
       (ownLastLine ? '' : eol + indent),
   };
+}
+
+/**
+ * The edit that comments out `text[start, end)` when that statement is the body of an `if`, `else`,
+ * loop or label rather than a member of a statement list: it is wrapped in braces, so the construct
+ * stays valid and still has a body. The `{` goes where the statement started (on the line before it
+ * when only white space came between), the commented lines and `todos` one level deeper than that
+ * line, and the `}` back at its indentation; what followed the statement stays after the `}`.
+ * `fullStart` is where the statement's leading trivia begins; it is used only when it is white space
+ * inside `range`.
+ */
+export function wrapCommentedOut(
+  text: string,
+  fullStart: number,
+  start: number,
+  end: number,
+  range: { readonly from: number; readonly to: number },
+  todos: readonly string[],
+): Edit {
+  const from = fullStart >= range.from && text.slice(fullStart, start).trim() === '' ? fullStart : start;
+  const outer = /^[ \t]*/.exec(text.slice(lineStart(text, from)))?.[0] ?? '';
+  const inner = outer + (outer.includes('\t') ? '\t' : '  ');
+  const base = /^[ \t]*/.exec(text.slice(lineStart(text, start)))?.[0] ?? '';
+  const eol = lineEndingAt(text, start);
+  const body = commentLines(text.slice(start, end), base, () => inner);
+  return {
+    start: from,
+    end,
+    text:
+      (from === fullStart ? ' {' : '{') +
+      eol +
+      todos.map((todo) => `${inner}${todo}${eol}`).join('') +
+      body +
+      eol +
+      outer +
+      '}',
+  };
+}
+
+/**
+ * `slice` with `// ` before each line. The first line starts at the statement and gets `base`; a
+ * later line keeps its white space past `base`, and `lead` gives what replaces the part it shares.
+ */
+function commentLines(slice: string, base: string, lead: (kept: string) => string): string {
+  const parts = slice.split(/(\r\n|\n|\r)/);
+  let body = '';
+  for (let i = 0; i < parts.length; i += 2) {
+    const line = parts[i] ?? '';
+    const lineBreak = parts[i + 1] ?? '';
+    if (i === 0) body += `${lead(base)}// ${line}`;
+    else if (line.trim() === '') body += `${lead(base)}//`;
+    else {
+      const at = Math.min(base.length, /^[ \t]*/.exec(line)?.[0].length ?? 0);
+      body += `${lead(line.slice(0, at))}// ${line.slice(at)}`;
+    }
+    body += lineBreak;
+  }
+  return body;
 }
