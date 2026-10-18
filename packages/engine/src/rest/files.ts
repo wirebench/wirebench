@@ -7,7 +7,6 @@
 import { z } from 'zod';
 import { assertionsSchema } from '../assert/schema.js';
 import {
-  attachmentSourceSchema,
   authConfigSchema,
   definitionAuthSchema,
   hookLinkSchema,
@@ -26,6 +25,16 @@ const methodSchema = z
   .min(1)
   .regex(/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/, 'a method must be an HTTP token');
 
+/**
+ * Where a REST body's file comes from. Unlike a SOAP attachment, which only exists once a file is
+ * picked, a file part or binary body starts out with no file chosen (`path: ''`): the editor adds it
+ * that way, and the OpenAPI, HAR and collection importers write it that way, so the loader keeps it.
+ */
+const bodySourceSchema = z.union([
+  z.looseObject({ kind: z.literal('cache'), sha256: nonEmpty }),
+  z.looseObject({ kind: z.literal('path'), path: z.string() }),
+]);
+
 const multipartPartSchema = z.union([
   z.looseObject({
     kind: z.literal('text'),
@@ -37,7 +46,7 @@ const multipartPartSchema = z.union([
   z.looseObject({
     kind: z.literal('file'),
     name: z.string(),
-    source: attachmentSourceSchema,
+    source: bodySourceSchema,
     enabled: z.boolean().default(true),
     fileName: z.string().optional(),
     contentType: z.string().optional(),
@@ -59,7 +68,7 @@ export const restBodySchema = z.union([
   }),
   z.looseObject({ kind: z.literal('form'), fields: z.array(keyValueEntrySchema).default([]) }),
   z.looseObject({ kind: z.literal('multipart'), parts: z.array(multipartPartSchema).default([]) }),
-  z.looseObject({ kind: z.literal('binary'), source: attachmentSourceSchema, contentType: z.string() }),
+  z.looseObject({ kind: z.literal('binary'), source: bodySourceSchema, contentType: z.string() }),
   z.looseObject({
     kind: z.literal('graphql'),
     file: nonEmpty,
