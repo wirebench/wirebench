@@ -362,6 +362,10 @@ describe('the crafted fixtures convert', () => {
         expect(r.scripts, r.path).toBeDefined();
         expect(r.error, r.path).not.toBe('script-type-error');
       }
+      // Something ran: a fixture whose scripts silently did nothing on both sides would agree vacuously.
+      expect(
+        layered.some((r) => (r.scripts?.tests.length ?? 0) + (r.scripts?.values.length ?? 0) + r.assertions.length > 0),
+      ).toBe(true);
       expect(typed).toEqual(layered);
 
       const grpcLevels = levelsOf(collections).filter((level) => level.protocol === 'grpc');

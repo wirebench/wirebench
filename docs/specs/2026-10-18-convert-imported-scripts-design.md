@@ -292,8 +292,10 @@ Notes:
   docs say so.
 - **An untyped body.** Without a contract the typed `response.json()` is `unknown`, and an imported
   request has none, so `res.body.id` would not type-check. The layers read the body untyped, and so
-  does the converted script: `response.json() as any`, parenthesised where a property follows
-  (`(response.json() as any).id`). The cast is erased before the script runs. Linking the request to
+  does the converted script: `response.json() as any`, parenthesised wherever something binds to
+  it — a property or element access, a call, an operator (`(response.json() as any).id`). Where
+  that `(` opens a statement after a line with no semicolon, Convert writes a `;` before it, so the
+  two lines are not joined. The cast is erased before the script runs. Linking the request to
   a contract later and deleting the cast types the body from it.
 - **Repeated headers.** Bruno's `res.getHeader` joins repeated names with `, `. The typed
   `headers.get` gives the first one. The docs name the difference; `headers.getAll(n).join(', ')` is

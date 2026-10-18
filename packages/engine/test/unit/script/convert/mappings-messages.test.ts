@@ -3,6 +3,7 @@
  * protocol, every `—` cell as a TODO, the response rows in a pre-request script, the request setters
  * in a post-response script, and the argument shapes the rows insist on.
  */
+import ts from 'typescript';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from '../../../../src/grpc/scripting.js';
 import { restScriptTypes } from '../../../../src/rest/script-types.js';
@@ -321,6 +322,47 @@ describe('the crafted fixtures type-check after converting, on a request with no
     expect(converted('thunder-client', 'var json = tc.response.json;\n').body).toBe(
       'var json = response.json() as any;\n',
     );
+  });
+
+  it('keeps a script written without semicolons from joining a statement that now opens with (', () => {
+    const parses = (text: string): readonly unknown[] =>
+      (
+        ts.createSourceFile('s.ts', text, ts.ScriptTarget.Latest, true) as ts.SourceFile & {
+          parseDiagnostics?: readonly unknown[];
+        }
+      ).parseDiagnostics ?? [];
+    for (const [dialect, from, to] of [
+      [
+        'bruno',
+        'const a = 1\nres.body.items.forEach(log)\n',
+        'const a = 1\n;(response.json() as any).items.forEach(log)\n',
+      ],
+      [
+        'postman',
+        "console.log('x')\npm.response.json().items.forEach(log)\n",
+        "console.log('x')\n;(response.json() as any).items.forEach(log)\n",
+      ],
+      // An object literal's `}` still joins the next line.
+      ['bruno', 'const o = {}\nres.body.items.pop()\n', 'const o = {}\n;(response.json() as any).items.pop()\n'],
+      // A `;`, a block's `}` or the start of the file already keeps them apart.
+      ['bruno', 'const a = 1;\nres.body.items.pop()\n', 'const a = 1;\n(response.json() as any).items.pop()\n'],
+      ['bruno', 'if (flag) {}\nres.body.items.pop()\n', 'if (flag) {}\n(response.json() as any).items.pop()\n'],
+      ['bruno', 'res.body.items.pop()\n', '(response.json() as any).items.pop()\n'],
+      ['bruno', 'if (flag) {\n  res.body.items.pop()\n}\n', 'if (flag) {\n  (response.json() as any).items.pop()\n}\n'],
+      // The body of an `if` without braces is not a statement of a list.
+      ['bruno', 'if (flag)\n  res.body.items.pop()\n', 'if (flag)\n  (response.json() as any).items.pop()\n'],
+    ] as const) {
+      const result = converted(dialect, from);
+      expect(result.body, from).toBe(to);
+      expect(parses(result.text), from).toEqual([]);
+      expect(
+        typeErrors(
+          untyped('post').replace(/^/, 'declare const flag: boolean;\ndeclare function log(v: unknown): void;\n'),
+          result.text,
+        ),
+        from,
+      ).toEqual([]);
+    }
   });
 
   it('passes a header value that is not a string literal through String(), as every layer does', () => {

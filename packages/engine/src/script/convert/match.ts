@@ -17,7 +17,7 @@ export function tableMatcher(rows: readonly MappingRow[]): Matcher {
   for (const row of rows) {
     for (const call of row.calls) byName.set(call, [...(byName.get(call) ?? []), row]);
   }
-  return (ref, context) => {
+  const answer: Matcher = (ref, context) => {
     const rows = (byName.get(ref.name) ?? []).filter((row) => row.dialects.includes(context.dialect));
     if (rows.length === 0) return prefixAnswer(byName, ref, context);
     for (const row of rows) {
@@ -42,6 +42,10 @@ export function tableMatcher(rows: readonly MappingRow[]): Matcher {
       return { node: target.node, text: isLoose(row, context) && !separated(target.node) ? `(${text})` : text };
     }
     return undefined;
+  };
+  return (ref, context) => {
+    const found = answer(ref, context);
+    return found === undefined || 'refused' in found ? found : { node: found.node, text: asiSafe(found) };
   };
 }
 
@@ -237,6 +241,37 @@ function assignedTo(node: ts.Node): boolean {
     }
     return false;
   }
+}
+
+/**
+ * The replacement's text, with a `;` before it when it opens with `(`, `[` or a backtick at the start
+ * of a statement that follows one with no semicolon: without it, a script written without
+ * semicolons would join the two (`const a = 1\n(response.json() as any).id` calls `1`). A
+ * statement that follows a `;`, a block's `}` or nothing is left as it is.
+ */
+function asiSafe({ node, text }: Replacement): string {
+  const ts = typescript();
+  if (!/^[([`]/.test(text)) return text;
+  const start = node.getStart();
+  let statement: ts.Node = node;
+  while (!ts.isExpressionStatement(statement)) {
+    const parent: ts.Node | undefined = statement.parent;
+    if (parent === undefined || parent.getStart() !== start || ts.isSourceFile(parent)) return text;
+    statement = parent;
+  }
+  const list = statement.parent;
+  if (!(ts.isSourceFile(list) || ts.isBlock(list) || ts.isModuleBlock(list) || ts.isCaseOrDefaultClause(list))) {
+    return text;
+  }
+  const index = list.statements.indexOf(statement);
+  const previous = index > 0 ? list.statements[index - 1] : undefined;
+  if (previous === undefined) return text;
+  const last = previous.getText().slice(-1);
+  // A `}` ends a block-like statement; an expression or a declaration ending in `}` (an object or a
+  // function expression) still joins the next line.
+  const closed =
+    last === ';' || (last === '}' && !ts.isExpressionStatement(previous) && !ts.isVariableStatement(previous));
+  return closed ? text : `;${text}`;
 }
 
 /** True when the row's template binds looser than a member access for the script's protocol. */
