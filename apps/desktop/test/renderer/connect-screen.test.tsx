@@ -69,6 +69,35 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+describe('a serial console with no port picked yet (#688)', () => {
+  beforeEach(() => {
+    const host = resolved('tester');
+    useHostsStore.setState({ resolved: [{ ...host, ssh: { ...host.ssh, protocol: { value: 'serial', from } } }] });
+  });
+
+  it('asks for the port as a step: no red, no Retry, no log, no Host settings', () => {
+    show({ code: 'serial-device-unset', message: 'x', details: { hostId: 'box' } });
+    expect(screen.getByTestId('connect-screen').getAttribute('data-state')).toBe('choose-port');
+    expect(screen.getByRole('heading', { name: 'Choose the port for box' })).toBeTruthy();
+    expect(screen.getByTestId('connect-serial-device')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Use and connect' })).toBeTruthy();
+    for (const gone of ['Retry', 'Edit host', 'Show log', 'Hide log']) {
+      expect(screen.queryByRole('button', { name: gone }), gone).toBeNull();
+    }
+    expect(screen.queryByText('Host settings')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('a port that was set and has gone stays a failure, with Retry and the log', () => {
+    show({ code: 'serial-device-missing', message: 'x', details: { device: 'COM3' } });
+    expect(screen.getByTestId('connect-screen').getAttribute('data-state')).toBe('failed');
+    expect(screen.getByRole('alert').textContent).toMatch(/COM3 is not on this computer/);
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Hide log' })).toBeTruthy();
+    expect(screen.getByTestId('connect-serial-device')).toBeTruthy();
+  });
+});
+
 describe('the connection screen fixes a failure in place (#532)', () => {
   it('a network failure keeps Retry the main button and asks for nothing', () => {
     show({ code: 'ssh-connect-failed', message: 'x', details: { reason: 'refused', phase: 'tcp' } });

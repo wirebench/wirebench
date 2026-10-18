@@ -25,6 +25,10 @@ All notable changes to this project are documented here. The format follows
   **Opening /dev/ttyUSB0 at 9600 8N1** then **Ready**, and a Telnet host's shows **Resolving address**,
   **Connecting** and, when a user is set, **Signing in at the prompt**, instead of SSH's host-key,
   authentication and shell steps (#688).
+- **A serial console with no port yet asks for one calmly.** The first connect on a computer where no
+  port was picked shows **Choose the port for** the host, with the ports and **Use and connect**, instead
+  of a red failure with Retry, the log and a **Host settings** heading. A port that was set and has gone
+  is still shown as a failure (#688).
 - **A large REST response scrolls smoothly in Raw.** Scrolling the Raw view of a multi-megabyte body
   draws the new lines in the next frame and moves them without a layout pass, so it no longer drops
   frames on a slower machine.

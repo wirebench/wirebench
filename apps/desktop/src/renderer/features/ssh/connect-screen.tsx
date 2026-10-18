@@ -565,7 +565,10 @@ export function ConnectScreen({
   const typedUser = useConnectStore((s) => (paneKey === undefined ? undefined : s.users[paneKey]));
   const os = useHostsStore((s) => (host === undefined ? undefined : osOf(s.osByHost[osKeyOf(host)])));
   const outcome = view?.outcome.kind;
-  const failed = outcome === 'failed';
+  // A serial console with no port picked on this computer yet has not failed: the screen asks for one,
+  // with nothing red, no Retry and no log (#688). A port that was set and is gone stays a failure.
+  const choosePort = view?.outcome.kind === 'failed' && view.outcome.error.code === 'serial-device-unset';
+  const failed = outcome === 'failed' && !choosePort;
   const connected = outcome === 'connected';
   const [logOpen, setLogOpen] = useState(failed && !foldLog);
   const [fading, setFading] = useState(false);
@@ -630,7 +633,8 @@ export function ConnectScreen({
   const total = view !== undefined && view.outcome.kind === 'connected' ? view.outcome.at - view.startedAt : undefined;
   const showActions = failed || (reconnect === undefined && view === undefined);
   // A host's settings stopped it before any step ran: the steps are not the story (#532).
-  const settings = view?.outcome.kind === 'failed' && view.outcome.step === undefined ? view.outcome : undefined;
+  const settings =
+    view?.outcome.kind === 'failed' && view.outcome.step === undefined && !choosePort ? view.outcome : undefined;
   // Retry leads only where trying again can work; a refused sign-in or a setting is fixed first (#532).
   const fix =
     view?.outcome.kind === 'failed'
@@ -641,7 +645,7 @@ export function ConnectScreen({
   return (
     <div
       data-testid="connect-screen"
-      data-state={outcome ?? 'waiting'}
+      data-state={choosePort ? 'choose-port' : (outcome ?? 'waiting')}
       role="region"
       aria-label={`Connection to ${host?.name ?? hostId}`}
       className={`${overlay ? 'absolute inset-0 z-10' : 'h-full'} flex flex-col items-center overflow-auto bg-surface-sunken px-4 py-6 transition-opacity duration-300 ${
@@ -691,7 +695,16 @@ export function ConnectScreen({
           </div>
         )}
 
-        <ol className={settings === undefined ? 'flex flex-col gap-1' : 'hidden'} aria-label="Connection steps">
+        {choosePort && (
+          <h2 className="text-sm font-medium text-fg-default" data-testid="connect-choose-port">
+            {`Choose the port for ${host?.name ?? hostId}`}
+          </h2>
+        )}
+
+        <ol
+          className={settings === undefined && !choosePort ? 'flex flex-col gap-1' : 'hidden'}
+          aria-label="Connection steps"
+        >
           {(steps ?? []).map((step) => {
             const duration = step.state === 'done' ? stepDuration(step) : undefined;
             return (
@@ -785,7 +798,7 @@ export function ConnectScreen({
           </div>
         )}
 
-        {view !== undefined && (
+        {view !== undefined && !choosePort && (
           <div>
             <button
               type="button"
@@ -802,7 +815,7 @@ export function ConnectScreen({
         )}
       </div>
       {/* Wider than the steps: log lines are long, and wrapping each one makes the log hard to read. */}
-      {view !== undefined && logOpen && (
+      {view !== undefined && logOpen && !choosePort && (
         <div className="mt-2 w-full max-w-3xl">
           <ConnectLog lines={view.log} summary={view.outcome.kind === 'failed' ? view.outcome.sentence : undefined} />
         </div>
