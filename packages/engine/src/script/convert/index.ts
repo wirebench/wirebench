@@ -7,7 +7,7 @@
 import type ts from 'typescript';
 import { unsupportedCall, UNSUPPORTED_CALLS } from '../../import/scripts.js';
 import type { LayeredApi, ScriptPhase } from '../model.js';
-import { MODULE_MARKER } from '../module-syntax.js';
+import { blankModuleMarkers } from '../module-syntax.js';
 import {
   declaredNames,
   DIALECT_ROOTS,
@@ -127,7 +127,7 @@ export function convertScript(
 ): ConvertedScript {
   const ts = typescript();
   const { dialect, protocol, phase } = input;
-  const text = dialect === 'hoppscotch' ? input.text.replace(MODULE_MARKER, '') : input.text;
+  const text = dialect === 'hoppscotch' ? blankModuleMarkers(input.text) : input.text;
   const source = ts.createSourceFile(`script.${phase}.js`, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   // The parser's own diagnostics: what createSourceFile found, before any program or type check.
   const syntax = (source as ts.SourceFile & { parseDiagnostics?: readonly ts.DiagnosticWithLocation[] })
