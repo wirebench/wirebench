@@ -2,7 +2,7 @@
   "name": "@wirebench/server",
   "version": "2.1.1",
   "private": true,
-  "license": "Apache-2.0",
+  "license": "Elastic-2.0",
   "type": "module",
   "description": "Wirebench Server: sign-in, teams and shared workspaces for Wirebench, self-hosted.",
   "engines": {

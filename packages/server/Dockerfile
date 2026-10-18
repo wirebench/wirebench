@@ -21,7 +21,7 @@ ARG REVISION
 LABEL org.opencontainers.image.source="https://github.com/wirebench/wirebench" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \
-      org.opencontainers.image.licenses="Apache-2.0"
+      org.opencontainers.image.licenses="Elastic-2.0"
 
 # The shared-workspace store shells out to git (argument arrays through GitCli).
 RUN apt-get update && apt-get install -y --no-install-recommends git && apt-get clean && rm -rf /var/lib/apt/lists/*

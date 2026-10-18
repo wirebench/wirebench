@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Wirebench Server is under the Elastic License 2.0.** The server package, `packages/server`, moves from
+  Apache-2.0 to the Elastic License 2.0: free to run for your own company and to modify, not to offer to
+  third parties as a hosted or managed service, and not to run with the license file check circumvented.
+  The desktop app, the engine, the CLI, the SSH package, the integrations, the site and the docs stay
+  Apache-2.0. Community, Team and Enterprise are unchanged: a server with no license file is still Community
+  with five enabled accounts, and nothing shipped as free becomes paid
+  ([ADR-0028](docs/adr/0028-the-server-is-licensed-under-the-elastic-license-2-0.md)).
 - **New host opens in the right panel, with a draft card in Hosts.** New host (the Hosts button and its
   menu, a group's Add host, the empty state, **Hosts: New Host…** and **Save as host…**) opens its form in
   the right panel, where Edit host already was, instead of a dialog over the hosts. While it is open, a

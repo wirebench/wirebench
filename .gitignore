@@ -19,6 +19,8 @@ git-worktrees/
 release
 .serena/
 packages/*/LICENSE
+# The server is private and never packed; its LICENSE is its own (Elastic-2.0), not a prepack copy.
+!packages/server/LICENSE
 apps/desktop/build-resources/
 !packages/engine/test/fixtures/saml/*.pem
 !packages/server/test/fixtures/saml/*.pem
