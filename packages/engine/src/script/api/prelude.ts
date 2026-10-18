@@ -200,8 +200,14 @@ define('test', (name, check) => {
     throw new ScriptValueInvalid('A script may record at most ${String(SCRIPT_OUTPUT_LIMITS.tests)} tests');
   }
   try {
-    check();
-    state.tests.push({ name: String(name), passed: true });
+    const returned = check();
+    if (returned !== null && (typeof returned === 'object' || typeof returned === 'function') && typeof returned.then === 'function') {
+      // A test cannot wait: the promise is not awaited, and a rejection of it is swallowed so it stays quiet.
+      if (typeof returned.catch === 'function') returned.catch(() => {});
+      state.tests.push({ name: String(name), passed: false, message: 'the test callback is async, and a test cannot wait: make it synchronous' });
+    } else {
+      state.tests.push({ name: String(name), passed: true });
+    }
   } catch (error) {
     state.tests.push({ name: String(name), passed: false, message: error instanceof Error ? error.message : show(error) });
   }

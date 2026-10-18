@@ -91,6 +91,8 @@ define('tc', Object.freeze({
   test: (name, result) => test(name, () => {
     const outcome = typeof result === 'function' ? result() : result;
     if (outcome === false) throw new ExpectationFailed('the test returned false');
+    // An async function hands back a promise: pass it on so test refuses it.
+    if (outcome !== null && typeof outcome === 'object' && typeof outcome.then === 'function') return outcome;
   }),
   expect: chaiExpect,
   // With no argument it skips the current request; any argument names another request, which is out of reach.
