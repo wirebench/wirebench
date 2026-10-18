@@ -16,6 +16,8 @@ import { noteFirstPress, swallowsClick, takeSecondPress } from './double-press.j
 import { GroupActionsButton, GroupMenu, HostActionsButton, HostMenu } from './host-menus.js';
 import { TOP_LEVEL, type HostsLayout, type HostsPrefs, type HostsSort } from './hosts-prefs.js';
 import { serialTargetText } from './serial-section.js';
+import { telnetTargetText } from './host-protocol.js';
+import { PlainTextMark } from './plain-text-mark.js';
 import {
   flattenGroups,
   hostStatusOf,
@@ -80,6 +82,8 @@ function targetOf(host: HostEntryWire, resolved: ResolvedHostWire | undefined): 
   if (resolved?.ssh.protocol?.value === 'serial') return serialTargetText(resolved);
   const user = resolved?.ssh.user.value;
   const port = resolved?.ssh.port.value;
+  // A Telnet host says so, as its tab does (#688).
+  if (resolved?.ssh.protocol?.value === 'telnet') return telnetTargetText(host.address, user, port);
   return `${user === undefined ? '' : `${user}@`}${host.address}${port === undefined || port === 22 ? '' : `:${String(port)}`}`;
 }
 
@@ -212,6 +216,11 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
                 </>
               )}
               {osText !== undefined && <span>{osText} · </span>}
+              {resolved?.ssh.protocol?.value === 'telnet' && (
+                <span className="mr-1 inline-flex align-[-1px]">
+                  <PlainTextMark />
+                </span>
+              )}
               <span className="font-mono">{targetOf(host, resolved)}</span>
             </span>
             {grid && tags}
@@ -269,7 +278,14 @@ function DraftCard({ draft, layout }: { readonly draft: NewHostDraft; readonly l
             New
           </span>
         </span>
-        <span className="truncate font-mono text-xs leading-4 text-fg-subtle">{draft.target}</span>
+        <span className="truncate text-xs leading-4 text-fg-subtle">
+          {draft.plainText === true && (
+            <span className="mr-1 inline-flex align-[-1px]">
+              <PlainTextMark />
+            </span>
+          )}
+          <span className="font-mono">{draft.target}</span>
+        </span>
       </span>
     </li>
   );

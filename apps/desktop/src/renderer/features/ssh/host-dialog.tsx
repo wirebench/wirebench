@@ -17,7 +17,7 @@ import { ForwardsSection, inheritedForwards } from './forwarding/forwards-sectio
 import { EnvSection, envProblem, inheritedEnv } from './env-section.js';
 import { AgentForwardingSection, inheritedForwardAgent } from './agent-forwarding.js';
 import { inheritedMosh, inheritedProtocol, MoshSection, moshProblem } from './mosh-section.js';
-import { TELNET_PORT } from './host-protocol.js';
+import { TELNET_PORT, telnetTargetText } from './host-protocol.js';
 import { inheritedSerial, SerialDeviceField, serialLabel, SerialLineSection, serialProblem } from './serial-section.js';
 import { cleanProxy, proxyProblem, ProxySection } from './proxy-section.js';
 import { OS_LABELS } from './os-icon.js';
@@ -283,7 +283,9 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const hostForm = dialog.mode === 'new-host' || dialog.mode === 'edit-host';
   const draftTarget = serial
     ? `Serial · ${serialLabel(ssh.serial ?? inheritedSerial(chain).value)}`
-    : draftTargetText(address.trim(), ssh.user ?? loginUser.value, ssh.port ?? inheritedPort.value);
+    : telnet
+      ? telnetTargetText(address.trim(), ssh.user ?? loginUser.value, ssh.port ?? inheritedPort.value)
+      : draftTargetText(address.trim(), ssh.user ?? loginUser.value, ssh.port ?? inheritedPort.value);
   const draftName = name.trim();
   // A form that goes (its tab left for another) has nothing left to drop.
   useEffect(
@@ -296,9 +298,16 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
     if (!hostForm) return;
     noteForm(
       dirty,
-      fresh ? { name: draftName, target: draftTarget, ...(groupId === undefined ? {} : { groupId }) } : undefined,
+      fresh
+        ? {
+            name: draftName,
+            target: draftTarget,
+            ...(telnet ? { plainText: true } : {}),
+            ...(groupId === undefined ? {} : { groupId }),
+          }
+        : undefined,
     );
-  }, [hostForm, fresh, dirty, draftName, draftTarget, groupId, noteForm]);
+  }, [hostForm, fresh, dirty, draftName, draftTarget, telnet, groupId, noteForm]);
   // Cancel and Escape leave a form in the details panel the way putting the panel away does: asking first.
   const cancel = (): void => {
     if (embedded && hostForm) leaveForm();
