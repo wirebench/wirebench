@@ -50,8 +50,19 @@ export interface Replacement {
   readonly text: string;
 }
 
-/** The mapping table's answer for one reference: a replacement, or undefined when it has none. */
-export type Matcher = (ref: DialectRef, context: ConvertContext) => Replacement | undefined;
+/**
+ * The mapping table's answer that a call stays a TODO with the layer's reason, although the layer
+ * runs it elsewhere: `skipRequest` in a post-response script.
+ */
+export interface Refusal {
+  readonly refused: string;
+}
+
+/**
+ * The mapping table's answer for one reference: a replacement, a refusal, or undefined when it has
+ * none ("not converted yet").
+ */
+export type Matcher = (ref: DialectRef, context: ConvertContext) => Replacement | Refusal | undefined;
 
 /** The names the script declares anywhere: a root among them is the script's own, not the global. */
 export function declaredNames(source: ts.SourceFile): Set<string> {

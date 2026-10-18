@@ -1,8 +1,7 @@
 /**
  * The converter's skeleton (spec §5): it parses a level's scripts, finds the dialect's roots, asks a
  * matcher for each call on one, and turns what is left into TODOs with the statement commented out.
- * The mapping table is empty here, so every dialect call is a TODO; the matcher seam is driven by a
- * stand-in matcher.
+ * Calls with no row (`bru.unknown`) are TODOs; the matcher seam is driven by a stand-in matcher.
  */
 import { createContext, runInContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
@@ -67,8 +66,8 @@ describe('convertLevelScripts', () => {
     const post = [
       'const id = 1;',
       'if (id) {',
-      "  bru.setVar('id', id);",
-      '  bru.setVar(',
+      "  bru.unknown('id', id);",
+      '  bru.unknown(',
       "    'other',",
       '    id,',
       '  );',
@@ -88,10 +87,10 @@ describe('convertLevelScripts', () => {
         header('bruno', 'imported-scripts/a/b.post.js'),
         'const id = 1;',
         'if (id) {',
-        '  // TODO(convert): bru.setVar — not converted yet',
-        "  // bru.setVar('id', id);",
-        '  // TODO(convert): bru.setVar — not converted yet',
-        '  // bru.setVar(',
+        '  // TODO(convert): bru.unknown — not converted yet',
+        "  // bru.unknown('id', id);",
+        '  // TODO(convert): bru.unknown — not converted yet',
+        '  // bru.unknown(',
         "  //   'other',",
         '  //   id,',
         '  // );',
@@ -100,8 +99,8 @@ describe('convertLevelScripts', () => {
       ].join('\n'),
     );
     expect(result.todos).toEqual([
-      { phase: 'post', line: 4, call: 'bru.setVar', kind: 'not-mapped', reason: 'not converted yet' },
-      { phase: 'post', line: 6, call: 'bru.setVar', kind: 'not-mapped', reason: 'not converted yet' },
+      { phase: 'post', line: 4, call: 'bru.unknown', kind: 'not-mapped', reason: 'not converted yet' },
+      { phase: 'post', line: 6, call: 'bru.unknown', kind: 'not-mapped', reason: 'not converted yet' },
     ]);
     expect(result.mapped).toBe(0);
   });
@@ -110,15 +109,15 @@ describe('convertLevelScripts', () => {
     const result = convertLevelScripts({
       dialect: 'bruno',
       protocol: 'rest',
-      pre: "  const a = 1; bru.setVar('a', a); console.log(a); // done\n",
+      pre: "  const a = 1; bru.unknown('a', a); console.log(a); // done\n",
       backups: {},
     });
     expect(result.ok && result.pre).toBe(
       [
         '// Converted from a bruno script.',
         '  const a = 1; ',
-        '  // TODO(convert): bru.setVar — not converted yet',
-        "  // bru.setVar('a', a);",
+        '  // TODO(convert): bru.unknown — not converted yet',
+        "  // bru.unknown('a', a);",
         '  console.log(a); // done',
         '',
       ].join('\n'),
@@ -181,7 +180,7 @@ describe('convertLevelScripts', () => {
     const result = convertLevelScripts({
       dialect: 'bruno',
       protocol: 'rest',
-      pre: "const a = 1;\r\nif (a) {\r\n  bru.setVar('a',\r\n    a);\r\n}\r\n",
+      pre: "const a = 1;\r\nif (a) {\r\n  bru.unknown('a',\r\n    a);\r\n}\r\n",
       backups: {},
     });
     expect(result.ok && result.pre).toBe(
@@ -189,8 +188,8 @@ describe('convertLevelScripts', () => {
         '// Converted from a bruno script.',
         'const a = 1;',
         'if (a) {',
-        '  // TODO(convert): bru.setVar — not converted yet',
-        "  // bru.setVar('a',",
+        '  // TODO(convert): bru.unknown — not converted yet',
+        "  // bru.unknown('a',",
         '  //   a);',
         '}',
         '',
@@ -336,7 +335,7 @@ describe('the statement a TODO comments out', () => {
     const result = convertLevelScripts({
       dialect: 'bruno',
       protocol: 'rest',
-      pre: "if (a) {\n  x();\n} else bru.setVar('a', 1);\n",
+      pre: "if (a) {\n  x();\n} else bru.unknown('a', 1);\n",
       backups: {},
     });
     expect(result.ok && result.pre).toBe(
@@ -345,8 +344,8 @@ describe('the statement a TODO comments out', () => {
         'if (a) {',
         '  x();',
         '} else {',
-        '  // TODO(convert): bru.setVar — not converted yet',
-        "  // bru.setVar('a', 1);",
+        '  // TODO(convert): bru.unknown — not converted yet',
+        "  // bru.unknown('a', 1);",
         '}',
         '',
       ].join('\n'),

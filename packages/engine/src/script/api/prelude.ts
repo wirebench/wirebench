@@ -18,6 +18,9 @@ import type { ProtocolScripting } from '../../protocol/module.js';
 import type { ScriptApi, ScriptPhase } from '../model.js';
 import { isLayeredApi, SCRIPT_CONTROL_LIMITS, SCRIPT_OUTPUT_LIMITS } from '../model.js';
 
+/** Why `execution.skipRequest` throws in a post-response script; the converter's TODO repeats it. */
+export const SKIP_REQUEST_PRE_ONLY = 'execution.skipRequest works only in a pre-request script';
+
 const COMMON = String.raw`
 const input = JSON.parse(__host.inputJson);
 const hasOwn = (object, key) => object !== null && typeof object === 'object' && Object.prototype.hasOwnProperty.call(object, key);
@@ -94,7 +97,7 @@ define('execution', Object.freeze({
     control.next = name;
   },
   skipRequest() {
-    if (input.phase !== 'pre') throw new ScriptUnsupported('execution.skipRequest works only in a pre-request script');
+    if (input.phase !== 'pre') throw new ScriptUnsupported('${SKIP_REQUEST_PRE_ONLY}');
     control.skip = true;
   },
 }));

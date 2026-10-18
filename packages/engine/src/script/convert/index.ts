@@ -16,11 +16,12 @@ import {
   type DialectRef,
   type Matcher,
 } from './roots.js';
+import { matchMappings } from './match.js';
 import { applyEdits, commentOut, lineEndingAt, wrapCommentedOut, type Edit } from './splice.js';
 import { headerComment, NOT_CONVERTED, shadowedReason, todoComment, type ConvertTodo } from './todo.js';
 import { typescript } from './typescript.js';
 
-export type { ConvertProtocol, ConvertContext, DialectRef, Matcher, Replacement } from './roots.js';
+export type { ConvertProtocol, ConvertContext, DialectRef, Matcher, Refusal, Replacement } from './roots.js';
 export type { ConvertTodo } from './todo.js';
 
 export type ConvertedLevel =
@@ -38,9 +39,6 @@ export type ConvertedLevel =
 export type ConvertedScript =
   | { readonly ok: true; readonly text: string; readonly todos: readonly ConvertTodo[]; readonly mapped: number }
   | { readonly ok: false; readonly line: number; readonly message: string };
-
-/** The mapping table before it has rows: nothing is replaced. */
-const matchNothing: Matcher = () => undefined;
 
 /** A level's pre and post scripts converted; a phase with no script has no file. */
 export function convertLevelScripts(input: {
@@ -90,7 +88,7 @@ export function convertScript(
     readonly text: string;
     readonly backup?: string;
   },
-  matcher: Matcher = matchNothing,
+  matcher: Matcher = matchMappings,
 ): ConvertedScript {
   const ts = typescript();
   const { dialect, protocol, phase, text } = input;
@@ -161,6 +159,10 @@ export function convertScript(
         unconverted.set(ref.node, { node: ref.node, call: ref.name, kind: 'not-mapped', reason: NOT_CONVERTED });
         continue;
       }
+      if ('refused' in replacement) {
+        unconverted.set(ref.node, { node: ref.node, call: ref.name, kind: 'unsupported', reason: replacement.refused });
+        continue;
+      }
       checkReplacement(ref, replacement.node, handed, { from: cursor, to }, refs, dialect, source);
       decided.set(ref.node, replacement.node);
       cursor = replacement.node.end;
@@ -228,7 +230,7 @@ export function convertScript(
         cursor = edit.end;
       } else if (item.ref !== undefined) {
         const replacement = matcher(item.ref, context);
-        if (replacement === undefined || replacement.node !== decided.get(item.ref.node)) {
+        if (replacement === undefined || 'refused' in replacement || replacement.node !== decided.get(item.ref.node)) {
           throw new Error(`convert: the matcher answered ${item.ref.name} differently the second time`);
         }
         edits.push({ start: replacement.node.getStart(source), end: replacement.node.end, text: replacement.text });
