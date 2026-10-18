@@ -26,6 +26,10 @@ All notable changes to this project are documented here. The format follows
 - **Search heads each group with the request.** A group of Search results starts with the REST method
   and the request name, with the project and API faint underneath, instead of a breadcrumb that cut
   every group to the same "PAYMENTS › SWAGGER P…" (#683).
+- **A shared terminal's viewer counts themself.** Right after joining, the viewer's header reads
+  **1 watching** with their own chip, as the owner's strip does, instead of **0 watching**. Once the share
+  has ended the count and chips go, and the notice offers **Close tab**. A new share of the same session
+  has a new link, so there is no rejoin from the ended tab (#690).
 - **Telnet and serial terminals no longer offer Files.** The terminal tab's toolbar shows **Files** only
   when the focused pane's host is reached over SSH or Mosh, as the pane's own menu already did (#688).
 - **Telnet and serial connects list their own steps.** A serial console's connection screen shows

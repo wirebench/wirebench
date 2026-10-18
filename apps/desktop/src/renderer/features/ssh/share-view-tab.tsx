@@ -4,6 +4,7 @@ import '@xterm/xterm/css/xterm.css';
 import { detectPlatform } from '../../lib/platform.js';
 import { isPaletteChord } from '../../lib/terminal-focus.js';
 import { ipc } from '../../state/ipc-client.js';
+import { useEditorsStore } from '../../state/editors.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { terminalAppearance } from './terminal-appearance.js';
 import { bytesToBase64 } from './terminal-session.js';
@@ -85,7 +86,8 @@ export function ShareViewTab({ tabId }: { readonly tabId: string }) {
       : state.control === self
         ? 'You'
         : (state.viewers.find((v) => v.userId === state.control)?.name ?? 'Someone');
-  const others = [...new Map((state?.viewers ?? []).map((v) => [v.userId, v])).values()];
+  // Everyone watching, this user included, as the owner's strip counts them; nobody once it ended.
+  const watching = ended === undefined ? [...new Map((state?.viewers ?? []).map((v) => [v.userId, v])).values()] : [];
 
   return (
     <div className="flex h-full min-w-0 flex-col" data-testid="share-view">
@@ -96,8 +98,12 @@ export function ShareViewTab({ tabId }: { readonly tabId: string }) {
         <span className="font-medium">
           {view?.ownerName ?? ''} · {view?.hostName ?? ''}
         </span>
-        <span className="text-fg-subtle">{others.length} watching</span>
-        {others.map((viewer) => (
+        {ended === undefined && (
+          <span className="text-fg-subtle" data-testid="share-view-watching">
+            {watching.length} watching
+          </span>
+        )}
+        {watching.map((viewer) => (
           <span key={viewer.userId} className="rounded-full border border-hairline px-2 py-0.5">
             {viewer.userId === self ? `${viewer.name} (you)` : viewer.name}
           </span>
@@ -137,12 +143,19 @@ export function ShareViewTab({ tabId }: { readonly tabId: string }) {
         )}
       </div>
       {ended !== undefined && (
-        <div
-          className="border-b border-hairline px-3 py-1.5 text-xs text-fg-default"
-          role="status"
-          data-testid="share-view-ended"
-        >
-          {ENDED[ended] ?? 'The shared terminal ended.'}
+        <div className="flex items-center gap-2 border-b border-hairline px-3 py-1.5 text-xs text-fg-default">
+          <span role="status" data-testid="share-view-ended">
+            {ENDED[ended] ?? 'The shared terminal ended.'}
+          </span>
+          <button
+            type="button"
+            className={BUTTON}
+            onClick={() => {
+              useEditorsStore.getState().close(tabId);
+            }}
+          >
+            Close tab
+          </button>
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-auto bg-surface-sunken p-2">

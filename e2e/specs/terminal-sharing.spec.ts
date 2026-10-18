@@ -11,7 +11,7 @@ import { SyncProfiles, SYNC_TIMEOUT } from '../helpers/sync.js';
 /**
  * Live terminal sharing (#429) against the fake server's relay, with two app instances: Alice shares an SSH
  * session, Bob joins from the invite link, sees the screen, asks for control, types once Alice approves,
- * and sees the share end when she stops it.
+ * and sees the share end when she stops it, then closes the tab.
  */
 
 const PASSWORD = 'correct horse battery';
@@ -86,6 +86,9 @@ test.describe('terminal sharing', () => {
     const view = bob.getByTestId('share-view');
     await expect(view.getByTestId('share-view-terminal')).toContainText('echo before', { timeout: 20_000 });
     await expect(view.getByTestId('share-view-control')).toHaveText('View only');
+    // Bob counts himself among those watching, as Alice's strip does (#690).
+    await expect(view.getByTestId('share-view-watching')).toHaveText('1 watching');
+    await expect(view.getByTestId('share-view-header')).toContainText('Bob (you)');
     await expect(strip).toContainText('1 watching');
     await expect(strip.getByTestId('share-viewer-Bob')).toBeVisible();
 
@@ -109,7 +112,11 @@ test.describe('terminal sharing', () => {
     await expect(view.getByTestId('share-view-control')).toHaveText('View only');
     await strip.getByRole('button', { name: 'Stop sharing' }).click();
     await expect(view.getByTestId('share-view-ended')).toHaveText('The owner stopped sharing.');
+    await expect(view.getByTestId('share-view-watching')).toBeHidden();
+    await expect(view.getByTestId('share-view-header')).not.toContainText('Bob (you)');
     await expect(strip).toBeHidden();
     await expect.poll(() => fake?.terminalShares().length).toBe(0);
+    await view.getByRole('button', { name: 'Close tab' }).click();
+    await expect(view).toBeHidden();
   });
 });
