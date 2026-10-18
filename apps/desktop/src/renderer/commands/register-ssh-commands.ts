@@ -1,5 +1,5 @@
 import { catalogEntry } from '@shared/command-catalog.js';
-import { editHost, openInNewTab, openTerminalFor } from '../features/ssh/connect.js';
+import { editHost, newHost, openInNewTab, openTerminalFor } from '../features/ssh/connect.js';
 import { activeFilesPane, fileActions } from '../features/ssh/files/file-actions.js';
 import { openFiles } from '../features/ssh/files/open-files.js';
 import {
@@ -73,7 +73,7 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     ...catalogEntry('ssh.newHost'),
     run: () => {
       revealHosts();
-      useHostsStore.getState().openDialog({ mode: 'new-host' });
+      newHost();
     },
   });
   registerCommand({

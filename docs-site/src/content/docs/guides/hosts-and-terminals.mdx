@@ -416,8 +416,8 @@ groups:
   the host can see them while it starts. Agent forwarding does not apply to a Mosh session.
 - The details panel shows the protocol with its source. Closing the tab ends the session on the host too.
 
-In the host form, **Protocol** sits under **Advanced**; choosing **Mosh** shows the server command and the
-UDP ports. **Telnet** is described next.
+In the host form, **Protocol** sits right under **Name**, since it changes the fields below it; choosing
+**Mosh** shows the server command and the UDP ports. **Telnet** is described next.
 
 ## Telnet
 
@@ -479,7 +479,7 @@ groups:
           serial: { baud: 115200, dataBits: 8, parity: none, stopBits: 1, flowControl: rtscts }
 ```
 
-- In the host form, open **Advanced** and set **Protocol** to **Serial console**. Address, port, sign-in,
+- In the host form, set **Protocol** (under **Name**) to **Serial console**. Address, port, sign-in,
   jump host and proxy go: a serial line has none. The form shows **Device on this computer** with the ports
   this computer has (with a **Refresh** for an adapter plugged in since, or a path you type) and the line
   settings: baud, data bits, parity (`none`, `even`, `odd`, `mark`, `space`), stop bits (`1`, `1.5`, `2`)
@@ -511,6 +511,15 @@ a host only selects it, and an open panel then shows that host. The panel closes
 <kbd>Esc</kbd> or the rail icon, never from clicking a host, and stays open or closed after a restart
 (per machine). On a new machine, the first host you pick shows a note that points to the icon. When a
 forward runs through the host, the details say so ("1 forward running"); click that to open **Port forwarding**.
+
+**New host** (the button above the list, a group's **Add host**, **New host here…** in a group's menu, or
+**Hosts: New Host…** in the palette) opens its form in the same right panel, beside the hosts rather than
+over them. While it is open, a dashed **New** card stands in the list where Save will put the host: in the
+group the form's **Group** names, showing the name and address as you type them. **Save** turns it into the
+host's card; **Cancel**, <kbd>Esc</kbd> or the panel's close icon drops it. **Duplicate** opens the same form
+filled in from the host, and writes nothing until you save. **Edit** opens the host's form in the panel too.
+Leaving either form with changes in it (closing the panel, picking another host, starting another form)
+asks first.
 
 With more than six hosts, the ones you connected to lately show in a **Recent** strip above the list
 (with fewer, the list already shows every host), newest first, with when
@@ -886,7 +895,7 @@ rule off: above, `db-1` has `pg` and not `grafana`, while every other host under
 
 **New rule…** in the **Port forwarding** view adds a rule to a host you pick from a list, and once forwarding
 groups exist, to the group you pick under **Forwarding group**. To edit rules, or to
-set one on a whole group, use the host and group dialogs, under **Port forwarding**: **Add rule** adds one at
+set one on a whole group, use the host and group forms, under **Port forwarding**: **Add rule** adds one at
 that level, an inherited rule shows greyed with where it came from, **Override** copies it to this level to
 edit it, and **Off** switches it off here. The rule form has the type, port, bind, target and **Start with
 the host's terminals**.
@@ -1140,7 +1149,7 @@ A run asks first, in the run dialog, when it reaches two or more hosts, when it 
 or when the snippet has `confirm: true` (**Always confirm** in the editor). A run into one unprotected
 terminal goes straight in.
 
-Mark a group or a host protected with the **Protected** switch in the host dialog, or `protected: true` in
+Mark a group or a host protected with the **Protected** switch in the host or group form, or `protected: true` in
 `hosts.yaml`. It is inherited like the `ssh` fields, so a nearer `protected: false` lifts a group's flag:
 
 ```yaml

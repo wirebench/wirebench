@@ -23,11 +23,12 @@ describe('ssh commands', () => {
     useUiStore.setState({ enabledAreas: ['explorer', 'ssh'] } as never);
     useUiStore.getState().setSidebarView('explorer');
   });
-  it('ssh.newHost shows the Hosts view and opens the dialog', async () => {
+  it('ssh.newHost shows the Hosts view and opens New host in the details panel', async () => {
     await runCommand('ssh.newHost', {} as never);
     expect(useUiStore.getState().sidebar.view).toBe('ssh');
     expect(useUiStore.getState().sidebar.visible).toBe(true);
     expect(useHostsStore.getState().dialog).toEqual({ mode: 'new-host' });
+    expect(useHostsStore.getState().homeView).toBe('hosts');
   });
   it('ssh.editHost with an id opens the edit dialog and does not collapse an already-visible Hosts view', async () => {
     await runCommand('ssh.newGroup', {} as never);

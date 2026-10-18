@@ -22,13 +22,26 @@ export interface HostPrefill {
   readonly user?: string;
 }
 
-/** Which host / group form is open, if any. `parent` is the group a new entry is created in. */
+/**
+ * Which host / group form is open, if any. `parent` is the group a new entry is created in; `copyOf` is the
+ * host Duplicate starts a new one from.
+ */
 export type HostsDialog =
-  | { mode: 'new-host'; parent?: string; prefill?: HostPrefill }
+  | { mode: 'new-host'; parent?: string; prefill?: HostPrefill; copyOf?: string }
   | { mode: 'edit-host'; id: string }
   | { mode: 'new-group'; parent?: string }
   | { mode: 'edit-group'; id: string }
   | null;
+
+/** What the New host form holds so far, drawn as the draft card in its group on the Hosts tab. */
+export interface NewHostDraft {
+  /** As typed; the card says "New host" while it is empty. */
+  readonly name: string;
+  /** `user@address:port` or the serial line, as the form would save it. */
+  readonly target: string;
+  /** The group it will be saved to; absent for the top level. */
+  readonly groupId?: string;
+}
 
 /**
  * A host key main refused until the user decides; `previous` is set when the stored key differs. A terminal's
@@ -111,6 +124,19 @@ interface HostsState {
   filter: string;
   selectedTags: readonly string[];
   dialog: HostsDialog;
+  /** The open New host form's draft card; absent while none is open. */
+  draft: NewHostDraft | undefined;
+  /** Whether the open host form (New or Edit host) holds changes that leaving it would drop. */
+  formDirty: boolean;
+  /** What the open New host or Edit host form reports as the user types. */
+  noteForm: (dirty: boolean, draft?: NewHostDraft) => void;
+  /** Set while "Discard changes?" asks: running it drops the form and carries on. */
+  discardAsk: (() => void) | null;
+  /**
+   * Leaves the open host form, then runs `then`. A New host or Edit host form with changes asks first;
+   * declining keeps the form and never runs `then`.
+   */
+  leaveForm: (then?: () => void) => void;
   /** Whether the "Import hosts" dialog is open. */
   importOpen: boolean;
   /** Whether the "Import known hosts" dialog (Known hosts view) is open. */
@@ -204,6 +230,9 @@ const WORKSPACE_STATE = {
   problems: [],
   loaded: false,
   dialog: null,
+  draft: undefined,
+  formDirty: false,
+  discardAsk: null,
   importOpen: false,
   knownHostsImportOpen: false,
   panes: {},
@@ -239,14 +268,32 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
     set({ groupFilter });
   },
   selectHost: (selectedHostId) => {
-    // Picking another host leaves the one being edited: its form lives in the details panel.
+    // Picking another host leaves the host form in the details panel (asking first if it has changes):
+    // a new host's form, or another host's edit.
     const { dialog } = get();
-    const leaving = dialog?.mode === 'edit-host' && dialog.id !== selectedHostId;
-    set({ selectedHostId, ...(leaving ? { dialog: null } : {}) });
+    const leaving = dialog?.mode === 'new-host' || (dialog?.mode === 'edit-host' && dialog.id !== selectedHostId);
+    if (!leaving) {
+      set({ selectedHostId });
+      return;
+    }
+    get().leaveForm(() => {
+      set({ selectedHostId });
+    });
   },
   setDetailsOpen: (open) => {
+    const mode = get().dialog?.mode;
+    // A new host's form borrows the panel: putting it away drops the draft and leaves the panel as it was.
+    if (!open && mode === 'new-host') {
+      get().leaveForm();
+      return;
+    }
     // Putting the panel away cancels an edit in it.
-    if (!open && get().dialog?.mode === 'edit-host') set({ dialog: null });
+    if (!open && mode === 'edit-host') {
+      get().leaveForm(() => {
+        useUiStore.getState().setHostDetailsOpen(false);
+      });
+      return;
+    }
     useUiStore.getState().setHostDetailsOpen(open);
   },
   filter: '',
@@ -268,10 +315,25 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
     set({ selectedTags: selectedTags.includes(tag) ? selectedTags.filter((t) => t !== tag) : [...selectedTags, tag] });
   },
   openDialog: (dialog) => {
-    set({ dialog });
+    // Another form replaces a host form only once its changes may go.
+    get().leaveForm(() => {
+      set({ dialog, draft: undefined, formDirty: false, discardAsk: null });
+    });
   },
   closeDialog: () => {
-    set({ dialog: null });
+    set({ dialog: null, draft: undefined, formDirty: false, discardAsk: null });
+  },
+  noteForm: (formDirty, draft) => {
+    set({ formDirty, draft });
+  },
+  leaveForm: (then) => {
+    const { dialog, formDirty } = get();
+    const proceed = (): void => {
+      get().closeDialog();
+      then?.();
+    };
+    if (formDirty && (dialog?.mode === 'new-host' || dialog?.mode === 'edit-host')) set({ discardAsk: proceed });
+    else proceed();
   },
   setImportOpen: (importOpen) => {
     set({ importOpen });

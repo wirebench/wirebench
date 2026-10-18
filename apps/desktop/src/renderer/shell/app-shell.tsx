@@ -216,8 +216,11 @@ export function AppShell() {
   // Code is only for the areas with requests (`right-panel.ts`).
   const codeArea = useEditorsStore((state) => rightPanelFor(state) === 'code');
   const settingsOpen = useUiStore((state) => state.preferences.open);
+  // While New host borrows the panel, the handle's double-click puts it away like the close icon.
+  const newHostOpen = useHostsStore((state) => state.dialog?.mode === 'new-host');
   const toggleHostDetails = useCallback(() => {
-    useHostsStore.getState().setDetailsOpen(useUiStore.getState().slideOver.hostDetailsOpen !== true);
+    const hosts = useHostsStore.getState();
+    hosts.setDetailsOpen(hosts.dialog?.mode !== 'new-host' && useUiStore.getState().slideOver.hostDetailsOpen !== true);
   }, []);
   const closeHostDetails = useCallback(() => {
     useHostsStore.getState().setDetailsOpen(false);
@@ -613,7 +616,7 @@ export function AppShell() {
                   <CodePanel />
                 </SlideOver>
                 <SlideOver
-                  label="Host details"
+                  label={newHostOpen ? 'New host' : 'Host details'}
                   open={hostDetailsShown && !settingsOpen}
                   width={slideOverWidth}
                   onWidthChange={setSlideOverWidth}

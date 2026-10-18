@@ -164,6 +164,18 @@ describe('SlideOver', () => {
     box.remove();
   });
 
+  it('leaves Escape in a dialog over the panel to that dialog', () => {
+    const { onClose } = renderSlideOver();
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'alertdialog');
+    const button = document.createElement('button');
+    dialog.append(button);
+    document.body.append(dialog);
+    fireEvent.keyDown(button, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    dialog.remove();
+  });
+
   it('ignores Escape while closed — there is no listener to leave behind', () => {
     const { onClose } = renderSlideOver({ open: false });
 
