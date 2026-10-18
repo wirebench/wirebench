@@ -46,6 +46,7 @@ export function patchedScripts(
     enabled: patch.enabled ?? scripts?.enabled ?? true,
     secrets: [...new Set(secrets)],
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    ...(scripts?.postResponseOrder !== undefined ? { postResponseOrder: scripts.postResponseOrder } : {}),
   };
 }
 

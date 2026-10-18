@@ -13,9 +13,10 @@ import type { ResponseSnapshot } from '../protocols.js';
 import { TRANSFER_NAME_PATTERN } from '../sequence/model.js';
 import { applyRequestChanges } from './apply.js';
 import { buildPrelude } from './api/prelude.js';
-import { POSTMAN_LAYER } from './api/postman.js';
+import { SCRIPT_LAYERS } from './api/layers.js';
 import { scriptingOf } from './lookup.js';
 import {
+  isLayeredApi,
   SCRIPT_CONTROL_LIMITS,
   SCRIPT_OUTPUT_LIMITS,
   type ScriptControl,
@@ -167,6 +168,15 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
     };
   }
 
+  const layer = input.layer ?? (isLayeredApi(input.api) ? SCRIPT_LAYERS[input.api] : undefined);
+  if (isLayeredApi(input.api) && layer === undefined) {
+    return {
+      ok: false,
+      error: { code: 'script-unsupported', message: `${input.api} scripts are not supported yet` },
+      ...empty,
+    };
+  }
+
   for (const value of Object.values(input.secrets)) {
     input.onSecretValue?.(value);
   }
@@ -181,12 +191,7 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
     input.response === undefined ? undefined : (scripting.views?.response(input.response, types) ?? input.response);
 
   const result = await input.sandbox.run({
-    prelude: buildPrelude(
-      scripting,
-      input.phase,
-      input.api,
-      input.layer ?? (input.api === 'postman' ? POSTMAN_LAYER : undefined),
-    ),
+    prelude: buildPrelude(scripting, input.phase, input.api, layer),
     code,
     filename: input.filename,
     timeoutMs: input.timeoutMs ?? 0,

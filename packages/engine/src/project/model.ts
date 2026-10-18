@@ -32,10 +32,12 @@ import type { JwtAlgorithm } from '../http/auth/jwt-algorithms.js';
  * build would drop and send without. 10 added the `aws-sigv4` and `digest` auth types (#339), and,
  * before it shipped, the `graphql` REST body and an API's `graphqlSchema` (#77), and the `mcp` kind: an
  * MCP server under `apis/` with its `catalogue.json` and its calls' `<slug>.args.json` (#79).
+ * 11 added the `insomnia`, `bruno`, `hoppscotch` and `thunder-client` script APIs and a `postResponseOrder` on
+ * `scripts`, so an older build refuses a project that holds scripts it cannot run.
  * All are additive; this format does not round-trip unknown keys, so an older build would delete them on
  * its next save (see `schema.ts` and ADR-0003) — and would meanwhile send a request without its scripts.
  */
-export const FORMAT_VERSION = 10;
+export const FORMAT_VERSION = 11;
 
 /** A flat, ordered map of property name to value (project- or environment-scoped). */
 export type PropertyMap = Readonly<Record<string, string>>;

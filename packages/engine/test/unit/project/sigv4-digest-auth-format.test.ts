@@ -36,8 +36,8 @@ async function readAllText(dir: string, prefix = ''): Promise<Map<string, string
 const DIGEST = { type: 'digest', username: 'admin', passwordRef: 'sec_d', passwordEnv: 'APPLIANCE' };
 
 describe('aws-sigv4 and digest auth in the project format', () => {
-  it('need format 10, so an older build refuses the project', () => {
-    expect(FORMAT_VERSION).toBe(10);
+  it('need format 10 or later, so an older build refuses the project', () => {
+    expect(FORMAT_VERSION).toBeGreaterThanOrEqual(10);
   });
 
   it('leave a version-9 project opening unchanged, rewritten with only its formatVersion line', async () => {
@@ -49,14 +49,14 @@ describe('aws-sigv4 and digest auth in the project format', () => {
 
     const { project, problems } = await loadProject(dir);
     expect(problems).toEqual([]);
-    expect(project.formatVersion).toBe(10);
+    expect(project.formatVersion).toBe(11);
     await saveProject(project, dir);
     const after = await readAllText(dir);
 
     expect([...after.keys()].sort()).toEqual([...before.keys()].sort());
     for (const [file, beforeText] of before) {
       const expected =
-        file === 'wirebench.yaml' ? beforeText.replace('formatVersion: 9', 'formatVersion: 10') : beforeText;
+        file === 'wirebench.yaml' ? beforeText.replace('formatVersion: 9', 'formatVersion: 11') : beforeText;
       expect(after.get(file)).toBe(expected);
     }
     await rm(dir, { recursive: true, force: true });

@@ -13,8 +13,11 @@ and are `unknown` when the request has none. `WbSecretName` is the union of the 
 lists under `scripts.secrets`. `WbStatus` is every HTTP status from 100 to 599 as a literal type,
 and `WbRange1` to `WbRange5` are its hundreds, so checking `response.status` narrows the response.
 
-A Postman script (`api: postman`) is JavaScript and is checked for syntax only; its `pm` object is
-described in the [Scripts guide](/wirebench/docs/guides/scripts/#postman-scripts).
+A script imported from another client (`api: postman` or `api: insomnia`) is JavaScript and is checked
+for syntax only. It runs over the globals above through a layer that adds the client's own names,
+`pm` or `insomnia` and `$`, described in the
+[Scripts guide](/wirebench/docs/guides/scripts/#scripts-from-other-clients). Postman scripts also have a
+[section of their own](/wirebench/docs/guides/scripts/#postman-scripts).
 
 A mock operation's `dispatch.ts` sees **Every script** and **Mock dispatch scripts**, and nothing
 else: no vars, props, secrets or tests. `WbResponseName` is the union of the operation's response

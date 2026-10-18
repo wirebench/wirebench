@@ -5,9 +5,11 @@
 import { cp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { ProjectError } from '../../../src/errors.js';
 import { loadProject } from '../../../src/project/load.js';
-import type { Project } from '../../../src/project/model.js';
+import { FORMAT_VERSION, type Project } from '../../../src/project/model.js';
 import { saveProject } from '../../../src/project/save.js';
+import { scriptsSchema } from '../../../src/project/schema-parts.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
 import type { RequestScripts } from '../../../src/script/model.js';
 import { SCRIPT_LIMITS } from '../../../src/script/sandbox/model.js';
@@ -27,6 +29,19 @@ beforeEach(async () => {
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
+
+async function readAllText(root: string, prefix = ''): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const entry of await readdir(join(root, prefix), { withFileTypes: true })) {
+    const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) {
+      for (const [k, v] of await readAllText(root, relative)) out.set(k, v);
+    } else {
+      out.set(relative, await readFile(join(root, relative), 'utf8'));
+    }
+  }
+  return out;
+}
 
 const SCRIPTS: RequestScripts = {
   pre: { text: 'request.headers.set("X-Sig", crypto.hash("sha256", request.body.text));\n' },
@@ -178,5 +193,80 @@ describe('request scripts on disk', () => {
     const { project, problems } = await loadProject(dir);
     expect(restRequest(project).scripts).toBeUndefined();
     expect(problems).toEqual([expect.objectContaining({ code: 'orphan-request-file' })]);
+  });
+});
+
+describe('script APIs in the project format', () => {
+  it('scriptsSchema accepts the four new apis', () => {
+    for (const api of ['insomnia', 'bruno', 'hoppscotch', 'thunder-client']) {
+      expect(scriptsSchema.parse({ api }).api).toBe(api);
+    }
+    expect(scriptsSchema.safeParse({ api: 'other' }).success).toBe(false);
+  });
+
+  it('postResponseOrder survives save, load and save, on a request and on an API', async () => {
+    const { project } = await loadProject(dir);
+    const scripts = (order: 'outer-first' | 'inner-first'): RequestScripts => ({
+      post: { text: 'log("x");\n' },
+      api: 'bruno',
+      enabled: true,
+      secrets: [],
+      postResponseOrder: order,
+    });
+    const api = restApisOf(project)[0]!;
+    const withBoth = withRestApis(project, [
+      {
+        ...api,
+        scripts: scripts('inner-first'),
+        requests: [{ ...restRequest(project), scripts: scripts('outer-first') }],
+      },
+    ]);
+    await saveProject(withBoth, dir);
+    expect(await readFile(join(dir, REQUESTS, 'Create cart.request.yaml'), 'utf8')).toContain(
+      'postResponseOrder: outer-first',
+    );
+
+    const first = await loadProject(dir);
+    expect(first.problems).toEqual([]);
+    const loadedApi = restApisOf(first.project)[0]!;
+    expect(loadedApi.scripts?.postResponseOrder).toBe('inner-first');
+    expect(loadedApi.requests[0]?.scripts?.postResponseOrder).toBe('outer-first');
+
+    await saveProject(first.project, dir);
+    const second = restApisOf((await loadProject(dir)).project)[0]!;
+    expect(second.scripts?.postResponseOrder).toBe('inner-first');
+    expect(second.requests[0]?.scripts?.postResponseOrder).toBe('outer-first');
+  });
+
+  it('a project stamped newer than this build is refused', async () => {
+    const manifest = join(dir, 'wirebench.yaml');
+    const text = await readFile(manifest, 'utf8');
+    await writeFile(manifest, text.replace(/formatVersion: \d+/, `formatVersion: ${String(FORMAT_VERSION + 1)}`));
+
+    const error = (await loadProject(dir).catch((e: unknown) => e)) as ProjectError;
+    expect(error.code).toBe('project-format-too-new');
+    expect(error.details).toMatchObject({ formatVersion: FORMAT_VERSION + 1, supported: FORMAT_VERSION });
+  });
+
+  it('a format 10 project migrates to the current format unchanged', async () => {
+    const manifest = join(dir, 'wirebench.yaml');
+    const stamped = (await readFile(manifest, 'utf8')).replace(/formatVersion: \d+/, 'formatVersion: 10');
+    await writeFile(manifest, stamped);
+    const before = await readAllText(dir);
+
+    const { project, problems } = await loadProject(dir);
+    expect(problems).toEqual([]);
+    expect(project.formatVersion).toBe(FORMAT_VERSION);
+    await saveProject(project, dir);
+    const after = await readAllText(dir);
+
+    expect([...after.keys()].sort()).toEqual([...before.keys()].sort());
+    for (const [file, text] of before) {
+      expect(after.get(file)).toBe(
+        file === 'wirebench.yaml'
+          ? text.replace('formatVersion: 10', `formatVersion: ${String(FORMAT_VERSION)}`)
+          : text,
+      );
+    }
   });
 });

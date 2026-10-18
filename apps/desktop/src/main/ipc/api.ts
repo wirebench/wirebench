@@ -848,7 +848,8 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
 
   /**
    * An Insomnia export (spec 2026-10-15 §4): each workspace's REST, gRPC and WebSocket API in the
-   * chosen project, its scripts under `imported-scripts/` (never run), its base and folder
+   * chosen project, its scripts attached to their requests and folders switched off (they run only once the
+   * user turns them on), its base and folder
    * environments as project properties and its sub-environments as workspace environments (never
    * activated). Everything is read and mapped before a project is created, so a refusal changes
    * nothing; a project created for the import is taken back when anything after it fails. An export

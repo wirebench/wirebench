@@ -884,8 +884,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
   /**
    * Another request client's export: main converts each collection into a REST, a gRPC and a
-   * WebSocket API in the chosen project, writes its scripts under `imported-scripts/` as text, and
-   * adds its environments to the workspace without making one active.
+   * WebSocket API in the chosen project, and adds its environments to the workspace without making one
+   * active. An Insomnia export's scripts are attached to their requests and folders switched off;
+   * the other clients' scripts are written under `imported-scripts/` as text and never run.
    */
   async function importClient(
     kind: 'insomnia' | 'bruno' | 'hoppscotch' | 'thunder-client',
@@ -2503,7 +2504,8 @@ function PostmanFolderSummary({ value }: { readonly value: ApiImportPostmanFolde
 
 /**
  * What another client's export made: the APIs, requests and folders (and collections, when the
- * export held several), the examples and assertions kept, the scripts saved as text; then the
+ * export held several), the examples and assertions kept, the scripts saved as text (an Insomnia export's are attached switched
+ * off, and the report's warnings say so); then the
  * environments and properties it added, and the report.
  */
 function ClientImportSummary({ value }: { readonly value: ApiImportClientResponse }) {

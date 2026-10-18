@@ -542,7 +542,7 @@ export type AttachmentSourceWire = z.infer<typeof attachmentSourceWireSchema>;
 export const requestScriptsWireSchema = z.object({
   pre: z.string().optional(),
   post: z.string().optional(),
-  api: z.enum(['wirebench', 'postman']),
+  api: z.enum(['wirebench', 'postman', 'insomnia', 'bruno', 'hoppscotch', 'thunder-client']),
   /** False keeps the scripts but runs none of them, as an imported Postman collection's are. */
   enabled: z.boolean(),
   /** The secrets a script may read with `secrets.get`, named as the engine's `SECRET_NAME_PATTERN` allows. */
@@ -554,6 +554,8 @@ export const requestScriptsWireSchema = z.object({
     .optional(),
 });
 export type RequestScriptsWire = z.infer<typeof requestScriptsWireSchema>;
+/** Which API a script is written against: the typed one, or another API client's layer. */
+export type ScriptApiWire = RequestScriptsWire['api'];
 
 /**
  * An edit to a request's scripts, for `update-request-scripts`. Only the fields present change; a
