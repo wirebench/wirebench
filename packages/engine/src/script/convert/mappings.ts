@@ -9,6 +9,7 @@
  */
 import { UNSUPPORTED_WHY } from '../api/layer-parts.js';
 import { sentRequestReason, SKIP_REQUEST_PRE_ONLY } from '../api/prelude.js';
+import { TC_NO_RESPONSE_YET } from '../api/thunder-client.js';
 import { cryptoHash, cryptoHmac, expectChain, tcTest, type Chain, type ExpectStyle } from './chains.js';
 import type { LayeredApi, ScriptPhase } from '../model.js';
 import type { ConvertProtocol } from './roots.js';
@@ -48,6 +49,12 @@ export interface MappingRow {
    * has no value to stand where the call's was. Used anywhere else, it is a TODO.
    */
   readonly statement?: true;
+  /**
+   * With `statement`, the call may also be the expression body of an arrow, whose value nothing
+   * reads (`pm.test('ok', () => pm.response.to.have.status(200))`). For an assertion only: a setter
+   * must stay a statement.
+   */
+  readonly arrowBody?: true;
   /**
    * How many more arguments may follow. They are dropped, so each must be a literal (a scope name,
    * an options object of literals); a call with any other one is left as a TODO.
@@ -317,7 +324,8 @@ const HEADER_SENT = {
 };
 
 /**
- * §6.5 the response (post-response only) and §6.6 the request. A `—` cell of the spec is a protocol
+ * §6.5 the response (post-response only) and §6.6 the request. In a pre-request script Thunder
+ * Client's `tc.response` refuses every member with a reason; the other layers have none. A `—` cell of the spec is a protocol
  * the row's `to` leaves out. An MCP response has no status, body or headers, so only its duration maps.
  */
 export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
@@ -331,6 +339,7 @@ export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
     calls,
     dialects: dialects as readonly LayeredApi[],
     phase: 'post',
+    ...(dialects.includes('thunder-client') ? { otherPhase: TC_NO_RESPONSE_YET } : {}),
     shape: 'property',
     to: httpAndGrpc(fixed('response.status'), fixed('response.status.code')),
   })),
@@ -351,6 +360,7 @@ export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
     calls: ['tc.response.json'],
     dialects: ['thunder-client'],
     phase: 'post',
+    otherPhase: TC_NO_RESPONSE_YET,
     shape: 'property',
     to: { rest: fixed('response.json()'), grpc: fixed('response.message') },
   },
@@ -386,6 +396,7 @@ export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
     calls: ['tc.response.text'],
     dialects: ['thunder-client'],
     phase: 'post',
+    otherPhase: TC_NO_RESPONSE_YET,
     shape: 'property',
     to: httpAndGrpc(fixed('response.text'), fixed('JSON.stringify(response.message)')),
   },
@@ -408,6 +419,7 @@ export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
     calls: ['tc.response.getHeader'],
     dialects: ['thunder-client'],
     phase: 'post',
+    otherPhase: TC_NO_RESPONSE_YET,
     arity: 1,
     to: httpAndGrpc(calling('response.headers.get'), calling('response.metadata.get')),
   },
@@ -421,6 +433,7 @@ export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
     calls,
     dialects: dialects as readonly LayeredApi[],
     phase: 'post',
+    ...(dialects.includes('thunder-client') ? { otherPhase: TC_NO_RESPONSE_YET } : {}),
     shape: 'property',
     to: everyProtocol(fixed('response.durationMs')),
   })),
@@ -438,6 +451,7 @@ export const MESSAGE_MAPPINGS: readonly MappingRow[] = [
     shape: 'numeric-literal',
     arity: 1,
     statement: true,
+    arrowBody: true,
     to: httpAndGrpc(
       ([code]) => `expect(response.status).toBe(${String(code)})`,
       ([code]) => `expect(response.status.code).toBe(${String(code)})`,

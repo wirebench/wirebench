@@ -95,7 +95,7 @@ function shapeOf(row: MappingRow, ref: DialectRef): { node: ts.Node; args: reado
   }
   const call = ref.call;
   if (call === undefined || call.arguments.some((arg) => ts.isSpreadElement(arg))) return undefined;
-  if (row.statement === true && !ts.isExpressionStatement(call.parent)) return undefined;
+  if (row.statement === true && !standsAlone(call, row.arrowBody === true)) return undefined;
   if (shape === 'object-key-value') {
     const [only] = call.arguments;
     if (call.arguments.length !== 1 || only === undefined || !ts.isObjectLiteralExpression(only)) return undefined;
@@ -170,18 +170,72 @@ function pure(node: ts.Expression): boolean {
   return false;
 }
 
-/** True when `node` is assigned to, incremented, decremented or deleted. */
+/**
+ * True when `call` is a statement of its own, or (with `arrowBody`) the expression body of an arrow,
+ * whose value nobody reads either: `test('ok', () => pm.response.to.have.status(200))`.
+ */
+function standsAlone(call: ts.CallExpression, arrowBody: boolean): boolean {
+  const ts = typescript();
+  const parent = call.parent;
+  return ts.isExpressionStatement(parent) || (arrowBody && ts.isArrowFunction(parent) && parent.body === call);
+}
+
+/**
+ * True when `node`, or what is read through it (`res.body.id`, `res.body['id']`, `res.body.items[0]`),
+ * is assigned to, incremented, decremented or deleted, directly or as a destructuring or for-in/of
+ * target. A template that reads afresh (`response.json()`) would lose the write.
+ */
 function written(node: ts.Node): boolean {
   const ts = typescript();
-  const parent = node.parent;
-  if (ts.isBinaryExpression(parent)) {
-    const op = parent.operatorToken.kind;
-    return parent.left === node && op >= ts.SyntaxKind.FirstAssignment && op <= ts.SyntaxKind.LastAssignment;
+  let target = node;
+  for (let parent = target.parent; ; parent = target.parent) {
+    if (
+      ((ts.isPropertyAccessExpression(parent) || ts.isElementAccessExpression(parent)) &&
+        parent.expression === target) ||
+      ts.isParenthesizedExpression(parent) ||
+      ts.isNonNullExpression(parent)
+    ) {
+      target = parent;
+    } else break;
   }
+  const parent = target.parent;
   if (ts.isPrefixUnaryExpression(parent) || ts.isPostfixUnaryExpression(parent)) {
     return parent.operator === ts.SyntaxKind.PlusPlusToken || parent.operator === ts.SyntaxKind.MinusMinusToken;
   }
-  return ts.isDeleteExpression(parent);
+  if (ts.isDeleteExpression(parent)) return true;
+  return assignedTo(target);
+}
+
+/** True when `node` is the target of an assignment or a for-in/of, alone or inside a destructuring pattern. */
+function assignedTo(node: ts.Node): boolean {
+  const ts = typescript();
+  let target = node;
+  for (;;) {
+    const parent = target.parent;
+    if (ts.isBinaryExpression(parent)) {
+      const op = parent.operatorToken.kind;
+      if (parent.left === target && op >= ts.SyntaxKind.FirstAssignment && op <= ts.SyntaxKind.LastAssignment) {
+        return true;
+      }
+      // `[a = 1] = list`: the default sits on the right of the element's own `=`.
+      return false;
+    }
+    if ((ts.isForOfStatement(parent) || ts.isForInStatement(parent)) && parent.initializer === target) return true;
+    // Climb out of a pattern: an array element, a spread, an object's value or shorthand.
+    if (
+      ts.isArrayLiteralExpression(parent) ||
+      ts.isSpreadElement(parent) ||
+      ts.isSpreadAssignment(parent) ||
+      ts.isObjectLiteralExpression(parent) ||
+      ts.isParenthesizedExpression(parent) ||
+      (ts.isPropertyAssignment(parent) && parent.initializer === target) ||
+      ts.isShorthandPropertyAssignment(parent)
+    ) {
+      target = parent;
+      continue;
+    }
+    return false;
+  }
 }
 
 /** True when `node`'s position already keeps a loose expression apart from what is around it. */

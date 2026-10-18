@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from '../../../../src/grpc/scripting.js';
 import type { RestRequestSnapshot, RestResponseSnapshot } from '../../../../src/rest/scripting.js';
 import { sentRequestReason } from '../../../../src/script/api/prelude.js';
+import { TC_NO_RESPONSE_YET, THUNDER_CLIENT_LAYER } from '../../../../src/script/api/thunder-client.js';
 import { convertScript } from '../../../../src/script/convert/index.js';
 import type { ConvertProtocol } from '../../../../src/script/convert/roots.js';
 import type { LayeredApi, ScriptPhase } from '../../../../src/script/model.js';
@@ -170,15 +171,30 @@ describe('§6.5 response rows in a pre-request script are TODOs', () => {
     it.each(row.calls.map(([dialect, call]) => ({ dialect, call })))(
       `${row.name}: $call ($dialect)`,
       ({ dialect, call }) => {
+        // Only Thunder Client's layer refuses its response before the request, and says why.
+        const thunder = call.startsWith('tc.');
+        const reason = thunder ? TC_NO_RESPONSE_YET : NOT_CONVERTED;
         for (const protocol of PROTOCOLS) {
           const from = `${row.statement.replace('CALL', call)}\n`;
           const result = converted(dialect, from, protocol, 'pre');
-          expect(result.body).toBe(`// TODO(convert): ${callOf(call)} — ${NOT_CONVERTED}\n// ${from}`);
-          expect(result.todos.map(({ kind }) => kind)).toEqual(['not-mapped']);
+          expect(result.body).toBe(`// TODO(convert): ${callOf(call)} — ${reason}\n// ${from}`);
+          expect(result.todos).toEqual([
+            { phase: 'pre', line: 2, call: callOf(call), kind: thunder ? 'unsupported' : 'not-mapped', reason },
+          ]);
         }
       },
     );
   }
+
+  it("carries the reason Thunder Client's layer throws", () => {
+    expect(THUNDER_CLIENT_LAYER).toContain(
+      "unsupported('tc.response in a pre-request script', 'there is no response before the request is sent')",
+    );
+    expect(TC_NO_RESPONSE_YET).toBe('there is no response before the request is sent');
+    expect(converted('thunder-client', 'const id = tc.response.json.id;\n', 'rest', 'pre').todos).toEqual([
+      { phase: 'pre', line: 2, call: 'tc.response.json.id', kind: 'unsupported', reason: TC_NO_RESPONSE_YET },
+    ]);
+  });
 });
 
 describe('§6.5 shapes', () => {
@@ -219,6 +235,49 @@ describe('§6.5 shapes', () => {
   it('leaves a written response property as a TODO', () => {
     expect(converted('bruno', 'res.body.id = 2;\n').todos.map(({ call }) => call)).toEqual(['res.body.id']);
     expect(converted('bruno', 'res.status = 2;\n').todos.map(({ call }) => call)).toEqual(['res.status']);
+  });
+
+  it('leaves a write through an element or a deeper property as a TODO, since json() reads afresh', () => {
+    for (const [statement, call] of [
+      ["res.body['id'] = 2;", 'res.body'],
+      ['res.body.items[0] = 1;', 'res.body.items'],
+      ['res.body.items[0].name += "x";', 'res.body.items'],
+      ['(res.body).count++;', 'res.body'],
+      ["delete res.body['id'];", 'res.body'],
+      ['res.body!.id = 2;', 'res.body'],
+      ['[res.body.a, res.body.b] = pair;', 'res.body.a'],
+      ['({ a: res.body.a } = pair);', 'res.body.a'],
+      ['for (res.body.x of list) log(1);', 'res.body.x'],
+      ['for (tc.response.json.k in obj) log(1);', 'tc.response.json.k'],
+    ] as const) {
+      const dialect: LayeredApi = call.startsWith('tc.') ? 'thunder-client' : 'bruno';
+      const result = converted(dialect, `${statement}\n`, 'rest', 'post');
+      expect(result.mapped, statement).toBe(0);
+      expect(result.todos.map(({ call: c }) => c)[0], statement).toBe(call);
+    }
+  });
+
+  it('still converts a read beside a write', () => {
+    expect(converted('bruno', 'x[res.body.id] = 1;\n').body).toBe('x[response.json().id] = 1;\n');
+    expect(converted('bruno', 'const [a] = [res.body.a];\n').body).toBe('const [a] = [response.json().a];\n');
+    expect(converted('bruno', 'total = res.body.items[0];\n').body).toBe('total = response.json().items[0];\n');
+    expect(converted('bruno', 'for (const x of res.body.items) log(x);\n').body).toBe(
+      'for (const x of response.json().items) log(x);\n',
+    );
+  });
+
+  it('asserts a status as the expression body of an arrow', () => {
+    expect(converted('postman', "pm.test('ok', () => pm.response.to.have.status(200));\n").body).toBe(
+      "test('ok', () => expect(response.status).toBe(200));\n",
+    );
+    expect(
+      converted('insomnia', "insomnia.test('ok', () => insomnia.response.to.have.status(200));\n", 'grpc').body,
+    ).toBe("test('ok', () => expect(response.status.code).toBe(200));\n");
+  });
+
+  it('keeps a setter a statement: an arrow body is a TODO there', () => {
+    const result = converted('bruno', 'const go = () => req.setUrl(u);\n', 'rest', 'pre');
+    expect(result.body).toBe(`// TODO(convert): req.setUrl — ${NOT_CONVERTED}\n// const go = () => req.setUrl(u);\n`);
   });
 
   it('asserts a status only for a number literal, as a statement of its own', () => {
