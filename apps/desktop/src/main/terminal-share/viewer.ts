@@ -106,7 +106,7 @@ export class TerminalShareViewer {
                 this.deps.emit.data(sender, { viewId: view.viewId, data: data.toString('base64') });
             },
             closed: () => {
-              this.finish(view, view.ended ?? 'lost');
+              this.finish(view, 'lost');
             },
           },
         );
@@ -192,7 +192,7 @@ export class TerminalShareViewer {
         view.requesting = false;
         break;
       case 'ended':
-        view.ended = message.reason;
+        this.end(view, message.reason);
         break;
       default:
         return;
@@ -203,9 +203,17 @@ export class TerminalShareViewer {
   private finish(view: View, reason: TerminalShareEndReasonWire): void {
     if (this.views.get(view.viewId) !== view) return;
     this.views.delete(view.viewId);
-    view.ended = reason;
-    view.control = null;
+    this.end(view, view.ended ?? reason);
     this.publish(view);
+  }
+
+  /** An ended share has nobody watching it and nobody typing into it. */
+  private end(view: View, reason: TerminalShareEndReasonWire): void {
+    view.ended = reason;
+    view.viewers = [];
+    view.control = null;
+    view.requesting = false;
+    view.declined = false;
   }
 
   private publish(view: View): void {
