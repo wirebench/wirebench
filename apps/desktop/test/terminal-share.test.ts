@@ -267,9 +267,17 @@ describe('TerminalShareViewer (#429)', () => {
     expect(v.states.at(-1)!.declined).toBe(true);
     socket.serverSends({ type: 'resize', cols: 120, rows: 40 });
     expect(v.states.at(-1)).toMatchObject({ cols: 120, rows: 40 });
+    socket.serverSends({
+      type: 'presence',
+      owner: { userId: BOB, name: 'Alice' },
+      viewers: [{ userId: ME, name: 'Me', control: true, requesting: false }],
+    });
+    socket.serverSends({ type: 'control', userId: ME });
     socket.serverSends({ type: 'ended', reason: 'removed' });
+    // Nobody watches or types into a share that ended (#690).
+    expect(v.states.at(-1)).toMatchObject({ ended: 'removed', viewers: [], control: null, requesting: false });
     socket.serverCloses(TERMINAL_SHARE_CLOSE.forbidden);
-    expect(v.states.at(-1)!.ended).toBe('removed');
+    expect(v.states.at(-1)).toMatchObject({ ended: 'removed', viewers: [] });
   });
 
   it('a share that ended before joining is a not-found refusal', async () => {
