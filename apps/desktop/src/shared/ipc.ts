@@ -418,8 +418,12 @@ import {
   logExportHarRequestSchema,
   logResendResponseSchema,
   projectChangedEventSchema,
+  projectApiMovePlanSchema,
+  projectMoveApiRequestSchema,
+  projectMoveApiResponseSchema,
   projectMutateRequestSchema,
   projectMutateResponseSchema,
+  projectPlanApiMoveRequestSchema,
   projectSnapshotResponseSchema,
   requestCurlRequestSchema,
   requestCodeRequestSchema,
@@ -815,6 +819,10 @@ export const channels = {
   project: {
     snapshot: defineChannel('project.snapshot', projectIdRequestSchema, projectSnapshotResponseSchema),
     mutate: defineChannel('project.mutate', projectMutateRequestSchema, projectMutateResponseSchema),
+    /** What moving an API to another project would copy and leave behind, for the confirm (#701). */
+    planApiMove: defineChannel('project.planApiMove', projectPlanApiMoveRequestSchema, projectApiMovePlanSchema),
+    /** Moves an API to another project of the open workspace, saving both (#701). */
+    moveApi: defineChannel('project.moveApi', projectMoveApiRequestSchema, projectMoveApiResponseSchema),
     save: defineChannel('project.save', projectIdRequestSchema, projectSaveResponseSchema),
     moveToWorkspace: defineChannel(
       'project.moveToWorkspace',

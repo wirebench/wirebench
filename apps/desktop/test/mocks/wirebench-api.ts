@@ -155,6 +155,8 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       importLegacy: fail('project.importLegacy'),
       reload: fail('project.reload'),
       moveToWorkspace: fail('project.moveToWorkspace'),
+      planApiMove: fail('project.planApiMove'),
+      moveApi: fail('project.moveApi'),
     },
     // `list` and `snapshot` resolve rather than fail: the shell asks for both on mount, so
     // every renderer test would otherwise have to stub channels it does not care about.

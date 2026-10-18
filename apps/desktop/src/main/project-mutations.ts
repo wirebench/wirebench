@@ -39,6 +39,7 @@ import {
   updateMockResponse,
 } from './project-mock-mutations.js';
 import type { GenerateMockFn } from './project-mock-mutations.js';
+import { reorderApi } from './project-container-moves.js';
 import { addSequence, duplicateSequence, removeSequence, updateSequence } from './project-sequence-mutations.js';
 
 /**
@@ -154,6 +155,7 @@ export const CORE_CHANGE_KINDS: readonly ProjectChange['kind'][] = [
   'update-folder',
   'remove-folder',
   'move-node',
+  'move-container',
 ];
 
 /**
@@ -326,6 +328,9 @@ async function applyChangeOnly(project: Project, change: ProjectChange, deps: Mu
           index: change.index,
         },
       );
+
+    case 'move-container':
+      return { project: reorderApi(project, change.apiId, change.beforeApiId) };
 
     default:
       return applyKindChange(project, change, deps);
