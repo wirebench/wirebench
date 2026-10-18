@@ -110,7 +110,7 @@ export function proposeConversions(
 export function applyConversions(
   project: Project,
   accepted: readonly { readonly ownerId: string; readonly fingerprint: string }[],
-  takenBackups: ReadonlySet<string> = new Set(),
+  takenBackups: ReadonlySet<string>,
 ): {
   readonly project: Project;
   readonly applied: readonly LevelProposal[];

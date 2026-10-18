@@ -169,7 +169,7 @@ describe('applyConversions', () => {
       project: next,
       applied,
       refused,
-    } = applyConversions(project, [{ ownerId: 'api', fingerprint: proposal.fingerprint }]);
+    } = applyConversions(project, [{ ownerId: 'api', fingerprint: proposal.fingerprint }], new Set());
     expect(refused).toEqual([]);
     expect(applied.map((each) => each.ownerId)).toEqual(['api']);
     expect(applied[0]?.backups).toEqual(proposal.backups);
@@ -189,6 +189,22 @@ describe('applyConversions', () => {
     expect(soapInterfacesOf(next)).toBe(soapInterfacesOf(project));
   });
 
+  it('apply names its backups from the listing it is given, not the review', () => {
+    const project = sample();
+    const proposal = proposeConversions(project, 'api', new Set()).find((each) => each.ownerId === 'api')!;
+    expect(proposal.backups.map((backup) => backup.path)).toEqual(['imported-scripts/shop/shop.pre.js']);
+    // Between the review and Accept, a file lands at the path the review showed.
+    const listing = new Set(['imported-scripts/shop/shop.pre.js']);
+    const { project: next, applied } = applyConversions(
+      project,
+      [{ ownerId: 'api', fingerprint: proposal.fingerprint }],
+      listing,
+    );
+    expect(applied[0]?.backups.map((backup) => backup.path)).toEqual(['imported-scripts/shop/shop-2.pre.js']);
+    expect(shopOf(next).scripts?.pre?.text.split('\n')[0]).toBe(header('bruno', 'imported-scripts/shop/shop-2.pre.js'));
+    expect([...listing]).toEqual(['imported-scripts/shop/shop.pre.js']);
+  });
+
   it('a level with no text switches api only', () => {
     const base = sample();
     const orderOnly: RequestScripts = { api: 'bruno', enabled: true, secrets: [], postResponseOrder: 'inner-first' };
@@ -200,9 +216,11 @@ describe('applyConversions', () => {
     expect(proposal.ownerId).toBe('api');
     expect(proposal.backups).toEqual([]);
     expect(proposal.result).toEqual({ ok: true, todos: [], mapped: 0 });
-    const { project: next, applied } = applyConversions(project, [
-      { ownerId: 'api', fingerprint: proposal.fingerprint },
-    ]);
+    const { project: next, applied } = applyConversions(
+      project,
+      [{ ownerId: 'api', fingerprint: proposal.fingerprint }],
+      new Set(),
+    );
     expect(applied).toHaveLength(1);
     expect(shopOf(next).scripts).toEqual({ ...orderOnly, api: 'wirebench' });
   });
@@ -227,11 +245,15 @@ describe('applyConversions', () => {
       project: next,
       applied,
       refused,
-    } = applyConversions(changed, [
-      ...proposals.map(({ ownerId, fingerprint }) => ({ ownerId, fingerprint })),
-      { ownerId: 'typed', fingerprint: 'x' },
-      { ownerId: 'gone', fingerprint: 'x' },
-    ]);
+    } = applyConversions(
+      changed,
+      [
+        ...proposals.map(({ ownerId, fingerprint }) => ({ ownerId, fingerprint })),
+        { ownerId: 'typed', fingerprint: 'x' },
+        { ownerId: 'gone', fingerprint: 'x' },
+      ],
+      new Set(),
+    );
     expect(refused).toEqual([
       { ownerId: 'request', reason: 'changed' },
       { ownerId: 'typed', reason: 'not-layered' },
@@ -258,7 +280,7 @@ describe('applyConversions', () => {
       project: next,
       applied,
       refused,
-    } = applyConversions(project, [{ ownerId: 'other-request', fingerprint: proposal.fingerprint }]);
+    } = applyConversions(project, [{ ownerId: 'other-request', fingerprint: proposal.fingerprint }], new Set());
     expect(applied).toEqual([]);
     expect(refused).toEqual([{ ownerId: 'other-request', reason: 'syntax' }]);
     expect(next).toBe(project);

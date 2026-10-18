@@ -58,9 +58,12 @@ describe('a converted level on disk', () => {
     const project = await layeredProject();
     const [proposal] = proposeConversions(project);
     expect(proposal?.path).toEqual(['Shop', 'Create cart']);
-    const { project: converted, applied } = applyConversions(project, [
-      { ownerId: proposal!.ownerId, fingerprint: proposal!.fingerprint },
-    ]);
+    // A fresh listing of imported-scripts/ at Accept time: nothing is there yet.
+    const { project: converted, applied } = applyConversions(
+      project,
+      [{ ownerId: proposal!.ownerId, fingerprint: proposal!.fingerprint }],
+      new Set(),
+    );
     expect(applied).toHaveLength(1);
 
     // The backups first, as the caller writes them.
