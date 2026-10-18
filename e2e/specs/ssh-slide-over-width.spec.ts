@@ -126,7 +126,27 @@ test('no SSH slide-over row is wider than the panel at 280–400px (#591)', asyn
   await expect(edit.getByLabel('Passphrase secret', { exact: true })).toBeVisible();
   await fitsAtEveryWidth(page, 'Edit host (key)');
   await edit.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByTestId('host-discard')).toBeVisible();
+  await page.getByTestId('host-discard').getByRole('button', { name: 'Discard' }).click();
   await expect(page.getByTestId('host-details')).toBeVisible();
+
+  // New host in the same panel, for each protocol, with Advanced open (#674).
+  await page.getByRole('button', { name: 'New host', exact: true }).click();
+  const form = page.getByTestId('host-dialog');
+  await expect(form).toBeVisible();
+  await form.getByLabel('Name', { exact: true }).fill('a-new-host-with-a-long-name');
+  await openAdvanced(form);
+  const protocolSelect = form.getByRole('combobox', { name: 'Protocol' });
+  const protocols = await protocolSelect
+    .locator('option')
+    .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
+  for (const protocol of protocols) {
+    await protocolSelect.selectOption(protocol);
+    await fitsAtEveryWidth(page, `New host (${protocol === '' ? 'ssh' : protocol})`);
+  }
+  await form.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByTestId('host-discard').getByRole('button', { name: 'Discard' }).click();
+  await expect(form).toBeHidden();
 
   // A new snippet with a variable: every field and the remove button stay in the panel.
   await showSshNav(page, 'snippets');
