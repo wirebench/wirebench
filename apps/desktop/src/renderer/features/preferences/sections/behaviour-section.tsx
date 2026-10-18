@@ -41,6 +41,13 @@ export function BehaviourSection({ preferences, update }: SectionProps) {
           setting="ui.confirmOnDelete"
           onChange={(confirmOnDelete) => update({ ui: { confirmOnDelete } })}
         />
+        <BooleanSetting
+          label="Preview tabs"
+          value={ui.previewTabs}
+          setting="ui.previewTabs"
+          onChange={(previewTabs) => update({ ui: { previewTabs } })}
+          hint="A single click in the Explorer opens a preview tab that the next click replaces. Double-click, edit or send to keep it."
+        />
       </SettingsGroup>
 
       <SettingsGroup title="History">

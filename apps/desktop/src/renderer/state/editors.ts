@@ -178,6 +178,16 @@ export interface EditorsStore {
   readonly displayedSet: TabSet;
   /** Each set's active tab, kept while another set is displayed. */
   readonly activeBySet: Readonly<Partial<Record<TabSet, string>>>;
+  /**
+   * The preview tab (#679), if one is open: what a single click in the Explorer opened, shown in italics
+   * and replaced by the next one. Opening it again outside {@link previewing}, editing it, sending it or
+   * {@link EditorsStore.pin} keeps it.
+   */
+  readonly previewId: string | undefined;
+  /** Keeps the preview tab `id` open: it stops being the one the next preview replaces. */
+  readonly pin: (id: string) => void;
+  /** {@link pin}s the preview tab when it edits or sends `entityId` (a request of any kind). */
+  readonly pinEntity: (entityId: string) => void;
   /** Shows `set`'s tabs, back on the tab that was active there (or none, for its empty state). */
   readonly showSet: (target: TabSet) => void;
   /** Form view type per request draft id. Editor state, not project data — never saved to disk. */
@@ -263,6 +273,7 @@ const EMPTY_EDITORS = {
   activeId: undefined,
   displayedSet: 'explorer' as TabSet,
   activeBySet: {},
+  previewId: undefined,
   formViewTypes: {},
   requestViewTypes: {},
   responseViewTypes: {},
@@ -272,6 +283,27 @@ const EMPTY_EDITORS = {
   inspectorTabs: {},
   selectedAttachments: {},
 } as const;
+
+/** How many {@link previewing} calls are running: while above zero, `open` opens a preview tab. */
+let previewDepth = 0;
+
+/**
+ * Runs `open`, and whatever opens a tab synchronously inside it, as a preview (#679): a new tab takes the
+ * place of the current preview tab instead of adding one. A tab that is already open is only selected.
+ */
+export function previewing<T>(open: () => T): T {
+  previewDepth += 1;
+  try {
+    return open();
+  } finally {
+    previewDepth -= 1;
+  }
+}
+
+/** The ids of a request tab's entity, of whichever kind: what a send or an edit names. */
+function requestEntityOf(tab: EditorTab): string | undefined {
+  return tab.requestId ?? tab.restRequestId ?? tab.grpcRequestId ?? tab.wsRequestId ?? tab.mcpRequestId;
+}
 
 /** Asked before a tab closes, by tab id; see {@link setCloseGuard}. */
 const closeGuards = new Map<string, () => boolean>();
@@ -304,9 +336,38 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
   },
 
   open: (tab) => {
-    const { tabs } = get();
-    const existing = tabs.find((t) => t.id === tab.id);
-    get().activateIn(existing === undefined ? [...tabs, tab] : tabs, tab.id);
+    const { tabs, previewId } = get();
+    const preview = previewDepth > 0;
+    if (tabs.some((t) => t.id === tab.id)) {
+      // Opened again for good — a double-click, Enter, a menu's Open — the preview stays.
+      if (!preview && previewId === tab.id) set({ previewId: undefined });
+      get().activateIn(tabs, tab.id);
+      return;
+    }
+    const old = preview ? tabs.find((t) => t.id === previewId) : undefined;
+    if (old === undefined) {
+      if (preview) set({ previewId: tab.id });
+      get().activateIn([...tabs, tab], tab.id);
+      return;
+    }
+    // The new preview takes the old one's place on the strip, so browsing never walks the tab along.
+    const sameSet = tabSetOf(old) === tabSetOf(tab);
+    const nextTabs = sameSet ? tabs.map((t) => (t.id === old.id ? tab : t)) : [...tabs.filter((t) => t !== old), tab];
+    const activeBySet = { ...get().activeBySet };
+    const oldSet = tabSetOf(old);
+    if (activeBySet[oldSet] === old.id) delete activeBySet[oldSet];
+    set({ previewId: tab.id, activeBySet });
+    get().activateIn(nextTabs, tab.id);
+  },
+
+  pin: (id) => {
+    if (get().previewId === id) set({ previewId: undefined });
+  },
+
+  pinEntity: (entityId) => {
+    const { tabs, previewId } = get();
+    const tab = tabs.find((t) => t.id === previewId);
+    if (tab !== undefined && requestEntityOf(tab) === entityId) set({ previewId: undefined });
   },
 
   openOrReplace: (tab) => {
@@ -336,7 +397,7 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
   },
 
   close: (id) => {
-    const { tabs, activeId, activeBySet, displayedSet } = get();
+    const { tabs, activeId, activeBySet, displayedSet, previewId } = get();
     const tab = tabs.find((t) => t.id === id);
     if (tab === undefined || closeGuards.get(id)?.() === true) {
       return;
@@ -360,6 +421,7 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
       tabs: nextTabs,
       activeBySet: nextActiveBySet,
       activeId: tabSet === displayedSet ? nextActiveBySet[tabSet] : activeId,
+      previewId: previewId === id ? undefined : previewId,
     });
   },
 

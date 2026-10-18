@@ -2051,6 +2051,7 @@ export const preferencesWireSchema = z.object({
       mode: z.enum(['split', 'tabs']),
     }),
     confirmOnDelete: z.boolean(),
+    previewTabs: z.boolean(),
     historyCap: z.number(),
     logSize: z.number(),
   }),
