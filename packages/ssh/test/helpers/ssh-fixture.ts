@@ -40,6 +40,10 @@ export interface SshFixture {
   /** The host key as a known_hosts line has it after the names: `ssh-rsa AAAA…`. */
   readonly hostPublicKey: string;
   lastResize?: { cols: number; rows: number };
+  /** The terminal type the last pty request named. */
+  lastTerm?: string;
+  /** Every byte the shells received, as sent: what a server in another character set reads. */
+  readonly shellInput: number[];
   /** SSH connections the server has accepted so far. */
   readonly connections: number;
   /** Every `tcpip-forward` global request granted, in order, and whether it was cancelled since. */
@@ -108,6 +112,7 @@ export async function startSshFixture(options: {
     remoteForwards: [],
     envRequests: [],
     agentRequests: [],
+    shellInput: [],
     hostKey: { host: '', keyType: keyTypeOf(publicBlob), fingerprint: fingerprintOf(publicBlob) },
     hostPublicKey: `${keyTypeOf(publicBlob)} ${publicBlob.toString('base64')}`,
     drop: () => {
@@ -159,6 +164,7 @@ export async function startSshFixture(options: {
         const session = acceptSession();
         session.on('pty', (accept, _reject, info) => {
           fixture.lastResize = { cols: info.cols, rows: info.rows };
+          fixture.lastTerm = info.term;
           accept();
         });
         session.on('env', (accept, reject, info) => {
@@ -228,6 +234,7 @@ export async function startSshFixture(options: {
           const stream = accept();
           let line = '';
           stream.on('data', (data: Buffer) => {
+            fixture.shellInput.push(...data);
             stream.write(data);
             line += data.toString();
             const match = /exit (\d+)[\r\n]/.exec(line);

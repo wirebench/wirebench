@@ -33,7 +33,7 @@ until you import it again with definitions cached.
 
 | Setting | What it does |
 | --- | --- |
-| **Port** | The port to listen on. `0` picks a free one when the mock starts, and keeps it while the mock is edited |
+| **Port** | The port to listen on. Empty (shown as *any free port*) or `0` picks a free one when the mock starts, and keeps it while the mock is edited |
 | **Path** | Where the mock is served. A SOAP mock also serves its WSDL at `<path>?wsdl`, with every address rewritten to the mock |
 | **Contract check** | **Refuse a request that breaks the contract** answers it with a SOAP fault or a 4xx; **Answer anyway and log the problems** dispatches it and lists the problems in the log; **Do not check requests** only routes it |
 

@@ -28,6 +28,8 @@ import { closeSnippetPicker, openSnippetPicker, useSnippetPickerStore } from './
 import { TerminalPicker } from './snippets/terminal-picker.js';
 import { finderFor, FIND_HIGHLIGHT_LIMIT, isFindChord, TerminalFindBar, type FindResults } from './terminal-find.js';
 import { clipboardChord, TerminalContextMenu, type TerminalMenuActions } from './terminal-menu.js';
+import { ShareStrip } from './share-strip.js';
+import { refreshShareAvailable, startShare, useTerminalShareStore } from './terminal-share-store.js';
 import { BroadcastBanner } from './panes/broadcast-banner.js';
 import {
   broadcastOf,
@@ -53,6 +55,8 @@ import {
 import { useLayoutsStore } from './panes/layouts-store.js';
 import { MissingHostPane } from './panes/missing-host-pane.js';
 import { PaneHeader } from './panes/pane-header.js';
+import { hasSshFeatures, useHostProtocol } from './host-protocol.js';
+import { PlainTextStrip } from './plain-text-mark.js';
 import { SaveLayoutDialog } from './panes/save-layout-dialog.js';
 import { leaves, type PaneLeaf, type PaneNode } from './panes/pane-tree.js';
 import { PaneView } from './panes/pane-view.js';
@@ -354,6 +358,7 @@ function TerminalPane({
   readonly split: boolean;
 }) {
   const { paneId, hostId } = pane;
+  const protocol = useHostProtocol(hostId);
   const holder = useRef<HTMLDivElement>(null);
   const live = useRef<Live | null>(null);
   /** The session keystrokes go to; unset until attached and again once the session has ended. */
@@ -367,6 +372,14 @@ function TerminalPane({
   // The last connect ended with no session (refused, failed, or the trust prompt dismissed).
   const failed = useHostsStore((s) => s.connectFailed[paneId] === true) && session === undefined;
   const sessionId = session?.sessionId;
+  // Shared terminals (#429): this session's share, and whether sharing is offered here at all.
+  const share = useTerminalShareStore((s) => (sessionId === undefined ? undefined : s.owned[sessionId]));
+  const shareAvailable = useTerminalShareStore((s) => s.available);
+  const [shareError, setShareError] = useState<string | undefined>(undefined);
+  const hostName = useHostsStore((s) => s.resolved.find((h) => h.id === hostId)?.name);
+  useEffect(() => {
+    if (sessionId !== undefined) void refreshShareAvailable();
+  }, [sessionId]);
   const broadcast = useTabBroadcast(tabId);
   const receiving = broadcast.on && broadcast.ticked.has(paneId);
   const [exit, setExit] = useState<{ sessionId: string; code: number | null } | undefined>(undefined);
@@ -830,6 +843,24 @@ function TerminalPane({
     reconnect: () => {
       useHostsStore.getState().bumpReconnect(paneId);
     },
+    share: () => {
+      const current = target.current;
+      if (current === undefined) return;
+      if (share !== undefined) {
+        void ipc().terminalShare.stop({ sessionId: current });
+        return;
+      }
+      setShareError(undefined);
+      const term = live.current?.term;
+      void startShare({
+        sessionId: current,
+        hostName: hostName ?? hostId,
+        cols: term?.cols ?? 80,
+        rows: term?.rows ?? 24,
+      }).then((result) => {
+        if (!result.ok) setShareError(result.message);
+      });
+    },
   };
 
   return (
@@ -868,6 +899,25 @@ function TerminalPane({
         }}
       />
       {split && <PaneHeader tabId={tabId} pane={pane} focused={focused} />}
+      {share !== undefined && <ShareStrip share={share} />}
+      {shareError !== undefined && (
+        <div
+          className="flex items-center gap-2 border-b border-hairline px-3 py-1.5 text-xs text-status-danger"
+          role="alert"
+        >
+          <span className="flex-1">Could not share: {shareError}</span>
+          <button
+            type="button"
+            className="text-fg-subtle hover:text-fg-default"
+            onClick={() => {
+              setShareError(undefined);
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+      {!split && protocol === 'telnet' && <PlainTextStrip />}
       {/* A strip above the terminal, pushing it down: it never covers the text or a notice on the screen. */}
       <TerminalFindBar
         open={findOpen}
@@ -885,6 +935,12 @@ function TerminalPane({
           state={() => ({
             hasSelection: live.current?.term.hasSelection() ?? false,
             connected: target.current !== undefined,
+            files: hasSshFeatures(protocol),
+            ...(share !== undefined
+              ? { share: 'sharing' as const }
+              : shareAvailable === true && hasSshFeatures(protocol)
+                ? { share: 'available' as const }
+                : {}),
           })}
           actions={menuActions}
         >

@@ -343,7 +343,9 @@ export interface ServerModule {
     | 'live-updates'
     | 'scheduled-runs'
     | 'audit-log'
-    | 'sso';
+    | 'sso'
+    | 'session-logs'
+    | 'terminal-shares';
   /**
    * The module's `NNNN_name.sql` files, merged with the host's in version order (`serve.ts`
    * `allMigrations`). By convention `packages/server/migrations/<module>/` (e.g.

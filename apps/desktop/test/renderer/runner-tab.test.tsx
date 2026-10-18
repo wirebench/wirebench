@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { RunnerTab, resultMark } from '../../src/renderer/features/runner/runner-tab.js';
+import { RunnerTab, resultMark, summaryText } from '../../src/renderer/features/runner/runner-tab.js';
 import { dataColumnsFor, subscribeToRunnerProgress, useRunnerStore } from '../../src/renderer/state/runner.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import type {
@@ -24,7 +24,8 @@ const STATE: RunnerState = {
   settings: SETTINGS,
   requests: [
     { id: 'login', name: 'Log in', path: 'Shop/Log in', protocol: 'rest' },
-    { id: 'me', name: 'Me', path: 'Shop/Me', protocol: 'rest' },
+    // Named as an import used to name a request with no summary: by its method and path.
+    { id: 'me', name: 'GET /me', path: 'Shop/GET /me', protocol: 'rest', method: 'GET' },
   ],
   data: { name: 'users.csv', columns: ['user', 'password'], rows: 2 },
 };
@@ -112,9 +113,11 @@ async function mount(): Promise<void> {
 describe('RunnerTab', () => {
   it('lists the requests in run order and names the data file, never its path', async () => {
     await mount();
+    // The method shows once, in the badge, not again at the start of the name (#633).
+    expect(screen.getAllByTestId('method-badge').map((badge) => badge.textContent)).toEqual(['GET']);
     expect(screen.getAllByTestId('runner-request').map((row) => row.textContent)).toEqual([
       expect.stringContaining('Shop/Log in'),
-      expect.stringContaining('Shop/Me'),
+      expect.stringContaining('Shop › /me'),
     ]);
     expect(screen.getByTestId('runner-data').textContent).toBe('users.csv — 2 rows: user, password');
     expect(screen.getByTestId('runner-iterations').getAttribute('placeholder')).toBe('One per row (2)');
@@ -218,6 +221,39 @@ describe('RunnerTab', () => {
     expect(row.querySelector('summary')?.textContent).toBe('✗Files/Read a file8 ms');
     expect(within(row).getByTestId('runner-result-assertion').textContent).toContain('MCP result');
     unsubscribe();
+  });
+});
+
+describe('summaryText (#637)', () => {
+  const base = { total: 12, passed: 12, failed: 0, errored: 0, skipped: 0, durationMs: 40 };
+
+  it('counts passes without checks apart from checked ones', () => {
+    expect(summaryText({ ...base, unchecked: 9 }, false)).toBe(
+      '3 passed, 0 failed, 0 errored, 9 without checks, 40 ms',
+    );
+  });
+
+  it('reads a run saved before the count as every pass checked', () => {
+    expect(summaryText(base, false)).toBe('12 passed, 0 failed, 0 errored, 40 ms');
+  });
+});
+
+describe('the row error (#637)', () => {
+  it('reads as the send error panel does: title and message, the code small', async () => {
+    const errored: RunnerRequestResult = {
+      path: 'Shop/Delete pet',
+      name: 'Delete pet',
+      protocol: 'rest',
+      outcome: 'errored',
+      assertions: [],
+      error: { code: 'rest-url-incomplete', message: 'The URL still needs a value for {id}' },
+    };
+    historyGet.mockResolvedValue({ ok: true, value: { run: { ...RUN, requests: [errored] } } });
+    await mount();
+    fireEvent.click(await screen.findByTestId('runner-history-entry'));
+    const error = await screen.findByTestId('runner-result-error');
+    expect(error.textContent).toBe('Incomplete URL: The URL still needs a value for {id} rest-url-incomplete');
+    expect(within(error).getByTestId('runner-result-error-code').textContent).toBe('rest-url-incomplete');
   });
 });
 

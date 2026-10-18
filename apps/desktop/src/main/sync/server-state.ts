@@ -61,6 +61,8 @@ export interface ServerStateDoc {
   readonly role?: WorkspaceRole;
   /** Whether the workspace records desktop activity, as the last fetch reported it; absent reads as false. */
   readonly recordDesktopActivity?: boolean;
+  /** Whether the workspace records SSH session logs (#430), as the last fetch reported it; absent reads as false. */
+  readonly recordSessionLogs?: boolean;
   /** Local display only; the server attributes commits to the signed-in user (§3.1). */
   readonly identity?: { readonly name: string; readonly email: string };
   readonly lastSyncAt?: string;
@@ -109,6 +111,7 @@ const stateDocSchema = z.object({
   behind: z.number().int().min(0).optional(),
   role: workspaceRoleSchema.optional(),
   recordDesktopActivity: z.boolean().optional(),
+  recordSessionLogs: z.boolean().optional(),
   identity: z.object({ name: z.string().min(1), email: z.string().min(1) }).optional(),
   lastSyncAt: z.string().optional(),
 });
@@ -247,6 +250,7 @@ function toDoc(parsed: z.infer<typeof stateDocSchema>): ServerStateDoc {
     ...(parsed.behind !== undefined ? { behind: parsed.behind } : {}),
     ...(parsed.role !== undefined ? { role: parsed.role } : {}),
     ...(parsed.recordDesktopActivity !== undefined ? { recordDesktopActivity: parsed.recordDesktopActivity } : {}),
+    ...(parsed.recordSessionLogs !== undefined ? { recordSessionLogs: parsed.recordSessionLogs } : {}),
     ...(parsed.identity !== undefined
       ? { identity: { name: parsed.identity.name, email: parsed.identity.email } }
       : {}),
@@ -259,11 +263,19 @@ function toDoc(parsed: z.infer<typeof stateDocSchema>): ServerStateDoc {
  * touching anything: false when there is no state yet, or it cannot be read.
  */
 export async function readRecordDesktopActivity(dir: string): Promise<boolean> {
+  return (await readRecordingFlags(dir)).desktopActivity;
+}
+
+/** Both recording switches of the last fetched head under `dir`, read the same way: false when unknown. */
+export async function readRecordingFlags(dir: string): Promise<{ desktopActivity: boolean; sessionLogs: boolean }> {
   try {
     const parsed = stateDocSchema.safeParse(parseYaml(await readFile(join(dir, STATE_FILE), 'utf8')));
-    return parsed.success && parsed.data.recordDesktopActivity === true;
+    return {
+      desktopActivity: parsed.success && parsed.data.recordDesktopActivity === true,
+      sessionLogs: parsed.success && parsed.data.recordSessionLogs === true,
+    };
   } catch {
-    return false;
+    return { desktopActivity: false, sessionLogs: false };
   }
 }
 

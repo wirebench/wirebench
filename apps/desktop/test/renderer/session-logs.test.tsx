@@ -2,7 +2,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { groupLogged, useLogSwitchesStore } from '../../src/renderer/features/ssh/session-log-switches.js';
 import { HostSessionLogs, logSummary, SessionLogsDialog } from '../../src/renderer/features/ssh/session-logs.js';
-import { hideSessionLogs, showSessionLogs } from '../../src/renderer/features/ssh/session-logs-store.js';
+import {
+  hideSessionLogs,
+  hideTeamSessionLogs,
+  showSessionLogs,
+  showTeamSessionLogs,
+  useTeamSessionLogsDialogStore,
+} from '../../src/renderer/features/ssh/session-logs-store.js';
+import { TeamSessionLogsDialog } from '../../src/renderer/features/ssh/team-session-logs.js';
 import type { SessionLogEntryWire } from '../../src/shared/session-log-wire.js';
 import type { HostsFileWire } from '../../src/shared/ssh-wire.js';
 
@@ -14,6 +21,8 @@ const sessionLog = {
   search: vi.fn(),
   delete: vi.fn(),
   reveal: vi.fn(),
+  teamList: vi.fn(),
+  teamRead: vi.fn(),
 };
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({ ipc: () => ({ sessionLog }) }));
 
@@ -40,7 +49,7 @@ const groupName = (id: string): string => (id === 'prod' ? 'Production' : id);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useLogSwitchesStore.setState({ switches: {} });
+  useLogSwitchesStore.setState({ switches: {}, team: false });
   sessionLog.switches.mockResolvedValue(ok({ switches: {} }));
   sessionLog.setSwitch.mockResolvedValue(ok({}));
   sessionLog.list.mockResolvedValue(ok({ logs: [] }));
@@ -53,6 +62,7 @@ afterEach(() => {
   cleanup();
   act(() => {
     hideSessionLogs();
+    hideTeamSessionLogs();
   });
 });
 
@@ -223,5 +233,72 @@ describe('groupLogged', () => {
     expect(groupLogged(FILE, {}, 'prod')).toBe(false);
     expect(groupLogged(FILE, { 'group:root': true }, 'prod')).toBe(true);
     expect(groupLogged(FILE, { 'group:root': true, 'group:prod': false }, 'prod')).toBe(false);
+  });
+});
+
+describe('team session logs (#430)', () => {
+  const teamLog = {
+    id: '01K000000000000000000000L1',
+    userId: 'U1',
+    userName: 'Ada',
+    hostId: 'web',
+    hostName: 'Web',
+    address: '10.0.0.1',
+    port: 22,
+    user: 'deploy',
+    startedAt: '2026-10-17T10:00:00.000Z',
+    endedAt: null,
+    exitCode: null,
+    reason: null,
+    size: 9,
+    truncated: false,
+    live: true,
+  };
+
+  it('a recording team turns the host switch on for good and offers the team logs', async () => {
+    sessionLog.switches.mockResolvedValue(ok({ switches: { 'host:web': false }, team: true }));
+    render(<HostSessionLogs hostId="web" path={[]} groupName={groupName} />);
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Log sessions' }).getAttribute('aria-checked')).toBe('true');
+    });
+    const toggle = screen.getByRole<HTMLButtonElement>('switch', { name: 'Log sessions' });
+    expect(toggle.disabled).toBe(true);
+    expect(screen.getByText('recorded by your team')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Team logs…' }));
+    expect(useTeamSessionLogsDialogStore.getState()).toEqual({ open: true, hostId: 'web' });
+  });
+
+  it('lists every member’s logs, opens one and refreshes a running one from where it stopped', async () => {
+    sessionLog.teamList.mockResolvedValue(ok({ available: true, logs: [teamLog], next: null }));
+    sessionLog.teamRead
+      .mockResolvedValueOnce(ok({ text: 'uptime\n', next: 7, size: 7, truncated: false, live: true }))
+      .mockResolvedValueOnce(ok({ text: 'ok\n', next: 10, size: 10, truncated: false, live: true }));
+    act(() => {
+      showTeamSessionLogs('web');
+    });
+    render(<TeamSessionLogsDialog />);
+    const dialog = await screen.findByTestId('team-session-logs-dialog');
+    await waitFor(() => {
+      expect(sessionLog.teamList).toHaveBeenCalledWith({ hostId: 'web' });
+    });
+    fireEvent.click(await within(dialog).findByTestId(`team-log-${teamLog.id}`));
+    await waitFor(() => {
+      expect(screen.getByTestId('team-log-text').textContent).toBe('uptime\n');
+    });
+    expect(sessionLog.teamRead).toHaveBeenCalledWith({ id: teamLog.id, offset: 0 });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('team-log-text').textContent).toBe('uptime\nok\n');
+    });
+    expect(sessionLog.teamRead).toHaveBeenLastCalledWith({ id: teamLog.id, offset: 7 });
+  });
+
+  it('says so when the workspace is not shared to a server', async () => {
+    sessionLog.teamList.mockResolvedValue(ok({ available: false, logs: [], next: null }));
+    act(() => {
+      showTeamSessionLogs();
+    });
+    render(<TeamSessionLogsDialog />);
+    expect(await screen.findByText(/not shared to a Wirebench Server/)).toBeTruthy();
   });
 });

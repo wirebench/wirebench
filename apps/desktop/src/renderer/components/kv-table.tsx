@@ -29,6 +29,12 @@ export const KV_INPUT_CLASS =
   'h-row w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 font-mono text-sm text-fg-default hover:border-hairline-strong focus:border-transparent focus:outline-none focus:ring-1 focus:ring-accent';
 
 /**
+ * The tables' checkboxes: tinted with the accent, as the Settings checkboxes are, rather than the
+ * browser's own blue.
+ */
+export const KV_CHECKBOX_CLASS = 'accent-accent';
+
+/**
  * The table's own cells: the input's look, as a one-line text area that grows to fit, so a long
  * value (a SOAPAction URI, a token) wraps inside its column instead of running under the next one.
  */
@@ -352,7 +358,13 @@ export function KvTable({
                   column === 'enabled' ? (
                     <td key={column} className="px-2 py-1 align-top">
                       <span className={FIRST_LINE}>
-                        <input type="checkbox" aria-label={`${row.name} is computed`} checked disabled />
+                        <input
+                          type="checkbox"
+                          className={KV_CHECKBOX_CLASS}
+                          aria-label={`${row.name} is computed`}
+                          checked
+                          disabled
+                        />
                       </span>
                     </td>
                   ) : (
@@ -398,7 +410,13 @@ export function KvTable({
                   {column === 'enabled' ? (
                     // Nothing to toggle yet: the row does not exist until something is typed.
                     <span className={FIRST_LINE}>
-                      <input type="checkbox" aria-label="New row enabled" checked disabled />
+                      <input
+                        type="checkbox"
+                        className={KV_CHECKBOX_CLASS}
+                        aria-label="New row enabled"
+                        checked
+                        disabled
+                      />
                     </span>
                   ) : (
                     <input
@@ -509,6 +527,7 @@ function KvRow({ row, columns, testid, rowProps, lockName, onPatch, onRemove }: 
             <span className={FIRST_LINE}>
               <input
                 type="checkbox"
+                className={KV_CHECKBOX_CLASS}
                 aria-label={`Enable ${row.name}`}
                 data-testid={testid('enabled')}
                 checked={row.enabled}

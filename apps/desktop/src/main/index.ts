@@ -13,8 +13,10 @@ import {
   enabledProperties,
   overlayCurrent,
   type ConnectOptions,
+  type ConnectedWebSocket,
   type GetSecret,
 } from '@wirebench/engine';
+import { setDeviceKeySigner } from '@wirebench/ssh';
 import { app, BrowserWindow, dialog, powerMonitor, protocol, safeStorage, session, shell } from 'electron';
 import type { WebContents } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
@@ -40,6 +42,8 @@ import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { recordSecretValue, redactSecretText } from './redact.js';
 import { SecretSourcesService } from './secret-sources-service.js';
 import { projectSecretGetter, secretStoreLabel } from './secret-resolver.js';
+import { AppLock, lockedGetter } from './app-lock.js';
+import { DeviceHelper, DeviceKeys, deviceHelperDir } from './device-keys.js';
 import { SshKeysService } from './ssh-keys.js';
 import { SshSecretsService } from './ssh-secrets.js';
 import { SecretScanSessions } from './secret-scan-session.js';
@@ -51,6 +55,8 @@ import { registerAppChannels } from './ipc/app.js';
 import {
   enabledAreasFromEnv,
   localTerminalFromEnv,
+  serialFromEnv,
+  telnetFromEnv,
   hostsOnFileChange,
   hostsOnWorkspaceChange,
   registerEnabledAreaChannels,
@@ -61,6 +67,8 @@ import { sshAreaEndsOnSwitch, sshScopeOf, sshSecretsFor } from './ssh-window.js'
 import { sshDefaultsOf, windowHosts, type HostsService } from './hosts-service.js';
 import { windowSnippets, type SnippetsService } from './snippets-service.js';
 import { LAYOUTS_FILE, LayoutStore } from './layout-store.js';
+import { SERIAL_DEVICES_FILE, SerialDeviceStore } from './serial-devices.js';
+import { listSerialPorts, openSerialSession } from './serial-session.js';
 import { MCP_APPROVALS_FILE, McpApprovals, McpApprovalStore } from './mcp-approvals.js';
 import { promptWindowOf } from './kinds/mcp/ipc.js';
 import {
@@ -70,6 +78,9 @@ import {
   SessionLogSwitches,
   sessionLogPlanner,
 } from './session-logs.js';
+import { SessionLogUploader } from './session-log-uploader.js';
+import { TerminalShareOwner } from './terminal-share/owner.js';
+import { TerminalShareViewer } from './terminal-share/viewer.js';
 import { SshService, forwardResume } from './ssh-service.js';
 import { localShell, localShellCwd, localShellEnv } from './local-shell.js';
 import { LocalTerminalService } from './local-terminal-service.js';
@@ -148,6 +159,7 @@ import { registerTeamSecretsChannels } from './ipc/team-secrets.js';
 import { registerSecretScanChannels } from './ipc/secret-scan.js';
 import { registerSnapshotChannels } from './ipc/snapshot.js';
 import { SnapshotStore } from './snapshot-store.js';
+import { registerAppLockChannels } from './ipc/app-lock.js';
 import { registerSslChannels } from './ipc/ssl.js';
 import { registerGitChannels } from './ipc/git.js';
 import { registerSyncChannels } from './ipc/sync.js';
@@ -229,6 +241,8 @@ const scopes = new WindowScopes<WindowScope>();
 const preferencesService = new PreferencesService(app.getPath('userData'), {
   // Managed machines: an administrator's policy file locks the settings it names (see `policy.ts`).
   policyFile: policyFilePath({ platform: process.platform, env: process.env, isPackaged: app.isPackaged }),
+  // A default User-Agent names the release that sends it.
+  appVersion: appVersion(),
 });
 
 /**
@@ -532,6 +546,10 @@ const secretScans = scoped(scopes, (scope) => scope.secretScans);
 const enabledAreas = enabledAreasFromEnv();
 /** Whether the local terminal tab (#410) is on: with the SSH area, unless `local-terminal=off`. */
 const localTerminalOn = localTerminalFromEnv();
+const telnetOn = telnetFromEnv();
+const serialOn = serialFromEnv();
+/** The device each serial host (#426) opens on this machine, per workspace. */
+const serialDevices = new SerialDeviceStore(join(app.getPath('userData'), SERIAL_DEVICES_FILE));
 
 /**
  * The kinds `WIREBENCH_KINDS` leaves switched on (see `kinds/enabled-kinds.ts`), and the engine
@@ -551,9 +569,39 @@ const snippetsService = scoped(scopes, (scope) => scope.snippets);
  * The SSH sessions, each owned by the window that opened it; hosts and secrets resolve at connect, from
  * that window's workspace.
  */
+/**
+ * Device keys (#428): SSH keys held by this machine's secure hardware, reached through the device helper. Set
+ * as the process's signer, so every connect (terminal, files, forwards, key install) can sign with one.
+ */
+const deviceHelper = new DeviceHelper({
+  platform: process.platform,
+  dir: deviceHelperDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }),
+});
+const deviceKeys = new DeviceKeys(deviceHelper, process.platform);
+setDeviceKeySigner(deviceKeys);
+
+/**
+ * The app lock (#428): with `secrets.appLock` on, the first SSH secret read after launch, after the idle time,
+ * or after the screen locked asks for biometrics or the OS password, through the same helper.
+ */
+const appLockSupported = deviceHelper.file !== undefined;
+const appLock = new AppLock({
+  enabled: () => preferencesService.get().secrets.appLock,
+  idleMinutes: () => preferencesService.get().secrets.appLockIdleMinutes,
+  supported: appLockSupported,
+  idleSeconds: () => powerMonitor.getSystemIdleTime(),
+  unlock: (reason) => deviceKeys.unlock(reason),
+  log: (line) => {
+    console.warn(line);
+  },
+});
+/** Every SSH secret read waits for the app lock; the keychain's listing reads public halves and does not. */
+const sshSecretsUnlocked = (sender: WebContents): GetSecret =>
+  sshSecretsFor(secretStore, sshScopeOf(scopes, sender), recordSecretValue);
+
 const sshConnectDeps = {
   hosts: (sender: WebContents) => sshScopeOf(scopes, sender).hosts,
-  secretsFor: (sender: WebContents) => sshSecretsFor(secretStore, sshScopeOf(scopes, sender), recordSecretValue),
+  secretsFor: (sender: WebContents) => lockedGetter(appLock, sshSecretsUnlocked(sender)),
   knownHostsFile: join(app.getPath('userData'), 'ssh-known-hosts.json'),
   agentSocket: () => (process.platform === 'win32' ? 'pageant' : process.env['SSH_AUTH_SOCK']),
 };
@@ -562,8 +610,22 @@ const sshRefusals = new RefusalStore();
 const sshConnector = createSshConnector({ ...sshConnectDeps, refusals: sshRefusals });
 /** Session logs (#414): per-machine switches, and the logs under `userData/session-logs` within the size limit. */
 const sessionLogSwitches = new SessionLogSwitches(join(app.getPath('userData'), SESSION_LOG_SWITCHES_FILE));
+/** Team session logs (#430): what a recording workspace's server should hold, streamed as it is written. */
+const sessionLogUploader = new SessionLogUploader({
+  client: serverClient,
+  accounts: accountService,
+  now: () => new Date(),
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (handle) => {
+    clearTimeout(handle as ReturnType<typeof setTimeout>);
+  },
+  log: (message) => {
+    console.warn(message);
+  },
+});
 const sessionLogs = new SessionLogStore({
   root: join(app.getPath('userData'), SESSION_LOGS_DIR),
+  uploader: sessionLogUploader,
   limits: () => {
     const terminal = preferencesService.get().terminal;
     return { maxBytes: terminal.sessionLogMaxMb * 1024 * 1024, raw: terminal.sessionLogRaw };
@@ -574,6 +636,15 @@ const sessionLogs = new SessionLogStore({
 });
 const sshService = new SshService({
   ...sshConnectDeps,
+  telnet: telnetOn,
+  serial: serialOn,
+  // The serial-port binding is native and loads at the first serial connect, so a machine it does not load on
+  // only loses serial consoles.
+  openSerial: (options) => openSerialSession(options),
+  serialDevice: (sender, hostId) => {
+    const workspace = sshScopeOf(scopes, sender).workspace.openWorkspaceId();
+    return workspace === undefined ? Promise.resolve(undefined) : serialDevices.get(workspace, hostId);
+  },
   // Mosh hosts (#419): mosh-server is started over SSH, then the installed mosh-client runs in a pty.
   openMosh: (options) =>
     openMoshSession(
@@ -608,10 +679,50 @@ const sshService = new SshService({
       const id = workspace.openWorkspaceId();
       if (id === undefined) return undefined;
       const target = workspace.auditTarget();
-      return { id, ...(target ? { server: { url: target.url, recording: target.recording } } : {}) };
+      const upload = workspace.sessionLogTarget();
+      return {
+        id,
+        ...(target ? { server: { url: target.url, recording: target.recording } } : {}),
+        ...(upload ? { upload } : {}),
+      };
     },
     hosts: sshConnectDeps.hosts,
   }),
+});
+
+/**
+ * Shared terminals (#429): the owner's side taps a session's masked output and relays it through the
+ * workspace's server; the viewer's side watches a teammate's. Both use `serverClient`'s TLS and proxy.
+ */
+const shareConnect = (wsUrl: string): ConnectedWebSocket => {
+  const options: ConnectOptions = serverConnectOptions.get(new URL(wsUrl.replace(/^ws/, 'http')).origin) ?? {};
+  return connectWebSocket(wsUrl, options);
+};
+const terminalShareOwner = new TerminalShareOwner({
+  client: serverClient,
+  accounts: accountService,
+  connect: shareConnect,
+  target: (sender) => {
+    const target = sshScopeOf(scopes, sender).workspace.auditTarget();
+    return target ? { url: target.url, workspaceId: target.workspaceId } : undefined;
+  },
+  ssh: sshService,
+  emit: (sender, state) => {
+    emitEvent(sender, events.terminalShare.state, state);
+  },
+});
+const terminalShareViewer = new TerminalShareViewer({
+  client: serverClient,
+  accounts: accountService,
+  connect: shareConnect,
+  emit: {
+    data: (sender, event) => {
+      emitEvent(sender, events.terminalShare.viewerData, event);
+    },
+    state: (sender, event) => {
+      emitEvent(sender, events.terminalShare.viewerState, event);
+    },
+  },
 });
 /**
  * The local terminal tabs' shells (#410), owned per window like the SSH terminals. The pty binding is native and
@@ -668,7 +779,8 @@ const forwardService = new ForwardService({
 const sshKeys = new SshKeysService({
   secrets: sshSecrets,
   connector: sshConnector,
-  secretsFor: sshConnectDeps.secretsFor,
+  secretsFor: sshSecretsUnlocked,
+  deviceKeys,
 });
 
 /** `workspace-state.json`, one queue for every window's workspace service. */
@@ -981,6 +1093,16 @@ void app.whenReady().then(() => {
   forwardResume(powerMonitor, () => {
     broadcast(events.ssh.resumed, {});
   });
+  // The app lock locks again when the machine does, and after the idle time (#428).
+  powerMonitor.on('lock-screen', () => {
+    appLock.lock();
+  });
+  powerMonitor.on('suspend', () => {
+    appLock.lock();
+  });
+  setInterval(() => {
+    appLock.tick();
+  }, 30_000).unref();
 
   // Created once, up front, so it exists before any sync operation can start (see `hooksDir`).
   mkdirSync(hooksDir, { recursive: true });
@@ -1003,6 +1125,8 @@ void app.whenReady().then(() => {
     enabledAreas,
     enabledKinds,
     localTerminalOn,
+    telnetOn,
+    serialOn,
   );
   // The calling window's open projects' folders: the containment roots a renderer-named import path may sit in.
   const openProjectDirs = (): readonly string[] =>
@@ -1151,7 +1275,12 @@ void app.whenReady().then(() => {
   registerProvisioningChannels({ client: serverClient, accounts: accountService });
   registerAuditChannels({ client: serverClient, accounts: accountService, picks: dialogPicks });
   registerHooksChannels({ hooks: hooksService });
-  registerSchedulesChannels({ schedules: schedulesService });
+  registerSchedulesChannels({
+    schedules: schedulesService,
+    modelOf: (entityId) => workspaceService.hostOfEntity(entityId).model(),
+    registryOf: (entityId) => workspaceService.hostOfEntity(entityId).runContextFor(entityId)?.registry,
+    environmentsOf: (projectId) => workspaceService.hostOfEntity(projectId).sendEnvironments().environments,
+  });
   accountService.onChange((servers) => broadcast(events.account.changed, { servers: servers.map(toAccountWire) }));
   // Signing in to a window's workspace's server sends what its audit outbox kept while signed out.
   accountService.onChange((servers) => {
@@ -1317,6 +1446,16 @@ void app.whenReady().then(() => {
       }
     }
   });
+  registerAppLockChannels({
+    preferences: preferencesService,
+    lock: appLock,
+    support: appLockSupported
+      ? { supported: true }
+      : { supported: false, reason: 'This computer cannot ask for biometrics or the password here' },
+    onChanged: (preferences) => {
+      broadcast(events.preferences.changed, { preferences });
+    },
+  });
   // Settings picks are the app's: preferences apply to every window (design D4).
   registerSslChannels({
     preferences: preferencesService,
@@ -1418,14 +1557,29 @@ void app.whenReady().then(() => {
     transfers: sftpTransfers,
     edits: sftpEdits,
     forward: forwardService,
+    serial: {
+      ports: () => listSerialPorts(),
+      devices: serialDevices,
+      workspaceOf: (sender) => sshScopeOf(scopes, sender).workspace.openWorkspaceId(),
+    },
     sessionLogs: {
       logs: sessionLogs,
       switches: sessionLogSwitches,
       workspaceOf: (sender) => sshScopeOf(scopes, sender).workspace.openWorkspaceId(),
+      teamRecords: (sender) => sshScopeOf(scopes, sender).workspace.sessionLogTarget() !== undefined,
+      team: {
+        serverOf: (sender) => {
+          const target = sshScopeOf(scopes, sender).workspace.auditTarget();
+          return target ? { url: target.url, workspaceId: target.workspaceId } : undefined;
+        },
+        client: serverClient,
+        accounts: accountService,
+      },
       reveal: (path) => {
         shell.showItemInFolder(path);
       },
     },
+    terminalShares: { owner: terminalShareOwner, viewer: terminalShareViewer },
     keys: sshKeys,
     localTerminal: localTerminalOn ? localTerminals : undefined,
     importer: new SshImportService<WebContents>({
@@ -1446,6 +1600,8 @@ void app.whenReady().then(() => {
   void clearAttachmentsTmp(app.getPath('userData'));
   // A lowered size limit, or logs from before a crash, are brought under the limit; prune never throws.
   void sessionLogs.prune();
+  // Logs an earlier run left half sent go on streaming; one cut off by a crash ends as lost.
+  void sessionLogUploader.resume(join(app.getPath('userData'), SESSION_LOGS_DIR));
   // Warms the in-memory map so the first send does not have to wait on a disk read, and corrects
   // any early `globals.get` subscriber that raced ahead of the load with the on-disk properties.
   void globalProperties.load().then(
@@ -1593,6 +1749,8 @@ app.on('before-quit', (event) => {
   hooksService.dispose();
   schedulesService.dispose();
   // SSH sessions end with the app; closing never throws or waits.
+  terminalShareOwner.disposeAll();
+  terminalShareViewer.disposeAll();
   sshService.disposeAll();
   sftpTransfers.disposeAll();
   // The copies go with their edits; not awaited, and start-up sweeps whatever a quit leaves.

@@ -8,7 +8,7 @@ import { ssoModule } from '../../../src/sso/module.js';
 import { recordingAudit } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
 import { signedInUser, type IdentityHarness, type SignedInUser } from '../../helpers/identity.js';
-import { license, licensingHarness, testKeys } from '../../helpers/licensing.js';
+import { license, licenseInstallRecorded, licensingHarness, testKeys } from '../../helpers/licensing.js';
 
 const PATCH_OP = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
 const USER = 'urn:ietf:params:scim:schemas:core:2.0:User';
@@ -45,6 +45,7 @@ describeDb('SCIM users (saml-scim spec §3.5, §6.3)', () => {
       payload: { license: license(keys, { edition: 'enterprise', ...(seats !== undefined ? { seats } : {}) }) },
     });
     expect(put.statusCode, put.body).toBe(200);
+    await licenseInstallRecorded(h);
     const created = await h.app.inject({
       method: 'POST',
       url: '/api/v1/scim-tokens',

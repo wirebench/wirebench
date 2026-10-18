@@ -8,3 +8,5 @@ export { SoftAuthenticator, softTransport } from './fido-authenticator.js';
 export type { SoftAuthenticatorOptions } from './fido-authenticator.js';
 export { PROXY_ONLY_NAME, startTestProxy } from './test-proxy.js';
 export type { ProxyRequest, TestProxy, TestProxyOptions } from './test-proxy.js';
+export { startTelnetFixture } from './telnet-fixture.js';
+export type { TelnetFixture, TelnetFixtureClient, TelnetFixtureOptions } from './telnet-fixture.js';

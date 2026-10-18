@@ -391,8 +391,8 @@ describe('createHttpFetchDocument', () => {
 
     expect(error.code).toBe('connection-refused');
     expect(error.details).not.toHaveProperty('request');
-    // What the transport said is kept; only the request as sent goes.
-    expect(error.details).toEqual({ code: 'ECONNREFUSED', location: url });
+    // What the transport said is kept, with the host and port it was aimed at; only the request as sent goes.
+    expect(error.details).toEqual({ code: 'ECONNREFUSED', target: new URL(origin).host, location: url });
     expect(JSON.stringify(error)).not.toContain(secret);
     expect(error.message).not.toContain(secret);
   });

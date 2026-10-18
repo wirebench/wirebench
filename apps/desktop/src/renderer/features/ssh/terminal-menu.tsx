@@ -21,6 +21,8 @@ export interface TerminalMenuActions {
   readonly runSnippet: () => void;
   readonly openFiles: () => void;
   readonly reconnect: () => void;
+  /** Starts sharing the session, or stops (#429). */
+  readonly share: () => void;
 }
 
 /** How the pane stands when the menu opens. */
@@ -29,6 +31,10 @@ export interface TerminalMenuState {
   readonly hasSelection: boolean;
   /** The pane's session is open, so what is typed or pasted has somewhere to go. */
   readonly connected: boolean;
+  /** Whether the session can be shared (#429): offered only on a server that relays shared terminals. */
+  readonly share?: 'available' | 'sharing';
+  /** Whether the host has Files (SFTP); a Telnet host does not (#425). Offered unless false. */
+  readonly files?: boolean;
 }
 
 export interface TerminalMenuItem {
@@ -99,9 +105,18 @@ export function terminalMenuGroups(
     ],
     [
       item('runSnippet', 'Run snippet…', command('ssh.snippetPicker'), !state.connected),
-      item('openFiles', 'Open files', command('ssh.openFiles')),
+      ...(state.files === false ? [] : [item('openFiles', 'Open files', command('ssh.openFiles'))]),
       item('reconnect', 'Reconnect', undefined),
     ],
+    ...(state.share === undefined
+      ? []
+      : [
+          [
+            state.share === 'sharing'
+              ? item('share', 'Stop sharing', undefined)
+              : item('share', 'Share session', undefined, !state.connected),
+          ],
+        ]),
   ];
 }
 

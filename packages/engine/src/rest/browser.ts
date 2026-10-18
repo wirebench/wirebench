@@ -23,6 +23,8 @@ export type { KeyValueEntry } from './model.js';
 export { formatHtml } from './format-html.js';
 // Which request calls a definition's operation, so a lint finding in Problems opens that request.
 export { matchOperation, type RestOperationRef } from './openapi/match.js';
+// What the send adds when the preferences ask for compressed responses, so Settings says exactly that.
+export { REST_ACCEPT_ENCODING, SOAP_ACCEPT_ENCODING } from '../http/default-headers.js';
 // Whether pasted text is a curl command, so the import dialog refuses what main would refuse.
 export { notCurlReason } from '../http/curl-start.js';
 // The `${secret:name}` name rule, so the renderer's secret review checks a name typed into it

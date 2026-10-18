@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react';
-import { RotateCcw, Trash2 } from 'lucide-react';
+import { KeyRound, RotateCcw, Trash2 } from 'lucide-react';
 import { IconButton } from '../../components/icon-button.js';
-import { KV_INPUT_CLASS, useCommittedDraft } from '../../components/kv-table.js';
+import { KV_CHECKBOX_CLASS, KV_INPUT_CLASS, useCommittedDraft } from '../../components/kv-table.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { useGridNavigation, type GridRowProps } from '../../lib/grid-navigation.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
 import type { PropertyMapWire } from '../../../shared/wire-base.js';
 import type { CurrentColumn } from '../../state/current-values.js';
+import { makeSecret, offersMakeSecret, secretNameFor } from './make-secret.js';
 
 /**
  * A scope below this one in the precedence chain, nearest first — Workspace and Globals below an
@@ -79,6 +80,12 @@ export interface VariablesTableTarget {
   readonly emptyMessage?: string;
   /** The Current column. Absent: the table has none. */
   readonly current?: CurrentColumn;
+  /**
+   * The projects *Make secret* stores a value for: the owning project of a project's properties or
+   * environment, every project a workspace scope applies to. Absent or empty: the action is not
+   * offered — Globals reach every workspace, so no set of projects is the right one there.
+   */
+  readonly secretProjectIds?: readonly string[];
 }
 
 /** True when `scope` defines `name` at all, whether or not it disables it there. */
@@ -303,6 +310,10 @@ interface RowProps {
   readonly onToggleEnabled: (next: boolean) => void;
   readonly onRemove: () => void;
   readonly currentCell: CurrentCellProps | undefined;
+  /** Offered for a secret-like name with a plain value; see `make-secret.ts`. */
+  readonly onMakeSecret: (() => void) | undefined;
+  /** True while this row's Make secret is storing the value. */
+  readonly makingSecret: boolean;
 }
 
 /** One name/value pair. Edits are local until Enter, Tab or blur, so a keystroke is never a mutation. */
@@ -318,6 +329,8 @@ function VariableRow({
   onToggleEnabled,
   onRemove,
   currentCell,
+  onMakeSecret,
+  makingSecret,
 }: RowProps) {
   const nameField = useCommittedDraft(name, onCommitName);
   const valueField = useCommittedDraft(value, onCommitValue);
@@ -332,6 +345,7 @@ function VariableRow({
       <td role="gridcell" className="px-2 py-1 text-center">
         <input
           type="checkbox"
+          className={KV_CHECKBOX_CLASS}
           aria-label={`Enable ${name}`}
           data-testid="env-variable-enabled"
           checked={enabled}
@@ -356,12 +370,28 @@ function VariableRow({
         </div>
       </td>
       <td role="gridcell" className="px-2 py-1">
-        <input
-          aria-label={`Value of ${name}`}
-          data-testid="env-variable-value"
-          className={INPUT_CLASS}
-          {...valueField}
-        />
+        <div className="flex items-center gap-1">
+          <input
+            aria-label={`Value of ${name}`}
+            data-testid="env-variable-value"
+            className={INPUT_CLASS}
+            {...valueField}
+          />
+          {onMakeSecret !== undefined && (
+            <button
+              type="button"
+              data-testid="env-variable-make-secret"
+              aria-label={`Make ${name} a secret`}
+              title={`Store this value as a project secret on this machine, and put \${secret:${secretNameFor(name)}} here instead`}
+              disabled={makingSecret}
+              className="inline-flex shrink-0 items-center gap-1 rounded px-1 text-xs whitespace-nowrap text-fg-muted hover:bg-surface-hover hover:text-fg-default disabled:opacity-50"
+              onClick={onMakeSecret}
+            >
+              <KeyRound size={12} aria-hidden="true" />
+              Make secret
+            </button>
+          )}
+        </div>
       </td>
       {currentCell !== undefined && <CurrentCell name={name} committed={value} {...currentCell} />}
       <td role="gridcell" className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
@@ -422,6 +452,7 @@ function InheritedVariableRow({
       <td role="gridcell" className="px-2 py-1 text-center">
         <input
           type="checkbox"
+          className={KV_CHECKBOX_CLASS}
           aria-label={`Enable ${name}`}
           data-testid="env-variable-enabled"
           checked={enabled}
@@ -481,12 +512,15 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
     renameDisabledUnsupported = false,
     emptyMessage = 'No variables yet.',
     current,
+    secretProjectIds = [],
   } = target;
   const [newName, setNewName] = useState('');
   const [newValue, setNewValue] = useState('');
   const [error, setError] = useState<string | undefined>(undefined);
   const [pasteItems, setPasteItems] = useState<readonly PastedVariable[] | undefined>(undefined);
   const newNameRef = useRef<HTMLInputElement>(null);
+  /** The variable whose value Make secret is storing, so its button cannot be pressed twice. */
+  const [makingSecret, setMakingSecret] = useState<string | undefined>(undefined);
 
   const disabledSet = new Set(disabled);
   const showSecrets = useSecretsVisibilityStore((state) => state.show);
@@ -549,6 +583,26 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
     // unless the flag is re-asserted under the new name.
     if (disabledSet.has(from)) {
       onSetEnabled?.(trimmed, false);
+    }
+  };
+
+  /**
+   * Stores `name`'s value as a secret of {@link VariablesTableTarget.secretProjectIds} and puts the
+   * token in its place. A refusal (a name the project already has) leaves the row as it was and
+   * says why under the table.
+   */
+  const toSecret = async (name: string, value: string): Promise<void> => {
+    setMakingSecret(name);
+    try {
+      const result = await makeSecret({ projectIds: secretProjectIds, name, value });
+      if (result.ok) {
+        setError(undefined);
+        onSet(name, result.token);
+      } else {
+        setError(result.message);
+      }
+    } finally {
+      setMakingSecret(undefined);
     }
   };
 
@@ -754,6 +808,14 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
                   onRemove={() => {
                     onRemove(name);
                   }}
+                  onMakeSecret={
+                    secretProjectIds.length > 0 && offersMakeSecret(name, properties[name] ?? '')
+                      ? () => {
+                          void toSecret(name, properties[name] ?? '');
+                        }
+                      : undefined
+                  }
+                  makingSecret={makingSecret === name}
                   currentCell={
                     current === undefined
                       ? undefined
@@ -817,7 +879,13 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
               <td role="gridcell" className="px-2 py-1 text-center">
                 {/* Neutral until a name exists — a variable that isn't there yet can't be disabled — then
                   checked the moment one is typed. Never interactive: there's nothing to toggle yet. */}
-                <input type="checkbox" aria-label="New variable enabled" checked={trimmedNewName.length > 0} disabled />
+                <input
+                  type="checkbox"
+                  className={KV_CHECKBOX_CLASS}
+                  aria-label="New variable enabled"
+                  checked={trimmedNewName.length > 0}
+                  disabled
+                />
               </td>
               <td role="gridcell" className="px-2 py-1">
                 <input

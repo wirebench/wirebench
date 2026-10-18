@@ -37,12 +37,14 @@ import { registerHandler } from './register.js';
 const MAIN_ONLY_KEYS = {
   ssl: ['caBundlePath', 'caBundlePickedByMain'],
   git: ['path', 'pathPickedByMain'],
+  secrets: ['appLock'],
 } as const;
 
 /** Per-section message naming the channel that is the actual way to change a main-only key. */
 const MAIN_ONLY_MESSAGE: Record<keyof typeof MAIN_ONLY_KEYS, string> = {
   ssl: 'The CA bundle is set only by picking a file (ssl.pickCaBundle), not through preferences.update',
   git: 'The git executable is set only by detection or picking a file (git.locate), not through preferences.update',
+  secrets: 'The app lock is turned on only after a prompt (appLock.set), not through preferences.update',
 };
 
 export function registerPreferencesChannels(

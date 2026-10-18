@@ -55,6 +55,14 @@ describe('KvTable', () => {
     expect(screen.getByTestId('rest-query-table').getAttribute('aria-label')).toBe('Query parameters');
   });
 
+  it('tints every checkbox with the accent, as Settings does', () => {
+    mount();
+
+    for (const box of screen.getAllByRole('checkbox')) {
+      expect(box.className).toContain('accent-accent');
+    }
+  });
+
   it('commits a value on Enter, and hands back the whole list', () => {
     const { onChange } = mount({ rows: [row('a', '1'), row('b', '2')] });
 

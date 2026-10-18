@@ -51,6 +51,10 @@ export interface TestWsServerOptions {
    * (echo, `/close`, `/close-echo`, `/drop`). Binary and control frames keep theirs.
    */
   readonly onText?: (text: string, peer: TestWsPeer) => void;
+  /** Called with each binary frame and its peer, instead of the echo. */
+  readonly onBinary?: (payload: Buffer, peer: TestWsPeer) => void;
+  /** Called once when a connection ends, either side's doing. */
+  readonly onClosed?: (peer: TestWsPeer) => void;
   /** Answers every upgrade with this plain HTTP status (e.g. `404`) instead of switching protocols. */
   readonly status?: number;
   /** Swallows the client's close frame: never answers it and keeps the connection open. */
@@ -197,6 +201,7 @@ export async function startTestWsServer(options: TestWsServerOptions = {}): Prom
     let closeSent = false;
     socket.on('close', () => {
       closed = true;
+      options.onClosed?.(peer);
     });
     // A server that swallows the close keeps its half of the connection; the client letting go ends it.
     if (options.ignoreClose === true) {
@@ -240,6 +245,8 @@ export async function startTestWsServer(options: TestWsServerOptions = {}): Prom
           socket.write(encodeFrame(OP.pong, frame.payload));
         } else if (frame.opcode === OP.text && options.onText !== undefined) {
           options.onText(frame.payload.toString('utf8'), peer);
+        } else if (frame.opcode === OP.binary && options.onBinary !== undefined) {
+          options.onBinary(frame.payload, peer);
         } else if (frame.opcode === OP.text || frame.opcode === OP.binary) {
           if (path === '/close') socket.write(encodeFrame(OP.close, closePayload(4000, 'bye')));
           else if (path === '/close-echo')

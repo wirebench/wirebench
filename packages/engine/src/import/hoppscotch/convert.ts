@@ -195,7 +195,7 @@ export function v21AuthOfHoppscotch(auth: HopRec, label: string, report: ReportB
 }
 
 /** The v2.1 body and, for a raw one, the content type it implies. */
-function v21Body(body: HopBody, label: string, report: ReportBuilder): { body?: Json; contentType?: string } {
+function v21Body(body: HopBody): { body?: Json; contentType?: string } {
   const type = body.contentType;
   if (type === null) return {};
   if (type === 'application/x-www-form-urlencoded') {
@@ -211,13 +211,8 @@ function v21Body(body: HopBody, label: string, report: ReportBuilder): { body?: 
       const key = str(part['key']);
       const disabled = part['active'] === false ? { disabled: true } : {};
       const contentType = str(part['contentType']);
-      if (part['isFile'] === true) {
-        // No file travels in the export, and a file part needs one: the row stays, switched off.
-        report.note(
-          `${label}: the file part "${key}" has no file in the export, so it was kept switched off as a text part; pick its file on the Body tab.`,
-        );
-        return { key: t(key), type: 'text', value: '', disabled: true };
-      }
+      // No file travels in the export; the shared mapper keeps the row and says to pick the file again.
+      if (part['isFile'] === true) return { key: t(key), type: 'file' };
       return {
         key: t(key),
         type: 'text',
@@ -228,12 +223,8 @@ function v21Body(body: HopBody, label: string, report: ReportBuilder): { body?: 
     });
     return { body: { mode: 'formdata', formdata: parts } };
   }
-  if (type === 'application/octet-stream' || type === 'binary') {
-    report.note(
-      `${label}: its body is a file, which is not in the export, so it has no body; pick the file on the Body tab.`,
-    );
-    return {};
-  }
+  // No file travels in the export; the shared mapper gives the request no body and says to pick the file again.
+  if (type === 'application/octet-stream' || type === 'binary') return { body: { mode: 'file' } };
   return {
     body: { mode: 'raw', raw: t(str(body.body)), options: { raw: { language: rawLanguage(type) } } },
     contentType: type,
@@ -277,7 +268,7 @@ function restItem(
     ...request.params.filter((row) => !inlineNames.has(row.key)),
   ];
   const headers = withInherited(request.headers, inherited);
-  const { body, contentType } = v21Body(request.body, label, report);
+  const { body, contentType } = v21Body(request.body);
   if (contentType !== undefined && !headers.some((row) => row.key.toLowerCase() === 'content-type')) {
     headers.push({ key: 'Content-Type', value: contentType, active: true });
   }

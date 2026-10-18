@@ -1,0 +1,15 @@
+{
+  "name": "wirebench",
+  "description": "Wirebench for Claude Code: the MCP server and a skill that teaches its vocabulary.",
+  "owner": {
+    "name": "Wirebench",
+    "url": "https://github.com/wirebench/wirebench"
+  },
+  "plugins": [
+    {
+      "name": "wirebench",
+      "source": "./wirebench",
+      "description": "Send, check and diff API requests in a local Wirebench project through its MCP server."
+    }
+  ]
+}

@@ -1,4 +1,5 @@
-import { NumberSetting, SettingsGroup, TextSetting } from '../../../components/settings-grid.js';
+import { EnumSetting, NumberSetting, SettingsGroup, TextSetting } from '../../../components/settings-grid.js';
+import { TERMINAL_CHARSETS, terminalTypeProblem } from '../../../../shared/terminal-charsets.js';
 import { PREFERENCE_LIMITS } from '../../../state/preference-limits.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../../state/preferences-defaults.js';
 import type { SectionProps } from './section-props.js';
@@ -57,6 +58,34 @@ export function SshSection({ preferences, update, locked = () => false }: Sectio
           update({ ssh: { connectTimeout: connectTimeout ?? DEFAULTS.connectTimeout } });
         }}
         hint="Seconds to wait for a server to answer before the connection gives up."
+      />
+      <TextSetting
+        label="Terminal type"
+        setting="ssh.term"
+        testId="preferences-ssh-term"
+        value={ssh.term}
+        placeholder={DEFAULTS.term}
+        trim
+        monospace
+        locked={locked('ssh.term')}
+        validate={(term) => (term === '' ? undefined : terminalTypeProblem(term))}
+        onCommit={(term) => {
+          update({ ssh: { term: term === '' ? DEFAULTS.term : term } });
+        }}
+        hint="The TERM a shell is opened with. Older servers and network devices may need vt100 or xterm."
+      />
+      <EnumSetting
+        label="Character set"
+        setting="ssh.charset"
+        testId="preferences-ssh-charset"
+        display="select"
+        value={ssh.charset}
+        options={TERMINAL_CHARSETS.map((c) => ({ value: c.id, label: c.label }))}
+        locked={locked('ssh.charset')}
+        onChange={(charset) => {
+          update({ ssh: { charset } });
+        }}
+        hint="How the terminal reads and writes text. Change it for a server that does not use UTF-8."
       />
     </SettingsGroup>
   );

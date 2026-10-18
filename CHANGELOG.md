@@ -27,6 +27,58 @@ All notable changes to this project are documented here. The format follows
   they run against an `insomnia` object (`insomnia.test`, `insomnia.expect`, `insomnia.response`,
   `insomnia.request` and the variable scopes); `sendRequest`, `require`, cookie writes and the vault fail
   with `script-unsupported`, and the import report lists them.
+- **Share a live terminal.** On an Enterprise server, **Share session** in an SSH terminal's menu lets
+  members of the shared workspace watch it: they join from an invite link with **Terminal: Join Shared
+  Terminal…** and see the screen as it is, masked the same way. A viewer can ask for control; the owner
+  approves, takes it back or stops sharing in one click. The server relays the screen and stores
+  nothing but audit rows (#429).
+- **Team session logs.** A workspace admin on an Enterprise server can turn on **Record SSH
+  sessions** for a shared workspace: every member's SSH sessions on its hosts are then logged, masked
+  as local session logs are, and streamed to the server while they run. **Terminal: Team Session
+  Logs…** lists and reads them, filtered by host or member; each read is audited, logs are kept as long
+  as audit events, and an admin can delete one sooner (#430).
+- **Device keys.** **Generate key…** can make an SSH key in this machine's secure hardware: the Secure
+  Enclave on macOS (`ecdsa-sha2-nistp256`), or Windows Hello on Windows (RSA, experimental). The keychain
+  stores only a handle that this device alone can use, and every sign-in asks for Touch ID or your password
+  (Windows Hello on Windows). Its public key installs on hosts like any other. On another machine the key is
+  marked "other device" and a connect says where it was made. The key cannot be copied or recovered, so the
+  dialog suggests keeping a second way into the same hosts. The CLI cannot use device keys (#428).
+- **App lock.** **Settings → Secrets → App lock** asks for biometrics or your password before the first SSH
+  secret is used after launch, again after a set idle time (15 minutes by default) and after the screen
+  locks. It is off by default. Turning it on asks once, and the rest of the app stays usable while it is
+  locked (#428).
+- **Terminal type and character set per host.** A host or group's `ssh` settings take `term`, the
+  terminal type the shell is opened with (`xterm-256color` by default, for example `vt100` or
+  `vt220`), and `charset`, the character set its text is read and written in: UTF-8 by default, or
+  one of ISO-8859-1/2/5/7/9/15, Windows-1250/1251/1252/1253/1254/1257, CP850 and KOI8-R. Both
+  inherit like the other host settings and fall back to new **Settings → SSH** defaults; the host
+  form shows them under **Advanced**. They apply to SSH shells and Telnet; a serial console
+  uses the character set; Mosh stays UTF-8 (#427).
+- **Telnet hosts.** A host or group can set `protocol: telnet` to open a Telnet session in the same
+  terminal tab, with panes, find, snippets and session logs. Wirebench negotiates the terminal type and
+  window size, and types the host's user and password at the device's login and password prompts when they
+  are set. It connects straight, through the host's proxy, or through an SSH jump host. The form, the
+  details panel and the terminal all say the session is not encrypted, and Files, port forwarding, agent
+  forwarding and keys are hidden for these hosts. `WIREBENCH_AREAS=telnet=off` switches Telnet off for a
+  build (#425).
+- **Serial consoles.** A host or group can set `protocol: serial` to open a serial port on this computer
+  (a USB serial adapter or a built-in port) in the same terminal tab, with panes, find, snippets and session
+  logs. The line settings (baud, data bits, parity, stop bits and flow control) live in `hosts.yaml`; the
+  device each console opens is remembered per computer, picked in the host form from this computer's ports
+  or on the connection screen the first time. Address, sign-in, jump host, proxy and the SSH-only features
+  are hidden for these hosts. `WIREBENCH_AREAS=serial=off` switches serial consoles off for a build (#426).
+- **Make secret on credential-like variables.** A variable named like a credential (`token`,
+  `password`, `apiKey`…) with a plain value now offers **Make secret** in its row: the value is stored
+  as a project secret on this machine and the row keeps `${secret:name}`. On a workspace scope it is
+  stored for every project the scope applies to. A name the project already has is refused, never
+  overwritten (#634).
+- **Scheduled runs in the app.** A workspace shared on a server that runs schedules shows a
+  **Schedules** node in the Explorer: each schedule with a green, red or grey dot and, while failing,
+  how many runs failed in a row. Opening one shows its runs, newest first, and each run's results as
+  the Runner shows them, with the exchange of a failed request and how its alerts were delivered; a run
+  that ends appears without a refresh. **Schedule…** on a project, API, folder, request or sequence
+  opens a new schedule that runs it, picked from the open workspace. Workspace admins create, edit,
+  pause, run now, set secrets, test alerts and delete; everyone else reads (#517).
 - **Import Insomnia exports.** **Import…** reads Insomnia's export formats 4 (JSON or YAML) and 5
   (YAML), and detects a picked file by its content. Each workspace becomes a REST, a gRPC and a
   WebSocket API in the chosen project, in Insomnia's order, with folder headers and auth. The base and
@@ -72,12 +124,56 @@ All notable changes to this project are documented here. The format follows
   beside the requests, so a request stays in view while you browse its history or edit its variables.
   SSH keeps its own strip. The right rail shows an environment's details while its tab is in front
   (#607).
+- **Copy as cURL and Generate code… under Send ▾.** The menu under a SOAP or REST request's Send
+  button, which offered only **Send to environments…**, now also has **Copy as cURL** (the same as
+  the request's palette command) and **Generate code…**, which opens the Code panel (#632).
+- **A send the network failed is not a Problem.** A refused connection, an unknown host, a timeout, a
+  failed TLS handshake, a proxy or network failure no longer adds a red Problem: the response pane
+  already says what happened, with a hint and Retry, and the status bar's `last:` shows it. Failures
+  the project can fix (unresolved variables, an incomplete URL, an untrusted certificate, script type
+  errors) stay in Problems, now worded by their title ("Incomplete URL: …") rather than their code
+  (#635).
 
 ### Fixed
 
 - **Assertions chained after `.property(...)` in imported scripts now fail when they should.** In the
   Postman, Insomnia and Bruno layers, `expect(x).to.have.property('a').that.equals(5)` passed whatever
   `a` held, because the check after `.property(...)` could not fail.
+- **An imported form-data file part with no file no longer stops the project from opening.** A
+  collection whose multipart body has a file part without a file, from Postman, Insomnia, Thunder
+  Client or Hoppscotch, now keeps that row as a switched-off text part, and the import report names
+  the request and tells you to pick the file again on the Body tab.
+- **An imported file body with no file no longer stops the project from opening.** A request whose
+  whole body is a file but carries no file, from Postman, Insomnia or Thunder Client, now imports with
+  no body, and the import report names the request and tells you to pick the file on the Body tab.
+  Hoppscotch file bodies now get the same warning.
+- **No orphan warning for a saved golden.** Opening a project, or `wirebench run`, no longer warns
+  `"<request>.golden.yaml" does not belong to any request` for a golden saved beside its request, in
+  any protocol. A golden whose request is gone is still reported.
+- **Environment rows show colour and protection.** The Environments list now shows each
+  environment's colour dot and, for a protected one, its lock, as the title-bar switcher does. The
+  Environment details panel stays as you left it, open or put away, when you come back to an
+  environment and after a restart (#634).
+- **The mock tab explains port 0 and shows methods uppercase.** A mock on port 0 now shows an empty
+  Port field reading *any free port*, and clearing the field asks for one. An operation's header reads
+  `GET /json` rather than `get /json` (#634).
+- **The environment switcher names your only project.** In a workspace of one project the title
+  bar's switcher now names that project and can be used straight away, instead of reading "No
+  project" until a request is opened. With several projects it still waits for a request tab to say
+  which (#634).
+- **API tabs read cleanly.** The REST, gRPC and WebSocket API tabs no longer show an issue number or
+  repeat when an API's scripts run, and their authentication fields line up with Name and Description
+  (#634).
+- **The Body tab shows when there is a body.** Like Scripts, the REST request's Body tab carries a dot
+  while the request would send a body (#637).
+- **The Runner counts requests without checks apart.** Its summary and Past runs now say "3 passed,
+  9 without checks" instead of counting a request that tested nothing as passed, and a request that
+  errored reads like the send error panel ("Incomplete URL: …", the code in small text) (#637).
+- **REST fits a 1024×700 window better.** Shrinking the window below 720px collapses an open console,
+  and growing it back reopens it; the first send in a short window leaves the console collapsed. The
+  HTTP Log toolbar wraps instead of scrolling sideways when the code panel narrows the console, and
+  **Preserve log** is now a pin icon beside the other actions. The response's status line wraps
+  between its parts instead of cutting the last one short (#636).
 - **WSDL import goes through your proxy and CA bundle.** Importing a WSDL by URL, re-fetching it when a
   project reopens, and fetching a definition a legacy SOAP project file holds no copy of now use the
   proxy and CA bundle from Settings, as sends and OpenAPI imports already did, with Basic or Kerberos
@@ -86,6 +182,54 @@ All notable changes to this project are documented here. The format follows
 - **A refused proxy tunnel no longer reads as Cancelled.** When an HTTPS request goes through a proxy
   that refuses the tunnel (a 407 for a wrong or missing proxy password), the send now fails with
   "Proxy connection failed" and the proxy's status, instead of showing as if you had cancelled it.
+- **A failed send says what happened once, and where.** The error panel names the host and port a
+  refused connection was aimed at ("Couldn't connect to 127.0.0.1:9") and the host that did not
+  resolve, and leaves out a message that only repeats its title. The HTTP Log names a failed row the
+  way the panel does ("Connection refused", not `connection-refused`), with the code in its tooltip.
+  A `${` that is never closed is reported as such, naming the field it is in with a link to it,
+  instead of as a variable missing from the environment. Cancelling a send keeps the response you
+  were looking at, under a one-line "Cancelled after … · Retry" bar (#631).
+- **Imported requests no longer show their method twice.** An OpenAPI operation with no summary or
+  operation id, and a request from **Import cURL…**, is now named by its path alone (`/pets/{id}`), since
+  the method badge beside it already says GET or POST. A request imported earlier as `GET /pets/{id}`
+  shows without the repeated method in the explorer, the Runner's list and History; its stored name is
+  unchanged (#633).
+- **Method badges in the explorer line up.** Every method badge in the tree has the same width and
+  starts in the same column, so POST no longer sits further left than GET and DEL (#633).
+- **The explorer no longer scrolls sideways.** In a narrow sidebar a long name such as
+  `DELETE /pets/{id}` is cut with an ellipsis instead of running past the edge behind a horizontal
+  scrollbar; hover it to read it in full (#633).
+- **The command palette lists what you can run first.** Within each group, commands that cannot run
+  here (greyed, with the reason) now come after the ones that can, so typing "REST" no longer puts
+  **REST: Lint Definition** and **REST: Update Definition…** above the commands you can use (#633).
+- **History's Compare… shows what it is waiting for.** After **Compare…**, the picked row is tinted
+  and a banner names it ("Comparing with List pets · 22:06:50 — pick another entry") with **Cancel**;
+  a click on another row then opens the comparison. A right-click on a History row now opens the same
+  menu as its **⋯** button (#633).
+- **The "Method changed to POST" toast goes when it stops being true.** Switching a REST body to
+  GraphQL and back, or to another kind, now takes the toast and its **Undo** down at once instead of
+  leaving it up for its full eight seconds (#632).
+- **Query examples match the language picked.** The example chips in an empty Query view now follow
+  the query language: JSONPath offers only JSONPath expressions, XPath and XQuery their own, instead
+  of mixing XPath 3.1 map lookups in with JSONPath (#632).
+- **HTML Pretty reads like the page.** Inline elements such as `<b>`, `<a>`, `<span>`, `<code>` and
+  `<title>` stay on one line with their text instead of taking three, and the content of `<pre>`,
+  `<textarea>`, `<script>` and `<style>` is shown exactly as it arrived (#632).
+- **Key/value checkboxes use the accent colour.** The checkboxes in Params, Headers and the other
+  key/value tables, and in an environment's variables, are tinted like the ones in Settings instead
+  of the system blue (#632).
+- **The default User-Agent names the real version.** Requests sent from the app now carry
+  `User-Agent: Wirebench/<version>` (for example `Wirebench/6.1.0`) instead of the stale
+  `Wirebench/0.1`, and it follows each update; a User-Agent you set yourself is kept. The CLI, which
+  sends without the app's preferences, sends `Wirebench`. The **Accept compressed responses** hint now
+  names what is sent: `gzip, deflate, br` on REST requests, `gzip, deflate` on SOAP ones (#632).
+- **A response with no body says so.** A 204, a `HEAD` answer or any other empty response now shows
+  "No body (204 No Content)" in the Body tab, with the response's own status, instead of an empty
+  editor showing line 1. A saved example and a captured webhook request with no body say the same
+  (#632).
+- **Override sits on the row in the generated headers.** In a REST request's **Generated** headers,
+  **Override** is now a small text-sized control on the row's baseline instead of a full-height
+  button standing off it, and the row checkboxes use the accent colour (#632).
 - **Credential headers stay out of imported Postman requests.** A literal `Authorization` header in a
   Postman collection becomes the request's bearer or basic auth (the user name only) and is dropped;
   any other credential-looking header with a literal value, such as `X-Api-Key` or `Cookie`, is

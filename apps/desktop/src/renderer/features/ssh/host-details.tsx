@@ -15,6 +15,9 @@ import { openFiles } from './files/open-files.js';
 import { HostForwards } from './forwarding/forwarding-view.js';
 import { isLive, useForwardsStore } from './forwarding/forwards-store.js';
 import { HostForm } from './host-dialog.js';
+import { hasSshFeatures, protocolOf } from './host-protocol.js';
+import { PROTOCOL_LABELS } from './mosh-section.js';
+import { PlainTextMark } from './plain-text-mark.js';
 import { HostActionsButton } from './host-menus.js';
 import { findHost, flattenGroups, hostStatusOf, osKeyOf, useHostsStore } from './hosts-store.js';
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
@@ -23,6 +26,8 @@ import { proxyText } from './proxy-section.js';
 import { HostSessionLogs } from './session-logs.js';
 import { sessionStatus } from './session-status.js';
 import { schemeLabel } from './terminal-schemes.js';
+import { charsetLabel, DEFAULT_TERMINAL_CHARSET, DEFAULT_TERMINAL_TYPE } from '../../../shared/terminal-charsets.js';
+import { serialLabel } from './serial-section.js';
 
 type Provenance = ResolvedHostWire['ssh']['port']['from'];
 
@@ -98,6 +103,11 @@ export function HostDetails() {
   );
   const [knownHosts, setKnownHosts] = useState<readonly SshKnownHostWire[]>([]);
   const [secrets, setSecrets] = useState<readonly SshSecretNameWire[]>([]);
+  // A serial console's device on this machine (#426): never in hosts.yaml, so asked of main per host.
+  const [device, setDevice] = useState<string | undefined>(undefined);
+  const selectedSerial = useHostsStore(
+    (s) => s.resolved.find((h) => h.id === selectedHostId)?.ssh.protocol?.value === 'serial',
+  );
 
   // Read again per host: a key may have been trusted, or a secret stored, since the last one.
   useEffect(() => {
@@ -107,6 +117,21 @@ export function HostDetails() {
       setSecrets(names.ok ? names.value.names : []);
     })();
   }, [selectedHostId, hostStatus]);
+  useEffect(() => {
+    setDevice(undefined);
+    if (selectedHostId === undefined || !selectedSerial) return;
+    let live = true;
+    Promise.resolve()
+      .then(() => ipc().ssh.serialDevice({ hostId: selectedHostId }))
+      .then((result) => {
+        if (live && result.ok) setDevice(result.value.device);
+      })
+      // Unread, the row says the first connection picks one.
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [selectedHostId, selectedSerial, hostStatus, dialog]);
 
   const entry = selectedHostId === undefined ? undefined : findHost(file, selectedHostId);
   if (entry === undefined) {
@@ -124,6 +149,11 @@ export function HostDetails() {
     );
   }
   const host = resolved.find((h) => h.id === entry.id);
+  const protocol = protocolOf(host);
+  // A Telnet host (#425) has no Files, agent, host key, environment, forwarding or ssh command; a serial
+  // console (#426) has no address, sign-in, jump, proxy or timing either.
+  const sshFeatures = hasSshFeatures(protocol);
+  const serial = protocol === 'serial';
   const groups = flattenGroups(file);
   const groupName = (id: string): string => groups.find(({ group }) => group.id === id)?.group.name ?? id;
   const status = sessionStatus(hostStatus);
@@ -183,13 +213,15 @@ export function HostDetails() {
         >
           Connect
         </Button>
-        <Button
-          onClick={() => {
-            openFiles(entry.id);
-          }}
-        >
-          <FolderOpen size={12} aria-hidden="true" /> Files
-        </Button>
+        {sshFeatures && (
+          <Button
+            onClick={() => {
+              openFiles(entry.id);
+            }}
+          >
+            <FolderOpen size={12} aria-hidden="true" /> Files
+          </Button>
+        )}
         <Button onClick={edit}>
           <Pencil size={12} aria-hidden="true" /> Edit
         </Button>
@@ -228,6 +260,13 @@ export function HostDetails() {
   const hostKey = `${host.address}:${String(host.ssh.port.value)}`;
   const keys = knownHosts.filter((k) => k.host === hostKey);
   const command = sshCommandOf(host, jumpAddress);
+  // Rows only for what this host changes; the type and character set only when they are not the built-in ones.
+  const shownIf = <T,>(p: { value?: T | undefined; from: ResolvedHostWire['protected']['from'] } | undefined) =>
+    p?.value === undefined ? undefined : { value: p.value, from: p.from };
+  const scheme = shownIf(host.terminal?.scheme);
+  const fontSize = shownIf(host.terminal?.fontSize);
+  const term = serial || host.ssh.term?.value === DEFAULT_TERMINAL_TYPE ? undefined : host.ssh.term;
+  const charset = host.ssh.charset?.value === DEFAULT_TERMINAL_CHARSET ? undefined : host.ssh.charset;
   const proxy = host.ssh.proxy.value;
   const muted = (text: string): ReactNode => <span className="truncate text-xs text-fg-subtle">{text}</span>;
   const osEntry = osByHost[osKeyOf(host)];
@@ -251,37 +290,66 @@ export function HostDetails() {
         </div>
       )}
       <Section title="Connection">
-        <Row label="Address">
-          <span className="truncate font-mono">{host.address}</span>
-          <CopyButton text={host.address} label="Copy address" />
-        </Row>
-        <Row label="Port">
-          <span className="font-mono">{host.ssh.port.value}</span>
-          {muted(provenance(host.ssh.port.from))}
-        </Row>
-        <Row label="User">
-          <span className="truncate font-mono">{host.ssh.user.value ?? '—'}</span>
-          {host.ssh.user.value !== undefined && muted(provenance(host.ssh.user.from))}
-        </Row>
-        <Row label="OS">
-          {os === undefined ? (
-            <span className="text-fg-subtle">found on the first connection</span>
-          ) : (
-            <>
-              <span className="flex min-w-0 items-center gap-1.5 self-center">
-                <OsIcon os={os} size={14} />
-                <span className="truncate">{osTextOf(osEntry)}</span>
-              </span>
-              {muted(osEntry?.chosen === undefined ? 'detected' : 'set by you')}
-            </>
-          )}
-        </Row>
+        {serial && (
+          <>
+            <Row label="Device">
+              {device === undefined ? (
+                <span className="text-fg-subtle">picked on the first connection</span>
+              ) : (
+                <>
+                  <span className="truncate font-mono">{device}</span>
+                  {muted('on this computer')}
+                </>
+              )}
+            </Row>
+            <Row label="Line">
+              <span className="font-mono">{serialLabel(host.ssh.serial?.value)}</span>
+              {host.ssh.serial !== undefined && muted(provenance(host.ssh.serial.from))}
+            </Row>
+          </>
+        )}
+        {!serial && (
+          <>
+            <Row label="Address">
+              <span className="truncate font-mono">{host.address}</span>
+              <CopyButton text={host.address} label="Copy address" />
+            </Row>
+            <Row label="Port">
+              <span className="font-mono">{host.ssh.port.value}</span>
+              {muted(provenance(host.ssh.port.from))}
+            </Row>
+            <Row label="User">
+              <span className="truncate font-mono">{host.ssh.user.value ?? '—'}</span>
+              {host.ssh.user.value !== undefined && muted(provenance(host.ssh.user.from))}
+            </Row>
+            <Row label="OS">
+              {os === undefined ? (
+                <span className="text-fg-subtle">found on the first connection</span>
+              ) : (
+                <>
+                  <span className="flex min-w-0 items-center gap-1.5 self-center">
+                    <OsIcon os={os} size={14} />
+                    <span className="truncate">{osTextOf(osEntry)}</span>
+                  </span>
+                  {muted(osEntry?.chosen === undefined ? 'detected' : 'set by you')}
+                </>
+              )}
+            </Row>
+          </>
+        )}
         <Row label="Protocol">
-          <span>{host.ssh.protocol?.value === 'mosh' ? 'Mosh' : 'SSH'}</span>
+          <span>{PROTOCOL_LABELS[protocol]}</span>
           {host.ssh.protocol !== undefined &&
             host.ssh.protocol.from !== 'default' &&
             muted(provenance(host.ssh.protocol.from))}
         </Row>
+        {protocol === 'telnet' && (
+          <Row label="Encryption">
+            <span className="flex items-center gap-1 text-status-warning">
+              <PlainTextMark /> None: plain text
+            </span>
+          </Row>
+        )}
         {host.ssh.protocol?.value === 'mosh' && (
           <Row label="Mosh server">
             <span className="truncate font-mono">
@@ -291,72 +359,82 @@ export function HostDetails() {
             </span>
           </Row>
         )}
-        <Row label="Jump host">
-          <span className="truncate">{jump === undefined ? '—' : (jumpHost?.name ?? jump)}</span>
-          {jump !== undefined && muted(provenance(host.ssh.jump.from))}
-        </Row>
-        <Row label="Proxy">
-          <span className="truncate">{proxy === undefined ? '—' : proxyText(proxy)}</span>
-          {(proxy !== undefined || host.ssh.proxy.from !== 'default') && muted(provenance(host.ssh.proxy.from))}
-          {proxy !== undefined && jump !== undefined && muted('not used: reached through the jump host')}
-        </Row>
-        {proxy?.passwordSecret !== undefined && (
-          <Row label="Proxy password">
-            <span className="truncate font-mono">{proxy.passwordSecret}</span>
-            {muted(secretState(proxy.passwordSecret))}
-          </Row>
-        )}
-      </Section>
-      <Section title="Sign-in">
-        {auth === undefined ? (
-          <Row label="Method">
-            <span className="text-fg-subtle">not set</span>
-          </Row>
-        ) : (
+        {!serial && (
           <>
-            <Row label="Method">
-              <span>{auth.kind === 'agent' ? 'SSH agent' : auth.kind === 'key' ? 'Private key' : 'Password'}</span>
-              {muted(provenance(host.ssh.auth.from))}
+            <Row label="Jump host">
+              <span className="truncate">{jump === undefined ? '—' : (jumpHost?.name ?? jump)}</span>
+              {jump !== undefined && muted(provenance(host.ssh.jump.from))}
             </Row>
-            {auth.kind !== 'agent' && (
-              <Row label={auth.kind === 'key' ? 'Key secret' : 'Secret'}>
-                <span className="truncate font-mono">{auth.secret}</span>
-                {muted(secretState(auth.secret))}
-              </Row>
-            )}
-            {auth.kind === 'key' && auth.certificateSecret !== undefined && (
-              <Row label="Certificate">
-                <span className="truncate font-mono">{auth.certificateSecret}</span>
-                {muted(secretState(auth.certificateSecret))}
-              </Row>
-            )}
-            {auth.kind === 'key' && auth.passphraseSecret !== undefined && (
-              <Row label="Passphrase">
-                <span className="truncate font-mono">{auth.passphraseSecret}</span>
-                {muted(secretState(auth.passphraseSecret))}
+            <Row label="Proxy">
+              <span className="truncate">{proxy === undefined ? '—' : proxyText(proxy)}</span>
+              {(proxy !== undefined || host.ssh.proxy.from !== 'default') && muted(provenance(host.ssh.proxy.from))}
+              {proxy !== undefined && jump !== undefined && muted('not used: reached through the jump host')}
+            </Row>
+            {proxy?.passwordSecret !== undefined && (
+              <Row label="Proxy password">
+                <span className="truncate font-mono">{proxy.passwordSecret}</span>
+                {muted(secretState(proxy.passwordSecret))}
               </Row>
             )}
           </>
         )}
       </Section>
-      <Section title="Agent">
-        <Row label="Agent forwarding">
-          <span>{host.ssh.forwardAgent.value ? 'On' : 'Off'}</span>
-          {muted(provenance(host.ssh.forwardAgent.from))}
-        </Row>
-      </Section>
-      <Section title="Host key">
-        {keys.length === 0 ? (
-          <p className="py-1 text-sm text-fg-subtle">Not trusted yet: the first connection asks.</p>
-        ) : (
-          keys.map((key) => (
-            <Row key={key.keyType} label={key.keyType}>
-              <span className="font-mono text-xs break-all">{key.fingerprint}</span>
+      {!serial && (
+        <Section title="Sign-in">
+          {auth === undefined ? (
+            <Row label="Method">
+              <span className="text-fg-subtle">not set</span>
             </Row>
-          ))
-        )}
-      </Section>
-      {host.env.length > 0 && (
+          ) : (
+            <>
+              <Row label="Method">
+                <span>{auth.kind === 'agent' ? 'SSH agent' : auth.kind === 'key' ? 'Private key' : 'Password'}</span>
+                {muted(provenance(host.ssh.auth.from))}
+              </Row>
+              {auth.kind !== 'agent' && (
+                <Row label={auth.kind === 'key' ? 'Key secret' : 'Secret'}>
+                  <span className="truncate font-mono">{auth.secret}</span>
+                  {muted(secretState(auth.secret))}
+                </Row>
+              )}
+              {auth.kind === 'key' && auth.certificateSecret !== undefined && (
+                <Row label="Certificate">
+                  <span className="truncate font-mono">{auth.certificateSecret}</span>
+                  {muted(secretState(auth.certificateSecret))}
+                </Row>
+              )}
+              {auth.kind === 'key' && auth.passphraseSecret !== undefined && (
+                <Row label="Passphrase">
+                  <span className="truncate font-mono">{auth.passphraseSecret}</span>
+                  {muted(secretState(auth.passphraseSecret))}
+                </Row>
+              )}
+            </>
+          )}
+        </Section>
+      )}
+      {sshFeatures && (
+        <Section title="Agent">
+          <Row label="Agent forwarding">
+            <span>{host.ssh.forwardAgent.value ? 'On' : 'Off'}</span>
+            {muted(provenance(host.ssh.forwardAgent.from))}
+          </Row>
+        </Section>
+      )}
+      {sshFeatures && (
+        <Section title="Host key">
+          {keys.length === 0 ? (
+            <p className="py-1 text-sm text-fg-subtle">Not trusted yet: the first connection asks.</p>
+          ) : (
+            keys.map((key) => (
+              <Row key={key.keyType} label={key.keyType}>
+                <span className="font-mono text-xs break-all">{key.fingerprint}</span>
+              </Row>
+            ))
+          )}
+        </Section>
+      )}
+      {sshFeatures && host.env.length > 0 && (
         <Section title="Environment">
           {host.env.map((variable) => (
             <Row key={variable.name} label={variable.name}>
@@ -373,38 +451,53 @@ export function HostDetails() {
           ))}
         </Section>
       )}
-      {host.terminal !== undefined &&
-        (host.terminal.scheme.value !== undefined || host.terminal.fontSize.value !== undefined) && (
-          <Section title="Terminal">
-            {host.terminal.scheme.value !== undefined && (
-              <Row label="Scheme">
-                <span className="truncate">{schemeLabel(host.terminal.scheme.value)}</span>
-                {muted(provenance(host.terminal.scheme.from))}
-              </Row>
-            )}
-            {host.terminal.fontSize.value !== undefined && (
-              <Row label="Font size">
-                <span>{`${String(host.terminal.fontSize.value)} px`}</span>
-                {muted(provenance(host.terminal.fontSize.from))}
-              </Row>
-            )}
-          </Section>
-        )}
-      <section aria-label="Port forwarding" className="flex flex-col border-t border-hairline px-1 py-3">
-        <h3 className="mb-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">Port forwarding</h3>
-        <HostForwards hostId={host.id} />
-      </section>
+      {(scheme !== undefined || fontSize !== undefined || term !== undefined || charset !== undefined) && (
+        <Section title="Terminal">
+          {scheme !== undefined && (
+            <Row label="Scheme">
+              <span className="truncate">{schemeLabel(scheme.value)}</span>
+              {muted(provenance(scheme.from))}
+            </Row>
+          )}
+          {fontSize !== undefined && (
+            <Row label="Font size">
+              <span>{`${String(fontSize.value)} px`}</span>
+              {muted(provenance(fontSize.from))}
+            </Row>
+          )}
+          {term !== undefined && (
+            <Row label="Type">
+              <span className="truncate font-mono">{term.value}</span>
+              {muted(provenance(term.from))}
+            </Row>
+          )}
+          {charset !== undefined && (
+            <Row label="Character set">
+              <span className="truncate">{charsetLabel(charset.value)}</span>
+              {muted(provenance(charset.from))}
+            </Row>
+          )}
+        </Section>
+      )}
+      {sshFeatures && (
+        <section aria-label="Port forwarding" className="flex flex-col border-t border-hairline px-1 py-3">
+          <h3 className="mb-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">Port forwarding</h3>
+          <HostForwards hostId={host.id} />
+        </section>
+      )}
       <HostSessionLogs hostId={host.id} path={host.path} groupName={groupName} refreshKey={hostStatus} />
-      <Section title="Timing">
-        <Row label="Keep-alive">
-          <span>{host.ssh.keepAlive.value}s</span>
-          {muted(provenance(host.ssh.keepAlive.from))}
-        </Row>
-        <Row label="Timeout">
-          <span>{host.ssh.connectTimeout.value}s</span>
-          {muted(provenance(host.ssh.connectTimeout.from))}
-        </Row>
-      </Section>
+      {!serial && (
+        <Section title="Timing">
+          <Row label="Keep-alive">
+            <span>{host.ssh.keepAlive.value}s</span>
+            {muted(provenance(host.ssh.keepAlive.from))}
+          </Row>
+          <Row label="Timeout">
+            <span>{host.ssh.connectTimeout.value}s</span>
+            {muted(provenance(host.ssh.connectTimeout.from))}
+          </Row>
+        </Section>
+      )}
       {host.tags.length > 0 && (
         <Section title="Tags">
           <div className="flex flex-wrap gap-1 py-1">
@@ -416,12 +509,14 @@ export function HostDetails() {
           </div>
         </Section>
       )}
-      <Section title="Command">
-        <div className="flex items-start gap-2 rounded-md bg-surface-sunken px-2 py-1.5">
-          <code className="min-w-0 flex-1 font-mono text-xs break-all text-fg-default">{command}</code>
-          <CopyButton text={command} label="Copy command" />
-        </div>
-      </Section>
+      {sshFeatures && (
+        <Section title="Command">
+          <div className="flex items-start gap-2 rounded-md bg-surface-sunken px-2 py-1.5">
+            <code className="min-w-0 flex-1 font-mono text-xs break-all text-fg-default">{command}</code>
+            <CopyButton text={command} label="Copy command" />
+          </div>
+        </Section>
+      )}
     </div>
   );
 }
