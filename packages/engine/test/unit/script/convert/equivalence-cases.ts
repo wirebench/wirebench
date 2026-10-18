@@ -27,6 +27,16 @@ export const RUN_ITERATION = { index: 2, count: 5 } as const;
 // --- how each dialect family writes a test -------------------------------------------------------
 
 /** How a dialect family writes a test that one value equals another. */
+/**
+ * A value written into a script's source as a literal. `JSON.stringify` alone leaves `<`, `>`, `/` and
+ * the two line separators as they are; escaping them keeps the literal inert wherever the text lands.
+ */
+const literal = (value: unknown): string =>
+  (JSON.stringify(value) ?? 'undefined').replace(
+    /[<>/\u2028\u2029]/g,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+
 interface Family {
   readonly dialect: LayeredApi;
   readonly label: string;
@@ -38,15 +48,15 @@ interface Family {
 const chai =
   (testCall: string, expectCall: string): Family['check'] =>
   (label, actual, expected) =>
-    `${testCall}(${JSON.stringify(label)}, () => { ${expectCall}(${actual}).to.equal(${JSON.stringify(expected)}); });`;
+    `${testCall}(${literal(label)}, () => { ${expectCall}(${actual}).to.equal(${literal(expected)}); });`;
 const chaiDeep =
   (testCall: string, expectCall: string): Family['check'] =>
   (label, actual, expected) =>
-    `${testCall}(${JSON.stringify(label)}, () => { ${expectCall}(${actual}).to.eql(${JSON.stringify(expected)}); });`;
+    `${testCall}(${literal(label)}, () => { ${expectCall}(${actual}).to.eql(${literal(expected)}); });`;
 const jest =
   (testCall: string, expectCall: string): Family['check'] =>
   (label, actual, expected) =>
-    `${testCall}(${JSON.stringify(label)}, () => { ${expectCall}(${actual}).toBe(${JSON.stringify(expected)}); });`;
+    `${testCall}(${literal(label)}, () => { ${expectCall}(${actual}).toBe(${literal(expected)}); });`;
 
 /** A family whose test and expect calls are chai-style. */
 const chaiFamily = (dialect: LayeredApi, label: string, testCall: string, expectCall: string): Family => ({
@@ -427,8 +437,8 @@ const JEST: readonly Assertion[] = [
 const assertions = (testCall: string, expectCall: string, list: readonly Assertion[]): string =>
   list
     .flatMap(([label, passes, fails]) => [
-      `${testCall}(${JSON.stringify(`${label} passes`)}, function () { ${passes.replace('E(', `${expectCall}(`)}; });`,
-      `${testCall}(${JSON.stringify(`${label} fails`)}, () => { ${fails.replace('E(', `${expectCall}(`)}; });`,
+      `${testCall}(${literal(`${label} passes`)}, function () { ${passes.replace('E(', `${expectCall}(`)}; });`,
+      `${testCall}(${literal(`${label} fails`)}, () => { ${fails.replace('E(', `${expectCall}(`)}; });`,
     ])
     .join('\n');
 
