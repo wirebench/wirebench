@@ -3311,6 +3311,101 @@ export type ScriptDiagnosticWire = z.infer<typeof scriptDiagnosticWireSchema>;
 
 export const scriptDiagnosticsResponseSchema = z.object({ diagnostics: z.array(scriptDiagnosticWireSchema) });
 
+// Converting imported scripts (convert-imported-scripts spec §4.2): the review's proposals, worked
+// out in main from the model it holds. Accepting sends only `{ ownerId, fingerprint }` pairs as the
+// `convert-scripts` change; no script text crosses back.
+
+/** The proposals for every layered level at or below `ownerId`, or in the whole project when it is absent. */
+export const scriptProposeConversionsRequestSchema = z.object({
+  projectId: z.string(),
+  ownerId: z.string().optional(),
+});
+export type ScriptProposeConversionsRequest = z.infer<typeof scriptProposeConversionsRequestSchema>;
+
+const layeredApiWireSchema = z.enum(['postman', 'insomnia', 'bruno', 'hoppscotch', 'thunder-client']);
+
+/** A call the converter left as written, under a TODO comment at `line` (1-based) of the converted text. */
+export const convertTodoWireSchema = z.object({
+  phase: scriptPhaseWireSchema,
+  line: z.number().int(),
+  call: z.string(),
+  kind: z.enum(['unsupported', 'not-mapped', 'shadowed']),
+  reason: z.string(),
+});
+export type ConvertTodoWire = z.infer<typeof convertTodoWireSchema>;
+
+/** One layered level as the review shows it. */
+export const scriptConversionWireSchema = z.object({
+  /** The request, folder, API or interface id. */
+  ownerId: z.string(),
+  /** The names from the API (or interface) down to the level. */
+  path: z.array(z.string()),
+  dialect: layeredApiWireSchema,
+  /** The layered texts the level holds now; a phase without a script is absent. */
+  before: z.object({ pre: z.string().optional(), post: z.string().optional() }),
+  result: z.discriminatedUnion('ok', [
+    z.object({
+      ok: z.literal(true),
+      pre: z.string().optional(),
+      post: z.string().optional(),
+      /** How many calls were rewritten. */
+      mapped: z.number().int(),
+      todos: z.array(convertTodoWireSchema),
+      todoCounts: z.object({
+        unsupported: z.number().int(),
+        notMapped: z.number().int(),
+        shadowed: z.number().int(),
+      }),
+      /** The checker's problems with each converted phase, as the Scripts tab would show them. */
+      problems: z.object({
+        pre: z.array(scriptDiagnosticWireSchema).optional(),
+        post: z.array(scriptDiagnosticWireSchema).optional(),
+      }),
+    }),
+    z.object({
+      ok: z.literal(false),
+      phase: scriptPhaseWireSchema,
+      /** 1-based; absent when the script could not be converted for a reason with no line. */
+      line: z.number().int().min(1).optional(),
+      message: z.string(),
+    }),
+  ]),
+  /** Where Accept writes each phase's layered text; a path may gain a `-n` suffix by then. */
+  backups: z.array(z.string()),
+  /** What Accept sends back: it refuses the level when its texts changed since. */
+  fingerprint: z.string(),
+});
+export type ScriptConversionWire = z.infer<typeof scriptConversionWireSchema>;
+
+export const scriptProposeConversionsResponseSchema = z.object({ levels: z.array(scriptConversionWireSchema) });
+export type ScriptProposeConversionsResponse = z.infer<typeof scriptProposeConversionsResponseSchema>;
+
+/** Why Accept left a level as it was. */
+export const conversionRefusalWireSchema = z.enum(['changed', 'not-layered', 'syntax', 'duplicate-id']);
+export type ConversionRefusalWire = z.infer<typeof conversionRefusalWireSchema>;
+
+/** What a `convert-scripts` change did: the levels switched, and those left as they were and why. */
+export const scriptConversionsResultWireSchema = z.object({
+  applied: z.array(
+    z.object({
+      ownerId: z.string(),
+      path: z.array(z.string()),
+      /** The backups written, project-relative. */
+      backups: z.array(z.string()),
+      todos: z.number().int(),
+    }),
+  ),
+  refused: z.array(
+    z.object({
+      ownerId: z.string(),
+      /** Empty when no level has the id any more. */
+      path: z.array(z.string()),
+      reason: conversionRefusalWireSchema,
+    }),
+  ),
+});
+export type ScriptConversionsResultWire = z.infer<typeof scriptConversionsResultWireSchema>;
+
 export const scriptCompletionsResponseSchema = z.object({
   items: z.array(z.object({ name: z.string(), kind: z.string(), detail: z.string().optional() })),
 });

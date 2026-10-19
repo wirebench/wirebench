@@ -35,6 +35,7 @@ import {
   requestAuthSourceSchema,
   requestScriptsPatchSchema,
   restFolderWireSchema,
+  scriptConversionsResultWireSchema,
   sequencePatchSchema,
   sequenceWireSchema,
   unresolvedRefWireSchema,
@@ -590,6 +591,16 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
   // **Switch on scripts…**: switches on the scripts of many requests at once, each one a reviewable
   // change to its request file. A request without scripts is left as it is.
   z.object({ kind: z.literal('enable-scripts'), requestIds: z.array(z.string()).min(1).max(10_000) }),
+  // **Convert to Wirebench script**: switches each named layered level to the typed API. Only the
+  // fingerprint the review showed crosses: main works the conversion out again from its own model,
+  // and refuses a level whose texts changed since (convert-imported-scripts spec §4.2, §7).
+  z.object({
+    kind: z.literal('convert-scripts'),
+    levels: z
+      .array(z.object({ ownerId: z.string(), fingerprint: z.string().max(128) }))
+      .min(1)
+      .max(10_000),
+  }),
   z.object({ kind: z.literal('update-project-settings'), patch: projectSettingsPatchSchema }),
   z.object({
     kind: z.literal('update-interface'),
@@ -675,6 +686,8 @@ export const projectMutateResponseSchema = z.object({
   createdWssOutgoingId: z.string().optional(),
   /** Set by `add-wss-incoming`: the id of the configuration that was created. */
   createdWssIncomingId: z.string().optional(),
+  /** Set by `convert-scripts`: the levels switched (their backups written, then saved) and those refused. */
+  converted: scriptConversionsResultWireSchema.optional(),
 });
 export type ProjectMutateResponse = z.infer<typeof projectMutateResponseSchema>;
 export const projectAddInterfaceResponseSchema = z.object({

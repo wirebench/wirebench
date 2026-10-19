@@ -51,6 +51,7 @@ import { scheduleStateOf, schedulesShown, useSchedulesStore } from '../../state/
 import { describeCron, STATE_DOT, STATE_LABEL } from '../schedules/schedule-format.js';
 import { openScheduleTab, schedulesActions } from '../schedules/schedules-actions.js';
 import { useScriptValuesStore } from '../../state/script-values.js';
+import { ConvertScriptsDialog } from '../scripts/convert-scripts-dialog.js';
 import { EnableScriptsDialog } from '../scripts/enable-scripts-dialog.js';
 
 /** Measures a container's box size with `ResizeObserver` so the virtualized tree can fill it. */
@@ -892,6 +893,7 @@ export function ExplorerView() {
       </div>
 
       <EnableScriptsDialog />
+      <ConvertScriptsDialog />
       {EXPLORER_DIALOGS.map((Dialogs, index) => (
         <Dialogs key={index} />
       ))}

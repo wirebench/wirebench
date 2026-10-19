@@ -1147,7 +1147,9 @@ void app.whenReady().then(() => {
     },
   });
   scriptHost = scripts;
-  registerScriptChannels(scripts);
+  registerScriptChannels(scripts, (projectId, ownerId) =>
+    workspaceService.hostFor(projectId).proposeConversions(ownerId),
+  );
   // This machine's MCP stdio approvals (#79); a send with no window of its own asks in the focused one.
   const mcpApprovals = new McpApprovals({
     store: new McpApprovalStore(join(app.getPath('userData'), MCP_APPROVALS_FILE)),

@@ -31,7 +31,8 @@ import {
   type ScriptPhase,
 } from '../../editor/script-language.js';
 import { useProjectStore } from '../../state/project.js';
-import { registerScriptEditFlush } from '../../state/script-edits.js';
+import { useConvertScriptsDialog } from './convert-scripts-dialog.js';
+import { flushScriptEdits, registerScriptEditFlush } from '../../state/script-edits.js';
 import type { RequestScriptsPatchWire, RequestScriptsWire, ScriptApiWire } from '../../../shared/wire-base.js';
 
 /** Long enough that a burst of keystrokes is one write, short enough that a send right after sees it. */
@@ -166,9 +167,26 @@ export function ScriptsTab({ requestId, scripts, level }: ScriptsTabProps) {
       ))}
       <div className="flex shrink-0 items-center justify-between border-b border-hairline">
         <Tabs label="Scripts" items={items} active={phase} onSelect={setPhase} />
-        <span className="px-3 text-xs text-fg-faint">
-          {api === 'wirebench' ? 'TypeScript' : `JavaScript · ${LAYER_LABELS[api]} layer`}
-        </span>
+        <div className="flex items-center gap-2 px-3">
+          <span className="text-xs text-fg-faint">
+            {api === 'wirebench' ? 'TypeScript' : `JavaScript · ${LAYER_LABELS[api]} layer`}
+          </span>
+          {api !== 'wirebench' && (
+            <Button
+              variant="ghost"
+              data-testid="scripts-convert"
+              onClick={() => {
+                const projectId = useProjectStore.getState().projectOf[requestId];
+                if (projectId !== undefined) {
+                  // The review is worked out from main's model: a just-typed edit goes there first.
+                  void flushScriptEdits().then(() => useConvertScriptsDialog.getState().open(projectId, requestId));
+                }
+              }}
+            >
+              Convert to Wirebench script
+            </Button>
+          )}
+        </div>
       </div>
       <div className="min-h-0 flex-1">
         <ScriptEditor

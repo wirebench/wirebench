@@ -132,6 +132,7 @@ export const COMMAND_IDS = [
   'mock.start',
   'mock.stop',
   'script.clearValues',
+  'script.convertAll',
   'env.switch',
   'env.next',
   'view.showHttpLog',
