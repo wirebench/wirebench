@@ -248,6 +248,25 @@ describe('Keychain', () => {
     expect(row.textContent).toContain('on this machine');
     expect(screen.getByTestId('secret-row-UNSET').textContent).toContain('no value');
   });
+  it("lists an identity's password with the identity using it, and reads the names again after a write (S64)", async () => {
+    useHostsStore.setState({
+      homeView: 'keychain',
+      file: {
+        ...STATE.file,
+        identities: [{ id: 'tester', name: 'Tester', auth: { kind: 'password', secret: 'UNSET' } }],
+      },
+    });
+    render(<SshHome />);
+    const row = await screen.findByTestId('secret-row-UNSET');
+    expect(row.textContent).toContain('Used by identity Tester');
+    const reads = secretNames.mock.calls.length;
+    act(() => {
+      useHostsStore.getState().secretsChanged();
+    });
+    await vi.waitFor(() => {
+      expect(secretNames.mock.calls.length).toBeGreaterThan(reads);
+    });
+  });
   it('Set value… stores the value write-only and reloads the names', async () => {
     useHostsStore.setState({ homeView: 'keychain' });
     render(<SshHome />);
