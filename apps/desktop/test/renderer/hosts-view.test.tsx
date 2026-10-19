@@ -867,6 +867,23 @@ describe('Host details', () => {
     expect(await screen.findByText('SHA256:abc')).toBeDefined();
     expect(screen.getByText('ssh deploy@10.0.0.1')).toBeDefined();
   });
+  it('a host with a session open leads with Go to terminal, and New session opens another (S50)', async () => {
+    useHostsStore.setState({ selectedHostId: 'b', panes: { p1: { hostId: 'b', sessionId: 's1', state: 'open' } } });
+    render(<HostDetails />);
+    expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Go to terminal' }).className).toContain('bg-accent');
+    const tabs = useEditorsStore.getState().tabs.length;
+    await userEvent.click(screen.getByRole('button', { name: 'New session' }));
+    expect(useEditorsStore.getState().tabs.length).toBe(tabs + 1);
+    useHostsStore.setState({ panes: {} });
+  });
+  it('lets a long value wrap rather than cutting it off (S51)', () => {
+    useHostsStore.setState({ selectedHostId: 'b' });
+    render(<HostDetails />);
+    const value = screen.getByTestId('host-details').querySelector('dd');
+    expect(value?.className).toContain('[&_.truncate]:whitespace-normal');
+    expect(value?.className).toContain('flex-wrap');
+  });
   it('says how many forwards run through the host, linking to Port forwarding', async () => {
     useHostsStore.setState({ selectedHostId: 'b' });
     useForwardsStore.setState({
