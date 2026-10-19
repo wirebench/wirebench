@@ -171,6 +171,12 @@ function ImportBody() {
           Choose a file…
         </Button>
       </div>
+      {/* Escape closes it too, but the dialog has something to click, as the other host dialogs do (S65). */}
+      <div className="flex justify-end border-t border-hairline pt-3">
+        <Dialog.Close asChild>
+          <Button>Cancel</Button>
+        </Dialog.Close>
+      </div>
     </div>
   );
 }
