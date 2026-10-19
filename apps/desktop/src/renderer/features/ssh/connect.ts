@@ -88,6 +88,17 @@ export function connectWithPin(paneId: string, pin: string): void {
   pendingPins.set(paneId, pin);
 }
 
+/**
+ * A password typed on a pane's connection screen for this connect only (#721, #722): none is stored, or the
+ * agent could not sign in. Like a PIN it is taken once, kept only in memory, and never stored.
+ */
+const pendingPasswords = new Map<string, string>();
+
+/** Hands `password` to the pane's next connect (the screen then retries it). */
+export function connectWithPassword(paneId: string, password: string): void {
+  pendingPasswords.set(paneId, password);
+}
+
 /** What one connect came to. */
 type ConnectOutcome =
   | { readonly kind: 'open'; readonly sessionId: string }
@@ -119,6 +130,8 @@ async function connectOutcome(pane: PaneLeaf, size: Size): Promise<ConnectOutcom
   }
   const skPin = pendingPins.get(paneId);
   pendingPins.delete(paneId);
+  const password = pendingPasswords.get(paneId);
+  pendingPasswords.delete(paneId);
   const quick = quickTargetOf(hostId);
   let result;
   try {
@@ -128,6 +141,7 @@ async function connectOutcome(pane: PaneLeaf, size: Size): Promise<ConnectOutcom
       attemptId,
       ...signInRequest(paneId),
       ...(skPin === undefined ? {} : { skPin }),
+      ...(password === undefined ? {} : { password }),
       ...(quick === undefined ? {} : { quick }),
     });
   } catch (error) {
@@ -155,6 +169,8 @@ async function connectOutcome(pane: PaneLeaf, size: Size): Promise<ConnectOutcom
   store.setPane(paneId, undefined);
   const { code, message, details } = result.error;
   if ((code === 'ssh-host-key-new' || code === 'ssh-host-key-changed') && details) {
+    // Trusting the key resumes this connect: a password typed for it goes with the resumed one.
+    if (password !== undefined) pendingPasswords.set(paneId, password);
     noteTrust(paneId, attemptId, code === 'ssh-host-key-changed');
     openTrustPrompt(pane, { size }, details);
     return { kind: 'trust' };

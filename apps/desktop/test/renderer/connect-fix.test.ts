@@ -67,6 +67,7 @@ describe('connectFix (#532)', () => {
       ask: 'password',
       secret: 'box_pw',
       user: 'root',
+      missing: false,
     });
   });
 
@@ -79,6 +80,7 @@ describe('connectFix (#532)', () => {
       kind: 'settings',
       ask: 'password',
       secret: 'box_pw',
+      missing: true,
     });
     // Another secret (an env variable's, say) is set in the settings.
     expect(connectFix(error('secret-missing', { name: 'token' }), PASSWORD).ask).toBeUndefined();

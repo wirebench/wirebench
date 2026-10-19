@@ -12,7 +12,14 @@ import { isPaletteChord } from '../../lib/terminal-focus.js';
 import type { Platform } from '../../lib/platform.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
-import { connectToHost, connectWithPin, editHost, paneIsOpen, reconnectToHost } from './connect.js';
+import {
+  connectToHost,
+  connectWithPassword,
+  connectWithPin,
+  editHost,
+  paneIsOpen,
+  reconnectToHost,
+} from './connect.js';
 import { ConnectScreen, ReconnectBar } from './connect-screen.js';
 import type { ReconnectBanner } from './connect-screen.js';
 import { dropAttempt, useConnectStore } from './connect-store.js';
@@ -978,6 +985,10 @@ function TerminalPane({
             }}
             onPin={(pin) => {
               connectWithPin(paneId, pin);
+              useHostsStore.getState().bumpReconnect(paneId);
+            }}
+            onPassword={(password) => {
+              connectWithPassword(paneId, password);
               useHostsStore.getState().bumpReconnect(paneId);
             }}
             onEditHost={() => {

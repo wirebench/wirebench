@@ -116,6 +116,27 @@ describe('createSshConnector', () => {
     expect(named.hops.map((h) => [h.address, h.user])).toEqual([['b.example', 'typed']]);
   });
 
+  it('a password typed for the connect signs in to the target only, reads no secret for it, and is masked (#721, #722)', async () => {
+    // The target's own secret is missing: the typed password stands in for it; the jump host keeps its own.
+    const { connector } = make({ secrets: { jump_pw: 'jpw' } });
+    const shell = await connector.prepareShell(sender(1), 'a', undefined, undefined, undefined, 'typed-pw');
+    expect(shell.hops.map((h) => [h.user, h.auth])).toEqual([
+      ['jump', { kind: 'password', password: 'jpw' }],
+      ['me', { kind: 'password', password: 'typed-pw' }],
+    ]);
+    expect(shell.secrets).toContain('typed-pw');
+    // A one-off server signs in with it instead of the agent, with no agent running.
+    const quick = await connector.prepareShell(
+      sender(1),
+      'quick-3',
+      undefined,
+      undefined,
+      { address: '10.0.0.1', port: 22, user: 'ops' },
+      'typed-pw',
+    );
+    expect(quick.hops.map((h) => h.auth)).toEqual([{ kind: 'password', password: 'typed-pw' }]);
+  });
+
   it('a one-off server with no user is incomplete until one is typed (#537)', async () => {
     const { connector } = make();
     await expect(

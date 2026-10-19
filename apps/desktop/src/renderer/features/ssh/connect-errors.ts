@@ -341,6 +341,8 @@ export type ConnectFix =
       readonly ask: 'password';
       readonly secret: string;
       readonly user: string | undefined;
+      /** No password is stored on this machine yet (#721): a sign-in step, not a refusal. */
+      readonly missing: boolean;
     }
   /** The security key needs its PIN (#420); `wrong` after one it refused. */
   | { readonly kind: ConnectErrorKind; readonly retryPrimary: false; readonly ask: 'pin'; readonly wrong: boolean }
@@ -383,5 +385,6 @@ export function connectFix(error: ConnectError, target: SignIn | undefined): Con
     ask: 'password',
     secret: auth.secret,
     user: text(details, 'user') ?? target.user,
+    missing,
   };
 }

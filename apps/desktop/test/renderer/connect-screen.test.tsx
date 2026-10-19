@@ -124,6 +124,60 @@ describe('the connection screen fixes a failure in place (#532)', () => {
     expect(document.body.textContent).not.toContain('right-pw');
   });
 
+  it('no stored password is a sign-in step: Connect uses it once and stores nothing (#721)', () => {
+    const onPassword = vi.fn();
+    const onRetry = vi.fn();
+    render(
+      <ConnectScreen
+        hostId="box"
+        purpose="terminal"
+        view={failed({ code: 'secret-missing', message: 'x', details: { name: 'box_pw' } })}
+        onRetry={onRetry}
+        onPassword={onPassword}
+        onEditHost={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('connect-screen').getAttribute('data-state')).toBe('sign-in');
+    expect(screen.getByRole('heading', { name: 'Sign in to box' })).toBeTruthy();
+    expect(screen.queryByText('Host settings')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    for (const gone of ['Retry', 'Show log', 'Hide log']) {
+      expect(screen.queryByRole('button', { name: gone }), gone).toBeNull();
+    }
+    expect(screen.getByLabelText<HTMLInputElement>('Remember on this machine').checked).toBe(false);
+    fireEvent.change(screen.getByLabelText('Password for tester'), { target: { value: 'once-pw' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(onPassword).toHaveBeenCalledWith('once-pw');
+    expect(setSecret).not.toHaveBeenCalled();
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
+  it('Remember on this machine stores the password, then retries (#721)', async () => {
+    const onPassword = vi.fn();
+    const onRetry = vi.fn();
+    render(
+      <ConnectScreen
+        hostId="box"
+        purpose="terminal"
+        view={failed({ code: 'secret-missing', message: 'x', details: { name: 'box_pw' } })}
+        onRetry={onRetry}
+        onPassword={onPassword}
+        onEditHost={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    setSecret.mockResolvedValue({ ok: true, value: {} });
+    fireEvent.click(screen.getByLabelText('Remember on this machine'));
+    fireEvent.change(screen.getByLabelText('Password for tester'), { target: { value: 'kept-pw' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await waitFor(() => {
+      expect(onRetry).toHaveBeenCalledOnce();
+    });
+    expect(setSecret).toHaveBeenCalledWith({ name: 'box_pw', value: 'kept-pw' });
+    expect(onPassword).not.toHaveBeenCalled();
+  });
+
   it('a refused store says why and does not retry', async () => {
     const onRetry = show({ code: 'ssh-auth-failed', message: 'x' });
     setSecret.mockResolvedValue({ ok: false, error: { code: 'secret-store-failed', message: 'The store is locked' } });
