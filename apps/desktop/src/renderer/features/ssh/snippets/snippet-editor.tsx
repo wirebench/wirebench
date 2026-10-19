@@ -206,6 +206,10 @@ function SnippetForm(props: {
   };
 
   const undeclared = undeclaredTokens(script, variables);
+  // Save asks once whether an undeclared `${name}` is meant for the shell (#717); a new set of them asks again.
+  const undeclaredKey = undeclared.join(' ');
+  const [undeclaredAsked, setUndeclaredAsked] = useState<string>();
+  const askingUndeclared = undeclared.length > 0 && undeclaredAsked === undeclaredKey;
   const canSave =
     name.trim() !== '' && script.trim() !== '' && (packageChoice !== NEW_PACKAGE || newPackage.trim() !== '');
 
@@ -283,7 +287,12 @@ function SnippetForm(props: {
       className="flex flex-col gap-3 px-1 py-3"
       onSubmit={(e) => {
         e.preventDefault();
-        if (canSave && !saving) void submit();
+        if (!canSave || saving) return;
+        if (undeclared.length > 0 && undeclaredAsked !== undeclaredKey) {
+          setUndeclaredAsked(undeclaredKey);
+          return;
+        }
+        void submit();
       }}
     >
       <h3 className="text-sm font-medium text-fg-default">{snippet === undefined ? 'New snippet' : snippet.name}</h3>
@@ -518,6 +527,19 @@ function SnippetForm(props: {
           {error}
         </p>
       )}
+      {askingUndeclared && (
+        <p
+          role="alert"
+          data-testid="snippet-undeclared-ask"
+          className="rounded border border-status-warning px-2 py-1 text-sm text-fg-default"
+        >
+          {`${undeclared.map((token) => `\${${token}}`).join(', ')} ${
+            undeclared.length === 1 ? 'is not a variable' : 'are not variables'
+          }, so a run types ${undeclared.length === 1 ? 'it' : 'them'} as is and the shell expands ${
+            undeclared.length === 1 ? 'it' : 'them'
+          }. Declare ${undeclared.length === 1 ? 'it' : 'them'} above, or save anyway.`}
+        </p>
+      )}
       <div className="flex justify-end gap-2">
         {snippet !== undefined && (
           <>
@@ -538,7 +560,7 @@ function SnippetForm(props: {
           </>
         )}
         <Button variant="primary" type="submit" disabled={!canSave || saving}>
-          Save
+          {askingUndeclared ? 'Save anyway' : 'Save'}
         </Button>
       </div>
       <ConfirmDialog

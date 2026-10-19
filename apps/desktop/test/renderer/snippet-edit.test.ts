@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   addPackage,
+  declareVariable,
   duplicateSnippet,
   freeSnippetId,
   moveSnippet,
   removePackage,
   removeSnippet,
   renamePackage,
+  scriptOf,
   scriptTokens,
   undeclaredTokens,
   upsertSnippet,
@@ -114,5 +116,25 @@ describe('script tokens', () => {
       { start: 19, end: 23, kind: 'shell' },
       { start: 24, end: 31, kind: 'shell' },
     ]);
+  });
+});
+
+describe('declareVariable and scriptOf (#717)', () => {
+  it('adds the name after the variables a snippet has, in a package or not', () => {
+    const next = declareVariable(declareVariable(FILE, 'b', 'dir'), 'c', 'host');
+    expect(next.packages[0]?.snippets[1]?.variables).toEqual([{ name: 'dir' }]);
+    expect(next.snippets[0]?.variables).toEqual([{ name: 'host' }]);
+    expect(FILE.packages[0]?.snippets[1]?.variables).toEqual([]);
+  });
+
+  it('leaves the file alone for a declared name or an unknown snippet', () => {
+    const once = declareVariable(FILE, 'a', 'dir');
+    expect(declareVariable(once, 'a', 'dir')).toBe(once);
+    expect(declareVariable(FILE, 'nope', 'dir')).toBe(FILE);
+  });
+
+  it('reads a snippet script by id', () => {
+    expect(scriptOf(FILE, 'c')).toBe('ls');
+    expect(scriptOf(FILE, 'nope')).toBeUndefined();
   });
 });

@@ -4,8 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const runSnippet = vi.fn();
 const previewSnippet = vi.fn();
 const listSnippets = vi.fn();
+const saveSnippets = vi.fn();
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({
-  ipc: () => ({ ssh: { runSnippet, previewSnippet, listSnippets } }),
+  ipc: () => ({ ssh: { runSnippet, previewSnippet, listSnippets, saveSnippets } }),
 }));
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { SECRET_NOTE, SnippetRunDialog } from '../../src/renderer/features/ssh/snippets/run-dialog.js';
@@ -91,6 +92,41 @@ function open(target: SnippetListItemWire, opts: { enter?: false } = {}) {
     startRun(target, opts);
   });
 }
+
+describe('an undeclared ${name} (#717)', () => {
+  const script = 'uptime && df -h ${dir}';
+  const DF = item({ id: 'df', name: 'Disk', firstLine: script, literalStart: 'uptime && df -h ', confirm: true });
+  const fileWith = (variables: { name: string }[]) => ({
+    version: 1 as const,
+    packages: [],
+    snippets: [{ id: 'df', name: 'Disk', tags: [], variables, script, enter: true, confirm: true }],
+  });
+
+  it('is named as going to the shell as is, and Ask for it declares it so the form asks', async () => {
+    useSnippetsStore.setState({ snippets: [DF], file: fileWith([]) });
+    const declared = { ...DF, variables: [{ name: 'dir' }] };
+    saveSnippets.mockReset().mockResolvedValue({
+      ok: true,
+      value: { file: fileWith([{ name: 'dir' }]), snippets: [declared], problems: [] },
+    });
+    open(DF);
+    expect(screen.getByTestId('snippet-run-undeclared').textContent).toContain(
+      '${dir} goes to the shell as is; the shell expands it.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Ask for ${dir}' }));
+    await waitFor(() => expect(saveSnippets).toHaveBeenCalled());
+    expect(saveSnippets.mock.calls[0]?.[0]).toEqual({ file: fileWith([{ name: 'dir' }]) });
+    await waitFor(() => expect(screen.queryByTestId('snippet-run-undeclared')).toBeNull());
+    expect(input(screen.getByLabelText('dir')).value).toBe('');
+  });
+
+  it('says nothing for a snippet whose tokens are all declared', () => {
+    const declared = { ...DF, variables: [{ name: 'dir' }] };
+    useSnippetsStore.setState({ snippets: [declared], file: fileWith([{ name: 'dir' }]) });
+    open(declared);
+    expect(screen.queryByTestId('snippet-run-undeclared')).toBeNull();
+  });
+});
 
 describe('the run dialog for one terminal', () => {
   it('with no terminal in front, shows the dialog with the open terminal ticked and the preview from main', async () => {
