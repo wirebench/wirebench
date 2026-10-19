@@ -241,6 +241,10 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Toggle Editor Layout: Side by Side / Stacked | — | — |
 | Toggle Editor Layout: Split / Tabs | <kbd>⌘\</kbd> | <kbd>Ctrl+\</kbd> |
 | Close Tab | <kbd>⌘W</kbd> | <kbd>Ctrl+W</kbd> |
+| Close Other Tabs | — | — |
+| Close Tabs to the Right | — | — |
+| Close Saved Tabs | — | — |
+| Close All Tabs | — | — |
 | Move Tab Left | <kbd>⌘⇧⇞</kbd> | <kbd>Ctrl+Shift+PageUp</kbd> |
 | Move Tab Right | <kbd>⌘⇧⇟</kbd> | <kbd>Ctrl+Shift+PageDown</kbd> |
 | Go to Next Element Value | <kbd>⌥→</kbd> | <kbd>Alt+Right</kbd> |

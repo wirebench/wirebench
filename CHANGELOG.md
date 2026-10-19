@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Preview tabs, a tab menu and a question before unsaved edits are lost.** A single click in the
+  Explorer opens one preview tab, its name in italics, that the next single click replaces, so reading
+  through requests no longer leaves a tab per click. A double-click, the first edit, **Send** or
+  double-clicking the tab's name keeps it; **Settings ▸ Behaviour ▸ Preview tabs** turns previews off.
+  Right-clicking a tab offers **Close**, **Close others**, **Close to the right**, **Close saved**,
+  **Close all**, **Reveal in Explorer** and **Copy name**, for SSH and terminal tabs too; a middle-click
+  closes a tab, and the palette has **Close Other Tabs**, **Close Tabs to the Right**, **Close Saved
+  Tabs** and **Close All Tabs**. Closing a tab with unsaved edits, however it is closed, asks **Save**,
+  **Don't save** or **Cancel** (#679).
 - **Comments in a JSON body.** <kbd>Cmd/Ctrl+/</kbd> toggles `//` on the selected lines of a Raw JSON
   body and <kbd>Shift+Alt+A</kbd> toggles `/* */`; comments are coloured as comments and saved with the
   request. They are removed before the body is sent, with any comma a commented-out last field leaves

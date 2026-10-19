@@ -891,6 +891,27 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     category: 'Editor',
     shortcut: 'Mod+W',
   },
+  // The tab menu's close actions (#679), for the palette and a user's own chords.
+  'editor.closeOtherTabs': {
+    id: 'editor.closeOtherTabs',
+    label: 'Close Other Tabs',
+    category: 'Editor',
+  },
+  'editor.closeTabsToRight': {
+    id: 'editor.closeTabsToRight',
+    label: 'Close Tabs to the Right',
+    category: 'Editor',
+  },
+  'editor.closeSavedTabs': {
+    id: 'editor.closeSavedTabs',
+    label: 'Close Saved Tabs',
+    category: 'Editor',
+  },
+  'editor.closeAllTabs': {
+    id: 'editor.closeAllTabs',
+    label: 'Close All Tabs',
+    category: 'Editor',
+  },
   'editor.moveTabLeft': {
     id: 'editor.moveTabLeft',
     label: 'Move Tab Left',

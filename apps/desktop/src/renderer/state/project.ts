@@ -480,6 +480,11 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly editMcpRequest: (requestId: string, patch: McpRequestPatchWire) => void;
   readonly commitMcpRequest: (requestId: string) => Promise<boolean>;
   readonly saveMcpRequest: (requestId: string, options?: SaveOptions) => Promise<void>;
+  /**
+   * Throws a request's unsaved edit away, of whichever kind: its draft goes, and the mirror shows the request
+   * as last saved again. What Don't save does when a tab with unsaved edits closes (#679).
+   */
+  readonly discardDraft: (requestId: string) => void;
   readonly removeMcpRequest: (requestId: string) => Promise<void>;
   readonly cloneMcpRequest: (requestId: string) => Promise<string>;
   /** Appends an empty environment to one project and returns its id. */
@@ -2073,6 +2078,19 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         async () => await get().commitMcpRequest(requestId),
         options,
       );
+    },
+
+    discardDraft: (requestId) => {
+      const projectId = get().projectOf[requestId];
+      const drafts = useDraftsStore.getState();
+      drafts.discardRequest(requestId);
+      drafts.discardRestRequest(requestId);
+      drafts.discardGrpcRequest(requestId);
+      drafts.discardWsRequest(requestId);
+      drafts.discardMcpRequest(requestId);
+      // The indexes lay drafts over main's copy, which never saw the edit: rebuilding them shows it unedited.
+      const project = projectId === undefined ? undefined : get().projects[projectId];
+      if (project !== undefined) apply(project.id, project);
     },
 
     removeMcpRequest: async (requestId) => {

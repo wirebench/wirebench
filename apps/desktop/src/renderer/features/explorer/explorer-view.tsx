@@ -34,7 +34,8 @@ import { useWorkspaceStore } from '../../state/workspace.js';
 import { MethodBadge } from '../rest-api/method-badge.js';
 import { requestDisplayName } from '../rest-api/request-display-name.js';
 import { EXPLORER_DIALOGS, TAB_KINDS, entityIdOf, explorerDeletion, explorerRole } from '../../kinds/index.js';
-import { useEditorsStore } from '../../state/editors.js';
+import { previewing, useEditorsStore } from '../../state/editors.js';
+import { usePreferencesStore } from '../../state/preferences.js';
 import { kindLabel } from '../../kinds/placeholders.js';
 import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
@@ -163,6 +164,15 @@ function MockRunningBadge({ mockId }: { readonly mockId: string }) {
   );
 }
 
+/**
+ * Runs what a single click opens as a preview tab (#679), unless Settings turned preview tabs off: the next
+ * single click replaces it, and a double-click, an edit or a send keeps it.
+ */
+function asPreview(open: () => void): void {
+  if (usePreferencesStore.getState().preferences.ui.previewTabs) previewing(open);
+  else open();
+}
+
 function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   const role = explorerRole(node.data.kind);
   const Icon = role?.icon ?? NODE_ICON[node.data.kind];
@@ -187,30 +197,39 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
         // bubbles to it, so both handlers here stop propagation to keep it from also firing.
         onClick={(e) => {
           e.stopPropagation();
-          node.select();
-          if (
-            role?.click === 'open' ||
-            node.data.kind === 'webhook-request' ||
-            node.data.kind === 'catch-url' ||
-            node.data.kind === 'schedule' ||
-            node.data.kind === 'sequence' ||
-            node.data.kind === 'mock'
-          ) {
-            node.activate();
-          } else if (role?.click === 'open-and-fold') {
-            // An API opens its tab AND folds, unlike an interface: the tab is where its base URL
-            // and credentials live, and the row is also the container the user is about to expand.
-            node.activate();
-            node.toggle();
-          } else if (node.isInternal) {
-            // A project row opens its tab from `onSelect` (see below) and folds under the same
-            // click, like an API row: the row is both the thing the tab is about and the container
-            // the user is reaching into.
-            node.toggle();
-          }
+          // Whatever the click opens — here, or the project tab from `onSelect` — opens as a preview,
+          // except on a double-click's second click, which keeps what the first one opened (#679). Read
+          // from the click count rather than left to `dblclick`, which the row's re-render can swallow.
+          const keep = e.detail >= 2;
+          (keep ? (open: () => void) => open() : asPreview)(() => {
+            node.select();
+            if (keep && node.data.kind === 'project' && node.data.projectId !== undefined) {
+              openProjectTab(node.data.projectId);
+            }
+            if (
+              role?.click === 'open' ||
+              node.data.kind === 'webhook-request' ||
+              node.data.kind === 'catch-url' ||
+              node.data.kind === 'schedule' ||
+              node.data.kind === 'sequence' ||
+              node.data.kind === 'mock'
+            ) {
+              node.activate();
+            } else if (role?.click === 'open-and-fold') {
+              // An API opens its tab AND folds, unlike an interface: the tab is where its base URL
+              // and credentials live, and the row is also the container the user is about to expand.
+              node.activate();
+              node.toggle();
+            } else if (node.isInternal) {
+              // A project row opens its tab from `onSelect` (see below) and folds under the same
+              // click, like an API row: the row is both the thing the tab is about and the container
+              // the user is reaching into.
+              node.toggle();
+            }
+          });
         }}
-        // Kept for the rows a single click does not open: the interface viewer still answers to
-        // a double-click, as it always has, so folding an interface open costs nothing.
+        // A double-click opens for good: the preview the first click opened stays (#679). The interface
+        // viewer still answers to it too, as it always has, so folding an interface open costs nothing.
         onDoubleClick={(e) => {
           e.stopPropagation();
           node.activate();
@@ -727,7 +746,8 @@ export function ExplorerView() {
                 // On an interface row it opens the viewer, the same thing "Show Interface
                 // Viewer" does.
                 if (node.data.kind === 'project') {
-                  // A project has no editor of its own; its tab opens from `onSelect`.
+                  // A project's tab opens from `onSelect`; a double-click or Enter keeps it (#679).
+                  if (node.data.projectId !== undefined) openProjectTab(node.data.projectId);
                   return;
                 }
                 const role = explorerRole(node.data.kind);
@@ -789,8 +809,12 @@ export function ExplorerView() {
                 // double-click — per the approved spec's amendment; project rows have no
                 // "activate" behaviour of their own (see `onActivate` below), so this is the
                 // only path that opens one.
+                // Selecting is browsing, by click or by arrow key, so the tab is a preview (#679).
                 if (node.kind === 'project' && node.projectId !== undefined) {
-                  openProjectTab(node.projectId);
+                  const { projectId } = node;
+                  asPreview(() => {
+                    openProjectTab(projectId);
+                  });
                 }
                 setSelection({
                   kind: node.kind,
