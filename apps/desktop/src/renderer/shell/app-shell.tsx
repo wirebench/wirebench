@@ -70,6 +70,7 @@ import { UnsavedCloseDialog } from './unsaved-close-dialog.js';
 import { ShareDialog } from '../features/workspace/share-dialog.js';
 import { JoinDialog } from '../features/workspace/join-dialog.js';
 import { OpenTeamWorkspaceDialog } from '../features/workspace/open-team-workspace-dialog.js';
+import { MoveApiDialog } from '../features/explorer/move-api-dialog.js';
 import { MoveProjectDialog } from '../features/explorer/move-project-dialog.js';
 import { SecretSourcesApproveDialog } from '../features/secret-sources/approve-dialog.js';
 import { SecretSourcesDialog } from '../features/secret-sources/secret-sources-dialog.js';
@@ -698,6 +699,7 @@ export function AppShell() {
       <ImportWebhooksDialog />
       <SaveAsWebhookDialog />
       <MoveProjectDialog />
+      <MoveApiDialog />
       <SyncPanel />
       <ConflictResolver />
       {/* Here, not in an editor: a run or a catalogue refresh from anywhere may need an answer. */}

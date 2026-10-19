@@ -1330,6 +1330,17 @@ void app.whenReady().then(() => {
     picks: dialogPicks,
     ensureWorkspaceEnvironments: async (names, projectId) =>
       await workspaceService.ensureEnvironments(names, projectId),
+    apiMove: {
+      hosts: (apiId, targetProjectId) => {
+        const source = workspaceService.hostOfEntity(apiId);
+        return {
+          sourceProjectId: source.require().project.id,
+          source,
+          target: workspaceService.hostFor(targetProjectId),
+        };
+      },
+      secrets: secretStore,
+    },
   });
   /** A Globals change, told to every window and to every window's current-values overlay. */
   const onGlobalsChanged = (state: ReturnType<GlobalProperties['get']>): void => {

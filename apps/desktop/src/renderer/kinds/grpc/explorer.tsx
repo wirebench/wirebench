@@ -5,6 +5,7 @@ import type { ExplorerNode } from '../../features/explorer/tree-nodes.js';
 import { MethodKindBadge } from '../../features/grpc-editor/method-kind-badge.js';
 import { useProjectStore } from '../../state/project.js';
 import type { KindExplorer } from '../renderer-kind.js';
+import { useMoveApiStore } from '../../features/explorer/move-api-dialog.js';
 
 function GrpcGutter({ node }: { readonly node: ExplorerNode }) {
   return node.methodKind === undefined ? null : <MethodKindBadge kind={node.methodKind} compact />;
@@ -14,6 +15,7 @@ function GrpcGutter({ node }: { readonly node: ExplorerNode }) {
 export const grpcExplorer: KindExplorer = {
   nodes: {
     'grpc-api': {
+      container: true,
       icon: Radio,
       testId: 'grpc-api-row',
       badge: 'gRPC',
@@ -37,7 +39,10 @@ export const grpcExplorer: KindExplorer = {
             { key: 'new-request', label: 'New request', run: () => explorerActions.newGrpcRequest(apiId) },
           ],
           exportItems({ containerId: apiId }),
-          [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('grpc-api', apiId) }],
+          [
+            { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('grpc-api', apiId) },
+            { key: 'move-to-project', label: 'Move to project…', run: () => useMoveApiStore.getState().open(apiId) },
+          ],
           [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeGrpcApi(apiId) }],
         );
       },

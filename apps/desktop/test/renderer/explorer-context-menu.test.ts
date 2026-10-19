@@ -201,6 +201,7 @@ describe('explorerMenuItems on a REST row', () => {
       'Export as Postman Collection…',
       'Export as OpenCollection…',
       'Rename…',
+      'Move to project…',
       'Delete',
     ]);
   });
@@ -212,7 +213,7 @@ describe('explorerMenuItems on a REST row', () => {
       ['Run…'],
       ['Update Definition…', 'Import webhooks…', 'New Mock', 'Lint Definition'],
       ['Export as Postman Collection…', 'Export as OpenCollection…'],
-      ['Rename…'],
+      ['Rename…', 'Move to project…'],
       ['Delete'],
     ]);
     const byHand = explorerMenuItems(node({ kind: 'api', id: 'api:a1', apiId: 'a1' }));
@@ -312,6 +313,7 @@ describe('explorerMenuItems on a gRPC row', () => {
       'Export as Postman Collection…',
       'Export as OpenCollection…',
       'Rename…',
+      'Move to project…',
       'Delete',
     ]);
   });
@@ -359,6 +361,7 @@ describe('explorerMenuItems on a WebSocket row', () => {
       'Export as Postman Collection…',
       'Export as OpenCollection…',
       'Rename…',
+      'Move to project…',
       'Delete',
     ]);
   });

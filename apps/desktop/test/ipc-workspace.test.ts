@@ -591,8 +591,10 @@ describe('project.* channels', () => {
     expect(Object.keys(channels.project).sort()).toEqual([
       'addInterface',
       'importLegacy',
+      'moveApi',
       'moveToWorkspace',
       'mutate',
+      'planApiMove',
       'reload',
       'save',
       'snapshot',

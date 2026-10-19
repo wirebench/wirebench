@@ -4,6 +4,7 @@ import { exportItems, groups, reportRenameFailure } from '../../features/explore
 import { WsBadge } from '../../features/ws-editor/badge.js';
 import { useProjectStore } from '../../state/project.js';
 import type { KindExplorer } from '../renderer-kind.js';
+import { useMoveApiStore } from '../../features/explorer/move-api-dialog.js';
 
 function WsGutter() {
   return <WsBadge />;
@@ -13,6 +14,7 @@ function WsGutter() {
 export const wsExplorer: KindExplorer = {
   nodes: {
     'ws-api': {
+      container: true,
       icon: Cable,
       testId: 'ws-api-row',
       badge: 'WS',
@@ -36,7 +38,10 @@ export const wsExplorer: KindExplorer = {
             { key: 'new-request', label: 'New request', run: () => explorerActions.newWsRequest(apiId) },
           ],
           exportItems({ containerId: apiId }),
-          [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('ws-api', apiId) }],
+          [
+            { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('ws-api', apiId) },
+            { key: 'move-to-project', label: 'Move to project…', run: () => useMoveApiStore.getState().open(apiId) },
+          ],
           [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeWsApi(apiId) }],
         );
       },

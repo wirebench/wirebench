@@ -8,6 +8,7 @@ import type {
   ApiGrpcRefreshResponse,
   ProjectChange,
   ProjectChangedEvent,
+  ProjectApiMovePlan,
   ProjectMutateResponse,
   ProjectWire,
 } from '../../shared/wire-types.js';
@@ -365,6 +366,20 @@ export interface ProjectStore extends ProjectSnapshot {
    * absent). What a drag-and-drop in the explorer commits.
    */
   readonly moveNode: (nodeId: string, parentId: string | undefined, index: number) => Promise<void>;
+  /** Reorders an API of any kind among its project's APIs (#701): before `beforeApiId`, or last. */
+  readonly reorderApi: (apiId: string, beforeApiId: string | undefined) => Promise<void>;
+  /** What moving an API to another project would copy and leave behind (#701). */
+  readonly planApiMove: (apiId: string, targetProjectId: string) => Promise<ProjectApiMovePlan>;
+  /**
+   * Moves an API to another project, before `beforeApiId` there or last, saving both projects (#701).
+   * Answers where it came from — the project, and the API it stood before there — for an undo. Every
+   * id is kept, so its tabs and drafts stay as they are.
+   */
+  readonly moveApiToProject: (
+    apiId: string,
+    targetProjectId: string,
+    beforeApiId: string | undefined,
+  ) => Promise<{ readonly projectId: string; readonly beforeApiId: string | undefined }>;
   /** Creates a project's webhook collection if it does not have one yet. A no-op once it does. */
   readonly ensureWebhooks: (projectId: string) => Promise<void>;
   /** Merges a patch into one project's webhook collection (its target and/or its own credentials). */
@@ -2201,6 +2216,39 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         ...(parentId !== undefined ? { parentId } : {}),
         index,
       });
+    },
+
+    reorderApi: async (apiId, beforeApiId) => {
+      await mutateEntity(apiId, {
+        kind: 'move-container',
+        apiId,
+        ...(beforeApiId !== undefined ? { beforeApiId } : {}),
+      });
+    },
+
+    planApiMove: async (apiId, targetProjectId) => {
+      const result = await ipc().project.planApiMove({ apiId, targetProjectId });
+      if (!result.ok) {
+        throw asError(result.error);
+      }
+      return result.value;
+    },
+
+    moveApiToProject: async (apiId, targetProjectId, beforeApiId) => {
+      const sentIn = generation;
+      const result = await ipc().project.moveApi({
+        apiId,
+        targetProjectId,
+        ...(beforeApiId !== undefined ? { beforeApiId } : {}),
+      });
+      if (!result.ok) {
+        throw asError(result.error);
+      }
+      if (sentIn === generation) {
+        apply(result.value.sourceProjectId, result.value.source);
+        apply(targetProjectId, result.value.target);
+      }
+      return { projectId: result.value.sourceProjectId, beforeApiId: result.value.sourceBeforeApiId };
     },
 
     ensureWebhooks: async (projectId) => {
