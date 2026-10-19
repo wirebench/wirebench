@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   applyJsonFormEdit,
   buildJsonForm,
+  hasJsonComments,
   type JsonFormEdit,
   type JsonFormNode,
   type JsonSchema,
@@ -37,12 +38,17 @@ export interface JsonFormViewProps {
 /** The label the root takes, since it has no property name of its own. */
 const ROOT_PATH = 'body';
 
-type Parsed = { readonly ok: true; readonly value: JsonValue | undefined } | { readonly ok: false };
+type Parsed =
+  { readonly ok: true; readonly value: JsonValue | undefined } | { readonly ok: false; readonly commented?: boolean };
 
 function parse(text: string): Parsed {
   // An empty body is "no value yet", which the form can fill — not a syntax error.
   if (text.trim() === '') {
     return { ok: true, value: undefined };
+  }
+  // Every form edit rewrites the body with `JSON.stringify`, which would drop its comments (#702).
+  if (hasJsonComments(text)) {
+    return { ok: false, commented: true };
   }
   try {
     return { ok: true, value: JSON.parse(text) as JsonValue };
@@ -62,7 +68,11 @@ export function JsonFormView({ text, schema, onChange, onShowText, readOnly = fa
   if (!parsed.ok || root === undefined) {
     return (
       <div data-testid="json-form-view" className="flex flex-col items-start gap-2 p-1 text-sm">
-        <p className="text-fg-muted">The body is not valid JSON</p>
+        <p className="text-fg-muted">
+          {!parsed.ok && parsed.commented === true
+            ? 'The body has comments, which the form would remove. Edit it as text.'
+            : 'The body is not valid JSON'}
+        </p>
         {onShowText !== undefined && (
           <Button variant="secondary" onClick={onShowText}>
             Back to Text

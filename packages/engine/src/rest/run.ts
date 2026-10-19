@@ -52,6 +52,7 @@ import type { EffectiveSigning, WebhookCollection, WebhookFolder } from '../webh
 import { webhooksOf } from '../webhooks/model.js';
 import { resolveAuthChain } from '../http/auth/apply-auth.js';
 import { expandRestSendInput } from './expand.js';
+import { stripRestBodyComments } from './json-comments.js';
 import type { RestLiveEvent } from './events.js';
 import { createApi, restApisOf } from './model.js';
 import type { RestApi, RestFolder, RestRequestDef } from './model.js';
@@ -177,7 +178,8 @@ export async function resolveRest(selected: RestSelected, context: RunContext): 
       pathParams: request.pathParams,
       query: request.query,
       headers: request.headers,
-      body: request.body,
+      // Comments go before anything is expanded or read, so one never resolves a reference (#702).
+      body: stripRestBodyComments(request.body),
       settings: request.settings,
     },
     baseUrl: callbackUrl !== undefined ? '' : baseUrlFor(context, api),
