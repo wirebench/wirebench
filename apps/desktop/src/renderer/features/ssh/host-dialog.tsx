@@ -16,7 +16,14 @@ import { forwardProblem } from './forwarding/forward-form.js';
 import { ForwardsSection, inheritedForwards } from './forwarding/forwards-section.js';
 import { EnvSection, envProblem, inheritedEnv } from './env-section.js';
 import { AgentForwardingSection, inheritedForwardAgent } from './agent-forwarding.js';
-import { inheritedMosh, inheritedProtocol, MoshSection, MoshServerFields, moshProblem } from './mosh-section.js';
+import {
+  inheritedMosh,
+  inheritedProtocol,
+  MoshSection,
+  MoshServerFields,
+  moshProblem,
+  PROTOCOL_LABELS,
+} from './mosh-section.js';
 import { TELNET_PORT, telnetTargetText } from './host-protocol.js';
 import { inheritedSerial, SerialDeviceField, serialLabel, SerialLineSection, serialProblem } from './serial-section.js';
 import { cleanProxy, proxyProblem, ProxySection } from './proxy-section.js';
@@ -302,11 +309,14 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
     proxyPassword !== '' ||
     device.trim() !== savedDevice;
   const hostForm = dialog.mode === 'new-host' || dialog.mode === 'edit-host';
+  // Until an address is typed the draft card names the protocol alone, not a half-built "root@" (S45).
   const draftTarget = serial
     ? `Serial · ${serialLabel(ssh.serial ?? inheritedSerial(chain).value)}`
-    : telnet
-      ? telnetTargetText(address.trim(), ssh.user ?? loginUser.value, ssh.port ?? inheritedPort.value)
-      : draftTargetText(address.trim(), ssh.user ?? loginUser.value, ssh.port ?? inheritedPort.value);
+    : address.trim() === ''
+      ? PROTOCOL_LABELS[protocol]
+      : telnet
+        ? telnetTargetText(address.trim(), ssh.user ?? loginUser.value, ssh.port ?? inheritedPort.value)
+        : draftTargetText(address.trim(), ssh.user ?? loginUser.value, ssh.port ?? inheritedPort.value);
   const draftName = name.trim();
   // A form that goes (its tab left for another) has nothing left to drop.
   useEffect(

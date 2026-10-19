@@ -995,13 +995,22 @@ describe('Editing in the details panel', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     const draft = screen.getByTestId('host-draft-card');
     expect(draft.textContent).toContain('New host');
-    expect(within(screen.getByRole('list', { name: 'Hosts in Ungrouped' })).getByTestId('host-draft-card')).toBe(draft);
+    // No half-built "me@" before an address is typed: the protocol alone (S45).
+    expect(draft.textContent).toContain('SSH');
+    expect(draft.textContent).not.toContain('@');
+    const ungrouped = screen.getByRole('list', { name: 'Hosts in Ungrouped' });
+    expect(within(ungrouped).getByTestId('host-draft-card')).toBe(draft);
+    // First in its group while the form is open, whatever its name sorts as (S46).
+    expect(ungrouped.firstElementChild).toBe(draft);
     // The draft is the picked card while the form is open.
     expect(screen.getByTestId('host-row-b').dataset['selected']).toBeUndefined();
     await userEvent.type(within(form).getByLabelText('Name'), 'gamma');
     await userEvent.type(within(form).getByLabelText('Address'), 'gamma.example');
     expect(screen.getByTestId('host-draft-card').textContent).toContain('gamma');
     expect(screen.getByTestId('host-draft-card').textContent).toContain('me@gamma.example');
+    expect(screen.getByRole('list', { name: 'Hosts in Ungrouped' }).firstElementChild).toBe(
+      screen.getByTestId('host-draft-card'),
+    );
   });
   it('the draft sits in the group it will be saved to, and moves with the Group select', async () => {
     render(<SshArea />);

@@ -405,7 +405,10 @@ export function HostCards({
       return {
         ...section,
         count: hosts.length,
-        hosts: sortHosts(withDraft ? [...hosts, draftEntry(draft)] : hosts, prefs.sort, panes, lastConnected),
+        // The draft stays first in its group while it is typed, rather than moving as its name sorts (S46).
+        hosts: withDraft
+          ? [draftEntry(draft), ...sortHosts(hosts, prefs.sort, panes, lastConnected)]
+          : sortHosts(hosts, prefs.sort, panes, lastConnected),
       };
     })
     // The top level needs no heading when it is all there is; an empty group keeps its heading
