@@ -218,6 +218,7 @@ export function AppShell() {
   const settingsOpen = useUiStore((state) => state.preferences.open);
   // While New host borrows the panel, the handle's double-click puts it away like the close icon.
   const newHostOpen = useHostsStore((state) => state.dialog?.mode === 'new-host');
+  const editHostOpen = useHostsStore((state) => state.dialog?.mode === 'edit-host');
   const toggleHostDetails = useCallback(() => {
     const hosts = useHostsStore.getState();
     hosts.setDetailsOpen(hosts.dialog?.mode !== 'new-host' && useUiStore.getState().slideOver.hostDetailsOpen !== true);
@@ -616,7 +617,7 @@ export function AppShell() {
                   <CodePanel />
                 </SlideOver>
                 <SlideOver
-                  label={newHostOpen ? 'New host' : 'Host details'}
+                  label={newHostOpen ? 'New host' : editHostOpen ? 'Edit host' : 'Host details'}
                   open={hostDetailsShown && !settingsOpen}
                   width={slideOverWidth}
                   onWidthChange={setSlideOverWidth}

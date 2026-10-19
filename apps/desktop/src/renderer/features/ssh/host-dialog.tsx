@@ -446,10 +446,39 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
       }}
     />
   );
+  const actions = (
+    // In the panel, a footer bar under the scrolling fields, so a long form (Advanced open, a short window)
+    // never scrolls Cancel and Save out of view (#689).
+    <div
+      className={
+        embedded ? 'flex shrink-0 items-start gap-2 border-t border-hairline px-1 pt-2' : 'flex items-start gap-2'
+      }
+    >
+      {shown.length === 0 ? (
+        <span className="flex-1" />
+      ) : (
+        <ul id={missingId} aria-label="Needed to save" className="flex-1 text-xs text-fg-subtle">
+          {shown.map((m) => (
+            <li key={m}>{m}</li>
+          ))}
+        </ul>
+      )}
+      <Button onClick={cancel}>Cancel</Button>
+      <Button
+        type="submit"
+        variant="primary"
+        disabled={shown.length > 0}
+        aria-describedby={shown.length === 0 ? undefined : missingId}
+      >
+        Save
+      </Button>
+    </div>
+  );
   return (
-    // A container, so a narrow details panel stacks the paired fields rather than squeezing them.
+    // A container, so a narrow details panel stacks the paired fields rather than squeezing them. In the
+    // panel the form fills its body and scrolls the fields itself, above the footer.
     <form
-      className="@container flex flex-col gap-3"
+      className={embedded ? 'flex h-full min-h-0 flex-col' : '@container flex flex-col gap-3'}
       onBlur={onBlur}
       onKeyDown={(e) => {
         if (e.key !== 'Escape' || !embedded || !hostForm || e.defaultPrevented) return;
@@ -464,307 +493,298 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
         else reveal();
       }}
     >
-      {embedded ? (
-        // The panel's header already says New host.
-        <h2 className={fresh ? 'sr-only' : 'text-md font-medium text-fg-default'}>{label}</h2>
-      ) : (
-        <>
-          <Dialog.Title className="text-md font-medium text-fg-default">{label}</Dialog.Title>
-          <Dialog.Description className="sr-only">{`${label}: settings left on inherit come from the enclosing group.`}</Dialog.Description>
-        </>
-      )}
-      <label className={FIELD_CLASS}>
-        <span className="text-fg-subtle">Name</span>
-        <input
-          aria-required="true"
-          className={INPUT_CLASS}
-          value={name}
-          onChange={(e) => {
-            setName(e.target.value);
-          }}
-        />
-      </label>
-      {/* Protocol reshapes the rest of the form, so it comes before what it changes. */}
-      {protocolSection}
-      {isHost && !serial && (
+      <div
+        data-testid={embedded ? 'host-form-fields' : undefined}
+        className={
+          embedded
+            ? '@container flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto px-1 py-3 *:min-w-0'
+            : 'contents'
+        }
+      >
+        {embedded ? (
+          // The panel's header already says New host or Edit host.
+          <h2 className="sr-only">{label}</h2>
+        ) : (
+          <>
+            <Dialog.Title className="text-md font-medium text-fg-default">{label}</Dialog.Title>
+            <Dialog.Description className="sr-only">{`${label}: settings left on inherit come from the enclosing group.`}</Dialog.Description>
+          </>
+        )}
         <label className={FIELD_CLASS}>
-          <span className="text-fg-subtle">Address</span>
+          <span className="text-fg-subtle">Name</span>
           <input
             aria-required="true"
             className={INPUT_CLASS}
-            value={address}
-            placeholder="host.example.com or 10.0.0.5"
+            value={name}
             onChange={(e) => {
-              setAddress(e.target.value);
+              setName(e.target.value);
             }}
           />
         </label>
-      )}
-      {dialog.mode !== 'edit-group' && groups.length > 0 && (
-        <label className={FIELD_CLASS}>
-          <span className="text-fg-subtle">{isHost ? 'Group' : 'Inside group'}</span>
-          <select
-            aria-label={isHost ? 'Group' : 'Inside group'}
-            className={INPUT_CLASS}
-            value={groupId ?? ''}
-            onChange={(e) => {
-              setGroupId(e.target.value === '' ? undefined : e.target.value);
-            }}
-          >
-            <option value="">No group</option>
-            {groups.map(({ group, depth }) => (
-              <option key={group.id} value={group.id}>
-                {`${' '.repeat(depth)}${group.name}`}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {!serial && (identities.length > 0 || ssh.identity !== undefined) && (
-        <label className={FIELD_CLASS}>
-          <span className="flex gap-2 text-fg-subtle">
-            Identity
-            {ssh.identity === undefined && identityInherited.value !== undefined && (
-              <span className="text-fg-faint">{sourceText(identityInherited, identityName)}</span>
-            )}
-          </span>
-          <select
-            aria-label="Identity"
-            className={INPUT_CLASS}
-            value={ssh.identity ?? ''}
-            onChange={(e) => {
-              pickIdentity(e.target.value === '' ? undefined : e.target.value);
-            }}
-          >
-            <option value="">{identityInherited.value === undefined ? 'None' : 'Inherit'}</option>
-            {identities.map((identity) => (
-              <option key={identity.id} value={identity.id}>
-                {identity.user === undefined ? identity.name : `${identity.name} (${identity.user})`}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {serial ? (
-        <>
-          {isHost && (
-            <SerialDeviceField
-              value={device}
-              onChange={(next) => {
-                setDevice(next);
-                setDeviceError(undefined);
-              }}
-            />
-          )}
-          <SerialLineSection
-            own={ssh.serial}
-            inherited={inheritedSerial(chain)}
-            onChange={(next) => {
-              setSsh((prev) => withField(prev, 'serial', next));
-            }}
-          />
-        </>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 gap-2 @min-[22rem]:grid-cols-[minmax(0,1fr)_9rem]">
-            <InheritedField label="User" provenance={loginUser} override={ssh.user} onChange={set('user')} />
-            <InheritedField
-              label="Port"
-              type="number"
-              provenance={inheritedPort}
-              override={ssh.port}
-              onChange={set('port')}
-            />
-          </div>
-          <HostAuthSection
-            value={ssh.auth}
-            inherited={loginAuth}
-            onChange={set('auth')}
-            password={password}
-            onPasswordChange={(typed) => {
-              // A typed password is a choice: switching to Telnet afterwards keeps it.
-              setTouched((prev) => ({ ...prev, auth: true }));
-              setPassword(typed);
-            }}
-            passwordOnly={telnet}
-          />
-        </>
-      )}
-      {telnet && (
-        <p className="text-xs text-fg-subtle">
-          Wirebench types the user and password at the device's login and password prompts. Leave them empty to sign in
-          yourself.
-        </p>
-      )}
-      {deviceError !== undefined && (
-        <p role="alert" className="text-sm text-status-danger">
-          {`The device was not kept: ${deviceError}`}
-        </p>
-      )}
-      {secretError !== undefined && (
-        <p role="alert" className="text-sm text-status-danger">
-          {`The password was not stored: ${secretError}`}
-        </p>
-      )}
-      <details className="border-t border-hairline pt-2" data-testid="host-advanced">
-        <summary className="cursor-pointer rounded text-xs font-medium text-fg-subtle select-none hover:text-fg-default focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none">
-          Advanced
-        </summary>
-        <div className="mt-3 flex flex-col gap-3">
-          {isHost && !serial && (
-            <label className={FIELD_CLASS}>
-              <span className="text-fg-subtle">OS</span>
-              <select
-                aria-label="OS"
-                className={INPUT_CLASS}
-                value={os}
-                onChange={(e) => {
-                  setOs(e.target.value as SshOsId | '');
-                }}
-              >
-                <option value="">{`Auto${savedOs?.detected === undefined ? '' : ` (${savedOs.detected.name})`}`}</option>
-                {SSH_OS_IDS.map((id) => (
-                  <option key={id} value={id}>
-                    {OS_LABELS[id]}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+        {/* Protocol reshapes the rest of the form, so it comes before what it changes. */}
+        {protocolSection}
+        {isHost && !serial && (
           <label className={FIELD_CLASS}>
-            <span className="text-fg-subtle">Tags (comma separated)</span>
+            <span className="text-fg-subtle">Address</span>
             <input
+              aria-required="true"
               className={INPUT_CLASS}
-              value={tags}
+              value={address}
+              placeholder="host.example.com or 10.0.0.5"
               onChange={(e) => {
-                setTags(e.target.value);
+                setAddress(e.target.value);
               }}
             />
           </label>
-          <InheritedSwitch
-            label="Protected"
-            provenance={inheritedProtected(chain)}
-            override={protectedHere}
-            onChange={setProtectedHere}
-          />
-          {!serial && (
-            <label className={FIELD_CLASS}>
-              <span className="flex gap-2 text-fg-subtle">
-                Jump host
-                {ssh.jump === undefined && jumpInherited.value !== undefined && (
-                  <span className="text-fg-faint">{sourceText(jumpInherited)}</span>
-                )}
-              </span>
-              <select
-                aria-label="Jump host"
-                className={INPUT_CLASS}
-                value={ssh.jump ?? ''}
-                onChange={(e) => {
-                  set('jump')(e.target.value === '' ? undefined : e.target.value);
-                }}
-              >
-                <option value="">{jumpInherited.value === undefined ? 'None' : 'Inherit'}</option>
-                {jumpOptions.map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          {!serial && (
-            <div className="grid grid-cols-1 gap-2 @min-[22rem]:grid-cols-2">
-              {!telnet && (
-                <InheritedField
-                  label="Keep-alive (s)"
-                  type="number"
-                  provenance={inheritedFrom(chain, 'keepAlive', sshPrefs)}
-                  override={ssh.keepAlive}
-                  onChange={set('keepAlive')}
-                />
+        )}
+        {!serial && (identities.length > 0 || ssh.identity !== undefined) && (
+          <label className={FIELD_CLASS}>
+            <span className="flex gap-2 text-fg-subtle">
+              Identity
+              {ssh.identity === undefined && identityInherited.value !== undefined && (
+                <span className="text-fg-faint">{sourceText(identityInherited, identityName)}</span>
               )}
-              <InheritedField
-                label="Connect timeout (s)"
-                type="number"
-                provenance={inheritedFrom(chain, 'connectTimeout', sshPrefs)}
-                override={ssh.connectTimeout}
-                onChange={set('connectTimeout')}
-              />
-            </div>
-          )}
-          <div className="grid grid-cols-1 gap-2 @min-[22rem]:grid-cols-2">
-            {!serial && (
-              <InheritedField
-                label="Terminal type"
-                provenance={inheritedFrom(chain, 'term', sshPrefs)}
-                override={ssh.term}
-                onChange={set('term')}
-                suggestions={COMMON_TERMINAL_TYPES}
+            </span>
+            <select
+              aria-label="Identity"
+              className={INPUT_CLASS}
+              value={ssh.identity ?? ''}
+              onChange={(e) => {
+                pickIdentity(e.target.value === '' ? undefined : e.target.value);
+              }}
+            >
+              <option value="">{identityInherited.value === undefined ? 'None' : 'Inherit'}</option>
+              {identities.map((identity) => (
+                <option key={identity.id} value={identity.id}>
+                  {identity.user === undefined ? identity.name : `${identity.name} (${identity.user})`}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {serial ? (
+          <>
+            {isHost && (
+              <SerialDeviceField
+                value={device}
+                onChange={(next) => {
+                  setDevice(next);
+                  setDeviceError(undefined);
+                }}
               />
             )}
-            <InheritedSelect
-              label="Character set"
-              provenance={inheritedFrom(chain, 'charset', sshPrefs)}
-              override={ssh.charset}
-              options={TERMINAL_CHARSETS}
-              onChange={set('charset')}
-            />
-          </div>
-          {!serial && (
-            <ProxySection
-              own={ssh.proxy}
-              inherited={inheritedFrom(chain, 'proxy')}
+            <SerialLineSection
+              own={ssh.serial}
+              inherited={inheritedSerial(chain)}
               onChange={(next) => {
-                setSsh((prev) => withField(prev, 'proxy', next));
-              }}
-              names={secretNames}
-              password={proxyPassword}
-              onPasswordChange={setProxyPassword}
-            />
-          )}
-          {viaSsh && (
-            <AgentForwardingSection
-              override={ssh.forwardAgent}
-              inherited={inheritedForwardAgent(chain)}
-              onChange={(next) => {
-                setSsh((prev) => withField(prev, 'forwardAgent', next));
+                setSsh((prev) => withField(prev, 'serial', next));
               }}
             />
-          )}
-          {viaSsh && <EnvSection own={env} inherited={inheritedEnv(chain)} onChange={setEnv} />}
-          <HostTerminalSection
-            own={terminal}
-            inherited={inheritedTerminal(chain, terminalPrefs)}
-            onChange={setTerminal}
-          />
-          {viaSsh && <ForwardsSection own={forwards} inherited={inheritedForwards(chain)} onChange={setForwards} />}
-        </div>
-      </details>
-      {failed && problems[0] !== undefined && (
-        <p role="alert" className="text-sm text-status-danger">
-          {problems[0].message}
-        </p>
-      )}
-      <div className="flex items-start gap-2">
-        {shown.length === 0 ? (
-          <span className="flex-1" />
+          </>
         ) : (
-          <ul id={missingId} aria-label="Needed to save" className="flex-1 text-xs text-fg-subtle">
-            {shown.map((m) => (
-              <li key={m}>{m}</li>
-            ))}
-          </ul>
+          <>
+            <div className="grid grid-cols-1 gap-2 @min-[22rem]:grid-cols-[minmax(0,1fr)_9rem]">
+              <InheritedField label="User" provenance={loginUser} override={ssh.user} onChange={set('user')} />
+              <InheritedField
+                label="Port"
+                type="number"
+                provenance={inheritedPort}
+                override={ssh.port}
+                onChange={set('port')}
+              />
+            </div>
+            <HostAuthSection
+              value={ssh.auth}
+              inherited={loginAuth}
+              onChange={set('auth')}
+              password={password}
+              onPasswordChange={(typed) => {
+                // A typed password is a choice: switching to Telnet afterwards keeps it.
+                setTouched((prev) => ({ ...prev, auth: true }));
+                setPassword(typed);
+              }}
+              passwordOnly={telnet}
+            />
+          </>
         )}
-        <Button onClick={cancel}>Cancel</Button>
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={shown.length > 0}
-          aria-describedby={shown.length === 0 ? undefined : missingId}
-        >
-          Save
-        </Button>
+        {/* After the sign-in, so it does not split the address from the user (S47). */}
+        {dialog.mode !== 'edit-group' && groups.length > 0 && (
+          <label className={FIELD_CLASS}>
+            <span className="text-fg-subtle">{isHost ? 'Group' : 'Inside group'}</span>
+            <select
+              aria-label={isHost ? 'Group' : 'Inside group'}
+              className={INPUT_CLASS}
+              value={groupId ?? ''}
+              onChange={(e) => {
+                setGroupId(e.target.value === '' ? undefined : e.target.value);
+              }}
+            >
+              <option value="">No group</option>
+              {groups.map(({ group, depth }) => (
+                <option key={group.id} value={group.id}>
+                  {`${' '.repeat(depth)}${group.name}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {telnet && (
+          <p className="text-xs text-fg-subtle">
+            Wirebench types the user and password at the device's login and password prompts. Leave them empty to sign
+            in yourself.
+          </p>
+        )}
+        {deviceError !== undefined && (
+          <p role="alert" className="text-sm text-status-danger">
+            {`The device was not kept: ${deviceError}`}
+          </p>
+        )}
+        {secretError !== undefined && (
+          <p role="alert" className="text-sm text-status-danger">
+            {`The password was not stored: ${secretError}`}
+          </p>
+        )}
+        <details className="border-t border-hairline pt-2" data-testid="host-advanced">
+          <summary className="cursor-pointer rounded text-xs font-medium text-fg-subtle select-none hover:text-fg-default focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none">
+            Advanced
+          </summary>
+          <div className="mt-3 flex flex-col gap-3">
+            {isHost && !serial && (
+              <label className={FIELD_CLASS}>
+                <span className="text-fg-subtle">OS</span>
+                <select
+                  aria-label="OS"
+                  className={INPUT_CLASS}
+                  value={os}
+                  onChange={(e) => {
+                    setOs(e.target.value as SshOsId | '');
+                  }}
+                >
+                  <option value="">{`Auto${savedOs?.detected === undefined ? '' : ` (${savedOs.detected.name})`}`}</option>
+                  {SSH_OS_IDS.map((id) => (
+                    <option key={id} value={id}>
+                      {OS_LABELS[id]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className={FIELD_CLASS}>
+              <span className="text-fg-subtle">Tags (comma separated)</span>
+              <input
+                className={INPUT_CLASS}
+                value={tags}
+                onChange={(e) => {
+                  setTags(e.target.value);
+                }}
+              />
+            </label>
+            <InheritedSwitch
+              label="Protected"
+              provenance={inheritedProtected(chain)}
+              override={protectedHere}
+              onChange={setProtectedHere}
+            />
+            {!serial && (
+              <label className={FIELD_CLASS}>
+                <span className="flex gap-2 text-fg-subtle">
+                  Jump host
+                  {ssh.jump === undefined && jumpInherited.value !== undefined && (
+                    <span className="text-fg-faint">{sourceText(jumpInherited)}</span>
+                  )}
+                </span>
+                <select
+                  aria-label="Jump host"
+                  className={INPUT_CLASS}
+                  value={ssh.jump ?? ''}
+                  onChange={(e) => {
+                    set('jump')(e.target.value === '' ? undefined : e.target.value);
+                  }}
+                >
+                  <option value="">{jumpInherited.value === undefined ? 'None' : 'Inherit'}</option>
+                  {jumpOptions.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {!serial && (
+              <div className="grid grid-cols-1 gap-2 @min-[22rem]:grid-cols-2">
+                {!telnet && (
+                  <InheritedField
+                    label="Keep-alive (s)"
+                    type="number"
+                    provenance={inheritedFrom(chain, 'keepAlive', sshPrefs)}
+                    override={ssh.keepAlive}
+                    onChange={set('keepAlive')}
+                  />
+                )}
+                <InheritedField
+                  label="Connect timeout (s)"
+                  type="number"
+                  provenance={inheritedFrom(chain, 'connectTimeout', sshPrefs)}
+                  override={ssh.connectTimeout}
+                  onChange={set('connectTimeout')}
+                />
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-2 @min-[22rem]:grid-cols-2">
+              {!serial && (
+                <InheritedField
+                  label="Terminal type"
+                  provenance={inheritedFrom(chain, 'term', sshPrefs)}
+                  override={ssh.term}
+                  onChange={set('term')}
+                  suggestions={COMMON_TERMINAL_TYPES}
+                />
+              )}
+              <InheritedSelect
+                label="Character set"
+                provenance={inheritedFrom(chain, 'charset', sshPrefs)}
+                override={ssh.charset}
+                options={TERMINAL_CHARSETS}
+                onChange={set('charset')}
+              />
+            </div>
+            {!serial && (
+              <ProxySection
+                own={ssh.proxy}
+                inherited={inheritedFrom(chain, 'proxy')}
+                onChange={(next) => {
+                  setSsh((prev) => withField(prev, 'proxy', next));
+                }}
+                names={secretNames}
+                password={proxyPassword}
+                onPasswordChange={setProxyPassword}
+              />
+            )}
+            {viaSsh && (
+              <AgentForwardingSection
+                override={ssh.forwardAgent}
+                inherited={inheritedForwardAgent(chain)}
+                onChange={(next) => {
+                  setSsh((prev) => withField(prev, 'forwardAgent', next));
+                }}
+              />
+            )}
+            {viaSsh && <EnvSection own={env} inherited={inheritedEnv(chain)} onChange={setEnv} />}
+            <HostTerminalSection
+              own={terminal}
+              inherited={inheritedTerminal(chain, terminalPrefs)}
+              onChange={setTerminal}
+            />
+            {viaSsh && <ForwardsSection own={forwards} inherited={inheritedForwards(chain)} onChange={setForwards} />}
+          </div>
+        </details>
+        {failed && problems[0] !== undefined && (
+          <p role="alert" className="text-sm text-status-danger">
+            {problems[0].message}
+          </p>
+        )}
       </div>
+      {actions}
     </form>
   );
 }
