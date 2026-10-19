@@ -77,8 +77,14 @@ function RunDialogBody({ request }: { readonly request: RunRequest }) {
   const resolved = useHostsStore((s) => s.resolved);
   const [terminals] = useState<OpenTerminal[]>(() => openTerminals());
   const [hostTargets, setHostTargets] = useState<readonly HostTarget[]>(() => lastTargets(request.snippetId));
+  // Ticked by pane (S07): the terminal in front ticks its focused pane, which the list puts first in its tab.
   const [ticked, setTicked] = useState<ReadonlySet<string>>(() => {
-    const first = request.tabId ?? (hostTargets.length === 0 ? terminals[0]?.tabId : undefined);
+    const first =
+      request.tabId !== undefined
+        ? terminals.find((t) => t.tabId === request.tabId)?.key
+        : hostTargets.length === 0
+          ? terminals[0]?.key
+          : undefined;
     return new Set(first === undefined ? [] : [first]);
   });
   const [picking, setPicking] = useState(false);
@@ -115,7 +121,7 @@ function RunDialogBody({ request }: { readonly request: RunRequest }) {
     () => new Map(flattenGroups(file).map(({ group }) => [group.id, group.name] as const)),
     [file],
   );
-  const chosenTerminals = terminals.filter((t) => ticked.has(t.tabId));
+  const chosenTerminals = terminals.filter((t) => ticked.has(t.key));
   // Every host the run touches, each once: the ticked terminals' hosts, then the chips' hosts.
   const targetHosts = (() => {
     const ids = new Set(chosenTerminals.map((t) => t.hostId));
@@ -164,6 +170,7 @@ function RunDialogBody({ request }: { readonly request: RunRequest }) {
       setRunning(true);
       try {
         await runInTerminal(onlyTerminal.tabId, item, values, {
+          paneId: onlyTerminal.paneId,
           ...(insert ? { enter: false as const } : {}),
           // What the user typed is in the terminal the suggestion came from, not in another one.
           ...(request.skip !== undefined && onlyTerminal.tabId === request.tabId ? { skip: request.skip } : {}),
@@ -182,6 +189,7 @@ function RunDialogBody({ request }: { readonly request: RunRequest }) {
     const terminalTargets = chosenTerminals.map((t) => ({
       kind: 'terminal' as const,
       tabId: t.tabId,
+      paneId: t.paneId,
       hostId: t.hostId,
     }));
     runOnTargets(item, values, terminalTargets, hostTargets, {
@@ -283,16 +291,16 @@ function RunDialogBody({ request }: { readonly request: RunRequest }) {
                   <p className="text-sm text-fg-subtle">No terminal is connected.</p>
                 ) : (
                   terminals.map((t) => (
-                    <label key={t.tabId} className="flex items-center gap-2 text-sm text-fg-default">
+                    <label key={t.key} className="flex items-center gap-2 text-sm text-fg-default">
                       <input
                         type="checkbox"
-                        checked={ticked.has(t.tabId)}
+                        checked={ticked.has(t.key)}
                         onChange={(e) => {
                           const on = e.currentTarget.checked;
                           setTicked((current) => {
                             const next = new Set(current);
-                            if (on) next.add(t.tabId);
-                            else next.delete(t.tabId);
+                            if (on) next.add(t.key);
+                            else next.delete(t.key);
                             return next;
                           });
                         }}
