@@ -4,7 +4,7 @@
  * must record the same tests, values, run control and request. The documented differences (spec §6)
  * each have a case that pins the difference instead.
  */
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { loadProtoSet } from '../../../../src/grpc/proto/load.js';
 import { grpcScriptTypes } from '../../../../src/grpc/script-types.js';
 import { mcpScriptTypes } from '../../../../src/mcp/script-types.js';
@@ -28,6 +28,10 @@ import {
   RUN_VALUES,
   type EquivalenceCase,
 } from './equivalence-cases.js';
+
+// A type check builds a program for its case; under coverage on a busy runner that outlasts the
+// default 5 s.
+vi.setConfig({ testTimeout: 30_000 });
 
 const sandbox = createScriptSandbox();
 afterAll(async () => {

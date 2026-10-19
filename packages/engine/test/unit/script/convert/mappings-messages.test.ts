@@ -4,7 +4,7 @@
  * in a post-response script, and the argument shapes the rows insist on.
  */
 import ts from 'typescript';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from '../../../../src/grpc/scripting.js';
 import { restScriptTypes } from '../../../../src/rest/script-types.js';
 import type { RestRequestSnapshot, RestResponseSnapshot } from '../../../../src/rest/scripting.js';
@@ -17,6 +17,10 @@ import { runScript, type ScriptRunInput } from '../../../../src/script/run.js';
 import { createScriptSandbox } from '../../../../src/script/sandbox/host.js';
 import { apiDeclarations, secretNameType } from '../../../../src/script/types/api.js';
 import { typeErrors } from '../ts-check.js';
+
+// A type check builds a program for its case; under coverage on a busy runner that outlasts the
+// default 5 s.
+vi.setConfig({ testTimeout: 30_000 });
 
 const PROTOCOLS: readonly ConvertProtocol[] = ['rest', 'soap', 'grpc', 'mcp'];
 const NOT_CONVERTED = 'not converted yet';
