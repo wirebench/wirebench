@@ -99,7 +99,7 @@ export function HostDetails() {
     <>
       {dialog?.mode === 'new-host' ? (
         // Keeps the test id the centred dialog had, so the end-to-end helpers find the form where it moved.
-        <div data-testid="host-dialog" className="px-1 py-3">
+        <div data-testid="host-dialog" className="h-full">
           <HostForm key={JSON.stringify(dialog)} file={file} dialog={dialog} embedded />
         </div>
       ) : (
@@ -184,7 +184,7 @@ function PickedHost() {
   }
   if (dialog?.mode === 'edit-host' && dialog.id === entry.id) {
     return (
-      <div data-testid="host-edit" className="px-1 py-3">
+      <div data-testid="host-edit" className="h-full">
         <HostForm key={entry.id} file={file} dialog={dialog} embedded />
       </div>
     );

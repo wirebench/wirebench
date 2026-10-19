@@ -10,6 +10,10 @@
  * all. It colours strings, keys, numbers, keywords and punctuation, and marks an unterminated
  * string invalid. It does not validate: a malformed body is the server's answer to give, and
  * *Format* already reports a parse failure where the user asked for one.
+ *
+ * `//` and `/* *\/` comments are part of the language (#702): Mod+/ and Shift+Alt+A toggle them,
+ * and they are coloured as comments. The engine strips them before a body is sent
+ * (`rest/json-comments.ts`), so what reaches the server is still JSON.
  */
 import type { monaco as MonacoNamespace } from './monaco-core.js';
 
@@ -27,6 +31,7 @@ export function registerJsonLanguage(monaco: typeof MonacoNamespace): void {
 
   monaco.languages.register({ id: JSON_LANGUAGE_ID, extensions: ['.json'], aliases: ['JSON', 'json'] });
   monaco.languages.setLanguageConfiguration(JSON_LANGUAGE_ID, {
+    comments: { lineComment: '//', blockComment: ['/*', '*/'] },
     brackets: [
       ['{', '}'],
       ['[', ']'],
@@ -34,7 +39,7 @@ export function registerJsonLanguage(monaco: typeof MonacoNamespace): void {
     autoClosingPairs: [
       { open: '{', close: '}' },
       { open: '[', close: ']' },
-      { open: '"', close: '"', notIn: ['string'] },
+      { open: '"', close: '"', notIn: ['string', 'comment'] },
     ],
     surroundingPairs: [
       { open: '{', close: '}' },
@@ -45,6 +50,10 @@ export function registerJsonLanguage(monaco: typeof MonacoNamespace): void {
   monaco.languages.setMonarchTokensProvider(JSON_LANGUAGE_ID, {
     tokenizer: {
       root: [
+        // Comments first: outside a string a `/` can only start one. A string is matched whole by
+        // the rules below, so a `//` inside `"http://…"` never gets here.
+        [/\/\/.*$/, 'comment'],
+        [/\/\*/, 'comment', '@comment'],
         // A string followed by a colon is a key; anything else quoted is a value. The lookahead
         // keeps the two apart without a second state.
         [/"(?:[^"\\]|\\.)*"(?=\s*:)/, 'type'],
@@ -55,6 +64,11 @@ export function registerJsonLanguage(monaco: typeof MonacoNamespace): void {
         [/[{}[\]]/, '@brackets'],
         [/[:,]/, 'delimiter'],
         [/\s+/, 'white'],
+      ],
+      comment: [
+        [/[^*]+/, 'comment'],
+        [/\*\//, 'comment', '@pop'],
+        [/\*/, 'comment'],
       ],
     },
   });
