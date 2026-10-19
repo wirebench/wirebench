@@ -9,7 +9,7 @@ import {
   selectorCovers,
   selectRequests,
 } from '@wirebench/engine';
-import type { LevelProposal, Project } from '@wirebench/engine';
+import type { ConversionRefusal, LevelProposal, Project } from '@wirebench/engine';
 import type { ScriptsConvertArgs } from '../args.js';
 import { ExitCode } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
@@ -100,7 +100,9 @@ async function write(
       // `wx`: an existing file is never overwritten; a clash means the listing is stale.
       await writeFile(absolute, backup.source, { encoding: 'utf8', flag: 'wx' });
     } catch (error) {
-      io.stderr.write(`backup-failed: ${backup.path}: ${messageOf(error)}; the project was not saved\n`);
+      io.stderr.write(
+        `backup-failed: ${backup.path}: ${messageOf(error)}; the project is not saved; backups already written stay in ${BACKUP_DIR}/\n`,
+      );
       return ExitCode.RunError;
     }
   }
@@ -123,11 +125,17 @@ async function write(
       io.stdout.write(`Converted ${title(level)}: ${counts(result.mapped, result.todos.length)}\n`);
       for (const backup of done.backups) io.stdout.write(`  backup: ${backup.path}\n`);
     } else {
-      io.stdout.write(`${title(level)}: skipped (${refusedWhy.get(level.ownerId) ?? 'not applied'})\n`);
+      io.stdout.write(`${title(level)}: skipped (${refusalText(refusedWhy.get(level.ownerId))})\n`);
     }
   }
   io.stdout.write(`Converted ${total(applied, levels.length - applied.length)}.\n`);
   return ExitCode.Ok;
+}
+
+/** Why a level was refused, as the output says it; ids are not checked unique, so a copied file can share one. */
+function refusalText(reason: ConversionRefusal | undefined): string {
+  if (reason === 'duplicate-id') return 'another level has the same id';
+  return reason ?? 'not applied';
 }
 
 const title = (level: LevelProposal): string => `${level.path.join(' / ')} (${level.dialect})`;

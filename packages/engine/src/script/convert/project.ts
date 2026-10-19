@@ -28,8 +28,12 @@ export interface LevelProposal {
   readonly fingerprint: string;
 }
 
-/** Why an accepted level was not applied. */
-export type ConversionRefusal = 'changed' | 'not-layered' | 'syntax';
+/**
+ * Why an accepted level was not applied. `duplicate-id`: another level of the project carries the
+ * same id (ids come from the files and are not checked unique, so a copied request file keeps its
+ * id); switching by id would rewrite both, so neither is switched.
+ */
+export type ConversionRefusal = 'changed' | 'duplicate-id' | 'not-layered' | 'syntax';
 
 /** Something in a container's tree that can carry scripts. */
 interface Scripted {
@@ -91,7 +95,7 @@ export function proposeConversions(
   takenBackups: ReadonlySet<string> = new Set(),
 ): LevelProposal[] {
   return layeredLevels(project, rootId, takenBackups)
-    .filter((level) => level.inRoot)
+    .levels.filter((level) => level.inRoot)
     .map(propose);
 }
 
@@ -104,9 +108,11 @@ export function proposeConversions(
  * fingerprint does not cover, so a path may get a different `-n` suffix than the review showed.
  * Each applied level's header names the path in its `backups`, so the two always agree.
  *
- * An accepted level is refused as `changed` when its dialect or text differs from what was proposed,
- * as `not-layered` when it is gone or already `wirebench`, and as `syntax` when it does not convert,
- * which covers a syntax error and a script refused with line 0 (the converter's "could not
+ * An accepted level is refused as `duplicate-id` when another level that carries scripts (layered or
+ * typed, of any protocol, a SOAP interface included) has the same id, and nothing with that id is
+ * switched. Otherwise it is refused as `changed` when its dialect or text differs from what was
+ * proposed, as `not-layered` when it is gone or already `wirebench`, and as `syntax` when it does not
+ * convert, which covers a syntax error and a script refused with line 0 (the converter's "could not
  * convert"). The level is switched to `wirebench` with the converted texts; a phase it did not have
  * stays absent, and `enabled`, `secrets`, `timeoutMs` and `postResponseOrder` are kept.
  *
@@ -123,13 +129,18 @@ export function applyConversions(
   readonly applied: readonly LevelProposal[];
   readonly refused: readonly { readonly ownerId: string; readonly reason: ConversionRefusal }[];
 } {
-  const levels = new Map(layeredLevels(project, undefined, takenBackups).map((level) => [level.ownerId, level]));
+  const found = layeredLevels(project, undefined, takenBackups);
+  const levels = new Map(found.levels.map((level) => [level.ownerId, level]));
   const applied: LevelProposal[] = [];
   const refused: { ownerId: string; reason: ConversionRefusal }[] = [];
   const seen = new Set<string>();
   for (const { ownerId, fingerprint } of accepted) {
     if (seen.has(ownerId)) continue;
     seen.add(ownerId);
+    if (found.duplicateIds.has(ownerId)) {
+      refused.push({ ownerId, reason: 'duplicate-id' });
+      continue;
+    }
     const level = levels.get(ownerId);
     if (level === undefined) {
       refused.push({ ownerId, reason: 'not-layered' });
@@ -223,10 +234,19 @@ function convertLevel(level: Level, before: { readonly pre?: string; readonly po
   });
 }
 
-/** Every layered level of the project with its backup paths, in explorer order. */
-function layeredLevels(project: Project, rootId: string | undefined, takenBackups: ReadonlySet<string>): Level[] {
+/**
+ * Every layered level of the project with its backup paths, in explorer order, and the ids that more
+ * than one level carrying scripts (layered or not) shares.
+ */
+function layeredLevels(
+  project: Project,
+  rootId: string | undefined,
+  takenBackups: ReadonlySet<string>,
+): { readonly levels: Level[]; readonly duplicateIds: ReadonlySet<string> } {
   const taken = new Set(takenBackups);
   const levels: Level[] = [];
+  const scriptedIds = new Set<string>();
+  const duplicateIds = new Set<string>();
   const containers: { readonly order: number; readonly walk: () => void }[] = [];
 
   const visit = (
@@ -238,6 +258,10 @@ function layeredLevels(project: Project, rootId: string | undefined, takenBackup
   ): boolean => {
     const inRoot = above || rootId === undefined || owner.id === rootId;
     const scripts = owner.scripts;
+    if (scripts !== undefined) {
+      if (scriptedIds.has(owner.id)) duplicateIds.add(owner.id);
+      scriptedIds.add(owner.id);
+    }
     if (scripts !== undefined && isLayeredApi(scripts.api)) {
       const backups: { pre?: string; post?: string } = {};
       for (const phase of PHASES) {
@@ -296,7 +320,7 @@ function layeredLevels(project: Project, rootId: string | undefined, takenBackup
   // A stable sort: containers of one order keep their kind's place, as they load.
   containers.sort((a, b) => a.order - b.order);
   for (const container of containers) container.walk();
-  return levels;
+  return { levels, duplicateIds };
 }
 
 /** An edit applied to each level; a level it returns unchanged keeps its identity. */

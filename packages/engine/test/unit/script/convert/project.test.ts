@@ -286,3 +286,75 @@ describe('applyConversions', () => {
     expect(next).toBe(project);
   });
 });
+
+describe('applyConversions with ids that are not unique', () => {
+  /** `sample()` with two more REST requests in the Other API, both carrying the id `dup`. */
+  function twins(first: RequestScripts, second: RequestScripts): Project {
+    const base = sample();
+    return withRestApis(
+      base,
+      restApisOf(base).map((api) =>
+        api.id === 'other-api'
+          ? { ...api, requests: [...api.requests, rest('Copy A', first, 'dup'), rest('Copy B', second, 'dup')] }
+          : api,
+      ),
+    );
+  }
+  const otherOf = (project: Project): RestApi => restApisOf(project).find((api) => api.id === 'other-api')!;
+  const OTHER_TEXT: RequestScripts = { ...REQUEST_SCRIPTS, pre: { text: "bru.setVar('z', '9');\n" } };
+
+  it('a layered id two levels share is refused and neither level changes', () => {
+    const project = twins(REQUEST_SCRIPTS, OTHER_TEXT);
+    const proposals = proposeConversions(project).filter((proposal) => proposal.ownerId === 'dup');
+    expect(proposals).toHaveLength(2);
+    const ping = proposeConversions(project, 'other-request')[0]!;
+
+    // Only the second level is accepted.
+    const one = applyConversions(
+      project,
+      [
+        { ownerId: 'dup', fingerprint: proposals[1]!.fingerprint },
+        { ownerId: 'other-request', fingerprint: ping.fingerprint },
+      ],
+      new Set(),
+    );
+    expect(one.refused).toEqual([{ ownerId: 'dup', reason: 'duplicate-id' }]);
+    expect(one.applied.map((each) => each.ownerId)).toEqual(['other-request']);
+    const requests = otherOf(one.project).requests;
+    expect(requests[0]?.scripts?.api).toBe('wirebench');
+    expect(requests.slice(1).map((request) => request.scripts)).toEqual([REQUEST_SCRIPTS, OTHER_TEXT]);
+
+    // Both levels are accepted.
+    const both = applyConversions(
+      project,
+      proposals.map(({ ownerId, fingerprint }) => ({ ownerId, fingerprint })),
+      new Set(),
+    );
+    expect(both.refused).toEqual([{ ownerId: 'dup', reason: 'duplicate-id' }]);
+    expect(both.applied).toEqual([]);
+    expect(both.project).toBe(project);
+  });
+
+  it('a layered level sharing its id with a typed level is refused and neither changes', () => {
+    const base = sample();
+    // A typed SOAP interface carries the id of the layered request in the Other API.
+    const typed = soapInterfacesOf(base).map((iface) => ({
+      ...iface,
+      id: 'other-request',
+      scripts: WIREBENCH_SCRIPTS,
+    }));
+    const project = withSoapInterfaces(base, typed);
+    const ping = proposeConversions(project, 'other-request').find((each) => each.ownerId === 'other-request')!;
+
+    const {
+      project: next,
+      applied,
+      refused,
+    } = applyConversions(project, [{ ownerId: 'other-request', fingerprint: ping.fingerprint }], new Set());
+    expect(refused).toEqual([{ ownerId: 'other-request', reason: 'duplicate-id' }]);
+    expect(applied).toEqual([]);
+    expect(next).toBe(project);
+    expect(soapInterfacesOf(next)[0]?.scripts).toEqual(WIREBENCH_SCRIPTS);
+    expect(otherOf(next).requests[0]?.scripts).toEqual(REQUEST_SCRIPTS);
+  });
+});

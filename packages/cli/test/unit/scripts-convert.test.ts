@@ -166,6 +166,40 @@ describe('wirebench scripts convert', () => {
     expect(cli.out()).toMatch(/^Converted 1 level, /m);
   });
 
+  it('--write refuses levels that share an id and converts the others', async () => {
+    const dir = await layeredProject();
+    const cli = io();
+    // A copied request file keeps its id: the folder now holds two requests with the id `create`.
+    const carts = join(dir, 'apis/Shop/requests/Carts');
+    const yaml = await readFile(join(carts, 'Create cart.request.yaml'), 'utf8');
+    await writeFile(
+      join(carts, 'Copy.request.yaml'),
+      yaml
+        .replace('name: Create cart', 'name: Copy')
+        .replace('order: 0', 'order: 1')
+        .replace('  post: Create cart.post.js\n', '')
+        .replace('Create cart.pre.js', 'Copy.pre.js'),
+    );
+    await writeFile(join(carts, 'Copy.pre.js'), "bru.setVar('x', '9');\n");
+
+    expect(await convert(dir, ['Shop'], true, cli.io)).toBe(ExitCode.Ok);
+
+    const out = cli.out();
+    expect(out).toContain('Converted Shop (bruno): ');
+    expect(out).toContain('Shop / Carts / Create cart (bruno): skipped (another level has the same id)\n');
+    expect(out).toContain('Shop / Carts / Copy (bruno): skipped (another level has the same id)\n');
+    expect(out).toMatch(/^Converted 1 level, .*, 3 skipped\.$/m);
+    const loaded = await loadProject(dir);
+    const api = restApisOf(loaded.project)[0]!;
+    expect(api.scripts?.api).toBe('wirebench');
+    expect(api.folders[0]?.requests.map((request) => request.scripts)).toEqual([
+      bruno("bru.setVar('c', '3');\n", "bru.sendRequest({});\nbru.setVar('d', '4');\n"),
+      bruno("bru.setVar('x', '9');\n"),
+    ]);
+    const backups = Object.keys(await snapshot(dir)).filter((file) => file.startsWith('imported-scripts/'));
+    expect(backups).toEqual(['imported-scripts/shop/shop.pre.js']);
+  });
+
   it('a selector that matches nothing is a usage error', async () => {
     const dir = await layeredProject();
     const cli = io();
@@ -185,6 +219,24 @@ describe('wirebench scripts convert', () => {
 
     expect(await scriptsOf(dir)).toEqual(before);
     expect(cli.err()).toMatch(/^backup-failed: /m);
+    expect(cli.err()).toContain('the project is not saved; backups already written stay in imported-scripts/\n');
+  });
+
+  it('a backup that fails part way keeps the backups already written and saves nothing', async () => {
+    const dir = await layeredProject();
+    const before = await scriptsOf(dir);
+    // An empty folder where the last backup goes: the listing shows no file, so the path is chosen
+    // and its exclusive create fails after the others were written.
+    await mkdir(join(dir, 'imported-scripts/shop/shop-carts-create cart.post.js'), { recursive: true });
+    const cli = io();
+
+    expect(await convert(dir, [], true, cli.io)).toBe(ExitCode.RunError);
+
+    expect(await scriptsOf(dir)).toEqual(before);
+    expect(await readFile(join(dir, 'imported-scripts/shop/shop.pre.js'), 'utf8')).toBe("bru.setVar('a', '1');\n");
+    expect(cli.err()).toMatch(
+      /^backup-failed: imported-scripts\/shop\/shop-carts-create cart\.post\.js: .+; the project is not saved; backups already written stay in imported-scripts\/$/m,
+    );
   });
 
   it('exit 3 when the project cannot be loaded', async () => {
