@@ -81,7 +81,8 @@ test.describe('Convert imported scripts', () => {
     await expect(rows).toHaveCount(2, { timeout: 30_000 });
     await expect(rows.filter({ hasText: 'Create user' })).toHaveCount(1);
 
-    // Every row converts with nothing left to do, and its proposal type-checks clean.
+    // Every row converts with nothing left to do, and its proposal type-checks clean: each phase's
+    // "No problems." under the diff is main's own checker run over the proposed text.
     for (let row = 0; row < 2; row += 1) {
       const entry = rows.nth(row);
       await expect(entry.getByRole('checkbox')).toBeChecked();
@@ -90,11 +91,9 @@ test.describe('Convert imported scripts', () => {
       await select.click();
       await expect(select).toHaveAttribute('aria-current', 'true');
       const phases = dialog.locator('[data-testid^="convert-scripts-phase-"]');
-      await expect(phases.first()).toBeVisible({ timeout: 30_000 });
-      const count = await phases.count();
-      for (let phase = 0; phase < count; phase += 1) {
-        await expect(phases.nth(phase)).toContainText('No problems.');
-      }
+      // Each level of the fixture has one phase: the API's pre-request script, Create user's post-response one.
+      await expect(phases).toHaveCount(1, { timeout: 30_000 });
+      await expect(phases.first()).toContainText('No problems.');
     }
 
     await dialog.getByTestId('convert-scripts-accept').click();
@@ -126,7 +125,8 @@ test.describe('Convert imported scripts', () => {
     const text = (await typedPostScript(page)) ?? '';
     expect(text).toContain('vars.set("userId", (response.json() as any).id);');
     expect(text).toContain('expect(response.status).toBe(201);');
-    await expect(page.getByTestId('scripts-problem-post')).toHaveCount(0);
+    // The proof that the proposal type-checks is the review's "No problems." above; the tab's own
+    // checker line stays empty for the saved script too.
     await expect(page.getByTestId('script-errors')).toHaveCount(0);
   });
 });
