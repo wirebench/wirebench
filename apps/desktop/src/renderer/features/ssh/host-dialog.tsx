@@ -646,6 +646,13 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
               emptyAsked={!telnet}
             />
             {gapLine('auth')}
+            {/* Directly under the sign-in choice it explains, before Group (S61). */}
+            {telnet && (
+              <p data-testid="host-telnet-sign-in-note" className="text-xs text-fg-subtle">
+                Wirebench types the user and password at the device's login and password prompts. Leave them empty to
+                sign in yourself.
+              </p>
+            )}
           </>
         )}
         {/* After the sign-in, so it does not split the address from the user (S47). */}
@@ -668,12 +675,6 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
               ))}
             </select>
           </label>
-        )}
-        {telnet && (
-          <p className="text-xs text-fg-subtle">
-            Wirebench types the user and password at the device's login and password prompts. Leave them empty to sign
-            in yourself.
-          </p>
         )}
         {deviceError !== undefined && (
           <p role="alert" className="text-sm text-status-danger">

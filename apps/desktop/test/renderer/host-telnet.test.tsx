@@ -113,6 +113,12 @@ describe('Telnet in the host form (#425)', () => {
     edit('core');
     expect(within(section()).getByRole('option', { name: 'Inherit (Telnet)' })).toBeTruthy();
     expect(screen.getByText(/types the user and password at the device's/)).toBeTruthy();
+    // The note sits right under the sign-in choice it explains; Group comes after it (S61).
+    const note = screen.getByTestId('host-telnet-sign-in-note');
+    const auth = screen.getByRole('radiogroup', { name: 'Authentication' });
+    const group = screen.getByLabelText('Group');
+    expect(auth.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(note.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByLabelText<HTMLInputElement>('Port').placeholder).toBe('23');
     await save();
     expect(saved().groups[0]!.hosts[0]!.ssh).toEqual({});
