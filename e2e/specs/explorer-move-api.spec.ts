@@ -27,7 +27,9 @@ async function expectAbove(page: Page, first: string, second: string, timeout = 
 /**
  * Drags `source` onto the middle of `target` the way a hand does: press, a few moves to get the drag
  * going, then small moves to the drop point, so the tree's HTML5 drag sees enough `dragover` events to
- * settle on a drop. The target is measured only once the drag has started, since rows can move.
+ * settle on a drop. The target is measured only once the drag has started, since rows can move. The
+ * drag then rests on the drop point before letting go: the tree drops where its last hover was, and
+ * without the pause that can still be the bottom edge of the row above ("after it", not "into").
  *
  * The row is selected with a click first, and the press waits for it to render again: under the
  * test's emulated drag, a drag that starts on a row before its re-render has settled (after a drop,
@@ -49,7 +51,12 @@ async function dragRow(page: Page, source: Locator, target: Locator): Promise<vo
   const endX = to.x + to.width / 2;
   const endY = to.y + to.height / 2;
   await page.mouse.move(endX, endY, { steps: 20 });
-  await page.mouse.move(endX, endY, { steps: 2 });
+  // Dwell on the drop point so the tree's last hover is this row's middle, not the row it passed over.
+  for (const dy of [2, -2, 0]) {
+    await page.waitForTimeout(100);
+    await page.mouse.move(endX, endY + dy, { steps: 2 });
+  }
+  await page.waitForTimeout(100);
   await page.mouse.up();
 }
 
