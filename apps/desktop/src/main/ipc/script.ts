@@ -3,11 +3,16 @@
  * and signature help, all answered by main's checker against the request's own types (or, for a
  * mock's `dispatch.ts`, the dispatch API), and a project's session values. Editing a request's scripts goes through `project.mutate`.
  *
+ * `script.proposeConversions` answers the review of converting imported scripts: main converts from
+ * the model it holds and checks each converted phase; Accept is a `convert-scripts` change.
+ *
  * Nothing here runs a script: the renderer only ever gets the checker's answers and masked values.
  */
 
+import type { LevelProposal, Project } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { ScriptTargetWire } from '../../shared/wire-base.js';
+import { conversionWire } from '../convert-scripts.js';
 import type { ScriptHost, ScriptTarget } from '../script-host.js';
 import { registerHandler } from './register.js';
 
@@ -18,7 +23,13 @@ function targetOf(request: ScriptTargetWire): ScriptTarget {
     : { requestId: request.requestId, phase: request.phase };
 }
 
-export function registerScriptChannels(host: ScriptHost): void {
+/** The proposals for a project's layered levels at or below `ownerId`, from the model it holds (`ProjectHost.proposeConversions`). */
+export type ProposeConversions = (
+  projectId: string,
+  ownerId: string | undefined,
+) => Promise<{ readonly project: Project; readonly levels: readonly LevelProposal[] }>;
+
+export function registerScriptChannels(host: ScriptHost, proposeConversions: ProposeConversions): void {
   registerHandler(channels.script.diagnostics, async (request) => ({
     diagnostics: [...(await host.diagnostics(targetOf(request), request.source))],
   }));
@@ -47,4 +58,12 @@ export function registerScriptChannels(host: ScriptHost): void {
   registerHandler(channels.script.clearValues, ({ projectId }) =>
     Promise.resolve({ cleared: host.clearValues(projectId) }),
   );
+  registerHandler(channels.script.proposeConversions, async ({ projectId, ownerId }) => {
+    const { project, levels } = await proposeConversions(projectId, ownerId);
+    const check = host.convertedDiagnostics.bind(host);
+    const wire = [];
+    // One at a time: the checker is one worker, and a project can have many levels.
+    for (const level of levels) wire.push(await conversionWire(project, level, check));
+    return { levels: wire };
+  });
 }

@@ -79,6 +79,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       closeModel: vi.fn().mockResolvedValue({ ok: true, value: {} }),
       listValues: vi.fn().mockResolvedValue({ ok: true, value: { values: [] } }),
       clearValues: vi.fn().mockResolvedValue({ ok: true, value: { cleared: 0 } }),
+      proposeConversions: vi.fn().mockResolvedValue({ ok: true, value: { levels: [] } }),
     },
     api: {
       importOpenApi: fail('api.importOpenApi'),
