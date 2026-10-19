@@ -14,6 +14,7 @@ import { MethodBadge } from '../../features/rest-api/method-badge.js';
 import { requestDisplayName } from '../../features/rest-api/request-display-name.js';
 import { useProjectStore } from '../../state/project.js';
 import type { KindExplorer } from '../renderer-kind.js';
+import { useMoveApiStore } from '../../features/explorer/move-api-dialog.js';
 
 function RestGutter({ node }: { readonly node: ExplorerNode }) {
   if (node.method === undefined) {
@@ -61,6 +62,7 @@ async function copyUrl(requestId: string): Promise<void> {
 export const restExplorer: KindExplorer = {
   nodes: {
     api: {
+      container: true,
       icon: Globe,
       testId: 'api-row',
       badge: 'REST',
@@ -108,7 +110,10 @@ export const restExplorer: KindExplorer = {
               ]
             : [],
           exportItems({ containerId: apiId }),
-          [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('api', apiId) }],
+          [
+            { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('api', apiId) },
+            { key: 'move-to-project', label: 'Move to project…', run: () => useMoveApiStore.getState().open(apiId) },
+          ],
           [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeApi(apiId) }],
         );
       },

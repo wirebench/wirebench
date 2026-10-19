@@ -24,6 +24,7 @@ import {
   showTerminal,
   useRunDialogStore,
 } from './run.js';
+import { declareVariable, scriptOf, undeclaredTokens } from './snippet-edit.js';
 import { lastTargets, lastValues } from './snippets-prefs.js';
 import { useSnippetsStore } from './snippets-store.js';
 import { VariablesForm, anyInvalid, emptyVariables, initialValues } from './variables-form.js';
@@ -70,6 +71,8 @@ function protectedLine(host: ResolvedHostWire, groupNames: ReadonlyMap<string, s
 
 function RunDialogBody({ request }: { readonly request: RunRequest }) {
   const item = useSnippetsStore((s) => s.snippets.find((x) => x.id === request.snippetId));
+  const snippetsFile = useSnippetsStore((s) => s.file);
+  const saveSnippets = useSnippetsStore((s) => s.save);
   const file = useHostsStore((s) => s.file);
   const resolved = useHostsStore((s) => s.resolved);
   const [terminals] = useState<OpenTerminal[]>(() => openTerminals());
@@ -135,6 +138,20 @@ function RunDialogBody({ request }: { readonly request: RunRequest }) {
   const onlyTerminal = hostTargets.length === 0 && chosenTerminals.length === 1 ? chosenTerminals[0] : undefined;
 
   const empty = emptyVariables(item?.variables ?? [], values);
+  // A `${name}` the snippet does not declare is shell text: it is typed as is and the shell expands it,
+  // usually to nothing, so `rm -rf ${dir}/` would run as `rm -rf /` (#717). Each one is named here.
+  const undeclared = item === undefined ? [] : undeclaredTokens(scriptOf(snippetsFile, item.id) ?? '', item.variables);
+  /** Declares `name` in snippets.yaml, so the form asks for it from now on. */
+  const askFor = async (name: string): Promise<void> => {
+    if (item === undefined) return;
+    setError(undefined);
+    const answer = await saveSnippets(declareVariable(snippetsFile, item.id, name));
+    if (!answer.ok) {
+      setError(answer.error.message);
+      return;
+    }
+    setValues((current) => ({ ...current, [name]: current[name] ?? '' }));
+  };
   const submit = async (): Promise<void> => {
     if (item === undefined || !canRun) return;
     if (empty.length > 0 && !emptyAsked) {
@@ -235,6 +252,30 @@ function RunDialogBody({ request }: { readonly request: RunRequest }) {
                 setEmptyAsked(false);
               }}
             />
+            {undeclared.length > 0 && (
+              <ul data-testid="snippet-run-undeclared" className="flex flex-col gap-1">
+                {undeclared.map((name) => (
+                  <li
+                    key={name}
+                    className="flex items-center gap-2 rounded border border-status-warning px-2 py-1 text-xs text-fg-default"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <code className="font-mono">{`\${${name}}`}</code> goes to the shell as is; the shell expands it.
+                    </span>
+                    <Button
+                      aria-label={`Ask for \${${name}}`}
+                      onClick={() => {
+                        askFor(name).catch((cause: unknown) => {
+                          setError(cause instanceof Error ? cause.message : String(cause));
+                        });
+                      }}
+                    >
+                      Ask for it
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
             {full && (
               <fieldset className="flex flex-col gap-1">
                 <legend className="mb-1 text-xs font-medium text-fg-muted">Terminals</legend>

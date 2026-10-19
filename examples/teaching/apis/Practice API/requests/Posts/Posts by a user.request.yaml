@@ -1,0 +1,22 @@
+assertions:
+  - equals: 200
+    type: status
+  - exists: true
+    expression: $[0].userId
+    language: jsonpath
+    type: match
+auth:
+  type: inherit
+body:
+  kind: none
+description: Lesson 1. A query parameter filters the list to one user's posts.
+id: TEACH00REQ03
+kind: rest
+method: GET
+name: Posts by a user
+order: 0
+query:
+  - description: Only posts written by this user
+    name: userId
+    value: ${userId}
+url: /posts

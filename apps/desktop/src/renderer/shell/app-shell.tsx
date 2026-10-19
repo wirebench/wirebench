@@ -66,9 +66,12 @@ import { SettingsPage } from '../features/preferences/settings-page.js';
 import { WorkspaceManageDialog } from '../features/workspace/manage-dialog.js';
 import { RemoveProjectDialog } from '../features/workspace/remove-project-dialog.js';
 import { RevealSecretsDialog } from '../features/console/reveal-secrets-dialog.js';
+import { LiveCloseDialog } from './live-close-dialog.js';
+import { UnsavedCloseDialog } from './unsaved-close-dialog.js';
 import { ShareDialog } from '../features/workspace/share-dialog.js';
 import { JoinDialog } from '../features/workspace/join-dialog.js';
 import { OpenTeamWorkspaceDialog } from '../features/workspace/open-team-workspace-dialog.js';
+import { MoveApiDialog } from '../features/explorer/move-api-dialog.js';
 import { MoveProjectDialog } from '../features/explorer/move-project-dialog.js';
 import { SecretSourcesApproveDialog } from '../features/secret-sources/approve-dialog.js';
 import { SecretSourcesDialog } from '../features/secret-sources/secret-sources-dialog.js';
@@ -218,6 +221,7 @@ export function AppShell() {
   const settingsOpen = useUiStore((state) => state.preferences.open);
   // While New host borrows the panel, the handle's double-click puts it away like the close icon.
   const newHostOpen = useHostsStore((state) => state.dialog?.mode === 'new-host');
+  const editHostOpen = useHostsStore((state) => state.dialog?.mode === 'edit-host');
   const toggleHostDetails = useCallback(() => {
     const hosts = useHostsStore.getState();
     hosts.setDetailsOpen(hosts.dialog?.mode !== 'new-host' && useUiStore.getState().slideOver.hostDetailsOpen !== true);
@@ -616,7 +620,7 @@ export function AppShell() {
                   <CodePanel />
                 </SlideOver>
                 <SlideOver
-                  label={newHostOpen ? 'New host' : 'Host details'}
+                  label={newHostOpen ? 'New host' : editHostOpen ? 'Edit host' : 'Host details'}
                   open={hostDetailsShown && !settingsOpen}
                   width={slideOverWidth}
                   onWidthChange={setSlideOverWidth}
@@ -684,6 +688,8 @@ export function AppShell() {
       <WorkspaceManageDialog />
       <RemoveProjectDialog />
       <RevealSecretsDialog />
+      <LiveCloseDialog />
+      <UnsavedCloseDialog />
       <ShareDialog />
       <JoinDialog />
       <OpenTeamWorkspaceDialog />
@@ -695,6 +701,7 @@ export function AppShell() {
       <ImportWebhooksDialog />
       <SaveAsWebhookDialog />
       <MoveProjectDialog />
+      <MoveApiDialog />
       <SyncPanel />
       <ConflictResolver />
       {/* Here, not in an editor: a run or a catalogue refresh from anywhere may need an answer. */}

@@ -200,6 +200,14 @@ describe('PreferencesEditor', () => {
     await vi.waitFor(() => {
       expect(update).toHaveBeenCalledWith({ patch: { terminal: { autoReconnect: false } } });
     });
+
+    // S53: the question closing live sessions asks, on by default.
+    const confirmClose = screen.getByRole('switch', { name: 'Confirm closing live sessions' });
+    expect(confirmClose.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(confirmClose);
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { terminal: { confirmCloseSessions: false } } });
+    });
   });
 
   it('lists the highlighting rules and turns highlighting off from the Terminal section', async () => {

@@ -690,6 +690,12 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Scripts: Clear Session Values',
     category: 'Explorer',
   },
+  // Every imported script of the current project, rewritten to the typed API after a review.
+  'script.convertAll': {
+    id: 'script.convertAll',
+    label: 'Scripts: Convert All Imported Scripts…',
+    category: 'Explorer',
+  },
   'env.switch': {
     id: 'env.switch',
     label: 'Switch Environment…',
@@ -885,6 +891,27 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     category: 'Editor',
     shortcut: 'Mod+W',
   },
+  // The tab menu's close actions (#679), for the palette and a user's own chords.
+  'editor.closeOtherTabs': {
+    id: 'editor.closeOtherTabs',
+    label: 'Close Other Tabs',
+    category: 'Editor',
+  },
+  'editor.closeTabsToRight': {
+    id: 'editor.closeTabsToRight',
+    label: 'Close Tabs to the Right',
+    category: 'Editor',
+  },
+  'editor.closeSavedTabs': {
+    id: 'editor.closeSavedTabs',
+    label: 'Close Saved Tabs',
+    category: 'Editor',
+  },
+  'editor.closeAllTabs': {
+    id: 'editor.closeAllTabs',
+    label: 'Close All Tabs',
+    category: 'Editor',
+  },
   'editor.moveTabLeft': {
     id: 'editor.moveTabLeft',
     label: 'Move Tab Left',
@@ -1074,4 +1101,26 @@ const SSH_AREA_VIEWS: ReadonlySet<string> = new Set(['view.showHosts', 'view.sho
  */
 export function areaKeywords(id: string): readonly string[] {
   return /^(?:ssh|sftp)\./.test(id) || SSH_AREA_VIEWS.has(id) ? ['ssh'] : [];
+}
+
+/**
+ * The other protocols a host can use (#425, #426, #419): a search for one names the commands that make
+ * or open such a host, whose labels say only "Host" (S40).
+ */
+const PROTOCOL_KEYWORDS: Readonly<Record<string, readonly string[]>> = {
+  'ssh.newHost': ['telnet', 'serial', 'mosh'],
+  'ssh.connectPalette': ['telnet', 'serial', 'mosh'],
+};
+
+/** The protocol names a search can find a command by, beyond its category, label and area. */
+export function protocolKeywords(id: string): readonly string[] {
+  return PROTOCOL_KEYWORDS[id] ?? [];
+}
+
+/** The SSH area's main actions, which a search for the area's name ("ssh") lists first. */
+const SSH_AREA_LEADS: ReadonlySet<string> = new Set(['ssh.connectPalette', 'ssh.newHost']);
+
+/** Whether a command is one of its area's main actions, ranked first when a search names the area. */
+export function isAreaLead(id: string): boolean {
+  return SSH_AREA_LEADS.has(id);
 }

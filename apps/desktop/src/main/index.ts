@@ -1147,7 +1147,9 @@ void app.whenReady().then(() => {
     },
   });
   scriptHost = scripts;
-  registerScriptChannels(scripts);
+  registerScriptChannels(scripts, (projectId, ownerId) =>
+    workspaceService.hostFor(projectId).proposeConversions(ownerId),
+  );
   // This machine's MCP stdio approvals (#79); a send with no window of its own asks in the focused one.
   const mcpApprovals = new McpApprovals({
     store: new McpApprovalStore(join(app.getPath('userData'), MCP_APPROVALS_FILE)),
@@ -1328,6 +1330,17 @@ void app.whenReady().then(() => {
     picks: dialogPicks,
     ensureWorkspaceEnvironments: async (names, projectId) =>
       await workspaceService.ensureEnvironments(names, projectId),
+    apiMove: {
+      hosts: (apiId, targetProjectId) => {
+        const source = workspaceService.hostOfEntity(apiId);
+        return {
+          sourceProjectId: source.require().project.id,
+          source,
+          target: workspaceService.hostFor(targetProjectId),
+        };
+      },
+      secrets: secretStore,
+    },
   });
   /** A Globals change, told to every window and to every window's current-values overlay. */
   const onGlobalsChanged = (state: ReturnType<GlobalProperties['get']>): void => {
@@ -1449,9 +1462,8 @@ void app.whenReady().then(() => {
   registerAppLockChannels({
     preferences: preferencesService,
     lock: appLock,
-    support: appLockSupported
-      ? { supported: true }
-      : { supported: false, reason: 'This computer cannot ask for biometrics or the password here' },
+    // No reason: the renderer says what the app lock needs, and there is nothing to add to it.
+    support: { supported: appLockSupported },
     onChanged: (preferences) => {
       broadcast(events.preferences.changed, { preferences });
     },

@@ -35,6 +35,7 @@ import {
   requestAuthSourceSchema,
   requestScriptsPatchSchema,
   restFolderWireSchema,
+  scriptConversionsResultWireSchema,
   sequencePatchSchema,
   sequenceWireSchema,
   unresolvedRefWireSchema,
@@ -444,6 +445,11 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     parentId: z.string().optional(),
     index: z.number().int().nonnegative(),
   }),
+  /**
+   * Reorders an API of any kind among its project's APIs (#701): before `beforeApiId`, or after the
+   * last one when that is absent. Interfaces keep their places.
+   */
+  z.object({ kind: z.literal('move-container'), apiId: z.string(), beforeApiId: z.string().optional() }),
   z.object({ kind: z.literal('add-grpc-api'), name: z.string(), target: z.string(), tls: z.boolean().optional() }),
   z.object({ kind: z.literal('update-grpc-api'), apiId: z.string(), patch: grpcApiPatchSchema }),
   z.object({ kind: z.literal('remove-grpc-api'), apiId: z.string() }),
@@ -590,6 +596,16 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
   // **Switch on scripts…**: switches on the scripts of many requests at once, each one a reviewable
   // change to its request file. A request without scripts is left as it is.
   z.object({ kind: z.literal('enable-scripts'), requestIds: z.array(z.string()).min(1).max(10_000) }),
+  // **Convert to Wirebench script**: switches each named layered level to the typed API. Only the
+  // fingerprint the review showed crosses: main works the conversion out again from its own model,
+  // and refuses a level whose texts changed since (convert-imported-scripts spec §4.2, §7).
+  z.object({
+    kind: z.literal('convert-scripts'),
+    levels: z
+      .array(z.object({ ownerId: z.string(), fingerprint: z.string().max(128) }))
+      .min(1)
+      .max(10_000),
+  }),
   z.object({ kind: z.literal('update-project-settings'), patch: projectSettingsPatchSchema }),
   z.object({
     kind: z.literal('update-interface'),
@@ -675,8 +691,46 @@ export const projectMutateResponseSchema = z.object({
   createdWssOutgoingId: z.string().optional(),
   /** Set by `add-wss-incoming`: the id of the configuration that was created. */
   createdWssIncomingId: z.string().optional(),
+  /** Set by `convert-scripts`: the levels switched (their backups written, then saved) and those refused. */
+  converted: scriptConversionsResultWireSchema.optional(),
 });
 export type ProjectMutateResponse = z.infer<typeof projectMutateResponseSchema>;
+
+/** Request for `project.planApiMove`: what moving an API to another project would copy and leave (#701). */
+export const projectPlanApiMoveRequestSchema = z.object({ apiId: z.string(), targetProjectId: z.string() });
+export const projectApiMovePlanSchema = z.object({
+  apiName: z.string(),
+  targetName: z.string(),
+  /** Project variables the API reads that the target cannot resolve: copied with their values. */
+  copiedVariables: z.array(z.string()),
+  /** `${secret:…}` names with a value on this machine that the target lacks: copied. */
+  copiedSecrets: z.array(z.string()),
+  /** Variables that resolve in the source only through its environments: not copied. */
+  unresolvedVariables: z.array(z.string()),
+  /** `${secret:…}` names with no value on this machine: not copied. */
+  unresolvedSecrets: z.array(z.string()),
+  /** Keystores the API names: project-level, they stay behind. */
+  keystores: z.array(z.string()),
+  /** Source sequences with steps that run the API's requests. */
+  sequences: z.array(z.string()),
+});
+export type ProjectApiMovePlan = z.infer<typeof projectApiMovePlanSchema>;
+
+/** Request/response for `project.moveApi`: the move, then both projects as they are now (#701). */
+export const projectMoveApiRequestSchema = z.object({
+  apiId: z.string(),
+  targetProjectId: z.string(),
+  /** The target API it lands before; absent, after the target's last API. */
+  beforeApiId: z.string().optional(),
+});
+export const projectMoveApiResponseSchema = z.object({
+  sourceProjectId: z.string(),
+  /** The API that followed it in the source, where an undo puts it back; absent, it was the last. */
+  sourceBeforeApiId: z.string().optional(),
+  source: projectWireSchema,
+  target: projectWireSchema,
+});
+export type ProjectMoveApiResponse = z.infer<typeof projectMoveApiResponseSchema>;
 export const projectAddInterfaceResponseSchema = z.object({
   /** The project the interface landed in — the one that was created, for a `newProjectName`. */
   projectId: z.string(),

@@ -266,6 +266,8 @@ interface RowProps {
   readonly errorId?: string;
   /** Shown right after the control: where an empty field's value comes from, or a way back to it. */
   readonly aside?: React.ReactNode;
+  /** A line under the hint, inside the row: why the control is unavailable here. */
+  readonly note?: React.ReactNode;
   readonly children: React.ReactNode;
 }
 
@@ -300,6 +302,7 @@ function Row({
   error,
   errorId,
   aside,
+  note,
   children,
 }: RowProps) {
   const variant = useContext(VariantContext);
@@ -324,6 +327,7 @@ function Row({
           {aside}
           {locked && <LockedPill />}
         </div>
+        {note !== undefined && <div className="pl-46 text-xs text-fg-subtle">{note}</div>}
         {error !== undefined && (
           <div className="pl-46">
             <RowError id={errorId} message={error} />
@@ -373,6 +377,7 @@ function Row({
           )}
         </div>
         {hint !== undefined && <p className="mt-0.5 text-xs text-fg-subtle">{hint}</p>}
+        {note !== undefined && <div className="mt-0.5 text-xs text-fg-subtle">{note}</div>}
         {error !== undefined && <RowError id={errorId} message={error} />}
       </div>
       <div className="flex shrink-0 items-center gap-2">
@@ -582,6 +587,8 @@ export interface NumberSettingProps {
   readonly testId?: string;
   /** Not editable right now (the setting does not apply in the current mode); the value still shows. */
   readonly readOnly?: boolean;
+  /** Off, like {@link readOnly}, but greyed out too: the feature the setting tunes is off or unavailable. */
+  readonly disabled?: boolean;
   /** Locked by a managed-preferences policy: disabled, and the row says so. */
   readonly locked?: boolean;
   /** The dotted preference key this row edits, for the modified dot and per-row Reset. */
@@ -606,7 +613,8 @@ export function NumberSetting({
   unit,
   hint,
   testId,
-  readOnly = false,
+  readOnly: readOnlyProp = false,
+  disabled = false,
   locked: lockedProp = false,
   setting,
   aside,
@@ -616,6 +624,7 @@ export function NumberSetting({
   const unitId = useId();
   const variant = useContext(VariantContext);
   const row = useRowState(setting, lockedProp);
+  const readOnly = readOnlyProp || disabled;
   const rule: NumberRule = { min, max, integer };
   const asText = value === undefined ? '' : String(value);
   const [draft, setDraft] = useState(asText);
@@ -651,7 +660,7 @@ export function NumberSetting({
       {...(testId !== undefined ? { 'data-testid': testId } : {})}
       {...(error !== undefined ? { 'aria-invalid': true } : {})}
       {...(describedBy.length > 0 ? { 'aria-describedby': describedBy.join(' ') } : {})}
-      disabled={row.locked}
+      disabled={row.locked || disabled}
       readOnly={readOnly}
       inputMode={integer ? 'numeric' : 'decimal'}
       className={`${controlClass(variant, 'number')}${readOnly ? ' text-fg-muted' : ''}${error !== undefined ? INVALID_CONTROL : ''}`}
@@ -717,6 +726,8 @@ export interface BooleanSettingProps {
   readonly setting?: string;
   /** Shown right after the control, such as where an unset value comes from. */
   readonly aside?: React.ReactNode;
+  /** A line under the hint, inside the row: why the switch is unavailable here. */
+  readonly note?: React.ReactNode;
 }
 
 /**
@@ -733,6 +744,7 @@ export function BooleanSetting({
   locked: lockedProp = false,
   setting,
   aside,
+  note,
 }: BooleanSettingProps) {
   const id = useId();
   const variant = useContext(VariantContext);
@@ -746,6 +758,7 @@ export function BooleanSetting({
       modified={row.modified}
       onReset={row.reset}
       aside={aside}
+      note={note}
       {...(hint !== undefined ? { hint } : {})}
     >
       {variant === 'card' ? (

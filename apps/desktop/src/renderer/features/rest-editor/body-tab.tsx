@@ -10,7 +10,7 @@
  * of its own — the pick is what makes the file legal for main to read.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { JsonSchema } from '@wirebench/engine/rest';
+import { hasJsonComments, type JsonSchema } from '@wirebench/engine/rest';
 import { formatXml } from '@wirebench/engine/xml';
 import { Button } from '../../components/button.js';
 import { KvTable } from '../../components/kv-table.js';
@@ -68,7 +68,8 @@ function emptyBody(kind: BodyKind): RestBodyWire {
  *
  * JSON goes through `JSON.parse`, XML through the engine's own formatter — the same one the SOAP
  * editor's *Format* uses — and anything else is left alone, because there is no one right shape for
- * it. A body that does not parse is never silently rewritten.
+ * it. A body that does not parse is never silently rewritten, and nor is a JSON body with comments:
+ * `JSON.parse` would drop them, so Format refuses and says so (#702).
  */
 export function formatRawBody(
   text: string,
@@ -76,6 +77,9 @@ export function formatRawBody(
   indent: number,
 ): { readonly text: string } | { readonly error: string } {
   if (language === 'json') {
+    if (hasJsonComments(text)) {
+      return { error: 'Format would remove the comments in this body. Delete them first to format it.' };
+    }
     try {
       return { text: JSON.stringify(JSON.parse(text), null, indent) };
     } catch (error) {

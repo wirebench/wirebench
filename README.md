@@ -48,7 +48,15 @@ prompts, silent installs and where your data lives.
   sudo apt install ./wirebench_<version>_amd64.deb
   ```
 
-There is no Homebrew tap or winget package yet.
+On macOS and Windows a package manager installs and upgrades the app too (the winget listing is pending review):
+
+```bash
+brew install --cask wirebench/tap/wirebench
+```
+
+```powershell
+winget install Wirebench.Wirebench
+```
 
 The command line runs the same project files in a pipeline, as a GitHub Action, a GitLab template, a container image
 or plain `npx`:

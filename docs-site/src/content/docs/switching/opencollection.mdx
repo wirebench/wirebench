@@ -133,6 +133,9 @@ as they are, to the API, folder or request they were on, switched off. They run 
 [Bruno scripts](/wirebench/docs/guides/scripts/#bruno-scripts) for what is supported and what fails
 with `script-unsupported`. A request's `after-response` script and its `tests` become one
 post-response script.
+To move a script off the layer for good,
+[convert it to a Wirebench script](/wirebench/docs/guides/scripts/#convert-to-wirebench-scripts): a
+typed script the type check reads, with a TODO on each call that does not map.
 
 Script file items, and a script on a level that cannot hold one, are written as they are to
 `imported-scripts/` in the project folder, and never read back or run. A script lands at

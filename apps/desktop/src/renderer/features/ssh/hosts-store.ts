@@ -37,8 +37,10 @@ export type HostsDialog =
 export interface NewHostDraft {
   /** As typed; the card says "New host" while it is empty. */
   readonly name: string;
-  /** `user@address:port` or the serial line, as the form would save it. */
+  /** `user@address:port`, the Telnet target or the serial line, as the form would save it. */
   readonly target: string;
+  /** A Telnet host: the card shows the not-encrypted mark before the target (#688). */
+  readonly plainText?: true;
   /** The group it will be saved to; absent for the top level. */
   readonly groupId?: string;
 }

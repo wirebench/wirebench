@@ -1,4 +1,4 @@
-export { findStepRequest, runSelectorOf, selectRequests } from './select.js';
+export { findStepRequest, normaliseSelector, runSelectorOf, selectorCovers, selectRequests } from './select.js';
 export type { SelectedRequest, StepRequestLookup } from './select.js';
 export { scopesFor, withSystemValuesReported } from './context.js';
 export { overlayCurrent, withCurrentValues } from './current-values.js';

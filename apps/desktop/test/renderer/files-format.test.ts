@@ -115,14 +115,18 @@ describe('format', () => {
 
 describe('formatModifiedShort', () => {
   const at = (y: number, m: number, d: number): number => new Date(y, m, d, 21, 21).getTime();
-  it('drops the year this year and the time before it, so it fits the 7rem column', () => {
+  it('is the time today, the day earlier this year and the date before it, so it fits the 7rem column (S66)', () => {
     const now = at(2026, 9, 16);
+    const today = formatModifiedShort(at(2026, 9, 16), now);
     const thisYear = formatModifiedShort(at(2026, 9, 15), now);
     const lastYear = formatModifiedShort(at(2024, 9, 15), now);
+    expect(today).toMatch(/21/);
+    expect(today).not.toMatch(/2026|16/);
     expect(thisYear).not.toContain('2026');
-    expect(thisYear).toMatch(/21/);
+    expect(thisYear).toMatch(/15/);
+    expect(thisYear).not.toMatch(/21/);
     expect(lastYear).toContain('2024');
-    for (const text of [thisYear, lastYear]) {
+    for (const text of [today, thisYear, lastYear]) {
       expect(text.length).toBeLessThan(formatModified(at(2026, 9, 15)).length);
     }
   });

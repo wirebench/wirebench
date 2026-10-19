@@ -87,6 +87,7 @@ export const BEHAVIOUR_KEYS = [
   'editor.autoFormatResponses',
   'editor.autosave',
   'ui.confirmOnDelete',
+  'ui.previewTabs',
   'ui.historyCap',
   'ui.logSize',
 ] as const;
@@ -190,7 +191,7 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
       {
         id: 'secrets',
         label: 'Secrets',
-        subtitle: 'External secret sources.',
+        subtitle: 'Secret sources and the app lock for SSH secrets.',
         keys: stored('secrets'),
         searchable: true,
       },

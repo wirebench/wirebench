@@ -143,6 +143,7 @@ describe('terminal preferences', () => {
   it('defaults to asking before a multi-line paste, not copying on select, reconnecting 10 times and suggesting', () => {
     expect(DEFAULT_PREFERENCES.terminal).toEqual({
       confirmMultilinePaste: true,
+      confirmCloseSessions: true,
       copyOnSelect: false,
       autoReconnect: true,
       reconnectAttempts: 10,
@@ -163,6 +164,7 @@ describe('terminal preferences', () => {
     });
     expect(merged.terminal).toEqual({
       confirmMultilinePaste: false,
+      confirmCloseSessions: true,
       copyOnSelect: true,
       autoReconnect: false,
       reconnectAttempts: 10,

@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { ArrowLeftRight, FolderPlus, Lock, PencilLine, SquareTerminal, Trash2 } from 'lucide-react';
 import { Button } from '../../../components/button.js';
-import { IconButton } from '../../../components/icon-button.js';
+import { Tooltip } from '../../../components/tooltip.js';
 import { ConfirmDialog } from '../../../components/confirm-dialog.js';
 import { setCloseGuard, useEditorsStore } from '../../../state/editors.js';
 import { ConflictDialog } from './conflict-dialog.js';
@@ -20,8 +21,34 @@ import type { SftpEditEvent } from '../../../../shared/sftp-wire.js';
 const SEPARATOR = 'w-px bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
 
 /**
+ * A toolbar action: its icon, with its name beside it where the tab has room for the names (S66), and a
+ * tooltip naming it either way.
+ */
+function ToolButton(props: {
+  readonly label: string;
+  readonly disabled: boolean;
+  readonly onClick: () => void;
+  readonly children: ReactNode;
+}) {
+  return (
+    <Tooltip label={props.label}>
+      <Button
+        variant="ghost"
+        aria-label={props.label}
+        disabled={props.disabled}
+        onClick={props.onClick}
+        className="gap-1.5 px-2"
+      >
+        {props.children}
+        <span className="hidden text-sm @min-[56rem]:inline">{props.label}</span>
+      </Button>
+    </Tooltip>
+  );
+}
+
+/**
  * The tab's toolbar: what the right-click menu offers for the pane in use (the host's until the other is
- * used), as icon buttons, each disabled when that pane's selection does not allow it.
+ * used), each disabled when that pane's selection does not allow it.
  */
 function FilesToolbar({ tabId }: { readonly tabId: string }) {
   const paneId = useFilesStore((s) => {
@@ -34,7 +61,7 @@ function FilesToolbar({ tabId }: { readonly tabId: string }) {
   const local = pane?.place.kind === 'local';
   return (
     <div role="toolbar" aria-label="Files" data-testid="files-toolbar" className="flex items-center gap-0.5">
-      <IconButton
+      <ToolButton
         label="New folder"
         disabled={!ready}
         onClick={() => {
@@ -42,8 +69,8 @@ function FilesToolbar({ tabId }: { readonly tabId: string }) {
         }}
       >
         <FolderPlus size={14} aria-hidden="true" />
-      </IconButton>
-      <IconButton
+      </ToolButton>
+      <ToolButton
         label="Rename"
         disabled={!ready || count !== 1}
         onClick={() => {
@@ -51,8 +78,8 @@ function FilesToolbar({ tabId }: { readonly tabId: string }) {
         }}
       >
         <PencilLine size={14} aria-hidden="true" />
-      </IconButton>
-      <IconButton
+      </ToolButton>
+      <ToolButton
         label="Delete…"
         disabled={!ready || count === 0}
         onClick={() => {
@@ -60,10 +87,10 @@ function FilesToolbar({ tabId }: { readonly tabId: string }) {
         }}
       >
         <Trash2 size={14} aria-hidden="true" />
-      </IconButton>
+      </ToolButton>
       {/* Permissions are changed on a host only, so this machine's pane has no button for them. */}
       {!local && (
-        <IconButton
+        <ToolButton
           label="Permissions…"
           disabled={!ready || count !== 1}
           onClick={() => {
@@ -71,9 +98,9 @@ function FilesToolbar({ tabId }: { readonly tabId: string }) {
           }}
         >
           <Lock size={14} aria-hidden="true" />
-        </IconButton>
+        </ToolButton>
       )}
-      <IconButton
+      <ToolButton
         label="Copy to other pane"
         disabled={!ready || count === 0}
         onClick={() => {
@@ -81,7 +108,7 @@ function FilesToolbar({ tabId }: { readonly tabId: string }) {
         }}
       >
         <ArrowLeftRight size={14} aria-hidden="true" />
-      </IconButton>
+      </ToolButton>
     </div>
   );
 }
@@ -128,7 +155,7 @@ export function FilesTab({ tabId, hostId }: { readonly tabId: string; readonly h
 
   return (
     <div className="flex h-full flex-col" data-testid="ssh-files">
-      <div className="flex items-center gap-2 border-b border-hairline px-2 py-1">
+      <div className="@container flex items-center gap-2 border-b border-hairline px-2 py-1">
         <FilesToolbar tabId={tabId} />
         <span className="min-w-0 flex-1" />
         <Button

@@ -34,13 +34,15 @@ import { useWorkspaceStore } from '../../state/workspace.js';
 import { MethodBadge } from '../rest-api/method-badge.js';
 import { requestDisplayName } from '../rest-api/request-display-name.js';
 import { EXPLORER_DIALOGS, TAB_KINDS, entityIdOf, explorerDeletion, explorerRole } from '../../kinds/index.js';
-import { useEditorsStore } from '../../state/editors.js';
+import { previewing, useEditorsStore } from '../../state/editors.js';
+import { usePreferencesStore } from '../../state/preferences.js';
 import { kindLabel } from '../../kinds/placeholders.js';
 import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { explorerActions } from './explorer-actions.js';
 import { openProjectTab, projectRowActions } from './project-actions.js';
-import { isDropDisabled, planMoves } from './drag-drop.js';
+import { isContainerRow, isDropDisabled, planContainerDrop, planMoves } from './drag-drop.js';
+import { dropApiOnProject } from './move-api-dialog.js';
 import { getExplorerTree, registerExplorerTree, revealNode } from './explorer-api.js';
 import type { ExplorerNode, ExplorerProject, ExplorerSchedules, ExplorerWebhooks } from './tree-nodes.js';
 import { buildExplorerTree, nodeProjectId, schedulesNode } from './tree-nodes.js';
@@ -51,6 +53,7 @@ import { scheduleStateOf, schedulesShown, useSchedulesStore } from '../../state/
 import { describeCron, STATE_DOT, STATE_LABEL } from '../schedules/schedule-format.js';
 import { openScheduleTab, schedulesActions } from '../schedules/schedules-actions.js';
 import { useScriptValuesStore } from '../../state/script-values.js';
+import { ConvertScriptsDialog } from '../scripts/convert-scripts-dialog.js';
 import { EnableScriptsDialog } from '../scripts/enable-scripts-dialog.js';
 
 /** Measures a container's box size with `ResizeObserver` so the virtualized tree can fill it. */
@@ -162,6 +165,15 @@ function MockRunningBadge({ mockId }: { readonly mockId: string }) {
   );
 }
 
+/**
+ * Runs what a single click opens as a preview tab (#679), unless Settings turned preview tabs off: the next
+ * single click replaces it, and a double-click, an edit or a send keeps it.
+ */
+function asPreview(open: () => void): void {
+  if (usePreferencesStore.getState().preferences.ui.previewTabs) previewing(open);
+  else open();
+}
+
 function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   const role = explorerRole(node.data.kind);
   const Icon = role?.icon ?? NODE_ICON[node.data.kind];
@@ -186,36 +198,50 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
         // bubbles to it, so both handlers here stop propagation to keep it from also firing.
         onClick={(e) => {
           e.stopPropagation();
-          node.select();
-          if (
-            role?.click === 'open' ||
-            node.data.kind === 'webhook-request' ||
-            node.data.kind === 'catch-url' ||
-            node.data.kind === 'schedule' ||
-            node.data.kind === 'sequence' ||
-            node.data.kind === 'mock'
-          ) {
-            node.activate();
-          } else if (role?.click === 'open-and-fold') {
-            // An API opens its tab AND folds, unlike an interface: the tab is where its base URL
-            // and credentials live, and the row is also the container the user is about to expand.
-            node.activate();
-            node.toggle();
-          } else if (node.isInternal) {
-            // A project row opens its tab from `onSelect` (see below) and folds under the same
-            // click, like an API row: the row is both the thing the tab is about and the container
-            // the user is reaching into.
-            node.toggle();
-          }
+          // Whatever the click opens — here, or the project tab from `onSelect` — opens as a preview,
+          // except on a double-click's second click, which keeps what the first one opened (#679). Read
+          // from the click count rather than left to `dblclick`, which the row's re-render can swallow.
+          const keep = e.detail >= 2;
+          (keep ? (open: () => void) => open() : asPreview)(() => {
+            node.select();
+            if (keep && node.data.kind === 'project' && node.data.projectId !== undefined) {
+              openProjectTab(node.data.projectId);
+            }
+            if (
+              role?.click === 'open' ||
+              node.data.kind === 'webhook-request' ||
+              node.data.kind === 'catch-url' ||
+              node.data.kind === 'schedule' ||
+              node.data.kind === 'sequence' ||
+              node.data.kind === 'mock'
+            ) {
+              node.activate();
+            } else if (role?.click === 'open-and-fold') {
+              // An API opens its tab AND folds, unlike an interface: the tab is where its base URL
+              // and credentials live, and the row is also the container the user is about to expand.
+              node.activate();
+              node.toggle();
+            } else if (node.isInternal) {
+              // A project row opens its tab from `onSelect` (see below) and folds under the same
+              // click, like an API row: the row is both the thing the tab is about and the container
+              // the user is reaching into.
+              node.toggle();
+            }
+          });
         }}
-        // Kept for the rows a single click does not open: the interface viewer still answers to
-        // a double-click, as it always has, so folding an interface open costs nothing.
+        // A double-click opens for good: the preview the first click opened stays (#679). The interface
+        // viewer still answers to it too, as it always has, so folding an interface open costs nothing.
         onDoubleClick={(e) => {
           e.stopPropagation();
           node.activate();
         }}
+        {...(node.willReceiveDrop ? { 'data-drop-target': 'true' } : {})}
         className={`flex h-full items-center pr-1 text-sm ${
-          node.isSelected ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'
+          node.willReceiveDrop
+            ? 'bg-accent-muted text-fg-default ring-1 ring-accent ring-inset'
+            : node.isSelected
+              ? 'bg-accent-muted text-fg-default'
+              : 'text-fg-default hover:bg-surface-raised'
         }`}
       >
         {/* The chevron's width is reserved on leaves as well, so a request's name lines up with the
@@ -672,13 +698,15 @@ export function ExplorerView() {
               }
               disableDrag={(node) =>
                 explorerRole(node.kind)?.movable !== true &&
+                explorerRole(node.kind)?.container !== true &&
                 node.kind !== 'folder' &&
                 node.kind !== 'webhook-request' &&
                 node.kind !== 'webhook-folder'
               }
               // Reordering and moving happen inside the same API: a request or folder belongs to its
               // own API definition, and cannot move into another API or project. A webhook item or
-              // folder likewise stays inside its own project's webhook collection.
+              // folder likewise stays inside its own project's webhook collection. An API row moves
+              // among its project's containers, or onto another project's row (#701).
               disableDrop={({ parentNode, dragNodes, index }) => {
                 const ancestors: ExplorerNode[] = [];
                 for (let node = parentNode?.parent ?? null; node !== null; node = node.parent) {
@@ -695,6 +723,28 @@ export function ExplorerView() {
               }}
               onMove={async ({ dragNodes, parentNode, index }) => {
                 const parent = parentNode?.data;
+                const first = dragNodes[0]?.data;
+                if (first !== undefined && isContainerRow(first)) {
+                  if (parent?.kind !== 'project') return;
+                  const drop = planContainerDrop(
+                    parent,
+                    (parentNode?.children ?? []).map((child) => child.data),
+                    first,
+                    index,
+                  );
+                  if (drop === undefined) return;
+                  if (sameProject(parent, first)) {
+                    await useProjectStore
+                      .getState()
+                      .reorderApi(drop.apiId, drop.beforeApiId)
+                      .catch((error: unknown) =>
+                        showToast(error instanceof Error ? error.message : 'Could not move it'),
+                      );
+                  } else {
+                    await dropApiOnProject(drop.apiId, drop.targetProjectId, drop.beforeApiId);
+                  }
+                  return;
+                }
                 if (
                   parent === undefined ||
                   (explorerRole(parent.kind)?.dropTarget !== true &&
@@ -726,7 +776,8 @@ export function ExplorerView() {
                 // On an interface row it opens the viewer, the same thing "Show Interface
                 // Viewer" does.
                 if (node.data.kind === 'project') {
-                  // A project has no editor of its own; its tab opens from `onSelect`.
+                  // A project's tab opens from `onSelect`; a double-click or Enter keeps it (#679).
+                  if (node.data.projectId !== undefined) openProjectTab(node.data.projectId);
                   return;
                 }
                 const role = explorerRole(node.data.kind);
@@ -788,8 +839,12 @@ export function ExplorerView() {
                 // double-click — per the approved spec's amendment; project rows have no
                 // "activate" behaviour of their own (see `onActivate` below), so this is the
                 // only path that opens one.
+                // Selecting is browsing, by click or by arrow key, so the tab is a preview (#679).
                 if (node.kind === 'project' && node.projectId !== undefined) {
-                  openProjectTab(node.projectId);
+                  const { projectId } = node;
+                  asPreview(() => {
+                    openProjectTab(projectId);
+                  });
                 }
                 setSelection({
                   kind: node.kind,
@@ -892,6 +947,7 @@ export function ExplorerView() {
       </div>
 
       <EnableScriptsDialog />
+      <ConvertScriptsDialog />
       {EXPLORER_DIALOGS.map((Dialogs, index) => (
         <Dialogs key={index} />
       ))}

@@ -26,6 +26,8 @@ import { useUiStore } from '../state/ui.js';
 import { useDraftsStore } from '../state/drafts.js';
 import { tabsInSet, type TabSet } from '../state/tab-sets.js';
 import { useEditorsStore } from '../state/editors.js';
+import { closeTabs } from './tab-close.js';
+import { TabContextMenu } from './tab-context-menu.js';
 import { useProjectStore, type ProjectStore } from '../state/project.js';
 import { useWebhooksStore } from '../state/webhooks.js';
 import { useSchedulesStore } from '../state/schedules.js';
@@ -125,8 +127,13 @@ export function EditorArea() {
   const activeId = useEditorsStore((state) => state.activeId);
   const activate = useEditorsStore((state) => state.activate);
   const showStart = useEditorsStore((state) => state.showStart);
-  const close = useEditorsStore((state) => state.close);
   const move = useEditorsStore((state) => state.move);
+  const previewId = useEditorsStore((state) => state.previewId);
+  const pin = useEditorsStore((state) => state.pin);
+  /** Closes one tab, asking first when it holds unsaved edits (#679). */
+  const close = (id: string): void => {
+    void closeTabs([id]);
+  };
   const workspaceEnvironments = useWorkspaceStore((state) => state.workspace?.environments ?? NO_ENVIRONMENTS);
   // The active environment's colour bands the top of the strip (#345): where a send goes, in view.
   // The current project's (#468): the strip belongs to no one request.
@@ -171,6 +178,11 @@ export function EditorArea() {
       }),
     ),
   );
+  // The first edit keeps a preview tab (#679): a tab with unsaved edits is never replaced by the next click.
+  const previewDirty = previewId !== undefined && dirtyTabs[tabs.findIndex((tab) => tab.id === previewId)] === true;
+  useEffect(() => {
+    if (previewDirty && previewId !== undefined) pin(previewId);
+  }, [previewDirty, previewId, pin]);
   const paneSessions = useHostsStore((state) => state.panes);
   const resolvedHosts = useHostsStore((state) => state.resolved);
   const layouts = useLayoutsStore((state) => state.layouts);
@@ -418,121 +430,145 @@ export function EditorArea() {
                 leaves(tab.panes).map((leaf) => leaf.paneId),
               );
             const mark = markOf(tab);
+            const index = tabs.indexOf(tab);
+            // One focusable control per tab. A nested close *button* would be interactive
+            // content inside a `tab` widget, which screen readers do not announce reliably, so
+            // the × is a decorative click target and the keyboard path to closing is Delete (or
+            // Backspace) on the focused tab — what `aria-keyshortcuts` advertises.
             return (
-              // One focusable control per tab. A nested close *button* would be interactive
-              // content inside a `tab` widget, which screen readers do not announce reliably, so
-              // the × is a decorative click target and the keyboard path to closing is Delete (or
-              // Backspace) on the focused tab — what `aria-keyshortcuts` advertises.
-              <button
+              <TabContextMenu
                 key={tab.id}
-                type="button"
-                role="tab"
-                id={tabId(tab.id)}
-                aria-controls={panelId(tab.id)}
-                aria-selected={tab.id === activeId}
-                tabIndex={tab.id === activeId ? 0 : -1}
-                aria-keyshortcuts="Delete"
-                onClick={() => activate(tab.id)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Delete' || event.key === 'Backspace') {
-                    event.preventDefault();
-                    close(tab.id);
-                    return;
-                  }
-                  // ⌘⇧←/→ (Ctrl+Shift elsewhere) carries the focused tab along the strip instead of
-                  // moving focus, so the list's own arrow handling must not see it.
-                  if (
-                    (event.metaKey || event.ctrlKey) &&
-                    event.shiftKey &&
-                    (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
-                  ) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    const index = tabs.findIndex((candidate) => candidate.id === tab.id);
-                    move(tab.id, index + (event.key === 'ArrowLeft' ? -1 : 1));
-                  }
-                }}
-                draggable
-                onDragStart={(event) => {
-                  event.dataTransfer.effectAllowed = 'move';
-                  event.dataTransfer.setData('text/plain', tab.id);
-                  setDraggingId(tab.id);
-                }}
-                onDragOver={(event) => {
-                  if (draggingId === undefined) {
-                    return;
-                  }
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = 'move';
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  const side = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
-                  if (dropTarget?.id !== tab.id || dropTarget.side !== side) {
-                    setDropTarget({ id: tab.id, side });
-                  }
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  if (draggingId !== undefined && dropTarget !== undefined && draggingId !== dropTarget.id) {
-                    const from = tabs.findIndex((candidate) => candidate.id === draggingId);
-                    const over = tabs.findIndex((candidate) => candidate.id === dropTarget.id);
-                    // Index in the list *after* the dragged tab is lifted out of it.
-                    const insertAt = (dropTarget.side === 'after' ? over + 1 : over) - (from < over ? 1 : 0);
-                    move(draggingId, insertAt);
-                  }
-                  endDrag();
-                }}
-                onDragEnd={endDrag}
-                data-drop={dropTarget?.id === tab.id && draggingId !== tab.id ? dropTarget.side : undefined}
-                title={label}
-                className={`group inline-flex max-w-[14rem] shrink-0 items-center gap-2 border-r border-hairline px-3 text-sm ${
-                  tab.id === activeId ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
-                } ${draggingId === tab.id ? 'opacity-50' : ''} data-[drop=after]:shadow-[inset_-2px_0_0_var(--color-accent)] data-[drop=before]:shadow-[inset_2px_0_0_var(--color-accent)]`}
+                tab={tab}
+                label={label}
+                hasOthers={tabs.length > 1}
+                hasRight={index < tabs.length - 1}
               >
-                {status !== undefined && (
-                  // A terminal tab's icon is its session's state, coloured like the Hosts tree's dot.
-                  <span
-                    role="img"
-                    aria-label={status.label}
-                    className={`size-1.5 shrink-0 rounded-full bg-current ${status.color}`}
-                  />
-                )}
-                <span className="min-w-0 truncate">{label}</span>
-                {mark !== undefined && <TerminalMarkIcon mark={mark} />}
-                {recording && <RecordingMark />}
-                {forwarding !== undefined && <AgentForwardingMark state={forwarding} />}
-                {broadcasting[tab.id]?.on === true && (
-                  // Never missed while on (spec R8): drawn red, and named for screen readers.
-                  <span
-                    data-testid="editor-tab-broadcast"
-                    title="Broadcasting"
-                    aria-label="Broadcasting"
-                    role="img"
-                    className="size-1.5 shrink-0 rounded-full bg-status-danger"
-                  />
-                )}
-                {dirty && (
-                  // Announced, not just drawn: the dot is the only thing distinguishing a tab
-                  // with unsaved edits from one without, and it is too small to rely on colour.
-                  <span
-                    data-testid="editor-tab-dirty"
-                    title="Unsaved changes"
-                    aria-label="Unsaved changes"
-                    className="size-1.5 shrink-0 rounded-full bg-fg-muted"
-                  />
-                )}
-                <span
-                  aria-hidden="true"
-                  data-testid="editor-tab-close"
-                  title={`Close ${label}`}
-                  className="text-fg-subtle hover:text-fg-default"
-                  onClick={(event) => {
-                    event.stopPropagation();
+                <button
+                  type="button"
+                  role="tab"
+                  id={tabId(tab.id)}
+                  aria-controls={panelId(tab.id)}
+                  aria-selected={tab.id === activeId}
+                  tabIndex={tab.id === activeId ? 0 : -1}
+                  aria-keyshortcuts="Delete"
+                  onClick={() => activate(tab.id)}
+                  // Double-clicking a preview tab's title keeps it (#679).
+                  onDoubleClick={() => {
+                    pin(tab.id);
+                  }}
+                  // A middle-click closes, as on any tab strip. `auxclick` is what fires for it; the button's
+                  // `mousedown` default is held back so the platform's middle-click autoscroll never starts.
+                  onMouseDown={(event) => {
+                    if (event.button === 1) event.preventDefault();
+                  }}
+                  onAuxClick={(event) => {
+                    if (event.button !== 1) return;
+                    event.preventDefault();
                     close(tab.id);
                   }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Delete' || event.key === 'Backspace') {
+                      event.preventDefault();
+                      close(tab.id);
+                      return;
+                    }
+                    // ⌘⇧←/→ (Ctrl+Shift elsewhere) carries the focused tab along the strip instead of
+                    // moving focus, so the list's own arrow handling must not see it.
+                    if (
+                      (event.metaKey || event.ctrlKey) &&
+                      event.shiftKey &&
+                      (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+                    ) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const index = tabs.findIndex((candidate) => candidate.id === tab.id);
+                      move(tab.id, index + (event.key === 'ArrowLeft' ? -1 : 1));
+                    }
+                  }}
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', tab.id);
+                    setDraggingId(tab.id);
+                  }}
+                  onDragOver={(event) => {
+                    if (draggingId === undefined) {
+                      return;
+                    }
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'move';
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    const side = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+                    if (dropTarget?.id !== tab.id || dropTarget.side !== side) {
+                      setDropTarget({ id: tab.id, side });
+                    }
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    if (draggingId !== undefined && dropTarget !== undefined && draggingId !== dropTarget.id) {
+                      const from = tabs.findIndex((candidate) => candidate.id === draggingId);
+                      const over = tabs.findIndex((candidate) => candidate.id === dropTarget.id);
+                      // Index in the list *after* the dragged tab is lifted out of it.
+                      const insertAt = (dropTarget.side === 'after' ? over + 1 : over) - (from < over ? 1 : 0);
+                      move(draggingId, insertAt);
+                    }
+                    endDrag();
+                  }}
+                  onDragEnd={endDrag}
+                  data-drop={dropTarget?.id === tab.id && draggingId !== tab.id ? dropTarget.side : undefined}
+                  data-preview={tab.id === previewId ? 'true' : undefined}
+                  title={tab.id === previewId ? `${label} (preview)` : label}
+                  className={`group inline-flex max-w-[14rem] shrink-0 items-center gap-2 border-r border-hairline px-3 text-sm ${
+                    tab.id === activeId ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
+                  } ${draggingId === tab.id ? 'opacity-50' : ''} data-[drop=after]:shadow-[inset_-2px_0_0_var(--color-accent)] data-[drop=before]:shadow-[inset_2px_0_0_var(--color-accent)]`}
                 >
-                  ×
-                </span>
-              </button>
+                  {status !== undefined && (
+                    // A terminal tab's icon is its session's state, coloured like the Hosts tree's dot.
+                    <span
+                      role="img"
+                      aria-label={status.label}
+                      className={`size-1.5 shrink-0 rounded-full bg-current ${status.color}`}
+                    />
+                  )}
+                  {/* A preview tab's name is italic: the next single click in the Explorer replaces it. */}
+                  <span className={`min-w-0 truncate${tab.id === previewId ? ' italic' : ''}`}>{label}</span>
+                  {mark !== undefined && <TerminalMarkIcon mark={mark} />}
+                  {recording && <RecordingMark />}
+                  {forwarding !== undefined && <AgentForwardingMark state={forwarding} />}
+                  {broadcasting[tab.id]?.on === true && (
+                    // Never missed while on (spec R8): drawn red, and named for screen readers.
+                    <span
+                      data-testid="editor-tab-broadcast"
+                      title="Broadcasting"
+                      aria-label="Broadcasting"
+                      role="img"
+                      className="size-1.5 shrink-0 rounded-full bg-status-danger"
+                    />
+                  )}
+                  {dirty && (
+                    // Announced, not just drawn: the dot is the only thing distinguishing a tab
+                    // with unsaved edits from one without, and it is too small to rely on colour.
+                    <span
+                      data-testid="editor-tab-dirty"
+                      title="Unsaved changes"
+                      aria-label="Unsaved changes"
+                      className="size-1.5 shrink-0 rounded-full bg-fg-muted"
+                    />
+                  )}
+                  <span
+                    aria-hidden="true"
+                    data-testid="editor-tab-close"
+                    title={`Close ${label}`}
+                    className="text-fg-subtle hover:text-fg-default"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      close(tab.id);
+                    }}
+                  >
+                    ×
+                  </span>
+                </button>
+              </TabContextMenu>
             );
           })}
         </div>
@@ -608,6 +644,16 @@ export function EditorArea() {
         id={panelId(selectedId)}
         aria-labelledby={tabId(selectedId)}
         className="min-h-0 flex-1 overflow-hidden"
+        // Typing, toggling or picking anything in a preview tab keeps it (#679), whatever its kind: a project's
+        // settings autosave, so they never show as unsaved for the effect above to see. Bubbling, not capture:
+        // the field's own handler has to read the new value first, or the re-render this causes puts a
+        // controlled input back to its old one.
+        onInput={() => {
+          if (activeId !== undefined && activeId === previewId) pin(activeId);
+        }}
+        onChange={() => {
+          if (activeId !== undefined && activeId === previewId) pin(activeId);
+        }}
       >
         {showingStart && displayedSet === 'ssh' ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading hosts…</p>}>

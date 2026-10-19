@@ -126,7 +126,7 @@ describe('MCP menus', () => {
       ['Run…'],
       ['Refresh catalogue'],
       ['Export as Postman Collection…', 'Export as OpenCollection…'],
-      ['Rename…'],
+      ['Rename…', 'Move to project…'],
       ['Delete'],
     ]);
   });

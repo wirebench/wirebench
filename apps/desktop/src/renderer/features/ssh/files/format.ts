@@ -102,12 +102,8 @@ export function formatSize(bytes: number): string {
 }
 
 const MODIFIED = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-const THIS_YEAR = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-});
+const TODAY = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const THIS_YEAR = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
 const OTHER_YEAR = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 
 /** A modified time in full, in the user's locale: a cell's title. */
@@ -116,12 +112,15 @@ export function formatModified(ms: number): string {
 }
 
 /**
- * A modified time short enough for a 7rem column, in the user's locale: "Oct 15, 21:21" this year,
- * "Oct 15, 2024" before it (#594).
+ * A modified time short enough for a 7rem column, in the user's locale, the full time in its title:
+ * "12:35" today, "Oct 15" earlier this year, "Oct 15, 2024" before it. A date with a time ("Oct 19, 12:35 PM")
+ * was cut off in the column (S66).
  */
 export function formatModifiedShort(ms: number, now: number = Date.now()): string {
   const date = new Date(ms);
-  return (date.getFullYear() === new Date(now).getFullYear() ? THIS_YEAR : OTHER_YEAR).format(date);
+  const today = new Date(now);
+  if (date.toDateString() === today.toDateString()) return TODAY.format(date);
+  return (date.getFullYear() === today.getFullYear() ? THIS_YEAR : OTHER_YEAR).format(date);
 }
 
 /** A folder, or a link to one: opening it lists it. */

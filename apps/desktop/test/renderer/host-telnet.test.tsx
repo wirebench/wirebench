@@ -18,6 +18,9 @@ import { connectErrorKind, connectFailureSentence } from '../../src/renderer/fea
 import { HostDetails } from '../../src/renderer/features/ssh/host-details.js';
 import { HostForm } from '../../src/renderer/features/ssh/host-dialog.js';
 import { HostActionsButton } from '../../src/renderer/features/ssh/host-menus.js';
+import { telnetTargetText } from '../../src/renderer/features/ssh/host-protocol.js';
+import { HostCards } from '../../src/renderer/features/ssh/host-cards.js';
+import { DEFAULT_HOSTS_PREFS } from '../../src/renderer/features/ssh/hosts-prefs.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 
@@ -110,6 +113,12 @@ describe('Telnet in the host form (#425)', () => {
     edit('core');
     expect(within(section()).getByRole('option', { name: 'Inherit (Telnet)' })).toBeTruthy();
     expect(screen.getByText(/types the user and password at the device's/)).toBeTruthy();
+    // The note sits right under the sign-in choice it explains; Group comes after it (S61).
+    const note = screen.getByTestId('host-telnet-sign-in-note');
+    const auth = screen.getByRole('radiogroup', { name: 'Authentication' });
+    const group = screen.getByLabelText('Group');
+    expect(auth.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(note.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByLabelText<HTMLInputElement>('Port').placeholder).toBe('23');
     await save();
     expect(saved().groups[0]!.hosts[0]!.ssh).toEqual({});
@@ -184,5 +193,39 @@ describe('a Telnet host elsewhere (#425)', () => {
     for (const code of ['telnet-off', 'ssh-jump-not-ssh', 'ssh-protocol-unsupported']) {
       expect(connectErrorKind(code)).toBe('settings');
     }
+  });
+});
+
+describe('a Telnet host’s target says so (#688)', () => {
+  it('reads "Telnet · user@address", the port only when it is not 23', () => {
+    expect(telnetTargetText('10.1.1.1', 'admin', 23)).toBe('Telnet · admin@10.1.1.1');
+    expect(telnetTargetText('10.1.1.1', undefined, undefined)).toBe('Telnet · 10.1.1.1');
+    expect(telnetTargetText('10.1.1.1', 'admin', 2323)).toBe('Telnet · admin@10.1.1.1:2323');
+  });
+
+  it('a card shows the Telnet target with the not-encrypted mark; an SSH card shows neither', () => {
+    render(<HostCards prefs={DEFAULT_HOSTS_PREFS} onPrefs={vi.fn()} />);
+    const telnet = screen.getByTestId('host-row-core');
+    expect(telnet.textContent).toContain('Telnet · 10.0.0.2');
+    expect(within(telnet).getByRole('img', { name: 'Not encrypted' })).toBeTruthy();
+    const ssh = screen.getByTestId('host-row-plain');
+    expect(ssh.textContent).toContain('u@10.0.0.1');
+    expect(ssh.textContent).not.toContain('Telnet');
+    expect(within(ssh).queryByRole('img', { name: 'Not encrypted' })).toBeNull();
+  });
+
+  it('the draft card of a new Telnet host reads the same, without a bare :23', async () => {
+    render(<HostForm file={FILE} dialog={{ mode: 'new-host', parent: 'switches' }} embedded />);
+    await userEvent.type(screen.getByLabelText('Name'), 'edge');
+    await userEvent.type(screen.getByLabelText('Address'), '10.1.1.1');
+    await userEvent.type(screen.getByLabelText('User'), 'admin');
+    expect(useHostsStore.getState().draft).toMatchObject({ target: 'Telnet · admin@10.1.1.1', plainText: true });
+    cleanup();
+    useHostsStore.setState({ dialog: { mode: 'new-host', parent: 'switches' } });
+    render(<HostCards prefs={DEFAULT_HOSTS_PREFS} onPrefs={vi.fn()} />);
+    const card = screen.getByTestId('host-draft-card');
+    expect(card.textContent).toContain('Telnet · admin@10.1.1.1');
+    expect(card.textContent).not.toContain(':23');
+    expect(within(card).getByRole('img', { name: 'Not encrypted' })).toBeTruthy();
   });
 });

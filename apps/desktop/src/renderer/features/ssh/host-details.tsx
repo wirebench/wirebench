@@ -6,12 +6,12 @@
  * closes it, it only changes the host shown. Whether it shows is remembered on this machine.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Copy, FolderOpen, Pencil, TriangleAlert } from 'lucide-react';
+import { Copy, FolderOpen, Pencil, Plus, SquareTerminal, TriangleAlert } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import type { ResolvedHostWire, SshKnownHostWire, SshSecretNameWire } from '../../../shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
-import { editHost, openTerminalFor } from './connect.js';
+import { editHost, openInNewTab, openTerminalFor } from './connect.js';
 import { openFiles } from './files/open-files.js';
 import { HostForwards } from './forwarding/forwarding-view.js';
 import { isLive, useForwardsStore } from './forwarding/forwards-store.js';
@@ -34,10 +34,13 @@ type Provenance = ResolvedHostWire['ssh']['port']['from'];
 
 export function Row({ label, children }: { readonly label: string; readonly children: ReactNode }) {
   return (
-    // The label above the value in a panel narrower than 360px, beside it from there.
-    <div className="grid grid-cols-1 items-baseline gap-x-2 gap-y-0.5 py-1 @min-[360px]:grid-cols-[6.5rem_1fr]">
+    // The label above the value in a panel narrower than 420px, beside it from there. A value wraps rather
+    // than being cut off ("core_sw_passw…", S51): its parts are not cut short inside a row.
+    <div className="grid grid-cols-1 items-baseline gap-x-2 gap-y-0.5 py-1 @min-[420px]:grid-cols-[6.5rem_1fr]">
       <dt className="text-xs text-fg-subtle">{label}</dt>
-      <dd className="flex min-w-0 items-baseline gap-2 text-sm text-fg-default">{children}</dd>
+      <dd className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm text-fg-default [&_.truncate]:whitespace-normal [&_.truncate]:[overflow-wrap:anywhere]">
+        {children}
+      </dd>
     </div>
   );
 }
@@ -99,7 +102,7 @@ export function HostDetails() {
     <>
       {dialog?.mode === 'new-host' ? (
         // Keeps the test id the centred dialog had, so the end-to-end helpers find the form where it moved.
-        <div data-testid="host-dialog" className="px-1 py-3">
+        <div data-testid="host-dialog" className="h-full">
           <HostForm key={JSON.stringify(dialog)} file={file} dialog={dialog} embedded />
         </div>
       ) : (
@@ -184,7 +187,7 @@ function PickedHost() {
   }
   if (dialog?.mode === 'edit-host' && dialog.id === entry.id) {
     return (
-      <div data-testid="host-edit" className="px-1 py-3">
+      <div data-testid="host-edit" className="h-full">
         <HostForm key={entry.id} file={file} dialog={dialog} embedded />
       </div>
     );
@@ -246,14 +249,35 @@ function PickedHost() {
       </div>
       {/* Wraps in a narrow panel rather than pushing the last buttons past its edge. */}
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="primary"
-          onClick={() => {
-            openTerminalFor(entry.id);
-          }}
-        >
-          Connect
-        </Button>
+        {/* With a session open, the way back to it leads, and another session sits beside it (S50). */}
+        {hostStatus === 'open' ? (
+          <>
+            <Button
+              variant="primary"
+              onClick={() => {
+                openTerminalFor(entry.id);
+              }}
+            >
+              <SquareTerminal size={12} aria-hidden="true" /> Go to terminal
+            </Button>
+            <Button
+              onClick={() => {
+                openInNewTab(entry.id);
+              }}
+            >
+              <Plus size={12} aria-hidden="true" /> New session
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="primary"
+            onClick={() => {
+              openTerminalFor(entry.id);
+            }}
+          >
+            Connect
+          </Button>
+        )}
         {sshFeatures && (
           <Button
             onClick={() => {

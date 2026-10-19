@@ -6,66 +6,16 @@
  * there every layer has only to start.
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from '../../../src/grpc/scripting.js';
-import type { McpRequestSnapshot, McpResponseSnapshot } from '../../../src/mcp/scripting.js';
-import type { SoapRequestSnapshot, SoapResponseSnapshot } from '../../../src/soap/scripting.js';
 import type { LayeredApi, ScriptOutcome } from '../../../src/script/model.js';
 import type { ScriptRunInput } from '../../../src/script/run.js';
 import { runScript } from '../../../src/script/run.js';
 import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
+import { GRPC, GRPC_RESPONSE, MCP, MCP_RESPONSE, SOAP, SOAP_RESPONSE } from './snapshots.js';
 
 const sandbox = createScriptSandbox();
 afterAll(async () => {
   await sandbox.dispose();
 });
-
-const GRPC: GrpcRequestSnapshot = {
-  protocol: 'grpc',
-  target: 'grpc.test:443',
-  method: 'shop.Carts/Get',
-  metadata: [['x-trace', '1']],
-  message: { id: '7' },
-};
-const GRPC_RESPONSE: GrpcResponseSnapshot = {
-  protocol: 'grpc',
-  status: { code: 0, name: 'OK', message: '' },
-  metadata: [['x-server', 'carts-1']],
-  trailers: [],
-  message: { id: '9', items: 2 },
-  durationMs: 3,
-};
-
-const SOAP: SoapRequestSnapshot = {
-  protocol: 'soap',
-  endpoint: 'https://soap.test/stock',
-  soapAction: 'urn:GetQuote',
-  headers: [],
-  envelope: '<soap:Envelope><soap:Body><q/></soap:Body></soap:Envelope>',
-};
-const SOAP_RESPONSE: SoapResponseSnapshot = {
-  protocol: 'soap',
-  status: 200,
-  headers: [['Content-Type', 'text/xml']],
-  text: '<Envelope/>',
-  durationMs: 5,
-};
-
-const MCP: McpRequestSnapshot = {
-  protocol: 'mcp',
-  transport: 'http',
-  url: 'https://mcp.test/mcp',
-  method: 'tools/call',
-  tool: 'search',
-  arguments: { q: 'a' },
-};
-const MCP_RESPONSE: McpResponseSnapshot = {
-  protocol: 'mcp',
-  method: 'tools/call',
-  result: { content: [] },
-  isError: false,
-  messageCount: 4,
-  durationMs: 6,
-};
 
 const run = (
   api: LayeredApi,

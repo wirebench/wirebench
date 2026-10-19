@@ -410,7 +410,9 @@ function GenerateKeyBody({
             </fieldset>
             {deviceStatus?.supported === false && (
               <p className="text-xs text-fg-subtle" data-testid="generate-key-device-unavailable">
-                Device keys: {deviceStatus.reason}
+                Device keys need macOS with a Secure Enclave or Windows Hello.
+                {/* Main adds a reason only when it says more, such as "This Mac has no Secure Enclave". */}
+                {deviceStatus.reason !== undefined && ` ${deviceStatus.reason.replace(/\.?$/, '.')}`}
               </p>
             )}
             {device && deviceWords !== undefined && (

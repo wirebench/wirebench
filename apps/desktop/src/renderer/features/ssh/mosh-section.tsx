@@ -62,14 +62,12 @@ export interface MoshSectionProps {
   readonly inheritedProtocol: Provenance<SshProtocolWire>;
   readonly inheritedMosh: Provenance<MoshSettingsWire>;
   readonly onProtocol: (next: SshProtocolWire | undefined) => void;
-  readonly onMosh: (next: MoshSettingsWire | undefined) => void;
 }
 
 /**
  * The host and group form's protocol (#419): SSH, Mosh, which starts a mosh server over SSH and then runs the
  * session over UDP with the installed mosh-client, Telnet (#425), in plain text, or a serial console (#426) on
- * this computer. For Mosh, the server command and UDP ports, as one block that replaces a group's whole. Telnet
- * and serial are offered only while this build allows them, and stay shown on an entry already set to them.
+ * this computer ({@link MoshServerFields} holds Mosh's server settings). Telnet and serial are offered only while this build allows them, and stay shown on an entry already set to them.
  */
 export function MoshSection({
   protocol,
@@ -77,21 +75,13 @@ export function MoshSection({
   inheritedProtocol: inheritedP,
   inheritedMosh: inheritedM,
   onProtocol,
-  onMosh,
 }: MoshSectionProps) {
-  const serverId = useId();
-  const portsId = useId();
   const telnetAllowed = useUiStore((s) => s.telnetEnabled);
   const serialAllowed = useUiStore((s) => s.serialEnabled);
   const fromGroup = typeof inheritedP.from === 'object';
   const effective = protocol ?? inheritedP.value ?? 'ssh';
   const inheritedLabel = PROTOCOL_LABELS[inheritedP.value ?? 'ssh'];
   const blockSource = mosh === undefined ? sourceText(inheritedM, () => 'settings') : undefined;
-  const portsBad = mosh?.ports !== undefined && mosh.ports !== '' && !validMoshPorts(mosh.ports);
-  const setField = (key: keyof MoshSettingsWire, value: string): void => {
-    const next = { ...(mosh ?? {}), [key]: value === '' ? undefined : value };
-    onMosh(cleanMosh(next));
-  };
   return (
     <section aria-label="Protocol" className="flex flex-col gap-2">
       <label className="flex flex-col gap-1 text-xs">
@@ -135,49 +125,72 @@ export function MoshSection({
         </p>
       )}
       {effective === 'mosh' && (
-        <>
-          <p role="note" className="text-xs text-fg-subtle">
-            Starts a mosh server over SSH, then runs the session over UDP with mosh-client, which must be installed on
-            this computer. UDP goes straight to the host, not through a jump host.
-            {blockSource !== undefined && <span className="text-fg-faint"> Server settings {blockSource}.</span>}
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex flex-col gap-1 text-xs">
-              <label htmlFor={serverId} className="text-fg-subtle">
-                Server command
-              </label>
-              <input
-                id={serverId}
-                className={`${INPUT_CLASS} min-w-0`}
-                placeholder={inheritedM.value?.server ?? 'mosh-server'}
-                value={mosh?.server ?? ''}
-                onChange={(e) => {
-                  setField('server', e.target.value);
-                }}
-              />
-            </div>
-            <div className="flex flex-col gap-1 text-xs">
-              <label htmlFor={portsId} className="text-fg-subtle">
-                UDP ports
-              </label>
-              <input
-                id={portsId}
-                className={`${INPUT_CLASS} min-w-0`}
-                placeholder={inheritedM.value?.ports ?? '60000:61000'}
-                aria-invalid={portsBad}
-                value={mosh?.ports ?? ''}
-                onChange={(e) => {
-                  setField('ports', e.target.value.trim());
-                }}
-              />
-            </div>
-          </div>
-          {portsBad && (
-            <p role="alert" className="text-xs text-status-danger">
-              Enter one port, or a range as LOW:HIGH (for example 60000:60010).
-            </p>
-          )}
-        </>
+        <p role="note" className="text-xs text-fg-subtle">
+          Starts a mosh server over SSH, then runs the session over UDP with mosh-client, which must be installed on
+          this computer. UDP goes straight to the host, not through a jump host.
+          {blockSource !== undefined && <span className="text-fg-faint"> Server settings {blockSource}.</span>} Server
+          command and UDP ports are under Advanced.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * A Mosh host's server command and UDP ports, as one block that replaces a group's whole. Rare tuning with
+ * good defaults, so the form keeps them under Advanced, after the fields every host needs (S62).
+ */
+export function MoshServerFields({
+  mosh,
+  inheritedMosh: inheritedM,
+  onMosh,
+}: Pick<MoshSectionProps, 'mosh' | 'inheritedMosh'> & {
+  readonly onMosh: (next: MoshSettingsWire | undefined) => void;
+}) {
+  const serverId = useId();
+  const portsId = useId();
+  const portsBad = mosh?.ports !== undefined && mosh.ports !== '' && !validMoshPorts(mosh.ports);
+  const setField = (key: keyof MoshSettingsWire, value: string): void => {
+    const next = { ...(mosh ?? {}), [key]: value === '' ? undefined : value };
+    onMosh(cleanMosh(next));
+  };
+  return (
+    <section aria-label="Mosh server" className="flex flex-col gap-2">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-col gap-1 text-xs">
+          <label htmlFor={serverId} className="text-fg-subtle">
+            Server command
+          </label>
+          <input
+            id={serverId}
+            className={`${INPUT_CLASS} min-w-0`}
+            placeholder={inheritedM.value?.server ?? 'mosh-server'}
+            value={mosh?.server ?? ''}
+            onChange={(e) => {
+              setField('server', e.target.value);
+            }}
+          />
+        </div>
+        <div className="flex flex-col gap-1 text-xs">
+          <label htmlFor={portsId} className="text-fg-subtle">
+            UDP ports
+          </label>
+          <input
+            id={portsId}
+            className={`${INPUT_CLASS} min-w-0`}
+            placeholder={inheritedM.value?.ports ?? '60000:61000'}
+            aria-invalid={portsBad}
+            value={mosh?.ports ?? ''}
+            onChange={(e) => {
+              setField('ports', e.target.value.trim());
+            }}
+          />
+        </div>
+      </div>
+      {portsBad && (
+        <p role="alert" className="text-xs text-status-danger">
+          Enter one port, or a range as LOW:HIGH (for example 60000:60010).
+        </p>
       )}
     </section>
   );

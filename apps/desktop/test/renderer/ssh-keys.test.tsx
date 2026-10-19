@@ -100,7 +100,7 @@ beforeEach(() => {
   useKeyInstall.setState({ target: null });
   deviceKeyStatus.mockResolvedValue({
     ok: true,
-    value: { supported: false, reason: 'Device keys are not available on this OS' },
+    value: { supported: false },
   });
 });
 afterEach(cleanup);
@@ -402,8 +402,21 @@ describe('device keys (#428)', () => {
     const dialog = await screen.findByTestId('generate-key-dialog');
     expect(await within(dialog).findByTestId('generate-key-device-unavailable')).toBeDefined();
     expect(within(dialog).getByRole('radio', { name: 'Device key' })).toHaveProperty('disabled', true);
-    expect(within(dialog).getByTestId('generate-key-device-unavailable').textContent).toContain(
-      'not available on this OS',
+    expect(within(dialog).getByTestId('generate-key-device-unavailable').textContent).toBe(
+      'Device keys need macOS with a Secure Enclave or Windows Hello.',
+    );
+  });
+
+  it('adds what this computer lacks when main says', async () => {
+    deviceKeyStatus.mockResolvedValue({
+      ok: true,
+      value: { supported: false, platform: 'macos-secure-enclave', reason: 'This Mac has no Secure Enclave' },
+    });
+    render(<SshHome />);
+    await userEvent.click(screen.getByRole('button', { name: /Generate key/ }));
+    const dialog = await screen.findByTestId('generate-key-dialog');
+    expect((await within(dialog).findByTestId('generate-key-device-unavailable')).textContent).toBe(
+      'Device keys need macOS with a Secure Enclave or Windows Hello. This Mac has no Secure Enclave.',
     );
   });
 

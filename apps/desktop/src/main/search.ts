@@ -51,6 +51,8 @@ export interface SearchDocument {
   readonly projectName?: string;
   readonly requestId?: string;
   readonly requestName?: string;
+  /** A REST request's method. */
+  readonly method?: string;
   readonly interfaceId?: string;
   readonly interfaceName?: string;
   readonly location?: string;
@@ -201,6 +203,7 @@ export function searchDocuments(
         ...(document.projectName !== undefined ? { projectName: document.projectName } : {}),
         ...(document.requestId !== undefined ? { requestId: document.requestId } : {}),
         ...(document.requestName !== undefined ? { requestName: document.requestName } : {}),
+        ...(document.method !== undefined ? { method: document.method } : {}),
         ...(document.interfaceId !== undefined ? { interfaceId: document.interfaceId } : {}),
         ...(document.interfaceName !== undefined ? { interfaceName: document.interfaceName } : {}),
         ...(document.location !== undefined ? { location: document.location } : {}),

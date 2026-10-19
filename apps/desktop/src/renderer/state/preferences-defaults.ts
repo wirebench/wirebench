@@ -51,6 +51,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     theme: 'dark',
     defaultLayout: { orientation: 'side-by-side', mode: 'split' },
     confirmOnDelete: true,
+    previewTabs: true,
     historyCap: 1000,
     logSize: 500,
   },
@@ -60,6 +61,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
   mocks: { listenOnAllInterfaces: false },
   terminal: {
     confirmMultilinePaste: true,
+    confirmCloseSessions: true,
     copyOnSelect: false,
     autoReconnect: true,
     reconnectAttempts: 10,

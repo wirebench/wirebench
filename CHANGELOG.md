@@ -6,6 +6,42 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Closing live sessions asks first.** Closing tabs that hold a connected SSH, Telnet or serial session,
+  or a running local terminal, asks once for the whole batch (**Close 2 sessions on web-1?**); **Cancel**
+  keeps every tab. **Don't ask again** turns it off, and **Settings → Terminal → Confirm closing live
+  sessions** turns it back on (S53).
+- **Undeclared snippet variables can be declared on the spot.** A `${name}` the snippet does not declare
+  is listed when it runs (it goes to the shell as is, for the shell to expand), with **Ask for it** to
+  declare it; saving a snippet with undeclared names asks once, and **Save anyway** keeps them (#717).
+- **Move an API to another project.** API rows of every kind (REST, gRPC, WebSocket, MCP) offer
+  **Move to project…**, and dragging an API onto another project's row moves it there, the row
+  highlighted as the drop target. Folders, requests, scripts, mocks and the cached definition go with it
+  and keep their ids, so open tabs and History still resolve. Before the move it lists what the API uses
+  that the target lacks: project variables and this computer's `${secret:…}` values are copied, and
+  environment-only variables, unset secrets, keystores and sequences that run its requests are named.
+  Both projects are saved; a failure leaves both as they were, and the toast's **Undo** moves it back
+  (#701).
+- **Reorder APIs by dragging.** An API row dragged up or down among its project's APIs changes their
+  order (#701).
+- **Preview tabs, a tab menu and a question before unsaved edits are lost.** A single click in the
+  Explorer opens one preview tab, its name in italics, that the next single click replaces, so reading
+  through requests no longer leaves a tab per click. A double-click, the first edit, **Send** or
+  double-clicking the tab's name keeps it; **Settings ▸ Behaviour ▸ Preview tabs** turns previews off.
+  Right-clicking a tab offers **Close**, **Close others**, **Close to the right**, **Close saved**,
+  **Close all**, **Reveal in Explorer** and **Copy name**, for SSH and terminal tabs too; a middle-click
+  closes a tab, and the palette has **Close Other Tabs**, **Close Tabs to the Right**, **Close Saved
+  Tabs** and **Close All Tabs**. Closing a tab with unsaved edits, however it is closed, asks **Save**,
+  **Don't save** or **Cancel** (#679).
+- **Comments in a JSON body.** <kbd>Cmd/Ctrl+/</kbd> toggles `//` on the selected lines of a Raw JSON
+  body and <kbd>Shift+Alt+A</kbd> toggles `/* */`; comments are coloured as comments and saved with the
+  request. They are removed before the body is sent, with any comma a commented-out last field leaves
+  behind, so the server still receives valid JSON; slashes inside strings stay, and a `${…}` inside a
+  comment is never resolved. Desktop and CLI sends, MCP, runs, **Copy as cURL**, generated code,
+  History and the HTTP log all use the body without comments. GraphQL variables accept them too.
+  **Format** and the JSON form refuse a body with comments instead of dropping them (#702).
+
 ### Changed
 
 - **Wirebench Server is under the Elastic License 2.0.** The server package, `packages/server`, moves from
@@ -15,6 +51,22 @@ All notable changes to this project are documented here. The format follows
   Apache-2.0. Community, Team and Enterprise are unchanged: a server with no license file is still Community
   with five enabled accounts, and nothing shipped as free becomes paid
   ([ADR-0028](docs/adr/0028-the-server-is-licensed-under-the-elastic-license-2-0.md)).
+- **Palette: SSH commands come first in the SSH area, and protocols find New host.** Typing in the
+  palette ranks the area's lead commands (**Connect…**, **New Host…**) above the area's other commands
+  that match only by area, a shorter name wins a tie, and "telnet", "serial" or "mosh" find New host and
+  Connect (#714, S40, S68).
+- **Host forms say which fields are missing, beside them.** Each empty required field reads what it needs
+  under its label, and the footer counts them (**2 fields need a value**). An SSH or Mosh password left
+  empty is asked for when connecting, as the form now says, instead of blocking Save; a Telnet password
+  stays as before. The Telnet sign-in note sits under the sign-in fields, and the Mosh server command and
+  UDP ports moved under **Advanced** (S59–S62).
+- **Host cards and details.** A host card no longer repeats its OS in the subtitle; the icon still names
+  it (#715). A connected host's details lead with **Go to terminal** and **New session**, and long values
+  wrap instead of being cut (S50, S51). The New card stays first in its group and names the protocol until
+  an address is typed (S45, S46). An empty group offers **Add host** inline (S49). The SSH sidebar's
+  button reads **Local terminal** (S69).
+- **SFTP toolbar and dates.** The Files toolbar shows labels when there is room and icons with tooltips
+  when there is not, and **Modified** shows the time for today and a short date otherwise (S66).
 - **New host opens in the right panel, with a draft card in Hosts.** New host (the Hosts button and its
   menu, a group's Add host, the empty state, **Hosts: New Host…** and **Save as host…**) opens its form in
   the right panel, where Edit host already was, instead of a dialog over the hosts. While it is open, a
@@ -26,9 +78,67 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The connection screen names the user it connects as.** A quick host shows `user@address:port`, the
+  user typed at the prompt wins over the saved one, and a failed attempt with nothing logged no longer
+  shows an empty log box (#716, S67).
+- **SSH round-5 polish.** The snippet editor keeps Run, Insert and Save in a footer while its body
+  scrolls (S63); the Keychain names the identities that use a secret ("Used by identity Tester") and
+  refreshes when secrets change (S64); the import dialog's first step has **Cancel** (S65); the host
+  details hint goes once Hosts is not in front (S41); an ended team session log with nothing recorded says
+  so, its dialog has a close button and opens large (S42); the status bar no longer starts with a
+  separator in Settings (S54).
+- **Device keys and the app lock say what they need.** Where they cannot be used, **Generate key** reads
+  **Device keys need macOS with a Secure Enclave or Windows Hello.** and Settings → Secrets reads **App
+  lock needs Touch ID, Windows Hello or the system password prompt.**, inside the App lock row under its
+  description, followed by the computer's own reason when there is one (such as **This Mac has no Secure
+  Enclave**). **Lock again after idle** is disabled while the app lock is off or unavailable, and the
+  Secrets page's subtitle now mentions the app lock (#691).
+- **Quick Open finds requests by name.** <kbd>⌘P</kbd> lists the requests and operations whose name
+  matches above those that match only by their project, API or folder, so "pet" puts Find pets first,
+  not every request in Swagger Petstore. A row listed by its path alone needs every typed word to be
+  missing from its name: "pet user" no longer lists Delete user because its API is Petstore (#683).
+- **Search heads each group with the request.** A group of Search results starts with the REST method
+  and the request name, with the project and API faint underneath, instead of a breadcrumb that cut
+  every group to the same "PAYMENTS › SWAGGER P…" (#683).
+- **Lint findings no longer count as Problems.** After importing an OpenAPI definition, its lint findings
+  get their own status bar item (**57 lint findings**, with errors and warnings named in the tooltip),
+  which is never coloured and opens the Problems panel. The **Problems** item and the **Console** badge
+  count only what went wrong, so a clean import of a real-world spec no longer turns the status bar red.
+  The import summary names the findings by severity (**Lint: 2 errors, 55 warnings**) and links to them
+  (#682).
+- **Save stays in view in the New host and Edit host forms.** Cancel and Save sit in a footer bar at the
+  bottom of the right panel and the form scrolls above it, so a short window or an open **Advanced**
+  section no longer scrolls them away. <kbd>Enter</kbd> in a field still saves. The panel is titled
+  **Edit host** while editing, and **Group** moves below the sign-in fields so it no longer sits between
+  **Address** and **User** (#689).
+- **A shared terminal's viewer counts themself.** Right after joining, the viewer's header reads
+  **1 watching** with their own chip, as the owner's strip does, instead of **0 watching**. Once the share
+  has ended the count and chips go, and the notice offers **Close tab**. A new share of the same session
+  has a new link, so there is no rejoin from the ended tab (#690).
+- **Telnet and serial terminals no longer offer Files.** The terminal tab's toolbar shows **Files** only
+  when the focused pane's host is reached over SSH or Mosh, as the pane's own menu already did (#688).
+- **Telnet and serial connects list their own steps.** A serial console's connection screen shows
+  **Opening /dev/ttyUSB0 at 9600 8N1** then **Ready**, and a Telnet host's shows **Resolving address**,
+  **Connecting** and, when a user is set, **Signing in at the prompt**, instead of SSH's host-key,
+  authentication and shell steps (#688).
+- **A serial console with no port yet asks for one calmly.** The first connect on a computer where no
+  port was picked shows **Choose the port for** the host, with the ports and **Use and connect**, instead
+  of a red failure with Retry, the log and a **Host settings** heading. A port that was set and has gone
+  is still shown as a failure (#688).
+- **Telnet hosts say so in the host list.** A Telnet host's card, its list row and the New host draft
+  card read **Telnet · admin@10.1.1.1** with the not-encrypted mark the Telnet tab already shows, and the
+  draft no longer shows a bare `:23` (#688).
 - **A large REST response scrolls smoothly in Raw.** Scrolling the Raw view of a multi-megabyte body
   draws the new lines in the next frame and moves them without a layout pass, so it no longer drops
   frames on a slower machine.
+- **The split-pane host picker opens the host you type.** Typing another host's name in Split right's
+  picker now selects that host, from either group, and Enter connects the new pane to it. Before, the
+  current host stayed selected (its id matched the typed digits), so the new pane opened on the wrong
+  machine. The picker matches on name, address, group path and tags only (#687).
+- **A script test with an async callback now fails.** `test(name, async () => …)` used to record a pass
+  whatever the callback did, because a script cannot wait for the promise. It now fails with "the test
+  callback is async, and a test cannot wait: make it synchronous", in the typed API and in every imported
+  script layer.
 
 ## [6.1.0] - 2026-10-18
 

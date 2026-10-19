@@ -56,3 +56,7 @@ export { apiDeclarations, apiReference, scriptDeclarations, secretNameType } fro
 export { dispatchDeclarations } from './types/dispatch.js';
 export type { ApiReferenceSection } from './types/api.js';
 export { stripTypes, StripError } from './strip.js';
+export { convertLevelScripts } from './convert/index.js';
+export type { ConvertedLevel, ConvertProtocol, ConvertTodo } from './convert/index.js';
+export { applyConversions, proposeConversions } from './convert/project.js';
+export type { ConversionRefusal, LevelProposal } from './convert/project.js';

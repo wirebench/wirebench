@@ -47,3 +47,12 @@ describe('command catalog audit', () => {
     expect(command?.extraShortcuts).toEqual(entry.extraShortcuts);
   });
 });
+
+describe('script.convertAll', () => {
+  it('the palette command is in the catalog', () => {
+    const entry = COMMAND_CATALOG['script.convertAll'];
+    expect(entry.label).toBe('Scripts: Convert All Imported Scripts…');
+    expect(entry.category).toBe('Explorer');
+    expect(getCommand('script.convertAll')).toBeDefined();
+  });
+});

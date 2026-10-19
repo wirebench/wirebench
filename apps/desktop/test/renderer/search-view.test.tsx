@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { SearchView } from '../../src/renderer/features/search/search-view.js';
+import { SearchView, searchGroupHeading } from '../../src/renderer/features/search/search-view.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useInterfaceEditorStore } from '../../src/renderer/features/interface-editor/interface-editor-state.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
@@ -127,8 +127,14 @@ describe('SearchView', () => {
     await type('Add');
 
     expect(screen.getAllByTestId('search-group')).toHaveLength(2);
-    expect(screen.getByText('Calculator › Request 1')).toBeTruthy();
-    expect(screen.getByText('Calculator › calc.wsdl')).toBeTruthy();
+    expect(screen.getAllByTestId('search-group-name').map((name) => name.textContent)).toEqual([
+      'Request 1',
+      'calc.wsdl',
+    ]);
+    expect(screen.getAllByTestId('search-group-path').map((path) => path.textContent)).toEqual([
+      'Calculator',
+      'Calculator',
+    ]);
     expect(screen.getAllByTestId('search-result')).toHaveLength(2);
     expect(screen.getByText('<Add>')).toBeTruthy();
   });
@@ -218,8 +224,14 @@ describe('SearchView', () => {
     await type('Add');
 
     expect(screen.getAllByTestId('search-group')).toHaveLength(2);
-    expect(screen.getByText('Calc Project › Calculator › Request 1')).toBeTruthy();
-    expect(screen.getByText('Weather Project › Weather › Request 2')).toBeTruthy();
+    expect(screen.getAllByTestId('search-group-name').map((name) => name.textContent)).toEqual([
+      'Request 1',
+      'Request 2',
+    ]);
+    expect(screen.getAllByTestId('search-group-path').map((path) => path.textContent)).toEqual([
+      'Calc Project › Calculator',
+      'Weather Project › Weather',
+    ]);
   });
 
   it("reveals a multi-project result in its own project's request, not any other's", async () => {
@@ -299,5 +311,58 @@ describe('SearchView with REST matches', () => {
     expect(useEditorsStore.getState().tabs).toEqual([
       expect.objectContaining({ id: 'rest:rest-1', kind: 'rest-request', restRequestId: 'rest-1' }),
     ]);
+  });
+});
+
+describe('searchGroupHeading', () => {
+  const REST: SearchMatchWire = {
+    ...BODY_MATCH,
+    protocol: 'rest',
+    projectId: 'p1',
+    projectName: 'Payments',
+    requestId: 'rest-1',
+    requestName: 'Delete user',
+    method: 'DELETE',
+    interfaceName: 'Swagger Petstore',
+  };
+
+  it('leads with the method and the request name, the path apart', () => {
+    expect(searchGroupHeading(REST)).toEqual(
+      expect.objectContaining({ method: 'DELETE', name: 'Delete user', path: 'Payments › Swagger Petstore' }),
+    );
+  });
+
+  it('names a header match by its request, with Headers in the path', () => {
+    const heading = searchGroupHeading({ ...REST, kind: 'request-header' });
+    expect(heading.name).toBe('Delete user');
+    expect(heading.path).toBe('Payments › Swagger Petstore › Headers');
+    expect(heading.key).not.toBe(searchGroupHeading(REST).key);
+  });
+
+  it('names a definition document by its location, with no method', () => {
+    expect(searchGroupHeading(DOC_MATCH)).toEqual(expect.objectContaining({ name: 'calc.wsdl', path: 'Calculator' }));
+    expect(searchGroupHeading(DOC_MATCH).method).toBeUndefined();
+  });
+
+  it('keeps two requests of one name apart', () => {
+    expect(searchGroupHeading({ ...REST, requestId: 'rest-2' }).key).not.toBe(searchGroupHeading(REST).key);
+  });
+
+  it('shows the method and name in the list, the path under them', async () => {
+    vi.useFakeTimers();
+    installWirebenchApi({ search: { query: stubQuery([REST]) } });
+    useProjectStore.setState({ restRequests: { 'rest-1': { name: 'Delete user' } as never } });
+    render(<SearchView />);
+    fireEvent.change(screen.getByTestId('search-input'), { target: { value: 'user' } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+
+    const group = screen.getByTestId('search-group');
+    expect(group.querySelector('h3')?.textContent).toContain('DELETE');
+    expect(screen.getByTestId('search-group-name').textContent).toBe('Delete user');
+    expect(screen.getByTestId('search-group-path').textContent).toBe('Payments › Swagger Petstore');
+    vi.useRealTimers();
+    cleanup();
   });
 });

@@ -271,6 +271,8 @@ import {
   scriptCompletionsResponseSchema,
   scriptDiagnosticsResponseSchema,
   scriptPositionRequestSchema,
+  scriptProposeConversionsRequestSchema,
+  scriptProposeConversionsResponseSchema,
   scriptQuickInfoResponseSchema,
   scriptSignatureHelpResponseSchema,
   scriptSourceRequestSchema,
@@ -418,8 +420,12 @@ import {
   logExportHarRequestSchema,
   logResendResponseSchema,
   projectChangedEventSchema,
+  projectApiMovePlanSchema,
+  projectMoveApiRequestSchema,
+  projectMoveApiResponseSchema,
   projectMutateRequestSchema,
   projectMutateResponseSchema,
+  projectPlanApiMoveRequestSchema,
   projectSnapshotResponseSchema,
   requestCurlRequestSchema,
   requestCodeRequestSchema,
@@ -815,6 +821,10 @@ export const channels = {
   project: {
     snapshot: defineChannel('project.snapshot', projectIdRequestSchema, projectSnapshotResponseSchema),
     mutate: defineChannel('project.mutate', projectMutateRequestSchema, projectMutateResponseSchema),
+    /** What moving an API to another project would copy and leave behind, for the confirm (#701). */
+    planApiMove: defineChannel('project.planApiMove', projectPlanApiMoveRequestSchema, projectApiMovePlanSchema),
+    /** Moves an API to another project of the open workspace, saving both (#701). */
+    moveApi: defineChannel('project.moveApi', projectMoveApiRequestSchema, projectMoveApiResponseSchema),
     save: defineChannel('project.save', projectIdRequestSchema, projectSaveResponseSchema),
     moveToWorkspace: defineChannel(
       'project.moveToWorkspace',
@@ -1137,6 +1147,16 @@ export const channels = {
     /** A project's session values, masked, a secret one without its value. */
     listValues: defineChannel('script.listValues', scriptValuesRequestSchema, scriptValuesListResponseSchema),
     clearValues: defineChannel('script.clearValues', scriptValuesRequestSchema, scriptValuesClearResponseSchema),
+    /**
+     * The review of converting imported scripts: each layered level at or below `ownerId` (or in the
+     * project) with its converted texts, TODOs and the checker's problems. Accept is `project.mutate`
+     * with a `convert-scripts` change.
+     */
+    proposeConversions: defineChannel(
+      'script.proposeConversions',
+      scriptProposeConversionsRequestSchema,
+      scriptProposeConversionsResponseSchema,
+    ),
   },
   // A request's golden response, kept beside its files as `<slug>.golden.yaml`.
   snapshot: {

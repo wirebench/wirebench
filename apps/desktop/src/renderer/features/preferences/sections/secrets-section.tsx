@@ -67,12 +67,16 @@ export function SecretsSection({ preferences, update, locked = () => false }: Se
             void setAppLock(enabled);
           }}
           hint="Asks for biometrics or your password before the first SSH secret is used after launch, after the idle time below, and after the screen locks. Turning it on asks once now."
+          note={
+            support?.supported === false && (
+              <p data-testid="secrets-app-lock-unavailable">
+                App lock needs Touch ID, Windows Hello or the system password prompt.
+                {/* Main adds a reason only when it says more than that, such as why the prompt failed here. */}
+                {support.reason !== undefined && ` ${support.reason.replace(/\.?$/, '.')}`}
+              </p>
+            )
+          }
         />
-        {support?.supported === false && (
-          <p data-testid="secrets-app-lock-unavailable" className="px-3 text-xs text-fg-subtle">
-            Not available here: {support.reason ?? 'this computer cannot ask'}.
-          </p>
-        )}
         {error !== undefined && (
           <p role="alert" data-testid="secrets-app-lock-error" className="px-3 text-sm text-status-danger">
             {error}
@@ -86,6 +90,8 @@ export function SecretsSection({ preferences, update, locked = () => false }: Se
           unit="min"
           placeholder={String(DEFAULT_PREFERENCES_WIRE.secrets.appLockIdleMinutes)}
           testId="secrets-app-lock-idle"
+          // Nothing to tune while the lock is off or this computer cannot ask.
+          disabled={!preferences.secrets.appLock || support?.supported !== true}
           locked={locked('secrets.appLockIdleMinutes')}
           onCommit={(appLockIdleMinutes) => {
             update({

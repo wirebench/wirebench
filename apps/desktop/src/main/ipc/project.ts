@@ -9,6 +9,9 @@ import { channels } from '../../shared/ipc.js';
 import type { ReadPicks } from '../dialog-picks.js';
 import { checkedImportSource } from '../path-access.js';
 import type { ProjectRouter } from '../project-router.js';
+import { moveApi, planApiMove } from '../api-move.js';
+import type { ApiMoveHost, ApiMoveSecrets } from '../api-move.js';
+import type { ProjectWire } from '../../shared/wire-types.js';
 import { registerHandler } from './register.js';
 
 /**
@@ -41,6 +44,22 @@ export interface ProjectChannelDeps {
    * `WorkspaceService.ensureEnvironments`. Optional so the tests of the other channels need not build one.
    */
   readonly ensureWorkspaceEnvironments?: (names: readonly string[], projectId: string) => Promise<readonly string[]>;
+  /**
+   * The two hosts an API move (#701) runs between: the one holding `apiId` and the target project's,
+   * and the secret store it copies `${secret:…}` values through. Optional so the tests of the other
+   * channels need not build one.
+   */
+  readonly apiMove?: {
+    readonly hosts: (
+      apiId: string,
+      targetProjectId: string,
+    ) => {
+      readonly sourceProjectId: string;
+      readonly source: ApiMoveHost & { snapshot(): ProjectWire | null };
+      readonly target: ApiMoveHost & { snapshot(): ProjectWire | null };
+    };
+    readonly secrets: ApiMoveSecrets;
+  };
 }
 
 /**
@@ -89,6 +108,35 @@ export function registerProjectChannels(deps: ProjectChannelDeps): void {
   );
 
   registerHandler(channels.project.mutate, (request) => router.projectMutate(request.projectId, request.change));
+
+  const { apiMove } = deps;
+  if (apiMove !== undefined) {
+    registerHandler(channels.project.planApiMove, async (request) => {
+      const { source, target } = apiMove.hosts(request.apiId, request.targetProjectId);
+      return await planApiMove(source, target, request.apiId, apiMove.secrets);
+    });
+
+    registerHandler(channels.project.moveApi, async (request) => {
+      const { sourceProjectId, source, target } = apiMove.hosts(request.apiId, request.targetProjectId);
+      const { sourceBeforeApiId } = await moveApi(
+        source,
+        target,
+        { apiId: request.apiId, beforeApiId: request.beforeApiId },
+        apiMove.secrets,
+      );
+      const sourceWire = source.snapshot();
+      const targetWire = target.snapshot();
+      if (sourceWire === null || targetWire === null) {
+        throw new WirebenchError('no-project', 'A project closed during the move');
+      }
+      return {
+        sourceProjectId,
+        ...(sourceBeforeApiId !== undefined ? { sourceBeforeApiId } : {}),
+        source: sourceWire,
+        target: targetWire,
+      };
+    });
+  }
 
   registerHandler(channels.project.save, (request) => router.save(request.projectId, { reason: 'manual' }));
 

@@ -27,6 +27,7 @@ import { openSequenceTab } from '../sequence/sequence-actions.js';
 import { useSequenceRunsStore } from '../../state/sequence-runs.js';
 import { useWebhookItemsDialogs } from '../webhook-items/webhook-items-state.js';
 import { useScriptValuesStore } from '../../state/script-values.js';
+import { useConvertScriptsDialog } from '../scripts/convert-scripts-dialog.js';
 import { useEnableScriptsDialog } from '../scripts/enable-scripts-dialog.js';
 
 /**
@@ -807,6 +808,24 @@ export const explorerActions = {
   /** Asks, then switches on the scripts of the given requests (#63): **Switch on scripts…**. */
   enableScripts(requestIds: readonly string[]): void {
     useEnableScriptsDialog.getState().open(requestIds);
+  },
+
+  /**
+   * Opens the review of converting the imported scripts of one interface, API or folder and of the
+   * levels beneath it: **Convert scripts…**.
+   */
+  convertScripts(ownerId: string): void {
+    const projectId = useProjectStore.getState().projectOf[ownerId];
+    if (projectId !== undefined) {
+      void useConvertScriptsDialog.getState().open(projectId, ownerId);
+    }
+  },
+
+  /** Opens the review of converting every imported script of one project, the `script.convertAll` command. */
+  convertAllScripts(projectId: string | undefined): void {
+    if (projectId !== undefined) {
+      void useConvertScriptsDialog.getState().open(projectId);
+    }
   },
 
   /** Forgets one project's session values (#63), the `script.clearValues` command. */

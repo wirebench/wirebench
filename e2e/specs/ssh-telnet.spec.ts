@@ -40,11 +40,18 @@ test('a Telnet host signs in at the prompts, says it is not encrypted, and runs 
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog).toBeHidden();
 
+  // The card says Telnet and shows the not-encrypted mark, as the tab does (#688).
+  const row = page.getByTestId('host-row-core-sw');
+  await expect(row).toContainText(`Telnet · admin@127.0.0.1:${String(fixture.port)}`);
+  await expect(row.getByRole('img', { name: 'Not encrypted' })).toBeVisible();
+
   // No host key to trust: Telnet has none.
-  await page.getByTestId('host-row-core-sw').dblclick();
+  await row.dblclick();
   const connected = page.getByTestId('editor-area').getByLabel('connected', { exact: true });
   await expect(connected).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('ssh-plain-text')).toContainText('Not encrypted');
+  // Files is SFTP: the toolbar offers none for a Telnet host (#688).
+  await expect(page.getByTestId('editor-area').getByRole('button', { name: 'Files', exact: true })).toHaveCount(0);
   const terminal = page.getByTestId('ssh-terminal');
   await expect(terminal).toContainText('Welcome', { timeout: 30_000 });
   await terminal.click();

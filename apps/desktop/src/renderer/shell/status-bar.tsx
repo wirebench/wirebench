@@ -1,4 +1,5 @@
 import { Moon, Sun, SunMoon } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { cycleTheme } from '../lib/theme-actions.js';
 import { THEME_LABEL, useResolvedTheme } from '../lib/theme.js';
 import { RENDERER_AREAS } from '../areas/index.js';
@@ -15,7 +16,7 @@ import { describeSendError } from '../features/request-editor/send-error.js';
 import type { FailedExchangeWire } from '../../shared/wire-base.js';
 import { selectRequestTrustsInvalid } from '../state/project-endpoint.js';
 import { useWorkspaceStore } from '../state/workspace.js';
-import { useProblemsStore } from '../state/problems.js';
+import { countProblems, lintSummary, useProblemsStore } from '../state/problems.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
 
@@ -78,12 +79,14 @@ export function StatusBar() {
       .sort()
       .at(-1),
   );
-  // A failed SSH connect is a problem of the Problems panel, but not of the requests these counts are about:
-  // its connection screen already says what failed.
-  const problemCount = useProblemsStore((state) => state.items.filter(countsAsRequestProblem).length);
-  const errorCount = useProblemsStore(
-    (state) => state.items.filter((item) => countsAsRequestProblem(item) && item.severity === 'error').length,
-  );
+  // Lint findings and failed SSH connects are left out of the request problems: see `countProblems`.
+  const {
+    problems: problemCount,
+    errors: errorCount,
+    lintErrors,
+    lintWarnings,
+  } = useProblemsStore(useShallow((state) => countProblems(state.items)));
+  const lintCount = lintErrors + lintWarnings;
   // With the SSH area's tabs in front, the request items (TLS, the last send) say nothing about what is shown.
   const sshShown = useEditorsStore((state) => state.displayedSet === 'ssh');
   const showConsoleTab = useUiStore((state) => state.showConsoleTab);
@@ -113,7 +116,9 @@ export function StatusBar() {
       aria-label="Status"
       className="flex h-status-bar shrink-0 items-center justify-between border-t border-hairline bg-surface-sunken px-3 text-xs text-fg-subtle"
     >
-      <div className="flex items-center gap-3">
+      {/* Every item draws the separator before it, so whichever comes first (in Settings, or the SSH area, the
+          Sidebar to Problems run is gone) hides its own (S54). */}
+      <div data-testid="status-bar-items" className="flex items-center gap-3 [&>[aria-hidden=true]:first-child]:hidden">
         {workbenchShown && (
           <>
             <button
@@ -186,6 +191,26 @@ export function StatusBar() {
             >
               {problemCount} {problemCount === 1 ? 'problem' : 'problems'}
             </button>
+            {lintCount > 0 && (
+              <>
+                <span aria-hidden="true" className="text-fg-faint">
+                  ·
+                </span>
+                {/* Never tinted: a definition's style findings are not a failure. */}
+                <button
+                  type="button"
+                  data-testid="status-bar-lint"
+                  title={`Lint: ${lintSummary(lintErrors, lintWarnings)}. Show the Problems panel`}
+                  aria-label={`Lint: ${lintSummary(lintErrors, lintWarnings)}. Show the Problems panel`}
+                  className="rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default"
+                  onClick={() => {
+                    showConsoleTab('problems');
+                  }}
+                >
+                  {lintCount} lint {lintCount === 1 ? 'finding' : 'findings'}
+                </button>
+              </>
+            )}
           </>
         )}
         {!sshShown && (
@@ -272,11 +297,6 @@ export function StatusBar() {
       )}
     </footer>
   );
-}
-
-/** A problem the status bar counts: anything but a failed SSH connect (grouped `ssh:<hostId>`). */
-function countsAsRequestProblem(item: { readonly groupId: string }): boolean {
-  return !item.groupId.startsWith('ssh:');
 }
 
 /** `last: Connection refused in 3.0 ms` — a send that produced no response, named as the response pane names it. */

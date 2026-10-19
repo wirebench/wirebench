@@ -38,7 +38,8 @@ function candidates(project: Project, registry: ProtocolRegistry): Candidate[] {
   );
 }
 
-function normalise(selector: string): string {
+/** A selector as `wirebench run` reads it: `/` separators, no leading `./`, `.request.yaml` or trailing `/`. */
+export function normaliseSelector(selector: string): string {
   return selector
     .replace(/\\/g, '/')
     .replace(/^\.\//, '')
@@ -46,7 +47,8 @@ function normalise(selector: string): string {
     .replace(/\/$/, '');
 }
 
-const covers = (selector: string, candidate: string): boolean =>
+/** Whether a normalised selector covers `candidate`: the same path, or one below it at a `/` boundary. */
+export const selectorCovers = (selector: string, candidate: string): boolean =>
   candidate === selector || candidate.startsWith(`${selector}/`);
 
 /**
@@ -71,8 +73,8 @@ export function selectRequests(
     return { selected: all.filter((c) => !c.explicitOnly).map((c) => asSelected(c.item)), unmatched: [] };
   }
   const matches = (selector: string, c: Candidate): boolean => {
-    const s = normalise(selector);
-    return covers(s, c.item.path) || covers(s, c.diskPath);
+    const s = normaliseSelector(selector);
+    return selectorCovers(s, c.item.path) || selectorCovers(s, c.diskPath);
   };
   return {
     selected: all.filter((c) => selectors.some((s) => matches(s, c))).map((c) => asSelected(c.item)),

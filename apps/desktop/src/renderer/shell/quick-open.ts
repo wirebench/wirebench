@@ -4,8 +4,11 @@
  * project it belongs to.
  *
  * Pure selection logic, so the entries can be asserted on without mounting the palette. The
- * palette does the fuzzy matching itself (cmdk's own filter) over each entry's `value`.
+ * palette ranks the request and operation rows with {@link quickOpenFilter}: by name first, by
+ * breadcrumb only below every name match.
  */
+
+import { defaultFilter } from 'cmdk';
 
 import type { LayoutWire } from '../../shared/layout-wire.js';
 import type { SnippetListItemWire } from '../../shared/snippets-wire.js';
@@ -27,6 +30,11 @@ export interface QuickOpenEntry {
   readonly detail: string;
   /** What cmdk matches against — label and breadcrumb together. */
   readonly value: string;
+  /**
+   * Set for `request` and `operation`: the text a name match runs on — the request or operation name,
+   * after its method or kind tag, without the project prefix the label may carry.
+   */
+  readonly name?: string;
   /** Set for `request`: the draft to open. */
   readonly requestId?: string;
   /** Set for `host`: the host whose terminal to open. */
@@ -86,6 +94,7 @@ export function quickOpenEntries(
       label,
       detail,
       value: `${label} ${detail}`,
+      name: request.name,
       requestId: request.id,
     });
   }
@@ -106,6 +115,7 @@ export function quickOpenEntries(
         label,
         detail,
         value: `${label} ${detail}`,
+        name: operation.name,
         interfaceId: summary.id,
         bindingName: operation.binding,
         operationName: operation.name,
@@ -116,6 +126,51 @@ export function quickOpenEntries(
   requestEntries.sort((a, b) => a.value.localeCompare(b.value));
   operationEntries.sort((a, b) => a.value.localeCompare(b.value));
   return [...requestEntries, ...operationEntries];
+}
+
+/** A breadcrumb match always ranks below a name match: name matches score above it, breadcrumb ones under it. */
+const NAME_FLOOR = 0.5;
+
+/**
+ * How well a request or operation row matches the search: by its name first, by its breadcrumb (the
+ * `project › API › folder` path, and what the kind adds, such as a URL) only when the name does not match.
+ * A name match scores above 0.5 by cmdk's fuzzy score over the name; a breadcrumb match scores below it,
+ * and counts only when every typed word is missing from the name, so "pet" lists Find pets above Delete
+ * user, and "pet user" never lists Delete user because its API is Petstore. Each word
+ * of a breadcrumb match must appear in the breadcrumb as typed: a fuzzy match there, spread over a long
+ * path, would match almost anything.
+ *
+ * @param name - The row's name ({@link QuickOpenEntry.name}).
+ * @param breadcrumb - Everything the row matches on: its label, breadcrumb and what the kind adds.
+ * @param search - What was typed.
+ * @returns 0 for no match, otherwise a score in (0, 1].
+ */
+export function quickOpenScore(name: string, breadcrumb: string, search: string): number {
+  const query = search.trim();
+  if (query === '') return 1;
+  const byName = defaultFilter(name, query);
+  if (byName > 0) return NAME_FLOOR + byName * (1 - NAME_FLOOR);
+  const words = query.toLowerCase().split(/\s+/);
+  const lowerName = name.toLowerCase();
+  if (words.some((word) => lowerName.includes(word))) return 0;
+  const lowerCrumb = breadcrumb.toLowerCase();
+  if (!words.every((word) => lowerCrumb.includes(word))) return 0;
+  return 0.1 + defaultFilter(breadcrumb, query) * (NAME_FLOOR - 0.2);
+}
+
+/**
+ * ⌘P's cmdk filter. A request or operation row passes its name and breadcrumb as keywords and is scored by
+ * {@link quickOpenScore}; a host, layout or snippet row passes none and keeps cmdk's own score.
+ */
+export function quickOpenFilter(value: string, search: string, keywords?: string[]): number {
+  const [name, breadcrumb] = keywords ?? [];
+  if (name === undefined || breadcrumb === undefined) return defaultFilter(value, search);
+  return quickOpenScore(name, breadcrumb, search);
+}
+
+/** What an entry hands {@link quickOpenFilter}: its name, then the rest of what it matches on. */
+export function quickOpenKeywords(entry: QuickOpenEntry): string[] {
+  return entry.name === undefined ? [] : [entry.name, entry.value];
 }
 
 /** One saved request a protocol kind lists in Quick Open (its `requests.quickOpen`). */
@@ -185,6 +240,7 @@ export function quickOpenKindEntries(
       label,
       detail,
       value: [label, detail, item.match ?? ''].filter((part) => part !== '').join(' '),
+      name: label,
       requestId: item.id,
     };
   });

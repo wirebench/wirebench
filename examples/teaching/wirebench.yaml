@@ -1,0 +1,9 @@
+formatVersion: 4
+id: TEACH00PROJECT
+name: Teaching sample
+properties: {}
+settings:
+  cacheDefinitions: true
+  defaultTimeoutMs: 30000
+  prettyPrintResponses: true
+writtenBy: wirebench

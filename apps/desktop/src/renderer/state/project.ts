@@ -8,6 +8,7 @@ import type {
   ApiGrpcRefreshResponse,
   ProjectChange,
   ProjectChangedEvent,
+  ProjectApiMovePlan,
   ProjectMutateResponse,
   ProjectWire,
 } from '../../shared/wire-types.js';
@@ -79,6 +80,8 @@ import type {
   RequestScriptsPatchWire,
   RestFolderWire,
   RequestAssertionWire,
+  ScriptConversionWire,
+  ScriptConversionsResultWire,
   WebhookSigningWire,
 } from '../../shared/wire-base.js';
 import type {
@@ -274,6 +277,22 @@ export interface ProjectStore extends ProjectSnapshot {
    * requests are one project's: the first one's.
    */
   readonly enableScripts: (requestIds: readonly string[]) => Promise<void>;
+  /**
+   * The levels whose imported scripts would convert to Wirebench scripts, each with its texts
+   * before and after — what the review shows. `ownerId` narrows it to that level and the levels
+   * beneath it; without it, every level of the project. Reads the model the editor holds, unsaved
+   * edits included; changes nothing.
+   */
+  readonly proposeConversions: (projectId: string, ownerId?: string) => Promise<readonly ScriptConversionWire[]>;
+  /**
+   * Converts the listed levels in one project edit: backs up each level's layered texts, switches
+   * it and saves. A level whose texts changed since its `fingerprint` was proposed is refused by
+   * name, and the others go ahead.
+   */
+  readonly convertScripts: (
+    projectId: string,
+    levels: readonly { readonly ownerId: string; readonly fingerprint: string }[],
+  ) => Promise<ScriptConversionsResultWire>;
   /** Merges a patch into one project's settings (`wirebench.yaml`). */
   readonly updateProjectSettings: (projectId: string, patch: ProjectSettingsPatchWire) => Promise<void>;
   /** Renames one project. The folder keeps its slug; only the name in `wirebench.yaml` changes. */
@@ -347,6 +366,20 @@ export interface ProjectStore extends ProjectSnapshot {
    * absent). What a drag-and-drop in the explorer commits.
    */
   readonly moveNode: (nodeId: string, parentId: string | undefined, index: number) => Promise<void>;
+  /** Reorders an API of any kind among its project's APIs (#701): before `beforeApiId`, or last. */
+  readonly reorderApi: (apiId: string, beforeApiId: string | undefined) => Promise<void>;
+  /** What moving an API to another project would copy and leave behind (#701). */
+  readonly planApiMove: (apiId: string, targetProjectId: string) => Promise<ProjectApiMovePlan>;
+  /**
+   * Moves an API to another project, before `beforeApiId` there or last, saving both projects (#701).
+   * Answers where it came from — the project, and the API it stood before there — for an undo. Every
+   * id is kept, so its tabs and drafts stay as they are.
+   */
+  readonly moveApiToProject: (
+    apiId: string,
+    targetProjectId: string,
+    beforeApiId: string | undefined,
+  ) => Promise<{ readonly projectId: string; readonly beforeApiId: string | undefined }>;
   /** Creates a project's webhook collection if it does not have one yet. A no-op once it does. */
   readonly ensureWebhooks: (projectId: string) => Promise<void>;
   /** Merges a patch into one project's webhook collection (its target and/or its own credentials). */
@@ -462,6 +495,11 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly editMcpRequest: (requestId: string, patch: McpRequestPatchWire) => void;
   readonly commitMcpRequest: (requestId: string) => Promise<boolean>;
   readonly saveMcpRequest: (requestId: string, options?: SaveOptions) => Promise<void>;
+  /**
+   * Throws a request's unsaved edit away, of whichever kind: its draft goes, and the mirror shows the request
+   * as last saved again. What Don't save does when a tab with unsaved edits closes (#679).
+   */
+  readonly discardDraft: (requestId: string) => void;
   readonly removeMcpRequest: (requestId: string) => Promise<void>;
   readonly cloneMcpRequest: (requestId: string) => Promise<string>;
   /** Appends an empty environment to one project and returns its id. */
@@ -2057,6 +2095,19 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       );
     },
 
+    discardDraft: (requestId) => {
+      const projectId = get().projectOf[requestId];
+      const drafts = useDraftsStore.getState();
+      drafts.discardRequest(requestId);
+      drafts.discardRestRequest(requestId);
+      drafts.discardGrpcRequest(requestId);
+      drafts.discardWsRequest(requestId);
+      drafts.discardMcpRequest(requestId);
+      // The indexes lay drafts over main's copy, which never saw the edit: rebuilding them shows it unedited.
+      const project = projectId === undefined ? undefined : get().projects[projectId];
+      if (project !== undefined) apply(project.id, project);
+    },
+
     removeMcpRequest: async (requestId) => {
       await mutateEntity(requestId, { kind: 'remove-mcp-request', requestId });
       forgetMcpRequest(requestId);
@@ -2165,6 +2216,39 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         ...(parentId !== undefined ? { parentId } : {}),
         index,
       });
+    },
+
+    reorderApi: async (apiId, beforeApiId) => {
+      await mutateEntity(apiId, {
+        kind: 'move-container',
+        apiId,
+        ...(beforeApiId !== undefined ? { beforeApiId } : {}),
+      });
+    },
+
+    planApiMove: async (apiId, targetProjectId) => {
+      const result = await ipc().project.planApiMove({ apiId, targetProjectId });
+      if (!result.ok) {
+        throw asError(result.error);
+      }
+      return result.value;
+    },
+
+    moveApiToProject: async (apiId, targetProjectId, beforeApiId) => {
+      const sentIn = generation;
+      const result = await ipc().project.moveApi({
+        apiId,
+        targetProjectId,
+        ...(beforeApiId !== undefined ? { beforeApiId } : {}),
+      });
+      if (!result.ok) {
+        throw asError(result.error);
+      }
+      if (sentIn === generation) {
+        apply(result.value.sourceProjectId, result.value.source);
+        apply(targetProjectId, result.value.target);
+      }
+      return { projectId: result.value.sourceProjectId, beforeApiId: result.value.sourceBeforeApiId };
     },
 
     ensureWebhooks: async (projectId) => {
@@ -2345,6 +2429,25 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         return;
       }
       await mutateEntity(first, { kind: 'enable-scripts', requestIds: [...requestIds] });
+    },
+
+    proposeConversions: async (projectId, ownerId) => {
+      const result = await ipc().script.proposeConversions({
+        projectId,
+        ...(ownerId === undefined ? {} : { ownerId }),
+      });
+      if (!result.ok) {
+        throw asError(result.error);
+      }
+      return result.value.levels;
+    },
+
+    convertScripts: async (projectId, levels) => {
+      const { converted } = await mutate(projectId, {
+        kind: 'convert-scripts',
+        levels: levels.map(({ ownerId, fingerprint }) => ({ ownerId, fingerprint })),
+      });
+      return converted ?? { applied: [], refused: [] };
     },
 
     updateProjectSettings: async (projectId, patch) => {

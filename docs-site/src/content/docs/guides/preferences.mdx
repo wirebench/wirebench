@@ -35,7 +35,7 @@ you press <kbd>Enter</kbd> or move on, and <kbd>Escape</kbd> puts back the previ
 | Group | Section | What it covers |
 | --- | --- | --- |
 | General | **Appearance** | Theme (system, light or dark); the editor's font family and size, tab size, line numbers and word wrap; the default request layout (side by side or stacked, split or tabs) |
-| | **Behaviour** | Validate before sending, format responses, autosave, confirm before deleting, and how many history entries and HTTP Log rows to keep |
+| | **Behaviour** | Validate before sending, format responses, autosave, confirm before deleting, preview tabs, and how many history entries and HTTP Log rows to keep |
 | | **Keyboard shortcuts** | Every command's keybinding, and a way to change it |
 | | **Updates** | Whether Wirebench checks GitHub Releases for a new version at launch |
 | Requests | **HTTP** | User-Agent, request/response compression, keep-alive vs. `Connection: close`, socket timeout, max connections, whether to offer HTTP/2 (on by default; NTLM and Kerberos always use HTTP/1.1), and the chunking threshold |
@@ -126,6 +126,11 @@ off by default.
 **Suggest snippets** is `terminal.snippetSuggestions` and is on by default: typing the start of a snippet's
 first line in an SSH terminal shows the rest of it dimmed after the cursor, and **Tab** completes it without
 pressing Enter.
+
+**Confirm closing live sessions** is `terminal.confirmCloseSessions` and is on by default: closing tabs
+that hold a connected SSH, Telnet or serial session, or a running local terminal, asks once for the whole
+batch, since closing ends the connection and whatever runs in it. Ticking **Don't ask again** in that
+question turns this off.
 
 **Reconnect dropped sessions** is `terminal.autoReconnect` and is on by default. When the network drops
 a session (a reset, a timeout, a jump host's connection ending), the tab keeps its scrollback and tries

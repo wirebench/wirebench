@@ -22,6 +22,22 @@ function isMovable(node: ExplorerNode): boolean {
   );
 }
 
+/**
+ * An API row of any kind (#701): dragged among its project's containers to reorder them, or onto
+ * another project's row to move there.
+ */
+export function isContainerRow(node: ExplorerNode | undefined): boolean {
+  return node !== undefined && explorerRole(node.kind)?.container === true;
+}
+
+/** The rows under a project that follow its containers, each with an ordering of its own. */
+const PROJECT_GROUP_KINDS: ReadonlySet<ExplorerNodeKind> = new Set([
+  'webhook-collection',
+  'sequences',
+  'mocks',
+  'values',
+]);
+
 const isWebhookKind = (kind: string): boolean => kind === 'webhook-folder' || kind === 'webhook-request';
 
 const isFolderKind = (kind: string): boolean => kind === 'folder' || kind === 'webhook-folder';
@@ -88,6 +104,36 @@ export function planMoves(
   return plan;
 }
 
+/** Where an API row dropped on a project goes: which project, and the API it goes before. */
+export interface ContainerDrop {
+  readonly apiId: string;
+  readonly targetProjectId: string;
+  /** The API it lands before; absent, it goes after the project's last API. */
+  readonly beforeApiId?: string;
+}
+
+/**
+ * The move an API row dropped at `index` among a project's `children` makes. Only API rows take
+ * part in the ordering: a drop next to an interface or a placeholder lands at the next API after
+ * it, so interfaces keep the places they had. `undefined` for a drag that is not an API row.
+ */
+export function planContainerDrop(
+  project: ExplorerNode,
+  children: readonly ExplorerNode[],
+  dragged: ExplorerNode,
+  index: number,
+): ContainerDrop | undefined {
+  if (!isContainerRow(dragged) || dragged.apiId === undefined || project.projectId === undefined) return undefined;
+  const before = children
+    .slice(index)
+    .find((child) => isContainerRow(child) && child.apiId !== undefined && child.apiId !== dragged.apiId);
+  return {
+    apiId: dragged.apiId,
+    targetProjectId: project.projectId,
+    ...(before?.apiId !== undefined ? { beforeApiId: before.apiId } : {}),
+  };
+}
+
 export interface DropCandidate {
   /** The node being dropped into. */
   readonly parent: ExplorerNode | undefined;
@@ -104,12 +150,28 @@ export interface DropCandidate {
 }
 
 /**
- * Whether the tree should refuse a drop. A request or folder moves only within its own API,
+ * Whether the tree refuses an API row's drop (#701). It drops only on a project: its own, among the
+ * containers (not past them, among the Sequences or Mocks groups), or another one that is open,
+ * anywhere. A project still loading, or whose folder is missing, takes nothing.
+ */
+function isContainerDropDisabled({ parent, children, index, sameProject }: DropCandidate): boolean {
+  if (parent?.kind !== 'project' || parent.loading === true) return true;
+  if (children.some((child) => child.kind === 'project-missing')) return true;
+  if (!sameProject) return false;
+  const containerCount = children.filter((child) => !PROJECT_GROUP_KINDS.has(child.kind)).length;
+  return index > containerCount;
+}
+
+/**
+ * Whether the tree should refuse a drop. An API row moves only among projects' containers (see
+ * {@link isContainerDropDisabled}). A request or folder moves only within its own API,
  * never into another API or project; a webhook item or folder only within its own project's
  * webhook collection, and nothing else into it. A folder never moves into itself or its own
  * subtree. Folders drop only among folders, and requests only among requests.
  */
 export function isDropDisabled({ parent, children, dragged, index, sameProject, ancestors }: DropCandidate): boolean {
+  if (isContainerRow(dragged))
+    return isContainerDropDisabled({ parent, children, dragged, index, sameProject, ancestors });
   if (dragged === undefined || !isMovable(dragged) || parent === undefined || !sameProject) return true;
   if (isWebhookKind(dragged.kind)) {
     // The collection has one per project, so `sameProject` already pins it down.

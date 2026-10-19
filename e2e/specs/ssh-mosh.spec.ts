@@ -38,7 +38,9 @@ async function chooseMosh(dialog: Locator, server?: string): Promise<void> {
   await openAdvanced(dialog);
   const section = dialog.getByRole('region', { name: 'Protocol' });
   await section.getByRole('combobox', { name: 'Protocol' }).selectOption('mosh');
-  if (server !== undefined) await section.getByLabel('Server command').fill(server);
+  if (server !== undefined) {
+    await dialog.getByRole('region', { name: 'Mosh server' }).getByLabel('Server command').fill(server);
+  }
 }
 
 test.skip(!moshInstalled(), 'mosh is not installed on this machine');
