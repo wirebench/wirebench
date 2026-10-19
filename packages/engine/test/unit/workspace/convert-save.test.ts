@@ -4,7 +4,7 @@
  * deletes the `.js` files the level no longer uses.
  */
 import { access, cp, readdir, readFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createGrpcApi, grpcApisOf, withGrpcApis } from '../../../src/grpc/model.js';
 import { createMcpFolder, createMcpServer, mcpServersOf, withMcpServers } from '../../../src/mcp/model.js';
@@ -165,7 +165,7 @@ async function scriptFiles(): Promise<string[]> {
   const entries = await readdir(dir, { recursive: true, withFileTypes: true });
   return entries
     .filter((entry) => entry.isFile() && /\.(pre|post)\.(js|ts)$/.test(entry.name))
-    .map((entry) => join(entry.parentPath, entry.name).slice(dir.length + 1))
+    .map((entry) => relative(dir, join(entry.parentPath, entry.name)).split(sep).join('/'))
     .filter((file) => !file.startsWith('imported-scripts') && !file.startsWith('apis/Shop'))
     .sort();
 }

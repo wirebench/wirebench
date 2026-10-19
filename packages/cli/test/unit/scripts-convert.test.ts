@@ -4,7 +4,7 @@
  * saves through the engine; a level that does not parse is listed and skipped.
  */
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { PassThrough } from 'node:stream';
 import {
   createApi,
@@ -66,13 +66,13 @@ function io(): { io: CliIo; out: () => string; err: () => string } {
   return { io: { stdout, stderr, env: {} }, out: () => out, err: () => err };
 }
 
-/** Every file under `dir` with its text, so a test can say nothing changed. */
+/** Every file under `dir` with its text, keyed by its `/`-separated path, so a test can say nothing changed. */
 async function snapshot(dir: string): Promise<Record<string, string>> {
   const files: Record<string, string> = {};
   for (const entry of await readdir(dir, { recursive: true, withFileTypes: true })) {
     if (entry.isFile()) {
       const path = join(entry.parentPath, entry.name);
-      files[path.slice(dir.length + 1)] = await readFile(path, 'utf8');
+      files[relative(dir, path).split(sep).join('/')] = await readFile(path, 'utf8');
     }
   }
   return files;
