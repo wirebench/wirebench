@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Closing live sessions asks first.** Closing tabs that hold a connected SSH, Telnet or serial session,
+  or a running local terminal, asks once for the whole batch (**Close 2 sessions on web-1?**); **Cancel**
+  keeps every tab. **Don't ask again** turns it off, and **Settings → Terminal → Confirm closing live
+  sessions** turns it back on (S53).
+- **Undeclared snippet variables can be declared on the spot.** A `${name}` the snippet does not declare
+  is listed when it runs (it goes to the shell as is, for the shell to expand), with **Ask for it** to
+  declare it; saving a snippet with undeclared names asks once, and **Save anyway** keeps them (#717).
 - **Move an API to another project.** API rows of every kind (REST, gRPC, WebSocket, MCP) offer
   **Move to project…**, and dragging an API onto another project's row moves it there, the row
   highlighted as the drop target. Folders, requests, scripts, mocks and the cached definition go with it
@@ -37,6 +44,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Palette: SSH commands come first in the SSH area, and protocols find New host.** Typing in the
+  palette ranks the area's lead commands (**Connect…**, **New Host…**) above the area's other commands
+  that match only by area, a shorter name wins a tie, and "telnet", "serial" or "mosh" find New host and
+  Connect (#714, S40, S68).
+- **Host forms say which fields are missing, beside them.** Each empty required field reads what it needs
+  under its label, and the footer counts them (**2 fields need a value**). An SSH or Mosh password left
+  empty is asked for when connecting, as the form now says, instead of blocking Save; a Telnet password
+  stays as before. The Telnet sign-in note sits under the sign-in fields, and the Mosh server command and
+  UDP ports moved under **Advanced** (S59–S62).
+- **Host cards and details.** A host card no longer repeats its OS in the subtitle; the icon still names
+  it (#715). A connected host's details lead with **Go to terminal** and **New session**, and long values
+  wrap instead of being cut (S50, S51). The New card stays first in its group and names the protocol until
+  an address is typed (S45, S46). An empty group offers **Add host** inline (S49). The SSH sidebar's
+  button reads **Local terminal** (S69).
+- **SFTP toolbar and dates.** The Files toolbar shows labels when there is room and icons with tooltips
+  when there is not, and **Modified** shows the time for today and a short date otherwise (S66).
 - **New host opens in the right panel, with a draft card in Hosts.** New host (the Hosts button and its
   menu, a group's Add host, the empty state, **Hosts: New Host…** and **Save as host…**) opens its form in
   the right panel, where Edit host already was, instead of a dialog over the hosts. While it is open, a
@@ -48,6 +71,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The connection screen names the user it connects as.** A quick host shows `user@address:port`, the
+  user typed at the prompt wins over the saved one, and a failed attempt with nothing logged no longer
+  shows an empty log box (#716, S67).
+- **SSH round-5 polish.** The snippet editor keeps Run, Insert and Save in a footer while its body
+  scrolls (S63); the Keychain names the identities that use a secret ("Used by identity Tester") and
+  refreshes when secrets change (S64); the import dialog's first step has **Cancel** (S65); the host
+  details hint goes once Hosts is not in front (S41); an ended team session log with nothing recorded says
+  so, its dialog has a close button and opens large (S42); the status bar no longer starts with a
+  separator in Settings (S54).
 - **Device keys and the app lock say what they need.** Where they cannot be used, **Generate key** reads
   **Device keys need macOS with a Secure Enclave or Windows Hello.** and Settings → Secrets reads **App
   lock needs Touch ID, Windows Hello or the system password prompt.**, inside the App lock row under its
