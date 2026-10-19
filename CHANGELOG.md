@@ -18,6 +18,15 @@ All notable changes to this project are documented here. The format follows
   (#701).
 - **Reorder APIs by dragging.** An API row dragged up or down among its project's APIs changes their
   order (#701).
+- **Preview tabs, a tab menu and a question before unsaved edits are lost.** A single click in the
+  Explorer opens one preview tab, its name in italics, that the next single click replaces, so reading
+  through requests no longer leaves a tab per click. A double-click, the first edit, **Send** or
+  double-clicking the tab's name keeps it; **Settings ▸ Behaviour ▸ Preview tabs** turns previews off.
+  Right-clicking a tab offers **Close**, **Close others**, **Close to the right**, **Close saved**,
+  **Close all**, **Reveal in Explorer** and **Copy name**, for SSH and terminal tabs too; a middle-click
+  closes a tab, and the palette has **Close Other Tabs**, **Close Tabs to the Right**, **Close Saved
+  Tabs** and **Close All Tabs**. Closing a tab with unsaved edits, however it is closed, asks **Save**,
+  **Don't save** or **Cancel** (#679).
 - **Comments in a JSON body.** <kbd>Cmd/Ctrl+/</kbd> toggles `//` on the selected lines of a Raw JSON
   body and <kbd>Shift+Alt+A</kbd> toggles `/* */`; comments are coloured as comments and saved with the
   request. They are removed before the body is sent, with any comma a commented-out last field leaves
@@ -39,6 +48,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Lint findings no longer count as Problems.** After importing an OpenAPI definition, its lint findings
+  get their own status bar item (**57 lint findings**, with errors and warnings named in the tooltip),
+  which is never coloured and opens the Problems panel. The **Problems** item and the **Console** badge
+  count only what went wrong, so a clean import of a real-world spec no longer turns the status bar red.
+  The import summary names the findings by severity (**Lint: 2 errors, 55 warnings**) and links to them
+  (#682).
 - **Save stays in view in the New host and Edit host forms.** Cancel and Save sit in a footer bar at the
   bottom of the right panel and the form scrolls above it, so a short window or an open **Advanced**
   section no longer scrolls them away. <kbd>Enter</kbd> in a field still saves. The panel is titled

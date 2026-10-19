@@ -8,6 +8,33 @@
 import { jsonSchemaValidator } from '../../json/schema-validate.js';
 
 /**
+ * The reasons `WHY` in `PART_UNSUPPORTED` holds, for TypeScript that names a refused call (the
+ * converter's TODOs). `PART_UNSUPPORTED` is source text the sandbox runs, so it keeps its own copy;
+ * a test evaluates it and holds the two equal.
+ */
+export const UNSUPPORTED_WHY = Object.freeze({
+  send: 'a script cannot send requests',
+  cookies: 'a script cannot keep cookies',
+  files: 'a script cannot read files',
+  modules: 'a script cannot load modules',
+  wait: 'a script cannot wait',
+  processEnv: "a script cannot read the machine's environment",
+  programs: 'a script cannot run programs',
+  settings: "set this in the request's Settings",
+  auth: "set this on the request's Auth tab",
+  handling: 'a script cannot change how a response is handled',
+  visual: 'a script cannot show visual output',
+  initial: 'a script cannot change initial values',
+  vault: 'a script reads secrets with secrets.get, from the ones its scripts list',
+  binary: 'a script reads a body as text',
+  response: 'a script cannot change the response',
+  values: "a script cannot list the run's values",
+});
+
+/** The reason `unsupported` gives a call with none of `WHY`'s. */
+export const UNSUPPORTED_DEFAULT_REASON = 'Wirebench scripts cannot do this';
+
+/**
  * Declares `WHY` and `unsupported`: `unsupported(name, reason)` is a function that throws
  * `ScriptUnsupported` naming the call and why it cannot run; `WHY` holds the reasons a kind of call
  * shares, and a call with none of them gets a plain default.

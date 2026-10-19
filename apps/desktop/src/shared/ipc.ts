@@ -271,6 +271,8 @@ import {
   scriptCompletionsResponseSchema,
   scriptDiagnosticsResponseSchema,
   scriptPositionRequestSchema,
+  scriptProposeConversionsRequestSchema,
+  scriptProposeConversionsResponseSchema,
   scriptQuickInfoResponseSchema,
   scriptSignatureHelpResponseSchema,
   scriptSourceRequestSchema,
@@ -1145,6 +1147,16 @@ export const channels = {
     /** A project's session values, masked, a secret one without its value. */
     listValues: defineChannel('script.listValues', scriptValuesRequestSchema, scriptValuesListResponseSchema),
     clearValues: defineChannel('script.clearValues', scriptValuesRequestSchema, scriptValuesClearResponseSchema),
+    /**
+     * The review of converting imported scripts: each layered level at or below `ownerId` (or in the
+     * project) with its converted texts, TODOs and the checker's problems. Accept is `project.mutate`
+     * with a `convert-scripts` change.
+     */
+    proposeConversions: defineChannel(
+      'script.proposeConversions',
+      scriptProposeConversionsRequestSchema,
+      scriptProposeConversionsResponseSchema,
+    ),
   },
   // A request's golden response, kept beside its files as `<slug>.golden.yaml`.
   snapshot: {

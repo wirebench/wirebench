@@ -220,6 +220,16 @@ and `pm.*.set` variable calls (all kept as the run's values), `CryptoJS` hashes,
 `pm.execution.skipRequest` steer a run. Anything else — `pm.sendRequest`, `pm.cookies.jar()`,
 `pm.visualizer`, `require` — fails when it is called, with `script-unsupported` naming it.
 
+[Convert](#convert-to-wirebench-scripts) maps `pm.test`, `pm.expect` with the chains it lists, the
+variable calls `get`, `set` and `has` (and `postman.getEnvironmentVariable` and its kin),
+`pm.response` `code`, `json()`, `text()`, `headers.get`, `responseTime` and `to.have.status(n)`, the
+`pm.request` header reads (and its header writes, in a pre-request script only), `url.toString()` and
+a read of `method`, `pm.info.iteration` and `iterationCount`, `pm.iterationData.get`, run control,
+`btoa`, `atob`, and a `CryptoJS` hash (`MD5`, `SHA1`, `SHA256`, `SHA512`) or HMAC (`HmacSHA1`,
+`HmacSHA256`, `HmacSHA512`) written as one `CryptoJS.X(…).toString(…)`; `HmacMD5` is not mapped. It
+leaves `pm.response.status`, `pm.request.body`, `pm.info.requestName`, `unset`, `clear` and
+`replaceIn` as TODOs.
+
 A script can't send a request, so a `pm.sendRequest` call needs rewriting:
 
 - A login whose token the next request uses is a [sequence](/wirebench/docs/guides/sequences/) step with a
@@ -234,20 +244,20 @@ Insomnia has no script level above a folder, so there is none on the API.
 `insomnia` and `$` are the same object as `pm` in the Postman layer, with two more members:
 `baseEnvironment` and `parentFolders` read like `environment` and write to the run's `vars`.
 
-| Insomnia | In Wirebench |
-| --- | --- |
-| `insomnia.test`, `insomnia.expect` | Supported, as `pm.test` and `pm.expect` |
-| `insomnia.response` (`code`, `status`, `headers`, `json()`, `text()`, `responseTime`) | Supported |
-| `insomnia.request` (`url`, headers, `body`) | Supported |
-| `insomnia.variables`, `environment`, `baseEnvironment`, `collectionVariables`, `globals` | Supported; reads check `vars` then `props`, writes go to `vars` |
-| `insomnia.iterationData` | Supported; reads the current data row of a [data-driven run](/wirebench/docs/guides/runner/), and has no `set` |
-| `insomnia.info.requestName` | Supported |
-| `insomnia.execution.setNextRequest`, `skipRequest` | Supported; obeyed in API and folder runs only |
-| `insomnia.cookies` reads | Supported; they return nothing, as no cookie is visible to a script |
-| `insomnia.cookies` writes (`set`, `unset`, `clear`) | `script-unsupported` |
-| `insomnia.vault.get` | `script-unsupported` |
-| `insomnia.sendRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step or OAuth2 auth |
-| `insomnia.require`, `require` | `script-unsupported` |
+| Insomnia | In Wirebench | Convert |
+| --- | --- | --- |
+| `insomnia.test`, `insomnia.expect` | Supported, as `pm.test` and `pm.expect` | Yes, with the chains [Convert](#convert-to-wirebench-scripts) lists |
+| `insomnia.response` (`code`, `status`, `headers`, `json()`, `text()`, `responseTime`) | Supported | Yes for `code`, `headers.get`, `json()`, `text()`, `responseTime` and `to.have.status(n)`; no for `status` |
+| `insomnia.request` (`url`, headers, `body`) | Supported | Yes for `headers.get`, `url.toString()` and reading `method`, and for `headers.add`, `upsert` and `remove` in a pre-request script only; no for `body` |
+| `insomnia.variables`, `environment`, `baseEnvironment`, `collectionVariables`, `globals` | Supported; reads check `vars` then `props`, writes go to `vars` | Yes for `get`, `set` and `has`; no for `unset`, `clear` and `replaceIn` |
+| `insomnia.iterationData` | Supported; reads the current data row of a [data-driven run](/wirebench/docs/guides/runner/), and has no `set` | Yes for `get`; no for `toObject` |
+| `insomnia.info.requestName` | Supported | No |
+| `insomnia.execution.setNextRequest`, `skipRequest` | Supported; obeyed in API and folder runs only | Yes; `skipRequest` in a pre-request script only |
+| `insomnia.cookies` reads | Supported; they return nothing, as no cookie is visible to a script | No |
+| `insomnia.cookies` writes (`set`, `unset`, `clear`) | `script-unsupported` | No |
+| `insomnia.vault.get` | `script-unsupported` | No |
+| `insomnia.sendRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step or OAuth2 auth | No |
+| `insomnia.require`, `require` | `script-unsupported` | No |
 
 An Insomnia unit-test suite (the Tests tab) is reported on import and not run: it targets a request by
 id outside any script.
@@ -273,29 +283,29 @@ a WebSocket-only folder, or a collection script when the collection has no REST 
 in every client, the scripts of a collection the import drops for having no HTTP request (in an
 Insomnia import, of a dropped folder too).
 
-| Bruno | In Wirebench |
-| --- | --- |
-| `test`, `expect` with the common chai chains | Supported |
-| `expect(x).to.have.jsonSchema(schema)`, also after `.not` | Supported; see [below](#jsonschema) |
-| `res.status`, `res.body`, `res.headers`, `res.responseTime`, `getStatus()`, `getBody()`, `getHeader()`, `getHeaders()`, `getStatusText()`, `getResponseTime()` | Supported; `res.body` is parsed JSON for a JSON response and text otherwise, and `res.headers` has lower-case names |
-| `res.getUrl()` | Supported; the request's URL, since a script sees no redirect |
-| `res.getSize()` | Supported; `{ header, body, total }` in bytes, the header size counted from the status line and headers |
-| `res.setBody`, `res.setHeader` | `script-unsupported`; a script cannot change the response |
-| `req.getUrl`, `setUrl`, `getMethod`, `setMethod`, `getHeader`, `getHeaders`, `setHeader`, `deleteHeader`, `getBody`, `setBody`, `getName` | Supported |
-| `req.setHeaders`, `req.getAuthMode` | `script-unsupported` |
-| `bru.getVar`, `setVar`, `hasVar`, `deleteVar`, `getEnvVar`, `setEnvVar`, `getGlobalEnvVar`, `setGlobalEnvVar`, `getCollectionVar`, `getFolderVar`, `getRequestVar` | Supported; reads check `vars` then `props`, writes go to `vars` |
-| `bru.getEnvName`, `bru.getCollectionName` | Supported; both give `undefined`, since a run has no named environment or collection a script can see |
-| `bru.deleteAllVars` | `script-unsupported` |
-| `bru.getProcessEnv` | `script-unsupported`; a script cannot read the machine's environment |
-| `bru.visualize` | `script-unsupported` |
-| `bru.interpolate` | Supported with limits; see [below](#interpolate) |
-| `bru.setNextRequest`, `bru.runner.skipRequest`, `bru.runner.stopExecution` | Supported; obeyed in API and folder runs only |
-| `req.setTimeout`, `getTimeout`, `setMaxRedirects` | `script-unsupported`; use the request's **Settings** |
-| `req.onFail`, `req.disableParsingResponseJson` | `script-unsupported`; a script cannot change how a response is handled |
-| `bru.cookies` | `script-unsupported` |
-| `bru.sendRequest`, `bru.runRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step or OAuth2 auth |
-| `bru.sleep` | `script-unsupported` |
-| `require` | `script-unsupported` |
+| Bruno | In Wirebench | Convert |
+| --- | --- | --- |
+| `test`, `expect` with the common chai chains | Supported | Yes, with the chains [Convert](#convert-to-wirebench-scripts) lists |
+| `expect(x).to.have.jsonSchema(schema)`, also after `.not` | Supported; see [below](#jsonschema) | No; the TODO points at the request's JSON Schema assertion |
+| `res.status`, `res.body`, `res.headers`, `res.responseTime`, `getStatus()`, `getBody()`, `getHeader()`, `getHeaders()`, `getStatusText()`, `getResponseTime()` | Supported; `res.body` is parsed JSON for a JSON response and text otherwise, and `res.headers` has lower-case names | Yes for `status`, `body`, `responseTime`, `getStatus()`, `getBody()`, `getHeader()` and `getResponseTime()`; no for `headers`, `getHeaders()` and `getStatusText()` |
+| `res.getUrl()` | Supported; the request's URL, since a script sees no redirect | No |
+| `res.getSize()` | Supported; `{ header, body, total }` in bytes, the header size counted from the status line and headers | No |
+| `res.setBody`, `res.setHeader` | `script-unsupported`; a script cannot change the response | No |
+| `req.getUrl`, `setUrl`, `getMethod`, `setMethod`, `getHeader`, `getHeaders`, `setHeader`, `deleteHeader`, `getBody`, `setBody`, `getName` | Supported | Yes for `getUrl`, `getMethod` and `getHeader`, and for `setUrl`, `setMethod`, `setHeader` and `deleteHeader` in a pre-request script only (`setUrl` and `setMethod` on REST only); no for `getHeaders`, `getBody`, `setBody` and `getName` |
+| `req.setHeaders`, `req.getAuthMode` | `script-unsupported` | No |
+| `bru.getVar`, `setVar`, `hasVar`, `deleteVar`, `getEnvVar`, `setEnvVar`, `getGlobalEnvVar`, `setGlobalEnvVar`, `getCollectionVar`, `getFolderVar`, `getRequestVar` | Supported; reads check `vars` then `props`, writes go to `vars` | Yes, except `deleteVar` |
+| `bru.getEnvName`, `bru.getCollectionName` | Supported; both give `undefined`, since a run has no named environment or collection a script can see | No |
+| `bru.deleteAllVars` | `script-unsupported` | No |
+| `bru.getProcessEnv` | `script-unsupported`; a script cannot read the machine's environment | No |
+| `bru.visualize` | `script-unsupported` | No |
+| `bru.interpolate` | Supported with limits; see [below](#interpolate) | No |
+| `bru.setNextRequest`, `bru.runner.skipRequest`, `bru.runner.stopExecution` | Supported; obeyed in API and folder runs only | Yes; `skipRequest` in a pre-request script only |
+| `req.setTimeout`, `getTimeout`, `setMaxRedirects` | `script-unsupported`; use the request's **Settings** | No |
+| `req.onFail`, `req.disableParsingResponseJson` | `script-unsupported`; a script cannot change how a response is handled | No |
+| `bru.cookies` | `script-unsupported` | No |
+| `bru.sendRequest`, `bru.runRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step or OAuth2 auth | No |
+| `bru.sleep` | `script-unsupported` | No |
+| `require` | `script-unsupported` | No |
 
 #### interpolate
 
@@ -325,26 +335,26 @@ post-response script. Pre-request scripts run outermost first, as in every layer
 `iterationData`, whose members are unsupported, with `pm.visualizer.set` and the run-control calls
 `pm.execution.setNextRequest` and `skipRequest` unsupported too.
 
-| Hoppscotch | In Wirebench |
-| --- | --- |
-| `pw.test`, `hopp.test` | Supported |
-| `pw.expect` | Supported; the Jest matchers `toBe`, `toBeType`, `toInclude`, `toHaveLength` and `toBeLevel2xx` to `toBeLevel5xx`, each with `.not` |
-| `hopp.expect` | Supported; the same Jest matchers and the chai chain (`.to.equal` and the rest) |
-| `pw.response` | Supported; `status`, `headers` (a list of `{ key, value }` rows) and `body`, parsed JSON for a JSON response and text otherwise |
-| `hopp.response` | Supported; `statusCode`, `statusText`, `headers`, `responseTime`, and `body.asJSON()` and `body.asText()` |
-| `hopp.response.body.bytes` | `script-unsupported` |
-| `pw.env` | Supported; `get`, `set`, `unset`, `resolve` and `getResolve`. `get` is plain: an unset name gives `undefined` and `<<name>>` is not expanded. `resolve` expands `<<name>>` (an unset name becomes empty, nested names up to 10 levels). Writes go to `vars` |
-| `hopp.env`, `hopp.env.active`, `hopp.env.global` | Supported; `get`, `getRaw`, `set` and `delete`. `get` expands `<<name>>`, `getRaw` does not, and both give `null` for an unset name |
-| `hopp.env.reset`, `getInitialRaw`, `setInitial` | `script-unsupported` |
-| `hopp.request` reads: `url`, `method`, `headers`, `params`, `body`, `variables` | Supported; `headers` and `params` are lists of `{ key, value }` rows, `body` is `{ contentType, body }` |
-| `hopp.request` writes: `setUrl`, `setMethod`, `setHeader`, `setHeaders`, `removeHeader`, `setParam`, `setParams`, `removeParam`, `setBody`, `variables.set` | Supported in a pre-request script only; `setBody({ contentType, body })` also sets `Content-Type` |
-| `hopp.request.setAuth`, `hopp.request.auth` | `script-unsupported`; use the request's **Auth** tab |
-| `pm.*` | Supported as in the Postman layer, except the rows below |
-| `pm.collectionVariables`, `pm.iterationData`, `pm.visualizer`, `pm.execution.setNextRequest`, `pm.execution.skipRequest` | `script-unsupported` |
-| `hopp.cookies`, `pm.cookies.jar` | `script-unsupported` |
-| `hopp.fetch`, `pm.sendRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step or OAuth2 auth |
-| `pm.vault`, `pm.require`, `require` | `script-unsupported` |
-| A top-level `import` | Refused before the script runs; a bare `export {};` line is ignored |
+| Hoppscotch | In Wirebench | Convert |
+| --- | --- | --- |
+| `pw.test`, `hopp.test` | Supported | Yes |
+| `pw.expect` | Supported; the Jest matchers `toBe`, `toBeType`, `toInclude`, `toHaveLength` and `toBeLevel2xx` to `toBeLevel5xx`, each with `.not` | Yes |
+| `hopp.expect` | Supported; the same Jest matchers and the chai chain (`.to.equal` and the rest) | Yes, with the chains [Convert](#convert-to-wirebench-scripts) lists |
+| `pw.response` | Supported; `status`, `headers` (a list of `{ key, value }` rows) and `body`, parsed JSON for a JSON response and text otherwise | Yes for `status` and `body`; no for `headers` |
+| `hopp.response` | Supported; `statusCode`, `statusText`, `headers`, `responseTime`, and `body.asJSON()` and `body.asText()` | Yes for `statusCode`, `responseTime`, `body.asJSON()` and `body.asText()`; no for `statusText` and `headers` |
+| `hopp.response.body.bytes` | `script-unsupported` | No |
+| `pw.env` | Supported; `get`, `set`, `unset`, `resolve` and `getResolve`. `get` is plain: an unset name gives `undefined` and `<<name>>` is not expanded. `resolve` expands `<<name>>` (an unset name becomes empty, nested names up to 10 levels). Writes go to `vars` | Yes for `get` and `set`; no for `unset`, `resolve` and `getResolve` |
+| `hopp.env`, `hopp.env.active`, `hopp.env.global` | Supported; `get`, `getRaw`, `set` and `delete`. `get` expands `<<name>>`, `getRaw` does not, and both give `null` for an unset name | Yes for `getRaw` and `set`; no for `get` and `delete` |
+| `hopp.env.reset`, `getInitialRaw`, `setInitial` | `script-unsupported` | No |
+| `hopp.request` reads: `url`, `method`, `headers`, `params`, `body`, `variables` | Supported; `headers` and `params` are lists of `{ key, value }` rows, `body` is `{ contentType, body }` | No |
+| `hopp.request` writes: `setUrl`, `setMethod`, `setHeader`, `setHeaders`, `removeHeader`, `setParam`, `setParams`, `removeParam`, `setBody`, `variables.set` | Supported in a pre-request script only; `setBody({ contentType, body })` also sets `Content-Type` | Yes for `setHeader` and `removeHeader`, in a pre-request script only; no for the rest |
+| `hopp.request.setAuth`, `hopp.request.auth` | `script-unsupported`; use the request's **Auth** tab | No |
+| `pm.*` | Supported as in the Postman layer, except the rows below | As in the [Postman layer](#postman-scripts) |
+| `pm.collectionVariables`, `pm.iterationData`, `pm.visualizer`, `pm.execution.setNextRequest`, `pm.execution.skipRequest` | `script-unsupported` | No |
+| `hopp.cookies`, `pm.cookies.jar` | `script-unsupported` | No |
+| `hopp.fetch`, `pm.sendRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step or OAuth2 auth | No |
+| `pm.vault`, `pm.require`, `require` | `script-unsupported` | No |
+| A top-level `import` | Refused before the script runs; a bare `export {};` line is ignored | No; a bare `export {};` line is blanked, as the runner does |
 
 A value a script stores lasts for the run; see [Values for later
 requests](#values-for-later-requests). A `<<name>>` in a request becomes `${name}`, which reads the
@@ -356,31 +366,136 @@ A Thunder Client export's pre-request and post-request scripts are imported wher
 collection's on the API, each folder's on its folder, each request's on the request. A request's
 post-request script becomes its post-response script.
 
-| Thunder Client | In Wirebench |
-| --- | --- |
-| `tc.test(name, result)` | Supported; `result` is a boolean or a function that returns a boolean or nothing |
-| `expect` | Supported, the chai chains, as a global and as `tc.expect` |
-| `tc.getVar`, `tc.setVar` | Supported; the scope argument picks nothing, reads check `vars` then `props`, writes go to `vars` |
-| `tc.replaceVars` | Supported; `{{name}}` through `vars`, then `props`; an unset name is left as written |
-| `tc.response` | Supported in a post-response script; `status`, `time`, `size` (bytes), `contentType`, `text`, `json` and `headers` (a list of `{ name, value }` rows, original casing) and `getHeader`. `json` is parsed when the body is JSON and `undefined` when it does not parse |
-| `tc.response` in a pre-request script | `script-unsupported` |
-| `tc.request` reads: `name`, `url`, `method`, `headers`, `body`, `getHeader` | Supported; `headers` is a list of `{ name, value, isDisabled }` rows of the headers being sent, so `isDisabled` is always `false`, `body` is parsed JSON or text, `undefined` when there is none; `id` is `undefined` |
-| `tc.request` writes: `setHeader`, `setBody`, and `tc.setParam` | Supported in a pre-request script only |
-| `tc.request.url.getParam`, `setParam` | A `TypeError`: `tc.request.url` is a plain string. The import report names them; edit the URL with `tc.setParam` or the request's **Params** table |
-| `tc.info` | Supported; `requestName`, `currentIteration` and `totalIterations`. `environmentName`, `collectionName` and `folderName` are `undefined` |
-| `tc.skipRequest()` | Supported with no argument; obeyed in API and folder runs only |
-| `tc.skipRequest('name')` | `script-unsupported` |
-| `tc.runRequest`, `tc.retryRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step |
-| `tc.loadModule`, `tc.loadFromPath`, `tc.readFile`, `tc.getAbsolutePath`, `tc.exec`, `require` | `script-unsupported` |
-| `tc.delay` | `script-unsupported` |
-| `tc.getCookies`, `tc.setCookie`, `tc.clearCookies`, `tc.response.cookies` | `script-unsupported` |
-| `tc.response.getBinary`, `tc.response.passed`, `tc.chartHTML` | `script-unsupported` |
-| `tc.request.auth` | `script-unsupported`; use the request's **Auth** tab |
-| The global `assert` | `script-unsupported`; use `expect` |
+| Thunder Client | In Wirebench | Convert |
+| --- | --- | --- |
+| `tc.test(name, result)` | Supported; `result` is a boolean or a function that returns a boolean or nothing | Yes |
+| `expect` | Supported, the chai chains, as a global and as `tc.expect` | Yes, with the chains [Convert](#convert-to-wirebench-scripts) lists |
+| `tc.getVar`, `tc.setVar` | Supported; the scope argument picks nothing, reads check `vars` then `props`, writes go to `vars` | Yes |
+| `tc.replaceVars` | Supported; `{{name}}` through `vars`, then `props`; an unset name is left as written | No |
+| `tc.response` | Supported in a post-response script; `status`, `time`, `size` (bytes), `contentType`, `text`, `json` and `headers` (a list of `{ name, value }` rows, original casing) and `getHeader`. `json` is parsed when the body is JSON and `undefined` when it does not parse | Yes for `status`, `time`, `text`, `json` and `getHeader`; no for `size`, `contentType` and `headers` |
+| `tc.response` in a pre-request script | `script-unsupported` | No |
+| `tc.request` reads: `name`, `url`, `method`, `headers`, `body`, `getHeader` | Supported; `headers` is a list of `{ name, value, isDisabled }` rows of the headers being sent, so `isDisabled` is always `false`, `body` is parsed JSON or text, `undefined` when there is none; `id` is `undefined` | No |
+| `tc.request` writes: `setHeader`, `setBody`, and `tc.setParam` | Supported in a pre-request script only | No |
+| `tc.request.url.getParam`, `setParam` | A `TypeError`: `tc.request.url` is a plain string. The import report names them; edit the URL with `tc.setParam` or the request's **Params** table | No |
+| `tc.info` | Supported; `requestName`, `currentIteration` and `totalIterations`. `environmentName`, `collectionName` and `folderName` are `undefined` | Yes for `currentIteration` and `totalIterations`; no for `requestName` |
+| `tc.skipRequest()` | Supported with no argument; obeyed in API and folder runs only | Yes, in a pre-request script only |
+| `tc.skipRequest('name')` | `script-unsupported` | No |
+| `tc.runRequest`, `tc.retryRequest` | `script-unsupported`; use a [sequence](/wirebench/docs/guides/sequences/) step | No |
+| `tc.loadModule`, `tc.loadFromPath`, `tc.readFile`, `tc.getAbsolutePath`, `tc.exec`, `require` | `script-unsupported` | No |
+| `tc.delay` | `script-unsupported` | No |
+| `tc.getCookies`, `tc.setCookie`, `tc.clearCookies`, `tc.response.cookies` | `script-unsupported` | No |
+| `tc.response.getBinary`, `tc.response.passed`, `tc.chartHTML` | `script-unsupported` | No |
+| `tc.request.auth` | `script-unsupported`; use the request's **Auth** tab | No |
+| The global `assert` | `script-unsupported`; use `expect` | No |
 
 A value a script stores lasts for the run; see [Values for later
 requests](#values-for-later-requests). A `{{name}}` in a request becomes `${name}`, which reads the
 environment, so the next request reads a stored value as `${#Sequence#name}`.
+
+### Convert to Wirebench scripts
+
+A layer keeps an imported script running as it is. Convert rewrites it into a typed Wirebench script
+instead, so the type check reads it like any script you write. Each level converts on its own, and
+the layered and the typed levels of one API run together.
+
+**Where to start.** Three places open the same review:
+
+- **Convert to Wirebench script** on the Scripts tab of a level with imported scripts, next to the
+  dialect label. It converts that level.
+- **Convert scripts…** in the tree's menu of an API, a folder or an interface. It collects every
+  level with imported scripts at or below it.
+- **Scripts: Convert All Imported Scripts…** in the command palette. It collects every level with
+  imported scripts in the project.
+
+**The review.** The list on the left has one row per level: its path, its dialect and how many TODOs
+it leaves. Every row is ticked; untick one to leave it as it is. A level whose script does not parse
+says "has a syntax error at line N" and cannot be ticked. The selected row shows each phase side by
+side, the imported text on the left and the typed one on the right, with the type-check problems of
+the typed text under it. **Accept** converts the ticked rows in one edit, then reports each level
+with its backups and its TODO count, and each level it left as it was with the reason ("changed since
+the review opened", "another level has the same id"). **Cancel** changes nothing. Converting saves
+the project, so Accept refuses a project with unsaved edits: "Save the project first, then convert its
+scripts." It also refuses when a script file it would remove was changed outside Wirebench: "A script
+file changed outside Wirebench. Reload the project, then convert." Either way nothing is written. Nothing is switched on: a
+level whose scripts were off stays off.
+
+**The backup.** Before the save, each phase's imported text is written to
+`imported-scripts/<api>/<owner>.<phase>.js` in the project folder, where `<owner>` is the level's path
+below the API. A name already taken gets `-2`, `-3`. Nothing reads these files again; they are there
+to compare with. The first line of the typed script names its backup:
+
+```ts
+// Converted from a bruno script; the original is in imported-scripts/users-api/users-create-user.post.js.
+```
+
+**What is left.** A call Convert has no mapping for is not rewritten. Its statement is commented out,
+with one line above it naming the call and why:
+
+```ts
+// TODO(convert): pm.sendRequest — a script cannot send requests
+// pm.sendRequest(tokenRequest, (err, res) => {
+//   pm.environment.set('token', res.json().access_token);
+// });
+```
+
+"not converted yet" marks a call the layer runs and Convert does not map yet. A root the script
+declares itself says so, and its uses are left as written. Bruno's `.jsonSchema` points at the
+request's JSON Schema assertion. Any other reason is the layer's own, for a call no script can make. A name the commented-out statement declared is then
+missing where it is used, and the type check says so: the type check lists what is left to do. The
+per-client tables above have a Convert column saying which calls are mapped.
+
+The chai chains map to the typed matchers: `equal` to `toBe`, `deep.equal` and `eql` to `toEqual`,
+`include` and `contain` to `toContain`, `property` to `toHaveProperty`, `lengthOf` to `toHaveLength`,
+`match` to `toMatch`, `above` and `below` to `toBeGreaterThan` and `toBeLessThan`, `true`, `false`,
+`null`, `undefined` and `ok`, `a(…)` for `string`, `number`, `boolean`, `undefined` and `function`,
+and `.not`. `oneOf`, `within`, `least`, `most`, `keys`, `empty`, `exist` and `include` with an object
+are left as TODOs.
+
+**What changes.** A converted script does what the layered one did, with these differences:
+
+- A body that is not JSON: the typed `response.json()` throws, where the layer read the text or
+  `undefined`.
+- A header sent more than once: `headers.get` gives the first value, where the layer joined them with
+  `, `. `headers.getAll(name).join(', ')` gives the joined value.
+- Deep equality: `toEqual` ignores key order, where the layer compared the two values' JSON.
+- `pm.request` on a gRPC request: the converted script reads its metadata, where the layer failed.
+- A REST body is read as `(response.json() as any)`, because an imported request has no contract.
+  Once the request has one, delete the cast to get the body's types.
+- Each read of the converted body parses it again, so changing `res.body` in place no longer sticks,
+  and a loop that reads a large body is slower.
+- `toBeLevel2xx()` and the others become `Math.floor(status / 100)` checks, which also accept a
+  numeric string.
+- `include` on an array compares items deeply; `match` needs a string, and `above` and `below` a
+  number.
+- `tc.test(name, value)` with a variable or a property as `value` is converted as a function and
+  called, so a boolean held in a variable fails the test, and the type check names the line. Write
+  `tc.test(name, () => value)` before converting.
+- `vars.set` throws `script-value-invalid` on a value that is not a string, number or boolean, where
+  the layer stored text.
+
+**From a terminal.** `wirebench scripts convert` does the same without the app:
+
+```bash
+wirebench scripts convert ./project [selector…] [--write]
+```
+
+A selector is a display path (`Shop/Carts`) or a path on disk, and covers the levels at or below it.
+With none, every level that has imported scripts is covered.
+
+Without `--write` the command only previews. For each level it prints the path and the dialect, a
+unified diff for each phase, the TODOs left in the converted text, and a total. Nothing is written.
+
+With `--write` it backs up each phase's imported text to `imported-scripts/<api>/<owner>.<phase>.js`
+(it never overwrites a file), switches the level to the typed API, keeping `enabled`, `secrets`,
+`timeoutMs` and the post-response order, and saves the project. A level whose script does not parse is
+listed and skipped, as is a level whose id another level also carries. A backup that cannot be
+written stops the command before the save: the project is not saved; backups already written stay in
+`imported-scripts/`.
+
+It exits 0 when done, 2 for a usage error such as a selector that matches nothing, and 3 when the project
+cannot be loaded, a backup cannot be written or the project cannot be saved. See the
+[CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#convert-imported-scripts)
+for an example of each mode.
 
 ## Steer a run
 

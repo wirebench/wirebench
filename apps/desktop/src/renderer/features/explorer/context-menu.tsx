@@ -5,7 +5,7 @@ import { explorerActions } from './explorer-actions.js';
 import { exportItems, groups, type ExplorerMenuGroup, type ExplorerMenuItem } from './menu-items.js';
 import { explorerRole, kindExplorer } from '../../kinds/index.js';
 import { projectRowActions } from './project-actions.js';
-import type { ExplorerNode } from './tree-nodes.js';
+import { levelIdOf, type ExplorerNode } from './tree-nodes.js';
 import { webhooksActions } from '../webhooks/webhooks-actions.js';
 import { openRunnerTab } from '../runner/runner-actions.js';
 import { canManageSchedules, openScheduleTab, schedulesActions } from '../schedules/schedules-actions.js';
@@ -43,19 +43,24 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
 
 /**
  * **Switch on scripts…** (#63) on an interface, API or folder with requests beneath it whose
- * scripts are off, after the node's own first group.
+ * scripts are off, and **Convert scripts…** on one with imported scripts at or below it, after the
+ * node's own first group.
  */
 function withScriptsGroup(node: ExplorerNode, menu: readonly ExplorerMenuGroup[]): readonly ExplorerMenuGroup[] {
   const off = node.scriptsOff;
-  if (off === undefined || off.length === 0) {
+  const owner = (node.scriptsLayered?.length ?? 0) > 0 ? levelIdOf(node) : undefined;
+  const items: ExplorerMenuItem[] = [
+    ...(off !== undefined && off.length > 0
+      ? [{ key: 'enable-scripts', label: 'Switch on scripts…', run: () => explorerActions.enableScripts(off) }]
+      : []),
+    ...(owner !== undefined
+      ? [{ key: 'convert-scripts', label: 'Convert scripts…', run: () => explorerActions.convertScripts(owner) }]
+      : []),
+  ];
+  if (items.length === 0) {
     return menu;
   }
-  const item: ExplorerMenuItem = {
-    key: 'enable-scripts',
-    label: 'Switch on scripts…',
-    run: () => explorerActions.enableScripts(off),
-  };
-  return [...menu.slice(0, 1), [item], ...menu.slice(1)];
+  return [...menu.slice(0, 1), items, ...menu.slice(1)];
 }
 
 /** **Run…**: opens the Runner tab for `targetId` (#336). */

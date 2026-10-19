@@ -165,3 +165,44 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => ({
     });
   },
 }));
+
+/**
+ * What the status bar counts. Lint findings are style advice on a definition, not something that
+ * failed, so they are counted apart from the problems and never tint the Console or Problems
+ * items; a failed SSH connect (grouped `ssh:<hostId>`) is not counted at all, since its
+ * connection screen already says what failed.
+ */
+export interface ProblemCounts {
+  /** Problems other than lint findings. */
+  readonly problems: number;
+  /** How many of {@link ProblemCounts.problems} are errors. */
+  readonly errors: number;
+  readonly lintErrors: number;
+  readonly lintWarnings: number;
+}
+
+export function countProblems(items: readonly Problem[]): ProblemCounts {
+  let problems = 0;
+  let errors = 0;
+  let lintErrors = 0;
+  let lintWarnings = 0;
+  for (const item of items) {
+    if (item.groupId.startsWith('ssh:')) continue;
+    if (item.source === 'lint') {
+      if (item.severity === 'error') lintErrors += 1;
+      else lintWarnings += 1;
+    } else {
+      problems += 1;
+      if (item.severity === 'error') errors += 1;
+    }
+  }
+  return { problems, errors, lintErrors, lintWarnings };
+}
+
+/** `2 errors, 55 warnings`, leaving out a severity with none; empty when there are no findings. */
+export function lintSummary(errors: number, warnings: number): string {
+  const parts: string[] = [];
+  if (errors > 0) parts.push(`${String(errors)} ${errors === 1 ? 'error' : 'errors'}`);
+  if (warnings > 0) parts.push(`${String(warnings)} ${warnings === 1 ? 'warning' : 'warnings'}`);
+  return parts.join(', ');
+}

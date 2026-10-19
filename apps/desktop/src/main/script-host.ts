@@ -388,6 +388,32 @@ export class ScriptHost {
     return this.checkerOf().diagnostics(ScriptHost.modelId(target), model);
   }
 
+  /**
+   * The problems of a converted script (convert-imported-scripts spec §4.2), checked as the level's
+   * script will be once it is typed: a request against its own declarations, a level above requests
+   * against its protocol's. The level is still layered, so this does not go through the editor's
+   * model, and the checker forgets the text once it has answered.
+   */
+  async convertedDiagnostics(
+    ownerId: string,
+    level: { readonly protocol: string; readonly secrets: readonly string[] },
+    phase: ScriptPhase,
+    source: string,
+  ): Promise<readonly ScriptDiagnostic[]> {
+    const located = this.locate(ownerId);
+    const declarations =
+      located === undefined
+        ? scriptDeclarations(level.protocol, phase, level.secrets, levelScriptTypes(level.protocol))
+        : scriptDeclarations(located.protocol, phase, level.secrets, (await located.types()).generated);
+    const id = `${ownerId}:${phase}:converted`;
+    const checker = this.checkerOf();
+    try {
+      return await checker.diagnostics(id, { source, declarations, api: 'wirebench' });
+    } finally {
+      await checker.remove(id);
+    }
+  }
+
   async completions(
     target: ScriptTarget,
     source: string,

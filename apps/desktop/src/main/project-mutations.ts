@@ -26,7 +26,8 @@ import {
 } from './project-environment-mutations.js';
 import { addKeystore, removeKeystore, updateKeystore } from './project-keystore-mutations.js';
 import { setRequestAssertions } from './project-assertion-mutations.js';
-import { enableScripts, updateRequestScripts } from './project-script-mutations.js';
+import { convertScripts, enableScripts, updateRequestScripts } from './project-script-mutations.js';
+import type { ScriptConversions } from './project-script-mutations.js';
 import {
   addMock,
   addMockResponse,
@@ -82,6 +83,11 @@ export interface MutationDeps {
    * engine neither loads nor saves what that kind keeps. Absent, every kind is on.
    */
   readonly enabledKinds?: readonly KindId[];
+  /**
+   * The project-relative paths under `imported-scripts/`, listed afresh for this change. A
+   * `convert-scripts` change refuses outright without it: a backup's name depends on what is there.
+   */
+  readonly takenBackups?: ReadonlySet<string>;
 }
 
 /** The outcome of one change: the next model, plus any entity the change created. */
@@ -99,6 +105,8 @@ export interface MutationResult {
   readonly createdKeystoreId?: string;
   readonly createdWssOutgoingId?: string;
   readonly createdWssIncomingId?: string;
+  /** Set by `convert-scripts`: the caller writes `applied[].backups` before it saves. */
+  readonly conversions?: ScriptConversions;
 }
 
 /** Merges a settings patch into the project's settings; `resourceRoot: null` clears it. */
@@ -147,6 +155,7 @@ export const CORE_CHANGE_KINDS: readonly ProjectChange['kind'][] = [
   'set-request-assertions',
   'update-request-scripts',
   'enable-scripts',
+  'convert-scripts',
   'update-project-settings',
   'add-keystore',
   'update-keystore',
@@ -264,6 +273,13 @@ async function applyChangeOnly(project: Project, change: ProjectChange, deps: Mu
 
     case 'enable-scripts':
       return enableScripts(project, change.requestIds);
+
+    case 'convert-scripts': {
+      if (deps.takenBackups === undefined) {
+        throw new ProjectError('convert-unavailable', 'Scripts can only be converted in an open project folder.');
+      }
+      return convertScripts(project, change.levels, deps.takenBackups);
+    }
 
     case 'update-project-settings':
       return updateProjectSettings(project, change.patch);

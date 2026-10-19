@@ -41,7 +41,8 @@ describe('the layered script APIs', () => {
     expect(scriptFileName('x', 'pre', 'wirebench')).toBe('x.pre.ts');
   });
 
-  it('a layered api is syntax-checked only', () => {
+  // Each api builds a checker program; under coverage on a busy runner the six of them outlast 5 s.
+  it('a layered api is syntax-checked only', { timeout: 30_000 }, () => {
     for (const api of LAYERED) {
       expect(checkOnce({ source: 'const n = 1; nothing.here(n.nope);', declarations: '', api })).toEqual([]);
       expect(checkOnce({ source: 'foo(', declarations: '', api })).toHaveLength(1);

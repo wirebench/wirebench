@@ -182,6 +182,11 @@ export interface UiPreferences {
   readonly theme: 'dark' | 'light' | 'system';
   readonly defaultLayout: LayoutPreference;
   readonly confirmOnDelete: boolean;
+  /**
+   * Whether a single click in the Explorer opens a preview tab, shown in italics, that the next single click
+   * replaces (#679). Off: every click opens a tab of its own.
+   */
+  readonly previewTabs: boolean;
   /** How many history entries are kept per project. */
   readonly historyCap: number;
   /** How many rows the HTTP Log keeps in memory ({@link LOG_SIZE_MIN}–{@link LOG_SIZE_MAX}). */
@@ -344,6 +349,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     theme: 'dark',
     defaultLayout: Object.freeze({ orientation: 'side-by-side', mode: 'split' }),
     confirmOnDelete: true,
+    previewTabs: true,
     historyCap: 1000,
     logSize: 500,
   }),
@@ -556,6 +562,7 @@ export const preferencesSchema = z.object({
         })
         .optional(),
       confirmOnDelete: z.boolean().optional(),
+      previewTabs: z.boolean().optional(),
       historyCap: limited('ui.historyCap').optional(),
       logSize: limited('ui.logSize').optional(),
     })
