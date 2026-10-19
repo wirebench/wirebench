@@ -186,9 +186,101 @@ describe('the review', () => {
     expect(message).toContain('Converted one level');
     expect(message).toContain('2 backups');
     expect(message).toContain('3 TODOs');
-    expect(message).toContain('"Shop / Cart" (changed since the review opened)');
-    expect(message).toContain('"Shop / Copy" (another level has the same id)');
+    expect(message).toContain('2 levels not converted');
+  });
+
+  it('after Accept the dialog reports each level, its backups and TODOs, then just closes', async () => {
+    convertScripts.mockResolvedValue({
+      applied: [{ ownerId: 'r1', path: ['Shop', 'Login'], backups: ['a.pre.js', 'a.post.js'], todos: 3 }],
+      refused: [
+        { ownerId: 'r2', path: ['Shop', 'Cart'], reason: 'changed' },
+        { ownerId: 'r5', path: ['Shop', 'Copy'], reason: 'duplicate-id' },
+        { ownerId: 'r6', path: ['Shop', 'Done'], reason: 'not-layered' },
+        { ownerId: 'r7', path: ['Shop', 'Bad'], reason: 'syntax' },
+        { ownerId: 'r8', path: [], reason: 'changed' },
+      ],
+    });
+    await openReview();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('convert-scripts-accept'));
+      await Promise.resolve();
+    });
+
+    const converted = screen.getByTestId('convert-scripts-report-applied');
+    expect(converted.textContent).toContain('Shop / Login');
+    expect(converted.textContent).toContain('a.pre.js');
+    expect(converted.textContent).toContain('a.post.js');
+    expect(converted.textContent).toContain('3 TODOs');
+    const refused = screen.getByTestId('convert-scripts-report-refused').textContent;
+    expect(refused).toContain('Shop / Cart: changed since the review opened');
+    expect(refused).toContain('Shop / Copy: another level has the same id');
+    expect(refused).toContain('Shop / Done: already converted');
+    expect(refused).toContain('Shop / Bad: does not convert');
+    expect(refused).toContain('A level no longer there: changed since the review opened');
+    expect(screen.queryByTestId('convert-scripts-accept')).toBeNull();
+    expect(screen.queryByTestId('convert-scripts-cancel')).toBeNull();
+
+    const close = screen.getByTestId('convert-scripts-close');
+    expect(document.activeElement).toBe(close);
+    fireEvent.click(close);
     expect(useConvertScriptsDialog.getState().target).toBeUndefined();
+    expect(convertScripts).toHaveBeenCalledTimes(1);
+  });
+
+  it('Escape on the report just closes', async () => {
+    convertScripts.mockResolvedValue({ applied: [], refused: [] });
+    await openReview();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('convert-scripts-accept'));
+      await Promise.resolve();
+    });
+
+    fireEvent.keyDown(screen.getByTestId('convert-scripts-close'), { key: 'Escape' });
+    expect(useConvertScriptsDialog.getState().target).toBeUndefined();
+    expect(convertScripts).toHaveBeenCalledTimes(1);
+  });
+
+  it('a row that does not convert says why to a screen reader', async () => {
+    await openReview();
+
+    expect(
+      screen.getByRole('checkbox', { name: 'Convert Shop / Broken', description: /has a syntax error at line 3/ }),
+    ).toHaveProperty('disabled', true);
+    expect(screen.getByRole('checkbox', { name: 'Convert Shop / Cart', description: /No TODOs/ })).toBeDefined();
+  });
+
+  it('a review opened while an Accept is in flight cannot send a second one', async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    convertScripts.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await openReview();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('convert-scripts-accept'));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await useConvertScriptsDialog.getState().open('p1');
+    });
+
+    await act(async () => {
+      await useConvertScriptsDialog.getState().accept();
+    });
+    expect(convertScripts).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('convert-scripts-accept')).toHaveProperty('disabled', true);
+
+    await act(async () => {
+      finish({ applied: [], refused: [] });
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId('convert-scripts-accept')).toHaveProperty('disabled', false);
+    await act(async () => {
+      await useConvertScriptsDialog.getState().accept();
+    });
+    expect(convertScripts).toHaveBeenCalledTimes(2);
   });
 
   it('an unsaved project keeps the review open and says to save first', async () => {
@@ -217,19 +309,13 @@ describe('the review', () => {
   });
 });
 
-describe('the report', () => {
-  it('names each refusal readably', () => {
-    const message = convertResultMessage({
-      applied: [],
-      refused: [
-        { ownerId: 'a', path: ['X'], reason: 'not-layered' },
-        { ownerId: 'b', path: ['Y'], reason: 'syntax' },
-        { ownerId: 'c', path: [], reason: 'changed' },
-      ],
-    });
-    expect(message).toContain('No level was converted.');
-    expect(message).toContain('"X" (already converted)');
-    expect(message).toContain('"Y" (does not convert)');
-    expect(message).toContain('a level no longer there (changed since the review opened)');
+describe('the toast', () => {
+  it('sums up what was converted and counts what was not', () => {
+    expect(convertResultMessage({ applied: [], refused: [{ ownerId: 'a', path: ['X'], reason: 'syntax' }] })).toBe(
+      'No level was converted. One level not converted.',
+    );
+    expect(
+      convertResultMessage({ applied: [{ ownerId: 'a', path: ['X'], backups: ['x.pre.js'], todos: 0 }], refused: [] }),
+    ).toBe('Converted one level: one backup in imported-scripts/, no TODOs to check.');
   });
 });

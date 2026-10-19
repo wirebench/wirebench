@@ -2,11 +2,12 @@
  * **Convert scripts…**: the review of turning imported scripts into Wirebench scripts. One row per
  * level whose scripts are still in the source client's dialect, ticked by default, with its TODO
  * count; the selected row shows each phase before and after, with the checker's problems under it.
- * **Accept** converts the ticked rows in one project edit, then a toast says what was converted and
- * what was refused. **Cancel** changes nothing.
+ * **Accept** converts the ticked rows in one project edit; the dialog then reports each level converted,
+ * with its backups and TODO count, and each refused one and why, and a toast sums it up. **Cancel**
+ * changes nothing.
  */
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect, useRef } from 'react';
 import { create } from 'zustand';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
@@ -51,8 +52,10 @@ interface ConvertScriptsDialogState {
   readonly ticked: readonly boolean[];
   /** The row whose diff is shown. */
   readonly selected: number;
-  /** Accept is in flight. */
+  /** An Accept is in flight — this review's, or one sent from a review closed since. */
   readonly busy: boolean;
+  /** What Accept did, once it did it: the dialog shows it in place of the review. */
+  readonly report: ScriptConversionsResultWire | undefined;
   /** Why the proposal or the Accept failed, shown in the dialog. */
   readonly error: string | undefined;
   /**
@@ -62,7 +65,7 @@ interface ConvertScriptsDialogState {
   readonly open: (projectId: string, ownerId?: string) => Promise<void>;
   readonly toggle: (row: number, ticked: boolean) => void;
   readonly select: (row: number) => void;
-  /** Converts the ticked rows; closes and reports in a toast, or stays open saying why it could not. */
+  /** Converts the ticked rows and shows the report, or stays on the review saying why it could not. */
   readonly accept: () => Promise<void>;
   readonly close: () => void;
 }
@@ -73,6 +76,7 @@ const CLOSED = {
   ticked: [],
   selected: 0,
   busy: false,
+  report: undefined,
   error: undefined,
 } as const;
 
@@ -86,13 +90,18 @@ function messageOf(error: unknown, fallback: string): string {
 export const useConvertScriptsDialog = create<ConvertScriptsDialogState>((set, get) => {
   /** Bumped on every open and close, so a proposal that lands after either is dropped. */
   let generation = 0;
+  /**
+   * Whether a `convert-scripts` edit is on its way to main. Not reset by `open` or `close`: a review
+   * opened while one is in flight must not send a second edit before the first one lands.
+   */
+  let inFlight = false;
 
   return {
     ...CLOSED,
 
     open: async (projectId, ownerId) => {
       const opened = ++generation;
-      set({ ...CLOSED, target: { projectId, ...(ownerId === undefined ? {} : { ownerId }) } });
+      set({ ...CLOSED, busy: inFlight, target: { projectId, ...(ownerId === undefined ? {} : { ownerId }) } });
       try {
         const levels = await useProjectStore.getState().proposeConversions(projectId, ownerId);
         if (opened === generation) {
@@ -118,8 +127,8 @@ export const useConvertScriptsDialog = create<ConvertScriptsDialogState>((set, g
     },
 
     accept: async () => {
-      const { target, levels, ticked, busy } = get();
-      if (target === undefined || levels === undefined || busy) {
+      const { target, levels, ticked, report } = get();
+      if (target === undefined || levels === undefined || report !== undefined || inFlight) {
         return;
       }
       const chosen = levels.filter((level, index) => ticked[index] === true && level.result.ok);
@@ -127,20 +136,23 @@ export const useConvertScriptsDialog = create<ConvertScriptsDialogState>((set, g
         return;
       }
       const accepted = generation;
+      inFlight = true;
       set({ busy: true, error: undefined });
       try {
         const result = await useProjectStore.getState().convertScripts(
           target.projectId,
           chosen.map(({ ownerId, fingerprint }) => ({ ownerId, fingerprint })),
         );
-        if (accepted === generation) {
-          get().close();
-        }
+        inFlight = false;
+        set(accepted === generation ? { busy: false, report: result } : { busy: false });
         showToast(convertResultMessage(result));
       } catch (error) {
-        if (accepted === generation) {
-          set({ busy: false, error: messageOf(error, 'Could not convert the scripts') });
-        }
+        inFlight = false;
+        set(
+          accepted === generation
+            ? { busy: false, error: messageOf(error, 'Could not convert the scripts') }
+            : { busy: false },
+        );
       }
     },
 
@@ -155,7 +167,12 @@ function plural(count: number, one: string, many: string): string {
   return count === 1 ? `one ${one}` : `${String(count)} ${many}`;
 }
 
-/** What the toast after Accept says: the levels converted, then each refused one and why. */
+/** A refused level's path as the report names it. */
+function refusedName(path: readonly string[]): string {
+  return path.length === 0 ? 'A level no longer there' : path.join(' / ');
+}
+
+/** What the toast after Accept says: the levels converted, in sum, and how many were not. */
 export function convertResultMessage(result: ScriptConversionsResultWire): string {
   const { applied, refused } = result;
   const backups = applied.reduce((sum, level) => sum + level.backups.length, 0);
@@ -169,11 +186,8 @@ export function convertResultMessage(result: ScriptConversionsResultWire): strin
   if (refused.length === 0) {
     return done;
   }
-  const named = refused.map(
-    ({ path, reason }) =>
-      `${path.length === 0 ? 'a level no longer there' : `"${path.join(' / ')}"`} (${REFUSAL_TEXT[reason]})`,
-  );
-  return `${done} Not converted: ${named.join(', ')}.`;
+  const count = plural(refused.length, 'level', 'levels');
+  return `${done} ${count.charAt(0).toUpperCase()}${count.slice(1)} not converted.`;
 }
 
 /** What a row says about the calls left as written: those not converted yet apart from those no mapping can convert. */
@@ -199,6 +213,7 @@ function Row({ level, row }: { readonly level: ScriptConversionWire; readonly ro
   const select = useConvertScriptsDialog((state) => state.select);
   const path = level.path.join(' / ');
   const failed = !level.result.ok;
+  const statusId = `convert-scripts-row-${String(row)}-status`;
 
   return (
     <li
@@ -209,6 +224,7 @@ function Row({ level, row }: { readonly level: ScriptConversionWire; readonly ro
         type="checkbox"
         className="mt-0.5"
         aria-label={`Convert ${path}`}
+        aria-describedby={statusId}
         checked={ticked}
         disabled={failed || busy}
         onChange={(event) => {
@@ -226,11 +242,77 @@ function Row({ level, row }: { readonly level: ScriptConversionWire; readonly ro
         <span className="block truncate text-sm text-fg-default" title={path}>
           {path}
         </span>
-        <span className={`block text-xs ${failed ? 'text-status-danger' : 'text-fg-subtle'}`}>
+        <span id={statusId} className={`block text-xs ${failed ? 'text-status-danger' : 'text-fg-subtle'}`}>
           {`${DIALECT_LABELS[level.dialect]} · ${todoText(level)}`}
         </span>
       </button>
     </li>
+  );
+}
+
+/** What Accept did, level by level (spec §7), with Close as its one way out. */
+function Report({ report }: { readonly report: ScriptConversionsResultWire }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  // The review's buttons are gone, and focus with them: it goes to Close.
+  useEffect(() => {
+    closeRef.current?.focus();
+  }, []);
+  const { applied, refused } = report;
+
+  return (
+    <>
+      <AlertDialog.Title className="text-md font-medium text-fg-default">
+        {applied.length === 0 ? 'No scripts converted' : 'Scripts converted'}
+      </AlertDialog.Title>
+      <AlertDialog.Description asChild>
+        <div className="mt-1 text-sm text-fg-subtle">
+          {applied.length === 0
+            ? 'Every level was left as it was.'
+            : 'Each level below has a typed script now, and its imported text is kept in the backups listed.'}
+        </div>
+      </AlertDialog.Description>
+      <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
+        {applied.length > 0 && (
+          <section aria-label="Converted">
+            <h3 className="text-sm font-medium text-fg-default">Converted</h3>
+            <ul data-testid="convert-scripts-report-applied" className="mt-1 flex flex-col gap-2">
+              {applied.map((level, index) => (
+                <li key={`${level.ownerId}:${String(index)}`} className="text-sm">
+                  <span className="block text-fg-default">{level.path.join(' / ')}</span>
+                  <span className="block text-xs text-fg-subtle">
+                    {level.todos === 0 ? 'No TODOs' : plural(level.todos, 'TODO', 'TODOs')}
+                  </span>
+                  <ul aria-label="Backups" className="mt-0.5 font-mono text-xs text-fg-subtle">
+                    {level.backups.map((backup) => (
+                      <li key={backup}>{backup}</li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        {refused.length > 0 && (
+          <section aria-label="Not converted" className="mt-3">
+            <h3 className="text-sm font-medium text-fg-default">Not converted</h3>
+            <ul data-testid="convert-scripts-report-refused" className="mt-1 flex flex-col gap-1 text-sm">
+              {refused.map((level, index) => (
+                <li key={`${level.ownerId}:${String(index)}`} className="text-fg-default">
+                  {`${refusedName(level.path)}: ${REFUSAL_TEXT[level.reason]}`}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
+      <div className="mt-4 flex justify-end">
+        <AlertDialog.Cancel asChild>
+          <Button ref={closeRef} variant="primary" data-testid="convert-scripts-close">
+            Close
+          </Button>
+        </AlertDialog.Cancel>
+      </div>
+    </>
   );
 }
 
@@ -241,6 +323,7 @@ export function ConvertScriptsDialog() {
   const ticked = useConvertScriptsDialog((state) => state.ticked);
   const selected = useConvertScriptsDialog((state) => state.selected);
   const busy = useConvertScriptsDialog((state) => state.busy);
+  const report = useConvertScriptsDialog((state) => state.report);
   const error = useConvertScriptsDialog((state) => state.error);
   const accept = useConvertScriptsDialog((state) => state.accept);
   const close = useConvertScriptsDialog((state) => state.close);
@@ -252,7 +335,8 @@ export function ConvertScriptsDialog() {
     <AlertDialog.Root
       open={target !== undefined}
       onOpenChange={(open) => {
-        if (!open && !busy) {
+        // While this review's Accept is in flight it cannot be dismissed; the report closes freely.
+        if (!open && (report !== undefined || !busy)) {
           close();
         }
       }}
@@ -263,64 +347,72 @@ export function ConvertScriptsDialog() {
           data-testid="convert-scripts-dialog"
           className="fixed top-1/2 left-1/2 flex h-[85vh] w-[64rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-md bg-surface-raised p-4 shadow-lg"
         >
-          <AlertDialog.Title className="text-md font-medium text-fg-default">
-            Convert to Wirebench scripts?
-          </AlertDialog.Title>
-          <AlertDialog.Description asChild>
-            <div className="mt-1 text-sm text-fg-subtle">
-              Each ticked level gets a typed script in place of its imported one. The imported text is kept in
-              imported-scripts/, and nothing is switched on. Calls left as written are marked with a TODO.
-            </div>
-          </AlertDialog.Description>
-          {levels === undefined ? (
-            <p className="mt-3 text-sm text-fg-subtle">Working out the conversion…</p>
-          ) : levels.length === 0 ? (
-            error === undefined && <p className="mt-3 text-sm text-fg-subtle">No imported scripts to convert here.</p>
+          {report !== undefined ? (
+            <Report report={report} />
           ) : (
-            <div className="mt-3 flex min-h-0 flex-1 gap-3">
-              <ul aria-label="Levels" className="w-72 shrink-0 overflow-y-auto border-r border-hairline pr-2">
-                {levels.map((level, row) => (
-                  <Row key={`${level.ownerId}:${String(row)}`} level={level} row={row} />
-                ))}
-              </ul>
-              <div className="min-w-0 flex-1 overflow-y-auto">
-                {shown !== undefined && !shown.result.ok ? (
-                  <p className="text-sm text-status-danger">{`This level does not convert: ${shown.result.message}`}</p>
-                ) : (
-                  shown !== undefined && (
-                    <Suspense fallback={<span className="text-sm text-fg-subtle">Loading editor…</span>}>
-                      <ConvertScriptsDiff level={shown} />
-                    </Suspense>
-                  )
-                )}
+            <>
+              <AlertDialog.Title className="text-md font-medium text-fg-default">
+                Convert to Wirebench scripts?
+              </AlertDialog.Title>
+              <AlertDialog.Description asChild>
+                <div className="mt-1 text-sm text-fg-subtle">
+                  Each ticked level gets a typed script in place of its imported one. The imported text is kept in
+                  imported-scripts/, and nothing is switched on. Calls left as written are marked with a TODO.
+                </div>
+              </AlertDialog.Description>
+              {levels === undefined ? (
+                <p className="mt-3 text-sm text-fg-subtle">Working out the conversion…</p>
+              ) : levels.length === 0 ? (
+                error === undefined && (
+                  <p className="mt-3 text-sm text-fg-subtle">No imported scripts to convert here.</p>
+                )
+              ) : (
+                <div className="mt-3 flex min-h-0 flex-1 gap-3">
+                  <ul aria-label="Levels" className="w-72 shrink-0 overflow-y-auto border-r border-hairline pr-2">
+                    {levels.map((level, row) => (
+                      <Row key={`${level.ownerId}:${String(row)}`} level={level} row={row} />
+                    ))}
+                  </ul>
+                  <div className="min-w-0 flex-1 overflow-y-auto">
+                    {shown !== undefined && !shown.result.ok ? (
+                      <p className="text-sm text-status-danger">{`This level does not convert: ${shown.result.message}`}</p>
+                    ) : (
+                      shown !== undefined && (
+                        <Suspense fallback={<span className="text-sm text-fg-subtle">Loading editor…</span>}>
+                          <ConvertScriptsDiff level={shown} />
+                        </Suspense>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
+              {error !== undefined && (
+                <p role="alert" className="mt-2 text-sm text-status-danger">
+                  {error}
+                </p>
+              )}
+              <div className="mt-4 flex items-center gap-2">
+                <span className="flex-1 text-xs text-fg-subtle">
+                  {levels !== undefined && levels.length > 0 && plural(count, 'level ticked', 'levels ticked')}
+                </span>
+                <AlertDialog.Cancel asChild>
+                  <Button data-testid="convert-scripts-cancel" disabled={busy}>
+                    Cancel
+                  </Button>
+                </AlertDialog.Cancel>
+                <Button
+                  variant="primary"
+                  data-testid="convert-scripts-accept"
+                  disabled={busy || count === 0}
+                  onClick={() => {
+                    void accept();
+                  }}
+                >
+                  Accept
+                </Button>
               </div>
-            </div>
+            </>
           )}
-          {error !== undefined && (
-            <p role="alert" className="mt-2 text-sm text-status-danger">
-              {error}
-            </p>
-          )}
-          <div className="mt-4 flex items-center gap-2">
-            <span className="flex-1 text-xs text-fg-subtle">
-              {levels !== undefined && levels.length > 0 && plural(count, 'level ticked', 'levels ticked')}
-            </span>
-            <AlertDialog.Cancel asChild>
-              <Button data-testid="convert-scripts-cancel" disabled={busy}>
-                Cancel
-              </Button>
-            </AlertDialog.Cancel>
-            <Button
-              variant="primary"
-              data-testid="convert-scripts-accept"
-              disabled={busy || count === 0}
-              onClick={() => {
-                void accept();
-              }}
-            >
-              Accept
-            </Button>
-          </div>
         </AlertDialog.Content>
       </AlertDialog.Portal>
     </AlertDialog.Root>
