@@ -128,6 +128,20 @@ export function removePackage(file: SnippetsFileWire, id: string): SnippetsFileW
   return { ...file, packages: file.packages.filter((p) => p.id !== id) };
 }
 
+/** The script of snippet `id` as the file holds it, or `undefined` when the file has no such snippet. */
+export function scriptOf(file: SnippetsFileWire, id: string): string | undefined {
+  return findSnippet(file, id)?.snippet.script;
+}
+
+/** Declares `name` as a variable of snippet `id`, after the ones it has; a name it already has changes nothing. */
+export function declareVariable(file: SnippetsFileWire, id: string, name: string): SnippetsFileWire {
+  const found = findSnippet(file, id);
+  if (found === undefined || found.snippet.variables.some((v) => v.name === name)) return file;
+  return mapHolder(file, id, (list) =>
+    list.map((s) => (s.id === id ? { ...s, variables: [...s.variables, { name }] } : s)),
+  );
+}
+
 /** `${name}` tokens in the script that are neither declared nor `secret:`, once each, in order of first use. */
 export function undeclaredTokens(script: string, variables: readonly { name: string }[]): string[] {
   const declared = new Set(variables.map((v) => v.name));

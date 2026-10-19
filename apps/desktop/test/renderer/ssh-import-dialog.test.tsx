@@ -103,6 +103,13 @@ describe('ImportDialog', () => {
     expect(screen.getByRole('button', { name: 'Read ~/.ssh/config' })).toBeDefined();
   });
 
+  it('has a Cancel to click before any file is chosen (S65)', async () => {
+    render(<ImportDialog />);
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(useHostsStore.getState().importOpen).toBe(false);
+    expect(importPreview).not.toHaveBeenCalled();
+  });
+
   it('shows hosts, a changed id, the duplicate switch, skipped lines, ignored options and notes', async () => {
     await openReport();
     expect(screen.getByText('(changed)')).toBeDefined();

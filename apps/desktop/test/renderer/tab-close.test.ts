@@ -1,7 +1,16 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { closeTabs, closeTargets, useUnsavedCloseStore } from '../../src/renderer/shell/tab-close.js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
+import { leaves, onePane, split } from '../../src/renderer/features/ssh/panes/pane-tree.js';
+import {
+  closeTabs,
+  closeTargets,
+  useLiveCloseStore,
+  useUnsavedCloseStore,
+} from '../../src/renderer/shell/tab-close.js';
 import { useDraftsStore } from '../../src/renderer/state/drafts.js';
 import { useEditorsStore, type EditorTab } from '../../src/renderer/state/editors.js';
+import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
+import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 
 function rest(id: string): EditorTab {
   return { id: `rest:${id}`, kind: 'rest-request', title: id, restRequestId: id };
@@ -76,5 +85,81 @@ describe('closeTabs asks about unsaved edits (#679)', () => {
     await done;
     expect(ids()).toEqual([]);
     expect(useDraftsStore.getState().isRestRequestDirty('b')).toBe(false);
+  });
+});
+
+describe('closeTabs asks once before ending live sessions (S53)', () => {
+  const update = vi.fn(() => Promise.resolve(undefined));
+  const withPreference = (confirmCloseSessions: boolean): void => {
+    usePreferencesStore.setState({
+      preferences: {
+        ...DEFAULT_PREFERENCES_WIRE,
+        terminal: { ...DEFAULT_PREFERENCES_WIRE.terminal, confirmCloseSessions },
+      },
+      loaded: true,
+      update,
+    });
+  };
+
+  beforeEach(() => {
+    update.mockClear();
+    withPreference(true);
+    useEditorsStore.getState().reset();
+    useDraftsStore.getState().reset();
+    useLiveCloseStore.setState({ question: undefined, resolve: undefined });
+    const one = onePane('a');
+    const first = leaves(one)[0]?.paneId ?? '';
+    const two = split(one, first, 'row', 'a');
+    const [left, right] = leaves(two).map((leaf) => leaf.paneId);
+    const solo = leaves(onePane('b'))[0]?.paneId ?? '';
+    useHostsStore.setState({
+      panes: {
+        [left ?? '']: { hostId: 'a', state: 'open' },
+        [right ?? '']: { hostId: 'a', state: 'connecting' },
+      },
+    });
+    useEditorsStore.getState().open({ id: 'ssh-terminal:t1', kind: 'ssh-terminal', title: 'alpha', panes: two });
+    useEditorsStore.getState().open({
+      id: 'ssh-terminal:t2',
+      kind: 'ssh-terminal',
+      title: 'beta',
+      panes: { kind: 'pane', paneId: solo, hostId: 'b' },
+    });
+    useEditorsStore.getState().open(rest('a'));
+  });
+
+  it('asks once for the whole batch, counting the sessions and tabs that are live', async () => {
+    const closing = closeTabs(['ssh-terminal:t1', 'ssh-terminal:t2', 'rest:a']);
+    await settle();
+    expect(useLiveCloseStore.getState().question).toEqual({ sessions: 2, tabs: 1, name: 'alpha' });
+    useLiveCloseStore.getState().answer({ close: true, dontAskAgain: false });
+    await closing;
+    expect(ids()).toEqual([]);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('Cancel keeps every tab in the batch', async () => {
+    const closing = closeTabs(['rest:a', 'ssh-terminal:t1']);
+    await settle();
+    useLiveCloseStore.getState().answer({ close: false, dontAskAgain: false });
+    await closing;
+    expect(ids()).toEqual(['ssh-terminal:t1', 'ssh-terminal:t2', 'rest:a']);
+  });
+
+  it("Don't ask again turns the preference off", async () => {
+    const closing = closeTabs(['ssh-terminal:t1']);
+    await settle();
+    useLiveCloseStore.getState().answer({ close: true, dontAskAgain: true });
+    await closing;
+    expect(update).toHaveBeenCalledWith({ terminal: { confirmCloseSessions: false } });
+  });
+
+  it('does not ask for tabs with no live session, or with the preference off', async () => {
+    await closeTabs(['ssh-terminal:t2']);
+    expect(useLiveCloseStore.getState().question).toBeUndefined();
+    withPreference(false);
+    await closeTabs(['ssh-terminal:t1']);
+    expect(useLiveCloseStore.getState().question).toBeUndefined();
+    expect(ids()).toEqual(['rest:a']);
   });
 });

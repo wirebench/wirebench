@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as RadixTooltip from '@radix-ui/react-tooltip';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { FilesTab } from '../../src/renderer/features/ssh/files/files-tab.js';
@@ -50,6 +50,20 @@ it('connects on mount and lists the host’s home folder', async () => {
     expect(screen.getByText('notes.txt')).toBeDefined();
   });
   expect(open).toHaveBeenCalledWith({ hostId: 'a', attemptId: expect.any(String) as unknown });
+});
+
+it('names each toolbar action, as text where the tab has room (S66)', async () => {
+  render(<Tab />);
+  await waitFor(() => {
+    expect(screen.getByText('notes.txt')).toBeDefined();
+  });
+  const toolbar = screen.getByTestId('files-toolbar');
+  for (const name of ['New folder', 'Rename', 'Delete…', 'Permissions…', 'Copy to other pane']) {
+    const button = within(toolbar).getByRole('button', { name });
+    // The name is drawn beside the icon from 56rem of tab width; the tooltip names it below that.
+    expect(button.querySelector('span')?.textContent).toBe(name);
+    expect(button.querySelector('span')?.className).toContain('@min-[56rem]:inline');
+  }
 });
 
 it('a failed open shows the connection screen with its reason, and Retry connects again', async () => {

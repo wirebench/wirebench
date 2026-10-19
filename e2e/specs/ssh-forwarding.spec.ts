@@ -116,6 +116,9 @@ test('a local rule started from the view carries bytes; an autoStart rule follow
 
   // The view shows in the area's first tab; the terminal's own tab is the one named after the host.
   await page.getByRole('tab', { name: /db/ }).getByTestId('editor-tab-close').click();
+  // A tab with live sessions asks once before ending them (S53).
+  await expect(page.getByTestId('live-close')).toBeVisible();
+  await page.getByTestId('live-close-confirm').click();
   await expect(web.getByRole('button', { name: 'Start' })).toBeVisible({ timeout: 30_000 });
   await expect(status).toHaveCount(0);
 });

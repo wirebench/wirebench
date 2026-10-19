@@ -209,13 +209,13 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
               )}
             </span>
             <span className="truncate text-xs leading-4 text-fg-subtle">
-              {/* The warning takes the second line's start, so the name keeps the first line's width. */}
+              {/* The warning takes the second line's start, so the name keeps the first line's width. The OS is
+                  the icon and its tooltip only: as text before the target it cut off what tells hosts apart. */}
               {warning !== undefined && (
                 <>
                   <span className="text-status-warning">{warning}</span> ·{' '}
                 </>
               )}
-              {osText !== undefined && <span>{osText} · </span>}
               {resolved?.ssh.protocol?.value === 'telnet' && (
                 <span className="mr-1 inline-flex align-[-1px]">
                   <PlainTextMark />
@@ -405,7 +405,10 @@ export function HostCards({
       return {
         ...section,
         count: hosts.length,
-        hosts: sortHosts(withDraft ? [...hosts, draftEntry(draft)] : hosts, prefs.sort, panes, lastConnected),
+        // The draft stays first in its group while it is typed, rather than moving as its name sorts (S46).
+        hosts: withDraft
+          ? [draftEntry(draft), ...sortHosts(hosts, prefs.sort, panes, lastConnected)]
+          : sortHosts(hosts, prefs.sort, panes, lastConnected),
       };
     })
     // The top level needs no heading when it is all there is; an empty group keeps its heading
@@ -487,7 +490,10 @@ export function HostCards({
               onClick={() => {
                 newHost(section.group === undefined ? {} : { parent: section.group.id });
               }}
-              className="ml-auto flex items-center gap-1 rounded px-1 text-xs text-fg-subtle opacity-0 group-hover/section:opacity-100 hover:text-fg-default focus-visible:opacity-100"
+              // An empty group keeps it in view: hover is not how anyone finds the way in (S49).
+              className={`ml-auto flex items-center gap-1 rounded px-1 text-xs text-fg-subtle hover:text-fg-default focus-visible:opacity-100 ${
+                section.hosts.length === 0 ? '' : 'opacity-0 group-hover/section:opacity-100'
+              }`}
             >
               <Plus size={12} aria-hidden="true" /> Add host
             </button>
@@ -497,7 +503,18 @@ export function HostCards({
           <section key={key} aria-label={section.title} className="flex flex-col gap-2">
             {headed && (section.group === undefined ? heading : <GroupMenu group={section.group}>{heading}</GroupMenu>)}
             {isFolded ? null : section.hosts.length === 0 ? (
-              <p className="text-xs text-fg-subtle">No hosts in this group yet.</p>
+              <p className="flex items-center gap-1 text-xs text-fg-subtle">
+                No hosts in this group yet ·
+                <button
+                  type="button"
+                  onClick={() => {
+                    newHost(section.group === undefined ? {} : { parent: section.group.id });
+                  }}
+                  className="rounded text-accent hover:underline focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+                >
+                  Add host
+                </button>
+              </p>
             ) : (
               <ul
                 aria-label={`Hosts in ${section.title}`}

@@ -171,13 +171,15 @@ export function HostsView() {
             type="button"
             data-testid="ssh-new-local-terminal"
             title="New local terminal"
+            aria-label="New local terminal"
             onClick={() => {
               openLocalTerminal();
             }}
             className={`${ENTRY_CLASS} text-fg-muted hover:bg-surface-raised`}
           >
             <Terminal size={15} aria-hidden="true" className="shrink-0" />
-            <span className={LABEL_CLASS}>New local terminal</span>
+            {/* Short enough for the default sidebar width, where "New local terminal" was cut off (S69). */}
+            <span className={LABEL_CLASS}>Local terminal</span>
           </button>
         </div>
       )}

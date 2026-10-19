@@ -34,8 +34,19 @@ export function HostAuthSection(props: {
   readonly noneLabel?: string;
   /** A Telnet host (#425) signs in with a password only: key and agent are not offered unless already chosen. */
   readonly passwordOnly?: boolean;
+  /** A password left empty is asked for when the host connects (S60): the field is optional and says so. */
+  readonly emptyAsked?: boolean;
 }) {
-  const { value, inherited, onChange, password = '', onPasswordChange, noneLabel, passwordOnly = false } = props;
+  const {
+    value,
+    inherited,
+    onChange,
+    password = '',
+    onPasswordChange,
+    noneLabel,
+    passwordOnly = false,
+    emptyAsked = false,
+  } = props;
   const radioName = useId();
   const { names, reload: loadNames } = useSecretNames();
   const [setting, setSetting] = useState<{ name: string; value: string; error?: string } | undefined>(undefined);
@@ -103,7 +114,7 @@ export function HostAuthSection(props: {
             <input
               type="password"
               autoComplete="new-password"
-              aria-required={value.secret === ''}
+              aria-required={value.secret === '' && !emptyAsked}
               className={INPUT_CLASS}
               value={password}
               placeholder={value.secret === '' ? undefined : '•••• stored · type to replace'}
@@ -115,9 +126,11 @@ export function HostAuthSection(props: {
           {/* The hint takes its own line; the stored-secret choice sits under it, never in a narrow column beside it. */}
           <div className="flex flex-col items-start gap-1 text-fg-subtle">
             <span>
-              {value.secret === ''
-                ? 'Kept on this machine as a secret, never in the hosts file.'
-                : `Stored as the secret ${value.secret}.`}
+              {value.secret !== ''
+                ? `Stored as the secret ${value.secret}.`
+                : emptyAsked && password === ''
+                  ? 'Left empty, it is asked for when you connect.'
+                  : 'Kept on this machine as a secret, never in the hosts file.'}
             </span>
             <button
               type="button"

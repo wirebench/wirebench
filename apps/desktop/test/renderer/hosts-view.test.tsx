@@ -248,6 +248,25 @@ describe('Keychain', () => {
     expect(row.textContent).toContain('on this machine');
     expect(screen.getByTestId('secret-row-UNSET').textContent).toContain('no value');
   });
+  it("lists an identity's password with the identity using it, and reads the names again after a write (S64)", async () => {
+    useHostsStore.setState({
+      homeView: 'keychain',
+      file: {
+        ...STATE.file,
+        identities: [{ id: 'tester', name: 'Tester', auth: { kind: 'password', secret: 'UNSET' } }],
+      },
+    });
+    render(<SshHome />);
+    const row = await screen.findByTestId('secret-row-UNSET');
+    expect(row.textContent).toContain('Used by identity Tester');
+    const reads = secretNames.mock.calls.length;
+    act(() => {
+      useHostsStore.getState().secretsChanged();
+    });
+    await vi.waitFor(() => {
+      expect(secretNames.mock.calls.length).toBeGreaterThan(reads);
+    });
+  });
   it('Set value… stores the value write-only and reloads the names', async () => {
     useHostsStore.setState({ homeView: 'keychain' });
     render(<SshHome />);
@@ -427,35 +446,57 @@ describe('Hosts tab', () => {
   it('a blank form names nothing until a required field is left empty', async () => {
     render(<SshArea />);
     await userEvent.click(screen.getByRole('button', { name: /New host/ }));
-    expect(screen.queryByRole('list', { name: 'Needed to save' })).toBeNull();
+    expect(screen.queryByTestId('host-form-missing')).toBeNull();
     await userEvent.click(screen.getByLabelText('Name'));
     await userEvent.tab();
-    expect(screen.getByRole('list', { name: 'Needed to save' }).textContent).toContain('Name is required');
+    expect(screen.getByTestId('host-form-gap-name').textContent).toBe('Name is required');
   });
   it('Save on an incomplete form lists what is missing and stays off until it is filled in', async () => {
     render(<SshArea />);
     await userEvent.click(screen.getByRole('button', { name: /New host/ }));
-    const missing = () => screen.getByRole('list', { name: 'Needed to save' }).textContent;
+    const missing = () => screen.getByTestId('host-form-missing').textContent;
     await vi.waitFor(() => {
       expect(screen.getByLabelText<HTMLInputElement>('User').value).toBe('me');
     });
-    expect(screen.queryByRole('list', { name: 'Needed to save' })).toBeNull();
+    expect(screen.queryByTestId('host-form-missing')).toBeNull();
     const saves = saveHosts.mock.calls.length;
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(saveHosts.mock.calls.length).toBe(saves);
-    expect(missing()).toContain('Name is required');
-    expect(missing()).toContain('Address is required');
-    expect(missing()).toContain('Password is required');
+    // Each gap sits under its own field; the footer keeps one line (S59).
+    expect(missing()).toBe('2 fields need a value');
+    expect(screen.getByTestId('host-form-gap-name').textContent).toBe('Name is required');
+    expect(screen.getByTestId('host-form-gap-address').textContent).toBe('Address is required');
+    expect(screen.getByLabelText('Address').getAttribute('aria-invalid')).toBe('true');
+    // The password may stay empty: it is asked for when the host connects (S60).
+    expect(screen.queryByTestId('host-form-gap-auth')).toBeNull();
+    expect(screen.getByText('Left empty, it is asked for when you connect.')).toBeDefined();
     await userEvent.type(screen.getByLabelText('Name'), 'x');
     await userEvent.type(screen.getByLabelText('Address'), 'y');
     await userEvent.clear(screen.getByLabelText('User'));
-    expect(missing()).not.toContain('Name is required');
-    expect(missing()).toContain('User is required');
+    expect(screen.queryByTestId('host-form-gap-name')).toBeNull();
+    expect(screen.getByTestId('host-form-gap-user').textContent).toBe('User is required');
+    expect(missing()).toBe('1 field needs a value');
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(true);
     await userEvent.type(screen.getByLabelText('User'), 'u');
-    await userEvent.type(screen.getByLabelText('Password', { selector: 'input[type="password"]' }), 'pw');
-    expect(screen.queryByRole('list', { name: 'Needed to save' })).toBeNull();
+    expect(screen.queryByTestId('host-form-missing')).toBeNull();
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(false);
+  });
+  it('a host saved with its password left empty names the secret the connection screen asks for (S60)', async () => {
+    render(<SshArea />);
+    await userEvent.click(screen.getByRole('button', { name: /New host/ }));
+    await vi.waitFor(() => {
+      expect(screen.getByLabelText<HTMLInputElement>('User').value).toBe('me');
+    });
+    await userEvent.type(screen.getByLabelText('Name'), 'gamma');
+    await userEvent.type(screen.getByLabelText('Address'), 'g.example');
+    const stores = setSecret.mock.calls.length;
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await vi.waitFor(() => {
+      expect(saveHosts).toHaveBeenCalled();
+    });
+    const sent = saveHosts.mock.calls.at(-1)?.[0] as { file: typeof STATE.file };
+    expect(sent.file.hosts.at(-1)?.ssh).toMatchObject({ auth: { kind: 'password', secret: 'gamma_password' } });
+    expect(setSecret.mock.calls.length).toBe(stores);
   });
   it('the Group select starts on the group the list is narrowed to; the group then supplies the user', async () => {
     useHostsStore.setState({ groupFilter: 'g' });
@@ -826,6 +867,23 @@ describe('Host details', () => {
     expect(await screen.findByText('SHA256:abc')).toBeDefined();
     expect(screen.getByText('ssh deploy@10.0.0.1')).toBeDefined();
   });
+  it('a host with a session open leads with Go to terminal, and New session opens another (S50)', async () => {
+    useHostsStore.setState({ selectedHostId: 'b', panes: { p1: { hostId: 'b', sessionId: 's1', state: 'open' } } });
+    render(<HostDetails />);
+    expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Go to terminal' }).className).toContain('bg-accent');
+    const tabs = useEditorsStore.getState().tabs.length;
+    await userEvent.click(screen.getByRole('button', { name: 'New session' }));
+    expect(useEditorsStore.getState().tabs.length).toBe(tabs + 1);
+    useHostsStore.setState({ panes: {} });
+  });
+  it('lets a long value wrap rather than cutting it off (S51)', () => {
+    useHostsStore.setState({ selectedHostId: 'b' });
+    render(<HostDetails />);
+    const value = screen.getByTestId('host-details').querySelector('dd');
+    expect(value?.className).toContain('[&_.truncate]:whitespace-normal');
+    expect(value?.className).toContain('flex-wrap');
+  });
   it('says how many forwards run through the host, linking to Port forwarding', async () => {
     useHostsStore.setState({ selectedHostId: 'b' });
     useForwardsStore.setState({
@@ -954,13 +1012,35 @@ describe('Editing in the details panel', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     const draft = screen.getByTestId('host-draft-card');
     expect(draft.textContent).toContain('New host');
-    expect(within(screen.getByRole('list', { name: 'Hosts in Ungrouped' })).getByTestId('host-draft-card')).toBe(draft);
+    // No half-built "me@" before an address is typed: the protocol alone (S45).
+    expect(draft.textContent).toContain('SSH');
+    expect(draft.textContent).not.toContain('@');
+    const ungrouped = screen.getByRole('list', { name: 'Hosts in Ungrouped' });
+    expect(within(ungrouped).getByTestId('host-draft-card')).toBe(draft);
+    // First in its group while the form is open, whatever its name sorts as (S46).
+    expect(ungrouped.firstElementChild).toBe(draft);
     // The draft is the picked card while the form is open.
     expect(screen.getByTestId('host-row-b').dataset['selected']).toBeUndefined();
     await userEvent.type(within(form).getByLabelText('Name'), 'gamma');
     await userEvent.type(within(form).getByLabelText('Address'), 'gamma.example');
     expect(screen.getByTestId('host-draft-card').textContent).toContain('gamma');
     expect(screen.getByTestId('host-draft-card').textContent).toContain('me@gamma.example');
+    expect(screen.getByRole('list', { name: 'Hosts in Ungrouped' }).firstElementChild).toBe(
+      screen.getByTestId('host-draft-card'),
+    );
+  });
+  it('an empty group offers Add host inline, and keeps its header button in view (S49)', async () => {
+    const empty = { id: 'e', name: 'Staging', tags: [], ssh: {}, groups: [], hosts: [] };
+    const file = { ...STATE.file, groups: [...STATE.file.groups, empty] };
+    useHostsStore.setState({ file });
+    listHosts.mockResolvedValue({ ok: true, value: { file, resolved: STATE.resolved, problems: [] } });
+    render(<SshArea />);
+    const staging = await screen.findByRole('region', { name: 'Staging' });
+    expect(within(staging).getByText(/No hosts in this group yet/)).toBeDefined();
+    expect(within(staging).getByRole('button', { name: 'Add a host to Staging' }).className).not.toContain('opacity-0');
+    await userEvent.click(within(staging).getByRole('button', { name: 'Add host' }));
+    await screen.findByTestId('host-dialog');
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: 'Group' }).value).toBe('e');
   });
   it('the draft sits in the group it will be saved to, and moves with the Group select', async () => {
     render(<SshArea />);
@@ -1100,11 +1180,14 @@ describe('Group headings', () => {
 describe('Host OS', () => {
   const ubuntu = { detected: { id: 'ubuntu' as const, name: 'Ubuntu', version: '22.04' } };
 
-  it('the card shows what the last connection found', () => {
+  it('the card shows what the last connection found on its icon, and still leads with the target (S56)', () => {
     useHostsStore.setState({ osByHost: { '10.0.0.1:22': ubuntu } });
     render(<SshHome />);
-    expect(screen.getByTestId('host-row-a').textContent).toContain('Ubuntu 22.04');
-    expect(screen.getByTestId('host-row-b').textContent).not.toContain('Ubuntu');
+    const card = screen.getByTestId('host-row-a');
+    expect(card.querySelector('[title="Ubuntu 22.04"]')).not.toBeNull();
+    expect(card.textContent).not.toContain('Ubuntu');
+    expect(card.textContent).toContain('10.0.0.1');
+    expect(screen.getByTestId('host-row-b').querySelector('[title^="Ubuntu"]')).toBeNull();
   });
   it('the details say whether it was detected or chosen', () => {
     useHostsStore.setState({ osByHost: { '10.0.0.1:22': ubuntu }, selectedHostId: 'a' });

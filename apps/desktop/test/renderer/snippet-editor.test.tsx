@@ -149,8 +149,25 @@ describe('snippet editor', () => {
     await userEvent.click(declare);
     expect(screen.queryByRole('button', { name: 'Declare ${service} as a variable' })).toBeNull();
     await userEvent.type(screen.getByLabelText('Default of service'), 'api');
+    // ${HOME} is still shell text, so Save asks once (#717) before Save anyway saves.
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByTestId('snippet-undeclared-ask').textContent).toContain('${HOME} is not a variable');
+    expect(saveSnippets).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Save anyway' }));
     expect(saved().snippets[0]?.variables).toEqual([{ name: 'service', default: 'api' }]);
+  });
+
+  it('Save asks again only when the undeclared tokens change (#717)', async () => {
+    editSnippet('uptime');
+    const script = screen.getByLabelText('Script');
+    await userEvent.clear(script);
+    await userEvent.type(script, 'df -h ${{dir}');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('button', { name: 'Save anyway' })).toBeDefined();
+    await userEvent.type(script, ' ${{mount}');
+    expect(screen.queryByTestId('snippet-undeclared-ask')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByTestId('snippet-undeclared-ask').textContent).toContain('${dir}, ${mount} are not variables');
   });
 
   it('the secret picker inserts ${secret:NAME} from the workspace secret names', async () => {
@@ -220,6 +237,19 @@ describe('snippet editor', () => {
 });
 
 describe('snippet editor Run and Insert', () => {
+  it('keeps Run, Insert and Save in a footer under the scrolling fields (S63)', () => {
+    editSnippet('uptime');
+    const body = screen.getByTestId('snippet-editor-body');
+    const footer = screen.getByTestId('snippet-editor-footer');
+    for (const name of ['Run', 'Insert', 'Save']) {
+      const button = screen.getByRole('button', { name });
+      expect(footer.contains(button)).toBe(true);
+      expect(body.contains(button)).toBe(false);
+    }
+    expect(body.className).toContain('overflow-y-auto');
+    expect(footer.className).toContain('shrink-0');
+  });
+
   it('with no terminal in front, Run and Insert open the run dialog for the saved snippet', async () => {
     editSnippet('uptime');
     await userEvent.click(screen.getByRole('button', { name: 'Run' }));

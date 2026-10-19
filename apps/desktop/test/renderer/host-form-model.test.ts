@@ -3,7 +3,9 @@ import type { HostsFileWire } from '../../src/shared/ssh-wire.js';
 import {
   chainOf,
   initialGroup,
+  fieldGaps,
   missingFields,
+  missingSummary,
   passwordSecretName,
   type SaveCheck,
 } from '../../src/renderer/features/ssh/host-form-model.js';
@@ -43,12 +45,21 @@ describe('missingFields', () => {
   });
 
   it('lists every gap in the order the form shows the fields', () => {
-    expect(missingFields({ ...NEW_HOST, name: ' ', address: '', user: undefined, password: '' })).toEqual([
+    expect(missingFields({ ...NEW_HOST, name: ' ', address: '', user: undefined, auth: undefined })).toEqual([
       'Name is required',
       'Address is required',
       'User is required',
-      'Password is required',
+      'Choose how to sign in',
     ]);
+  });
+
+  it('names the field each gap is shown under (S59)', () => {
+    expect(fieldGaps({ ...NEW_HOST, name: '', address: '' }).map((gap) => gap.field)).toEqual(['name', 'address']);
+  });
+
+  it('lets an SSH password be left empty, to be asked for at connect; Telnet still needs one (S60)', () => {
+    expect(missingFields({ ...NEW_HOST, password: '' })).toEqual([]);
+    expect(missingFields({ ...NEW_HOST, password: '', passwordAsked: false })).toEqual(['Password is required']);
   });
 
   it('a user or a way to sign in supplied by the group is enough', () => {
@@ -69,11 +80,13 @@ describe('missingFields', () => {
     expect(missingFields({ ...NEW_HOST, auth: { kind: 'key', secret: '' } })).toEqual(['Choose a private key']);
   });
 
-  it('an edited host or a group does not need a user or a way to sign in, but a chosen password needs one', () => {
+  it('an edited host or a group does not need a user or a way to sign in, but a chosen Telnet password needs one', () => {
     const loose = { ...NEW_HOST, needsLogin: false, user: undefined, auth: undefined, password: '' };
     expect(missingFields(loose)).toEqual([]);
     expect(missingFields({ ...loose, isHost: false, address: '' })).toEqual([]);
-    expect(missingFields({ ...loose, auth: { kind: 'password', secret: '' } })).toEqual(['Password is required']);
+    expect(missingFields({ ...loose, auth: { kind: 'password', secret: '' }, passwordAsked: false })).toEqual([
+      'Password is required',
+    ]);
   });
 
   it("appends the Advanced sections' problems", () => {
@@ -121,5 +134,15 @@ describe('sourceText', () => {
     expect(sourceText({ value: 'deploy', from: { group: 'Production' } })).toBe('deploy · from Production');
     expect(sourceText({ value: true, from: 'default' }, (v) => (v ? 'on' : 'off'))).toBe('on · default');
     expect(sourceText({ value: undefined, from: 'default' })).toBeUndefined();
+  });
+});
+
+describe('missingSummary (S59)', () => {
+  it("is one line: how many fields need a value, then the sections' own problems", () => {
+    expect(missingSummary(0, [])).toBeUndefined();
+    expect(missingSummary(1, [])).toBe('1 field needs a value');
+    expect(missingSummary(3, ['A forwarding rule is incomplete (Advanced)'])).toBe(
+      '3 fields need a value · A forwarding rule is incomplete (Advanced)',
+    );
   });
 });

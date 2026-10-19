@@ -180,27 +180,61 @@ export interface SaveCheck {
   readonly inheritedAuth: SshAuthWire | undefined;
   /** The password typed inline, stored as a secret on Save. */
   readonly password: string;
+  /**
+   * Whether a password left empty is asked for when the host connects (S60), as the SSH connection screen
+   * does; `false` (Telnet) keeps it required. Default true.
+   */
+  readonly passwordAsked?: boolean;
   /** Problems the Advanced sections report (forwarding, environment, terminal). */
   readonly sectionProblems: readonly string[];
 }
 
+/** A form field a gap is shown under (S59). */
+export type FormField = 'name' | 'address' | 'user' | 'auth';
+
 /**
- * Why Save is disabled, one line per gap, in the order the form shows the fields; empty when it can save.
- * A group may leave every setting to its hosts.
+ * The required fields left empty, each with the line shown under it, in the order the form shows them.
+ * A group may leave every setting to its hosts. Over SSH a password may be left empty: it is asked for
+ * when the host connects (S60).
  */
-export function missingFields(check: SaveCheck): string[] {
-  const out: string[] = [];
-  if (check.name.trim() === '') out.push('Name is required');
-  if (check.isHost && check.needsAddress !== false && check.address.trim() === '') out.push('Address is required');
-  const user = check.user === undefined || check.user === '' ? check.inheritedUser : check.user;
-  if (check.needsLogin && (user === undefined || user.trim() === '')) out.push('User is required');
-  const auth = check.auth ?? check.inheritedAuth;
-  if (check.auth?.kind === 'password' && check.auth.secret === '' && check.password === '') {
-    out.push('Password is required');
-  } else if (check.auth?.kind === 'key' && check.auth.secret === '') {
-    out.push('Choose a private key');
-  } else if (check.needsLogin && auth === undefined) {
-    out.push('Choose how to sign in');
+export function fieldGaps(check: SaveCheck): { readonly field: FormField; readonly message: string }[] {
+  const out: { field: FormField; message: string }[] = [];
+  if (check.name.trim() === '') out.push({ field: 'name', message: 'Name is required' });
+  if (check.isHost && check.needsAddress !== false && check.address.trim() === '') {
+    out.push({ field: 'address', message: 'Address is required' });
   }
-  return [...out, ...check.sectionProblems];
+  const user = check.user === undefined || check.user === '' ? check.inheritedUser : check.user;
+  if (check.needsLogin && (user === undefined || user.trim() === '')) {
+    out.push({ field: 'user', message: 'User is required' });
+  }
+  const auth = check.auth ?? check.inheritedAuth;
+  if (
+    check.passwordAsked === false &&
+    check.auth?.kind === 'password' &&
+    check.auth.secret === '' &&
+    check.password === ''
+  ) {
+    out.push({ field: 'auth', message: 'Password is required' });
+  } else if (check.auth?.kind === 'key' && check.auth.secret === '') {
+    out.push({ field: 'auth', message: 'Choose a private key' });
+  } else if (check.needsLogin && auth === undefined) {
+    out.push({ field: 'auth', message: 'Choose how to sign in' });
+  }
+  return out;
+}
+
+/** Why Save is disabled, one line per gap, in the order the form shows the fields; empty when it can save. */
+export function missingFields(check: SaveCheck): string[] {
+  return [...fieldGaps(check).map((gap) => gap.message), ...check.sectionProblems];
+}
+
+/**
+ * The footer's one line for what Save still needs (S59): how many fields need a value (each says so under
+ * itself), then any Advanced section's own problem; `undefined` when nothing is missing.
+ */
+export function missingSummary(fieldCount: number, sectionProblems: readonly string[]): string | undefined {
+  const fields =
+    fieldCount === 0 ? [] : [fieldCount === 1 ? '1 field needs a value' : `${String(fieldCount)} fields need a value`];
+  const parts = [...fields, ...sectionProblems];
+  return parts.length === 0 ? undefined : parts.join(' · ');
 }

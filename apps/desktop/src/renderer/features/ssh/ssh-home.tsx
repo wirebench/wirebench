@@ -22,7 +22,13 @@ import {
 import { Button, SPLIT_HEAD_CLASS, SPLIT_TAIL_CLASS } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { showToast } from '../../components/toast.js';
-import type { ResolvedHostWire, SshKnownHostWire, SshSecretNameWire } from '../../../shared/ssh-wire.js';
+import type {
+  IdentityWire,
+  ResolvedHostWire,
+  SshAuthWire,
+  SshKnownHostWire,
+  SshSecretNameWire,
+} from '../../../shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
 import { HostCards } from './host-cards.js';
 import { ForwardingPanel } from './forwarding/forwarding-view.js';
@@ -32,6 +38,7 @@ import { useHostsPrefs, type HostsSort } from './hosts-prefs.js';
 import { newHost } from './connect.js';
 import { flattenGroups, osKeyOf, useHostsStore } from './hosts-store.js';
 import { IdentitiesSection } from './identities-section.js';
+import { identitiesOf } from './identities.js';
 import { RecentSection } from './recent-section.js';
 import { SshEmptyState, SshNoMatches, SshView, SshViewHeader } from './ssh-view-frame.js';
 import { SSH_VIEWS } from './ssh-views.js';
@@ -277,17 +284,20 @@ function HostsPanel() {
 }
 
 /** The names of the hosts that sign in with secret `name`: as their password, key, key passphrase or certificate. */
-function usersOf(name: string, hosts: readonly ResolvedHostWire[]): string[] {
-  return hosts
-    .filter((host) => {
-      const auth = host.ssh.auth.value;
-      if (auth === undefined || auth.kind === 'agent') return false;
-      return (
-        auth.secret === name ||
-        (auth.kind === 'key' && (auth.passphraseSecret === name || auth.certificateSecret === name))
-      );
-    })
-    .map((host) => host.name);
+/** Whether a way to sign in reads secret `name`: its password or key, or the key's passphrase or certificate. */
+function authUses(auth: SshAuthWire | undefined, name: string): boolean {
+  if (auth === undefined || auth.kind === 'agent') return false;
+  return (
+    auth.secret === name || (auth.kind === 'key' && (auth.passphraseSecret === name || auth.certificateSecret === name))
+  );
+}
+
+/** Who signs in with secret `name`: the hosts by name, then each identity as "identity <name>" (S64). */
+function usersOf(name: string, hosts: readonly ResolvedHostWire[], identities: readonly IdentityWire[]): string[] {
+  return [
+    ...hosts.filter((host) => authUses(host.ssh.auth.value, name)).map((host) => host.name),
+    ...identities.filter((identity) => authUses(identity.auth, name)).map((identity) => `identity ${identity.name}`),
+  ];
 }
 
 interface SecretForm {
@@ -300,6 +310,9 @@ interface SecretForm {
 
 function KeychainPanel() {
   const resolved = useHostsStore((s) => s.resolved);
+  const identities = identitiesOf(useHostsStore((s) => s.file));
+  // Bumped by every keychain write, the Identities section's password included (S64), so the list reads again.
+  const secretsRevision = useHostsStore((s) => s.secretsRevision);
   const [names, setNames] = useState<readonly SshSecretNameWire[]>();
   // The value is write-only: it goes to main and never comes back.
   const [form, setForm] = useState<SecretForm>();
@@ -318,7 +331,7 @@ function KeychainPanel() {
   };
   useEffect(() => {
     void load();
-  }, []);
+  }, [secretsRevision]);
 
   const store = async (current: SecretForm): Promise<void> => {
     const name = current.name.trim();
@@ -328,15 +341,17 @@ function KeychainPanel() {
       setForm({ ...current, value: '', error: result.error.message });
       return;
     }
+    // The write bumps the secrets revision, which reads the names again.
     setForm(undefined);
-    await load();
   };
 
   const needle = filter.trim().toLowerCase();
   const shown = (names ?? []).filter(
     (secret) =>
       needle === '' ||
-      [secret.name, ...usersOf(secret.name, resolved)].some((field) => field.toLowerCase().includes(needle)),
+      [secret.name, ...usersOf(secret.name, resolved, identities)].some((field) =>
+        field.toLowerCase().includes(needle),
+      ),
   );
   const generate = (): void => {
     setGenerating(true);
@@ -448,7 +463,7 @@ function KeychainPanel() {
       ) : (
         <ul aria-label="Secrets" className="flex flex-col divide-y divide-hairline rounded-md border border-hairline">
           {shown.map((secret) => {
-            const users = usersOf(secret.name, resolved);
+            const users = usersOf(secret.name, resolved, identities);
             const key = keys.get(secret.name);
             return (
               <li
@@ -581,8 +596,8 @@ function KeychainPanel() {
             setAttaching(undefined);
           }}
           onAttached={() => {
+            // The write bumps the secrets revision, which reads the names again.
             setAttaching(undefined);
-            void load();
           }}
         />
       )}
@@ -594,7 +609,6 @@ function KeychainPanel() {
         }}
         onGenerated={() => {
           setGenerating(false);
-          void load();
         }}
       />
     </SshView>

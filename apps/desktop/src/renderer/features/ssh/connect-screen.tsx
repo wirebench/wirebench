@@ -147,23 +147,26 @@ export function ConnectLog({
           {summary}
         </p>
       )}
-      <pre ref={box} className="max-h-72 overflow-auto p-2 whitespace-pre-wrap text-fg-muted select-text">
-        {lines.length === 0
-          ? 'Nothing logged yet.'
-          : lines.map((line, index) => (
-              <span
-                key={index}
-                ref={index === failingIndex ? failing : undefined}
-                className={`block ${line.error ? 'text-status-danger' : ''} ${
-                  index === failingIndex ? 'rounded-sm bg-status-danger/15 font-medium' : ''
-                }`}
-                data-error={line.error ? 'true' : undefined}
-                data-failing={index === failingIndex ? 'true' : undefined}
-              >
-                <span className={line.error ? undefined : 'text-fg-faint'}>{timeOf(line.at)}</span> {line.text}
-              </span>
-            ))}
-      </pre>
+      {/* A failure with nothing logged shows its summary alone: "Nothing logged yet." under it read as a contradiction (S67). */}
+      {(lines.length > 0 || !failed) && (
+        <pre ref={box} className="max-h-72 overflow-auto p-2 whitespace-pre-wrap text-fg-muted select-text">
+          {lines.length === 0
+            ? 'Nothing logged yet.'
+            : lines.map((line, index) => (
+                <span
+                  key={index}
+                  ref={index === failingIndex ? failing : undefined}
+                  className={`block ${line.error ? 'text-status-danger' : ''} ${
+                    index === failingIndex ? 'rounded-sm bg-status-danger/15 font-medium' : ''
+                  }`}
+                  data-error={line.error ? 'true' : undefined}
+                  data-failing={index === failingIndex ? 'true' : undefined}
+                >
+                  <span className={line.error ? undefined : 'text-fg-faint'}>{timeOf(line.at)}</span> {line.text}
+                </span>
+              ))}
+        </pre>
+      )}
     </div>
   );
 }
@@ -595,7 +598,7 @@ export function ConnectScreen({
     };
   }, [connected, attemptId]);
 
-  const user = typedUser ?? host?.ssh.user.value;
+  const user = typedUser ?? host?.ssh.user.value ?? quick?.user;
   const protocol = host?.ssh.protocol?.value;
   const serialHost = protocol === 'serial';
   // The port this computer opens for a serial console, read again for each attempt: a pick changes it.
@@ -622,9 +625,12 @@ export function ConnectScreen({
       : serialHost
         ? { kind: 'serial', opening: `${device ?? 'the serial port'} at ${serialLabel(host?.ssh.serial?.value)}` }
         : SSH_ROUTE;
+  // A one-off server has no saved host: the screen names what was typed, never its internal id (#716).
   const target =
     host === undefined
-      ? hostId
+      ? quick === undefined
+        ? hostId
+        : `${user === undefined ? '' : `${user}@`}${quick.address.includes(':') ? `[${quick.address}]` : quick.address}:${String(quick.port)}`
       : host.ssh.protocol?.value === 'serial'
         ? serialTargetText(host)
         : `${user === undefined ? '' : `${user}@`}${host.address}:${String(host.ssh.port.value)}`;

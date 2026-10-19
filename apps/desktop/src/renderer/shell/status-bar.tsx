@@ -116,7 +116,9 @@ export function StatusBar() {
       aria-label="Status"
       className="flex h-status-bar shrink-0 items-center justify-between border-t border-hairline bg-surface-sunken px-3 text-xs text-fg-subtle"
     >
-      <div className="flex items-center gap-3">
+      {/* Every item draws the separator before it, so whichever comes first (in Settings, or the SSH area, the
+          Sidebar to Problems run is gone) hides its own (S54). */}
+      <div data-testid="status-bar-items" className="flex items-center gap-3 [&>[aria-hidden=true]:first-child]:hidden">
         {workbenchShown && (
           <>
             <button

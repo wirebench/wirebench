@@ -236,6 +236,8 @@ export interface MockPreferences {
 export interface TerminalPreferences {
   /** Ask before a multi-line paste goes to the shell, because a pasted script runs line by line. */
   readonly confirmMultilinePaste: boolean;
+  /** Ask before closing a tab that holds a live session: closing it ends the connection (S53). */
+  readonly confirmCloseSessions: boolean;
   /** Copy the selection to the clipboard as soon as it is made. */
   readonly copyOnSelect: boolean;
   /** Reconnect, with backoff, a session the network dropped (never one that exited or failed to sign in). */
@@ -359,6 +361,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   mocks: Object.freeze({ listenOnAllInterfaces: false }),
   terminal: Object.freeze({
     confirmMultilinePaste: true,
+    confirmCloseSessions: true,
     copyOnSelect: false,
     autoReconnect: true,
     reconnectAttempts: 10,
@@ -580,6 +583,7 @@ export const preferencesSchema = z.object({
   terminal: z
     .object({
       confirmMultilinePaste: z.boolean().optional(),
+      confirmCloseSessions: z.boolean().optional(),
       copyOnSelect: z.boolean().optional(),
       autoReconnect: z.boolean().optional(),
       reconnectAttempts: limited('terminal.reconnectAttempts').optional(),

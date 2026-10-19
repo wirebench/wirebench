@@ -7,6 +7,7 @@ import { ConnectScreen, failingLine } from '../../src/renderer/features/ssh/conn
 import { beginAttempt, noteFailed, useConnectStore } from '../../src/renderer/features/ssh/connect-store.js';
 import type { ConnectError } from '../../src/renderer/features/ssh/connect-errors.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
+import { useQuickHostsStore } from '../../src/renderer/features/ssh/quick-hosts.js';
 import type { HostsFileWire, ResolvedHostWire } from '../../src/shared/ssh-wire.js';
 
 const from = 'host' as const;
@@ -187,6 +188,31 @@ describe('the connection screen fixes a failure in place (#532)', () => {
     expect(screen.getByTestId('connect-log-summary').textContent).toContain('refused the password');
     // Main flagged no line here, so none is marked: the summary says what failed.
     expect(log.querySelectorAll('[data-failing="true"]')).toHaveLength(0);
+  });
+
+  it('a failure with nothing logged shows its summary alone, without "Nothing logged yet." (S67)', () => {
+    show({ code: 'ssh-auth-failed', message: 'x' });
+    expect(screen.getByTestId('connect-log').textContent).not.toContain('Nothing logged yet.');
+  });
+});
+
+describe('a quick connect (#716)', () => {
+  it('names the typed user@address:port, never the internal id', () => {
+    const id = useQuickHostsStore.getState().add({ address: '127.0.0.1', port: 35481, user: 'nobody' });
+    useHostsStore.setState({ resolved: [] });
+    render(
+      <ConnectScreen
+        hostId={id}
+        purpose="terminal"
+        view={failed({ code: 'ssh-auth-failed', message: 'x' })}
+        onRetry={vi.fn()}
+        onEditHost={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const screenText = screen.getByTestId('connect-screen').textContent ?? '';
+    expect(screenText).toContain('nobody@127.0.0.1:35481');
+    expect(screenText).not.toContain('quick-');
   });
 });
 
