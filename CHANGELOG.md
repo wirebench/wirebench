@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Comments in a JSON body.** <kbd>Cmd/Ctrl+/</kbd> toggles `//` on the selected lines of a Raw JSON
+  body and <kbd>Shift+Alt+A</kbd> toggles `/* */`; comments are coloured as comments and saved with the
+  request. They are removed before the body is sent, with any comma a commented-out last field leaves
+  behind, so the server still receives valid JSON; slashes inside strings stay, and a `${…}` inside a
+  comment is never resolved. Desktop and CLI sends, MCP, runs, **Copy as cURL**, generated code,
+  History and the HTTP log all use the body without comments. GraphQL variables accept them too.
+  **Format** and the JSON form refuse a body with comments instead of dropping them (#702).
+
 ### Changed
 
 - **New host opens in the right panel, with a draft card in Hosts.** New host (the Hosts button and its
@@ -25,6 +35,11 @@ All notable changes to this project are documented here. The format follows
   description, followed by the computer's own reason when there is one (such as **This Mac has no Secure
   Enclave**). **Lock again after idle** is disabled while the app lock is off or unavailable, and the
   Secrets page's subtitle now mentions the app lock (#691).
+- **Save stays in view in the New host and Edit host forms.** Cancel and Save sit in a footer bar at the
+  bottom of the right panel and the form scrolls above it, so a short window or an open **Advanced**
+  section no longer scrolls them away. <kbd>Enter</kbd> in a field still saves. The panel is titled
+  **Edit host** while editing, and **Group** moves below the sign-in fields so it no longer sits between
+  **Address** and **User** (#689).
 - **A shared terminal's viewer counts themself.** Right after joining, the viewer's header reads
   **1 watching** with their own chip, as the owner's strip does, instead of **0 watching**. Once the share
   has ended the count and chips go, and the notice offers **Close tab**. A new share of the same session

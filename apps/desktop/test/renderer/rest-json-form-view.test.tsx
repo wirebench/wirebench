@@ -155,6 +155,12 @@ describe('JsonFormView', () => {
     expect(onShowText).toHaveBeenCalled();
   });
 
+  it('refuses a body with comments, which a form edit would drop', () => {
+    render(<JsonFormView text={'{\n  "name": "a"\n  // "tag": "b"\n}'} schema={PET} onChange={vi.fn()} />);
+    expect(screen.getByText(/The body has comments/)).toBeTruthy();
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
   it('never writes on render', () => {
     const onChange = vi.fn();
     render(<JsonFormView text={'{"name":"a"}'} schema={PET} onChange={onChange} />);
