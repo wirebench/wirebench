@@ -271,6 +271,9 @@ describe('the local terminal tab', () => {
 describe('the local terminal switch', () => {
   it('the SSH sidebar offers New local terminal while it is on', () => {
     render(<HostsView />);
+    // A label short enough for the default sidebar width; the button keeps the full name (S69).
+    expect(screen.getByTestId('ssh-new-local-terminal').textContent).toBe('Local terminal');
+    expect(screen.getByRole('button', { name: 'New local terminal' })).toBeDefined();
     fireEvent.click(screen.getByTestId('ssh-new-local-terminal'));
     expect(localTab()).toBeDefined();
   });
