@@ -139,7 +139,9 @@ describe('a serial console in the host form (#426)', () => {
     await waitFor(() => {
       expect(screen.getByText(/Found: \/dev\/ttyUSB0 — FTDI, \/dev\/ttyS0/)).toBeTruthy();
     });
-    expect(screen.getByText('Line: 115200 8N1')).toBeTruthy();
+    // The fields say the line; no "Line:" summary repeats them for a host's own (S16).
+    expect(screen.getByLabelText<HTMLInputElement>('Baud').value).toBe('115200');
+    expect(screen.queryByText(/^Line: /)).toBeNull();
     await userEvent.type(screen.getByLabelText('Device on this computer'), '/dev/ttyUSB0');
     const baud = screen.getByLabelText('Baud');
     await userEvent.clear(baud);

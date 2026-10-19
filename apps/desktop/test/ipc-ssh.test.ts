@@ -94,6 +94,7 @@ const NO_KEYS = {
   install: vi.fn(),
   attachCertificate: vi.fn(),
   deviceKeyStatus: vi.fn(),
+  defaultKeyComment: vi.fn(() => 'me@here'),
 };
 const NO_SFTP = {
   open: vi.fn(),
@@ -787,6 +788,7 @@ describe('ssh key channels', () => {
       install: vi.fn(() => Promise.resolve({ result: 'added' as const })),
       attachCertificate: vi.fn(),
       deviceKeyStatus: vi.fn(() => Promise.resolve({ supported: false, reason: 'none here' })),
+      defaultKeyComment: vi.fn(() => 'me@here'),
     };
     registerSshChannels({
       hosts: NO_HOSTS,

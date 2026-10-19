@@ -102,6 +102,11 @@ export class SshKeysService {
     return this.wire(request.name, key, passphrase === '' ? undefined : passphraseName);
   }
 
+  /** The comment a key gets when none is typed: `user@host`, as ssh-keygen gives it (S15). */
+  defaultKeyComment(): string {
+    return (this.deps.defaultComment ?? systemComment)();
+  }
+
   /** Whether this machine can make device keys (#428). */
   async deviceKeyStatus(): Promise<SshDeviceKeyStatus> {
     return (await this.deps.deviceKeys?.status()) ?? { supported: false };

@@ -21,6 +21,7 @@ import {
   portsNote,
   RefreshPortsButton,
   serialLabel,
+  serialPathExample,
   serialTargetText,
   useSerialPorts,
 } from './serial-section.js';
@@ -507,7 +508,7 @@ function SerialDeviceForm({ hostId, onConnect }: { readonly hostId: string; read
         <input
           aria-label="Serial port path"
           className={`${INPUT_CLASS} min-w-0 flex-1 font-mono`}
-          placeholder="COM3 or /dev/ttyUSB0"
+          placeholder={serialPathExample()}
           value={typed}
           onChange={(e) => {
             setTyped(e.target.value);

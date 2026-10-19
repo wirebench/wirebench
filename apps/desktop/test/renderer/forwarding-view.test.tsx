@@ -214,16 +214,19 @@ describe('the Port forwarding view', () => {
     fireEvent.change(within(dialog).getByLabelText('Host'), { target: { value: 'bastion' } });
     expect(within(dialog).getByLabelText<HTMLInputElement>('Name').value).toBe('forward');
     fireEvent.change(within(dialog).getByLabelText('Port'), { target: { value: '6000' } });
+    // The suggested name follows the port, then the target (S14).
+    expect(within(dialog).getByLabelText<HTMLInputElement>('Name').value).toBe('local-6000');
     fireEvent.change(within(dialog).getByLabelText('Target (as the host sees it)'), {
       target: { value: 'localhost:6000' },
     });
+    expect(within(dialog).getByLabelText<HTMLInputElement>('Name').value).toBe('localhost-6000');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Add rule' }));
     await waitFor(() => {
       expect(saveHosts).toHaveBeenCalledOnce();
     });
     const saved = (saveHosts.mock.calls[0]![0] as { file: HostsFileWire }).file;
     expect(saved.hosts.find((h) => h.id === 'bastion')?.forwards).toEqual([
-      { id: 'forward', type: 'local', port: 6000, target: 'localhost:6000' },
+      { id: 'localhost-6000', type: 'local', port: 6000, target: 'localhost:6000' },
     ]);
     expect(saved.hosts.find((h) => h.id === 'db-1')?.forwards).toBeUndefined();
     await waitFor(() => {

@@ -7,7 +7,7 @@ import { findHost, upsertHost, useHostsStore } from '../hosts-store.js';
 import { INPUT_CLASS } from '../inherited-field.js';
 import { ForwardForm, forwardProblem, type ForwardFullEntry } from './forward-form.js';
 import { moveRule } from './forward-groups.js';
-import { freeRuleId } from './forwards-section.js';
+import { freeRuleId, suggestedRuleId } from './forwards-section.js';
 
 const CONTENT_CLASS =
   'fixed top-1/2 left-1/2 flex max-h-[85vh] w-[28rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-3 overflow-y-auto rounded-md bg-surface-raised p-4 shadow-lg';
@@ -121,8 +121,8 @@ export function NewRuleDialog({
                   onChange={(event) => {
                     const next = event.target.value;
                     // A suggested id follows the host; one typed by hand stays.
-                    if (entry.id === freeRuleId(takenOn(hostId))) {
-                      setEntry({ ...entry, id: freeRuleId(takenOn(next)) });
+                    if (entry.id === suggestedRuleId(entry, takenOn(hostId))) {
+                      setEntry({ ...entry, id: suggestedRuleId(entry, takenOn(next)) });
                     }
                     setHostId(next);
                     setError(undefined);
@@ -159,7 +159,11 @@ export function NewRuleDialog({
                 heading="Rule"
                 entry={entry}
                 onChange={(next) => {
-                  setEntry(next);
+                  // While the name is the suggested one it follows the target and port, so two rules made here
+                  // are not "forward" and "forward-2" (S14); a name typed by hand stays.
+                  const taken = takenOn(hostId);
+                  const suggested = next.id === entry.id && entry.id === suggestedRuleId(entry, taken);
+                  setEntry(suggested ? { ...next, id: suggestedRuleId(next, taken) } : next);
                   setError(undefined);
                 }}
               />

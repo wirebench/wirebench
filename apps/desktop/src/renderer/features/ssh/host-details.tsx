@@ -24,6 +24,7 @@ import { findHost, flattenGroups, hostStatusOf, osKeyOf, useHostsStore } from '.
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
 import { ProtectedMark } from './protected-mark.js';
 import { proxyText } from './proxy-section.js';
+import { useRecentConnections } from './recent-connections.js';
 import { HostSessionLogs } from './session-logs.js';
 import { sessionStatus } from './session-status.js';
 import { schemeLabel } from './terminal-schemes.js';
@@ -139,6 +140,7 @@ function PickedHost() {
     selectedHostId === undefined ? undefined : hostStatusOf(s.panes, selectedHostId),
   );
   const osByHost = useHostsStore((s) => s.osByHost);
+  const recent = useRecentConnections();
   // The live forwards through the host, so a host with no terminal open still says it is in use (#594).
   const forwardsRunning = useForwardsStore((s) =>
     selectedHostId === undefined
@@ -389,7 +391,14 @@ function PickedHost() {
             </Row>
             <Row label="OS">
               {os === undefined ? (
-                <span className="text-fg-subtle">found on the first connection</span>
+                // Once a connection has come and gone without it, "found on the first connection" is a
+                // promise not kept (S10): the host did not say.
+                <span className="text-fg-subtle">
+                  {hostStatus === 'open' ||
+                  recent.some((entry) => entry.hostId === host.id && entry.outcome === 'connected')
+                    ? 'not detected'
+                    : 'found on the first connection'}
+                </span>
               ) : (
                 <>
                   <span className="flex min-w-0 items-center gap-1.5 self-center">
