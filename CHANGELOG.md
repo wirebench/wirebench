@@ -48,6 +48,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Device keys and the app lock say what they need.** Where they cannot be used, **Generate key** reads
+  **Device keys need macOS with a Secure Enclave or Windows Hello.** and Settings → Secrets reads **App
+  lock needs Touch ID, Windows Hello or the system password prompt.**, inside the App lock row under its
+  description, followed by the computer's own reason when there is one (such as **This Mac has no Secure
+  Enclave**). **Lock again after idle** is disabled while the app lock is off or unavailable, and the
+  Secrets page's subtitle now mentions the app lock (#691).
 - **Quick Open finds requests by name.** <kbd>⌘P</kbd> lists the requests and operations whose name
   matches above those that match only by their project, API or folder, so "pet" puts Find pets first,
   not every request in Swagger Petstore. A row listed by its path alone needs every typed word to be

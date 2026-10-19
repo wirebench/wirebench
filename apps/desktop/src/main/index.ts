@@ -1462,9 +1462,8 @@ void app.whenReady().then(() => {
   registerAppLockChannels({
     preferences: preferencesService,
     lock: appLock,
-    support: appLockSupported
-      ? { supported: true }
-      : { supported: false, reason: 'This computer cannot ask for biometrics or the password here' },
+    // No reason: the renderer says what the app lock needs, and there is nothing to add to it.
+    support: { supported: appLockSupported },
     onChanged: (preferences) => {
       broadcast(events.preferences.changed, { preferences });
     },
