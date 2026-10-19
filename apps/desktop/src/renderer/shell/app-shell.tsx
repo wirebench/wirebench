@@ -66,6 +66,7 @@ import { SettingsPage } from '../features/preferences/settings-page.js';
 import { WorkspaceManageDialog } from '../features/workspace/manage-dialog.js';
 import { RemoveProjectDialog } from '../features/workspace/remove-project-dialog.js';
 import { RevealSecretsDialog } from '../features/console/reveal-secrets-dialog.js';
+import { LiveCloseDialog } from './live-close-dialog.js';
 import { UnsavedCloseDialog } from './unsaved-close-dialog.js';
 import { ShareDialog } from '../features/workspace/share-dialog.js';
 import { JoinDialog } from '../features/workspace/join-dialog.js';
@@ -687,6 +688,7 @@ export function AppShell() {
       <WorkspaceManageDialog />
       <RemoveProjectDialog />
       <RevealSecretsDialog />
+      <LiveCloseDialog />
       <UnsavedCloseDialog />
       <ShareDialog />
       <JoinDialog />

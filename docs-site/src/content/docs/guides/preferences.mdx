@@ -127,6 +127,11 @@ off by default.
 first line in an SSH terminal shows the rest of it dimmed after the cursor, and **Tab** completes it without
 pressing Enter.
 
+**Confirm closing live sessions** is `terminal.confirmCloseSessions` and is on by default: closing tabs
+that hold a connected SSH, Telnet or serial session, or a running local terminal, asks once for the whole
+batch, since closing ends the connection and whatever runs in it. Ticking **Don't ask again** in that
+question turns this off.
+
 **Reconnect dropped sessions** is `terminal.autoReconnect` and is on by default. When the network drops
 a session (a reset, a timeout, a jump host's connection ending), the tab keeps its scrollback and tries
 again after 1, 2, 4, 8 and 16 seconds, then every 30 seconds, showing the attempt and a countdown with

@@ -193,6 +193,15 @@ export function TerminalSection({ preferences, update }: SectionProps) {
       </SettingsGroup>
       <SettingsGroup title="Connection">
         <BooleanSetting
+          label="Confirm closing live sessions"
+          setting="terminal.confirmCloseSessions"
+          value={terminal.confirmCloseSessions}
+          onChange={(confirmCloseSessions) => {
+            update({ terminal: { confirmCloseSessions } });
+          }}
+          hint="Ask once before closing tabs that hold a connected session: closing ends the connection and whatever runs in it."
+        />
+        <BooleanSetting
           label="Reconnect dropped sessions"
           setting="terminal.autoReconnect"
           value={terminal.autoReconnect}

@@ -61,6 +61,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
   mocks: { listenOnAllInterfaces: false },
   terminal: {
     confirmMultilinePaste: true,
+    confirmCloseSessions: true,
     copyOnSelect: false,
     autoReconnect: true,
     reconnectAttempts: 10,

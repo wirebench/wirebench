@@ -2061,6 +2061,7 @@ export const preferencesWireSchema = z.object({
   mocks: z.object({ listenOnAllInterfaces: z.boolean() }),
   terminal: z.object({
     confirmMultilinePaste: z.boolean(),
+    confirmCloseSessions: z.boolean(),
     copyOnSelect: z.boolean(),
     autoReconnect: z.boolean(),
     reconnectAttempts: z.number(),

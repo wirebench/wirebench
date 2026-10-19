@@ -71,6 +71,9 @@ test('split a terminal, save and reopen the layout, broadcast to both panes', as
   const tab = page.getByRole('tab', { name: /Two/ });
   await expect(tab).toBeVisible();
   await tab.getByTestId('editor-tab-close').click();
+  // A tab with live sessions asks once before ending them (S53).
+  await expect(page.getByTestId('live-close')).toBeVisible();
+  await page.getByTestId('live-close-confirm').click();
   await expect(page.getByTestId('ssh-pane')).toHaveCount(0);
 
   await page.getByTestId('ssh-nav-layouts').click();

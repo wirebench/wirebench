@@ -1,7 +1,8 @@
 /**
  * Closing editor tabs the way the user asks for it (#679): one tab, the others, those to the right, the saved
  * ones or all of them, from the tab menu, the palette, ⌘W, × or a middle-click. A tab with unsaved edits asks
- * first — Save, Don't save or Cancel — and Cancel stops the rest of the batch with it.
+ * first — Save, Don't save or Cancel — and Cancel stops the rest of the batch with it. Tabs holding live
+ * sessions ask once before any of that (S53), unless Settings → Terminal says not to.
  *
  * `useEditorsStore.close` stays the plain close: a request deleted or a project closed takes its tab without a
  * question, since there is nothing left to save it into.
@@ -9,7 +10,9 @@
 import { create } from 'zustand';
 import { entityIdOf, TAB_KINDS } from '../kinds/index.js';
 import { useDraftsStore } from '../state/drafts.js';
+import { liveSessionsOf } from '../features/ssh/live-sessions.js';
 import { useEditorsStore, type EditorTab } from '../state/editors.js';
+import { usePreferencesStore } from '../state/preferences.js';
 import { useProjectStore } from '../state/project.js';
 import { tabsInSet } from '../state/tab-sets.js';
 import { useWorkspaceStore } from '../state/workspace.js';
@@ -107,11 +110,78 @@ async function saveDraft(requestId: string): Promise<void> {
   else if (drafts.mcpRequests[requestId] !== undefined) await project.saveMcpRequest(requestId);
 }
 
+/** What closing tabs with live sessions asks: how many sessions, and the tab's name when there is one tab. */
+export interface LiveCloseQuestion {
+  readonly sessions: number;
+  readonly tabs: number;
+  readonly name: string;
+}
+
+export interface LiveCloseAnswer {
+  readonly close: boolean;
+  /** Ticked "Don't ask again": the preference goes off, and Settings → Terminal turns it back on. */
+  readonly dontAskAgain: boolean;
+}
+
+interface LiveCloseState {
+  readonly question: LiveCloseQuestion | undefined;
+  readonly resolve: ((answer: LiveCloseAnswer) => void) | undefined;
+  readonly ask: (question: LiveCloseQuestion) => Promise<LiveCloseAnswer>;
+  readonly answer: (answer: LiveCloseAnswer) => void;
+}
+
+/** The one "Close the sessions?" question (S53), answered by `LiveCloseDialog`. */
+export const useLiveCloseStore = create<LiveCloseState>((set, get) => ({
+  question: undefined,
+  resolve: undefined,
+  ask: (question) => {
+    get().resolve?.({ close: false, dontAskAgain: false });
+    return new Promise<LiveCloseAnswer>((resolve) => {
+      set({ question, resolve });
+    });
+  },
+  answer: (answer) => {
+    const { resolve } = get();
+    set({ question: undefined, resolve: undefined });
+    resolve?.(answer);
+  },
+}));
+
 /**
- * Closes `ids` in order, asking about each one with unsaved edits. A save that fails (or a review that is
- * cancelled) leaves the tab open and stops there, as Cancel does.
+ * The question closing `ids` asks first, or `undefined` when the preference is off or none of them holds a
+ * live session. Closing a connected terminal ended its session at once (S53).
+ */
+function liveCloseQuestion(ids: readonly string[]): LiveCloseQuestion | undefined {
+  if (!usePreferencesStore.getState().preferences.terminal.confirmCloseSessions) return undefined;
+  const tabs = useEditorsStore.getState().tabs;
+  const live = ids.flatMap((id) => {
+    const tab = tabs.find((candidate) => candidate.id === id);
+    const sessions = tab === undefined ? 0 : liveSessionsOf(tab);
+    return tab === undefined || sessions === 0 ? [] : [{ tab, sessions }];
+  });
+  const first = live[0];
+  if (first === undefined) return undefined;
+  const sessions = live.reduce((sum, entry) => sum + entry.sessions, 0);
+  return { sessions, tabs: live.length, name: live.length === 1 ? tabName(first.tab) : '' };
+}
+
+/** Asks `question` and whether to go on; "Don't ask again" turns the preference off. */
+async function confirmLiveSessions(question: LiveCloseQuestion): Promise<boolean> {
+  const answer = await useLiveCloseStore.getState().ask(question);
+  if (answer.close && answer.dontAskAgain) {
+    void usePreferencesStore.getState().update({ terminal: { confirmCloseSessions: false } });
+  }
+  return answer.close;
+}
+
+/**
+ * Closes `ids` in order, asking once first when they hold live sessions, then about each one with unsaved
+ * edits. A save that fails (or a review that is cancelled) leaves the tab open and stops there, as Cancel does.
  */
 export async function closeTabs(ids: readonly string[]): Promise<void> {
+  // Nothing to ask leaves no await before the first close, so a tab with nothing live closes at once.
+  const question = liveCloseQuestion(ids);
+  if (question !== undefined && !(await confirmLiveSessions(question))) return;
   for (const id of ids) {
     const tab = useEditorsStore.getState().tabs.find((candidate) => candidate.id === id);
     if (tab === undefined) continue;

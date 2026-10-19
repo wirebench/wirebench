@@ -185,6 +185,7 @@ import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { reconnectNow } from '../../src/renderer/features/ssh/reconnect.js';
 import { __dispatchForTest as dispatch, bytesToBase64 } from '../../src/renderer/features/ssh/terminal-session.js';
 import { EditorArea } from '../../src/renderer/shell/editor-area.js';
+import { useLiveCloseStore } from '../../src/renderer/shell/tab-close.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
@@ -1438,8 +1439,17 @@ describe('split panes', () => {
     expect(close).not.toHaveBeenCalledWith({ sessionId: 's1' });
     expect(tree().kind).toBe('pane');
     expect(screen.queryByTestId('ssh-pane-header')).toBeNull();
+    // The last pane closes the tab, which holds a live session: that asks once first (S53).
+    let closing: Promise<boolean> | undefined;
+    act(() => {
+      closing = runCommand('editor.closeTab', {} as never);
+    });
+    await waitFor(() => {
+      expect(useLiveCloseStore.getState().question).toMatchObject({ sessions: 1, tabs: 1 });
+    });
     await act(async () => {
-      await runCommand('editor.closeTab', {} as never);
+      useLiveCloseStore.getState().answer({ close: true, dontAskAgain: false });
+      await closing;
     });
     expect(useEditorsStore.getState().tabs).toEqual([]);
     expect(close).toHaveBeenCalledWith({ sessionId: 's1' });
