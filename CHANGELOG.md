@@ -73,6 +73,10 @@ All notable changes to this project are documented here. The format follows
   picker now selects that host, from either group, and Enter connects the new pane to it. Before, the
   current host stayed selected (its id matched the typed digits), so the new pane opened on the wrong
   machine. The picker matches on name, address, group path and tags only (#687).
+- **A script test with an async callback now fails.** `test(name, async () => …)` used to record a pass
+  whatever the callback did, because a script cannot wait for the promise. It now fails with "the test
+  callback is async, and a test cannot wait: make it synchronous", in the typed API and in every imported
+  script layer.
 
 ## [6.1.0] - 2026-10-18
 

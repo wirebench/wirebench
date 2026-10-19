@@ -109,7 +109,8 @@ with a line break fails with `script-value-invalid`. Either way nothing is sent.
 `test(name, () => …)` records a test, and `expect` checks a value inside it: `toBe`, `toEqual`,
 `toContain`, `toMatch`, `toBeGreaterThan`, `toHaveProperty` and the rest, each with `.not`. A failed
 `expect` fails its test and the script carries on. Tests count as the request's assertions, in the app,
-in a sequence and in `wirebench run`.
+in a sequence and in `wirebench run`. A test callback must be synchronous: a script cannot wait for a
+promise, so a callback that returns one (an `async` function) fails its test.
 
 ## Values for later requests
 
