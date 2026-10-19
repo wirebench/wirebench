@@ -16,6 +16,9 @@
  */
 import { PART_EXPECT, PART_REQUEST, PART_RESPONSE, PART_UNSUPPORTED, PART_VARIABLES } from './layer-parts.js';
 
+/** Why `tc.response` throws in a pre-request script; the converter's TODO repeats it. */
+export const TC_NO_RESPONSE_YET = 'there is no response before the request is sent';
+
 export const THUNDER_CLIENT_LAYER =
   PART_UNSUPPORTED +
   PART_VARIABLES +
@@ -61,7 +64,7 @@ if (responseView !== undefined) {
   });
 } else {
   tcResponse = new Proxy({}, {
-    get: (target, member) => (typeof member === 'symbol' || member === 'then' || member === 'toJSON' ? undefined : unsupported('tc.response in a pre-request script', 'there is no response before the request is sent')()),
+    get: (target, member) => (typeof member === 'symbol' || member === 'then' || member === 'toJSON' ? undefined : unsupported('tc.response in a pre-request script', '${TC_NO_RESPONSE_YET}')()),
   });
 }
 

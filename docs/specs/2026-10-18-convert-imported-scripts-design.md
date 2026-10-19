@@ -36,7 +36,7 @@ does the level switch to `api: 'wirebench'`, and the type check reports what is 
 
 - My Bruno login request runs `bru.setVar("userId", res.body.id)` and a `tests` block with
   `expect(res.getStatus()).to.equal(201)`. I click Convert on its Scripts tab and see
-  `vars.set("userId", response.json().id)` and `expect(response.status).toBe(201)` in a diff. I
+  `vars.set("userId", (response.json() as any).id)` and `expect(response.status).toBe(201)` in a diff. I
   accept. The request now holds `create-user.post.ts`, the old `.js` sits under
   `imported-scripts/`, and the test still passes.
 - A Postman collection imported 40 requests with scripts. I choose "Convert scripts…" on the API,
@@ -118,7 +118,12 @@ The engine already depends on `typescript` at run time (`script/check/service.ts
 `ts.createSourceFile` to parse each script as JavaScript, and nothing else from the compiler:
 
 1. **Parse.** A script that does not parse is not converted. Its row says "has a syntax error at
-   line N" and cannot be ticked.
+   line N" and cannot be ticked. A script that cannot be converted for another reason (it nests too
+   deeply to walk, or the converter hits an internal error) is reported the same way, with line 0
+   and a message that starts "could not convert:", and cannot be ticked either; Convert never throws.
+   A Hoppscotch script's `export {};` lines, which the runner blanks before it runs the script, are
+   blanked first too: the line stays, empty, so the TODO line numbers hold, and the converted script
+   does not fail on the `export` the typed runner would not blank.
 2. **Find the dialect's roots.** A dialect has fixed global roots: `pm`, `postman`, `CryptoJS`,
    `btoa` and `atob` for `postman`; `insomnia` and `$` for `insomnia`; `bru`, `req`, `res`, `test`
    and `expect` for `bruno`; `pw`, `hopp` and `pm` for `hoppscotch`; and `tc`, `test` and `expect` for
@@ -212,7 +217,10 @@ Notes:
 - **Writes.** A layer turns `null` and `undefined` into `''` and an object into its JSON. The typed
   `vars.set` takes a string, number or boolean and throws `script-value-invalid` otherwise. The type
   check reports a value whose type it cannot narrow to one of those. Convert does not wrap it in
-  `JSON.stringify`, because the type check already names the line.
+  `JSON.stringify`, because the type check already names the line. A value read from the response
+  body is the exception: the body is cast `as any` (§6.5), so `vars.set('id', response.json() as any)`
+  or a field of it type-checks, and when the value is `null`, `undefined` or an object at run time
+  `vars.set` throws `script-value-invalid` where the layer stored `''` or the JSON.
 - **Not mapped:** `unset`, `clear` and `bru.deleteVar` (the typed API has no unset), `hopp.env.get`
   and `pw.env.resolve` (they expand `<<name>>`), `replaceIn`, `bru.interpolate` and `tc.replaceVars`.
 
@@ -221,7 +229,8 @@ Notes:
 | Dialect call | Wirebench |
 | --- | --- |
 | `pm.test(n, f)`, `pw.test(n, f)`, `hopp.test(n, f)`, Bruno's `test(n, f)` | `test(n, f)` |
-| `tc.test(n, f)` with a function literal | `test(n, () => expect((f)()).not.toBe(false))` |
+| `tc.test(n, f)` with an `async` function literal | `test(n, f)` |
+| `tc.test(n, f)` with any other function literal | `test(n, () => expect<unknown>((f)()).not.toBe(false))` |
 | `tc.test(n, b)` with any other value | `test(n, () => expect(b).toBe(true))` |
 | `pm.expect(x)`, `hopp.expect(x)`, `pw.expect(x)`, Bruno's and Thunder Client's `expect(x)`, `tc.expect(x)` | `expect(x)`, then the chain below |
 
@@ -260,10 +269,14 @@ Notes:
   failed only on key order, never the reverse.
 - **`.property` with a dotted name.** Chai reads `'a.b'` as one key, and the typed `toHaveProperty`
   splits a string on dots. The array form keeps chai's meaning.
-- **`.include` on an object** (subset match) has no typed form. The type check reports it, because
-  the typed `toContain` takes a string for a non-array value.
+- **`.include` on an object** (subset match) has no typed form. With the body cast `as any` the type
+  check would not report it, and the typed `toContain` would fail at run time where chai passed, so
+  `.include`, `.includes`, `.contain` or `.contains` given an object literal is a TODO.
 - **`tc.test` with a function value** that is not a literal (a variable) is converted the same way,
   `(f)()`.
+- **`tc.test` with an `async` function literal** becomes `test(n, f)`: the typed `test` settles the
+  promise, so a rejection fails the test. Checking the promise with `.not.toBe(false)` would pass
+  whatever it settled to.
 - **Not mapped:** `.oneOf`, `.within`, `.least` / `.gte`, `.most` / `.lte`, `.keys`, `.empty`,
   `.exist`, `.NaN`, `.string`, `.a(t)` for `object`, `array`, `null` or a non-literal `t`, and Bruno's
   `.jsonSchema`. For `.jsonSchema`, the TODO points at the request's JSON Schema assertion.
@@ -273,8 +286,8 @@ Notes:
 | Dialect call | REST | SOAP | gRPC | MCP |
 | --- | --- | --- | --- | --- |
 | `pm.response.code`, `res.status`, `res.getStatus()`, `pw.response.status`, `hopp.response.statusCode`, `tc.response.status` | `response.status` | `response.status` | `response.status.code` | — |
-| `pm.response.json()`, `hopp.response.body.asJSON()`, `tc.response.json` | `response.json()` | — | `response.message` | — |
-| `res.body`, `res.getBody()`, `pw.response.body` | `response.json()` | `response.text` | `response.message` | — |
+| `pm.response.json()`, `hopp.response.body.asJSON()`, `tc.response.json` | `response.json() as any` | — | `response.message` | — |
+| `res.body`, `res.getBody()`, `pw.response.body` | `response.json() as any` | `response.text` | `response.message` | — |
 | `pm.response.text()`, `hopp.response.body.asText()`, `tc.response.text` | `response.text` | `response.text` | `JSON.stringify(response.message)` | — |
 | `pm.response.headers.get(n)`, `res.getHeader(n)`, `tc.response.getHeader(n)` | `response.headers.get(n)` | `response.headers.get(n)` | `response.metadata.get(n)` | — |
 | `pm.response.responseTime`, `res.responseTime`, `res.getResponseTime()`, `hopp.response.responseTime`, `tc.response.time` | `response.durationMs` | `response.durationMs` | `response.durationMs` | `response.durationMs` |
@@ -289,8 +302,14 @@ Notes:
   Client's `tc.response.json` give the text, or `undefined`, when the body does not parse. The typed
   REST `response.json()` throws instead. A converted script on a non-JSON response therefore fails
   with `script-error` where it used to read the text or `undefined`. That failure is loud, and the
-  docs say so. On REST, `response.json()` is also typed from the contract, which is the point of
-  converting.
+  docs say so.
+- **An untyped body.** Without a contract the typed `response.json()` is `unknown`, and an imported
+  request has none, so `res.body.id` would not type-check. The layers read the body untyped, and so
+  does the converted script: `response.json() as any`, parenthesised wherever something binds to
+  it — a property or element access, a call, an operator (`(response.json() as any).id`). Where
+  that `(` opens a statement after a line with no semicolon, Convert writes a `;` before it, so the
+  two lines are not joined. The cast is erased before the script runs. Linking the request to
+  a contract later and deleting the cast types the body from it.
 - **Repeated headers.** Bruno's `res.getHeader` joins repeated names with `, `. The typed
   `headers.get` gives the first one. The docs name the difference; `headers.getAll(n).join(', ')` is
   the exact form, and Convert does not write it.
@@ -307,13 +326,21 @@ Notes:
 | `pm.request.headers.upsert({ key: k, value: v })`, `req.setHeader(k, v)`, `hopp.request.setHeader(k, v)` | pre | `request.headers.set(k, v)` | `request.headers.set(k, v)` | `request.metadata.set(k, v)` | — |
 | `pm.request.headers.remove(k)` (a string), `req.deleteHeader(k)`, `hopp.request.removeHeader(k)` | pre | `request.headers.delete(k)` | `request.headers.delete(k)` | `request.metadata.delete(k)` | — |
 | `pm.request.headers.get(k)`, `req.getHeader(k)` | both | `request.headers.get(k)` | `request.headers.get(k)` | `request.metadata.get(k)` | — |
-| `req.getUrl()`, `pm.request.url.toString()` | both | `request.url` | `request.endpoint` | `request.target` | `request.url` |
+| `req.getUrl()` | both | `request.url` | `request.endpoint` | `request.target` | `request.url` |
+| `pm.request.url.toString()` | both | `request.url` | — | `request.target` | `request.url` |
 | `req.setUrl(u)` | pre | `request.url = u` | — | — | — |
 | `req.getMethod()`, `pm.request.method` (read) | both | `request.method` | — | `request.method` | `request.method` |
 | `req.setMethod(m)` | pre | `request.method = m` | — | — | — |
 
 Notes:
 
+- **Header values.** Every layer passes a header's name and value through `String(…)`. The typed
+  writers take strings, so a `k` or `v` that is not a string literal is written `String(k)`,
+  `String(v)`: the run is the same, and a variable read (`string | undefined`) or a number
+  type-checks.
+- **The URL on SOAP.** The `pm`-shaped layers read the URL as `String(request.url)`, which is
+  `'undefined'` on SOAP, so `pm.request.url.toString()` is a TODO there. Bruno's `req.getUrl()` reads
+  the endpoint.
 - **Writes need a statement.** `request.url = u` and `request.method = m` are assignments. A
   `req.setUrl(u)` used as a value (rare) becomes a TODO.
 - **Read-only in post-response.** The typed post-response `request` is read-only, as the layers'

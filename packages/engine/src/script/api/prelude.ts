@@ -18,6 +18,19 @@ import type { ProtocolScripting } from '../../protocol/module.js';
 import type { ScriptApi, ScriptPhase } from '../model.js';
 import { isLayeredApi, SCRIPT_CONTROL_LIMITS, SCRIPT_OUTPUT_LIMITS } from '../model.js';
 
+/** Why `execution.skipRequest` throws in a post-response script; the converter's TODO repeats it. */
+export const SKIP_REQUEST_PRE_ONLY = 'execution.skipRequest works only in a pre-request script';
+
+/** How the reason a request setter throws in a post-response script ends; `what` (`header`, `URL`, …) goes before it. */
+const SENT_REQUEST_TAIL = ' of a sent request cannot be changed';
+
+/**
+ * Why a request setter throws in a post-response script: the headers' (or gRPC metadata's), the
+ * URL's or the method's, as `what` names them. The converter's TODO repeats it.
+ */
+export const sentRequestReason = (what: 'header' | 'metadata' | 'URL' | 'method'): string =>
+  `The ${what}${SENT_REQUEST_TAIL}`;
+
 const COMMON = String.raw`
 const input = JSON.parse(__host.inputJson);
 const hasOwn = (object, key) => object !== null && typeof object === 'object' && Object.prototype.hasOwnProperty.call(object, key);
@@ -94,7 +107,7 @@ define('execution', Object.freeze({
     control.next = name;
   },
   skipRequest() {
-    if (input.phase !== 'pre') throw new ScriptUnsupported('execution.skipRequest works only in a pre-request script');
+    if (input.phase !== 'pre') throw new ScriptUnsupported('${SKIP_REQUEST_PRE_ONLY}');
     control.skip = true;
   },
 }));
@@ -212,7 +225,7 @@ const hasCrlf = (text) => /[\r\n\0]/.test(text);
 /** A case-insensitive view of an ordered list of [name, value] pairs. */
 const pairsApi = (pairs, writable, what) => {
   const lower = (name) => String(name).toLowerCase();
-  const refuse = () => { throw new TypeError('The ' + what + ' of a sent request cannot be changed'); };
+  const refuse = () => { throw new TypeError('The ' + what + '${SENT_REQUEST_TAIL}'); };
   const guard = (name, value) => {
     if (hasCrlf(name) || hasCrlf(value)) {
       throw new ScriptValueInvalid('A ' + what + ' name or value may not hold CR, LF or NUL: "' + name + '"');
