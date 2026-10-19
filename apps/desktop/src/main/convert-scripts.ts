@@ -42,10 +42,11 @@ export async function listImportedScripts(projectDir: string): Promise<Set<strin
 /** Something in a container's tree that can carry scripts, as far as finding it by id goes. */
 interface Node {
   readonly id: string;
+  readonly name: string;
   readonly scripts?: { readonly secrets: readonly string[] };
   readonly folders?: readonly Node[];
   readonly requests?: readonly Node[];
-  readonly operations?: readonly { readonly requests: readonly Node[] }[];
+  readonly operations?: readonly { readonly name: string; readonly requests: readonly Node[] }[];
 }
 
 function find(node: Node, id: string): Node | undefined {
@@ -58,6 +59,33 @@ function find(node: Node, id: string): Node | undefined {
     (node.requests ?? []).find((request) => request.id === id) ??
     (node.operations ?? []).flatMap((operation) => operation.requests).find((request) => request.id === id)
   );
+}
+
+/** The names from `node` down to the one with this id, as a proposal's `path` gives them. */
+function pathTo(node: Node, id: string): string[] | undefined {
+  if (node.id === id) return [node.name];
+  for (const folder of node.folders ?? []) {
+    const below = pathTo(folder, id);
+    if (below !== undefined) return [node.name, ...below];
+  }
+  const request = (node.requests ?? []).find((each) => each.id === id);
+  if (request !== undefined) return [node.name, request.name];
+  for (const operation of node.operations ?? []) {
+    const found = operation.requests.find((each) => each.id === id);
+    if (found !== undefined) return [node.name, operation.name, found.name];
+  }
+  return undefined;
+}
+
+/** The path of the request, folder, API or interface with this id, or `undefined` when nothing has it. */
+export function levelPath(project: Project, ownerId: string): string[] | undefined {
+  for (const kind of SCRIPTED_KINDS) {
+    for (const container of containersOf(project, kind) as readonly Node[]) {
+      const path = pathTo(container, ownerId);
+      if (path !== undefined) return path;
+    }
+  }
+  return undefined;
 }
 
 /** What a level's converted scripts are checked with. */
@@ -137,7 +165,7 @@ export async function conversionWire(
 
 /**
  * What a `convert-scripts` change did, for the dialog's report. A refused level's path is looked up
- * in `pathOf`, the levels of the model the change was applied to; empty when it is not there.
+ * with `pathOf` in the model the change was applied to ({@link levelPath}); empty when no level has the id.
  */
 export function conversionsResultWire(
   conversions: ScriptConversions,

@@ -4,7 +4,7 @@
  * proposals come from the model main holds, with TODO counts and the checker's problems; Accept
  * sends fingerprints only, and main writes the backups, each at its exact path, before it saves.
  */
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -158,6 +158,7 @@ describe('accepting conversions', () => {
     const { levels } = await host.proposeConversions();
     // The Scripts tab's edit reaches main after the review opened.
     await host.mutate({ kind: 'update-request-scripts', requestId: 'rest-1', scripts: { pre: 'pm.test("x");' } });
+    await host.save({ reason: 'test' });
 
     const result = await host.mutate({
       kind: 'convert-scripts',
@@ -198,5 +199,108 @@ describe('accepting conversions', () => {
       host.writeImportedScripts([{ path: 'imported-scripts/../escape.js', source: 'x' }], { strict: true }),
     ).rejects.toMatchObject({ code: 'import-path-refused' });
     expect(existsSync(join(dir, 'escape.js'))).toBe(false);
+  });
+
+  it('a project with unsaved edits is refused before any backup is written', async () => {
+    const { host, dir } = await openProject();
+    const { levels } = await host.proposeConversions();
+    await host.mutate({ kind: 'update-rest-request', requestId: 'rest-1', patch: { url: '/elsewhere' } });
+    const before = filesUnder(dir);
+    const model = host.model();
+
+    await expect(
+      host.mutate({ kind: 'convert-scripts', levels: [{ ownerId: 'rest-1', fingerprint: levels[0]!.fingerprint }] }),
+    ).rejects.toMatchObject({ code: 'project-dirty' });
+
+    expect(host.model()).toBe(model);
+    expect(scriptsOf(host)?.api).toBe('postman');
+    expect(filesUnder(dir)).toEqual(before);
+    expect(existsSync(join(dir, 'imported-scripts'))).toBe(false);
+  });
+
+  it('a level refused as not layered keeps its path; a gone one has none', async () => {
+    const { host } = await openProject();
+
+    const result = await host.mutate({
+      kind: 'convert-scripts',
+      levels: [
+        { ownerId: 'f-1', fingerprint: 'x' },
+        { ownerId: 'gone', fingerprint: 'x' },
+      ],
+    });
+
+    expect(result.converted?.refused).toEqual([
+      { ownerId: 'f-1', path: ['Shop', 'Carts'], reason: 'not-layered' },
+      { ownerId: 'gone', path: [], reason: 'not-layered' },
+    ]);
+  });
+});
+
+describe('accepting conversions while something else happens', () => {
+  /** Runs `meanwhile` once the backups are written, before the host switches the model. */
+  function duringBackups(host: ProjectHost, meanwhile: () => Promise<unknown>): void {
+    const original = host.writeImportedScripts.bind(host);
+    vi.spyOn(host, 'writeImportedScripts').mockImplementation(async (scripts, options) => {
+      const written = await original(scripts, options);
+      await meanwhile();
+      return written;
+    });
+  }
+
+  it('an edit that lands while the backups are written is kept, and the conversion refused', async () => {
+    const { host, dir } = await openProject();
+    const { levels } = await host.proposeConversions();
+    duringBackups(host, () =>
+      host.mutate({ kind: 'update-rest-request', requestId: 'rest-1', patch: { name: 'Sign in' } }),
+    );
+
+    await expect(
+      host.mutate({ kind: 'convert-scripts', levels: [{ ownerId: 'rest-1', fingerprint: levels[0]!.fingerprint }] }),
+    ).rejects.toMatchObject({ code: 'project-changed' });
+
+    expect(scriptsOf(host)?.api).toBe('postman');
+    expect(restApisOf(host.model()!)[0]?.requests[0]?.name).toBe('Sign in');
+    expect(
+      filesUnder(dir).filter((file) => file.endsWith('.pre.js') && !file.startsWith('imported-scripts/')),
+    ).toHaveLength(1);
+    expect(filesUnder(dir).some((file) => file.endsWith('.pre.ts'))).toBe(false);
+  });
+
+  it('a project reopened while the backups are written is not switched', async () => {
+    const { host, dir } = await openProject();
+    const { levels } = await host.proposeConversions();
+    duringBackups(host, () => host.reload());
+
+    await expect(
+      host.mutate({ kind: 'convert-scripts', levels: [{ ownerId: 'rest-1', fingerprint: levels[0]!.fingerprint }] }),
+    ).rejects.toMatchObject({ code: 'project-changed' });
+
+    expect(scriptsOf(host)?.api).toBe('postman');
+    expect(host.snapshot()?.dirty).toBe(false);
+    expect(filesUnder(dir).some((file) => file.endsWith('.pre.ts'))).toBe(false);
+  });
+
+  it('a backup file created between the listing and the write is never overwritten', async () => {
+    const { host, dir } = await openProject();
+    const { levels } = await host.proposeConversions();
+    const backup = join(dir, 'imported-scripts', 'shop', 'shop-login.pre.js');
+    const original = host.writeImportedScripts.bind(host);
+    vi.spyOn(host, 'writeImportedScripts').mockImplementation(async (scripts, options) => {
+      mkdirSync(join(dir, 'imported-scripts', 'shop'), { recursive: true });
+      writeFileSync(backup, 'planted');
+      return await original(scripts, options);
+    });
+
+    await expect(
+      host.mutate({ kind: 'convert-scripts', levels: [{ ownerId: 'rest-1', fingerprint: levels[0]!.fingerprint }] }),
+    ).rejects.toMatchObject({ code: 'backup-exists' });
+
+    expect(await readFile(backup, 'utf8')).toBe('planted');
+    expect(filesUnder(dir).filter((file) => file.startsWith('imported-scripts/'))).toEqual([
+      'imported-scripts/shop/shop-login.pre.js',
+    ]);
+    expect(scriptsOf(host)?.api).toBe('postman');
+    expect(host.snapshot()?.dirty).toBe(false);
+    expect(filesUnder(dir).some((file) => file.endsWith('.pre.ts'))).toBe(false);
   });
 });

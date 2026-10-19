@@ -95,7 +95,7 @@ import { writeNewFile } from './write-new-file.js';
 import type { SecretStore } from './secrets.js';
 import { allowsReadPath } from './path-access.js';
 import { applyChange, projectNameFromDir } from './project-mutations.js';
-import { conversionsResultWire, listImportedScripts } from './convert-scripts.js';
+import { conversionsResultWire, levelPath, listImportedScripts } from './convert-scripts.js';
 import type { ScriptConversions } from './project-script-mutations.js';
 import type { ProjectWireContext } from './project-wire.js';
 import { findRequest, toProjectWire } from './project-wire.js';
@@ -935,6 +935,15 @@ export class ProjectHost {
     const workspaceProperties = this.workspaceContext?.()?.workspace.properties;
     // A backup's name depends on what is in `imported-scripts/` now, so a conversion lists it afresh.
     const takenBackups = change.kind === 'convert-scripts' ? await listImportedScripts(open.dir) : undefined;
+    // Converting saves the whole model, so it would write unrelated unsaved edits past the manual
+    // save's secret review: it refuses until the project is saved. Checked after the listing's await,
+    // so no edit slips in between.
+    if (change.kind === 'convert-scripts' && open.dirty) {
+      throw new ProjectError(
+        'project-dirty',
+        'The project has unsaved changes. Save it first, then convert its scripts.',
+      );
+    }
     const before = open.project;
     const result = await applyChange(before, change, {
       ...(takenBackups !== undefined ? { takenBackups } : {}),
@@ -962,7 +971,7 @@ export class ProjectHost {
       },
     });
     if (result.conversions !== undefined) {
-      return await this.convertScripts(before, result.project, result.conversions, takenBackups ?? new Set());
+      return await this.convertScripts(before, result.project, result.conversions);
     }
     open.project = result.project;
     for (const host of this.kindHostList()) {
@@ -1004,18 +1013,9 @@ export class ProjectHost {
     before: Project,
     converted: Project,
     conversions: ScriptConversions,
-    takenBackups: ReadonlySet<string>,
   ): Promise<{ project: ProjectWire; converted: ScriptConversionsResultWire }> {
     const open = this.require();
-    // A refused level's path, for the report: worked out only when one was refused, and once.
-    let paths: ReadonlyMap<string, readonly string[]> | undefined;
-    const pathOf = (ownerId: string): readonly string[] | undefined => {
-      paths ??= new Map(
-        proposeConversions(before, undefined, takenBackups).map((level) => [level.ownerId, level.path]),
-      );
-      return paths.get(ownerId);
-    };
-    const report = conversionsResultWire(conversions, pathOf);
+    const report = conversionsResultWire(conversions, (ownerId) => levelPath(before, ownerId));
     if (conversions.applied.length === 0) {
       return { project: this.snapshot() as ProjectWire, converted: report };
     }
@@ -1023,8 +1023,9 @@ export class ProjectHost {
       conversions.applied.flatMap((level) => level.backups),
       { strict: true },
     );
-    // The backups were written for `before`; a model that moved on meanwhile is not overwritten.
-    if (open.project !== before) {
+    // The backups were written for `before`; a model that moved on meanwhile, or a project closed or
+    // reopened meanwhile, is not overwritten.
+    if (this.open !== open || open.project !== before) {
       throw new ProjectError(
         'project-changed',
         'The project changed while its scripts were being converted; nothing was converted. Review them again.',
