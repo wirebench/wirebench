@@ -119,19 +119,45 @@ describe('ScriptsTab', () => {
     expect(updateRequestScripts).toHaveBeenCalledWith('r1', { secrets: ['signing_key', 'api_token'] });
   });
 
-  it('the button shows only on a layered level', () => {
+  it('the button shows only on a layered level', async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     useConvertScriptsDialog.setState({ open });
     useProjectStore.setState({ projectOf: { f1: 'p1' } });
     const { rerender } = render(<ScriptsTab requestId="f1" level="folder" scripts={{ ...OFF, enabled: true }} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Convert to Wirebench script' }));
-    expect(open).toHaveBeenCalledWith('p1', 'f1');
+    await vi.waitFor(() => expect(open).toHaveBeenCalledWith('p1', 'f1'));
 
     rerender(<ScriptsTab requestId="f1" level="folder" scripts={{ ...OFF, api: 'wirebench' }} />);
     expect(screen.queryByRole('button', { name: 'Convert to Wirebench script' })).toBeNull();
     rerender(<ScriptsTab requestId="f1" level="folder" scripts={undefined} />);
     expect(screen.queryByRole('button', { name: 'Convert to Wirebench script' })).toBeNull();
+  });
+
+  it('Convert writes a just-typed edit before the review opens', async () => {
+    let written: () => void = () => undefined;
+    updateRequestScripts.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          written = resolve;
+        }),
+    );
+    const open = vi.fn().mockResolvedValue(undefined);
+    useConvertScriptsDialog.setState({ open });
+    useProjectStore.setState({ projectOf: { r1: 'p1' } });
+    render(<ScriptsTab requestId="r1" scripts={{ ...OFF, enabled: true }} />);
+
+    fireEvent.change(screen.getByLabelText('Pre-request script'), { target: { value: 'pm.variables.set("a", "2");' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Convert to Wirebench script' }));
+
+    expect(updateRequestScripts).toHaveBeenCalledWith('r1', { pre: 'pm.variables.set("a", "2");' });
+    await Promise.resolve();
+    expect(open).not.toHaveBeenCalled();
+    await act(async () => {
+      written();
+      await Promise.resolve();
+    });
+    expect(open).toHaveBeenCalledWith('p1', 'r1');
   });
 
   it("shows the checker's errors under the editor", async () => {

@@ -32,7 +32,7 @@ import {
 } from '../../editor/script-language.js';
 import { useProjectStore } from '../../state/project.js';
 import { useConvertScriptsDialog } from './convert-scripts-dialog.js';
-import { registerScriptEditFlush } from '../../state/script-edits.js';
+import { flushScriptEdits, registerScriptEditFlush } from '../../state/script-edits.js';
 import type { RequestScriptsPatchWire, RequestScriptsWire, ScriptApiWire } from '../../../shared/wire-base.js';
 
 /** Long enough that a burst of keystrokes is one write, short enough that a send right after sees it. */
@@ -178,7 +178,8 @@ export function ScriptsTab({ requestId, scripts, level }: ScriptsTabProps) {
               onClick={() => {
                 const projectId = useProjectStore.getState().projectOf[requestId];
                 if (projectId !== undefined) {
-                  void useConvertScriptsDialog.getState().open(projectId, requestId);
+                  // The review is worked out from main's model: a just-typed edit goes there first.
+                  void flushScriptEdits().then(() => useConvertScriptsDialog.getState().open(projectId, requestId));
                 }
               }}
             >
