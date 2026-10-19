@@ -2563,6 +2563,8 @@ export const searchMatchSchema = z.object({
   /** Set for the two request kinds: which request matched, and its display name. */
   requestId: z.string().optional(),
   requestName: z.string().optional(),
+  /** Set for a REST request's matches: its method, which heads the group before the name. */
+  method: z.string().optional(),
   /** Set for every kind: the interface the match belongs to, and its display name. */
   interfaceId: z.string().optional(),
   interfaceName: z.string().optional(),

@@ -38,6 +38,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Quick Open finds requests by name.** <kbd>⌘P</kbd> lists the requests and operations whose name
+  matches above those that match only by their project, API or folder, so "pet" puts Find pets first,
+  not every request in Swagger Petstore. A row listed by its path alone needs every typed word to be
+  missing from its name: "pet user" no longer lists Delete user because its API is Petstore (#683).
+- **Search heads each group with the request.** A group of Search results starts with the REST method
+  and the request name, with the project and API faint underneath, instead of a breadcrumb that cut
+  every group to the same "PAYMENTS › SWAGGER P…" (#683).
 - **Lint findings no longer count as Problems.** After importing an OpenAPI definition, its lint findings
   get their own status bar item (**57 lint findings**, with errors and warnings named in the tooltip),
   which is never coloured and opens the Problems panel. The **Problems** item and the **Console** badge

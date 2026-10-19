@@ -52,6 +52,7 @@ export const restSearch: KindSearch = {
           projectName,
           requestId: request.id,
           requestName: request.name,
+          method: request.method,
           interfaceId: request.apiId,
           interfaceName: apiName,
         });
@@ -65,6 +66,7 @@ export const restSearch: KindSearch = {
           projectName,
           requestId: request.id,
           requestName: request.name,
+          method: request.method,
           interfaceId: request.apiId,
           interfaceName: apiName,
         });

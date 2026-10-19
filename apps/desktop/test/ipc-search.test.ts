@@ -263,6 +263,8 @@ describe('search.query', () => {
       kind: 'request-body',
       protocol: 'rest',
       requestId: 'rest-9',
+      // The Search view heads the group with it (#683).
+      method: 'POST',
       snippet: 'POST /orders/{orderId}',
     });
   });
@@ -410,6 +412,8 @@ describe('search.query', () => {
       kind: 'request-body',
       protocol: 'rest',
       requestId: 'rest-9',
+      // The Search view heads the group with it (#683).
+      method: 'POST',
       snippet: 'POST /orders/{orderId}',
     });
   });
