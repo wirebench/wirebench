@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { findStepRequest, runSelectorOf, selectRequests } from '../../../src/run/select.js';
+import {
+  findStepRequest,
+  normaliseSelector,
+  runSelectorOf,
+  selectorCovers,
+  selectRequests,
+} from '../../../src/run/select.js';
+import * as engine from '../../../src/index.js';
 import { hooksProject } from '../webhooks/fixture.js';
 import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
 import { DEFAULT_REQUEST_PROPERTIES } from '../../../src/soap/model.js';
@@ -203,5 +210,24 @@ describe('selectRequests — webhooks', () => {
       kind: 'unsupported',
       reason: 'A webhook cannot be a sequence step',
     });
+  });
+});
+
+describe('the selector rules other verbs share', () => {
+  it('normalises a selector as run reads it', () => {
+    expect(normaliseSelector('.\\apis\\Shop\\requests\\Ping.request.yaml')).toBe('apis/Shop/requests/Ping');
+    expect(normaliseSelector('./Shop/Carts/')).toBe('Shop/Carts');
+  });
+
+  it('covers the same path and paths below it, only at a / boundary', () => {
+    expect(selectorCovers('Shop', 'Shop')).toBe(true);
+    expect(selectorCovers('Shop', 'Shop/Carts/Create cart')).toBe(true);
+    expect(selectorCovers('Shop', 'Shopping/List')).toBe(false);
+    expect(selectorCovers('Shop/Carts', 'Shop')).toBe(false);
+  });
+
+  it('are exported from the engine', () => {
+    expect(engine.normaliseSelector).toBe(normaliseSelector);
+    expect(engine.selectorCovers).toBe(selectorCovers);
   });
 });

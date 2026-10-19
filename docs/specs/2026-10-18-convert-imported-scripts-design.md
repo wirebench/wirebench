@@ -108,7 +108,9 @@ The review is one dialog for all three entry points:
 
 The proposal is computed from the text the editor holds, not the file on disk. If a level's scripts
 change between the review opening and Accept (another window, a file watcher reload), that row is
-refused with "changed since the review opened" and the others go ahead.
+refused with "changed since the review opened" and the others go ahead. A row whose id another level
+of the project also carries (ids are not checked unique; a copied request file keeps its id) is
+refused with "another level has the same id", and no level with that id is switched.
 
 ## 5. How the rewrite works
 

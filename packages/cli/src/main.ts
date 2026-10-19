@@ -8,6 +8,7 @@ import { mockCheckCommand } from './commands/mock-check.js';
 import { mockRecordCommand } from './commands/mock-record.js';
 import { opCommand } from './commands/ops.js';
 import { runCommand } from './commands/run.js';
+import { scriptsConvertCommand } from './commands/scripts-convert.js';
 import { secretsListCommand } from './commands/secrets-list.js';
 import { sshForwardCommand } from './commands/ssh-forward.js';
 import { ExitCode } from './exit-codes.js';
@@ -44,6 +45,9 @@ export async function main(
       }
       case 'secrets-list': {
         return await secretsListCommand(args, io);
+      }
+      case 'scripts-convert': {
+        return await scriptsConvertCommand(args, io);
       }
       case 'op': {
         return await opCommand(args, io);

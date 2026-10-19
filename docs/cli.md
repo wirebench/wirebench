@@ -80,6 +80,9 @@ wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [
                        Also shows where each secret comes from, and prints the
                        secret-sources hash.
 
+wirebench scripts convert <path> [selector…] [--write]
+                       Rewrites imported scripts to the typed API: see "Convert imported scripts" below.
+
 wirebench import <source> [--name <name>]
 wirebench operations [<interface-or-api>]
 wirebench generate <operation> [--optional all|required]
@@ -387,6 +390,78 @@ beside it (`<request>.pre.ts`, `<request>.post.ts`). `wirebench run` runs them o
   - A run allows at most 1 000 jumps (`script-jump-limit`).
   - The `cli` report prints `↳ skipped by its script`, `↳ next: "Name"` or `↳ ended the run` under the request.
   - `wirebench send` and `--sequence` steps ignore these calls, and their script log says so.
+
+## Convert imported scripts
+
+A project imported from another client keeps its scripts in that client's dialect, on the levels they
+came from (see [the scripts guide](https://wirebench.github.io/wirebench/docs/guides/scripts/#scripts-from-other-clients)).
+`wirebench scripts convert` rewrites them to the typed API.
+
+```text
+wirebench scripts convert <path> [selector…] [--write]
+```
+
+- `<path>` is one project directory.
+- A selector is a display path (`Shop/Carts`) or a path on disk (`apis/Shop/requests/Carts/Create cart`),
+  as for `run`. It covers the level it names and every level below it. With no selector, every level that
+  has imported scripts is covered. A selector that matches nothing is exit 2.
+
+Without `--write` the command only previews. For each level it prints the path and the dialect, then a
+unified diff for each phase (`pre`, `post`), then the TODOs left in the converted text, then a total.
+A call that has no typed equivalent stays as a comment with a `TODO(convert)` note. Nothing is written.
+
+```bash
+$ wirebench scripts convert ./project Shop/Carts
+Shop / Carts / Create cart (bruno)
+--- pre (bruno)
++++ pre (typed)
+@@ -1 +1,2 @@
+-bru.setVar('cartId', '42');
++// Converted from a bruno script; the original is in imported-scripts/shop/shop-carts-create cart.pre.js.
++vars.set('cartId', '42');
+--- post (bruno)
++++ post (typed)
+@@ -1,2 +1,4 @@
+-bru.sendRequest({});
+-bru.setVar('d', '4');
++// Converted from a bruno script; the original is in imported-scripts/shop/shop-carts-create cart.post.js.
++// TODO(convert): bru.sendRequest — a script cannot send requests
++// bru.sendRequest({});
++vars.set('d', '4');
+TODOs in post:
+  line 2: bru.sendRequest — a script cannot send requests
+
+1 level, 2 mapped calls, 1 TODO
+Nothing written; run with --write to convert.
+```
+
+With `--write` the command, for each level it can convert:
+
+1. Backs up each phase's imported text to `imported-scripts/<api>/<owner>.<phase>.js`. It never
+   overwrites a file that is there.
+2. Switches the level to the typed API. `enabled`, `secrets`, `timeoutMs` and the post-response order
+   are kept.
+3. Saves the project, and removes the stale layered `.js` file.
+
+```bash
+$ wirebench scripts convert ./project --write
+Converted Shop / Carts / Create cart (bruno): 2 mapped calls, 1 TODO
+  backup: imported-scripts/shop/shop-carts-create cart.pre.js
+  backup: imported-scripts/shop/shop-carts-create cart.post.js
+Converted 1 level, 2 mapped calls, 1 TODO.
+```
+
+A level whose script does not parse is listed with the line and the message, and skipped. It keeps its
+imported script. A level whose id another level also carries (a copied request file keeps its id) is
+listed as `skipped (another level has the same id)` and keeps its imported script, as does the other
+level. A backup that cannot be written (the file exists, the folder is not writable) stops the command
+before the save: the project is not saved; backups already written stay in `imported-scripts/`.
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Done, whatever the TODO count. Also when no level had imported scripts. |
+| 2 | Usage error: no path, an unknown subcommand, a flag the verb does not take, a selector that matches nothing, a workspace path. |
+| 3 | The project cannot be loaded, a backup cannot be written, or the project cannot be saved. |
 
 ## Secrets
 
