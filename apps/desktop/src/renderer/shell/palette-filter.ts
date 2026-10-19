@@ -4,7 +4,7 @@
  * commands before a fuzzy hit such as Close Tab, and "history" lists the History commands first.
  */
 import { defaultFilter } from 'cmdk';
-import { areaKeywords, isAreaLead } from '@shared/command-catalog.js';
+import { areaKeywords, isAreaLead, protocolKeywords } from '@shared/command-catalog.js';
 
 /** A fuzzy match never outranks a group match: cmdk's score is at most 1, so it is scaled under it. */
 const FUZZY_CEILING = 0.9;
@@ -31,8 +31,9 @@ const LENGTH_PENALTY = 1e-7;
 
 /**
  * The names a search can pick a command's group by: its category, the prefix its label leads with
- * (`REST` in `REST: New Request`, `History` in `History: Clear`), and its area's name (`ssh` for the
- * SSH area's commands, given an `id`). These are the item's cmdk keywords.
+ * (`REST` in `REST: New Request`, `History` in `History: Clear`), its area's name (`ssh` for the
+ * SSH area's commands, given an `id`) and the protocols it makes hosts for (`telnet` for New Host…).
+ * These are the item's cmdk keywords.
  */
 export function paletteKeywords(command: {
   readonly id?: string;
@@ -45,7 +46,11 @@ export function paletteKeywords(command: {
     return names;
   }
   const lead = isAreaLead(command.id);
-  return [...names, ...areaKeywords(command.id).map((area) => (lead ? area : `${AREA_MEMBER}${area}`))];
+  return [
+    ...names,
+    ...areaKeywords(command.id).map((area) => (lead ? area : `${AREA_MEMBER}${area}`)),
+    ...protocolKeywords(command.id),
+  ];
 }
 
 /** The keyword a search is matched against, without its {@link AREA_MEMBER} mark. */

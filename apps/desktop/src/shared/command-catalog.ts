@@ -1103,6 +1103,20 @@ export function areaKeywords(id: string): readonly string[] {
   return /^(?:ssh|sftp)\./.test(id) || SSH_AREA_VIEWS.has(id) ? ['ssh'] : [];
 }
 
+/**
+ * The other protocols a host can use (#425, #426, #419): a search for one names the commands that make
+ * or open such a host, whose labels say only "Host" (S40).
+ */
+const PROTOCOL_KEYWORDS: Readonly<Record<string, readonly string[]>> = {
+  'ssh.newHost': ['telnet', 'serial', 'mosh'],
+  'ssh.connectPalette': ['telnet', 'serial', 'mosh'],
+};
+
+/** The protocol names a search can find a command by, beyond its category, label and area. */
+export function protocolKeywords(id: string): readonly string[] {
+  return PROTOCOL_KEYWORDS[id] ?? [];
+}
+
 /** The SSH area's main actions, which a search for the area's name ("ssh") lists first. */
 const SSH_AREA_LEADS: ReadonlySet<string> = new Set(['ssh.connectPalette', 'ssh.newHost']);
 

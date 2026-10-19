@@ -111,3 +111,26 @@ describe('fuzzy ties', () => {
     expect(score('Close Tab', 'close')).toBeGreaterThan(score('Hosts: Connect Local Socket Ending Somewhere', 'close'));
   });
 });
+
+describe('protocol keywords (S40)', () => {
+  const entries = Object.values(COMMAND_CATALOG);
+  const top = (search: string): string[] => {
+    const scored = entries
+      .filter((entry) => entry.paletteHidden !== true)
+      .map((entry) => ({
+        id: entry.id,
+        score: paletteFilter(`${entry.category} ${entry.label}`, search, paletteKeywords(entry)),
+      }));
+    const best = Math.max(...scored.map((row) => row.score));
+    return scored
+      .filter((row) => row.score === best)
+      .map((row) => row.id)
+      .sort();
+  };
+
+  it('"telnet", "serial" and "mosh" lead with New Host… and Connect to Host…', () => {
+    for (const search of ['telnet', 'serial', 'mosh']) {
+      expect(top(search)).toEqual(['ssh.connectPalette', 'ssh.newHost']);
+    }
+  });
+});
