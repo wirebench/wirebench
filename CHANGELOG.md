@@ -29,10 +29,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
-- **A script test with an async callback now fails.** `test(name, async () => …)` used to record a pass
-  whatever the callback did, because a script cannot wait for the promise. It now fails with "the test
-  callback is async, and a test cannot wait: make it synchronous", in the typed API and in every imported
-  script layer.
+- **Lint findings no longer count as Problems.** After importing an OpenAPI definition, its lint findings
+  get their own status bar item (**57 lint findings**, with errors and warnings named in the tooltip),
+  which is never coloured and opens the Problems panel. The **Problems** item and the **Console** badge
+  count only what went wrong, so a clean import of a real-world spec no longer turns the status bar red.
+  The import summary names the findings by severity (**Lint: 2 errors, 55 warnings**) and links to them
+  (#682).
 - **Save stays in view in the New host and Edit host forms.** Cancel and Save sit in a footer bar at the
   bottom of the right panel and the form scrolls above it, so a short window or an open **Advanced**
   section no longer scrolls them away. <kbd>Enter</kbd> in a field still saves. The panel is titled
@@ -62,6 +64,10 @@ All notable changes to this project are documented here. The format follows
   picker now selects that host, from either group, and Enter connects the new pane to it. Before, the
   current host stayed selected (its id matched the typed digits), so the new pane opened on the wrong
   machine. The picker matches on name, address, group path and tags only (#687).
+- **A script test with an async callback now fails.** `test(name, async () => …)` used to record a pass
+  whatever the callback did, because a script cannot wait for the promise. It now fails with "the test
+  callback is async, and a test cannot wait: make it synchronous", in the typed API and in every imported
+  script layer.
 
 ## [6.1.0] - 2026-10-18
 

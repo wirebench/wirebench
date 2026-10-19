@@ -22,6 +22,7 @@ import { lintRestDefinition } from '../rest-api/lint-actions.js';
 import { importUrlCopy } from './import-url-copy.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import { useShallow } from 'zustand/react/shallow';
 import { X, Sparkles } from 'lucide-react';
 import { detectImportFormat, type DetectedImportFormat, type ImportFormatKind } from '@wirebench/engine/detect';
 import type {
@@ -58,7 +59,7 @@ import { SecretField } from '../../components/secret-field.js';
 import { Tabs } from '../../components/tabs.js';
 import { useKerberosAvailability } from '../../lib/use-kerberos-availability.js';
 import { ipc } from '../../state/ipc-client.js';
-import { lintGroupId, useProblemsStore } from '../../state/problems.js';
+import { lintGroupId, lintSummary, useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore, type ImportDialogFormat } from '../../state/ui.js';
 import { getExplorerTree } from './explorer-api.js';
@@ -1998,12 +1999,17 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
   const projectName = useProjectStore((state) =>
     result.kind === 'openapi' ? state.projects[result.projectId]?.name : undefined,
   );
-  // The import lints quietly after it lands, so the count arrives a moment after the summary does.
-  const lintCount = useProblemsStore((state) => {
-    if (result.kind !== 'openapi') return 0;
-    const groupId = lintGroupId(result.apiId);
-    return state.items.filter((item) => item.groupId === groupId).length;
-  });
+  // The import lints quietly after it lands, so the counts arrive a moment after the summary does.
+  const lintCounts = useProblemsStore(
+    useShallow((state) => {
+      if (result.kind !== 'openapi') return { errors: 0, warnings: 0 };
+      const groupId = lintGroupId(result.apiId);
+      const findings = state.items.filter((item) => item.groupId === groupId);
+      const errors = findings.filter((item) => item.severity === 'error').length;
+      return { errors, warnings: findings.length - errors };
+    }),
+  );
+  const lintCount = lintCounts.errors + lintCounts.warnings;
   const [applied, setApplied] = useState<string | undefined>(
     openApiSummary?.securitySchemes.find((scheme) => scheme.applied)?.name,
   );
@@ -2061,13 +2067,14 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
               <button
                 type="button"
                 data-testid="import-openapi-lint"
+                title="Show the findings in the Problems panel"
                 className="mt-1 text-xs text-accent underline"
                 onClick={() => {
                   useUiStore.getState().showConsoleTab('problems');
                   onDone();
                 }}
               >
-                {lintCount} lint finding{lintCount === 1 ? '' : 's'}
+                Lint: {lintSummary(lintCounts.errors, lintCounts.warnings)}
               </button>
             )}
           </div>

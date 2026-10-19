@@ -177,6 +177,34 @@ describe('StatusBar', () => {
     expect(screen.getByTestId('status-bar-problems').className).toContain('text-status-danger');
   });
 
+  it('counts lint findings apart, untinted, and leaves them out of Problems and the Console badge', () => {
+    useProblemsStore.getState().setLint('api-1', [
+      { rule: 'oas3-schema', severity: 'error', message: 'm', path: '/paths', source: 's' },
+      { rule: 'info-description', severity: 'warning', message: 'm', path: '/info', source: 's' },
+      { rule: 'media-example', severity: 'hint', message: 'm', path: '/paths', source: 's' },
+    ]);
+    render(<StatusBar />);
+
+    const problems = screen.getByTestId('status-bar-problems');
+    expect(problems.textContent).toBe('0 problems');
+    expect(problems.className).not.toContain('text-status-');
+    const consoleButton = screen.getByTestId('status-bar-console');
+    expect(consoleButton.textContent).toBe('Console');
+    expect(consoleButton.className).not.toContain('text-status-');
+
+    const lint = screen.getByTestId('status-bar-lint');
+    expect(lint.textContent).toBe('3 lint findings');
+    expect(lint.getAttribute('title')).toBe('Lint: 1 error, 2 warnings. Show the Problems panel');
+    expect(lint.className).not.toContain('text-status-');
+    fireEvent.click(lint);
+    expect(useUiStore.getState().console.activeTab).toBe('problems');
+  });
+
+  it('shows no lint item without lint findings', () => {
+    render(<StatusBar />);
+    expect(screen.queryByTestId('status-bar-lint')).toBeNull();
+  });
+
   it('shows the theme indicator and cycles on click', () => {
     useUiStore.setState({ theme: 'light' });
     render(<StatusBar />);

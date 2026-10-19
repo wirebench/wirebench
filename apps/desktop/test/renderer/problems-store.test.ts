@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Problem } from '../../src/renderer/state/problems.js';
-import { useProblemsStore } from '../../src/renderer/state/problems.js';
+import { countProblems, lintSummary, useProblemsStore } from '../../src/renderer/state/problems.js';
 
 function expansion(requestId: string, message: string): Problem {
   return {
@@ -41,5 +41,47 @@ describe('useProblemsStore', () => {
     useProblemsStore.getState().add([expansion('req-1', 'a')]);
     useProblemsStore.getState().clear('expansion:req-1');
     expect(useProblemsStore.getState().items).toEqual([]);
+  });
+});
+
+describe('countProblems', () => {
+  function problem(groupId: string, source: Problem['source'], severity: Problem['severity']): Problem {
+    return { groupId, source, severity, problem: { code: 'c', message: 'm' } };
+  }
+
+  it('counts lint findings apart from the problems, by severity', () => {
+    expect(
+      countProblems([
+        problem('lint:api-1', 'lint', 'error'),
+        problem('lint:api-1', 'lint', 'error'),
+        problem('lint:api-1', 'lint', 'warning'),
+        problem('lint:api-2', 'lint', 'warning'),
+        problem('expansion:req-1', 'expansion', 'warning'),
+        problem('iface-1', 'import', 'error'),
+      ]),
+    ).toEqual({ problems: 2, errors: 1, lintErrors: 2, lintWarnings: 2 });
+  });
+
+  it('leaves a failed SSH connect out of every count', () => {
+    expect(countProblems([problem('ssh:host-1', 'send', 'error')])).toEqual({
+      problems: 0,
+      errors: 0,
+      lintErrors: 0,
+      lintWarnings: 0,
+    });
+  });
+
+  it('counts nothing in an empty list', () => {
+    expect(countProblems([])).toEqual({ problems: 0, errors: 0, lintErrors: 0, lintWarnings: 0 });
+  });
+});
+
+describe('lintSummary', () => {
+  it('names both severities, singular or plural, and leaves out one with none', () => {
+    expect(lintSummary(2, 55)).toBe('2 errors, 55 warnings');
+    expect(lintSummary(1, 1)).toBe('1 error, 1 warning');
+    expect(lintSummary(0, 3)).toBe('3 warnings');
+    expect(lintSummary(4, 0)).toBe('4 errors');
+    expect(lintSummary(0, 0)).toBe('');
   });
 });

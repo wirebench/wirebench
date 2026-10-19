@@ -307,7 +307,7 @@ describe('the import summary', () => {
     expect(screen.getByTestId('import-openapi-counts').textContent).toBe('7 requests in 2 folders, 1 deprecated.');
   });
 
-  it('counts the lint findings the import filed, and opens Problems from them', async () => {
+  it('sums up the lint findings the import filed by severity, and opens Problems from them', async () => {
     useProblemsStore.setState({ items: [] });
     await importAndSummarise(summary());
     expect(screen.queryByTestId('import-openapi-lint')).toBeNull();
@@ -316,10 +316,11 @@ describe('the import summary', () => {
       useProblemsStore.getState().setLint('api-1', [
         { rule: 'info-description', severity: 'warning', message: 'm', path: '/info', source: 's' },
         { rule: 'media-example', severity: 'hint', message: 'm', path: '/paths', source: 's' },
+        { rule: 'oas3-schema', severity: 'error', message: 'm', path: '/paths', source: 's' },
       ]);
     });
     const link = screen.getByTestId('import-openapi-lint');
-    expect(link.textContent).toBe('2 lint findings');
+    expect(link.textContent).toBe('Lint: 1 error, 2 warnings');
     await userEvent.click(link);
     expect(useUiStore.getState().console.activeTab).toBe('problems');
     useProblemsStore.setState({ items: [] });
