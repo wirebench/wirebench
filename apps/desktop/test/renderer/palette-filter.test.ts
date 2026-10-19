@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { paletteFilter, paletteKeywords } from '../../src/renderer/shell/palette-filter.js';
+import { keywordName, paletteFilter, paletteKeywords } from '../../src/renderer/shell/palette-filter.js';
 import { COMMAND_CATALOG } from '../../src/shared/command-catalog.js';
 
 describe('paletteKeywords', () => {
@@ -50,7 +50,9 @@ describe('the ssh keyword', () => {
     paletteFilter(`${entry.category} ${entry.label}`, search, paletteKeywords(entry));
 
   it('belongs to every SSH-area command, and to no other', () => {
-    const ssh = entries.filter((entry) => paletteKeywords(entry).includes('ssh')).map((entry) => entry.id);
+    const ssh = entries
+      .filter((entry) => paletteKeywords(entry).map(keywordName).includes('ssh'))
+      .map((entry) => entry.id);
     expect(ssh).toContain('view.showHosts');
     expect(ssh).toContain('view.showForwarding');
     expect(ssh).toContain('view.showSnippets');
@@ -64,12 +66,48 @@ describe('the ssh keyword', () => {
     expect(ssh).not.toContain('secrets.toggleShowSecrets');
   });
 
+  const isSsh = (entry: (typeof entries)[number]): boolean => paletteKeywords(entry).map(keywordName).includes('ssh');
+
   it('ranks every SSH command above any subsequence hit for "ssh"', () => {
-    const sshScores = entries.filter((entry) => paletteKeywords(entry).includes('ssh')).map((e) => scoreOf(e, 'ssh'));
-    const others = entries.filter((entry) => !paletteKeywords(entry).includes('ssh')).map((e) => scoreOf(e, 'ssh'));
-    expect(Math.min(...sshScores)).toBe(1);
+    const sshScores = entries.filter(isSsh).map((e) => scoreOf(e, 'ssh'));
+    const others = entries.filter((entry) => !isSsh(entry)).map((e) => scoreOf(e, 'ssh'));
+    expect(Math.min(...sshScores)).toBeGreaterThan(0.9);
     // "Secrets: Toggle Show Secrets" and the like still match as a subsequence, but below.
     expect(Math.max(...others)).toBeGreaterThan(0);
     expect(Math.max(...others)).toBeLessThan(1);
+  });
+
+  it('leads with Connect to Host… and New Host… (S68)', () => {
+    const ranked = entries
+      .filter((entry) => entry.paletteHidden !== true && isSsh(entry))
+      .map((entry) => ({ id: entry.id, score: scoreOf(entry, 'ssh') }))
+      .sort((a, b) => b.score - a.score);
+    expect(
+      ranked
+        .slice(0, 2)
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual(['ssh.connectPalette', 'ssh.newHost']);
+    expect(ranked[2]?.score).toBeLessThan(ranked[1]?.score ?? 0);
+  });
+});
+
+describe('fuzzy ties', () => {
+  const score = (label: string, search: string): number =>
+    paletteFilter(`Hosts ${label}`, search, paletteKeywords({ category: 'Hosts', label }));
+
+  it('selects New Host… for "new host", over New Host Group… (S55)', () => {
+    expect(score('Hosts: New Host…', 'new host')).toBeGreaterThan(score('Hosts: New Host Group…', 'new host'));
+  });
+
+  it('still selects New Host Group… for "new host group"', () => {
+    expect(score('Hosts: New Host Group…', 'new host group')).toBeGreaterThan(
+      score('Hosts: New Host…', 'new host group'),
+    );
+  });
+
+  it('never reorders two different fuzzy scores by length', () => {
+    // "close" matches Close Tab better than a long label that merely contains the letters.
+    expect(score('Close Tab', 'close')).toBeGreaterThan(score('Hosts: Connect Local Socket Ending Somewhere', 'close'));
   });
 });
