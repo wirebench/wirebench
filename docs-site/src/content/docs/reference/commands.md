@@ -167,6 +167,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Sequence: New Sequence | — | — |
 | Runner: Run Selection… | — | — |
 | Scripts: Clear Session Values | — | — |
+| Scripts: Convert All Imported Scripts… | — | — |
 
 ## Request
 

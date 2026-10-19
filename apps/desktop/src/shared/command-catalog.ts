@@ -690,6 +690,12 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Scripts: Clear Session Values',
     category: 'Explorer',
   },
+  // Every imported script of the current project, rewritten to the typed API after a review.
+  'script.convertAll': {
+    id: 'script.convertAll',
+    label: 'Scripts: Convert All Imported Scripts…',
+    category: 'Explorer',
+  },
   'env.switch': {
     id: 'env.switch',
     label: 'Switch Environment…',

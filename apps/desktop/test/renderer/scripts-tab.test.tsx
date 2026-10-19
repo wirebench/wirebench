@@ -14,6 +14,7 @@ vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mock
 
 const { ScriptsTab, hasScripts, parseSecretNames } = await import('../../src/renderer/features/scripts/scripts-tab.js');
 const { useProjectStore } = await import('../../src/renderer/state/project.js');
+const { useConvertScriptsDialog } = await import('../../src/renderer/features/scripts/convert-scripts-dialog.js');
 const { flushScriptEdits, hasScriptEditors } = await import('../../src/renderer/state/script-edits.js');
 
 const updateRequestScripts = vi.fn();
@@ -116,6 +117,21 @@ describe('ScriptsTab', () => {
     fireEvent.change(field, { target: { value: 'signing_key, api_token signing_key' } });
     fireEvent.blur(field);
     expect(updateRequestScripts).toHaveBeenCalledWith('r1', { secrets: ['signing_key', 'api_token'] });
+  });
+
+  it('the button shows only on a layered level', () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    useConvertScriptsDialog.setState({ open });
+    useProjectStore.setState({ projectOf: { f1: 'p1' } });
+    const { rerender } = render(<ScriptsTab requestId="f1" level="folder" scripts={{ ...OFF, enabled: true }} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Convert to Wirebench script' }));
+    expect(open).toHaveBeenCalledWith('p1', 'f1');
+
+    rerender(<ScriptsTab requestId="f1" level="folder" scripts={{ ...OFF, api: 'wirebench' }} />);
+    expect(screen.queryByRole('button', { name: 'Convert to Wirebench script' })).toBeNull();
+    rerender(<ScriptsTab requestId="f1" level="folder" scripts={undefined} />);
+    expect(screen.queryByRole('button', { name: 'Convert to Wirebench script' })).toBeNull();
   });
 
   it("shows the checker's errors under the editor", async () => {

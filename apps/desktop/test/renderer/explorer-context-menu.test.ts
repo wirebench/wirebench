@@ -1,6 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { explorerMenuGroups, explorerMenuItems } from '../../src/renderer/features/explorer/context-menu.js';
-import type { ExplorerNode } from '../../src/renderer/features/explorer/tree-nodes.js';
+import { buildExplorerTree, type ExplorerNode } from '../../src/renderer/features/explorer/tree-nodes.js';
+import { useConvertScriptsDialog } from '../../src/renderer/features/scripts/convert-scripts-dialog.js';
+import { useProjectStore } from '../../src/renderer/state/project.js';
+import { restApiWire, restFolderWire, restRequestWire } from '../helpers/wire-defaults.js';
 import { useMockRunsStore } from '../../src/renderer/state/mock-runs.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
@@ -505,5 +508,62 @@ describe('Run… in the explorer', () => {
     expect(runnerTargetOf({ kind: 'sequence', id: 'sequence:s1' })).toBe('s1');
     expect(runnerTargetOf({ kind: 'rest-request', id: 'rest:r1', apiId: 'a1', requestId: 'r1' })).toBe('r1');
     expect(runnerTargetOf(undefined)).toBeUndefined();
+  });
+});
+
+/** **Convert scripts…**: an interface, API or folder with layered scripts at or below it. */
+describe('Convert scripts… in the explorer', () => {
+  const LAYERED = { api: 'postman' as const, enabled: true, secrets: [], pre: 'pm.variables.set("a", "1");' };
+  const TYPED = { api: 'wirebench' as const, enabled: true, secrets: [], pre: 'variables.set("a", "1");' };
+
+  function tree(): ExplorerNode[] {
+    return buildExplorerTree(
+      [{ id: 'p1', name: 'Demo', source: 'internal', dir: '/demo', status: 'ready' }],
+      [{ projectId: 'p1', interfaceIds: [] }],
+      {},
+      [],
+      {
+        p1: {
+          apis: [restApiWire({ id: 'api-1', name: 'Shop' })],
+          folders: [
+            restFolderWire({ id: 'f1', apiId: 'api-1', name: 'Carts' }),
+            restFolderWire({ id: 'f2', apiId: 'api-1', name: 'Typed', scripts: TYPED }),
+          ],
+          requests: [
+            restRequestWire({ id: 'r1', apiId: 'api-1', folderId: 'f1', name: 'Cart', scripts: LAYERED }),
+            restRequestWire({ id: 'r2', apiId: 'api-1', folderId: 'f2', name: 'Plain', scripts: TYPED }),
+          ],
+        },
+      },
+    );
+  }
+
+  function find(nodes: readonly ExplorerNode[], id: string): ExplorerNode | undefined {
+    for (const entry of nodes) {
+      if (entry.id === id) return entry;
+      const inside = find(entry.children ?? [], id);
+      if (inside !== undefined) return inside;
+    }
+    return undefined;
+  }
+
+  it('the menu offers Convert scripts… only with layered levels beneath', () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    useConvertScriptsDialog.setState({ open });
+    useProjectStore.setState({ projectOf: { 'api-1': 'p1', f1: 'p1', f2: 'p1', r1: 'p1', r2: 'p1' } });
+    const nodes = tree();
+    const labels = (id: string): string[] => explorerMenuItems(find(nodes, id)!).map((item) => item.label);
+
+    expect(find(nodes, 'api:api-1')?.scriptsLayered).toEqual(['r1']);
+    expect(find(nodes, 'folder:f1')?.scriptsLayered).toEqual(['r1']);
+    expect(find(nodes, 'folder:f2')?.scriptsLayered).toBeUndefined();
+    expect(labels('api:api-1')).toContain('Convert scripts…');
+    expect(labels('folder:f1')).toContain('Convert scripts…');
+    expect(labels('folder:f2')).not.toContain('Convert scripts…');
+
+    explorerMenuItems(find(nodes, 'folder:f1')!)
+      .find((item) => item.label === 'Convert scripts…')
+      ?.run();
+    expect(open).toHaveBeenCalledWith('p1', 'f1');
   });
 });
