@@ -240,6 +240,20 @@ describe('StatusBar', () => {
     expect(screen.getByTestId('status-bar-problems')).toBeTruthy();
   });
 
+  it('in Settings over the SSH area, the item that comes first hides its separator (S54)', () => {
+    useEditorsStore.setState({ displayedSet: 'ssh' });
+    useUiStore.getState().setPreferencesOpen(true);
+    try {
+      render(<StatusBar />);
+      const items = screen.getByTestId('status-bar-items');
+      expect(items.firstElementChild?.getAttribute('aria-hidden')).toBe('true');
+      expect(items.className).toContain('[&>[aria-hidden=true]:first-child]:hidden');
+    } finally {
+      useUiStore.getState().setPreferencesOpen(false);
+      useEditorsStore.setState({ displayedSet: 'explorer' });
+    }
+  });
+
   it('leaves a failed SSH connect out of the counts: its connection screen says what failed (#537)', () => {
     useProblemsStore.getState().add([
       {
