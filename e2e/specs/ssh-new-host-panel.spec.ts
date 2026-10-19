@@ -1,11 +1,12 @@
 import { expect, test, type Locator } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createWorkspace } from '../helpers/project.js';
-import { fillNewHost, showSshNav } from '../helpers/ssh-host.js';
+import { fillNewHost, openAdvanced, showSshNav } from '../helpers/ssh-host.js';
 
 /*
  * New host in the details panel (#674): the form opens beside the hosts rather than over them, a draft card
- * stands where Save will put the host, and leaving a form with typing in it asks first.
+ * stands where Save will put the host, and leaving a form with typing in it asks first. Cancel and Save sit
+ * in a footer under the scrolling fields, so a long form never scrolls them away (#689).
  */
 
 let launched: LaunchedApp | undefined;
@@ -25,6 +26,17 @@ async function contentSize(app: LaunchedApp, width: number, height: number): Pro
     },
     { width, height },
   );
+}
+
+/** That `form`'s Save is whole inside a 700px-high window and its fields scroll above it (#689). */
+async function saveInView(form: Locator): Promise<void> {
+  const save = await box(form.getByRole('button', { name: 'Save' }));
+  expect(save.y).toBeGreaterThan(0);
+  expect(save.y + save.height).toBeLessThanOrEqual(700);
+  const scrolls = await form
+    .getByTestId('host-form-fields')
+    .evaluate((fields) => fields.scrollHeight > fields.clientHeight);
+  expect(scrolls).toBe(true);
 }
 
 async function box(of: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
@@ -53,6 +65,10 @@ test('New host opens in the panel with a draft card, at 1024×700 (#674)', async
   await expect(draft).toContainText('web-2');
   await expect(draft).toContainText('deploy@127.0.0.1:2222');
 
+  // With Advanced open the form is longer than the panel; Save stays in view in the footer (#689).
+  await openAdvanced(form);
+  await saveInView(form);
+
   // The draft card and the panel sit side by side, both whole.
   const card = await box(draft);
   const panel = await box(page.getByTestId('slide-over'));
@@ -75,12 +91,25 @@ test('New host opens in the panel with a draft card, at 1024×700 (#674)', async
   await expect(page.getByTestId('host-row-web-2')).toBeVisible();
   await expect(page.getByTestId('slide-over')).toBeHidden();
 
+  // Edit host: the panel says so (S48), Save stays in view with Advanced open, and Enter in a field saves.
+  await page.getByTestId('host-row-web-2').click();
+  if (!(await page.getByTestId('host-details').isVisible())) await page.getByTestId('rail-host-details').click();
+  await page.getByTestId('host-details').getByRole('button', { name: 'Edit' }).click();
+  const edit = page.getByTestId('host-edit');
+  await expect(page.getByTestId('slide-over')).toHaveAttribute('aria-label', 'Edit host');
+  await openAdvanced(edit);
+  await saveInView(edit);
+  await edit.getByLabel('Name', { exact: true }).fill('web-2b');
+  await edit.getByLabel('Name', { exact: true }).press('Enter');
+  await expect(edit).toBeHidden();
+  await expect(page.getByTestId('host-details')).toContainText('web-2b');
+
   // Duplicate opens the form filled in from the host; Cancel on it, untouched, drops the draft at once.
   await page.getByTestId('host-row-web-2').click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Duplicate' }).click();
-  await expect(form.getByLabel('Name', { exact: true })).toHaveValue('web-2 copy');
+  await expect(form.getByLabel('Name', { exact: true })).toHaveValue('web-2b copy');
   await expect(form.getByLabel('Address', { exact: true })).toHaveValue('127.0.0.1');
-  await expect(draft).toContainText('web-2 copy');
+  await expect(draft).toContainText('web-2b copy');
   await form.getByRole('button', { name: 'Cancel' }).click();
   await expect(ask).toBeHidden();
   await expect(draft).toHaveCount(0);
