@@ -166,6 +166,32 @@ describe('JoinShareDialog (#429)', () => {
     expect(store.useTerminalShareStore.getState().joinOpen).toBe(false);
   });
 
+  it('keeps the state that arrives before join answers, so the count is right at once (#690)', async () => {
+    const off = store.subscribeToShareEvents();
+    let viewId = '';
+    terminalShare.join.mockImplementation((request: { viewId: string }) => {
+      viewId = request.viewId;
+      listeners.get('terminalShare.viewerState')!({
+        viewId,
+        viewers: [{ userId: ME, name: 'Me', control: false, requesting: false }],
+        control: null,
+        self: ME,
+        requesting: false,
+        cols: 120,
+        rows: 40,
+      });
+      return Promise.resolve(ok({ viewId, hostName: 'web', ownerName: 'Alice', cols: 80, rows: 24 }));
+    });
+    vi.spyOn(useEditorsStore.getState(), 'open').mockImplementation(() => undefined);
+    expect(await store.joinShare(SHARE.invite)).toEqual({ ok: true });
+    expect(store.useTerminalShareStore.getState().views[viewId]).toMatchObject({
+      cols: 120,
+      rows: 40,
+      state: { viewers: [{ userId: ME }] },
+    });
+    off();
+  });
+
   it('shows why a link cannot be joined', async () => {
     terminalShare.preview.mockResolvedValue({ ok: false, error: { message: 'That is not a shared terminal link.' } });
     store.openJoinShare();
@@ -214,11 +240,24 @@ describe('ShareViewTab (#429)', () => {
     expect(terminalShare.release).toHaveBeenCalledWith({ viewId: 'v1' });
   });
 
-  it('says why the share ended, and leaves it when the tab closes', () => {
+  it('counts this user among those watching, as the owner does (#690)', () => {
+    setView(state({ viewers: [{ userId: ME, name: 'Me', control: false, requesting: false }] }));
+    render(<ShareViewTab tabId="terminal-share:v1" />);
+    expect(screen.getByTestId('share-view-watching').textContent).toBe('1 watching');
+    expect(screen.getByText('Me (you)')).toBeTruthy();
+  });
+
+  it('says why the share ended, offers to close the tab, and leaves it when the tab closes', () => {
+    const close = vi.spyOn(useEditorsStore.getState(), 'close').mockImplementation(() => undefined);
     setView(state({ ended: 'removed' }));
     const { unmount } = render(<ShareViewTab tabId="terminal-share:v1" />);
     expect(screen.getByTestId('share-view-ended').textContent).toBe('The owner removed you from this shared terminal.');
     expect(screen.queryByRole('button', { name: 'Request control' })).toBeNull();
+    // An ended share has no count and no chips, even with a stale viewer list.
+    expect(screen.queryByTestId('share-view-watching')).toBeNull();
+    expect(screen.queryByText('Me (you)')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Close tab' }));
+    expect(close).toHaveBeenCalledWith('terminal-share:v1');
     unmount();
     expect(terminalShare.leave).toHaveBeenCalledWith({ viewId: 'v1' });
   });

@@ -56,6 +56,16 @@ The **Body** tab switches between five kinds, each keeping its own draft while y
 
 ![The Body tab of a POST request set to Raw, holding a small JSON object](/wirebench/docs/images/rest-client/body-tab.png)
 
+A JSON body can hold comments, to switch a field off while you try a request without deleting it.
+<kbd>⌘/</kbd> / <kbd>Ctrl+/</kbd> toggles `//` on the selected lines and <kbd>⇧⌥A</kbd> /
+<kbd>Shift+Alt+A</kbd> toggles `/* */` around the selection. The request is saved with its comments;
+they are removed when it is sent, together with a comma left trailing by a commented-out last field,
+so the server still receives JSON. Slashes inside strings (`"http://…"`) are left alone, and a
+`${…}` reference inside a comment is never resolved. *Copy as cURL*, generated code, the CLI, MCP
+sends, the runner, History and the HTTP log all show the body without its comments. Comments are
+read only in a Raw body set to JSON and in GraphQL variables, never because of a `Content-Type`
+header. Format refuses a body with comments rather than dropping them, and so does the JSON form.
+
 When a request was imported from an OpenAPI document and its operation declares a JSON request body,
 a **Text / Form** switch appears next to the language picker while the body is Raw and set to JSON.
 Form shows one field per property, labelled by its path (`owner.first`, `tags[0]`), with buttons to

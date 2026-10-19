@@ -727,6 +727,7 @@ export { fromRestCurl, restToCurl, CURL_REDACTED } from './rest/curl.js';
 export { notCurlReason, stripShellPrompt } from './http/curl-start.js';
 export type { FromRestCurlOptions, FromRestCurlResult, RestToCurlOptions } from './rest/curl.js';
 export { expandRestSendInput } from './rest/expand.js';
+export { hasJsonComments, stripJsonComments, stripRestBodyComments } from './rest/json-comments.js';
 export { GRAPHQL_BODY_EXTENSION } from './rest/model.js';
 export { graphqlPayload, graphqlPayloadText, lowerGraphqlBody, lowerGraphqlBodyText } from './rest/graphql/body.js';
 export type { GraphqlBody } from './rest/graphql/body.js';
