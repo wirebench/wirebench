@@ -1100,11 +1100,14 @@ describe('Group headings', () => {
 describe('Host OS', () => {
   const ubuntu = { detected: { id: 'ubuntu' as const, name: 'Ubuntu', version: '22.04' } };
 
-  it('the card shows what the last connection found', () => {
+  it('the card shows what the last connection found on its icon, and still leads with the target (S56)', () => {
     useHostsStore.setState({ osByHost: { '10.0.0.1:22': ubuntu } });
     render(<SshHome />);
-    expect(screen.getByTestId('host-row-a').textContent).toContain('Ubuntu 22.04');
-    expect(screen.getByTestId('host-row-b').textContent).not.toContain('Ubuntu');
+    const card = screen.getByTestId('host-row-a');
+    expect(card.querySelector('[title="Ubuntu 22.04"]')).not.toBeNull();
+    expect(card.textContent).not.toContain('Ubuntu');
+    expect(card.textContent).toContain('10.0.0.1');
+    expect(screen.getByTestId('host-row-b').querySelector('[title^="Ubuntu"]')).toBeNull();
   });
   it('the details say whether it was detected or chosen', () => {
     useHostsStore.setState({ osByHost: { '10.0.0.1:22': ubuntu }, selectedHostId: 'a' });

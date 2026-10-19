@@ -209,13 +209,13 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
               )}
             </span>
             <span className="truncate text-xs leading-4 text-fg-subtle">
-              {/* The warning takes the second line's start, so the name keeps the first line's width. */}
+              {/* The warning takes the second line's start, so the name keeps the first line's width. The OS is
+                  the icon and its tooltip only: as text before the target it cut off what tells hosts apart. */}
               {warning !== undefined && (
                 <>
                   <span className="text-status-warning">{warning}</span> ·{' '}
                 </>
               )}
-              {osText !== undefined && <span>{osText} · </span>}
               {resolved?.ssh.protocol?.value === 'telnet' && (
                 <span className="mr-1 inline-flex align-[-1px]">
                   <PlainTextMark />
