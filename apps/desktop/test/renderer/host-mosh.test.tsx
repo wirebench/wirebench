@@ -139,7 +139,7 @@ describe('the protocol section of the host form (#419)', () => {
     await userEvent.selectOptions(select(), 'mosh');
     await userEvent.type(within(section()).getByLabelText('UDP ports'), '9:1');
     expect(within(section()).getByRole('alert').textContent).toMatch(/LOW:HIGH/);
-    expect(screen.getByRole('list', { name: 'Needed to save' }).textContent).toMatch(/UDP ports/);
+    expect(screen.getByTestId('host-form-missing').textContent).toMatch(/UDP ports/);
   });
 });
 

@@ -47,10 +47,13 @@ import {
   sshPreferenceDefaults,
   inheritedProtected,
   initialGroup,
+  fieldGaps,
   missingFields,
+  missingSummary,
   passwordSecretName,
   slug,
   withField,
+  type FormField,
 } from './host-form-model.js';
 import { useSecretNames } from './secret-fields.js';
 import { findIdentity, identitiesOf } from './identities.js';
@@ -249,7 +252,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
       serialProblem(ssh.serial),
     ].filter((p): p is string => p !== undefined),
   ];
-  const missing = missingFields({
+  const saveCheck = {
     isHost,
     // A copy saves as its original was: it asks for no sign-in the original did without.
     needsLogin: fresh && viaSsh && copy === undefined,
@@ -262,13 +265,31 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
     auth: serial ? undefined : ssh.auth,
     inheritedAuth: loginAuth.value,
     password: serial ? '' : password,
+    passwordAsked: !telnet,
     sectionProblems,
-  });
+  };
+  const missing = missingFields(saveCheck);
   const valid = missing.length === 0;
   // A blank new form names no required field until Save or a required field left empty; a section's own
   // problem (a proxy without a host) shows at once, since only an edit can cause it (#594).
   const { revealed, reveal, onBlur } = useRevealMissing();
   const shown = revealed ? missing : sectionProblems;
+  // Each empty required field says so under itself; the footer keeps one line (S59).
+  const gaps = revealed ? fieldGaps(saveCheck) : [];
+  const gapOf = (field: FormField): string | undefined => gaps.find((gap) => gap.field === field)?.message;
+  const summary = missingSummary(gaps.length, sectionProblems);
+  const gapLine = (field: FormField) => {
+    const message = gapOf(field);
+    return message === undefined ? null : (
+      <span
+        id={`${missingId}-${field}`}
+        data-testid={`host-form-gap-${field}`}
+        className="-mt-2 text-xs text-status-danger"
+      >
+        {message}
+      </span>
+    );
+  };
 
   // Whether leaving now would drop something typed; the New host form also draws its draft card from this.
   const [startedAs] = useState(() =>
@@ -340,6 +361,14 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
       setSsh(clean);
       setPassword('');
       setSecretError(undefined);
+    } else if (clean.auth?.kind === 'password' && clean.auth.secret === '' && !telnet) {
+      // A password left empty is asked for when the host connects (S60): the file names the secret the
+      // connection screen stores it under, and nothing is stored now.
+      const secret = passwordSecretName(
+        id,
+        secretNames.map((n) => n.name),
+      );
+      clean = { ...clean, auth: { ...clean.auth, secret } };
     }
     const proxy = cleanProxy(clean.proxy);
     if (proxy !== undefined) clean = { ...clean, proxy };
@@ -454,14 +483,17 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
         embedded ? 'flex shrink-0 items-start gap-2 border-t border-hairline px-1 pt-2' : 'flex items-start gap-2'
       }
     >
-      {shown.length === 0 ? (
+      {summary === undefined ? (
         <span className="flex-1" />
       ) : (
-        <ul id={missingId} aria-label="Needed to save" className="flex-1 text-xs text-fg-subtle">
-          {shown.map((m) => (
-            <li key={m}>{m}</li>
-          ))}
-        </ul>
+        <p
+          id={missingId}
+          data-testid="host-form-missing"
+          title={summary}
+          className="min-w-0 flex-1 self-center truncate text-xs text-fg-subtle"
+        >
+          {summary}
+        </p>
       )}
       <Button onClick={cancel}>Cancel</Button>
       <Button
@@ -514,6 +546,8 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
           <span className="text-fg-subtle">Name</span>
           <input
             aria-required="true"
+            aria-invalid={gapOf('name') === undefined ? undefined : 'true'}
+            aria-describedby={gapOf('name') === undefined ? undefined : `${missingId}-name`}
             className={INPUT_CLASS}
             value={name}
             onChange={(e) => {
@@ -521,6 +555,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             }}
           />
         </label>
+        {gapLine('name')}
         {/* Protocol reshapes the rest of the form, so it comes before what it changes. */}
         {protocolSection}
         {isHost && !serial && (
@@ -528,6 +563,8 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             <span className="text-fg-subtle">Address</span>
             <input
               aria-required="true"
+              aria-invalid={gapOf('address') === undefined ? undefined : 'true'}
+              aria-describedby={gapOf('address') === undefined ? undefined : `${missingId}-address`}
               className={INPUT_CLASS}
               value={address}
               placeholder="host.example.com or 10.0.0.5"
@@ -537,6 +574,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             />
           </label>
         )}
+        {isHost && !serial && gapLine('address')}
         {!serial && (identities.length > 0 || ssh.identity !== undefined) && (
           <label className={FIELD_CLASS}>
             <span className="flex gap-2 text-fg-subtle">
@@ -593,6 +631,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
                 onChange={set('port')}
               />
             </div>
+            {gapLine('user')}
             <HostAuthSection
               value={ssh.auth}
               inherited={loginAuth}
@@ -604,7 +643,9 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
                 setPassword(typed);
               }}
               passwordOnly={telnet}
+              emptyAsked={!telnet}
             />
+            {gapLine('auth')}
           </>
         )}
         {/* After the sign-in, so it does not split the address from the user (S47). */}

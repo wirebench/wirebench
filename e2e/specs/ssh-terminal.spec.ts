@@ -47,16 +47,18 @@ test('connect to a host, trust its key, type, see the echo, end the session', as
   // Essentials first: the rest waits under a closed Advanced. A blank form names nothing; Save says what it
   // needs and stays off until it is there.
   await expect(dialog.getByLabel('Tags (comma separated)')).toBeHidden();
-  await expect(dialog.getByRole('list', { name: 'Needed to save' })).toHaveCount(0);
+  await expect(dialog.getByTestId('host-form-missing')).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog.getByRole('button', { name: 'Save' })).toBeDisabled();
-  await expect(dialog.getByRole('list', { name: 'Needed to save' })).toContainText('Address is required');
+  // Each empty field says so under itself; the footer keeps one line.
+  await expect(dialog.getByTestId('host-form-gap-address')).toHaveText('Address is required');
+  await expect(dialog.getByTestId('host-form-missing')).toHaveText('2 fields need a value');
   // No group supplies a user, so User is a plain field (no Override switch), prefilled with the login name.
   await expect(dialog.getByRole('switch', { name: 'Override User' })).toHaveCount(0);
   await expect(dialog.getByLabel('User', { exact: true })).not.toHaveValue('');
   // The password is typed inline; Save stores it as the workspace secret box_password.
   await fillNewHost(dialog, { name: 'box', port: fixture.port, user: 'tester', password: 'pw' });
-  await expect(dialog.getByRole('list', { name: 'Needed to save' })).toHaveCount(0);
+  await expect(dialog.getByTestId('host-form-missing')).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog).toBeHidden();
 

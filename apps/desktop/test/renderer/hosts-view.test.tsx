@@ -427,35 +427,57 @@ describe('Hosts tab', () => {
   it('a blank form names nothing until a required field is left empty', async () => {
     render(<SshArea />);
     await userEvent.click(screen.getByRole('button', { name: /New host/ }));
-    expect(screen.queryByRole('list', { name: 'Needed to save' })).toBeNull();
+    expect(screen.queryByTestId('host-form-missing')).toBeNull();
     await userEvent.click(screen.getByLabelText('Name'));
     await userEvent.tab();
-    expect(screen.getByRole('list', { name: 'Needed to save' }).textContent).toContain('Name is required');
+    expect(screen.getByTestId('host-form-gap-name').textContent).toBe('Name is required');
   });
   it('Save on an incomplete form lists what is missing and stays off until it is filled in', async () => {
     render(<SshArea />);
     await userEvent.click(screen.getByRole('button', { name: /New host/ }));
-    const missing = () => screen.getByRole('list', { name: 'Needed to save' }).textContent;
+    const missing = () => screen.getByTestId('host-form-missing').textContent;
     await vi.waitFor(() => {
       expect(screen.getByLabelText<HTMLInputElement>('User').value).toBe('me');
     });
-    expect(screen.queryByRole('list', { name: 'Needed to save' })).toBeNull();
+    expect(screen.queryByTestId('host-form-missing')).toBeNull();
     const saves = saveHosts.mock.calls.length;
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(saveHosts.mock.calls.length).toBe(saves);
-    expect(missing()).toContain('Name is required');
-    expect(missing()).toContain('Address is required');
-    expect(missing()).toContain('Password is required');
+    // Each gap sits under its own field; the footer keeps one line (S59).
+    expect(missing()).toBe('2 fields need a value');
+    expect(screen.getByTestId('host-form-gap-name').textContent).toBe('Name is required');
+    expect(screen.getByTestId('host-form-gap-address').textContent).toBe('Address is required');
+    expect(screen.getByLabelText('Address').getAttribute('aria-invalid')).toBe('true');
+    // The password may stay empty: it is asked for when the host connects (S60).
+    expect(screen.queryByTestId('host-form-gap-auth')).toBeNull();
+    expect(screen.getByText('Left empty, it is asked for when you connect.')).toBeDefined();
     await userEvent.type(screen.getByLabelText('Name'), 'x');
     await userEvent.type(screen.getByLabelText('Address'), 'y');
     await userEvent.clear(screen.getByLabelText('User'));
-    expect(missing()).not.toContain('Name is required');
-    expect(missing()).toContain('User is required');
+    expect(screen.queryByTestId('host-form-gap-name')).toBeNull();
+    expect(screen.getByTestId('host-form-gap-user').textContent).toBe('User is required');
+    expect(missing()).toBe('1 field needs a value');
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(true);
     await userEvent.type(screen.getByLabelText('User'), 'u');
-    await userEvent.type(screen.getByLabelText('Password', { selector: 'input[type="password"]' }), 'pw');
-    expect(screen.queryByRole('list', { name: 'Needed to save' })).toBeNull();
+    expect(screen.queryByTestId('host-form-missing')).toBeNull();
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(false);
+  });
+  it('a host saved with its password left empty names the secret the connection screen asks for (S60)', async () => {
+    render(<SshArea />);
+    await userEvent.click(screen.getByRole('button', { name: /New host/ }));
+    await vi.waitFor(() => {
+      expect(screen.getByLabelText<HTMLInputElement>('User').value).toBe('me');
+    });
+    await userEvent.type(screen.getByLabelText('Name'), 'gamma');
+    await userEvent.type(screen.getByLabelText('Address'), 'g.example');
+    const stores = setSecret.mock.calls.length;
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await vi.waitFor(() => {
+      expect(saveHosts).toHaveBeenCalled();
+    });
+    const sent = saveHosts.mock.calls.at(-1)?.[0] as { file: typeof STATE.file };
+    expect(sent.file.hosts.at(-1)?.ssh).toMatchObject({ auth: { kind: 'password', secret: 'gamma_password' } });
+    expect(setSecret.mock.calls.length).toBe(stores);
   });
   it('the Group select starts on the group the list is narrowed to; the group then supplies the user', async () => {
     useHostsStore.setState({ groupFilter: 'g' });
