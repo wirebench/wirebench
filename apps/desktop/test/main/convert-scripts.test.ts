@@ -218,6 +218,44 @@ describe('accepting conversions', () => {
     expect(existsSync(join(dir, 'imported-scripts'))).toBe(false);
   });
 
+  it('a layered file edited outside Wirebench is refused before any backup is written', async () => {
+    const { host, dir } = await openProject();
+    const { levels } = await host.proposeConversions();
+    const layered = filesUnder(dir).filter((file) => file.endsWith('.pre.js'));
+    expect(layered).toHaveLength(1);
+    // Edited in another editor while the project is open: the model still holds the old text.
+    const outsideEdit = 'pm.environment.set("token", "edited outside");\n';
+    writeFileSync(join(dir, layered[0]!), outsideEdit);
+    const model = host.model();
+
+    await expect(
+      host.mutate({ kind: 'convert-scripts', levels: [{ ownerId: 'rest-1', fingerprint: levels[0]!.fingerprint }] }),
+    ).rejects.toMatchObject({
+      code: 'project-changed-on-disk',
+      message: 'A script file changed outside Wirebench. Reload the project, then convert.',
+    });
+
+    expect(await readFile(join(dir, layered[0]!), 'utf8')).toBe(outsideEdit);
+    expect(existsSync(join(dir, 'imported-scripts'))).toBe(false);
+    expect(host.model()).toBe(model);
+    expect(scriptsOf(host)?.api).toBe('postman');
+    expect(filesUnder(dir).some((file) => file.endsWith('.pre.ts'))).toBe(false);
+  });
+
+  it('a layered file deleted outside Wirebench is refused too', async () => {
+    const { host, dir } = await openProject();
+    const { levels } = await host.proposeConversions();
+    const layered = filesUnder(dir).filter((file) => file.endsWith('.pre.js'));
+    rmSync(join(dir, layered[0]!));
+
+    await expect(
+      host.mutate({ kind: 'convert-scripts', levels: [{ ownerId: 'rest-1', fingerprint: levels[0]!.fingerprint }] }),
+    ).rejects.toMatchObject({ code: 'project-changed-on-disk' });
+
+    expect(existsSync(join(dir, 'imported-scripts'))).toBe(false);
+    expect(scriptsOf(host)?.api).toBe('postman');
+  });
+
   it('a level refused as not layered keeps its path; a gone one has none', async () => {
     const { host } = await openProject();
 

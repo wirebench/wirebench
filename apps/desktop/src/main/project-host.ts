@@ -35,6 +35,7 @@ import {
   isProtectedEnvironment,
   loadKeystore,
   loadProject,
+  nodeFs,
   overlayCurrent,
   pemCertificates,
   ProjectError,
@@ -1006,8 +1007,9 @@ export class ProjectHost {
    * saved, whose save deletes the stale `.js` files. A backup that cannot be written stops the change
    * before the model is touched; the backups already written stay, as harmless text.
    *
-   * @throws ProjectError `import-path-refused` or `backup-exists` from {@link writeImportedScripts};
-   * `project-changed` when another edit landed while the backups were written
+   * @throws ProjectError `project-changed-on-disk` when a script file the save would delete was
+   * changed outside Wirebench; `import-path-refused` or `backup-exists` from
+   * {@link writeImportedScripts}; `project-changed` when another edit landed while the backups were written
    */
   private async convertScripts(
     before: Project,
@@ -1019,6 +1021,7 @@ export class ProjectHost {
     if (conversions.applied.length === 0) {
       return { project: this.snapshot() as ProjectWire, converted: report };
     }
+    await this.refuseStaleScriptsChangedOnDisk(before, converted);
     await this.writeImportedScripts(
       conversions.applied.flatMap((level) => level.backups),
       { strict: true },
@@ -1036,6 +1039,36 @@ export class ProjectHost {
     this.emitChanged();
     await this.save({ reason: 'convert-scripts' });
     return { project: this.snapshot() as ProjectWire, converted: report };
+  }
+
+  /**
+   * Refuses a conversion whose save would delete a script file that differs on disk from the model's
+   * text for it. The watcher only flags an outside edit; it does not reload the model, so the backup
+   * would be written from the old text and the save would prune the edited file: the edit lost.
+   * Every file `before` has and `converted` does not (the stale ones the save deletes) must be on
+   * disk with the model's text.
+   *
+   * @throws ProjectError `project-changed-on-disk` when one is missing or differs
+   */
+  private async refuseStaleScriptsChangedOnDisk(before: Project, converted: Project): Promise<void> {
+    const open = this.require();
+    const fs = this.fs ?? nodeFs;
+    const kept = projectFiles(converted, { writer: PROJECT_WRITER, ...this.registryOption() });
+    const stale = [...projectFiles(before, { writer: PROJECT_WRITER, ...this.registryOption() })].filter(
+      ([path]) => !kept.has(path),
+    );
+    for (const [path, text] of stale) {
+      const onDisk = await fs.readFile(resolvePath(open.dir, ...path.split('/'))).then(
+        (bytes) => bytes.toString('utf8'),
+        () => undefined,
+      );
+      if (onDisk !== text) {
+        throw new ProjectError(
+          'project-changed-on-disk',
+          'A script file changed outside Wirebench. Reload the project, then convert.',
+        );
+      }
+    }
   }
 
   /**

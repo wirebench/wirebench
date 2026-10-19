@@ -297,6 +297,22 @@ describe('the review', () => {
     expect(showToast).not.toHaveBeenCalled();
   });
 
+  it('a script file changed on disk keeps the review open and says to reload', async () => {
+    convertScripts.mockRejectedValue(Object.assign(new Error('changed on disk'), { code: 'project-changed-on-disk' }));
+    await openReview();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('convert-scripts-accept'));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole('alert').textContent).toBe(
+      'A script file changed outside Wirebench. Reload the project, then convert.',
+    );
+    expect(useConvertScriptsDialog.getState().target).toBeDefined();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
   it('says so when there is nothing to convert, and Cancel changes nothing', async () => {
     proposeConversions.mockResolvedValue([]);
     await openReview();

@@ -42,6 +42,12 @@ const REFUSAL_TEXT: Readonly<Record<ConversionRefusalWire, string>> = {
 
 /** What Accept says when main refuses because the project has unsaved edits. */
 const SAVE_FIRST = 'Save the project first, then convert its scripts.';
+const RELOAD_FIRST = 'A script file changed outside Wirebench. Reload the project, then convert.';
+/** The inline text for the refusals main explains by code. */
+const MESSAGE_BY_CODE: ReadonlyMap<unknown, string> = new Map([
+  ['project-dirty', SAVE_FIRST],
+  ['project-changed-on-disk', RELOAD_FIRST],
+]);
 
 interface ConvertScriptsDialogState {
   /** What the review was opened on, while it is open: a project, or one level and those beneath it. */
@@ -82,7 +88,7 @@ const CLOSED = {
 
 function messageOf(error: unknown, fallback: string): string {
   if (error instanceof Error) {
-    return (error as Error & { code?: unknown }).code === 'project-dirty' ? SAVE_FIRST : error.message;
+    return MESSAGE_BY_CODE.get((error as Error & { code?: unknown }).code) ?? error.message;
   }
   return fallback;
 }
