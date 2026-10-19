@@ -293,6 +293,22 @@ describe('team session logs (#430)', () => {
     expect(sessionLog.teamRead).toHaveBeenLastCalledWith({ id: teamLog.id, offset: 7 });
   });
 
+  it('says when an opened log is empty, and closes from its own button (S42)', async () => {
+    sessionLog.teamList.mockResolvedValue(ok({ available: true, logs: [{ ...teamLog, live: false }], next: null }));
+    sessionLog.teamRead.mockResolvedValueOnce(ok({ text: '', next: 0, size: 0, truncated: false, live: false }));
+    act(() => {
+      showTeamSessionLogs('web');
+    });
+    render(<TeamSessionLogsDialog />);
+    const dialog = await screen.findByTestId('team-session-logs-dialog');
+    fireEvent.click(await within(dialog).findByTestId(`team-log-${teamLog.id}`));
+    expect((await screen.findByTestId('team-log-empty')).textContent).toBe('Nothing was recorded in this session.');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => {
+      expect(screen.queryByTestId('team-session-logs-dialog')).toBeNull();
+    });
+  });
+
   it('says so when the workspace is not shared to a server', async () => {
     sessionLog.teamList.mockResolvedValue(ok({ available: false, logs: [], next: null }));
     act(() => {

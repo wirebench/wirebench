@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import { X } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { ipc } from '../../state/ipc-client.js';
 import type { TeamSessionLogWire } from '../../../shared/session-log-wire.js';
@@ -97,9 +98,23 @@ function TeamSessionLogsBody() {
   return (
     <Dialog.Content
       data-testid="team-session-logs-dialog"
-      className="fixed top-1/2 left-1/2 flex max-h-[85vh] w-[44rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-2 rounded-md bg-surface-raised p-4 shadow-lg"
+      // An open log takes most of the window, so its text reads like a terminal's rather than in a small box (S42).
+      className={`fixed top-1/2 left-1/2 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-2 rounded-md bg-surface-raised p-4 shadow-lg ${
+        opened ? 'h-[85vh] w-[64rem]' : 'max-h-[85vh] w-[44rem]'
+      }`}
     >
-      <Dialog.Title className="text-md font-medium text-fg-default">Team session logs</Dialog.Title>
+      <div className="flex items-start gap-2">
+        <Dialog.Title className="flex-1 text-md font-medium text-fg-default">Team session logs</Dialog.Title>
+        <Dialog.Close asChild>
+          <button
+            type="button"
+            aria-label="Close"
+            className="-m-1 rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg-default"
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
+        </Dialog.Close>
+      </div>
       <Dialog.Description className="text-xs text-fg-subtle">
         What your team’s SSH sessions printed, as the server keeps it. Opening a log is recorded in the server’s audit
         log.
@@ -219,6 +234,8 @@ function TeamLogViewer({ log, onBack }: { readonly log: TeamSessionLogWire; read
     live: log.live,
   });
   const [loading, setLoading] = useState(false);
+  // Whether the first part has come back: until then an empty text is not yet known to be empty.
+  const [loaded, setLoaded] = useState(false);
 
   const read = async (from: number): Promise<void> => {
     setLoading(true);
@@ -231,6 +248,7 @@ function TeamLogViewer({ log, onBack }: { readonly log: TeamSessionLogWire; read
       setText((before) => (from === 0 ? result.value.text : before + result.value.text));
       setNext(result.value.next);
       setState({ size: result.value.size, live: result.value.live });
+      setLoaded(true);
     } finally {
       setLoading(false);
     }
@@ -271,6 +289,13 @@ function TeamLogViewer({ log, onBack }: { readonly log: TeamSessionLogWire; read
         className="min-h-48 flex-1 overflow-auto rounded border border-hairline bg-surface-sunken p-2 font-mono text-xs whitespace-pre-wrap text-fg-default"
       >
         {text}
+        {loaded && text === '' && state.error === undefined && (
+          <span data-testid="team-log-empty" className="font-sans text-sm text-fg-subtle">
+            {state.live
+              ? 'Nothing recorded yet. Refresh reads what the session prints next.'
+              : 'Nothing was recorded in this session.'}
+          </span>
+        )}
       </pre>
       {next < state.size && !state.live && (
         <Button
