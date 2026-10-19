@@ -232,6 +232,7 @@
     "script.completions",
     "script.diagnostics",
     "script.listValues",
+    "script.proposeConversions",
     "script.quickInfo",
     "script.signatureHelp",
     "search.query",

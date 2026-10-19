@@ -644,6 +644,8 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     },
 
     sendGrpc: async (requestId, options) => {
+      // A send keeps the preview tab it was made from (#679).
+      useEditorsStore.getState().pinEntity(requestId);
       if (hasScriptEditors()) {
         await flushScriptEdits();
       }
@@ -788,6 +790,8 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     },
 
     connectWs: async (requestId) => {
+      // A send keeps the preview tab it was made from (#679).
+      useEditorsStore.getState().pinEntity(requestId);
       const current = get().wsByRequest[requestId];
       // `closing` counts too: the session is still on the wire until main answers, and a second
       // connect started now would run two sessions against the one request.
@@ -953,6 +957,8 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     },
 
     sendMcp: async (requestId) => {
+      // A send keeps the preview tab it was made from (#679).
+      useEditorsStore.getState().pinEntity(requestId);
       if (hasScriptEditors()) {
         await flushScriptEdits();
       }
@@ -1082,6 +1088,8 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     },
 
     sendRest: async (requestId) => {
+      // A send keeps the preview tab it was made from (#679).
+      useEditorsStore.getState().pinEntity(requestId);
       if (hasScriptEditors()) {
         await flushScriptEdits();
       }
@@ -1252,6 +1260,8 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     },
 
     send: async (requestId, force) => {
+      // A send keeps the preview tab it was made from (#679).
+      useEditorsStore.getState().pinEntity(requestId);
       if (hasScriptEditors()) {
         await flushScriptEdits();
       }

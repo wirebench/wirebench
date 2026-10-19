@@ -14,7 +14,7 @@ import { TRANSFER_NAME_PATTERN } from '../sequence/model.js';
 import { applyRequestChanges } from './apply.js';
 import { buildPrelude } from './api/prelude.js';
 import { SCRIPT_LAYERS } from './api/layers.js';
-import { MODULE_MARKER, TOP_LEVEL_IMPORT } from './module-syntax.js';
+import { blankModuleMarkers, TOP_LEVEL_IMPORT, TOP_LEVEL_IMPORT_REASON } from './module-syntax.js';
 import { scriptingOf } from './lookup.js';
 import {
   isLayeredApi,
@@ -161,7 +161,7 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
   let code: string;
   try {
     code = input.api === 'wirebench' ? stripTypes(input.source) : input.source;
-    if (input.api === 'hoppscotch') code = code.replace(MODULE_MARKER, '');
+    if (input.api === 'hoppscotch') code = blankModuleMarkers(code);
   } catch (error) {
     return {
       ok: false,
@@ -185,7 +185,7 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
       ok: false,
       error: {
         code: 'script-unsupported',
-        message: 'import is not supported: a script cannot load modules, so remove the import statement',
+        message: `import is not supported: ${TOP_LEVEL_IMPORT_REASON}`,
       },
       ...empty,
     };

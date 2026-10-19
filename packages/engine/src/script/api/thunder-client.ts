@@ -16,6 +16,9 @@
  */
 import { PART_EXPECT, PART_REQUEST, PART_RESPONSE, PART_UNSUPPORTED, PART_VARIABLES } from './layer-parts.js';
 
+/** Why `tc.response` throws in a pre-request script; the converter's TODO repeats it. */
+export const TC_NO_RESPONSE_YET = 'there is no response before the request is sent';
+
 export const THUNDER_CLIENT_LAYER =
   PART_UNSUPPORTED +
   PART_VARIABLES +
@@ -61,7 +64,7 @@ if (responseView !== undefined) {
   });
 } else {
   tcResponse = new Proxy({}, {
-    get: (target, member) => (typeof member === 'symbol' || member === 'then' || member === 'toJSON' ? undefined : unsupported('tc.response in a pre-request script', 'there is no response before the request is sent')()),
+    get: (target, member) => (typeof member === 'symbol' || member === 'then' || member === 'toJSON' ? undefined : unsupported('tc.response in a pre-request script', '${TC_NO_RESPONSE_YET}')()),
   });
 }
 
@@ -91,6 +94,8 @@ define('tc', Object.freeze({
   test: (name, result) => test(name, () => {
     const outcome = typeof result === 'function' ? result() : result;
     if (outcome === false) throw new ExpectationFailed('the test returned false');
+    // An async function hands back a promise: pass it on so test refuses it.
+    if (outcome !== null && typeof outcome === 'object' && typeof outcome.then === 'function') return outcome;
   }),
   expect: chaiExpect,
   // With no argument it skips the current request; any argument names another request, which is out of reach.

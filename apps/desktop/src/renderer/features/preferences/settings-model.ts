@@ -87,6 +87,7 @@ export const BEHAVIOUR_KEYS = [
   'editor.autoFormatResponses',
   'editor.autosave',
   'ui.confirmOnDelete',
+  'ui.previewTabs',
   'ui.historyCap',
   'ui.logSize',
 ] as const;

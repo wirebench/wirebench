@@ -4,6 +4,7 @@ import { openRunnerTab, runnerTargetOf } from '../features/runner/runner-actions
 import { registerCommand } from '../lib/commands.js';
 import { useProjectStore } from '../state/project.js';
 import { useScriptValuesStore } from '../state/script-values.js';
+import { currentProjectId } from '../state/workspace-tabs.js';
 import type { Selection } from '../state/ui.js';
 
 /** Registers the `explorer.*` commands — the context menu's actions, reachable from the palette. */
@@ -15,6 +16,15 @@ export function registerExplorerCommands(): void {
     whenScope: 'project',
     run: (ctx) => {
       explorerActions.clearValues(valuesProjectId(ctx.selection));
+    },
+  });
+  // The current project's imported scripts, all of them, after a review.
+  registerCommand({
+    ...catalogEntry('script.convertAll'),
+    when: () => currentProjectId() !== undefined,
+    whenScope: 'project',
+    run: () => {
+      explorerActions.convertAllScripts(currentProjectId());
     },
   });
   registerCommand({

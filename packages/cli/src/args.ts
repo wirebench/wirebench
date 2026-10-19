@@ -21,6 +21,8 @@ import { MOCK_CHECK_HELP, MOCK_HELP, parseMockCheck, parseMockServe } from './ar
 import type { MockArgs, MockCheckArgs } from './args-mock.js';
 import { MOCK_RECORD_HELP, MOCK_RECORD_OPTIONS, parseMock, refuseMockRecordOnly } from './args-mock-record.js';
 import type { MockRecordArgs } from './args-mock-record.js';
+import { parseScripts, refuseScriptsOnly, SCRIPTS_HELP, SCRIPTS_OPTIONS, SCRIPTS_USAGE } from './args-scripts.js';
+import type { ScriptsConvertArgs } from './args-scripts.js';
 import { parseSsh, SSH_HELP } from './args-ssh.js';
 import type { SshForwardArgs } from './args-ssh.js';
 import { secretSourcesOptionsFrom, type CliSecretSourcesOptions } from './source-secrets.js';
@@ -32,6 +34,7 @@ export type { DiffContractArgs } from './args-diff-contract.js';
 export type { LintArgs } from './args-lint.js';
 export type { MockArgs, MockCheckArgs } from './args-mock.js';
 export type { MockRecordArgs } from './args-mock-record.js';
+export type { ScriptsConvertArgs } from './args-scripts.js';
 export type { SshForwardArgs } from './args-ssh.js';
 
 /** `wirebench <verb> --help` for every verb that has its own help. */
@@ -40,6 +43,7 @@ export const HELP_TOPICS: Readonly<Record<string, string>> = {
   'diff-contract': DIFF_CONTRACT_HELP,
   lint: LINT_HELP,
   mock: `${MOCK_HELP}\n\n${MOCK_CHECK_HELP}\n\n${MOCK_RECORD_HELP}`,
+  scripts: SCRIPTS_HELP,
   ssh: SSH_HELP,
 };
 
@@ -115,6 +119,11 @@ wirebench mock check <path> [mock…] [--json]
 
 ${MOCK_RECORD_HELP}
 
+${SCRIPTS_USAGE}
+                       Rewrites the project's imported scripts to the typed API: prints a diff per
+                       level, or with --write backs the originals up and saves (see
+                       wirebench scripts --help).
+
 wirebench ssh forward <host> [rule…] | --group <id> [--port <rule>=<n>]… [--host-key SHA256:<b64>]…
                        [--json] [-q]
                        Opens a host's port forwarding rules, or a forwarding group's, from hosts.yaml
@@ -178,6 +187,7 @@ export type ParsedArgs =
   | MockCheckArgs
   | MockRecordArgs
   | SshForwardArgs
+  | ScriptsConvertArgs
   | { readonly command: 'help'; readonly topic?: string }
   | { readonly command: 'version' };
 
@@ -277,6 +287,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
         ...OP_OPTIONS,
         ...MOCK_RECORD_OPTIONS,
         ...LINT_OPTIONS,
+        ...SCRIPTS_OPTIONS,
       },
     });
   } catch (error) {
@@ -309,17 +320,24 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
     return { command: 'help' };
   }
 
+  /** How a refusal names the verb: the subcommand too, for the verbs that have one. */
+  const verb = `wirebench ${word === 'secrets' ? 'secrets list' : word === 'scripts' ? 'scripts convert' : word}`;
+
   if (word !== 'run') {
-    refuseRunDataOnly(values, `wirebench ${word === 'secrets' ? 'secrets list' : word}`);
+    refuseRunDataOnly(values, verb);
   }
 
   // Only what sends MCP requests takes it; every other verb refuses it rather than ignore it.
   if (values['allow-commands'] !== undefined && !COMMAND_VERBS.has(word)) {
-    throw new UsageError(`--allow-commands does not apply to wirebench ${word === 'secrets' ? 'secrets list' : word}`);
+    throw new UsageError(`--allow-commands does not apply to ${verb}`);
   }
 
   if (word !== 'lint') {
-    refuseLintOnly(values, `wirebench ${word === 'secrets' ? 'secrets list' : word}`);
+    refuseLintOnly(values, verb);
+  }
+
+  if (word !== 'scripts') {
+    refuseScriptsOnly(values, verb);
   }
 
   if (word === 'mock') {
@@ -404,6 +422,10 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       vars: parseVars(values.var),
       secretSources: secretSourcesOptionsFrom(values),
     };
+  }
+
+  if (word === 'scripts') {
+    return parseScripts(rest, values);
   }
 
   if (word === 'call') {

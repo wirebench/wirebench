@@ -35,10 +35,12 @@ import {
   isProtectedEnvironment,
   loadKeystore,
   loadProject,
+  nodeFs,
   overlayCurrent,
   pemCertificates,
   ProjectError,
   projectFiles,
+  proposeConversions,
   resolveEndpoint,
   resolveScopes,
   resolveWorkspaceEndpoint,
@@ -62,6 +64,7 @@ import type {
   IssuedTokenSource,
   Keystore,
   KeystoreDef,
+  LevelProposal,
   PemCertificateSummary,
   Preferences,
   Project,
@@ -80,6 +83,7 @@ import type {
   ProjectSaveResult,
   KeystoresInspectResponse,
   ProxyOptionsWire,
+  ScriptConversionsResultWire,
   TlsOptionsWire,
 } from '../shared/wire-base.js';
 import type { EngineService } from './engine-service.js';
@@ -92,6 +96,8 @@ import { writeNewFile } from './write-new-file.js';
 import type { SecretStore } from './secrets.js';
 import { allowsReadPath } from './path-access.js';
 import { applyChange, projectNameFromDir } from './project-mutations.js';
+import { conversionsResultWire, levelPath, listImportedScripts } from './convert-scripts.js';
+import type { ScriptConversions } from './project-script-mutations.js';
 import type { ProjectWireContext } from './project-wire.js';
 import { findRequest, toProjectWire } from './project-wire.js';
 import { ProjectWatcher, SELF_WRITE_TTL_MS } from './project-watch.js';
@@ -924,10 +930,24 @@ export class ProjectHost {
     createdKeystoreId?: string;
     createdWssOutgoingId?: string;
     createdWssIncomingId?: string;
+    converted?: ScriptConversionsResultWire;
   }> {
     const open = this.require();
     const workspaceProperties = this.workspaceContext?.()?.workspace.properties;
-    const result = await applyChange(open.project, change, {
+    // A backup's name depends on what is in `imported-scripts/` now, so a conversion lists it afresh.
+    const takenBackups = change.kind === 'convert-scripts' ? await listImportedScripts(open.dir) : undefined;
+    // Converting saves the whole model, so it would write unrelated unsaved edits past the manual
+    // save's secret review: it refuses until the project is saved. Checked after the listing's await,
+    // so no edit slips in between.
+    if (change.kind === 'convert-scripts' && open.dirty) {
+      throw new ProjectError(
+        'project-dirty',
+        'The project has unsaved changes. Save it first, then convert its scripts.',
+      );
+    }
+    const before = open.project;
+    const result = await applyChange(before, change, {
+      ...(takenBackups !== undefined ? { takenBackups } : {}),
       ...(workspaceProperties !== undefined ? { workspaceProperties } : {}),
       ...(this.hooks.enabledKinds !== undefined ? { enabledKinds: this.hooks.enabledKinds } : {}),
       reservedSequenceSlugs: refusedSequenceSlugs(open.problems),
@@ -951,6 +971,9 @@ export class ProjectHost {
         });
       },
     });
+    if (result.conversions !== undefined) {
+      return await this.convertScripts(before, result.project, result.conversions);
+    }
     open.project = result.project;
     for (const host of this.kindHostList()) {
       host.afterChange?.(change);
@@ -976,6 +999,88 @@ export class ProjectHost {
       ...(result.createdWssOutgoingId !== undefined ? { createdWssOutgoingId: result.createdWssOutgoingId } : {}),
       ...(result.createdWssIncomingId !== undefined ? { createdWssIncomingId: result.createdWssIncomingId } : {}),
     };
+  }
+
+  /**
+   * The rest of a `convert-scripts` change (convert-imported-scripts spec §7): each applied level's
+   * backups are written, each at its exact path and never over a file, then the converted model is
+   * saved, whose save deletes the stale `.js` files. A backup that cannot be written stops the change
+   * before the model is touched; the backups already written stay, as harmless text.
+   *
+   * @throws ProjectError `project-changed-on-disk` when a script file the save would delete was
+   * changed outside Wirebench; `import-path-refused` or `backup-exists` from
+   * {@link writeImportedScripts}; `project-changed` when another edit landed while the backups were written
+   */
+  private async convertScripts(
+    before: Project,
+    converted: Project,
+    conversions: ScriptConversions,
+  ): Promise<{ project: ProjectWire; converted: ScriptConversionsResultWire }> {
+    const open = this.require();
+    const report = conversionsResultWire(conversions, (ownerId) => levelPath(before, ownerId));
+    if (conversions.applied.length === 0) {
+      return { project: this.snapshot() as ProjectWire, converted: report };
+    }
+    await this.refuseStaleScriptsChangedOnDisk(before, converted);
+    await this.writeImportedScripts(
+      conversions.applied.flatMap((level) => level.backups),
+      { strict: true },
+    );
+    // The backups were written for `before`; a model that moved on meanwhile, or a project closed or
+    // reopened meanwhile, is not overwritten.
+    if (this.open !== open || open.project !== before) {
+      throw new ProjectError(
+        'project-changed',
+        'The project changed while its scripts were being converted; nothing was converted. Review them again.',
+      );
+    }
+    open.project = converted;
+    this.markDirty();
+    this.emitChanged();
+    await this.save({ reason: 'convert-scripts' });
+    return { project: this.snapshot() as ProjectWire, converted: report };
+  }
+
+  /**
+   * Refuses a conversion whose save would delete a script file that differs on disk from the model's
+   * text for it. The watcher only flags an outside edit; it does not reload the model, so the backup
+   * would be written from the old text and the save would prune the edited file: the edit lost.
+   * Every file `before` has and `converted` does not (the stale ones the save deletes) must be on
+   * disk with the model's text.
+   *
+   * @throws ProjectError `project-changed-on-disk` when one is missing or differs
+   */
+  private async refuseStaleScriptsChangedOnDisk(before: Project, converted: Project): Promise<void> {
+    const open = this.require();
+    const fs = this.fs ?? nodeFs;
+    const kept = projectFiles(converted, { writer: PROJECT_WRITER, ...this.registryOption() });
+    const stale = [...projectFiles(before, { writer: PROJECT_WRITER, ...this.registryOption() })].filter(
+      ([path]) => !kept.has(path),
+    );
+    for (const [path, text] of stale) {
+      const onDisk = await fs.readFile(resolvePath(open.dir, ...path.split('/'))).then(
+        (bytes) => bytes.toString('utf8'),
+        () => undefined,
+      );
+      if (onDisk !== text) {
+        throw new ProjectError(
+          'project-changed-on-disk',
+          'A script file changed outside Wirebench. Reload the project, then convert.',
+        );
+      }
+    }
+  }
+
+  /**
+   * The review of converting imported scripts: every layered level at or below `rootId`, or in the
+   * whole project, worked out from the model as it stands (unsaved edits included), its backups
+   * named against a fresh listing of `imported-scripts/`.
+   */
+  async proposeConversions(rootId?: string): Promise<{ readonly project: Project; readonly levels: LevelProposal[] }> {
+    const open = this.require();
+    const taken = await listImportedScripts(open.dir);
+    const project = open.project;
+    return { project, levels: proposeConversions(project, rootId, taken) };
   }
 
   /**
@@ -1288,11 +1393,17 @@ export class ProjectHost {
    * is taken by an exclusive create ({@link writeNewFile}), not by a check and then a write, so a
    * file or link that appears at a name in between is never replaced or followed.
    *
+   * `strict` (a conversion's backups, whose converted header names each exact path): a path outside
+   * the folder, or one already taken, throws instead of being skipped or moved, and the scripts after
+   * it are not written.
+   *
    * @returns the project-relative paths written, each `{ from, to }` a clash moved, and the paths skipped
-   * @throws ProjectError `import-path-refused` when `imported-scripts` is a symbolic link or not a folder
+   * @throws ProjectError `import-path-refused` when `imported-scripts` is a symbolic link or not a folder,
+   * or, when `strict`, a path resolves outside it; `backup-exists` when `strict` and a path is taken
    */
   async writeImportedScripts(
     scripts: readonly { readonly path: string; readonly source: string }[],
+    options: { readonly strict?: boolean } = {},
   ): Promise<{ written: string[]; renamed: { from: string; to: string }[]; skipped: string[] }> {
     const open = this.require();
     const scriptsRoot = resolvePath(open.dir, IMPORTED_SCRIPTS_DIR);
@@ -1323,12 +1434,24 @@ export class ProjectHost {
       let target = resolvePath(open.dir, ...path.split('/'));
       // Importers slugify every segment; this guards that promise against `..` and a symlink too.
       if (!(await contained(target))) {
+        if (options.strict === true) {
+          throw new ProjectError(
+            'import-path-refused',
+            `${script.path} is outside ${IMPORTED_SCRIPTS_DIR} in the project folder, so it was not written`,
+            { details: { path: script.path } },
+          );
+        }
         skipped.push(script.path);
         continue;
       }
       await mkdir(resolvePath(target, '..'), { recursive: true });
       const data = Buffer.from(script.source, 'utf8');
       for (let n = 2; !(await writeNewFile(target, data)); n += 1) {
+        if (options.strict === true) {
+          throw new ProjectError('backup-exists', `${script.path} already exists, so it was not overwritten`, {
+            details: { path: script.path },
+          });
+        }
         path = [...segments, `${stem}-${String(n)}${tail}`].join('/');
         target = resolvePath(open.dir, ...path.split('/'));
       }

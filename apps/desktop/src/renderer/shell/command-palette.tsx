@@ -27,6 +27,8 @@ import { paletteFilter, paletteKeywords } from './palette-filter.js';
 import type { QuickOpenEntry } from './quick-open.js';
 import {
   quickOpenEntries,
+  quickOpenFilter,
+  quickOpenKeywords,
   quickOpenHostEntries,
   quickOpenKindEntries,
   quickOpenLayoutEntries,
@@ -383,8 +385,9 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
           <Command
             key={mode}
             loop
-            // The commands rank a search naming their group first; the pickers keep cmdk's own order.
-            {...(picker ? {} : { filter: paletteFilter })}
+            // The commands rank a search naming their group first; ⌘P ranks a request by its name before its
+            // breadcrumb; the other pickers keep cmdk's own order.
+            {...(quickOpen ? { filter: quickOpenFilter } : picker ? {} : { filter: paletteFilter })}
             label={
               snippetsPicker
                 ? 'Snippets'
@@ -427,6 +430,7 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                   <Command.Item
                     key={entry.key}
                     value={entry.value}
+                    keywords={quickOpenKeywords(entry)}
                     data-testid="quick-open-item"
                     data-kind={entry.requestKind ?? 'soap'}
                     onSelect={() => {

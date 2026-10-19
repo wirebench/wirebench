@@ -79,6 +79,8 @@ import type {
   RequestScriptsPatchWire,
   RestFolderWire,
   RequestAssertionWire,
+  ScriptConversionWire,
+  ScriptConversionsResultWire,
   WebhookSigningWire,
 } from '../../shared/wire-base.js';
 import type {
@@ -274,6 +276,22 @@ export interface ProjectStore extends ProjectSnapshot {
    * requests are one project's: the first one's.
    */
   readonly enableScripts: (requestIds: readonly string[]) => Promise<void>;
+  /**
+   * The levels whose imported scripts would convert to Wirebench scripts, each with its texts
+   * before and after — what the review shows. `ownerId` narrows it to that level and the levels
+   * beneath it; without it, every level of the project. Reads the model the editor holds, unsaved
+   * edits included; changes nothing.
+   */
+  readonly proposeConversions: (projectId: string, ownerId?: string) => Promise<readonly ScriptConversionWire[]>;
+  /**
+   * Converts the listed levels in one project edit: backs up each level's layered texts, switches
+   * it and saves. A level whose texts changed since its `fingerprint` was proposed is refused by
+   * name, and the others go ahead.
+   */
+  readonly convertScripts: (
+    projectId: string,
+    levels: readonly { readonly ownerId: string; readonly fingerprint: string }[],
+  ) => Promise<ScriptConversionsResultWire>;
   /** Merges a patch into one project's settings (`wirebench.yaml`). */
   readonly updateProjectSettings: (projectId: string, patch: ProjectSettingsPatchWire) => Promise<void>;
   /** Renames one project. The folder keeps its slug; only the name in `wirebench.yaml` changes. */
@@ -462,6 +480,11 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly editMcpRequest: (requestId: string, patch: McpRequestPatchWire) => void;
   readonly commitMcpRequest: (requestId: string) => Promise<boolean>;
   readonly saveMcpRequest: (requestId: string, options?: SaveOptions) => Promise<void>;
+  /**
+   * Throws a request's unsaved edit away, of whichever kind: its draft goes, and the mirror shows the request
+   * as last saved again. What Don't save does when a tab with unsaved edits closes (#679).
+   */
+  readonly discardDraft: (requestId: string) => void;
   readonly removeMcpRequest: (requestId: string) => Promise<void>;
   readonly cloneMcpRequest: (requestId: string) => Promise<string>;
   /** Appends an empty environment to one project and returns its id. */
@@ -2057,6 +2080,19 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       );
     },
 
+    discardDraft: (requestId) => {
+      const projectId = get().projectOf[requestId];
+      const drafts = useDraftsStore.getState();
+      drafts.discardRequest(requestId);
+      drafts.discardRestRequest(requestId);
+      drafts.discardGrpcRequest(requestId);
+      drafts.discardWsRequest(requestId);
+      drafts.discardMcpRequest(requestId);
+      // The indexes lay drafts over main's copy, which never saw the edit: rebuilding them shows it unedited.
+      const project = projectId === undefined ? undefined : get().projects[projectId];
+      if (project !== undefined) apply(project.id, project);
+    },
+
     removeMcpRequest: async (requestId) => {
       await mutateEntity(requestId, { kind: 'remove-mcp-request', requestId });
       forgetMcpRequest(requestId);
@@ -2345,6 +2381,25 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         return;
       }
       await mutateEntity(first, { kind: 'enable-scripts', requestIds: [...requestIds] });
+    },
+
+    proposeConversions: async (projectId, ownerId) => {
+      const result = await ipc().script.proposeConversions({
+        projectId,
+        ...(ownerId === undefined ? {} : { ownerId }),
+      });
+      if (!result.ok) {
+        throw asError(result.error);
+      }
+      return result.value.levels;
+    },
+
+    convertScripts: async (projectId, levels) => {
+      const { converted } = await mutate(projectId, {
+        kind: 'convert-scripts',
+        levels: levels.map(({ ownerId, fingerprint }) => ({ ownerId, fingerprint })),
+      });
+      return converted ?? { applied: [], refused: [] };
     },
 
     updateProjectSettings: async (projectId, patch) => {

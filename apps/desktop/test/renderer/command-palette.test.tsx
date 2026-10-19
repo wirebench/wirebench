@@ -4,6 +4,7 @@ import { availableFirst, CommandPalette } from '../../src/renderer/shell/command
 import { registerCommand, resetCommands } from '../../src/renderer/lib/commands.js';
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
+import { useProjectStore } from '../../src/renderer/state/project.js';
 
 /**
  * Regression coverage for a bug Task 9 uncovered (not introduced — it was always there, just
@@ -98,6 +99,47 @@ describe('CommandPalette', () => {
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'REST' } });
     await waitFor(() => expect(order()).toEqual(expected));
     expect(screen.getByRole('option', { selected: true }).textContent).toContain('New Folder');
+  });
+});
+
+describe('CommandPalette quick open (#683)', () => {
+  const context: CommandContext = {
+    platform: 'mac',
+    ui: {
+      sidebar: DEFAULT_UI_STATE.sidebar,
+      console: DEFAULT_UI_STATE.console,
+      slideOver: DEFAULT_UI_STATE.slideOver,
+      theme: DEFAULT_UI_STATE.theme,
+      editorLineNumbers: DEFAULT_UI_STATE.editorLineNumbers,
+      editorLayout: DEFAULT_UI_STATE.editorLayout,
+    },
+    selection: undefined,
+  };
+  const saved = (id: string, name: string) =>
+    ({ id, name, interfaceId: 'if-pet', bindingName: 'PetSoap', operationName: name }) as never;
+
+  beforeEach(() => {
+    useProjectStore.setState({
+      interfaces: { 'if-pet': { id: 'if-pet', name: 'Swagger Petstore', operations: [] } as never },
+      requests: { a: saved('a', 'Delete user'), b: saved('b', 'Find pets'), c: saved('c', 'Add owner') },
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('lists a request matched by name above one matched only by its breadcrumb', async () => {
+    render(<CommandPalette open onOpenChange={() => undefined} context={context} mode="quick-open" />);
+    const labels = () => screen.getAllByTestId('quick-open-item').map((item) => item.firstChild?.textContent);
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'pet' } });
+    await waitFor(() => expect(labels()[0]).toBe('Find pets'));
+    expect([...labels()].sort()).toEqual(['Add owner', 'Delete user', 'Find pets']);
+
+    // "user" is in Delete user's name, so the "pet" in its breadcrumb no longer lists it.
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'pet user' } });
+    await waitFor(() => expect(screen.queryAllByTestId('quick-open-item')).toHaveLength(0));
   });
 });
 

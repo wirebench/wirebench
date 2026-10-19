@@ -14,6 +14,9 @@ const OPTIONS: ts.CompilerOptions = {
   skipLibCheck: false,
 };
 
+/** The library files, parsed once: they are the same for every check. */
+const LIBRARY = new Map<string, ts.SourceFile | undefined>();
+
 /** The diagnostics for `script` checked against `declarations`, as `line: message` strings. */
 export function typeErrors(declarations: string, script: string): string[] {
   const files = new Map([
@@ -24,7 +27,9 @@ export function typeErrors(declarations: string, script: string): string[] {
   const getSourceFile = host.getSourceFile.bind(host);
   host.getSourceFile = (name, version) => {
     const text = files.get(name);
-    return text !== undefined ? ts.createSourceFile(name, text, version) : getSourceFile(name, version);
+    if (text !== undefined) return ts.createSourceFile(name, text, version);
+    if (!LIBRARY.has(name)) LIBRARY.set(name, getSourceFile(name, version));
+    return LIBRARY.get(name);
   };
   host.fileExists = (name) => files.has(name) || ts.sys.fileExists(name);
   host.readFile = (name) => files.get(name) ?? ts.sys.readFile(name);

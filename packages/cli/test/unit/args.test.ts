@@ -440,3 +440,40 @@ describe('run --data, --iterations, --delay, --data-overrun (#336)', () => {
     expect(() => parseCliArgs(['send', 'r', '--iterations', '2'])).toThrow('--iterations does not apply');
   });
 });
+
+describe('parseCliArgs — scripts convert', () => {
+  it('parses the path, the selectors and --write', () => {
+    expect(parseCliArgs(['scripts', 'convert', 'p'])).toEqual({
+      command: 'scripts-convert',
+      path: 'p',
+      selectors: [],
+      write: false,
+    });
+    expect(parseCliArgs(['scripts', 'convert', 'p', 'Shop/Carts', 'Other', '--write'])).toEqual({
+      command: 'scripts-convert',
+      path: 'p',
+      selectors: ['Shop/Carts', 'Other'],
+      write: true,
+    });
+  });
+
+  it('refuses an unknown subcommand, a missing path and a foreign flag', () => {
+    expect(() => parseCliArgs(['scripts', 'frobnicate', 'p'])).toThrow('unknown subcommand "frobnicate"');
+    expect(() => parseCliArgs(['scripts'])).toThrow(UsageError);
+    expect(() => parseCliArgs(['scripts', 'convert'])).toThrow('<path> is required');
+    expect(() => parseCliArgs(['scripts', 'convert', 'p', '--bail'])).toThrow(
+      '--bail does not apply to wirebench scripts convert',
+    );
+  });
+
+  it('refuses --write on other verbs', () => {
+    expect(() => parseCliArgs(['run', 'p', '--write'])).toThrow('--write does not apply to wirebench run');
+    expect(() => parseCliArgs(['secrets', 'list', 'p', '--write'])).toThrow(
+      '--write does not apply to wirebench secrets list',
+    );
+  });
+
+  it('has its own help topic', () => {
+    expect(parseCliArgs(['scripts', '--help'])).toEqual({ command: 'help', topic: 'scripts' });
+  });
+});

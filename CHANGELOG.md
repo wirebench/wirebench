@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Preview tabs, a tab menu and a question before unsaved edits are lost.** A single click in the
+  Explorer opens one preview tab, its name in italics, that the next single click replaces, so reading
+  through requests no longer leaves a tab per click. A double-click, the first edit, **Send** or
+  double-clicking the tab's name keeps it; **Settings ▸ Behaviour ▸ Preview tabs** turns previews off.
+  Right-clicking a tab offers **Close**, **Close others**, **Close to the right**, **Close saved**,
+  **Close all**, **Reveal in Explorer** and **Copy name**, for SSH and terminal tabs too; a middle-click
+  closes a tab, and the palette has **Close Other Tabs**, **Close Tabs to the Right**, **Close Saved
+  Tabs** and **Close All Tabs**. Closing a tab with unsaved edits, however it is closed, asks **Save**,
+  **Don't save** or **Cancel** (#679).
 - **Comments in a JSON body.** <kbd>Cmd/Ctrl+/</kbd> toggles `//` on the selected lines of a Raw JSON
   body and <kbd>Shift+Alt+A</kbd> toggles `/* */`; comments are coloured as comments and saved with the
   request. They are removed before the body is sent, with any comma a commented-out last field leaves
@@ -35,6 +44,13 @@ All notable changes to this project are documented here. The format follows
   description, followed by the computer's own reason when there is one (such as **This Mac has no Secure
   Enclave**). **Lock again after idle** is disabled while the app lock is off or unavailable, and the
   Secrets page's subtitle now mentions the app lock (#691).
+- **Quick Open finds requests by name.** <kbd>⌘P</kbd> lists the requests and operations whose name
+  matches above those that match only by their project, API or folder, so "pet" puts Find pets first,
+  not every request in Swagger Petstore. A row listed by its path alone needs every typed word to be
+  missing from its name: "pet user" no longer lists Delete user because its API is Petstore (#683).
+- **Search heads each group with the request.** A group of Search results starts with the REST method
+  and the request name, with the project and API faint underneath, instead of a breadcrumb that cut
+  every group to the same "PAYMENTS › SWAGGER P…" (#683).
 - **Lint findings no longer count as Problems.** After importing an OpenAPI definition, its lint findings
   get their own status bar item (**57 lint findings**, with errors and warnings named in the tooltip),
   which is never coloured and opens the Problems panel. The **Problems** item and the **Console** badge
@@ -70,6 +86,10 @@ All notable changes to this project are documented here. The format follows
   picker now selects that host, from either group, and Enter connects the new pane to it. Before, the
   current host stayed selected (its id matched the typed digits), so the new pane opened on the wrong
   machine. The picker matches on name, address, group path and tags only (#687).
+- **A script test with an async callback now fails.** `test(name, async () => …)` used to record a pass
+  whatever the callback did, because a script cannot wait for the promise. It now fails with "the test
+  callback is async, and a test cannot wait: make it synchronous", in the typed API and in every imported
+  script layer.
 
 ## [6.1.0] - 2026-10-18
 

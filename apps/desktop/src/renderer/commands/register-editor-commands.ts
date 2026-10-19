@@ -12,6 +12,7 @@ import { tabsInSet } from '../state/tab-sets.js';
 import { useEditorsStore } from '../state/editors.js';
 import { usePreferencesStore } from '../state/preferences.js';
 import { useProjectStore } from '../state/project.js';
+import { closeTabsIn } from '../shell/tab-close.js';
 import { activeRequestId, ui } from './command-helpers.js';
 
 /** Registers the `editor.*` commands, which act on the mounted request editor and its tab. */
@@ -134,12 +135,30 @@ export function registerEditorCommands(): void {
         }
         return;
       }
-      const { activeId, close } = useEditorsStore.getState();
-      if (activeId !== undefined) {
-        close(activeId);
-      }
+      void closeTabsIn('this');
     },
   });
+
+  // The tab menu's batch closes (#679), around the active tab on the strip in view; each asks about unsaved edits.
+  const hasTabs = (): boolean => {
+    const { tabs, displayedSet } = useEditorsStore.getState();
+    return tabsInSet(tabs, displayedSet).length > 0;
+  };
+  for (const [id, scope, when] of [
+    ['editor.closeOtherTabs', 'others', () => useEditorsStore.getState().activeId !== undefined],
+    ['editor.closeTabsToRight', 'right', () => useEditorsStore.getState().activeId !== undefined],
+    ['editor.closeSavedTabs', 'saved', hasTabs],
+    ['editor.closeAllTabs', 'all', hasTabs],
+  ] as const) {
+    registerCommand({
+      ...catalogEntry(id),
+      when,
+      whenScope: 'editor',
+      run: () => {
+        void closeTabsIn(scope);
+      },
+    });
+  }
 
   // ⌘⇧PageUp/PageDown. Shifts the active tab one place along the strip; the Start tab is not
   // in the store, so it always stays first.

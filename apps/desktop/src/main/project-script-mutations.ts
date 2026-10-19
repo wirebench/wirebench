@@ -1,6 +1,7 @@
 /**
- * The script project changes (#63): `update-request-scripts` edits one request's scripts, and
- * `enable-scripts` switches on the scripts of many at once. Both work the same on a SOAP, REST or
+ * The script project changes (#63): `update-request-scripts` edits one request's scripts,
+ * `enable-scripts` switches on the scripts of many at once, and `convert-scripts` switches layered
+ * levels to the typed API. Both work the same on a SOAP, REST or
  * gRPC request, found by id wherever it sits, and on a level above requests (#334): a SOAP
  * interface, a REST or gRPC API, or one of their folders.
  *
@@ -8,8 +9,8 @@
  * edit cannot point a script at a file outside the request's directory.
  */
 
-import { ProjectError, SCRIPT_LIMITS } from '@wirebench/engine';
-import type { Project, RequestScripts, ScriptSource } from '@wirebench/engine';
+import { applyConversions, ProjectError, SCRIPT_LIMITS } from '@wirebench/engine';
+import type { ConversionRefusal, LevelProposal, Project, RequestScripts, ScriptSource } from '@wirebench/engine';
 import type { RequestScriptsPatchWire } from '../shared/wire-base.js';
 import { mapRequests, mapScriptLevels } from './project-request-map.js';
 import type { Identified } from './project-request-map.js';
@@ -96,4 +97,26 @@ export function enableScripts(project: Project, ids: readonly string[]): { reado
       ? { ...owner, scripts: { ...owner.scripts, enabled: true } }
       : owner;
   return { project: mapScriptLevels<Scripted>(mapRequests<Scripted>(project, enable), enable) };
+}
+
+/** What `convert-scripts` did: the levels switched, whose backups the caller writes before the save, and those refused. */
+export interface ScriptConversions {
+  readonly applied: readonly LevelProposal[];
+  readonly refused: readonly { readonly ownerId: string; readonly reason: ConversionRefusal }[];
+}
+
+/**
+ * Switches each accepted layered level to `wirebench`, worked out again from `project` itself; a
+ * level whose fingerprint no longer matches is refused (convert-imported-scripts spec §4.2, §7).
+ * Nothing is written here: the caller writes `conversions.applied[].backups`, then saves.
+ *
+ * @param takenBackups a fresh listing of the project's `imported-scripts/`, taken for this change
+ */
+export function convertScripts(
+  project: Project,
+  levels: readonly { readonly ownerId: string; readonly fingerprint: string }[],
+  takenBackups: ReadonlySet<string>,
+): { readonly project: Project; readonly conversions: ScriptConversions } {
+  const { project: next, applied, refused } = applyConversions(project, levels, takenBackups);
+  return { project: next, conversions: { applied, refused } };
 }
