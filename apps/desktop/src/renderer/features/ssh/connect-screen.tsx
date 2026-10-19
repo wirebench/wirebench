@@ -688,7 +688,15 @@ export function ConnectScreen({
   // Retry leads only where trying again can work; a refused sign-in or a setting is fixed first (#532).
   const fix =
     view?.outcome.kind === 'failed'
-      ? connectFix(view.outcome.error, host === undefined ? undefined : { hostId, user, auth: host.ssh.auth.value })
+      ? connectFix(
+          view.outcome.error,
+          host !== undefined
+            ? { hostId, user, auth: host.ssh.auth.value, host: `${host.address}:${String(host.ssh.port.value)}` }
+            : // A one-off server signs in with the agent (#537); a password is the way in when that fails (#722).
+              quick !== undefined
+              ? { hostId, user, auth: { kind: 'agent' }, host: `${quick.address}:${String(quick.port)}` }
+              : undefined,
+        )
       : undefined;
   const retryPrimary = fix?.retryPrimary ?? true;
 
@@ -835,7 +843,7 @@ export function ConnectScreen({
             secret={fix.secret}
             identity={authIdentity?.name}
             onRetry={onRetry}
-            onOnce={fix.missing ? onPassword : undefined}
+            onOnce={fix.once ? onPassword : undefined}
           />
         )}
         {fix?.ask === 'pin' && onPin !== undefined && view !== undefined && (

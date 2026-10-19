@@ -54,6 +54,56 @@ test('Connect to Host takes a server that is not saved, and Save as host… fill
   await expect(dialog.getByRole('radio', { name: 'Agent', exact: true })).toBeChecked();
 });
 
+test('a quick connect the agent cannot sign in to takes a password, used once (#722)', async () => {
+  test.setTimeout(120_000);
+  // Password only: the agent fails here whether or not one runs on this machine.
+  fixture = await startSshFixture({ password: { user: 'tester', password: 'pw' } });
+  launched = await launchApp();
+  const page = launched.window;
+  await createWorkspace(page, 'Quick');
+
+  await page.keyboard.press(`${MOD}+Shift+P`);
+  await page.getByTestId('command-palette-input').fill('Connect to Host');
+  await page
+    .getByRole('option', { name: /Connect to Host/ })
+    .first()
+    .click();
+  await page.getByTestId('quick-open-input').fill(`tester@127.0.0.1:${String(fixture.port)}`);
+  await page.getByTestId('quick-connect').click();
+
+  // With no agent the connect stops before the network; with one, the new key is trusted first. Either way the
+  // trust prompt is answered whenever it shows.
+  const trust = page.getByTestId('trust-dialog');
+  const trustWhenAsked = async (): Promise<void> => {
+    if (await trust.isVisible()) await trust.getByRole('button', { name: 'Trust and connect' }).click();
+  };
+  const screen = page.getByTestId('connect-screen');
+  const password = screen.getByLabel('Password for tester', { exact: true });
+  await expect
+    .poll(
+      async () => {
+        await trustWhenAsked();
+        return password.isVisible();
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+  // Nothing to store it under: a one-off server has no secret.
+  await expect(screen.getByLabel('Remember on this machine')).toHaveCount(0);
+  await password.fill('pw');
+  await screen.getByRole('button', { name: 'Connect', exact: true }).click();
+  const connected = page.getByTestId('editor-area').getByLabel('connected', { exact: true });
+  await expect
+    .poll(
+      async () => {
+        await trustWhenAsked();
+        return connected.isVisible();
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+});
+
 test('in a terminal the palette answers to Mod+Shift+P, and the status bar shows the session (#537)', async () => {
   test.setTimeout(180_000);
   fixture = await startSshFixture({ password: { user: 'tester', password: 'pw' } });

@@ -67,7 +67,7 @@ describe('connectFix (#532)', () => {
       ask: 'password',
       secret: 'box_pw',
       user: 'root',
-      missing: false,
+      once: false,
     });
   });
 
@@ -80,7 +80,7 @@ describe('connectFix (#532)', () => {
       kind: 'settings',
       ask: 'password',
       secret: 'box_pw',
-      missing: true,
+      once: true,
     });
     // Another secret (an env variable's, say) is set in the settings.
     expect(connectFix(error('secret-missing', { name: 'token' }), PASSWORD).ask).toBeUndefined();
@@ -90,6 +90,17 @@ describe('connectFix (#532)', () => {
     expect(connectFix(error('ssh-auth-failed'), KEY)).toEqual({ kind: 'auth', retryPrimary: false });
     expect(connectFix(error('ssh-auth-failed', { agent: 'missing' }), PASSWORD).ask).toBeUndefined();
     expect(connectFix(error('ssh-auth-failed', { hop: 0, hops: 2 }), PASSWORD).ask).toBeUndefined();
+  });
+
+  it('an agent that cannot sign in to the target asks for a password to use once (#722)', () => {
+    const AGENT: SignIn = { hostId: 'quick-1', user: 'ops', auth: { kind: 'agent' }, host: '10.0.0.1:22' };
+    const once = { kind: 'auth', retryPrimary: false, ask: 'password', secret: undefined, user: 'ops', once: true };
+    expect(connectFix(error('ssh-auth-failed', { agent: 'missing', host: '10.0.0.1:22' }), AGENT)).toEqual(once);
+    // The server took none of the agent's keys.
+    expect(connectFix(error('ssh-auth-failed', { host: '10.0.0.1:22', tried: ['agent'] }), AGENT)).toEqual(once);
+    // A jump host's agent failure is not the target's: its settings fix it.
+    expect(connectFix(error('ssh-auth-failed', { agent: 'missing', host: '10.0.0.9:22' }), AGENT).ask).toBeUndefined();
+    expect(connectFix(error('ssh-auth-failed', { hop: 0, hops: 2 }), AGENT).ask).toBeUndefined();
   });
 
   it('without the host (gone from the file) it only places Retry', () => {

@@ -325,6 +325,8 @@ export interface SignIn {
   readonly hostId: string;
   readonly user: string | undefined;
   readonly auth: SshAuthWire | undefined;
+  /** The target as errors name it, `address:port`: an agent failure on a jump host is not the target's. */
+  readonly host?: string | undefined;
 }
 
 /**
@@ -339,10 +341,14 @@ export type ConnectFix =
       readonly kind: ConnectErrorKind;
       readonly retryPrimary: false;
       readonly ask: 'password';
-      readonly secret: string;
+      /** Where the password is stored; none for a host that signs in with the agent (#722). */
+      readonly secret: string | undefined;
       readonly user: string | undefined;
-      /** No password is stored on this machine yet (#721): a sign-in step, not a refusal. */
-      readonly missing: boolean;
+      /**
+       * Connect with it once, storing nothing: no password is stored yet (#721), or the agent could not sign
+       * in (#722). Otherwise a stored password was refused, and the one stored is what to fix.
+       */
+      readonly once: boolean;
     }
   /** The security key needs its PIN (#420); `wrong` after one it refused. */
   | { readonly kind: ConnectErrorKind; readonly retryPrimary: false; readonly ask: 'pin'; readonly wrong: boolean }
@@ -375,6 +381,24 @@ export function connectFix(error: ConnectError, target: SignIn | undefined): Con
   const hops = details['hops'];
   const jump = typeof hop === 'number' && typeof hops === 'number' && hop < hops - 1;
   // Only the target's own password: a jump host's, a key or the agent is fixed in the host's settings.
+  // The agent could not sign in to the target (none runs, or the server took none of its keys): a password
+  // typed here is the way in for this connect (#722). A jump host's agent failure is set in its settings.
+  const agentHost = text(details, 'host');
+  if (
+    auth?.kind === 'agent' &&
+    !jump &&
+    error.code === 'ssh-auth-failed' &&
+    (agentHost === undefined || target.host === undefined || agentHost === target.host)
+  ) {
+    return {
+      kind,
+      retryPrimary: false,
+      ask: 'password',
+      secret: undefined,
+      user: text(details, 'user') ?? target.user,
+      once: true,
+    };
+  }
   if (auth?.kind !== 'password' || auth.secret === '' || jump) return { kind, retryPrimary };
   const refused = error.code === 'ssh-auth-failed' && details['agent'] !== 'missing' && details['unusableKey'] !== true;
   const missing = error.code === 'secret-missing' && text(details, 'name') === auth.secret;
@@ -385,6 +409,6 @@ export function connectFix(error: ConnectError, target: SignIn | undefined): Con
     ask: 'password',
     secret: auth.secret,
     user: text(details, 'user') ?? target.user,
-    missing,
+    once: missing,
   };
 }
