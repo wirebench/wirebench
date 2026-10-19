@@ -3,13 +3,17 @@
  * Jest row under each root that runs it, `tc.test`'s three forms, the CryptoJS chains, and the chains
  * and calls left as TODOs.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { restScriptTypes } from '../../../../src/rest/script-types.js';
 import { convertScript } from '../../../../src/script/convert/index.js';
 import type { ConvertProtocol } from '../../../../src/script/convert/roots.js';
 import type { LayeredApi, ScriptPhase } from '../../../../src/script/model.js';
 import { apiDeclarations, secretNameType } from '../../../../src/script/types/api.js';
 import { typeErrors } from '../ts-check.js';
+
+// A type check builds a program for its case; under coverage on a busy runner that outlasts the
+// default 5 s.
+vi.setConfig({ testTimeout: 30_000 });
 
 const PROTOCOLS: readonly ConvertProtocol[] = ['rest', 'soap', 'grpc', 'mcp'];
 const PHASES: readonly ScriptPhase[] = ['pre', 'post'];
