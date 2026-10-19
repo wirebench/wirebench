@@ -284,7 +284,7 @@ function SnippetForm(props: {
     <form
       aria-label={snippet === undefined ? 'New snippet' : `Edit ${snippet.name}`}
       data-testid="snippet-editor"
-      className="flex flex-col gap-3 px-1 py-3"
+      className="flex h-full min-h-0 flex-col"
       onSubmit={(e) => {
         e.preventDefault();
         if (!canSave || saving) return;
@@ -295,273 +295,281 @@ function SnippetForm(props: {
         void submit();
       }}
     >
-      <h3 className="text-sm font-medium text-fg-default">{snippet === undefined ? 'New snippet' : snippet.name}</h3>
-      <Field label="Name">
-        {(id) => (
-          <input
-            id={id}
-            className={INPUT_CLASS}
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value);
-            }}
-          />
-        )}
-      </Field>
-      <Field label="Package">
-        {(id) => (
-          <select
-            id={id}
-            className={INPUT_CLASS}
-            value={packageChoice}
-            onChange={(e) => {
-              setPackageChoice(e.target.value);
-            }}
-          >
-            <option value={NO_PACKAGE}>No package</option>
-            {file.packages.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-            <option value={NEW_PACKAGE}>New package…</option>
-          </select>
-        )}
-      </Field>
-      {packageChoice === NEW_PACKAGE && (
-        <Field label="New package name">
+      {/* The fields scroll; Run, Insert and Save stay in a footer under them, as in the host form (S63). */}
+      <div data-testid="snippet-editor-body" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 py-3">
+        <h3 className="text-sm font-medium text-fg-default">{snippet === undefined ? 'New snippet' : snippet.name}</h3>
+        <Field label="Name">
           {(id) => (
             <input
               id={id}
               className={INPUT_CLASS}
-              value={newPackage}
+              value={name}
               onChange={(e) => {
-                setNewPackage(e.target.value);
+                setName(e.target.value);
               }}
             />
           )}
         </Field>
-      )}
-      <Field label="Tags">
-        {(id) => (
-          <input
-            id={id}
-            className={INPUT_CLASS}
-            placeholder="deploy, logs"
-            value={tags}
-            onChange={(e) => {
-              setTags(e.target.value);
-            }}
-          />
-        )}
-      </Field>
-      <Field label="Description">
-        {(id) => (
-          <input
-            id={id}
-            className={INPUT_CLASS}
-            value={description}
-            onChange={(e) => {
-              setDescription(e.target.value);
-            }}
-          />
-        )}
-      </Field>
-      <div className="flex flex-col gap-1 text-xs">
-        <div className="flex items-center gap-2">
-          <span className="flex-1 text-fg-subtle">Script</span>
-          <select
-            aria-label="Insert secret"
-            className={`${INPUT_CLASS} max-w-44`}
-            value=""
-            onChange={(e) => {
-              const choice = e.target.value;
-              if (choice === NEW_SECRET) setNewSecret({ name: '', value: '' });
-              else if (choice !== '') insert(`\${secret:${choice}}`);
-            }}
-          >
-            <option value="">Insert secret…</option>
-            {secretNames.map((n) => (
-              <option key={n.name} value={n.name}>
-                {n.name}
-              </option>
-            ))}
-            <option value={NEW_SECRET}>New secret…</option>
-          </select>
-        </div>
-        <div className="h-40 overflow-hidden rounded border border-hairline-strong">
-          <CodeEditor
-            value={script}
-            language="text"
-            ariaLabel="Script"
-            lineNumbers={false}
-            onChange={setScript}
-            onMount={onMount}
-          />
-        </div>
-      </div>
-      {newSecret !== undefined && (
-        <div className="flex flex-col gap-2 rounded-md border border-hairline p-2">
-          <Field label="Secret name">
+        <Field label="Package">
+          {(id) => (
+            <select
+              id={id}
+              className={INPUT_CLASS}
+              value={packageChoice}
+              onChange={(e) => {
+                setPackageChoice(e.target.value);
+              }}
+            >
+              <option value={NO_PACKAGE}>No package</option>
+              {file.packages.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+              <option value={NEW_PACKAGE}>New package…</option>
+            </select>
+          )}
+        </Field>
+        {packageChoice === NEW_PACKAGE && (
+          <Field label="New package name">
             {(id) => (
               <input
                 id={id}
-                className={`${INPUT_CLASS} font-mono`}
-                value={newSecret.name}
-                onChange={(e) => {
-                  setNewSecret({ ...newSecret, name: e.target.value });
-                }}
-              />
-            )}
-          </Field>
-          <Field label="Secret value">
-            {(id) => (
-              <input
-                id={id}
-                type="password"
-                autoComplete="off"
                 className={INPUT_CLASS}
-                value={newSecret.value}
+                value={newPackage}
                 onChange={(e) => {
-                  setNewSecret({ ...newSecret, value: e.target.value });
+                  setNewPackage(e.target.value);
                 }}
               />
             )}
           </Field>
-          {newSecret.error !== undefined && <p className="text-xs text-status-danger">{newSecret.error}</p>}
-          <div className="flex justify-end gap-2">
-            <Button
-              onClick={() => {
-                setNewSecret(undefined);
+        )}
+        <Field label="Tags">
+          {(id) => (
+            <input
+              id={id}
+              className={INPUT_CLASS}
+              placeholder="deploy, logs"
+              value={tags}
+              onChange={(e) => {
+                setTags(e.target.value);
+              }}
+            />
+          )}
+        </Field>
+        <Field label="Description">
+          {(id) => (
+            <input
+              id={id}
+              className={INPUT_CLASS}
+              value={description}
+              onChange={(e) => {
+                setDescription(e.target.value);
+              }}
+            />
+          )}
+        </Field>
+        <div className="flex flex-col gap-1 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-fg-subtle">Script</span>
+            <select
+              aria-label="Insert secret"
+              className={`${INPUT_CLASS} max-w-44`}
+              value=""
+              onChange={(e) => {
+                const choice = e.target.value;
+                if (choice === NEW_SECRET) setNewSecret({ name: '', value: '' });
+                else if (choice !== '') insert(`\${secret:${choice}}`);
               }}
             >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                void storeSecret();
-              }}
-            >
-              Store and insert
-            </Button>
+              <option value="">Insert secret…</option>
+              {secretNames.map((n) => (
+                <option key={n.name} value={n.name}>
+                  {n.name}
+                </option>
+              ))}
+              <option value={NEW_SECRET}>New secret…</option>
+            </select>
+          </div>
+          <div className="h-40 overflow-hidden rounded border border-hairline-strong">
+            <CodeEditor
+              value={script}
+              language="text"
+              ariaLabel="Script"
+              lineNumbers={false}
+              onChange={setScript}
+              onMount={onMount}
+            />
           </div>
         </div>
-      )}
-      {undeclared.length > 0 && (
-        <ul className="flex flex-wrap gap-1">
-          {undeclared.map((token) => (
-            <li key={token}>
-              <button
-                type="button"
-                className="rounded border border-hairline px-2 py-0.5 text-xs text-fg-muted hover:bg-surface-raised"
+        {newSecret !== undefined && (
+          <div className="flex flex-col gap-2 rounded-md border border-hairline p-2">
+            <Field label="Secret name">
+              {(id) => (
+                <input
+                  id={id}
+                  className={`${INPUT_CLASS} font-mono`}
+                  value={newSecret.name}
+                  onChange={(e) => {
+                    setNewSecret({ ...newSecret, name: e.target.value });
+                  }}
+                />
+              )}
+            </Field>
+            <Field label="Secret value">
+              {(id) => (
+                <input
+                  id={id}
+                  type="password"
+                  autoComplete="off"
+                  className={INPUT_CLASS}
+                  value={newSecret.value}
+                  onChange={(e) => {
+                    setNewSecret({ ...newSecret, value: e.target.value });
+                  }}
+                />
+              )}
+            </Field>
+            {newSecret.error !== undefined && <p className="text-xs text-status-danger">{newSecret.error}</p>}
+            <div className="flex justify-end gap-2">
+              <Button
                 onClick={() => {
-                  setVariables((rows) => [...rows, row({ name: token })]);
+                  setNewSecret(undefined);
                 }}
               >
-                {`Declare \${${token}} as a variable`}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <fieldset className="flex min-w-0 flex-col gap-2 text-xs">
-        <legend className="mb-1 text-fg-subtle">Variables</legend>
-        {/* Below 360px of panel width a row stacks: name and remove on one line, Label and Default under them. */}
-        {variables.map((v) => (
-          <div
-            key={v.key}
-            data-testid="snippet-variable-row"
-            className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-1 @min-[360px]:grid-cols-[6rem_minmax(0,1fr)_minmax(0,1fr)_auto]"
-          >
-            <input
-              aria-label="Variable name"
-              className={`${INPUT_CLASS} order-1 col-span-2 min-w-0 font-mono @min-[360px]:order-none @min-[360px]:col-span-1`}
-              value={v.name}
-              onChange={(e) => {
-                setVariable(v.key, { name: e.target.value });
-              }}
-            />
-            <input
-              aria-label={`Label of ${v.name}`}
-              placeholder="Label"
-              className={`${INPUT_CLASS} order-3 min-w-0 @min-[360px]:order-none`}
-              value={v.label}
-              onChange={(e) => {
-                setVariable(v.key, { label: e.target.value });
-              }}
-            />
-            <input
-              aria-label={`Default of ${v.name}`}
-              placeholder="Default"
-              className={`${INPUT_CLASS} order-4 min-w-0 @min-[360px]:order-none`}
-              value={v.default}
-              onChange={(e) => {
-                setVariable(v.key, { default: e.target.value });
-              }}
-            />
-            <button
-              type="button"
-              aria-label={`Remove ${v.name}`}
-              className="order-2 inline-flex size-6 items-center @min-[360px]:order-none justify-center rounded text-fg-subtle hover:bg-surface-hover"
-              onClick={() => {
-                setVariables((rows) => rows.filter((r) => r.key !== v.key));
-              }}
-            >
-              <X size={12} aria-hidden="true" />
-            </button>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void storeSecret();
+                }}
+              >
+                Store and insert
+              </Button>
+            </div>
           </div>
-        ))}
-        <Button
-          className="self-start"
-          onClick={() => {
-            setVariables((rows) => [...rows, row({ name: '' })]);
-          }}
-        >
-          <Plus size={12} aria-hidden="true" /> Add variable
-        </Button>
-      </fieldset>
-      <Switch label="Press Enter" checked={enter} onChange={setEnter} />
-      <Switch label="Always confirm" checked={confirm} onChange={setConfirm} />
-      {error !== undefined && (
-        <p role="alert" className="rounded border border-status-danger px-2 py-1 text-sm text-fg-default">
-          {error}
-        </p>
-      )}
-      {askingUndeclared && (
-        <p
-          role="alert"
-          data-testid="snippet-undeclared-ask"
-          className="rounded border border-status-warning px-2 py-1 text-sm text-fg-default"
-        >
-          {`${undeclared.map((token) => `\${${token}}`).join(', ')} ${
-            undeclared.length === 1 ? 'is not a variable' : 'are not variables'
-          }, so a run types ${undeclared.length === 1 ? 'it' : 'them'} as is and the shell expands ${
-            undeclared.length === 1 ? 'it' : 'them'
-          }. Declare ${undeclared.length === 1 ? 'it' : 'them'} above, or save anyway.`}
-        </p>
-      )}
-      <div className="flex justify-end gap-2">
-        {snippet !== undefined && (
-          <>
-            <Button
-              onClick={() => {
-                run({});
-              }}
-            >
-              Run
-            </Button>
-            <Button
-              onClick={() => {
-                run({ enter: false });
-              }}
-            >
-              Insert
-            </Button>
-          </>
         )}
-        <Button variant="primary" type="submit" disabled={!canSave || saving}>
-          {askingUndeclared ? 'Save anyway' : 'Save'}
-        </Button>
+        {undeclared.length > 0 && (
+          <ul className="flex flex-wrap gap-1">
+            {undeclared.map((token) => (
+              <li key={token}>
+                <button
+                  type="button"
+                  className="rounded border border-hairline px-2 py-0.5 text-xs text-fg-muted hover:bg-surface-raised"
+                  onClick={() => {
+                    setVariables((rows) => [...rows, row({ name: token })]);
+                  }}
+                >
+                  {`Declare \${${token}} as a variable`}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <fieldset className="flex min-w-0 flex-col gap-2 text-xs">
+          <legend className="mb-1 text-fg-subtle">Variables</legend>
+          {/* Below 360px of panel width a row stacks: name and remove on one line, Label and Default under them. */}
+          {variables.map((v) => (
+            <div
+              key={v.key}
+              data-testid="snippet-variable-row"
+              className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-1 @min-[360px]:grid-cols-[6rem_minmax(0,1fr)_minmax(0,1fr)_auto]"
+            >
+              <input
+                aria-label="Variable name"
+                className={`${INPUT_CLASS} order-1 col-span-2 min-w-0 font-mono @min-[360px]:order-none @min-[360px]:col-span-1`}
+                value={v.name}
+                onChange={(e) => {
+                  setVariable(v.key, { name: e.target.value });
+                }}
+              />
+              <input
+                aria-label={`Label of ${v.name}`}
+                placeholder="Label"
+                className={`${INPUT_CLASS} order-3 min-w-0 @min-[360px]:order-none`}
+                value={v.label}
+                onChange={(e) => {
+                  setVariable(v.key, { label: e.target.value });
+                }}
+              />
+              <input
+                aria-label={`Default of ${v.name}`}
+                placeholder="Default"
+                className={`${INPUT_CLASS} order-4 min-w-0 @min-[360px]:order-none`}
+                value={v.default}
+                onChange={(e) => {
+                  setVariable(v.key, { default: e.target.value });
+                }}
+              />
+              <button
+                type="button"
+                aria-label={`Remove ${v.name}`}
+                className="order-2 inline-flex size-6 items-center @min-[360px]:order-none justify-center rounded text-fg-subtle hover:bg-surface-hover"
+                onClick={() => {
+                  setVariables((rows) => rows.filter((r) => r.key !== v.key));
+                }}
+              >
+                <X size={12} aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+          <Button
+            className="self-start"
+            onClick={() => {
+              setVariables((rows) => [...rows, row({ name: '' })]);
+            }}
+          >
+            <Plus size={12} aria-hidden="true" /> Add variable
+          </Button>
+        </fieldset>
+        <Switch label="Press Enter" checked={enter} onChange={setEnter} />
+        <Switch label="Always confirm" checked={confirm} onChange={setConfirm} />
+      </div>
+      <div
+        data-testid="snippet-editor-footer"
+        className="flex shrink-0 flex-col gap-2 border-t border-hairline px-1 py-2"
+      >
+        {error !== undefined && (
+          <p role="alert" className="rounded border border-status-danger px-2 py-1 text-sm text-fg-default">
+            {error}
+          </p>
+        )}
+        {askingUndeclared && (
+          <p
+            role="alert"
+            data-testid="snippet-undeclared-ask"
+            className="rounded border border-status-warning px-2 py-1 text-sm text-fg-default"
+          >
+            {`${undeclared.map((token) => `\${${token}}`).join(', ')} ${
+              undeclared.length === 1 ? 'is not a variable' : 'are not variables'
+            }, so a run types ${undeclared.length === 1 ? 'it' : 'them'} as is and the shell expands ${
+              undeclared.length === 1 ? 'it' : 'them'
+            }. Declare ${undeclared.length === 1 ? 'it' : 'them'} above, or save anyway.`}
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          {snippet !== undefined && (
+            <>
+              <Button
+                onClick={() => {
+                  run({});
+                }}
+              >
+                Run
+              </Button>
+              <Button
+                onClick={() => {
+                  run({ enter: false });
+                }}
+              >
+                Insert
+              </Button>
+            </>
+          )}
+          <Button variant="primary" type="submit" disabled={!canSave || saving}>
+            {askingUndeclared ? 'Save anyway' : 'Save'}
+          </Button>
+        </div>
       </div>
       <ConfirmDialog
         open={pendingRun !== undefined}

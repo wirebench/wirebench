@@ -237,6 +237,19 @@ describe('snippet editor', () => {
 });
 
 describe('snippet editor Run and Insert', () => {
+  it('keeps Run, Insert and Save in a footer under the scrolling fields (S63)', () => {
+    editSnippet('uptime');
+    const body = screen.getByTestId('snippet-editor-body');
+    const footer = screen.getByTestId('snippet-editor-footer');
+    for (const name of ['Run', 'Insert', 'Save']) {
+      const button = screen.getByRole('button', { name });
+      expect(footer.contains(button)).toBe(true);
+      expect(body.contains(button)).toBe(false);
+    }
+    expect(body.className).toContain('overflow-y-auto');
+    expect(footer.className).toContain('shrink-0');
+  });
+
   it('with no terminal in front, Run and Insert open the run dialog for the saved snippet', async () => {
     editSnippet('uptime');
     await userEvent.click(screen.getByRole('button', { name: 'Run' }));
