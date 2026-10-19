@@ -16,7 +16,7 @@ import { forwardProblem } from './forwarding/forward-form.js';
 import { ForwardsSection, inheritedForwards } from './forwarding/forwards-section.js';
 import { EnvSection, envProblem, inheritedEnv } from './env-section.js';
 import { AgentForwardingSection, inheritedForwardAgent } from './agent-forwarding.js';
-import { inheritedMosh, inheritedProtocol, MoshSection, moshProblem } from './mosh-section.js';
+import { inheritedMosh, inheritedProtocol, MoshSection, MoshServerFields, moshProblem } from './mosh-section.js';
 import { TELNET_PORT, telnetTargetText } from './host-protocol.js';
 import { inheritedSerial, SerialDeviceField, serialLabel, SerialLineSection, serialProblem } from './serial-section.js';
 import { cleanProxy, proxyProblem, ProxySection } from './proxy-section.js';
@@ -470,9 +470,6 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
       onProtocol={(next) => {
         setSsh((prev) => withField(prev, 'protocol', next));
       }}
-      onMosh={(next) => {
-        setSsh((prev) => withField(prev, 'mosh', next));
-      }}
     />
   );
   const actions = (
@@ -691,6 +688,15 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             Advanced
           </summary>
           <div className="mt-3 flex flex-col gap-3">
+            {protocol === 'mosh' && (
+              <MoshServerFields
+                mosh={ssh.mosh}
+                inheritedMosh={inheritedMosh(chain)}
+                onMosh={(next) => {
+                  setSsh((prev) => withField(prev, 'mosh', next));
+                }}
+              />
+            )}
             {isHost && !serial && (
               <label className={FIELD_CLASS}>
                 <span className="text-fg-subtle">OS</span>

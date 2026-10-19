@@ -88,6 +88,7 @@ afterEach(() => {
 
 const edit = (id: string) => render(<HostForm file={FILE} dialog={{ mode: 'edit-host', id }} embedded />);
 const section = () => screen.getByRole('region', { name: 'Protocol' });
+const moshServer = () => screen.getByRole('region', { name: 'Mosh server' });
 const select = () => within(section()).getByRole<HTMLSelectElement>('combobox', { name: 'Protocol' });
 const save = async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -98,15 +99,20 @@ describe('the protocol section of the host form (#419)', () => {
     edit('plain');
     expect(select().value).toBe('');
     expect(within(section()).getByRole('option', { name: 'SSH' })).toBeTruthy();
-    expect(within(section()).queryByLabelText('UDP ports')).toBeNull();
+    expect(screen.queryByLabelText('UDP ports')).toBeNull();
   });
 
   it('choosing Mosh shows the server fields and saves protocol and block on the host', async () => {
     edit('plain');
     await userEvent.selectOptions(select(), 'mosh');
     expect(within(section()).getByRole('note').textContent).toMatch(/mosh-client/);
-    await userEvent.type(within(section()).getByLabelText('Server command'), '/opt/mosh-server');
-    await userEvent.type(within(section()).getByLabelText('UDP ports'), '61000:61005');
+    // The server fields are rare tuning: under Advanced, after the address every host needs (S62).
+    expect(within(section()).queryByLabelText('Server command')).toBeNull();
+    expect(moshServer().closest('details')?.getAttribute('data-testid')).toBe('host-advanced');
+    const address = screen.getByLabelText('Address');
+    expect(address.compareDocumentPosition(moshServer()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await userEvent.type(within(moshServer()).getByLabelText('Server command'), '/opt/mosh-server');
+    await userEvent.type(within(moshServer()).getByLabelText('UDP ports'), '61000:61005');
     await save();
     expect(saved().hosts[0]!.ssh).toMatchObject({
       protocol: 'mosh',
@@ -119,7 +125,7 @@ describe('the protocol section of the host form (#419)', () => {
     expect(select().value).toBe('');
     expect(within(section()).getByRole('option', { name: 'Inherit (Mosh)' })).toBeTruthy();
     expect(within(section()).getByText('Mosh · from Roaming')).toBeTruthy();
-    expect(within(section()).getByLabelText<HTMLInputElement>('UDP ports').placeholder).toBe('60000:60010');
+    expect(within(moshServer()).getByLabelText<HTMLInputElement>('UDP ports').placeholder).toBe('60000:60010');
     await save();
     const ssh = saved().groups[0]!.hosts[0]!.ssh;
     expect(ssh.protocol).toBeUndefined();
@@ -129,7 +135,7 @@ describe('the protocol section of the host form (#419)', () => {
   it('a host can switch an inherited Mosh back to SSH', async () => {
     edit('train');
     await userEvent.selectOptions(select(), 'ssh');
-    expect(within(section()).queryByLabelText('UDP ports')).toBeNull();
+    expect(screen.queryByLabelText('UDP ports')).toBeNull();
     await save();
     expect(saved().groups[0]!.hosts[0]!.ssh.protocol).toBe('ssh');
   });
@@ -137,8 +143,8 @@ describe('the protocol section of the host form (#419)', () => {
   it('holds Save while the port range is not valid', async () => {
     edit('plain');
     await userEvent.selectOptions(select(), 'mosh');
-    await userEvent.type(within(section()).getByLabelText('UDP ports'), '9:1');
-    expect(within(section()).getByRole('alert').textContent).toMatch(/LOW:HIGH/);
+    await userEvent.type(within(moshServer()).getByLabelText('UDP ports'), '9:1');
+    expect(within(moshServer()).getByRole('alert').textContent).toMatch(/LOW:HIGH/);
     expect(screen.getByTestId('host-form-missing').textContent).toMatch(/UDP ports/);
   });
 });
