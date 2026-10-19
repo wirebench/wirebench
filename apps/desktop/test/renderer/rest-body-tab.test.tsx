@@ -23,6 +23,12 @@ describe('formatRawBody', () => {
     expect('error' in result).toBe(true);
   });
 
+  it('refuses a JSON body with comments rather than dropping them', () => {
+    const result = formatRawBody('{\n  "a": 1\n  // "b": 2\n}', 'json', 2);
+    expect('error' in result && result.error).toContain('comments');
+    expect(formatRawBody('{"u":"http://x"}', 'json', 2)).toEqual({ text: '{\n  "u": "http://x"\n}' });
+  });
+
   it('pretty-prints XML through the engine formatter', () => {
     const result = formatRawBody('<a><b/></a>', 'xml', 2);
     expect('text' in result && result.text).toContain('\n');

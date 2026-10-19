@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { prepareFor } from '../../helpers/prepare-for.js';
+import { resolveRest } from '../../../src/rest/run.js';
 import type { RunContext } from '../../../src/run/context.js';
 import type { SendHost } from '../../../src/run/host.js';
 import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
@@ -453,6 +454,29 @@ describe('prepareFor — REST', () => {
     expect(first.id).toBeDefined();
     expect(first.body).toBe(`{"id":"${first.id}","n":"5"}`);
     expect((await send()).id).not.toBe(first.id);
+  });
+
+  it('strips a JSON body’s comments before expanding it, so a commented-out reference reads nothing', async () => {
+    const asked: string[] = [];
+    const project = makeProject({
+      restBody: {
+        kind: 'raw',
+        language: 'json',
+        text: '{\n  "tenant": "${tenant}",\n  "url": "http://x.test/a",\n  // "key": "${secret:gone}",\n  // "typo": "${nope}"\n}',
+      },
+    });
+    const { input, unresolved } = await resolveRest(
+      restOf(project),
+      contextFor(project, { environmentId: 'env-test' }, { getSecret: (ref) => (asked.push(ref), getSecret(ref)) }),
+    );
+    expect(unresolved).toEqual([]);
+    expect(asked).toEqual([]);
+    const body = input.request.body;
+    if (body.kind !== 'raw') throw new Error('expected a raw body');
+    expect(JSON.parse(body.text)).toEqual({ tenant: 'env-tenant', url: 'http://x.test/a' });
+    // The saved request keeps its comments: only the resolved input is stripped.
+    const saved = restOf(project).request.body;
+    expect(saved.kind === 'raw' && saved.text.includes('// "key"')).toBe(true);
   });
 
   it('refuses the OAuth2 authorization-code grant, which needs a browser', async () => {
