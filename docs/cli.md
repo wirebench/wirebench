@@ -413,6 +413,12 @@ A call that has no typed equivalent stays as a comment with a `TODO(convert)` no
 ```bash
 $ wirebench scripts convert ./project Shop/Carts
 Shop / Carts / Create cart (bruno)
+--- pre (bruno)
++++ pre (typed)
+@@ -1 +1,2 @@
+-bru.setVar('cartId', '42');
++// Converted from a bruno script; the original is in imported-scripts/shop/shop-carts-create cart.pre.js.
++vars.set('cartId', '42');
 --- post (bruno)
 +++ post (typed)
 @@ -1,2 +1,4 @@
@@ -425,7 +431,7 @@ Shop / Carts / Create cart (bruno)
 TODOs in post:
   line 2: bru.sendRequest — a script cannot send requests
 
-1 level, 1 mapped call, 1 TODO
+1 level, 2 mapped calls, 1 TODO
 Nothing written; run with --write to convert.
 ```
 
@@ -439,15 +445,17 @@ With `--write` the command, for each level it can convert:
 
 ```bash
 $ wirebench scripts convert ./project --write
-Converted Shop/Carts/Create cart (bruno): 1 mapped call, 1 TODO
+Converted Shop / Carts / Create cart (bruno): 2 mapped calls, 1 TODO
+  backup: imported-scripts/shop/shop-carts-create cart.pre.js
   backup: imported-scripts/shop/shop-carts-create cart.post.js
-
-Converted 1 level, 1 mapped call, 1 TODO.
+Converted 1 level, 2 mapped calls, 1 TODO.
 ```
 
 A level whose script does not parse is listed with the line and the message, and skipped. It keeps its
-imported script. A backup that cannot be written (the file exists, the folder is not writable) stops the
-command before the save, so the project is unchanged.
+imported script. A level whose id another level also carries (a copied request file keeps its id) is
+listed as `skipped (another level has the same id)` and keeps its imported script, as does the other
+level. A backup that cannot be written (the file exists, the folder is not writable) stops the command
+before the save: the project is not saved; backups already written stay in `imported-scripts/`.
 
 | Code | Meaning |
 | --- | --- |

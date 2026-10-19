@@ -399,7 +399,9 @@ unified diff for each phase, the TODOs left in the converted text, and a total. 
 With `--write` it backs up each phase's imported text to `imported-scripts/<api>/<owner>.<phase>.js`
 (it never overwrites a file), switches the level to the typed API, keeping `enabled`, `secrets`,
 `timeoutMs` and the post-response order, and saves the project. A level whose script does not parse is
-listed and skipped. A backup that cannot be written stops the command before the save.
+listed and skipped, as is a level whose id another level also carries. A backup that cannot be
+written stops the command before the save: the project is not saved; backups already written stay in
+`imported-scripts/`.
 
 It exits 0 when done, 2 for a usage error such as a selector that matches nothing, and 3 when the project
 cannot be loaded, a backup cannot be written or the project cannot be saved. See the
