@@ -98,6 +98,11 @@ describe('connectFix (#532)', () => {
     expect(connectFix(error('ssh-auth-failed', { agent: 'missing', host: '10.0.0.1:22' }), AGENT)).toEqual(once);
     // The server took none of the agent's keys.
     expect(connectFix(error('ssh-auth-failed', { host: '10.0.0.1:22', tried: ['agent'] }), AGENT)).toEqual(once);
+    // Windows, no agent running: Pageant's pipe is not there, a connection error inside the sign-in step.
+    const pipe = { host: '10.0.0.1:22', hop: 0, reason: 'other', phase: 'auth' };
+    expect(connectFix(error('ssh-connect-failed', pipe), AGENT)).toMatchObject({ ask: 'password', once: true });
+    // A connection that failed before the sign-in step is no agent's doing.
+    expect(connectFix(error('ssh-connect-failed', { ...pipe, phase: 'connect' }), AGENT).ask).toBeUndefined();
     // A jump host's agent failure is not the target's: its settings fix it.
     expect(connectFix(error('ssh-auth-failed', { agent: 'missing', host: '10.0.0.9:22' }), AGENT).ask).toBeUndefined();
     expect(connectFix(error('ssh-auth-failed', { hop: 0, hops: 2 }), AGENT).ask).toBeUndefined();
