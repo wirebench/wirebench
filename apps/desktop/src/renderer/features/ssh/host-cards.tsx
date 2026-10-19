@@ -233,7 +233,10 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
                   <PlainTextMark />
                 </span>
               )}
-              <span className="font-mono">{targetOf(host, resolved)}</span>
+              {/* The grid cuts a long target short: the tooltip has all of it (S08). */}
+              <span className="font-mono" title={targetOf(host, resolved)}>
+                {targetOf(host, resolved)}
+              </span>
             </span>
             {grid && tags}
           </span>
