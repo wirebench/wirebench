@@ -1,7 +1,8 @@
 # Spec: Convert imported scripts to Wirebench scripts
 
 **Date:** 2026-10-18
-**Status:** implemented (#698, #711, #712 and PR 4, the desktop); plan in
+**Status:** implemented (#698 the async fix, #711 the engine, #712 the project edit and the CLI, #713
+the desktop); plan in
 `docs/plans/2026-10-18-convert-imported-scripts-plan.md`
 **Milestone:** 6.1 — Team operations
 **Scope:** phase 2 of imported scripts: a "Convert to Wirebench script" action that rewrites a level's
@@ -158,7 +159,9 @@ it:
 
 - The TODO names the call as the layer names it, and adds the layer's reason when the call is one
   the layer refuses (`WHY` in `layer-parts.ts`), or "not converted yet" when the layer runs it but no
-  mapping exists.
+  mapping exists. Two carry their own explanation: a root the script declares itself ("the script
+  declares its own …, so its uses were not converted") and Bruno's `.jsonSchema` (use the request's
+  JSON Schema assertion).
 - Mapped calls inside a commented-out statement are not rewritten; the statement is kept exactly as
   written.
 - A name declared in a commented-out statement and used later makes the type check report "Cannot
@@ -542,17 +545,25 @@ What a converted script does differently from its layered run (§6), one line ea
   large body is slower.
 - **`toBeLevel2xx`-style checks** become `Math.floor(status / 100)` checks, which also accept a numeric
   string.
-- **Chai.** `include` on an array compares items deeply after conversion; `.match` and `.above` need
-  a string and a number.
+- **Chai.** `include` on an array compares items deeply after conversion; `.match` needs a string,
+  and `.above` and `.below` a number.
+- **`tc.test(name, value)` with a variable.** A variable or a property as `value` is converted as a
+  function and called, so a boolean held in a variable fails the test; the type check names the line.
+  Write `tc.test(name, () => value)` before converting.
 - **`vars.set`** throws `script-value-invalid` on a value that is not a string, number or boolean,
   where the layer stored text.
 
 And what the first version leaves out:
 
-- **Accept needs a saved project.** Converting saves the whole model, so a project with unsaved edits
-  is refused with "Save the project first, then convert its scripts."
-- **Not mapped:** MCP response bodies, request bodies (§6.6) and `vars.unset` (the typed API has no
-  unset; ask first, §14). Each stays a TODO.
+- **Accept needs a saved project.** Converting saves the whole model, so Accept refuses a project
+  with unsaved edits: "Save the project first, then convert its scripts."
+- **Accept needs the script files as loaded.** The save removes each converted level's `.js` files,
+  so when one of them was changed or removed outside Wirebench since the project was loaded, Accept
+  refuses before any backup is written: "A script file changed outside Wirebench. Reload the project,
+  then convert." Nothing is written and the model is untouched.
+- **Not mapped:** MCP response bodies, request bodies (§6.6), `CryptoJS.HmacMD5` (only `HmacSHA1`,
+  `HmacSHA256` and `HmacSHA512` are mapped) and `vars.unset` (the typed API has no unset; ask first,
+  §14). Each stays a TODO.
 - **Convert is not in the MCP server** (ask first, §14).
 - **Hoppscotch's `export {};`** is blanked by line, as the runner does, so a matching line inside a
   multi-line template literal is blanked too.

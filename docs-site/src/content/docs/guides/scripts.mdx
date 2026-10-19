@@ -223,10 +223,12 @@ and `pm.*.set` variable calls (all kept as the run's values), `CryptoJS` hashes,
 [Convert](#convert-to-wirebench-scripts) maps `pm.test`, `pm.expect` with the chains it lists, the
 variable calls `get`, `set` and `has` (and `postman.getEnvironmentVariable` and its kin),
 `pm.response` `code`, `json()`, `text()`, `headers.get`, `responseTime` and `to.have.status(n)`, the
-`pm.request` header calls, `url.toString()` and a read of `method`, `pm.info.iteration` and
-`iterationCount`, `pm.iterationData.get`, run control, `btoa`, `atob`, and a `CryptoJS` hash or HMAC
-written as one `CryptoJS.X(…).toString(…)`. It leaves `pm.response.status`, `pm.request.body`,
-`pm.info.requestName`, `unset`, `clear` and `replaceIn` as TODOs.
+`pm.request` header reads (and its header writes, in a pre-request script only), `url.toString()` and
+a read of `method`, `pm.info.iteration` and `iterationCount`, `pm.iterationData.get`, run control,
+`btoa`, `atob`, and a `CryptoJS` hash (`MD5`, `SHA1`, `SHA256`, `SHA512`) or HMAC (`HmacSHA1`,
+`HmacSHA256`, `HmacSHA512`) written as one `CryptoJS.X(…).toString(…)`; `HmacMD5` is not mapped. It
+leaves `pm.response.status`, `pm.request.body`, `pm.info.requestName`, `unset`, `clear` and
+`replaceIn` as TODOs.
 
 A script can't send a request, so a `pm.sendRequest` call needs rewriting:
 
@@ -246,7 +248,7 @@ Insomnia has no script level above a folder, so there is none on the API.
 | --- | --- | --- |
 | `insomnia.test`, `insomnia.expect` | Supported, as `pm.test` and `pm.expect` | Yes, with the chains [Convert](#convert-to-wirebench-scripts) lists |
 | `insomnia.response` (`code`, `status`, `headers`, `json()`, `text()`, `responseTime`) | Supported | Yes for `code`, `headers.get`, `json()`, `text()`, `responseTime` and `to.have.status(n)`; no for `status` |
-| `insomnia.request` (`url`, headers, `body`) | Supported | Yes for `headers.add`, `upsert`, `remove`, `get`, `url.toString()` and reading `method`; no for `body` |
+| `insomnia.request` (`url`, headers, `body`) | Supported | Yes for `headers.get`, `url.toString()` and reading `method`, and for `headers.add`, `upsert` and `remove` in a pre-request script only; no for `body` |
 | `insomnia.variables`, `environment`, `baseEnvironment`, `collectionVariables`, `globals` | Supported; reads check `vars` then `props`, writes go to `vars` | Yes for `get`, `set` and `has`; no for `unset`, `clear` and `replaceIn` |
 | `insomnia.iterationData` | Supported; reads the current data row of a [data-driven run](/wirebench/docs/guides/runner/), and has no `set` | Yes for `get`; no for `toObject` |
 | `insomnia.info.requestName` | Supported | No |
@@ -289,7 +291,7 @@ Insomnia import, of a dropped folder too).
 | `res.getUrl()` | Supported; the request's URL, since a script sees no redirect | No |
 | `res.getSize()` | Supported; `{ header, body, total }` in bytes, the header size counted from the status line and headers | No |
 | `res.setBody`, `res.setHeader` | `script-unsupported`; a script cannot change the response | No |
-| `req.getUrl`, `setUrl`, `getMethod`, `setMethod`, `getHeader`, `getHeaders`, `setHeader`, `deleteHeader`, `getBody`, `setBody`, `getName` | Supported | Yes for `getUrl`, `setUrl`, `getMethod`, `setMethod`, `getHeader`, `setHeader` and `deleteHeader` (`setUrl` and `setMethod` on REST only); no for `getHeaders`, `getBody`, `setBody` and `getName` |
+| `req.getUrl`, `setUrl`, `getMethod`, `setMethod`, `getHeader`, `getHeaders`, `setHeader`, `deleteHeader`, `getBody`, `setBody`, `getName` | Supported | Yes for `getUrl`, `getMethod` and `getHeader`, and for `setUrl`, `setMethod`, `setHeader` and `deleteHeader` in a pre-request script only (`setUrl` and `setMethod` on REST only); no for `getHeaders`, `getBody`, `setBody` and `getName` |
 | `req.setHeaders`, `req.getAuthMode` | `script-unsupported` | No |
 | `bru.getVar`, `setVar`, `hasVar`, `deleteVar`, `getEnvVar`, `setEnvVar`, `getGlobalEnvVar`, `setGlobalEnvVar`, `getCollectionVar`, `getFolderVar`, `getRequestVar` | Supported; reads check `vars` then `props`, writes go to `vars` | Yes, except `deleteVar` |
 | `bru.getEnvName`, `bru.getCollectionName` | Supported; both give `undefined`, since a run has no named environment or collection a script can see | No |
@@ -345,7 +347,7 @@ post-response script. Pre-request scripts run outermost first, as in every layer
 | `hopp.env`, `hopp.env.active`, `hopp.env.global` | Supported; `get`, `getRaw`, `set` and `delete`. `get` expands `<<name>>`, `getRaw` does not, and both give `null` for an unset name | Yes for `getRaw` and `set`; no for `get` and `delete` |
 | `hopp.env.reset`, `getInitialRaw`, `setInitial` | `script-unsupported` | No |
 | `hopp.request` reads: `url`, `method`, `headers`, `params`, `body`, `variables` | Supported; `headers` and `params` are lists of `{ key, value }` rows, `body` is `{ contentType, body }` | No |
-| `hopp.request` writes: `setUrl`, `setMethod`, `setHeader`, `setHeaders`, `removeHeader`, `setParam`, `setParams`, `removeParam`, `setBody`, `variables.set` | Supported in a pre-request script only; `setBody({ contentType, body })` also sets `Content-Type` | Yes for `setHeader` and `removeHeader`; no for the rest |
+| `hopp.request` writes: `setUrl`, `setMethod`, `setHeader`, `setHeaders`, `removeHeader`, `setParam`, `setParams`, `removeParam`, `setBody`, `variables.set` | Supported in a pre-request script only; `setBody({ contentType, body })` also sets `Content-Type` | Yes for `setHeader` and `removeHeader`, in a pre-request script only; no for the rest |
 | `hopp.request.setAuth`, `hopp.request.auth` | `script-unsupported`; use the request's **Auth** tab | No |
 | `pm.*` | Supported as in the Postman layer, except the rows below | As in the [Postman layer](#postman-scripts) |
 | `pm.collectionVariables`, `pm.iterationData`, `pm.visualizer`, `pm.execution.setNextRequest`, `pm.execution.skipRequest` | `script-unsupported` | No |
@@ -412,7 +414,9 @@ side, the imported text on the left and the typed one on the right, with the typ
 the typed text under it. **Accept** converts the ticked rows in one edit, then reports each level
 with its backups and its TODO count, and each level it left as it was with the reason ("changed since
 the review opened", "another level has the same id"). **Cancel** changes nothing. Converting saves
-the project, so Accept asks you to save it first when it has unsaved edits. Nothing is switched on: a
+the project, so Accept refuses a project with unsaved edits: "Save the project first, then convert its
+scripts." It also refuses when a script file it would remove was changed outside Wirebench: "A script
+file changed outside Wirebench. Reload the project, then convert." Either way nothing is written. Nothing is switched on: a
 level whose scripts were off stays off.
 
 **The backup.** Before the save, each phase's imported text is written to
@@ -434,8 +438,9 @@ with one line above it naming the call and why:
 // });
 ```
 
-"not converted yet" marks a call the layer runs and Convert does not map yet; any other reason is
-the layer's own, for a call no script can make. A name the commented-out statement declared is then
+"not converted yet" marks a call the layer runs and Convert does not map yet. A root the script
+declares itself says so, and its uses are left as written. Bruno's `.jsonSchema` points at the
+request's JSON Schema assertion. Any other reason is the layer's own, for a call no script can make. A name the commented-out statement declared is then
 missing where it is used, and the type check says so: the type check lists what is left to do. The
 per-client tables above have a Convert column saying which calls are mapped.
 
@@ -460,7 +465,11 @@ are left as TODOs.
   and a loop that reads a large body is slower.
 - `toBeLevel2xx()` and the others become `Math.floor(status / 100)` checks, which also accept a
   numeric string.
-- `include` on an array compares items deeply, and `match` and `above` need a string and a number.
+- `include` on an array compares items deeply; `match` needs a string, and `above` and `below` a
+  number.
+- `tc.test(name, value)` with a variable or a property as `value` is converted as a function and
+  called, so a boolean held in a variable fails the test, and the type check names the line. Write
+  `tc.test(name, () => value)` before converting.
 - `vars.set` throws `script-value-invalid` on a value that is not a string, number or boolean, where
   the layer stored text.
 
