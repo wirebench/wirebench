@@ -490,7 +490,10 @@ export function HostCards({
               onClick={() => {
                 newHost(section.group === undefined ? {} : { parent: section.group.id });
               }}
-              className="ml-auto flex items-center gap-1 rounded px-1 text-xs text-fg-subtle opacity-0 group-hover/section:opacity-100 hover:text-fg-default focus-visible:opacity-100"
+              // An empty group keeps it in view: hover is not how anyone finds the way in (S49).
+              className={`ml-auto flex items-center gap-1 rounded px-1 text-xs text-fg-subtle hover:text-fg-default focus-visible:opacity-100 ${
+                section.hosts.length === 0 ? '' : 'opacity-0 group-hover/section:opacity-100'
+              }`}
             >
               <Plus size={12} aria-hidden="true" /> Add host
             </button>
@@ -500,7 +503,18 @@ export function HostCards({
           <section key={key} aria-label={section.title} className="flex flex-col gap-2">
             {headed && (section.group === undefined ? heading : <GroupMenu group={section.group}>{heading}</GroupMenu>)}
             {isFolded ? null : section.hosts.length === 0 ? (
-              <p className="text-xs text-fg-subtle">No hosts in this group yet.</p>
+              <p className="flex items-center gap-1 text-xs text-fg-subtle">
+                No hosts in this group yet ·
+                <button
+                  type="button"
+                  onClick={() => {
+                    newHost(section.group === undefined ? {} : { parent: section.group.id });
+                  }}
+                  className="rounded text-accent hover:underline focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+                >
+                  Add host
+                </button>
+              </p>
             ) : (
               <ul
                 aria-label={`Hosts in ${section.title}`}

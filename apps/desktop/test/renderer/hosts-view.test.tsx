@@ -1012,6 +1012,19 @@ describe('Editing in the details panel', () => {
       screen.getByTestId('host-draft-card'),
     );
   });
+  it('an empty group offers Add host inline, and keeps its header button in view (S49)', async () => {
+    const empty = { id: 'e', name: 'Staging', tags: [], ssh: {}, groups: [], hosts: [] };
+    const file = { ...STATE.file, groups: [...STATE.file.groups, empty] };
+    useHostsStore.setState({ file });
+    listHosts.mockResolvedValue({ ok: true, value: { file, resolved: STATE.resolved, problems: [] } });
+    render(<SshArea />);
+    const staging = await screen.findByRole('region', { name: 'Staging' });
+    expect(within(staging).getByText(/No hosts in this group yet/)).toBeDefined();
+    expect(within(staging).getByRole('button', { name: 'Add a host to Staging' }).className).not.toContain('opacity-0');
+    await userEvent.click(within(staging).getByRole('button', { name: 'Add host' }));
+    await screen.findByTestId('host-dialog');
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: 'Group' }).value).toBe('e');
+  });
   it('the draft sits in the group it will be saved to, and moves with the Group select', async () => {
     render(<SshArea />);
     await userEvent.click(screen.getByRole('button', { name: 'Add a host to Production' }));
