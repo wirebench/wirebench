@@ -1,6 +1,6 @@
 /**
  * A form SAML token in outgoing WS-Security end to end: add a SAML Token entry (Form, Issuer
- * `urn:e2e`, Subject `alice`) to an outgoing configuration, select it on Request 1, send to the
+ * `urn:e2e`, Subject `alice`) to an outgoing configuration, select it on Add (SOAP 1.1), send to the
  * in-process SOAP stub, and read the assertion off the wire in the HTTP Log's raw request.
  */
 
@@ -57,7 +57,7 @@ test.describe('wss saml token', () => {
     await editor.getByLabel('Issuer', { exact: true }).fill('urn:e2e');
     await editor.getByLabel('Subject', { exact: true }).fill('alice');
 
-    // --- select it on Request 1 and send ----------------------------------------------------
+    // --- select it on Add (SOAP 1.1) and send ----------------------------------------------------
     await selectTab(page, 'Request tabs', 'Auth');
     await page.getByTestId('request-wss-outgoing').selectOption({ label: 'Outgoing WSS' });
 

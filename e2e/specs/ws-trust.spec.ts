@@ -79,7 +79,7 @@ test.describe('ws-trust issued token', () => {
     await expect(page.getByTestId('ssl-ca-bundle')).toHaveValue(bundlePath);
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('settings-page')).toHaveCount(0);
-    await page.getByRole('tab', { name: 'Request 1' }).click();
+    await page.getByRole('tab', { name: 'Add (SOAP 1.1)' }).click();
     await expect(page.getByTestId('request-editor')).toBeVisible({ timeout: 20_000 });
 
     // --- add an Issued Token entry pointing at the token service ----------------------------
@@ -104,7 +104,7 @@ test.describe('ws-trust issued token', () => {
     await entry.getByRole('button', { name: 'Save' }).click();
     await expect(entry.getByText('••••••••')).toBeVisible();
 
-    // --- select it on Request 1 and send twice ----------------------------------------------
+    // --- select it on Add (SOAP 1.1) and send twice ----------------------------------------------
     await selectTab(page, 'Request tabs', 'Auth');
     await page.getByTestId('request-wss-outgoing').selectOption({ label: 'Outgoing WSS' });
     await page.getByTestId('request-endpoint').fill(`${server.url}/soap`);
@@ -116,7 +116,7 @@ test.describe('ws-trust issued token', () => {
     // --- one token request: one STS row, whose name carries the request's ---------------------
     const stsRows = logRows(page).filter({ hasText: 'STS ·' });
     await expect(stsRows).toHaveCount(1);
-    await expect(stsRows.first()).toContainText('STS · Request 1');
+    await expect(stsRows.first()).toContainText('STS · Add (SOAP 1.1)');
     expect(sts.requests).toHaveLength(1);
 
     // --- the entry's status line, open all along, updates in place once the send cached a token --

@@ -138,7 +138,7 @@ test.describe('live updates', () => {
     });
 
     // --- Alice pushes; Bob shows 1 to pull within 5 s, with auto-fetch at ten minutes (criterion 1)
-    await expandExplorer(alice.window, 'Request 1');
+    await expandExplorer(alice.window, 'Add (SOAP 1.1)');
     await openFirstRequest(alice.window);
     await saveIntA(alice.window, '5555');
     await expect.poll(() => server.headContains(workspaceId, intA('5555')), { timeout: SYNC_TIMEOUT }).toBe(true);

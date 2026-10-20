@@ -353,7 +353,7 @@ export const CONFLICT_MINE = '2222';
  */
 export async function produceRequestConflict(pageA: Page, pageB: Page, remoteDir: string): Promise<void> {
   for (const page of [pageA, pageB]) {
-    await expandExplorer(page, 'Request 1');
+    await expandExplorer(page, 'Add (SOAP 1.1)');
     await openFirstRequest(page);
   }
   await setMonacoText(pageB, 'Request envelope XML', calculatorEnvelope(CONFLICT_MINE));

@@ -28,6 +28,7 @@ import {
   exportDefinition,
   fetchDocumentFromCache,
   generateDocs,
+  generatedRequestName,
   generateId,
   IMPORTED_SCRIPTS_DIR,
   interfaceDir,
@@ -1219,7 +1220,8 @@ export class SoapHost implements KindHostHooks {
         interfaceId,
         bindingName: operation.binding,
         operationName: operation.name,
-        name: 'Request 1',
+        // Named after the operation, with the binding when there are several, not "Request 1" (#726).
+        name: generatedRequestName(operation, summary.operations),
         generated: {
           envelopeXml: generated.envelopeXml,
           soapVersion: generated.soapVersion,

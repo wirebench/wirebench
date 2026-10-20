@@ -1,6 +1,6 @@
 /**
  * Outgoing WS-Security end to end: build a configuration with a Timestamp and a digest
- * UsernameToken in the WS-Security view, select it on Request 1, and send it to the echoing
+ * UsernameToken in the WS-Security view, select it on Add (SOAP 1.1), and send it to the echoing
  * `/soap` route — which hands the secured envelope straight back, proving the header was on
  * the wire and not merely configured.
  *
@@ -90,7 +90,7 @@ test.describe('wss', () => {
     await password.getByRole('button', { name: 'Save' }).click();
     await expect(password.getByText('••••••••')).toBeVisible();
 
-    // --- select it on Request 1 and send ----------------------------------------------------
+    // --- select it on Add (SOAP 1.1) and send ----------------------------------------------------
     await selectTab(page, 'Request tabs', 'Auth');
     await page.getByTestId('request-wss-outgoing').selectOption({ label: 'Outgoing WSS' });
     // The envelope and its views live on the request pane's Body tab.
@@ -179,7 +179,7 @@ test.describe('wss', () => {
     await expect(editor.getByLabel('Signature alias')).toBeVisible();
     await expect(page.getByTestId('wss-part-row')).toHaveCount(2);
 
-    // --- select it on Request 1 and send ----------------------------------------------------
+    // --- select it on Add (SOAP 1.1) and send ----------------------------------------------------
     await selectTab(page, 'Request tabs', 'Auth');
     await page.getByTestId('request-wss-outgoing').selectOption({ label: 'Outgoing WSS' });
     // The envelope and its views live on the request pane's Body tab.
@@ -256,7 +256,7 @@ test.describe('wss', () => {
     await expect(editor.getByLabel('Encryption alias')).toBeVisible();
     await editor.getByLabel('Embed key').check();
 
-    // --- select it on Request 1 and send ----------------------------------------------------
+    // --- select it on Add (SOAP 1.1) and send ----------------------------------------------------
     await selectTab(page, 'Request tabs', 'Auth');
     await page.getByTestId('request-wss-outgoing').selectOption({ label: 'Outgoing WSS' });
     // The envelope and its views live on the request pane's Body tab.
@@ -337,7 +337,7 @@ test.describe('wss', () => {
     await editor.getByLabel('Decryption keystore').selectOption({ label: 'client' });
     await editor.getByLabel('Signature truststore').selectOption({ label: 'client' });
 
-    // --- select it on Request 1 and send to the signed+encrypted route -----------------------
+    // --- select it on Add (SOAP 1.1) and send to the signed+encrypted route -----------------------
     await selectTab(page, 'Request tabs', 'Auth');
     await page.getByTestId('request-wss-incoming').selectOption({ label: 'Incoming WSS' });
     // The envelope and its views live on the request pane's Body tab.

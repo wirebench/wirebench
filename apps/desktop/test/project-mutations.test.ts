@@ -58,15 +58,21 @@ describe('applyChange', () => {
     expect(soapInterfacesOf(project)).toHaveLength(1);
   });
 
-  it('add-request generates an envelope and names it Request N', async () => {
+  it('add-request generates an envelope and names it after the operation, then "Add 2" (#726)', async () => {
     const result = await applyChange(
       build(),
       { kind: 'add-request', interfaceId: 'iface-1', bindingName: BINDING, operationName: 'Add' },
       deps,
     );
     const created = findRequest(result.project, result.createdRequestId!);
-    expect(created?.request.name).toBe('Request 2');
-    expect(created?.request.slug).toBe('Request 2');
+    expect(created?.request.name).toBe('Add');
+    expect(created?.request.slug).toBe('Add');
+    const again = await applyChange(
+      result.project,
+      { kind: 'add-request', interfaceId: 'iface-1', bindingName: BINDING, operationName: 'Add' },
+      deps,
+    );
+    expect(findRequest(again.project, again.createdRequestId!)?.request.name).toBe('Add 2');
     expect(created?.request.envelopeXml).toBe('<Add/>');
     expect(created?.request.order).toBe(1);
     // The interface default endpoint is pre-selected, so a new request is sendable at once.
@@ -115,7 +121,7 @@ describe('applyChange', () => {
     );
     const created = findRequest(result.project, result.createdRequestId!);
     expect(created?.operation.name).toBe('Subtract');
-    expect(created?.request.name).toBe('Request 1');
+    expect(created?.request.name).toBe('Subtract');
   });
 
   it('clone-request copies the envelope under a "(copy)" name and a unique slug', async () => {

@@ -517,6 +517,8 @@ export type {
 export { importWsdl } from './soap/import.js';
 export { sendSoapRequest } from './soap/send.js';
 export { generateEmptySoapRequest, generateSoapRequest } from './soap/generate.js';
+export { generatedRequestName } from './soap/request-name.js';
+export type { NamedOperation } from './soap/request-name.js';
 export { summarizeSoapOperations } from './soap/operations.js';
 export type {
   SoapAttachmentOptions,

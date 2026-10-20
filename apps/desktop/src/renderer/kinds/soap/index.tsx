@@ -43,8 +43,14 @@ export const soapRenderer: RendererKind = {
       persisted: true,
       Component: RequestEditor,
       title: (id, { project }) => project.requests[id]?.name,
-      // Generated requests all start as "Request 1"; the operation tells them apart.
-      detail: (id, { project }) => project.requests[id]?.operationName,
+      // A generated request is named after its operation (#726); name the operation only once the
+      // request has been renamed to something that no longer says it.
+      detail: (id, { project }) => {
+        const request = project.requests[id];
+        return request === undefined || request.name.startsWith(request.operationName)
+          ? undefined
+          : request.operationName;
+      },
       dirty: (id, drafts) => drafts.requests[id] !== undefined,
     },
     {

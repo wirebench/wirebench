@@ -26,7 +26,7 @@ function vaultBlobs(dir: string): string {
 }
 
 async function authPanel(page: Page) {
-  await expandExplorer(page, 'Request 1');
+  await expandExplorer(page, 'Add (SOAP 1.1)');
   await openFirstRequest(page);
   await selectTab(page, 'Request tabs', 'Auth');
   return page.getByTestId('inspector-panel-request');
