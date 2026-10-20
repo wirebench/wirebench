@@ -114,4 +114,13 @@ test('New host opens in the panel with a draft card, at 1024×700 (#674)', async
   await expect(ask).toBeHidden();
   await expect(draft).toHaveCount(0);
   await expect(page.getByTestId('host-row-web-2-copy')).toHaveCount(0);
+
+  // The same from the card's ⋯ menu: its click must not also pick the card, which would drop the copy (S01).
+  await page.getByTestId('host-row-web-2').hover();
+  await page.getByTestId('host-row-web-2').getByRole('button', { name: 'More actions for web-2b' }).click();
+  await page.getByRole('menuitem', { name: 'Duplicate' }).click();
+  await expect(form.getByLabel('Name', { exact: true })).toHaveValue('web-2b copy');
+  await expect(draft).toContainText('web-2b copy');
+  await form.getByRole('button', { name: 'Cancel' }).click();
+  await expect(draft).toHaveCount(0);
 });

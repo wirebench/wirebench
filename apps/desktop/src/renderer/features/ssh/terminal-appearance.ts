@@ -25,6 +25,18 @@ export interface TerminalAppearance {
   readonly theme: ITheme;
 }
 
+/** The scrollbar's slider as the foreground at low opacity; nothing (xterm's own) for a colour not `#rrggbb`. */
+export function sliderColours(
+  foreground: string,
+): Pick<ITheme, 'scrollbarSliderBackground' | 'scrollbarSliderHoverBackground' | 'scrollbarSliderActiveBackground'> {
+  if (!/^#[0-9a-f]{6}$/i.test(foreground)) return {};
+  return {
+    scrollbarSliderBackground: `${foreground}26`,
+    scrollbarSliderHoverBackground: `${foreground}40`,
+    scrollbarSliderActiveBackground: `${foreground}59`,
+  };
+}
+
 /** xterm's colours from a built-in palette. */
 export function themeFromScheme(scheme: TerminalScheme): ITheme {
   const [
@@ -51,6 +63,8 @@ export function themeFromScheme(scheme: TerminalScheme): ITheme {
     cursor: scheme.cursor,
     cursorAccent: scheme.background,
     selectionBackground: scheme.selection,
+    // From the scheme's own text, faint: xterm's default slider was an opaque grey slab on a light scheme (S17).
+    ...sliderColours(scheme.foreground),
     black,
     red,
     green,

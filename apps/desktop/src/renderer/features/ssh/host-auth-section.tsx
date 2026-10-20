@@ -15,7 +15,7 @@ const KINDS: readonly { id: Kind; label: string }[] = [
 ];
 
 function describe(auth: SshAuthWire | undefined): string {
-  return auth === undefined ? 'none' : auth.kind === 'agent' ? 'agent' : `${auth.kind} (${auth.secret})`;
+  return auth === undefined ? 'none' : auth.kind === 'agent' ? 'agent' : `${auth.kind} ${auth.secret}`;
 }
 
 /**
@@ -89,7 +89,12 @@ export function HostAuthSection(props: {
   return (
     <fieldset className="flex min-w-0 flex-col gap-2 text-xs">
       <legend className="text-fg-subtle">Authentication</legend>
-      <div role="radiogroup" aria-label="Authentication" className="flex flex-wrap gap-3">
+      {/* Four choices (Inherit with them) go two by two: in the panel they left Agent alone on a second row (S12). */}
+      <div
+        role="radiogroup"
+        aria-label="Authentication"
+        className={kinds.length > 3 ? 'grid grid-cols-2 gap-x-3 gap-y-1' : 'flex flex-wrap gap-3'}
+      >
         {kinds.map((k) => (
           <label key={k.id} className="flex items-center gap-1 text-sm text-fg-default">
             <input
@@ -105,7 +110,12 @@ export function HostAuthSection(props: {
         ))}
       </div>
       {value === undefined && noneLabel === undefined && (
-        <p className="text-fg-subtle">{`Inherited: ${describe(inherited.value)}${source === '' ? '' : ` (${source})`}`}</p>
+        <p className="text-fg-subtle">
+          {/* "Inherited from identity Tester: password tester_password", not two sets of brackets (S12). */}
+          {source.startsWith('from ')
+            ? `Inherited ${source}: ${describe(inherited.value)}`
+            : `Inherited: ${describe(inherited.value)}${source === '' ? '' : ` (${source})`}`}
+        </p>
       )}
       {value?.kind === 'password' && !savedSecret && (
         <div className="flex flex-col gap-1">

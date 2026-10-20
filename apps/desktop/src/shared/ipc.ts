@@ -1222,6 +1222,8 @@ export const channels = {
     keys: defineChannel('ssh.keys', z.undefined(), sshKeysResponseSchema),
     // Device keys (#428): whether this machine's hardware can make one; a handle never crosses.
     deviceKeyStatus: defineChannel('ssh.deviceKeyStatus', z.undefined(), sshDeviceKeyStatusSchema),
+    // The comment a new key gets when none is typed, `user@host` (S15): the dialog fills it in to edit.
+    defaultKeyComment: defineChannel('ssh.defaultKeyComment', z.undefined(), z.object({ comment: z.string() })),
     installKey: defineChannel('ssh.installKey', sshInstallKeyRequestSchema, sshInstallKeyResponseSchema),
     // A key's OpenSSH user certificate (#421), stored as `<secret>_cert`; it is public, so it may cross.
     attachCertificate: defineChannel('ssh.attachCertificate', sshAttachCertificateRequestSchema, sshKeyWireSchema),

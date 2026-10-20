@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 import { startSshFixture, type SshFixture } from '@wirebench/ssh/test-helpers';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createWorkspace } from '../helpers/project.js';
-import { addPasswordHost, trustHostKey } from '../helpers/ssh-host.js';
+import { addPasswordHost, fillNewHost, showSshNav, trustHostKey } from '../helpers/ssh-host.js';
 
 let launched: LaunchedApp | undefined;
 let fixture: SshFixture | undefined;
@@ -155,6 +155,46 @@ test('a refused password is fixed on the screen: Save and retry stores it and co
   await page.keyboard.type('echo fixed');
   await page.keyboard.press('Enter');
   await expect(terminal).toContainText('echo fixed', { timeout: 30_000 });
+});
+
+test('a password left empty is asked for as a sign-in step, used once and not stored (#721)', async () => {
+  test.setTimeout(180_000);
+  fixture = await startSshFixture({ password: { user: 'tester', password: 'pw' } });
+  launched = await launchApp();
+  const page = launched.window;
+  await createWorkspace(page, 'Ops');
+  await showSshNav(page, 'hosts');
+  await page.getByRole('button', { name: 'New host' }).click();
+  const dialog = page.getByTestId('host-dialog');
+  // No password typed: the form says it is asked for when connecting.
+  await fillNewHost(dialog, { name: 'box', port: fixture.port, user: 'tester' });
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(dialog).toBeHidden();
+
+  const ask = async (): Promise<void> => {
+    await page.getByTestId('host-row-box').dblclick();
+    const screen = page.getByTestId('connect-screen');
+    await expect(screen).toHaveAttribute('data-state', 'sign-in', { timeout: 30_000 });
+    await expect(screen.getByRole('heading', { name: 'Sign in to box' })).toBeVisible();
+    await expect(screen.getByRole('alert')).toHaveCount(0);
+    await expect(screen.getByLabel('Remember on this machine')).not.toBeChecked();
+    await screen.getByLabel('Password for tester', { exact: true }).fill('pw');
+    await screen.getByRole('button', { name: 'Connect', exact: true }).click();
+  };
+  await ask();
+  await trustHostKey(page, fixture);
+  await expect(page.getByTestId('editor-area').getByLabel('connected', { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // Nothing was stored: a new session asks again.
+  await page.getByRole('tab', { name: /box/ }).getByTestId('editor-tab-close').click();
+  await page.getByTestId('live-close-confirm').click();
+  await showSshNav(page, 'hosts');
+  await ask();
+  await expect(page.getByTestId('editor-area').getByLabel('connected', { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
 });
 
 test('a host with no user asks who to sign in as, saves it to the host and connects (#532)', async () => {

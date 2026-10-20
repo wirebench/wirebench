@@ -57,6 +57,8 @@ describe('terminal schemes', () => {
     expect(theme.white).toBe('#e5e9f0');
     expect(theme.brightBlack).toBe('#4c566a');
     expect(theme.brightWhite).toBe('#eceff4');
+    // The scrollbar is the text colour, faint, not xterm's opaque grey (S17).
+    expect(theme.scrollbarSliderBackground).toBe('#d8dee926');
   });
 });
 

@@ -51,6 +51,22 @@ All notable changes to this project are documented here. The format follows
   Apache-2.0. Community, Team and Enterprise are unchanged: a server with no license file is still Community
   with five enabled accounts, and nothing shipped as free becomes paid
   ([ADR-0028](docs/adr/0028-the-server-is-licensed-under-the-elastic-license-2-0.md)).
+- **A password left empty is asked for as a sign-in step, and used once.** Connecting to a host whose
+  password was left to be asked shows **Sign in to box** with the password field and **Connect**, instead
+  of a red missing-secret error; the password is used for that connection only, and **Remember on this
+  machine** stores it. When the SSH agent cannot sign in (none runs, or the server takes none of its keys),
+  the connection screen offers the same password field, for quick connects too (#721, #722).
+- **Snippet Run reaches every pane.** In a split tab, the Run dialog lists each connected pane
+  (**Box pair · box**, **Box pair · box-2**) and types into the one picked (#723).
+- **SSH polish.** The host form's footer line wraps instead of being cut; the SSH menu keeps its labels in
+  a narrow sidebar; a card's full target shows on hover; with an identity, the sign-in choices sit two by
+  two and the inherited note reads **Inherited from identity Tester: password tester_password**. A forward
+  rule in the host panel stacks its fields, and **New rule…** names the rule after its target
+  (**localhost-6000**). **Generate key** fills in the real `user@host` comment. The serial port field gives
+  this platform's example, and the form drops the line summary that repeated its fields. The share strip
+  says **has control**, host details say **not detected** for an OS the host never gave, and Keychain says
+  **No identities yet.** Files and **Save layout…** wait for a connected pane, the terminal scrollbar is
+  faint on light schemes, and a pane that reconnected loses its error mark (#723).
 - **Palette: SSH commands come first in the SSH area, and protocols find New host.** Typing in the
   palette ranks the area's lead commands (**Connect…**, **New Host…**) above the area's other commands
   that match only by area, a shorter name wins a tie, and "telnet", "serial" or "mosh" find New host and
@@ -78,6 +94,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Duplicate from a host card's ⋯ menu opens the copy.** It did nothing: the menu's click also picked the
+  card, which dropped the form Duplicate had just opened. The right-click menu was not affected (#719).
+- **Closing a split tab names every host.** A tab split across box and box-2 asks **Close 2 sessions on
+  box and box-2?**, not only the first host's name (#720).
 - **The connection screen names the user it connects as.** A quick host shows `user@address:port`, the
   user typed at the prompt wins over the saved one, and a failed attempt with nothing logged no longer
   shows an empty log box (#716, S67).

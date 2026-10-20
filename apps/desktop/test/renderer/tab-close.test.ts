@@ -138,6 +138,29 @@ describe('closeTabs asks once before ending live sessions (S53)', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  it('names every host when one tab holds sessions on more than one (#720)', async () => {
+    const one = onePane('a');
+    const first = leaves(one)[0]?.paneId ?? '';
+    const mixed = split(one, first, 'row', 'b');
+    const [left, right] = leaves(mixed).map((leaf) => leaf.paneId);
+    useHostsStore.setState({
+      resolved: [
+        { id: 'a', name: 'box' },
+        { id: 'b', name: 'box-2' },
+      ] as never,
+      panes: {
+        [left ?? '']: { hostId: 'a', state: 'open' },
+        [right ?? '']: { hostId: 'b', state: 'open' },
+      },
+    });
+    useEditorsStore.getState().open({ id: 'ssh-terminal:t3', kind: 'ssh-terminal', title: 'Box pair', panes: mixed });
+    const closing = closeTabs(['ssh-terminal:t3']);
+    await settle();
+    expect(useLiveCloseStore.getState().question).toEqual({ sessions: 2, tabs: 1, name: 'box and box-2' });
+    useLiveCloseStore.getState().answer({ close: false, dontAskAgain: false });
+    await closing;
+  });
+
   it('Cancel keeps every tab in the batch', async () => {
     const closing = closeTabs(['rest:a', 'ssh-terminal:t1']);
     await settle();

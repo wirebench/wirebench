@@ -21,6 +21,7 @@ import {
   portsNote,
   RefreshPortsButton,
   serialLabel,
+  serialPathExample,
   serialTargetText,
   useSerialPorts,
 } from './serial-section.js';
@@ -49,6 +50,11 @@ export interface ConnectScreenProps {
   readonly onRetry: () => void;
   /** A security key asked for its PIN (#420): connect again with it. Without it the screen only says so. */
   readonly onPin?: ((pin: string) => void) | undefined;
+  /**
+   * Connects again with a password typed for this connect only (#721, #722). Without it a missing password is
+   * stored before the retry, as before.
+   */
+  readonly onPassword?: ((password: string) => void) | undefined;
   readonly onEditHost: () => void;
   readonly onClose: () => void;
   /** "Connected in N ms" has shown and faded: the caller drops the screen. */
@@ -353,21 +359,37 @@ function PasswordForm({
   secret,
   identity,
   onRetry,
+  onOnce,
 }: {
   readonly user: string | undefined;
-  readonly secret: string;
+  /** Where Remember stores it; none for a host that signs in with the agent (#722). */
+  readonly secret: string | undefined;
   /** The identity the password belongs to (#416): saving it changes it for every host using it. */
   readonly identity: string | undefined;
   readonly onRetry: () => void;
+  /**
+   * Connects once with the typed password, storing nothing (#721, #722): Connect leads, and storing it is the
+   * opt-in "Remember on this machine". Without it the form stores the password and retries, as for a password
+   * the server refused, whose stored value is the one to fix.
+   */
+  readonly onOnce?: ((password: string) => void) | undefined;
 }) {
   const [value, setValue] = useState('');
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [remember, setRemember] = useState(false);
   const field = useFocus<HTMLInputElement>();
   const label = user === undefined ? 'Password' : `Password for ${user}`;
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     if (value === '') return;
+    if (onOnce !== undefined && (!remember || secret === undefined)) {
+      const typed = value;
+      setValue('');
+      onOnce(typed);
+      return;
+    }
+    if (secret === undefined) return;
     setBusy(true);
     const stored = await storeSshSecret({ name: secret, value });
     setValue('');
@@ -403,10 +425,22 @@ function PasswordForm({
           />
         </label>
         <Button type="submit" variant="primary" disabled={busy || value === ''}>
-          Save and retry
+          {onOnce === undefined ? 'Save and retry' : 'Connect'}
         </Button>
       </div>
-      {identity !== undefined && (
+      {onOnce !== undefined && secret !== undefined && (
+        <label className="flex items-center gap-2 text-xs text-fg-muted">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => {
+              setRemember(e.target.checked);
+            }}
+          />
+          {identity === undefined ? 'Remember on this machine' : `Remember for the identity ${identity}`}
+        </label>
+      )}
+      {identity !== undefined && (onOnce === undefined || remember) && (
         <p className="text-xs text-fg-muted">{`Saved for the identity ${identity}: every host that uses it signs in with it.`}</p>
       )}
       {error !== undefined && (
@@ -474,7 +508,7 @@ function SerialDeviceForm({ hostId, onConnect }: { readonly hostId: string; read
         <input
           aria-label="Serial port path"
           className={`${INPUT_CLASS} min-w-0 flex-1 font-mono`}
-          placeholder="COM3 or /dev/ttyUSB0"
+          placeholder={serialPathExample()}
           value={typed}
           onChange={(e) => {
             setTyped(e.target.value);
@@ -548,6 +582,7 @@ export function ConnectScreen({
   typedAhead,
   onRetry,
   onPin,
+  onPassword,
   onEditHost,
   onClose,
   onFaded,
@@ -571,7 +606,15 @@ export function ConnectScreen({
   // A serial console with no port picked on this computer yet has not failed: the screen asks for one,
   // with nothing red, no Retry and no log (#688). A port that was set and is gone stays a failure.
   const choosePort = view?.outcome.kind === 'failed' && view.outcome.error.code === 'serial-device-unset';
-  const failed = outcome === 'failed' && !choosePort;
+  // No password stored for a host that signs in with one is a sign-in step, not a failure (#721): the form
+  // promised to ask for it at connect time. Asked like the port above: nothing red, no Retry, no log.
+  const signIn =
+    onPassword !== undefined &&
+    view?.outcome.kind === 'failed' &&
+    view.outcome.error.code === 'secret-missing' &&
+    host?.ssh.auth.value?.kind === 'password' &&
+    view.outcome.error.details?.['name'] === host.ssh.auth.value.secret;
+  const failed = outcome === 'failed' && !choosePort && !signIn;
   const connected = outcome === 'connected';
   const [logOpen, setLogOpen] = useState(failed && !foldLog);
   const [fading, setFading] = useState(false);
@@ -640,18 +683,28 @@ export function ConnectScreen({
   const showActions = failed || (reconnect === undefined && view === undefined);
   // A host's settings stopped it before any step ran: the steps are not the story (#532).
   const settings =
-    view?.outcome.kind === 'failed' && view.outcome.step === undefined && !choosePort ? view.outcome : undefined;
+    view?.outcome.kind === 'failed' && view.outcome.step === undefined && !choosePort && !signIn
+      ? view.outcome
+      : undefined;
   // Retry leads only where trying again can work; a refused sign-in or a setting is fixed first (#532).
   const fix =
     view?.outcome.kind === 'failed'
-      ? connectFix(view.outcome.error, host === undefined ? undefined : { hostId, user, auth: host.ssh.auth.value })
+      ? connectFix(
+          view.outcome.error,
+          host !== undefined
+            ? { hostId, user, auth: host.ssh.auth.value, host: `${host.address}:${String(host.ssh.port.value)}` }
+            : // A one-off server signs in with the agent (#537); a password is the way in when that fails (#722).
+              quick !== undefined
+              ? { hostId, user, auth: { kind: 'agent' }, host: `${quick.address}:${String(quick.port)}` }
+              : undefined,
+        )
       : undefined;
   const retryPrimary = fix?.retryPrimary ?? true;
 
   return (
     <div
       data-testid="connect-screen"
-      data-state={choosePort ? 'choose-port' : (outcome ?? 'waiting')}
+      data-state={choosePort ? 'choose-port' : signIn ? 'sign-in' : (outcome ?? 'waiting')}
       role="region"
       aria-label={`Connection to ${host?.name ?? hostId}`}
       className={`${overlay ? 'absolute inset-0 z-10' : 'h-full'} flex flex-col items-center overflow-auto bg-surface-sunken px-4 py-6 transition-opacity duration-300 ${
@@ -707,8 +760,17 @@ export function ConnectScreen({
           </h2>
         )}
 
+        {signIn && (
+          <div className="flex flex-col gap-1" data-testid="connect-sign-in-step">
+            <h2 className="text-sm font-medium text-fg-default">{`Sign in to ${host?.name ?? hostId}`}</h2>
+            <p className="text-sm text-fg-subtle">
+              {`No password is stored on this machine${user === undefined ? '' : ` for ${user}`}. Type it to connect.`}
+            </p>
+          </div>
+        )}
+
         <ol
-          className={settings === undefined && !choosePort ? 'flex flex-col gap-1' : 'hidden'}
+          className={settings === undefined && !choosePort && !signIn ? 'flex flex-col gap-1' : 'hidden'}
           aria-label="Connection steps"
         >
           {(steps ?? []).map((step) => {
@@ -777,7 +839,13 @@ export function ConnectScreen({
           <SignInAsForm hostId={hostId} paneKey={paneKey} identity={identity} onConnect={onRetry} />
         )}
         {fix?.ask === 'password' && (
-          <PasswordForm user={fix.user} secret={fix.secret} identity={authIdentity?.name} onRetry={onRetry} />
+          <PasswordForm
+            user={fix.user}
+            secret={fix.secret}
+            identity={authIdentity?.name}
+            onRetry={onRetry}
+            onOnce={fix.once ? onPassword : undefined}
+          />
         )}
         {fix?.ask === 'pin' && onPin !== undefined && view !== undefined && (
           <PinForm key={view.attemptId} wrong={fix.wrong} onPin={onPin} />
@@ -804,7 +872,7 @@ export function ConnectScreen({
           </div>
         )}
 
-        {view !== undefined && !choosePort && (
+        {view !== undefined && !choosePort && !signIn && (
           <div>
             <button
               type="button"
@@ -821,7 +889,7 @@ export function ConnectScreen({
         )}
       </div>
       {/* Wider than the steps: log lines are long, and wrapping each one makes the log hard to read. */}
-      {view !== undefined && logOpen && !choosePort && (
+      {view !== undefined && logOpen && !choosePort && !signIn && (
         <div className="mt-2 w-full max-w-3xl">
           <ConnectLog lines={view.log} summary={view.outcome.kind === 'failed' ? view.outcome.sentence : undefined} />
         </div>

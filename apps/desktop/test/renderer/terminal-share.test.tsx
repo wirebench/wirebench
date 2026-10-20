@@ -93,7 +93,7 @@ describe('ShareStrip (#429)', () => {
     Object.assign(navigator, { clipboard: { writeText } });
     render(<ShareStrip share={SHARE} />);
     expect(screen.getByText('Sharing · 2 watching')).toBeTruthy();
-    expect(screen.getByTestId('share-viewer-Cy').textContent).toContain('(typing)');
+    expect(screen.getByTestId('share-viewer-Cy').textContent).toContain('has control');
     expect(screen.getByTestId('share-request').textContent).toContain('Bob asks for control');
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
     expect(terminalShare.grant).toHaveBeenCalledWith({ sessionId: 's1', userId: BOB });

@@ -61,6 +61,13 @@ describe('nextMark', () => {
     }
   });
 
+  it('a session live again turns an error into unread, and leaves other marks (S18)', () => {
+    expect(nextMark('error', { kind: 'recovered' }, BEHIND)).toBe('unread');
+    expect(nextMark('error', { kind: 'recovered' }, FRONT_OTHER_PANE)).toBeUndefined();
+    expect(nextMark('input', { kind: 'recovered' }, BEHIND)).toBe('input');
+    expect(nextMark(undefined, { kind: 'recovered' }, BEHIND)).toBeUndefined();
+  });
+
   it('going behind another tab adds no mark of its own', () => {
     expect(nextMark(undefined, { kind: 'view', view: BEHIND }, FRONT_FOCUSED)).toBeUndefined();
   });

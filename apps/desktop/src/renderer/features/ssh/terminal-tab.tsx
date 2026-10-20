@@ -12,7 +12,14 @@ import { isPaletteChord } from '../../lib/terminal-focus.js';
 import type { Platform } from '../../lib/platform.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
-import { connectToHost, connectWithPin, editHost, paneIsOpen, reconnectToHost } from './connect.js';
+import {
+  connectToHost,
+  connectWithPassword,
+  connectWithPin,
+  editHost,
+  paneIsOpen,
+  reconnectToHost,
+} from './connect.js';
 import { ConnectScreen, ReconnectBar } from './connect-screen.js';
 import type { ReconnectBanner } from './connect-screen.js';
 import { dropAttempt, useConnectStore } from './connect-store.js';
@@ -63,7 +70,7 @@ import { PaneView } from './panes/pane-view.js';
 import { isDrop, onReconnectNow, Reconnector } from './reconnect.js';
 import type { ReconnectState } from './reconnect.js';
 import { attachTerminal, bytesToBase64, detachTerminal } from './terminal-session.js';
-import { forgetMark, noteError, noteOutput, noteView, promptWatcher } from './terminal-marks.js';
+import { forgetMark, noteError, noteOutput, noteRecovered, noteView, promptWatcher } from './terminal-marks.js';
 import { attachOutputHighlights, type OutputHighlights } from './output-highlights.js';
 import { applyAppearance, nextZoom, terminalAppearance, zoomChord } from './terminal-appearance.js';
 import type { TerminalAppearance, TerminalOverride } from './terminal-appearance.js';
@@ -238,6 +245,8 @@ export function TerminalTab({
   const paneIds = leaves(panes).map((leaf) => leaf.paneId);
   const paneKey = paneIds.join(' ');
   const broadcasting = useTabBroadcast(tabId).on;
+  const focusedOpen = focused !== undefined && paneSessions[focused]?.state === 'open';
+  const anyOpen = paneIds.some((id) => paneSessions[id]?.state === 'open');
   // A closed pane leaves the ticks; one pane left ends the broadcast, and so does closing the tab.
   useEffect(() => {
     pruneBroadcast(tabId, paneKey.split(' '));
@@ -286,7 +295,10 @@ export function TerminalTab({
         {hasSshFeatures(focusedProtocol) && (
           <button
             type="button"
-            className={TOOL_CLASS}
+            className={`${TOOL_CLASS} disabled:cursor-not-allowed disabled:opacity-50`}
+            // A failed or unfinished connect has no session for Files to use (S09).
+            disabled={!focusedOpen}
+            title={focusedOpen ? undefined : 'Files opens once this pane is connected'}
             onClick={() => {
               if (focusedHost !== undefined) openFiles(focusedHost);
             }}
@@ -296,7 +308,9 @@ export function TerminalTab({
         )}
         <button
           type="button"
-          className={TOOL_CLASS}
+          className={`${TOOL_CLASS} disabled:cursor-not-allowed disabled:opacity-50`}
+          disabled={!anyOpen}
+          title={anyOpen ? undefined : 'A layout is saved once a pane is connected'}
           onClick={() => {
             useLayoutsStore.getState().setSavingTabId(tabId);
           }}
@@ -702,6 +716,8 @@ function TerminalPane({
         if (isDrop(reason) && prefs.autoReconnect) reconnector.current?.start(prefs.reconnectAttempts);
       },
     });
+    // Live again: a mark the drop left is over (S18).
+    noteRecovered(paneId);
     current.syncSize();
     // What was typed while connecting goes to this pane's shell alone, ahead of anything typed from now on.
     const typed = typeAhead.current.take();
@@ -978,6 +994,10 @@ function TerminalPane({
             }}
             onPin={(pin) => {
               connectWithPin(paneId, pin);
+              useHostsStore.getState().bumpReconnect(paneId);
+            }}
+            onPassword={(password) => {
+              connectWithPassword(paneId, password);
               useHostsStore.getState().bumpReconnect(paneId);
             }}
             onEditHost={() => {
