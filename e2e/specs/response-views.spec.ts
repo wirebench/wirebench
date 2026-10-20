@@ -58,6 +58,9 @@ test.describe('Response views (Raw, Query, Fault)', () => {
     await page.locator('[data-testid="request-send"]').click();
     const status = page.locator('[data-testid="response-status"]');
     await expect(status).toContainText(/200/, { timeout: 10_000 });
+    // On its own line above the response tabs, all of it in view, and no sideways scroll (#725).
+    await expect(status).toBeInViewport({ ratio: 1 });
+    expect((await status.boundingBox())?.width ?? 0).toBeGreaterThan(120);
 
     // Request Raw: the bytes actually sent, headers included.
     await page.getByRole('tab', { name: 'Raw' }).first().click();
