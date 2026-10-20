@@ -16,6 +16,12 @@ import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-d
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { logExchange, makeFailure, makeRestExchange } from '../mocks/exchange-fixtures.js';
 import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
+import { showToast } from '../../src/renderer/components/toast.js';
+
+vi.mock('../../src/renderer/components/toast.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/renderer/components/toast.js')>()),
+  showToast: vi.fn(),
+}));
 
 const draft: RequestDraft = {
   properties: REQUEST_PROPERTIES,
@@ -83,6 +89,27 @@ describe('useExchangesStore', () => {
       },
     });
   }
+
+  it('send() asks once before sending template "?" values; Send anyway stops asking for that request (#728)', async () => {
+    useProjectStore.setState({
+      requests: { r1: draft, r2: { ...draft, id: 'r2', envelopeXml: '<a><b>?</b><c>?</c></a>' } },
+    });
+    const sendFn = vi.fn().mockResolvedValue({ ok: true, value: exchangeSummary('send-2') });
+    stubIpc({ request: { generate: vi.fn(), send: sendFn, cancel: vi.fn() } });
+    vi.mocked(showToast).mockClear();
+
+    await useExchangesStore.getState().send('r2');
+    expect(sendFn).not.toHaveBeenCalled();
+    const [message, action] = vi.mocked(showToast).mock.calls[0] ?? [];
+    expect(message).toContain('2 values still hold the template "?"');
+    expect(action?.label).toBe('Send anyway');
+
+    action?.onClick();
+    await vi.waitFor(() => expect(sendFn).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(useExchangesStore.getState().byRequest['r2']?.status).toBe('done'));
+    await useExchangesStore.getState().send('r2');
+    expect(sendFn).toHaveBeenCalledTimes(2);
+  });
 
   it('send() blocks on validation errors when auto-validate is on', async () => {
     autoValidateOn();

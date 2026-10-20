@@ -14,6 +14,7 @@ import type { SchemaSet } from '../xsd/schema-set.js';
 import type { OperationRef } from '../soap/request-builder.js';
 import { checkSoapStructure } from './soap-structure.js';
 import { validateAgainstSchemaSet } from './schema-validator.js';
+import { findTemplatePlaceholders } from '../xml/template-placeholders.js';
 import type { ValidationBinding, ValidationPart, ValidationProblem } from './types.js';
 
 export type {
@@ -80,7 +81,23 @@ export async function validateMessage(input: ValidateMessageInput): Promise<Vali
     { binding: input.binding, ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}) },
   );
 
-  return { problems: [...structure, ...schema], durationMs: performance.now() - started };
+  // A request still holding the generator's `?` sends it literally (#728). A response is what a
+  // server sent, where `?` can be a real value.
+  const placeholders: ValidationProblem[] =
+    input.direction === 'request'
+      ? findTemplatePlaceholders(input.xml).map((placeholder) => ({
+          severity: 'warning',
+          code: 'template-placeholder',
+          message: `${placeholder.name} still holds the template value "?"`,
+          line: placeholder.line,
+          column: placeholder.column,
+          endLine: placeholder.line,
+          endColumn: placeholder.column + 1,
+          source: 'structure',
+        }))
+      : [];
+
+  return { problems: [...structure, ...schema, ...placeholders], durationMs: performance.now() - started };
 }
 
 /**

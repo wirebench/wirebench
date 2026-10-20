@@ -49,7 +49,7 @@ test.describe('projects on disk', () => {
     await expect(launched.window.getByTestId('workspace-picker')).toBeVisible();
     await expect(launched.window.getByText('No workspaces yet.')).toBeVisible();
 
-    // The import writes one `Add (SOAP 1.1)` per operation, straight to disk.
+    // The import writes one request per operation, straight to disk.
     await createProjectWithCalculator(launched.window, server, { expectProjectName: 'Calculator Project' });
     await expect(launched.window.getByTestId('title-bar')).toContainText('Workspace 1');
     await expect(

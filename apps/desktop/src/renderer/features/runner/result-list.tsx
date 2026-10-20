@@ -72,6 +72,15 @@ export function ResultRow<T extends RunnerRequestResult>({ result, extra }: Resu
       <span className="truncate text-fg-default">{result.path}</span>
       {result.status !== undefined && <span className="text-fg-muted">{result.status}</span>}
       {result.durationMs !== undefined && <span className="text-fg-subtle">{Math.round(result.durationMs)} ms</span>}
+      {result.templatePlaceholders !== undefined && (
+        <span
+          data-testid="runner-result-template"
+          className="shrink-0 rounded-sm bg-status-warning/10 px-1 text-xs text-status-warning"
+          title='Sent with values still holding the template "?"'
+        >
+          {result.templatePlaceholders} × ?
+        </span>
+      )}
     </span>
   );
   return (

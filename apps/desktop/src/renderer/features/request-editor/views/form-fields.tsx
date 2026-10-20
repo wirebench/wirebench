@@ -122,6 +122,23 @@ export function FieldEditor({ node, onChange, disabled = false }: FieldEditorPro
   // the user (or the sample generator) already wrote.
   const isTemporal = inputType === 'date' || inputType === 'time' || inputType === 'datetime-local';
   const temporalOk = isTemporal && /^\d{4}-\d{2}|^\d{2}:\d{2}/.test(value);
+  // The generator's `?` is sent literally, so it must not look like an empty field: a number input
+  // shows "?" as nothing at all (#728). It shows as a marked placeholder that typing replaces.
+  if (value === PLACEHOLDER) {
+    return (
+      <input
+        type="text"
+        aria-label={label}
+        disabled={readOnly}
+        value=""
+        placeholder="? — template value, sent as is"
+        title='Still the template value "?": a send would carry it literally'
+        data-template-placeholder="true"
+        onChange={(event) => onChange(event.target.value)}
+        className="min-w-0 flex-1 rounded-sm border border-dashed border-status-warning bg-surface-base px-1 py-0.5 text-sm text-fg-default placeholder:text-status-warning"
+      />
+    );
+  }
   return (
     <input
       type={isTemporal && !temporalOk ? 'text' : inputType}
