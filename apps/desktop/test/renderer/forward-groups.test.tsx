@@ -369,9 +369,9 @@ describe('the Port forwarding view with groups', () => {
       expect(saveHosts).toHaveBeenCalledOnce();
     });
     expect(saved().hosts.find((h) => h.id === 'db-1')?.forwards).toEqual([
-      { id: 'forward', type: 'local', port: 6000, target: 'localhost:6000' },
+      { id: 'localhost-6000', type: 'local', port: 6000, target: 'localhost:6000' },
     ]);
-    expect(saved().forwardGroups?.[0]?.rules.at(-1)).toEqual({ host: 'db-1', rule: 'forward' });
+    expect(saved().forwardGroups?.[0]?.rules.at(-1)).toEqual({ host: 'db-1', rule: 'localhost-6000' });
   });
 
   it('Delete group offers Undo, which brings the group back (#594)', async () => {

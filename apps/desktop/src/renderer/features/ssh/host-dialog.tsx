@@ -496,8 +496,8 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
         <p
           id={missingId}
           data-testid="host-form-missing"
-          title={summary}
-          className="min-w-0 flex-1 self-center truncate text-xs text-fg-subtle"
+          // It wraps: cut short, "2 fields need a…" lost the word that says what is wrong (S05).
+          className="min-w-0 flex-1 self-center text-xs break-words text-fg-subtle"
         >
           {summary}
         </p>

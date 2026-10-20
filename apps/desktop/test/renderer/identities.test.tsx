@@ -233,7 +233,7 @@ describe('host form: Identity', () => {
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Identity' }), 'deploy');
     expect(screen.getByText('deploy · from identity Deploy')).toBeDefined();
     expect(screen.getByLabelText<HTMLInputElement>('User').disabled).toBe(true);
-    expect(screen.getByText('Inherited: key (DEPLOY_KEY) (from identity Deploy)')).toBeDefined();
+    expect(screen.getByText('Inherited from identity Deploy: key DEPLOY_KEY')).toBeDefined();
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(setSecret).not.toHaveBeenCalled();
     expect(sentFile().hosts.at(-1)?.ssh).toEqual({ identity: 'deploy' });

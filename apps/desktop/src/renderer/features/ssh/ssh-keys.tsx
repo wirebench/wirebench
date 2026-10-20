@@ -270,6 +270,21 @@ function GenerateKeyBody({
   const [algorithm, setAlgorithm] = useState<SshKeyAlgorithmWire>('ed25519');
   const [bits, setBits] = useState<number>();
   const [comment, setComment] = useState('');
+  // What main writes when the field is empty, `user@host`, filled in to see and edit (S15). A comment typed
+  // before it arrives stays.
+  useEffect(() => {
+    let live = true;
+    void Promise.resolve()
+      .then(() => ipc().ssh.defaultKeyComment(undefined))
+      .then((result) => {
+        if (live && result.ok) setComment((typed) => (typed === '' ? result.value.comment : typed));
+      })
+      // Unread, the field stays empty and main still comments the key.
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
   const [passphrase, setPassphrase] = useState('');
   const [repeat, setRepeat] = useState('');
   const [pin, setPin] = useState('');
@@ -464,7 +479,7 @@ function GenerateKeyBody({
               <input
                 className={INPUT_CLASS}
                 value={comment}
-                placeholder="user@this-machine"
+                placeholder="user@host"
                 onChange={(e) => {
                   setComment(e.target.value);
                 }}

@@ -51,14 +51,15 @@ const ENTRIES: readonly {
 ];
 
 /*
- * The menu reads its own width (it is a container). From 7.5rem an entry is icon, label and count, the label
- * cut short with an ellipsis; narrower than that the menu is an icon rail, the label kept for screen
- * readers and in the tooltip.
+ * The menu reads its own width (it is a container). From 5.5rem an entry is icon and label, the label cut short
+ * with an ellipsis, and from 7.5rem its count too; narrower than that the menu is an icon rail, the label kept
+ * for screen readers and in the tooltip. The sidebar's smallest share of a 1024-wide window is about 6rem:
+ * labels fit there, and icons alone are hard to tell apart (S06).
  */
 const ENTRY_CLASS =
-  'flex w-full items-center justify-center gap-2 rounded-md px-2 py-1.5 text-sm @min-[7.5rem]:justify-start';
+  'flex w-full items-center justify-center gap-2 rounded-md px-2 py-1.5 text-sm @min-[5.5rem]:justify-start';
 const LABEL_CLASS =
-  'sr-only @min-[7.5rem]:not-sr-only @min-[7.5rem]:min-w-0 @min-[7.5rem]:flex-1 @min-[7.5rem]:truncate @min-[7.5rem]:text-left';
+  'sr-only @min-[5.5rem]:not-sr-only @min-[5.5rem]:min-w-0 @min-[5.5rem]:flex-1 @min-[5.5rem]:truncate @min-[5.5rem]:text-left';
 const COUNT_CLASS = 'hidden flex-none text-xs text-fg-subtle @min-[7.5rem]:inline';
 
 /**

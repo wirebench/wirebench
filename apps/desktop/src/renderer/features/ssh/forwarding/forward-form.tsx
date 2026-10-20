@@ -72,7 +72,9 @@ export function ForwardForm({ entry, onChange, onRemove, note, heading }: Forwar
     <fieldset
       data-testid="forward-form"
       aria-label={entry.id === '' ? 'New rule' : `Rule ${entry.id}`}
-      className="flex flex-col gap-2 rounded-md border border-hairline p-2"
+      // A container: in the host panel, about 15rem wide, the fields stack instead of pairing up, where Target
+      // showed "7.0.0.1:40407" scrolled past its start and its label wrapped (S13).
+      className="@container flex flex-col gap-2 rounded-md border border-hairline p-2"
     >
       <div className="flex items-center gap-2">
         <span className="text-xs font-medium text-fg-default">
@@ -89,7 +91,7 @@ export function ForwardForm({ entry, onChange, onRemove, note, heading }: Forwar
           </button>
         )}
       </div>
-      <div role="radiogroup" aria-label="Type" className="flex gap-3 text-xs">
+      <div role="radiogroup" aria-label="Type" className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
         {TYPES.map((type) => (
           <label key={type.id} className="flex items-center gap-1 text-fg-default">
             <input
@@ -105,7 +107,7 @@ export function ForwardForm({ entry, onChange, onRemove, note, heading }: Forwar
           </label>
         ))}
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 gap-2 @min-[22rem]:grid-cols-2">
         {field(
           'Name',
           <input

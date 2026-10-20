@@ -157,15 +157,43 @@ describe('runInTerminal', () => {
 });
 
 describe('openTerminals', () => {
-  it('lists each terminal tab with a live focused pane, the host it is on and whether it is protected', () => {
+  it('lists every live pane, the focused one first, named by tab and host in a split (S07)', () => {
     useHostsStore.setState({
       resolved: [{ id: 'db', name: 'Database', protected: { value: true, source: 'host' } }] as never,
     });
     expect(openTerminals()).toEqual([
-      { tabId: 'ssh-terminal:t1', paneId: 'p2', hostId: 'db', label: 'Database', protected: true },
+      {
+        key: 'ssh-terminal:t1 p2',
+        tabId: 'ssh-terminal:t1',
+        paneId: 'p2',
+        hostId: 'db',
+        label: 'web · Database',
+        protected: true,
+      },
+      {
+        key: 'ssh-terminal:t1 p1',
+        tabId: 'ssh-terminal:t1',
+        paneId: 'p1',
+        hostId: 'web',
+        label: 'web · web',
+        protected: false,
+      },
     ]);
-    useHostsStore.setState({ panes: { p2: { hostId: 'db', sessionId: 's-db', state: 'closed' } } });
+    // One live pane left: the host's name alone.
+    useHostsStore.setState({
+      panes: {
+        p1: { hostId: 'web', sessionId: 's-web', state: 'open' },
+        p2: { hostId: 'db', sessionId: 's-db', state: 'closed' },
+      },
+    });
+    expect(openTerminals().map((t) => [t.paneId, t.label])).toEqual([['p1', 'web']]);
+    useHostsStore.setState({ panes: {} });
     expect(openTerminals()).toEqual([]);
+  });
+
+  it('runs into the pane picked, not only the focused one (S07)', async () => {
+    await runInTerminal('ssh-terminal:t1', item(), {}, { paneId: 'p1' });
+    expect(runSnippet).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's-web' }));
   });
 });
 

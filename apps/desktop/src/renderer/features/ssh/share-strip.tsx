@@ -32,7 +32,8 @@ export function ShareStrip({ share }: { readonly share: TerminalShareStateEvent 
           data-testid={`share-viewer-${viewer.name}`}
         >
           {viewer.name}
-          {viewer.control && <span className="text-fg-subtle">(typing)</span>}
+          {/* Whether or not they type right now: "(typing)" read as a moment, not as who holds the keyboard (S11). */}
+          {viewer.control && <span className="text-fg-subtle">has control</span>}
           <button
             type="button"
             aria-label={`Remove ${viewer.name}`}

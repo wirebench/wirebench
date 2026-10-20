@@ -10,7 +10,7 @@
 import { create } from 'zustand';
 import { entityIdOf, TAB_KINDS } from '../kinds/index.js';
 import { useDraftsStore } from '../state/drafts.js';
-import { liveSessionsOf } from '../features/ssh/live-sessions.js';
+import { liveHostNamesOf, liveSessionsOf, namesText } from '../features/ssh/live-sessions.js';
 import { useEditorsStore, type EditorTab } from '../state/editors.js';
 import { usePreferencesStore } from '../state/preferences.js';
 import { useProjectStore } from '../state/project.js';
@@ -110,7 +110,7 @@ async function saveDraft(requestId: string): Promise<void> {
   else if (drafts.mcpRequests[requestId] !== undefined) await project.saveMcpRequest(requestId);
 }
 
-/** What closing tabs with live sessions asks: how many sessions, and the tab's name when there is one tab. */
+/** What closing tabs with live sessions asks: how many sessions, and, for one tab, its name or its hosts' names. */
 export interface LiveCloseQuestion {
   readonly sessions: number;
   readonly tabs: number;
@@ -162,7 +162,10 @@ function liveCloseQuestion(ids: readonly string[]): LiveCloseQuestion | undefine
   const first = live[0];
   if (first === undefined) return undefined;
   const sessions = live.reduce((sum, entry) => sum + entry.sessions, 0);
-  return { sessions, tabs: live.length, name: live.length === 1 ? tabName(first.tab) : '' };
+  if (live.length !== 1) return { sessions, tabs: live.length, name: '' };
+  // A split tab on box and box-2 ends a session on each: the tab's own name would name only the first (#720).
+  const hosts = liveHostNamesOf(first.tab);
+  return { sessions, tabs: 1, name: hosts.length > 1 ? namesText(hosts) : tabName(first.tab) };
 }
 
 /** Asks `question` and whether to go on; "Don't ask again" turns the preference off. */

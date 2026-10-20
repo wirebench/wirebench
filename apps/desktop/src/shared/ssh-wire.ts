@@ -323,6 +323,11 @@ export const sshConnectRequestSchema = z.strictObject({
    * asked for it (`ssh-sk-pin`). Used for this connect only and never stored.
    */
   skPin: z.string().min(1).max(63).optional(),
+  /**
+   * The target's password for this connect only (#721, #722), typed on the connection screen when none is
+   * stored or the agent could not sign in. It replaces the target's sign-in for this connect and is never stored.
+   */
+  password: z.string().min(1).max(4096).optional(),
   /** Connects to this server instead of a saved host; `hostId` names the one-off pane's host. */
   quick: sshQuickTargetSchema.optional(),
 });

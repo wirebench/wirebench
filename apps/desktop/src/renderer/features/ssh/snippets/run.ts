@@ -22,20 +22,23 @@ import { useSnippetsStore } from './snippets-store.js';
 
 export type { HostTarget } from './snippets-prefs.js';
 
-/** A terminal tab: a run types into its focused pane's session. */
+/** A terminal tab: a run types into `paneId`'s session, or the tab's focused pane's without one. */
 export interface TerminalTarget {
   readonly kind: 'terminal';
   readonly tabId: string;
+  readonly paneId?: string;
   /** The host it was on when chosen: names it in the report should the tab close before the run. */
   readonly hostId?: string;
 }
 
-/** An open terminal a run can type into: a tab whose focused pane has a live session. */
+/** An open terminal a run can type into: a pane of a terminal tab with a live session. */
 export interface OpenTerminal {
+  /** Tells the panes of one tab apart: `<tabId> <paneId>`. */
+  readonly key: string;
   readonly tabId: string;
   readonly paneId: string;
   readonly hostId: string;
-  /** The host's name. */
+  /** The host's name; in a tab with several live panes, the tab's name first ("Box pair · box-2"). */
   readonly label: string;
   readonly protected: boolean;
 }
@@ -70,26 +73,51 @@ export function invalidValue(value: string): boolean {
   });
 }
 
-/** The terminal tabs a run can type into, the one used most recently first. */
+/**
+ * The terminals a run can type into: every live pane of every terminal tab, not only the focused one, so each
+ * pane of a split tab can be picked (S07). The tab used most recently first, its focused pane leading.
+ */
 export function openTerminals(): OpenTerminal[] {
   const hosts = useHostsStore.getState();
   const use = (tabId: string): number => hosts.terminalTabUse[tabId] ?? 0;
-  const found: OpenTerminal[] = [];
+  const found: (OpenTerminal & { readonly focused: boolean })[] = [];
   for (const tab of useEditorsStore.getState().tabs) {
     if (tab.kind !== 'ssh-terminal' || tab.panes === undefined) continue;
-    const paneId = focusedPaneOf(tab.id, tab.panes);
-    const pane = paneId === undefined ? undefined : hosts.panes[paneId];
-    if (paneId === undefined || pane?.state !== 'open' || pane.sessionId === undefined) continue;
-    const host = hosts.resolved.find((h) => h.id === pane.hostId);
-    found.push({
-      tabId: tab.id,
-      paneId,
-      hostId: pane.hostId,
-      label: host?.name ?? pane.hostId,
-      protected: host?.protected.value === true,
+    const focused = focusedPaneOf(tab.id, tab.panes);
+    const live = leaves(tab.panes).filter((leaf) => {
+      const pane = hosts.panes[leaf.paneId];
+      return pane?.state === 'open' && pane.sessionId !== undefined;
     });
+    for (const leaf of live) {
+      const hostId = hosts.panes[leaf.paneId]?.hostId ?? leaf.hostId;
+      const host = hosts.resolved.find((h) => h.id === hostId);
+      const name = host?.name ?? hostId;
+      found.push({
+        key: `${tab.id} ${leaf.paneId}`,
+        tabId: tab.id,
+        paneId: leaf.paneId,
+        hostId,
+        label: live.length > 1 ? `${tab.title} · ${name}` : name,
+        protected: host?.protected.value === true,
+        focused: leaf.paneId === focused,
+      });
+    }
   }
-  return found.sort((a, b) => use(b.tabId) - use(a.tabId));
+  return found
+    .sort((a, b) => use(b.tabId) - use(a.tabId) || Number(b.focused) - Number(a.focused))
+    .map(({ focused, ...terminal }) => {
+      void focused;
+      return terminal;
+    });
+}
+
+/** The pane a run into `tabId` types into: `paneId` while it is still in the tab, else the tab's focused one. */
+function paneOf(tabId: string, paneId?: string): { paneId: string; hostId: string } | undefined {
+  const tab = useEditorsStore.getState().tabs.find((t) => t.id === tabId && t.kind === 'ssh-terminal');
+  if (tab?.panes === undefined) return undefined;
+  const wanted = paneId ?? focusedPaneOf(tabId, tab.panes);
+  const leaf = leaves(tab.panes).find((l) => l.paneId === wanted);
+  return leaf === undefined ? undefined : { paneId: leaf.paneId, hostId: leaf.hostId };
 }
 
 /**
@@ -102,10 +130,9 @@ export async function runInTerminal(
   tabId: string,
   item: SnippetListItemWire,
   values: Record<string, string>,
-  opts: { enter?: false; skip?: number } = {},
+  opts: { enter?: false; skip?: number; paneId?: string } = {},
 ): Promise<void> {
-  const tab = useEditorsStore.getState().tabs.find((t) => t.id === tabId && t.kind === 'ssh-terminal');
-  const paneId = tab?.panes === undefined ? undefined : focusedPaneOf(tabId, tab.panes);
+  const paneId = paneOf(tabId, opts.paneId)?.paneId;
   const pane = paneId === undefined ? undefined : useHostsStore.getState().panes[paneId];
   if (paneId === undefined || pane?.state !== 'open' || pane.sessionId === undefined) {
     throw new SnippetRunError('ssh-session-unknown', 'That terminal is not connected');
@@ -189,23 +216,15 @@ export function runSummary(report: RunReport): string {
   return total === 1 && only !== undefined ? `Ran on ${hostName(only)}` : `Ran on ${String(total)} hosts`;
 }
 
-/** The focused pane of a terminal tab, while the tab is open. */
-function focusedPane(tabId: string): { paneId: string; hostId: string } | undefined {
-  const tab = useEditorsStore.getState().tabs.find((t) => t.id === tabId && t.kind === 'ssh-terminal');
-  const paneId = tab?.panes === undefined ? undefined : focusedPaneOf(tabId, tab.panes);
-  const leaf = tab?.panes === undefined ? undefined : leaves(tab.panes).find((l) => l.paneId === paneId);
-  return leaf === undefined ? undefined : { paneId: leaf.paneId, hostId: leaf.hostId };
-}
-
 /**
- * Waits for a terminal tab's focused pane to have a live session, through its connect: a trust prompt or a
- * sign-in waits for the user. `fresh` is a tab the run just opened, whose pane has no state until it mounts;
- * an existing pane that is neither open nor connecting is not waited for.
+ * Waits for a terminal tab's pane (`paneId`, else its focused one) to have a live session, through its connect:
+ * a trust prompt or a sign-in waits for the user. `fresh` is a tab the run just opened, whose pane has no state
+ * until it mounts; an existing pane that is neither open nor connecting is not waited for.
  *
  * @returns whether the session was already open (then it is written to at once)
  * @throws SnippetRunError when the tab closes, or the connect ends without a session
  */
-function sessionOf(tabId: string, fresh: boolean): Promise<boolean> {
+function sessionOf(tabId: string, fresh: boolean, paneId?: string): Promise<boolean> {
   return new Promise((resolve, reject) => {
     let sawPrompt = false;
     const offs: (() => void)[] = [];
@@ -215,7 +234,7 @@ function sessionOf(tabId: string, fresh: boolean): Promise<boolean> {
       else resolve(outcome.open);
     };
     const check = (first: boolean): boolean => {
-      const target = focusedPane(tabId);
+      const target = paneOf(tabId, paneId);
       if (target === undefined) {
         finish(new SnippetRunError('ssh-session-unknown', 'The terminal was closed'));
         return true;
@@ -271,38 +290,48 @@ export async function runOnTargets(
   hosts: readonly HostTarget[],
   opts: { enter?: false; skip?: { readonly tabId: string; readonly count: number } } = {},
 ): Promise<RunReport> {
-  const jobs: { hostId: string; tabId: string; fresh: boolean }[] = [];
+  const jobs: { hostId: string; tabId: string; paneId?: string; fresh: boolean }[] = [];
   const failed: { hostId: string; message: string }[] = [];
   const taken = new Set<string>();
   for (const terminal of terminals) {
-    const hostId = focusedPane(terminal.tabId)?.hostId ?? terminal.hostId;
+    const hostId = paneOf(terminal.tabId, terminal.paneId)?.hostId ?? terminal.hostId;
     if (hostId === undefined) {
       failed.push({ hostId: terminal.tabId, message: 'The terminal was closed' });
       continue;
     }
     if (taken.has(hostId)) continue;
     taken.add(hostId);
-    jobs.push({ hostId, tabId: terminal.tabId, fresh: false });
+    jobs.push({
+      hostId,
+      tabId: terminal.tabId,
+      ...(terminal.paneId === undefined ? {} : { paneId: terminal.paneId }),
+      fresh: false,
+    });
   }
   const open = openTerminals();
   for (const host of expandTargets(hosts, useHostsStore.getState().resolved)) {
     if (taken.has(host.id)) continue;
     taken.add(host.id);
     const reuse = open.find((t) => t.hostId === host.id);
-    jobs.push({ hostId: host.id, tabId: reuse?.tabId ?? openInNewTab(host.id), fresh: reuse === undefined });
+    jobs.push(
+      reuse === undefined
+        ? { hostId: host.id, tabId: openInNewTab(host.id), fresh: true }
+        : { hostId: host.id, tabId: reuse.tabId, paneId: reuse.paneId, fresh: false },
+    );
   }
   const enter = opts.enter === false ? { enter: false as const } : {};
   const results = await Promise.allSettled(
     jobs.map(async (job) => {
-      const wasOpen = await sessionOf(job.tabId, job.fresh);
+      const wasOpen = await sessionOf(job.tabId, job.fresh, job.paneId);
       if (!wasOpen) {
-        const pane = focusedPane(job.tabId);
+        const pane = paneOf(job.tabId, job.paneId);
         const sessionId = pane === undefined ? undefined : useHostsStore.getState().panes[pane.paneId]?.sessionId;
         if (sessionId !== undefined) await whenReady(sessionId);
       }
       // An accepted suggestion's typed start is only in the terminal it came from.
       const skip = opts.skip?.tabId === job.tabId ? { skip: opts.skip.count } : {};
-      await runInTerminal(job.tabId, item, values, { ...enter, ...skip });
+      const pane = job.paneId === undefined ? {} : { paneId: job.paneId };
+      await runInTerminal(job.tabId, item, values, { ...enter, ...skip, ...pane });
     }),
   );
   const ok: string[] = [];
@@ -349,7 +378,7 @@ export function startRun(item: SnippetListItemWire, opts: { enter?: false; ask?:
   const enter = opts.enter === false ? { enter: false as const } : {};
   const skip = opts.skip === undefined || terminal === undefined ? {} : { skip: opts.skip };
   if (opts.ask !== true && mode === 'none' && terminal !== undefined) {
-    runInTerminal(terminal.tabId, item, {}, { ...enter, ...skip }).catch((error: unknown) => {
+    runInTerminal(terminal.tabId, item, {}, { ...enter, ...skip, paneId: terminal.paneId }).catch((error: unknown) => {
       showToast(`${item.name}: ${messageOf(error)}`);
     });
     return;

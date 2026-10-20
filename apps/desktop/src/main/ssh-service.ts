@@ -273,7 +273,14 @@ export class SshService {
     const stale = (): boolean => epoch !== this.epoch || generation !== flight.generation || sender.isDestroyed();
     const closed = (): WirebenchError =>
       new WirebenchError('ssh-session-closed', 'The session closed before it opened');
-    const prepared = await this.connector.prepareShell(sender, request.hostId, stale, request.user, request.quick);
+    const prepared = await this.connector.prepareShell(
+      sender,
+      request.hostId,
+      stale,
+      request.user,
+      request.quick,
+      request.password,
+    );
     const { env, secrets, forwardAgent, mosh, telnet, serial } = prepared;
     if (telnet !== undefined && this.deps.telnet === false) {
       throw new WirebenchError(

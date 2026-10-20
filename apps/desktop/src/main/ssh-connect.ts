@@ -164,7 +164,8 @@ export interface SshConnector {
    * socket to forward, or without one when no agent runs, in which case the shell opens without it.
    * `user` (both): signs in to the target as this user for this connect only, as typed on the connection
    * screen (#532); hosts.yaml is not changed. `quick` (shell only): a server that is not saved (#537), signed in
-   * to with the agent; `hostId` is then the renderer's id for it.
+   * to with the agent; `hostId` is then the renderer's id for it. `password` (shell only): the target signs in
+   * with it for this connect, in place of its own sign-in, and nothing is read for it (#721, #722).
    */
   prepareShell(
     sender: WebContents,
@@ -172,6 +173,7 @@ export interface SshConnector {
     abandoned?: () => boolean,
     user?: string,
     quick?: SshQuickTarget,
+    password?: string,
   ): Promise<{
     hops: HopCredentials[];
     env: Record<string, string>;
@@ -331,7 +333,12 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     return found;
   };
 
-  const credentialsFor = async (chain: readonly ResolvedHost[], getSecret: GetSecret): Promise<HopCredentials[]> => {
+  /** `password`: the target's (last hop's) password for this connect, typed on the connection screen. */
+  const credentialsFor = async (
+    chain: readonly ResolvedHost[],
+    getSecret: GetSecret,
+    password?: string,
+  ): Promise<HopCredentials[]> => {
     const value = (token: string): Promise<string> => secretValue(token, getSecret);
     const hops: HopCredentials[] = [];
     // The first hop's own proxy (#417): the hops after it are reached through it, never through a proxy.
@@ -341,19 +348,22 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
       const auth = hop.ssh.auth.value;
       const user = hop.ssh.user.value;
       if (!auth || user === undefined) continue; // unreachable: chainFor refused incomplete hops
+      const typed = index === chain.length - 1 ? password : undefined;
       const credentials: HopCredentials['auth'] =
-        auth.kind === 'password'
-          ? { kind: 'password', password: await value(auth.password) }
-          : auth.kind === 'key'
-            ? {
-                kind: 'key',
-                privateKey: await value(auth.key),
-                // The secret's name, which is how the user knows the key; shown in progress and errors.
-                label: secretNameOf(auth.key),
-                ...(auth.certificate ? { certificate: await value(auth.certificate) } : {}),
-                ...(auth.passphrase ? { passphrase: await value(auth.passphrase) } : {}),
-              }
-            : { kind: 'agent', socket: requireAgent(hop) };
+        typed !== undefined
+          ? { kind: 'password', password: typed }
+          : auth.kind === 'password'
+            ? { kind: 'password', password: await value(auth.password) }
+            : auth.kind === 'key'
+              ? {
+                  kind: 'key',
+                  privateKey: await value(auth.key),
+                  // The secret's name, which is how the user knows the key; shown in progress and errors.
+                  label: secretNameOf(auth.key),
+                  ...(auth.certificate ? { certificate: await value(auth.certificate) } : {}),
+                  ...(auth.passphrase ? { passphrase: await value(auth.passphrase) } : {}),
+                }
+              : { kind: 'agent', socket: requireAgent(hop) };
       hops.push({
         address: hop.address,
         port: hop.ssh.port.value,
@@ -391,6 +401,7 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     jumps: number,
     getSecret: GetSecret,
     user?: string,
+    typed?: string,
   ): Promise<NonNullable<Awaited<ReturnType<SshConnector['prepareShell']>>['telnet']>> => {
     const value = (token: string): Promise<string> => secretValue(token, getSecret);
     // The target's own proxy is used only when it is the first network hop.
@@ -399,7 +410,7 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     const auth = target.ssh.auth.value;
     // A user from Preferences → SSH is an SSH login name; only one set for the host is typed.
     const login = user ?? (target.ssh.user.from === 'preferences' ? undefined : target.ssh.user.value);
-    const password = auth?.kind === 'password' ? await value(auth.password) : undefined;
+    const password = typed ?? (auth?.kind === 'password' ? await value(auth.password) : undefined);
     return {
       target: {
         address: target.address,
@@ -408,7 +419,7 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
         ...(proxy === undefined ? {} : { proxy }),
       },
       login: { ...(login === undefined ? {} : { user: login }), ...(password === undefined ? {} : { password }) },
-      ...(auth === undefined || auth.kind === 'password' ? {} : { unusedAuth: auth.kind }),
+      ...(auth === undefined || auth.kind === 'password' || typed !== undefined ? {} : { unusedAuth: auth.kind }),
     };
   };
 
@@ -419,6 +430,7 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     user?: string,
     quick?: SshQuickTarget,
     shell = false,
+    password?: string,
   ) => {
     // Taken now, so the secrets are those of the workspace the connect began in, never a later one's.
     const getSecret = deps.secretsFor(sender);
@@ -451,11 +463,17 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
         chain,
         getSecret,
         hops,
-        telnet: await telnetFor(target, jumps.length, getSecret, user),
+        telnet: await telnetFor(target, jumps.length, getSecret, user, password),
         serial: undefined,
       };
     }
-    return { chain, getSecret, hops: await credentialsFor(chain, getSecret), telnet: undefined, serial: undefined };
+    return {
+      chain,
+      getSecret,
+      hops: await credentialsFor(chain, getSecret, password),
+      telnet: undefined,
+      serial: undefined,
+    };
   };
 
   return {
@@ -463,8 +481,16 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
       return (await prepare(sender, hostId, abandoned, user)).hops;
     },
 
-    async prepareShell(sender, hostId, abandoned = () => false, user, quick) {
-      const { chain, getSecret, hops, telnet, serial } = await prepare(sender, hostId, abandoned, user, quick, true);
+    async prepareShell(sender, hostId, abandoned = () => false, user, quick, password) {
+      const { chain, getSecret, hops, telnet, serial } = await prepare(
+        sender,
+        hostId,
+        abandoned,
+        user,
+        quick,
+        true,
+        password,
+      );
       const target = chain[chain.length - 1] as ResolvedHost;
       const terminal = { term: target.ssh.term.value, charset: target.ssh.charset.value };
       if (serial !== undefined) return { hops, env: {}, secrets: [], serial, ...terminal };
@@ -474,9 +500,12 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
         return { hops, env: {}, secrets, telnet, ...terminal };
       }
       const socket = target.ssh.forwardAgent.value ? deps.agentSocket() : undefined;
+      const { env, secrets } = await envFor(target, getSecret);
       return {
         hops,
-        ...(await envFor(target, getSecret)),
+        env,
+        // A password typed for this connect is masked like a stored one, should the shell echo it.
+        secrets: password === undefined ? secrets : [...secrets, password],
         ...(target.ssh.forwardAgent.value ? { forwardAgent: socket ? { socket } : {} } : {}),
         ...(target.ssh.protocol.value === 'mosh'
           ? { mosh: target.ssh.mosh.value === undefined ? {} : { settings: target.ssh.mosh.value } }

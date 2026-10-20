@@ -108,6 +108,14 @@ interface CardProps {
   readonly onSelect: () => void;
 }
 
+/**
+ * Whether a pointer event on a card started inside the card's own DOM. React bubbles events from a portal (the
+ * ⋯ menu's content) through the component tree, so a menu item's click reaches the card's handlers too.
+ */
+function fromCard(e: { readonly target: EventTarget; readonly currentTarget: Element }): boolean {
+  return e.target instanceof Node && e.currentTarget.contains(e.target);
+}
+
 function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }: CardProps) {
   const status = sessionStatus(useHostsStore((s) => hostStatusOf(s.panes, host.id)));
   const osEntry = useHostsStore((s) => (resolved === undefined ? undefined : s.osByHost[osKeyOf(resolved)]));
@@ -161,11 +169,15 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
             : 'border-hairline bg-surface-raised hover:bg-surface-hover'
         } ${grid ? 'items-center gap-2.5 rounded-md p-2' : 'items-center gap-3 rounded-md px-3 py-1'}`}
         onMouseDown={(e) => {
+          if (!fromCard(e)) return;
           if (e.button === 0 && e.detail === 1) {
             noteFirstPress(host.id, e);
           }
         }}
         onClick={(e) => {
+          // The ⋯ menu renders in a portal but is a React child of this card, so its items' clicks bubble here.
+          // Picking Duplicate there must not also pick the card: that leaves the form Duplicate just opened (S01).
+          if (!fromCard(e)) return;
           // The second click of a double-click belongs to connecting (see `double-press.ts`).
           // Picking a card only changes the host the details show; it never opens or closes the panel.
           if (e.detail > 1) return;
@@ -221,7 +233,10 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
                   <PlainTextMark />
                 </span>
               )}
-              <span className="font-mono">{targetOf(host, resolved)}</span>
+              {/* The grid cuts a long target short: the tooltip has all of it (S08). */}
+              <span className="font-mono" title={targetOf(host, resolved)}>
+                {targetOf(host, resolved)}
+              </span>
             </span>
             {grid && tags}
           </span>

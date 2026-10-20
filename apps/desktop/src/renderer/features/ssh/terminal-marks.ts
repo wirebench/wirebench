@@ -21,6 +21,8 @@ export type MarkEvent =
   | { readonly kind: 'output'; readonly prompt: boolean }
   /** Its session ended badly: a non-zero exit, a dropped connection, a connect that failed. */
   | { readonly kind: 'error' }
+  /** A session is live in it again: a reconnect, or a Retry that worked. */
+  | { readonly kind: 'recovered' }
   /** The user moved: its tab came to the front, or it got the keys. */
   | { readonly kind: 'view'; readonly view: MarkView };
 
@@ -48,6 +50,9 @@ export function nextMark(mark: TerminalMark | undefined, event: MarkEvent, view:
       return settle(event.prompt ? worse(mark, 'input') : worse(mark, 'unread'), view);
     case 'error':
       return settle(worse(mark, 'error'), view);
+    case 'recovered':
+      // The error is over: what is left to tell is that something happened there (S18).
+      return settle(mark === 'error' ? 'unread' : mark, view);
   }
 }
 
@@ -128,6 +133,11 @@ export function noteOutput(key: string, prompt: boolean): void {
 /** The terminal's session ended badly or never started. */
 export function noteError(key: string): void {
   apply(key, { kind: 'error' });
+}
+
+/** A session is live in the terminal again: an error mark from before is over. */
+export function noteRecovered(key: string): void {
+  apply(key, { kind: 'recovered' });
 }
 
 /** Where the user sees the terminal now; coming to the front or getting the keys clears its mark. */

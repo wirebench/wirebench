@@ -44,6 +44,31 @@ export function freeRuleId(taken: ReadonlySet<string>): string {
   return id;
 }
 
+/**
+ * The name New rule… suggests while its own is not typed (S14): the target ("localhost-5432"), else the type
+ * and port ("dynamic-1080"), else `forward`; free on the host, with `-2`, `-3` added when taken.
+ */
+export function suggestedRuleId(
+  entry: { readonly type: string; readonly port: number; readonly target?: string | undefined },
+  taken: ReadonlySet<string>,
+): string {
+  const fromTarget = (entry.target ?? '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((part) => part !== '')
+    .join('-');
+  const base =
+    fromTarget !== ''
+      ? fromTarget
+      : Number.isInteger(entry.port) && entry.port > 0
+        ? `${entry.type}-${String(entry.port)}`
+        : undefined;
+  if (base === undefined) return freeRuleId(taken);
+  let id = base;
+  for (let n = 2; taken.has(id); n++) id = `${base}-${String(n)}`;
+  return id;
+}
+
 const SWITCH_CLASS =
   'inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-hairline-strong px-0.5 transition-colors focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none';
 

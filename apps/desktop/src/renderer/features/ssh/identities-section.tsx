@@ -191,6 +191,12 @@ export function IdentitiesSection({ filter }: { readonly filter: string }) {
         A user and a way to sign in that hosts in any group can use. Changing one changes every host that uses it.
       </p>
       {editing !== undefined && editing.id === undefined && <IdentityForm onDone={close} />}
+      {/* Without it the section ran straight into Secrets, its description reading as theirs (S19). */}
+      {identities.length === 0 && editing === undefined && (
+        <p className="text-sm text-fg-muted" data-testid="identities-empty">
+          No identities yet.
+        </p>
+      )}
       {error !== undefined && (
         <p role="alert" className="text-sm text-status-danger">
           {error}

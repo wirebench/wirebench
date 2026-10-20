@@ -6,6 +6,7 @@ import type {
   SerialSettingsWire,
   SshSerialPortWire,
 } from '../../../shared/ssh-wire.js';
+import { detectPlatform } from '../../lib/platform.js';
 import { ipc } from '../../state/ipc-client.js';
 import { INPUT_CLASS, sourceText, type Provenance } from './inherited-field.js';
 
@@ -42,6 +43,11 @@ export function serialLineOf(settings: SerialSettingsWire | undefined): SerialLi
 }
 
 /** `9600 8N1`, `115200 7E2 · RTS/CTS`: the line as consoles are labelled. */
+/** An example port path in this computer's own form: COM3 meant nothing on a Mac or Linux (S16). */
+export function serialPathExample(platform = detectPlatform()): string {
+  return platform === 'win' ? 'COM3' : platform === 'mac' ? '/dev/cu.usbserial-0001' : '/dev/ttyUSB0';
+}
+
 export function serialLabel(settings: SerialSettingsWire | undefined): string {
   const line = serialLineOf(settings);
   const flow = line.flowControl === 'rtscts' ? ' · RTS/CTS' : line.flowControl === 'xonxoff' ? ' · XON/XOFF' : '';
@@ -164,7 +170,7 @@ export function SerialDeviceField({
           id={id}
           list={listId}
           className={`${INPUT_CLASS} min-w-0 flex-1 font-mono`}
-          placeholder={state.ports[0]?.path ?? 'COM3 or /dev/ttyUSB0'}
+          placeholder={state.ports[0]?.path ?? serialPathExample()}
           value={value}
           onChange={(e) => {
             onChange(e.target.value);
@@ -234,10 +240,13 @@ export function SerialLineSection({
   );
   return (
     <section aria-label="Serial line" className="flex flex-col gap-2">
-      <p className="text-xs text-fg-subtle">
-        {`Line: ${serialLabel(own ?? inherited.value)}`}
-        {source !== undefined && <span className="text-fg-faint">{` · ${source}`}</span>}
-      </p>
+      {/* The fields below say the line already: the summary stays only to say where an inherited one is from (S16). */}
+      {source !== undefined && (
+        <p className="text-xs text-fg-subtle">
+          {`Line: ${serialLabel(own ?? inherited.value)}`}
+          <span className="text-fg-faint">{` · ${source}`}</span>
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1 text-xs">
           <label htmlFor={baudId} className="text-fg-subtle">

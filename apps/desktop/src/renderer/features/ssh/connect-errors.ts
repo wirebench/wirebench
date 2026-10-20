@@ -325,6 +325,8 @@ export interface SignIn {
   readonly hostId: string;
   readonly user: string | undefined;
   readonly auth: SshAuthWire | undefined;
+  /** The target as errors name it, `address:port`: an agent failure on a jump host is not the target's. */
+  readonly host?: string | undefined;
 }
 
 /**
@@ -339,13 +341,35 @@ export type ConnectFix =
       readonly kind: ConnectErrorKind;
       readonly retryPrimary: false;
       readonly ask: 'password';
-      readonly secret: string;
+      /** Where the password is stored; none for a host that signs in with the agent (#722). */
+      readonly secret: string | undefined;
       readonly user: string | undefined;
+      /**
+       * Connect with it once, storing nothing: no password is stored yet (#721), or the agent could not sign
+       * in (#722). Otherwise a stored password was refused, and the one stored is what to fix.
+       */
+      readonly once: boolean;
     }
   /** The security key needs its PIN (#420); `wrong` after one it refused. */
   | { readonly kind: ConnectErrorKind; readonly retryPrimary: false; readonly ask: 'pin'; readonly wrong: boolean }
   /** A serial console (#426) has no device on this computer yet, or the one it had is gone: pick one. */
   | { readonly kind: ConnectErrorKind; readonly retryPrimary: false; readonly ask: 'device' };
+
+/**
+ * The agent could not sign in to the target (#722): none runs, or the server took none of its keys. On Windows
+ * an agent that is not running fails inside the sign-in step as a connection error (Pageant's pipe is not
+ * there), not as a refusal. A jump host's agent failure is not the target's: its settings fix it.
+ */
+function agentCouldNotSignIn(error: ConnectError, target: SignIn): boolean {
+  if (target.auth?.kind !== 'agent') return false;
+  const details = error.details ?? {};
+  const hop = details['hop'];
+  const hops = details['hops'];
+  if (typeof hop === 'number' && typeof hops === 'number' && hop < hops - 1) return false;
+  const host = text(details, 'host');
+  if (host !== undefined && target.host !== undefined && host !== target.host) return false;
+  return error.code === 'ssh-auth-failed' || (error.code === 'ssh-connect-failed' && details['phase'] === 'auth');
+}
 
 /** Retry stays primary unless the same attempt would fail the same way: a refused sign-in or a setting. */
 export function connectFix(error: ConnectError, target: SignIn | undefined): ConnectFix {
@@ -358,6 +382,16 @@ export function connectFix(error: ConnectError, target: SignIn | undefined): Con
   }
   if (error.code === 'serial-device-unset' || error.code === 'serial-device-missing') {
     return { kind, retryPrimary: false, ask: 'device' };
+  }
+  if (target !== undefined && agentCouldNotSignIn(error, target)) {
+    return {
+      kind,
+      retryPrimary: false,
+      ask: 'password',
+      secret: undefined,
+      user: text(details, 'user') ?? target.user,
+      once: true,
+    };
   }
   if (target === undefined || retryPrimary) return { kind, retryPrimary };
   const hostId = details['hostId'];
@@ -383,5 +417,6 @@ export function connectFix(error: ConnectError, target: SignIn | undefined): Con
     ask: 'password',
     secret: auth.secret,
     user: text(details, 'user') ?? target.user,
+    once: missing,
   };
 }

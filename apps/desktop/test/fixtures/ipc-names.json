@@ -291,6 +291,7 @@
     "ssh.attachCertificate",
     "ssh.close",
     "ssh.connect",
+    "ssh.defaultKeyComment",
     "ssh.deleteSecret",
     "ssh.deviceKeyStatus",
     "ssh.forgetHostKey",
