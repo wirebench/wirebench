@@ -1179,8 +1179,12 @@ export class SoapHost implements KindHostHooks {
         : 'type' in input.auth
           ? kerberosImportAuth(input.auth.spn)
           : { type: 'basic', username: input.auth.username, passwordRef: input.auth.passwordRef, preemptive: true };
+    // A second import of the same service is told apart by its name: "Calculator (2)" (#727).
+    const takenNames = new Set(soapInterfacesOf(open.project).map((existing) => existing.name));
+    let interfaceName = summary.name;
+    for (let n = 2; takenNames.has(interfaceName); n += 1) interfaceName = `${summary.name} (${String(n)})`;
     const iface: Interface = {
-      ...createInterface(summary.name, {
+      ...createInterface(interfaceName, {
         id: interfaceId,
         slug,
         definitionUrl: summary.definitionUrl,

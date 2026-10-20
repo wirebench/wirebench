@@ -316,6 +316,17 @@ paths:
     expect(existsSync(join(dir, 'apis', 'Calculator', 'api.yaml'))).toBe(true);
   });
 
+  it('names a second import of the same service "Calculator (2)" (#727)', async () => {
+    const dir = join(tempDir('project'), 'Twice Project');
+    const service = newService();
+    await service.create({ dir, name: 'Twice Project' });
+    await service.kind('soap').addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+    const { project } = await service.kind('soap').addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+    await service.close();
+
+    expect(project.interfaces.map((iface) => iface.name)).toEqual(['Calculator', 'Calculator (2)']);
+  });
+
   it('creates, imports, mutates, saves and reopens a project from disk', async () => {
     const dir = join(tempDir('project'), 'Calculator Project');
     const service = newService();

@@ -8,6 +8,7 @@ import {
   REQUEST_ROW,
   createProjectWithCalculator,
   expandExplorer,
+  openImportDialog,
   saveAll,
   workspaceProjectDir,
 } from '../helpers/project.js';
@@ -157,6 +158,34 @@ test.describe('Update Definition, Export and Documentation', () => {
 
     await expect.poll(() => filesEndingWith(projectDir, '.xml.bak').length, { timeout: 20_000 }).toBe(1);
     expect(readFileSync(filesEndingWith(projectDir, '.xml.bak')[0] ?? '', 'utf8')).toContain('WB-EDIT');
+  });
+
+  test('importing the same WSDL again offers Update Definition… or a named copy (#727)', async () => {
+    launched = await launchApp();
+    const page = launched.window;
+    await createProjectWithCalculator(page, v1!);
+
+    // The same URL into the same project: asked, not silently duplicated.
+    await openImportDialog(page, 'wsdl');
+    await page.getByTestId('import-url-input').fill(v1!.wsdlUrl);
+    await page.getByTestId('import-submit').click();
+    await expect(page.getByTestId('import-existing')).toContainText('VersionedService', { timeout: 20_000 });
+
+    // Update Definition… hands over to that flow on the existing interface.
+    await page.getByTestId('import-existing-update').click();
+    await expect(page.getByTestId('update-definition-dialog')).toBeVisible({ timeout: 20_000 });
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('update-definition-dialog')).toBeHidden();
+
+    // Import as a copy adds a second interface, told apart by its name.
+    await openImportDialog(page, 'wsdl');
+    await page.getByTestId('import-url-input').fill(v1!.wsdlUrl);
+    await page.getByTestId('import-submit').click();
+    await page.getByTestId('import-existing-copy').click();
+    await expect(page.getByTestId('import-submit')).toBeHidden({ timeout: 20_000 });
+    await expect(page.locator('[data-tree-id]', { hasText: 'VersionedService (2)' })).toBeVisible({
+      timeout: 20_000,
+    });
   });
 
   test('generates HTML documentation and exports the definition folder', async () => {

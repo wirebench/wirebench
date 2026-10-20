@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { ImportDialog } from '../../src/renderer/features/explorer/import-dialog.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { useInterfaceEditorStore } from '../../src/renderer/features/interface-editor/interface-editor-state.js';
 import type { ProjectWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { NO_REST, PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
@@ -247,5 +248,67 @@ describe('ImportDialog', () => {
     render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="openapi" />);
     expect(screen.getByTestId('definition-auth')).toBeTruthy();
     expect(screen.getAllByText('Authentication')).toHaveLength(1);
+  });
+
+  describe('a WSDL already in the project (#727)', () => {
+    beforeEach(() => {
+      useProjectStore.getState().applySnapshot(project.id, project);
+    });
+
+    function importSameUrl(): void {
+      fireEvent.change(screen.getByLabelText('Definition URL or file'), {
+        target: { value: 'http://example.test/service.wsdl' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Import' }));
+    }
+
+    it('asks instead of importing, and Update Definition… opens that flow on the existing interface', async () => {
+      const importFn = vi.fn();
+      stubWirebench({ project: { addInterface: importFn } });
+      const onOpenChange = vi.fn();
+      render(<ImportDialog open onOpenChange={onOpenChange} />);
+      importSameUrl();
+
+      expect(await screen.findByTestId('import-existing')).toBeTruthy();
+      expect(screen.getByText(/“Calculator” is already in this project/)).toBeTruthy();
+      expect(importFn).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByTestId('import-existing-update'));
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+      expect(useInterfaceEditorStore.getState().dialogFor('iface-1')).toBe('update');
+      expect(importFn).not.toHaveBeenCalled();
+      useInterfaceEditorStore.getState().setDialog('iface-1', undefined);
+    });
+
+    it('Import as a copy goes ahead with the import', async () => {
+      const importFn = vi
+        .fn()
+        .mockResolvedValue({ ok: true, value: { projectId: project.id, project, interfaceId: 'iface-2' } });
+      stubWirebench({ project: { addInterface: importFn } });
+      render(<ImportDialog open onOpenChange={vi.fn()} />);
+      importSameUrl();
+
+      fireEvent.click(await screen.findByTestId('import-existing-copy'));
+      await waitFor(() => expect(importFn).toHaveBeenCalledTimes(1));
+      expect((importFn.mock.calls[0]?.[0] as { source: unknown }).source).toEqual({
+        kind: 'url',
+        url: 'http://example.test/service.wsdl',
+      });
+    });
+
+    it('a different URL imports without asking', async () => {
+      const importFn = vi
+        .fn()
+        .mockResolvedValue({ ok: true, value: { projectId: project.id, project, interfaceId: 'iface-2' } });
+      stubWirebench({ project: { addInterface: importFn } });
+      render(<ImportDialog open onOpenChange={vi.fn()} />);
+      fireEvent.change(screen.getByLabelText('Definition URL or file'), {
+        target: { value: 'http://example.test/other.wsdl' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Import' }));
+
+      await waitFor(() => expect(importFn).toHaveBeenCalledTimes(1));
+      expect(screen.queryByTestId('import-existing')).toBeNull();
+    });
   });
 });
