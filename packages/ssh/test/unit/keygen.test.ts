@@ -55,7 +55,9 @@ describe('generateKey', { timeout: 30_000 }, () => {
     });
     try {
       const key = await generateKey({ algorithm: 'ed25519' });
-      expect(make).toHaveBeenCalledTimes(2);
+      // At least twice: the real pair made after the mocked one may itself lose its leading zero (1 in 256)
+      // and be thrown away too, which made an exact count fail now and then on CI.
+      expect(make.mock.calls.length).toBeGreaterThanOrEqual(2);
       expect(key.publicKey).not.toBe(SHORT_ED25519.public);
       expect(describePrivateKey(key.privateKey).publicKey).toBe(key.publicKey);
     } finally {
