@@ -202,7 +202,8 @@ export function restRequestRow(page: Page, name: string): Locator {
 
 /** Opens the API tab for `name` by double-clicking its explorer row. */
 export async function openApiTab(page: Page, name: string): Promise<void> {
-  await apiRow(page, name).dblclick();
+  // One click opens the tab and leaves the API unfolded (#680); a double-click would fold it.
+  await apiRow(page, name).click();
   await expect(page.getByTestId('api-tab')).toBeVisible({ timeout: 20_000 });
 }
 
