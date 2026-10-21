@@ -74,8 +74,10 @@ export function FeaturesSection({ preferences, update }: SectionProps) {
       {groupsOf(answer.states).map((group) => (
         <SettingsGroup key={group.title} title={group.title}>
           {group.rows.map((state) => {
-            const wanted = preferences.features[state.id] ?? state.default;
+            // What the run started with is the preference as main read it (in a development build,
+            // WIREBENCH_FEATURES laid over the file); a file that is silent shows that, not the default.
             const startedWith = state.preference ?? state.default;
+            const wanted = preferences.features[state.id] ?? startedWith;
             const notes: string[] = [];
             if (state.policy && policyWorkspace !== undefined) {
               notes.push(`Off by team policy for ${policyWorkspace}`);
