@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { InterfaceSummary } from '../../src/shared/kinds/soap/wire.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 import type { ExplorerNode } from '../../src/renderer/features/explorer/tree-nodes.js';
+import { endpointCountText } from '../../src/renderer/kinds/soap/explorer-tree.js';
 import { buildExplorerTree, nodeProjectId, restEntityId } from '../../src/renderer/features/explorer/tree-nodes.js';
 import {
   REQUEST_PROPERTIES,
@@ -819,5 +820,17 @@ describe('buildExplorerTree with mocks', () => {
   it('shows no Mocks group for a project without any', () => {
     const [root] = tree({}, { p1: [] });
     expect(root?.children?.map((child) => child.kind)).toEqual(['interface']);
+  });
+});
+
+describe('endpointCountText (#731 X18)', () => {
+  it('counts ports and distinct addresses, the same in the tree and the overview', () => {
+    const port = (name: string, address?: string) => ({ name, binding: '{tns}B', ...(address ? { address } : {}) });
+    expect(
+      endpointCountText({
+        services: [{ name: 'S', ports: [port('A', 'http://x/soap'), port('B', 'http://x/soap')] }],
+      } as never),
+    ).toBe('2 ports, 1 address');
+    expect(endpointCountText({ services: [{ name: 'S', ports: [port('A')] }] } as never)).toBe('1 port, 0 addresses');
   });
 });

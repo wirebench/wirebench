@@ -3,6 +3,18 @@ import type { ExplorerConflictTargets, ExplorerNode } from '../../features/explo
 import type { RequestDraft } from '../../state/project.js';
 import type { KindExplorerTree } from '../explorer-tree.js';
 
+/**
+ * How many ports an interface's services declare and how many distinct addresses they point at, said
+ * the same way in the tree and in the interface overview (#731 X18): "2 ports, 1 address".
+ */
+export function endpointCountText(summary: Pick<InterfaceSummary, 'services'>): string {
+  const ports = summary.services.flatMap((service) => service.ports);
+  const addresses = new Set(ports.flatMap((port) => (port.address === undefined ? [] : [port.address]))).size;
+  return `${String(ports.length)} ${ports.length === 1 ? 'port' : 'ports'}, ${String(addresses)} ${
+    addresses === 1 ? 'address' : 'addresses'
+  }`;
+}
+
 function endpointsNode(interfaceId: string, summary: InterfaceSummary): ExplorerNode {
   const children: ExplorerNode[] = summary.services.flatMap((service) =>
     service.ports.map((port) => ({
@@ -12,7 +24,13 @@ function endpointsNode(interfaceId: string, summary: InterfaceSummary): Explorer
       ...(port.address !== undefined ? { address: port.address } : {}),
     })),
   );
-  return { id: `endpoints:${interfaceId}`, kind: 'endpoints', label: 'Endpoints', children };
+  return {
+    id: `endpoints:${interfaceId}`,
+    kind: 'endpoints',
+    label: 'Endpoints',
+    suffix: endpointCountText(summary),
+    children,
+  };
 }
 
 function requestNodes(

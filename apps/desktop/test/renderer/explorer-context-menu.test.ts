@@ -125,8 +125,9 @@ describe('explorerMenuItems', () => {
       'Copy SOAPAction',
     ]);
     expect(explorerMenuItems(node({ kind: 'request', requestId: 'r1' })).map((item) => item.label)).toEqual([
-      'Recreate request (keep values)',
-      'Recreate (discard values)',
+      'Send',
+      'Copy as cURL',
+      'Recreate from definition',
       'Create empty',
       'Clone',
       'Rename…',
@@ -144,8 +145,19 @@ describe('explorerMenuItems', () => {
       explorerMenuGroups(node({ kind: 'request', requestId: 'r1' })).map((group) => group.map((i) => i.key)),
     ).toEqual([
       // No 'open': a single click on the row already opens the request.
-      ['recreate', 'recreate-discard', 'recreate-empty'],
+      ['send', 'copy-curl'],
+      ['recreate-from-definition', 'recreate-empty'],
       ['clone', 'rename', 'delete'],
+    ]);
+  });
+
+  it('puts the two Recreate variants under one Recreate from definition submenu (#731 X22)', () => {
+    const recreate = explorerMenuItems(node({ kind: 'request', requestId: 'r1' })).find(
+      (item) => item.key === 'recreate-from-definition',
+    );
+    expect(recreate?.children?.map((item) => [item.key, item.label])).toEqual([
+      ['recreate', 'Keep values'],
+      ['recreate-discard', 'Discard values'],
     ]);
   });
 

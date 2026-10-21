@@ -368,20 +368,43 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
           {menuGroups.map((group, index) => (
             <Fragment key={group[0]?.key ?? index}>
               {index > 0 && <ContextMenu.Separator className="my-1 h-px bg-hairline" />}
-              {group.map((item) => (
-                <ContextMenu.Item
-                  key={item.key}
-                  className={ITEM_CLASS}
-                  onSelect={() => {
-                    if (RENAMING_ITEMS.has(item.key)) {
-                      isRenamingRef.current = true;
-                    }
-                    item.run();
-                  }}
-                >
-                  {item.label}
-                </ContextMenu.Item>
-              ))}
+              {group.map((item) =>
+                item.children !== undefined ? (
+                  <ContextMenu.Sub key={item.key}>
+                    <ContextMenu.SubTrigger className={`${ITEM_CLASS} justify-between gap-4`}>
+                      {item.label}
+                      <span aria-hidden="true" className="text-fg-faint">
+                        ›
+                      </span>
+                    </ContextMenu.SubTrigger>
+                    <ContextMenu.Portal>
+                      <ContextMenu.SubContent
+                        className="z-dropdown min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {item.children.map((child) => (
+                          <ContextMenu.Item key={child.key} className={ITEM_CLASS} onSelect={() => child.run()}>
+                            {child.label}
+                          </ContextMenu.Item>
+                        ))}
+                      </ContextMenu.SubContent>
+                    </ContextMenu.Portal>
+                  </ContextMenu.Sub>
+                ) : (
+                  <ContextMenu.Item
+                    key={item.key}
+                    className={ITEM_CLASS}
+                    onSelect={() => {
+                      if (RENAMING_ITEMS.has(item.key)) {
+                        isRenamingRef.current = true;
+                      }
+                      item.run();
+                    }}
+                  >
+                    {item.label}
+                  </ContextMenu.Item>
+                ),
+              )}
             </Fragment>
           ))}
         </ContextMenu.Content>

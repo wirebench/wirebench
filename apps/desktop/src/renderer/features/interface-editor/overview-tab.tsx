@@ -5,6 +5,7 @@
  * their own.
  */
 
+import { endpointCountText } from '../../kinds/soap/explorer-tree.js';
 import { AuthFields, asSoapAuth, SOAP_AUTH_TYPES } from '../../components/auth-fields.js';
 import { Button } from '../../components/button.js';
 import { ReadOnlySetting, SettingsGroup } from '../../components/settings-grid.js';
@@ -65,7 +66,7 @@ export function OverviewTab({ interfaceId }: OverviewTabProps) {
           value={String(new Set(iface.operations.map((operation) => operation.name)).size)}
           testId="interface-operation-count"
         />
-        <ReadOnlySetting label="Endpoints" value={String(iface.endpoints.length)} testId="interface-endpoint-count" />
+        <ReadOnlySetting label="Endpoints" value={endpointCountText(iface)} testId="interface-endpoint-count" />
         <ReadOnlySetting label="Documents" value={String(documentCount)} testId="interface-document-count" />
         <ReadOnlySetting label="Problems" value={String(iface.problems.length)} />
       </SettingsGroup>
