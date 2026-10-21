@@ -70,6 +70,7 @@ export const AUDIT_ACTIONS = [
   'schedule.run_cancelled',
   'schedule.run_finished',
   'workspace.session_logs_changed',
+  'workspace.features_changed',
   'session_log.started',
   'session_log.read',
   'session_log.deleted',

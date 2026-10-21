@@ -37,7 +37,7 @@ One pull request, one commit per task, `WIREBENCH_SKIP_PERF=1 pnpm check` green 
   and `teamWorkspaceUpdateRequestSchema` (optional, max 32, dedup); `server-api/sync.ts`: on the head.
 - `packages/server/migrations/teams-access/0017_feature-policy.sql`: the column.
 - `teams/repo.ts`: read and update the column; `teams/routes/workspaces.ts`: PATCH by workspace admin,
-  audit `workspace.features-changed`, announce; `sync` head route carries it.
+  audit `workspace.features_changed`, announce; `sync` head route carries it.
 - Tests: server contract tests for PATCH (role, validation, audit, list), sync head; engine schema tests.
 
 ## Task 4 — start-up from the preference (desktop main)

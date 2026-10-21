@@ -53,6 +53,6 @@ describeDb('the teams capability (§5.1)', () => {
 
   it('meta lists teams after identity', async () => {
     const meta = await call<{ capabilities: string[] }>(h, undefined, 'GET', '/meta');
-    expect(meta.body.capabilities).toEqual(['identity', 'teams']);
+    expect(meta.body.capabilities).toEqual(['feature-policy', 'identity', 'teams']);
   });
 });
