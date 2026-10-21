@@ -15,8 +15,9 @@ import {
   wsApisOf,
 } from '@wirebench/engine';
 import type { CollectionExportEnvironment, CollectionExportTarget, Project } from '@wirebench/engine';
-import type { ExportArgs } from '../args.js';
+import type { ExportArgs, FeatureArgs } from '../args.js';
 import { ExitCode } from '../exit-codes.js';
+import { featuresFor } from '../features.js';
 import type { CliIo } from '../main.js';
 import { USAGE_CODES } from '../ops/errors.js';
 import { openProject } from '../ops/project.js';
@@ -38,12 +39,12 @@ function targetFor(project: Project, wanted: string): CollectionExportTarget | s
   return `no API or interface "${wanted}" in the project${known !== '' ? ` (it has: ${known})` : ''}`;
 }
 
-export async function exportCommand(args: ExportArgs, io: CliIo): Promise<ExitCode> {
+export async function exportCommand(args: ExportArgs & FeatureArgs, io: CliIo): Promise<ExitCode> {
   const warn = (line: string): void => {
     io.stderr.write(`${line}\n`);
   };
   try {
-    const opened = await openProject({ projectDir: resolve(args.project), warn });
+    const opened = await openProject({ projectDir: resolve(args.project), warn, registry: featuresFor(args, io) });
     const { project } = opened;
     const target: CollectionExportTarget | string =
       args.api === undefined ? { kind: 'project' } : targetFor(project, args.api);

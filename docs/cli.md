@@ -73,6 +73,12 @@ wirebench run <path> [selector…] [options]
     --no-color
 -q, --quiet | -v, --verbose
 
+Every verb: --features <id=on|off,…>
+                       Switch features off (or back on) for this process: soap, rest, grpc, websocket,
+                       mcp, scripts, sequences, webhooks, server-sync, team-secrets, mcp-server. Laid over
+                       WIREBENCH_FEATURES, which takes the same list. A request of a kind that is off
+                       errors with feature-disabled; a verb that needs an off feature exits 2.
+
 wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [--var <k=v>…]
                        Prints every secret the selection needs: variable name, where it is used,
                        whether it is set. Exit 0 when all are set, 3 when one is missing. Never
@@ -764,9 +770,35 @@ Three codes come from the engine's protocol modules and feature switches
 
 | Code | Exit | When |
 | --- | --- | --- |
-| `feature-disabled` | 3 | A request's protocol is switched off, or the `scripts` feature is switched off and the request has active scripts. The request is not sent. The error's `details.feature` names the feature, and `details.requires` the feature it depends on when that one is what is off. No flag or variable of `wirebench` switches a feature off yet. |
+| `feature-disabled` | 3, or 2 | A request's protocol is switched off, or the `scripts` feature is switched off and the request has active scripts: the request is not sent, exit 3. A verb that needs an off feature (`run --sequence` with `sequences` off, `generate` or `validate` or an import of a WSDL with `soap` off, `wirebench mcp` with `mcp-server` off) is refused before anything is sent: exit 2. The error's `details.feature` names the feature, and `details.requires` the feature it depends on when that one is what is off. Features are switched with `--features` or `WIREBENCH_FEATURES` (see [Feature switches](#feature-switches)). |
 | `container-unsupported` | none: a warning | An interface or API whose `kind` this build has no enabled protocol for. It is printed at load as `warning: container-unsupported: …`, its folder is left untouched, and its requests cannot be selected. The rest of the project runs. |
 | `container-slug-conflict` | 3 | A save would write an interface or API into the folder of a container that was not loaded. Nothing is written. `wirebench import` does not run into it: it names the new folder around every container the project holds, loaded or not, so an import of `Shop` beside a `Shop` that was not loaded is written to `Shop-2`. |
+
+## Feature switches
+
+Every verb takes `--features <list>` and reads `WIREBENCH_FEATURES`: a comma-separated list of
+`<id>=on|off` entries (case-insensitive, spaces ignored), the flag laid over the variable per id. The
+ids are the protocols `soap`, `rest`, `grpc`, `websocket` and `mcp` (the MCP request kind) and the
+features `scripts`, `sequences`, `webhooks`, `server-sync`, `team-secrets` and `mcp-server`. A
+feature that is off behaves as the desktop's switch makes it behave:
+
+- An interface or API of a kind that is off loads as a placeholder (`container-unsupported`, a
+  warning): its folder is left untouched and its requests cannot be selected or sent.
+- `wirebench run --sequence` with `sequences` off exits 2 with `feature-disabled` before anything is
+  sent; `scripts` off errors a request that has active scripts.
+- `generate` and `validate` need `soap`; `import` refuses a WSDL while `soap` is off and an OpenAPI
+  document while `rest` is off. `wirebench mcp` with `mcp-server` off exits 2, and its `tools/list`
+  leaves out a tool whose feature is off (a call to one is refused with `feature-disabled`).
+
+A flag entry that is not `<id>=on|off` is a usage error (exit 2); such an entry in the variable is
+ignored, since one variable serves many commands. An id with no feature in this version is warned
+about on stderr (`unknown feature "graphql" ignored`) and dropped, never an error, so a variable set
+for a newer version does not break an older one.
+
+```bash
+WIREBENCH_FEATURES=grpc=off wirebench run ./project            # gRPC APIs load as placeholders
+wirebench run ./project --sequence smoke --features sequences=off  # exit 2, feature-disabled
+```
 
 ## Proxy and TLS
 

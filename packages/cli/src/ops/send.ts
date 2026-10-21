@@ -230,7 +230,7 @@ export async function sendAndRecord(input: SendAndRecordInput): Promise<Recorded
   const { item, opened, environment, context } = input;
   const { project, workspace } = opened;
   // From the saved item, never from an override: the override adds no secret to read.
-  const needs = secretNeedsOf([input.needsOf ?? item], project, {}, workspace?.workspace);
+  const needs = secretNeedsOf([input.needsOf ?? item], project, {}, workspace?.workspace, context.registry);
   const tokens = input.tokens ?? new Set<string>();
   let knownNow: () => string[] = () => [...tokens];
   const secrets = cliSecrets(
@@ -258,6 +258,8 @@ export async function sendAndRecord(input: SendAndRecordInput): Promise<Recorded
     }),
     containsKnownSecret: (text) => knownSecretIn(text, known()),
     ...(input.scripting !== undefined ? { scripting: input.scripting } : {}),
+    // The process's switches: a kind or `scripts` that is off errors the send with `feature-disabled`.
+    registry: context.registry,
   };
   try {
     await input.before?.(runContext);

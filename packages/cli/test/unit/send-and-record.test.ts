@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  createBuiltinRegistry,
   CookieJar,
   createApi,
   createProject,
@@ -44,6 +45,7 @@ async function hostFor(cookies: OpsContext['cookies']): Promise<RunContext['host
     secretSources: DEFAULT_CLI_SECRET_SOURCES,
     secretSourceCache: createSourceCache(),
     secretSourceValues: new Set<string>(),
+    registry: createBuiltinRegistry(),
     revealed: new Set(),
     ...(cookies !== undefined ? { cookies } : {}),
   };
@@ -88,6 +90,7 @@ describe('sendAndRecord', () => {
       secretSources: { enabled: true, trust: { mode: 'any' } },
       secretSourceCache: createSourceCache(),
       secretSourceValues,
+      registry: createBuiltinRegistry(),
       revealed: new Set(),
     };
     await sendAndRecord({

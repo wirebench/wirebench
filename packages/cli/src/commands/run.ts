@@ -6,6 +6,7 @@ import {
   createSourceCache,
   createSecretMasker,
   dataFormatOf,
+  featureDisabled,
   isProtectedEnvironment,
   isWirebenchError,
   jarCookieHost,
@@ -26,6 +27,7 @@ import type {
   Environment,
   GoldenFile,
   Project,
+  ProtocolRegistry,
   RunContext,
   RunResult,
   RunWorkspace,
@@ -35,8 +37,9 @@ import type {
   WorkspaceEnvironment,
 } from '@wirebench/engine';
 import { UsageError } from '../args.js';
-import type { RunArgs } from '../args.js';
+import type { FeatureArgs, RunArgs } from '../args.js';
 import { ExitCode, exitCodeFor } from '../exit-codes.js';
+import { featuresFor } from '../features.js';
 import type { CliIo } from '../main.js';
 import { cliSecrets } from '../source-secrets.js';
 import { cliSendHost } from '../send-host.js';
@@ -124,12 +127,14 @@ export async function loadTarget(
   path: string,
   io: CliIo,
   loadFailure: ExitCode = ExitCode.Usage,
+  registry?: ProtocolRegistry,
 ): Promise<{ readonly project: Project; readonly workspace?: RunWorkspace } | ExitCode> {
   try {
     if (!(await exists(join(path, 'wirebench.yaml'))) && (await exists(join(path, 'workspace.yaml')))) {
       return await refuseWorkspace(path, io);
     }
-    const loaded = await loadProject(path);
+    // Through the verb's registry: a kind that is off loads as a placeholder, never a rewrite.
+    const loaded = await loadProject(path, registry !== undefined ? { registry } : {});
     for (const problem of loaded.problems) {
       io.stderr.write(`warning: ${problem.code}: ${problem.message} (${problem.file})\n`);
     }
@@ -157,8 +162,9 @@ export async function loadSelection(
     readonly sequences?: readonly string[];
   },
   io: CliIo,
+  registry?: ProtocolRegistry,
 ): Promise<LoadedSelection | ExitCode> {
-  const target = await loadTarget(args.path, io);
+  const target = await loadTarget(args.path, io, ExitCode.Usage, registry);
   if (typeof target === 'number') {
     return target;
   }
@@ -166,11 +172,16 @@ export async function loadSelection(
 
   let selection: SuiteSelection;
   try {
-    selection = selectSuite(project, workspace, {
-      ...(args.env !== undefined ? { environment: args.env } : {}),
-      select: args.selectors,
-      ...(args.sequences !== undefined ? { sequences: args.sequences } : {}),
-    });
+    selection = selectSuite(
+      project,
+      workspace,
+      {
+        ...(args.env !== undefined ? { environment: args.env } : {}),
+        select: args.selectors,
+        ...(args.sequences !== undefined ? { sequences: args.sequences } : {}),
+      },
+      registry,
+    );
   } catch (error) {
     // A bad environment, sequence or selector is a usage error, as it always has been.
     if (isWirebenchError(error)) {
@@ -214,8 +225,15 @@ async function readDataTable(path: string, io: CliIo): Promise<DataTable | ExitC
  * This function is the only holder of raw results: reporters are built straight into the masking
  * wrapper, so no reporter — one added later included — can be handed a secret value.
  */
-export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
-  const loaded = await loadSelection(args, io);
+export async function runCommand(args: RunArgs & FeatureArgs, io: CliIo): Promise<ExitCode> {
+  const registry = featuresFor(args, io);
+  if (args.sequences.length > 0 && !registry.features.isEnabled('sequences')) {
+    // Refused before the project is read, let alone anything sent (feature switches spec §5.1).
+    const off = featureDisabled(registry.features, 'sequences');
+    io.stderr.write(`${off.code}: ${off.message}\n`);
+    return ExitCode.Usage;
+  }
+  const loaded = await loadSelection(args, io, registry);
   if (typeof loaded === 'number') {
     return loaded;
   }
@@ -238,7 +256,7 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     ...(args.iterations !== undefined ? { iterations: args.iterations } : {}),
     ...(args.dataOverrun !== undefined ? { overrun: args.dataOverrun } : {}),
   });
-  const needs = secretNeedsOf(selected, project, args.vars, workspace?.workspace);
+  const needs = secretNeedsOf(selected, project, args.vars, workspace?.workspace, registry);
   // OAuth2 access tokens are secrets the run obtains rather than reads: the engine reports each
   // one as it arrives, and every mask built after that — they are built per result — hides it.
   // A value a secret source hands out is masked too, including in that source's own error text.
@@ -295,6 +313,8 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     insecure: args.insecure,
     signal: controller.signal,
     containsKnownSecret: maskerDetects(maskNow),
+    // The run, its sequence steps and its scripts dispatch through the verb's switches.
+    registry,
   };
   let result: RunResult;
   try {

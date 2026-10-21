@@ -6,10 +6,11 @@
  */
 import { format } from 'node:util';
 import type { Readable, Writable } from 'node:stream';
-import { routeWorkerOutput } from '@wirebench/engine';
+import { featureDisabled, routeWorkerOutput } from '@wirebench/engine';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import type { McpArgs } from '../args.js';
+import type { FeatureArgs, McpArgs } from '../args.js';
 import { ExitCode } from '../exit-codes.js';
+import { featuresFor } from '../features.js';
 import type { CliIo } from '../main.js';
 import { startContractTools } from '../mcp/contract-tools.js';
 import type { ContractToolsHost } from '../mcp/contract-tools.js';
@@ -21,11 +22,12 @@ import { openProject } from '../ops/project.js';
 import { cliVersion } from '../version.js';
 import { opsBaseFor } from './ops.js';
 
-export function mcpBaseFor(args: McpArgs, io: Pick<CliIo, 'stderr' | 'env'>): OpsBase {
+export function mcpBaseFor(args: McpArgs & FeatureArgs, io: Pick<CliIo, 'stderr' | 'env'>): OpsBase {
   return opsBaseFor(
     {
       project: args.project,
       historyDir: args.historyDir,
+      registry: featuresFor(args, io),
       gates: {
         write: args.allowWrite,
         send: args.allowSend,
@@ -163,9 +165,19 @@ export interface McpCommandOptions {
   readonly stop?: AbortSignal;
 }
 
-export async function mcpCommand(args: McpArgs, io: CliIo, options: McpCommandOptions = {}): Promise<ExitCode> {
+export async function mcpCommand(
+  args: McpArgs & FeatureArgs,
+  io: CliIo,
+  options: McpCommandOptions = {},
+): Promise<ExitCode> {
   const stdin = options.stdin ?? process.stdin;
   const base = mcpBaseFor(args, io);
+  if (!base.registry.features.isEnabled('mcp-server')) {
+    // Switched off for this process (feature switches spec §5.2): nothing is served, exit 2.
+    const off = featureDisabled(base.registry.features, 'mcp-server');
+    io.stderr.write(`${off.code}: ${off.message}\n`);
+    return ExitCode.Usage;
+  }
   const refused = await checkProject(base, io);
   if (refused !== undefined) {
     return refused;

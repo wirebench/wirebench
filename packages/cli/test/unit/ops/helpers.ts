@@ -9,6 +9,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  createBuiltinRegistry,
   createProject,
   createSourceCache,
   loadProject,
@@ -72,6 +73,7 @@ export async function emptyProject(): Promise<Fixture> {
       secretSources: DEFAULT_CLI_SECRET_SOURCES,
       secretSourceCache: createSourceCache(),
       secretSourceValues: new Set<string>(),
+      registry: createBuiltinRegistry(),
       ...overrides,
     }),
   };
