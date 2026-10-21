@@ -244,7 +244,7 @@ test.describe('workspaces', () => {
     await expect(linked).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('explorer-project-linked-badge')).toBeVisible();
     // Fold state is per workspace, so in this one the linked project's interface starts shut.
-    await expandExplorer(page, 'Request 1');
+    await expandExplorer(page, 'Add (SOAP 1.1)');
     await openFirstRequest(page);
 
     // --- linking the same folder again is refused, in words --------------------------

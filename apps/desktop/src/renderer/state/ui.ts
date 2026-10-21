@@ -722,6 +722,12 @@ export function fixedLayout(): boolean {
   return api?.env?.fixedLayout === true;
 }
 
+/** Whether a send skips the template "?" question (see `env.sendTemplatesUnasked`): e2e runs only. */
+export function sendTemplatesUnasked(): boolean {
+  const api = (globalThis as { wirebench?: { env?: { sendTemplatesUnasked?: boolean } } }).wirebench;
+  return api?.env?.sendTemplatesUnasked === true;
+}
+
 /**
  * Hydrates the store from `localStorage` once, then keeps writing every later change back.
  * Called from the shell on mount; safe to call when storage is unavailable.

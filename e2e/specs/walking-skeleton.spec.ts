@@ -41,13 +41,13 @@ test.describe('walking skeleton: import -> open request -> send -> response', ()
 
     await expect(window.getByText('Calculator', { exact: false }).first()).toBeVisible({ timeout: 20_000 });
     // An imported interface arrives folded shut; unfold the tree down to its requests.
-    await expandExplorer(window, 'Request 1');
+    await expandExplorer(window, 'Add (SOAP 1.1)');
 
-    // The import already generated one `Request 1` per operation and saved it to disk; open
+    // The import already generated one request per operation, named after it, and saved it to disk; open
     // the one under Add, which a single click opens.
     const addRow = window.locator('[data-testid="explorer-tree-row"]', { hasText: 'Add' }).first();
     await expect(addRow).toBeVisible({ timeout: 10_000 });
-    const requestRow = window.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first();
+    const requestRow = window.locator('[data-testid="explorer-tree-row"]', { hasText: 'Add (SOAP 1.1)' }).first();
     await expect(requestRow).toBeVisible({ timeout: 10_000 });
     await requestRow.click();
 

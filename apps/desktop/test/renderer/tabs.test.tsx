@@ -63,14 +63,22 @@ describe('Tabs', () => {
       const onSelect = vi.fn<(id: Id) => void>();
       render(<Tabs label="Response tabs" items={ITEMS} active="body" onSelect={onSelect} />);
       expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Body']);
-      const more = screen.getByRole('button', { name: 'More Response tabs' });
-      expect(more.textContent).toBe('More');
+      // A hidden tab that holds something is named on the button (#732 X07).
+      const more = screen.getByRole('button', { name: 'More Response tabs, Cookies 2' });
+      expect(more.textContent).toBe('More· Cookies 2');
+      expect(screen.getByTestId('tabs-more-summary').textContent).toBe('· Cookies 2');
 
       await userEvent.click(more);
       const items = await screen.findAllByRole('menuitemradio');
       expect(items.map((item) => item.textContent)).toEqual(['Headers', 'Cookies2', 'Raw', 'Snapshot']);
       await userEvent.click(screen.getByRole('menuitemradio', { name: 'Snapshot' }));
       expect(onSelect).toHaveBeenCalledWith('snapshot');
+    });
+
+    it('says how many hidden tabs hold something when more than one does', () => {
+      const items = [...ITEMS.slice(0, 3), { id: 'snapshot', label: 'Snapshot', badge: '1' }] as const;
+      render(<Tabs label="Response tabs" items={items} active="body" onSelect={() => undefined} />);
+      expect(screen.getByTestId('tabs-more-summary').textContent).toBe('· 2 in use');
     });
 
     it('names the selected tab on the More button when it is hidden', () => {
@@ -100,9 +108,9 @@ describe('Tabs', () => {
         { id: 'snapshot', label: 'Snapshot', badge: '0/1', tone: 'danger' },
       ] as const;
       render(<Tabs label="Response tabs" items={items} active="body" onSelect={() => undefined} />);
-      const more = screen.getByRole('button', { name: 'More Response tabs, 1 with failures' });
+      const more = screen.getByRole('button', { name: 'More Response tabs, Cookies 2, 1 with failures' });
       expect(screen.getByTestId('tabs-more-alerts').textContent).toBe('1');
-      expect(more.textContent).toBe('More1');
+      expect(more.textContent).toBe('More· Cookies 21');
     });
   });
 });

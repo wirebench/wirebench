@@ -165,7 +165,7 @@ test.describe('environments', () => {
     // Opening the environment page brought the Environments area into view; the request's tab is
     // Explorer's, so go back there before sending again.
     await page.getByTestId('activity-bar').getByRole('button', { name: 'Explorer', exact: true }).click();
-    await page.getByRole('tab', { name: 'Request 1' }).click();
+    await page.getByRole('tab', { name: 'Add (SOAP 1.1)' }).click();
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('status-bar')).toContainText('200', { timeout: 20_000 });
     expect(lastIntA(imported)).toBe('100');
@@ -177,7 +177,7 @@ test.describe('environments', () => {
 
     await page.getByTestId('activity-bar').getByRole('button', { name: 'Explorer', exact: true }).click();
 
-    await page.getByRole('tab', { name: 'Request 1' }).click();
+    await page.getByRole('tab', { name: 'Add (SOAP 1.1)' }).click();
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('status-bar')).toContainText('200', { timeout: 20_000 });
     expect(lastIntA(imported)).toBe('200');

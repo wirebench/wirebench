@@ -5,8 +5,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { IconButton } from '../../components/icon-button.js';
-import { SecretField } from '../../components/secret-field.js';
-import { KeystorePicker, WSS_FIELD_CLASS } from './outgoing-entry-fields.js';
+import { KeystorePicker, WSS_FIELD_CLASS, WssSecretField } from './outgoing-entry-fields.js';
 import type { WssEntryWire } from '../../../shared/kinds/soap/wire.js';
 
 type SamlEntry = Extract<WssEntryWire, { kind: 'saml-token' }>;
@@ -40,7 +39,7 @@ export function newSamlXmlEntry(): SamlEntry {
 function Row({ label, children }: { readonly label: string; readonly children: ReactNode }) {
   return (
     <label className="flex items-center gap-1 text-xs text-fg-subtle">
-      <span className="w-24 shrink-0">{label}</span>
+      <span className="w-32 shrink-0">{label}</span>
       {children}
     </label>
   );
@@ -84,7 +83,7 @@ function SigningFields({
           });
         }}
       />
-      <SecretField
+      <WssSecretField
         label="Issuer key password"
         value={sign.keyPasswordRef}
         onChange={(ref) => {

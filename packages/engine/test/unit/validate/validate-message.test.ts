@@ -80,6 +80,20 @@ describe('validateMessage', () => {
     expect(result.problems.map((problem) => problem.code)).toEqual(['content-type-mismatch']);
   });
 
+  it('warns about a request value still holding the template "?", and not in a response (#728)', async () => {
+    const xml = envelope('      <tem:Add><tem:intA>?</tem:intA><tem:intB>2</tem:intB></tem:Add>');
+    const request = await run(xml);
+    const placeholder = request.problems.filter((problem) => problem.code === 'template-placeholder');
+    expect(placeholder).toHaveLength(1);
+    expect(placeholder[0]).toMatchObject({
+      severity: 'warning',
+      line: 4,
+      message: 'tem:intA still holds the template value "?"',
+    });
+    const response = await run(xml, { direction: 'response' });
+    expect(response.problems.map((problem) => problem.code)).not.toContain('template-placeholder');
+  });
+
   it('honours an explicit timeout', async () => {
     const result = await run(envelope(ADD), { timeoutMs: 10_000 });
     expect(result.problems).toEqual([]);

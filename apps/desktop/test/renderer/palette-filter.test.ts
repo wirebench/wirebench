@@ -24,12 +24,12 @@ describe('paletteFilter', () => {
     const rest = score('Explorer', 'REST: New Request', 'REST');
     const closeTab = score('Editor', 'Close Tab', 'REST');
 
-    expect(rest).toBe(1);
+    expect(rest).toBeGreaterThan(0.9);
     expect(closeTab).toBeLessThan(rest);
   });
 
   it('matches a category prefix whatever its case', () => {
-    expect(score('History', 'History: Clear', 'hist')).toBe(1);
+    expect(score('History', 'History: Clear', 'hist')).toBeGreaterThan(0.9);
   });
 
   it('keeps fuzzy matches, below a group match', () => {
@@ -37,6 +37,14 @@ describe('paletteFilter', () => {
 
     expect(fuzzy).toBeGreaterThan(0);
     expect(fuzzy).toBeLessThan(1);
+  });
+
+  it('ranks a command whose name says the search above one only its group matches (#732 X16)', () => {
+    // "Copy as cURL" is only in the Request group; "New Request" says it in its name.
+    const named = score('Explorer', 'Explorer: New Request', 'request');
+    const tagged = score('Request', 'Copy as cURL', 'request');
+    expect(named).toBeGreaterThan(tagged);
+    expect(tagged).toBeGreaterThan(score('Editor', 'Close Tab', 'request'));
   });
 
   it('drops a command that does not match at all', () => {
@@ -132,5 +140,34 @@ describe('protocol keywords (S40)', () => {
     for (const search of ['telnet', 'serial', 'mosh']) {
       expect(top(search)).toEqual(['ssh.connectPalette', 'ssh.newHost']);
     }
+  });
+});
+
+describe('the soap keyword (#732 X16)', () => {
+  const entries = Object.values(COMMAND_CATALOG).filter((entry) => entry.paletteHidden !== true);
+  const ranked = (search: string): string[] =>
+    entries
+      .map((entry) => ({
+        id: entry.id,
+        score: paletteFilter(`${entry.category} ${entry.label}`, search, paletteKeywords(entry)),
+      }))
+      .filter((row) => row.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map((row) => row.id);
+
+  it('leads with the everyday SOAP actions', () => {
+    expect(ranked('soap').slice(0, 5).sort()).toEqual(
+      [
+        'explorer.importAnother',
+        'explorer.newRequest',
+        'explorer.updateDefinition',
+        'request.send',
+        'request.validate',
+      ].sort(),
+    );
+  });
+
+  it('finds Import and Update Definition by "wsdl"', () => {
+    expect(ranked('wsdl').slice(0, 2).sort()).toEqual(['explorer.importAnother', 'explorer.updateDefinition']);
   });
 });

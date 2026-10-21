@@ -5,3 +5,4 @@
  */
 export { formatXml, type FormatXmlOptions, type FormatXmlResult } from './pretty.js';
 export { elementPathAt, completionContextAt, type CompletionContext, type TextRange } from './locate.js';
+export { findTemplatePlaceholders, TEMPLATE_PLACEHOLDER, type TemplatePlaceholder } from './template-placeholders.js';

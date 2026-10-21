@@ -6,7 +6,8 @@ import { expect, type Locator, type Page } from '@playwright/test';
  */
 export async function selectTab(page: Page, strip: string, name: string | RegExp): Promise<void> {
   const tab = page.getByRole('tablist', { name: strip }).getByRole('tab', { name });
-  const more = page.getByRole('button', { name: new RegExp(`more ${escapeRegExp(strip)}$`, 'i') });
+  // The button's name may go on with what its hidden tabs hold ("…, Attachments 1") or their failures.
+  const more = page.getByRole('button', { name: new RegExp(`more ${escapeRegExp(strip)}(,.*)?$`, 'i') });
   // Retried as a whole: a label can change under the spec (a badge arriving with the response),
   // and a tab can move between the strip and the menu as the window or its label changes.
   await expect(async () => {
@@ -35,7 +36,7 @@ export function selectedTab(page: Page, strip: string, name: string | RegExp): L
   return page
     .getByRole('tablist', { name: strip })
     .getByRole('tab', { name })
-    .or(page.getByRole('button', { name: new RegExp(`${label}.*, more ${escapeRegExp(strip)}$`) }));
+    .or(page.getByRole('button', { name: new RegExp(`${label}.*, more ${escapeRegExp(strip)}(,.*)?$`) }));
 }
 
 function escapeRegExp(text: string): string {

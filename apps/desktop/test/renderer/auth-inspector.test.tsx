@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { AuthInspector } from '../../src/renderer/features/request-editor/inspectors/auth-inspector.js';
+import { AuthInspector, sourceLabel } from '../../src/renderer/features/request-editor/inspectors/auth-inspector.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeDraft } from '../mocks/exchange-fixtures.js';
@@ -48,8 +48,15 @@ describe('AuthInspector', () => {
     expect(screen.getByLabelText('Request authentication type')).toHaveProperty('value', 'inherit');
     expect(screen.queryByLabelText('Request username')).toBeNull();
     await waitFor(() => {
-      expect(screen.getByTestId('auth-effective').textContent).toBe("Using endpoint 'Primary' credentials (override)");
+      expect(screen.getByTestId('auth-effective').textContent).toBe(
+        "Inherits Basic from endpoint 'Primary' (override) · Edit endpoint",
+      );
     });
+  });
+
+  it('says what an interface-level inherit sends, and from where (#732 X09)', () => {
+    expect(sourceLabel({ source: 'none', type: 'none' }, 'Calculator')).toBe('Inherits None from Calculator');
+    expect(sourceLabel({ source: 'interface', type: 'ntlm' }, 'Calculator')).toBe('Inherits NTLM from Calculator');
   });
 
   it('choosing a scheme over Inherit gives the request its own credentials', async () => {

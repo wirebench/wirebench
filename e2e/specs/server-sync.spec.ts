@@ -149,7 +149,7 @@ test.describe('server sync', () => {
     await expect(syncBadge(bob.window)).toContainText('Viewer');
     const bobToken = server.lastToken(BOB.email);
 
-    await expandExplorer(bob.window, 'Request 1');
+    await expandExplorer(bob.window, 'Add (SOAP 1.1)');
     await openFirstRequest(bob.window);
     await saveIntA(bob.window, edited);
     await waitForSync(bob.window, 'ahead');
@@ -207,7 +207,7 @@ test.describe('server sync', () => {
     server.setRole(workspaceId, BOB.email, 'editor');
 
     // A known value first, so the teammate's edit below touches exactly this request.
-    await expandExplorer(page, 'Request 1');
+    await expandExplorer(page, 'Add (SOAP 1.1)');
     await openFirstRequest(page);
     await saveIntA(page, base);
     await waitForSync(page, 'clean');

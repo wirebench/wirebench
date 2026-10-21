@@ -98,6 +98,7 @@ export function toRunnerResult(result: RequestResult): RunnerRequestResult {
     ...(result.error !== undefined ? { error: { code: result.error.code, message: mask(result.error.message) } } : {}),
     ...(result.scriptLog !== undefined ? { scriptLog: result.scriptLog.map(mask) } : {}),
     ...(result.iteration !== undefined ? { iteration: result.iteration } : {}),
+    ...(result.templatePlaceholders !== undefined ? { templatePlaceholders: result.templatePlaceholders } : {}),
   };
 }
 

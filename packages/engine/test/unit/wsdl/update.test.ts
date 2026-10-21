@@ -131,7 +131,8 @@ describe('applyUpdate', () => {
     const iface = soapInterfacesOf(result.project)[0];
     const subtract = iface?.operations.find((op) => op.name === 'Subtract');
     expect(subtract?.requests).toHaveLength(1);
-    expect(subtract?.requests[0]?.name).toBe('Request 1');
+    // Named after the operation, not "Request 1" (#726).
+    expect(subtract?.requests[0]?.name).toBe('Subtract');
     expect(subtract?.requests[0]?.envelopeXml).toContain('Subtract');
     expect(result.requestsCreated).toEqual(['id-1']);
   });

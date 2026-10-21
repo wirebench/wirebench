@@ -21,16 +21,14 @@ import { formatEditorInPlace, gotoLine, registerXmlLanguageFeaturesOnce } from '
 import { useEditorsStore } from '../../state/editors.js';
 import type { RequestViewType } from '../../state/editors.js';
 import { useExchangesStore } from '../../state/exchanges.js';
-import { useProjectStore } from '../../state/project.js';
+import { useProjectStore, type RequestDraft } from '../../state/project.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { useUiStore } from '../../state/ui.js';
 import { AttachmentsInspector } from './inspectors/attachments-inspector.js';
 import { AuthInspector } from './inspectors/auth-inspector.js';
-import { DetailsInspector } from './inspectors/details-inspector.js';
 import { HeadersInspector } from './inspectors/headers-inspector.js';
 import { PaneTabs, type InspectorItem } from './inspectors/inspector-strip.js';
 import { PropertiesInspector } from './inspectors/properties-inspector.js';
-import { SslInspector } from './inspectors/ssl-inspector.js';
 import { WsaInspector } from './inspectors/wsa-inspector.js';
 import { OverflowMenu } from './overflow-menu.js';
 import { goToSchemaDefinition } from './schema-navigation.js';
@@ -45,20 +43,46 @@ import { useEditorVariableAssist } from '../environments/variable-assist-provide
 /** Long enough that a burst of keystrokes is one store write, short enough to feel immediate. */
 const DEBOUNCE_MS = 120;
 
-/** The request pane's tabs, in order. Body — the envelope — sits after Headers, where the REST
- * editor keeps its body, and is the tab a request opens on. */
+/**
+ * The request pane's tabs, in order. Body — the envelope — sits after Headers, where the REST
+ * editor keeps its body, and is the tab a request opens on. Details is folded into Properties and
+ * SSL is the response pane's alone (#732 X07, #731 X21), so the strip fits; the tabs that hold
+ * something say how much, which the More button repeats while they are behind it.
+ */
 const REQUEST_TABS: readonly InspectorItem[] = [
-  { id: 'details', label: 'Details' },
   { id: 'properties', label: 'Properties' },
   { id: 'headers', label: 'Headers' },
   { id: 'body', label: 'Body' },
   { id: 'attachments', label: 'Attachments' },
   { id: 'auth', label: 'Auth' },
   { id: 'wsa', label: 'WS-A' },
-  { id: 'ssl', label: 'SSL' },
   { id: 'scripts', label: 'Scripts' },
   { id: 'assertions', label: 'Assertions' },
 ];
+
+/** A count as a tab badge: nothing for none. */
+function countBadge(count: number | undefined): string | undefined {
+  return count === undefined || count === 0 ? undefined : String(count);
+}
+
+/** The request tabs with their counts: headers, attachments and assertions. */
+function useRequestTabs(requestId: string): readonly InspectorItem[] {
+  // Read loosely: a draft restored from an older session may lack a list.
+  const loose = (state: { readonly requests: Readonly<Record<string, RequestDraft>> }) =>
+    state.requests[requestId] as Partial<RequestDraft> | undefined;
+  const headers = useProjectStore((state) => loose(state)?.headers?.length);
+  const attachments = useProjectStore((state) => loose(state)?.attachments?.length);
+  const assertions = useProjectStore((state) => loose(state)?.assertions?.length);
+  const counts: Partial<Record<InspectorItem['id'], string | undefined>> = {
+    headers: countBadge(headers),
+    attachments: countBadge(attachments),
+    assertions: countBadge(assertions),
+  };
+  return REQUEST_TABS.map((item) => {
+    const badge = counts[item.id];
+    return badge === undefined ? item : { ...item, badge };
+  });
+}
 
 const VIEWS = [
   { id: 'xml', label: 'XML' },
@@ -134,6 +158,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
   const interfaceIdRef = useRef(interfaceId);
   interfaceIdRef.current = interfaceId;
   const lineNumbers = useUiStore((state) => state.editorLineNumbers);
+  const requestTabs = useRequestTabs(requestId);
   const exchange = useExchangesStore((state) => state.byRequest[requestId]?.exchange);
   const rawRequestBase64 = exchange?.http.rawRequestBase64;
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | undefined>(undefined);
@@ -397,18 +422,14 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
         requestId={requestId}
         pane="request"
         label="Request tabs"
-        items={REQUEST_TABS}
+        items={requestTabs}
         render={(inspector) =>
           inspector === 'body' ? (
             body
-          ) : inspector === 'details' ? (
-            <DetailsInspector requestId={requestId} />
           ) : inspector === 'properties' ? (
             <PropertiesInspector requestId={requestId} />
           ) : inspector === 'headers' ? (
             <HeadersInspector requestId={requestId} />
-          ) : inspector === 'ssl' ? (
-            <SslInspector http={exchange?.http} />
           ) : inspector === 'attachments' ? (
             <AttachmentsInspector requestId={requestId} />
           ) : inspector === 'auth' ? (

@@ -46,6 +46,11 @@ import { subscribeToSync } from '../state/sync.js';
 import { subscribeToHosts } from '../features/ssh/hosts-store.js';
 import { collapseConsoleInShortWindow, subscribeConsoleToFirstSend } from '../state/console-first-send.js';
 import {
+  useWssConfigPanelLabel,
+  useWssConfigPanelShown,
+  useWssConfigPanelStore,
+} from '../features/wss/wss-config-panel-store.js';
+import {
   subscribeToSnippets,
   useSnippetEditorShown,
   useSnippetsStore,
@@ -155,6 +160,11 @@ const SnippetEditor = lazy(async () => {
 
 // The SSH panels and dialogs below load the first time one shows, not before the first paint: the
 // window opens on whichever area was last in front, and most of them sit behind a click.
+// The WS-Security configuration editor (#730) loads the first time a configuration is opened.
+const WssConfigPanel = lazy(async () => {
+  const module = await import('../features/wss/wss-config-panel.js');
+  return { default: module.WssConfigPanel };
+});
 const HostDetails = lazy(async () => {
   const module = await import('../features/ssh/host-details.js');
   return { default: module.HostDetails };
@@ -244,6 +254,12 @@ export function AppShell() {
   }, []);
   // On the Snippets view it holds the snippet being edited.
   const snippetEditorShown = useSnippetEditorShown();
+  // A WS-Security configuration picked in its sidebar opens beside the request (#730).
+  const wssConfigShown = useWssConfigPanelShown();
+  const wssConfigLabel = useWssConfigPanelLabel();
+  const closeWssConfig = useCallback(() => {
+    useWssConfigPanelStore.getState().requestClose();
+  }, []);
   const closeSnippetEditor = useCallback(() => {
     useSnippetsStore.getState().closeEditor();
   }, []);
@@ -611,7 +627,7 @@ export function AppShell() {
                   unmounts completely; the rail's icon or `view.toggleCode` reopens it. */}
                 <SlideOver
                   label="Code"
-                  open={slideOver.open && codeArea && !settingsOpen}
+                  open={slideOver.open && codeArea && !settingsOpen && !wssConfigShown}
                   width={slideOverWidth}
                   onWidthChange={setSlideOverWidth}
                   onToggle={toggleCode}
@@ -652,6 +668,18 @@ export function AppShell() {
                   onClose={closeEnvironmentDetails}
                 >
                   <EnvironmentDetailsPanel />
+                </SlideOver>
+                <SlideOver
+                  label={wssConfigLabel}
+                  open={wssConfigShown && !settingsOpen}
+                  width={slideOverWidth}
+                  onWidthChange={setSlideOverWidth}
+                  onToggle={closeWssConfig}
+                  onClose={closeWssConfig}
+                >
+                  <Suspense fallback={null}>
+                    <WssConfigPanel />
+                  </Suspense>
                 </SlideOver>
                 <SlideOver
                   label="Snippet"

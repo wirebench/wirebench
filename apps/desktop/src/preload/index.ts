@@ -24,6 +24,7 @@ const api = buildApi(
     // per-app appearance override. Absent (a preload loaded outside our window) means dark.
     osTheme: process.argv.includes(`${OS_THEME_ARGUMENT}light`) ? 'light' : 'dark',
     ...(process.env['WIREBENCH_E2E_FIXED_LAYOUT'] === '1' ? { fixedLayout: true } : {}),
+    ...(process.env['WIREBENCH_E2E_SEND_TEMPLATES'] === '1' ? { sendTemplatesUnasked: true } : {}),
   },
   (file) => webUtils.getPathForFile(file),
 );

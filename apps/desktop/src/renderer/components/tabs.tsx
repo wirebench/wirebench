@@ -72,6 +72,18 @@ export function fitTabs({ widths, available, moreWidth, activeIndex, pinned = []
   return 0;
 }
 
+/**
+ * What the More button adds after "More" for the hidden tabs that hold something (#732 X07): the one
+ * tab and its count ("Assertions 1"), or how many hold something. Set-up work behind More is then not
+ * out of sight.
+ */
+export function moreSummary<T extends string>(hidden: readonly TabItem<T>[]): string | undefined {
+  const held = hidden.filter((item) => item.badge !== undefined && item.tone !== 'danger');
+  const only = held[0];
+  if (only === undefined) return undefined;
+  return held.length === 1 ? `${only.label} ${only.badge ?? ''}` : `${String(held.length)} in use`;
+}
+
 /** The badge's classes: faint, or the danger colour for a tab that reports a failure. */
 function badgeClass(item: { readonly tone?: 'danger' }): string {
   return `font-mono text-xs ${item.tone === 'danger' ? 'text-status-danger' : 'text-fg-faint'}`;
@@ -147,6 +159,9 @@ export function Tabs<T extends string>({ label, items, active, onSelect }: TabsP
     }
   }
   const activeHidden = hidden.find((item) => item.id === active);
+  const summary = activeHidden === undefined ? moreSummary(hidden) : undefined;
+  // Room for the longest summary the More button could show, so it never pushes the strip over.
+  const widestSummary = moreSummary(items);
   const alerts = hidden.filter((item) => item.tone === 'danger' && item.id !== active).length;
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>): void {
@@ -194,11 +209,16 @@ export function Tabs<T extends string>({ label, items, active, onSelect }: TabsP
                 type="button"
                 data-testid="tabs-more"
                 aria-label={`${activeHidden !== undefined ? `${activeHidden.label}, more ${label}` : `More ${label}`}${
-                  alerts > 0 ? `, ${String(alerts)} with failures` : ''
-                }`}
+                  summary !== undefined ? `, ${summary}` : ''
+                }${alerts > 0 ? `, ${String(alerts)} with failures` : ''}`}
                 className={`${TAB_CLASS} gap-1 ${activeHidden !== undefined ? SELECTED_CLASS : UNSELECTED_CLASS}`}
               >
                 {activeHidden !== undefined ? activeHidden.label : 'More'}
+                {summary !== undefined && (
+                  <span data-testid="tabs-more-summary" className="font-mono text-xs text-fg-faint">
+                    · {summary}
+                  </span>
+                )}
                 {activeHidden?.badge !== undefined && (
                   <span className={badgeClass(activeHidden)}>{activeHidden.badge}</span>
                 )}
@@ -252,7 +272,10 @@ export function Tabs<T extends string>({ label, items, active, onSelect }: TabsP
             )}
           </span>
         ))}
-        <span data-text="More" className={`${TAB_CLASS} gap-1 ${MEASURE_TEXT}`}>
+        <span
+          data-text={widestSummary === undefined ? 'More' : `More · ${widestSummary}`}
+          className={`${TAB_CLASS} gap-1 ${MEASURE_TEXT}`}
+        >
           <ChevronDown size={12} aria-hidden="true" />
         </span>
       </div>

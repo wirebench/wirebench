@@ -106,7 +106,7 @@ test.describe('keystores', () => {
     await expect(alias.first()).toContainText('client');
     await expect(alias.first()).toContainText('CN=wirebench-client');
 
-    // --- select it for Request 1 and send over mutual TLS ------------------------------------
+    // --- select it for Add (SOAP 1.1) and send over mutual TLS ------------------------------------
     await page.getByTestId('request-endpoint').fill(`${secure.url}/soap`);
     await selectTab(page, 'Request tabs', 'Properties');
     await page.getByTestId('request-ssl-keystore').selectOption({ label: 'corp' });

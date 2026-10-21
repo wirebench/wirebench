@@ -160,7 +160,9 @@ test.describe('request editor actions', () => {
     await page.getByTestId('import-curl-submit').click();
 
     // The imported request shows up in the explorer, and its editor resolves to the pasted URL.
-    await expect(page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 2' }).first()).toBeVisible({
+    await expect(
+      page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Add (SOAP 1.1) 2' }).first(),
+    ).toBeVisible({
       timeout: 20_000,
     });
     await expect(page.getByTestId('request-endpoint')).toHaveValue(server!.url, { timeout: 20_000 });

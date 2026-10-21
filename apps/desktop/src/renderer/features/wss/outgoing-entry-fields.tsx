@@ -7,7 +7,7 @@
 
 import { Plus, Trash2 } from 'lucide-react';
 import { IconButton } from '../../components/icon-button.js';
-import { SecretField } from '../../components/secret-field.js';
+import { SecretField, type SecretFieldProps } from '../../components/secret-field.js';
 import { useKeystoreAliases } from '../../components/use-keystore-aliases.js';
 import { useProjectStore } from '../../state/project.js';
 import type { WssEntryWire } from '../../../shared/kinds/soap/wire.js';
@@ -22,6 +22,21 @@ type WssPartWire = WssSignatureEntry['parts'][number];
 export const WSS_FIELD_CLASS =
   'w-full rounded border border-hairline bg-surface-sunken px-1 py-0.5 text-xs text-fg-default';
 
+/**
+ * A password field with its label on screen beside it (#730): on its own the field says only "Not set",
+ * and a signature entry holds more than one password.
+ */
+export function WssSecretField(props: SecretFieldProps) {
+  return (
+    <div className="flex items-center gap-1 text-xs text-fg-subtle">
+      <span className="w-32 shrink-0">{props.label}</span>
+      <div className="min-w-0 flex-1">
+        <SecretField {...props} />
+      </div>
+    </div>
+  );
+}
+
 interface TimestampFieldsProps {
   readonly entry: WssTimestampEntry;
   readonly onChange: (entry: WssTimestampEntry) => void;
@@ -32,7 +47,7 @@ export function TimestampFields({ entry, onChange }: TimestampFieldsProps) {
   return (
     <div className="mt-1 flex flex-col gap-1">
       <label className="flex items-center gap-1 text-xs text-fg-subtle">
-        <span className="w-24 shrink-0">Time to live (s)</span>
+        <span className="w-32 shrink-0">Time to live (s)</span>
         <input
           type="number"
           min={0}
@@ -68,7 +83,7 @@ export function UsernameTokenFields({ entry, onChange }: UsernameTokenFieldsProp
   return (
     <div className="mt-1 flex flex-col gap-1">
       <label className="flex items-center gap-1 text-xs text-fg-subtle">
-        <span className="w-24 shrink-0">Username</span>
+        <span className="w-32 shrink-0">Username</span>
         <input
           aria-label="Username"
           className={WSS_FIELD_CLASS}
@@ -79,7 +94,7 @@ export function UsernameTokenFields({ entry, onChange }: UsernameTokenFieldsProp
         />
       </label>
       <label className="flex items-center gap-1 text-xs text-fg-subtle">
-        <span className="w-24 shrink-0">Password type</span>
+        <span className="w-32 shrink-0">Password type</span>
         <select
           aria-label="Password type"
           className={WSS_FIELD_CLASS}
@@ -94,7 +109,7 @@ export function UsernameTokenFields({ entry, onChange }: UsernameTokenFieldsProp
         </select>
       </label>
       <div data-testid="wss-entry-password">
-        <SecretField
+        <WssSecretField
           label="WS-Security password"
           value={entry.passwordRef}
           onChange={(ref) => {
@@ -242,7 +257,7 @@ export function KeystorePicker(props: {
   return (
     <>
       <label className="flex items-center gap-1 text-xs text-fg-subtle">
-        <span className="w-24 shrink-0">{props.label}</span>
+        <span className="w-32 shrink-0">{props.label}</span>
         <select
           aria-label={props.label}
           className={WSS_FIELD_CLASS}
@@ -261,7 +276,7 @@ export function KeystorePicker(props: {
       </label>
       {props.keystoreRef !== undefined && (
         <label className="flex items-center gap-1 text-xs text-fg-subtle">
-          <span className="w-24 shrink-0">{`${props.label} alias`}</span>
+          <span className="w-32 shrink-0">{`${props.label} alias`}</span>
           <select
             aria-label={`${props.label} alias`}
             className={WSS_FIELD_CLASS}
@@ -302,7 +317,7 @@ export function SignatureFields({ entry, onChange }: SignatureFieldsProps) {
   return (
     <div className="mt-1 flex flex-col gap-1" data-testid="wss-signature-fields">
       <label className="flex items-center gap-1 text-xs text-fg-subtle">
-        <span className="w-24 shrink-0">Keystore</span>
+        <span className="w-32 shrink-0">Keystore</span>
         <select
           aria-label="Signature keystore"
           className={WSS_FIELD_CLASS}
@@ -322,7 +337,7 @@ export function SignatureFields({ entry, onChange }: SignatureFieldsProps) {
         </select>
       </label>
       <label className="flex items-center gap-1 text-xs text-fg-subtle">
-        <span className="w-24 shrink-0">Alias</span>
+        <span className="w-32 shrink-0">Alias</span>
         <select
           aria-label="Signature alias"
           className={WSS_FIELD_CLASS}
@@ -345,7 +360,7 @@ export function SignatureFields({ entry, onChange }: SignatureFieldsProps) {
         </select>
       </label>
       <div data-testid="wss-signature-key-password">
-        <SecretField
+        <WssSecretField
           label="Signing key password"
           value={entry.keyPasswordRef}
           onChange={(ref) => {
@@ -356,7 +371,7 @@ export function SignatureFields({ entry, onChange }: SignatureFieldsProps) {
         />
       </div>
       <label className="flex items-center gap-1 text-xs text-fg-subtle">
-        <span className="w-24 shrink-0">Key identifier</span>
+        <span className="w-32 shrink-0">Key identifier</span>
         <select
           aria-label="Key identifier type"
           className={WSS_FIELD_CLASS}
@@ -374,7 +389,7 @@ export function SignatureFields({ entry, onChange }: SignatureFieldsProps) {
         </select>
       </label>
       <label className="flex items-center gap-1 text-xs text-fg-subtle">
-        <span className="w-24 shrink-0">Signature</span>
+        <span className="w-32 shrink-0">Signature</span>
         <select
           aria-label="Signature algorithm"
           className={WSS_FIELD_CLASS}
@@ -388,7 +403,7 @@ export function SignatureFields({ entry, onChange }: SignatureFieldsProps) {
         </select>
       </label>
       <label className="flex items-center gap-1 text-xs text-fg-subtle">
-        <span className="w-24 shrink-0">Digest</span>
+        <span className="w-32 shrink-0">Digest</span>
         <select
           aria-label="Digest algorithm"
           className={WSS_FIELD_CLASS}
@@ -465,7 +480,7 @@ export function EncryptionFields({ entry, onChange }: EncryptionFieldsProps) {
   return (
     <div className="mt-1 flex flex-col gap-1" data-testid="wss-encryption-fields">
       <label className="flex items-center gap-1 text-xs text-fg-subtle">
-        <span className="w-24 shrink-0">Keystore</span>
+        <span className="w-32 shrink-0">Keystore</span>
         <select
           aria-label="Encryption keystore"
           className={WSS_FIELD_CLASS}
@@ -485,7 +500,7 @@ export function EncryptionFields({ entry, onChange }: EncryptionFieldsProps) {
         </select>
       </label>
       <label className="flex items-center gap-1 text-xs text-fg-subtle">
-        <span className="w-24 shrink-0">Alias</span>
+        <span className="w-32 shrink-0">Alias</span>
         <select
           aria-label="Encryption alias"
           className={WSS_FIELD_CLASS}
@@ -508,7 +523,7 @@ export function EncryptionFields({ entry, onChange }: EncryptionFieldsProps) {
         </select>
       </label>
       <label className="flex items-center gap-1 text-xs text-fg-subtle">
-        <span className="w-24 shrink-0">Key identifier</span>
+        <span className="w-32 shrink-0">Key identifier</span>
         <select
           aria-label="Encryption key identifier type"
           className={WSS_FIELD_CLASS}
@@ -525,7 +540,7 @@ export function EncryptionFields({ entry, onChange }: EncryptionFieldsProps) {
         </select>
       </label>
       <label className="flex items-center gap-1 text-xs text-fg-subtle">
-        <span className="w-24 shrink-0">Encryption</span>
+        <span className="w-32 shrink-0">Encryption</span>
         <select
           aria-label="Encryption algorithm"
           className={WSS_FIELD_CLASS}
@@ -542,7 +557,7 @@ export function EncryptionFields({ entry, onChange }: EncryptionFieldsProps) {
         </select>
       </label>
       <label className="flex items-center gap-1 text-xs text-fg-subtle">
-        <span className="w-24 shrink-0">Key transport</span>
+        <span className="w-32 shrink-0">Key transport</span>
         <select
           aria-label="Key transport algorithm"
           className={WSS_FIELD_CLASS}

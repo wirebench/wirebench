@@ -44,6 +44,10 @@ export function AssertionsTab({ requestId, assertions, kinds }: AssertionsTabPro
         testIdPrefix="request"
         emptyText="No assertions. Add one to check every send of this request."
       />
+      {/* They are not the tab's unsaved edits: say so, rather than let the missing mark mislead (#732 X11). */}
+      <p data-testid="assertions-applied-note" className="mt-2 text-xs text-fg-faint">
+        Assertion edits apply at once, apart from the request's unsaved changes; saving the project writes them.
+      </p>
       {refused !== undefined && (
         <p role="alert" data-testid="request-assertions-error" className="mt-2 text-xs text-status-danger">
           {refused}

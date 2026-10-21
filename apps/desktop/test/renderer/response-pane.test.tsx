@@ -65,10 +65,13 @@ describe('ResponsePane', () => {
       />,
     );
 
-    const status = screen.getByRole('status');
+    // A banner on its own line above the tabs, not squeezed at the strip's end (#725).
+    const status = screen.getByRole('alert');
     expect(status.textContent).toContain('network-error');
     expect(status.textContent).toContain('ECONNREFUSED');
     expect(status.className).toContain('text-status-danger');
+    const tabs = screen.getByRole('tablist', { name: 'Response tabs' });
+    expect(status.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows the raw body as text when the response is not SOAP', () => {

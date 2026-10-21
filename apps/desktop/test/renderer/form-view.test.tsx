@@ -100,6 +100,16 @@ describe('FormView', () => {
     expect(screen.getByLabelText<HTMLInputElement>('tem:intA value').value).toBe('1');
   });
 
+  it('shows a template "?" as a marked placeholder, not as an empty field (#728)', async () => {
+    renderView();
+    await waitFor(() => expect(screen.getByLabelText('tem:intB value')).toBeDefined());
+    const intB = screen.getByLabelText<HTMLInputElement>('tem:intB value');
+    expect(intB.dataset['templatePlaceholder']).toBe('true');
+    expect(intB.value).toBe('');
+    expect(intB.placeholder).toContain('template value');
+    expect(screen.getByLabelText<HTMLInputElement>('tem:intA value').dataset['templatePlaceholder']).toBeUndefined();
+  });
+
   it('typing splices the value into the text at the field range', async () => {
     const { onValueEdit } = renderView();
     await waitFor(() => expect(screen.getByLabelText('tem:intA value')).toBeDefined());

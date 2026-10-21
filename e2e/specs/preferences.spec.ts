@@ -89,7 +89,7 @@ test.describe('request properties and preferences', () => {
     await expect(page.getByTestId('settings-page')).toHaveCount(0);
 
     // --- back to the request, and recreate it with the new indent -------------
-    await page.getByRole('tab', { name: 'Request 1' }).click();
+    await page.getByRole('tab', { name: 'Add (SOAP 1.1)' }).click();
     // Recreate is not in the request pane's right-click menu; the palette reaches it.
     await runCommand(page, 'Request: Recreate (keep values)');
 

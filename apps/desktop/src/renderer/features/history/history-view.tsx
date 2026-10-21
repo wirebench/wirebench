@@ -10,7 +10,7 @@ import { useGridNavigation } from '../../lib/grid-navigation.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useHistoryStore } from '../../state/history.js';
 import { canResendHistoryEntry, entrySide, openCompareTab, resendHistoryEntry } from './history-actions.js';
-import { historyCountLabel, historyTabTitle, hostOf } from './history-row-text.js';
+import { historyCountLabel, historyStatusChip, historyTabTitle, hostOf } from './history-row-text.js';
 import { compareBannerText, compareStep } from './history-compare.js';
 import { requestDisplayName } from '../rest-api/request-display-name.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
@@ -121,8 +121,12 @@ function Row({
               <span className="text-fg-default">{name}</span>
               {entry.operationName.length > 0 && <span className="text-fg-subtle"> · {entry.operationName}</span>}
             </span>
-            <span className={`shrink-0 rounded-sm px-1 font-mono ${TONE_CLASS[toneOf(entry)]}`}>
-              {entry.status ?? 'err'}
+            <span
+              data-testid="history-status-chip"
+              title={entry.error?.message}
+              className={`shrink-0 rounded-sm px-1 font-mono ${TONE_CLASS[toneOf(entry)]}`}
+            >
+              {historyStatusChip(entry)}
             </span>
           </span>
           <span className="w-full truncate text-fg-subtle" title={entry.endpoint}>

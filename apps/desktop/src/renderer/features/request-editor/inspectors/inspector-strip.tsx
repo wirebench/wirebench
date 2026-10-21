@@ -29,6 +29,8 @@ export function InspectorIconButton({
 export interface InspectorItem {
   readonly id: InspectorId;
   readonly label: string;
+  /** A count after the label, e.g. how many assertions the request has. */
+  readonly badge?: string;
 }
 
 export interface PaneTabsProps {
@@ -37,8 +39,11 @@ export interface PaneTabsProps {
   readonly pane: InspectorPane;
   readonly label: string;
   readonly items: readonly InspectorItem[];
-  /** Rendered at the right end of the strip, whichever tab is showing (the response status). */
-  readonly trailing?: ReactNode;
+  /**
+   * Its own line above the strip, whichever tab is showing (the response status). At the strip's end it was
+   * pushed out of the pane by the tabs (#725).
+   */
+  readonly above?: ReactNode;
   /** Renders the selected tab's content, which fills the rest of the pane. */
   readonly render: (inspector: InspectorId) => ReactNode;
 }
@@ -49,7 +54,7 @@ export interface PaneTabsProps {
  * lives in the editors store, keyed per request and per pane, so switching editor tabs and coming
  * back finds the pane as it was left.
  */
-export function PaneTabs({ requestId, pane, label, items, trailing, render }: PaneTabsProps) {
+export function PaneTabs({ requestId, pane, label, items, above, render }: PaneTabsProps) {
   const active = useEditorsStore((state) => state.inspectorFor(requestId, pane));
   const setInspector = useEditorsStore((state) => state.setInspector);
 
@@ -57,9 +62,10 @@ export function PaneTabs({ requestId, pane, label, items, trailing, render }: Pa
 
   return (
     <>
+      {above}
       <div className="flex shrink-0 items-center gap-2 border-b border-hairline">
         {/* Ten tabs do not fit a split pane; the ones that don't go into the strip's More menu. */}
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <Tabs
             label={label}
             items={items}
@@ -69,7 +75,6 @@ export function PaneTabs({ requestId, pane, label, items, trailing, render }: Pa
             }}
           />
         </div>
-        {trailing !== undefined && <div className="min-w-0 flex-1">{trailing}</div>}
       </div>
       <div
         role="tabpanel"

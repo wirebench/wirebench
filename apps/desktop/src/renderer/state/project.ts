@@ -299,6 +299,7 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly renameProject: (projectId: string, name: string) => Promise<void>;
   /** Turns the definition cache on or off for one interface. */
   readonly setCacheDefinition: (interfaceId: string, cacheDefinition: boolean) => Promise<void>;
+  /** Picks a request's endpoint in its editor: staged like the editor's other edits (#732 X11). */
   readonly setEndpoint: (requestId: string, url: string) => void;
   /** Replaces a request's envelope in the mirror ONLY: for changes main has already saved
    * itself (`request.recreate`), where a second `update-request` would just rewrite the file. */
@@ -1526,7 +1527,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     setEndpoint: (requestId, url) => {
-      get().updateRequest(requestId, { endpointUrl: url });
+      // An endpoint picked in the editor is an edit like any other there: staged, so the tab says it
+      // is unsaved and Mod+S writes it (#732 X11).
+      get().editRequest(requestId, { endpointUrl: url });
     },
 
     addRequest: async (interfaceId, bindingName, operationName) => {

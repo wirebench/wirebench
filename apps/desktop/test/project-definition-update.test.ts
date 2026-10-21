@@ -62,7 +62,8 @@ function tempDir(prefix: string): string {
 }
 
 /** The request named `name` under the operation `operationName`, from a project snapshot. */
-function requestOf(project: ProjectWire, operationName: string, name = 'Request 1') {
+// A generated request is named after its operation (#726).
+function requestOf(project: ProjectWire, operationName: string, name = operationName) {
   return project.requests.find((request) => request.operationName === operationName && request.name === name);
 }
 

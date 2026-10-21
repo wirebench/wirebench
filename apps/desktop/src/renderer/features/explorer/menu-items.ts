@@ -11,6 +11,8 @@ export interface ExplorerMenuItem {
   readonly key: string;
   readonly label: string;
   readonly run: () => void;
+  /** Set on an entry that opens a submenu of these instead of running (#731 X22); `run` is then unused. */
+  readonly children?: readonly ExplorerMenuItem[];
 }
 
 /**
