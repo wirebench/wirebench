@@ -41,6 +41,7 @@ export function toWorkspace(row: repo.WorkspaceRow, myRole: WorkspaceRole, sourc
     source,
     recordDesktopActivity: row.recordDesktopActivity,
     recordSessionLogs: row.recordSessionLogs,
+    disabledFeatures: [...row.disabledFeatures],
     createdAt: row.createdAt,
   };
 }
@@ -52,6 +53,9 @@ function conflictOr(error: unknown): never {
   if (error instanceof WirebenchError && error.code === 'server-repo-exists') throw workspaceExists();
   throw error;
 }
+
+const sameList = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((id, i) => id === b[i]);
 
 const isMissing = (error: unknown): boolean => (error as NodeJS.ErrnoException | null)?.code === 'ENOENT';
 
@@ -178,6 +182,7 @@ export const workspaceRoutes =
                 ? { recordDesktopActivity: body.recordDesktopActivity }
                 : {}),
               ...(body.recordSessionLogs !== undefined ? { recordSessionLogs: body.recordSessionLogs } : {}),
+              ...(body.disabledFeatures !== undefined ? { disabledFeatures: body.disabledFeatures } : {}),
             });
             const source = auditSource(request);
             const scope = {
@@ -220,14 +225,28 @@ export const workspaceRoutes =
                 details: { enabled: body.recordSessionLogs, previous: previous.recordSessionLogs },
               });
             }
+            // The policy only restricts (ADR-0029), so no licence feature gates it; the stored form is
+            // compared so that a reordered or repeated list is not a change.
+            const disabled =
+              body.disabledFeatures === undefined ? undefined : repo.normalizeDisabledFeatures(body.disabledFeatures);
+            if (disabled !== undefined && !sameList(disabled, previous.disabledFeatures)) {
+              await recordAudit(env.ctx.hooks, tx, {
+                ...source,
+                ...scope,
+                action: 'workspace.features_changed',
+                details: { disabled, previous: [...previous.disabledFeatures] },
+              });
+            }
           })
           .catch(conflictOr);
-        // The default role moves every member on it; a rename moves no one (§3.2). The recording flag
-        // and session-log flags reach the desktops through the same nudge, so they re-read the workspace.
+        // The default role moves every member on it; a rename moves no one (§3.2). The recording flag,
+        // the session-log flag and the feature policy reach the desktops through the same nudge, so
+        // they re-read the workspace.
         if (
           body.defaultRole !== undefined ||
           body.recordDesktopActivity !== undefined ||
-          body.recordSessionLogs !== undefined
+          body.recordSessionLogs !== undefined ||
+          body.disabledFeatures !== undefined
         )
           announce(env.ctx.hooks.accessChanged, { workspaceId: access.workspaceId }, request.log);
         return toWorkspace((await repo.workspaceById(db, access.workspaceId))!, access.role, access.source);

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   accessEntrySchema,
+  disabledFeaturesSchema,
+  featureIdSchema,
   MAX_TEAMS_NAME_LENGTH,
   memberAddRequestSchema,
   TEAMS_ID_PATTERN,
@@ -68,6 +70,32 @@ describe('server-api teams schemas', () => {
     expect(teamWorkspaceUpdateRequestSchema.parse({ recordDesktopActivity: true })).toEqual({
       recordDesktopActivity: true,
     });
+  });
+
+  it('the feature policy is a short list of lower-case ids, and an older server reads as none', () => {
+    expect(featureIdSchema.safeParse('scripts').success).toBe(true);
+    expect(featureIdSchema.safeParse('a'.repeat(32)).success).toBe(true);
+    for (const bad of ['', 'Scripts', '-scripts', '1scripts', 'a'.repeat(33), 'mcp server', 'mcp_server']) {
+      expect(featureIdSchema.safeParse(bad).success, bad).toBe(false);
+    }
+    expect(disabledFeaturesSchema.safeParse(Array.from({ length: 32 }, (_, i) => `f${i}`)).success).toBe(true);
+    expect(disabledFeaturesSchema.safeParse(Array.from({ length: 33 }, (_, i) => `f${i}`)).success).toBe(false);
+    expect(teamWorkspaceUpdateRequestSchema.parse({ disabledFeatures: ['scripts'] })).toEqual({
+      disabledFeatures: ['scripts'],
+    });
+    expect(teamWorkspaceUpdateRequestSchema.safeParse({ disabledFeatures: ['Scripts'] }).success).toBe(false);
+    expect(
+      teamWorkspaceSchema.parse({
+        id: ID,
+        name: 'Integration',
+        teamId: ID,
+        teamName: 'Payments QA',
+        defaultRole: 'viewer',
+        myRole: 'editor',
+        source: 'grant',
+        createdAt: '2026-09-25T10:00:00.000Z',
+      }).disabledFeatures,
+    ).toEqual([]);
     expect(
       accessEntrySchema.parse({
         userId: ID,

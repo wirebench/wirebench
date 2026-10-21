@@ -151,6 +151,7 @@ class StubServer {
       source: 'default',
       recordDesktopActivity: false,
       recordSessionLogs: false,
+      disabledFeatures: [],
       createdAt: '2026-09-25T00:00:00.000Z',
     };
     const files = new Map<string, TreeFile>(input.files ?? []);
@@ -225,6 +226,7 @@ class StubServer {
         role: found.row.myRole,
         recordDesktopActivity: false,
         recordSessionLogs: false,
+        disabledFeatures: [],
       };
     });
   }

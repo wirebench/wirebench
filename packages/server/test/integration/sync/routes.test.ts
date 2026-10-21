@@ -35,7 +35,7 @@ describeDb('server-sync routes (§3.2)', () => {
 
   it('meta lists sync beside identity and teams', async () => {
     const meta = await call<{ capabilities: string[] }>(f.h, undefined, 'GET', '/meta');
-    expect(meta.body.capabilities).toEqual(['identity', 'sync', 'teams']);
+    expect(meta.body.capabilities).toEqual(['feature-policy', 'identity', 'sync', 'teams']);
   });
 
   it("an empty workspace: a null head, no commits, an empty snapshot and log, and each caller's role", async () => {
@@ -46,7 +46,14 @@ describeDb('server-sync routes (§3.2)', () => {
     ] as const) {
       expect(await get(user, 'head')).toEqual({
         status: 200,
-        body: { head: null, commits: 0, role, recordDesktopActivity: false, recordSessionLogs: false },
+        body: {
+          head: null,
+          commits: 0,
+          role,
+          recordDesktopActivity: false,
+          recordSessionLogs: false,
+          disabledFeatures: [],
+        },
       });
     }
     expect(await get(f.viewer, 'snapshot')).toEqual({ status: 200, body: { head: null, files: [] } });
@@ -72,6 +79,7 @@ describeDb('server-sync routes (§3.2)', () => {
       role: 'viewer',
       recordDesktopActivity: false,
       recordSessionLogs: false,
+      disabledFeatures: [],
     });
     expect((await get<SyncSnapshotResponse>(f.viewer, 'snapshot')).body).toEqual({
       head,

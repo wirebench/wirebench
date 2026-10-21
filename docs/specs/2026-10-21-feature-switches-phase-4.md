@@ -238,7 +238,7 @@ The server accepts any id of the grammar: a policy may name a feature this serve
 know (a newer desktop, a plugin), and the desktop ignores an id it has no descriptor for (§3).
 
 `PATCH /workspaces/:id` with `disabledFeatures` needs the workspace admin role, as `recordSessionLogs`
-does, records the audit event `workspace.features-changed` with `{ disabled, previous }`, and announces
+does, records the audit event `workspace.features_changed` with `{ disabled, previous }`, and announces
 the workspace change on the live hub the way the other settings do. `GET /workspaces` lists it, and
 `GET …/sync/head` carries `disabledFeatures: string[]` (default `[]`, so an older server reads as no
 policy). No licence feature gates it: a policy is a restriction, and restricting is free.

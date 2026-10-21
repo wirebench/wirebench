@@ -20,6 +20,9 @@ export interface TeamsOptions {
   readonly now?: () => Date;
 }
 
+/** Listed in `GET /meta` once a server stores a workspace feature policy. */
+export const FEATURE_POLICY_CAPABILITY = 'feature-policy';
+
 export function teamsModule(options: TeamsOptions = {}): ServerModule {
   const now = options.now ?? (() => new Date());
   return {
@@ -29,6 +32,8 @@ export function teamsModule(options: TeamsOptions = {}): ServerModule {
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       const env: TeamsEnv = { ctx, now, invitations: { ctx, settings: identitySettings(ctx.config), now } };
       ctx.meta.addCapability('teams');
+      // The workspace `disabledFeatures` policy (ADR-0029); a server without it shows no policy editor.
+      ctx.meta.addCapability(FEATURE_POLICY_CAPABILITY);
       teamRoutes(env)(app);
       memberRoutes(env)(app);
       teamInvitationRoutes(env)(app);
