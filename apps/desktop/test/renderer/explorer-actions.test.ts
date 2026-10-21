@@ -355,3 +355,42 @@ describe('explorerActions for WebSocket nodes', () => {
     expect(useUiStore.getState().confirmDeleteNode).toBeUndefined();
   });
 });
+
+describe('explorerActions new rows start a rename (#685 E16)', () => {
+  const edit = vi.fn();
+  const openParents = vi.fn();
+
+  beforeEach(() => {
+    installWirebenchApi();
+    useEditorsStore.getState().reset();
+    edit.mockClear();
+    openParents.mockClear();
+    registerExplorerTree({
+      get: () => ({ edit, isSelected: false }),
+      openParents,
+      select: vi.fn(),
+    } as unknown as Parameters<typeof registerExplorerTree>[0]);
+  });
+
+  it('puts a new gRPC API’s row into rename mode once its tab is open', async () => {
+    useProjectStore.setState({ addGrpcApi: vi.fn().mockResolvedValue('grpc-new'), grpcApis: {} });
+
+    explorerActions.newGrpcApi('p1');
+    await vi.waitFor(() => {
+      expect(edit).toHaveBeenCalled();
+    });
+    expect(openParents).toHaveBeenCalledWith('grpc-api:grpc-new');
+    registerExplorerTree(null);
+  });
+
+  it('puts a new WebSocket API’s row into rename mode', async () => {
+    useProjectStore.setState({ addWsApi: vi.fn().mockResolvedValue('ws-api-new'), wsApis: {} });
+
+    explorerActions.newWsApi('p1');
+    await vi.waitFor(() => {
+      expect(edit).toHaveBeenCalled();
+    });
+    expect(openParents).toHaveBeenCalledWith('ws-api:ws-api-new');
+    registerExplorerTree(null);
+  });
+});

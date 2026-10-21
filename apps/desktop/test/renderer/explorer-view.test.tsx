@@ -295,6 +295,50 @@ describe('ExplorerView', () => {
     expect(useUiStore.getState().confirmRemoveProjectId).toBe('p1');
   });
 
+  it('shows a missing project’s folder on its two-line row and has no Refresh button (#685 E13, E17)', () => {
+    openWorkspace([wireProject({ source: 'linked', dir: '/Users/me/work/gone', status: 'missing' })]);
+
+    render(
+      <TooltipPrimitive.Provider>
+        <ExplorerView />
+      </TooltipPrimitive.Provider>,
+    );
+
+    const row = screen.getByTestId('explorer-project-missing');
+    expect(row.textContent).toContain('This project folder is missing.');
+    expect(screen.getByTestId('explorer-project-missing-path').textContent).toBe('/Users/me/work/gone');
+    expect(screen.getByRole('button', { name: 'Locate…' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
+  });
+
+  it('Expand all stops at the operations and Endpoints, and a click on an empty operation creates its first request (#685 E14)', async () => {
+    const addRequest = vi.fn().mockResolvedValue('req-new');
+    useProjectStore.setState({
+      addRequest,
+      interfaces: { [summary.id]: summary },
+      order: [{ projectId: 'p1', interfaceIds: [summary.id] }],
+      requests: {},
+    });
+
+    render(
+      <TooltipPrimitive.Provider>
+        <ExplorerView />
+      </TooltipPrimitive.Provider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    const operationRow = await screen.findByText('Add');
+    // The interface unfolded, but its operation and Endpoints did not: their rows are the request level.
+    expect(screen.getByText('Endpoints').closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText(/example\.test/)).toBeNull();
+    // With no request yet, the operation is a leaf (an empty twisty) and a click makes the first one.
+    const twisty = operationRow.closest('[data-tree-id]')?.querySelector('[data-testid="explorer-row-twisty"]');
+    expect(twisty?.childElementCount).toBe(0);
+    fireEvent.click(operationRow);
+    expect(addRequest).toHaveBeenCalledWith('iface-1', '{tns}B', 'Add');
+  });
+
   it('opens the interface viewer on double-click only, never on a single click', () => {
     useProjectStore.setState({
       interfaces: { [summary.id]: summary },

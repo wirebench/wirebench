@@ -834,3 +834,24 @@ describe('endpointCountText (#731 X18)', () => {
     expect(endpointCountText({ services: [{ name: 'S', ports: [port('A')] }] } as never)).toBe('1 port, 0 addresses');
   });
 });
+
+describe('buildExplorerTree for #685', () => {
+  it('makes an operation with no request a leaf, so a click on it creates the first one (E14)', () => {
+    const [interfaceNode] = interfacesOf([iface()], []);
+    const operationNode = interfaceNode?.children?.find((node) => node.kind === 'operation');
+
+    expect(operationNode).toBeDefined();
+    expect(operationNode?.children).toBeUndefined();
+  });
+
+  it('carries the missing linked project’s folder on its row, for the second line (E17)', () => {
+    const tree = buildExplorerTree(
+      [{ id: 'p1', name: 'Gone', source: 'linked', dir: '/Users/me/work/gone', status: 'missing' }],
+      [{ projectId: 'p1', interfaceIds: [] }],
+      {},
+      [],
+    );
+
+    expect(tree[0]?.children?.[0]).toMatchObject({ kind: 'project-missing', dir: '/Users/me/work/gone' });
+  });
+});

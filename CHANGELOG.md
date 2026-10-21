@@ -110,6 +110,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Explorer, after a daily-use review (#685).** A SOAP operation with no request is a leaf, and a click on
+  it creates the first request; **Expand all** unfolds down to the operations and Endpoints and leaves
+  those folded, so a tree of many operations stays readable. A failed import names the HTTP status and
+  the host ("The server answered 404 Not Found from api.example.test") and says what to check: the URL,
+  the authentication or the format. **New gRPC API**, **New WebSocket API**, **New Sequence** and **New
+  Webhook** put the new row into rename mode, as New Folder does. A linked project whose folder is gone
+  says so on two lines, with the folder's path and the **Locate…** and **Remove** buttons below it, and
+  the toolbar's disabled Refresh button is gone: the banner that reports a project changed on disk offers
+  Reload.
 - **A click in the Explorer no longer folds the row it opens (#680).** Clicking a project or API row opens
   its tab and leaves its children where they are; folding is the chevron's, the arrow keys' and a
   double-click's job. The row a context menu was opened on is outlined while the menu is up, and an item

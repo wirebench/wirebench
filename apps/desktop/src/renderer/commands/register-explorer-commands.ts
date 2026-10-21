@@ -7,6 +7,7 @@ import {
   deleteExplorerNodes,
   DUPLICABLE_KINDS,
   duplicateExplorerNodes,
+  expandExplorerAll,
   explorerTargetKinds,
   explorerTargets,
   focusExplorer,
@@ -116,7 +117,7 @@ function registerTreeCommands(): void {
     when: () => getExplorerTree() !== null,
     whenScope: 'explorer',
     run: () => {
-      getExplorerTree()?.openAll();
+      expandExplorerAll();
     },
   });
   registerCommand({

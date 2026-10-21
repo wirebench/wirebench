@@ -109,9 +109,20 @@ export async function expandExplorer(page: Page, rowText?: string): Promise<void
   // With no `rowText`, any SOAP request row will do: generated requests are named after their
   // operation (#726), so the name depends on the fixture.
   const row = rowText === undefined ? page.locator(REQUEST_ROW) : page.locator('[data-tree-id]', { hasText: rowText });
-  await expect(row.first()).toBeVisible({
-    timeout: 20_000,
-  });
+  // Expand all stops at the operations (#685 E14): a SOAP request row shows once its operation is unfolded too.
+  const operations = page.locator('[data-tree-id^="op:"]');
+  await expect(async () => {
+    if (await row.first().isVisible()) return;
+    const count = await operations.count();
+    for (let index = 0; index < count; index += 1) {
+      const operation = operations.nth(index);
+      const item = operation.locator('xpath=ancestor::*[@role="treeitem"][1]');
+      if ((await item.getAttribute('aria-expanded')) === 'false') {
+        await operation.getByTestId('explorer-row-twisty').click();
+      }
+    }
+    await expect(row.first()).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
 }
 
 /**

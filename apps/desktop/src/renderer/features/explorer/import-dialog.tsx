@@ -20,6 +20,7 @@
 
 import { lintRestDefinition } from '../rest-api/lint-actions.js';
 import { importUrlCopy } from './import-url-copy.js';
+import { describeImportError } from './import-error.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useShallow } from 'zustand/react/shallow';
@@ -670,7 +671,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       if (cancelledTokensRef.current.has(token)) {
         return;
       }
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       cancelledTokensRef.current.delete(token);
       if (tokenRef.current === token) {
@@ -780,7 +781,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       }
       setResult({ kind: 'variables', summary: res.value.summary, reportText: res.value.reportText });
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       setImporting(false);
     }
@@ -811,7 +812,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       getExplorerTree()?.open(`proj:${res.value.projectId}`);
       setResult({ kind: 'har', value: res.value, responses: harResponses });
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       setImporting(false);
     }
@@ -852,7 +853,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       getExplorerTree()?.open(`proj:${res.value.projectId}`);
       setResult({ kind: 'http-file', value: res.value });
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       setImporting(false);
     }
@@ -884,7 +885,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       getExplorerTree()?.open(`proj:${res.value.projectId}`);
       setResult({ kind: 'opencollection', value: res.value });
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       setImporting(false);
     }
@@ -931,7 +932,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       getExplorerTree()?.open(`proj:${res.value.projectId}`);
       setResult({ kind: 'client', value: res.value });
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       setImporting(false);
     }
@@ -963,7 +964,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       getExplorerTree()?.open(`proj:${res.value.projectId}`);
       setResult({ kind: 'postman-v3', value: res.value });
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       setImporting(false);
     }
@@ -1302,7 +1303,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       if (cancelledTokensRef.current.has(token)) {
         return;
       }
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       cancelledTokensRef.current.delete(token);
       if (tokenRef.current === token) {
