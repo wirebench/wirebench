@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Feature switches.** Every protocol and optional feature can be turned off: **Settings → Features**
+  lists SOAP, REST, gRPC, WebSocket, MCP requests, Scripts, Sequences, Webhooks, Shared workspaces,
+  Team secrets and the MCP server, with the stage of each and why one is off (_Requires REST_, _Off by
+  team policy for Payments_); a change applies at the next start. The CLI and `wirebench mcp` take
+  `--features grpc=off,scripts=off` and `WIREBENCH_FEATURES`; `tools/list` omits the tools of what is
+  off and a call to one is refused with `feature-disabled`. A workspace admin sets a restrict-only
+  policy per shared workspace (**Team → Workspaces → Features**), carried on every sync (ADR-0029). A
+  feature that is off is refused by the engine, not only hidden, and its files are never rewritten
+  (#735, phase 4 of #184).
 - **Closing live sessions asks first.** Closing tabs that hold a connected SSH, Telnet or serial session,
   or a running local terminal, asks once for the whole batch (**Close 2 sessions on web-1?**); **Cancel**
   keeps every tab. **Don't ask again** turns it off, and **Settings → Terminal → Confirm closing live
@@ -44,6 +53,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The developer variable `WIREBENCH_KINDS` is gone; `WIREBENCH_FEATURES="grpc=off"` takes its place in a
+  development build, and the `features` preference in a shipped one (#735).
 - **SOAP, after a daily-use review (#725–#732).** Imported requests are named after their operation
   ("Add", or "Add (SOAP 1.2)" when a 1.1 and a 1.2 binding offer it) instead of "Request 1" (#726).
   Importing a WSDL already in the project asks **Update Definition…** or **Import as a copy**, a copy

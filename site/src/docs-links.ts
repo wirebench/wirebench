@@ -39,6 +39,7 @@ export const DOCS_LINKS = {
   serverSamlScim: 'guides/server-saml-scim',
   serverScheduledRuns: 'guides/server-scheduled-runs',
   managedPreferences: 'guides/managed-preferences',
+  featureSwitches: 'guides/feature-switches',
   agentsMcp: 'guides/agents-mcp',
   codingAgents: 'guides/coding-agents',
   teaching: 'guides/teaching',

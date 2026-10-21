@@ -89,7 +89,9 @@ facility. It is off when `rest` is off (`requires`), and it can be off on its ow
 - The REST module's `projectFiles.load` is handed the registry's feature set through the load
   context it already receives, leaves `webhooks/` unread, and the project gets a placeholder for it
   (`reason: 'feature-disabled'`, kind `rest`, name "Webhooks"), the shape phase 3 already shows for a
-  kind that is off. `projectFiles.managed` still names the folder, so a save never touches it.
+  kind that is off. `projectFiles.managed` names nothing while `webhooks` is off: a save removes a
+  managed file it no longer writes, so a folder still listed as managed would be deleted. The desktop's
+  own placeholder for the folder reads `managed` with no feature set and still sees it._As built._
 - The run loop refuses a selected webhook item with `feature-disabled` for `webhooks`, before its
   script and its send, the way it refuses scripts.
 - The desktop registers no webhook commands and the explorer shows the placeholder row.
