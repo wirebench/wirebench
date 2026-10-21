@@ -49,6 +49,7 @@
     "api.webhookItems",
     "app.areas",
     "app.checkForUpdates",
+    "app.features",
     "app.kinds",
     "app.mcpApprovals",
     "app.mcpApprove",

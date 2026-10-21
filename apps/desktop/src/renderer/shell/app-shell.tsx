@@ -480,7 +480,17 @@ export function AppShell() {
         registerShellCommands(openPalette); // resetCommands() at its top makes re-registration safe
         void syncAppMenu();
       });
-    // And which kinds; a kind that is off registers no commands, and its containers show as placeholders.
+    return () => {
+      cancelled = true;
+    };
+  }, [openPalette]);
+
+  // Which kinds and features the open workspace has on (phase 4 spec §6.2): a kind that is off registers
+  // no commands and its containers show as placeholders. Asked again when the workspace changes, since a
+  // server share's team policy is the workspace's.
+  const openWorkspaceId = useWorkspaceStore((state) => state.workspace?.id);
+  useEffect(() => {
+    let cancelled = false;
     void ipc()
       .app.kinds(undefined)
       .then((result) => {
@@ -488,13 +498,14 @@ export function AppShell() {
         useUiStore
           .getState()
           .setEnabledKinds(result.value.enabled.map(toKindId).filter((kind): kind is KindId => kind !== undefined));
+        useUiStore.getState().setEnabledFeatures(result.value.features);
         registerShellCommands(openPalette);
         void syncAppMenu();
       });
     return () => {
       cancelled = true;
     };
-  }, [openPalette]);
+  }, [openPalette, openWorkspaceId]);
 
   useTheme(theme);
 

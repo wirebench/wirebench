@@ -2083,9 +2083,43 @@ export const preferencesWireSchema = z.object({
     charset: z.string(),
     term: z.string(),
   }),
+  /** Feature switches by id; an id with no entry keeps its default (phase 4 spec §4.1). */
+  features: z.record(z.string(), z.boolean()),
   shortcuts: z.record(z.string(), z.string()),
 });
 export type PreferencesWire = z.infer<typeof preferencesWireSchema>;
+
+/**
+ * One feature switch as this run resolved it (phase 4 spec §3): the engine's `FeatureState`, restated
+ * for the renderer, which imports the engine type-only.
+ */
+export const featureStateWireSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  stage: z.enum(['stable', 'experimental']),
+  requires: z.array(z.string()),
+  default: z.boolean(),
+  /** What the preference the run started with says, when it names the feature. */
+  preference: z.boolean().optional(),
+  /** The open workspace's team policy names it off (ADR-0029). */
+  policy: z.boolean(),
+  enabled: z.boolean(),
+  reason: z
+    .union([
+      z.object({ by: z.enum(['policy', 'preference', 'default']) }),
+      z.object({ by: z.literal('requires'), feature: z.string() }),
+    ])
+    .optional(),
+});
+export type FeatureStateWire = z.infer<typeof featureStateWireSchema>;
+
+/** `app.features`: the rows Settings shows, and the team policy of the open workspace when it has one. */
+export const appFeaturesWireSchema = z.object({
+  states: z.array(featureStateWireSchema),
+  /** Set when the open workspace is shared through a server whose policy switches anything off. */
+  policy: z.object({ workspace: z.string(), disabled: z.array(z.string()) }).optional(),
+});
+export type AppFeaturesWire = z.infer<typeof appFeaturesWireSchema>;
 
 /** The section names `preferences.reset` accepts. */
 export const preferencesSectionSchema = z.enum([
@@ -2105,6 +2139,7 @@ export const preferencesSectionSchema = z.enum([
   'terminal',
   'ssh',
   'tokens',
+  'features',
   'shortcuts',
 ]);
 export type PreferencesSectionWire = z.infer<typeof preferencesSectionSchema>;
@@ -2136,6 +2171,8 @@ export const preferencesPatchWireSchema = z.object({
   mocks: z.record(z.string(), z.unknown()).optional(),
   terminal: z.record(z.string(), z.unknown()).optional(),
   ssh: z.record(z.string(), z.unknown()).optional(),
+  /** A `null` value removes the switch (the engine schema allows it there). */
+  features: z.record(z.string(), z.boolean().nullable()).optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });
 export type PreferencesPatchWire = z.infer<typeof preferencesPatchWireSchema>;
@@ -2245,6 +2282,8 @@ export const syncStatusWireSchema = z.object({
   error: z.object({ code: z.string(), message: z.string() }).optional(),
   /** An automatic commit waits for the open projects' possible secrets to be reviewed; how many. */
   held: z.object({ findings: z.number() }).optional(),
+  /** A fetch reported another team feature policy; it applies when the workspace is next opened (phase 4 spec §6.2). */
+  policyChanged: z.literal(true).optional(),
   /**
    * The caller's role in a Wirebench Server workspace (teams-access §3.5); `server-sync` fills it and
    * shows *Viewer* on the badge. Inlined rather than `workspaceRoleWireSchema`, which is declared

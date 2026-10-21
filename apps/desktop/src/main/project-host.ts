@@ -113,7 +113,7 @@ import type { KindApiDefinitions, KindHostHooks, KindHosts } from './kinds/kind-
 import type { ApiDefinitionDocuments } from './kinds/kind-main.js';
 import { MAIN_KINDS } from './kinds/kind-main.js';
 import type { KindId } from '../shared/kinds/kind-module.js';
-import { switchedOffProjectFiles } from './kinds/enabled-kinds.js';
+import { switchedOffProjectFiles } from './features/startup.js';
 
 /** How long an edit sits before autosave writes it out. */
 export const AUTOSAVE_DEBOUNCE_MS = 500;

@@ -9,7 +9,7 @@ import { startTestGrpcServer, type TestGrpcServer } from '../helpers/test-server
 
 // Kind modules spec §7: a project holding a container of a kind this run switched off opens with
 // that container as a placeholder row, named, saying why, and offering nothing else.
-test.describe('a kind switched off with WIREBENCH_KINDS', () => {
+test.describe('a kind switched off with WIREBENCH_FEATURES', () => {
   let launched: LaunchedApp | undefined;
   let server: TestGrpcServer | undefined;
   let userDataDir: string | undefined;
@@ -39,7 +39,7 @@ test.describe('a kind switched off with WIREBENCH_KINDS', () => {
     await launched.close();
 
     // The same profile reopens the same workspace, this time with gRPC off.
-    launched = await launchApp({ userDataDir, keepUserDataDir: true, extraEnv: { WIREBENCH_KINDS: 'grpc=off' } });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true, extraEnv: { WIREBENCH_FEATURES: 'grpc=off' } });
     page = launched.window;
     await page.getByRole('button', { name: 'Expand all' }).click();
     const row = page.getByTestId('explorer-placeholder-row').filter({ hasText: 'Greeter' });

@@ -298,6 +298,13 @@ export interface Preferences {
   readonly terminal: TerminalPreferences;
   readonly ssh: SshPreferences;
   /**
+   * Feature switches by id (`grpc`, `scripts`, …), phase 4 spec §4.1: true turns a feature on,
+   * false off; an id with no entry keeps its descriptor's default. The machine's level of the
+   * three (team policy, this, the default); a team policy can only restrict it (ADR-0029). Applied
+   * at the next start.
+   */
+  readonly features: Readonly<Record<string, boolean>>;
+  /**
    * Keybinding overrides, keyed by command id: the chord that runs it, or `''` when the user
    * unbound it. Empty by default — a command with no entry uses its registered chord. Written
    * by the Shortcuts editor and read by the renderer's keybinding dispatcher.
@@ -375,6 +382,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     localShell: '',
   }),
   ssh: Object.freeze({ keepAlive: 15, connectTimeout: 20, charset: 'utf-8', term: 'xterm-256color' }),
+  features: Object.freeze({}),
   shortcuts: Object.freeze({}),
 });
 
@@ -616,6 +624,8 @@ export const preferencesSchema = z.object({
         .optional(),
     })
     .optional(),
+  /** A `null` value removes the switch, so a row can go back to its descriptor's default. */
+  features: z.record(z.string().regex(/^[a-z][a-z0-9-]{0,31}$/), z.boolean().nullable()).optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });
 
@@ -719,6 +729,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     mocks: parseSection('mocks', shape.mocks, root['mocks']),
     terminal: parseSection('terminal', shape.terminal, root['terminal']),
     ssh: parseSection('ssh', shape.ssh, root['ssh']),
+    features: parseSection('features', shape.features, root['features']),
     shortcuts: parseSection('shortcuts', shape.shortcuts, root['shortcuts']),
   };
   return {
@@ -740,6 +751,8 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     mocks: mergeSection(base.mocks, value.mocks),
     terminal: mergeSection(base.terminal, value.terminal),
     ssh: mergeSection(base.ssh, value.ssh),
+    // `mergeSection` drops a `null` entry, so the merged record holds booleans only.
+    features: mergeSection(base.features, value.features),
     shortcuts: { ...base.shortcuts, ...(value.shortcuts ?? {}) },
   };
 }

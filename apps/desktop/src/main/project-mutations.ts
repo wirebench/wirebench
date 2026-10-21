@@ -84,6 +84,11 @@ export interface MutationDeps {
    */
   readonly enabledKinds?: readonly KindId[];
   /**
+   * The feature ids this workspace has on (phase 4 spec §4.4): a change that `sequences` or another
+   * non-protocol feature owns is refused when it is off. Absent, every feature is on.
+   */
+  readonly enabledFeatures?: readonly string[];
+  /**
    * The project-relative paths under `imported-scripts/`, listed afresh for this change. A
    * `convert-scripts` change refuses outright without it: a backup's name depends on what is there.
    */
@@ -367,8 +372,18 @@ function applyKindChange(
     });
   }
   requireKindEnabled(owner.kind, deps.enabledKinds);
+  const feature = FEATURE_OF_CHANGE[change.kind];
+  if (feature !== undefined) requireFeatureEnabled(feature, deps.enabledFeatures);
   return reducer(project, change, deps);
 }
+
+/** The non-protocol feature a change needs on (phase 4 spec §7); a change not listed needs only its kind. */
+const FEATURE_OF_CHANGE: Readonly<Record<string, string>> = {
+  'add-sequence': 'sequences',
+  'update-sequence': 'sequences',
+  'remove-sequence': 'sequences',
+  'duplicate-sequence': 'sequences',
+};
 
 /**
  * The tree of the kind that owns an id, per `owns`.
@@ -401,6 +416,30 @@ export function requireKindEnabled(kind: KindId, enabledKinds: readonly KindId[]
     details: { feature: module.feature.id },
   });
 }
+
+/**
+ * Refuses a write through a feature that is off, the way {@link requireKindEnabled} refuses a kind.
+ * `enabledFeatures` absent means every feature is on.
+ *
+ * @throws ProjectError `feature-disabled` with `details.feature`
+ */
+export function requireFeatureEnabled(feature: string, enabledFeatures: readonly string[] | undefined): void {
+  if (enabledFeatures === undefined || enabledFeatures.includes(feature)) {
+    return;
+  }
+  const title = FEATURE_TITLES[feature] ?? feature;
+  throw new ProjectError('feature-disabled', `${title} is switched off`, { details: { feature } });
+}
+
+/** How the non-protocol features are named to a person; the engine's descriptors carry the same titles. */
+const FEATURE_TITLES: Readonly<Record<string, string>> = {
+  scripts: 'Scripts',
+  sequences: 'Sequences',
+  webhooks: 'Webhooks',
+  'server-sync': 'Shared workspaces',
+  'team-secrets': 'Team secrets',
+  'mcp-server': 'MCP server',
+};
 
 /** Derives a project's default name from its folder, the folder's last segment. */
 export function projectNameFromDir(dir: string): string {

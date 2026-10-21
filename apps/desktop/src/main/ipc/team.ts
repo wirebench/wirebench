@@ -6,10 +6,12 @@
  */
 import { channels } from '../../shared/ipc.js';
 import type { ServerClient } from '../server-client.js';
-import { withToken, type TokenSource } from '../server-token.js';
+import { withToken as withTokenUnguarded, type TokenSource } from '../server-token.js';
 import { registerHandler } from './register.js';
 
 export interface TeamChannelDeps {
+  /** Refuses every call when `server-sync` is off (phase 4 spec §7); absent, nothing is refused. */
+  readonly requireFeature?: (feature: string) => void;
   readonly client: Pick<
     ServerClient,
     | 'me'
@@ -42,6 +44,12 @@ const DESKTOP_ACTIVITY_CAPABILITY = 'desktop-activity';
 const SESSION_LOGS_CAPABILITY = 'session-logs';
 
 const DONE = { done: true } as const;
+
+/** `withToken`, after the feature guard: a server call is a `server-sync` use. */
+const withToken: typeof withTokenUnguarded = (deps, url, fn) => {
+  (deps as TeamChannelDeps).requireFeature?.('server-sync');
+  return withTokenUnguarded(deps, url, fn);
+};
 
 export function registerTeamChannels(deps: TeamChannelDeps): void {
   const c = deps.client;

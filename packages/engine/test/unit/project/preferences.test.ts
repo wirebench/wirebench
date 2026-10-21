@@ -487,3 +487,23 @@ describe('withAppUserAgent', () => {
     expect(moved.editor).toEqual(DEFAULT_PREFERENCES.editor);
   });
 });
+
+describe('the features section (phase 4 spec §4.1)', () => {
+  it('is empty by default and keeps the switches a file sets', () => {
+    expect(DEFAULT_PREFERENCES.features).toEqual({});
+    const merged = mergePreferences({ features: { grpc: false, mcp: true } });
+    expect(merged.features).toEqual({ grpc: false, mcp: true });
+  });
+
+  it('removes a switch patched to null, so a row can go back to its default', () => {
+    const base = mergePreferences({ features: { grpc: false, scripts: false } });
+    const merged = mergePreferences({ features: { grpc: null } }, base);
+    expect(merged.features).toEqual({ scripts: false });
+  });
+
+  it('drops the section when an id is not a feature id, and keeps the rest of the document', () => {
+    const merged = mergePreferences({ features: { 'Not An Id': false }, updates: { checkOnLaunch: true } });
+    expect(merged.features).toEqual({});
+    expect(merged.updates.checkOnLaunch).toBe(true);
+  });
+});

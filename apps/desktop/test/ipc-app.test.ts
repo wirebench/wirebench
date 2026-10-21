@@ -107,7 +107,10 @@ describe('app.* IPC', () => {
   });
 
   it('app.kinds answers the kinds this run has switched on', async () => {
-    registerAppChannels(undefined, undefined, undefined, undefined, ['soap', 'rest']);
+    registerAppChannels(undefined, undefined, undefined, undefined, {
+      kinds: () => ['soap', 'rest'],
+      states: () => ({ states: [] }),
+    });
     expect(await invoke('app.kinds', undefined, webContents())).toEqual({
       ok: true,
       value: { enabled: ['soap', 'rest'] },

@@ -78,6 +78,7 @@ let service: {
   syncStatus: ReturnType<typeof vi.fn<() => SyncStatusWire>>;
   treeDir: ReturnType<typeof vi.fn<() => string>>;
   updateSyncSettings: ReturnType<typeof vi.fn<(patch: unknown) => Promise<SyncStatusWire>>>;
+  requireFeature: (feature: string) => void;
 };
 let reveal: ReturnType<typeof vi.fn<(path: string) => void>>;
 
@@ -89,6 +90,7 @@ beforeEach(() => {
     syncStatus: vi.fn<() => SyncStatusWire>().mockReturnValue(SHARED_STATUS),
     treeDir: vi.fn<() => string>().mockReturnValue(TREE),
     updateSyncSettings: vi.fn<(patch: unknown) => Promise<SyncStatusWire>>().mockResolvedValue(SHARED_STATUS),
+    requireFeature: () => undefined,
   };
   reveal = vi.fn<(path: string) => void>();
   registerSyncChannels({ service, reveal });

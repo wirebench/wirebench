@@ -21,15 +21,25 @@ export type TeamSecretsChannelService = Pick<
   | 'dismissReplaced'
 >;
 
-export function registerTeamSecretsChannels(service: TeamSecretsChannelService): void {
+export function registerTeamSecretsChannels(
+  service: TeamSecretsChannelService,
+  /** Refuses every call but `status` when `team-secrets` is off (phase 4 spec §7). */
+  requireFeature: (feature: string) => void = () => undefined,
+): void {
+  const guarded = <T>(run: () => Promise<T>): Promise<T> => {
+    requireFeature('team-secrets');
+    return run();
+  };
   registerHandler(channels.teamSecrets.status, () => service.status());
-  registerHandler(channels.teamSecrets.turnOn, () => service.turnOn({ commit: true }));
-  registerHandler(channels.teamSecrets.requestAccess, () => service.requestAccess());
-  registerHandler(channels.teamSecrets.approve, ({ keyId }) => service.approve(keyId));
-  registerHandler(channels.teamSecrets.decline, ({ keyId }) => service.decline(keyId));
-  registerHandler(channels.teamSecrets.remove, ({ keyId }) => service.remove(keyId));
-  registerHandler(channels.teamSecrets.grantAdmin, ({ keyId }) => service.grantAdmin(keyId));
-  registerHandler(channels.teamSecrets.revokeAdmin, ({ keyId }) => service.revokeAdmin(keyId));
-  registerHandler(channels.teamSecrets.restoreMine, ({ entryId }) => service.restoreMine(entryId));
-  registerHandler(channels.teamSecrets.dismissReplaced, ({ entryId }) => service.dismissReplaced(entryId));
+  registerHandler(channels.teamSecrets.turnOn, () => guarded(() => service.turnOn({ commit: true })));
+  registerHandler(channels.teamSecrets.requestAccess, () => guarded(() => service.requestAccess()));
+  registerHandler(channels.teamSecrets.approve, ({ keyId }) => guarded(() => service.approve(keyId)));
+  registerHandler(channels.teamSecrets.decline, ({ keyId }) => guarded(() => service.decline(keyId)));
+  registerHandler(channels.teamSecrets.remove, ({ keyId }) => guarded(() => service.remove(keyId)));
+  registerHandler(channels.teamSecrets.grantAdmin, ({ keyId }) => guarded(() => service.grantAdmin(keyId)));
+  registerHandler(channels.teamSecrets.revokeAdmin, ({ keyId }) => guarded(() => service.revokeAdmin(keyId)));
+  registerHandler(channels.teamSecrets.restoreMine, ({ entryId }) => guarded(() => service.restoreMine(entryId)));
+  registerHandler(channels.teamSecrets.dismissReplaced, ({ entryId }) =>
+    guarded(() => service.dismissReplaced(entryId)),
+  );
 }

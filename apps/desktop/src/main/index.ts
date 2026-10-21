@@ -94,7 +94,7 @@ import { createForwardBinds } from './forward-binds.js';
 import { TransferQueue } from './transfers.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
 import { clearAttachmentsTmp } from './kinds/soap/channels/attachments.js';
-import { enabledKindsFromEnv, kindRegistry } from './kinds/enabled-kinds.js';
+import { startupFeatures, type FeaturesRun } from './features/startup.js';
 import { MAIN_KINDS } from './kinds/kind-main.js';
 import { registerKeystoreChannels } from './ipc/keystores.js';
 import { registerCertificateChannels } from './ipc/certificates.js';
@@ -552,13 +552,17 @@ const serialOn = serialFromEnv();
 const serialDevices = new SerialDeviceStore(join(app.getPath('userData'), SERIAL_DEVICES_FILE));
 
 /**
- * The kinds `WIREBENCH_KINDS` leaves switched on (see `kinds/enabled-kinds.ts`), and the engine
- * registry built from them once. Each workspace hands the registry to its project hosts, which pass it
- * to every load, save and send, so a project's containers of a kind that is off load as placeholders
- * and are saved untouched.
+ * This run's feature switches (phase 4 spec §4.2): the `features` preference, resolved once the
+ * preferences are loaded (in `whenReady`, before any channel or window) and kept for the run. Each
+ * workspace hands the registry resolved for it (its team policy laid over, §6.2) to its project hosts,
+ * which pass it to every load, save and send, so a project's containers of a kind that is off load as
+ * placeholders and are saved untouched. A changed preference applies at the next start.
  */
-const enabledKinds = enabledKindsFromEnv();
-const kindsRegistry = kindRegistry(enabledKinds);
+let features: FeaturesRun = startupFeatures({
+  preferences: { features: {} },
+  env: process.env,
+  isPackaged: app.isPackaged,
+});
 
 /** The calling window's `hosts.yaml` (each window has its own, for its own workspace; see `createWindowScope`). */
 const hostsService = scoped(scopes, (scope) => scope.hosts);
@@ -869,8 +873,7 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
     userDataDir: app.getPath('userData'),
     state: workspaceState,
     sweepJoining,
-    enabledKinds,
-    registry: kindsRegistry,
+    features,
     // One workspace, one window (design D5): the window holding it is brought forward instead.
     heldElsewhere: (workspaceId) => {
       const holder = scopes
@@ -1082,7 +1085,13 @@ function auditSignedInFor(
 app.setName('Wirebench');
 app.setAboutPanelOptions({ applicationName: 'Wirebench', applicationVersion: appVersion() });
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
+  // The switches come from the preferences file, so it is read before anything registers a kind.
+  features = startupFeatures({
+    preferences: await preferencesService.load(),
+    env: process.env,
+    isPackaged: app.isPackaged,
+  });
   electronApp.setAppUserModelId('io.wirebench.desktop');
   registerAppProtocol();
 
@@ -1123,7 +1132,11 @@ void app.whenReady().then(() => {
       openWindow({ reopenLast: false });
     },
     enabledAreas,
-    enabledKinds,
+    {
+      kinds: () => workspaceService.enabledKinds(),
+      features: () => workspaceService.enabledFeatures(),
+      states: () => workspaceService.featureStates(),
+    },
     localTerminalOn,
     telnetOn,
     serialOn,
@@ -1222,23 +1235,27 @@ void app.whenReady().then(() => {
     owns: (mockId) => workspaceService.projectId(mockId) !== undefined,
   });
   // A sequence's steps go through the engine as a single send does, with the same dependencies.
-  registerSequenceChannels(new SequenceRunner(), {
-    service: engineService,
-    requests: requestDeps,
-    modelOf: (entityId) => workspaceService.hostOfEntity(entityId).model(),
-    emit: (event) => {
-      emitToCaller(events.sequence.progress, event);
+  registerSequenceChannels(
+    new SequenceRunner(),
+    {
+      service: engineService,
+      requests: requestDeps,
+      modelOf: (entityId) => workspaceService.hostOfEntity(entityId).model(),
+      emit: (event) => {
+        emitToCaller(events.sequence.progress, event);
+      },
+      emitWaiting: (event) => {
+        emitToCaller(events.sequence.waiting, event);
+      },
+      // Read per run: the workspace, its link and the account can all change between runs.
+      captures: () =>
+        desktopCaptureSource(
+          { client: serverClient, accounts: accountService },
+          linkedServerOf(workspaceService.snapshot()),
+        ),
     },
-    emitWaiting: (event) => {
-      emitToCaller(events.sequence.waiting, event);
-    },
-    // Read per run: the workspace, its link and the account can all change between runs.
-    captures: () =>
-      desktopCaptureSource(
-        { client: serverClient, accounts: accountService },
-        linkedServerOf(workspaceService.snapshot()),
-      ),
-  });
+    (feature) => workspaceService.requireFeature(feature),
+  );
   // The Runner sends as a sequence does; its settings and runs live under user data, not the project.
   registerRunnerChannels(
     new RunnerService({
@@ -1271,7 +1288,11 @@ void app.whenReady().then(() => {
   });
   registerIssuedTokenChannels({ issuedTokens: issuedTokensService, showSecrets: showSecretsFlag });
   registerAccountChannels({ accounts: accountService });
-  registerTeamChannels({ client: serverClient, accounts: accountService });
+  registerTeamChannels({
+    client: serverClient,
+    accounts: accountService,
+    requireFeature: (feature) => workspaceService.requireFeature(feature),
+  });
   registerCiTokenChannels({ client: serverClient, accounts: accountService });
   registerLicenseChannels({ client: serverClient, accounts: accountService });
   registerProvisioningChannels({ client: serverClient, accounts: accountService });
@@ -1500,7 +1521,7 @@ void app.whenReady().then(() => {
   registerDialogsChannels(dialogPicks);
   registerFsChannels();
   // A kind that is off registers no channels: a call to one is refused as an unknown channel.
-  for (const kind of MAIN_KINDS.filter((candidate) => enabledKinds.includes(candidate.kind))) {
+  for (const kind of MAIN_KINDS.filter((candidate) => features.enabledKinds.includes(candidate.kind))) {
     kind.registerChannels({
       engine: engineService,
       request: requestDeps,
@@ -1530,7 +1551,7 @@ void app.whenReady().then(() => {
   registerSearchChannels(engineService, workspaceService);
   registerSecretsChannels(teamSecretStore, showSecretsFlag);
   registerSecretSourcesChannels(workspaceService, secretSources);
-  registerTeamSecretsChannels(teamSecrets);
+  registerTeamSecretsChannels(teamSecrets, (feature) => workspaceService.requireFeature(feature));
   registerSecretScanChannels(secretScans);
   registerSnapshotChannels(
     new SnapshotStore((requestId) => {

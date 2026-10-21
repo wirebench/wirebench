@@ -20,6 +20,7 @@ import type {
 export type SettingsSectionId =
   | 'appearance'
   | 'behaviour'
+  | 'features'
   | 'shortcuts'
   | 'updates'
   | 'http'
@@ -111,6 +112,14 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         subtitle: 'How the app acts while you work.',
         keys: { kind: 'fields', keys: BEHAVIOUR_KEYS },
         searchable: true,
+      },
+      {
+        id: 'features',
+        label: 'Features',
+        subtitle: 'Turn protocols and optional features off on this machine.',
+        keys: stored('features'),
+        searchable: true,
+        keywords: ['switch', 'protocol', 'experimental', 'policy', 'grpc', 'soap', 'rest', 'websocket', 'scripts'],
       },
       {
         id: 'shortcuts',
@@ -302,6 +311,11 @@ export function isModified(preferences: PreferencesWire, key: string): boolean {
 function resetValue(preferences: PreferencesWire, key: string): { readonly value: unknown } | undefined {
   if (MAIN_ONLY_KEYS.has(key)) {
     return undefined;
+  }
+  // A feature switch has no default value of its own: removing the key (a `null` patch) puts the
+  // descriptor's default back (phase 4 spec §4.1).
+  if (key.startsWith('features.')) {
+    return { value: null };
   }
   const fallback = valueAt(DEFAULT_PREFERENCES_WIRE, key);
   if (fallback !== undefined) {

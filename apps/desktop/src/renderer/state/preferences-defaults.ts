@@ -75,5 +75,6 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     localShell: '',
   },
   ssh: { keepAlive: 15, connectTimeout: 20, charset: 'utf-8', term: 'xterm-256color' },
+  features: {},
   shortcuts: {},
 };

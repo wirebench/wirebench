@@ -22,7 +22,10 @@ import type { WorkspaceService } from '../workspace-service.js';
 import { registerHandler } from './register.js';
 
 /** The `WorkspaceService` surface the `sync.*` channels drive. */
-export type SyncChannelService = Pick<WorkspaceService, 'sync' | 'syncStatus' | 'treeDir' | 'updateSyncSettings'>;
+export type SyncChannelService = Pick<
+  WorkspaceService,
+  'sync' | 'syncStatus' | 'treeDir' | 'updateSyncSettings' | 'requireFeature'
+>;
 
 /** What `sync.*` needs beyond the service itself. */
 export interface SyncChannelDeps {
@@ -33,6 +36,8 @@ export interface SyncChannelDeps {
 
 /** The running `SyncService`, or a `sync-not-supported` refusal for a local workspace. */
 function requireSync(service: SyncChannelService): SyncService {
+  // A sync operation is a `server-sync` use (phase 4 spec §7); the status read is not.
+  service.requireFeature('server-sync');
   const sync = service.sync();
   if (sync === undefined) {
     throw new WirebenchError('sync-not-supported', 'This workspace is not shared.');

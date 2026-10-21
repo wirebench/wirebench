@@ -1,6 +1,7 @@
 import { catalogEntry } from '@shared/command-catalog.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { openRunnerTab, runnerTargetOf } from '../features/runner/runner-actions.js';
+import { featureOn } from '../state/ui.js';
 import { registerCommand } from '../lib/commands.js';
 import { useProjectStore } from '../state/project.js';
 import { useScriptValuesStore } from '../state/script-values.js';
@@ -29,7 +30,8 @@ export function registerExplorerCommands(): void {
   });
   registerCommand({
     ...catalogEntry('sequence.new'),
-    when: (ctx) => ctx.selection?.kind === 'project',
+    // A workspace with `sequences` off offers none (phase 4 spec §4.4); main refuses the change too.
+    when: (ctx) => ctx.selection?.kind === 'project' && featureOn('sequences'),
     whenScope: 'selection.project',
     run: (ctx) => {
       explorerActions.newSequence(ctx.selection?.id);
