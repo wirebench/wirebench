@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { IncomingConfigEditor } from '../../src/renderer/features/wss/incoming-config-editor.js';
+import { WssConfigPanel } from '../../src/renderer/features/wss/wss-config-panel.js';
+import { useWssConfigPanelStore } from '../../src/renderer/features/wss/wss-config-panel-store.js';
 import { WssInspector, wssTabLabel } from '../../src/renderer/features/request-editor/inspectors/wss-inspector.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
@@ -40,6 +42,7 @@ function setUp(configs: readonly WssIncomingWire[] = [config]) {
   render(
     <TooltipPrimitive.Provider>
       <IncomingConfigEditor />
+      <WssConfigPanel />
     </TooltipPrimitive.Provider>,
   );
   return actions;
@@ -47,6 +50,7 @@ function setUp(configs: readonly WssIncomingWire[] = [config]) {
 
 afterEach(() => {
   cleanup();
+  useWssConfigPanelStore.setState({ editing: undefined, original: undefined, asking: false });
   useProjectStore.getState().reset();
 });
 

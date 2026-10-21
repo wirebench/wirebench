@@ -3,9 +3,8 @@
  * credential that proves who is asking — followed by the cached token's status.
  */
 import type { ReactNode } from 'react';
-import { SecretField } from '../../components/secret-field.js';
 import { useKerberosAvailability } from '../../lib/use-kerberos-availability.js';
-import { KeystorePicker, WSS_FIELD_CLASS } from './outgoing-entry-fields.js';
+import { KeystorePicker, WSS_FIELD_CLASS, WssSecretField } from './outgoing-entry-fields.js';
 import { IssuedTokenStatus } from './issued-token-status.js';
 import type { WssEntryWire } from '../../../shared/kinds/soap/wire.js';
 
@@ -25,7 +24,7 @@ interface Props {
 function Row({ label, children }: { readonly label: string; readonly children: ReactNode }) {
   return (
     <label className="flex items-center gap-1 text-xs text-fg-subtle">
-      <span className="w-24 shrink-0">{label}</span>
+      <span className="w-32 shrink-0">{label}</span>
       {children}
     </label>
   );
@@ -219,7 +218,7 @@ export function IssuedTokenFields({ entry, onChange, projectId, configId, entryI
                 }}
               />
             </Row>
-            <SecretField
+            <WssSecretField
               label="STS password"
               value={credential.passwordRef}
               onChange={(ref) => {
@@ -238,7 +237,7 @@ export function IssuedTokenFields({ entry, onChange, projectId, configId, entryI
                 setCredential(withOptional({ ...credential, keystoreRef: ref ?? '' }, 'alias', alias));
               }}
             />
-            <SecretField
+            <WssSecretField
               label="Key password"
               value={credential.keyPasswordRef}
               onChange={(ref) => {
@@ -295,7 +294,7 @@ export function IssuedTokenFields({ entry, onChange, projectId, configId, entryI
                     }}
                   />
                 </Row>
-                <SecretField
+                <WssSecretField
                   label="Kerberos password"
                   value={credential.passwordRef}
                   onChange={(ref) => {

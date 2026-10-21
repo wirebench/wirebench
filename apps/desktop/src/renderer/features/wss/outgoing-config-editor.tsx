@@ -13,15 +13,16 @@ import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { IconButton } from '../../components/icon-button.js';
-import { SecretField } from '../../components/secret-field.js';
 import { useProjectStore, useTargetProjectId } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
+import { useWssConfigPanelStore } from './wss-config-panel-store.js';
 import {
   EncryptionFields,
   SignatureFields,
   TimestampFields,
   UsernameTokenFields,
   WSS_FIELD_CLASS,
+  WssSecretField,
 } from './outgoing-entry-fields.js';
 import { IssuedTokenFields } from './issued-token-fields.js';
 import { newSamlFormEntry, SamlTokenFields } from './saml-token-fields.js';
@@ -199,22 +200,10 @@ interface ConfigProps {
 }
 
 function ConfigRow({ config, onRemove }: ConfigProps) {
-  const [open, setOpen] = useState(false);
-  const updateWssOutgoing = useProjectStore((state) => state.updateWssOutgoing);
-  const keystores = useProjectStore((state) => state.keystores);
-  // The request open in the editor, but only when it selects this configuration: main refuses a
-  // request that does not, and a status line for another request's cache key would mislead.
-  const selectedRequestId = useUiStore((state) => state.selection?.requestId);
-  const requestId = useProjectStore((state) =>
-    selectedRequestId !== undefined && state.requests[selectedRequestId]?.wssOutgoingRef === config.id
-      ? selectedRequestId
-      : undefined,
+  const open = useWssConfigPanelStore(
+    (state) => state.editing?.direction === 'outgoing' && state.editing.id === config.id,
   );
   const Chevron = open ? ChevronDown : ChevronRight;
-
-  const patchEntries = (entries: readonly WssEntryWire[]): void => {
-    void updateWssOutgoing(config.id, { entries: [...entries] });
-  };
 
   return (
     <li data-testid="wss-outgoing-row" className="rounded px-1 py-0.5">
@@ -223,9 +212,11 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
           type="button"
           aria-expanded={open}
           onClick={() => {
-            setOpen(!open);
+            const panel = useWssConfigPanelStore.getState();
+            if (open) panel.requestClose();
+            else panel.open('outgoing', config.id);
           }}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-1 text-left text-sm text-fg-default hover:bg-surface-raised"
+          className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-1 text-left text-sm text-fg-default hover:bg-surface-raised ${open ? 'bg-surface-raised' : ''}`}
         >
           <Chevron size={12} aria-hidden="true" className="shrink-0" />
           <span className="min-w-0 truncate">{config.name}</span>
@@ -237,148 +228,169 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
           <Trash2 size={13} aria-hidden="true" />
         </IconButton>
       </div>
-
-      {open && (
-        <div data-testid="wss-outgoing-editor" className="flex flex-col gap-1 px-5 pb-2">
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <span className="w-24 shrink-0">Name</span>
-            <input
-              aria-label="Configuration name"
-              className={FIELD}
-              defaultValue={config.name}
-              onBlur={(event) => {
-                if (event.target.value.trim().length > 0 && event.target.value !== config.name) {
-                  void updateWssOutgoing(config.id, { name: event.target.value });
-                }
-              }}
-            />
-          </label>
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <span className="w-24 shrink-0">Default alias</span>
-            <select
-              aria-label="Default alias"
-              className={FIELD}
-              value={config.defaultAlias ?? ''}
-              onChange={(event) => {
-                void updateWssOutgoing(config.id, {
-                  defaultAlias: event.target.value === '' ? null : event.target.value,
-                });
-              }}
-            >
-              <option value="">—</option>
-              {/* The alias list is the union of every keystore's *default* alias: reading the
-                  aliases themselves means `keystores.inspect` per row, which Task 38 needs
-                  anyway when signing gains a real per-entry keystore choice. */}
-              {keystores
-                .map((keystore) => keystore.defaultAlias)
-                .filter((alias): alias is string => alias !== undefined)
-                .map((alias) => (
-                  <option key={alias} value={alias}>
-                    {alias}
-                  </option>
-                ))}
-              {config.defaultAlias !== undefined &&
-                !keystores.some((keystore) => keystore.defaultAlias === config.defaultAlias) && (
-                  <option value={config.defaultAlias}>{config.defaultAlias}</option>
-                )}
-            </select>
-          </label>
-          <div data-testid="wss-outgoing-password">
-            <SecretField
-              label="Default WS-Security password"
-              value={config.defaultPasswordRef}
-              onChange={(ref) => {
-                void updateWssOutgoing(config.id, { defaultPasswordRef: ref ?? null });
-              }}
-            />
-          </div>
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <span className="w-24 shrink-0">Actor</span>
-            <input
-              aria-label="Actor"
-              className={FIELD}
-              defaultValue={config.actor ?? ''}
-              onBlur={(event) => {
-                if (event.target.value !== (config.actor ?? '')) {
-                  void updateWssOutgoing(config.id, {
-                    actor: event.target.value === '' ? null : event.target.value,
-                  });
-                }
-              }}
-            />
-          </label>
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <input
-              type="checkbox"
-              aria-label="Must understand"
-              checked={config.mustUnderstand}
-              onChange={(event) => {
-                void updateWssOutgoing(config.id, { mustUnderstand: event.target.checked });
-              }}
-            />
-            Must understand
-          </label>
-
-          <div className="mt-1 flex items-center gap-1">
-            <span className="min-w-0 flex-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">Entries</span>
-            <select
-              aria-label="Add entry"
-              data-testid="wss-entry-add"
-              className="rounded border border-hairline bg-surface-sunken px-1 py-0.5 text-xs text-fg-default"
-              value=""
-              onChange={(event) => {
-                const kind = event.target.value;
-                if (
-                  kind === 'timestamp' ||
-                  kind === 'username-token' ||
-                  kind === 'signature' ||
-                  kind === 'encryption' ||
-                  kind === 'saml-token' ||
-                  kind === 'issued-token'
-                ) {
-                  patchEntries([...config.entries, newEntry(kind)]);
-                }
-                event.target.value = '';
-              }}
-            >
-              <option value="">Add entry…</option>
-              <option value="timestamp">Timestamp</option>
-              <option value="username-token">Username Token</option>
-              <option value="signature">Signature</option>
-              <option value="encryption">Encryption</option>
-              <option value="issued-token">Issued Token (WS-Trust)</option>
-              <option value="saml-token">SAML Token</option>
-            </select>
-          </div>
-
-          <ul aria-label={`Entries of ${config.name}`} className="flex flex-col gap-1">
-            {config.entries.length === 0 && <li className="text-xs text-fg-faint">No entries yet.</li>}
-            {config.entries.map((entry, index) => (
-              <EntryRow
-                // Entries have no ids of their own; position is their identity, and the whole
-                // list is replaced on every edit, so a positional key is exact here.
-                key={`${entry.kind}-${String(index)}`}
-                entry={entry}
-                index={index}
-                count={config.entries.length}
-                projectId={config.projectId}
-                configId={config.id}
-                requestId={requestId}
-                onChange={(next) => {
-                  patchEntries(config.entries.map((candidate, at) => (at === index ? next : candidate)));
-                }}
-                onMove={(delta) => {
-                  patchEntries(move(config.entries, index, delta));
-                }}
-                onRemove={() => {
-                  patchEntries(config.entries.filter((_candidate, at) => at !== index));
-                }}
-              />
-            ))}
-          </ul>
-        </div>
-      )}
     </li>
+  );
+}
+
+/**
+ * One outgoing configuration's editor: its defaults, its actor/mustUnderstand, and its ordered entry
+ * list. Shown in the right panel (#730), where every label has room.
+ */
+export function OutgoingConfigForm({ config }: { readonly config: WssOutgoingWire & { readonly projectId: string } }) {
+  const updateWssOutgoing = useProjectStore((state) => state.updateWssOutgoing);
+  const keystores = useProjectStore((state) => state.keystores);
+  // The request open in the editor, but only when it selects this configuration: main refuses a
+  // request that does not, and a status line for another request's cache key would mislead.
+  const selectedRequestId = useUiStore((state) => state.selection?.requestId);
+  const requestId = useProjectStore((state) =>
+    selectedRequestId !== undefined && state.requests[selectedRequestId]?.wssOutgoingRef === config.id
+      ? selectedRequestId
+      : undefined,
+  );
+
+  const patchEntries = (entries: readonly WssEntryWire[]): void => {
+    void updateWssOutgoing(config.id, { entries: [...entries] });
+  };
+
+  return (
+    <div data-testid="wss-outgoing-editor" className="flex flex-col gap-1 px-5 pb-2">
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        <span className="w-32 shrink-0">Name</span>
+        <input
+          aria-label="Configuration name"
+          className={FIELD}
+          defaultValue={config.name}
+          onBlur={(event) => {
+            if (event.target.value.trim().length > 0 && event.target.value !== config.name) {
+              void updateWssOutgoing(config.id, { name: event.target.value });
+            }
+          }}
+        />
+      </label>
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        <span className="w-32 shrink-0">Default alias</span>
+        <select
+          aria-label="Default alias"
+          className={FIELD}
+          value={config.defaultAlias ?? ''}
+          onChange={(event) => {
+            void updateWssOutgoing(config.id, {
+              defaultAlias: event.target.value === '' ? null : event.target.value,
+            });
+          }}
+        >
+          <option value="">—</option>
+          {/* The alias list is the union of every keystore's *default* alias: reading the
+                aliases themselves means `keystores.inspect` per row, which Task 38 needs
+                anyway when signing gains a real per-entry keystore choice. */}
+          {keystores
+            .map((keystore) => keystore.defaultAlias)
+            .filter((alias): alias is string => alias !== undefined)
+            .map((alias) => (
+              <option key={alias} value={alias}>
+                {alias}
+              </option>
+            ))}
+          {config.defaultAlias !== undefined &&
+            !keystores.some((keystore) => keystore.defaultAlias === config.defaultAlias) && (
+              <option value={config.defaultAlias}>{config.defaultAlias}</option>
+            )}
+        </select>
+      </label>
+      <div data-testid="wss-outgoing-password">
+        <WssSecretField
+          label="Default WS-Security password"
+          value={config.defaultPasswordRef}
+          onChange={(ref) => {
+            void updateWssOutgoing(config.id, { defaultPasswordRef: ref ?? null });
+          }}
+        />
+      </div>
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        <span className="w-32 shrink-0">Actor</span>
+        <input
+          aria-label="Actor"
+          className={FIELD}
+          defaultValue={config.actor ?? ''}
+          onBlur={(event) => {
+            if (event.target.value !== (config.actor ?? '')) {
+              void updateWssOutgoing(config.id, {
+                actor: event.target.value === '' ? null : event.target.value,
+              });
+            }
+          }}
+        />
+      </label>
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        <input
+          type="checkbox"
+          aria-label="Must understand"
+          checked={config.mustUnderstand}
+          onChange={(event) => {
+            void updateWssOutgoing(config.id, { mustUnderstand: event.target.checked });
+          }}
+        />
+        Must understand
+      </label>
+
+      <div className="mt-1 flex items-center gap-1">
+        <span className="min-w-0 flex-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">Entries</span>
+        <select
+          aria-label="Add entry"
+          data-testid="wss-entry-add"
+          className="rounded border border-hairline bg-surface-sunken px-1 py-0.5 text-xs text-fg-default"
+          value=""
+          onChange={(event) => {
+            const kind = event.target.value;
+            if (
+              kind === 'timestamp' ||
+              kind === 'username-token' ||
+              kind === 'signature' ||
+              kind === 'encryption' ||
+              kind === 'saml-token' ||
+              kind === 'issued-token'
+            ) {
+              patchEntries([...config.entries, newEntry(kind)]);
+            }
+            event.target.value = '';
+          }}
+        >
+          <option value="">Add entry…</option>
+          <option value="timestamp">Timestamp</option>
+          <option value="username-token">Username Token</option>
+          <option value="signature">Signature</option>
+          <option value="encryption">Encryption</option>
+          <option value="issued-token">Issued Token (WS-Trust)</option>
+          <option value="saml-token">SAML Token</option>
+        </select>
+      </div>
+
+      <ul aria-label={`Entries of ${config.name}`} className="flex flex-col gap-1">
+        {config.entries.length === 0 && <li className="text-xs text-fg-faint">No entries yet.</li>}
+        {config.entries.map((entry, index) => (
+          <EntryRow
+            // Entries have no ids of their own; position is their identity, and the whole
+            // list is replaced on every edit, so a positional key is exact here.
+            key={`${entry.kind}-${String(index)}`}
+            entry={entry}
+            index={index}
+            count={config.entries.length}
+            projectId={config.projectId}
+            configId={config.id}
+            requestId={requestId}
+            onChange={(next) => {
+              patchEntries(config.entries.map((candidate, at) => (at === index ? next : candidate)));
+            }}
+            onMove={(delta) => {
+              patchEntries(move(config.entries, index, delta));
+            }}
+            onRemove={() => {
+              patchEntries(config.entries.filter((_candidate, at) => at !== index));
+            }}
+          />
+        ))}
+      </ul>
+    </div>
   );
 }
 

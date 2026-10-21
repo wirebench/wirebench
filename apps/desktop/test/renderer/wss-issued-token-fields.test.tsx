@@ -4,6 +4,8 @@ import type { ReactElement } from 'react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { IssuedTokenFields } from '../../src/renderer/features/wss/issued-token-fields.js';
 import { OutgoingConfigEditor } from '../../src/renderer/features/wss/outgoing-config-editor.js';
+import { WssConfigPanel } from '../../src/renderer/features/wss/wss-config-panel.js';
+import { useWssConfigPanelStore } from '../../src/renderer/features/wss/wss-config-panel-store.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
@@ -28,6 +30,7 @@ const fresh: IssuedEntry = {
 
 afterEach(() => {
   cleanup();
+  useWssConfigPanelStore.setState({ editing: undefined, original: undefined, asking: false });
   resetKerberosAvailability();
   useExchangesStore.getState().reset();
   useExchangesStore.setState({ log: [], byRequest: {} });
@@ -306,7 +309,12 @@ describe('Issued token in the outgoing editor', () => {
       updateWssOutgoing,
     } as never);
     useUiStore.setState({ selection: { kind: 'request', id: 'r1', requestId: 'r1' } });
-    render(<OutgoingConfigEditor />);
+    render(
+      <>
+        <OutgoingConfigEditor />
+        <WssConfigPanel />
+      </>,
+    );
     fireEvent.click(screen.getByRole('button', { expanded: false }));
     return { issuedTokens, updateWssOutgoing };
   }

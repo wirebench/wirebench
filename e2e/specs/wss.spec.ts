@@ -179,6 +179,16 @@ test.describe('wss', () => {
     await expect(editor.getByLabel('Signature alias')).toBeVisible();
     await expect(page.getByTestId('wss-part-row')).toHaveCount(2);
 
+    // The configuration opens in the right panel beside the request (#730): every label whole, and the
+    // signing key's password field says which password it is.
+    await expect(page.getByTestId('wss-config-panel')).toContainText('Signing key password');
+    for (const label of ['Key identifier', 'Signature', 'Digest', 'Keystore']) {
+      const span = editor.locator('span', { hasText: new RegExp(`^${label}$`) }).first();
+      await expect(span).toBeVisible();
+      expect(await span.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    }
+    await expect(page.getByTestId('wss-config-unsaved')).toBeVisible();
+
     // --- select it on Add (SOAP 1.1) and send ----------------------------------------------------
     await selectTab(page, 'Request tabs', 'Auth');
     await page.getByTestId('request-wss-outgoing').selectOption({ label: 'Outgoing WSS' });

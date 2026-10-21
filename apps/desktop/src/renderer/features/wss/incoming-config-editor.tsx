@@ -14,10 +14,10 @@ import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { IconButton } from '../../components/icon-button.js';
-import { SecretField } from '../../components/secret-field.js';
 import { useProjectStore, useTargetProjectId } from '../../state/project.js';
 import { useKeystoreAliases } from '../../components/use-keystore-aliases.js';
-import { WSS_FIELD_CLASS } from './outgoing-entry-fields.js';
+import { WSS_FIELD_CLASS, WssSecretField } from './outgoing-entry-fields.js';
+import { useWssConfigPanelStore } from './wss-config-panel-store.js';
 import type { WssIncomingPatchWire, WssIncomingWire } from '../../../shared/kinds/soap/wire.js';
 
 const FIELD = WSS_FIELD_CLASS;
@@ -28,15 +28,10 @@ interface ConfigProps {
 }
 
 function ConfigRow({ config, onRemove }: ConfigProps) {
-  const [open, setOpen] = useState(false);
-  const updateWssIncoming = useProjectStore((state) => state.updateWssIncoming);
-  const keystores = useProjectStore((state) => state.keystores);
-  const aliases = useKeystoreAliases(config.decryptKeystoreRef ?? '');
+  const open = useWssConfigPanelStore(
+    (state) => state.editing?.direction === 'incoming' && state.editing.id === config.id,
+  );
   const Chevron = open ? ChevronDown : ChevronRight;
-
-  const patch = (next: WssIncomingPatchWire): void => {
-    void updateWssIncoming(config.id, next);
-  };
 
   return (
     <li data-testid="wss-incoming-row" className="rounded px-1 py-0.5">
@@ -45,9 +40,11 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
           type="button"
           aria-expanded={open}
           onClick={() => {
-            setOpen(!open);
+            const panel = useWssConfigPanelStore.getState();
+            if (open) panel.requestClose();
+            else panel.open('incoming', config.id);
           }}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-1 text-left text-sm text-fg-default hover:bg-surface-raised"
+          className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-1 text-left text-sm text-fg-default hover:bg-surface-raised ${open ? 'bg-surface-raised' : ''}`}
         >
           <Chevron size={12} aria-hidden="true" className="shrink-0" />
           <span className="min-w-0 truncate">{config.name}</span>
@@ -56,145 +53,159 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
           <Trash2 size={13} aria-hidden="true" />
         </IconButton>
       </div>
-
-      {open && (
-        <div data-testid="wss-incoming-editor" className="flex flex-col gap-1 px-5 pb-2">
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <span className="w-28 shrink-0">Name</span>
-            <input
-              aria-label="Incoming configuration name"
-              className={FIELD}
-              defaultValue={config.name}
-              onBlur={(event) => {
-                if (event.target.value.trim().length > 0 && event.target.value !== config.name) {
-                  patch({ name: event.target.value });
-                }
-              }}
-            />
-          </label>
-
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <span className="w-28 shrink-0">Decrypt keystore</span>
-            <select
-              aria-label="Decryption keystore"
-              className={FIELD}
-              value={config.decryptKeystoreRef ?? ''}
-              onChange={(event) => {
-                // Changing the keystore invalidates the alias chosen inside the old one.
-                patch({
-                  decryptKeystoreRef: event.target.value === '' ? null : event.target.value,
-                  decryptAlias: null,
-                });
-              }}
-            >
-              <option value="">—</option>
-              {keystores.map((keystore) => (
-                <option key={keystore.id} value={keystore.id}>
-                  {keystore.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {config.decryptKeystoreRef !== undefined && (
-            <label className="flex items-center gap-1 text-xs text-fg-subtle">
-              <span className="w-28 shrink-0">Decrypt alias</span>
-              <select
-                aria-label="Decryption alias"
-                className={FIELD}
-                value={config.decryptAlias ?? ''}
-                onChange={(event) => {
-                  patch({ decryptAlias: event.target.value === '' ? null : event.target.value });
-                }}
-              >
-                <option value="">Default</option>
-                {aliases.map((alias) => (
-                  <option key={alias.alias} value={alias.alias}>
-                    {alias.alias}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          <div data-testid="wss-incoming-key-password">
-            <SecretField
-              label="Decryption key password"
-              value={config.decryptKeyPasswordRef}
-              onChange={(ref) => {
-                patch({ decryptKeyPasswordRef: ref ?? null });
-              }}
-            />
-          </div>
-
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <span className="w-28 shrink-0">Truststore</span>
-            <select
-              aria-label="Signature truststore"
-              className={FIELD}
-              value={config.signatureKeystoreRef ?? ''}
-              onChange={(event) => {
-                patch({ signatureKeystoreRef: event.target.value === '' ? null : event.target.value });
-              }}
-            >
-              <option value="">—</option>
-              {keystores.map((keystore) => (
-                <option key={keystore.id} value={keystore.id}>
-                  {keystore.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <input
-              type="checkbox"
-              aria-label="Require signature"
-              checked={config.requireSignature}
-              onChange={(event) => {
-                patch({ requireSignature: event.target.checked });
-              }}
-            />
-            Require signature
-          </label>
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <input
-              type="checkbox"
-              aria-label="Require timestamp"
-              checked={config.requireTimestamp}
-              onChange={(event) => {
-                patch({ requireTimestamp: event.target.checked });
-              }}
-            />
-            Require timestamp
-          </label>
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <span className="w-28 shrink-0">Skew (s)</span>
-            <input
-              type="number"
-              min={0}
-              aria-label="Timestamp skew (seconds)"
-              className={FIELD}
-              value={config.timestampSkewSeconds}
-              onChange={(event) => {
-                patch({ timestampSkewSeconds: Math.max(0, Number(event.target.value) || 0) });
-              }}
-            />
-          </label>
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <input
-              type="checkbox"
-              aria-label="Verify certificate chain"
-              checked={config.verifyChain}
-              onChange={(event) => {
-                patch({ verifyChain: event.target.checked });
-              }}
-            />
-            Verify certificate chain
-          </label>
-        </div>
-      )}
     </li>
+  );
+}
+
+/**
+ * One incoming configuration's editor: the keystore that opens an encrypted response, the truststore
+ * its signatures are judged against, and how strict to be. Shown in the right panel (#730).
+ */
+export function IncomingConfigForm({ config }: { readonly config: WssIncomingWire }) {
+  const updateWssIncoming = useProjectStore((state) => state.updateWssIncoming);
+  const keystores = useProjectStore((state) => state.keystores);
+  const aliases = useKeystoreAliases(config.decryptKeystoreRef ?? '');
+
+  const patch = (next: WssIncomingPatchWire): void => {
+    void updateWssIncoming(config.id, next);
+  };
+
+  return (
+    <div data-testid="wss-incoming-editor" className="flex flex-col gap-1 px-5 pb-2">
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        <span className="w-32 shrink-0">Name</span>
+        <input
+          aria-label="Incoming configuration name"
+          className={FIELD}
+          defaultValue={config.name}
+          onBlur={(event) => {
+            if (event.target.value.trim().length > 0 && event.target.value !== config.name) {
+              patch({ name: event.target.value });
+            }
+          }}
+        />
+      </label>
+
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        <span className="w-32 shrink-0">Decrypt keystore</span>
+        <select
+          aria-label="Decryption keystore"
+          className={FIELD}
+          value={config.decryptKeystoreRef ?? ''}
+          onChange={(event) => {
+            // Changing the keystore invalidates the alias chosen inside the old one.
+            patch({
+              decryptKeystoreRef: event.target.value === '' ? null : event.target.value,
+              decryptAlias: null,
+            });
+          }}
+        >
+          <option value="">—</option>
+          {keystores.map((keystore) => (
+            <option key={keystore.id} value={keystore.id}>
+              {keystore.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {config.decryptKeystoreRef !== undefined && (
+        <label className="flex items-center gap-1 text-xs text-fg-subtle">
+          <span className="w-32 shrink-0">Decrypt alias</span>
+          <select
+            aria-label="Decryption alias"
+            className={FIELD}
+            value={config.decryptAlias ?? ''}
+            onChange={(event) => {
+              patch({ decryptAlias: event.target.value === '' ? null : event.target.value });
+            }}
+          >
+            <option value="">Default</option>
+            {aliases.map((alias) => (
+              <option key={alias.alias} value={alias.alias}>
+                {alias.alias}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <div data-testid="wss-incoming-key-password">
+        <WssSecretField
+          label="Decryption key password"
+          value={config.decryptKeyPasswordRef}
+          onChange={(ref) => {
+            patch({ decryptKeyPasswordRef: ref ?? null });
+          }}
+        />
+      </div>
+
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        <span className="w-32 shrink-0">Truststore</span>
+        <select
+          aria-label="Signature truststore"
+          className={FIELD}
+          value={config.signatureKeystoreRef ?? ''}
+          onChange={(event) => {
+            patch({ signatureKeystoreRef: event.target.value === '' ? null : event.target.value });
+          }}
+        >
+          <option value="">—</option>
+          {keystores.map((keystore) => (
+            <option key={keystore.id} value={keystore.id}>
+              {keystore.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        <input
+          type="checkbox"
+          aria-label="Require signature"
+          checked={config.requireSignature}
+          onChange={(event) => {
+            patch({ requireSignature: event.target.checked });
+          }}
+        />
+        Require signature
+      </label>
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        <input
+          type="checkbox"
+          aria-label="Require timestamp"
+          checked={config.requireTimestamp}
+          onChange={(event) => {
+            patch({ requireTimestamp: event.target.checked });
+          }}
+        />
+        Require timestamp
+      </label>
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        <span className="w-32 shrink-0">Skew (s)</span>
+        <input
+          type="number"
+          min={0}
+          aria-label="Timestamp skew (seconds)"
+          className={FIELD}
+          value={config.timestampSkewSeconds}
+          onChange={(event) => {
+            patch({ timestampSkewSeconds: Math.max(0, Number(event.target.value) || 0) });
+          }}
+        />
+      </label>
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        <input
+          type="checkbox"
+          aria-label="Verify certificate chain"
+          checked={config.verifyChain}
+          onChange={(event) => {
+            patch({ verifyChain: event.target.checked });
+          }}
+        />
+        Verify certificate chain
+      </label>
+    </div>
   );
 }
 
