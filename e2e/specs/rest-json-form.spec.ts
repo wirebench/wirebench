@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace } from '../helpers/project.js';
-import { apiRow, folderRow, importOpenApiByUrl, openRequestTab, restRequestRow } from '../helpers/rest.js';
+import { apiRow, folderRow, importOpenApiByUrl, openRequestTab, restRequestRow, unfoldRow } from '../helpers/rest.js';
 import { startTestRestServer, type TestRestServer } from '../helpers/test-server.js';
 import { monacoModelText } from '../helpers/editor.js';
 
@@ -71,7 +71,7 @@ test.describe('REST JSON body form', () => {
     await createProject(page, 'Items');
     await importOpenApiByUrl(page, `${server.url}/openapi.yaml`);
     await expect(apiRow(page, 'Items')).toBeVisible({ timeout: 20_000 });
-    await apiRow(page, 'Items').click();
+    await unfoldRow(apiRow(page, 'Items'));
     await expect(folderRow(page, 'items')).toBeVisible({ timeout: 20_000 });
     await folderRow(page, 'items').click();
 

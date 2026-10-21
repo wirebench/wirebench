@@ -174,28 +174,60 @@ function asPreview(open: () => void): void {
   else open();
 }
 
+/**
+ * Set while a context-menu action selects its target row (#680): the selection is bookkeeping for the action, so
+ * `onSelect` must not open the row's tab over whatever the action opens.
+ */
+let selectingForMenu = false;
+
+/** Selects `node` for a menu action without opening what a click on it would. */
+function selectForMenu(node: NodeApi<ExplorerNode>): void {
+  if (node.isSelected) return;
+  selectingForMenu = true;
+  try {
+    node.select();
+  } finally {
+    selectingForMenu = false;
+  }
+}
+
 function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   const role = explorerRole(node.data.kind);
   const Icon = role?.icon ?? NODE_ICON[node.data.kind];
   const indent = typeof style.paddingLeft === 'number' ? style.paddingLeft : 0;
   const rowStyle = { ...style, paddingLeft: indent + ROW_PADDING_LEFT };
   const label = requestDisplayName(node.data.label, node.data.method);
+  // The row the context menu was opened on wears an outline while the menu is up (#680): the menu acts on
+  // the row under the pointer, not on the selection, and the two can differ.
+  const [menuOpen, setMenuOpen] = useState(false);
+  // What a single click opens, if anything; a row with nothing to open folds instead.
+  const opens =
+    role?.click === 'open' ||
+    node.data.kind === 'project' ||
+    node.data.kind === 'webhook-request' ||
+    node.data.kind === 'catch-url' ||
+    node.data.kind === 'schedule' ||
+    node.data.kind === 'sequence' ||
+    node.data.kind === 'mock';
   return (
-    <ExplorerContextMenu node={node.data}>
+    <ExplorerContextMenu node={node.data} onOpenChange={setMenuOpen} onAction={() => selectForMenu(node)}>
       <div
         ref={dragHandle}
         style={rowStyle}
         data-testid={role?.testId ?? ROW_TESTID[node.data.kind] ?? 'explorer-tree-row'}
         data-tree-id={node.id}
         {...(node.data.projectId !== undefined ? { 'data-project-id': node.data.projectId } : {})}
+        {...(menuOpen ? { 'data-menu-open': 'true' } : {})}
         // No `role`/`aria-selected`/`tabIndex` here: react-arborist's own row wrapper is the
         // `treeitem` (with `aria-level`, `aria-selected` and `aria-expanded`), and repeating
         // them on this child would nest a second treeitem inside the real one.
-        // One click does the obvious thing for the row it lands on: a request opens, and
-        // anything with children folds or unfolds. Everything else selects only — that is what
-        // feeds the details panel and the palette's `when` gates. react-arborist's default row
-        // wrapper calls `node.handleClick` (which both selects AND activates) on any click that
-        // bubbles to it, so both handlers here stop propagation to keep it from also firing.
+        // One click does the obvious thing for the row it lands on: a row with a tab (a request, an
+        // API, a project) opens it, and a row with nothing to open folds or unfolds. A row with a tab
+        // never folds on a click (#680): clicking a project to read its settings must not hide the
+        // requests being worked on. Its folding is the chevron's, Left/Right's and a double-click's.
+        // react-arborist's default row wrapper calls `node.handleClick` (which both selects AND
+        // activates) on any click that bubbles to it, so both handlers here stop propagation to keep
+        // it from also firing.
         onClick={(e) => {
           e.stopPropagation();
           // Whatever the click opens — here, or the project tab from `onSelect` — opens as a preview,
@@ -207,24 +239,11 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             if (keep && node.data.kind === 'project' && node.data.projectId !== undefined) {
               openProjectTab(node.data.projectId);
             }
-            if (
-              role?.click === 'open' ||
-              node.data.kind === 'webhook-request' ||
-              node.data.kind === 'catch-url' ||
-              node.data.kind === 'schedule' ||
-              node.data.kind === 'sequence' ||
-              node.data.kind === 'mock'
-            ) {
-              node.activate();
-            } else if (role?.click === 'open-and-fold') {
-              // An API opens its tab AND folds, unlike an interface: the tab is where its base URL
-              // and credentials live, and the row is also the container the user is about to expand.
-              node.activate();
-              node.toggle();
+            if (opens) {
+              if (node.data.kind !== 'project') node.activate();
+              // The double-click's second click folds a container that opens on one click.
+              if (keep && node.isInternal) node.toggle();
             } else if (node.isInternal) {
-              // A project row opens its tab from `onSelect` (see below) and folds under the same
-              // click, like an API row: the row is both the thing the tab is about and the container
-              // the user is reaching into.
               node.toggle();
             }
           });
@@ -242,7 +261,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             : node.isSelected
               ? 'bg-accent-muted text-fg-default'
               : 'text-fg-default hover:bg-surface-raised'
-        }`}
+        }${menuOpen && !node.willReceiveDrop ? ' ring-1 ring-accent ring-inset' : ''}`}
       >
         {/* The chevron's width is reserved on leaves as well, so a request's name lines up with the
             folder names around it: the fold marker is what differs between those rows, not the
@@ -840,7 +859,7 @@ export function ExplorerView() {
                 // "activate" behaviour of their own (see `onActivate` below), so this is the
                 // only path that opens one.
                 // Selecting is browsing, by click or by arrow key, so the tab is a preview (#679).
-                if (node.kind === 'project' && node.projectId !== undefined) {
+                if (node.kind === 'project' && node.projectId !== undefined && !selectingForMenu) {
                   const { projectId } = node;
                   asPreview(() => {
                     openProjectTab(projectId);

@@ -30,7 +30,7 @@ export const mcpExplorer: KindExplorer = {
       icon: Plug,
       testId: 'mcp-api-row',
       badge: 'MCP',
-      click: 'open-and-fold',
+      click: 'open',
       dropTarget: true,
       open: (node) => explorerActions.openMcpApi(node.apiId),
       runTarget: (node) => node.apiId,

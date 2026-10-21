@@ -28,11 +28,11 @@ export interface ExplorerNodeRole {
   /** A container row's kind badge: `REST`, `gRPC`, `WS`. */
   readonly badge?: string;
   /**
-   * What one click does besides selecting the row: a request opens; an API opens its tab and folds,
-   * since the tab is where its base URL and credentials live and the row is also the container the
-   * user is about to expand. Unset, the row folds if it has children.
+   * What one click does besides selecting the row: `open` opens its tab (a request's editor, an API's
+   * settings) and never folds it (#680) — folding is the chevron's, the arrow keys' and a double-click's
+   * job. Unset, the row folds if it has children, since it has nothing to open.
    */
-  readonly click?: 'open' | 'open-and-fold';
+  readonly click?: 'open';
   /** Whether the row can be dragged within its container. */
   readonly movable?: boolean;
   /** Whether rows can be dropped into this one. */

@@ -16,7 +16,15 @@ import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace } from '../helpers/project.js';
-import { apiRow, folderRow, importOpenApiByUrl, responseStatus, restRequestRow, sendRest } from '../helpers/rest.js';
+import {
+  apiRow,
+  folderRow,
+  importOpenApiByUrl,
+  responseStatus,
+  restRequestRow,
+  sendRest,
+  unfoldRow,
+} from '../helpers/rest.js';
 import { startTestRestServer, type TestRestServer } from '../helpers/test-server.js';
 
 /** A small contract: two item routes that promise a `name`, and a status route that promises only a 200. */
@@ -136,7 +144,7 @@ test.describe('REST response validation', () => {
     await createProject(page, 'Items');
     await importOpenApiByUrl(page, `${server.url}/openapi.yaml`);
     await expect(apiRow(page, 'Items')).toBeVisible({ timeout: 20_000 });
-    await apiRow(page, 'Items').click();
+    await unfoldRow(apiRow(page, 'Items'));
     await expect(folderRow(page, 'items')).toBeVisible({ timeout: 20_000 });
 
     const chip = page.getByTestId('rest-contract-chip');

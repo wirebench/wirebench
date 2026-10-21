@@ -29,6 +29,10 @@ export type { ExplorerMenuGroup, ExplorerMenuItem } from './menu-items.js';
 export interface ExplorerContextMenuProps {
   readonly node: ExplorerNode;
   readonly children: ReactNode;
+  /** Told when the menu opens and closes, so the row can mark itself as the menu's target (#680). */
+  readonly onOpenChange?: (open: boolean) => void;
+  /** Runs right before any item's action: the row selects itself, so the action's target is the selected row. */
+  readonly onAction?: () => void;
 }
 
 /**
@@ -340,7 +344,7 @@ export function explorerMenuItems(node: ExplorerNode): readonly ExplorerMenuItem
 const RENAMING_ITEMS: ReadonlySet<string> = new Set(['rename', 'new-folder', 'new-request', 'new-graphql-request']);
 
 /** The right-click menu for one explorer node; the items shown depend on `node.kind`. */
-export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps) {
+export function ExplorerContextMenu({ node, children, onOpenChange, onAction }: ExplorerContextMenuProps) {
   const menuGroups = explorerMenuGroups(node);
 
   const isRenamingRef = useRef(false);
@@ -349,8 +353,13 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
     return <>{children}</>;
   }
 
+  const run = (item: ExplorerMenuItem): void => {
+    onAction?.();
+    item.run();
+  };
+
   return (
-    <ContextMenu.Root>
+    <ContextMenu.Root {...(onOpenChange === undefined ? {} : { onOpenChange })}>
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content
@@ -383,7 +392,7 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
                         onClick={(event) => event.stopPropagation()}
                       >
                         {item.children.map((child) => (
-                          <ContextMenu.Item key={child.key} className={ITEM_CLASS} onSelect={() => child.run()}>
+                          <ContextMenu.Item key={child.key} className={ITEM_CLASS} onSelect={() => run(child)}>
                             {child.label}
                           </ContextMenu.Item>
                         ))}
@@ -398,7 +407,7 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
                       if (RENAMING_ITEMS.has(item.key)) {
                         isRenamingRef.current = true;
                       }
-                      item.run();
+                      run(item);
                     }}
                   >
                     {item.label}
