@@ -295,6 +295,7 @@ export class ServerBackend implements SyncBackend {
       role: answer.role,
       recordDesktopActivity: answer.recordDesktopActivity === true,
       recordSessionLogs: answer.recordSessionLogs === true,
+      disabledFeatures: [...(answer.disabledFeatures ?? [])],
       lastSyncAt: this.now().toISOString(),
       ...(merging
         ? {}

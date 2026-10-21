@@ -87,7 +87,7 @@ describe('team.* channels (teams-access §3.5, §5.2)', () => {
     registerTeamChannels(f);
     expect(await invoke('team.list', { url: 'https://WB.test/some/path' })).toEqual({
       ok: true,
-      value: { teams: [TEAM], serverAdmin: true, desktopActivity: true, sessionLogs: false },
+      value: { teams: [TEAM], serverAdmin: true, desktopActivity: true, sessionLogs: false, featurePolicy: false },
     });
     expect(f.accounts.tokenFor).toHaveBeenCalledWith('https://wb.test');
     expect(f.client.listTeams).toHaveBeenCalledWith('https://wb.test', TOKEN);

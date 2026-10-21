@@ -42,6 +42,8 @@ export interface TeamChannelDeps {
 const DESKTOP_ACTIVITY_CAPABILITY = 'desktop-activity';
 /** `GET /meta` lists it when the server stores team SSH session logs and their workspace switch (#430). */
 const SESSION_LOGS_CAPABILITY = 'session-logs';
+/** `GET /meta` lists it when the server stores a workspace feature policy (phase 4 spec §6.1). */
+const FEATURE_POLICY_CAPABILITY = 'feature-policy';
 
 const DONE = { done: true } as const;
 
@@ -66,6 +68,7 @@ export function registerTeamChannels(deps: TeamChannelDeps): void {
         serverAdmin: me.user.serverAdmin,
         desktopActivity: meta?.capabilities.includes(DESKTOP_ACTIVITY_CAPABILITY) === true,
         sessionLogs: meta?.capabilities.includes(SESSION_LOGS_CAPABILITY) === true,
+        featurePolicy: meta?.capabilities.includes(FEATURE_POLICY_CAPABILITY) === true,
       };
     }),
   );
@@ -132,6 +135,7 @@ export function registerTeamChannels(deps: TeamChannelDeps): void {
         ...(r.defaultRole !== undefined ? { defaultRole: r.defaultRole } : {}),
         ...(r.recordDesktopActivity !== undefined ? { recordDesktopActivity: r.recordDesktopActivity } : {}),
         ...(r.recordSessionLogs !== undefined ? { recordSessionLogs: r.recordSessionLogs } : {}),
+        ...(r.disabledFeatures !== undefined ? { disabledFeatures: r.disabledFeatures } : {}),
       }),
     })),
   );

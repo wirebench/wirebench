@@ -3040,6 +3040,8 @@ export const teamWorkspaceWireSchema = z.object({
   recordDesktopActivity: z.boolean(),
   /** Restates the engine's `TeamWorkspace.recordSessionLogs` (#430); absent from an older server. */
   recordSessionLogs: z.boolean().optional(),
+  /** The workspace's team feature policy: the ids that are off (ADR-0029); absent from an older server. */
+  disabledFeatures: z.array(z.string()).optional(),
 });
 export type TeamWorkspaceWire = z.infer<typeof teamWorkspaceWireSchema>;
 export const accessEntryWireSchema = z.object({
@@ -3091,6 +3093,7 @@ export const teamUpdateWorkspaceRequestWireSchema = z.object({
   defaultRole: defaultRoleWireSchema.optional(),
   recordDesktopActivity: z.boolean().optional(),
   recordSessionLogs: z.boolean().optional(),
+  disabledFeatures: z.array(z.string()).optional(),
 });
 export const teamSetAccessRequestWireSchema = z.object({
   url: z.string(),
@@ -3111,6 +3114,8 @@ export const teamListResponseWireSchema = z.object({
   desktopActivity: z.boolean(),
   /** `GET /meta` lists `session-logs`: the server stores team SSH session logs (#430). */
   sessionLogs: z.boolean().optional(),
+  /** The server stores a workspace feature policy (phase 4 spec §6.1); absent from an older server. */
+  featurePolicy: z.boolean().optional(),
 });
 export type TeamListResponse = z.infer<typeof teamListResponseWireSchema>;
 export const teamResponseWireSchema = z.object({ team: teamWireSchema });
