@@ -1,4 +1,5 @@
 import type { Document, Element } from '@xmldom/xmldom';
+import { describeFetchFailure } from './fetch-failure.js';
 import { WsdlParseError } from '../errors.js';
 import type { FetchDocument, FetchedDocument } from '../http/fetch-document.js';
 import { NS } from '../xml/namespaces.js';
@@ -290,7 +291,8 @@ export async function resolveDefinition(source: DefinitionSource, options: Resol
     try {
       rootFetched = await fetchDocument(source.location, signal);
     } catch (cause) {
-      throw new WsdlParseError('fetch-failed', `Failed to fetch root document "${source.location}"`, {
+      // Name the cause and what to try, not just that it failed (#732 X14).
+      throw new WsdlParseError('fetch-failed', describeFetchFailure(cause, source.location), {
         cause,
         details: { location: source.location },
       });

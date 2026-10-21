@@ -1110,6 +1110,12 @@ export function areaKeywords(id: string): readonly string[] {
 const PROTOCOL_KEYWORDS: Readonly<Record<string, readonly string[]>> = {
   'ssh.newHost': ['telnet', 'serial', 'mosh'],
   'ssh.connectPalette': ['telnet', 'serial', 'mosh'],
+  // The everyday SOAP actions, whose labels say "Request" or "WSDL" but never "SOAP" (#732 X16).
+  'explorer.importAnother': ['soap', 'wsdl'],
+  'explorer.newRequest': ['soap'],
+  'explorer.updateDefinition': ['soap', 'wsdl'],
+  'request.send': ['soap'],
+  'request.validate': ['soap'],
 };
 
 /** The protocol names a search can find a command by, beyond its category, label and area. */
@@ -1120,7 +1126,16 @@ export function protocolKeywords(id: string): readonly string[] {
 /** The SSH area's main actions, which a search for the area's name ("ssh") lists first. */
 const SSH_AREA_LEADS: ReadonlySet<string> = new Set(['ssh.connectPalette', 'ssh.newHost']);
 
+/** SOAP's everyday actions, which a search for "soap" lists first (#732 X16). */
+const SOAP_LEADS: ReadonlySet<string> = new Set([
+  'explorer.importAnother',
+  'explorer.newRequest',
+  'explorer.updateDefinition',
+  'request.send',
+  'request.validate',
+]);
+
 /** Whether a command is one of its area's main actions, ranked first when a search names the area. */
 export function isAreaLead(id: string): boolean {
-  return SSH_AREA_LEADS.has(id);
+  return SSH_AREA_LEADS.has(id) || SOAP_LEADS.has(id);
 }

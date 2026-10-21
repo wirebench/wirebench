@@ -10,6 +10,7 @@ import {
 } from '../../src/renderer/state/exchanges.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
+import { useDraftsStore } from '../../src/renderer/state/drafts.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
@@ -300,6 +301,23 @@ describe('useExchangesStore', () => {
     expect(state.byRequest['r1']).toBeUndefined();
     expect(state.log).toHaveLength(1);
     expect(sendIdOf(state.log[0]!)).toBe('send-1');
+  });
+
+  it('send() sends to an endpoint picked in the editor and not yet saved, not the one main has (#732 X11)', async () => {
+    const preflight = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { endpoint: 'http://saved.test/soap', endpointSource: 'request', unresolved: [] },
+    });
+    const sendFn = vi.fn().mockResolvedValue({ ok: true, value: exchangeSummary('send-x11') });
+    stubIpc({ request: { generate: vi.fn(), send: sendFn, cancel: vi.fn(), preflight } });
+    useProjectStore.setState({ requests: { r1: { ...draft, endpointUrl: 'http://picked.test/soap' } } });
+    useDraftsStore.getState().stageRequest('r1', { endpointUrl: 'http://picked.test/soap' });
+
+    await useExchangesStore.getState().send('r1');
+    expect((sendFn.mock.calls[0]?.[0] as { input: { endpoint: string } }).input.endpoint).toBe(
+      'http://picked.test/soap',
+    );
+    useDraftsStore.getState().discardRequest('r1');
   });
 
   it('send() preflights first, sends the endpoint it returns, and lists unresolved refs', async () => {

@@ -19,6 +19,26 @@ export function historyTabTitle(entry: Pick<HistoryEntryWire, 'requestName' | 'a
   return `${entry.requestName} · ${formatClockTime(entry.at)}`;
 }
 
+/** A failed send's chip names what went wrong, short enough for the row (#732 X12). */
+const ERROR_CHIP: Readonly<Record<string, string>> = {
+  'connection-refused': 'refused',
+  dns: 'DNS',
+  timeout: 'timeout',
+  tls: 'TLS',
+  'tls-untrusted': 'TLS',
+  aborted: 'cancelled',
+  proxy: 'proxy',
+  'too-many-redirects': 'redirects',
+  'missing-endpoint': 'no URL',
+};
+
+/** What a row's status chip says: the status, or for a send that got none, the kind of failure. */
+export function historyStatusChip(entry: Pick<HistoryEntryWire, 'status' | 'error'>): string {
+  if (entry.status !== undefined) return String(entry.status);
+  const code = entry.error?.code;
+  return code === undefined ? 'err' : (ERROR_CHIP[code] ?? 'err');
+}
+
 /** The footer's count: "1 entry", "2 entries". */
 export function historyCountLabel(total: number): string {
   return total === 1 ? '1 entry' : `${String(total)} entries`;

@@ -37,8 +37,15 @@ const DEFAULT_OPTIONS: DefinitionUpdateOptions = {
   updateTestRequests: false,
 };
 
-/** The checkboxes, in the order the dialog presents them. */
-const OPTION_LABELS: readonly { key: keyof DefinitionUpdateOptions; label: string; hint?: string }[] = [
+/**
+ * The checkboxes, in the order the dialog presents them. `updateTestRequests` is left out until it does
+ * something (#732 X13): a disabled box only says there is a feature missing.
+ */
+const OPTION_LABELS: readonly {
+  key: Exclude<keyof DefinitionUpdateOptions, 'updateTestRequests'>;
+  label: string;
+  hint?: string;
+}[] = [
   { key: 'createNewRequests', label: 'Create new requests' },
   { key: 'recreateRequests', label: 'Recreate requests' },
   { key: 'recreateOptional', label: 'Recreate optional elements' },
@@ -49,7 +56,6 @@ const OPTION_LABELS: readonly { key: keyof DefinitionUpdateOptions; label: strin
     label: 'Create backups',
     hint: 'Kept next to the request file, one per update.',
   },
-  { key: 'updateTestRequests', label: 'Update TestRequests' },
 ];
 
 const INPUT_CLASS = 'h-row w-full rounded-md border border-hairline bg-surface-base px-2 text-sm text-fg-default';
@@ -297,16 +303,11 @@ export function UpdateDefinitionDialog({ open, onOpenChange, interfaceId }: Upda
                     type="checkbox"
                     data-testid={`update-option-${key}`}
                     checked={options[key]}
-                    disabled={key === 'updateTestRequests'}
                     onChange={(event) => {
-                      if (key === 'updateTestRequests') {
-                        return;
-                      }
                       setOptions({ ...options, [key]: event.target.checked });
                     }}
                   />
-                  <span className={key === 'updateTestRequests' ? 'text-fg-faint' : undefined}>{label}</span>
-                  {key === 'updateTestRequests' && <span className="text-xs text-fg-faint">(later phase)</span>}
+                  <span>{label}</span>
                 </label>
               ))}
             </div>

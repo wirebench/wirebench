@@ -1336,9 +1336,13 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       // environment) and dry-runs the expansion; the mirror's own answer is the fallback for
       // an unsaved/unknown request, where preflight cannot help.
       const preflight = await ipc().request.preflight({ requestId });
-      const endpoint = preflight.ok
-        ? preflight.value.endpoint
-        : selectRequestEndpointUrl(projectState, useWorkspaceStore.getState().workspace, requestId);
+      // Main answers from its own model, which an endpoint picked in the editor and not yet saved
+      // has not reached: then the editor's own choice is the one to send to (#732 X11).
+      const stagedEndpoint = useDraftsStore.getState().peekRequest(requestId)?.endpointUrl !== undefined;
+      const endpoint =
+        preflight.ok && !stagedEndpoint
+          ? preflight.value.endpoint
+          : selectRequestEndpointUrl(projectState, useWorkspaceStore.getState().workspace, requestId);
       if (preflight.ok && preflight.value.unresolved.length > 0) {
         useProblemsStore.getState().add(expansionProblems(requestId, preflight.value.unresolved));
       }

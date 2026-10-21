@@ -169,7 +169,8 @@ describe('UpdateDefinitionDialog', () => {
       expect(checkbox(`update-option-${key}`).checked).toBe(true);
     }
     expect(checkbox('update-option-recreateOptional').checked).toBe(false);
-    expect(checkbox('update-option-updateTestRequests').disabled).toBe(true);
+    // Not offered until it does something (#732 X13).
+    expect(screen.queryByTestId('update-option-updateTestRequests')).toBeNull();
   });
 
   it('applies with the ticked options and adopts the snapshot main sends back', async () => {
