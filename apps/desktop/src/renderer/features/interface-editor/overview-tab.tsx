@@ -61,7 +61,8 @@ export function OverviewTab({ interfaceId }: OverviewTabProps) {
       <SettingsGroup title="Contents">
         <ReadOnlySetting
           label="Operations"
-          value={String(iface.operations.length)}
+          // By name, as the explorer lists them: a SOAP 1.1 and a 1.2 binding of one operation are one (#732 X15).
+          value={String(new Set(iface.operations.map((operation) => operation.name)).size)}
           testId="interface-operation-count"
         />
         <ReadOnlySetting label="Endpoints" value={String(iface.endpoints.length)} testId="interface-endpoint-count" />

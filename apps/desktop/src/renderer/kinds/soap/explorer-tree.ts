@@ -57,22 +57,47 @@ function sortedOperations(operations: readonly OperationSummaryWire[]): Operatio
   return [...operations].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function operationsNode(
+/**
+ * An interface's operations, straight under it (#732 X15): no "Operations" folder. Bindings that differ
+ * only by SOAP version (a 1.1 and a 1.2 of one port type) list each operation once, with its versions
+ * after the name and every binding's requests under it; those already say their version (#726). Other
+ * bindings, such as two of one version, keep a row each.
+ */
+function operationChildren(
   interfaceId: string,
   summary: InterfaceSummary,
   requests: readonly RequestDraft[],
   conflicted: ExplorerConflictTargets,
-): ExplorerNode {
+): ExplorerNode[] {
   const bindings = [...new Set(summary.operations.map((op) => op.binding))];
-
   if (bindings.length <= 1) {
-    const children = sortedOperations(summary.operations).map((op) =>
-      operationNode(interfaceId, op, requests, conflicted),
-    );
-    return { id: `operations:${interfaceId}`, kind: 'operations', label: 'Operations', children };
+    return sortedOperations(summary.operations).map((op) => operationNode(interfaceId, op, requests, conflicted));
   }
 
-  const children: ExplorerNode[] = bindings.map((binding) => {
+  const versionOf = new Map(summary.operations.map((op) => [op.binding, op.soapVersion]));
+  const versions = bindings.map((binding) => versionOf.get(binding));
+  const byVersion = !versions.includes('none') && new Set(versions).size === bindings.length;
+  if (byVersion) {
+    const names = [...new Set(summary.operations.map((op) => op.name))].sort((a, b) => a.localeCompare(b));
+    return names.map((name) => {
+      // The 1.1 binding first: it is the one New Request uses, as the lower version is the commoner one.
+      const variants = summary.operations
+        .filter((op) => op.name === name)
+        .sort((a, b) => a.soapVersion.localeCompare(b.soapVersion));
+      const primary = variants[0] as OperationSummaryWire;
+      const node = operationNode(interfaceId, primary, requests, conflicted);
+      if (variants.length === 1) {
+        return { ...node, suffix: `SOAP ${primary.soapVersion}` };
+      }
+      return {
+        ...node,
+        suffix: `SOAP ${variants.map((op) => op.soapVersion).join(' · ')}`,
+        children: variants.flatMap((op) => requestNodes(interfaceId, op, requests, conflicted)),
+      };
+    });
+  }
+
+  return bindings.map((binding) => {
     const bindingLocal = summary.operations.find((op) => op.binding === binding)?.bindingLocal ?? binding;
     const opsForBinding = sortedOperations(summary.operations.filter((op) => op.binding === binding));
     return {
@@ -84,8 +109,6 @@ function operationsNode(
       children: opsForBinding.map((op) => operationNode(interfaceId, op, requests, conflicted)),
     };
   });
-
-  return { id: `operations:${interfaceId}`, kind: 'operations', label: 'Operations', children };
 }
 
 function interfaceNode(
@@ -99,7 +122,7 @@ function interfaceNode(
     label: summary.name,
     interfaceId: summary.id,
     ...(summary.problems.length > 0 ? { problemCount: summary.problems.length } : {}),
-    children: [endpointsNode(summary.id, summary), operationsNode(summary.id, summary, requests, conflicted)],
+    children: [endpointsNode(summary.id, summary), ...operationChildren(summary.id, summary, requests, conflicted)],
   };
 }
 

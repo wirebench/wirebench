@@ -29,6 +29,8 @@ export function InspectorIconButton({
 export interface InspectorItem {
   readonly id: InspectorId;
   readonly label: string;
+  /** A count after the label, e.g. how many assertions the request has. */
+  readonly badge?: string;
 }
 
 export interface PaneTabsProps {

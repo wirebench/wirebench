@@ -1,4 +1,5 @@
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
+import { AttachmentFlagsGroup } from './request-flag-groups.js';
 import { useState } from 'react';
 import { showToast } from '../../../components/toast.js';
 import { ipc } from '../../../state/ipc-client.js';
@@ -185,16 +186,7 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
 
       {mtomOff && attachments.length > 0 && (
         <p className="text-xs text-fg-subtle">
-          MTOM is off — attachments are sent as SwA parts{' '}
-          <button
-            type="button"
-            className="underline hover:text-fg-default"
-            onClick={() => {
-              useEditorsStore.getState().setInspector(requestId, 'request', 'properties');
-            }}
-          >
-            Request properties
-          </button>
+          MTOM is off — attachments are sent as SwA parts. Turn on Enable MTOM below to send them as XOP parts.
         </p>
       )}
 
@@ -252,6 +244,8 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
           </AlertDialog.Content>
         </AlertDialog.Portal>
       </AlertDialog.Root>
+      {/* The flags that decide how attachments go out, here where they act (#732 X08). */}
+      <AttachmentFlagsGroup requestId={requestId} />
     </div>
   );
 }

@@ -19,12 +19,11 @@ const SOURCE_LABEL: Record<EndpointSourceWire, string> = {
 };
 
 /**
- * What used to be the Details panel's view of a request: the interface, the operation, its
- * SOAPAction, the endpoint it resolves to today and which rule produced it, and the project the
- * request belongs to. Read-only — every one of these is edited elsewhere (the endpoint in the
- * toolbar, the rest by renaming/importing), this is where the whole picture is put back together.
+ * The facts about a request that are edited elsewhere: its interface, operation and SOAPAction, the
+ * endpoint it resolves to today and which rule produced it, and its project. Properties shows them at
+ * its top now that the Details tab is folded into it (#731 X21).
  */
-export function DetailsInspector({ requestId }: DetailsInspectorProps) {
+export function RequestFacts({ requestId, title }: DetailsInspectorProps & { readonly title?: string }) {
   const request = useProjectStore((state) => state.requests[requestId]);
   const iface = useProjectStore((state) => (request === undefined ? undefined : state.interfaces[request.interfaceId]));
   const projectId = useProjectStore((state) => state.projectOf[requestId]);
@@ -36,24 +35,31 @@ export function DetailsInspector({ requestId }: DetailsInspectorProps) {
   const workspace = useWorkspaceStore((state) => state.workspace);
   const endpoint = useProjectStore((state) => selectRequestEndpointUrl(state, workspace, requestId));
   const endpointSource = useProjectStore((state) => selectRequestEndpointSource(state, workspace, requestId));
+  if (request === undefined) return null;
+  return (
+    <SettingsGroup {...(title !== undefined ? { title } : {})}>
+      <ReadOnlySetting label="Interface" value={iface?.name ?? '—'} />
+      <ReadOnlySetting label="Operation" value={request.operationName} />
+      <ReadOnlySetting
+        label="SOAPAction"
+        value={request.soapAction !== undefined && request.soapAction.length > 0 ? request.soapAction : '—'}
+      />
+      <ReadOnlySetting label="Endpoint" value={endpoint ?? '—'} />
+      <ReadOnlySetting label="Endpoint source" value={SOURCE_LABEL[endpointSource]} />
+      <ReadOnlySetting label="Project" value={projectName ?? '—'} />
+    </SettingsGroup>
+  );
+}
 
-  if (request === undefined) {
+/** The facts on their own, as the Details tab showed them. */
+export function DetailsInspector({ requestId }: DetailsInspectorProps) {
+  const exists = useProjectStore((state) => state.requests[requestId] !== undefined);
+  if (!exists) {
     return <p className="p-3 text-sm text-fg-subtle">This request no longer exists.</p>;
   }
-
   return (
     <div data-testid="request-details-inspector" className="overflow-auto p-3">
-      <SettingsGroup>
-        <ReadOnlySetting label="Interface" value={iface?.name ?? '—'} />
-        <ReadOnlySetting label="Operation" value={request.operationName} />
-        <ReadOnlySetting
-          label="SOAPAction"
-          value={request.soapAction !== undefined && request.soapAction.length > 0 ? request.soapAction : '—'}
-        />
-        <ReadOnlySetting label="Endpoint" value={endpoint ?? '—'} />
-        <ReadOnlySetting label="Endpoint source" value={SOURCE_LABEL[endpointSource]} />
-        <ReadOnlySetting label="Project" value={projectName ?? '—'} />
-      </SettingsGroup>
+      <RequestFacts requestId={requestId} />
     </div>
   );
 }

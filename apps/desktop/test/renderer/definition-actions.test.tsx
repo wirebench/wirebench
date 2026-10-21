@@ -312,7 +312,7 @@ describe('explorer tree — orphaned requests', () => {
         },
       ] as never,
     );
-    const requests = tree[0]?.children?.[0]?.children?.[1]?.children?.[0]?.children ?? [];
+    const requests = tree[0]?.children?.[0]?.children?.[1]?.children ?? [];
     expect(requests.map((node) => node.orphaned)).toEqual([true, undefined]);
   });
 });

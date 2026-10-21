@@ -11,11 +11,14 @@
  */
 
 import { useEffect, useState } from 'react';
-import { AuthFields, asSoapAuth, SOAP_AUTH_TYPES } from '../../../components/auth-fields.js';
+import { AuthFields, asSoapAuth, authTypeLabel, SOAP_AUTH_TYPES } from '../../../components/auth-fields.js';
+import { openInterfaceTab } from '../../interface-editor/interface-actions.js';
+import { useWssConfigPanelStore } from '../../wss/wss-config-panel-store.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useProjectStore } from '../../../state/project.js';
 import { OAuth2StatusPanel } from '../../rest-editor/oauth2-status.js';
 import { WssPolicyPanel } from './wss-policy-panel.js';
+import { WssDefaultsGroup } from './request-flag-groups.js';
 import type { RequestAuthSourceWire } from '../../../../shared/wire-base.js';
 
 const INPUT_CLASS =
@@ -25,21 +28,24 @@ export interface AuthInspectorProps {
   readonly requestId: string;
 }
 
-/** Human sentence for the level the effective credentials come from. */
-function sourceLabel(auth: RequestAuthSourceWire): string {
+/**
+ * What an inheriting request sends and where it comes from (#732 X09): "Inherits Basic from
+ * Calculator", "Inherits None from Calculator", or an endpoint's. The scheme alone, never a secret.
+ */
+export function sourceLabel(auth: RequestAuthSourceWire, interfaceName: string): string {
+  const scheme = authTypeLabel(auth.type);
   switch (auth.source) {
     case 'endpoint':
-      return `Using endpoint '${auth.endpointName ?? ''}' credentials (${auth.authMode ?? 'override'})`;
+      return `Inherits ${scheme} from endpoint '${auth.endpointName ?? ''}' (${auth.authMode ?? 'override'})`;
     case 'interface':
-      return 'Using the interface credentials';
+    case 'none':
+      return `Inherits ${scheme} from ${interfaceName}`;
     case 'request':
       return 'Using this request’s own credentials';
     case 'folder':
-      return 'Using the folder’s credentials';
+      return `Inherits ${scheme} from the folder`;
     case 'api':
-      return 'Using the API’s credentials';
-    case 'none':
-      return 'No credentials are configured for this request.';
+      return `Inherits ${scheme} from the API`;
   }
 }
 
@@ -47,6 +53,10 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
   const auth = useProjectStore((state) => state.requests[requestId]?.auth);
   const exists = useProjectStore((state) => state.requests[requestId] !== undefined);
   const updateRequestAuth = useProjectStore((state) => state.updateRequestAuth);
+  const interfaceId = useProjectStore((state) => state.requests[requestId]?.interfaceId);
+  const interfaceName = useProjectStore((state) =>
+    interfaceId === undefined ? undefined : state.interfaces[interfaceId]?.name,
+  );
   const [effective, setEffective] = useState<RequestAuthSourceWire | undefined>(undefined);
 
   // The inherited-source line comes from the main process's preflight, which is the one place
@@ -77,8 +87,24 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
         {auth !== undefined
           ? 'Set on this request'
           : effective !== undefined
-            ? sourceLabel(effective)
+            ? sourceLabel(effective, interfaceName ?? 'the interface')
             : 'Resolving credentials…'}
+        {/* A link to the level the credentials come from, where they are edited. */}
+        {auth === undefined && effective !== undefined && interfaceId !== undefined && (
+          <>
+            {' · '}
+            <button
+              type="button"
+              data-testid="auth-effective-open"
+              className="text-accent underline-offset-2 hover:underline"
+              onClick={() => {
+                openInterfaceTab(interfaceId, effective.source === 'endpoint' ? 'endpoints' : 'overview');
+              }}
+            >
+              {effective.source === 'endpoint' ? 'Edit endpoint' : `Open ${interfaceName ?? 'interface'}`}
+            </button>
+          </>
+        )}
       </p>
 
       <AuthFields
@@ -126,6 +152,45 @@ function WssSelectors({ requestId }: { readonly requestId: string }) {
   // own model when it secures the envelope at send time, so a reference left sitting in a draft
   // would simply not be there — the request would go out unsecured with no sign of why.
   const updateRequest = useProjectStore((state) => state.updateRequest);
+  const projectId = useProjectStore((state) => state.projectOf[requestId]);
+
+  /** New…: a fresh configuration, picked for this request and opened beside it (#732 X09). */
+  const create = async (direction: 'outgoing' | 'incoming'): Promise<void> => {
+    if (projectId === undefined) return;
+    const project = useProjectStore.getState();
+    const id =
+      direction === 'outgoing' ? await project.addWssOutgoing(projectId) : await project.addWssIncoming(projectId);
+    updateRequest(requestId, direction === 'outgoing' ? { wssOutgoingRef: id } : { wssIncomingRef: id });
+    useWssConfigPanelStore.getState().open(direction, id);
+  };
+
+  /** The New… and Edit… buttons under one picker. */
+  const actions = (direction: 'outgoing' | 'incoming', selected: string | undefined) => (
+    <div className="flex gap-2 pl-30 text-xs">
+      <button
+        type="button"
+        data-testid={`request-wss-${direction}-new`}
+        disabled={projectId === undefined}
+        className="text-accent underline-offset-2 hover:underline disabled:opacity-40"
+        onClick={() => {
+          void create(direction);
+        }}
+      >
+        New…
+      </button>
+      <button
+        type="button"
+        data-testid={`request-wss-${direction}-edit`}
+        disabled={selected === undefined}
+        className="text-accent underline-offset-2 hover:underline disabled:opacity-40"
+        onClick={() => {
+          if (selected !== undefined) useWssConfigPanelStore.getState().open(direction, selected);
+        }}
+      >
+        Edit…
+      </button>
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-2 border-t border-hairline pt-3">
@@ -153,6 +218,7 @@ function WssSelectors({ requestId }: { readonly requestId: string }) {
           )}
         </select>
       </label>
+      {actions('outgoing', configs.some((config) => config.id === outgoingRef) ? outgoingRef : undefined)}
       <label className="flex items-center gap-2">
         <span className="w-28 shrink-0 text-xs text-fg-subtle">Incoming WSS</span>
         <select
@@ -175,6 +241,9 @@ function WssSelectors({ requestId }: { readonly requestId: string }) {
           )}
         </select>
       </label>
+      {actions('incoming', incomingConfigs.some((config) => config.id === incomingRef) ? incomingRef : undefined)}
+      {/* The request's own WS-Security defaults, beside the configuration they go with (#732 X08). */}
+      <WssDefaultsGroup requestId={requestId} />
     </div>
   );
 }

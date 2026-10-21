@@ -30,6 +30,9 @@ export function WsaInspector({ requestId }: WsaInspectorProps) {
     (state) => request !== undefined && state.interfaces[request.interfaceId]?.wsa?.optional === true,
   );
   const updateRequestWsa = useProjectStore((state) => state.updateRequestWsa);
+  const interfaceName = useProjectStore((state) =>
+    request === undefined ? undefined : state.interfaces[request.interfaceId]?.name,
+  );
   const [effective, setEffective] = useState<RequestPreflightResponse['wsa'] | undefined>(undefined);
   const own = request?.wsa;
 
@@ -54,7 +57,17 @@ export function WsaInspector({ requestId }: WsaInspectorProps) {
   }
 
   const inherit = own === undefined;
-  const shown: WsaConfigWire = own ?? interfaceWsa ?? { enabled: false };
+  const base: WsaConfigWire = own ?? interfaceWsa ?? { enabled: false };
+  // While inheriting, the greyed fields hold what would be sent, the Action and To the interface leaves
+  // to their defaults included, rather than blanks (#732 X10).
+  const shown: WsaConfigWire =
+    inherit && effective?.enabled === true
+      ? {
+          ...base,
+          ...(base.action === undefined && effective.action !== undefined ? { action: effective.action } : {}),
+          ...(base.to === undefined && effective.to !== undefined ? { to: effective.to } : {}),
+        }
+      : base;
 
   return (
     <div className="flex flex-col gap-2 p-3 text-sm">
@@ -66,18 +79,24 @@ export function WsaInspector({ requestId }: WsaInspectorProps) {
           onChange={(event) => {
             // Breaking inheritance copies the interface configuration across, so the first edit
             // changes one field rather than silently resetting every other one to a default.
-            updateRequestWsa(requestId, event.target.checked ? null : { ...shown });
+            updateRequestWsa(requestId, event.target.checked ? null : { ...base });
           }}
         />
         <span className="text-xs">Inherit from interface</span>
       </label>
+      {inherit && (
+        <p data-testid="wsa-inherited-state" className="text-xs text-fg-subtle">
+          WS-A is {base.enabled ? 'on' : 'off'} on {interfaceName ?? 'the interface'}
+          {base.enabled && base.version !== undefined ? ` (${base.version})` : ''}.
+        </p>
+      )}
 
       <WsaFields
         config={shown}
         testIdPrefix="wsa"
         readOnly={inherit}
         onChange={(patch) => {
-          updateRequestWsa(requestId, { ...shown, ...patch });
+          updateRequestWsa(requestId, { ...base, ...patch });
         }}
       />
 

@@ -55,6 +55,11 @@ export const WEBHOOK_AUTH_TYPES: readonly AuthConfigWire['type'][] = TYPES.map((
  * A SOAP owner has nothing above it to inherit from (the project format refuses `inherit` there),
  * so the form offers every other scheme and leaves "configures nothing" to *Not configured*.
  */
+/** A scheme's name as the type picker shows it ("Basic", "Bearer token"). */
+export function authTypeLabel(type: AuthConfigWire['type']): string {
+  return TYPES.find((entry) => entry.value === type)?.label ?? type;
+}
+
 export const SOAP_AUTH_TYPES: readonly AuthConfigWire['type'][] = [
   'none',
   'basic',

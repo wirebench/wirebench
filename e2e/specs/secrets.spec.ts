@@ -93,7 +93,7 @@ test.describe('secrets', () => {
     await page.getByRole('button', { name: 'Set…' }).click();
     await page.getByPlaceholder('Enter password').fill(PASSWORD);
     await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByLabel('Password')).toHaveText('••••••••');
+    await expect(page.getByLabel('Password', { exact: true })).toHaveText('••••••••');
 
     await page.getByTestId('import-submit').click();
     await expandExplorer(page, 'Add (SOAP 1.1)');

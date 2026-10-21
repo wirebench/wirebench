@@ -63,6 +63,28 @@ describe('WsaInspector', () => {
     expect(screen.getByTestId('wsa-action')).toHaveProperty('value', 'urn:iface');
   });
 
+  it('says whether WS-A is on where it is inherited from, and fills a defaulted To (#732 X10)', async () => {
+    useProjectStore.setState(
+      (state) =>
+        ({
+          interfaces: { 'if-1': { ...state.interfaces['if-1'], name: 'Calculator' } },
+        }) as never,
+    );
+    render(<WsaInspector requestId="req-1" />);
+    expect(screen.getByTestId('wsa-inherited-state').textContent).toBe('WS-A is on on Calculator.');
+    // The interface sets no To: the field shows the one a send would carry, not a blank.
+    await waitFor(() => {
+      expect(screen.getByTestId('wsa-to')).toHaveProperty('value', 'http://e');
+    });
+    expect(screen.getByTestId('wsa-action')).toHaveProperty('value', 'urn:iface');
+  });
+
+  it('says WS-A is off on the interface it inherits from', () => {
+    install(undefined, { enabled: false }, { effectiveEnabled: false });
+    render(<WsaInspector requestId="req-1" />);
+    expect(screen.getByTestId('wsa-inherited-state').textContent).toContain('WS-A is off on');
+  });
+
   it('reports the headers a send would actually carry', async () => {
     render(<WsaInspector requestId="req-1" />);
 

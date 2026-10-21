@@ -83,7 +83,7 @@ function interfacesOf(summaries: readonly InterfaceSummary[], requests: readonly
 }
 
 describe('buildExplorerTree', () => {
-  it('builds interface -> endpoints/operations -> requests for a single binding', () => {
+  it('builds interface -> endpoints, then its operations -> requests, with no Operations folder (#732 X15)', () => {
     const tree = interfacesOf([iface()], [request()]);
 
     expect(tree).toHaveLength(1);
@@ -92,15 +92,12 @@ describe('buildExplorerTree', () => {
     expect(interfaceNode?.kind).toBe('interface');
     expect(interfaceNode?.children).toHaveLength(2);
 
-    const [endpoints, operations] = interfaceNode?.children ?? [];
+    const [endpoints, operationNode] = interfaceNode?.children ?? [];
     expect(endpoints?.kind).toBe('endpoints');
     expect(endpoints?.children).toHaveLength(1);
     expect(endpoints?.children?.[0]?.label).toBe('CalculatorSoap — http://example.test/soap');
 
-    // Single binding: the binding-group level collapses, operations sit directly under Operations.
-    expect(operations?.kind).toBe('operations');
-    expect(operations?.children).toHaveLength(1);
-    const [operationNode] = operations?.children ?? [];
+    // The operations sit straight under the interface.
     expect(operationNode?.kind).toBe('operation');
     expect(operationNode?.label).toBe('Add');
     expect(operationNode?.children).toHaveLength(1);
@@ -108,7 +105,7 @@ describe('buildExplorerTree', () => {
     expect(operationNode?.children?.[0]?.kind).toBe('request');
   });
 
-  it('groups operations by binding when an interface has multiple bindings', () => {
+  it('lists an operation of a SOAP 1.1 and a 1.2 binding once, with both versions and both requests (#732 X15)', () => {
     const summary = iface({
       operations: [
         {
@@ -131,12 +128,32 @@ describe('buildExplorerTree', () => {
         },
       ],
     });
-    const tree = interfacesOf([summary], []);
-    const operations = tree[0]?.children?.[1];
+    const requests = [
+      request({ id: 'r11', bindingName: '{tns}CalculatorSoap', operationName: 'Add', name: 'Add (SOAP 1.1)' }),
+      request({ id: 'r12', bindingName: '{tns}CalculatorSoap12', operationName: 'Add', name: 'Add (SOAP 1.2)' }),
+    ];
+    const tree = interfacesOf([summary], requests);
+    const operations = tree[0]?.children?.slice(1) ?? [];
 
-    expect(operations?.children).toHaveLength(2);
-    expect(operations?.children?.map((n) => n.kind)).toEqual(['binding', 'binding']);
-    expect(operations?.children?.map((n) => n.label)).toEqual(['CalculatorSoap', 'CalculatorSoap12']);
+    expect(operations.map((n) => n.kind)).toEqual(['operation']);
+    expect(operations[0]).toMatchObject({ label: 'Add', suffix: 'SOAP 1.1 · 1.2', bindingName: '{tns}CalculatorSoap' });
+    expect(operations[0]?.children?.map((n) => n.id)).toEqual(['req:r11', 'req:r12']);
+  });
+
+  it('keeps a row per binding when two bindings share a SOAP version', () => {
+    const op = (binding: string) => ({
+      name: 'Add',
+      binding: `{tns}${binding}`,
+      bindingLocal: binding,
+      soapVersion: '1.1' as const,
+      style: 'document' as const,
+      ports: [],
+      inputMimeParts: [],
+    });
+    const tree = interfacesOf([iface({ operations: [op('A'), op('B')] })], []);
+    const rows = tree[0]?.children?.slice(1) ?? [];
+    expect(rows.map((n) => n.kind)).toEqual(['binding', 'binding']);
+    expect(rows.map((n) => n.label)).toEqual(['A', 'B']);
   });
 
   it('sorts operations alphabetically and keeps requests in creation order', () => {
@@ -167,10 +184,10 @@ describe('buildExplorerTree', () => {
       request({ id: 'req-1', bindingName: '{tns}B', operationName: 'Add', name: 'Request 1' }),
     ];
     const tree = interfacesOf([summary], requests);
-    const operations = tree[0]?.children?.[1];
+    const operations = tree[0]?.children?.slice(1) ?? [];
 
-    expect(operations?.children?.map((n) => n.label)).toEqual(['Add', 'Subtract']);
-    const addNode = operations?.children?.find((n) => n.label === 'Add');
+    expect(operations.map((n) => n.label)).toEqual(['Add', 'Subtract']);
+    const addNode = operations.find((n) => n.label === 'Add');
     expect(addNode?.children?.map((n) => n.id)).toEqual(['req:req-2', 'req:req-1']);
   });
 
@@ -207,7 +224,7 @@ describe('buildExplorerTree', () => {
     expect(loading?.children?.map((node) => node.id)).toEqual(['iface:iface-1']);
     expect(loading?.children?.[0]?.children?.map((node) => node.id)).toEqual([
       'endpoints:iface-1',
-      'operations:iface-1',
+      'op:iface-1:{tns}CalculatorSoap:Add',
     ]);
   });
 
@@ -262,8 +279,7 @@ describe('buildExplorerTree', () => {
 
     expect(tree[0]?.conflicted).toBe(true);
     const interfaceNode = tree[0]?.children?.[0];
-    const operations = interfaceNode?.children?.find((node) => node.kind === 'operations');
-    const operation = operations?.children?.[0];
+    const operation = interfaceNode?.children?.find((node) => node.kind === 'operation');
     const [conflictedReq, otherReq] = operation?.children ?? [];
     expect(conflictedReq).toMatchObject({ requestId: 'req-1', conflicted: true });
     expect(otherReq).toMatchObject({ requestId: 'req-2' });
@@ -273,8 +289,7 @@ describe('buildExplorerTree', () => {
   it('leaves conflicted unset when no conflict targets are given', () => {
     const summary = iface();
     const tree = interfacesOf([summary], [request()]);
-    const operations = tree[0]?.children?.find((node) => node.kind === 'operations');
-    const operation = operations?.children?.[0];
+    const operation = tree[0]?.children?.find((node) => node.kind === 'operation');
     expect(operation?.children?.[0]?.conflicted).toBeUndefined();
   });
 });

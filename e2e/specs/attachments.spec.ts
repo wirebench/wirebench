@@ -108,8 +108,8 @@ test.describe('attachments', () => {
     await contentIdCell.press('Enter');
     await expect(contentIdCell).toHaveValue(CONTENT_ID);
 
-    // The inspector's own "MTOM is off" hint is the way into the request properties.
-    await page.getByRole('button', { name: 'Request properties' }).click();
+    // The MTOM flags sit under the attachments they act on (#732 X08).
+    await expect(page.getByTestId('attachment-flags')).toBeVisible();
     await page.getByLabel('Enable MTOM').check();
     await expect(page.getByLabel('Enable MTOM')).toBeChecked();
 
