@@ -4,18 +4,27 @@
  * against that kind's schema. A JSON Schema validator does the checking, not Zod, so a schema that
  * drops or misstates a constraint in the conversion fails here.
  */
-import { cp, readFile } from 'node:fs/promises';
+import { cp, readFile, rm } from 'node:fs/promises';
 import { join, matchesGlob } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import { createMcpFolder, createMcpRequest, createMcpServer } from '../../src/mcp/model.js';
 import { createMock, createMockOperation, createMockResponse } from '../../src/mock/model.js';
-import { PROJECT_FILE_KINDS, PROJECT_SCHEMA_BASE_URL, projectJsonSchemas } from '../../src/project-files.js';
+import {
+  PROJECT_FILE_KINDS,
+  PROJECT_SCHEMA_BASE_URL,
+  WORKSPACE_FILE_KINDS,
+  projectJsonSchemas,
+  workspaceJsonSchemas,
+} from '../../src/project-files.js';
 import { loadProject } from '../../src/project/load.js';
 import { FORMAT_VERSION } from '../../src/project/model.js';
 import { saveProject } from '../../src/project/save.js';
 import { parseYaml } from '../../src/project/yaml.js';
+import { WORKSPACE_FORMAT_VERSION } from '../../src/workspace/model.js';
+import { saveWorkspace } from '../../src/workspace/save.js';
 import { listTree, sampleProject, tempProjectDir } from './project/fixture.js';
+import { sampleWorkspace, tempWorkspaceDir } from './workspace/fixture.js';
 
 const ENGINE_FIXTURES = join(import.meta.dirname, '..', 'fixtures');
 const PROJECTS = {
@@ -194,5 +203,52 @@ describe('projectJsonSchemas', () => {
     const withoutKind: Partial<typeof request> = { ...request };
     delete withoutKind.kind;
     expect(validate.get('api-request')!(withoutKind)).toBe(false);
+  });
+});
+
+describe('workspaceJsonSchemas', () => {
+  const kinds = () => new Map(workspaceJsonSchemas().map(({ kind, schema }) => [kind.name, schema]));
+
+  it('publishes the workspace environment file under the workspace format version', () => {
+    const [environment] = workspaceJsonSchemas();
+    expect(environment?.path).toBe(`workspace/v${String(WORKSPACE_FORMAT_VERSION)}/environment.schema.json`);
+    expect(environment?.schema['$id']).toBe(`${PROJECT_SCHEMA_BASE_URL}/${environment!.path}`);
+    expect(environment?.schema['title']).toBe('Wirebench workspace file: Workspace environment');
+    expect(WORKSPACE_FILE_KINDS.map((kind) => kind.name)).toEqual(['environment']);
+  });
+
+  it('accepts a saved environment narrowed to projects, and one left with no project (#393)', async () => {
+    const ajv = new Ajv2020({ allErrors: true, strict: false });
+    const validate = ajv.compile(kinds().get('environment')!);
+    const dir = await tempWorkspaceDir();
+    const base = sampleWorkspace();
+    const [first, second] = base.environments;
+    await saveWorkspace(
+      {
+        ...base,
+        environments: [
+          { ...first!, projects: [base.projects[0]!.id, 'not-pulled-yet'] },
+          { ...second!, projects: [] },
+        ],
+      },
+      dir,
+    );
+    for (const environment of [first!, second!]) {
+      const file = join(dir, 'environments', `${environment.slug}.yaml`);
+      const valid = validate(parseYaml(await readFile(file, 'utf8'), file));
+      expect(validate.errors ?? [], file).toEqual([]);
+      expect(valid, file).toBe(true);
+    }
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('flags a malformed projects list, which the loader would read as absent', () => {
+    const ajv = new Ajv2020({ allErrors: true, strict: false });
+    const validate = ajv.compile(kinds().get('environment')!);
+    const file = { id: 'E1', name: 'dev', order: 0, properties: {}, endpoints: {} };
+    expect(validate(file)).toBe(true);
+    expect(validate({ ...file, projects: 'billing' })).toBe(false);
+    expect(validate({ ...file, projects: [''] })).toBe(false);
+    expect(validate({ ...file, projects: ['P1', 7] })).toBe(false);
   });
 });
