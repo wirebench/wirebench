@@ -11,7 +11,14 @@ import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace, openImportDialog, saveAll } from '../helpers/project.js';
-import { apiRow, chooseContextMenuItem, folderRow, openRequestTab, restRequestRow } from '../helpers/rest.js';
+import {
+  apiRow,
+  chooseContextMenuItem,
+  folderRow,
+  openRequestTab,
+  restRequestRow,
+  unfoldRow,
+} from '../helpers/rest.js';
 import { selectTab } from '../helpers/tabs.js';
 
 /** The collection the converter's fixture tests use: a collection pre-request script and a request's post-response one. */
@@ -64,8 +71,7 @@ test.describe('Convert imported scripts', () => {
 
     // The REST API is the first of the collection's APIs; unfold it and its folder for later.
     const api = apiRow(page, 'demo-collection').first();
-    await expect(api).toBeVisible({ timeout: 20_000 });
-    await api.click();
+    await unfoldRow(api);
     await expect(folderRow(page, 'Users')).toBeVisible({ timeout: 20_000 });
     await folderRow(page, 'Users').click();
     await expect(restRequestRow(page, 'Create user')).toBeVisible({ timeout: 20_000 });
