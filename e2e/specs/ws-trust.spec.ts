@@ -15,7 +15,7 @@ import { expect, test } from '@playwright/test';
 import { startTestSts, type TestSts } from '@wirebench/engine/test-helpers';
 import { logRows } from '../helpers/http-log.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
+import { createProjectWithCalculator, openFirstRequest, saveAll } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 import { selectTab } from '../helpers/tabs.js';
 
@@ -113,13 +113,24 @@ test.describe('ws-trust issued token', () => {
       await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 30_000 });
     }
 
+    // The configuration's panel narrows the console, and a narrow HTTP Log sheds its name column, which
+    // the STS rows are found by (#730). Saved first, the configuration closes without a question.
+    await saveAll(page);
+    const configRow = page.getByTestId('wss-outgoing-row');
+    const closeConfig = async (): Promise<void> => {
+      await configRow.getByRole('button', { expanded: true }).click();
+      await expect(page.getByTestId('wss-config-panel')).toHaveCount(0);
+    };
+    await closeConfig();
+
     // --- one token request: one STS row, whose name carries the request's ---------------------
     const stsRows = logRows(page).filter({ hasText: 'STS ·' });
     await expect(stsRows).toHaveCount(1);
     await expect(stsRows.first()).toContainText('STS · Add (SOAP 1.1)');
     expect(sts.requests).toHaveLength(1);
 
-    // --- the entry's status line, open all along, updates in place once the send cached a token --
+    // --- the entry's status line shows the token the send cached ------------------------------
+    await configRow.getByRole('button', { expanded: false }).click();
     await expect(page.getByTestId('wss-section')).toBeVisible();
     await expect(page.getByTestId('issued-token-state')).toContainText('Valid until', { timeout: 10_000 });
 
@@ -129,6 +140,7 @@ test.describe('ws-trust issued token', () => {
     await selectTab(page, 'Request tabs', 'Auth');
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 30_000 });
+    await closeConfig();
     await expect(stsRows).toHaveCount(2);
     expect(sts.requests).toHaveLength(2);
   });
