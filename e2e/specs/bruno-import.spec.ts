@@ -11,7 +11,7 @@ import { expect, test } from '@playwright/test';
 import { environmentRow, openEnvironmentsView } from '../helpers/environments.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace, openImportDialog } from '../helpers/project.js';
-import { apiRow, folderRow } from '../helpers/rest.js';
+import { apiRow, folderRow, unfoldRow } from '../helpers/rest.js';
 
 /** A collection with HTTP, GraphQL, gRPC and WebSocket requests, a `Users` folder and two environments. */
 const COLLECTION = fileURLToPath(new URL('../../fixtures/bruno/crafted/basic', import.meta.url));
@@ -47,7 +47,7 @@ test.describe('Bruno import', () => {
     await page.getByTestId('import-done').click();
 
     await expect(apiRow(page, 'demo-collection').first()).toBeVisible({ timeout: 20_000 });
-    await apiRow(page, 'demo-collection').first().click();
+    await unfoldRow(apiRow(page, 'demo-collection').first());
     await expect(folderRow(page, 'Users')).toBeVisible({ timeout: 20_000 });
     await folderRow(page, 'Users').click();
     const order = ['Create user', 'Upload avatar', 'User via GraphQL', 'Get user'];
