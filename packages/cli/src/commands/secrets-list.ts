@@ -5,8 +5,9 @@ import {
   secretSourcesHash,
   sharedTrusted,
 } from '@wirebench/engine';
-import type { SecretsListArgs } from '../args.js';
+import type { FeatureArgs, SecretsListArgs } from '../args.js';
 import { ExitCode } from '../exit-codes.js';
+import { featuresFor } from '../features.js';
 import type { CliIo } from '../main.js';
 import { loadSelection } from './run.js';
 
@@ -18,12 +19,13 @@ const HEADER = ['VARIABLE', 'STATE', 'SOURCE', 'PURPOSE', 'USED BY'] as const;
  * printed, and never even held past the check. A name the workspace maps to a secret source shows
  * as `mapped`, and the mapping's hash is printed so a pipeline can pin it.
  */
-export async function secretsListCommand(args: SecretsListArgs, io: CliIo): Promise<ExitCode> {
-  const loaded = await loadSelection(args, io);
+export async function secretsListCommand(args: SecretsListArgs & FeatureArgs, io: CliIo): Promise<ExitCode> {
+  const registry = featuresFor(args, io);
+  const loaded = await loadSelection(args, io, registry);
   if (typeof loaded === 'number') {
     return loaded;
   }
-  const needs = secretNeedsOf(loaded.selected, loaded.project, args.vars, loaded.workspace?.workspace);
+  const needs = secretNeedsOf(loaded.selected, loaded.project, args.vars, loaded.workspace?.workspace, registry);
   if (needs.length === 0) {
     io.stdout.write('No secrets needed.\n');
     return ExitCode.Ok;

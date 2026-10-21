@@ -90,7 +90,7 @@ export type {
   SelectedBase,
   SnapshotFacts,
 } from './protocol/module.js';
-export { createProtocolRegistry } from './protocol/registry.js';
+export { createProtocolRegistry, featureDisabled } from './protocol/registry.js';
 export type { ProtocolRegistry, ProtocolRegistryOptions } from './protocol/registry.js';
 export {
   BUILTIN_FEATURES,

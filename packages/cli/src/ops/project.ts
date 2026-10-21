@@ -37,14 +37,17 @@ export interface OpenedProject {
 /**
  * @throws OpsError `workspace-not-project`; ProjectError `project-not-found` and the loader's codes
  */
-export async function openProject(context: Pick<OpsContext, 'projectDir' | 'warn'>): Promise<OpenedProject> {
+export async function openProject(
+  context: Pick<OpsContext, 'projectDir' | 'warn'> & Partial<Pick<OpsContext, 'registry'>>,
+): Promise<OpenedProject> {
   const dir = context.projectDir;
   if (!(await exists(join(dir, 'wirebench.yaml'))) && (await exists(join(dir, 'workspace.yaml')))) {
     throw new OpsError('workspace-not-project', `${dir} is a workspace; pass --project with one of its projects`, {
       dir,
     });
   }
-  const loaded = await loadProject(dir);
+  // Through the process's registry: a kind that is off loads as a placeholder (feature switches spec §7).
+  const loaded = await loadProject(dir, context.registry !== undefined ? { registry: context.registry } : {});
   for (const problem of loaded.problems) {
     context.warn(`${problem.code}: ${problem.message} (${problem.file})`);
   }

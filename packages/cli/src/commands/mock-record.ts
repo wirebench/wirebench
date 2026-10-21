@@ -16,6 +16,8 @@ import type { MockDef, Project, RecordExchangeEvent, RunningRecorder } from '@wi
 import type { MockRecordArgs } from '../args-mock-record.js';
 import { secretValuesIn } from '../env-secrets.js';
 import { ExitCode } from '../exit-codes.js';
+import type { FeatureArgs } from '../features.js';
+import { featuresFor } from '../features.js';
 import type { CliIo } from '../main.js';
 import { proxyFromEnv } from '../proxy-env.js';
 import { UsageError } from '../usage-error.js';
@@ -74,11 +76,12 @@ function line(event: RecordExchangeEvent): string {
  * @throws UsageError for an unknown mock or `--from`
  */
 export async function mockRecordCommand(
-  args: MockRecordArgs,
+  args: MockRecordArgs & FeatureArgs,
   io: CliIo,
   options: MockRecordOptions = {},
 ): Promise<ExitCode> {
-  const loaded = await loadProject(args.path);
+  const registry = featuresFor(args, io);
+  const loaded = await loadProject(args.path, { registry });
   for (const problem of loaded.problems) {
     io.stderr.write(`${problem.code}: ${problem.message} (${problem.file})\n`);
   }
@@ -107,6 +110,7 @@ export async function mockRecordCommand(
   let recorder: RunningRecorder;
   try {
     recorder = await startRecorder({
+      registry,
       project,
       root: args.path,
       mockId: mock.id,

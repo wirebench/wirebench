@@ -25,6 +25,7 @@ import { parseScripts, refuseScriptsOnly, SCRIPTS_HELP, SCRIPTS_OPTIONS, SCRIPTS
 import type { ScriptsConvertArgs } from './args-scripts.js';
 import { parseSsh, SSH_HELP } from './args-ssh.js';
 import type { SshForwardArgs } from './args-ssh.js';
+import type { FeatureArgs } from './features.js';
 import { secretSourcesOptionsFrom, type CliSecretSourcesOptions } from './source-secrets.js';
 import { UsageError } from './usage-error.js';
 
@@ -36,6 +37,7 @@ export type { MockArgs, MockCheckArgs } from './args-mock.js';
 export type { MockRecordArgs } from './args-mock-record.js';
 export type { ScriptsConvertArgs } from './args-scripts.js';
 export type { SshForwardArgs } from './args-ssh.js';
+export type { FeatureArgs } from './features.js';
 
 /** `wirebench <verb> --help` for every verb that has its own help. */
 export const HELP_TOPICS: Readonly<Record<string, string>> = {
@@ -91,6 +93,12 @@ export const HELP_TEXT = `wirebench run <path> [selector…] [options]
                           Use them only if the mapping's hash is <hash> (secrets list prints it).
     --no-color
 -q, --quiet | -v, --verbose
+
+Every verb: --features <id=on|off,…>
+                       Switch features off (or back on) for this process: soap, rest, grpc, websocket,
+                       mcp, scripts, sequences, webhooks, server-sync, team-secrets, mcp-server. Laid over
+                       WIREBENCH_FEATURES, which takes the same list. A request of a kind that is off
+                       errors with feature-disabled; a verb that needs an off feature exits 2.
 
 wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [--var <k=v>…]
                        Prints every secret the selection needs: variable name, where it is used,
@@ -174,7 +182,10 @@ export interface SecretsListArgs {
   readonly secretSources: CliSecretSourcesOptions;
 }
 
-export type ParsedArgs =
+/** What `parseCliArgs` returns: one verb's arguments, plus the options every verb takes. */
+export type ParsedArgs = VerbArgs & FeatureArgs;
+
+type VerbArgs =
   | RunArgs
   | SecretsListArgs
   | OpArgs
@@ -253,52 +264,66 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
   if (argv[0] === 'ssh') {
     return parseSsh(argv.slice(1));
   }
-  let parsed;
+  const { values, positionals } = parseShared(argv);
+  const verb = parseVerb(values, positionals);
+  // Added only when given, so a verb's arguments read exactly as they did without the flag.
+  return typeof values.features === 'string' ? { ...verb, features: values.features } : verb;
+}
+
+/** `--features`, on every verb (feature switches spec §5.1). */
+const FEATURE_OPTIONS = { features: { type: 'string' } } as const;
+
+/** The options every verb but `ssh` parses with; each verb refuses the ones that are not its own. */
+const SHARED_OPTIONS = {
+  env: { type: 'string', short: 'e' },
+  'refuse-protected': { type: 'boolean' },
+  sequence: { type: 'string', multiple: true },
+  var: { type: 'string', multiple: true },
+  reporter: { type: 'string', multiple: true },
+  bail: { type: 'boolean' },
+  timeout: { type: 'string' },
+  sla: { type: 'string' },
+  'require-assertions': { type: 'boolean' },
+  baseline: { type: 'boolean' },
+  'require-baseline': { type: 'boolean' },
+  'update-baseline': { type: 'boolean' },
+  insecure: { type: 'boolean' },
+  'allow-commands': { type: 'boolean' },
+  'no-secret-sources': { type: 'boolean' },
+  'trust-secret-sources': { type: 'boolean' },
+  'trust-secret-sources-hash': { type: 'string' },
+  'no-color': { type: 'boolean' },
+  quiet: { type: 'boolean', short: 'q' },
+  verbose: { type: 'boolean', short: 'v' },
+  help: { type: 'boolean', short: 'h' },
+  version: { type: 'boolean' },
+  'fail-on': { type: 'string' },
+  ...DATA_OPTIONS,
+  ...OP_OPTIONS,
+  ...MOCK_RECORD_OPTIONS,
+  ...LINT_OPTIONS,
+  ...SCRIPTS_OPTIONS,
+  ...FEATURE_OPTIONS,
+} as const;
+
+type SharedParse = ReturnType<
+  typeof parseArgs<{ args: string[]; allowPositionals: true; strict: true; options: typeof SHARED_OPTIONS }>
+>;
+
+/** The one `parseArgs` call every verb but `ssh` shares. */
+function parseShared(argv: readonly string[]): SharedParse {
   try {
-    parsed = parseArgs({
-      args: [...argv],
-      allowPositionals: true,
-      strict: true,
-      options: {
-        env: { type: 'string', short: 'e' },
-        'refuse-protected': { type: 'boolean' },
-        sequence: { type: 'string', multiple: true },
-        var: { type: 'string', multiple: true },
-        reporter: { type: 'string', multiple: true },
-        bail: { type: 'boolean' },
-        timeout: { type: 'string' },
-        sla: { type: 'string' },
-        'require-assertions': { type: 'boolean' },
-        baseline: { type: 'boolean' },
-        'require-baseline': { type: 'boolean' },
-        'update-baseline': { type: 'boolean' },
-        insecure: { type: 'boolean' },
-        'allow-commands': { type: 'boolean' },
-        'no-secret-sources': { type: 'boolean' },
-        'trust-secret-sources': { type: 'boolean' },
-        'trust-secret-sources-hash': { type: 'string' },
-        'no-color': { type: 'boolean' },
-        quiet: { type: 'boolean', short: 'q' },
-        verbose: { type: 'boolean', short: 'v' },
-        help: { type: 'boolean', short: 'h' },
-        version: { type: 'boolean' },
-        'fail-on': { type: 'string' },
-        ...DATA_OPTIONS,
-        ...OP_OPTIONS,
-        ...MOCK_RECORD_OPTIONS,
-        ...LINT_OPTIONS,
-        ...SCRIPTS_OPTIONS,
-      },
-    });
+    return parseArgs({ args: [...argv], allowPositionals: true, strict: true, options: SHARED_OPTIONS });
   } catch (error) {
     if (error instanceof TypeError) {
       throw new UsageError(error.message);
     }
     throw error;
   }
+}
 
-  const { values, positionals } = parsed;
-
+/** One verb from the shared parse; `UsageError` for anything that is not a verb's call. */
+function parseVerb(values: SharedParse['values'], positionals: readonly string[]): VerbArgs {
   if (values.help) {
     const [topic] = positionals;
     return topic !== undefined && Object.hasOwn(HELP_TOPICS, topic) ? { command: 'help', topic } : { command: 'help' };

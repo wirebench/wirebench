@@ -10,7 +10,8 @@ import {
   selectRequests,
 } from '@wirebench/engine';
 import type { ConversionRefusal, LevelProposal, Project } from '@wirebench/engine';
-import type { ScriptsConvertArgs } from '../args.js';
+import type { FeatureArgs, ScriptsConvertArgs } from '../args.js';
+import { featuresFor } from '../features.js';
 import { ExitCode } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
 import { loadTarget } from './run.js';
@@ -30,8 +31,8 @@ const PHASES = ['pre', 'post'] as const;
  * TODOs and writes nothing. With it, it lists `imported-scripts/` afresh, applies, writes each backup
  * with an exclusive create (any failure stops before the save), then saves the project.
  */
-export async function scriptsConvertCommand(args: ScriptsConvertArgs, io: CliIo): Promise<ExitCode> {
-  const target = await loadTarget(args.path, io, ExitCode.RunError);
+export async function scriptsConvertCommand(args: ScriptsConvertArgs & FeatureArgs, io: CliIo): Promise<ExitCode> {
+  const target = await loadTarget(args.path, io, ExitCode.RunError, featuresFor(args, io));
   if (typeof target === 'number') {
     return target;
   }

@@ -21,9 +21,18 @@ import {
   summarizeWssPolicy,
   summaryLine,
 } from '@wirebench/engine';
-import type { ContractChange, ContractDiff, FetchDocument, OpenApiDocument, WsdlImportResult } from '@wirebench/engine';
+import type {
+  ContractChange,
+  ContractDiff,
+  FetchDocument,
+  OpenApiDocument,
+  ProtocolRegistry,
+  WsdlImportResult,
+} from '@wirebench/engine';
 import type { DiffContractArgs, DiffContractReporter } from '../args-diff-contract.js';
 import { ExitCode } from '../exit-codes.js';
+import type { FeatureArgs } from '../features.js';
+import { featuresFor } from '../features.js';
 import type { CliIo } from '../main.js';
 import { OpsError, exitCodeForError, toOpsError } from '../ops/errors.js';
 import { fetcherFor, readSource } from '../ops/import.js';
@@ -38,8 +47,13 @@ type LoadedContract =
   | { readonly format: 'openapi'; readonly document: OpenApiDocument };
 
 /** The interface or REST API of the project named `name` (or with that slug), its cached definition read offline. */
-async function fromProject(name: string, projectDir: string, warn: (message: string) => void): Promise<LoadedContract> {
-  const { project } = await openProject({ projectDir, warn });
+async function fromProject(
+  name: string,
+  projectDir: string,
+  warn: (message: string) => void,
+  registry: ProtocolRegistry,
+): Promise<LoadedContract> {
+  const { project } = await openProject({ projectDir, warn, registry });
   const matches = (container: { readonly name: string; readonly slug: string }): boolean =>
     container.name === name || container.slug === name;
   const iface = soapInterfacesOf(project).find(matches);
@@ -121,14 +135,15 @@ function gate(args: DiffContractArgs, diff: ContractDiff): ExitCode {
   }
 }
 
-export async function diffContractCommand(args: DiffContractArgs, io: CliIo): Promise<ExitCode> {
+export async function diffContractCommand(args: DiffContractArgs & FeatureArgs, io: CliIo): Promise<ExitCode> {
   const warn = (message: string): void => {
     io.stderr.write(`warning: ${message}\n`);
   };
   const fetchDocument = fetcherFor(io.env);
+  const registry = featuresFor(args, io);
   const load = (source: string): Promise<LoadedContract> =>
     source.startsWith(PROJECT_PREFIX)
-      ? fromProject(source.slice(PROJECT_PREFIX.length), resolve(args.project), warn)
+      ? fromProject(source.slice(PROJECT_PREFIX.length), resolve(args.project), warn, registry)
       : fromSource(source, fetchDocument, warn);
 
   let before: LoadedContract;
