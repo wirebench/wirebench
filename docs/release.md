@@ -153,9 +153,10 @@ and the `files` list keeps it and the two optional packages only it needs, `cpu-
 out of the asar, so the packaged app always runs ssh2's pure-JS ciphers. The asar check does not
 report those two by itself: ssh2 declares them as optional dependencies, which count wherever they
 are present, so the unit test in `scripts/check-desktop-asar.test.ts` pins the three patterns and
-the manual check below looks inside the packed app. ssh2 itself sits under `app.asar.unpacked` on
-every platform, because electron-builder unpacks a package whole when it holds an executable, and
-ssh2 ships `util/pagent.exe`, the Pageant helper it spawns on Windows.
+the manual check below looks inside the packed app. In the Windows builds ssh2 itself sits under
+`app.asar.unpacked`, because electron-builder unpacks a package whole when it holds an executable,
+and ssh2 ships `util/pagent.exe`, the Pageant helper it spawns on Windows; the mac and Linux builds
+carry no `.exe`, and ssh2 stays inside the asar there.
 
 ## Electron fuses
 

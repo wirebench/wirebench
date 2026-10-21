@@ -45,8 +45,9 @@ files:
   # ssh2's optional native cipher binding is never built (`neverBuiltDependencies` in the root
   # package.json); ssh2 falls back to its pure-JS ciphers. Neither the build folder nor the two
   # optional packages the binding alone needs ship: `cpu-features`, which it probes, and `nan`, the
-  # C++ headers it compiles against (#362). ssh2 itself is unpacked whole by electron-builder because
-  # of `util/pagent.exe`, the Pageant helper it spawns on Windows; that is wanted.
+  # C++ headers it compiles against (#362). In the Windows builds ssh2 itself is unpacked whole by
+  # electron-builder because of `util/pagent.exe`, the Pageant helper it spawns there; that is wanted.
+  # The mac and Linux builds carry no `.exe`, and ssh2 stays inside the asar.
   - '!**/node_modules/ssh2/lib/protocol/crypto/build/**'
   - '!**/node_modules/cpu-features/**'
   - '!**/node_modules/nan/**'
