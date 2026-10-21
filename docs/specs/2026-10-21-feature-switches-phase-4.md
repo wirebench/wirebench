@@ -214,11 +214,10 @@ send. A selector that names a request of a kind that is off reports that request
 
 ### 5.2 Ops and tools
 
-An op gains an optional `feature` (the id it needs). `generate`, `validate` and `operations` need
-`soap` ... no: `operations` lists every kind's operations and stays; `generate` and `validate` are
-SOAP-only today and declare `soap`; `import` declares none and refuses per format (a WSDL while
-`soap` is off: `feature-disabled` for `soap`); `send`, `query`, `history_*` declare none and go
-through the registry. `wirebench mcp` with `mcp-server` off prints `feature-disabled: MCP server is
+An op gains an optional `feature` (the id it needs). `generate` and `validate` are SOAP-only today
+and declare `soap`; `operations` lists every kind's operations and declares none; `import` declares
+none and refuses per format (a WSDL while `soap` is off: `feature-disabled` for `soap`); `send`,
+`query` and `history_*` declare none and go through the registry. `wirebench mcp` with `mcp-server` off prints `feature-disabled: MCP server is
 switched off` to stderr and exits 2 before it serves anything.
 
 `tools/list` omits a fixed tool whose `feature` is off, and the contract tools of a kind that is off
