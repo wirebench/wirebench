@@ -26,3 +26,12 @@ describe('findTemplatePlaceholders (#728)', () => {
     expect(findTemplatePlaceholders(xml)).toEqual([]);
   });
 });
+
+describe('findTemplatePlaceholders on hostile input', () => {
+  it('stays linear on many unclosed comments and CDATA openers', () => {
+    const hostile = '<!--'.repeat(50_000) + '<![CDATA['.repeat(50_000);
+    const started = performance.now();
+    expect(findTemplatePlaceholders(hostile)).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(2_000);
+  });
+});

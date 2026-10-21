@@ -20,14 +20,34 @@ export interface TemplatePlaceholder {
 /** The template value the sample generator writes. */
 export const TEMPLATE_PLACEHOLDER = '?';
 
-const SKIPPED = /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>/g;
+/**
+ * `xml` with every comment and CDATA section blanked to spaces (newlines kept, so offsets stay where
+ * they were). A linear `indexOf` scan, not a lazy regex: on many unclosed `<!--` a regex backtracks.
+ */
+function blankSkipped(xml: string): string {
+  let out = '';
+  let at = 0;
+  for (;;) {
+    const comment = xml.indexOf('<!--', at);
+    const cdata = xml.indexOf('<![CDATA[', at);
+    const start = comment === -1 ? cdata : cdata === -1 ? comment : Math.min(comment, cdata);
+    if (start === -1) break;
+    const close = start === comment ? '-->' : ']]>';
+    const end = xml.indexOf(close, start + (start === comment ? 4 : 9));
+    const stop = end === -1 ? xml.length : end + close.length;
+    out += xml.slice(at, start) + xml.slice(start, stop).replace(/[^\n]/g, ' ');
+    at = stop;
+  }
+  return out + xml.slice(at);
+}
+
 const ELEMENT = />(\s*)\?\s*<\/([A-Za-z_][\w.:-]*)\s*>/g;
 const ATTRIBUTE = /\s([A-Za-z_][\w.:-]*)\s*=\s*(["'])\?\2/g;
 
 /** Every template `?` in `xml`, in document order. */
 export function findTemplatePlaceholders(xml: string): TemplatePlaceholder[] {
   // Blank out what is skipped, keeping offsets (and so lines and columns) where they were.
-  const text = xml.replace(SKIPPED, (match) => match.replace(/[^\n]/g, ' '));
+  const text = blankSkipped(xml);
   const found: { readonly name: string; readonly offset: number }[] = [];
   for (const match of text.matchAll(ELEMENT)) {
     found.push({ name: match[2] ?? '', offset: match.index + 1 + (match[1]?.length ?? 0) });
