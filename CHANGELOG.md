@@ -104,6 +104,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The desktop package drops the last of ssh2's native-binding tree.** `nan`, the C++ headers only
+  ssh2's never-built cipher binding compiles against, no longer ships inside the app; the binding's
+  build folder and `cpu-features` were already left out, and the packaged app runs ssh2's pure-JS
+  ciphers on every platform (#362).
 - **SOAP, after a daily-use review (#725–#732).** A response's status and a send error have a line of
   their own above the tabs, never pushed out of view (#725). A template **?** shows in the Form view as
   a marked placeholder, Validate warns about each one, the first send of a request still holding them
