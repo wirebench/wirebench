@@ -132,7 +132,7 @@ test.describe('README screenshots', () => {
     await capture(window, 'import-wsdl');
 
     await window.getByTestId('import-submit').click();
-    await expandExplorer(window, 'Request 1');
+    await expandExplorer(window, 'Add (SOAP 1.1)');
 
     // The generated envelope, open in the editor.
     await openFirstRequest(window);

@@ -253,16 +253,16 @@ describe('useProjectStore', () => {
     expect(useProjectStore.getState().requests['req-1']?.envelopeXml).toBe('<Add>typed</Add>');
   });
 
-  it('setEndpoint patches the request custom URL', () => {
+  it("setEndpoint stages the request custom URL, as the editor's other edits are (#732 X11)", () => {
     applyProject();
     const mutate = vi.fn().mockResolvedValue({ ok: true, value: { project: projectWire() } });
     installWirebenchApi({ project: { mutate } });
 
     useProjectStore.getState().setEndpoint('req-1', 'http://custom.test/soap');
-    expect(mutate).toHaveBeenCalledWith({
-      projectId: 'proj-1',
-      change: { kind: 'update-request', requestId: 'req-1', patch: { endpointUrl: 'http://custom.test/soap' } },
-    });
+    expect(mutate).not.toHaveBeenCalled();
+    expect(useProjectStore.getState().requests['req-1']?.endpointUrl).toBe('http://custom.test/soap');
+    expect(useDraftsStore.getState().peekRequest('req-1')).toEqual({ endpointUrl: 'http://custom.test/soap' });
+    useProjectStore.getState().discardDraft('req-1');
   });
 
   it("save() saves every open project and reports each one's status", async () => {

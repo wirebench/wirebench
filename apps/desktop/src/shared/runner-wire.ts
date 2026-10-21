@@ -84,6 +84,8 @@ export const runnerRequestResultSchema = z.object({
   assertions: z.array(sequenceAssertionResultWireSchema),
   error: z.object({ code: z.string(), message: z.string() }).optional(),
   scriptLog: z.array(z.string()).optional(),
+  /** Values the SOAP request went out with still holding the template "?" (#728). */
+  templatePlaceholders: z.number().int().optional(),
   iteration: z
     .object({ index: z.number().int(), count: z.number().int(), row: z.number().int().optional() })
     .optional(),

@@ -150,6 +150,16 @@ describe('runRequests', () => {
     expect(result.requests.every((r) => r.exchange === undefined)).toBe(true);
   });
 
+  it('counts the template "?" values a SOAP request went out with (#728)', async () => {
+    const templated = ENVELOPE.replace('<w:text>hi</w:text>', '<w:text>?</w:text>');
+    const project = makeProject([
+      soapRequest('t', 0, '/soap', OK_SOAP, { envelopeXml: templated }),
+      soapRequest('f', 1, '/soap', OK_SOAP),
+    ]);
+    const result = await runRequests(all(project), contextFor(project));
+    expect(result.requests.map((r) => r.templatePlaceholders)).toEqual([1, undefined]);
+  });
+
   it('fails a request whose response faults under soap-fault: none, keeping its exchange', async () => {
     const project = makeProject([soapRequest('f', 0, '/fault', OK_SOAP)]);
     const [only] = (await runRequests(all(project), contextFor(project))).requests;

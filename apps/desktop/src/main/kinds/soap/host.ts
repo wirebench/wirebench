@@ -28,6 +28,7 @@ import {
   exportDefinition,
   fetchDocumentFromCache,
   generateDocs,
+  generatedRequestName,
   generateId,
   IMPORTED_SCRIPTS_DIR,
   interfaceDir,
@@ -1178,8 +1179,12 @@ export class SoapHost implements KindHostHooks {
         : 'type' in input.auth
           ? kerberosImportAuth(input.auth.spn)
           : { type: 'basic', username: input.auth.username, passwordRef: input.auth.passwordRef, preemptive: true };
+    // A second import of the same service is told apart by its name: "Calculator (2)" (#727).
+    const takenNames = new Set(soapInterfacesOf(open.project).map((existing) => existing.name));
+    let interfaceName = summary.name;
+    for (let n = 2; takenNames.has(interfaceName); n += 1) interfaceName = `${summary.name} (${String(n)})`;
     const iface: Interface = {
-      ...createInterface(summary.name, {
+      ...createInterface(interfaceName, {
         id: interfaceId,
         slug,
         definitionUrl: summary.definitionUrl,
@@ -1219,7 +1224,8 @@ export class SoapHost implements KindHostHooks {
         interfaceId,
         bindingName: operation.binding,
         operationName: operation.name,
-        name: 'Request 1',
+        // Named after the operation, with the binding when there are several, not "Request 1" (#726).
+        name: generatedRequestName(operation, summary.operations),
         generated: {
           envelopeXml: generated.envelopeXml,
           soapVersion: generated.soapVersion,

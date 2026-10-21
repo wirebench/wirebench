@@ -10,12 +10,19 @@ import {
 } from '../../src/renderer/state/exchanges.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
+import { useDraftsStore } from '../../src/renderer/state/drafts.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { logExchange, makeFailure, makeRestExchange } from '../mocks/exchange-fixtures.js';
 import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
+import { showToast } from '../../src/renderer/components/toast.js';
+
+vi.mock('../../src/renderer/components/toast.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/renderer/components/toast.js')>()),
+  showToast: vi.fn(),
+}));
 
 const draft: RequestDraft = {
   properties: REQUEST_PROPERTIES,
@@ -83,6 +90,27 @@ describe('useExchangesStore', () => {
       },
     });
   }
+
+  it('send() asks once before sending template "?" values; Send anyway stops asking for that request (#728)', async () => {
+    useProjectStore.setState({
+      requests: { r1: draft, r2: { ...draft, id: 'r2', envelopeXml: '<a><b>?</b><c>?</c></a>' } },
+    });
+    const sendFn = vi.fn().mockResolvedValue({ ok: true, value: exchangeSummary('send-2') });
+    stubIpc({ request: { generate: vi.fn(), send: sendFn, cancel: vi.fn() } });
+    vi.mocked(showToast).mockClear();
+
+    await useExchangesStore.getState().send('r2');
+    expect(sendFn).not.toHaveBeenCalled();
+    const [message, action] = vi.mocked(showToast).mock.calls[0] ?? [];
+    expect(message).toContain('2 values still hold the template "?"');
+    expect(action?.label).toBe('Send anyway');
+
+    action?.onClick();
+    await vi.waitFor(() => expect(sendFn).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(useExchangesStore.getState().byRequest['r2']?.status).toBe('done'));
+    await useExchangesStore.getState().send('r2');
+    expect(sendFn).toHaveBeenCalledTimes(2);
+  });
 
   it('send() blocks on validation errors when auto-validate is on', async () => {
     autoValidateOn();
@@ -273,6 +301,23 @@ describe('useExchangesStore', () => {
     expect(state.byRequest['r1']).toBeUndefined();
     expect(state.log).toHaveLength(1);
     expect(sendIdOf(state.log[0]!)).toBe('send-1');
+  });
+
+  it('send() sends to an endpoint picked in the editor and not yet saved, not the one main has (#732 X11)', async () => {
+    const preflight = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { endpoint: 'http://saved.test/soap', endpointSource: 'request', unresolved: [] },
+    });
+    const sendFn = vi.fn().mockResolvedValue({ ok: true, value: exchangeSummary('send-x11') });
+    stubIpc({ request: { generate: vi.fn(), send: sendFn, cancel: vi.fn(), preflight } });
+    useProjectStore.setState({ requests: { r1: { ...draft, endpointUrl: 'http://picked.test/soap' } } });
+    useDraftsStore.getState().stageRequest('r1', { endpointUrl: 'http://picked.test/soap' });
+
+    await useExchangesStore.getState().send('r1');
+    expect((sendFn.mock.calls[0]?.[0] as { input: { endpoint: string } }).input.endpoint).toBe(
+      'http://picked.test/soap',
+    );
+    useDraftsStore.getState().discardRequest('r1');
   });
 
   it('send() preflights first, sends the endpoint it returns, and lists unresolved refs', async () => {

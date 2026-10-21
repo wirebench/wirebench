@@ -282,7 +282,7 @@ test.describe('docs site screenshots', () => {
     await shoot(window, 'getting-started/import-wsdl');
 
     await window.getByTestId('import-submit').click();
-    await expandExplorer(window, 'Request 1');
+    await expandExplorer(window, 'Add (SOAP 1.1)');
     await openFirstRequest(window);
     await shoot(window, 'getting-started/request-editor');
 
@@ -509,7 +509,7 @@ test.describe('docs site screenshots', () => {
     // labels carry a clock time, so they are masked.
     await runCommand(window, 'Toggle Sidebar');
     await shoot(window, 'history/diff-view', {
-      mask: [...timingRegions(window), window.locator('span[title^="Request 1 ("]')],
+      mask: [...timingRegions(window), window.locator('span[title^="Add (SOAP 1.1) ("]')],
     });
   });
 

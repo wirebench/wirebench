@@ -62,7 +62,7 @@ test.describe('shared workspaces: secrets', () => {
 
     // --- A: Basic auth on the first request, against the fixture's /auth/basic ---------------
     const pageA = a.window;
-    await expandExplorer(pageA, 'Request 1');
+    await expandExplorer(pageA, 'Add (SOAP 1.1)');
     await openFirstRequest(pageA);
     await pageA.getByTestId('request-endpoint').fill(`${server.url}/auth/basic`);
     await selectTab(pageA, 'Request tabs', 'Auth');
@@ -72,7 +72,7 @@ test.describe('shared workspaces: secrets', () => {
     await panelA.getByRole('button', { name: 'Set…' }).click();
     await panelA.getByPlaceholder('Enter password').fill(PASSWORD);
     await panelA.getByRole('button', { name: 'Save' }).click();
-    await expect(panelA.getByLabel('Password')).toHaveText('••••••••');
+    await expect(panelA.getByLabel('Request password', { exact: true })).toHaveText('••••••••');
     await saveAll(pageA);
     await expect.poll(() => remoteContains(remote.dir, '/auth/basic'), { timeout: SYNC_TIMEOUT }).toBe(true);
     await expect.poll(() => remoteContains(remote.dir, 'passwordRef'), { timeout: SYNC_TIMEOUT }).toBe(true);
@@ -82,7 +82,7 @@ test.describe('shared workspaces: secrets', () => {
     const treeB = sharedTreeDir(b.userDataDir);
     await pullNow(pageB);
     await expect.poll(() => treeHead(treeB), { timeout: SYNC_TIMEOUT }).toBe(remoteHead(remote.dir));
-    await expandExplorer(pageB, 'Request 1');
+    await expandExplorer(pageB, 'Add (SOAP 1.1)');
     await openFirstRequest(pageB);
     await expect(pageB.getByTestId('request-endpoint')).toHaveValue(/\/auth\/basic$/, { timeout: 20_000 });
     await selectTab(pageB, 'Request tabs', 'Auth');
@@ -108,7 +108,7 @@ test.describe('shared workspaces: secrets', () => {
     await panelB.getByRole('button', { name: 'Enter…' }).click();
     await panelB.getByPlaceholder('Enter password').fill(PASSWORD);
     await panelB.getByRole('button', { name: 'Save' }).click();
-    await expect(panelB.getByLabel('Password')).toHaveText('••••••••');
+    await expect(panelB.getByLabel('Request password', { exact: true })).toHaveText('••••••••');
     await expect(panelB.getByTestId('secret-missing')).toHaveCount(0);
 
     await saveAll(pageB);

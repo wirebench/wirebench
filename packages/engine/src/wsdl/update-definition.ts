@@ -25,6 +25,8 @@ import type { IdGenerator, Project } from '../project/model.js';
 import type { Endpoint, Interface, OperationDef, SoapRequestDef } from '../soap/model.js';
 import { INTERFACES_DIR, OPERATIONS_DIR, uniqueSlug } from '../project/paths.js';
 import { recreateRequest } from '../soap/recreate.js';
+import { generatedRequestName } from '../soap/request-name.js';
+import type { NamedOperation } from '../soap/request-name.js';
 import type { OperationRef } from '../soap/request-builder.js';
 import type { WsdlImportResult, SoapOperationSummary } from '../soap/types.js';
 import { generateElement, generateType } from '../xsd/sample-generator.js';
@@ -273,6 +275,16 @@ function backupPath(iface: Interface, operation: OperationDef, request: SoapRequ
 }
 
 /** The operation summary for `ref` in the new import, if the new definition still has it. */
+/** An operation summary in the shape {@link generatedRequestName} reads. */
+function namedOperation(summary: SoapOperationSummary): NamedOperation {
+  return {
+    name: summary.operationName,
+    binding: qnameToString(summary.bindingName),
+    bindingLocal: summary.bindingName.localName,
+    soapVersion: summary.soapVersion,
+  };
+}
+
 function summaryFor(result: WsdlImportResult, key: string): SoapOperationSummary | undefined {
   return result.operations.find((op) => operationKey(refOf(op)) === key);
 }
@@ -397,7 +409,8 @@ export function applyUpdate(
         requests: [],
       };
       const generated = generateSoapRequest(newImport, ref, generateOptions);
-      const name = 'Request 1';
+      // Named after the operation, with the binding when there are several, not "Request 1" (#726).
+      const name = generatedRequestName(namedOperation(summary), newImport.operations.map(namedOperation));
       const request = createRequest(name, {
         id: newId(),
         envelopeXml: generated.envelopeXml,

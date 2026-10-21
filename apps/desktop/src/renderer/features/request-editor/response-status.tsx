@@ -54,11 +54,11 @@ export interface ResponseStatusProps {
 export function ResponseStatus({ exchange, error }: ResponseStatusProps) {
   if (error !== undefined) {
     return (
+      // A banner across the pane that wraps, not a clipped line: the error is what to read after Send (#725).
       <p
-        role="status"
+        role="alert"
         data-testid="response-status"
-        className="truncate px-2 font-mono text-xs text-status-danger"
-        title={error.message}
+        className="mx-1 w-full rounded-sm bg-status-danger/10 px-2 py-1 font-mono text-xs break-words text-status-danger"
       >
         <span className="font-medium">{error.code}</span> · {error.message}
       </p>

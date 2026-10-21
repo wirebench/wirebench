@@ -90,7 +90,7 @@ export async function importCalculator(page: Page, server: TestSoapServer): Prom
   await openImportDialog(page, 'wsdl');
   await page.getByTestId('import-url-input').fill(server.wsdlUrl);
   await page.getByTestId('import-submit').click();
-  await expandExplorer(page, 'Request 1');
+  await expandExplorer(page);
 }
 
 /**
@@ -103,17 +103,20 @@ export async function importCalculator(page: Page, server: TestSoapServer): Prom
  * to `explorer-tree-row`, so keying on the fallback would silently never match a REST, gRPC or
  * WebSocket row.
  */
-export async function expandExplorer(page: Page, rowText: string): Promise<void> {
+export async function expandExplorer(page: Page, rowText?: string): Promise<void> {
   await expect(page.getByTestId('import-submit')).toBeHidden({ timeout: 20_000 });
   await page.getByRole('button', { name: 'Expand all' }).click();
-  await expect(page.locator('[data-tree-id]', { hasText: rowText }).first()).toBeVisible({
+  // With no `rowText`, any SOAP request row will do: generated requests are named after their
+  // operation (#726), so the name depends on the fixture.
+  const row = rowText === undefined ? page.locator(REQUEST_ROW) : page.locator('[data-tree-id]', { hasText: rowText });
+  await expect(row.first()).toBeVisible({
     timeout: 20_000,
   });
 }
 
 /**
  * A workspace holding one project (`Calculator Project` unless `expectProjectName` says
- * otherwise) with `server`'s WSDL imported, returning once `Request 1` is in the explorer.
+ * otherwise) with `server`'s WSDL imported, returning once a request is in the explorer.
  */
 export async function createProjectWithCalculator(
   page: Page,
@@ -179,9 +182,12 @@ export async function createProjectWithFixture(
   }
 }
 
-/** Opens the first `Request 1` in the explorer through its context menu (react-arborist owns double-click). */
+/** A SOAP request row in the explorer (its tree id is `req:<id>`). */
+export const REQUEST_ROW = '[data-tree-id^="req:"]';
+
+/** Opens the first SOAP request in the explorer (react-arborist owns double-click). */
 export async function openFirstRequest(page: Page): Promise<void> {
-  const row = page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first();
+  const row = page.locator(REQUEST_ROW).first();
   await expect(row).toBeVisible({ timeout: 20_000 });
   // A single click opens it; the context menu no longer carries an *Open* that says so twice.
   await row.click();
@@ -202,7 +208,7 @@ export async function expectReopenedWorkspace(page: Page, workspaceName = 'Works
 /**
  * Opens a request through quick-open (⌘P), narrowed by `query`.
  *
- * With two projects open, every project has a `Request 1` of its own and the explorer cannot
+ * With two projects open, every project has an `Add (SOAP 1.1)` of its own and the explorer cannot
  * say which row is whose — the labels are identical and the tree is virtualised. Quick-open
  * can: every row names the project and interface it belongs to (`quickOpenEntries`), so a
  * query naming one of those picks a request out of exactly one project. Landing on an

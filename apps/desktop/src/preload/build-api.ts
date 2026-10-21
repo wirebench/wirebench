@@ -59,11 +59,16 @@ export type WirebenchApi = ApiFromChannels<typeof channels> & {
    * default window keeps that layout on a CI runner whose small screen clamps the window, instead
    * of stacking the REST editor and collapsing the console the way a small window does. It also opens
    * the console in a fresh workspace, which a user's first run keeps collapsed until the first send.
+   *
+   * `sendTemplatesUnasked` mirrors `WIREBENCH_E2E_SEND_TEMPLATES`: e2e specs send freshly generated
+   * requests, template "?" values and all, so the question a send asks about them (#728) is skipped
+   * there, except in the spec that tests it.
    */
   env: {
     readonly e2e: boolean;
     readonly osTheme: 'dark' | 'light';
     readonly fixedLayout?: boolean;
+    readonly sendTemplatesUnasked?: boolean;
   };
   /**
    * The path on this machine of a file dropped from the OS (`webUtils.getPathForFile`), or `''` for one

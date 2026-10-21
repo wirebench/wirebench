@@ -44,6 +44,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **SOAP, after a daily-use review (#725–#732).** Imported requests are named after their operation
+  ("Add", or "Add (SOAP 1.2)" when a 1.1 and a 1.2 binding offer it) instead of "Request 1" (#726).
+  Importing a WSDL already in the project asks **Update Definition…** or **Import as a copy**, a copy
+  named "Calculator (2)" (#727). The request tabs fit: Details folds into Properties, SSL stays on the
+  response, and Headers, Attachments and Assertions carry counts that a **More · Assertions 1** button
+  repeats when they are hidden. Properties keeps what has no other home, with a line of help on each
+  row: the MTOM flags moved under Attachments and the WSS password type and time to live under Auth.
+  Auth says what an inheriting request sends and from where ("Inherits None from Calculator"), and the
+  WSS pickers gain **New…** and **Edit…**; WS-A inherit says whether WS-A is on and shows the values a
+  send would carry. The tree drops the **Operations** folder, lists a 1.1 and 1.2 binding's operation
+  once ("SOAP 1.1 · 1.2") with icons for operations, requests and endpoints, and a request's menu gains
+  **Send**, **Copy as cURL** and one **Recreate from definition** submenu. **soap** in the palette
+  leads with Import, New Request, Update Definition, Send and Validate, and a command whose name matches
+  ranks above one only its group matches. WS-Security configurations open in the right panel, where
+  every label and each password field's name fit, marked unsaved and asked about on close (#730, #731,
+  #732).
+
 - **A password left empty is asked for as a sign-in step, and used once.** Connecting to a host whose
   password was left to be asked shows **Sign in to box** with the password field and **Connect**, instead
   of a red missing-secret error; the password is used for that connection only, and **Remember on this
@@ -86,6 +103,14 @@ All notable changes to this project are documented here. The format follows
   under **Name** in the host and group forms, since it changes the fields below it (#674).
 
 ### Fixed
+
+- **SOAP, after a daily-use review (#725–#732).** A response's status and a send error have a line of
+  their own above the tabs, never pushed out of view (#725). A template **?** shows in the Form view as
+  a marked placeholder, Validate warns about each one, the first send of a request still holding them
+  asks, and the Runner counts them (#728). A new mock answers with schema-typed sample values its own
+  contract accepts, not **?** (#729). A failed WSDL fetch names the HTTP status, sign-in, certificate or
+  network cause and what to try. History's chip names a failed send's kind ("refused", "DNS"), and an
+  endpoint picked in the editor marks the tab unsaved and is sent before it is saved (#732).
 
 - **Duplicate from a host card's ⋯ menu opens the copy.** It did nothing: the menu's click also picked the
   card, which dropped the form Duplicate had just opened. The right-click menu was not affected (#719).

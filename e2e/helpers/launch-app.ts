@@ -137,6 +137,11 @@ export interface LaunchOptions {
    * have small screens that clamp the window, and the specs were written for the default layout.
    */
   readonly adaptiveLayout?: boolean;
+  /**
+   * Ask before sending a request that still holds template "?" values, as a user's app does (#728).
+   * Off by default: most specs send freshly generated requests as they are.
+   */
+  readonly templateSendAsk?: boolean;
 }
 
 /** The env vars {@link LaunchOptions} translate into, shared by both launchers. */
@@ -148,6 +153,7 @@ function e2eEnv(options: LaunchOptions): Record<string, string> {
       : {}),
     ...(options.trashDir !== undefined ? { WIREBENCH_E2E_TRASH_DIR: options.trashDir } : {}),
     ...(options.adaptiveLayout === true ? {} : { WIREBENCH_E2E_FIXED_LAYOUT: '1' }),
+    ...(options.templateSendAsk === true ? {} : { WIREBENCH_E2E_SEND_TEMPLATES: '1' }),
     ...options.extraEnv,
   };
 }

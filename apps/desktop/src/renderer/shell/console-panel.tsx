@@ -8,6 +8,7 @@ import { useProblemsStore } from '../state/problems.js';
 import { useProjectStore } from '../state/project.js';
 import type { ConsoleTab } from '../state/ui-state.js';
 import { useUiStore } from '../state/ui.js';
+import { useWsiStore } from '../state/wsi.js';
 
 const TABS: readonly { id: ConsoleTab; label: string }[] = [
   { id: 'http-log', label: 'HTTP Log' },
@@ -24,18 +25,20 @@ const EMPTY_COPY: Readonly<Record<ConsoleTab, string>> = {
 };
 
 /**
- * The bottom console: four tabs, or three when the workspace has no SOAP interface, since the
- * WS-I Report only ever reports on one. Only Errors is still an empty state.
+ * The bottom console: HTTP Log, Problems and Errors, plus WS-I Report once a WS-I check has run
+ * (#731 X17): before that it held nothing but an empty state. Only Errors is still an empty state.
  */
 export function ConsolePanel() {
   const hasSoapInterface = useProjectStore((state) => Object.keys(state.interfaces).length > 0);
+  const wsiRan = useWsiStore((state) => state.status !== 'idle');
+  const showWsi = hasSoapInterface && wsiRan;
   const chosenTab = useUiStore((state) => state.console.activeTab);
   // A WS-I tab left active by a workspace that had SOAP falls back to the log rather than vanish.
-  const activeTab = chosenTab === 'ws-i-report' && !hasSoapInterface ? 'http-log' : chosenTab;
+  const activeTab = chosenTab === 'ws-i-report' && !showWsi ? 'http-log' : chosenTab;
   const showConsoleTab = useUiStore((state) => state.showConsoleTab);
   const collapseConsole = useUiStore((state) => state.collapseConsole);
   const problemCount = useProblemsStore((state) => state.items.length);
-  const tabs = TABS.filter((tab) => tab.id !== 'ws-i-report' || hasSoapInterface).map((tab) =>
+  const tabs = TABS.filter((tab) => tab.id !== 'ws-i-report' || showWsi).map((tab) =>
     tab.id === 'problems' && problemCount > 0 ? { ...tab, badge: String(problemCount) } : tab,
   );
 

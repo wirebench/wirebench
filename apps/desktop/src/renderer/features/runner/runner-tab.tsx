@@ -177,7 +177,9 @@ export function RunnerTab({ targetId }: RunnerTabProps) {
         <NumberSetting
           label="Iterations"
           testId="runner-iterations"
-          value={settings.iterations}
+          // Without a data file a run is one iteration: the field says so with a value, not a faint
+          // placeholder (#731 X19). With one, empty means one per row, which the placeholder says.
+          value={settings.iterations ?? (data !== undefined && data.error === undefined ? undefined : 1)}
           min={1}
           max={10_000}
           placeholder={data !== undefined && data.error === undefined ? `One per row (${data.rows})` : '1'}
@@ -188,7 +190,8 @@ export function RunnerTab({ targetId }: RunnerTabProps) {
           }}
         />
         <NumberSetting
-          label="Delay between requests (ms)"
+          label="Delay (ms)"
+          hint="How long to wait between one request and the next."
           testId="runner-delay"
           value={settings.delayMs}
           min={0}

@@ -316,6 +316,17 @@ paths:
     expect(existsSync(join(dir, 'apis', 'Calculator', 'api.yaml'))).toBe(true);
   });
 
+  it('names a second import of the same service "Calculator (2)" (#727)', async () => {
+    const dir = join(tempDir('project'), 'Twice Project');
+    const service = newService();
+    await service.create({ dir, name: 'Twice Project' });
+    await service.kind('soap').addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+    const { project } = await service.kind('soap').addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+    await service.close();
+
+    expect(project.interfaces.map((iface) => iface.name)).toEqual(['Calculator', 'Calculator (2)']);
+  });
+
   it('creates, imports, mutates, saves and reopens a project from disk', async () => {
     const dir = join(tempDir('project'), 'Calculator Project');
     const service = newService();
@@ -341,9 +352,12 @@ paths:
     expect(iface.endpoints.length).toBeGreaterThan(0);
     expect(iface.operations.map((op) => op.name)).toContain('Add');
 
-    // One `Request 1` per operation, each with a generated envelope.
+    // One request per operation, named after it (with the SOAP version where two bindings offer it), each
+    // with a generated envelope, and no two alike (#726).
     expect(afterImport.requests.length).toBe(iface.operations.length);
-    expect(new Set(afterImport.requests.map((request) => request.name))).toEqual(new Set(['Request 1']));
+    const names = afterImport.requests.map((request) => request.name);
+    expect(new Set(names).size).toBe(names.length);
+    for (const request of afterImport.requests) expect(request.name.startsWith(request.operationName)).toBe(true);
     const add = afterImport.requests.find((request) => request.operationName === 'Add')!;
     expect(add.envelopeXml).toContain('intA');
     // The interface's default endpoint is pre-selected, so the request is sendable at once.
@@ -356,8 +370,11 @@ paths:
     const addDir = join(interfaceRoot, 'operations', 'Add');
     // Two bindings expose `Add`, so the second operation folder is slug-disambiguated; the
     // first still holds exactly the two files one request occupies.
-    expect((await readdir(addDir)).sort()).toEqual(['Request 1.request.yaml', 'Request 1.xml']);
-    expect(await readFile(join(addDir, 'Request 1.xml'), 'utf8')).toContain('intA');
+    const addFiles = (await readdir(addDir)).sort();
+    expect(addFiles).toHaveLength(2);
+    expect(addFiles[0]).toMatch(/^Add.*\.request\.yaml$/);
+    const addXml = addFiles.find((file) => file.endsWith('.xml'))!;
+    expect(await readFile(join(addDir, addXml), 'utf8')).toContain('intA');
 
     // --- mutate + save ------------------------------------------------------
     const renamed = await service.mutate({ kind: 'rename-project', name: 'Renamed Project' });
@@ -407,7 +424,7 @@ paths:
         .filter((r) => r.operationName === 'Add' && r.bindingName === addBinding)
         .map((r) => r.name)
         .sort(),
-    ).toEqual(['Request 1', 'Request 2']);
+    ).toEqual(['Add (SOAP 1.1)', 'Add (SOAP 1.1) 2']);
 
     await reopened.close();
     rmSync(dir, { recursive: true, force: true });

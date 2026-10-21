@@ -69,7 +69,7 @@ test.describe('auth', () => {
     await panel.getByRole('button', { name: 'Set…' }).click();
     await panel.getByPlaceholder('Enter password').fill(PASSWORD);
     await panel.getByRole('button', { name: 'Save' }).click();
-    await expect(panel.getByLabel('Password')).toHaveText('••••••••');
+    await expect(panel.getByLabel('Request password', { exact: true })).toHaveText('••••••••');
 
     // --- challenge flow: no preemptive header, so the first attempt is answered with a 401 ---
     const preemptive = panel.getByLabel('Request preemptive');
@@ -122,7 +122,7 @@ test.describe('auth', () => {
     await panel.getByRole('button', { name: 'Replace…' }).click();
     await panel.getByPlaceholder('Enter password').fill('wrong');
     await panel.getByRole('button', { name: 'Save' }).click();
-    await expect(panel.getByLabel('Password')).toHaveText('••••••••');
+    await expect(panel.getByLabel('Request password', { exact: true })).toHaveText('••••••••');
 
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('response-status')).toContainText('401', { timeout: 20_000 });
@@ -131,7 +131,7 @@ test.describe('auth', () => {
     await panel.getByRole('button', { name: 'Replace…' }).click();
     await panel.getByPlaceholder('Enter password').fill(PASSWORD);
     await panel.getByRole('button', { name: 'Save' }).click();
-    await expect(panel.getByLabel('Password')).toHaveText('••••••••');
+    await expect(panel.getByLabel('Request password', { exact: true })).toHaveText('••••••••');
     await preemptive.check();
     await expect(preemptive).toBeChecked();
 
@@ -171,7 +171,7 @@ test.describe('auth', () => {
     await panel.getByRole('button', { name: 'Set…' }).click();
     await panel.getByPlaceholder('Enter password').fill(PASSWORD);
     await panel.getByRole('button', { name: 'Save' }).click();
-    await expect(panel.getByLabel('Password')).toHaveText('••••••••');
+    await expect(panel.getByLabel('Request password', { exact: true })).toHaveText('••••••••');
 
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 20_000 });
@@ -180,7 +180,7 @@ test.describe('auth', () => {
     await panel.getByRole('button', { name: 'Replace…' }).click();
     await panel.getByPlaceholder('Enter password').fill('wrong');
     await panel.getByRole('button', { name: 'Save' }).click();
-    await expect(panel.getByLabel('Password')).toHaveText('••••••••');
+    await expect(panel.getByLabel('Request password', { exact: true })).toHaveText('••••••••');
 
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('response-status')).toContainText('401', { timeout: 20_000 });

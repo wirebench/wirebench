@@ -5,6 +5,7 @@
  * picture, not the first thing that went wrong. An errored assertion outranks a failed one for the
  * request's outcome, because "we could not tell" is a different problem from "it is wrong".
  */
+import { findTemplatePlaceholders } from '../xml/template-placeholders.js';
 import { sendAwaitingCallbacks } from '../assert/callback.js';
 import type { CallbackClock, CallbackWaiting } from '../assert/callback.js';
 import type { CaptureSource } from '../assert/capture-source.js';
@@ -108,6 +109,15 @@ export interface RequestResult {
    * request the run goes on at (`null`: the run ended).
    */
   readonly control?: { readonly skipped?: true; readonly next?: string | null };
+  /** How many values of a SOAP request went out still holding the template "?" (#728); absent for none. */
+  readonly templatePlaceholders?: number;
+}
+
+/** The template "?" values a SOAP request was sent with (#728), as a result field, or nothing. */
+function templatePlaceholdersOf(item: SelectedRequest, rawRequest: Uint8Array): { templatePlaceholders?: number } {
+  if (identity(item).protocol !== 'soap') return {};
+  const count = findTemplatePlaceholders(new TextDecoder().decode(rawRequest)).length;
+  return count > 0 ? { templatePlaceholders: count } : {};
 }
 
 /** Bounds on run control (#335): fixed, with no option to raise or remove them. */
@@ -582,6 +592,7 @@ async function runOne(
         ...(compared !== undefined ? { baseline: compared.report } : {}),
         ...scriptReport(script, sent.scriptsOff === true),
         ...(script?.control !== undefined ? { control: script.control } : {}),
+        ...templatePlaceholdersOf(item, raw.rawRequest),
         ...(outcome !== 'passed'
           ? { exchange: { request: capped(raw.rawRequest), response: capped(raw.rawResponse) } }
           : {}),

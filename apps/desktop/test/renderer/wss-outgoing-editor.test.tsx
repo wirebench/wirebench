@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { OutgoingConfigEditor } from '../../src/renderer/features/wss/outgoing-config-editor.js';
+import { WssConfigPanel } from '../../src/renderer/features/wss/wss-config-panel.js';
+import { useWssConfigPanelStore } from '../../src/renderer/features/wss/wss-config-panel-store.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import type { ProjectWire } from '../../src/shared/wire-types.js';
@@ -35,6 +37,7 @@ function setUp(configs: readonly WssOutgoingWire[] = [config]) {
   render(
     <TooltipPrimitive.Provider>
       <OutgoingConfigEditor />
+      <WssConfigPanel />
     </TooltipPrimitive.Provider>,
   );
   return actions;
@@ -46,6 +49,7 @@ function expand(): void {
 
 afterEach(() => {
   cleanup();
+  useWssConfigPanelStore.setState({ editing: undefined, original: undefined, asking: false });
   useProjectStore.getState().reset();
 });
 

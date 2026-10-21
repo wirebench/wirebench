@@ -85,13 +85,19 @@ function replaceOperation(iface: Interface, next: OperationDef): Interface {
   };
 }
 
-/** `Request N` for the lowest free N within one operation. */
+/**
+ * A new request's name within one operation: the operation's ("Add"), then "Add 2", "Add 3"… for the first
+ * free number. "Request N" told requests apart nowhere outside the tree (#726).
+ */
 function nextRequestName(operation: OperationDef): string {
-  const highest = operation.requests.reduce((max, request) => {
-    const match = /^Request (\d+)$/.exec(request.name);
-    return match?.[1] === undefined ? max : Math.max(max, Number.parseInt(match[1], 10));
-  }, 0);
-  return `Request ${String(highest + 1)}`;
+  const taken = new Set(operation.requests.map((request) => request.name));
+  // Follow the first generated name, so a second "Add (SOAP 1.2)" request is "Add (SOAP 1.2) 2" (#726).
+  const first = operation.requests[0]?.name;
+  const base = first?.startsWith(operation.name) === true ? first : operation.name;
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base} ${String(n)}`)) n += 1;
+  return `${base} ${String(n)}`;
 }
 
 /** Finds the operation, or appends a freshly-slugged empty one when the interface lacks it. */

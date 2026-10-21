@@ -144,7 +144,7 @@ describe('ExplorerView', () => {
       workspaces: {
         w1: {
           tabs: [],
-          explorerOpen: { 'iface:iface-1': true, 'operations:iface-1': true, 'op:iface-1:{tns}B:Add': true },
+          explorerOpen: { 'iface:iface-1': true, 'op:iface-1:{tns}B:Add': true },
         },
       },
     });
@@ -157,7 +157,9 @@ describe('ExplorerView', () => {
 
     expect(screen.getByText('Calculator')).toBeTruthy();
     expect(screen.getByText('Endpoints')).toBeTruthy();
-    expect(screen.getByText('Operations')).toBeTruthy();
+    // Operations sit straight under the interface, with no Operations folder (#732 X15).
+    expect(screen.queryByText('Operations')).toBeNull();
+    expect(screen.getByText('Add')).toBeTruthy();
 
     expect(screen.getByTestId('explorer-project-row').getAttribute('data-project-id')).toBe('p1');
 
@@ -255,7 +257,7 @@ describe('ExplorerView', () => {
       workspaces: {
         w1: {
           tabs: [],
-          explorerOpen: { 'iface:iface-1': true, 'operations:iface-1': true, 'op:iface-1:{tns}B:Add': true },
+          explorerOpen: { 'iface:iface-1': true, 'op:iface-1:{tns}B:Add': true },
         },
       },
     });
@@ -308,16 +310,16 @@ describe('ExplorerView', () => {
     const interfaceRow = screen.getByText('Calculator');
 
     // An imported interface starts folded shut under its (open) project.
-    expect(screen.queryByText('Operations')).toBeNull();
+    expect(screen.queryByText('Endpoints')).toBeNull();
 
     // An interface row has children, so a single click unfolds it rather than opening a viewer —
     // browsing the tree must not spawn a tab per row it passes through.
     fireEvent.click(interfaceRow);
     expect(useEditorsStore.getState().tabs).toHaveLength(0);
-    expect(screen.queryByText('Operations')).toBeTruthy();
+    expect(screen.queryByText('Endpoints')).toBeTruthy();
 
     fireEvent.click(interfaceRow);
-    expect(screen.queryByText('Operations')).toBeNull();
+    expect(screen.queryByText('Endpoints')).toBeNull();
 
     // The viewer still answers to a double-click, as it always has.
     fireEvent.doubleClick(interfaceRow);
@@ -347,7 +349,7 @@ describe('ExplorerView', () => {
         <ExplorerView />
       </TooltipPrimitive.Provider>,
     );
-    expect(screen.getByText('Operations')).toBeTruthy();
+    expect(screen.getByText('Endpoints')).toBeTruthy();
   });
 
   describe('Link Project Folder…', () => {

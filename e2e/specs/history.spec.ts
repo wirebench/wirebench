@@ -49,7 +49,7 @@ test.describe('history', () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
 
-    // --- first launch: create + import, then send Request 1 twice ------------
+    // --- first launch: create + import, then send Add (SOAP 1.1) twice ------------
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     await createProjectWithCalculator(launched.window, server, { expectProjectName: 'History Project' });
     await openFirstRequest(launched.window);
@@ -93,7 +93,9 @@ test.describe('history', () => {
     const diffTab = launched.window.locator('[role="tab"]', { hasText: 'Compare' });
     await expect(diffTab).toBeVisible({ timeout: 10_000 });
     // The diff view's header names both compared entries.
-    await expect(launched.window.getByText('Request 1', { exact: false }).first()).toBeVisible({ timeout: 10_000 });
+    await expect(launched.window.getByText('Add (SOAP 1.1)', { exact: false }).first()).toBeVisible({
+      timeout: 10_000,
+    });
   });
 
   test('re-sends a REST entry and compares it with the original', async () => {

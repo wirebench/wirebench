@@ -51,7 +51,8 @@ function WsiTab({ interfaceId }: { readonly interfaceId: string }) {
     <div data-testid="interface-wsi" className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline p-2">
         <p data-testid="interface-wsi-subject" className="truncate text-sm text-fg-muted">
-          {owned ? `Report for ${subject.label}` : `No report for ${name ?? 'this interface'} yet`}
+          {/* The empty state says it once, below (#731 X17). */}
+          {owned ? `Report for ${subject.label}` : 'WS-I Basic Profile'}
         </p>
         <Button
           variant="primary"
@@ -68,7 +69,7 @@ function WsiTab({ interfaceId }: { readonly interfaceId: string }) {
           <WsiReport />
         ) : (
           <p className="p-3 text-sm text-fg-subtle" data-testid="interface-wsi-empty">
-            No report for this interface yet — Run a WS-I Basic Profile check to see one here.
+            No report for {name ?? 'this interface'} yet. Run a WS-I check to see one here.
           </p>
         )}
       </div>

@@ -21,7 +21,7 @@ function renderTabs(requestId = 'req-1', pane: InspectorPane = 'request'): void 
       pane={pane}
       label="Request tabs"
       items={ITEMS}
-      trailing={<span>status line</span>}
+      above={<span>status line</span>}
       render={(inspector) =>
         inspector === 'attachments' ? <InspectorPlaceholder name="Attachments" task={32} /> : <p>{inspector} body</p>
       }
@@ -72,10 +72,12 @@ describe('PaneTabs', () => {
     expect(panelText()).toBe('headers body');
   });
 
-  it('shows the trailing content beside the strip whichever tab is selected', async () => {
+  it('shows the content above the strip whichever tab is selected (#725)', async () => {
     renderTabs();
     await userEvent.click(screen.getByRole('tab', { name: 'SSL' }));
-    expect(screen.getByText('status line')).toBeDefined();
+    const line = screen.getByText('status line');
+    const strip = screen.getByRole('tablist', { name: 'Request tabs' });
+    expect(line.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows a placeholder naming the task an inspector is still waiting on', async () => {

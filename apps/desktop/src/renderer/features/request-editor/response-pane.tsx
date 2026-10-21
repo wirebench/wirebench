@@ -278,7 +278,14 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
         pane="response"
         label="Response tabs"
         items={responseTabs(response?.attachments.length ?? 0, wssTabLabel(exchange), exchange)}
-        trailing={<ResponseStatus exchange={exchange} error={state?.error} />}
+        // A line of its own above the tabs, so the status and a send error are always in view (#725).
+        above={
+          exchange !== undefined || state?.error !== undefined ? (
+            <div className="flex shrink-0 items-center border-b border-hairline py-1">
+              <ResponseStatus exchange={exchange} error={state?.error} />
+            </div>
+          ) : undefined
+        }
         render={(inspector) =>
           inspector === 'body' ? (
             bodyTab

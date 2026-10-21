@@ -195,6 +195,11 @@ export type { WirebenchErrorOptions } from './errors.js';
 export { parseXml, parseXmlDetailed, getPosition, classifyParseEvent } from './xml/parse.js';
 export type { ParseXmlOptions, XmlProblem, ParseEventClassification } from './xml/parse.js';
 export { serializeXml } from './xml/serialize.js';
+export {
+  findTemplatePlaceholders,
+  TEMPLATE_PLACEHOLDER,
+  type TemplatePlaceholder,
+} from './xml/template-placeholders.js';
 export { NS, PREFIX } from './xml/namespaces.js';
 export type { NamespaceUri } from './xml/namespaces.js';
 export { LineIndex } from './xml/positions.js';
@@ -517,6 +522,8 @@ export type {
 export { importWsdl } from './soap/import.js';
 export { sendSoapRequest } from './soap/send.js';
 export { generateEmptySoapRequest, generateSoapRequest } from './soap/generate.js';
+export { generatedRequestName } from './soap/request-name.js';
+export type { NamedOperation } from './soap/request-name.js';
 export { summarizeSoapOperations } from './soap/operations.js';
 export type {
   SoapAttachmentOptions,

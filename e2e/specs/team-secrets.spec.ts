@@ -26,7 +26,7 @@ function vaultBlobs(dir: string): string {
 }
 
 async function authPanel(page: Page) {
-  await expandExplorer(page, 'Request 1');
+  await expandExplorer(page, 'Add (SOAP 1.1)');
   await openFirstRequest(page);
   await selectTab(page, 'Request tabs', 'Auth');
   return page.getByTestId('inspector-panel-request');
@@ -84,7 +84,7 @@ test.describe('shared workspaces: team secrets', () => {
     await panelA.getByRole('button', { name: 'Set…' }).click();
     await panelA.getByPlaceholder('Enter password').fill(WRONG);
     await panelA.getByRole('button', { name: 'Save' }).click();
-    await expect(panelA.getByLabel('Password')).toHaveText('••••••••');
+    await expect(panelA.getByLabel('Request password', { exact: true })).toHaveText('••••••••');
     await saveAll(pageA);
     // The vault entry, not a commit subject: the request edits saved alongside it make the commit's message the generated one.
     await expect.poll(() => vaultBlobs(remote.dir), { timeout: SYNC_TIMEOUT }).not.toBe('');

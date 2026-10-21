@@ -93,10 +93,10 @@ test.describe('secrets', () => {
     await page.getByRole('button', { name: 'Set…' }).click();
     await page.getByPlaceholder('Enter password').fill(PASSWORD);
     await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByLabel('Password')).toHaveText('••••••••');
+    await expect(page.getByLabel('Password', { exact: true })).toHaveText('••••••••');
 
     await page.getByTestId('import-submit').click();
-    await expandExplorer(page, 'Request 1');
+    await expandExplorer(page, 'Add (SOAP 1.1)');
 
     // The test server ignores auth but records every request's headers, including the WSDL
     // fetch itself — so the recorded Authorization header proves the credentials were sent.
@@ -162,9 +162,9 @@ test.describe('secrets', () => {
     // `Authorization` header on the exchange the HTTP log shows.
     await page.getByLabel('Use these credentials for requests too').check();
     await page.getByTestId('import-submit').click();
-    await expandExplorer(page, 'Request 1');
+    await expandExplorer(page, 'Add (SOAP 1.1)');
 
-    const requestRow = page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first();
+    const requestRow = page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Add (SOAP 1.1)' }).first();
     await expect(requestRow).toBeVisible({ timeout: 20_000 });
     await requestRow.click();
     await expect(page.locator('[data-testid="request-editor"]')).toBeVisible({ timeout: 10_000 });

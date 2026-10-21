@@ -520,6 +520,9 @@ export const soapMocking: ProtocolMocking = {
           { definition, schemaSet },
           { bindingName: binding.name, operationName: operation.name },
           'output',
+          // Typed sample values, not "?": a client wired to the mock must be able to parse its first
+          // answer, and the mock's own contract check refuses `?` for an int (#729).
+          { sampleValues: true },
         );
         return {
           key: operation.name,

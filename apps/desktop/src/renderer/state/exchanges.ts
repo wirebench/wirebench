@@ -1,5 +1,6 @@
 import type { Draft } from 'immer';
 import { produce } from 'immer';
+import { findTemplatePlaceholders } from '@wirebench/engine/xml';
 import { create } from 'zustand';
 import type { IpcError } from '../../shared/ipc.js';
 import { showToast } from '../components/toast.js';
@@ -22,6 +23,7 @@ import type { Problem } from './problems.js';
 import { useProblemsStore } from './problems.js';
 import { isProblemOutcome, sendProblemText } from '../features/request-editor/send-error.js';
 import { selectRequestEndpointUrl } from './project-endpoint.js';
+import { sendTemplatesUnasked } from './ui.js';
 import { useWorkspaceStore } from './workspace.js';
 import { useProjectStore } from './project.js';
 import { useDraftsStore } from './drafts.js';
@@ -422,6 +424,12 @@ export interface ExchangesSnapshot {
    */
   readonly preserveLog: boolean;
 }
+
+/**
+ * Requests whose template "?" values the user chose to send as they are (#728): asked once per
+ * request in a session, not on every send.
+ */
+const placeholderSendAccepted = new Set<string>();
 
 /** The exchanges store: {@link ExchangesSnapshot} plus the actions that drive a send. */
 export interface ExchangesStore extends ExchangesSnapshot {
@@ -1283,6 +1291,25 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       useProblemsStore.getState().clearSource('expansion', requestId);
       useProblemsStore.getState().clearSource('send', requestId);
 
+      // A value still holding the generator's `?` goes out literally and comes back as a schema
+      // fault, so the first send asks; Send anyway stops asking for this request (#728).
+      if (force !== true && !placeholderSendAccepted.has(requestId) && !sendTemplatesUnasked()) {
+        const placeholders = findTemplatePlaceholders(draftRequest.envelopeXml).length;
+        if (placeholders > 0) {
+          showToast(
+            `${String(placeholders)} ${placeholders === 1 ? 'value still holds' : 'values still hold'} the template "?". Fill ${placeholders === 1 ? 'it' : 'them'} in, or send as is.`,
+            {
+              label: 'Send anyway',
+              onClick: () => {
+                placeholderSendAccepted.add(requestId);
+                void get().send(requestId, true);
+              },
+            },
+          );
+          return;
+        }
+      }
+
       const autoValidate = usePreferencesStore.getState().preferences.editor.autoValidateOnSend;
       if (autoValidate && force !== true) {
         const problems = await runValidation(requestId, 'request', draftRequest.envelopeXml);
@@ -1309,9 +1336,13 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       // environment) and dry-runs the expansion; the mirror's own answer is the fallback for
       // an unsaved/unknown request, where preflight cannot help.
       const preflight = await ipc().request.preflight({ requestId });
-      const endpoint = preflight.ok
-        ? preflight.value.endpoint
-        : selectRequestEndpointUrl(projectState, useWorkspaceStore.getState().workspace, requestId);
+      // Main answers from its own model, which an endpoint picked in the editor and not yet saved
+      // has not reached: then the editor's own choice is the one to send to (#732 X11).
+      const stagedEndpoint = useDraftsStore.getState().peekRequest(requestId)?.endpointUrl !== undefined;
+      const endpoint =
+        preflight.ok && !stagedEndpoint
+          ? preflight.value.endpoint
+          : selectRequestEndpointUrl(projectState, useWorkspaceStore.getState().workspace, requestId);
       if (preflight.ok && preflight.value.unresolved.length > 0) {
         useProblemsStore.getState().add(expansionProblems(requestId, preflight.value.unresolved));
       }

@@ -1,5 +1,6 @@
-import { Folder, Network, Plug } from 'lucide-react';
-import { recreateRequest, type RecreateMode } from '../../features/request-editor/request-actions.js';
+import { FileCode2, Folder, Link2, Network, Plug, Workflow } from 'lucide-react';
+import { copyAsCurl, recreateRequest, type RecreateMode } from '../../features/request-editor/request-actions.js';
+import { useExchangesStore } from '../../state/exchanges.js';
 import { explorerActions } from '../../features/explorer/explorer-actions.js';
 import { exportItems, groups, type ExplorerMenuGroup } from '../../features/explorer/menu-items.js';
 import type { ExplorerNode } from '../../features/explorer/tree-nodes.js';
@@ -68,14 +69,36 @@ function requestMenu(node: ExplorerNode): readonly ExplorerMenuGroup[] {
   };
   // No *Open*: a single click on the row already opens it, so the entry only restated what
   // the row's own default does.
+  const requestId = node.requestId;
   return groups(
+    // Send and Copy as cURL from the tree, as the editor's own menu offers them (#731 X22).
+    requestId === undefined
+      ? []
+      : [
+          {
+            key: 'send',
+            label: 'Send',
+            run: () => {
+              explorerActions.openRequest(requestId);
+              void useExchangesStore.getState().send(requestId);
+            },
+          },
+          { key: 'copy-curl', label: 'Copy as cURL', run: () => void copyAsCurl(requestId, 'posix') },
+        ],
     [
       {
-        key: 'recreate',
-        label: 'Recreate request (keep values)',
-        run: () => explorerActions.recreateRequest(node.requestId),
+        key: 'recreate-from-definition',
+        label: 'Recreate from definition',
+        run: () => undefined,
+        children: [
+          {
+            key: 'recreate',
+            label: 'Keep values',
+            run: () => explorerActions.recreateRequest(node.requestId),
+          },
+          { key: 'recreate-discard', label: 'Discard values', run: recreate('discard-values') },
+        ],
       },
-      { key: 'recreate-discard', label: 'Recreate (discard values)', run: recreate('discard-values') },
       { key: 'recreate-empty', label: 'Create empty', run: recreate('empty') },
     ],
     // Clone sits with Rename and Delete: all three are about this request as a thing you
@@ -101,7 +124,9 @@ export const soapExplorer: KindExplorer = {
       menu: interfaceMenu,
     },
     endpoints: { icon: Folder },
+    // Operation, request and endpoint rows have icons of their own, as a REST request has its method (#731 X20).
     endpoint: {
+      icon: Link2,
       menu: (node) =>
         groups([
           { key: 'copy-address', label: 'Copy address', run: () => explorerActions.copyEndpointAddress(node.address) },
@@ -122,6 +147,7 @@ export const soapExplorer: KindExplorer = {
             ]),
     },
     operation: {
+      icon: Workflow,
       menu: (node) =>
         groups(
           [
@@ -141,6 +167,7 @@ export const soapExplorer: KindExplorer = {
         ),
     },
     request: {
+      icon: FileCode2,
       click: 'open',
       open: (node) => explorerActions.openRequest(node.requestId),
       rename: (node, name) => {

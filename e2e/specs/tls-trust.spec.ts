@@ -89,7 +89,7 @@ test.describe('endpoint TLS trust', () => {
     await expect(page.getByTestId('settings-page')).toHaveCount(0);
 
     // --- the private-CA server is now reachable, with no per-endpoint opt-out ----------------
-    await page.getByRole('tab', { name: 'Request 1' }).click();
+    await page.getByRole('tab', { name: 'Add (SOAP 1.1)' }).click();
     await expect(page.getByTestId('request-editor')).toBeVisible({ timeout: 20_000 });
     await page.getByTestId('request-endpoint').fill(`${secure.url}/soap`);
     await page.getByTestId('request-send').click();

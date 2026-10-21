@@ -71,7 +71,7 @@ async function editFirstRequestWithoutSaving(page: Page): Promise<void> {
 
 /** After a relaunch (or a switch back): the first request shows the marker again, still unsaved. */
 async function expectEditRestoredUnsaved(page: Page, userDataDir: string): Promise<void> {
-  await expandExplorer(page, 'Request 1');
+  await expandExplorer(page, 'Add (SOAP 1.1)');
   await openFirstRequest(page);
   await expect.poll(() => envelopeText(page), { timeout: 20_000 }).toContain(`<tem:intA>${MARKER}</tem:intA>`);
   await expect(page.getByTestId('editor-tab-dirty')).toHaveCount(1, { timeout: 10_000 });

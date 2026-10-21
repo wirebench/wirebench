@@ -4,7 +4,14 @@ import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { setMonacoText } from '../helpers/editor.js';
-import { createProjectWithCalculator, expandExplorer, saveAll, workspaceProjectDir } from '../helpers/project.js';
+import {
+  REQUEST_ROW,
+  createProjectWithCalculator,
+  expandExplorer,
+  openImportDialog,
+  saveAll,
+  workspaceProjectDir,
+} from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 /**
@@ -36,9 +43,9 @@ async function envelopeText(page: Page): Promise<string> {
   return lines.join('').replace(/\s| /g, '');
 }
 
-/** Opens the nth `Request 1` row (operations are alphabetical: Add, Echo, Legacy). */
+/** Opens the nth request row (operations are alphabetical: Add, Echo, Legacy). */
 async function openRequest(page: Page, index: number): Promise<void> {
-  const row = page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).nth(index);
+  const row = page.locator(REQUEST_ROW).nth(index);
   await expect(row).toBeVisible({ timeout: 20_000 });
   await row.click();
   await expect(page.getByTestId('request-editor')).toBeVisible({ timeout: 20_000 });
@@ -109,7 +116,7 @@ test.describe('Update Definition, Export and Documentation', () => {
       timeout: 20_000,
     });
 
-    // Edit Echo's request (the second `Request 1`: Add, Echo, Legacy in alphabetical order).
+    // Edit Echo's request (the second request: Add, Echo, Legacy in alphabetical order).
     await openRequest(page, 1);
     await setMonacoText(page, 'Request envelope XML', EDITED_ECHO);
     await expect.poll(async () => await envelopeText(page), { timeout: 15_000 }).toContain('WB-EDIT');
@@ -135,11 +142,9 @@ test.describe('Update Definition, Export and Documentation', () => {
     // A new operation arrives folded shut, like everything an import adds.
     await expandExplorer(page, 'Subtract');
 
-    // The new operation brought a request with it, so there are now four `Request 1` rows.
-    await expect(page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' })).toHaveCount(4, {
-      timeout: 20_000,
-    });
-    await expect(page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Subtract' })).toHaveCount(1);
+    // The new operation brought a request with it, named after it (#726), so there are now four.
+    await expect(page.locator(REQUEST_ROW)).toHaveCount(4, { timeout: 20_000 });
+    await expect(page.locator(REQUEST_ROW, { hasText: 'Subtract' })).toHaveCount(1);
     // The removed operation's request is still there, badged rather than deleted.
     await expect(page.getByTestId('explorer-orphaned-badge')).toHaveCount(1);
 
@@ -153,6 +158,34 @@ test.describe('Update Definition, Export and Documentation', () => {
 
     await expect.poll(() => filesEndingWith(projectDir, '.xml.bak').length, { timeout: 20_000 }).toBe(1);
     expect(readFileSync(filesEndingWith(projectDir, '.xml.bak')[0] ?? '', 'utf8')).toContain('WB-EDIT');
+  });
+
+  test('importing the same WSDL again offers Update Definition… or a named copy (#727)', async () => {
+    launched = await launchApp();
+    const page = launched.window;
+    await createProjectWithCalculator(page, v1!);
+
+    // The same URL into the same project: asked, not silently duplicated.
+    await openImportDialog(page, 'wsdl');
+    await page.getByTestId('import-url-input').fill(v1!.wsdlUrl);
+    await page.getByTestId('import-submit').click();
+    await expect(page.getByTestId('import-existing')).toContainText('VersionedService', { timeout: 20_000 });
+
+    // Update Definition… hands over to that flow on the existing interface.
+    await page.getByTestId('import-existing-update').click();
+    await expect(page.getByTestId('update-definition-dialog')).toBeVisible({ timeout: 20_000 });
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('update-definition-dialog')).toBeHidden();
+
+    // Import as a copy adds a second interface, told apart by its name.
+    await openImportDialog(page, 'wsdl');
+    await page.getByTestId('import-url-input').fill(v1!.wsdlUrl);
+    await page.getByTestId('import-submit').click();
+    await page.getByTestId('import-existing-copy').click();
+    await expect(page.getByTestId('import-submit')).toBeHidden({ timeout: 20_000 });
+    await expect(page.locator('[data-tree-id]', { hasText: 'VersionedService (2)' })).toBeVisible({
+      timeout: 20_000,
+    });
   });
 
   test('generates HTML documentation and exports the definition folder', async () => {

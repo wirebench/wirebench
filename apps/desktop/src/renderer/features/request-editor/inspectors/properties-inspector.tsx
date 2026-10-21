@@ -2,34 +2,17 @@ import {
   BooleanSetting,
   EnumSetting,
   NumberSetting,
-  ReadOnlySetting,
   SettingsGroup,
   TextSetting,
 } from '../../../components/settings-grid.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useProjectStore } from '../../../state/project.js';
-import { selectRequestEndpointUrl } from '../../../state/project-endpoint.js';
-import { useWorkspaceStore } from '../../../state/workspace.js';
+import { RequestFacts } from './details-inspector.js';
 import type { RequestPropertiesPatchWire } from '../../../../shared/kinds/soap/wire.js';
 
 export interface PropertiesInspectorProps {
   readonly requestId: string;
 }
-
-/**
- * One line per attachment flag. They are the tooltip on each row's
- * label, because the flags interact (Force MTOM only means anything with MTOM enabled, Disable
- * multiparts overrides both) and the label alone does not say which way.
- */
-const ATTACHMENT_HINTS = {
-  enableMtom: 'Send attachments as MTOM/XOP parts instead of SwA parts.',
-  forceMtom: 'Use an XOP part even for a single inline value; only applies when MTOM is enabled.',
-  inlineResponseAttachments: 'Inline response attachments into the envelope instead of listing them as parts.',
-  expandMtomAttachments: 'Replace incoming xop:Include references with the referenced bytes when showing the response.',
-  disableMultiparts: 'Never send a multipart body: attachments are dropped and the envelope goes on its own.',
-  encodeAttachments: 'Base64-encode outgoing attachment content instead of sending it as raw bytes.',
-  enableInlineFiles: 'Expand `cid:` and file references found in the envelope from the attached files.',
-} as const;
 
 /** Shown on the SSL Keystore field, which is stored but has no picker yet. */
 const SSL_KEYSTORE_HINT = 'The client certificate this request presents. Manage keystores in the WS-Security view.';
@@ -58,10 +41,6 @@ const ENCODING_OPTIONS = [
  */
 export function PropertiesInspector({ requestId }: PropertiesInspectorProps) {
   const request = useProjectStore((state) => state.requests[requestId]);
-  // The active environment lives on the workspace, so an environment switch has to rerender
-  // the endpoint as well as a project change.
-  const workspace = useWorkspaceStore((state) => state.workspace);
-  const endpoint = useProjectStore((state) => selectRequestEndpointUrl(state, workspace, requestId));
   const editRequest = useProjectStore((state) => state.editRequest);
   const updateRequestProperties = useProjectStore((state) => state.updateRequestProperties);
   const keystores = useProjectStore((state) => state.keystores);
@@ -87,26 +66,22 @@ export function PropertiesInspector({ requestId }: PropertiesInspectorProps) {
 
   return (
     <div data-testid="request-properties" className="overflow-auto p-3">
-      <SettingsGroup title="General">
-        <TextSetting
-          label="Request name"
-          value={request.name}
-          onCommit={(name) => {
-            if (name.trim().length > 0) {
-              editRequest(requestId, { name: name.trim() });
-            }
-          }}
-        />
+      {/* What the Details tab showed, read-only (#731 X21). The name, the endpoint and WS-A are edited in
+          the breadcrumb, the URL bar and the WS-A tab; the attachment flags are under Attachments and
+          the WS-Security defaults under Auth (#732 X08). */}
+      <RequestFacts requestId={requestId} title="This request" />
+      <SettingsGroup title="Sending">
         <TextSetting
           label="Description"
+          hint="A note kept with the request; nothing is sent."
           value={request.description ?? ''}
           onCommit={(description) => {
             editRequest(requestId, { description: description.length > 0 ? description : null });
           }}
         />
-        <TextSetting label="Endpoint URL" value={endpoint ?? ''} readOnly monospace onCommit={() => undefined} />
         <EnumSetting
           label="Encoding"
+          hint="The character set the envelope is encoded in on the wire."
           value={properties.encoding}
           // A value a hand-edited project file set that is not one of the known labels still
           // shows (rather than silently snapping to the first option); picking a different
@@ -120,6 +95,7 @@ export function PropertiesInspector({ requestId }: PropertiesInspectorProps) {
         />
         <NumberSetting
           label="Timeout (ms)"
+          hint="How long to wait for an answer; empty uses the project default."
           value={properties.timeoutMs}
           min={0}
           placeholder="project default"
@@ -128,22 +104,26 @@ export function PropertiesInspector({ requestId }: PropertiesInspectorProps) {
         />
         <TextSetting
           label="Bind address"
+          hint="The local network address to send from; empty lets the system choose."
           value={properties.bindAddress ?? ''}
           placeholder="any interface"
           onCommit={(bindAddress) => patch({ bindAddress: bindAddress.length > 0 ? bindAddress : null })}
         />
         <BooleanSetting
           label="Follow redirects"
+          hint="Follow a 3xx answer to where it points instead of showing it."
           value={properties.followRedirects}
           onChange={(followRedirects) => patch({ followRedirects })}
         />
         <BooleanSetting
           label="Skip SOAP action"
+          hint="Leave the SOAPAction header (or action parameter) out of the request."
           value={properties.skipSoapAction}
           onChange={(skipSoapAction) => patch({ skipSoapAction })}
         />
         <NumberSetting
           label="Max size (bytes)"
+          hint="Stop reading a response larger than this; empty reads it all."
           value={properties.maxSizeBytes}
           min={0}
           placeholder="unlimited"
@@ -153,6 +133,7 @@ export function PropertiesInspector({ requestId }: PropertiesInspectorProps) {
           <div className="min-w-0 flex-1">
             <TextSetting
               label="Dump file"
+              hint="Write every response of this request to this file as well."
               value={properties.dumpFile ?? ''}
               monospace
               placeholder="no dump"
@@ -171,21 +152,25 @@ export function PropertiesInspector({ requestId }: PropertiesInspectorProps) {
         </div>
         <BooleanSetting
           label="Pretty print"
+          hint="Indent the envelope before sending it."
           value={properties.prettyPrint}
           onChange={(prettyPrint) => patch({ prettyPrint })}
         />
         <BooleanSetting
           label="Strip whitespaces"
+          hint="Remove whitespace between elements before sending."
           value={properties.stripWhitespaces}
           onChange={(stripWhitespaces) => patch({ stripWhitespaces })}
         />
         <BooleanSetting
           label="Remove empty content"
+          hint="Drop elements left empty, or holding only the ? template value, before sending."
           value={properties.removeEmptyContent}
           onChange={(removeEmptyContent) => patch({ removeEmptyContent })}
         />
         <BooleanSetting
           label="Entitize properties"
+          hint="Escape XML characters in values that ${…} expansions put into the envelope."
           value={properties.entitizeProperties}
           onChange={(entitizeProperties) => patch({ entitizeProperties })}
         />
@@ -205,76 +190,6 @@ export function PropertiesInspector({ requestId }: PropertiesInspectorProps) {
               : []),
           ]}
           onChange={(sslKeystoreRef) => patch({ sslKeystoreRef: sslKeystoreRef.length > 0 ? sslKeystoreRef : null })}
-        />
-        <ReadOnlySetting
-          label="WS-Addressing"
-          value={request.wsa === undefined ? 'Inherited' : request.wsa.enabled ? 'Enabled' : 'Disabled'}
-          hint="Edit it in the request pane's WS-A inspector."
-        />
-      </SettingsGroup>
-
-      <SettingsGroup title="Attachments">
-        <BooleanSetting
-          label="Enable MTOM"
-          hint={ATTACHMENT_HINTS.enableMtom}
-          value={properties.enableMtom}
-          onChange={(v) => patch({ enableMtom: v })}
-        />
-        <BooleanSetting
-          label="Force MTOM"
-          hint={ATTACHMENT_HINTS.forceMtom}
-          value={properties.forceMtom}
-          onChange={(v) => patch({ forceMtom: v })}
-        />
-        <BooleanSetting
-          label="Inline response attachments"
-          hint={ATTACHMENT_HINTS.inlineResponseAttachments}
-          value={properties.inlineResponseAttachments}
-          onChange={(v) => patch({ inlineResponseAttachments: v })}
-        />
-        <BooleanSetting
-          label="Expand MTOM attachments"
-          hint={ATTACHMENT_HINTS.expandMtomAttachments}
-          value={properties.expandMtomAttachments}
-          onChange={(v) => patch({ expandMtomAttachments: v })}
-        />
-        <BooleanSetting
-          label="Disable multiparts"
-          hint={ATTACHMENT_HINTS.disableMultiparts}
-          value={properties.disableMultiparts}
-          onChange={(v) => patch({ disableMultiparts: v })}
-        />
-        <BooleanSetting
-          label="Encode attachments"
-          hint={ATTACHMENT_HINTS.encodeAttachments}
-          value={properties.encodeAttachments}
-          onChange={(v) => patch({ encodeAttachments: v })}
-        />
-        <BooleanSetting
-          label="Enable inline files"
-          hint={ATTACHMENT_HINTS.enableInlineFiles}
-          value={properties.enableInlineFiles}
-          onChange={(v) => patch({ enableInlineFiles: v })}
-        />
-      </SettingsGroup>
-
-      <SettingsGroup title="WS-Security">
-        <EnumSetting
-          label="WSS password type"
-          value={properties.wssPasswordType ?? ''}
-          options={[
-            { value: '', label: 'None' },
-            { value: 'text', label: 'PasswordText' },
-            { value: 'digest', label: 'PasswordDigest' },
-          ]}
-          onChange={(value) => patch({ wssPasswordType: value === 'text' || value === 'digest' ? value : null })}
-        />
-        <NumberSetting
-          label="WSS time to live (s)"
-          value={properties.wssTimeToLive}
-          min={0}
-          placeholder="none"
-          onCommit={(wssTimeToLive) => patch({ wssTimeToLive: wssTimeToLive ?? null })}
         />
       </SettingsGroup>
     </div>

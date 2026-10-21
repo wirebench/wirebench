@@ -357,7 +357,7 @@ describe('HistoryView with REST entries', () => {
     render(<HistoryView />);
 
     expect(screen.getByTestId('method-badge').getAttribute('data-method')).toBe('POST');
-    expect(screen.getByTestId('history-soap-version').textContent).toBe('SOAP 1.1');
+    expect(screen.getByTestId('history-soap-version').textContent).toBe('1.1');
   });
 
   it('reads an entry with no kind as SOAP, as entries recorded before REST existed are', () => {

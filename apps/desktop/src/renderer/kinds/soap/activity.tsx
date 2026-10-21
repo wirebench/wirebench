@@ -11,9 +11,14 @@ export const soapRequests: KindRequests = {
 };
 
 function SoapHistoryBadge({ entry, place }: { readonly entry: HistoryEntryWire; readonly place: 'row' | 'header' }) {
+  // A compact version badge: "SOAP 1.1" in a fixed 48 px column cut the row short (#732 X12).
   return place === 'row' ? (
-    <span data-testid="history-soap-version" className="w-12 shrink-0 text-fg-faint">
-      {entry.soapVersion === 'none' ? 'SOAP' : `SOAP ${entry.soapVersion}`}
+    <span
+      data-testid="history-soap-version"
+      title={entry.soapVersion === 'none' ? 'SOAP' : `SOAP ${entry.soapVersion}`}
+      className="shrink-0 rounded-sm bg-surface-hover px-1 font-mono text-fg-subtle"
+    >
+      {entry.soapVersion === 'none' ? 'SOAP' : entry.soapVersion}
     </span>
   ) : (
     <span className="text-xs text-fg-faint">SOAP</span>

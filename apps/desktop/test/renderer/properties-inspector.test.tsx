@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { PropertiesInspector } from '../../src/renderer/features/request-editor/inspectors/properties-inspector.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
+import {
+  AttachmentFlagsGroup,
+  WssDefaultsGroup,
+} from '../../src/renderer/features/request-editor/inspectors/request-flag-groups.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
@@ -52,27 +56,27 @@ describe('PropertiesInspector', () => {
       'Strip whitespaces',
       'Remove empty content',
       'Entitize properties',
-      'Enable MTOM',
-      'Force MTOM',
-      'Inline response attachments',
-      'Expand MTOM attachments',
-      'Disable multiparts',
-      'Encode attachments',
-      'Enable inline files',
-      'WSS password type',
-      'WSS time to live (s)',
       'SSL Keystore',
-      'WS-Addressing',
     ]) {
       expect(screen.getByLabelText(label)).toBeTruthy();
     }
   });
 
-  it('shows the resolved endpoint read-only', () => {
+  it('leaves out what other tabs edit, and shows the Details facts read-only (#732 X08, #731 X21)', () => {
     render(<PropertiesInspector requestId="req-1" />);
-    const field = screen.getByLabelText<HTMLInputElement>('Endpoint URL');
-    expect(field.value).toBe('http://example.test/soap');
-    expect(field.readOnly).toBe(true);
+    for (const label of ['Request name', 'Endpoint URL', 'WS-Addressing', 'Enable MTOM', 'WSS password type']) {
+      expect(screen.queryByLabelText(label)).toBeNull();
+    }
+    expect(screen.getByText('This request')).toBeTruthy();
+    expect(screen.getByText('http://example.test/soap')).toBeTruthy();
+    expect(screen.getByText('Add')).toBeTruthy();
+  });
+
+  it('gives every remaining row a line of help', () => {
+    render(<PropertiesInspector requestId="req-1" />);
+    for (const label of ['Encoding', 'Follow redirects', 'Entitize properties', 'Remove empty content']) {
+      expect(screen.getByText(label).getAttribute('title') ?? '').not.toBe('');
+    }
   });
 
   it('commits a numeric edit on Enter, not on every keystroke', () => {
@@ -160,19 +164,6 @@ describe('PropertiesInspector', () => {
     expect(patch).toHaveBeenCalledWith('req-1', { sslKeystoreRef: null });
   });
 
-  it('reports WS-Addressing read-only, from request.wsa.enabled', () => {
-    seed({ wsa: { enabled: true, version: '2005/08' } });
-    render(<PropertiesInspector requestId="req-1" />);
-
-    const field = screen.getByLabelText('WS-Addressing');
-    expect(field.textContent).toBe('Enabled');
-  });
-
-  it('reports WS-Addressing as Inherited when the request has no wsa config', () => {
-    render(<PropertiesInspector requestId="req-1" />);
-    expect(screen.getByLabelText('WS-Addressing').textContent).toBe('Inherited');
-  });
-
   it('clears a numeric property back to "inherit" when the field is emptied', () => {
     const patch = vi.fn();
     seed({ properties: { ...REQUEST_PROPERTIES, timeoutMs: 500 } });
@@ -206,10 +197,10 @@ describe('PropertiesInspector', () => {
     expect(patch).toHaveBeenCalledWith('req-1', { prettyPrint: true });
   });
 
-  it('stores the attachment flags and explains each one on its label', () => {
+  it('stores the attachment flags, under Attachments, and explains each one on its label', () => {
     const patch = vi.fn();
     useProjectStore.setState({ updateRequestProperties: patch });
-    render(<PropertiesInspector requestId="req-1" />);
+    render(<AttachmentFlagsGroup requestId="req-1" />);
 
     fireEvent.click(screen.getByLabelText('Enable MTOM'));
     expect(patch).toHaveBeenCalledWith('req-1', { enableMtom: true });
@@ -221,27 +212,12 @@ describe('PropertiesInspector', () => {
     const patch = vi.fn();
     seed({ properties: { ...REQUEST_PROPERTIES, wssPasswordType: 'digest' } });
     useProjectStore.setState({ updateRequestProperties: patch });
-    render(<PropertiesInspector requestId="req-1" />);
+    render(<WssDefaultsGroup requestId="req-1" />);
 
     const select = screen.getByLabelText<HTMLSelectElement>('WSS password type');
     expect(select.value).toBe('digest');
     fireEvent.change(select, { target: { value: '' } });
     expect(patch).toHaveBeenCalledWith('req-1', { wssPasswordType: null });
-  });
-
-  it('renames the request through update-request, ignoring an empty name', () => {
-    const editRequest = vi.fn();
-    useProjectStore.setState({ editRequest });
-    render(<PropertiesInspector requestId="req-1" />);
-
-    const name = screen.getByLabelText('Request name');
-    fireEvent.change(name, { target: { value: '  ' } });
-    fireEvent.blur(name);
-    expect(editRequest).not.toHaveBeenCalled();
-
-    fireEvent.change(name, { target: { value: 'Renamed' } });
-    fireEvent.blur(name);
-    expect(editRequest).toHaveBeenCalledWith('req-1', { name: 'Renamed' });
   });
 
   it('writes the description as null when it is cleared', () => {

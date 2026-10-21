@@ -62,7 +62,9 @@ import { ipc } from '../../state/ipc-client.js';
 import { lintGroupId, lintSummary, useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore, type ImportDialogFormat } from '../../state/ui.js';
+import { updateDefinition } from '../interface-editor/interface-actions.js';
 import { getExplorerTree } from './explorer-api.js';
+import { findExistingInterface } from './existing-interface.js';
 import { IMPORT_FORMATS, importFormatRow, type ImportFormatRow } from './import-formats.js';
 import { CopyReport, ImportReportView, ReportItems } from './import-report.js';
 
@@ -285,6 +287,10 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   const [progress, setProgress] = useState<string | undefined>(undefined);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<UnifiedImportResult | undefined>(undefined);
+  /** The interface the WSDL being imported is already in the project as (#727). */
+  const [existing, setExisting] = useState<{ readonly interfaceId: string; readonly name: string } | undefined>(
+    undefined,
+  );
 
   const tokenRef = useRef<string | undefined>(undefined);
   const cancelledTokensRef = useRef<Set<string>>(new Set());
@@ -513,6 +519,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setImportError(undefined);
     setProgress(undefined);
     setResult(undefined);
+    setExisting(undefined);
     setUrlError(undefined);
     setDropped(undefined);
     setFilePath('');
@@ -977,7 +984,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     return effectiveFormat;
   }
 
-  async function onImport(): Promise<void> {
+  async function onImport(asCopy = false): Promise<void> {
     if (importing) {
       return;
     }
@@ -1113,12 +1120,23 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       }
     }
 
+    const chosen = openProjects.some((project) => project.id === target) ? target : NEW_PROJECT;
+    const into: ProjectAddInterfaceTarget = chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen };
+
+    // The same WSDL again is usually an attempt to refresh it: ask rather than add a twin (#727).
+    if (targetFormat === 'wsdl' && !asCopy && chosen !== NEW_PROJECT) {
+      const { interfaces, projectOf } = useProjectStore.getState();
+      const match = findExistingInterface(interfaces, projectOf, chosen, source);
+      if (match !== undefined) {
+        setExisting({ interfaceId: match.id, name: match.name });
+        return;
+      }
+    }
+    setExisting(undefined);
+
     const token = crypto.randomUUID();
     tokenRef.current = token;
     setImporting(true);
-
-    const chosen = openProjects.some((project) => project.id === target) ? target : NEW_PROJECT;
-    const into: ProjectAddInterfaceTarget = chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen };
 
     try {
       // Only a URL is fetched from anywhere, so only a URL carries credentials; a secret typed but not
@@ -1345,9 +1363,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
             <Dialog.Title className="text-md font-medium text-fg-default">
               {result !== undefined
                 ? 'Import Complete'
-                : format === 'auto'
-                  ? 'Import API or Service'
-                  : importFormatRow(format).dialogTitle}
+                : existing !== undefined
+                  ? 'Already in This Project'
+                  : format === 'auto'
+                    ? 'Import API or Service'
+                    : importFormatRow(format).dialogTitle}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button type="button" aria-label="Close" className="text-fg-subtle hover:text-fg-default">
@@ -1356,7 +1376,37 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
             </Dialog.Close>
           </div>
 
-          {result === undefined ? (
+          {result === undefined && existing !== undefined ? (
+            <div data-testid="import-existing" className="mt-3 flex flex-col gap-3">
+              <p className="text-sm text-fg-default">
+                “{existing.name}” is already in this project, imported from the same definition.
+              </p>
+              <p className="text-xs text-fg-subtle">
+                Update Definition… refreshes it in place and keeps your requests. A copy adds a second interface beside
+                it.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button data-testid="import-existing-back" onClick={() => setExisting(undefined)}>
+                  Back
+                </Button>
+                <Button data-testid="import-existing-copy" onClick={() => void onImport(true)}>
+                  Import as a copy
+                </Button>
+                <Button
+                  data-testid="import-existing-update"
+                  variant="primary"
+                  onClick={() => {
+                    const interfaceId = existing.interfaceId;
+                    onOpenChange(false);
+                    reset();
+                    updateDefinition(interfaceId);
+                  }}
+                >
+                  Update Definition…
+                </Button>
+              </div>
+            </div>
+          ) : result === undefined ? (
             <>
               {/* Format selection header */}
               <div className="mt-3 flex items-center justify-between gap-2">
