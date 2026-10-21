@@ -40,6 +40,7 @@ const NAMED_KEYS: Readonly<Record<string, string>> = {
   pagedown: 'pagedown',
   plus: '+',
   minus: '-',
+  delete: 'delete',
 };
 
 /**
@@ -89,6 +90,7 @@ const MAC_KEY_GLYPHS: Readonly<Record<string, string>> = {
   arrowdown: '↓',
   pageup: '⇞',
   pagedown: '⇟',
+  delete: '⌦',
   '\\': '\\',
 };
 
@@ -104,6 +106,7 @@ const OTHER_KEY_NAMES: Readonly<Record<string, string>> = {
   arrowdown: 'Down',
   pageup: 'PageUp',
   pagedown: 'PageDown',
+  delete: 'Delete',
   '\\': '\\',
 };
 
@@ -112,7 +115,10 @@ export function formatKeybinding(binding: string | Keybinding, platform: Platfor
   const parsed = typeof binding === 'string' ? parseKeybinding(binding) : binding;
   const isMac = platform === 'mac';
   const table = isMac ? MAC_KEY_GLYPHS : OTHER_KEY_NAMES;
-  const key = table[parsed.key] ?? (parsed.key.length === 1 ? parsed.key.toUpperCase() : parsed.key);
+  // A single character and a function key (`f2`) read upper-cased; anything else named reads as written.
+  const key =
+    table[parsed.key] ??
+    (parsed.key.length === 1 || /^f([1-9]|1[0-2])$/.test(parsed.key) ? parsed.key.toUpperCase() : parsed.key);
   const parts: string[] = [];
 
   if (parsed.mod) {

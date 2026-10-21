@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The Explorer selects like a desktop tree (#681).** Shift-click selects a range and Ctrl/⌘-click adds
+  or removes a row. A selection of several rows gets a menu of its own — **Move to…**, **Duplicate** and
+  **Delete 3 requests…** — and Delete, ⌘⌫ (Ctrl+Backspace) and Backspace delete it through one confirm. F2
+  starts an inline rename. The palette gains **Explorer: Collapse All**, **Expand All**, **Reveal Active
+  Tab**, **Focus Explorer**, **Rename**, **Duplicate**, **Delete** and **New Folder**, acting on the
+  selection or the active tab, and the new keys are listed under Settings → Keyboard shortcuts.
 - **Closing live sessions asks first.** Closing tabs that hold a connected SSH, Telnet or serial session,
   or a running local terminal, asks once for the whole batch (**Close 2 sessions on web-1?**); **Cancel**
   keeps every tab. **Don't ask again** turns it off, and **Settings → Terminal → Confirm closing live

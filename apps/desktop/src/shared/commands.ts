@@ -100,6 +100,14 @@ export const COMMAND_IDS = [
   'explorer.recreateRequest',
   'explorer.copyEndpointAddress',
   'explorer.checkWsiWsdl',
+  'explorer.collapseAll',
+  'explorer.expandAll',
+  'explorer.revealActiveTab',
+  'explorer.focus',
+  'explorer.rename',
+  'explorer.duplicate',
+  'explorer.delete',
+  'explorer.newFolder',
   'rest.send',
   'rest.copyAsCurl',
   'rest.importCurl',
@@ -271,6 +279,9 @@ export const COMMAND_WHEN_SCOPES = {
   'workspace.shared': 'the open workspace is shared',
   'account.signedIn': 'a server account is signed in',
   'area.code': 'the area in front has requests (not SSH or Environments)',
+  explorer: 'the Explorer tree is shown',
+  'explorer.target': 'a row is selected in the Explorer, or the active tab is one of its rows',
+  'explorer.activeTab': 'the active tab is a row of the Explorer',
 } as const;
 
 /** The key half of {@link COMMAND_WHEN_SCOPES}. */
@@ -307,6 +318,8 @@ export interface CommandDefinition<Ctx = unknown> {
   readonly extraShortcuts?: readonly string[];
   /** Kept out of the palette; menus and keybindings still run it (see `CommandCatalogEntry`). */
   readonly paletteHidden?: boolean;
+  /** Where its shortcut fires from (see `CommandCatalogEntry.keyScope`). */
+  readonly keyScope?: string;
   readonly when?: (context: Ctx) => boolean;
   /**
    * The declared identity of `when`, so two gated commands can be compared without calling
