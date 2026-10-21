@@ -49,5 +49,23 @@ test.describe('a kind switched off with WIREBENCH_FEATURES', () => {
 
     await row.click({ button: 'right' });
     await expect(page.getByRole('menuitem')).toHaveText(['gRPC is switched off']);
+    await page.keyboard.press('Escape');
+
+    // Settings → Features (phase 4 spec §4.3) shows the row off with no reason line (it is the
+    // preference itself), and turning it on only says it applies after a restart.
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Comma' : 'Control+Comma');
+    const editor = page.getByTestId('preferences-editor');
+    await expect(editor).toBeVisible({ timeout: 20_000 });
+    await editor.getByRole('button', { name: 'Features', exact: true }).click();
+    const grpc = page.getByTestId('feature-switch-grpc');
+    await expect(grpc).toHaveAttribute('aria-checked', 'false');
+    await expect(page.getByTestId('feature-note-grpc')).toHaveCount(0);
+    await expect(page.getByTestId('feature-stage-mcp')).toHaveText('Experimental');
+    await grpc.click();
+    await expect(grpc).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByTestId('feature-note-grpc')).toHaveText('Applies after restart');
+    // Still off in this run: the placeholder row stays.
+    await page.getByTestId('settings-back').click();
+    await expect(page.getByTestId('explorer-placeholder-row').filter({ hasText: 'Greeter' })).toBeVisible();
   });
 });
