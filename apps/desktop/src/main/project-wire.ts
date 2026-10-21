@@ -940,7 +940,15 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
   const webhookTree =
     webhooks !== undefined ? toWebhookTreeWires(webhooks, webhookCollectionId(project.id)) : undefined;
   const webhooksWire = toWebhookCollectionWire(project);
-  const unsupported = [...toUnsupportedWires(project), ...(context.switchedOff ?? [])];
+  const fromEngine = toUnsupportedWires(project);
+  // The engine itself stands in for a project-level folder whose feature is off (`webhooks`); the
+  // desktop's own placeholder for the same folder would be a second row.
+  const unsupported = [
+    ...fromEngine,
+    ...(context.switchedOff ?? []).filter(
+      (folder) => !fromEngine.some((placeholder) => placeholder.dir === folder.dir && placeholder.slug === folder.slug),
+    ),
+  ];
   return {
     id: project.id,
     name: project.name,
