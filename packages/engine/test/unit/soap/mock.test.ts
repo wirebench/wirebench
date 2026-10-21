@@ -11,6 +11,9 @@ import { nodeFs } from '../../../src/project/fs.js';
 import { soapMocking } from '../../../src/soap/mock.js';
 import { mockProject, wsdlFixture } from '../mock/fixture.js';
 import { soapInterfacesOf } from '../../../src/soap/model.js';
+import { fileURLToPath } from 'node:url';
+import { importWsdl } from '../../../src/soap/import.js';
+import { bindingContextFor, validateMessage } from '../../../src/validate/index.js';
 
 const CALCULATOR = wsdlFixture('public/calculator/service.wsdl');
 const SOAP11 = 'http://schemas.xmlsoap.org/soap/envelope/';
@@ -170,6 +173,49 @@ describe('SOAP mock services', () => {
       binding: '{http://tempuri.org/}CalculatorSoap12',
     });
     expect(v12.operations[0]?.response.bodyText).toContain(SOAP12);
+  });
+
+  it('a fresh mock answers with typed sample values its schema accepts, not "?" (#729)', async () => {
+    const { dir, project } = await mockProject({ wsdl: CALCULATOR });
+    const generated = await soapMocking.generate({ project, root: dir, fs: nodeFs, containerId: 'I1' });
+    const addResponse = generated.operations[0]?.response.bodyText ?? '';
+    expect(addResponse).not.toMatch(/>\?</);
+    expect(addResponse).toMatch(/AddResult>-?\d+</);
+
+    const mock = createMock(
+      'Fresh',
+      { containerId: 'I1', binding: '{http://tempuri.org/}CalculatorSoap' },
+      {
+        id: 'M9',
+        path: '/fresh',
+        validation: 'reject',
+        operations: [
+          createMockOperation('Add', 'Add', {
+            id: 'O9',
+            defaultResponseId: 'R9',
+            responses: [createMockResponse('Default', { id: 'R9', order: 0, body: 'xml', bodyText: addResponse })],
+          }),
+        ],
+      },
+    );
+    const started = await start(mock);
+    const answer = await post(started, envelope('1.1', add('1')), SOAP11_HEADERS);
+    expect(answer.status).toBe(200);
+
+    const calculator = await importWsdl({ kind: 'file', path: fileURLToPath(CALCULATOR) });
+    const binding = bindingContextFor(
+      calculator.definition,
+      { bindingName: { namespaceUri: 'http://tempuri.org/', localName: 'CalculatorSoap' }, operationName: 'Add' },
+      'response',
+    );
+    const { problems } = await validateMessage({
+      xml: answer.text,
+      direction: 'response',
+      schemaSet: calculator.schemaSet,
+      bundle: calculator.bundle,
+      binding: binding!,
+    });
+    expect(problems).toEqual([]);
   });
 
   it('refuse a binding the WSDL does not have, and an interface whose definition is not cached', async () => {
