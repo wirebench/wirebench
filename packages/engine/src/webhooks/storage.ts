@@ -5,6 +5,7 @@
  */
 import type { ProtocolProjectFiles } from '../protocol/module.js';
 import { readFileIfExists } from '../project/fs.js';
+import { unsupportedOf } from '../project/model.js';
 import { authConfig, loadFolderContents, optional, readYaml } from '../project/load-helpers.js';
 import { listApiTreeFiles, toAbsolute } from '../project/managed-files.js';
 import { REQUESTS_DIR, WEBHOOKS_DIR, WEBHOOKS_FILE } from '../project/paths.js';
@@ -23,8 +24,23 @@ const TREE_DIR = `${WEBHOOKS_DIR}/${REQUESTS_DIR}`;
 
 /** REST's project-level files: the webhook collection. */
 export const webhookProjectFiles: ProtocolProjectFiles = {
-  /** Reads `webhooks/`; the project is returned as it is when there is no `webhooks.yaml`. */
-  async load({ fs, root, problems }, project) {
+  /**
+   * Reads `webhooks/`; the project is returned as it is when there is no `webhooks.yaml`. With the
+   * `webhooks` feature off (feature switches spec §2.1) the folder is left unread, and when it holds a
+   * collection the project gets a placeholder for it instead, so a host can say the feature is off.
+   * `managed` names nothing then, so a save never writes over or deletes the folder.
+   */
+  async load({ fs, root, problems, features }, project) {
+    if (features?.isEnabled('webhooks') === false) {
+      if ((await readFileIfExists(fs, toAbsolute(root, COLLECTION_FILE))) === undefined) return project;
+      return {
+        ...project,
+        unsupported: [
+          ...unsupportedOf(project),
+          { dir: WEBHOOKS_DIR, slug: WEBHOOKS_DIR, kind: 'rest', reason: 'feature-disabled', name: 'Webhooks' },
+        ],
+      };
+    }
     const document = await readYaml(fs, root, COLLECTION_FILE);
     if (document === undefined) return project;
     const parsed = parseFile(webhooksFileSchema, document, COLLECTION_FILE);
@@ -80,8 +96,12 @@ export const webhookProjectFiles: ProtocolProjectFiles = {
     return files;
   },
 
-  /** The request tree is managed only beside its `webhooks.yaml`, as an API's is beside its `api.yaml`. */
-  async managed(fs, root) {
+  /**
+   * The request tree is managed only beside its `webhooks.yaml`, as an API's is beside its `api.yaml`;
+   * nothing with the `webhooks` feature off, when `load` read none of it.
+   */
+  async managed(fs, root, features) {
+    if (features?.isEnabled('webhooks') === false) return [];
     if ((await readFileIfExists(fs, toAbsolute(root, COLLECTION_FILE))) === undefined) return [];
     return [COLLECTION_FILE, ...(await listApiTreeFiles(fs, root, TREE_DIR))];
   },

@@ -383,6 +383,20 @@ function scriptsRefusal(item: SelectedBase, registry: ProtocolRegistry): Wireben
 }
 
 /**
+ * Why a selected webhook item cannot be sent in this registry (feature switches spec §2.1): the
+ * `webhooks` feature is off. A webhook item is a REST item against the synthetic `webhooks` API that
+ * REST's run facet builds for the collection. Undefined for every other item, and when the feature
+ * is on. Checked before the item's scripts and its send, the way `scriptsRefusal` is.
+ */
+function webhookRefusal(item: SelectedBase, registry: ProtocolRegistry): WirebenchError | undefined {
+  if (item.kind !== 'rest' || (item as { readonly api?: { readonly id?: string } }).api?.id !== 'webhooks') {
+    return undefined;
+  }
+  if (registry.features.isEnabled('webhooks')) return undefined;
+  return featureDisabled(registry.features, 'webhooks');
+}
+
+/**
  * A sender for one run: whatever a protocol loads for a container (a definition, a schema, an
  * OpenAPI document) is loaded once, and one OAuth2 token source serves every request behind the same
  * configuration. `runRequests` sends through it, and so does a sequence run, so a step is sent
@@ -419,6 +433,9 @@ export function createRunSender(context: RunContext): RunRequestSender {
     };
     const itemScope = scopeWith(scope, itemContext);
     const run = runOf(registry, item);
+
+    const webhookRefused = webhookRefusal(item, registry);
+    if (webhookRefused !== undefined) throw webhookRefused;
 
     const scripts = itemScripts(item, registry);
     if (!runsScripts(scripts)) {

@@ -266,7 +266,7 @@ export async function saveProject(project: Project, root: string, options?: Save
     for (const container of storage.containers(project)) {
       existing.push(...(await storage.managed(fs, root, container.slug)));
     }
-    if (facet !== undefined) existing.push(...(await facet.managed(fs, root)));
+    if (facet !== undefined) existing.push(...(await facet.managed(fs, root, registry.features)));
   }
   await refuseOverwritingForeignFiles(fs, root, desired, existing);
 

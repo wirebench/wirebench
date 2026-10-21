@@ -3,6 +3,7 @@
  * same registry its sender sends through — not the built-in one.
  */
 import {
+  BUILTIN_FEATURES,
   BUILTIN_PROTOCOLS,
   createGrpcApi,
   createGrpcRequest,
@@ -64,9 +65,8 @@ function hostRegistry(): ProtocolRegistry {
       },
     };
   });
-  return createProtocolRegistry(modules, {
-    features: [{ id: 'scripts', title: 'Scripts', default: true, stage: 'stable', requires: [] }],
-  });
+  // Every built-in feature: a registry that does not know `sequences` has it off, and refuses the run.
+  return createProtocolRegistry(modules, { features: BUILTIN_FEATURES });
 }
 
 describe('runSequences', () => {

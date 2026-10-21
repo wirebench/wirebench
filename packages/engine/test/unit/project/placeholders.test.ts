@@ -399,6 +399,129 @@ describe('the webhook collection with REST switched off', () => {
   });
 });
 
+describe('the webhook collection with the webhooks feature switched off', () => {
+  const webhooksOff = createBuiltinRegistry({ webhooks: false });
+  const PLACEHOLDER = { dir: 'webhooks', slug: 'webhooks', kind: 'rest', reason: 'feature-disabled', name: 'Webhooks' };
+  let dir: string;
+
+  const withHooks = (): Project => ({
+    ...baseProject(),
+    protocols: {
+      rest: createWebhookCollection({
+        target: 'https://hooks.test',
+        requests: [
+          createRestRequest('order.created', {
+            id: 'H1',
+            slug: 'order-created',
+            method: 'POST',
+            url: '/orders',
+            body: { kind: 'raw', language: 'json', text: '{ "event": "order.created" }' },
+          }),
+        ],
+      }),
+    },
+  });
+
+  beforeEach(async () => {
+    dir = await tempProjectDir();
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('is not loaded, stands as a placeholder, and the REST APIs load whole', async () => {
+    await saveProject(withHooks(), dir);
+
+    const { project, problems } = await loadProject(dir, { registry: webhooksOff });
+
+    expect(problems).toEqual([]);
+    expect(webhooksOf(project)).toBeUndefined();
+    expect(restApisOf(project).map((api) => api.slug)).toEqual(['Shop']);
+    expect(unsupportedOf(project)).toEqual([PLACEHOLDER]);
+  });
+
+  it('reads nothing under webhooks/ but checks for its collection file', async () => {
+    await saveProject(withHooks(), dir);
+    const touched: string[] = [];
+    const folder = join(dir, 'webhooks');
+    const fs: FsLike = {
+      ...nodeFs,
+      readFile: (path) => {
+        touched.push(path);
+        return nodeFs.readFile(path);
+      },
+      readdir: (path) => {
+        touched.push(path);
+        return nodeFs.readdir(path);
+      },
+    };
+
+    await loadProject(dir, { fs, registry: webhooksOff });
+
+    expect(touched.filter((path) => path.startsWith(folder))).toEqual([join(folder, 'webhooks.yaml')]);
+  });
+
+  it('has no placeholder when the project has no collection', async () => {
+    await saveProject(baseProject(), dir);
+
+    const { project } = await loadProject(dir, { registry: webhooksOff });
+
+    expect(unsupportedOf(project)).toEqual([]);
+  });
+
+  it('is left byte for byte by a save, and loads whole again with the switch back', async () => {
+    await saveProject(withHooks(), dir);
+    const whole = await loadProject(dir);
+    const before = await snapshot(dir);
+    const folderBefore = await snapshot(join(dir, 'webhooks'));
+
+    const { project } = await loadProject(dir, { registry: webhooksOff });
+
+    const unchanged = await saveProject(project, dir, { registry: webhooksOff });
+    expect(unchanged.written).toEqual([]);
+    expect(unchanged.removed).toEqual([]);
+    expect(await snapshot(dir)).toEqual(before);
+
+    const renamed = await saveProject(
+      {
+        ...project,
+        containers: {
+          ...project.containers,
+          rest: restApisOf(project).map((api) => ({ ...api, name: 'Shop, renamed' })),
+        },
+      },
+      dir,
+      { registry: webhooksOff },
+    );
+    expect(renamed.written).toEqual(['apis/Shop/api.yaml']);
+    expect(renamed.removed).toEqual([]);
+    expect(await snapshot(join(dir, 'webhooks'))).toEqual(folderBefore);
+
+    const back = await loadProject(dir);
+    expect(back.problems).toEqual([]);
+    expect(unsupportedOf(back.project)).toEqual([]);
+    expect(webhooksOf(back.project)).toEqual(webhooksOf(whole.project));
+  });
+
+  it('with REST off the module is not asked at all: the host stands in for the folder, as before', async () => {
+    await saveProject(withHooks(), dir);
+    const before = await snapshot(join(dir, 'webhooks'));
+    const restOff = createBuiltinRegistry({ rest: false });
+
+    const { project } = await loadProject(dir, { registry: restOff });
+
+    expect(restOff.features.whyDisabled('webhooks')).toEqual({ by: 'requires', feature: 'rest' });
+    expect(webhooksOf(project)).toBeUndefined();
+    expect(unsupportedOf(project)).toEqual([
+      { dir: 'apis', slug: 'Shop', kind: 'rest', reason: 'feature-disabled', name: 'Shop', order: 0 },
+    ]);
+    const result = await saveProject(project, dir, { registry: restOff });
+    expect(result.removed).toEqual([]);
+    expect(await snapshot(join(dir, 'webhooks'))).toEqual(before);
+  });
+});
+
 /**
  * Spec R6, one protocol at a time: with it switched off, a load and a save of an unchanged project
  * touch nothing at all, its containers' directories stay byte for byte, and switching it back on
