@@ -54,6 +54,7 @@ export const AUDIT_ACTIONS = [
   'workspace.desktop_recording_changed',
   'desktop.request_sent',
   'desktop.run_finished',
+  'desktop.ssh_session',
   'desktop.events_dropped',
   'scim.token_created',
   'scim.token_revoked',
@@ -236,9 +237,31 @@ export const desktopRunFinishedDetailsSchema = z.strictObject({
 });
 export type DesktopRunFinishedDetails = z.infer<typeof desktopRunFinishedDetailsSchema>;
 
+/**
+ * One terminal session that ended (#355, SSH area design A1): where it went and how it ended, never how it
+ * signed in. `address` is the target's (a jump chain's last hop, a Telnet device, a serial device's path);
+ * `user` is the login name, `''` for a serial line; `exitCode` is `null` when the shell reported none
+ * (lost connection, closed by the window). `reason` is the channel's: `exit`, `lost` or `closed`.
+ */
+export const desktopSshSessionDetailsSchema = z.strictObject({
+  protocol: z.enum(['ssh', 'mosh', 'telnet', 'serial']),
+  hostId: z.string().min(1).max(128),
+  address: z.string().min(1).max(DESKTOP_AUDIT_LIMITS.maxUrlLength),
+  port: z.number().int().min(0).max(65535),
+  user: z.string().max(256),
+  exitCode: z.number().int().nullable(),
+  reason: z.enum(['exit', 'lost', 'closed']),
+  durationMs: z.number().int().min(0),
+  startedAt: z.string().datetime(),
+  endedAt: z.string().datetime(),
+  sentAt: z.string().datetime(),
+});
+export type DesktopSshSessionDetails = z.infer<typeof desktopSshSessionDetailsSchema>;
+
 export const desktopAuditEventSchema = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('desktop.request_sent'), details: desktopRequestSentDetailsSchema }),
   z.strictObject({ action: z.literal('desktop.run_finished'), details: desktopRunFinishedDetailsSchema }),
+  z.strictObject({ action: z.literal('desktop.ssh_session'), details: desktopSshSessionDetailsSchema }),
 ]);
 export type DesktopAuditEvent = z.infer<typeof desktopAuditEventSchema>;
 

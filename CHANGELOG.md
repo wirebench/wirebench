@@ -41,6 +41,10 @@ All notable changes to this project are documented here. The format follows
   comment is never resolved. Desktop and CLI sends, MCP, runs, **Copy as cURL**, generated code,
   History and the HTTP log all use the body without comments. GraphQL variables accept them too.
   **Format** and the JSON form refuse a body with comments instead of dropping them (#702).
+- **Terminal sessions in the audit log.** In a workspace that records desktop activity, every SSH, Mosh,
+  Telnet or serial session that ends is reported to the team server as `desktop.ssh_session`: the host id,
+  address, port and login name, when it started and ended, why it ended and the exit code. Never a
+  password, key, passphrase or secret value; the **Recorded** notice names sessions too (#355).
 
 ### Changed
 

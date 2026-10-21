@@ -2390,6 +2390,7 @@ export {
   desktopAuditEventSchema,
   desktopRequestSentDetailsSchema,
   desktopRunFinishedDetailsSchema,
+  desktopSshSessionDetailsSchema,
 } from './server-api/audit.js';
 export type {
   AuditAction,
@@ -2406,6 +2407,7 @@ export type {
   DesktopAuditEvent,
   DesktopRequestSentDetails,
   DesktopRunFinishedDetails,
+  DesktopSshSessionDetails,
 } from './server-api/audit.js';
 export { ACCOUNTS_FILE_VERSION, accountsFileSchema, parseAccountsFile, serverAccountSchema } from './account/schema.js';
 export type { AccountsFile, ServerAccount } from './account/schema.js';
