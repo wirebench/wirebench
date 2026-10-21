@@ -8,7 +8,7 @@ describe('mcpProtocol', () => {
     expect(mcpProtocol.kind).toBe('mcp');
     expect(mcpProtocol.feature).toEqual({
       id: 'mcp',
-      title: 'MCP',
+      title: 'MCP requests',
       default: true,
       stage: 'experimental',
       requires: [],

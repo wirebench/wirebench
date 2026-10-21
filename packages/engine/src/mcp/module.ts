@@ -8,7 +8,7 @@ import { mcpStorage } from './storage.js';
 /** The MCP protocol: servers, their folders and their saved requests. */
 export const mcpProtocol = defineProtocol({
   kind: 'mcp',
-  feature: { id: 'mcp', title: 'MCP', default: true, stage: 'experimental', requires: [] },
+  feature: { id: 'mcp', title: 'MCP requests', default: true, stage: 'experimental', requires: [] },
   storage: mcpStorage,
   secrets: mcpSecrets,
   run: mcpRun,

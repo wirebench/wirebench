@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createFeatureSet } from '../../../src/protocol/features.js';
+import { createFeatureSet, resolveFeatures } from '../../../src/protocol/features.js';
 import type { FeatureDescriptor } from '../../../src/protocol/features.js';
 
 function feature(id: string, extra: Partial<FeatureDescriptor> = {}): FeatureDescriptor {
@@ -78,5 +78,64 @@ describe('createFeatureSet', () => {
   it('keeps the descriptors in the order given', () => {
     const set = createFeatureSet([feature('soap'), feature('rest'), feature('scripts')]);
     expect(set.descriptors.map((descriptor) => descriptor.id)).toEqual(['soap', 'rest', 'scripts']);
+  });
+});
+
+describe('resolveFeatures', () => {
+  const descriptors = [
+    feature('rest'),
+    feature('grpc'),
+    feature('beta', { default: false, stage: 'experimental' }),
+    feature('webhooks', { requires: ['rest'] }),
+  ];
+
+  it('gives every descriptor its default with no levels', () => {
+    const { switches, states } = resolveFeatures(descriptors);
+    expect(switches).toEqual({ rest: true, grpc: true, beta: false, webhooks: true });
+    expect(states.map((state) => [state.id, state.enabled])).toEqual([
+      ['rest', true],
+      ['grpc', true],
+      ['beta', false],
+      ['webhooks', true],
+    ]);
+    expect(states.find((state) => state.id === 'beta')?.reason).toEqual({ by: 'default' });
+    expect(states.find((state) => state.id === 'rest')?.reason).toBeUndefined();
+  });
+
+  it('lets the preference override the default, both ways, and says so', () => {
+    const { states } = resolveFeatures(descriptors, { preference: { grpc: false, beta: true } });
+    const grpc = states.find((state) => state.id === 'grpc')!;
+    expect(grpc).toMatchObject({ enabled: false, preference: false, policy: false, reason: { by: 'preference' } });
+    expect(states.find((state) => state.id === 'beta')).toMatchObject({ enabled: true, preference: true });
+  });
+
+  it('lets the policy win over a preference, and never turns anything on', () => {
+    const { switches, states } = resolveFeatures(descriptors, {
+      policy: ['grpc', 'beta'],
+      preference: { grpc: true, beta: true },
+    });
+    expect(switches['grpc']).toBe(false);
+    expect(switches['beta']).toBe(false);
+    const grpc = states.find((state) => state.id === 'grpc')!;
+    expect(grpc).toMatchObject({ enabled: false, preference: true, policy: true, reason: { by: 'policy' } });
+  });
+
+  it('turns a feature off through requires whatever its own levels said', () => {
+    const { states } = resolveFeatures(descriptors, { policy: ['rest'], preference: { webhooks: true } });
+    expect(states.find((state) => state.id === 'webhooks')).toMatchObject({
+      enabled: false,
+      preference: true,
+      policy: false,
+      reason: { by: 'requires', feature: 'rest' },
+    });
+  });
+
+  it('ignores an id no descriptor has, at both levels', () => {
+    const { switches, states } = resolveFeatures(descriptors, {
+      policy: ['graphql'],
+      preference: { plugin: false, constructor: false },
+    });
+    expect(Object.keys(switches)).toEqual(['rest', 'grpc', 'beta', 'webhooks']);
+    expect(states).toHaveLength(4);
   });
 });

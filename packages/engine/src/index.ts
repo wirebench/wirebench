@@ -62,8 +62,15 @@ export * from './run/index.js';
 
 // Protocol modules, the registry and features (ADR-0017). Exported for the engine's own hosts and
 // tagged `@internal` where they are declared: they are not yet a plugin API.
-export { createFeatureSet } from './protocol/features.js';
-export type { FeatureDescriptor, FeatureSet, WhyDisabled } from './protocol/features.js';
+export { createFeatureSet, resolveFeatures } from './protocol/features.js';
+export type {
+  FeatureDescriptor,
+  FeatureLevels,
+  FeatureReason,
+  FeatureSet,
+  FeatureState,
+  WhyDisabled,
+} from './protocol/features.js';
 export { defineProtocol } from './protocol/module.js';
 export type {
   ContainerBase,
@@ -85,7 +92,13 @@ export type {
 } from './protocol/module.js';
 export { createProtocolRegistry } from './protocol/registry.js';
 export type { ProtocolRegistry, ProtocolRegistryOptions } from './protocol/registry.js';
-export { BUILTIN_PROTOCOLS, createBuiltinRegistry } from './protocols.js';
+export {
+  BUILTIN_FEATURES,
+  BUILTIN_PROTOCOLS,
+  builtinDescriptors,
+  createBuiltinRegistry,
+  SCRIPTS_FEATURE,
+} from './protocols.js';
 export { PROJECT_FILE_KINDS, PROJECT_SCHEMA_BASE_URL, projectJsonSchemas } from './project-files.js';
 export type { ProjectFileKind, ProjectJsonSchema } from './project-files.js';
 export {
