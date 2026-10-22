@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import type { WebContents } from 'electron';
 import type { z } from 'zod';
 import { WirebenchError, nodeFs, secretPseudoRef, writeFileAtomic } from '@wirebench/engine';
+import type { DesktopAuditEvent } from '@wirebench/engine';
 import {
   HopProgress,
   createStreamMasker,
@@ -23,6 +24,7 @@ import type {
   ConnectProgress,
   HopCredentials,
   KnownHostEntry,
+  SessionExit,
   Snippet,
   SnippetListItem,
   SshSession,
@@ -49,6 +51,7 @@ import type {
   SshWriteManyResponse,
   SshWriteRequest,
 } from '../shared/ssh-wire.js';
+import { sshSessionEvent } from './audit/desktop-events.js';
 import { asWirebenchError } from './hosts-service.js';
 import type { OpenMoshOptions } from './mosh-session.js';
 import type { OpenSerialOptions } from './serial-session.js';
@@ -106,6 +109,13 @@ export interface SshServiceDeps extends SshConnectDeps {
       readonly secrets?: readonly string[];
     },
   ) => Promise<StartSessionLog | undefined>;
+  /**
+   * The workspace the window's sessions are audited under (#355), read when a connect starts so a session
+   * that ends after a switch is credited to the workspace it ran in; `undefined` when none is open.
+   */
+  readonly auditWorkspace?: (sender: WebContents) => string | undefined;
+  /** Takes a `desktop.ssh_session` event for that workspace's audit reporter; it decides whether it records. */
+  readonly audit?: (event: DesktopAuditEvent, workspaceId: string) => void;
 }
 
 /**
@@ -211,6 +221,19 @@ interface Live {
   /** Masks the secret values a snippet typed into this session, for the session's life. */
   readonly masker: StreamMasker;
   readonly stop: () => void;
+  /** Reports the session to the audit log (#355), once, with the channel's exit or none when the window closed it. */
+  readonly ended: (exit: SessionExit | undefined) => void;
+}
+
+/** The values a session signed in with: masked out of what the audit event says about it. */
+function hopSecrets(hops: readonly HopCredentials[]): string[] {
+  return hops.flatMap((hop) =>
+    hop.auth.kind === 'password'
+      ? [hop.auth.password]
+      : hop.auth.kind === 'key'
+        ? [hop.auth.privateKey, ...(hop.auth.passphrase === undefined ? [] : [hop.auth.passphrase])]
+        : [],
+  );
 }
 
 /**
@@ -313,6 +336,9 @@ export class SshService {
               secrets,
             };
     const startLog = await this.deps.sessionLog?.(sender, logged).catch(() => undefined);
+    // Taken before the open: the workspace the session is audited under is the one it was asked for in.
+    const auditWorkspace = this.deps.auditWorkspace?.(sender);
+    const startedAt = new Date(this.now());
     let session: SshSession;
     try {
       const options = {
@@ -371,6 +397,35 @@ export class SshService {
       throw closed();
     }
     const sessionId = session.id;
+    // What the audit log may know of the session (#355): where it went, as the session log names it, and
+    // never a credential; the login secrets and the host's secret-read variables are masked out of it.
+    const where = ('target' in logged ? logged.target : undefined) ?? hops[hops.length - 1];
+    const audited =
+      auditWorkspace === undefined || where === undefined || this.deps.audit === undefined
+        ? undefined
+        : {
+            workspaceId: auditWorkspace,
+            input: {
+              protocol:
+                device !== undefined
+                  ? ('serial' as const)
+                  : telnet !== undefined
+                    ? ('telnet' as const)
+                    : mosh !== undefined
+                      ? ('mosh' as const)
+                      : ('ssh' as const),
+              hostId: request.hostId,
+              address: where.address,
+              port: where.port,
+              user: where.user,
+              secrets: [
+                ...hopSecrets(hops),
+                ...secrets,
+                ...(telnet?.login.password === undefined ? [] : [telnet.login.password]),
+              ],
+              startedAt,
+            },
+          };
     // Everything the renderer sees passes the masker: the screen, scrollback, find and a reconnect replay.
     const masker = createStreamMasker();
     // A variable read from a secret is masked too, should the shell print it (`env`, `echo $TOKEN`).
@@ -418,7 +473,7 @@ export class SshService {
         ...(exit.signal ? { signal: exit.signal } : {}),
         reason: exit.reason,
       });
-      this.drop(sessionId);
+      this.drop(sessionId, exit);
     });
     this.live.set(sessionId, {
       session,
@@ -435,6 +490,23 @@ export class SshService {
         if (log) {
           log.push(masker.flush());
           void log.end(undefined);
+        }
+      },
+      ended: (exit) => {
+        if (audited === undefined) return;
+        try {
+          this.deps.audit?.(
+            sshSessionEvent({
+              ...audited.input,
+              endedAt: new Date(this.now()),
+              exit: exit === undefined ? undefined : { code: exit.code, reason: exit.reason },
+            }),
+            audited.workspaceId,
+          );
+        } catch (error) {
+          console.warn(
+            `[audit] a session could not be reported: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
       },
     });
@@ -740,11 +812,13 @@ export class SshService {
     return live;
   }
 
-  private drop(sessionId: string): void {
+  /** Ends a session's bookkeeping; `exit` is the channel's, or none when the window (or the app) closed it. */
+  private drop(sessionId: string, exit?: SessionExit): void {
     const live = this.live.get(sessionId);
     if (!live) return;
     live.stop();
     this.live.delete(sessionId);
+    live.ended(exit);
     for (const tap of [...live.taps]) tap.end();
     live.taps.clear();
     if (!live.sender.isDestroyed()) this.deps.emit(live.sender, events.ssh.state, { sessionId, state: 'closed' });

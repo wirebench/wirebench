@@ -101,6 +101,8 @@ function make(
     openSerial?: SshServiceDeps['openSerial'];
     serial?: boolean;
     serialDevice?: SshServiceDeps['serialDevice'];
+    auditWorkspace?: SshServiceDeps['auditWorkspace'];
+    audit?: SshServiceDeps['audit'];
   } = {},
 ) {
   const knownHostsFile = join(mkdtempSync(join(tmpdir(), 'wb-ssh-')), 'ssh-known-hosts.json');
@@ -156,6 +158,8 @@ function make(
     ...(opts.openSerial ? { openSerial: opts.openSerial } : {}),
     ...(opts.serial === undefined ? {} : { serial: opts.serial }),
     ...(opts.serialDevice ? { serialDevice: opts.serialDevice } : {}),
+    ...(opts.auditWorkspace ? { auditWorkspace: opts.auditWorkspace } : {}),
+    ...(opts.audit ? { audit: opts.audit } : {}),
   });
   return { service, open, emit, fake, opened, knownHostsFile, hostOsFile, list };
 }
@@ -1487,5 +1491,152 @@ describe('SshService serial consoles (#426)', () => {
       serialDevice: device('COM3'),
     });
     await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({ code: 'serial-device-busy' });
+  });
+});
+
+describe('SshService audit trail (#355)', () => {
+  const telnetFile = (): HostsFile =>
+    parseHostsFile(
+      `version: 1\nhosts:\n  - { id: a, name: a, address: 10.0.0.1, ssh: { user: admin, auth: { password: '\${secret:a_pw}' }, protocol: telnet } }\n`,
+    );
+  const serialFile = (): HostsFile =>
+    parseHostsFile(
+      `version: 1\nhosts:\n  - { id: a, name: Console, ssh: { protocol: serial, serial: { baud: 9600 } } }\n`,
+    );
+  const jumpFile = (): HostsFile =>
+    parseHostsFile(
+      `version: 1\nhosts:\n  - { id: bastion, name: bastion, address: 10.0.0.9, ssh: { user: hop, auth: { password: '\${secret:a_pw}' } } }\n  - { id: a, name: a, address: 10.0.0.1, env: { TOKEN: '\${secret:tok}' }, ssh: { user: me, jump: bastion, auth: { password: '\${secret:a_pw}' } } }\n`,
+    );
+  const SESSION_EVENT = (details: object): object => ({
+    action: 'desktop.ssh_session',
+    details: expect.objectContaining(details) as object,
+  });
+
+  it('reports the target hop, the workspace taken at connect, and the exit code when the shell exits', async () => {
+    const audit = vi.fn();
+    let workspace: string | undefined = 'ws-1';
+    const now = vi.fn(() => Date.parse('2026-10-20T08:00:00.000Z'));
+    const { service, fake } = make({
+      known: [KEY],
+      file: jumpFile(),
+      secrets: { a_pw: 'pw', tok: 'tok_value' },
+      audit,
+      auditWorkspace: () => workspace,
+      now,
+    });
+    const s = sender(1);
+    await service.connect(as(s), CONNECT);
+    expect(audit).not.toHaveBeenCalled();
+    // The workspace switches before the session ends: the event still belongs to the one it ran in.
+    workspace = 'ws-2';
+    now.mockReturnValue(Date.parse('2026-10-20T08:00:30.000Z'));
+    fake.pushExit(3);
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(audit).toHaveBeenCalledWith(
+      SESSION_EVENT({
+        protocol: 'ssh',
+        hostId: 'a',
+        address: '10.0.0.1',
+        port: 22,
+        user: 'me',
+        exitCode: 3,
+        reason: 'exit',
+        durationMs: 30_000,
+        startedAt: '2026-10-20T08:00:00.000Z',
+        endedAt: '2026-10-20T08:00:30.000Z',
+      }),
+      'ws-1',
+    );
+    const text = JSON.stringify(audit.mock.calls[0]?.[0]);
+    expect(text).not.toContain('pw');
+    expect(text).not.toContain('tok_value');
+    expect(text).not.toContain('10.0.0.9');
+  });
+
+  it('reports a session the window closed as closed with no exit code, once', async () => {
+    const audit = vi.fn();
+    const { service, fake } = make({ known: [KEY], audit, auditWorkspace: () => 'ws-1' });
+    const s = sender(1);
+    await service.connect(as(s), CONNECT);
+    service.close(as(s), { sessionId: 's1' });
+    expect(fake.close).toHaveBeenCalled();
+    // The channel's own exit, arriving after the close, is not a second session.
+    fake.pushExit(0);
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(audit).toHaveBeenCalledWith(SESSION_EVENT({ exitCode: null, reason: 'closed' }), 'ws-1');
+  });
+
+  it('reports a lost connection with reason lost, and a session ended by a workspace switch as closed', async () => {
+    const audit = vi.fn();
+    const { service, opened } = make({ known: [KEY], audit, auditWorkspace: () => 'ws-1', fresh: true });
+    const s = sender(1);
+    await service.connect(as(s), CONNECT);
+    opened[0]!.pushExit(null, undefined, 'lost');
+    expect(audit).toHaveBeenLastCalledWith(SESSION_EVENT({ exitCode: null, reason: 'lost' }), 'ws-1');
+    await service.connect(as(s), CONNECT);
+    service.disposeFor(as(s));
+    expect(audit).toHaveBeenCalledTimes(2);
+    expect(audit).toHaveBeenLastCalledWith(SESSION_EVENT({ exitCode: null, reason: 'closed' }), 'ws-1');
+  });
+
+  it('reports nothing without a workspace to audit under, or without a reporter', async () => {
+    const audit = vi.fn();
+    const none = make({ known: [KEY], audit, auditWorkspace: () => undefined });
+    await none.service.connect(as(sender(1)), CONNECT);
+    none.fake.pushExit(0);
+    expect(audit).not.toHaveBeenCalled();
+    const unwired = make({ known: [KEY], auditWorkspace: () => 'ws-1' });
+    await unwired.service.connect(as(sender(1)), CONNECT);
+    expect(() => unwired.fake.pushExit(0)).not.toThrow();
+  });
+
+  it('covers Telnet and serial sessions, which open through the same service', async () => {
+    const audit = vi.fn();
+    const telnet = fakeSession('t1');
+    const viaTelnet = make({
+      file: telnetFile(),
+      openTelnet: () => Promise.resolve(telnet.session),
+      audit,
+      auditWorkspace: () => 'ws-1',
+    });
+    await viaTelnet.service.connect(as(sender(1)), CONNECT);
+    telnet.pushExit(0);
+    expect(audit).toHaveBeenLastCalledWith(
+      SESSION_EVENT({ protocol: 'telnet', address: '10.0.0.1', port: 23, user: 'admin', exitCode: 0 }),
+      'ws-1',
+    );
+    expect(JSON.stringify(audit.mock.calls[0]?.[0])).not.toContain('pw');
+    const serial = fakeSession('c1');
+    const viaSerial = make({
+      file: serialFile(),
+      openSerial: () => Promise.resolve(serial.session),
+      serialDevice: () => Promise.resolve('/dev/ttyUSB0'),
+      audit,
+      auditWorkspace: () => 'ws-1',
+    });
+    await viaSerial.service.connect(as(sender(1)), CONNECT);
+    serial.pushExit(null, undefined, 'lost');
+    expect(audit).toHaveBeenLastCalledWith(
+      SESSION_EVENT({ protocol: 'serial', address: '/dev/ttyUSB0', port: 0, user: '', reason: 'lost' }),
+      'ws-1',
+    );
+  });
+
+  it('never lets a failing reporter touch the session', async () => {
+    const audit = vi.fn(() => {
+      throw new Error('boom');
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const { service, fake, emit } = make({ known: [KEY], audit, auditWorkspace: () => 'ws-1' });
+      await service.connect(as(sender(1)), CONNECT);
+      expect(() => fake.pushExit(0)).not.toThrow();
+      expect(emit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ name: 'ssh.state' }), {
+        sessionId: 's1',
+        state: 'closed',
+      });
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
