@@ -43,6 +43,7 @@ export const headRoutes =
             role,
             recordDesktopActivity: workspace?.recordDesktopActivity ?? false,
             recordSessionLogs: workspace?.recordSessionLogs ?? false,
+            disabledFeatures: [...(workspace?.disabledFeatures ?? [])],
           };
         });
       },

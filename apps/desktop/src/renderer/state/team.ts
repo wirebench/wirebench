@@ -29,6 +29,8 @@ export interface TeamState {
   readonly desktopActivity: boolean;
   /** The server stores team SSH session logs (#430); without it the Record SSH sessions switch is hidden. */
   readonly sessionLogs: boolean;
+  /** The server stores a workspace feature policy (phase 4 spec §6.1); the Workspaces tab offers Features. */
+  readonly featurePolicy: boolean;
   readonly teams: readonly TeamWire[];
   readonly teamId: string | undefined;
   readonly tab: TeamTab;
@@ -67,6 +69,7 @@ export interface TeamStore extends TeamState {
       readonly defaultRole?: DefaultRoleWire;
       readonly recordDesktopActivity?: boolean;
       readonly recordSessionLogs?: boolean;
+      readonly disabledFeatures?: string[];
     },
   ) => Promise<boolean>;
   readonly deleteWorkspace: (workspaceId: string) => Promise<boolean>;
@@ -81,6 +84,7 @@ const INITIAL: TeamState = {
   serverAdmin: false,
   desktopActivity: false,
   sessionLogs: false,
+  featurePolicy: false,
   teams: [],
   teamId: undefined,
   tab: 'members',
@@ -197,6 +201,7 @@ export const useTeamStore = create<TeamStore>((set, get) => {
         serverAdmin: list.serverAdmin,
         desktopActivity: list.desktopActivity === true,
         sessionLogs: list.sessionLogs === true,
+        featurePolicy: list.featurePolicy === true,
         workspaces: spaces?.workspaces ?? get().workspaces,
         teamId,
       });

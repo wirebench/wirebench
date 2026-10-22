@@ -102,6 +102,7 @@ function operationOfEntry(project: Project, entry: HistoryEntry | undefined): st
 export const validateOp = defineOp({
   name: 'validate',
   title: 'Validate a message',
+  feature: 'soap',
   description:
     'Validates a SOAP message against the WSDL schema (problems with line and column) or a REST response ' +
     'body against its OpenAPI response schema (problems with JSON path and keyword). valid is false only when ' +

@@ -334,7 +334,8 @@ export function isOpVerb(word: string): boolean {
 /** Every option given that `allowed` does not list is a usage error, not a silent no-op. */
 export function refuseForeign(values: OptionValues, allowed: readonly string[], verb: string): void {
   for (const [key, value] of Object.entries(values)) {
-    if (value !== undefined && key !== 'help' && key !== 'version' && !allowed.includes(key)) {
+    // `--features` is every verb's (spec §5.1), as `--help` and `--version` are.
+    if (value !== undefined && key !== 'help' && key !== 'version' && key !== 'features' && !allowed.includes(key)) {
       throw new UsageError(`--${key} does not apply to ${verb}`);
     }
   }

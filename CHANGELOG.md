@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Feature switches.** Every protocol and optional feature can be turned off: **Settings → Features**
+  lists SOAP, REST, gRPC, WebSocket, MCP requests, Scripts, Sequences, Webhooks, Shared workspaces,
+  Team secrets and the MCP server, with the stage of each and why one is off (_Requires REST_, _Off by
+  team policy for Payments_); a change applies at the next start. The CLI and `wirebench mcp` take
+  `--features grpc=off,scripts=off` and `WIREBENCH_FEATURES`; `tools/list` omits the tools of what is
+  off and a call to one is refused with `feature-disabled`. A workspace admin sets a restrict-only
+  policy per shared workspace (**Team → Workspaces → Features**), carried on every sync (ADR-0029). A
+  feature that is off is refused by the engine, not only hidden, and its files are never rewritten
+  (#735, phase 4 of #184).
 - **The Explorer selects like a desktop tree (#681).** Shift-click selects a range and Ctrl/⌘-click adds
   or removes a row. A selection of several rows gets a menu of its own — **Move to…**, **Duplicate** and
   **Delete 3 requests…** — and Delete, ⌘⌫ (Ctrl+Backspace) and Backspace delete it through one confirm. F2
@@ -61,6 +70,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The developer variable `WIREBENCH_KINDS` is gone; `WIREBENCH_FEATURES="grpc=off"` takes its place in a
+  development build, and the `features` preference in a shipped one (#735).
 - **Remove from workspace keeps the project folder unless asked.** The **Move the project folder to
   the trash** box in **Remove project?** starts unchecked, so tidying the workspace list never moves
   files on its own; tick it to trash the folder as before (#684).

@@ -4,7 +4,8 @@
  */
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import type { CallArgs } from '../args.js';
+import type { CallArgs, FeatureArgs } from '../args.js';
+import { featuresFor } from '../features.js';
 import { ExitCode } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
 import { callOp, findContractTool } from '../ops/call.js';
@@ -63,7 +64,7 @@ function callText(result: CallResult): string {
   return `${out.join('\n')}\n`;
 }
 
-export async function callCommand(args: CallArgs, io: CliIo): Promise<ExitCode> {
+export async function callCommand(args: CallArgs & FeatureArgs, io: CliIo): Promise<ExitCode> {
   const base = opsBaseFor(
     {
       project: args.project,
@@ -71,6 +72,7 @@ export async function callCommand(args: CallArgs, io: CliIo): Promise<ExitCode> 
       gates: OPEN_GATES,
       origin: 'cli',
       secretSources: args.secretSources,
+      registry: featuresFor(args, io),
     },
     io,
   );

@@ -164,9 +164,15 @@ export interface UiStore extends UiSnapshot {
   /** Whether this run lets serial consoles connect (#426; `WIREBENCH_AREAS`). Transient — answered by main. */
   readonly serialEnabled: boolean;
   readonly setSerialEnabled: (enabled: boolean) => void;
-  /** The protocol kinds this run has switched on (`WIREBENCH_KINDS`). Transient — answered by main. */
+  /** The protocol kinds the open workspace has on (phase 4 spec §6.2). Transient — answered by main. */
   readonly enabledKinds: readonly KindId[];
   readonly setEnabledKinds: (ids: readonly KindId[]) => void;
+  /**
+   * Every feature id that is on for the open workspace, protocols included (`app.kinds`). Transient.
+   * `undefined` until main answered: nothing is hidden on a guess.
+   */
+  readonly enabledFeatures: readonly string[] | undefined;
+  readonly setEnabledFeatures: (ids: readonly string[] | undefined) => void;
   /** Whether the title bar's workspace dropdown is open. Transient — never persisted. */
   readonly workspaceSwitcherOpen: boolean;
   /** Whether the Manage workspaces dialog is open. Transient — never persisted. */
@@ -340,6 +346,10 @@ export const useUiStore = create<UiStore>((set, get) => {
     enabledKinds: KINDS.map((kind) => kind.kind),
     setEnabledKinds: (ids) => {
       set({ enabledKinds: ids });
+    },
+    enabledFeatures: undefined,
+    setEnabledFeatures: (ids) => {
+      set({ enabledFeatures: ids });
     },
     enabledAreas: AREAS.map((area) => area.id),
     setEnabledAreas: (ids) => {
@@ -764,4 +774,10 @@ export function hydrateUi(
     useUiStore.getState().collapseConsole();
   }
   useUiStore.getState().persistTo(storage);
+}
+
+/** Whether the open workspace has the feature `id` on; true until main has answered (phase 4 spec §4.4). */
+export function featureOn(id: string): boolean {
+  const enabled = useUiStore.getState().enabledFeatures;
+  return enabled === undefined || enabled.includes(id);
 }

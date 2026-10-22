@@ -22,6 +22,7 @@ import { registerCommand } from '../lib/commands.js';
 import { useProjectStore } from '../state/project.js';
 import { useScriptValuesStore } from '../state/script-values.js';
 import { currentProjectId } from '../state/workspace-tabs.js';
+import { featureOn } from '../state/ui.js';
 import type { Selection } from '../state/ui.js';
 import { kindTarget } from './command-helpers.js';
 
@@ -47,7 +48,8 @@ export function registerExplorerCommands(): void {
   });
   registerCommand({
     ...catalogEntry('sequence.new'),
-    when: (ctx) => ctx.selection?.kind === 'project',
+    // A workspace with `sequences` off offers none (phase 4 spec §4.4); main refuses the change too.
+    when: (ctx) => ctx.selection?.kind === 'project' && featureOn('sequences'),
     whenScope: 'selection.project',
     run: (ctx) => {
       explorerActions.newSequence(ctx.selection?.id);

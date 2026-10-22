@@ -17,6 +17,7 @@ import {
   definitionCacheDir,
   detectImportFormat,
   endpointsFromContract,
+  featureDisabled,
   generateId,
   generateSoapRequest,
   importBruno,
@@ -506,6 +507,13 @@ async function addBruno(
   return addMappedCollections(context, project, mapped, 'bruno');
 }
 
+/** @throws WirebenchError `feature-disabled` when the kind the source would add is off */
+function refuseOffKind(context: OpsContext, kind: 'soap' | 'rest'): void {
+  if (!context.registry.features.isEnabled(kind)) {
+    throw featureDisabled(context.registry.features, kind);
+  }
+}
+
 export const importOp = defineOp({
   name: 'import',
   title: 'Import a definition',
@@ -545,10 +553,13 @@ export const importOp = defineOp({
     const fetchDocument = fetcherFor(context.env);
     const read = await readSource(value.source, fetchDocument);
     const detected = detectImportFormat({ text: read.text, filename: read.filename, url: read.url });
+    // Per format (feature switches spec §5.2): a WSDL needs SOAP on, an OpenAPI document REST.
     if (detected.kind === 'wsdl') {
+      refuseOffKind(context, 'soap');
       return addWsdl(context, project, read, fetchDocument, value.name);
     }
     if (detected.kind === 'openapi') {
+      refuseOffKind(context, 'rest');
       return addOpenApi(context, project, read, fetchDocument, value.name);
     }
     if (detected.kind === 'insomnia') {

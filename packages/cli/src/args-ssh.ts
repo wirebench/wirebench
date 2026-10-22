@@ -6,6 +6,7 @@
 import { parseArgs } from 'node:util';
 import { secretSourcesOptionsFrom } from './source-secrets.js';
 import type { CliSecretSourcesOptions } from './source-secrets.js';
+import type { FeatureArgs } from './features.js';
 import { UsageError } from './usage-error.js';
 
 const USAGE = 'wirebench ssh forward <host> [rule…] | --group <id>';
@@ -75,7 +76,7 @@ function parsePort(spec: string): readonly [string, number] {
 /** Parses `ssh …` after the verb, or answers its help. */
 export function parseSsh(
   argv: readonly string[],
-): SshForwardArgs | { readonly command: 'help'; readonly topic: 'ssh' } {
+): (SshForwardArgs | { readonly command: 'help'; readonly topic: 'ssh' }) & FeatureArgs {
   let parsed;
   try {
     parsed = parseArgs({
@@ -95,6 +96,8 @@ export function parseSsh(
         json: { type: 'boolean' },
         quiet: { type: 'boolean', short: 'q' },
         help: { type: 'boolean', short: 'h' },
+        // Every verb takes it (feature switches spec §5.1); `ssh forward` has nothing to switch.
+        features: { type: 'string' },
       },
     });
   } catch (error) {
@@ -133,5 +136,6 @@ export function parseSsh(
     secretSources: secretSourcesOptionsFrom(values),
     json: values.json === true,
     quiet: values.quiet === true,
+    ...(values.features !== undefined ? { features: values.features } : {}),
   };
 }

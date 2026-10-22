@@ -602,6 +602,32 @@ What this does not change: a script someone else wrote runs when you send its re
 request already sends what it says to where it says. The rules above make sure the script gains
 nothing a declarative request could not already do, beyond CPU and memory within its limits.
 
+## A feature that is off is refused, not hidden
+
+Every protocol and optional feature is a switch (phase 4 of #184, the
+[feature switches guide](https://wirebench.github.io/wirebench/docs/guides/feature-switches/)). What a
+switch promises:
+
+- **The engine enforces it.** A send, a run, a load or an import of a feature that is off is refused
+  with the stable error code `feature-disabled`, in the desktop, the CLI and the MCP server alike. The
+  desktop hides the feature as well, but hiding is not what keeps it off: a renderer that still calls a
+  channel of a kind that is off is refused by main, and `wirebench mcp` omits the tools of what is off
+  and refuses a call to one.
+- **No file that travels with a project can turn anything on.** The switches live in the machine's
+  preferences and in a workspace's team policy on the server; the project folder holds none, and the
+  loader reads none. This is the rule ADR-0016 set for scripts, now for every switch.
+- **A team policy only restricts** (ADR-0029). The server stores a list of what is off for a workspace.
+  A policy entry never turns a feature on, so neither a server nor a `git pull` can activate an
+  experimental protocol or the MCP server on a member's machine. A person's own "off" keeps its
+  meaning under any policy.
+- **Disabling never touches data.** A container of a kind that is off loads as a placeholder; its files
+  are neither rewritten nor deleted by a save, byte for byte (`kind-placeholders.test.ts`,
+  `placeholders.test.ts`).
+- **Security features are not switches.** Redaction and secret masking, path safety, the script
+  sandbox, the cookie jar's rules and TLS verification have no descriptor and read no switch.
+- **No remote flag service.** The only remote input is the workspace's own policy, fetched with its
+  sync head from the server the person signed in to, and it can only switch off.
+
 ## A mock listens on loopback and serves data
 
 A mock service (#59) is the engine's first listening socket. It takes three kinds of untrusted input:

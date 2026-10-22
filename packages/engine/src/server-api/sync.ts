@@ -71,6 +71,8 @@ export const syncHeadResponseSchema = z.object({
   recordDesktopActivity: z.boolean().default(false),
   /** The workspace's SSH session-log recording switch, refreshed on every fetch. */
   recordSessionLogs: z.boolean().default(false),
+  /** The workspace's feature policy (ADR-0029), refreshed on every fetch; `[]` from an older server. */
+  disabledFeatures: z.array(z.string()).default([]),
 });
 export type SyncHeadResponse = z.infer<typeof syncHeadResponseSchema>;
 

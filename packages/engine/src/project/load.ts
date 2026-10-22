@@ -213,7 +213,7 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
   const manifest = parseFile(manifestSchema, migrate(manifestDocument, MANIFEST_PATH), MANIFEST_PATH);
 
   const problems: ProjectProblem[] = [];
-  const ctx: LoadContext = { fs, root, problems };
+  const ctx: LoadContext = { fs, root, problems, features: registry.features };
   const loaded = new Map<ProtocolStorage, ContainerBase[]>();
   const unsupported: UnsupportedContainer[] = [];
   const interfaceSlugs = new Set<string>();

@@ -76,6 +76,7 @@ import {
 } from '@wirebench/engine';
 import type { ProtocolRegistry } from '@wirebench/engine';
 import type {
+  FeatureState,
   CollectionExportFormat,
   CollectionExportResult,
   FsLike,
@@ -120,8 +121,8 @@ import { rekeyEndpoints, renamedContainerSlugs } from './endpoint-renames.js';
 import { checkCertificates } from './certificate-expiry.js';
 import type { KindRouters } from './kinds/kind-main.js';
 import { KIND_ENTITY_IDS, KIND_ROUTES, type KindEntityIds } from './kinds/kind-routes.js';
-import { requireKindEnabled } from './project-mutations.js';
-import type { KindId } from '../shared/kinds/kind-module.js';
+import { requireFeatureEnabled, requireKindEnabled } from './project-mutations.js';
+import { KINDS, type KindId } from '../shared/kinds/kind-module.js';
 import type { ProjectRouter } from './project-router.js';
 import type { SecretScanSessions } from './secret-scan-session.js';
 import type { SecretUse, TeamSecretsService } from './team-secrets-service.js';
@@ -135,6 +136,7 @@ import { HeldChanges } from './sync/held-changes.js';
 import type { HeldBatch } from './sync/held-changes.js';
 import { fillConflictProjectIds, planPull } from './sync/pull-plan.js';
 import { readRecordingFlags, SERVER_STATE_DIR } from './sync/server-state.js';
+import type { FeaturesRun, ResolvedFeatures } from './features/startup.js';
 import { SyncService } from './sync/sync-service.js';
 import type { SyncServiceDeps } from './sync/sync-service.js';
 import type { SyncConflictWire, SyncPulledEvent, SyncStatusWire } from './sync/types.js';
@@ -190,6 +192,8 @@ import type {
   WorkspaceShareWire,
   WorkspaceSummaryWire,
   WorkspaceWire,
+  AppFeaturesWire,
+  FeatureStateWire,
 } from '../shared/wire-base.js';
 
 /**
@@ -283,10 +287,15 @@ export interface WorkspaceServiceDeps {
    * window's must not delete a clone another window's join is making. Default true.
    */
   readonly sweepJoining?: boolean;
-  /** The kinds this run has on (`WIREBENCH_KINDS`), handed to each project host. Absent, all. */
+  /** The kinds this run has on, handed to each project host. Absent, all. Superseded by `features` when set. */
   readonly enabledKinds?: readonly KindId[];
   /** The engine registry for this run, handed to each project host for its loads, saves and sends. */
   readonly registry?: ProtocolRegistry;
+  /**
+   * This run's feature switches (phase 4 spec §4.2): the machine's preference, which a server share's
+   * team policy restricts further (§6.2). Each workspace's project hosts get the registry resolved for it.
+   */
+  readonly features?: FeaturesRun;
   /**
    * Whether another window holds `workspaceId` open. Opening, renaming or deleting it from this one is
    * refused (`workspace-open-elsewhere`), so one workspace's files have one writer. Omitted, never.
@@ -416,6 +425,10 @@ interface OpenWorkspace {
   recording: boolean;
   /** A server share's last fetched head said `recordSessionLogs` (#430): every SSH session is logged and streamed. */
   sessionLogRecording: boolean;
+  /** The team policy the workspace opened under (ADR-0029): the last fetched head's list at that time. */
+  readonly featurePolicy: readonly string[];
+  /** A later fetch reported another policy; it applies when the workspace is next opened (spec §6.2). */
+  policyChanged: boolean;
   /** The `lastSyncAt` of the last sync status seen: a new one means a fetch (or a push) went through. */
   lastSyncAt: string | undefined;
 }
@@ -1011,6 +1024,10 @@ export class WorkspaceService implements ProjectRouter {
       syncReady: Promise.resolve(),
       recording: false,
       sessionLogRecording: false,
+      // Read before any project host comes up: each host's registry is resolved under it (spec §6.2).
+      featurePolicy:
+        share?.kind === 'server' ? (await readRecordingFlags(join(dir, SERVER_STATE_DIR))).disabledFeatures : [],
+      policyChanged: false,
       lastSyncAt: undefined,
     };
     this.current = open;
@@ -1222,8 +1239,8 @@ export class WorkspaceService implements ProjectRouter {
           this.deps.hooks?.onProgress?.(event);
         },
         newestRest: (projectId, requestId) => this.deps.history.newestFor?.(projectId, requestId),
-        ...(this.deps.enabledKinds !== undefined ? { enabledKinds: this.deps.enabledKinds } : {}),
-        ...(this.deps.registry !== undefined ? { registry: this.deps.registry } : {}),
+        // `current` is the workspace being opened: it is set before its entries come up.
+        ...hostFeatureDeps(this.resolvedFeatures(this.current)),
       },
       this.deps.fs,
       this.deps.globals,
@@ -1560,9 +1577,10 @@ export class WorkspaceService implements ProjectRouter {
    * @throws WorkspaceError `workspace-not-found` when no workspace is open.
    */
   syncStatus(): SyncStatusWire {
-    const sync = this.requireOpen().sync;
+    const open = this.requireOpen();
+    const sync = open.sync;
     if (sync !== undefined) {
-      return sync.status();
+      return open.policyChanged ? { ...sync.status(), policyChanged: true } : sync.status();
     }
     return { kind: 'local', gitAvailable: true, state: 'clean', ahead: 0, behind: 0, uncommitted: 0 };
   }
@@ -1856,6 +1874,12 @@ export class WorkspaceService implements ProjectRouter {
       return;
     }
     open.sessionLogRecording = flags.sessionLogs;
+    // A changed policy is not applied to running hosts: the next open does it, and the Sync panel says so.
+    const changed = !samePolicy(flags.disabledFeatures, open.featurePolicy);
+    if (changed !== open.policyChanged) {
+      open.policyChanged = changed;
+      this.deps.hooks?.onSyncStatus?.(open.workspace.id, this.syncStatus());
+    }
     if (recording !== open.recording) {
       open.recording = recording;
       this.deps.hooks?.onChanged?.(this.snapshot());
@@ -3568,7 +3592,51 @@ export class WorkspaceService implements ProjectRouter {
    * @throws ProjectError `feature-disabled`
    */
   requireKind(kind: KindId): void {
-    requireKindEnabled(kind, this.deps.enabledKinds);
+    requireKindEnabled(kind, this.resolvedFeatures(this.current).enabledKinds);
+  }
+
+  /**
+   * Refuses a call through a feature the open workspace has off (phase 4 spec §7).
+   *
+   * @throws ProjectError `feature-disabled`
+   */
+  requireFeature(feature: string): void {
+    requireFeatureEnabled(feature, this.resolvedFeatures(this.current).enabledFeatures);
+  }
+
+  /** The protocol kinds the open workspace has on; the machine's when none is open. */
+  enabledKinds(): readonly KindId[] {
+    return this.resolvedFeatures(this.current).enabledKinds ?? KINDS.map((kind) => kind.kind);
+  }
+
+  /** Every feature id the open workspace has on, protocols included; all of them when this run has no `features`. */
+  enabledFeatures(): readonly string[] {
+    const resolved = this.resolvedFeatures(this.current);
+    return resolved.enabledFeatures ?? resolved.states?.filter((state) => state.enabled).map((state) => state.id) ?? [];
+  }
+
+  /** Every feature switch as resolved for the open workspace, with its team policy when it has one (`app.features`). */
+  featureStates(): AppFeaturesWire {
+    const open = this.current;
+    const resolved = this.resolvedFeatures(open);
+    const states = resolved.states ?? [];
+    const policy =
+      open !== undefined && !open.closing && open.featurePolicy.length > 0
+        ? { workspace: open.workspace.name, disabled: [...open.featurePolicy] }
+        : undefined;
+    return { states: states.map(toFeatureStateWire), ...(policy !== undefined ? { policy } : {}) };
+  }
+
+  /** The switches `open`'s hosts run under: this run's, restricted by the workspace's team policy. */
+  private resolvedFeatures(open: OpenWorkspace | undefined): Partial<ResolvedFeatures> {
+    const features = this.deps.features;
+    if (features === undefined) {
+      return {
+        ...(this.deps.enabledKinds !== undefined ? { enabledKinds: this.deps.enabledKinds } : {}),
+        ...(this.deps.registry !== undefined ? { registry: this.deps.registry } : {}),
+      };
+    }
+    return open === undefined || open.closing ? features : features.forPolicy(open.featurePolicy);
   }
 
   /** @inheritdoc */
@@ -3690,4 +3758,38 @@ export async function readLeftoverProjectFolders(userDataDir: string): Promise<r
     }
   }
   return leftover;
+}
+
+/** The project-host deps a resolved feature set gives: only the fields it has. */
+function hostFeatureDeps(resolved: Partial<ResolvedFeatures>): {
+  readonly enabledKinds?: readonly KindId[];
+  readonly enabledFeatures?: readonly string[];
+  readonly registry?: ProtocolRegistry;
+} {
+  return {
+    ...(resolved.enabledKinds !== undefined ? { enabledKinds: resolved.enabledKinds } : {}),
+    ...(resolved.enabledFeatures !== undefined ? { enabledFeatures: resolved.enabledFeatures } : {}),
+    ...(resolved.registry !== undefined ? { registry: resolved.registry } : {}),
+  };
+}
+
+function samePolicy(a: readonly string[], b: readonly string[]): boolean {
+  const left = [...new Set(a)].sort();
+  const right = [...new Set(b)].sort();
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+/** The engine's row, as the wire restates it (the same fields, with `requires` copied). */
+function toFeatureStateWire(state: FeatureState): FeatureStateWire {
+  return {
+    id: state.id,
+    title: state.title,
+    stage: state.stage,
+    requires: [...state.requires],
+    default: state.default,
+    ...(state.preference !== undefined ? { preference: state.preference } : {}),
+    policy: state.policy,
+    enabled: state.enabled,
+    ...(state.reason !== undefined ? { reason: state.reason } : {}),
+  };
 }

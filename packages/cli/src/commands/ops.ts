@@ -6,12 +6,14 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { CookieJar, createSourceCache, jarCookieHost } from '@wirebench/engine';
-import type { OpArgs, OpName } from '../args.js';
+import type { ProtocolRegistry } from '@wirebench/engine';
+import type { FeatureArgs, OpArgs, OpName } from '../args.js';
 import { ExitCode } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
 import { OPEN_GATES, runOp } from '../ops/context.js';
 import type { Gates, OpsBase } from '../ops/context.js';
 import { exitCodeForError, OpsError, toOpsError } from '../ops/errors.js';
+import { featuresFor } from '../features.js';
 import { OPS } from '../ops/index.js';
 import { defaultHistoryDir } from '../ops/paths.js';
 import type { SendResult } from '../ops/send.js';
@@ -28,6 +30,8 @@ export function opsBaseFor(
     readonly gates: Gates;
     readonly origin: 'cli' | 'mcp';
     readonly secretSources: CliSecretSourcesOptions;
+    /** From the verb's `--features` and `WIREBENCH_FEATURES` ({@link featuresFor}). */
+    readonly registry: ProtocolRegistry;
   },
   io: Pick<CliIo, 'stderr' | 'env'>,
 ): OpsBase {
@@ -41,6 +45,7 @@ export function opsBaseFor(
     gates: options.gates,
     origin: options.origin,
     warn: (line) => io.stderr.write(`warning: ${line}\n`),
+    registry: options.registry,
     // One jar per process: a `call` sends once, an MCP server shares it across its tools.
     cookies: jarCookieHost(new CookieJar()),
     secretSources: options.secretSources,
@@ -70,7 +75,7 @@ function exitCodeOf(op: OpName, result: unknown): ExitCode {
   return ExitCode.Ok;
 }
 
-export async function opCommand(args: OpArgs, io: CliIo): Promise<ExitCode> {
+export async function opCommand(args: OpArgs & FeatureArgs, io: CliIo): Promise<ExitCode> {
   const base = opsBaseFor(
     {
       project: args.project,
@@ -78,6 +83,7 @@ export async function opCommand(args: OpArgs, io: CliIo): Promise<ExitCode> {
       gates: args.allowCommands === true ? { ...OPEN_GATES, commands: true } : OPEN_GATES,
       origin: 'cli',
       secretSources: args.secretSources,
+      registry: featuresFor(args, io),
     },
     io,
   );

@@ -178,6 +178,7 @@ describe('ServerClient — teams (teams-access §3.2)', () => {
     source: 'grant',
     recordDesktopActivity: false,
     recordSessionLogs: false,
+    disabledFeatures: [],
     createdAt: '2026-09-25T10:00:00.000Z',
   };
   const body = (request: HttpRequest | undefined): unknown =>
@@ -296,6 +297,7 @@ describe('ServerClient — sync (server-sync §3.2)', () => {
       role: 'editor',
       recordDesktopActivity: false,
       recordSessionLogs: false,
+      disabledFeatures: [],
     });
     expect(await c.syncHead(SERVER, TOKEN, WS_ID, A)).toEqual({
       head: B,
@@ -304,6 +306,7 @@ describe('ServerClient — sync (server-sync §3.2)', () => {
       role: 'viewer',
       recordDesktopActivity: false,
       recordSessionLogs: false,
+      disabledFeatures: [],
     });
     await c.syncHead(SERVER, TOKEN, WS_ID, null);
     expect((await c.syncLog(SERVER, TOKEN, WS_ID, 50))[0]?.subject).toBe('Add QA');

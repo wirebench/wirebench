@@ -57,6 +57,7 @@ function pickMedia(
 export const generateOp = defineOp({
   name: 'generate',
   title: 'Generate a sample request',
+  feature: 'soap',
   description:
     "Builds a sample request for one operation: a SOAP envelope from the WSDL's XSD, or a JSON body from the " +
     'OpenAPI schema, with method, path and headers for REST. Reads only; nothing is saved. For REST, path is the ' +

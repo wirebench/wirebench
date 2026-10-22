@@ -35,6 +35,8 @@ export interface WorkspaceRow {
   readonly defaultRole: DefaultRole;
   readonly recordDesktopActivity: boolean;
   readonly recordSessionLogs: boolean;
+  /** The feature ids off for everyone on the workspace (ADR-0029), sorted and without duplicates. */
+  readonly disabledFeatures: readonly string[];
   readonly createdBy: string | null;
   readonly createdAt: string;
 }
@@ -79,7 +81,8 @@ const MEMBER_SELECT = `select m.user_id as "userId", u.email, u.display_name as 
   from team_members m join users u on u.id = m.user_id`;
 const WORKSPACE_SELECT = `select w.id, w.name, w.team_id as "teamId", t.name as "teamName",
   w.default_role as "defaultRole", w.record_desktop_activity as "recordDesktopActivity",
-  w.record_session_logs as "recordSessionLogs", w.created_by as "createdBy", w.created_at as "createdAt"
+  w.record_session_logs as "recordSessionLogs", w.disabled_features as "disabledFeatures",
+  w.created_by as "createdBy", w.created_at as "createdAt"
   from workspaces w join teams t on t.id = w.team_id`;
 
 // ---- teams -------------------------------------------------------------------------------
@@ -306,20 +309,28 @@ export async function updateWorkspace(
     readonly defaultRole?: DefaultRole;
     readonly recordDesktopActivity?: boolean;
     readonly recordSessionLogs?: boolean;
+    readonly disabledFeatures?: readonly string[];
   },
 ): Promise<void> {
   await db.query(
     `update workspaces set name = coalesce($2, name), default_role = coalesce($3, default_role),
        record_desktop_activity = coalesce($4, record_desktop_activity),
-       record_session_logs = coalesce($5, record_session_logs) where id = $1`,
+       record_session_logs = coalesce($5, record_session_logs),
+       disabled_features = coalesce($6, disabled_features) where id = $1`,
     [
       id,
       patch.name ?? null,
       patch.defaultRole ?? null,
       patch.recordDesktopActivity ?? null,
       patch.recordSessionLogs ?? null,
+      patch.disabledFeatures === undefined ? null : normalizeDisabledFeatures(patch.disabledFeatures),
     ],
   );
+}
+
+/** The policy as it is stored: each id once, in a fixed order, so two equal policies compare equal. */
+export function normalizeDisabledFeatures(ids: readonly string[]): string[] {
+  return [...new Set(ids)].sort();
 }
 
 export async function deleteWorkspace(db: Querier, id: string): Promise<void> {
@@ -368,7 +379,8 @@ export async function visibleWorkspaces(
   return (
     await db.query(
       `select w.id, w.name, w.team_id as "teamId", t.name as "teamName", w.default_role as "defaultRole",
-              w.record_desktop_activity as "recordDesktopActivity",
+              w.record_desktop_activity as "recordDesktopActivity", w.record_session_logs as "recordSessionLogs",
+              w.disabled_features as "disabledFeatures",
               w.created_by as "createdBy", w.created_at as "createdAt", m.role as "teamRole", g.role as "grant"
        from workspaces w
        join teams t on t.id = w.team_id

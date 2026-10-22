@@ -44,6 +44,8 @@ An event carries a few details, such as the previous and new role. It never carr
 password hash, or the body of a request or response. A change to a workspace's *Record desktop activity*
 setting is recorded as `workspace.desktop_recording_changed`, with the new and previous value.
 A change to its *Record SSH sessions* setting is recorded as `workspace.session_logs_changed`.
+A change to its feature policy, the features switched off for everyone on the workspace, is recorded as
+`workspace.features_changed`, with the new and previous list of feature ids.
 
 ## Desktop activity
 

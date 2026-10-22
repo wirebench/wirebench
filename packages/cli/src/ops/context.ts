@@ -2,7 +2,8 @@
  * One core, two faces (spec §2): each capability is an {@link Op}, run through {@link runOp} by a
  * CLI verb and by an MCP tool alike, so the input check and the redaction are the same for both.
  */
-import type { CookieJarHost, SourceCache } from '@wirebench/engine';
+import { featureDisabled } from '@wirebench/engine';
+import type { CookieJarHost, ProtocolRegistry, SourceCache } from '@wirebench/engine';
 import type { z } from 'zod';
 import { secretValuesIn } from '../env-secrets.js';
 import type { CliSecretSourcesOptions } from '../source-secrets.js';
@@ -42,6 +43,12 @@ export interface OpsBase {
   /** A warning for the person running the process: stderr, never stdout. */
   readonly warn: (line: string) => void;
   /**
+   * The protocols and features this process runs with, from `--features` and `WIREBENCH_FEATURES`
+   * (feature switches spec §5): the project loads through it, a send dispatches through it, and an
+   * op that needs a feature is refused by it.
+   */
+  readonly registry: ProtocolRegistry;
+  /**
    * The cookie jar this process's REST sends share (cookie jar spec §4): one per `wirebench call`,
    * one per MCP server for its lifetime. In memory only. Absent: no jar.
    */
@@ -70,6 +77,12 @@ export interface Op<S extends z.ZodType, R> {
   readonly description: string;
   /** The single source for the CLI's argument check and the tool's `inputSchema`. */
   readonly input: S;
+  /**
+   * The feature the op needs, when it is one feature's alone (`generate` and `validate` are SOAP's).
+   * Off, the op is refused with `feature-disabled` before its input is looked at, and the MCP server
+   * leaves it out of `tools/list`. An op that spans kinds declares none and goes through the registry.
+   */
+  readonly feature?: string;
   run(input: z.output<S>, context: OpsContext): Promise<R>;
 }
 
@@ -105,6 +118,9 @@ export async function runOp<S extends z.ZodType, R>(op: Op<S, R>, raw: unknown, 
     revealed: new Set([...(base.origin === 'mcp' ? secretValuesIn(base.env) : []), ...base.secretSourceValues]),
   };
   try {
+    if (op.feature !== undefined && !base.registry.features.isEnabled(op.feature)) {
+      throw featureDisabled(base.registry.features, op.feature);
+    }
     const parsed = op.input.safeParse(raw);
     if (!parsed.success) {
       throw new OpsError('invalid-input', describeIssues(parsed.error));

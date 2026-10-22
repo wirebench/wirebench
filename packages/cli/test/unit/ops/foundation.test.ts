@@ -1,4 +1,5 @@
 import {
+  createBuiltinRegistry,
   awaitCallbacks,
   createSourceCache,
   HttpError,
@@ -43,6 +44,7 @@ const base: OpsBase = {
   secretSources: DEFAULT_CLI_SECRET_SOURCES,
   secretSourceCache: createSourceCache(),
   secretSourceValues: new Set<string>(),
+  registry: createBuiltinRegistry(),
 };
 
 const leaky = defineOp({

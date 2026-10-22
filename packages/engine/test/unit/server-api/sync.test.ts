@@ -68,6 +68,7 @@ describe('server-api sync schemas', () => {
       role: 'viewer',
       recordDesktopActivity: false,
       recordSessionLogs: false,
+      disabledFeatures: [],
     });
     expect(
       syncHeadResponseSchema.parse({ head: SHA1, commits: 3, behind: 2, role: 'editor', recordDesktopActivity: true })

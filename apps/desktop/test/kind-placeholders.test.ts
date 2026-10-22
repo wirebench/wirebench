@@ -11,7 +11,7 @@ import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createGrpcApi, createProject } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
-import { enabledKindsFromEnv, kindRegistry } from '../src/main/kinds/enabled-kinds.js';
+import { defaultFeatures, startupFeatures } from '../src/main/features/startup.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import { toProjectWire } from '../src/main/project-wire.js';
 
@@ -30,28 +30,52 @@ async function filesUnder(dir: string): Promise<Record<string, string>> {
   return out;
 }
 
-describe('WIREBENCH_KINDS', () => {
+describe('WIREBENCH_FEATURES and the features preference (phase 4 spec §4.2)', () => {
   it('switches off the kinds it names, and ignores anything else', () => {
-    expect(enabledKindsFromEnv({ WIREBENCH_KINDS: 'grpc=off, websocket=OFF, nonsense, rest=maybe' })).toEqual([
-      'soap',
-      'rest',
-      'mcp',
-    ]);
-    expect(enabledKindsFromEnv({})).toEqual(['soap', 'rest', 'grpc', 'websocket', 'mcp']);
+    expect(
+      defaultFeatures({ WIREBENCH_FEATURES: 'grpc=off, websocket=OFF, nonsense, rest=maybe' }).enabledKinds,
+    ).toEqual(['soap', 'rest', 'mcp']);
+    expect(defaultFeatures({}).enabledKinds).toEqual(['soap', 'rest', 'grpc', 'websocket', 'mcp']);
   });
 
   it('builds an engine registry with those kinds off', () => {
-    const registry = kindRegistry(['soap', 'rest']);
+    const { registry } = startupFeatures({
+      preferences: { features: { grpc: false, websocket: false } },
+      isPackaged: true,
+    });
     expect(registry.status('grpc')).toBe('disabled');
     expect(registry.status('websocket')).toBe('disabled');
     expect(registry.status('rest')).toBe('enabled');
   });
 
+  it('lays the variable over the file only in an unpackaged build', () => {
+    const env = { WIREBENCH_FEATURES: 'grpc=off' };
+    expect(startupFeatures({ preferences: { features: {} }, env, isPackaged: false }).enabledKinds).not.toContain(
+      'grpc',
+    );
+    expect(startupFeatures({ preferences: { features: {} }, env, isPackaged: true }).enabledKinds).toContain('grpc');
+  });
+
+  it('lays a workspace policy over the preference, and only restricts (ADR-0029)', () => {
+    const run = startupFeatures({ preferences: { features: { scripts: true } }, isPackaged: true });
+    const shared = run.forPolicy(['scripts', 'grpc', 'graphql']);
+    expect(shared.enabledKinds).toEqual(['soap', 'rest', 'websocket', 'mcp']);
+    expect(shared.enabledFeatures).not.toContain('scripts');
+    expect(shared.states.find((state) => state.id === 'scripts')).toMatchObject({
+      enabled: false,
+      preference: true,
+      policy: true,
+      reason: { by: 'policy' },
+    });
+    expect(run.forPolicy([])).toBe(run.forPolicy([]));
+    expect(run.enabledFeatures).toContain('scripts');
+  });
+
   it('switches MCP off like any other kind (#79)', () => {
-    expect(enabledKindsFromEnv({}).includes('mcp')).toBe(true);
-    const enabled = enabledKindsFromEnv({ WIREBENCH_KINDS: 'mcp=off' });
-    expect(enabled).not.toContain('mcp');
-    expect(kindRegistry(enabled).status('mcp')).toBe('disabled');
+    expect(defaultFeatures({}).enabledKinds.includes('mcp')).toBe(true);
+    const run = defaultFeatures({ WIREBENCH_FEATURES: 'mcp=off' });
+    expect(run.enabledKinds).not.toContain('mcp');
+    expect(run.registry.status('mcp')).toBe('disabled');
   });
 });
 
@@ -67,8 +91,8 @@ describe('a project with a kind switched off', () => {
     expect(Object.keys(before).length).toBeGreaterThan(0);
 
     // No global: the host is handed the run's registry, as the app's workspace hands it.
-    const enabledKinds = ['soap', 'rest', 'websocket'] as const;
-    const host = new ProjectHost(new EngineService(), { enabledKinds, registry: kindRegistry(enabledKinds) });
+    const { enabledKinds, registry } = defaultFeatures({ WIREBENCH_FEATURES: 'grpc=off,mcp=off' });
+    const host = new ProjectHost(new EngineService(), { enabledKinds, registry });
     const opened = await host.openProject(dir);
     expect(opened.grpcApis).toEqual([]);
     expect(opened.unsupported).toEqual([

@@ -1,6 +1,13 @@
 /** Protocol modules, their registry and the feature set (spec §3, §4). */
-export { createFeatureSet } from './features.js';
-export type { FeatureDescriptor, FeatureSet, WhyDisabled } from './features.js';
+export { createFeatureSet, resolveFeatures } from './features.js';
+export type {
+  FeatureDescriptor,
+  FeatureLevels,
+  FeatureReason,
+  FeatureSet,
+  FeatureState,
+  WhyDisabled,
+} from './features.js';
 export { defineProtocol } from './module.js';
 export type {
   ContainerBase,

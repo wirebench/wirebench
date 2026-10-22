@@ -2,6 +2,7 @@ import { useMemo, useEffect, useState } from 'react';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { useTeamStore } from '../../state/team.js';
+import { ipc } from '../../state/ipc-client.js';
 import type { DefaultRoleWire, TeamWorkspaceWire } from '../../../shared/wire-base.js';
 import { AccessPanel } from './access-panel.js';
 import { DEFAULT_ROLES, INPUT_CLASS, ROLE_LABELS, SELECT_CLASS, roleWithSource } from './roles.js';
@@ -22,8 +23,11 @@ function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
   const openAccess = useTeamStore((state) => state.openAccess);
   const desktopActivity = useTeamStore((state) => state.desktopActivity);
   const sessionLogs = useTeamStore((state) => state.sessionLogs);
+  const featurePolicy = useTeamStore((state) => state.featurePolicy);
   const [name, setName] = useState(workspace.name);
+  const [policyOpen, setPolicyOpen] = useState(false);
   const isAdmin = workspace.myRole === 'admin';
+  const offCount = workspace.disabledFeatures?.length ?? 0;
 
   useEffect(() => {
     setName(workspace.name);
@@ -36,7 +40,7 @@ function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
   };
 
   return (
-    <li data-testid={`workspace-row-${workspace.id}`} className="flex items-center gap-3 py-2">
+    <li data-testid={`workspace-row-${workspace.id}`} className="flex flex-wrap items-center gap-3 py-2">
       <div className="min-w-0 flex-1">
         <input
           data-testid={`workspace-name-${workspace.id}`}
@@ -84,6 +88,16 @@ function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
               Record SSH sessions
             </label>
           )}
+          {featurePolicy && (
+            <Button
+              data-testid={`workspace-features-${workspace.id}`}
+              onClick={() => {
+                setPolicyOpen((open) => !open);
+              }}
+            >
+              {offCount === 0 ? 'Features' : `Features (${offCount} off)`}
+            </Button>
+          )}
           <select
             data-testid={`workspace-default-${workspace.id}`}
             aria-label={`Default role in ${workspace.name}`}
@@ -119,9 +133,110 @@ function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
               SSH sessions are recorded
             </span>
           )}
+          {offCount > 0 && (
+            <span data-testid={`workspace-features-off-${workspace.id}`} className="text-xs text-fg-subtle">
+              {offCount === 1 ? '1 feature off by policy' : `${offCount} features off by policy`}
+            </span>
+          )}
         </>
       )}
+      {policyOpen && isAdmin && (
+        <FeaturePolicyEditor
+          workspace={workspace}
+          onSave={(disabledFeatures) => {
+            setPolicyOpen(false);
+            void updateWorkspace(workspace.id, { disabledFeatures });
+          }}
+          onCancel={() => {
+            setPolicyOpen(false);
+          }}
+        />
+      )}
     </li>
+  );
+}
+
+/**
+ * The workspace's team feature policy (phase 4 spec §6.3): one checkbox per switch this desktop knows,
+ * ticked when the policy switches it off. An id the policy holds that this desktop does not know (a
+ * newer version's, a plugin's) is kept on save: the list is merged, never replaced from the known ids.
+ */
+function FeaturePolicyEditor({
+  workspace,
+  onSave,
+  onCancel,
+}: {
+  readonly workspace: TeamWorkspaceWire;
+  readonly onSave: (disabledFeatures: string[]) => void;
+  readonly onCancel: () => void;
+}) {
+  const [known, setKnown] = useState<readonly { readonly id: string; readonly title: string }[] | undefined>(undefined);
+  const [off, setOff] = useState<ReadonlySet<string>>(() => new Set(workspace.disabledFeatures ?? []));
+  useEffect(() => {
+    let cancelled = false;
+    void ipc()
+      .app.features(undefined)
+      .then((result) => {
+        if (!cancelled && result.ok)
+          setKnown(result.value.states.map((state) => ({ id: state.id, title: state.title })));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const unknown = [...off].filter((id) => known?.every((feature) => feature.id !== id) === true);
+  return (
+    <div
+      data-testid={`workspace-policy-${workspace.id}`}
+      className="basis-full rounded-md border border-hairline bg-surface-raised p-3 text-sm"
+    >
+      <p className="mb-2 text-xs text-fg-subtle">
+        Off for everyone in this workspace. A policy only switches features off; what it leaves alone stays each
+        person's own setting.
+      </p>
+      {known === undefined ? (
+        <p className="text-xs text-fg-subtle">Loading…</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+          {known.map((feature) => (
+            <label key={feature.id} className="flex items-center gap-1 text-xs text-fg-muted">
+              <input
+                type="checkbox"
+                data-testid={`workspace-policy-${workspace.id}-${feature.id}`}
+                checked={off.has(feature.id)}
+                onChange={(event) => {
+                  setOff((current) => {
+                    const next = new Set(current);
+                    if (event.target.checked) next.add(feature.id);
+                    else next.delete(feature.id);
+                    return next;
+                  });
+                }}
+              />
+              {feature.title} off
+            </label>
+          ))}
+        </div>
+      )}
+      {unknown.length > 0 && (
+        <p className="mt-2 text-xs text-fg-subtle">Also off, from another version: {unknown.join(', ')}</p>
+      )}
+      <div className="mt-2 flex gap-2">
+        <Button
+          variant="primary"
+          data-testid={`workspace-policy-save-${workspace.id}`}
+          disabled={known === undefined}
+          onClick={() => {
+            onSave([...off].sort());
+          }}
+        >
+          Save
+        </Button>
+        <Button variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </div>
   );
 }
 
