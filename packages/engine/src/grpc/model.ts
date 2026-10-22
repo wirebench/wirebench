@@ -284,3 +284,10 @@ export function grpcApisOf(project: Project): readonly GrpcApi[] {
 export function withGrpcApis(project: Project, apis: readonly GrpcApi[]): Project {
   return withContainersOf(project, 'grpc', apis);
 }
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface RequestDefs {
+    grpc: GrpcRequestDef;
+  }
+}

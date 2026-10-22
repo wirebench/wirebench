@@ -17,6 +17,8 @@ import { restApisOf, withRestApis } from '../../../src/rest/model.js';
 import type { RequestScripts } from '../../../src/script/model.js';
 import { applyConversions, proposeConversions } from '../../../src/script/convert/project.js';
 import { tempProjectDir } from '../project/fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const V5_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v5', 'project');
 const REQUESTS = 'apis/Shop/requests';

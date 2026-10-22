@@ -10,15 +10,11 @@
  */
 
 import { createHash } from 'node:crypto';
-import { isAbsolute, join } from 'node:path';
+import { join } from 'node:path';
 import { ProjectError } from '../errors.js';
-import type { Attachment } from '../soap/model.js';
 import { nodeFs, readFileIfExists, readdirIfExists, writeFileAtomic, type FsLike } from './fs.js';
 import { ATTACHMENTS_DIR } from './paths.js';
 import { parseYaml, stringifyYaml } from './yaml.js';
-
-/** Resolves one attachment's bytes. Rejects when the attachment cannot be read. */
-export type AttachmentResolver = (attachment: Attachment) => Promise<Uint8Array>;
 
 /** One blob in the attachment cache, as recorded in `attachments/index.yaml`. */
 export interface AttachmentCacheEntry {
@@ -203,40 +199,4 @@ export async function pruneAttachments(
     await writeIndex(projectDir, fs, index);
   }
   return { removed: removed.sort() };
-}
-
-/**
- * The {@link AttachmentResolver} the desktop main process hands to the send path: cached
- * attachments come out of `attachments/`, path attachments off disk (absolute, or relative
- * to the resource root and then to the project itself, in that order).
- *
- * @param projectDir the project root
- * @param resourceRoot the project's resource root, when it has one
- */
-export function createFileAttachmentResolver(
-  projectDir: string,
-  resourceRoot?: string,
-  options: AttachmentCacheOptions = {},
-): AttachmentResolver {
-  const fs = options.fs ?? nodeFs;
-  return async (attachment: Attachment): Promise<Uint8Array> => {
-    if (attachment.source.kind === 'cache') {
-      return readAttachment(projectDir, attachment.source.sha256, { fs });
-    }
-    const path = attachment.source.path;
-    const candidates = isAbsolute(path)
-      ? [path]
-      : resourceRoot === undefined
-        ? [join(projectDir, path)]
-        : [join(resourceRoot, path), join(projectDir, path)];
-    for (const candidate of candidates) {
-      const buffer = await readFileIfExists(fs, candidate);
-      if (buffer !== undefined) {
-        return new Uint8Array(buffer);
-      }
-    }
-    throw new ProjectError('attachment-unreadable', `Attachment "${attachment.name}" could not be read from ${path}`, {
-      details: { attachmentId: attachment.id, path },
-    });
-  };
 }

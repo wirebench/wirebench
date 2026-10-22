@@ -106,6 +106,39 @@ describe('app.* IPC', () => {
     });
   });
 
+  it('app.features carries the area rows beside the feature rows (#360)', async () => {
+    registerAppChannels(undefined, undefined, undefined, ['explorer'], undefined, false, false, false, () => [
+      {
+        id: 'ssh',
+        title: 'SSH',
+        stage: 'stable',
+        requires: [],
+        default: true,
+        policy: true,
+        enabled: false,
+        reason: { by: 'policy' },
+      },
+    ]);
+    expect(await invoke('app.features', undefined, webContents())).toEqual({
+      ok: true,
+      value: {
+        states: [],
+        areas: [
+          {
+            id: 'ssh',
+            title: 'SSH',
+            stage: 'stable',
+            requires: [],
+            default: true,
+            policy: true,
+            enabled: false,
+            reason: { by: 'policy' },
+          },
+        ],
+      },
+    });
+  });
+
   it('app.kinds answers the kinds this run has switched on', async () => {
     registerAppChannels(undefined, undefined, undefined, undefined, {
       kinds: () => ['soap', 'rest'],

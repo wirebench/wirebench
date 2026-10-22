@@ -17,6 +17,8 @@ import {
 } from '../../../src/script/check/service.js';
 import { scriptDeclarations } from '../../../src/script/types/api.js';
 import { restScriptTypes } from '../../../src/rest/script-types.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const pet = {
   type: 'object',

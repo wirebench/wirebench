@@ -15,8 +15,8 @@ import { isWirebenchError, WirebenchError } from '../errors.js';
 import type { ProtocolRun, RunScope, SelectedBase } from '../protocol/module.js';
 import { featureDisabled } from '../protocol/registry.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
-import { defaultRegistry } from '../protocols.js';
-import type { SelectedRequest, SentExchange } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
+import type { SelectedRequest, SentExchange } from '../protocol/unions.js';
 import type { GoldenFile, GoldenRead, GoldenWrite } from '../snapshot/golden-file.js';
 import { scriptProperties } from '../script/props.js';
 import {
@@ -39,6 +39,7 @@ import type { RunContext } from './context.js';
 import type { SendHost } from './host.js';
 import type { Pacer } from './iterate.js';
 import { openExchange } from './open.js';
+import { asSelected } from './select.js';
 import { createRunTokenSource } from './oauth2-token.js';
 import { createJwtSource } from '../http/auth/jwt.js';
 import { createRunScope, scopeWith } from './scope.js';
@@ -53,7 +54,7 @@ import {
   type SentScripts,
 } from './script-support.js';
 
-export type { LiveEvent, SentExchange } from '../protocols.js';
+export type { LiveEvent, SentExchange } from '../protocol/unions.js';
 
 export type RequestOutcome = 'passed' | 'failed' | 'errored' | 'skipped';
 
@@ -114,7 +115,7 @@ export interface RequestResult {
 }
 
 /** The template "?" values a SOAP request was sent with (#728), as a result field, or nothing. */
-function templatePlaceholdersOf(item: SelectedRequest, rawRequest: Uint8Array): { templatePlaceholders?: number } {
+function templatePlaceholdersOf(item: SelectedBase, rawRequest: Uint8Array): { templatePlaceholders?: number } {
   if (identity(item).protocol !== 'soap') return {};
   const count = findTemplatePlaceholders(new TextDecoder().decode(rawRequest)).length;
   return count > 0 ? { templatePlaceholders: count } : {};
@@ -194,7 +195,7 @@ export interface RunOptions {
 }
 
 /** A request's own assertions; a gRPC request that never had any, and a protocol without them, carry none. */
-const assertionsOf = (item: SelectedRequest): readonly Assertion[] =>
+const assertionsOf = (item: SelectedBase): readonly Assertion[] =>
   ('assertions' in item.request ? item.request.assertions : undefined) ?? [];
 
 /** A request's scripts, as saved; a protocol without scripts has none. */
@@ -266,11 +267,11 @@ function capped(bytes: Uint8Array): string {
   return `${new TextDecoder().decode(bytes.subarray(0, EXCHANGE_CAP_BYTES))}\n… truncated`;
 }
 
-function identity(item: SelectedRequest): Pick<RequestResult, 'path' | 'group' | 'name' | 'protocol'> {
+function identity(item: SelectedBase): Pick<RequestResult, 'path' | 'group' | 'name' | 'protocol'> {
   return { path: item.path, group: item.group, name: item.request.name, protocol: item.kind };
 }
 
-function erroredResult(item: SelectedRequest, error: NonNullable<RequestResult['error']>): RequestResult {
+function erroredResult(item: SelectedBase, error: NonNullable<RequestResult['error']>): RequestResult {
   return {
     ...identity(item),
     outcome: 'errored',
@@ -423,7 +424,9 @@ export function createRunSender(context: RunContext): RunRequestSender {
   };
   const scope = createRunScope({ ...context, host });
 
-  return async (item, overrides = {}) => {
+  return async (selected, overrides = {}) => {
+    // Core works on the base: the union is the host's (package split spec §3.4).
+    const item: SelectedBase = selected;
     const itemContext: RunContext = {
       ...scope.context,
       ...(overrides.sequence !== undefined ? { sequence: overrides.sequence } : {}),
@@ -478,7 +481,7 @@ export function createRunSender(context: RunContext): RunRequestSender {
  * Returns one error per request that fails, in selection order; empty when all pass.
  */
 export async function checkRunScripts(
-  selected: readonly SelectedRequest[],
+  selected: readonly SelectedBase[],
   context: RunContext,
 ): Promise<readonly WirebenchError[]> {
   const scripting = context.scripting;
@@ -509,19 +512,19 @@ export async function checkRunScripts(
 
 /** The `--baseline` check for one sent request: `unsupported` for a protocol without goldens. */
 async function baselineOf(
-  item: SelectedRequest,
+  item: SelectedBase,
   subject: AssertionSubject,
   baseline: NonNullable<RunOptions['baseline']>,
 ): Promise<BaselineCheck> {
   if (!BASELINE_PROTOCOLS.has(item.kind)) {
     return { report: { status: 'unsupported' } };
   }
-  return checkBaseline(await baseline.source(item), subject, baseline.require);
+  return checkBaseline(await baseline.source(asSelected(item)), subject, baseline.require);
 }
 
 /** The `--update-baseline` step for one sent request whose own outcome did not error. */
 async function baselineUpdateOf(
-  item: SelectedRequest,
+  item: SelectedBase,
   subject: AssertionSubject,
   failed: boolean,
   update: NonNullable<RunOptions['updateBaseline']>,
@@ -531,7 +534,7 @@ async function baselineUpdateOf(
     return { report: { status: 'unsupported' } };
   }
   const plan = planBaselineUpdate({
-    read: await update.source(item),
+    read: await update.source(asSelected(item)),
     subject,
     failed,
     ...(containsKnownSecret !== undefined ? { containsKnownSecret } : {}),
@@ -540,7 +543,7 @@ async function baselineUpdateOf(
   if (plan.kind === 'done') return plan.check;
   let outcome: SinkOutcome;
   try {
-    outcome = await update.sink(item, plan.golden);
+    outcome = await update.sink(asSelected(item), plan.golden);
   } catch (error) {
     outcome = { status: 'failed', message: error instanceof Error ? error.message : String(error) };
   }
@@ -549,7 +552,7 @@ async function baselineUpdateOf(
 
 /** Runs one request; a throw anywhere on the way becomes an errored result, never a stopped run. */
 async function runOne(
-  item: SelectedRequest,
+  item: SelectedBase,
   send: RunRequestSender,
   options: RunOptions,
   overrides: RunSendOverrides,
@@ -561,7 +564,7 @@ async function runOne(
     const { sent, callbacks } = await sendAwaitingCallbacks(
       own,
       () => scopesFor({ ...context, ...(overrides.sequence !== undefined ? { sequence: overrides.sequence } : {}) }),
-      () => send(item, overrides),
+      () => send(asSelected(item), overrides),
       {
         ...(options.captures !== undefined ? { captures: options.captures } : {}),
         ...(options.callbackClock !== undefined ? { clock: options.callbackClock } : {}),
@@ -570,7 +573,7 @@ async function runOne(
         onWaiting: (waiting) => options.onCallbackWaiting?.(item.path, waiting),
       },
     );
-    options.onSent?.(item, sent);
+    options.onSent?.(asSelected(item), sent);
     const { subject, raw, script } = sent;
     const immediate = await checkRequestAssertions(
       subject,
@@ -631,7 +634,7 @@ async function runOne(
 }
 
 /** A request the run did not send: after an abort, a bail, a script's skip or a jump past it. */
-function skippedResult(item: SelectedRequest): RequestResult {
+function skippedResult(item: SelectedBase): RequestResult {
   return { ...identity(item), outcome: 'skipped', assertions: [], unasserted: assertionsOf(item).length === 0 };
 }
 
@@ -671,7 +674,7 @@ function runControlError(result: RequestResult, code: string, message: string): 
  * send it on at another selected request by name (#335), at most `RUN_CONTROL_LIMITS.jumps` times.
  */
 export async function runRequests(
-  selected: readonly SelectedRequest[],
+  selected: readonly SelectedBase[],
   context: RunContext,
   options: RunOptions = {},
 ): Promise<RunResult> {

@@ -17,6 +17,8 @@ import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
 import { createWsApi, createWsRequest, createWsSavedMessage, wsApisOf } from '../../../src/ws/model.js';
 import { tempProjectDir } from './fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 function emptyProject(): Project {
   return createProject('WS Project', { id: 'P1' });

@@ -1,40 +1,41 @@
 /**
- * The composition file (spec §4.3): the one core file that imports every built-in protocol module.
- * It holds the built-in registry every entry point falls back to, and the union types a host that
- * narrows on `kind` uses.
+ * The composition file (spec §4.3): the one file that imports every built-in protocol module. It
+ * installs the built-in registry every entry point falls back to, and re-exports the unions a host
+ * that narrows on `kind` uses, which the modules fill (`protocol/unions.ts`).
  */
-import type { GrpcCallResult } from './grpc/call.js';
-import type { GrpcRequestDef } from './grpc/model.js';
-import type { GrpcLiveEvent } from './grpc/events.js';
 import { grpcProtocol } from './grpc/module.js';
-import type { GrpcResolvedInput, GrpcSelected } from './grpc/run.js';
-import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from './grpc/scripting.js';
-import type { McpLiveEvent } from './mcp/events.js';
-import type { McpExchange } from './mcp/exchange.js';
-import type { McpRequestDef } from './mcp/model.js';
 import { mcpProtocol } from './mcp/module.js';
-import type { McpSelected } from './mcp/run.js';
-import type { McpRequestSnapshot, McpResponseSnapshot } from './mcp/scripting.js';
 import type { FeatureDescriptor } from './protocol/features.js';
 import type { ProtocolModule } from './protocol/module.js';
+import { installDefaultRegistry } from './protocol/default-registry.js';
 import { createProtocolRegistry } from './protocol/registry.js';
 import type { ProtocolRegistry } from './protocol/registry.js';
-import type { GraphqlCheckResult } from './rest/graphql/check.js';
-import type { RestRequestDef } from './rest/model.js';
 import { restProtocol } from './rest/module.js';
-import type { RestSelected } from './rest/run.js';
-import type { RestRequestSnapshot, RestResponseSnapshot } from './rest/scripting.js';
-import type { RestLiveEvent } from './rest/events.js';
-import type { RestExchange, RestSendInput } from './rest/send.js';
-import type { SoapRequestDef } from './soap/model.js';
 import { soapProtocol } from './soap/module.js';
-import type { SoapSelected } from './soap/run.js';
-import type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
-import type { SoapExchange, SoapSendInput, WsdlImportResult } from './soap/types.js';
-import type { WsLiveEvent } from './ws/events.js';
-import type { WsExchange, WsRequestDef } from './ws/model.js';
 import { wsProtocol } from './ws/module.js';
-import type { WsSelected } from './ws/run.js';
+
+// The declarations of @wirebench/engine reach every file that fills the unions (package split spec
+// §3.4) only through these re-exports: a value import of a module leaves no trace in a `.d.ts`, and a
+// host that compiles against `dist` would otherwise see a union missing the members of every file
+// its own imports do not happen to reach.
+export type { GrpcLiveEvent } from './grpc/events.js';
+export type { GrpcRequestDef } from './grpc/model.js';
+export type { GrpcSelected } from './grpc/run.js';
+export type { GrpcRequestSnapshot, GrpcResponseSnapshot } from './grpc/scripting.js';
+export type { McpLiveEvent } from './mcp/events.js';
+export type { McpRequestDef } from './mcp/model.js';
+export type { McpSelected } from './mcp/run.js';
+export type { McpRequestSnapshot, McpResponseSnapshot } from './mcp/scripting.js';
+export type { RestLiveEvent } from './rest/events.js';
+export type { RestRequestDef } from './rest/model.js';
+export type { RestSelected } from './rest/run.js';
+export type { RestRequestSnapshot, RestResponseSnapshot } from './rest/scripting.js';
+export type { SoapRequestDef } from './soap/model.js';
+export type { SoapSelected } from './soap/run.js';
+export type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
+export type { WsLiveEvent } from './ws/events.js';
+export type { WsRequestDef } from './ws/model.js';
+export type { WsSelected } from './ws/run.js';
 
 /**
  * The five built-in protocols, in the order their containers tie-break in the explorer.
@@ -90,73 +91,17 @@ export function createBuiltinRegistry(switches?: Readonly<Record<string, boolean
   });
 }
 
-let builtin: ProtocolRegistry | undefined;
+// The registry an entry point uses when its caller passes none (spec §3.3): the built-in protocols
+// with every feature on. Core holds the slot; loading this file fills it.
+installDefaultRegistry(createBuiltinRegistry);
+export { defaultRegistry } from './protocol/default-registry.js';
 
-/**
- * The registry an entry point uses when its caller passes none: the built-in protocols with every
- * feature on, always: a host that switches protocols off passes its own registry to each call.
- * Created on first use and kept. Call it inside a function, never at module scope: the
- * modules import core files that import this one.
- */
-export function defaultRegistry(): ProtocolRegistry {
-  builtin ??= createBuiltinRegistry();
-  return builtin;
-}
-
-/** One saved request selected for a run, of any built-in protocol a run can send. */
-export type SelectedRequest = SoapSelected | RestSelected | GrpcSelected | WsSelected | McpSelected;
-
-/** A SOAP interface's definition as a host already holds it in memory: imported and compiled. */
-export type HeldSoapDefinition = Pick<WsdlImportResult, 'definition' | 'bundle' | 'schemaSet' | 'wsa'>;
-
-/** The exchange a request travelled as, for a host that keeps more of it than a report does. */
-export type SentExchange =
-  | {
-      readonly kind: 'soap';
-      readonly soap: SoapExchange;
-      /** The request as resolved: references unexpanded, before its script and its credentials. */
-      readonly input: SoapSendInput;
-    }
-  | {
-      readonly kind: 'rest';
-      readonly rest: RestExchange;
-      /** What was sent: after the script, with the credentials resolved. */
-      readonly input: RestSendInput;
-      readonly contract?: unknown;
-      /** A GraphQL request's response, checked (#77). */
-      readonly graphql?: GraphqlCheckResult;
-    }
-  | {
-      readonly kind: 'grpc';
-      /** The call whole: every request message as sent, every response message decoded. */
-      readonly grpc: GrpcCallResult;
-      /** What was sent: after the script, with the credentials resolved. */
-      readonly input: GrpcResolvedInput;
-      /** The request message text as sent, after the script. */
-      readonly messageText: string;
-    }
-  | {
-      readonly kind: 'websocket';
-      /** The session whole: its handshake, every frame both ways, and how it closed. */
-      readonly ws: WsExchange;
-    }
-  | {
-      readonly kind: 'mcp';
-      /** The session whole: every message both ways, the transport's record, and the operation's answer. */
-      readonly mcp: McpExchange;
-    };
-
-/** A message an open exchange reports, whatever its protocol. */
-export type LiveEvent = RestLiveEvent | GrpcLiveEvent | WsLiveEvent | McpLiveEvent;
-
-/** The request snapshot of any built-in protocol that has scripts (spec §3.1). */
-export type RequestSnapshot = RestRequestSnapshot | SoapRequestSnapshot | GrpcRequestSnapshot | McpRequestSnapshot;
-
-/** The response snapshot of any built-in protocol that has scripts (spec §3.1). */
-export type ResponseSnapshot = RestResponseSnapshot | SoapResponseSnapshot | GrpcResponseSnapshot | McpResponseSnapshot;
-
-/**
- * A saved request of any built-in protocol, which is what a lookup by request id can return: the id
- * space is one (ULIDs), so `kind` is how a caller finds out what it has.
- */
-export type AnyRequestDef = SoapRequestDef | RestRequestDef | GrpcRequestDef | WsRequestDef | McpRequestDef;
+export type {
+  AnyRequestDef,
+  LiveEvent,
+  RequestSnapshot,
+  ResponseSnapshot,
+  SelectedRequest,
+  SentExchange,
+} from './protocol/unions.js';
+export type { HeldSoapDefinition } from './soap/run.js';

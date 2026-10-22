@@ -2118,6 +2118,11 @@ export const appFeaturesWireSchema = z.object({
   states: z.array(featureStateWireSchema),
   /** Set when the open workspace is shared through a server whose policy switches anything off. */
   policy: z.object({ workspace: z.string(), disabled: z.array(z.string()) }).optional(),
+  /**
+   * The desktop's area switches as this run resolved them (#360): `policy` on a row means the managed
+   * `policy.yaml` switched it off, `reason.by === 'preference'` means `WIREBENCH_AREAS` did. Absent from an older main.
+   */
+  areas: z.array(featureStateWireSchema).optional(),
 });
 export type AppFeaturesWire = z.infer<typeof appFeaturesWireSchema>;
 

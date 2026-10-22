@@ -22,6 +22,8 @@ import { RequestScripting } from '../../../src/script/request-scripts.js';
 import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
 import { startTestRestServer } from '../../helpers/index.js';
 import type { TestRestServer } from '../../helpers/index.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 let rest: TestRestServer;
 let dir: string;

@@ -64,8 +64,28 @@ describe('parsePolicy', () => {
     ]);
   });
 
+  it('switches an area off with `areas: { <id>: false }` and locks the key (#360)', () => {
+    const policy = parsePolicy('/p', {
+      areas: { ssh: false, 'local-terminal': false },
+      updates: { checkOnLaunch: false },
+    });
+    expect(policy.areasOff).toEqual(['ssh', 'local-terminal']);
+    expect(policy.locked).toEqual(['areas.ssh', 'areas.local-terminal', 'updates.checkOnLaunch']);
+    expect(policy.ignored).toEqual([]);
+    expect(policy.patch).toEqual({ updates: { checkOnLaunch: false } });
+  });
+
+  it('never switches an area on, and ignores unknown ids and a non-mapping section', () => {
+    const policy = parsePolicy('/p', { areas: { ssh: true, telnet: 'off', graphql: false, serial: false } });
+    expect(policy.areasOff).toEqual(['serial']);
+    expect(policy.locked).toEqual(['areas.serial']);
+    expect(policy.ignored).toEqual(['areas.ssh', 'areas.telnet', 'areas.graphql']);
+    expect(parsePolicy('/p', { areas: 'ssh' }).ignored).toEqual(['areas']);
+    expect(parsePolicy('/p', { areas: 'ssh' }).areasOff).toEqual([]);
+  });
+
   it('treats an empty document as no policy and a non-mapping as an error', () => {
-    expect(parsePolicy('/p', null)).toEqual({ path: '/p', patch: {}, locked: [], ignored: [] });
+    expect(parsePolicy('/p', null)).toEqual({ path: '/p', patch: {}, locked: [], ignored: [], areasOff: [] });
     expect(parsePolicy('/p', ['a']).error).toMatch(/not a YAML mapping/);
   });
 });

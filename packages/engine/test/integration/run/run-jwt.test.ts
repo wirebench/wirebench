@@ -26,6 +26,8 @@ import { startTestGrpcServer } from '../../helpers/test-grpc-server.js';
 import type { TestGrpcServer } from '../../helpers/test-grpc-server.js';
 import { startTestRestServer } from '../../helpers/test-rest-server.js';
 import type { TestRestServer } from '../../helpers/test-rest-server.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const SECRET = 'jwt-shared-secret-0123456789-abcdefghijklmnop';
 const HS256: JwtAuth = {

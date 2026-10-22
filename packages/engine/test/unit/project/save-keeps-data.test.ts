@@ -10,6 +10,8 @@ import { createProject } from '../../../src/project/model.js';
 import { createInterface } from '../../../src/soap/model.js';
 import { saveProject } from '../../../src/project/save.js';
 import { createApi, createRestRequest, restApisOf, withRestApis } from '../../../src/rest/model.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 let dir: string;
 beforeEach(async () => {

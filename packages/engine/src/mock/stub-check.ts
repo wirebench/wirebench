@@ -5,7 +5,7 @@
  * checks a received response gets (`MockContract.checkStubs`).
  */
 
-import { defaultRegistry } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
 import { nodeFs } from '../project/fs.js';
 import type { FsLike } from '../project/fs.js';
 import type { Project } from '../project/model.js';

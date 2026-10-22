@@ -10,6 +10,8 @@ import { createScriptChecker } from '../../../src/script/check/host.js';
 import type { RequestScripts } from '../../../src/script/model.js';
 import { RequestScripting, type ScriptedRequest } from '../../../src/script/request-scripts.js';
 import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const sandbox = createScriptSandbox();
 const checker = createScriptChecker();

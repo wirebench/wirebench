@@ -10,6 +10,8 @@ import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestApi } from '../../../src/rest/model.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
 import type { Workspace } from '../../../src/workspace/model.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 function soapRequest(extra: Partial<SoapRequestDef> = {}): SoapRequestDef {
   return {

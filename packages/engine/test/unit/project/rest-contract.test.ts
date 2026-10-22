@@ -12,6 +12,8 @@ import { projectFiles } from '../../../src/project/serialize.js';
 import { createApi, createRestRequest, restApisOf } from '../../../src/rest/model.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
 import { tempProjectDir } from './fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 function projectWith(request: RestRequestDef): Project {
   return {

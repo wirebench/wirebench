@@ -21,6 +21,8 @@ import { normalizeWsa } from '../../../src/wsa/model.js';
 import { startTestSoapServer } from '../../helpers/index.js';
 import type { TestSoapServer } from '../../helpers/index.js';
 import { testHost } from '../../helpers/send-host.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const ENVELOPE_WITH = (text: string): string =>
   `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><w:Echo xmlns:w="urn:wb"><w:text>${text}</w:text></w:Echo></soapenv:Body></soapenv:Envelope>`;

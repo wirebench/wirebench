@@ -21,6 +21,8 @@ import { createApi, createFolder, createRestRequest, entry, restApisOf } from '.
 import type { DefinitionAuth, Project } from '../../../src/project/model.js';
 import type { RestApi } from '../../../src/rest/model.js';
 import { listTree, tempProjectDir } from './fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 /** An API exercising every body kind, both auth positions, and two levels of folders. */
 function petstore(): RestApi {

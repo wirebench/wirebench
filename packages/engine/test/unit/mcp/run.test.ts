@@ -17,6 +17,8 @@ import { selectRequests } from '../../../src/run/select.js';
 import { applySecretMoves } from '../../../src/secrets/scan/apply.js';
 import { scanProjectForSecrets } from '../../../src/secrets/scan/scan.js';
 import { testHost } from '../../helpers/send-host.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const GH = 'ghp_FAKEFAKEFAKEFAKEFAKEFAKEFAKE1234';
 

@@ -8,7 +8,7 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { WirebenchError } from '../errors.js';
-import { defaultRegistry } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
 import { nodeFs } from '../project/fs.js';
 import type { FsLike } from '../project/fs.js';
 import type { Project } from '../project/model.js';

@@ -11,6 +11,8 @@ import type { ScriptRunInput } from '../../../src/script/run.js';
 import { runScript } from '../../../src/script/run.js';
 import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
 import { GRPC, GRPC_RESPONSE, MCP, MCP_RESPONSE, SOAP, SOAP_RESPONSE } from './snapshots.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const sandbox = createScriptSandbox();
 afterAll(async () => {

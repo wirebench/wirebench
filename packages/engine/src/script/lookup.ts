@@ -2,7 +2,7 @@
 import { WirebenchError } from '../errors.js';
 import type { ProtocolScripting } from '../protocol/module.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
-import { defaultRegistry } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
 
 /** The scripting facet of `protocol` in `registry` (the built-in one when absent), if it has one. */
 export function scriptingOf(

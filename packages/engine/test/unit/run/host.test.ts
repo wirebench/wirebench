@@ -9,6 +9,8 @@ import { createRunSender } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';
 import { reportedAuth } from '../../../src/run/send-helpers.js';
 import { testHost } from '../../helpers/send-host.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 /** A context for one REST request with `auth`, aimed at port 1 where nothing listens. */
 function contextWith(auth: AuthConfig, extra: Partial<RunContext['host']> = {}, secret = 'v'): RunContext {
