@@ -17,8 +17,7 @@ import {
 } from '#core/project/sequence-guards';
 import { escapeForLanguage } from './body.js';
 import { composeUrl } from './url.js';
-import type { GraphqlBody } from './graphql/body.js';
-import { lowerGraphqlBody, lowerGraphqlBodyText } from './graphql/body.js';
+import { restGraphql } from './graphql-slot.js';
 import type { KeyValueEntry, MultipartFormPart, RestBody } from './model.js';
 import type { RestSendInput, RestSendRequest } from './send.js';
 
@@ -156,17 +155,17 @@ function expandBody(
   switch (body.kind) {
     case 'graphql': {
       // A GraphQL string literal escapes as a JSON one does, so the query takes JSON escaping too.
-      const expanded: GraphqlBody = {
+      const expanded: Extract<RestBody, { kind: 'graphql' }> = {
         kind: 'graphql',
         query: runBody(body.query, 'json'),
         variables: runBody(body.variables, 'json'),
         ...(body.operationName !== undefined ? { operationName: run(body.operationName) } : {}),
       };
       try {
-        return lowerGraphqlBody(expanded);
+        return restGraphql().lower(expanded);
       } catch (error) {
         // An unresolved reference is the better report: the send refuses it, a preview shows it.
-        if (hasUnresolved()) return lowerGraphqlBodyText(expanded);
+        if (hasUnresolved()) return restGraphql().lowerText(expanded);
         throw error;
       }
     }

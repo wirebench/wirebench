@@ -802,8 +802,8 @@ export {
   graphqlPayloadText,
   lowerGraphqlBody,
   lowerGraphqlBodyText,
-} from '#protocol-rest/rest/graphql/body';
-export type { GraphqlBody } from '#protocol-rest/rest/graphql/body';
+} from '#protocol-graphql/graphql/body';
+export type { GraphqlBody } from '#protocol-graphql/graphql/body';
 export {
   GRAPHQL_DIR,
   GRAPHQL_SCHEMA_FILE,
@@ -816,15 +816,15 @@ export {
   sdlFromIntrospection,
   sdlFromSchemaFile,
   writeGraphqlSchema,
-} from '#protocol-rest/rest/graphql/schema';
-export { GRAPHQL_CHECK_MAX_BYTES, checkGraphqlResponse } from '#protocol-rest/rest/graphql/check';
+} from '#protocol-graphql/graphql/schema';
+export { GRAPHQL_CHECK_MAX_BYTES, checkGraphqlResponse } from '#protocol-graphql/graphql/check';
 export type {
   GraphqlCheckInput,
   GraphqlCheckResult,
   GraphqlDataProblem,
   GraphqlResponseError,
   GraphqlSchemaCheck,
-} from '#protocol-rest/rest/graphql/check';
+} from '#protocol-graphql/graphql/check';
 export type { ExpandRestOptions } from '#protocol-rest/rest/expand';
 export { decodeRestResponse, sendRest } from '#protocol-rest/rest/send';
 export type {

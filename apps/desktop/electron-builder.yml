@@ -30,7 +30,7 @@ files:
   - '!**/node_modules/@wirebench/engine/{src,test,coverage,node_modules}/**'
   # The engine's core and protocol packages (package split spec §6.2): the desktop lists them itself,
   # since they are the engine's dev dependencies, and only their built `dist/` is loaded.
-  - '!**/node_modules/@wirebench/{core,protocol-soap,protocol-rest,protocol-grpc,protocol-ws,protocol-mcp}/{src,test,coverage,node_modules}/**'
+  - '!**/node_modules/@wirebench/{core,protocol-soap,protocol-rest,protocol-grpc,protocol-ws,protocol-mcp,protocol-graphql}/{src,test,coverage,node_modules}/**'
   # Same for the SSH package: only its built `dist/` (and ssh2, hoisted) is resolved at runtime.
   - '!**/node_modules/@wirebench/ssh/{src,test,coverage,node_modules}/**'
   # The engine's optional `kerberos` dependency would otherwise be packed with the binding that

@@ -4,13 +4,26 @@
  * resolve — the script, the wire, History, cURL and code generation — sees an ordinary JSON body.
  */
 import { WirebenchError } from '#core/errors';
-import type { RestBody } from '../model.js';
 
-/** A GraphQL body. */
-export type GraphqlBody = Extract<RestBody, { kind: 'graphql' }>;
+/**
+ * A GraphQL body, as REST stores it. Written out rather than taken from REST's `RestBody`, since a
+ * protocol imports no other protocol (ADR-0030); the composition checks the two agree.
+ */
+export interface GraphqlBody {
+  readonly kind: 'graphql';
+  readonly query: string;
+  /** The variables as JSON text, edited as such; `''` for none. */
+  readonly variables: string;
+  /** Which operation of a document holding several to run; absent lets the server pick. */
+  readonly operationName?: string;
+}
 
-/** The raw JSON body a GraphQL body is sent as. */
-export type LoweredGraphqlBody = Extract<RestBody, { kind: 'raw' }>;
+/** The raw JSON body a GraphQL body is sent as: REST's `raw` body in JSON. */
+export interface LoweredGraphqlBody {
+  readonly kind: 'raw';
+  readonly language: 'json';
+  readonly text: string;
+}
 
 /**
  * The JSON text a send puts on the wire. Blank variables are left out, and so is an absent operation

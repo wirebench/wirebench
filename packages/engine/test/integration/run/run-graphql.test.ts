@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Project } from '#core/project/model';
 import { createProject } from '#core/project/model';
-import { writeGraphqlSchema } from '#protocol-rest/rest/graphql/schema';
+import { writeGraphqlSchema } from '#protocol-graphql/graphql/schema';
 import { createApi, createRestRequest, withRestApis } from '#protocol-rest/rest/model';
 import type { RestBody } from '#protocol-rest/rest/model';
 import type { RunContext } from '#core/run/context';

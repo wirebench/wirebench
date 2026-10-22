@@ -1,7 +1,7 @@
 /** A GraphQL response checked (#77): its errors, and its data against the operation and the schema. */
 import { buildSchema } from 'graphql';
 import { describe, expect, it } from 'vitest';
-import { checkGraphqlResponse, GRAPHQL_CHECK_MAX_BYTES } from '#protocol-rest/rest/graphql/check';
+import { checkGraphqlResponse, GRAPHQL_CHECK_MAX_BYTES } from '#protocol-graphql/graphql/check';
 
 const schema = buildSchema(`
   type Query { product(id: ID!): Product, products: [Product!]!, node(id: ID!): Node, count: Int! }

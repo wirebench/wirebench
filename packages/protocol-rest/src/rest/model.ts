@@ -276,7 +276,7 @@ export interface RestDefinitionRef {
 
 /**
  * Where an API's GraphQL schema came from (#77). The schema itself is SDL in the project, at
- * `apis/<slug>/graphql/schema.graphql` (`rest/graphql/schema.ts`).
+ * `apis/<slug>/graphql/schema.graphql` (`@wirebench/protocol-graphql`'s `graphql/schema.ts`).
  */
 export interface GraphqlSchemaRef {
   /** The URL that was introspected, or the name of the file that was imported. */

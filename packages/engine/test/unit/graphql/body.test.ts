@@ -14,14 +14,14 @@ import { saveProject } from '#core/project/save';
 import { projectFiles } from '#core/project/serialize';
 import { encodeRestBody } from '#protocol-rest/rest/body';
 import { expandRestSendInput } from '#protocol-rest/rest/expand';
-import { graphqlPayload, graphqlPayloadText } from '#protocol-rest/rest/graphql/body';
+import { graphqlPayload, graphqlPayloadText } from '#protocol-graphql/graphql/body';
 import { createApi, createRestRequest, restApisOf } from '#protocol-rest/rest/model';
 import type { RestBody, RestRequestDef } from '#protocol-rest/rest/model';
 import { restSecrets } from '#protocol-rest/rest/secrets';
 import type { RestSendInput } from '#protocol-rest/rest/send';
-import { tempProjectDir } from '../../project/fixture.js';
+import { tempProjectDir } from '../project/fixture.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
-import '../../../../src/protocols.js';
+import '../../../src/protocols.js';
 
 const REQUESTS = 'apis/shop/requests';
 
