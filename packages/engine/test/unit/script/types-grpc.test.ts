@@ -4,9 +4,9 @@
  * the well-known types — compiling with a script and catching a wrong field.
  */
 import { describe, expect, it } from 'vitest';
-import { loadProtoSet } from '../../../src/grpc/proto/load.js';
-import { apiDeclarations, secretNameType } from '../../../src/script/types/api.js';
-import { grpcScriptTypes } from '../../../src/grpc/script-types.js';
+import { loadProtoSet } from '#protocol-grpc/grpc/proto/load';
+import { apiDeclarations, secretNameType } from '#core/script/types/api';
+import { grpcScriptTypes } from '#protocol-grpc/grpc/script-types';
 import { typeErrors } from './ts-check.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';

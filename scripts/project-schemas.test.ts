@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { PROJECT_SCHEMA_BASE_URL, projectJsonSchemas } from '../packages/engine/src/project-files.ts';
-import { FORMAT_VERSION } from '../packages/engine/src/project/model.ts';
+import { FORMAT_VERSION } from '../packages/core/src/project/model.ts';
 import { MARKERS, PAGE, renderEditorSettings } from './project-schemas.ts';
 import { splice } from './docs-server-config.ts';
 

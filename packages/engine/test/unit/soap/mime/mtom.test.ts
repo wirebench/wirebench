@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { Attachment } from '../../../../src/soap/model.js';
-import { parseMultipartRelated } from '../../../../src/soap/mime/multipart.js';
-import { expandMtomResponse, prepareMtomRequest, xopContentType } from '../../../../src/soap/mime/mtom.js';
-import type { AttachmentResolver } from '../../../../src/soap/mime/types.js';
+import type { Attachment } from '#protocol-soap/soap/model';
+import { parseMultipartRelated } from '#protocol-soap/soap/mime/multipart';
+import { expandMtomResponse, prepareMtomRequest, xopContentType } from '#protocol-soap/soap/mime/mtom';
+import type { AttachmentResolver } from '#protocol-soap/soap/mime/types';
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 

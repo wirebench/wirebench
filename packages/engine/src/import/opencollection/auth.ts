@@ -5,13 +5,13 @@
  * Core only: it creates nothing protocol-specific.
  */
 
-import type { KeyValueEntry } from '../../http/entries.js';
-import { entry } from '../../http/entries.js';
-import type { AuthConfig, OAuth2Auth } from '../../project/model.js';
-import { blankUrlCredentials } from '../credential-values.js';
-import type { ReportBuilder } from '../report.js';
-import { rewriteMustache } from '../templates.js';
-import { referencesOnly } from '../values.js';
+import type { KeyValueEntry } from '#core/http/entries';
+import { entry } from '#core/http/entries';
+import type { AuthConfig, OAuth2Auth } from '#core/project/model';
+import { blankUrlCredentials } from '#core/import/credential-values';
+import type { ReportBuilder } from '#core/import/report';
+import { rewriteMustache } from '#core/import/templates';
+import { referencesOnly } from '#core/import/values';
 
 type Rec = Readonly<Record<string, unknown>>;
 

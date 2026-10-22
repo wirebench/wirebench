@@ -7,12 +7,12 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createMock, createMockOperation, createMockResponse } from '../../../src/mock/model.js';
-import type { MockDef, MockValidation } from '../../../src/mock/model.js';
-import { startMock } from '../../../src/mock/server.js';
-import type { MockExchangeEvent, RunningMock } from '../../../src/mock/server.js';
-import { nodeFs } from '../../../src/project/fs.js';
-import { restMocking } from '../../../src/rest/mock.js';
+import { createMock, createMockOperation, createMockResponse } from '#core/mock/model';
+import type { MockDef, MockValidation } from '#core/mock/model';
+import { startMock } from '#core/mock/server';
+import type { MockExchangeEvent, RunningMock } from '#core/mock/server';
+import { nodeFs } from '#core/project/fs';
+import { restMocking } from '#protocol-rest/rest/mock';
 import { mockProject } from '../mock/fixture.js';
 import { tempProjectDir } from '../project/fixture.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).

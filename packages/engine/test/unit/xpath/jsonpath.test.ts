@@ -7,9 +7,9 @@
  * real `eval` are refused, and the last describe block pins that.
  */
 import { describe, expect, it } from 'vitest';
-import { evaluateJsonPath } from '../../../src/xpath/jsonpath.js';
-import { evaluateJson } from '../../../src/xpath/evaluate.js';
-import type { QueryResult } from '../../../src/xpath/evaluate.js';
+import { evaluateJsonPath } from '#core/xpath/jsonpath';
+import { evaluateJson } from '#core/xpath/evaluate';
+import type { QueryResult } from '#core/xpath/evaluate';
 
 /** RFC 9535 §1.5's example document, verbatim. */
 const STORE = JSON.stringify({

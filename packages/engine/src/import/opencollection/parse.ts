@@ -4,7 +4,7 @@
  */
 
 import { parse as parseYaml } from 'yaml';
-import { OpenCollectionError } from '../../errors.js';
+import { OpenCollectionError } from '#core/errors';
 import type {
   OcAssertion,
   OcCollection,

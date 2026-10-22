@@ -3,10 +3,10 @@
  * nodes addressed by JSON pointer, and structural edits on that tree come back as a new body value.
  */
 import { describe, expect, it } from 'vitest';
-import { applyJsonFormEdit, buildJsonForm, toWireSchema, type JsonFormNode } from '../../../src/rest/json-form.js';
-import type { JsonSchema } from '../../../src/rest/openapi/model.js';
-import { sampleFromSchema } from '../../../src/json/schema/sample.js';
-import { parseSchema } from '../../../src/rest/openapi/parse.js';
+import { applyJsonFormEdit, buildJsonForm, toWireSchema, type JsonFormNode } from '#protocol-rest/rest/json-form';
+import type { JsonSchema } from '#protocol-rest/rest/openapi/model';
+import { sampleFromSchema } from '#core/json/schema/sample';
+import { parseSchema } from '#protocol-rest/rest/openapi/parse';
 
 function child(node: JsonFormNode, name: string): JsonFormNode {
   const found = node.children.find((candidate) => candidate.name === name);

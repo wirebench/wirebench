@@ -4,15 +4,15 @@
  * earlier step lifted correlates the callback, and the run says what it waits for.
  */
 import { describe, expect, it } from 'vitest';
-import type { CallbackClock, CallbackWaiting } from '../../../src/assert/callback.js';
-import type { CaptureDetailView, CaptureSource } from '../../../src/assert/capture-source.js';
-import type { AssertionSubject, CallbackAssertion } from '../../../src/assert/model.js';
-import { createProject } from '../../../src/project/model.js';
-import type { Project, PropertyMap } from '../../../src/project/model.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
-import { createSequence, createSequenceStep } from '../../../src/sequence/model.js';
-import { runSequence } from '../../../src/sequence/run.js';
-import type { CallbackStep, SequenceStepSender } from '../../../src/sequence/run.js';
+import type { CallbackClock, CallbackWaiting } from '#core/assert/callback';
+import type { CaptureDetailView, CaptureSource } from '#core/assert/capture-source';
+import type { AssertionSubject, CallbackAssertion } from '#core/assert/model';
+import { createProject } from '#core/project/model';
+import type { Project, PropertyMap } from '#core/project/model';
+import { createApi, createRestRequest } from '#protocol-rest/rest/model';
+import { createSequence, createSequenceStep } from '#core/sequence/model';
+import { runSequence } from '#core/sequence/run';
+import type { CallbackStep, SequenceStepSender } from '#core/sequence/run';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';
 

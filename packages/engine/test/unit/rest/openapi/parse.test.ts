@@ -9,10 +9,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { parseDocumentText, parseOpenApiDocument, versionOf } from '../../../../src/rest/openapi/parse.js';
-import { OpenApiError } from '../../../../src/errors.js';
-import { serverUrl } from '../../../../src/rest/openapi/model.js';
-import type { OpenApiDocument } from '../../../../src/rest/openapi/model.js';
+import { parseDocumentText, parseOpenApiDocument, versionOf } from '#protocol-rest/rest/openapi/parse';
+import { OpenApiError } from '#core/errors';
+import { serverUrl } from '#protocol-rest/rest/openapi/model';
+import type { OpenApiDocument } from '#protocol-rest/rest/openapi/model';
 
 const craftedDir = fileURLToPath(new URL('../../../../../../fixtures/openapi/crafted/', import.meta.url));
 

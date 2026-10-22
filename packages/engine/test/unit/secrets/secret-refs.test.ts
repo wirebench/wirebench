@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { secretRefsInValue } from '../../../src/secrets/secret-refs.js';
+import { secretRefsInValue } from '#core/secrets/secret-refs';
 
 describe('secretRefsInValue', () => {
   it('finds every keychain reference anywhere in a model, once each, and nothing else', () => {

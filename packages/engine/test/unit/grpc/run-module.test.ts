@@ -3,26 +3,26 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { writeProtoDefinitionCache } from '../../../src/grpc/cache.js';
-import { createGrpcApi, createGrpcFolder, createGrpcRequest, grpcApisOf } from '../../../src/grpc/model.js';
-import { grpcProtocol } from '../../../src/grpc/module.js';
-import { grpcRun } from '../../../src/grpc/run.js';
-import { createProject } from '../../../src/project/model.js';
-import type { RunScope } from '../../../src/protocol/module.js';
-import type { Project } from '../../../src/project/model.js';
-import type { GrpcRequestDef } from '../../../src/grpc/model.js';
-import { apiDefinitionDir } from '../../../src/project/paths.js';
-import type { RunContext } from '../../../src/run/context.js';
-import { createRunScope } from '../../../src/run/scope.js';
-import { selectRequests } from '../../../src/run/select.js';
+import { writeProtoDefinitionCache } from '#protocol-grpc/grpc/cache';
+import { createGrpcApi, createGrpcFolder, createGrpcRequest, grpcApisOf } from '#protocol-grpc/grpc/model';
+import { grpcProtocol } from '#protocol-grpc/grpc/module';
+import { grpcRun } from '#protocol-grpc/grpc/run';
+import { createProject } from '#core/project/model';
+import type { RunScope } from '#core/protocol/module';
+import type { Project } from '#core/project/model';
+import type { GrpcRequestDef } from '#protocol-grpc/grpc/model';
+import { apiDefinitionDir } from '#core/project/paths';
+import type { RunContext } from '#core/run/context';
+import { createRunScope } from '#core/run/scope';
+import { selectRequests } from '#core/run/select';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';
 
 const { events } = vi.hoisted(() => ({ events: [] as string[] }));
 
-vi.mock('../../../src/grpc/call.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../src/grpc/call.js')>()),
+vi.mock('#protocol-grpc/grpc/call', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#protocol-grpc/grpc/call')>()),
   callGrpc: (input: { readonly target: string; readonly messageText: string }) => {
     events.push(`send ${input.target} ${input.messageText}`);
     return Promise.resolve({

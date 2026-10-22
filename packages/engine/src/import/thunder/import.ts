@@ -4,7 +4,7 @@
  */
 
 import { readFile, stat } from 'node:fs/promises';
-import { ThunderError } from '../../errors.js';
+import { ThunderError } from '#core/errors';
 import type { MappedClientImport } from '../client-import.js';
 import type { ImportFolderErrorCode } from '../read-folder.js';
 import { readImportFolder } from '../read-folder.js';

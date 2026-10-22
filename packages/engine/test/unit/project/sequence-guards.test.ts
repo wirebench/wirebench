@@ -4,17 +4,17 @@
  * carries a line break into a URL, a header or metadata.
  */
 import { describe, expect, it } from 'vitest';
-import { SequenceError } from '../../../src/errors.js';
-import { expandGrpcInput } from '../../../src/grpc/expand.js';
-import { expand } from '../../../src/project/properties.js';
-import { expandSendInput } from '../../../src/soap/expand.js';
-import type { PropertyScopes } from '../../../src/project/properties.js';
-import { expandWithSequenceEscaped, urlOrigin } from '../../../src/project/sequence-guards.js';
-import { expandRestSendInput } from '../../../src/rest/expand.js';
-import { entry } from '../../../src/rest/model.js';
-import type { RestBody } from '../../../src/rest/model.js';
-import type { RestSendInput } from '../../../src/rest/send.js';
-import type { SoapSendInput } from '../../../src/soap/types.js';
+import { SequenceError } from '#core/errors';
+import { expandGrpcInput } from '#protocol-grpc/grpc/expand';
+import { expand } from '#core/project/properties';
+import { expandSendInput } from '#protocol-soap/soap/expand';
+import type { PropertyScopes } from '#core/project/properties';
+import { expandWithSequenceEscaped, urlOrigin } from '#core/project/sequence-guards';
+import { expandRestSendInput } from '#protocol-rest/rest/expand';
+import { entry } from '#protocol-rest/rest/model';
+import type { RestBody } from '#protocol-rest/rest/model';
+import type { RestSendInput } from '#protocol-rest/rest/send';
+import type { SoapSendInput } from '#protocol-soap/soap/types';
 
 function scopes(sequence: Record<string, string>, env: Record<string, string> = {}): PropertyScopes {
   return {

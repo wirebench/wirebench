@@ -5,7 +5,7 @@ import {
   secretEnvName,
   secretPseudoRef,
   secretToken,
-} from '../../../src/secrets/secret-token.js';
+} from '#core/secrets/secret-token';
 
 describe('SECRET_NAME_PATTERN', () => {
   it.each(['billing_key', '_x', 'A1'])('accepts %s', (name) => {

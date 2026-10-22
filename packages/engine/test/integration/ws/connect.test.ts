@@ -7,7 +7,7 @@
 import diagnosticsChannel from 'node:diagnostics_channel';
 import { WebSocket } from 'undici';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { WsError } from '../../../src/errors.js';
+import { WsError } from '#core/errors';
 import { connectWebSocket, LIVE_PATH, type ConnectedWebSocket } from '../../../src/index.js';
 import { generateServerCert, generateTestCa } from '../../helpers/test-certs.js';
 import { startTestProxy } from '../../helpers/test-proxy.js';

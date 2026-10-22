@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { sendSoapRequest } from '../../src/soap/send.js';
-import { DEFAULT_WSA_CONFIG } from '../../src/wsa/model.js';
-import type { SoapSendInput } from '../../src/soap/types.js';
+import { sendSoapRequest } from '#protocol-soap/soap/send';
+import { DEFAULT_WSA_CONFIG } from '#protocol-soap/wsa/model';
+import type { SoapSendInput } from '#protocol-soap/soap/types';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-soap-server.js';
 
 let server: TestSoapServer;

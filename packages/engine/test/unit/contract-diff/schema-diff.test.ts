@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { MessageSide } from '../../../src/contract-diff/model.js';
-import { diffSchemas } from '../../../src/contract-diff/schema-diff.js';
+import type { MessageSide } from '#core/contract-diff/model';
+import { diffSchemas } from '#core/contract-diff/schema-diff';
 
 /** `kind severity location` per change, the shape every row of spec §3.3 is checked in. */
 function diff(before: unknown, after: unknown, side: MessageSide, xmlOccurrence = false): string[] {

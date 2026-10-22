@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { prettyFrameText } from '../../../src/ws/pretty.js';
+import { prettyFrameText } from '#protocol-ws/ws/pretty';
 
 describe('prettyFrameText', () => {
   it('indents JSON', () =>

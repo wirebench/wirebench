@@ -5,9 +5,9 @@
  * newer than this build knows is read as the newest and named in the report. Pure.
  */
 
-import { HoppscotchError } from '../../errors.js';
-import type { ImportReport } from '../report.js';
-import { ReportBuilder } from '../report.js';
+import { HoppscotchError } from '#core/errors';
+import type { ImportReport } from '#core/import/report';
+import { ReportBuilder } from '#core/import/report';
 import type {
   HopBody,
   HopCollection,

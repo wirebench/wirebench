@@ -1,10 +1,10 @@
 import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it } from 'vitest';
-import { McpError } from '../../../src/errors.js';
-import { inspectMessage, readMessages } from '../../../src/mcp/jsonrpc.js';
-import { MCP_MAX_MESSAGE_BYTES, MCP_MAX_MESSAGES } from '../../../src/mcp/limits.js';
-import { runMcpSession, type McpSessionOptions } from '../../../src/mcp/session.js';
-import type { McpWireHandlers, McpWireTransport } from '../../../src/mcp/transport.js';
+import { McpError } from '#core/errors';
+import { inspectMessage, readMessages } from '#protocol-mcp/mcp/jsonrpc';
+import { MCP_MAX_MESSAGE_BYTES, MCP_MAX_MESSAGES } from '#protocol-mcp/mcp/limits';
+import { runMcpSession, type McpSessionOptions } from '#protocol-mcp/mcp/session';
+import type { McpWireHandlers, McpWireTransport } from '#protocol-mcp/mcp/transport';
 
 type Reply = (message: Record<string, unknown>, push: (value: unknown) => void) => void;
 

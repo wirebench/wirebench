@@ -4,5 +4,25 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "include": ["src"]
+  "include": ["src"],
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../protocol-soap"
+    },
+    {
+      "path": "../protocol-rest"
+    },
+    {
+      "path": "../protocol-grpc"
+    },
+    {
+      "path": "../protocol-ws"
+    },
+    {
+      "path": "../protocol-mcp"
+    }
+  ]
 }

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { buildUsernameToken, passwordDigest } from '../../../../src/wss/outgoing/username-token.js';
-import { serializeXml } from '../../../../src/xml/serialize.js';
+import { buildUsernameToken, passwordDigest } from '#protocol-soap/wss/outgoing/username-token';
+import { serializeXml } from '#core/xml/serialize';
 
 const NONCE_BASE64 = 'WScqanjCEAC4mQoBE07sAQ==';
 const CREATED = '2003-07-16T01:24:32Z';

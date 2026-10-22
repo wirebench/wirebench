@@ -1,4 +1,4 @@
-import type { WsdlDefinition } from '../../src/wsdl/model.js';
+import type { WsdlDefinition } from '#protocol-soap/wsdl/model';
 
 /**
  * Converts a {@link WsdlDefinition} into a plain, JSON-serialisable object

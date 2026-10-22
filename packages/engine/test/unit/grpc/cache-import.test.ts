@@ -2,9 +2,9 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ProjectError } from '../../../src/errors.js';
-import { readProtoDefinitionCache, writeProtoDefinitionCache, protoPathSegments } from '../../../src/grpc/cache.js';
-import { importProto } from '../../../src/grpc/import.js';
+import { ProjectError } from '#core/errors';
+import { readProtoDefinitionCache, writeProtoDefinitionCache, protoPathSegments } from '#protocol-grpc/grpc/cache';
+import { importProto } from '#protocol-grpc/grpc/import';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
 
 const dirs: string[] = [];

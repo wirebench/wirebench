@@ -1,7 +1,7 @@
 /** A request's own assertions as runs and the desktop check them (request-assertions spec §4). */
 import { describe, expect, it } from 'vitest';
-import { checkRequestAssertions } from '../../../src/assert/check.js';
-import type { Assertion, AssertionSubject } from '../../../src/assert/model.js';
+import { checkRequestAssertions } from '#core/assert/check';
+import type { Assertion, AssertionSubject } from '#core/assert/model';
 
 const subject: AssertionSubject = {
   protocol: 'rest',

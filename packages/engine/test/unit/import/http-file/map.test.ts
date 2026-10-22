@@ -4,11 +4,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { HttpFileError } from '../../../../src/errors.js';
+import { HttpFileError } from '#core/errors';
 import { importHttpFile } from '../../../../src/import/http-file/import.js';
 import { mapHttpFile } from '../../../../src/import/http-file/map.js';
-import { MAX_HTTP_FILE_BYTES, parseHttpFile } from '../../../../src/rest/http-file/parse.js';
-import { entry } from '../../../../src/rest/model.js';
+import { MAX_HTTP_FILE_BYTES, parseHttpFile } from '#protocol-rest/rest/http-file/parse';
+import { entry } from '#protocol-rest/rest/model';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureDir = resolve(here, '../../../../../../fixtures');

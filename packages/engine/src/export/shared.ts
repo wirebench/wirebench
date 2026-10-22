@@ -4,9 +4,9 @@
  * report every line of the export goes to.
  */
 
-import { ReportBuilder } from '../import/report.js';
-import { slugify } from '../project/paths.js';
-import { SECRET_NAME_PATTERN } from '../secrets/secret-token.js';
+import { ReportBuilder } from '#core/import/report';
+import { slugify } from '#core/project/paths';
+import { SECRET_NAME_PATTERN } from '#core/secrets/secret-token';
 
 /** The scopes the target's one variable namespace flattens: `${#Env#name}` is written `{{name}}`. */
 const FLATTENED = new Set(['Project', 'Env', 'Workspace', 'Global']);

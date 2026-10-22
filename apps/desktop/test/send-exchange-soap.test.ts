@@ -31,8 +31,8 @@ import { sendDepsFor } from './helpers/send-deps.js';
 const { cacheReads } = vi.hoisted(() => ({ cacheReads: [] as string[] }));
 
 // Every read of an interface's definition cache by the engine, which finds none here.
-vi.mock('../../../packages/engine/src/wsdl/cache.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../packages/engine/src/wsdl/cache.js')>()),
+vi.mock('../../../packages/protocol-soap/src/wsdl/cache.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../packages/protocol-soap/src/wsdl/cache.js')>()),
   readDefinitionCache: (dir: string) => {
     cacheReads.push(dir);
     return Promise.reject(new Error('no cache here'));

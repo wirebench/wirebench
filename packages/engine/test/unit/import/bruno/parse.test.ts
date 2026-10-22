@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BrunoError } from '../../../../src/errors.js';
+import { BrunoError } from '#core/errors';
 import { block, blocks, parseBru } from '../../../../src/import/bruno/parse.js';
 import type { BruBlock, BruPair } from '../../../../src/import/bruno/model.js';
 

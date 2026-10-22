@@ -1,12 +1,12 @@
 import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it } from 'vitest';
-import { McpError } from '../../../src/errors.js';
-import { buildMcpExchange, mcpSubject, type McpExchangeTransport } from '../../../src/mcp/exchange.js';
-import type { McpHttpCall } from '../../../src/mcp/http-calls.js';
-import type { McpCatalogue, McpOperation } from '../../../src/mcp/model.js';
-import { mcpOperationCall } from '../../../src/mcp/operation.js';
-import { runMcpSession, type McpSessionOutcome } from '../../../src/mcp/session.js';
-import type { McpWireHandlers, McpWireTransport } from '../../../src/mcp/transport.js';
+import { McpError } from '#core/errors';
+import { buildMcpExchange, mcpSubject, type McpExchangeTransport } from '#protocol-mcp/mcp/exchange';
+import type { McpHttpCall } from '#protocol-mcp/mcp/http-calls';
+import type { McpCatalogue, McpOperation } from '#protocol-mcp/mcp/model';
+import { mcpOperationCall } from '#protocol-mcp/mcp/operation';
+import { runMcpSession, type McpSessionOutcome } from '#protocol-mcp/mcp/session';
+import type { McpWireHandlers, McpWireTransport } from '#protocol-mcp/mcp/transport';
 
 const noWire: McpWireTransport = {
   start: () => Promise.resolve(),

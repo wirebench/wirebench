@@ -1,8 +1,8 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { PostmanError } from '../../../../src/errors.js';
-import { importPostmanCollection } from '../../../../src/rest/postman/import.js';
+import { PostmanError } from '#core/errors';
+import { importPostmanCollection } from '#protocol-rest/rest/postman/import';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

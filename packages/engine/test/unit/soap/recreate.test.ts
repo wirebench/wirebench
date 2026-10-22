@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { recreateRequest } from '../../../src/soap/recreate.js';
+import { recreateRequest } from '#protocol-soap/soap/recreate';
 
 const CURRENT = `<?xml version="1.0" encoding="utf-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">

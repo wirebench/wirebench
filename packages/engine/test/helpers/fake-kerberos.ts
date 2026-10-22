@@ -1,4 +1,4 @@
-import type { KerberosClientLike, KerberosInitInput, KerberosProvider } from '../../src/http/auth/kerberos-native.js';
+import type { KerberosClientLike, KerberosInitInput, KerberosProvider } from '#core/http/auth/kerberos-native';
 
 export interface FakeKerberos extends KerberosProvider {
   readonly inits: KerberosInitInput[];

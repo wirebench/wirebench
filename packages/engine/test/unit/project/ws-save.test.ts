@@ -8,14 +8,14 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadProject } from '../../../src/project/load.js';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { APIS_DIR } from '../../../src/project/paths.js';
-import { saveProject } from '../../../src/project/save.js';
-import { createGrpcApi, createGrpcRequest, grpcApisOf } from '../../../src/grpc/model.js';
-import { createApi, createRestRequest, restApisOf } from '../../../src/rest/model.js';
-import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../src/ws/model.js';
+import { loadProject } from '#core/project/load';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { APIS_DIR } from '#core/project/paths';
+import { saveProject } from '#core/project/save';
+import { createGrpcApi, createGrpcRequest, grpcApisOf } from '#protocol-grpc/grpc/model';
+import { createApi, createRestRequest, restApisOf } from '#protocol-rest/rest/model';
+import { createWsApi, createWsRequest, createWsSavedMessage } from '#protocol-ws/ws/model';
 import { listTree, tempProjectDir } from './fixture.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';

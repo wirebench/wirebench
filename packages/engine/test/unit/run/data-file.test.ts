@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isWirebenchError } from '../../../src/errors.js';
-import { DATA_FILE_LIMITS, dataFormatOf, parseDataFile } from '../../../src/run/data-file.js';
+import { isWirebenchError } from '#core/errors';
+import { DATA_FILE_LIMITS, dataFormatOf, parseDataFile } from '#core/run/data-file';
 
 function refusal(run: () => unknown): { code: string; message: string } {
   try {

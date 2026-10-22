@@ -1,21 +1,21 @@
 /** REST's run facet on its own: APIs and webhook items, why a request cannot run, its needs, one send. */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { createApi, createFolder, createRestRequest, entry, restApisOf } from '../../../src/rest/model.js';
-import { restProtocol } from '../../../src/rest/module.js';
-import { restRun } from '../../../src/rest/run.js';
-import type { RunContext } from '../../../src/run/context.js';
-import { createRunScope } from '../../../src/run/scope.js';
-import { selectRequests } from '../../../src/run/select.js';
-import { createWebhookCollection, createWebhookFolder } from '../../../src/webhooks/model.js';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { createApi, createFolder, createRestRequest, entry, restApisOf } from '#protocol-rest/rest/model';
+import { restProtocol } from '#protocol-rest/rest/module';
+import { restRun } from '#protocol-rest/rest/run';
+import type { RunContext } from '#core/run/context';
+import { createRunScope } from '#core/run/scope';
+import { selectRequests } from '#core/run/select';
+import { createWebhookCollection, createWebhookFolder } from '#protocol-rest/webhooks/model';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';
 
 const { events } = vi.hoisted(() => ({ events: [] as string[] }));
 
-vi.mock('../../../src/rest/send.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../src/rest/send.js')>()),
+vi.mock('#protocol-rest/rest/send', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#protocol-rest/rest/send')>()),
   sendRest: (input: { readonly baseUrl: string; readonly request: { readonly url: string } }) => {
     events.push(`send ${input.baseUrl}${input.request.url}`);
     return Promise.resolve({

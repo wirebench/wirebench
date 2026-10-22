@@ -2,14 +2,14 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { PostmanError } from '../../../../src/errors.js';
+import { PostmanError } from '#core/errors';
 import * as engine from '../../../../src/index.js';
 import {
   postmanVariablesOf,
   importPostmanVariables,
   isPostmanVariables,
   parsePostmanVariablesText,
-} from '../../../../src/rest/postman/variables.js';
+} from '#protocol-rest/rest/postman/variables';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = (name: string) =>

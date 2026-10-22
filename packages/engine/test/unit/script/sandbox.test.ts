@@ -4,9 +4,9 @@
  */
 import { createHmac } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
-import { clampTimeout, createScriptSandbox } from '../../../src/script/sandbox/host.js';
-import { positionIn, toSandboxError } from '../../../src/script/sandbox/execute.js';
-import { SCRIPT_LIMITS, type SandboxJob } from '../../../src/script/sandbox/model.js';
+import { clampTimeout, createScriptSandbox } from '#core/script/sandbox/host';
+import { positionIn, toSandboxError } from '#core/script/sandbox/execute';
+import { SCRIPT_LIMITS, type SandboxJob } from '#core/script/sandbox/model';
 
 /** A minimal API: `log`, and `out` handed back by `__finish`. */
 const PRELUDE = `

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createProject } from '../../../src/project/model.js';
-import type { RunContext } from '../../../src/run/context.js';
-import { createRunScope, scopeWith } from '../../../src/run/scope.js';
+import { createProject } from '#core/project/model';
+import type { RunContext } from '#core/run/context';
+import { createRunScope, scopeWith } from '#core/run/scope';
 
 const context: RunContext = {
   project: createProject('P', { id: 'p1' }),

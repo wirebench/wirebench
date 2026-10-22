@@ -1,7 +1,7 @@
 import { createServer, type Server, type Socket } from 'node:net';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import forge from 'node-forge';
-import { isCertificateVerifyError, probeTlsChain } from '../../../src/http/cert-expiry.js';
+import { isCertificateVerifyError, probeTlsChain } from '#core/http/cert-expiry';
 import { generateServerCert, generateTestCa, type TestCertificate } from '../../helpers/test-certs.js';
 import { startTestProxy, type TestProxy } from '../../helpers/test-proxy.js';
 import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';

@@ -13,7 +13,7 @@ import {
 } from '../../../src/index.js';
 import type { Project, WebhookSigning } from '../../../src/index.js';
 import { tempProjectDir } from './fixture.js';
-import { webhooksOf } from '../../../src/webhooks/model.js';
+import { webhooksOf } from '#protocol-rest/webhooks/model';
 
 const HMAC: WebhookSigning = {
   mode: 'sign',

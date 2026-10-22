@@ -3,11 +3,11 @@
  * (#346) and the cURL export.
  */
 import { describe, expect, it } from 'vitest';
-import type { SendAuth } from '../../../src/http/auth/send-auth.js';
-import { CURL_REDACTED, restToCurl } from '../../../src/rest/curl.js';
-import { previewRestHeaders } from '../../../src/rest/header-preview.js';
-import { entry } from '../../../src/rest/model.js';
-import type { RestSendInput } from '../../../src/rest/send.js';
+import type { SendAuth } from '#core/http/auth/send-auth';
+import { CURL_REDACTED, restToCurl } from '#protocol-rest/rest/curl';
+import { previewRestHeaders } from '#protocol-rest/rest/header-preview';
+import { entry } from '#protocol-rest/rest/model';
+import type { RestSendInput } from '#protocol-rest/rest/send';
 
 const SIGV4: SendAuth = {
   type: 'aws-sigv4',

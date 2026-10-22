@@ -8,14 +8,14 @@
  * these.
  */
 import { describe, expect, it } from 'vitest';
-import type { GrpcRequestSnapshot } from '../../../src/grpc/scripting.js';
-import type { McpRequestSnapshot } from '../../../src/mcp/scripting.js';
+import type { GrpcRequestSnapshot } from '#protocol-grpc/grpc/scripting';
+import type { McpRequestSnapshot } from '#protocol-mcp/mcp/scripting';
 import { defaultRegistry } from '../../../src/protocols.js';
 import type { RequestSnapshot } from '../../../src/protocols.js';
-import type { RestRequestSnapshot } from '../../../src/rest/scripting.js';
-import { applyRequestChanges } from '../../../src/script/apply.js';
-import type { ScriptFailure } from '../../../src/script/model.js';
-import type { SoapRequestSnapshot } from '../../../src/soap/scripting.js';
+import type { RestRequestSnapshot } from '#protocol-rest/rest/scripting';
+import { applyRequestChanges } from '#core/script/apply';
+import type { ScriptFailure } from '#core/script/model';
+import type { SoapRequestSnapshot } from '#protocol-soap/soap/scripting';
 
 type Snapshot = RequestSnapshot;
 

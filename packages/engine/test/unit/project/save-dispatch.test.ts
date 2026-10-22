@@ -6,14 +6,14 @@
 import { cp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
-import { loadProject } from '../../../src/project/load.js';
-import type { Project } from '../../../src/project/model.js';
-import { saveProject } from '../../../src/project/save.js';
-import { projectFiles } from '../../../src/project/serialize.js';
+import { createGrpcApi, createGrpcRequest } from '#protocol-grpc/grpc/model';
+import { loadProject } from '#core/project/load';
+import type { Project } from '#core/project/model';
+import { saveProject } from '#core/project/save';
+import { projectFiles } from '#core/project/serialize';
 import { createBuiltinRegistry } from '../../../src/protocols.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
-import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../src/ws/model.js';
+import { createApi, createRestRequest } from '#protocol-rest/rest/model';
+import { createWsApi, createWsRequest, createWsSavedMessage } from '#protocol-ws/ws/model';
 import { sampleProject, tempProjectDir } from './fixture.js';
 
 const ENGINE_FIXTURES = join(import.meta.dirname, '..', '..', 'fixtures');

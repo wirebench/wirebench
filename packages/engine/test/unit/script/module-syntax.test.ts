@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blankModuleMarkers } from '../../../src/script/module-syntax.js';
+import { blankModuleMarkers } from '#core/script/module-syntax';
 
 describe('blankModuleMarkers', () => {
   it('blanks an export {} line with or without its semicolon, padded by spaces and tabs', () => {

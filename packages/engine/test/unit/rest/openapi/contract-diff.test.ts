@@ -2,10 +2,10 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { ContractChange } from '../../../../src/contract-diff/model.js';
-import { diffOpenApiContracts } from '../../../../src/rest/openapi/contract-diff.js';
-import { parseOpenApi } from '../../../../src/rest/openapi/import.js';
-import type { OpenApiDocument } from '../../../../src/rest/openapi/model.js';
+import type { ContractChange } from '#core/contract-diff/model';
+import { diffOpenApiContracts } from '#protocol-rest/rest/openapi/contract-diff';
+import { parseOpenApi } from '#protocol-rest/rest/openapi/import';
+import type { OpenApiDocument } from '#protocol-rest/rest/openapi/model';
 
 const fixtures = fileURLToPath(new URL('../../../../../../fixtures/openapi/crafted/contract-diff/', import.meta.url));
 

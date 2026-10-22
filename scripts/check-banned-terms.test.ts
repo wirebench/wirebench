@@ -27,14 +27,14 @@ describe('findBannedTerms', () => {
 describe('isExemptPath', () => {
   it('exempts the checker, the format constants file and everything under the legacy fixtures folder', () => {
     expect(isExemptPath('scripts/check-banned-terms.ts')).toBe(true);
-    expect(isExemptPath('packages/engine/src/soap/legacy-project/format.ts')).toBe(true);
+    expect(isExemptPath('packages/protocol-soap/src/soap/legacy-project/format.ts')).toBe(true);
     expect(isExemptPath('fixtures/legacy-soap-project/minimal.xml')).toBe(true);
     expect(isExemptPath('fixtures/legacy-soap-project/nested/deep.xml')).toBe(true);
   });
 
   it('checks every other path, including siblings of the exempt ones', () => {
-    expect(isExemptPath('packages/engine/src/soap/legacy-project/parse.ts')).toBe(false);
-    expect(isExemptPath('packages/engine/src/soap/legacy-project/format.test.ts')).toBe(false);
+    expect(isExemptPath('packages/protocol-soap/src/soap/legacy-project/parse.ts')).toBe(false);
+    expect(isExemptPath('packages/protocol-soap/src/soap/legacy-project/format.test.ts')).toBe(false);
     expect(isExemptPath('fixtures/legacy-soap-project-extra/a.xml')).toBe(false);
     expect(isExemptPath('docs/specs/2026-09-18-legacy-soap-project-import-design.md')).toBe(false);
   });

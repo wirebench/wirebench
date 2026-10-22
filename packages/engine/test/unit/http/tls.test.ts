@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { captureSslInfo, splitPemBundle, type TlsSocketLike } from '../../../src/http/tls.js';
+import { captureSslInfo, splitPemBundle, type TlsSocketLike } from '#core/http/tls';
 
 interface FakeCert {
   subject?: Record<string, string | string[]>;

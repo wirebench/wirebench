@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { McpError } from '../../../src/errors.js';
-import type { McpOperation } from '../../../src/mcp/model.js';
+import { McpError } from '#core/errors';
+import type { McpOperation } from '#protocol-mcp/mcp/model';
 import {
   MCP_METHOD_CAPABILITY,
   mcpOperationCall,
   mcpOperationParams,
   mcpResultWarnings,
   parseMcpArguments,
-} from '../../../src/mcp/operation.js';
+} from '#protocol-mcp/mcp/operation';
 
 const row = (name: string, value: string, enabled = true) => ({ name, value, enabled });
 

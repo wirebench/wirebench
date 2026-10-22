@@ -4,7 +4,7 @@
  * no equivalent and is left to the caller to report.
  */
 
-import type { Assertion } from '../../assert/model.js';
+import type { Assertion } from '#core/assert/model';
 import type { OcAssertion } from './model.js';
 
 /** The operators read, by both of their spellings. */

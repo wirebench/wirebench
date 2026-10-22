@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { BrunoError } from '../../../../src/errors.js';
+import { BrunoError } from '#core/errors';
 import { ocOfBrunoFolder } from '../../../../src/import/bruno/convert.js';
 import { importBruno } from '../../../../src/import/bruno/import.js';
 import { isBrunoExport, ocOfBrunoExport } from '../../../../src/import/bruno/json-export.js';

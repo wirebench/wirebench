@@ -6,12 +6,12 @@
  * Test-only. Never import this from production code.
  */
 
-import { applyOutgoingWss } from '../../src/wss/apply.js';
-import { loadKeystore } from '../../src/keystore/index.js';
-import { createWssContext } from '../../src/wss/model.js';
-import { NS } from '../../src/xml/namespaces.js';
-import type { Keystore } from '../../src/keystore/model.js';
-import type { WssEntry, WssOutgoingConfig } from '../../src/wss/model.js';
+import { applyOutgoingWss } from '#protocol-soap/wss/apply';
+import { loadKeystore } from '#core/keystore/index';
+import { createWssContext } from '#protocol-soap/wss/model';
+import { NS } from '#core/xml/namespaces';
+import type { Keystore } from '#core/keystore/model';
+import type { WssEntry, WssOutgoingConfig } from '#protocol-soap/wss/model';
 import { generateUntrustedCert } from './test-certs.js';
 
 /** The key material the `/wss/*` routes secure their responses with. */

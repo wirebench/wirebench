@@ -9,7 +9,7 @@
  * `~` marks an entry disabled; `@name` lines above a pair annotate it. The grammar has no comments.
  */
 
-import { BrunoError } from '../../errors.js';
+import { BrunoError } from '#core/errors';
 import type { BruAnnotation, BruBlock, BruFile, BruGrammar, BruPair } from './model.js';
 
 /** Blocks whose body is raw text rather than `key: value` pairs. */

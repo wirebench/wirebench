@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { importWsdl } from '../../../src/soap/import.js';
-import type { WsdlImportResult } from '../../../src/soap/types.js';
-import { validateAgainstSchemaSet } from '../../../src/validate/schema-validator.js';
-import type { ValidationProblem } from '../../../src/validate/types.js';
+import { importWsdl } from '#protocol-soap/soap/import';
+import type { WsdlImportResult } from '#protocol-soap/soap/types';
+import { validateAgainstSchemaSet } from '#protocol-soap/validate/schema-validator';
+import type { ValidationProblem } from '#protocol-soap/validate/types';
 
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 
@@ -415,8 +415,8 @@ describe('validateAgainstSchemaSet — timeout guard', () => {
     fakeValidateXML.mockResolvedValue({ valid: true, errors: [] });
     vi.doMock('xmllint-wasm', () => ({ validateXML: fakeValidateXML }));
 
-    const { validateAgainstSchemaSet: validateWithFake } = await import('../../../src/validate/schema-validator.js');
-    const { importWsdl: importWithFake } = await import('../../../src/soap/import.js');
+    const { validateAgainstSchemaSet: validateWithFake } = await import('#protocol-soap/validate/schema-validator');
+    const { importWsdl: importWithFake } = await import('#protocol-soap/soap/import');
     const calculator = await importWithFake({ kind: 'file', path: publicPath('calculator') });
     const target = { schemaSet: calculator.schemaSet, bundle: calculator.bundle };
 

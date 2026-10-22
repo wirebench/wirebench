@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { maskRecordedResponse } from '../../../src/import/examples.js';
-import { REDACTED_MARKER } from '../../../src/redact/index.js';
+import { maskRecordedResponse } from '#core/import/examples';
+import { REDACTED_MARKER } from '#core/redact/index';
 
 const XML_MARKER = '&lt;redacted&gt;';
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { formatImportReport, ReportBuilder, uniqueName } from '../../../src/import/report.js';
-import { importedScriptPath } from '../../../src/import/scripts.js';
-import { credentialLookingNames, VariableSetBuilder } from '../../../src/import/variables.js';
+import { formatImportReport, ReportBuilder, uniqueName } from '#core/import/report';
+import { importedScriptPath } from '#core/import/scripts';
+import { credentialLookingNames, VariableSetBuilder } from '#core/import/variables';
 
 const plain = (name: string, value = 'v') => ({ name, value, enabled: true, secret: false });
 

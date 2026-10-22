@@ -1,10 +1,10 @@
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { isNotFound, nodeFs, readFileIfExists, readdirIfExists, writeFileAtomic } from '../../../src/project/fs.js';
-import type { FsLike } from '../../../src/project/fs.js';
-import { loadProject } from '../../../src/project/load.js';
-import { saveProject } from '../../../src/project/save.js';
+import { isNotFound, nodeFs, readFileIfExists, readdirIfExists, writeFileAtomic } from '#core/project/fs';
+import type { FsLike } from '#core/project/fs';
+import { loadProject } from '#core/project/load';
+import { saveProject } from '#core/project/save';
 import { listTree, sampleProject, tempProjectDir } from './fixture.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';

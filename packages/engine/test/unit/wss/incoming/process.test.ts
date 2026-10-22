@@ -4,11 +4,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { applyOutgoingWss } from '../../../../src/wss/apply.js';
-import { createWssContext, DEFAULT_WSS_SIGNATURE_PARTS } from '../../../../src/wss/model.js';
-import { processIncomingWss } from '../../../../src/wss/incoming/index.js';
-import { loadKeystore } from '../../../../src/keystore/index.js';
-import type { WssIncomingConfig, WssPart } from '../../../../src/wss/model.js';
+import { applyOutgoingWss } from '#protocol-soap/wss/apply';
+import { createWssContext, DEFAULT_WSS_SIGNATURE_PARTS } from '#protocol-soap/wss/model';
+import { processIncomingWss } from '#protocol-soap/wss/incoming/index';
+import { loadKeystore } from '#core/keystore/index';
+import type { WssIncomingConfig, WssPart } from '#protocol-soap/wss/model';
 import { generateClientCert, generateSigningCert, generateTestCa } from '../../../helpers/test-certs.js';
 
 const WSU_NS = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd';

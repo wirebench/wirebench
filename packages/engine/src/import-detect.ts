@@ -9,9 +9,9 @@
 import { parse as parseYamlDocument } from 'yaml';
 import { V3_DOCUMENT_KINDS } from './import/collection-v3/model.js';
 import { isOpenCollection } from './import/opencollection/parse.js';
-import { isHar } from './rest/har/parse.js';
-import { isPostmanCollection, isPostmanVariables } from './rest/postman/parse.js';
-import { looksLikeLegacyProject } from './soap/legacy-project/format.js';
+import { isHar } from '#protocol-rest/rest/har/parse';
+import { isPostmanCollection, isPostmanVariables } from '#protocol-rest/rest/postman/parse';
+import { looksLikeLegacyProject } from '#protocol-soap/soap/legacy-project/format';
 
 export type ImportFormatKind =
   | 'openapi'

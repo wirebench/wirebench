@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { expandWsInput, expandWsMessage, type WsCallInput } from '../../../src/ws/expand.js';
-import { entry } from '../../../src/rest/model.js';
-import { createWsRequest } from '../../../src/ws/model.js';
+import { expandWsInput, expandWsMessage, type WsCallInput } from '#protocol-ws/ws/expand';
+import { entry } from '#protocol-rest/rest/model';
+import { createWsRequest } from '#protocol-ws/ws/model';
 
 describe('expandWsInput', () => {
   const scopes = { project: { host: 'api.test', room: '7', quote: 'say "hi"' }, global: {}, system: {} };

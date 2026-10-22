@@ -1,16 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { parseXml } from '../../../src/xml/parse.js';
-import { NS } from '../../../src/xml/namespaces.js';
-import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
-import { parseWsdl } from '../../../src/wsdl/parse-wsdl.js';
-import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
-import type { WsdlDefinition } from '../../../src/wsdl/model.js';
-import type { QName } from '../../../src/wsdl/qname.js';
-import { detectEnvelopeVersion } from '../../../src/soap/envelope.js';
-import { buildEmptyRequest, buildSampleRequest } from '../../../src/soap/request-builder.js';
-import type { GeneratedRequest, RequestBuildInput } from '../../../src/soap/request-builder.js';
+import { parseXml } from '#core/xml/parse';
+import { NS } from '#core/xml/namespaces';
+import { createDefaultFetchDocument } from '#core/http/fetch-document';
+import { parseWsdl } from '#protocol-soap/wsdl/parse-wsdl';
+import { buildSchemaSet } from '#protocol-soap/xsd/schema-set';
+import type { WsdlDefinition } from '#protocol-soap/wsdl/model';
+import type { QName } from '#protocol-soap/wsdl/qname';
+import { detectEnvelopeVersion } from '#protocol-soap/soap/envelope';
+import { buildEmptyRequest, buildSampleRequest } from '#protocol-soap/soap/request-builder';
+import type { GeneratedRequest, RequestBuildInput } from '#protocol-soap/soap/request-builder';
 
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 const goldenDir = `${repoRoot}packages/engine/test/fixtures/envelopes/`;

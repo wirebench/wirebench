@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { notCurlReason, stripShellPrompt } from '../../../src/http/curl-start.js';
-import { fromRestCurl } from '../../../src/rest/curl.js';
-import { fromCurl } from '../../../src/soap/curl.js';
+import { notCurlReason, stripShellPrompt } from '#core/http/curl-start';
+import { fromRestCurl } from '#protocol-rest/rest/curl';
+import { fromCurl } from '#protocol-soap/soap/curl';
 
 describe('notCurlReason', () => {
   it('accepts curl and curl.exe, with or without a $ prompt or leading space', () => {

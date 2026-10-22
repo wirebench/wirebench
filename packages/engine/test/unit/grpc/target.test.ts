@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { GrpcError } from '../../../src/errors.js';
-import { entry } from '../../../src/rest/model.js';
-import { buildGrpcHeaders, parseGrpcTarget } from '../../../src/grpc/send.js';
+import { GrpcError } from '#core/errors';
+import { entry } from '#protocol-rest/rest/model';
+import { buildGrpcHeaders, parseGrpcTarget } from '#protocol-grpc/grpc/send';
 
 describe('parseGrpcTarget', () => {
   it('reads host:port, IPv6 literals and scheme-bearing URLs', () => {

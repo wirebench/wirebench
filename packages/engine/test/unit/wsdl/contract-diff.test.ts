@@ -1,10 +1,10 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { ContractChange } from '../../../src/contract-diff/model.js';
-import { importWsdl } from '../../../src/soap/import.js';
-import type { WsdlImportResult } from '../../../src/soap/types.js';
-import { diffWsdlContracts } from '../../../src/wsdl/contract-diff.js';
+import type { ContractChange } from '#core/contract-diff/model';
+import { importWsdl } from '#protocol-soap/soap/import';
+import type { WsdlImportResult } from '#protocol-soap/soap/types';
+import { diffWsdlContracts } from '#protocol-soap/wsdl/contract-diff';
 
 const fixtures = fileURLToPath(new URL('../../../../../fixtures/wsdl/crafted/contract-diff/', import.meta.url));
 

@@ -1,12 +1,8 @@
 // packages/engine/test/unit/secrets/sources/getter.test.ts
 import { describe, expect, it, vi } from 'vitest';
-import {
-  effectiveSecretSources,
-  parseLocalSecretSources,
-  parseSecretSources,
-} from '../../../../src/secrets/sources/parse.js';
-import { createSourceCache, sourceGetter, type SourceGetterOptions } from '../../../../src/secrets/sources/getter.js';
-import { secretSourcesHash } from '../../../../src/secrets/sources/trust.js';
+import { effectiveSecretSources, parseLocalSecretSources, parseSecretSources } from '#core/secrets/sources/parse';
+import { createSourceCache, sourceGetter, type SourceGetterOptions } from '#core/secrets/sources/getter';
+import { secretSourcesHash } from '#core/secrets/sources/trust';
 
 const shared = parseSecretSources({
   db: { kind: 'vault', path: 'kv/app', field: 'password' },

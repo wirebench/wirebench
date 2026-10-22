@@ -3,10 +3,10 @@
  * dedupe, replace, the limits, and that the input is left alone.
  */
 import { describe, expect, it } from 'vitest';
-import { MOCK_LIMITS, createMock, createMockOperation, createMockResponse } from '../../../src/mock/model.js';
-import type { MockDef } from '../../../src/mock/model.js';
-import { addRecordedStubs } from '../../../src/mock/record-stubs.js';
-import type { MockRecording } from '../../../src/mock/record-stubs.js';
+import { MOCK_LIMITS, createMock, createMockOperation, createMockResponse } from '#core/mock/model';
+import type { MockDef } from '#core/mock/model';
+import { addRecordedStubs } from '#core/mock/record-stubs';
+import type { MockRecording } from '#core/mock/record-stubs';
 
 function ids(): () => string {
   let n = 0;

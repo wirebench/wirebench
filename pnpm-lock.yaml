@@ -66,9 +66,27 @@ importers:
       '@serialport/stream':
         specifier: 13.0.0
         version: 13.0.0
+      '@wirebench/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@wirebench/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@wirebench/protocol-grpc':
+        specifier: workspace:*
+        version: link:../../packages/protocol-grpc
+      '@wirebench/protocol-mcp':
+        specifier: workspace:*
+        version: link:../../packages/protocol-mcp
+      '@wirebench/protocol-rest':
+        specifier: workspace:*
+        version: link:../../packages/protocol-rest
+      '@wirebench/protocol-soap':
+        specifier: workspace:*
+        version: link:../../packages/protocol-soap
+      '@wirebench/protocol-ws':
+        specifier: workspace:*
+        version: link:../../packages/protocol-ws
       '@wirebench/ssh':
         specifier: workspace:*
         version: link:../../packages/ssh
@@ -256,6 +274,49 @@ importers:
         specifier: workspace:*
         version: link:../ssh
 
+  packages/core:
+    dependencies:
+      '@jitl/quickjs-wasmfile-release-sync':
+        specifier: 0.32.0
+        version: 0.32.0
+      '@xmldom/xmldom':
+        specifier: ^0.9.12
+        version: 0.9.12
+      fontoxpath:
+        specifier: ^3.34.0
+        version: 3.34.0
+      jose:
+        specifier: ^6.2.12
+        version: 6.2.12
+      jsonpath-plus:
+        specifier: ^10.4.0
+        version: 10.4.0
+      node-forge:
+        specifier: ^1.3.1
+        version: 1.4.0
+      quickjs-emscripten-core:
+        specifier: 0.32.0
+        version: 0.32.0
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+      ulidx:
+        specifier: ^2.4.1
+        version: 2.4.1
+      undici:
+        specifier: ^8
+        version: 8.10.2
+      yaml:
+        specifier: ^2.9
+        version: 2.9.0
+      zod:
+        specifier: ^4.6.1
+        version: 4.6.1
+    optionalDependencies:
+      kerberos:
+        specifier: 7.0.0
+        version: 7.0.0
+
   packages/engine:
     dependencies:
       '@jitl/quickjs-wasmfile-release-sync':
@@ -323,9 +384,114 @@ importers:
         specifier: 7.0.0
         version: 7.0.0
     devDependencies:
+      '@wirebench/core':
+        specifier: workspace:*
+        version: link:../core
+      '@wirebench/protocol-grpc':
+        specifier: workspace:*
+        version: link:../protocol-grpc
+      '@wirebench/protocol-mcp':
+        specifier: workspace:*
+        version: link:../protocol-mcp
+      '@wirebench/protocol-rest':
+        specifier: workspace:*
+        version: link:../protocol-rest
+      '@wirebench/protocol-soap':
+        specifier: workspace:*
+        version: link:../protocol-soap
+      '@wirebench/protocol-ws':
+        specifier: workspace:*
+        version: link:../protocol-ws
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
+
+  packages/protocol-grpc:
+    dependencies:
+      '@wirebench/core':
+        specifier: workspace:*
+        version: link:../core
+      protobufjs:
+        specifier: ^8.8.0
+        version: 8.8.0
+      zod:
+        specifier: ^4.6.1
+        version: 4.6.1
+
+  packages/protocol-mcp:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.31.0
+        version: 1.31.0(zod@4.6.1)
+      '@wirebench/core':
+        specifier: workspace:*
+        version: link:../core
+      undici:
+        specifier: ^8
+        version: 8.10.2
+      zod:
+        specifier: ^4.6.1
+        version: 4.6.1
+
+  packages/protocol-rest:
+    dependencies:
+      '@stoplight/spectral-core':
+        specifier: 1.24.0
+        version: 1.24.0
+      '@stoplight/spectral-parsers':
+        specifier: 1.0.5
+        version: 1.0.5
+      '@stoplight/spectral-ref-resolver':
+        specifier: 1.0.5
+        version: 1.0.5
+      '@wirebench/core':
+        specifier: workspace:*
+        version: link:../core
+      graphql:
+        specifier: ^17.0.2
+        version: 17.0.2
+      yaml:
+        specifier: ^2.9
+        version: 2.9.0
+      zod:
+        specifier: ^4.6.1
+        version: 4.6.1
+
+  packages/protocol-soap:
+    dependencies:
+      '@wirebench/core':
+        specifier: workspace:*
+        version: link:../core
+      '@xmldom/xmldom':
+        specifier: ^0.9.12
+        version: 0.9.12
+      node-forge:
+        specifier: ^1.3.1
+        version: 1.4.0
+      undici:
+        specifier: ^8
+        version: 8.10.2
+      xml-crypto:
+        specifier: ^6.1.2
+        version: 6.1.2
+      xmllint-wasm:
+        specifier: 5.3.0
+        version: 5.3.0(@types/node@24.13.4)
+      zod:
+        specifier: ^4.6.1
+        version: 4.6.1
+
+  packages/protocol-ws:
+    dependencies:
+      '@wirebench/core':
+        specifier: workspace:*
+        version: link:../core
+      undici:
+        specifier: ^8
+        version: 8.10.2
+      zod:
+        specifier: ^4.6.1
+        version: 4.6.1
 
   packages/server:
     dependencies:
@@ -8051,7 +8217,7 @@ snapshots:
     dependencies:
       '@stoplight/ordered-object-literal': 1.0.5
       '@stoplight/path': 1.3.2
-      '@stoplight/types': 13.6.0
+      '@stoplight/types': 13.20.0
       jsonc-parser: 2.2.1
       lodash: 4.18.1
       safe-stable-stringify: 1.1.1
@@ -8108,7 +8274,7 @@ snapshots:
     dependencies:
       '@stoplight/json': 3.21.7
       '@stoplight/path': 1.3.2
-      '@stoplight/types': 13.6.0
+      '@stoplight/types': 13.20.0
       lodash: 4.18.1
       node-fetch: 2.7.0
       tslib: 2.8.1

@@ -3,39 +3,39 @@
  * installs the built-in registry every entry point falls back to, and re-exports the unions a host
  * that narrows on `kind` uses, which the modules fill (`protocol/unions.ts`).
  */
-import { grpcProtocol } from './grpc/module.js';
-import { mcpProtocol } from './mcp/module.js';
-import type { FeatureDescriptor } from './protocol/features.js';
-import type { ProtocolModule } from './protocol/module.js';
-import { installDefaultRegistry } from './protocol/default-registry.js';
-import { createProtocolRegistry } from './protocol/registry.js';
-import type { ProtocolRegistry } from './protocol/registry.js';
-import { restProtocol } from './rest/module.js';
-import { soapProtocol } from './soap/module.js';
-import { wsProtocol } from './ws/module.js';
+import { grpcProtocol } from '#protocol-grpc/grpc/module';
+import { mcpProtocol } from '#protocol-mcp/mcp/module';
+import type { FeatureDescriptor } from '#core/protocol/features';
+import type { ProtocolModule } from '#core/protocol/module';
+import { installDefaultRegistry } from '#core/protocol/default-registry';
+import { createProtocolRegistry } from '#core/protocol/registry';
+import type { ProtocolRegistry } from '#core/protocol/registry';
+import { restProtocol } from '#protocol-rest/rest/module';
+import { soapProtocol } from '#protocol-soap/soap/module';
+import { wsProtocol } from '#protocol-ws/ws/module';
 
 // The declarations of @wirebench/engine reach every file that fills the unions (package split spec
 // §3.4) only through these re-exports: a value import of a module leaves no trace in a `.d.ts`, and a
 // host that compiles against `dist` would otherwise see a union missing the members of every file
 // its own imports do not happen to reach.
-export type { GrpcLiveEvent } from './grpc/events.js';
-export type { GrpcRequestDef } from './grpc/model.js';
-export type { GrpcSelected } from './grpc/run.js';
-export type { GrpcRequestSnapshot, GrpcResponseSnapshot } from './grpc/scripting.js';
-export type { McpLiveEvent } from './mcp/events.js';
-export type { McpRequestDef } from './mcp/model.js';
-export type { McpSelected } from './mcp/run.js';
-export type { McpRequestSnapshot, McpResponseSnapshot } from './mcp/scripting.js';
-export type { RestLiveEvent } from './rest/events.js';
-export type { RestRequestDef } from './rest/model.js';
-export type { RestSelected } from './rest/run.js';
-export type { RestRequestSnapshot, RestResponseSnapshot } from './rest/scripting.js';
-export type { SoapRequestDef } from './soap/model.js';
-export type { SoapSelected } from './soap/run.js';
-export type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
-export type { WsLiveEvent } from './ws/events.js';
-export type { WsRequestDef } from './ws/model.js';
-export type { WsSelected } from './ws/run.js';
+export type { GrpcLiveEvent } from '#protocol-grpc/grpc/events';
+export type { GrpcRequestDef } from '#protocol-grpc/grpc/model';
+export type { GrpcSelected } from '#protocol-grpc/grpc/run';
+export type { GrpcRequestSnapshot, GrpcResponseSnapshot } from '#protocol-grpc/grpc/scripting';
+export type { McpLiveEvent } from '#protocol-mcp/mcp/events';
+export type { McpRequestDef } from '#protocol-mcp/mcp/model';
+export type { McpSelected } from '#protocol-mcp/mcp/run';
+export type { McpRequestSnapshot, McpResponseSnapshot } from '#protocol-mcp/mcp/scripting';
+export type { RestLiveEvent } from '#protocol-rest/rest/events';
+export type { RestRequestDef } from '#protocol-rest/rest/model';
+export type { RestSelected } from '#protocol-rest/rest/run';
+export type { RestRequestSnapshot, RestResponseSnapshot } from '#protocol-rest/rest/scripting';
+export type { SoapRequestDef } from '#protocol-soap/soap/model';
+export type { SoapSelected } from '#protocol-soap/soap/run';
+export type { SoapRequestSnapshot, SoapResponseSnapshot } from '#protocol-soap/soap/scripting';
+export type { WsLiveEvent } from '#protocol-ws/ws/events';
+export type { WsRequestDef } from '#protocol-ws/ws/model';
+export type { WsSelected } from '#protocol-ws/ws/run';
 
 /**
  * The five built-in protocols, in the order their containers tie-break in the explorer.
@@ -94,7 +94,7 @@ export function createBuiltinRegistry(switches?: Readonly<Record<string, boolean
 // The registry an entry point uses when its caller passes none (spec §3.3): the built-in protocols
 // with every feature on. Core holds the slot; loading this file fills it.
 installDefaultRegistry(createBuiltinRegistry);
-export { defaultRegistry } from './protocol/default-registry.js';
+export { defaultRegistry } from '#core/protocol/default-registry';
 
 export type {
   AnyRequestDef,
@@ -103,5 +103,5 @@ export type {
   ResponseSnapshot,
   SelectedRequest,
   SentExchange,
-} from './protocol/unions.js';
-export type { HeldSoapDefinition } from './soap/run.js';
+} from '#core/protocol/unions';
+export type { HeldSoapDefinition } from '#protocol-soap/soap/run';

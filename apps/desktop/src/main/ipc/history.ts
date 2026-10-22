@@ -259,7 +259,7 @@ export function resendBody(text: string, saved: RestBody): RestBodyWire | undefi
  * The recorded URL is reused only when its origin matches `savedOrigin`, the saved request's own
  * origin once its property references resolve. A redirect that crosses origins — to a CDN, say, or
  * a pre-signed object-store URL — makes the original send drop `authorization`,
- * `proxy-authorization` and `cookie` before following it (`packages/engine/src/http/client.ts`),
+ * `proxy-authorization` and `cookie` before following it (`packages/core/src/http/client.ts`),
  * but the entry records only that last hop's URL. Resending it with the saved auth would hand a
  * credential to an origin the original send never gave one to, and sending the saved URL instead
  * would not be the request History shows. So a different origin — or one that is undefined or

@@ -6,11 +6,11 @@ import {
   prepareCallbacks,
   seconds,
   waitingOf,
-} from '../../../src/assert/callback.js';
-import type { CallbackClock } from '../../../src/assert/callback.js';
-import type { CaptureDetailView, CaptureSource, CaptureSummaryView } from '../../../src/assert/capture-source.js';
-import type { AssertionResult, CallbackAssertion } from '../../../src/assert/model.js';
-import { WirebenchError } from '../../../src/errors.js';
+} from '#core/assert/callback';
+import type { CallbackClock } from '#core/assert/callback';
+import type { CaptureDetailView, CaptureSource, CaptureSummaryView } from '#core/assert/capture-source';
+import type { AssertionResult, CallbackAssertion } from '#core/assert/model';
+import { WirebenchError } from '#core/errors';
 
 const HOOK = '01K000000000000000000000H1';
 const capId = (n: number): string => `01K${String(n).padStart(23, '0')}`;

@@ -1,11 +1,11 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { decodeJwt, decodeProtectedHeader, jwtVerify } from 'jose';
 import { describe, expect, it } from 'vitest';
-import { jwtSendAuth, signConfiguredJwt } from '../../../../src/http/auth/jwt-auth.js';
-import type { JwtAuthDeps } from '../../../../src/http/auth/jwt-auth.js';
-import { createJwtSource } from '../../../../src/http/auth/jwt.js';
-import { loadKeystore } from '../../../../src/keystore/index.js';
-import type { JwtAuth } from '../../../../src/project/model.js';
+import { jwtSendAuth, signConfiguredJwt } from '#core/http/auth/jwt-auth';
+import type { JwtAuthDeps } from '#core/http/auth/jwt-auth';
+import { createJwtSource } from '#core/http/auth/jwt';
+import { loadKeystore } from '#core/keystore/index';
+import type { JwtAuth } from '#core/project/model';
 
 const SECRET = 'a-shared-secret-that-is-long-enough-0123456789';
 

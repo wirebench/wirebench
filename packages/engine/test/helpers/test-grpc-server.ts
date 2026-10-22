@@ -20,16 +20,16 @@ import http2, {
   type IncomingHttpHeaders,
 } from 'node:http2';
 import { gzipSync } from 'node:zlib';
-import { decodeMessage, encodeMessage } from '../../src/grpc/codec.js';
-import { encodeGrpcFrame, GrpcFrameParser } from '../../src/grpc/framing.js';
-import { loadProtoSet, type ProtoSet } from '../../src/grpc/proto/load.js';
+import { decodeMessage, encodeMessage } from '#protocol-grpc/grpc/codec';
+import { encodeGrpcFrame, GrpcFrameParser } from '#protocol-grpc/grpc/framing';
+import { loadProtoSet, type ProtoSet } from '#protocol-grpc/grpc/proto/load';
 import {
   REFLECTION_METHOD,
   reflectionPackage,
   reflectionProtoSet,
   reflectionServiceName,
-} from '../../src/grpc/reflection/proto.js';
-import { encodeGrpcMessage } from '../../src/grpc/status.js';
+} from '#protocol-grpc/grpc/reflection/proto';
+import { encodeGrpcMessage } from '#protocol-grpc/grpc/status';
 import { readProtoFixture } from './proto-fixtures.js';
 import { reflectionCatalog, withDependencies } from './test-grpc-reflection.js';
 

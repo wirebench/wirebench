@@ -4,12 +4,12 @@
  * compression, TLS, and the failures a server that is not gRPC produces.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { GrpcError, HttpError, ProtoError } from '../../../src/errors.js';
-import { callGrpc } from '../../../src/grpc/call.js';
-import { encodeMessage } from '../../../src/grpc/codec.js';
-import { sendGrpc, type GrpcSendInput } from '../../../src/grpc/send.js';
-import { configureKerberos } from '../../../src/http/auth/kerberos-native.js';
-import { entry } from '../../../src/rest/model.js';
+import { GrpcError, HttpError, ProtoError } from '#core/errors';
+import { callGrpc } from '#protocol-grpc/grpc/call';
+import { encodeMessage } from '#protocol-grpc/grpc/codec';
+import { sendGrpc, type GrpcSendInput } from '#protocol-grpc/grpc/send';
+import { configureKerberos } from '#core/http/auth/kerberos-native';
+import { entry } from '#protocol-rest/rest/model';
 import { fakeKerberos } from '../../helpers/fake-kerberos.js';
 import { generateServerCert, generateTestCa } from '../../helpers/test-certs.js';
 import { startTestGrpcServer, type TestGrpcServer } from '../../helpers/test-grpc-server.js';

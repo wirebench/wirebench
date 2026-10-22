@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { isWirebenchError } from '../../../src/errors.js';
-import { resolveEndpointAuth, resolveSoapAuth, toSendAuth } from '../../../src/secrets/resolve.js';
+import { isWirebenchError } from '#core/errors';
+import { resolveEndpointAuth, resolveSoapAuth, toSendAuth } from '#core/secrets/resolve';
 
 describe('resolveEndpointAuth', () => {
   it('returns undefined when there is no auth', async () => {

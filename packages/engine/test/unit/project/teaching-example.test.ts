@@ -11,10 +11,10 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadProject } from '../../../src/project/load.js';
-import { saveProject } from '../../../src/project/save.js';
-import { apiRequests } from '../../../src/rest/model.js';
-import type { RestApi } from '../../../src/rest/model.js';
+import { loadProject } from '#core/project/load';
+import { saveProject } from '#core/project/save';
+import { apiRequests } from '#protocol-rest/rest/model';
+import type { RestApi } from '#protocol-rest/rest/model';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';
 

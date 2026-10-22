@@ -6,17 +6,17 @@
  */
 import { describe, expect, it } from 'vitest';
 import { createSecretMasker, REDACTED_MARKER } from '../../../src/index.js';
-import type { McpExchange } from '../../../src/mcp/exchange.js';
-import type { McpHttpCall } from '../../../src/mcp/http-calls.js';
+import type { McpExchange } from '#protocol-mcp/mcp/exchange';
+import type { McpHttpCall } from '#protocol-mcp/mcp/http-calls';
 import {
   buildMcpHistoryEntry,
   capMcpMessages,
   historyMcpOf,
   MCP_HISTORY_RESULT_BYTES,
   redactMcpExchange,
-} from '../../../src/mcp/history-entry.js';
-import type { McpMessage } from '../../../src/mcp/session.js';
-import { WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL } from '../../../src/ws/transcript.js';
+} from '#protocol-mcp/mcp/history-entry';
+import type { McpMessage } from '#protocol-mcp/mcp/session';
+import { WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL } from '#protocol-ws/ws/transcript';
 
 const SECRET = 'live-secret-9f3a7c';
 const masks = { text: createSecretMasker([SECRET]) };

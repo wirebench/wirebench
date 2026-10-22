@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { md4 } from '../../../../src/http/auth/md4.js';
+import { md4 } from '#core/http/auth/md4';
 
 function hex(input: string): string {
   return Buffer.from(md4(new Uint8Array(Buffer.from(input, 'ascii')))).toString('hex');

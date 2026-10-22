@@ -4,13 +4,13 @@
  * reached, and a forged directive is refused like any other forged output.
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import type { RestRequestSnapshot, RestResponseSnapshot } from '../../../src/rest/scripting.js';
-import { ScriptSkipped, scriptSession } from '../../../src/run/script-support.js';
-import type { RequestScripts, ScriptOutcome } from '../../../src/script/model.js';
-import { runScript, type ScriptRunInput } from '../../../src/script/run.js';
-import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
-import { levelScriptTypes, RequestScripting, type ScriptedRequest } from '../../../src/script/request-scripts.js';
-import { scriptDeclarations } from '../../../src/script/types/api.js';
+import type { RestRequestSnapshot, RestResponseSnapshot } from '#protocol-rest/rest/scripting';
+import { ScriptSkipped, scriptSession } from '#core/run/script-support';
+import type { RequestScripts, ScriptOutcome } from '#core/script/model';
+import { runScript, type ScriptRunInput } from '#core/script/run';
+import { createScriptSandbox } from '#core/script/sandbox/host';
+import { levelScriptTypes, RequestScripting, type ScriptedRequest } from '#core/script/request-scripts';
+import { scriptDeclarations } from '#core/script/types/api';
 import { typeErrors } from './ts-check.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';

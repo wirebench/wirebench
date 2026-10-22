@@ -1,9 +1,9 @@
 /** A resolved REST or SOAP send as the request every code target renders. */
 import { describe, expect, it } from 'vitest';
-import { envMarker, generateCode, secretTokensToEnv } from '../../../src/http/codegen/index.js';
-import { restCodeRequest } from '../../../src/rest/codegen.js';
-import { entry } from '../../../src/rest/model.js';
-import { soapCodeRequest } from '../../../src/soap/codegen.js';
+import { envMarker, generateCode, secretTokensToEnv } from '#core/http/codegen/index';
+import { restCodeRequest } from '#protocol-rest/rest/codegen';
+import { entry } from '#protocol-rest/rest/model';
+import { soapCodeRequest } from '#protocol-soap/soap/codegen';
 import type { RestBody, RestSendInput } from '../../../src/index.js';
 
 function input(overrides: {

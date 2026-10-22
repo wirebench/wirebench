@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { soapActionHeaders } from '../../../src/soap/soap-action.js';
+import { soapActionHeaders } from '#protocol-soap/soap/soap-action';
 
 describe('soapActionHeaders (SOAP 1.1)', () => {
   it('always quotes the action', () => {

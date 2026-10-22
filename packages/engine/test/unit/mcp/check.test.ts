@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { checkMcpResult, firstTextContent, MCP_RESULT_CHECK, mcpCatalogueChecks } from '../../../src/mcp/check.js';
-import type { McpCatalogue, McpOperation } from '../../../src/mcp/model.js';
+import { checkMcpResult, firstTextContent, MCP_RESULT_CHECK, mcpCatalogueChecks } from '#protocol-mcp/mcp/check';
+import type { McpCatalogue, McpOperation } from '#protocol-mcp/mcp/model';
 
 const call = (args: string, tool = 'add'): McpOperation => ({ method: 'tools/call', tool, arguments: args });
 

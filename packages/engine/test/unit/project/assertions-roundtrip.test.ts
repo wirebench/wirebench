@@ -1,13 +1,13 @@
 import { cp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { CallbackAssertion } from '../../../src/assert/model.js';
-import { loadProject } from '../../../src/project/load.js';
-import { createProject } from '../../../src/project/model.js';
-import { saveProject } from '../../../src/project/save.js';
-import { createApi, createRestRequest, restApisOf } from '../../../src/rest/model.js';
+import type { CallbackAssertion } from '#core/assert/model';
+import { loadProject } from '#core/project/load';
+import { createProject } from '#core/project/model';
+import { saveProject } from '#core/project/save';
+import { createApi, createRestRequest, restApisOf } from '#protocol-rest/rest/model';
 import { tempProjectDir } from './fixture.js';
-import { soapInterfacesOf } from '../../../src/soap/model.js';
+import { soapInterfacesOf } from '#protocol-soap/soap/model';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';
 

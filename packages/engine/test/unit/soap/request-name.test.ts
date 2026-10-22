@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generatedRequestName, type NamedOperation } from '../../../src/soap/request-name.js';
+import { generatedRequestName, type NamedOperation } from '#protocol-soap/soap/request-name';
 
 const op = (name: string, binding: string, soapVersion: NamedOperation['soapVersion']): NamedOperation => ({
   name,

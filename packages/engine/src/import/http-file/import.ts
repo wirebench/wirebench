@@ -4,12 +4,12 @@
 
 import { readFile, stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
-import { HttpFileError } from '../../errors.js';
-import type { IdGenerator } from '../../project/model.js';
-import type { ParsedHttpFile } from '../../rest/http-file/parse.js';
+import { HttpFileError } from '#core/errors';
+import type { IdGenerator } from '#core/project/model';
+import type { ParsedHttpFile } from '#protocol-rest/rest/http-file/parse';
 import type { MappedHttpFile } from './map.js';
 import { mapHttpFile } from './map.js';
-import { MAX_HTTP_FILE_BYTES, parseHttpFile } from '../../rest/http-file/parse.js';
+import { MAX_HTTP_FILE_BYTES, parseHttpFile } from '#protocol-rest/rest/http-file/parse';
 
 /** Where a `.http` file comes from: a file on disk, or text with an optional API name. */
 export type HttpFileSource =

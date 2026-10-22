@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readAssertion } from '../../../../src/wss/saml/read.js';
+import { readAssertion } from '#protocol-soap/wss/saml/read';
 
 const SAML2 =
   '<saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion" ID="_a1" Version="2.0"' +

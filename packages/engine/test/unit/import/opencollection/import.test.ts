@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { OpenCollectionError } from '../../../../src/errors.js';
+import { OpenCollectionError } from '#core/errors';
 import { importOpenCollection } from '../../../../src/import/opencollection/import.js';
 import { MAX_OPENCOLLECTION_BYTES } from '../../../../src/import/opencollection/model.js';
 

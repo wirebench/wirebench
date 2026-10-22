@@ -1,10 +1,10 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { isWirebenchError } from '../../../src/errors.js';
-import { findBinding, findMessage, findPortType, findService } from '../../../src/wsdl/model.js';
-import { parseWsdl, parseWsdlDocument } from '../../../src/wsdl/parse-wsdl.js';
-import { parseXml } from '../../../src/xml/parse.js';
+import { isWirebenchError } from '#core/errors';
+import { findBinding, findMessage, findPortType, findService } from '#protocol-soap/wsdl/model';
+import { parseWsdl, parseWsdlDocument } from '#protocol-soap/wsdl/parse-wsdl';
+import { parseXml } from '#core/xml/parse';
 import { readPublicFixture } from '../../helpers/fixtures.js';
 import { toGoldenJson } from '../../helpers/golden.js';
 

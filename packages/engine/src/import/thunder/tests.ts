@@ -4,7 +4,7 @@
  * equivalent and is left to the caller to report.
  */
 
-import type { Assertion } from '../../assert/model.js';
+import type { Assertion } from '#core/assert/model';
 import type { TcTest } from './model.js';
 
 /** `json.a.b[0]`: each step starts with a different character, so nothing backtracks. */

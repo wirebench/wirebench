@@ -1,14 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { parseXml } from '../../../src/xml/parse.js';
-import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
-import { resolveDefinition } from '../../../src/wsdl/resolver.js';
-import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
-import type { SchemaSet } from '../../../src/xsd/schema-set.js';
-import { generateElement, generateSoapEncArray, generateType } from '../../../src/xsd/sample-generator.js';
-import type { GenerateOptions } from '../../../src/xsd/sample-generator.js';
-import { PLACEHOLDER, sampleValueFor, typeCommentFor } from '../../../src/xsd/sample-values.js';
+import { parseXml } from '#core/xml/parse';
+import { createDefaultFetchDocument } from '#core/http/fetch-document';
+import { resolveDefinition } from '#protocol-soap/wsdl/resolver';
+import { buildSchemaSet } from '#protocol-soap/xsd/schema-set';
+import type { SchemaSet } from '#protocol-soap/xsd/schema-set';
+import { generateElement, generateSoapEncArray, generateType } from '#protocol-soap/xsd/sample-generator';
+import type { GenerateOptions } from '#protocol-soap/xsd/sample-generator';
+import { PLACEHOLDER, sampleValueFor, typeCommentFor } from '#protocol-soap/xsd/sample-values';
 import { fileUrl, fixtureUrl, readPublicFixture } from '../../helpers/fixtures.js';
 
 const goldenDir = fileURLToPath(new URL('../../fixtures/samples/', import.meta.url));

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createProject } from '../../../src/project/model.js';
-import type { FeatureDescriptor } from '../../../src/protocol/features.js';
-import { defineProtocol } from '../../../src/protocol/module.js';
-import type { ProtocolRun, RunScope, SelectedBase } from '../../../src/protocol/module.js';
-import { exchangeController } from '../../../src/run/exchange.js';
-import type { SentRequest } from '../../../src/run/run.js';
+import { createProject } from '#core/project/model';
+import type { FeatureDescriptor } from '#core/protocol/features';
+import { defineProtocol } from '#core/protocol/module';
+import type { ProtocolRun, RunScope, SelectedBase } from '#core/protocol/module';
+import { exchangeController } from '#core/run/exchange';
+import type { SentRequest } from '#core/run/run';
 import { emptyStorage } from '../../helpers/empty-storage.js';
 import { testHost } from '../../helpers/send-host.js';
 

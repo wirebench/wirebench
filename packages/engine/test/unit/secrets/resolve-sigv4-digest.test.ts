@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { missingSecretRef } from '../../../src/http/auth/apply-auth.js';
-import { envVariablesFor, secretNeedsOfAuth } from '../../../src/secrets/env-names.js';
-import { resolveAuthConfig, resolveSoapAuth } from '../../../src/secrets/resolve.js';
+import { missingSecretRef } from '#core/http/auth/apply-auth';
+import { envVariablesFor, secretNeedsOfAuth } from '#core/secrets/env-names';
+import { resolveAuthConfig, resolveSoapAuth } from '#core/secrets/resolve';
 
 const secrets = (values: Record<string, string>) => (ref: string) => Promise.resolve(values[ref]);
 const SIGV4 = {

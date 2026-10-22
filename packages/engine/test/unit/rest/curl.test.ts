@@ -5,8 +5,8 @@
  * into a terminal, so what matters is the exact text, not that it "contains" the right flags.
  */
 import { describe, expect, it } from 'vitest';
-import { CURL_REDACTED, fromRestCurl, restToCurl } from '../../../src/rest/curl.js';
-import { entry } from '../../../src/rest/model.js';
+import { CURL_REDACTED, fromRestCurl, restToCurl } from '#protocol-rest/rest/curl';
+import { entry } from '#protocol-rest/rest/model';
 import type { RestBody, RestSendInput } from '../../../src/index.js';
 
 /** A resolved send, with only what a test overrides spelled out. */

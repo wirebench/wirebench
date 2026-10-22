@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { apiFromPostmanCollection } from '../../../../src/rest/postman/map.js';
-import { parsePostmanCollection } from '../../../../src/rest/postman/parse.js';
-import type { PostmanCollection } from '../../../../src/rest/postman/model.js';
+import { apiFromPostmanCollection } from '#protocol-rest/rest/postman/map';
+import { parsePostmanCollection } from '#protocol-rest/rest/postman/parse';
+import type { PostmanCollection } from '#protocol-rest/rest/postman/model';
 
 type Header = { key: string; value: string; disabled?: boolean; description?: string };
 

@@ -8,7 +8,7 @@ import {
   preferencesSchema,
   resetPreferences,
   withAppUserAgent,
-} from '../../../src/project/preferences.js';
+} from '#core/project/preferences';
 
 describe('DEFAULT_PREFERENCES', () => {
   it('carries the documented defaults', () => {

@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { importWsdl } from '../../../src/soap/import.js';
-import type { WsdlImportResult } from '../../../src/soap/types.js';
-import { generateDocs, sourceSnippet } from '../../../src/wsdl/docs-generator.js';
+import { importWsdl } from '#protocol-soap/soap/import';
+import type { WsdlImportResult } from '#protocol-soap/soap/types';
+import { generateDocs, sourceSnippet } from '#protocol-soap/wsdl/docs-generator';
 import { SOURCE_SNIPPET_CASES } from '../../helpers/source-snippet-cases.js';
 
 const fixtureRoot = fileURLToPath(new URL('../../../../../fixtures/wsdl/', import.meta.url));

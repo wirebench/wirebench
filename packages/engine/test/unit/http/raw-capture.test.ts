@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildRawRequest, buildRawResponse } from '../../../src/http/raw-capture.js';
-import type { HttpRequest } from '../../../src/http/types.js';
+import { buildRawRequest, buildRawResponse } from '#core/http/raw-capture';
+import type { HttpRequest } from '#core/http/types';
 
 function baseRequest(overrides: Partial<HttpRequest> = {}): HttpRequest {
   return {

@@ -5,11 +5,11 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type { RestApi, RestFolder, RestRequestDef } from '../../../../src/rest/model.js';
-import { parseOpenApi } from '../../../../src/rest/openapi/import.js';
-import { apiFromDocument } from '../../../../src/rest/openapi/map.js';
-import type { OpenApiDocument, OpenApiOperation } from '../../../../src/rest/openapi/model.js';
-import { applyRestUpdate, planRestUpdate } from '../../../../src/rest/openapi/update.js';
+import type { RestApi, RestFolder, RestRequestDef } from '#protocol-rest/rest/model';
+import { parseOpenApi } from '#protocol-rest/rest/openapi/import';
+import { apiFromDocument } from '#protocol-rest/rest/openapi/map';
+import type { OpenApiDocument, OpenApiOperation } from '#protocol-rest/rest/openapi/model';
+import { applyRestUpdate, planRestUpdate } from '#protocol-rest/rest/openapi/update';
 
 const updateDir = fileURLToPath(new URL('../../../../../../fixtures/openapi/crafted/update/', import.meta.url));
 

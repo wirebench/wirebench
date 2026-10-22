@@ -2,12 +2,12 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { headersAndAuth } from '../../../../src/import/credential-values.js';
-import { ReportBuilder } from '../../../../src/import/report.js';
+import { headersAndAuth } from '#core/import/credential-values';
+import { ReportBuilder } from '#core/import/report';
 import { mapOcAuth } from '../../../../src/import/opencollection/auth.js';
 import { mapOpenCollection } from '../../../../src/import/opencollection/map.js';
 import { parseOpenCollection } from '../../../../src/import/opencollection/parse.js';
-import type { RestBody, RestRequestDef } from '../../../../src/rest/model.js';
+import type { RestBody, RestRequestDef } from '#protocol-rest/rest/model';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureDir = resolve(here, '../../../../../../fixtures');

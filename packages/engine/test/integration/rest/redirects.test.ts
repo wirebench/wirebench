@@ -7,10 +7,10 @@
  * header across origins leaks a credential.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { sendRest } from '../../../src/rest/send.js';
-import type { RestSendInput } from '../../../src/rest/send.js';
-import { CookieJar, jarCookieHost } from '../../../src/rest/cookie-jar.js';
-import type { SendAuth } from '../../../src/http/auth/send-auth.js';
+import { sendRest } from '#protocol-rest/rest/send';
+import type { RestSendInput } from '#protocol-rest/rest/send';
+import { CookieJar, jarCookieHost } from '#protocol-rest/rest/cookie-jar';
+import type { SendAuth } from '#core/http/auth/send-auth';
 import { startTestRestServer, type TestRestServer } from '../../helpers/test-rest-server.js';
 
 let server: TestRestServer;

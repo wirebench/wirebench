@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffXml } from '../../../src/snapshot/xml-diff.js';
+import { diffXml } from '#core/snapshot/xml-diff';
 
 describe('diffXml', () => {
   it('ignores a different prefix bound to the same namespace', () => {

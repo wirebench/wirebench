@@ -4,11 +4,11 @@
  * rather than failing, since "could not tell" is not "wrong".
  */
 import { describe, expect, it } from 'vitest';
-import { evaluateAssertions } from '../../../src/assert/index.js';
-import type { GrpcCallResult, GrpcResponseMessage } from '../../../src/grpc/call.js';
-import type { GrpcExchange } from '../../../src/grpc/send.js';
-import { grpcStatusNames } from '../../../src/grpc/status.js';
-import { grpcSubject } from '../../../src/grpc/run.js';
+import { evaluateAssertions } from '#core/assert/index';
+import type { GrpcCallResult, GrpcResponseMessage } from '#protocol-grpc/grpc/call';
+import type { GrpcExchange } from '#protocol-grpc/grpc/send';
+import { grpcStatusNames } from '#protocol-grpc/grpc/status';
+import { grpcSubject } from '#protocol-grpc/grpc/run';
 
 function result(messages: readonly GrpcResponseMessage[], status = 0): GrpcCallResult {
   return {

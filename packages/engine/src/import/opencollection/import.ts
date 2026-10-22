@@ -6,7 +6,7 @@
 
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { OpenCollectionError } from '../../errors.js';
+import { OpenCollectionError } from '#core/errors';
 import type { MapOpenCollectionOptions, MappedOpenCollection } from './map.js';
 import { mapOpenCollection } from './map.js';
 import { MAX_OPENCOLLECTION_BYTES } from './model.js';
