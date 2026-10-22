@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { exportCollection } from '../../../src/export/index.js';
 import { mapOpenCollection } from '../../../src/import/opencollection/map.js';
 import { parseOpenCollection } from '../../../src/import/opencollection/parse.js';
-import type { AuthConfig } from '../../../src/project/model.js';
-import { createProject } from '../../../src/project/model.js';
-import { createInterface, createRequest } from '../../../src/soap/model.js';
-import type { RestBody, RestRequestSettings } from '../../../src/rest/model.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
-import { apiFromPostmanCollection } from '../../../src/rest/postman/map.js';
-import { parsePostmanCollectionText } from '../../../src/rest/postman/parse.js';
+import type { AuthConfig } from '#core/project/model';
+import { createProject } from '#core/project/model';
+import { createInterface, createRequest } from '#protocol-soap/soap/model';
+import type { RestBody, RestRequestSettings } from '#protocol-rest/rest/model';
+import { createApi, createRestRequest } from '#protocol-rest/rest/model';
+import { apiFromPostmanCollection } from '#protocol-rest/rest/postman/map';
+import { parsePostmanCollectionText } from '#protocol-rest/rest/postman/parse';
 import { newId } from './fixture.js';
 
 function oneRequest(input: { auth?: AuthConfig; body?: RestBody; settings?: RestRequestSettings; url?: string }) {

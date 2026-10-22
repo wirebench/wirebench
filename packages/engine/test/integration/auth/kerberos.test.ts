@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { sendWithAuth } from '../../../src/http/auth/apply.js';
-import { configureKerberos } from '../../../src/http/auth/kerberos-native.js';
+import { sendWithAuth } from '#core/http/auth/apply';
+import { configureKerberos } from '#core/http/auth/kerberos-native';
 import { fakeKerberos } from '../../helpers/fake-kerberos.js';
 import { startNegotiateServer, type NegotiateServer } from '../../helpers/negotiate-server.js';
 import { startRedirectServer, type RedirectServer } from '../../helpers/redirect-server.js';

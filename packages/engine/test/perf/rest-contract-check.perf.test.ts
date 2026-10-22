@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { SKIP_PERF, median } from '../bench/budgets.js';
-import type { RestContractInput } from '../../src/rest/contract-check.js';
-import { createRestContractChecker } from '../../src/rest/contract-check-worker-host.js';
-import type { OpenApiResponses } from '../../src/rest/openapi/model.js';
+import type { RestContractInput } from '#protocol-rest/rest/contract-check';
+import { createRestContractChecker } from '#protocol-rest/rest/contract-check-worker-host';
+import type { OpenApiResponses } from '#protocol-rest/rest/openapi/model';
 
 /** A row schema of 50 typed properties, all required: the shape the budget is stated for. */
 const PROPERTIES = 50;

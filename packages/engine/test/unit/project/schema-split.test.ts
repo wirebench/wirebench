@@ -3,15 +3,15 @@
  * holds the core documents, and still exports the shared pieces of `schema-parts.ts` (spec §3.2).
  */
 import { describe, expect, it } from 'vitest';
-import * as grpcFiles from '../../../src/grpc/files.js';
-import * as mcpFiles from '../../../src/mcp/files.js';
-import * as parts from '../../../src/project/schema-parts.js';
-import * as schema from '../../../src/project/schema.js';
-import * as restFiles from '../../../src/rest/files.js';
-import * as soapFiles from '../../../src/soap/files.js';
-import * as wsFiles from '../../../src/ws/files.js';
-import * as webhooksSchema from '../../../src/webhooks/schema.js';
-import * as wssSchema from '../../../src/wss/schema.js';
+import * as grpcFiles from '#protocol-grpc/grpc/files';
+import * as mcpFiles from '#protocol-mcp/mcp/files';
+import * as parts from '#core/project/schema-parts';
+import * as schema from '#core/project/schema';
+import * as restFiles from '#protocol-rest/rest/files';
+import * as soapFiles from '#protocol-soap/soap/files';
+import * as wsFiles from '#protocol-ws/ws/files';
+import * as webhooksSchema from '#protocol-rest/webhooks/schema';
+import * as wssSchema from '#protocol-soap/wss/schema';
 
 type Exports = Readonly<Record<string, unknown>>;
 

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { createProject } from '../../../src/project/model.js';
-import { createInterface, createRequest } from '../../../src/soap/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { requestFileLocation } from '../../../src/project/request-location.js';
-import { projectFiles } from '../../../src/project/serialize.js';
-import { createApi, createFolder, createRestRequest } from '../../../src/rest/model.js';
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
-import { createWsApi, createWsRequest } from '../../../src/ws/model.js';
+import { createProject } from '#core/project/model';
+import { createInterface, createRequest } from '#protocol-soap/soap/model';
+import type { Project } from '#core/project/model';
+import { requestFileLocation } from '#core/project/request-location';
+import { projectFiles } from '#core/project/serialize';
+import { createApi, createFolder, createRestRequest } from '#protocol-rest/rest/model';
+import { createGrpcApi, createGrpcRequest } from '#protocol-grpc/grpc/model';
+import { createWsApi, createWsRequest } from '#protocol-ws/ws/model';
 import { hooksProject } from '../webhooks/fixture.js';
 
 function projectWith(patch: Partial<Project>): Project {

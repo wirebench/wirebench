@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { entitizeValue, prettyPrint, removeEmptyContent, stripWhitespaces } from '../../../src/soap/transforms.js';
+import { entitizeValue, prettyPrint, removeEmptyContent, stripWhitespaces } from '#protocol-soap/soap/transforms';
 
 const ENVELOPE = (body: string): string =>
   `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">\n` +

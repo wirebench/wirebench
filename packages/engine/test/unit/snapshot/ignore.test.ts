@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchesIgnoreRule, parseIgnoreRules } from '../../../src/snapshot/ignore.js';
+import { matchesIgnoreRule, parseIgnoreRules } from '#core/snapshot/ignore';
 
 describe('parseIgnoreRules', () => {
   it('splits one rule per line, skipping blanks and comments', () => {

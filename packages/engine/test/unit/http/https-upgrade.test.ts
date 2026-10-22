@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isHttpsUpgrade, upgradedOrigin } from '../../../src/http/https-upgrade.js';
+import { isHttpsUpgrade, upgradedOrigin } from '#core/http/https-upgrade';
 
 const from = new URL('http://soap.example/svc/Calc.asmx?wsdl=no');
 

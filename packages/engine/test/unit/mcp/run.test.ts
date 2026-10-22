@@ -4,18 +4,18 @@
  */
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { approveMcpCommand, commandDisplay, commandFingerprint } from '../../../src/mcp/approval.js';
-import { expandMcpOperation, expandMcpTransport } from '../../../src/mcp/expand.js';
-import { createMcpFolder, createMcpRequest, createMcpServer, mcpServersOf } from '../../../src/mcp/model.js';
-import type { McpServer, McpTransport } from '../../../src/mcp/model.js';
-import { mcpRun } from '../../../src/mcp/run.js';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import type { PropertyScopes } from '../../../src/project/properties.js';
-import { secretNeedsOf } from '../../../src/run/secret-needs.js';
-import { selectRequests } from '../../../src/run/select.js';
-import { applySecretMoves } from '../../../src/secrets/scan/apply.js';
-import { scanProjectForSecrets } from '../../../src/secrets/scan/scan.js';
+import { approveMcpCommand, commandDisplay, commandFingerprint } from '#protocol-mcp/mcp/approval';
+import { expandMcpOperation, expandMcpTransport } from '#protocol-mcp/mcp/expand';
+import { createMcpFolder, createMcpRequest, createMcpServer, mcpServersOf } from '#protocol-mcp/mcp/model';
+import type { McpServer, McpTransport } from '#protocol-mcp/mcp/model';
+import { mcpRun } from '#protocol-mcp/mcp/run';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import type { PropertyScopes } from '#core/project/properties';
+import { secretNeedsOf } from '#core/run/secret-needs';
+import { selectRequests } from '#core/run/select';
+import { applySecretMoves } from '#core/secrets/scan/apply';
+import { scanProjectForSecrets } from '#core/secrets/scan/scan';
 import { testHost } from '../../helpers/send-host.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';

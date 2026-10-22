@@ -1,6 +1,6 @@
 import { brotliCompressSync, deflateSync, gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { decompressBody } from '../../../src/http/decompress.js';
+import { decompressBody } from '#core/http/decompress';
 
 describe('decompressBody', () => {
   const plaintext = new TextEncoder().encode('hello world');

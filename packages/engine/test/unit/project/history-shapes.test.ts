@@ -1,7 +1,7 @@
 import { describe, expectTypeOf, it } from 'vitest';
-import type { McpExchangeTransport } from '../../../src/mcp/exchange.js';
-import type { McpHttpCall } from '../../../src/mcp/http-calls.js';
-import type { McpMessage } from '../../../src/mcp/session.js';
+import type { McpExchangeTransport } from '#protocol-mcp/mcp/exchange';
+import type { McpHttpCall } from '#protocol-mcp/mcp/http-calls';
+import type { McpMessage } from '#protocol-mcp/mcp/session';
 import type {
   HistoryContract,
   HistoryMcpHttpCall,
@@ -9,10 +9,10 @@ import type {
   HistoryMcpTransport,
   HistorySseRow,
   HistoryWsFrame,
-} from '../../../src/project/history.js';
-import type { RestContractResult } from '../../../src/rest/contract-check.js';
-import type { SseRow } from '../../../src/http/sse.js';
-import type { WsFrame } from '../../../src/ws/model.js';
+} from '#core/project/history';
+import type { RestContractResult } from '#protocol-rest/rest/contract-check';
+import type { SseRow } from '#core/http/sse';
+import type { WsFrame } from '#protocol-ws/ws/model';
 
 // History restates the record shapes the protocols own, so `project/history.ts` names no protocol
 // (ADR-0017). These keep each restatement equal to the protocol's own type: a field added on one side

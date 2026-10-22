@@ -3,10 +3,10 @@
  * file as untrusted input: size, counts and names bounded, a newer `version` refused whole.
  */
 import { describe, expect, it } from 'vitest';
-import { isWirebenchError } from '../../../src/errors.js';
-import { parseSequenceFile, sequenceDocument, sequenceFilePath, sequenceSlugOf } from '../../../src/sequence/file.js';
-import { createSequence, createSequenceStep, SEQUENCE_LIMITS } from '../../../src/sequence/model.js';
-import type { SequenceDef } from '../../../src/sequence/model.js';
+import { isWirebenchError } from '#core/errors';
+import { parseSequenceFile, sequenceDocument, sequenceFilePath, sequenceSlugOf } from '#core/sequence/file';
+import { createSequence, createSequenceStep, SEQUENCE_LIMITS } from '#core/sequence/model';
+import type { SequenceDef } from '#core/sequence/model';
 
 function checkout(): SequenceDef {
   return createSequence('Checkout flow', {

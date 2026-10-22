@@ -3,10 +3,10 @@ import { exportCollection } from '../../../src/export/index.js';
 import { ocAssertion } from '../../../src/export/opencollection.js';
 import { mapOpenCollection } from '../../../src/import/opencollection/map.js';
 import { parseOpenCollection } from '../../../src/import/opencollection/parse.js';
-import type { RestFolder, RestRequestDef } from '../../../src/rest/model.js';
-import { joinBase } from '../../../src/rest/url.js';
+import type { RestFolder, RestRequestDef } from '#protocol-rest/rest/model';
+import { joinBase } from '#protocol-rest/rest/url';
 import { newId, sampleProject } from './fixture.js';
-import { restApisOf, withRestApis } from '../../../src/rest/model.js';
+import { restApisOf, withRestApis } from '#protocol-rest/rest/model';
 
 const project = sampleProject();
 

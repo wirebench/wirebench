@@ -5,7 +5,7 @@
  * for an integration test isn't possible.
  */
 import { describe, expect, it } from 'vitest';
-import { isUpgradeHeadFor } from '../../../src/ws/session.js';
+import { isUpgradeHeadFor } from '#protocol-ws/ws/session';
 
 const ORIGIN = 'http://127.0.0.1:4000';
 const PATH = '/echo?room=1';

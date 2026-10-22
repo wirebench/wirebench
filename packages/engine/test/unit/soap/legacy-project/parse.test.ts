@@ -2,14 +2,14 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { LegacyProjectError } from '../../../../src/errors.js';
+import { LegacyProjectError } from '#core/errors';
 import {
   LEGACY_PROJECT_NAMESPACE,
   LEGACY_PROJECT_ROOT,
   looksLikeLegacyProject,
-} from '../../../../src/soap/legacy-project/format.js';
-import { MAX_LEGACY_PROJECT_BYTES, readLegacySoapProject } from '../../../../src/soap/legacy-project/import.js';
-import { parseLegacyProject } from '../../../../src/soap/legacy-project/parse.js';
+} from '#protocol-soap/soap/legacy-project/format';
+import { MAX_LEGACY_PROJECT_BYTES, readLegacySoapProject } from '#protocol-soap/soap/legacy-project/import';
+import { parseLegacyProject } from '#protocol-soap/soap/legacy-project/parse';
 
 const FIXTURES = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../../fixtures/legacy-soap-project');
 const fixture = (name: string): string => readFileSync(resolve(FIXTURES, name), 'utf8');

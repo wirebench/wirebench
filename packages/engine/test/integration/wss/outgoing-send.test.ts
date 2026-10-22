@@ -4,8 +4,8 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { sendSoapRequest } from '../../../src/soap/send.js';
-import { createWssContext } from '../../../src/wss/model.js';
+import { sendSoapRequest } from '#protocol-soap/soap/send';
+import { createWssContext } from '#protocol-soap/wss/model';
 import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';
 
 const servers: TestSoapServer[] = [];

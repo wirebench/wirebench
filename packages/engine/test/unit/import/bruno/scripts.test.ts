@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ocOfBrunoFolder } from '../../../../src/import/bruno/convert.js';
 import { mapBruno } from '../../../../src/import/bruno/import.js';
 import { ocOfBrunoExport } from '../../../../src/import/bruno/json-export.js';
-import { apiFolders, apiRequests } from '../../../../src/rest/model.js';
+import { apiFolders, apiRequests } from '#protocol-rest/rest/model';
 
 /** A Bruno folder from `bruno.json` and the given files, mapped with numbered ids. */
 function mapFolder(config: Record<string, unknown>, files: Record<string, string>) {

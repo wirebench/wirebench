@@ -6,8 +6,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { createSecretBytesMasker, createSecretMasker, REDACTED_MARKER } from '../../../src/index.js';
-import { buildWsHistoryEntry } from '../../../src/ws/history-entry.js';
-import type { WsExchange } from '../../../src/ws/model.js';
+import { buildWsHistoryEntry } from '#protocol-ws/ws/history-entry';
+import type { WsExchange } from '#protocol-ws/ws/model';
 
 const SECRET = 'live-secret-9f3a7c';
 

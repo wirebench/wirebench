@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffSnapshot } from '../../../src/snapshot/diff.js';
+import { diffSnapshot } from '#core/snapshot/diff';
 
 describe('diffSnapshot', () => {
   it('diffs JSON semantically', () => {

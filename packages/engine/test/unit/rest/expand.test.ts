@@ -4,10 +4,10 @@
  * substituted into the body only — escaping a URL or a header would change the request.
  */
 import { describe, expect, it } from 'vitest';
-import type { PropertyScopes } from '../../../src/project/properties.js';
-import { expandRestSendInput } from '../../../src/rest/expand.js';
-import { entry } from '../../../src/rest/model.js';
-import type { RestSendInput } from '../../../src/rest/send.js';
+import type { PropertyScopes } from '#core/project/properties';
+import { expandRestSendInput } from '#protocol-rest/rest/expand';
+import { entry } from '#protocol-rest/rest/model';
+import type { RestSendInput } from '#protocol-rest/rest/send';
 
 const scopes: PropertyScopes = {
   project: { tier: 'gold', quote: 'a"b', markup: '<b>&</b>' },

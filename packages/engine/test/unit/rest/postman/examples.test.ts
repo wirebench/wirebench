@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { REDACTED_MARKER } from '../../../../src/redact/index.js';
-import { apiFromPostmanCollection } from '../../../../src/rest/postman/map.js';
-import { parsePostmanCollection } from '../../../../src/rest/postman/parse.js';
-import type { RestRequestDef } from '../../../../src/rest/model.js';
+import { REDACTED_MARKER } from '#core/redact/index';
+import { apiFromPostmanCollection } from '#protocol-rest/rest/postman/map';
+import { parsePostmanCollection } from '#protocol-rest/rest/postman/parse';
+import type { RestRequestDef } from '#protocol-rest/rest/model';
 
 let n = 0;
 const newId = (): string => `id-${String((n += 1))}`;

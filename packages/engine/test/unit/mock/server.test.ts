@@ -5,19 +5,19 @@
  */
 import { request as httpRequest } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
-import { isWirebenchError } from '../../../src/errors.js';
-import { createGrpcApi } from '../../../src/grpc/model.js';
-import { grpcProtocol } from '../../../src/grpc/module.js';
-import type { MockContract, MockReply, ProtocolMocking } from '../../../src/mock/contract.js';
-import { createMock, createMockOperation, createMockResponse } from '../../../src/mock/model.js';
-import type { MockDef } from '../../../src/mock/model.js';
-import { MOCK_REQUEST_BODY_BYTES, startMock } from '../../../src/mock/server.js';
-import type { MockExchangeEvent, RunningMock } from '../../../src/mock/server.js';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { createProtocolRegistry } from '../../../src/protocol/registry.js';
-import { createApi } from '../../../src/rest/model.js';
-import { restProtocol } from '../../../src/rest/module.js';
+import { isWirebenchError } from '#core/errors';
+import { createGrpcApi } from '#protocol-grpc/grpc/model';
+import { grpcProtocol } from '#protocol-grpc/grpc/module';
+import type { MockContract, MockReply, ProtocolMocking } from '#core/mock/contract';
+import { createMock, createMockOperation, createMockResponse } from '#core/mock/model';
+import type { MockDef } from '#core/mock/model';
+import { MOCK_REQUEST_BODY_BYTES, startMock } from '#core/mock/server';
+import type { MockExchangeEvent, RunningMock } from '#core/mock/server';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { createProtocolRegistry } from '#core/protocol/registry';
+import { createApi } from '#protocol-rest/rest/model';
+import { restProtocol } from '#protocol-rest/rest/module';
 
 const plain = (status: number, body: string): MockReply => ({
   status,

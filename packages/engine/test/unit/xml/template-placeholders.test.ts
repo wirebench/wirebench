@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findTemplatePlaceholders } from '../../../src/xml/template-placeholders.js';
+import { findTemplatePlaceholders } from '#core/xml/template-placeholders';
 
 describe('findTemplatePlaceholders (#728)', () => {
   it('finds elements and attributes whose whole value is "?", with positions', () => {

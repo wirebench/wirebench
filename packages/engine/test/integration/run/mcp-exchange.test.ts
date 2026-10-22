@@ -6,20 +6,20 @@
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createProject } from '../../../src/index.js';
-import type { McpLiveEvent } from '../../../src/mcp/events.js';
-import { commandFingerprint } from '../../../src/mcp/approval.js';
-import { createMcpRequest, createMcpServer } from '../../../src/mcp/model.js';
-import type { McpOperation, McpRequestDef, McpServer, McpTransport } from '../../../src/mcp/model.js';
-import { mcpItemFor } from '../../../src/mcp/run.js';
-import type { Project } from '../../../src/project/model.js';
-import type { RunContext } from '../../../src/run/context.js';
-import type { CommandApprovalRequest, SendFailure, SendHost } from '../../../src/run/host.js';
-import { openExchange } from '../../../src/run/open.js';
-import { createRunSender, runRequests } from '../../../src/run/run.js';
-import { createRunScope } from '../../../src/run/scope.js';
-import { selectRequests } from '../../../src/run/select.js';
-import { createSequence, createSequenceStep } from '../../../src/sequence/model.js';
-import { runSequence } from '../../../src/sequence/run.js';
+import type { McpLiveEvent } from '#protocol-mcp/mcp/events';
+import { commandFingerprint } from '#protocol-mcp/mcp/approval';
+import { createMcpRequest, createMcpServer } from '#protocol-mcp/mcp/model';
+import type { McpOperation, McpRequestDef, McpServer, McpTransport } from '#protocol-mcp/mcp/model';
+import { mcpItemFor } from '#protocol-mcp/mcp/run';
+import type { Project } from '#core/project/model';
+import type { RunContext } from '#core/run/context';
+import type { CommandApprovalRequest, SendFailure, SendHost } from '#core/run/host';
+import { openExchange } from '#core/run/open';
+import { createRunSender, runRequests } from '#core/run/run';
+import { createRunScope } from '#core/run/scope';
+import { selectRequests } from '#core/run/select';
+import { createSequence, createSequenceStep } from '#core/sequence/model';
+import { runSequence } from '#core/sequence/run';
 import { startTestMcpHttpServer } from '../../helpers/mcp-http-server.js';
 import type { TestMcpHttpServer } from '../../helpers/mcp-http-server.js';
 import { testHost } from '../../helpers/send-host.js';
@@ -325,7 +325,7 @@ describe('an MCP send through openExchange', () => {
     const result = await runRequests(selectRequests(p, []).selected, context(p, host));
     expect(result.requests[0]).toMatchObject({ outcome: 'errored', error: { code: 'mcp-timeout' } });
     expect(Date.now() - started).toBeLessThan(10_000);
-    const resolved = (await import('../../../src/run/open.js')).resolveExchange(
+    const resolved = (await import('#core/run/open')).resolveExchange(
       mcpItemFor(p, 'r-list')!,
       host,
       createRunScope({ ...context(p, host), timeoutMs: 1234 }),

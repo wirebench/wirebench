@@ -5,8 +5,8 @@
  * in it is never read into anything.
  */
 
-import { BrunoError } from '../../errors.js';
-import type { ImportReport } from '../report.js';
+import { BrunoError } from '#core/errors';
+import type { ImportReport } from '#core/import/report';
 import type {
   OcAssertion,
   OcCollection,

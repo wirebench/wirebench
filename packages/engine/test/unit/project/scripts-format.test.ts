@@ -5,17 +5,17 @@
 import { cp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { ProjectError } from '../../../src/errors.js';
-import { loadProject } from '../../../src/project/load.js';
-import { FORMAT_VERSION, type Project } from '../../../src/project/model.js';
-import { saveProject } from '../../../src/project/save.js';
-import { scriptsSchema } from '../../../src/project/schema-parts.js';
-import type { RestRequestDef } from '../../../src/rest/model.js';
-import type { RequestScripts } from '../../../src/script/model.js';
-import { SCRIPT_LIMITS } from '../../../src/script/sandbox/model.js';
+import type { ProjectError } from '#core/errors';
+import { loadProject } from '#core/project/load';
+import { FORMAT_VERSION, type Project } from '#core/project/model';
+import { saveProject } from '#core/project/save';
+import { scriptsSchema } from '#core/project/schema-parts';
+import type { RestRequestDef } from '#protocol-rest/rest/model';
+import type { RequestScripts } from '#core/script/model';
+import { SCRIPT_LIMITS } from '#core/script/sandbox/model';
 import { tempProjectDir } from './fixture.js';
-import { restApisOf, withRestApis } from '../../../src/rest/model.js';
-import { soapInterfacesOf } from '../../../src/soap/model.js';
+import { restApisOf, withRestApis } from '#protocol-rest/rest/model';
+import { soapInterfacesOf } from '#protocol-soap/soap/model';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';
 

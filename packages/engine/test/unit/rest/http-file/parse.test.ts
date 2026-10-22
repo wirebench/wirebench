@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { HttpFileError } from '../../../../src/errors.js';
-import { parseHttpFile } from '../../../../src/rest/http-file/parse.js';
+import { HttpFileError } from '#core/errors';
+import { parseHttpFile } from '#protocol-rest/rest/http-file/parse';
 
 const here = dirname(fileURLToPath(import.meta.url));
 

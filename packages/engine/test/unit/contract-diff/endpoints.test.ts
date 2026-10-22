@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffEndpoints } from '../../../src/contract-diff/endpoints.js';
+import { diffEndpoints } from '#core/contract-diff/endpoints';
 
 describe('diffEndpoints', () => {
   it('reports one removed and one added endpoint as a move', () => {

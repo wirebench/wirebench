@@ -2,10 +2,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { HttpError } from '../../src/errors.js';
-import { generateSoapRequest } from '../../src/soap/generate.js';
-import { importWsdl } from '../../src/soap/import.js';
-import { sendSoapRequest } from '../../src/soap/send.js';
+import { HttpError } from '#core/errors';
+import { generateSoapRequest } from '#protocol-soap/soap/generate';
+import { importWsdl } from '#protocol-soap/soap/import';
+import { sendSoapRequest } from '#protocol-soap/soap/send';
 import { fileUrl } from '../helpers/fixtures.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-soap-server.js';
 

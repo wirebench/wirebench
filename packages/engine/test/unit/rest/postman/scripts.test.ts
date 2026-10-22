@@ -5,9 +5,9 @@
  * run.
  */
 import { describe, expect, it } from 'vitest';
-import { runControlCalls, unsupportedCalls } from '../../../../src/import/scripts.js';
-import { apiFromPostmanCollection } from '../../../../src/rest/postman/map.js';
-import { parsePostmanCollection } from '../../../../src/rest/postman/parse.js';
+import { runControlCalls, unsupportedCalls } from '#core/import/scripts';
+import { apiFromPostmanCollection } from '#protocol-rest/rest/postman/map';
+import { parsePostmanCollection } from '#protocol-rest/rest/postman/parse';
 
 const info = { name: 'Shop', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' };
 const script = (listen: string, exec: string | string[], extra: Record<string, unknown> = {}) => ({

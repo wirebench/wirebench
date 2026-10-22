@@ -3,14 +3,14 @@
  * sandbox hands back is untrusted, so each rule has to hold without the prelude's help.
  */
 import { describe, expect, it } from 'vitest';
-import { grpcScripting } from '../../../src/grpc/scripting.js';
-import type { GrpcRequestSnapshot } from '../../../src/grpc/scripting.js';
-import type { ProtocolScripting } from '../../../src/protocol/module.js';
-import { restScripting } from '../../../src/rest/scripting.js';
-import type { RestRequestSnapshot } from '../../../src/rest/scripting.js';
-import { applyRequestChanges as applyChanges, secretReferencesIn as referencesIn } from '../../../src/script/apply.js';
-import { soapScripting } from '../../../src/soap/scripting.js';
-import type { SoapRequestSnapshot } from '../../../src/soap/scripting.js';
+import { grpcScripting } from '#protocol-grpc/grpc/scripting';
+import type { GrpcRequestSnapshot } from '#protocol-grpc/grpc/scripting';
+import type { ProtocolScripting } from '#core/protocol/module';
+import { restScripting } from '#protocol-rest/rest/scripting';
+import type { RestRequestSnapshot } from '#protocol-rest/rest/scripting';
+import { applyRequestChanges as applyChanges, secretReferencesIn as referencesIn } from '#core/script/apply';
+import { soapScripting } from '#protocol-soap/soap/scripting';
+import type { SoapRequestSnapshot } from '#protocol-soap/soap/scripting';
 
 type Snapshot = RestRequestSnapshot | SoapRequestSnapshot | GrpcRequestSnapshot;
 const FACETS = { rest: restScripting, soap: soapScripting, grpc: grpcScripting } as const;

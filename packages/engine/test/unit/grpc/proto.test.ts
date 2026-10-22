@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { ProtoError } from '../../../src/errors.js';
-import { describeMessage, describeMethod, describeServices, lookupMethod } from '../../../src/grpc/proto/describe.js';
-import { loadProtoSet } from '../../../src/grpc/proto/load.js';
-import { sampleMessage, sampleMessageText } from '../../../src/grpc/proto/sample.js';
+import { ProtoError } from '#core/errors';
+import { describeMessage, describeMethod, describeServices, lookupMethod } from '#protocol-grpc/grpc/proto/describe';
+import { loadProtoSet } from '#protocol-grpc/grpc/proto/load';
+import { sampleMessage, sampleMessageText } from '#protocol-grpc/grpc/proto/sample';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
 
 const greeter = () => loadProtoSet(readProtoFixture('greeter'), { roots: ['greeter.proto'] });

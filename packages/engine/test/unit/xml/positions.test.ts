@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LineIndex } from '../../../src/xml/positions.js';
+import { LineIndex } from '#core/xml/positions';
 
 describe('LineIndex', () => {
   it('round-trips offsets and positions on LF text', () => {

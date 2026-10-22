@@ -1,14 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import {
-  findEnvironment,
-  removeEnvironment,
-  resolveScopes,
-  upsertEnvironment,
-} from '../../../src/project/environments.js';
-import { resolveAuthEndpoint, resolveEndpoint } from '../../../src/soap/endpoints.js';
-import { createProject, type Environment, type Project } from '../../../src/project/model.js';
-import { createInterface } from '../../../src/soap/model.js';
-import { expand } from '../../../src/project/properties.js';
+import { findEnvironment, removeEnvironment, resolveScopes, upsertEnvironment } from '#core/project/environments';
+import { resolveAuthEndpoint, resolveEndpoint } from '#protocol-soap/soap/endpoints';
+import { createProject, type Environment, type Project } from '#core/project/model';
+import { createInterface } from '#protocol-soap/soap/model';
+import { expand } from '#core/project/properties';
 
 function fixtureProject(): { project: Project; iface: ReturnType<typeof createInterface> } {
   let project = createProject('Demo', { id: 'proj-1' });

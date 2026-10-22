@@ -4,11 +4,11 @@
  * against a hostile pattern from a shared file.
  */
 import { describe, expect, it } from 'vitest';
-import type { MockRequest, MockRequestView } from '../../../src/mock/contract.js';
-import { MockState, candidates, dispatch } from '../../../src/mock/dispatch.js';
-import type { DispatchScriptRunner } from '../../../src/mock/dispatch.js';
-import { createMockOperation, createMockResponse } from '../../../src/mock/model.js';
-import type { MockMatch, MockOperation, MockResponse } from '../../../src/mock/model.js';
+import type { MockRequest, MockRequestView } from '#core/mock/contract';
+import { MockState, candidates, dispatch } from '#core/mock/dispatch';
+import type { DispatchScriptRunner } from '#core/mock/dispatch';
+import { createMockOperation, createMockResponse } from '#core/mock/model';
+import type { MockMatch, MockOperation, MockResponse } from '#core/mock/model';
 
 function request(over: Partial<MockRequest> = {}): MockRequest {
   const bodyText = over.bodyText ?? '';

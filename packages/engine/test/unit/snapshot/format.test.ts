@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectSnapshotFormat } from '../../../src/snapshot/format.js';
+import { detectSnapshotFormat } from '#core/snapshot/format';
 
 describe('detectSnapshotFormat', () => {
   it('recognises a content type containing "json"', () => {

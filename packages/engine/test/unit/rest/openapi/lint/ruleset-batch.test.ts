@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { planLintRules } from '../../../../../src/rest/openapi/lint/ruleset.js';
-import { lintWithRules } from '../../../../../src/rest/openapi/lint/run.js';
+import { planLintRules } from '#protocol-rest/rest/openapi/lint/ruleset';
+import { lintWithRules } from '#protocol-rest/rest/openapi/lint/run';
 import { fixture, recordingFetch } from './helpers.js';
 
 const calls = vi.hoisted(() => ({ batches: [] as { pattern: string; texts: readonly string[] }[] }));
 
-vi.mock('../../../../../src/xpath/evaluate-async.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../../../src/xpath/evaluate-async.js')>();
+vi.mock('#core/xpath/evaluate-async', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('#core/xpath/evaluate-async')>();
   return {
     ...actual,
     matchRegexManyWithTimeout: (pattern: string, texts: readonly string[], options?: { timeoutMs?: number }) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeGrpcMessage, encodeGrpcMessage, formatGrpcTimeout, grpcStatusName } from '../../../src/grpc/status.js';
+import { decodeGrpcMessage, encodeGrpcMessage, formatGrpcTimeout, grpcStatusName } from '#protocol-grpc/grpc/status';
 
 describe('gRPC status', () => {
   it('names the seventeen codes and labels anything else UNKNOWN', () => {

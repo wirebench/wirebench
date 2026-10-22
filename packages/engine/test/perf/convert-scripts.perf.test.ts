@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SKIP_PERF } from '../bench/budgets.js';
-import { convertLevelScripts } from '../../src/script/convert/index.js';
+import { convertLevelScripts } from '#core/script/convert/index';
 
 /** 4 000 lines that each convert two calls, one inside the other's argument. */
 const LINES = Array.from({ length: 4000 }, (_, i) => `pm.environment.set('v${i}', pm.response.json().x${i});`);

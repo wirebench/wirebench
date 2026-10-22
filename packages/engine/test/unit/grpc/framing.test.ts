@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { GrpcError } from '../../../src/errors.js';
-import { encodeGrpcFrame, GrpcFrameParser } from '../../../src/grpc/framing.js';
+import { GrpcError } from '#core/errors';
+import { encodeGrpcFrame, GrpcFrameParser } from '#protocol-grpc/grpc/framing';
 
 describe('gRPC framing', () => {
   it('prefixes a message with a flag byte and a big-endian length', () => {

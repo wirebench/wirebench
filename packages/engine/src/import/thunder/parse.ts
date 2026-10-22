@@ -5,9 +5,9 @@
  * a string or an array of lines. The `ref` hash is ignored. Pure.
  */
 
-import { ThunderError } from '../../errors.js';
-import type { ImportReport } from '../report.js';
-import { ReportBuilder } from '../report.js';
+import { ThunderError } from '#core/errors';
+import type { ImportReport } from '#core/import/report';
+import { ReportBuilder } from '#core/import/report';
 import type {
   TcCollection,
   TcEnvironment,

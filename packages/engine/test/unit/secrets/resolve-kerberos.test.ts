@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { resolveAuthConfig, resolveSoapAuth } from '../../../src/secrets/resolve.js';
-import { secretNeedsOfAuth } from '../../../src/secrets/env-names.js';
+import { resolveAuthConfig, resolveSoapAuth } from '#core/secrets/resolve';
+import { secretNeedsOfAuth } from '#core/secrets/env-names';
 
 const secrets = (values: Record<string, string>) => (ref: string) => Promise.resolve(values[ref]);
 

@@ -8,25 +8,25 @@
  * never imports it.
  */
 
-import { blankIfLiteral, blankJsonText, blankText, headersAndAuth, resolvePath } from '../credential-values.js';
-import { MAX_EXAMPLE_BODY_CHARS, maskRecordedResponse } from '../examples.js';
-import type { ImportReport } from '../report.js';
-import { ReportBuilder } from '../report.js';
-import type { ImportedScriptFile } from '../scripts.js';
-import { colonPathParams, rewriteMustache } from '../templates.js';
-import type { ImportedVariables } from '../variables.js';
-import { warnCredentialLookingNames } from '../variables.js';
-import { referencesOnly, stripUserinfo } from '../values.js';
-import { isCredentialName } from '../credentials.js';
-import type { KeyValueEntry } from '../../http/entries.js';
-import { entry } from '../../http/entries.js';
-import type { AuthConfig, IdGenerator } from '../../project/model.js';
-import { generateId } from '../../project/model.js';
-import { SlugSet, uniqueSlug } from '../../project/paths.js';
-import type { GrpcApi, GrpcFolder, GrpcMethodKind, GrpcRequestDef } from '../../grpc/model.js';
-import { createGrpcApi, createGrpcFolder, createGrpcRequest, defaultTlsFor } from '../../grpc/model.js';
-import type { WsApi, WsFolder, WsRequestDef } from '../../ws/model.js';
-import { createWsApi, createWsFolder, createWsRequest, createWsSavedMessage } from '../../ws/model.js';
+import { blankIfLiteral, blankJsonText, blankText, headersAndAuth, resolvePath } from '#core/import/credential-values';
+import { MAX_EXAMPLE_BODY_CHARS, maskRecordedResponse } from '#core/import/examples';
+import type { ImportReport } from '#core/import/report';
+import { ReportBuilder } from '#core/import/report';
+import type { ImportedScriptFile } from '#core/import/scripts';
+import { colonPathParams, rewriteMustache } from '#core/import/templates';
+import type { ImportedVariables } from '#core/import/variables';
+import { warnCredentialLookingNames } from '#core/import/variables';
+import { referencesOnly, stripUserinfo } from '#core/import/values';
+import { isCredentialName } from '#core/import/credentials';
+import type { KeyValueEntry } from '#core/http/entries';
+import { entry } from '#core/http/entries';
+import type { AuthConfig, IdGenerator } from '#core/project/model';
+import { generateId } from '#core/project/model';
+import { SlugSet, uniqueSlug } from '#core/project/paths';
+import type { GrpcApi, GrpcFolder, GrpcMethodKind, GrpcRequestDef } from '#protocol-grpc/grpc/model';
+import { createGrpcApi, createGrpcFolder, createGrpcRequest, defaultTlsFor } from '#protocol-grpc/grpc/model';
+import type { WsApi, WsFolder, WsRequestDef } from '#protocol-ws/ws/model';
+import { createWsApi, createWsFolder, createWsRequest, createWsSavedMessage } from '#protocol-ws/ws/model';
 import type {
   MultipartFormPart,
   RestApi,
@@ -35,13 +35,13 @@ import type {
   RestRequestDef,
   RestRequestSettings,
   RestResponseExample,
-} from '../../rest/model.js';
-import { NO_BODY, createApi, createFolder, createRestRequest } from '../../rest/model.js';
-import { splitQueryKeepingReferences } from '../../rest/url.js';
-import type { ScriptLevel } from '../scripts.js';
-import { ScriptImportLog } from '../scripts.js';
-import type { RequestScripts } from '../../script/model.js';
-import type { Assertion } from '../../assert/model.js';
+} from '#protocol-rest/rest/model';
+import { NO_BODY, createApi, createFolder, createRestRequest } from '#protocol-rest/rest/model';
+import { splitQueryKeepingReferences } from '#protocol-rest/rest/url';
+import type { ScriptLevel } from '#core/import/scripts';
+import { ScriptImportLog } from '#core/import/scripts';
+import type { RequestScripts } from '#core/script/model';
+import type { Assertion } from '#core/assert/model';
 import { mapOcAssertion } from './assertions.js';
 import type { MappedOcAuth } from './auth.js';
 import { mapOcAuth } from './auth.js';

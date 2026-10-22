@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { mapAsyncApi } from '../../../src/asyncapi/map.js';
-import { importAsyncApi } from '../../../src/asyncapi/import.js';
-import { parseAsyncApi } from '../../../src/asyncapi/parse.js';
-import type { AsyncApiDocument } from '../../../src/asyncapi/model.js';
+import { mapAsyncApi } from '#protocol-ws/asyncapi/map';
+import { importAsyncApi } from '#protocol-ws/asyncapi/import';
+import { parseAsyncApi } from '#protocol-ws/asyncapi/parse';
+import type { AsyncApiDocument } from '#protocol-ws/asyncapi/model';
 import { fileFetch } from '../../helpers/file-fetch.js';
 
 const fixture = (name: string) => new URL(`../../fixtures/asyncapi/${name}`, import.meta.url);

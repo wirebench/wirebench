@@ -6,18 +6,12 @@
  * evidence at all, so each route rejects a wrong credential and each test proves the difference.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { sendHttp } from '../../../src/http/client.js';
-import type { OAuth2Auth } from '../../../src/project/model.js';
-import {
-  buildTokenRequest,
-  parseTokenResponse,
-  pkce,
-  newState,
-  authorizationUrl,
-} from '../../../src/http/auth/oauth2.js';
-import { sendRest } from '../../../src/rest/send.js';
-import type { RestSendInput } from '../../../src/rest/send.js';
-import type { SendAuth } from '../../../src/http/auth/send-auth.js';
+import { sendHttp } from '#core/http/client';
+import type { OAuth2Auth } from '#core/project/model';
+import { buildTokenRequest, parseTokenResponse, pkce, newState, authorizationUrl } from '#core/http/auth/oauth2';
+import { sendRest } from '#protocol-rest/rest/send';
+import type { RestSendInput } from '#protocol-rest/rest/send';
+import type { SendAuth } from '#core/http/auth/send-auth';
 import { startTestRestServer, type TestRestServer } from '../../helpers/test-rest-server.js';
 
 let server: TestRestServer;

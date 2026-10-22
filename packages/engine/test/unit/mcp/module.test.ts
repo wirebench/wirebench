@@ -1,6 +1,6 @@
 /** MCP as a module (#79): registered last, behind its experimental feature, with a scripting facet. */
 import { describe, expect, it } from 'vitest';
-import { mcpProtocol } from '../../../src/mcp/module.js';
+import { mcpProtocol } from '#protocol-mcp/mcp/module';
 import { BUILTIN_PROTOCOLS, createBuiltinRegistry } from '../../../src/protocols.js';
 
 describe('mcpProtocol', () => {

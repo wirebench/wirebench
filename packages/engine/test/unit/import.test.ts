@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { generateEmptySoapRequest, generateSoapRequest } from '../../src/soap/generate.js';
-import { importWsdl } from '../../src/soap/import.js';
-import { summarizeSoapOperations } from '../../src/soap/operations.js';
-import { parseWsdlDocument } from '../../src/wsdl/parse-wsdl.js';
-import { parseXml } from '../../src/xml/parse.js';
+import { generateEmptySoapRequest, generateSoapRequest } from '#protocol-soap/soap/generate';
+import { importWsdl } from '#protocol-soap/soap/import';
+import { summarizeSoapOperations } from '#protocol-soap/soap/operations';
+import { parseWsdlDocument } from '#protocol-soap/wsdl/parse-wsdl';
+import { parseXml } from '#core/xml/parse';
 import { readPublicFixture } from '../helpers/fixtures.js';
 
 function parseFixture(name: string) {

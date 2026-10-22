@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CI_GATE_FACTOR, GATE_SAMPLES, SKIP_PERF, median } from '../bench/budgets.js';
-import { apiFromPostmanCollection } from '../../src/rest/postman/map.js';
-import type { PostmanCollection } from '../../src/rest/postman/model.js';
+import { apiFromPostmanCollection } from '#protocol-rest/rest/postman/map';
+import type { PostmanCollection } from '#protocol-rest/rest/postman/model';
 
 const FOLDERS = 20_000;
 

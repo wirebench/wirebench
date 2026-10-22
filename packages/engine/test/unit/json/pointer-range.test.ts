@@ -2,8 +2,8 @@
  * Mapping a JSON Pointer to where its value sits in the text shown, pretty-printed or minified.
  */
 import { describe, expect, it } from 'vitest';
-import { pointerRange } from '../../../src/json/pointer-range.js';
-import { pointerRange as fromSubpath } from '../../../src/json/cursor.js';
+import { pointerRange } from '#core/json/pointer-range';
+import { pointerRange as fromSubpath } from '#core/json/cursor';
 
 describe('pointerRange', () => {
   const pretty = '{\n  "a": {\n    "b": 42,\n    "c": [1, "x", {"d": true}]\n  }\n}';

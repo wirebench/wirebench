@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { ExportError } from '../../../src/errors.js';
+import { ExportError } from '#core/errors';
 import { exportCollection } from '../../../src/export/index.js';
-import type { RestFolder, RestRequestDef } from '../../../src/rest/model.js';
-import { createRestRequest } from '../../../src/rest/model.js';
-import { apiFromPostmanCollection } from '../../../src/rest/postman/map.js';
-import { parsePostmanCollectionText } from '../../../src/rest/postman/parse.js';
-import { parsePostmanVariablesText } from '../../../src/rest/postman/variables.js';
-import { joinBase } from '../../../src/rest/url.js';
+import type { RestFolder, RestRequestDef } from '#protocol-rest/rest/model';
+import { createRestRequest } from '#protocol-rest/rest/model';
+import { apiFromPostmanCollection } from '#protocol-rest/rest/postman/map';
+import { parsePostmanCollectionText } from '#protocol-rest/rest/postman/parse';
+import { parsePostmanVariablesText } from '#protocol-rest/rest/postman/variables';
+import { joinBase } from '#protocol-rest/rest/url';
 import { newId, sampleProject } from './fixture.js';
-import { restApisOf, withRestApis } from '../../../src/rest/model.js';
+import { restApisOf, withRestApis } from '#protocol-rest/rest/model';
 
 const project = sampleProject();
 const restId = restApisOf(project)[0]!.id;

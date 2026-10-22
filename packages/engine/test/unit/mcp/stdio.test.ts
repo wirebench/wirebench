@@ -6,8 +6,8 @@ import {
   openStdioTransport,
   resolveMcpCwd,
   type McpStdioTransport,
-} from '../../../src/mcp/stdio.js';
-import { runMcpSession, type McpOperationCall } from '../../../src/mcp/session.js';
+} from '#protocol-mcp/mcp/stdio';
+import { runMcpSession, type McpOperationCall } from '#protocol-mcp/mcp/session';
 
 const FIXTURE = resolve(import.meta.dirname, '../../fixtures/mcp/stdio-server.mjs');
 const FIXTURE_DIR = resolve(import.meta.dirname, '../../fixtures/mcp');

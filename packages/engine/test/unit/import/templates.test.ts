@@ -1,6 +1,6 @@
 // packages/engine/test/unit/import/templates.test.ts
 import { describe, expect, it } from 'vitest';
-import { rewriteMustache } from '../../../src/import/templates.js';
+import { rewriteMustache } from '#core/import/templates';
 
 describe('rewriteMustache', () => {
   it('turns {{name}} into ${name}, trimming inner spaces', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertionsSchema } from '../../../src/assert/schema.js';
+import { assertionsSchema } from '#core/assert/schema';
 
 describe('assertionsSchema', () => {
   it('accepts one of each type and defaults soap-fault to none', () => {

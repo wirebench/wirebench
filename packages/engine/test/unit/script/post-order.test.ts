@@ -4,12 +4,12 @@
  * only the API level's setting counts.
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import type { RestRequestSnapshot, RestResponseSnapshot } from '../../../src/rest/scripting.js';
-import { scriptSession } from '../../../src/run/script-support.js';
-import { createScriptChecker } from '../../../src/script/check/host.js';
-import type { RequestScripts } from '../../../src/script/model.js';
-import { RequestScripting, type ScriptedRequest } from '../../../src/script/request-scripts.js';
-import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
+import type { RestRequestSnapshot, RestResponseSnapshot } from '#protocol-rest/rest/scripting';
+import { scriptSession } from '#core/run/script-support';
+import { createScriptChecker } from '#core/script/check/host';
+import type { RequestScripts } from '#core/script/model';
+import { RequestScripting, type ScriptedRequest } from '#core/script/request-scripts';
+import { createScriptSandbox } from '#core/script/sandbox/host';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';
 

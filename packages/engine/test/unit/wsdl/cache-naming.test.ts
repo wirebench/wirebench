@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { assignFileNames } from '../../../src/project/cache-naming.js';
-import type { BundledDocument } from '../../../src/wsdl/resolver.js';
+import { assignFileNames } from '#core/project/cache-naming';
+import type { BundledDocument } from '#protocol-soap/wsdl/resolver';
 
 /** Builds a minimal `BundledDocument` for naming tests; only the fields `assignFileNames` reads matter. */
 function doc(location: string, kind: 'wsdl' | 'xsd' = 'wsdl'): BundledDocument {

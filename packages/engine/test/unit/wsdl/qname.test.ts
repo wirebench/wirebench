@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseQName, qnameEquals, qnameToString } from '../../../src/wsdl/qname.js';
-import { parseXml } from '../../../src/xml/parse.js';
+import { parseQName, qnameEquals, qnameToString } from '#protocol-soap/wsdl/qname';
+import { parseXml } from '#core/xml/parse';
 
 describe('parseQName', () => {
   it('resolves an unprefixed name to the given default namespace', () => {

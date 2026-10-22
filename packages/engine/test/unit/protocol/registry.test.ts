@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { ProjectError, WirebenchError } from '../../../src/errors.js';
-import type { FeatureDescriptor } from '../../../src/protocol/features.js';
-import type { ProtocolModule } from '../../../src/protocol/module.js';
-import { createProtocolRegistry, featureDisabled } from '../../../src/protocol/registry.js';
+import { ProjectError, WirebenchError } from '#core/errors';
+import type { FeatureDescriptor } from '#core/protocol/features';
+import type { ProtocolModule } from '#core/protocol/module';
+import { createProtocolRegistry, featureDisabled } from '#core/protocol/registry';
 import { emptyStorage } from '../../helpers/empty-storage.js';
 
 function module(kind: string, feature: Partial<FeatureDescriptor> = {}): ProtocolModule {

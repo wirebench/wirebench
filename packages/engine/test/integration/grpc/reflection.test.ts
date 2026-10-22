@@ -11,11 +11,11 @@
  * the protocol ties a descriptor's name to a path on disk.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { GrpcError } from '../../../src/errors.js';
-import { callGrpc } from '../../../src/grpc/call.js';
-import { apiFromProtoSet, importProto } from '../../../src/grpc/import.js';
-import { reflectProtoSet, reflectServices } from '../../../src/grpc/reflection/client.js';
-import type { GrpcReflectInput } from '../../../src/grpc/reflection/client.js';
+import { GrpcError } from '#core/errors';
+import { callGrpc } from '#protocol-grpc/grpc/call';
+import { apiFromProtoSet, importProto } from '#protocol-grpc/grpc/import';
+import { reflectProtoSet, reflectServices } from '#protocol-grpc/grpc/reflection/client';
+import type { GrpcReflectInput } from '#protocol-grpc/grpc/reflection/client';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
 import { startTestGrpcServer, type TestGrpcServer } from '../../helpers/test-grpc-server.js';
 

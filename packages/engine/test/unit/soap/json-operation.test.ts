@@ -1,15 +1,15 @@
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { importWsdl } from '../../../src/soap/import.js';
+import { importWsdl } from '#protocol-soap/soap/import';
 import {
   envelopeFromJson,
   faultDetailJson,
   jsonFromEnvelope,
   operationJsonSchema,
-} from '../../../src/soap/json-operation.js';
-import type { WsdlImportResult } from '../../../src/soap/types.js';
-import { bindingContextFor, validateMessage } from '../../../src/validate/index.js';
-import { jsonSchemaOf } from '../../../src/xsd/json-bridge.js';
+} from '#protocol-soap/soap/json-operation';
+import type { WsdlImportResult } from '#protocol-soap/soap/types';
+import { bindingContextFor, validateMessage } from '#protocol-soap/validate/index';
+import { jsonSchemaOf } from '#protocol-soap/xsd/json-bridge';
 
 const FIXTURE = fileURLToPath(new URL('../../fixtures/json-bridge/service.wsdl', import.meta.url));
 const BRIDGE = 'urn:wb:bridge';

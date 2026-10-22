@@ -1,0 +1,39 @@
+{
+  "name": "@wirebench/protocol-rest",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Wirebench engine: REST, OpenAPI, the HTTP-client formats, webhooks and SSE. Composed by @wirebench/engine, which vendors it; not published on its own.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "development": "./src/*.ts",
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "imports": {
+    "#core/*": "@wirebench/core/*"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@wirebench/core": "workspace:*",
+    "@stoplight/spectral-core": "1.24.0",
+    "@stoplight/spectral-parsers": "1.0.5",
+    "@stoplight/spectral-ref-resolver": "1.0.5",
+    "graphql": "^17.0.2",
+    "yaml": "^2.9",
+    "zod": "^4.6.1"
+  }
+}

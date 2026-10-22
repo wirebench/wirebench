@@ -5,19 +5,19 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createGrpcApi, createGrpcRequest, grpcApisOf } from '../../../src/grpc/model.js';
-import { grpcStorage } from '../../../src/grpc/storage.js';
-import { loadProject } from '../../../src/project/load.js';
-import type { Project } from '../../../src/project/model.js';
-import { saveProject } from '../../../src/project/save.js';
+import { createGrpcApi, createGrpcRequest, grpcApisOf } from '#protocol-grpc/grpc/model';
+import { grpcStorage } from '#protocol-grpc/grpc/storage';
+import { loadProject } from '#core/project/load';
+import type { Project } from '#core/project/model';
+import { saveProject } from '#core/project/save';
 import { createBuiltinRegistry } from '../../../src/protocols.js';
-import { createApi, createRestRequest, restApisOf } from '../../../src/rest/model.js';
-import { restStorage } from '../../../src/rest/storage.js';
-import { soapStorage } from '../../../src/soap/storage.js';
-import { createWsApi, createWsRequest, wsApisOf } from '../../../src/ws/model.js';
-import { wsStorage } from '../../../src/ws/storage.js';
+import { createApi, createRestRequest, restApisOf } from '#protocol-rest/rest/model';
+import { restStorage } from '#protocol-rest/rest/storage';
+import { soapStorage } from '#protocol-soap/soap/storage';
+import { createWsApi, createWsRequest, wsApisOf } from '#protocol-ws/ws/model';
+import { wsStorage } from '#protocol-ws/ws/storage';
 import { sampleProject, tempProjectDir } from './fixture.js';
-import { soapInterfacesOf } from '../../../src/soap/model.js';
+import { soapInterfacesOf } from '#protocol-soap/soap/model';
 
 /** The sample project's two interfaces, plus one API of each other kind. */
 function mixedProject(): Project {

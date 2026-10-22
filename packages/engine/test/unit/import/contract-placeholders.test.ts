@@ -4,25 +4,25 @@
  * and never reads a property, an environment variable or a secret for it (#223).
  */
 import { describe, expect, it } from 'vitest';
-import { escapeExpansions, expand, unescapeExpansions } from '../../../src/project/properties.js';
-import type { PropertyScopes } from '../../../src/project/properties.js';
-import { parseOpenApi } from '../../../src/rest/openapi/import.js';
-import { apiFromDocument } from '../../../src/rest/openapi/map.js';
-import type { RestFolder, RestRequestDef } from '../../../src/rest/model.js';
-import { buildEmptyRequest, buildSampleRequest } from '../../../src/soap/request-builder.js';
-import type { RequestBuildInput } from '../../../src/soap/request-builder.js';
-import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
-import { parseWsdl } from '../../../src/wsdl/parse-wsdl.js';
-import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
-import { applyForm, buildForm } from '../../../src/xsd/form-model.js';
-import type { FormNode } from '../../../src/xsd/form-model.js';
-import { applyFormEdit } from '../../../src/xsd/form-edits.js';
-import { mapScheme } from '../../../src/rest/openapi/map.js';
-import { authFromScheme as asyncApiAuth } from '../../../src/asyncapi/security.js';
-import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
-import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
-import type { OAuth2Auth } from '../../../src/project/model.js';
-import { buildLiteralSampleRequest } from '../../../src/soap/request-builder.js';
+import { escapeExpansions, expand, unescapeExpansions } from '#core/project/properties';
+import type { PropertyScopes } from '#core/project/properties';
+import { parseOpenApi } from '#protocol-rest/rest/openapi/import';
+import { apiFromDocument } from '#protocol-rest/rest/openapi/map';
+import type { RestFolder, RestRequestDef } from '#protocol-rest/rest/model';
+import { buildEmptyRequest, buildSampleRequest } from '#protocol-soap/soap/request-builder';
+import type { RequestBuildInput } from '#protocol-soap/soap/request-builder';
+import { createDefaultFetchDocument } from '#core/http/fetch-document';
+import { parseWsdl } from '#protocol-soap/wsdl/parse-wsdl';
+import { buildSchemaSet } from '#protocol-soap/xsd/schema-set';
+import { applyForm, buildForm } from '#protocol-soap/xsd/form-model';
+import type { FormNode } from '#protocol-soap/xsd/form-model';
+import { applyFormEdit } from '#protocol-soap/xsd/form-edits';
+import { mapScheme } from '#protocol-rest/rest/openapi/map';
+import { authFromScheme as asyncApiAuth } from '#protocol-ws/asyncapi/security';
+import { createRunTokenSource } from '#core/run/oauth2-token';
+import type { HttpExchange, HttpRequest } from '#core/http/types';
+import type { OAuth2Auth } from '#core/project/model';
+import { buildLiteralSampleRequest } from '#protocol-soap/soap/request-builder';
 
 const PROBE = '${#System#WB_PROBE}';
 const scopes: PropertyScopes = { project: {}, global: {}, system: { WB_PROBE: 'leaked-from-env' } };

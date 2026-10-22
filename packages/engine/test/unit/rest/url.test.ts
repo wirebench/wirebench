@@ -5,7 +5,7 @@
  * the literal text `{id}`.
  */
 import { describe, expect, it } from 'vitest';
-import { entry } from '../../../src/rest/model.js';
+import { entry } from '#protocol-rest/rest/model';
 import {
   composeUrl,
   encodeValue,
@@ -14,7 +14,7 @@ import {
   parseUrlParams,
   splitQuery,
   trimTrailingSlashes,
-} from '../../../src/rest/url.js';
+} from '#protocol-rest/rest/url';
 
 describe('joinBase', () => {
   it.each([

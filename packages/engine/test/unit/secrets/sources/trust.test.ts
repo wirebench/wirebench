@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseSecretSources } from '../../../../src/secrets/sources/parse.js';
-import { secretSourcesHash, sharedTrusted } from '../../../../src/secrets/sources/trust.js';
+import { parseSecretSources } from '#core/secrets/sources/parse';
+import { secretSourcesHash, sharedTrusted } from '#core/secrets/sources/trust';
 
 function withProto(value: unknown): Record<string, unknown> {
   const input: Record<string, unknown> = { a: { kind: 'gcp', secret: 's' } };

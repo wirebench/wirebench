@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isWirebenchError } from '../../../src/errors.js';
-import { parseSoapResponse } from '../../../src/soap/response-parser.js';
+import { isWirebenchError } from '#core/errors';
+import { parseSoapResponse } from '#protocol-soap/soap/response-parser';
 
 const ADD_RESPONSE = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">

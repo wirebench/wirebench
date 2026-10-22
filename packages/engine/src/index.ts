@@ -1,5 +1,5 @@
-export { evaluateAssertions } from './assert/index.js';
-export { checkRequestAssertions } from './assert/check.js';
+export { evaluateAssertions } from '#core/assert/index';
+export { checkRequestAssertions } from '#core/assert/check';
 export type {
   Assertion,
   AssertionLanguage,
@@ -18,27 +18,27 @@ export type {
   StatusAssertion,
   StatusNames,
   StepAssertion,
-} from './assert/model.js';
-export { CALLBACK_LIMITS, callbackLabel } from './assert/model.js';
+} from '#core/assert/model';
+export { CALLBACK_LIMITS, callbackLabel } from '#core/assert/model';
 export {
   assertionsSchema,
   callbackAssertionSchema,
   stepAssertionsSchema,
   toCallbackAssertion,
-} from './assert/schema.js';
+} from '#core/assert/schema';
 export {
   FIRST_CAPTURE_CURSOR,
   captureDetailView,
   captureSourceOver,
   captureSummaryView,
   unavailableCaptureSource,
-} from './assert/capture-source.js';
+} from '#core/assert/capture-source';
 export type {
   CaptureDetailView,
   CaptureServerReads,
   CaptureSource,
   CaptureSummaryView,
-} from './assert/capture-source.js';
+} from '#core/assert/capture-source';
 export {
   NO_CAPTURE_SOURCE_MESSAGE,
   awaitCallbacks,
@@ -49,20 +49,20 @@ export {
   seconds,
   sendAwaitingCallbacks,
   waitingOf,
-} from './assert/callback.js';
+} from '#core/assert/callback';
 export type {
   AwaitCallbacksOptions,
   CallbackClock,
   CallbackWiring,
   CallbackWaiting,
   PendingCallback,
-} from './assert/callback.js';
+} from '#core/assert/callback';
 
-export * from './run/index.js';
+export * from '#core/run/index';
 
 // Protocol modules, the registry and features (ADR-0017). Exported for the engine's own hosts and
 // tagged `@internal` where they are declared: they are not yet a plugin API.
-export { createFeatureSet, resolveFeatures } from './protocol/features.js';
+export { createFeatureSet, resolveFeatures } from '#core/protocol/features';
 export type {
   FeatureDescriptor,
   FeatureLevels,
@@ -70,8 +70,8 @@ export type {
   FeatureSet,
   FeatureState,
   WhyDisabled,
-} from './protocol/features.js';
-export { defineProtocol } from './protocol/module.js';
+} from '#core/protocol/features';
+export { defineProtocol } from '#core/protocol/module';
 export type {
   ContainerBase,
   ContainerDir,
@@ -89,9 +89,9 @@ export type {
   ScriptedSend,
   SelectedBase,
   SnapshotFacts,
-} from './protocol/module.js';
-export { createProtocolRegistry, featureDisabled } from './protocol/registry.js';
-export type { ProtocolRegistry, ProtocolRegistryOptions } from './protocol/registry.js';
+} from '#core/protocol/module';
+export { createProtocolRegistry, featureDisabled } from '#core/protocol/registry';
+export type { ProtocolRegistry, ProtocolRegistryOptions } from '#core/protocol/registry';
 export {
   BUILTIN_FEATURES,
   BUILTIN_PROTOCOLS,
@@ -114,71 +114,76 @@ export {
   unsupportedOf,
   withContainersOf,
   withProtocolData,
-} from './project/model.js';
-export { takenContainerSlugs } from './project/container-slugs.js';
-export { soapInterfacesOf, withSoapInterfaces } from './soap/model.js';
-export { restApisOf, withRestApis } from './rest/model.js';
-export { grpcApisOf, withGrpcApis } from './grpc/model.js';
-export { wsApisOf, withWsApis } from './ws/model.js';
-export { mcpServersOf, withMcpServers } from './mcp/model.js';
-export { commandDisplay, commandFingerprint } from './mcp/approval.js';
-export type { CommandFingerprintInput } from './mcp/approval.js';
-export { mcpEffectiveAuth, mcpItemFor } from './mcp/run.js';
+} from '#core/project/model';
+export { takenContainerSlugs } from '#core/project/container-slugs';
+export { soapInterfacesOf, withSoapInterfaces } from '#protocol-soap/soap/model';
+export { restApisOf, withRestApis } from '#protocol-rest/rest/model';
+export { grpcApisOf, withGrpcApis } from '#protocol-grpc/grpc/model';
+export { wsApisOf, withWsApis } from '#protocol-ws/ws/model';
+export { mcpServersOf, withMcpServers } from '#protocol-mcp/mcp/model';
+export { commandDisplay, commandFingerprint } from '#protocol-mcp/mcp/approval';
+export type { CommandFingerprintInput } from '#protocol-mcp/mcp/approval';
+export { mcpEffectiveAuth, mcpItemFor } from '#protocol-mcp/mcp/run';
 // Refresh catalogue: one session that lists what the server has, through the same gate as a send.
-export { MCP_CATALOGUE_MAX_PAGES, refreshMcpCatalogue } from './mcp/catalogue.js';
-export type { McpCatalogueRefresh, RefreshMcpCatalogueOptions } from './mcp/catalogue.js';
-export type { McpMessage } from './mcp/session.js';
-export type { McpResolvedInput, McpSelected } from './mcp/run.js';
-export type { McpLiveEvent } from './mcp/events.js';
+export { MCP_CATALOGUE_MAX_PAGES, refreshMcpCatalogue } from '#protocol-mcp/mcp/catalogue';
+export type { McpCatalogueRefresh, RefreshMcpCatalogueOptions } from '#protocol-mcp/mcp/catalogue';
+export type { McpMessage } from '#protocol-mcp/mcp/session';
+export type { McpResolvedInput, McpSelected } from '#protocol-mcp/mcp/run';
+export type { McpLiveEvent } from '#protocol-mcp/mcp/events';
 // One MCP send as History records it, for every host that writes History.
-export { buildMcpHistoryEntry, historyMcpOf, redactMcpExchange } from './mcp/history-entry.js';
-export type { McpHistoryInput, McpHistoryMasks } from './mcp/history-entry.js';
-export type { McpExchange, McpExchangeTransport } from './mcp/exchange.js';
-export { wssConfigsOf, withWssConfigs } from './wss/project.js';
-export type { WssConfigs } from './wss/project.js';
-export type { UnsupportedContainer } from './project/model.js';
+export { buildMcpHistoryEntry, historyMcpOf, redactMcpExchange } from '#protocol-mcp/mcp/history-entry';
+export type { McpHistoryInput, McpHistoryMasks } from '#protocol-mcp/mcp/history-entry';
+export type { McpExchange, McpExchangeTransport } from '#protocol-mcp/mcp/exchange';
+export { wssConfigsOf, withWssConfigs } from '#protocol-soap/wss/project';
+export type { WssConfigs } from '#protocol-soap/wss/project';
+export type { UnsupportedContainer } from '#core/project/model';
 
 // What three core files re-exported until 3.0, from the module that declares it.
-export { soapResponseSubject } from './soap/run.js';
+export { soapResponseSubject } from '#protocol-soap/soap/run';
 // The SOAP run facet's item and its effective credentials, for a host that sends one SOAP item itself.
-export { soapEffectiveAuth, soapIssuedTokenKeyTarget, soapIssuedTokenTarget, soapItemFor } from './soap/run.js';
-export type { SoapOverride, SoapSelected } from './soap/run.js';
-export { restSubject } from './rest/run.js';
+export {
+  soapEffectiveAuth,
+  soapIssuedTokenKeyTarget,
+  soapIssuedTokenTarget,
+  soapItemFor,
+} from '#protocol-soap/soap/run';
+export type { SoapOverride, SoapSelected } from '#protocol-soap/soap/run';
+export { restSubject } from '#protocol-rest/rest/run';
 // The REST run facet and its effective credentials, for a host that sends one REST item itself.
-export { restEffectiveAuth, restItemFor, restRun } from './rest/run.js';
-export type { RestSelected } from './rest/run.js';
-export { grpcSubject } from './grpc/run.js';
+export { restEffectiveAuth, restItemFor, restRun } from '#protocol-rest/rest/run';
+export type { RestSelected } from '#protocol-rest/rest/run';
+export { grpcSubject } from '#protocol-grpc/grpc/run';
 // The gRPC run facet's item and its effective credentials, for a host that sends one gRPC item itself.
-export { grpcEffectiveAuth, grpcItemFor } from './grpc/run.js';
-export type { GrpcFailedInput, GrpcResolvedInput, GrpcSelected } from './grpc/run.js';
+export { grpcEffectiveAuth, grpcItemFor } from '#protocol-grpc/grpc/run';
+export type { GrpcFailedInput, GrpcResolvedInput, GrpcSelected } from '#protocol-grpc/grpc/run';
 // The WebSocket run facet's item and its effective credentials, for a host that opens one itself.
-export { wsEffectiveAuth, wsItemFor, wsSubject } from './ws/run.js';
-export type { WsSelected } from './ws/run.js';
+export { wsEffectiveAuth, wsItemFor, wsSubject } from '#protocol-ws/ws/run';
+export type { WsSelected } from '#protocol-ws/ws/run';
 // One WebSocket session as History records it, for every host that writes History.
-export { buildWsHistoryEntry, historyWsOf, redactWsExchange } from './ws/history-entry.js';
-export type { WsHistoryInput, WsHistoryMasks } from './ws/history-entry.js';
+export { buildWsHistoryEntry, historyWsOf, redactWsExchange } from '#protocol-ws/ws/history-entry';
+export type { WsHistoryInput, WsHistoryMasks } from '#protocol-ws/ws/history-entry';
 export type { AnyRequestDef, RequestSnapshot, ResponseSnapshot } from './protocols.js';
-export { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './soap/scripting.js';
-export type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
+export { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from '#protocol-soap/soap/scripting';
+export type { SoapRequestSnapshot, SoapResponseSnapshot } from '#protocol-soap/soap/scripting';
 export {
   projectSoapBody,
   qnameFromClark,
   replaceSoapBody,
   soapOperationElements,
   soapScriptTypes,
-} from './soap/script-types.js';
-export { applyRestSnapshot, restRequestSnapshot, restResponseSnapshot } from './rest/scripting.js';
-export type { RestRequestSnapshot, RestResponseSnapshot } from './rest/scripting.js';
-export { restOperationFor, restScriptTypes } from './rest/script-types.js';
-export { applyGrpcSnapshot, grpcRequestSnapshot, grpcResponseSnapshot } from './grpc/scripting.js';
-export type { GrpcRequestSnapshot, GrpcResponseSnapshot } from './grpc/scripting.js';
-export { grpcMessageTypes, grpcScriptTypes } from './grpc/script-types.js';
-export { interfaceFileSchema, requestFileSchema } from './soap/files.js';
-export type { InterfaceFile, RequestFile } from './soap/files.js';
-export { apiFileSchema, restBodySchema, restRequestFileSchema } from './rest/files.js';
-export type { ApiFile, RestRequestFile } from './rest/files.js';
-export { grpcApiFileSchema, grpcMethodKindSchema, grpcRequestFileSchema } from './grpc/files.js';
-export type { GrpcApiFile, GrpcRequestFile } from './grpc/files.js';
+} from '#protocol-soap/soap/script-types';
+export { applyRestSnapshot, restRequestSnapshot, restResponseSnapshot } from '#protocol-rest/rest/scripting';
+export type { RestRequestSnapshot, RestResponseSnapshot } from '#protocol-rest/rest/scripting';
+export { restOperationFor, restScriptTypes } from '#protocol-rest/rest/script-types';
+export { applyGrpcSnapshot, grpcRequestSnapshot, grpcResponseSnapshot } from '#protocol-grpc/grpc/scripting';
+export type { GrpcRequestSnapshot, GrpcResponseSnapshot } from '#protocol-grpc/grpc/scripting';
+export { grpcMessageTypes, grpcScriptTypes } from '#protocol-grpc/grpc/script-types';
+export { interfaceFileSchema, requestFileSchema } from '#protocol-soap/soap/files';
+export type { InterfaceFile, RequestFile } from '#protocol-soap/soap/files';
+export { apiFileSchema, restBodySchema, restRequestFileSchema } from '#protocol-rest/rest/files';
+export type { ApiFile, RestRequestFile } from '#protocol-rest/rest/files';
+export { grpcApiFileSchema, grpcMethodKindSchema, grpcRequestFileSchema } from '#protocol-grpc/grpc/files';
+export type { GrpcApiFile, GrpcRequestFile } from '#protocol-grpc/grpc/files';
 
 export {
   WirebenchError,
@@ -208,32 +213,32 @@ export {
   WsError,
   McpError,
   isWirebenchError,
-} from './errors.js';
-export type { WirebenchErrorOptions } from './errors.js';
+} from '#core/errors';
+export type { WirebenchErrorOptions } from '#core/errors';
 
-export { parseXml, parseXmlDetailed, getPosition, classifyParseEvent } from './xml/parse.js';
-export type { ParseXmlOptions, XmlProblem, ParseEventClassification } from './xml/parse.js';
-export { serializeXml } from './xml/serialize.js';
+export { parseXml, parseXmlDetailed, getPosition, classifyParseEvent } from '#core/xml/parse';
+export type { ParseXmlOptions, XmlProblem, ParseEventClassification } from '#core/xml/parse';
+export { serializeXml } from '#core/xml/serialize';
 export {
   findTemplatePlaceholders,
   TEMPLATE_PLACEHOLDER,
   type TemplatePlaceholder,
-} from './xml/template-placeholders.js';
-export { NS, PREFIX } from './xml/namespaces.js';
-export type { NamespaceUri } from './xml/namespaces.js';
-export { LineIndex } from './xml/positions.js';
-export type { LinePosition } from './xml/positions.js';
+} from '#core/xml/template-placeholders';
+export { NS, PREFIX } from '#core/xml/namespaces';
+export type { NamespaceUri } from '#core/xml/namespaces';
+export { LineIndex } from '#core/xml/positions';
+export type { LinePosition } from '#core/xml/positions';
 
-export { evaluate, evaluateJson } from './xpath/evaluate.js';
-export type { EvaluateOptions, QueryLanguage, QueryResult, QueryNodeItem, QueryValueItem } from './xpath/evaluate.js';
-export { evaluateJsonPath } from './xpath/jsonpath.js';
-export { evaluateWithTimeout, matchRegexWithTimeout } from './xpath/evaluate-async.js';
-export type { EvaluateWithTimeoutOptions, RegexMatchResult } from './xpath/evaluate-async.js';
-export { collectNamespaces, suggestPrefixes } from './xpath/namespaces.js';
+export { evaluate, evaluateJson } from '#core/xpath/evaluate';
+export type { EvaluateOptions, QueryLanguage, QueryResult, QueryNodeItem, QueryValueItem } from '#core/xpath/evaluate';
+export { evaluateJsonPath } from '#core/xpath/jsonpath';
+export { evaluateWithTimeout, matchRegexWithTimeout } from '#core/xpath/evaluate-async';
+export type { EvaluateWithTimeoutOptions, RegexMatchResult } from '#core/xpath/evaluate-async';
+export { collectNamespaces, suggestPrefixes } from '#core/xpath/namespaces';
 
-export { parseQName, qnameEquals, qnameToString } from './wsdl/qname.js';
-export type { QName } from './wsdl/qname.js';
-export { findBinding, findMessage, findPortType, findService } from './wsdl/model.js';
+export { parseQName, qnameEquals, qnameToString } from '#protocol-soap/wsdl/qname';
+export type { QName } from '#protocol-soap/wsdl/qname';
+export { findBinding, findMessage, findPortType, findService } from '#protocol-soap/wsdl/model';
 export type {
   Binding,
   BindingFault,
@@ -255,11 +260,11 @@ export type {
   SoapVersion,
   WsdlDefinition,
   WsdlImport,
-} from './wsdl/model.js';
-export { parseWsdl, parseWsdlDocument } from './wsdl/parse-wsdl.js';
-export type { ParseWsdlOptions, WsdlDocumentSource } from './wsdl/parse-wsdl.js';
-export { parseWsdlBundle } from './wsdl/merge.js';
-export { resolveDefinition } from './wsdl/resolver.js';
+} from '#protocol-soap/wsdl/model';
+export { parseWsdl, parseWsdlDocument } from '#protocol-soap/wsdl/parse-wsdl';
+export type { ParseWsdlOptions, WsdlDocumentSource } from '#protocol-soap/wsdl/parse-wsdl';
+export { parseWsdlBundle } from '#protocol-soap/wsdl/merge';
+export { resolveDefinition } from '#protocol-soap/wsdl/resolver';
 export type {
   BundledDocument,
   DefinitionBundle,
@@ -268,51 +273,62 @@ export type {
   FetchedDocument,
   ResolveOptions,
   ResolveProblem,
-} from './wsdl/resolver.js';
-export { createDefaultFetchDocument } from './http/fetch-document.js';
-export { createHttpFetchDocument } from './http/document-fetch.js';
-export type { DocumentFetchOptions } from './http/document-fetch.js';
-export { assignFileNames } from './project/cache-naming.js';
-export type { NamedDocument } from './project/cache-naming.js';
-export { createCachedFetchDocument, readDefinitionCache, writeDefinitionCache } from './wsdl/cache.js';
-export type { DefinitionCacheOptions, WriteDefinitionCacheOptions } from './wsdl/cache.js';
-export { exportDefinition } from './wsdl/export-definition.js';
-export type { ExportDefinitionOptions, ExportedFile, ExportResult } from './wsdl/export-definition.js';
-export { generateDocs } from './wsdl/docs-generator.js';
-export type { GenerateDocsOptions } from './wsdl/docs-generator.js';
-export { applyUpdate, planUpdate } from './wsdl/update-definition.js';
+} from '#protocol-soap/wsdl/resolver';
+export { createDefaultFetchDocument } from '#core/http/fetch-document';
+export { createHttpFetchDocument } from '#core/http/document-fetch';
+export type { DocumentFetchOptions } from '#core/http/document-fetch';
+export { assignFileNames } from '#core/project/cache-naming';
+export type { NamedDocument } from '#core/project/cache-naming';
+export { createCachedFetchDocument, readDefinitionCache, writeDefinitionCache } from '#protocol-soap/wsdl/cache';
+export type { DefinitionCacheOptions, WriteDefinitionCacheOptions } from '#protocol-soap/wsdl/cache';
+export { exportDefinition } from '#protocol-soap/wsdl/export-definition';
+export type { ExportDefinitionOptions, ExportedFile, ExportResult } from '#protocol-soap/wsdl/export-definition';
+export { generateDocs } from '#protocol-soap/wsdl/docs-generator';
+export type { GenerateDocsOptions } from '#protocol-soap/wsdl/docs-generator';
+export { applyUpdate, planUpdate } from '#protocol-soap/wsdl/update-definition';
 export type {
   ApplyUpdateOptions,
   ApplyUpdateResult,
   ChangedOperation,
   OperationChangeReason,
   UpdatePlan,
-} from './wsdl/update-definition.js';
+} from '#protocol-soap/wsdl/update-definition';
 
-export { buildSchemaSet } from './xsd/schema-set.js';
-export type { SchemaSet, SchemaSetInput, SchemaElementsInput } from './xsd/schema-set.js';
+export { buildSchemaSet } from '#protocol-soap/xsd/schema-set';
+export type { SchemaSet, SchemaSetInput, SchemaElementsInput } from '#protocol-soap/xsd/schema-set';
 export {
   elementPathAt,
   completionContextAt,
   childrenAllowedAt,
   attributesAllowedAt,
   declarationOf,
-} from './xsd/locate.js';
-export type { CompletionContext, TextRange } from './xsd/locate.js';
-export { BUILTIN_TYPES, SOAP_ENC_ATTRIBUTES, XSD_BUILTIN_NAMES, isBuiltinType, lookupBuiltin } from './xsd/builtins.js';
-export type { BuiltinType } from './xsd/builtins.js';
+} from '#protocol-soap/xsd/locate';
+export type { CompletionContext, TextRange } from '#protocol-soap/xsd/locate';
+export {
+  BUILTIN_TYPES,
+  SOAP_ENC_ATTRIBUTES,
+  XSD_BUILTIN_NAMES,
+  isBuiltinType,
+  lookupBuiltin,
+} from '#protocol-soap/xsd/builtins';
+export type { BuiltinType } from '#protocol-soap/xsd/builtins';
 export {
   DEFAULT_GENERATE_OPTIONS,
   generateElement,
   generateSoapEncArray,
   generateType,
-} from './xsd/sample-generator.js';
-export type { GenerateOptions, GeneratedFragment } from './xsd/sample-generator.js';
-export { PLACEHOLDER, facetsOf, sampleValueFor, typeCommentFor } from './xsd/sample-values.js';
-export type { FormFacets, SampleValueContext, SampleValueOptions, SimpleTypeRef } from './xsd/sample-values.js';
-export { scanXml } from './xsd/xml-scan.js';
-export type { ScanXmlResult, ScannedAttribute, ScannedElement } from './xsd/xml-scan.js';
-export { applyForm, buildForm, buildFormForType } from './xsd/form-model.js';
+} from '#protocol-soap/xsd/sample-generator';
+export type { GenerateOptions, GeneratedFragment } from '#protocol-soap/xsd/sample-generator';
+export { PLACEHOLDER, facetsOf, sampleValueFor, typeCommentFor } from '#protocol-soap/xsd/sample-values';
+export type {
+  FormFacets,
+  SampleValueContext,
+  SampleValueOptions,
+  SimpleTypeRef,
+} from '#protocol-soap/xsd/sample-values';
+export { scanXml } from '#protocol-soap/xsd/xml-scan';
+export type { ScanXmlResult, ScannedAttribute, ScannedElement } from '#protocol-soap/xsd/xml-scan';
+export { applyForm, buildForm, buildFormForType } from '#protocol-soap/xsd/form-model';
 export type {
   ApplyFormOptions,
   BuildFormOptions,
@@ -321,9 +337,9 @@ export type {
   FormRepeat,
   FormType,
   FormValueBase,
-} from './xsd/form-model.js';
-export { applyFormEdit } from './xsd/form-edits.js';
-export type { FormEdit } from './xsd/form-edits.js';
+} from '#protocol-soap/xsd/form-model';
+export { applyFormEdit } from '#protocol-soap/xsd/form-edits';
+export type { FormEdit } from '#protocol-soap/xsd/form-edits';
 export {
   createJsonSchemaWriter,
   jsonFromXml,
@@ -332,7 +348,7 @@ export {
   MAX_FILL_ROUNDS,
   MAX_PROPERTY_DESCRIPTION,
   xmlFromJson,
-} from './xsd/json-bridge.js';
+} from '#protocol-soap/xsd/json-bridge';
 export type {
   BridgeTarget,
   JsonFromXmlResult,
@@ -341,7 +357,7 @@ export type {
   JsonSchemaWriter,
   XmlFromJsonOptions,
   XmlFromJsonResult,
-} from './xsd/json-bridge.js';
+} from '#protocol-soap/xsd/json-bridge';
 
 export type {
   All,
@@ -373,33 +389,48 @@ export type {
   SimpleType,
   SourceRef,
   TypeDefinition,
-} from './xsd/model.js';
+} from '#protocol-soap/xsd/model';
 
-export { createEnvelope, detectEnvelopeVersion, envelopeNamespace, SOAP_ENVELOPE_PREFIX } from './soap/envelope.js';
-export type { EnvelopeParts, SoapEnvelopeVersion } from './soap/envelope.js';
-export { prefixForNamespace, RESERVED_PREFIXES } from './xml/prefixes.js';
-export { NamespaceScope } from './soap/namespace-scope.js';
-export { soapActionHeaders } from './soap/soap-action.js';
-export type { SoapActionHeaders, SoapActionOptions } from './soap/soap-action.js';
-export type { BuildProblem, BuildProblemCode } from './soap/build-problems.js';
-export { buildEmptyRequest, buildLiteralSampleRequest, buildSampleRequest } from './soap/request-builder.js';
-export type { GeneratedRequest, OperationRef, RequestBuildInput, RequestBuildOptions } from './soap/request-builder.js';
-export { buildRequestForm } from './soap/form-request.js';
-export type { RequestForm } from './soap/form-request.js';
-export { envelopeFromJson, faultDetailJson, jsonFromEnvelope, operationJsonSchema } from './soap/json-operation.js';
-export type { JsonEnvelope, OperationSchema } from './soap/json-operation.js';
-export { isSoapFault, parseFault } from './soap/fault.js';
-export type { FaultReason, SoapFault } from './soap/fault.js';
-export { recreateRequest } from './soap/recreate.js';
-export type { RecreateOptions, RecreateResult } from './soap/recreate.js';
+export {
+  createEnvelope,
+  detectEnvelopeVersion,
+  envelopeNamespace,
+  SOAP_ENVELOPE_PREFIX,
+} from '#protocol-soap/soap/envelope';
+export type { EnvelopeParts, SoapEnvelopeVersion } from '#protocol-soap/soap/envelope';
+export { prefixForNamespace, RESERVED_PREFIXES } from '#core/xml/prefixes';
+export { NamespaceScope } from '#protocol-soap/soap/namespace-scope';
+export { soapActionHeaders } from '#protocol-soap/soap/soap-action';
+export type { SoapActionHeaders, SoapActionOptions } from '#protocol-soap/soap/soap-action';
+export type { BuildProblem, BuildProblemCode } from '#protocol-soap/soap/build-problems';
+export { buildEmptyRequest, buildLiteralSampleRequest, buildSampleRequest } from '#protocol-soap/soap/request-builder';
+export type {
+  GeneratedRequest,
+  OperationRef,
+  RequestBuildInput,
+  RequestBuildOptions,
+} from '#protocol-soap/soap/request-builder';
+export { buildRequestForm } from '#protocol-soap/soap/form-request';
+export type { RequestForm } from '#protocol-soap/soap/form-request';
+export {
+  envelopeFromJson,
+  faultDetailJson,
+  jsonFromEnvelope,
+  operationJsonSchema,
+} from '#protocol-soap/soap/json-operation';
+export type { JsonEnvelope, OperationSchema } from '#protocol-soap/soap/json-operation';
+export { isSoapFault, parseFault } from '#protocol-soap/soap/fault';
+export type { FaultReason, SoapFault } from '#protocol-soap/soap/fault';
+export { recreateRequest } from '#protocol-soap/soap/recreate';
+export type { RecreateOptions, RecreateResult } from '#protocol-soap/soap/recreate';
 export {
   defaultUserAgent,
   isDefaultUserAgent,
   REST_ACCEPT_ENCODING,
   SOAP_ACCEPT_ENCODING,
-} from './http/default-headers.js';
-export { quoteForShell, toCurl } from './http/curl.js';
-export type { CurlBody, CurlCommand, CurlHeader, CurlPart, ToCurlOptions } from './http/curl.js';
+} from '#core/http/default-headers';
+export { quoteForShell, toCurl } from '#core/http/curl';
+export type { CurlBody, CurlCommand, CurlHeader, CurlPart, ToCurlOptions } from '#core/http/curl';
 export {
   CODE_TARGETS,
   defaultIndent,
@@ -407,9 +438,9 @@ export {
   generateCode,
   secretTokensToEnv,
   splitEnv,
-} from './http/codegen/index.js';
-export { restCodeRequest } from './rest/codegen.js';
-export { soapCodeRequest } from './soap/codegen.js';
+} from '#core/http/codegen/index';
+export { restCodeRequest } from '#protocol-rest/rest/codegen';
+export { soapCodeRequest } from '#protocol-soap/soap/codegen';
 export type {
   CodeBody,
   CodeHeader,
@@ -418,11 +449,11 @@ export type {
   CodeTargetId,
   GeneratedCode,
   TextPart,
-} from './http/codegen/index.js';
-export { fromCurl, soapToCurl } from './soap/curl.js';
-export type { FromCurlResult } from './soap/curl.js';
-export { parseSoapResponse } from './soap/response-parser.js';
-export type { ParsedSoapResponse } from './soap/response-parser.js';
+} from '#core/http/codegen/index';
+export { fromCurl, soapToCurl } from '#protocol-soap/soap/curl';
+export type { FromCurlResult } from '#protocol-soap/soap/curl';
+export { parseSoapResponse } from '#protocol-soap/soap/response-parser';
+export type { ParsedSoapResponse } from '#protocol-soap/soap/response-parser';
 
 export {
   DEFAULT_ROOT_CONTENT_ID,
@@ -431,16 +462,16 @@ export {
   mimeParameter,
   parseMultipartRelated,
   stripContentId,
-} from './soap/mime/multipart.js';
-export type { BuildMultipartInput, BuiltMultipart, ParsedMultipart } from './soap/mime/multipart.js';
-export { XOP_NS, expandMtomResponse, prepareMtomRequest, xopContentType } from './soap/mime/mtom.js';
-export type { ExpandedMtom, MtomOptions, PreparedMtom } from './soap/mime/mtom.js';
-export { collectResponseAttachments, prepareSwaRequest } from './soap/mime/swa.js';
-export type { PreparedSwa, SwaOptions } from './soap/mime/swa.js';
-export { inlineFiles } from './soap/mime/inline-files.js';
-export type { InlineFileProblem, InlineFilesOptions, InlinedFiles } from './soap/mime/inline-files.js';
-export { findCidReferences, forEachScannedElement, spliceRanges } from './soap/mime/cid-scan.js';
-export type { CidReference, CidScan } from './soap/mime/cid-scan.js';
+} from '#protocol-soap/soap/mime/multipart';
+export type { BuildMultipartInput, BuiltMultipart, ParsedMultipart } from '#protocol-soap/soap/mime/multipart';
+export { XOP_NS, expandMtomResponse, prepareMtomRequest, xopContentType } from '#protocol-soap/soap/mime/mtom';
+export type { ExpandedMtom, MtomOptions, PreparedMtom } from '#protocol-soap/soap/mime/mtom';
+export { collectResponseAttachments, prepareSwaRequest } from '#protocol-soap/soap/mime/swa';
+export type { PreparedSwa, SwaOptions } from '#protocol-soap/soap/mime/swa';
+export { inlineFiles } from '#protocol-soap/soap/mime/inline-files';
+export type { InlineFileProblem, InlineFilesOptions, InlinedFiles } from '#protocol-soap/soap/mime/inline-files';
+export { findCidReferences, forEachScannedElement, spliceRanges } from '#protocol-soap/soap/mime/cid-scan';
+export type { CidReference, CidScan } from '#protocol-soap/soap/mime/cid-scan';
 export type {
   AttachmentResolver,
   BuildTransferEncoding,
@@ -449,10 +480,10 @@ export type {
   MultipartRoot,
   ResponseAttachment,
   TransferEncoding,
-} from './soap/mime/types.js';
+} from '#protocol-soap/soap/mime/types';
 
-export { basicAuthorization, isBasicChallenge, parseWwwAuthenticate } from './http/auth/basic.js';
-export type { AuthChallenge } from './http/auth/basic.js';
+export { basicAuthorization, isBasicChallenge, parseWwwAuthenticate } from '#core/http/auth/basic';
+export type { AuthChallenge } from '#core/http/auth/basic';
 export {
   AV_IDS,
   DEFAULT_NEGOTIATE_FLAGS,
@@ -471,28 +502,28 @@ export {
   parseType2,
   parseType3,
   toFileTime,
-} from './http/auth/ntlm.js';
-export type { Type1Options, Type2Message, Type3Message, Type3Params, Type3Result } from './http/auth/ntlm.js';
-export { md4 } from './http/auth/md4.js';
-export { ntlmHandshake } from './http/auth/ntlm-transport.js';
-export type { NtlmCredentials, NtlmHandshakeOptions, NtlmHandshakeResult } from './http/auth/ntlm-transport.js';
-export { createDispatcher, createSingleConnectionDispatcher, sendHttp } from './http/client.js';
-export { FAILED_REQUEST_BODY_CAP_BYTES, failedRequestOf } from './http/failed-request.js';
-export type { FailedRequest } from './http/failed-request.js';
-export { buildRawRequest, buildRawResponse } from './http/raw-capture.js';
+} from '#core/http/auth/ntlm';
+export type { Type1Options, Type2Message, Type3Message, Type3Params, Type3Result } from '#core/http/auth/ntlm';
+export { md4 } from '#core/http/auth/md4';
+export { ntlmHandshake } from '#core/http/auth/ntlm-transport';
+export type { NtlmCredentials, NtlmHandshakeOptions, NtlmHandshakeResult } from '#core/http/auth/ntlm-transport';
+export { createDispatcher, createSingleConnectionDispatcher, sendHttp } from '#core/http/client';
+export { FAILED_REQUEST_BODY_CAP_BYTES, failedRequestOf } from '#core/http/failed-request';
+export type { FailedRequest } from '#core/http/failed-request';
+export { buildRawRequest, buildRawResponse } from '#core/http/raw-capture';
 export {
   GSS_C_MUTUAL_FLAG,
   GSS_MECH_OID_KRB5,
   configureKerberos,
   kerberosProvider,
   loadKerberosProvider,
-} from './http/auth/kerberos-native.js';
+} from '#core/http/auth/kerberos-native';
 export type {
   KerberosAvailability,
   KerberosClientLike,
   KerberosInitInput,
   KerberosProvider,
-} from './http/auth/kerberos-native.js';
+} from '#core/http/auth/kerberos-native';
 export {
   defaultSpn,
   kerberosToken,
@@ -500,14 +531,14 @@ export {
   normaliseSpn,
   startKerberosContext,
   withNegotiate,
-} from './http/auth/kerberos-token.js';
+} from '#core/http/auth/kerberos-token';
 export type {
   KerberosContext,
   KerberosCredentials,
   KerberosOptions,
   KerberosSendAuth,
   NegotiateBearer,
-} from './http/auth/kerberos-token.js';
+} from '#core/http/auth/kerberos-token';
 export type {
   HttpErrorCode,
   HttpExchange,
@@ -517,33 +548,33 @@ export type {
   ProxyOptions,
   Timings,
   TlsOptions,
-} from './http/types.js';
-export { isExcluded, parseSystemProxy, resolveProxyFor } from './http/proxy.js';
-export type { SystemProxyResolution } from './http/proxy.js';
-export type { ProxyConfig, ResolveProxyOptions } from './http/proxy.js';
-export { captureSslInfo, splitPemBundle } from './http/tls.js';
-export type { PeerCert, SslInfo, TlsSocketLike } from './http/tls.js';
+} from '#core/http/types';
+export { isExcluded, parseSystemProxy, resolveProxyFor } from '#core/http/proxy';
+export type { SystemProxyResolution } from '#core/http/proxy';
+export type { ProxyConfig, ResolveProxyOptions } from '#core/http/proxy';
+export { captureSslInfo, splitPemBundle } from '#core/http/tls';
+export type { PeerCert, SslInfo, TlsSocketLike } from '#core/http/tls';
 export {
   certificateExpiry,
   isCertificateVerifyError,
   pemCertificates,
   probeTlsChain,
   tlsProbeTarget,
-} from './http/cert-expiry.js';
+} from '#core/http/cert-expiry';
 export type {
   CertificateExpiry,
   CertificateExpiryStatus,
   PemCertificateSummary,
   ProbeTlsChainOptions,
   TlsProbeTarget,
-} from './http/cert-expiry.js';
+} from '#core/http/cert-expiry';
 
-export { importWsdl } from './soap/import.js';
-export { sendSoapRequest } from './soap/send.js';
-export { generateEmptySoapRequest, generateSoapRequest } from './soap/generate.js';
-export { generatedRequestName } from './soap/request-name.js';
-export type { NamedOperation } from './soap/request-name.js';
-export { summarizeSoapOperations } from './soap/operations.js';
+export { importWsdl } from '#protocol-soap/soap/import';
+export { sendSoapRequest } from '#protocol-soap/soap/send';
+export { generateEmptySoapRequest, generateSoapRequest } from '#protocol-soap/soap/generate';
+export { generatedRequestName } from '#protocol-soap/soap/request-name';
+export type { NamedOperation } from '#protocol-soap/soap/request-name';
+export { summarizeSoapOperations } from '#protocol-soap/soap/operations';
 export type {
   SoapAttachmentOptions,
   SoapExchange,
@@ -557,8 +588,8 @@ export type {
   WsdlImportProgress,
   WsdlImportResult,
   WsdlImportSource,
-} from './soap/types.js';
-export type { AuthSummary, SendAuth } from './http/auth/send-auth.js';
+} from '#protocol-soap/soap/types';
+export type { AuthSummary, SendAuth } from '#core/http/auth/send-auth';
 
 export {
   DEFAULT_OAUTH2_AUTH,
@@ -567,8 +598,13 @@ export {
   createProject,
   generateId,
   nextApiOrder,
-} from './project/model.js';
-export { DEFAULT_REQUEST_PROPERTIES, createInterface, createRequest, defaultContentId } from './soap/model.js';
+} from '#core/project/model';
+export {
+  DEFAULT_REQUEST_PROPERTIES,
+  createInterface,
+  createRequest,
+  defaultContentId,
+} from '#protocol-soap/soap/model';
 export type {
   ApiKeyAuth,
   AttachmentSource,
@@ -592,7 +628,7 @@ export type {
   PropertyMap,
   SoapOwnerAuth,
   WssRef,
-} from './project/model.js';
+} from '#core/project/model';
 export type {
   Attachment,
   AttachmentType,
@@ -604,7 +640,7 @@ export type {
   RequestProperties,
   SoapRequestDef,
   WsaConfig,
-} from './soap/model.js';
+} from '#protocol-soap/soap/model';
 export {
   COMMON_METHODS,
   NO_BODY,
@@ -618,7 +654,7 @@ export {
   entry,
   exampleBodyExtension,
   folderRequests,
-} from './rest/model.js';
+} from '#protocol-rest/rest/model';
 export {
   DEFAULT_WEBHOOK_TARGET,
   WEBHOOKS_COLLECTION_PREFIX,
@@ -639,7 +675,7 @@ export {
   webhookRequests,
   webhooksOf,
   withWebhooks,
-} from './webhooks/model.js';
+} from '#protocol-rest/webhooks/model';
 export type {
   CreateWebhookCollectionInput,
   CreateWebhookFolderInput,
@@ -648,7 +684,7 @@ export type {
   WebhookCollection,
   WebhookFolder,
   WebhookSigning,
-} from './webhooks/model.js';
+} from '#protocol-rest/webhooks/model';
 export {
   DEFAULT_SIGNATURE_TOLERANCE_SEC,
   SIGNATURE_FAILURES,
@@ -658,20 +694,26 @@ export {
   signatureSchemeSchema,
   toSignatureScheme,
   verifyWebhook,
-} from './http/webhook-signature.js';
+} from '#core/http/webhook-signature';
 export type {
   SignatureAlgorithm,
   SignatureFailure,
   SignatureScheme,
   SignatureVerdict,
-} from './http/webhook-signature.js';
-export { bodyLanguage, encodeFormFields, encodeRestBody, escapeForLanguage, rawContentType } from './rest/body.js';
-export type { EncodeBodyOptions, EncodedBody, FileResolver } from './rest/body.js';
-export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from './http/auth/apply-auth.js';
-export type { AppliedAuth } from './http/auth/apply-auth.js';
-export { applySoapAuth } from './soap/auth.js';
-export type { SoapAppliedAuth } from './soap/auth.js';
-export { cookieHeader, defaultPath, domainMatches, isExpired, pathMatches } from './rest/cookies.js';
+} from '#core/http/webhook-signature';
+export {
+  bodyLanguage,
+  encodeFormFields,
+  encodeRestBody,
+  escapeForLanguage,
+  rawContentType,
+} from '#protocol-rest/rest/body';
+export type { EncodeBodyOptions, EncodedBody, FileResolver } from '#protocol-rest/rest/body';
+export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from '#core/http/auth/apply-auth';
+export type { AppliedAuth } from '#core/http/auth/apply-auth';
+export { applySoapAuth } from '#protocol-soap/soap/auth';
+export type { SoapAppliedAuth } from '#protocol-soap/soap/auth';
+export { cookieHeader, defaultPath, domainMatches, isExpired, pathMatches } from '#protocol-rest/rest/cookies';
 export {
   CookieJar,
   cookiesToSend,
@@ -680,7 +722,7 @@ export {
   MAX_COOKIES,
   MAX_COOKIES_PER_DOMAIN,
   mergeCookieHeader,
-} from './rest/cookie-jar.js';
+} from '#protocol-rest/rest/cookie-jar';
 export type {
   CookieJarHost,
   CookieKey,
@@ -688,9 +730,9 @@ export type {
   CookieRejection,
   CookieVerdict,
   StoredCookie,
-} from './rest/cookie-jar.js';
-export { decodeResponseText, detectLanguage, parseSetCookie, prettyBody } from './rest/response.js';
-export type { BodyLanguage, Cookie, DecodedText, PrettyBody } from './rest/response.js';
+} from '#protocol-rest/rest/cookie-jar';
+export { decodeResponseText, detectLanguage, parseSetCookie, prettyBody } from '#protocol-rest/rest/response';
+export type { BodyLanguage, Cookie, DecodedText, PrettyBody } from '#protocol-rest/rest/response';
 export {
   CLIENT_ASSERTION_TYPE,
   DEVICE_CODE_GRANT_TYPE,
@@ -706,7 +748,7 @@ export {
   parseTokenResponse,
   pkce,
   pollDeviceToken,
-} from './http/auth/oauth2.js';
+} from '#core/http/auth/oauth2';
 export type {
   AuthorizationUrlInput,
   ClientAssertionInput,
@@ -719,7 +761,7 @@ export type {
   TokenRequestOptions,
   TokenResponseInput,
   TokenSet,
-} from './http/auth/oauth2.js';
+} from '#core/http/auth/oauth2';
 export {
   JWT_ALGORITHMS,
   JWT_REUSE_MARGIN_SECONDS,
@@ -729,7 +771,7 @@ export {
   privateKeyOf,
   signJwt,
   templateJwtJson,
-} from './http/auth/jwt.js';
+} from '#core/http/auth/jwt';
 export {
   JWT_DEFAULT_HEADER,
   JWT_DEFAULT_PREFIX,
@@ -737,8 +779,8 @@ export {
   jwtSendAuth,
   jwtTokenRequest,
   signConfiguredJwt,
-} from './http/auth/jwt-auth.js';
-export type { JwtAuthDeps, JwtSendAuth } from './http/auth/jwt-auth.js';
+} from '#core/http/auth/jwt-auth';
+export type { JwtAuthDeps, JwtSendAuth } from '#core/http/auth/jwt-auth';
 export type {
   JwtAlgorithm,
   JwtObject,
@@ -748,15 +790,20 @@ export type {
   JwtTokenRequest,
   SignJwtInput,
   TemplatedJwtJson,
-} from './http/auth/jwt.js';
-export { fromRestCurl, restToCurl, CURL_REDACTED } from './rest/curl.js';
-export { notCurlReason, stripShellPrompt } from './http/curl-start.js';
-export type { FromRestCurlOptions, FromRestCurlResult, RestToCurlOptions } from './rest/curl.js';
-export { expandRestSendInput } from './rest/expand.js';
-export { hasJsonComments, stripJsonComments, stripRestBodyComments } from './rest/json-comments.js';
-export { GRAPHQL_BODY_EXTENSION } from './rest/model.js';
-export { graphqlPayload, graphqlPayloadText, lowerGraphqlBody, lowerGraphqlBodyText } from './rest/graphql/body.js';
-export type { GraphqlBody } from './rest/graphql/body.js';
+} from '#core/http/auth/jwt';
+export { fromRestCurl, restToCurl, CURL_REDACTED } from '#protocol-rest/rest/curl';
+export { notCurlReason, stripShellPrompt } from '#core/http/curl-start';
+export type { FromRestCurlOptions, FromRestCurlResult, RestToCurlOptions } from '#protocol-rest/rest/curl';
+export { expandRestSendInput } from '#protocol-rest/rest/expand';
+export { hasJsonComments, stripJsonComments, stripRestBodyComments } from '#protocol-rest/rest/json-comments';
+export { GRAPHQL_BODY_EXTENSION } from '#protocol-rest/rest/model';
+export {
+  graphqlPayload,
+  graphqlPayloadText,
+  lowerGraphqlBody,
+  lowerGraphqlBodyText,
+} from '#protocol-rest/rest/graphql/body';
+export type { GraphqlBody } from '#protocol-rest/rest/graphql/body';
 export {
   GRAPHQL_DIR,
   GRAPHQL_SCHEMA_FILE,
@@ -769,68 +816,79 @@ export {
   sdlFromIntrospection,
   sdlFromSchemaFile,
   writeGraphqlSchema,
-} from './rest/graphql/schema.js';
-export { GRAPHQL_CHECK_MAX_BYTES, checkGraphqlResponse } from './rest/graphql/check.js';
+} from '#protocol-rest/rest/graphql/schema';
+export { GRAPHQL_CHECK_MAX_BYTES, checkGraphqlResponse } from '#protocol-rest/rest/graphql/check';
 export type {
   GraphqlCheckInput,
   GraphqlCheckResult,
   GraphqlDataProblem,
   GraphqlResponseError,
   GraphqlSchemaCheck,
-} from './rest/graphql/check.js';
-export type { ExpandRestOptions } from './rest/expand.js';
-export { decodeRestResponse, sendRest } from './rest/send.js';
-export type { RestEventStream, RestExchange, RestSendInput, RestSendRequest, RestSendSettings } from './rest/send.js';
-export { previewRestHeaders } from './rest/header-preview.js';
-export { headersOfRows, isOmitted, restHeaderRows } from './rest/request-headers.js';
-export type { RestHeaderLayers, RestHeaderRow, RestHeaderSource, RestHeaderState } from './rest/request-headers.js';
-export { createSseParser, eventStreamDocument, isEventStream, serializeEventStream } from './http/sse.js';
-export type { SseParser, SseRow } from './http/sse.js';
+} from '#protocol-rest/rest/graphql/check';
+export type { ExpandRestOptions } from '#protocol-rest/rest/expand';
+export { decodeRestResponse, sendRest } from '#protocol-rest/rest/send';
+export type {
+  RestEventStream,
+  RestExchange,
+  RestSendInput,
+  RestSendRequest,
+  RestSendSettings,
+} from '#protocol-rest/rest/send';
+export { previewRestHeaders } from '#protocol-rest/rest/header-preview';
+export { headersOfRows, isOmitted, restHeaderRows } from '#protocol-rest/rest/request-headers';
+export type {
+  RestHeaderLayers,
+  RestHeaderRow,
+  RestHeaderSource,
+  RestHeaderState,
+} from '#protocol-rest/rest/request-headers';
+export { createSseParser, eventStreamDocument, isEventStream, serializeEventStream } from '#core/http/sse';
+export type { SseParser, SseRow } from '#core/http/sse';
 export {
   capSseRows,
   createSseRowStore,
   historySseOf,
   SSE_HISTORY_LIMITS,
   SSE_SUMMARY_LIMITS,
-} from './rest/sse-transcript.js';
-export type { RestEventStreamLike, SseRowStore, SseTranscript } from './rest/sse-transcript.js';
-export { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuery } from './rest/url.js';
+} from '#protocol-rest/rest/sse-transcript';
+export type { RestEventStreamLike, SseRowStore, SseTranscript } from '#protocol-rest/rest/sse-transcript';
+export { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuery } from '#protocol-rest/rest/url';
 // OpenAPI: reading a description into the model an import maps onto an API.
-export { parseAsyncApi } from './asyncapi/parse.js';
-export type { ParseAsyncApiOptions, ParsedAsyncApi } from './asyncapi/parse.js';
-export type * from './asyncapi/model.js';
-export { mapAsyncApi } from './asyncapi/map.js';
-export type { AsyncApiImportSummary, MapAsyncApiOptions, MappedAsyncApi } from './asyncapi/map.js';
-export { authFromScheme as asyncApiAuthFromScheme } from './asyncapi/security.js';
-export type { AsyncApiSchemeInput } from './asyncapi/security.js';
-export { importAsyncApi } from './asyncapi/import.js';
-export { applyAsyncApiUpdate, planAsyncApiUpdate } from './asyncapi/update.js';
+export { parseAsyncApi } from '#protocol-ws/asyncapi/parse';
+export type { ParseAsyncApiOptions, ParsedAsyncApi } from '#protocol-ws/asyncapi/parse';
+export type * from '#protocol-ws/asyncapi/model';
+export { mapAsyncApi } from '#protocol-ws/asyncapi/map';
+export type { AsyncApiImportSummary, MapAsyncApiOptions, MappedAsyncApi } from '#protocol-ws/asyncapi/map';
+export { authFromScheme as asyncApiAuthFromScheme } from '#protocol-ws/asyncapi/security';
+export type { AsyncApiSchemeInput } from '#protocol-ws/asyncapi/security';
+export { importAsyncApi } from '#protocol-ws/asyncapi/import';
+export { applyAsyncApiUpdate, planAsyncApiUpdate } from '#protocol-ws/asyncapi/update';
 export type {
   ApplyAsyncApiUpdateOptions,
   AsyncApiApplyResult,
   AsyncApiChangeReason,
   AsyncApiOpRef,
   AsyncApiUpdatePlan,
-} from './asyncapi/update.js';
+} from '#protocol-ws/asyncapi/update';
 export {
   channelMessages as asyncApiChannelMessages,
   checkFrame as checkAsyncApiFrame,
   createFrameChecker,
   DEFAULT_FRAME_CHECK_BUDGET_MS,
   MAX_CHECKED_FRAME_BYTES,
-} from './asyncapi/frame-check.js';
-export type { ChannelMessages, FrameChecker, FrameCheckOptions } from './asyncapi/frame-check.js';
+} from '#protocol-ws/asyncapi/frame-check';
+export type { ChannelMessages, FrameChecker, FrameCheckOptions } from '#protocol-ws/asyncapi/frame-check';
 export {
   createWorkerFrameChecker,
   DEFAULT_FRAME_CHECK_DEADLINE_MS,
   DEFAULT_FRAME_CHECK_QUEUE,
   DEFAULT_FRAME_CHECK_QUEUE_BYTES,
-} from './asyncapi/frame-check-worker-host.js';
-export type { WorkerFrameChecker, WorkerFrameCheckerOptions } from './asyncapi/frame-check-worker-host.js';
-export type { ImportAsyncApiOptions, ImportedAsyncApi } from './asyncapi/import.js';
-export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
-export type { ImportedOpenApi, ImportOpenApiOptions } from './rest/openapi/import.js';
-export { loadOpenApiDocument } from './rest/script-types.js';
+} from '#protocol-ws/asyncapi/frame-check-worker-host';
+export type { WorkerFrameChecker, WorkerFrameCheckerOptions } from '#protocol-ws/asyncapi/frame-check-worker-host';
+export type { ImportAsyncApiOptions, ImportedAsyncApi } from '#protocol-ws/asyncapi/import';
+export { importOpenApi, parseOpenApi } from '#protocol-rest/rest/openapi/import';
+export type { ImportedOpenApi, ImportOpenApiOptions } from '#protocol-rest/rest/openapi/import';
+export { loadOpenApiDocument } from '#protocol-rest/rest/script-types';
 export {
   apiFromDocument,
   authFromScheme,
@@ -838,7 +896,7 @@ export {
   webhookItemsOf,
   webhookSourcesOf,
   webhooksFromDocument,
-} from './rest/openapi/map.js';
+} from '#protocol-rest/rest/openapi/map';
 export type {
   MapApiOptions,
   MappedApi,
@@ -846,24 +904,28 @@ export type {
   OpenApiImportSummary,
   OpenApiSchemeCandidate,
   WebhookItemRef,
-} from './rest/openapi/map.js';
-export { createCachedApiFetch, readApiDefinitionCache, writeApiDefinitionCache } from './rest/openapi/cache.js';
+} from '#protocol-rest/rest/openapi/map';
+export {
+  createCachedApiFetch,
+  readApiDefinitionCache,
+  writeApiDefinitionCache,
+} from '#protocol-rest/rest/openapi/cache';
 export type {
   ApiDefinitionCacheOptions,
   CachedApiDefinition,
   WriteApiDefinitionCacheOptions,
-} from './rest/openapi/cache.js';
-export type { OpenApiSource, ParsedOpenApi, ParseOpenApiOptions } from './rest/openapi/import.js';
-export { parseDocumentText, parseOpenApiDocument, parseSchema, versionOf } from './rest/openapi/parse.js';
-export { selectResponse } from './rest/openapi/responses.js';
-export type { ResponseSelection } from './rest/openapi/responses.js';
+} from '#protocol-rest/rest/openapi/cache';
+export type { OpenApiSource, ParsedOpenApi, ParseOpenApiOptions } from '#protocol-rest/rest/openapi/import';
+export { parseDocumentText, parseOpenApiDocument, parseSchema, versionOf } from '#protocol-rest/rest/openapi/parse';
+export { selectResponse } from '#protocol-rest/rest/openapi/responses';
+export type { ResponseSelection } from '#protocol-rest/rest/openapi/responses';
 export {
   applyRestUpdate,
   applyWebhookUpdate,
   planRestUpdate,
   planWebhookUpdate,
   sameStructure,
-} from './rest/openapi/update.js';
+} from '#protocol-rest/rest/openapi/update';
 export type {
   ApplyRestUpdateOptions,
   RestApiChangeReason,
@@ -873,21 +935,21 @@ export type {
   RestUpdatePlan,
   WebhookApplyResult,
   WebhookUpdatePlan,
-} from './rest/openapi/update.js';
-export { matchOperation } from './rest/openapi/match.js';
-export type { RestOperationRef } from './rest/openapi/match.js';
+} from '#protocol-rest/rest/openapi/update';
+export { matchOperation } from '#protocol-rest/rest/openapi/match';
+export type { RestOperationRef } from '#protocol-rest/rest/openapi/match';
 export {
   evaluateRuntimeTemplate,
   parseRuntimeExpression,
   parseRuntimeTemplate,
   resolveJsonPointer,
-} from './rest/openapi/runtime-expression.js';
+} from '#protocol-rest/rest/openapi/runtime-expression';
 export type {
   RuntimeExchange,
   RuntimeExpression,
   RuntimeSource,
   TemplatePart,
-} from './rest/openapi/runtime-expression.js';
+} from '#protocol-rest/rest/openapi/runtime-expression';
 export {
   checkRestResponse,
   DEFAULT_REST_CHECK_BUDGET_MS,
@@ -895,31 +957,37 @@ export {
   MAX_CHECKED_BODY_BYTES,
   MAX_CONTRACT_MESSAGE_LENGTH,
   MAX_CONTRACT_PROBLEMS,
-} from './rest/contract-check.js';
+} from '#protocol-rest/rest/contract-check';
 export type {
   RestContractCheckOptions,
   RestContractInput,
   RestContractProblem,
   RestContractResult,
   RestContractStatus,
-} from './rest/contract-check.js';
+} from '#protocol-rest/rest/contract-check';
 export {
   createRestContractChecker,
   DEFAULT_REST_CHECK_DEADLINE_MS,
   DEFAULT_REST_CHECK_QUEUE,
-} from './rest/contract-check-worker-host.js';
-export type { RestContractChecker, RestContractCheckerOptions } from './rest/contract-check-worker-host.js';
-export { pointerRange } from './json/pointer-range.js';
-export type { PointerTextRange } from './json/pointer-range.js';
-export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from './json/schema/refs.js';
-export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './json/schema/refs.js';
-export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from './json/schema/sample.js';
-export type { SampleDirection, SampleOptions, SampleXmlOptions } from './json/schema/sample.js';
-export { validateJsonSchema } from './json/schema-validate.js';
-export type { JsonSchemaProblem, ValidateJsonOptions } from './json/schema-validate.js';
-export { applyJsonFormEdit, buildJsonForm, toWireSchema } from './rest/json-form.js';
-export type { JsonFormEdit, JsonFormKind, JsonFormNode, JsonFormOptions, JsonFormValueType } from './rest/json-form.js';
-export { serverUrl, HTTP_METHODS } from './rest/openapi/model.js';
+} from '#protocol-rest/rest/contract-check-worker-host';
+export type { RestContractChecker, RestContractCheckerOptions } from '#protocol-rest/rest/contract-check-worker-host';
+export { pointerRange } from '#core/json/pointer-range';
+export type { PointerTextRange } from '#core/json/pointer-range';
+export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from '#core/json/schema/refs';
+export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from '#core/json/schema/refs';
+export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from '#core/json/schema/sample';
+export type { SampleDirection, SampleOptions, SampleXmlOptions } from '#core/json/schema/sample';
+export { validateJsonSchema } from '#core/json/schema-validate';
+export type { JsonSchemaProblem, ValidateJsonOptions } from '#core/json/schema-validate';
+export { applyJsonFormEdit, buildJsonForm, toWireSchema } from '#protocol-rest/rest/json-form';
+export type {
+  JsonFormEdit,
+  JsonFormKind,
+  JsonFormNode,
+  JsonFormOptions,
+  JsonFormValueType,
+} from '#protocol-rest/rest/json-form';
+export { serverUrl, HTTP_METHODS } from '#protocol-rest/rest/openapi/model';
 export type {
   JsonSchema,
   JsonValue,
@@ -943,7 +1011,7 @@ export type {
   OpenApiVersion,
   OpenApiXml,
   ParameterLocation,
-} from './rest/openapi/model.js';
+} from '#protocol-rest/rest/openapi/model';
 // Postman: importing Postman Collection v2.0 and v2.1 exports into REST APIs.
 export {
   apiFromPostmanCollection,
@@ -957,9 +1025,9 @@ export {
   parsePostmanVariablesText,
   postmanVariablesOf,
   translatePostmanVariables,
-} from './rest/postman/index.js';
+} from '#protocol-rest/rest/postman/index';
 // HAR: reading browser captures (HAR 1.1 and 1.2).
-export { MAX_HAR_INPUT_BYTES, importHar, isHar, mapHar, parseHarText } from './rest/har/index.js';
+export { MAX_HAR_INPUT_BYTES, importHar, isHar, mapHar, parseHarText } from '#protocol-rest/rest/har/index';
 export type {
   HarEntryIn,
   HarLogIn,
@@ -970,11 +1038,11 @@ export type {
   HarSource,
   MapHarOptions,
   MappedHar,
-} from './rest/har/index.js';
+} from '#protocol-rest/rest/har/index';
 // .http files: parsing request files, and mapping them to REST and WebSocket APIs.
-export { HTTP_FILE_METHODS, MAX_HTTP_FILE_BYTES, parseHttpFile } from './rest/http-file/index.js';
-export type { HttpFileRequest, ParsedHttpFile } from './rest/http-file/index.js';
-export { HTTP_ENV_FILE, HTTP_PRIVATE_ENV_FILE, parseHttpEnvFiles } from './rest/http-file/env.js';
+export { HTTP_FILE_METHODS, MAX_HTTP_FILE_BYTES, parseHttpFile } from '#protocol-rest/rest/http-file/index';
+export type { HttpFileRequest, ParsedHttpFile } from '#protocol-rest/rest/http-file/index';
+export { HTTP_ENV_FILE, HTTP_PRIVATE_ENV_FILE, parseHttpEnvFiles } from '#protocol-rest/rest/http-file/env';
 export { importHttpFile } from './import/http-file/import.js';
 export type { HttpFileSource, ImportHttpFileOptions } from './import/http-file/import.js';
 export { mapHttpFile } from './import/http-file/map.js';
@@ -1081,7 +1149,7 @@ export type {
   PostmanUrl,
   PostmanUrlEncodedParam,
   PostmanVariable,
-} from './rest/postman/index.js';
+} from '#protocol-rest/rest/postman/index';
 
 // Legacy SOAP projects: reading the single-XML project files of older SOAP workbenches.
 export {
@@ -1095,7 +1163,7 @@ export {
   parseLegacyProject,
   readLegacySoapProject,
   resolvedOperationsOf,
-} from './soap/legacy-project/index.js';
+} from '#protocol-soap/soap/legacy-project/index';
 export type {
   CacheFetchOptions,
   LegacyImportReport,
@@ -1117,8 +1185,8 @@ export type {
   LegacyProperty,
   LegacyScript,
   LegacyUnmapped,
-} from './soap/legacy-project/index.js';
-export type { ComposedUrl, ComposeUrlOptions, UrlProblem } from './rest/url.js';
+} from '#protocol-soap/soap/legacy-project/index';
+export type { ComposedUrl, ComposeUrlOptions, UrlProblem } from '#protocol-rest/rest/url';
 export type {
   CreateApiInput,
   CreateFolderInput,
@@ -1137,7 +1205,7 @@ export type {
   RestRequestSettings,
   RestResponseExample,
   RestServer,
-} from './rest/model.js';
+} from '#protocol-rest/rest/model';
 export {
   API_FILE,
   APIS_DIR,
@@ -1171,8 +1239,8 @@ export {
   WEBHOOKS_DIR,
   WEBHOOKS_FILE,
   wssFile,
-} from './project/paths.js';
-export type { RequestFilePair } from './project/paths.js';
+} from '#core/project/paths';
+export type { RequestFilePair } from '#core/project/paths';
 export {
   attachmentSourceSchema,
   authConfigSchema,
@@ -1192,9 +1260,9 @@ export {
   hookLinkSchema,
   wssIncomingFileSchema,
   wssOutgoingFileSchema,
-} from './project/schema.js';
-export { wssEntrySchema } from './wss/schema.js';
-export { webhookFolderFileSchema, webhooksFileSchema } from './webhooks/schema.js';
+} from '#core/project/schema';
+export { wssEntrySchema } from '#protocol-soap/wss/schema';
+export { webhookFolderFileSchema, webhooksFileSchema } from '#protocol-rest/webhooks/schema';
 export type {
   ApiDefinitionCacheDocument,
   ApiDefinitionCacheManifest,
@@ -1205,7 +1273,7 @@ export type {
   ManifestFile,
   RestFolderFile,
   ProtoDefinitionCacheManifest,
-} from './project/schema.js';
+} from '#core/project/schema';
 export {
   DEFAULT_PREFERENCES,
   describePreferenceLimit,
@@ -1217,7 +1285,7 @@ export {
   preferencesSchema,
   resetPreferences,
   withAppUserAgent,
-} from './project/preferences.js';
+} from '#core/project/preferences';
 export type {
   EditorPreferences,
   HttpPreferences,
@@ -1236,33 +1304,33 @@ export type {
   WsdlPreferences,
   RestPreferences,
   WsiPreferences,
-} from './project/preferences.js';
-export { toSoapSendInput } from './soap/send-input.js';
-export { toRestSendInput } from './rest/send-input.js';
-export { toGrpcSendInput } from './grpc/send-input.js';
-export type { AttachmentResolvers, SoapSendRequestInput, ToSoapSendInputArgs } from './soap/send-input.js';
-export type { RestSendRequestInput, ToRestSendInputArgs } from './rest/send-input.js';
-export type { GrpcSendRequestInput, ToGrpcSendInputArgs } from './grpc/send-input.js';
-export { entitizeValue, prettyPrint, removeEmptyContent, stripWhitespaces } from './soap/transforms.js';
-export { jsonCompletionContextAt } from './json/cursor.js';
-export type { JsonCompletionContext, JsonTextRange } from './json/cursor.js';
-export { formatXml } from './xml/pretty.js';
-export type { FormatXmlOptions, FormatXmlResult } from './xml/pretty.js';
-export { migrate } from './project/migrate.js';
-export { KEYSTORES_PATH, MANIFEST_PATH, authDocument, projectFiles } from './project/serialize.js';
-export type { ProjectFiles } from './project/serialize.js';
-export { requestFileLocation } from './project/request-location.js';
-export type { RequestFileLocation } from './project/request-location.js';
-export { BASELINE_MAX_BYTES, checkBaseline } from './run/baseline.js';
-export type { BaselineCheck, BaselineReport, BaselineStatus } from './run/baseline.js';
-export type { BaselineReason } from './run/baseline.js';
-export type { BaselineUpdatePlan, SinkOutcome } from './run/baseline-update.js';
-export { readGoldenFile, writeGoldenFile } from './snapshot/golden-file.js';
-export type { GoldenFile, GoldenRead, GoldenWrite } from './snapshot/golden-file.js';
-export { loadProject } from './project/load.js';
-export type { LoadProjectOptions, LoadResult, ProjectProblem } from './project/load.js';
-export { saveProject } from './project/save.js';
-export type { SaveProjectOptions, SaveResult } from './project/save.js';
+} from '#core/project/preferences';
+export { toSoapSendInput } from '#protocol-soap/soap/send-input';
+export { toRestSendInput } from '#protocol-rest/rest/send-input';
+export { toGrpcSendInput } from '#protocol-grpc/grpc/send-input';
+export type { AttachmentResolvers, SoapSendRequestInput, ToSoapSendInputArgs } from '#protocol-soap/soap/send-input';
+export type { RestSendRequestInput, ToRestSendInputArgs } from '#protocol-rest/rest/send-input';
+export type { GrpcSendRequestInput, ToGrpcSendInputArgs } from '#protocol-grpc/grpc/send-input';
+export { entitizeValue, prettyPrint, removeEmptyContent, stripWhitespaces } from '#protocol-soap/soap/transforms';
+export { jsonCompletionContextAt } from '#core/json/cursor';
+export type { JsonCompletionContext, JsonTextRange } from '#core/json/cursor';
+export { formatXml } from '#core/xml/pretty';
+export type { FormatXmlOptions, FormatXmlResult } from '#core/xml/pretty';
+export { migrate } from '#core/project/migrate';
+export { KEYSTORES_PATH, MANIFEST_PATH, authDocument, projectFiles } from '#core/project/serialize';
+export type { ProjectFiles } from '#core/project/serialize';
+export { requestFileLocation } from '#core/project/request-location';
+export type { RequestFileLocation } from '#core/project/request-location';
+export { BASELINE_MAX_BYTES, checkBaseline } from '#core/run/baseline';
+export type { BaselineCheck, BaselineReport, BaselineStatus } from '#core/run/baseline';
+export type { BaselineReason } from '#core/run/baseline';
+export type { BaselineUpdatePlan, SinkOutcome } from '#core/run/baseline-update';
+export { readGoldenFile, writeGoldenFile } from '#core/snapshot/golden-file';
+export type { GoldenFile, GoldenRead, GoldenWrite } from '#core/snapshot/golden-file';
+export { loadProject } from '#core/project/load';
+export type { LoadProjectOptions, LoadResult, ProjectProblem } from '#core/project/load';
+export { saveProject } from '#core/project/save';
+export type { SaveProjectOptions, SaveResult } from '#core/project/save';
 export {
   attachmentFile,
   attachmentsDir,
@@ -1271,11 +1339,11 @@ export {
   pruneAttachments,
   putAttachment,
   readAttachment,
-} from './project/attachments-cache.js';
-export type { AttachmentCacheEntry, AttachmentCacheOptions } from './project/attachments-cache.js';
-export { nodeFs, writeFileAtomic } from './project/fs.js';
-export type { DirEntry, FileStat, FsLike } from './project/fs.js';
-export { appendHistory, generateHistoryId, normalizeHistoryEntry, openHistory } from './project/history.js';
+} from '#core/project/attachments-cache';
+export type { AttachmentCacheEntry, AttachmentCacheOptions } from '#core/project/attachments-cache';
+export { nodeFs, writeFileAtomic } from '#core/project/fs';
+export type { DirEntry, FileStat, FsLike } from '#core/project/fs';
+export { appendHistory, generateHistoryId, normalizeHistoryEntry, openHistory } from '#core/project/history';
 export type {
   AppendHistoryOptions,
   HistoryEntry,
@@ -1296,7 +1364,7 @@ export type {
   HistorySseRow,
   HistoryWs,
   HistoryWsFrame,
-} from './project/history.js';
+} from '#core/project/history';
 export {
   enabledProperties,
   escapeExpansions,
@@ -1304,23 +1372,28 @@ export {
   hasExpansions,
   secretNamesIn,
   unescapeExpansions,
-} from './project/properties.js';
-export { propertyReferences } from './project/references.js';
-export type { PropertyReference, PropertyReferenceForm } from './project/references.js';
-export { contractPorts, endpointsFromContract, endpointUrlFromContract } from './wsdl/contract-endpoints.js';
-export type { ContractPort } from './wsdl/contract-endpoints.js';
-export { expandSendInput } from './soap/expand.js';
-export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
-export { DYNAMIC_GENERATORS, DynamicValues, generateDynamic, isDynamicName } from './project/dynamic.js';
-export type { DynamicGeneratorInfo, DynamicResult } from './project/dynamic.js';
-export { effectiveAuth, isEndpointAuth } from './project/endpoints.js';
-export { toKeystoreDef, toKeystoreRef } from './project/keystores.js';
-export { toWssIncomingConfig, toWssIncomingRef, toWssOutgoingConfig, toWssOutgoingRef } from './wss/configs.js';
+} from '#core/project/properties';
+export { propertyReferences } from '#core/project/references';
+export type { PropertyReference, PropertyReferenceForm } from '#core/project/references';
+export { contractPorts, endpointsFromContract, endpointUrlFromContract } from '#protocol-soap/wsdl/contract-endpoints';
+export type { ContractPort } from '#protocol-soap/wsdl/contract-endpoints';
+export { expandSendInput } from '#protocol-soap/soap/expand';
+export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from '#core/project/properties';
+export { DYNAMIC_GENERATORS, DynamicValues, generateDynamic, isDynamicName } from '#core/project/dynamic';
+export type { DynamicGeneratorInfo, DynamicResult } from '#core/project/dynamic';
+export { effectiveAuth, isEndpointAuth } from '#core/project/endpoints';
+export { toKeystoreDef, toKeystoreRef } from '#core/project/keystores';
+export {
+  toWssIncomingConfig,
+  toWssIncomingRef,
+  toWssOutgoingConfig,
+  toWssOutgoingRef,
+} from '#protocol-soap/wss/configs';
 // ---------------------------------------------------------------------------
 // WS-Addressing (Task 41)
 // ---------------------------------------------------------------------------
-export { DEFAULT_WSA_CONFIG, effectiveWsa, normalizeWsa } from './wsa/model.js';
-export type { WsaConfigPatch, WsaMustUnderstand, WsaVersion } from './wsa/model.js';
+export { DEFAULT_WSA_CONFIG, effectiveWsa, normalizeWsa } from '#protocol-soap/wsa/model';
+export type { WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '#protocol-soap/wsa/model';
 export {
   WSA_PREFIX,
   anonymousAddress,
@@ -1332,41 +1405,49 @@ export {
   effectiveTo,
   stripWsaHeaders,
   wsaNamespace,
-} from './wsa/headers.js';
-export type { WsaHeaderContext } from './wsa/headers.js';
-export { defaultAction, detectWsaDefaults, summarizeWsa, wsaActionKey } from './wsa/policy-detect.js';
-export type { WsaDetection, WsaSummary } from './wsa/policy-detect.js';
-export { detectWssPolicy, summarizeWssPolicy } from './wss/policy/detect.js';
+} from '#protocol-soap/wsa/headers';
+export type { WsaHeaderContext } from '#protocol-soap/wsa/headers';
+export { defaultAction, detectWsaDefaults, summarizeWsa, wsaActionKey } from '#protocol-soap/wsa/policy-detect';
+export type { WsaDetection, WsaSummary } from '#protocol-soap/wsa/policy-detect';
+export { detectWssPolicy, summarizeWssPolicy } from '#protocol-soap/wss/policy/detect';
 export {
   checkWssPolicy,
   describeWssPolicy,
   proposeWssEntries,
   requiredSignatureParts,
   suiteAlgorithms,
-} from './wss/policy/plan.js';
+} from '#protocol-soap/wss/policy/plan';
 export type {
   WssPolicyCheck,
   WssPolicyCheckResult,
   WssPolicyLine,
   WssPolicyProposal,
   WssSuiteAlgorithms,
-} from './wss/policy/plan.js';
+} from '#protocol-soap/wss/policy/plan';
 export type {
   WssPolicy,
   WssPolicyKeyReference,
   WssPolicyPart,
   WssPolicyToken,
   WssPolicyTokenRole,
-} from './wss/policy/model.js';
+} from '#protocol-soap/wss/policy/model';
 
-export { createIssuedTokenSource, issuedCacheKey, ISSUED_TOKEN_REFRESH_MARGIN_MS } from './wss/trust/issued-token.js';
-export type { IssuedTokenSource, IssuedTokenSourceOptions, IssuedTokenStatus } from './wss/trust/issued-token.js';
-export { soapHostOf, withSoapHost } from './soap/host.js';
-export type { SoapSendHost } from './soap/host.js';
-export { requestIssuedToken } from './wss/trust/client.js';
-export type { IssuedTokenTarget, TrustDeps } from './wss/trust/client.js';
-export { applyOutgoingWss, removeOutgoingWss } from './wss/apply.js';
-export type { ApplyOutgoingWssOptions, WssRequestProperties } from './wss/apply.js';
+export {
+  createIssuedTokenSource,
+  issuedCacheKey,
+  ISSUED_TOKEN_REFRESH_MARGIN_MS,
+} from '#protocol-soap/wss/trust/issued-token';
+export type {
+  IssuedTokenSource,
+  IssuedTokenSourceOptions,
+  IssuedTokenStatus,
+} from '#protocol-soap/wss/trust/issued-token';
+export { soapHostOf, withSoapHost } from '#protocol-soap/soap/host';
+export type { SoapSendHost } from '#protocol-soap/soap/host';
+export { requestIssuedToken } from '#protocol-soap/wss/trust/client';
+export type { IssuedTokenTarget, TrustDeps } from '#protocol-soap/wss/trust/client';
+export { applyOutgoingWss, removeOutgoingWss } from '#protocol-soap/wss/apply';
+export type { ApplyOutgoingWssOptions, WssRequestProperties } from '#protocol-soap/wss/apply';
 export {
   createWssContext,
   DEFAULT_WSS_ENCRYPTION_PARTS,
@@ -1374,7 +1455,7 @@ export {
   DEFAULT_WSS_SIGNATURE_PARTS,
   WSS_ENTRY_KINDS,
   SAML_TOKEN_PART,
-} from './wss/model.js';
+} from '#protocol-soap/wss/model';
 export type {
   BoundIssuedTokens,
   IssuedKeyType,
@@ -1402,33 +1483,37 @@ export type {
   WssSignatureEntry,
   WssTimestampEntry,
   WssUsernameTokenEntry,
-} from './wss/model.js';
-export { buildTimestamp, formatWssDateTime } from './wss/outgoing/timestamp.js';
-export type { BuildTimestampInput } from './wss/outgoing/timestamp.js';
-export { buildUsernameToken, passwordDigest } from './wss/outgoing/username-token.js';
-export type { BuildUsernameTokenInput } from './wss/outgoing/username-token.js';
-export { signEnvelope, verifySignature } from './wss/outgoing/signature.js';
-export type { ResolvedSigningKey, VerifySignatureOptions, VerifySignatureResult } from './wss/outgoing/signature.js';
-export { processIncomingWss } from './wss/incoming/index.js';
-export type { ProcessIncomingWssOptions, WssAction, WssActionKind, WssResult } from './wss/incoming/index.js';
-export type { WssReferenceCheck, WssSignatureCheck } from './wss/incoming/check.js';
-export { describeSecurityHeader } from './wss/timeline.js';
-export type { WssTimelineStep, WssTimelineStepKind } from './wss/timeline.js';
-export { decryptIncoming } from './wss/incoming/decrypt.js';
-export type { DecryptIncomingResult, ResolvedDecryptionKey } from './wss/incoming/decrypt.js';
-export { verifyIncoming } from './wss/incoming/verify.js';
+} from '#protocol-soap/wss/model';
+export { buildTimestamp, formatWssDateTime } from '#protocol-soap/wss/outgoing/timestamp';
+export type { BuildTimestampInput } from '#protocol-soap/wss/outgoing/timestamp';
+export { buildUsernameToken, passwordDigest } from '#protocol-soap/wss/outgoing/username-token';
+export type { BuildUsernameTokenInput } from '#protocol-soap/wss/outgoing/username-token';
+export { signEnvelope, verifySignature } from '#protocol-soap/wss/outgoing/signature';
+export type {
+  ResolvedSigningKey,
+  VerifySignatureOptions,
+  VerifySignatureResult,
+} from '#protocol-soap/wss/outgoing/signature';
+export { processIncomingWss } from '#protocol-soap/wss/incoming/index';
+export type { ProcessIncomingWssOptions, WssAction, WssActionKind, WssResult } from '#protocol-soap/wss/incoming/index';
+export type { WssReferenceCheck, WssSignatureCheck } from '#protocol-soap/wss/incoming/check';
+export { describeSecurityHeader } from '#protocol-soap/wss/timeline';
+export type { WssTimelineStep, WssTimelineStepKind } from '#protocol-soap/wss/timeline';
+export { decryptIncoming } from '#protocol-soap/wss/incoming/decrypt';
+export type { DecryptIncomingResult, ResolvedDecryptionKey } from '#protocol-soap/wss/incoming/decrypt';
+export { verifyIncoming } from '#protocol-soap/wss/incoming/verify';
 export type {
   IncomingSignatureResult,
   IncomingTimestampResult,
   VerifyIncomingOptions,
   VerifyIncomingResult,
-} from './wss/incoming/verify.js';
-export { decryptEnvelope, encryptEnvelope } from './wss/outgoing/encryption.js';
+} from '#protocol-soap/wss/incoming/verify';
+export { decryptEnvelope, encryptEnvelope } from '#protocol-soap/wss/outgoing/encryption';
 export type {
   DecryptEnvelopeOptions,
   DecryptEnvelopeResult,
   ResolvedEncryptionKey,
-} from './wss/outgoing/encryption.js';
+} from '#protocol-soap/wss/outgoing/encryption';
 export {
   buildKeyIdentifier,
   certificateBase64,
@@ -1439,8 +1524,8 @@ export {
   subjectKeyIdentifierBase64,
   thumbprintSha1Base64,
   WSS_TOKEN_TYPES,
-} from './wss/key-identifiers.js';
-export type { KeyIdentifier, KeyIdentifierInput } from './wss/key-identifiers.js';
+} from '#protocol-soap/wss/key-identifiers';
+export type { KeyIdentifier, KeyIdentifierInput } from '#protocol-soap/wss/key-identifiers';
 export {
   keystoreTypeForPath,
   loadKeystore,
@@ -1449,7 +1534,7 @@ export {
   selectAlias,
   signingKeyOf,
   toTlsClientIdentity,
-} from './keystore/index.js';
+} from '#core/keystore/index';
 export type {
   Keystore,
   KeystoreAlias,
@@ -1457,18 +1542,18 @@ export type {
   KeystoreType,
   LoadKeystoreOptions,
   TlsClientIdentity,
-} from './keystore/index.js';
+} from '#core/keystore/index';
 export {
   findEnvironment,
   removeEnvironment,
   resolveApiBaseUrl,
   resolveScopes,
   upsertEnvironment,
-} from './project/environments.js';
-export type { BaseUrlSource, EndpointSource } from './project/environments.js';
-export { resolveAuthEndpoint, resolveEndpoint } from './soap/endpoints.js';
-export { resolveWorkspaceEndpoint } from './soap/workspace-endpoint.js';
-export { createFileAttachmentResolver } from './soap/attachments.js';
+} from '#core/project/environments';
+export type { BaseUrlSource, EndpointSource } from '#core/project/environments';
+export { resolveAuthEndpoint, resolveEndpoint } from '#protocol-soap/soap/endpoints';
+export { resolveWorkspaceEndpoint } from '#protocol-soap/soap/workspace-endpoint';
+export { createFileAttachmentResolver } from '#protocol-soap/soap/attachments';
 // Workspace
 export {
   WORKSPACE_FORMAT_VERSION,
@@ -1524,7 +1609,7 @@ export {
   workspaceProjectRefSchema,
   workspaceShareSchema,
   workspaceTreeDir,
-} from './workspace/index.js';
+} from '#core/workspace/index';
 export type {
   GitShareSettings,
   LoadWorkspaceOptions,
@@ -1549,14 +1634,14 @@ export type {
   WorkspaceProjectRef,
   WorkspaceProjectRefFile,
   WorkspaceShare,
-} from './workspace/index.js';
+} from '#core/workspace/index';
 export {
   bindingContextFor,
   checkSoapStructure,
   validateAgainstSchemaSet,
   validateMessage,
   DEFAULT_VALIDATION_TIMEOUT_MS,
-} from './validate/index.js';
+} from '#protocol-soap/validate/index';
 export type {
   MessageDirection,
   SchemaValidationOptions,
@@ -1569,7 +1654,7 @@ export type {
   ValidationProblem,
   ValidationSeverity,
   ValidationSource,
-} from './validate/index.js';
+} from '#protocol-soap/validate/index';
 
 export {
   WSI_WSDL_ASSERTIONS,
@@ -1584,7 +1669,7 @@ export {
   wsiProblems,
   NOT_APPLICABLE,
   isNotApplicable,
-} from './validate/wsi/index.js';
+} from '#protocol-soap/validate/wsi/index';
 export type {
   RunWsdlAssertionsOptions,
   WsiAssertion,
@@ -1606,9 +1691,9 @@ export type {
   WsiMessageView,
   RunMessageAssertionsOptions,
   RenderWsiReportHtmlOptions,
-} from './validate/wsi/index.js';
-export { renderWsiAssertionsMarkdown, WSI_PLANNED_ASSERTIONS } from './validate/wsi/index.js';
-export type { PlannedAssertion } from './validate/wsi/index.js';
+} from '#protocol-soap/validate/wsi/index';
+export { renderWsiAssertionsMarkdown, WSI_PLANNED_ASSERTIONS } from '#protocol-soap/validate/wsi/index';
+export type { PlannedAssertion } from '#protocol-soap/validate/wsi/index';
 
 export { detectImportFolder, detectImportFormat } from './import-detect.js';
 export type { ImportFormatKind, DetectedImportFormat, ImportDetectInput } from './import-detect.js';
@@ -1626,7 +1711,7 @@ export {
   grpcFolderRequests,
   grpcMethodPath,
   serverStreams,
-} from './grpc/model.js';
+} from '#protocol-grpc/grpc/model';
 export type {
   CreateGrpcApiInput,
   CreateGrpcFolderInput,
@@ -1638,7 +1723,7 @@ export type {
   GrpcReflectionVersion,
   GrpcRequestDef,
   GrpcRequestSettings,
-} from './grpc/model.js';
+} from '#protocol-grpc/grpc/model';
 export {
   GRPC_STATUS_NAMES,
   decodeGrpcMessage,
@@ -1646,11 +1731,11 @@ export {
   formatGrpcTimeout,
   grpcStatusName,
   grpcStatusNames,
-} from './grpc/status.js';
-export { encodeGrpcFrame, GrpcFrameParser } from './grpc/framing.js';
-export type { GrpcFrame } from './grpc/framing.js';
-export { loadProtoSet } from './grpc/proto/load.js';
-export type { LoadProtoOptions, ProtoSet, ProtoSources } from './grpc/proto/load.js';
+} from '#protocol-grpc/grpc/status';
+export { encodeGrpcFrame, GrpcFrameParser } from '#protocol-grpc/grpc/framing';
+export type { GrpcFrame } from '#protocol-grpc/grpc/framing';
+export { loadProtoSet } from '#protocol-grpc/grpc/proto/load';
+export type { LoadProtoOptions, ProtoSet, ProtoSources } from '#protocol-grpc/grpc/proto/load';
 export {
   describeMessage,
   describeMessageAt,
@@ -1659,28 +1744,39 @@ export {
   lookupMessageType,
   lookupMethod,
   qualifiedName,
-} from './grpc/proto/describe.js';
+} from '#protocol-grpc/grpc/proto/describe';
 export type {
   FieldValueKind,
   GrpcMethodDescriptor,
   GrpcServiceDescriptor,
   MessageDescriptor,
   MessageFieldDescriptor,
-} from './grpc/proto/describe.js';
-export { sampleMessage, sampleMessageText } from './grpc/proto/sample.js';
-export type { SampleMessageOptions } from './grpc/proto/sample.js';
-export { WELL_KNOWN_TYPES, isWrapperType } from './grpc/proto/well-known.js';
-export { decodeMessage, encodeMessage, parseMessageText } from './grpc/codec.js';
-export { buildGrpcHeaders, parseGrpcTarget, sendGrpc } from './grpc/send.js';
-export type { GrpcExchange, GrpcSendInput, GrpcStatusSource, GrpcStreamHandle, GrpcTarget } from './grpc/send.js';
-export { callGrpc, decodeResponseMessage } from './grpc/call.js';
-export type { GrpcCallInput, GrpcCallResult, GrpcCallStreamHandle, GrpcResponseMessage } from './grpc/call.js';
-export { expandGrpcInput } from './grpc/expand.js';
-export type { ExpandGrpcOptions, GrpcExpandable } from './grpc/expand.js';
-export { apiFromProtoSet, importProto } from './grpc/import.js';
-export { reconcileGrpcApi } from './grpc/reconcile.js';
-export type { GrpcReconcileResult, ReconcileGrpcApiOptions } from './grpc/reconcile.js';
-export type { ImportProtoOptions, ImportedProto, ProtoImportSummary } from './grpc/import.js';
+} from '#protocol-grpc/grpc/proto/describe';
+export { sampleMessage, sampleMessageText } from '#protocol-grpc/grpc/proto/sample';
+export type { SampleMessageOptions } from '#protocol-grpc/grpc/proto/sample';
+export { WELL_KNOWN_TYPES, isWrapperType } from '#protocol-grpc/grpc/proto/well-known';
+export { decodeMessage, encodeMessage, parseMessageText } from '#protocol-grpc/grpc/codec';
+export { buildGrpcHeaders, parseGrpcTarget, sendGrpc } from '#protocol-grpc/grpc/send';
+export type {
+  GrpcExchange,
+  GrpcSendInput,
+  GrpcStatusSource,
+  GrpcStreamHandle,
+  GrpcTarget,
+} from '#protocol-grpc/grpc/send';
+export { callGrpc, decodeResponseMessage } from '#protocol-grpc/grpc/call';
+export type {
+  GrpcCallInput,
+  GrpcCallResult,
+  GrpcCallStreamHandle,
+  GrpcResponseMessage,
+} from '#protocol-grpc/grpc/call';
+export { expandGrpcInput } from '#protocol-grpc/grpc/expand';
+export type { ExpandGrpcOptions, GrpcExpandable } from '#protocol-grpc/grpc/expand';
+export { apiFromProtoSet, importProto } from '#protocol-grpc/grpc/import';
+export { reconcileGrpcApi } from '#protocol-grpc/grpc/reconcile';
+export type { GrpcReconcileResult, ReconcileGrpcApiOptions } from '#protocol-grpc/grpc/reconcile';
+export type { ImportProtoOptions, ImportedProto, ProtoImportSummary } from '#protocol-grpc/grpc/import';
 export {
   DESCRIPTORS_FILE,
   PROTOS_DIR,
@@ -1690,7 +1786,7 @@ export {
   readProtoDefinitionCache,
   writeDescriptorDefinitionCache,
   writeProtoDefinitionCache,
-} from './grpc/cache.js';
+} from '#protocol-grpc/grpc/cache';
 export type {
   CachedDescriptorDefinition,
   CachedGrpcDefinition,
@@ -1698,7 +1794,7 @@ export type {
   ProtoDefinitionCacheOptions,
   WriteDescriptorDefinitionCacheOptions,
   WriteProtoDefinitionCacheOptions,
-} from './grpc/cache.js';
+} from '#protocol-grpc/grpc/cache';
 export {
   DESCRIPTOR_HEADER_TYPE,
   DESCRIPTOR_SET_HEADER_TYPE,
@@ -1709,7 +1805,7 @@ export {
   reflectionProtoSet,
   reflectionProtoSource,
   reflectionServiceName,
-} from './grpc/reflection/proto.js';
+} from '#protocol-grpc/grpc/reflection/proto';
 export {
   descriptorHeader,
   descriptorSetBytes,
@@ -1718,16 +1814,20 @@ export {
   orderDescriptors,
   protoSetFromDescriptorSet,
   protoSetFromDescriptors,
-} from './grpc/reflection/descriptors.js';
+} from '#protocol-grpc/grpc/reflection/descriptors';
 export type {
   DescriptorHeader,
   ProtoSetFromDescriptorSetOptions,
   ProtoSetFromDescriptorsInput,
-} from './grpc/reflection/descriptors.js';
-export { isReflectionService, reflectProtoSet, reflectServices } from './grpc/reflection/client.js';
-export type { GrpcReflectInput, GrpcReflectedProtoSet, GrpcReflectionResult } from './grpc/reflection/client.js';
-export { GRPC_COMMAND_REDACTED, grpcToCommand } from './grpc/command.js';
-export type { GrpcToCommandOptions } from './grpc/command.js';
+} from '#protocol-grpc/grpc/reflection/descriptors';
+export { isReflectionService, reflectProtoSet, reflectServices } from '#protocol-grpc/grpc/reflection/client';
+export type {
+  GrpcReflectInput,
+  GrpcReflectedProtoSet,
+  GrpcReflectionResult,
+} from '#protocol-grpc/grpc/reflection/client';
+export { GRPC_COMMAND_REDACTED, grpcToCommand } from '#protocol-grpc/grpc/command';
+export type { GrpcToCommandOptions } from '#protocol-grpc/grpc/command';
 
 export {
   resolveAuthConfig,
@@ -1737,30 +1837,30 @@ export {
   secretMissingMessage,
   secretTokenMissingMessage,
   toSendAuth,
-} from './secrets/resolve.js';
-export type { GetSecret, ResolvedAuth } from './secrets/resolve.js';
+} from '#core/secrets/resolve';
+export type { GetSecret, ResolvedAuth } from '#core/secrets/resolve';
 export {
   envVariablesFor,
   secretNeedsOfAuth,
   SECRET_ENV_PREFIX,
   SIGNING_PSEUDO_REF_PREFIX,
-} from './secrets/env-names.js';
-export type { SecretNeed } from './secrets/env-names.js';
+} from '#core/secrets/env-names';
+export type { SecretNeed } from '#core/secrets/env-names';
 export {
   SECRET_NAME_PATTERN,
   secretEnvName,
   secretPseudoRef,
   secretToken,
   parseSecretPseudoRef,
-} from './secrets/secret-token.js';
-export { detectInText, SECRET_TEXT_SCAN_LIMIT } from './secrets/scan/rules.js';
-export type { DetectContext, SecretMatch, SecretRule } from './secrets/scan/rules.js';
-export { maskedPreview, scanProjectForSecrets } from './secrets/scan/scan.js';
-export { applySecretMoves, proposeSecretName } from './secrets/scan/apply.js';
-export type { SecretMove, SecretMovesResult } from './secrets/scan/apply.js';
-export type { SecretFinding, SecretLocation } from './secrets/scan/walk.js';
+} from '#core/secrets/secret-token';
+export { detectInText, SECRET_TEXT_SCAN_LIMIT } from '#core/secrets/scan/rules';
+export type { DetectContext, SecretMatch, SecretRule } from '#core/secrets/scan/rules';
+export { maskedPreview, scanProjectForSecrets } from '#core/secrets/scan/scan';
+export { applySecretMoves, proposeSecretName } from '#core/secrets/scan/apply';
+export type { SecretMove, SecretMovesResult } from '#core/secrets/scan/apply';
+export type { SecretFinding, SecretLocation } from '#core/secrets/scan/walk';
 
-export { SECRET_REF_PATTERN, secretRefsInValue } from './secrets/secret-refs.js';
+export { SECRET_REF_PATTERN, secretRefsInValue } from '#core/secrets/secret-refs';
 export {
   createSourceCache,
   effectiveSecretSources,
@@ -1772,7 +1872,7 @@ export {
   serializeSecretSources,
   sharedTrusted,
   sourceGetter,
-} from './secrets/sources/index.js';
+} from '#core/secrets/sources/index';
 export type {
   AwsSource,
   AzureSource,
@@ -1796,7 +1896,7 @@ export type {
   SourceCache,
   SourceGetterOptions,
   VaultSource,
-} from './secrets/sources/index.js';
+} from '#core/secrets/sources/index';
 
 // ---------------------------------------------------------------------------
 // Team secrets: machine keys, the access log and the vault (team-secrets spec §4, §5.2)
@@ -1862,7 +1962,7 @@ export {
   WRAP_INFO,
   wrapDataKey,
   wrapsUnapprovedKey,
-} from './team-secrets/index.js';
+} from '#core/team-secrets/index';
 export type {
   AccessAction,
   AccessEntryFile,
@@ -1880,7 +1980,7 @@ export type {
   TeamSecretsFiles,
   VaultEntryFile,
   VaultVerdict,
-} from './team-secrets/index.js';
+} from '#core/team-secrets/index';
 
 export {
   REDACTED_MARKER,
@@ -1897,8 +1997,8 @@ export {
   redactStructuredBody,
   redactUrl,
   redactXml,
-} from './redact/index.js';
-export { createSecretBytesMasker, createSecretMasker, MIN_SEEDED_SECRET_LENGTH } from './redact/literal.js';
+} from '#core/redact/index';
+export { createSecretBytesMasker, createSecretMasker, MIN_SEEDED_SECRET_LENGTH } from '#core/redact/literal';
 
 // WebSocket: the fourth protocol, a sibling container to a SOAP interface, a REST API and a gRPC
 // API (ADR-0007).
@@ -1911,7 +2011,7 @@ export {
   wsApiRequests,
   wsFolderRequests,
   wsMessageFileName,
-} from './ws/model.js';
+} from '#protocol-ws/ws/model';
 export type {
   CreateWsApiInput,
   CreateWsFolderInput,
@@ -1930,16 +2030,16 @@ export type {
   WsRequestDef,
   WsRequestSettings,
   WsSavedMessage,
-} from './ws/model.js';
-export { resolveWsUrl } from './ws/url.js';
-export { prettyFrameText } from './ws/pretty.js';
-export type { PrettyFrameResult } from './ws/pretty.js';
-export { openWsSession } from './ws/session.js';
-export type { WsSessionHandle, WsSessionHooks, WsSessionOptions } from './ws/session.js';
-export { connectWebSocket } from './ws/connect.js';
-export type { ConnectedWebSocket, ConnectOptions } from './ws/connect.js';
-export { capFrames, WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL } from './ws/transcript.js';
-export type { WsTranscript } from './ws/transcript.js';
+} from '#protocol-ws/ws/model';
+export { resolveWsUrl } from '#protocol-ws/ws/url';
+export { prettyFrameText } from '#protocol-ws/ws/pretty';
+export type { PrettyFrameResult } from '#protocol-ws/ws/pretty';
+export { openWsSession } from '#protocol-ws/ws/session';
+export type { WsSessionHandle, WsSessionHooks, WsSessionOptions } from '#protocol-ws/ws/session';
+export { connectWebSocket } from '#protocol-ws/ws/connect';
+export type { ConnectedWebSocket, ConnectOptions } from '#protocol-ws/ws/connect';
+export { capFrames, WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL } from '#protocol-ws/ws/transcript';
+export type { WsTranscript } from '#protocol-ws/ws/transcript';
 
 // MCP: the fifth protocol, an MCP server as a sibling container under `apis/` (#79).
 export {
@@ -1951,7 +2051,7 @@ export {
   mcpFolderRequests,
   mcpServerFolders,
   mcpServerRequests,
-} from './mcp/model.js';
+} from '#protocol-mcp/mcp/model';
 export type {
   CreateMcpFolderInput,
   CreateMcpRequestInput,
@@ -1974,14 +2074,14 @@ export type {
   McpServerSettings,
   McpStdioTransport,
   McpTransport,
-} from './mcp/model.js';
-export { MCP_CATALOGUE_FILE, parseMcpCatalogue, serializeMcpCatalogue } from './mcp/files.js';
-export { mcpCataloguePath } from './mcp/storage.js';
-export { expandWsInput, expandWsMessage } from './ws/expand.js';
-export type { WsCallInput } from './ws/expand.js';
-export { toWsSessionOptions } from './ws/call.js';
-export type { WsSessionMaterial } from './ws/call.js';
-export { wsToCommand } from './ws/command.js';
+} from '#protocol-mcp/mcp/model';
+export { MCP_CATALOGUE_FILE, parseMcpCatalogue, serializeMcpCatalogue } from '#protocol-mcp/mcp/files';
+export { mcpCataloguePath } from '#protocol-mcp/mcp/storage';
+export { expandWsInput, expandWsMessage } from '#protocol-ws/ws/expand';
+export type { WsCallInput } from '#protocol-ws/ws/expand';
+export { toWsSessionOptions } from '#protocol-ws/ws/call';
+export type { WsSessionMaterial } from '#protocol-ws/ws/call';
+export { wsToCommand } from '#protocol-ws/ws/command';
 
 export {
   GIT_CALL_ENV,
@@ -1994,7 +2094,7 @@ export {
   findGit,
   parseGitVersion,
   refusedLocalConfigKeys,
-} from './sync/git-cli.js';
+} from '#core/sync/git-cli';
 export type {
   GitCallEnv,
   GitLocation,
@@ -2002,10 +2102,10 @@ export type {
   GitRunOptions,
   GitSubcommand,
   Runner,
-} from './sync/git-cli.js';
+} from '#core/sync/git-cli';
 
-export { mergeFiles } from './sync/three-way-merge.js';
-export type { FileMerge, MergeFilesOptions } from './sync/three-way-merge.js';
+export { mergeFiles } from '#core/sync/three-way-merge';
+export type { FileMerge, MergeFilesOptions } from '#core/sync/three-way-merge';
 
 export {
   MACHINE_LOCAL_PATHS,
@@ -2014,13 +2114,13 @@ export {
   assertTreePath,
   isSafeTreeSegment,
   isTreePath,
-} from './sync/tree-paths.js';
+} from '#core/sync/tree-paths';
 
 // ---------------------------------------------------------------------------
 // Wirebench Server API: wire schemas shared by packages/server and the desktop client
 // ---------------------------------------------------------------------------
-export { SERVER_API_VERSION, SERVER_NAME, metaResponseSchema } from './server-api/meta.js';
-export type { MetaResponse } from './server-api/meta.js';
+export { SERVER_API_VERSION, SERVER_NAME, metaResponseSchema } from '#core/server-api/meta';
+export type { MetaResponse } from '#core/server-api/meta';
 export {
   DEVICE_TOKEN_PATTERN,
   MAX_DEVICE_NAME_LENGTH,
@@ -2057,7 +2157,7 @@ export {
   userPatchRequestSchema,
   usersResponseSchema,
   userSummarySchema,
-} from './server-api/identity.js';
+} from '#core/server-api/identity';
 export type {
   DeviceSummary,
   InvitationAcceptRequest,
@@ -2077,7 +2177,7 @@ export type {
   SignInResponse,
   UserPatchRequest,
   UserSummary,
-} from './server-api/identity.js';
+} from '#core/server-api/identity';
 export {
   MAX_TEAMS_NAME_LENGTH,
   TEAMS_ID_PATTERN,
@@ -2113,7 +2213,7 @@ export {
   teamWorkspacesResponseSchema,
   teamWorkspaceUpdateRequestSchema,
   workspaceRoleSchema,
-} from './server-api/teams.js';
+} from '#core/server-api/teams';
 export type {
   AccessEntry,
   DefaultRole,
@@ -2133,7 +2233,7 @@ export type {
   TeamWorkspaceCreateRequest,
   TeamWorkspaceUpdateRequest,
   WorkspaceRole,
-} from './server-api/teams.js';
+} from '#core/server-api/teams';
 export {
   MAX_SYNC_FILE_BYTES,
   MAX_SYNC_LOG_LIMIT,
@@ -2158,7 +2258,7 @@ export {
   TEAM_SECRETS_KEY_REQUEST_MAX_BYTES,
   teamSecretsKeyRequestSchema,
   teamSecretsKeyRequestResponseSchema,
-} from './server-api/sync.js';
+} from '#core/server-api/sync';
 export type {
   SyncChange,
   SyncChangesQuery,
@@ -2176,7 +2276,7 @@ export type {
   SyncSnapshotResponse,
   TeamSecretsKeyRequest,
   TeamSecretsKeyRequestResponse,
-} from './server-api/sync.js';
+} from '#core/server-api/sync';
 export {
   LIVE_CAPABILITY,
   LIVE_CLOSE,
@@ -2186,8 +2286,8 @@ export {
   liveClientMessageSchema,
   livePresenceUserSchema,
   liveServerMessageSchema,
-} from './server-api/live.js';
-export type { LiveClientMessage, LivePresenceUser, LiveRefusedCode, LiveServerMessage } from './server-api/live.js';
+} from '#core/server-api/live';
+export type { LiveClientMessage, LivePresenceUser, LiveRefusedCode, LiveServerMessage } from '#core/server-api/live';
 export {
   CATCH_CONTENT_TYPE_PATTERN,
   CATCH_SECRET_PATTERN,
@@ -2209,7 +2309,7 @@ export {
   HOOKS_LIMITS,
   hooksMetaSchema,
   SIGNATURE_SECRET_MAX_LENGTH,
-} from './server-api/hooks.js';
+} from '#core/server-api/hooks';
 export type {
   Capture,
   CaptureSignature,
@@ -2221,7 +2321,7 @@ export type {
   CatchUrlSignature,
   CatchUrlUpdateRequest,
   HooksMeta,
-} from './server-api/hooks.js';
+} from '#core/server-api/hooks';
 export {
   CI_TOKEN_NAME_MAX_LENGTH,
   ciTokenCreatedSchema,
@@ -2229,8 +2329,13 @@ export {
   ciTokenSummarySchema,
   ciTokensResponseSchema,
   ciWhoamiResponseSchema,
-} from './server-api/ci-tokens.js';
-export type { CiTokenCreateRequest, CiTokenCreated, CiTokenSummary, CiWhoamiResponse } from './server-api/ci-tokens.js';
+} from '#core/server-api/ci-tokens';
+export type {
+  CiTokenCreateRequest,
+  CiTokenCreated,
+  CiTokenSummary,
+  CiWhoamiResponse,
+} from '#core/server-api/ci-tokens';
 export {
   SCIM_TOKEN_NAME_MAX_LENGTH,
   SCIM_TOKEN_PATTERN,
@@ -2245,7 +2350,7 @@ export {
   scimTokenCreatedSchema,
   scimTokenSummarySchema,
   scimTokensResponseSchema,
-} from './server-api/saml-scim.js';
+} from '#core/server-api/saml-scim';
 export type {
   SamlCompleteRequest,
   SamlInfoResponse,
@@ -2256,7 +2361,7 @@ export type {
   ScimTokenCreateRequest,
   ScimTokenCreated,
   ScimTokenSummary,
-} from './server-api/saml-scim.js';
+} from '#core/server-api/saml-scim';
 export {
   ALERT_TARGET_KINDS,
   ALERT_DELIVERY_STATES,
@@ -2287,7 +2392,7 @@ export {
   scheduleTargetSchema,
   scheduleUpdateSchema,
   schedulesResponseSchema,
-} from './server-api/schedules.js';
+} from '#core/server-api/schedules';
 export type {
   AlertTarget,
   AlertTargetInput,
@@ -2310,7 +2415,7 @@ export type {
   ScheduleSecrets,
   ScheduleTarget,
   ScheduleUpdate,
-} from './server-api/schedules.js';
+} from '#core/server-api/schedules';
 export {
   SESSION_LOG_CLIENT_ID_PATTERN,
   SESSION_LOG_LIMITS,
@@ -2326,7 +2431,7 @@ export {
   sessionLogTextQuerySchema,
   sessionLogTextResponseSchema,
   sessionLogsQuerySchema,
-} from './server-api/session-logs.js';
+} from '#core/server-api/session-logs';
 export type {
   SessionLog,
   SessionLogChunkRequest,
@@ -2339,7 +2444,7 @@ export type {
   SessionLogTextQuery,
   SessionLogTextResponse,
   SessionLogsQuery,
-} from './server-api/session-logs.js';
+} from '#core/server-api/session-logs';
 export {
   TERMINAL_SHARE_CAPABILITY,
   TERMINAL_SHARE_CLOSE,
@@ -2357,7 +2462,7 @@ export {
   terminalShareParamsSchema,
   terminalSharePresenceEntrySchema,
   terminalShareServerMessageSchema,
-} from './server-api/terminal-share.js';
+} from '#core/server-api/terminal-share';
 export type {
   TerminalShareClientMessage,
   TerminalShareCreateRequest,
@@ -2367,7 +2472,7 @@ export type {
   TerminalShareInvite,
   TerminalSharePresenceEntry,
   TerminalShareServerMessage,
-} from './server-api/terminal-share.js';
+} from '#core/server-api/terminal-share';
 export {
   COMMUNITY_SEATS,
   EDITIONS,
@@ -2382,7 +2487,7 @@ export {
   licenseInstallRequestSchema,
   licensePayloadSchema,
   licenseStateSchema,
-} from './server-api/licensing.js';
+} from '#core/server-api/licensing';
 export type {
   Edition,
   Feature,
@@ -2391,7 +2496,7 @@ export type {
   LicensePayload,
   LicenseState,
   LicenseStatus,
-} from './server-api/licensing.js';
+} from '#core/server-api/licensing';
 export {
   AUDIT_ACTION_GROUPS,
   AUDIT_ACTIONS,
@@ -2411,7 +2516,7 @@ export {
   desktopRequestSentDetailsSchema,
   desktopRunFinishedDetailsSchema,
   desktopSshSessionDetailsSchema,
-} from './server-api/audit.js';
+} from '#core/server-api/audit';
 export type {
   AuditAction,
   AuditActionGroup,
@@ -2428,30 +2533,35 @@ export type {
   DesktopRequestSentDetails,
   DesktopRunFinishedDetails,
   DesktopSshSessionDetails,
-} from './server-api/audit.js';
-export { ACCOUNTS_FILE_VERSION, accountsFileSchema, parseAccountsFile, serverAccountSchema } from './account/schema.js';
-export type { AccountsFile, ServerAccount } from './account/schema.js';
-export * from './sequence/index.js';
-export * from './script/index.js';
-export * from './mock/index.js';
-export { readSequences } from './sequence/load.js';
-export type { SequenceFileProblem, SequenceFiles } from './sequence/load.js';
+} from '#core/server-api/audit';
+export {
+  ACCOUNTS_FILE_VERSION,
+  accountsFileSchema,
+  parseAccountsFile,
+  serverAccountSchema,
+} from '#core/account/schema';
+export type { AccountsFile, ServerAccount } from '#core/account/schema';
+export * from '#core/sequence/index';
+export * from '#core/script/index';
+export * from '#core/mock/index';
+export { readSequences } from '#core/sequence/load';
+export type { SequenceFileProblem, SequenceFiles } from '#core/sequence/load';
 export {
   assertNoControlCharacters,
   assertOriginIndependent,
   expandWithSequenceEscaped,
   hasSequenceValues,
   urlOrigin,
-} from './project/sequence-guards.js';
+} from '#core/project/sequence-guards';
 
-export { forwardWorkerOutput, routeWorkerOutput, workerOutputOptions } from './worker-output.js';
+export { forwardWorkerOutput, routeWorkerOutput, workerOutputOptions } from '#core/worker-output';
 
-export * from './contract-diff/index.js';
-export { diffWsdlContracts, wsdlOperationLabel } from './wsdl/contract-diff.js';
-export { diffOpenApiContracts, openApiOperationLabel } from './rest/openapi/contract-diff.js';
-export { lintOpenApi } from './rest/openapi/lint/run.js';
-export type { LintInput, LintOpenApiOptions, LintOptions } from './rest/openapi/lint/run.js';
-export { LINT_BUILTIN_RULESETS, LINT_SEVERITIES, countFindings, failsAt } from './rest/openapi/lint/model.js';
+export * from '#core/contract-diff/index';
+export { diffWsdlContracts, wsdlOperationLabel } from '#protocol-soap/wsdl/contract-diff';
+export { diffOpenApiContracts, openApiOperationLabel } from '#protocol-rest/rest/openapi/contract-diff';
+export { lintOpenApi } from '#protocol-rest/rest/openapi/lint/run';
+export type { LintInput, LintOpenApiOptions, LintOptions } from '#protocol-rest/rest/openapi/lint/run';
+export { LINT_BUILTIN_RULESETS, LINT_SEVERITIES, countFindings, failsAt } from '#protocol-rest/rest/openapi/lint/model';
 export type {
   LintBuiltinRuleset,
   LintCounts,
@@ -2461,11 +2571,11 @@ export type {
   LintRuleInfo,
   LintRulesetFile,
   LintSeverity,
-} from './rest/openapi/lint/model.js';
-export { LINT_CHECKS, LINT_TARGETS } from './rest/openapi/lint/ruleset.js';
-export { LINT_FOLDER, readProjectLintRulesets } from './rest/openapi/lint/project.js';
-export { lintReportJson, lintReportSarif } from './rest/openapi/lint/report.js';
-export type { LintJsonReport, LintReportOptions, LintTool } from './rest/openapi/lint/report.js';
+} from '#protocol-rest/rest/openapi/lint/model';
+export { LINT_CHECKS, LINT_TARGETS } from '#protocol-rest/rest/openapi/lint/ruleset';
+export { LINT_FOLDER, readProjectLintRulesets } from '#protocol-rest/rest/openapi/lint/project';
+export { lintReportJson, lintReportSarif } from '#protocol-rest/rest/openapi/lint/report';
+export type { LintJsonReport, LintReportOptions, LintTool } from '#protocol-rest/rest/openapi/lint/report';
 export * from './import/bruno/index.js';
 export * from './import/insomnia/index.js';
 export { importInsomnia, readInsomniaFile } from './import/insomnia/import.js';

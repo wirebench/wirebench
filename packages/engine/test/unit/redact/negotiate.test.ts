@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { maskNegotiateTokens, redactHeaderPairs, redactHeaders, redactRawHttp } from '../../../src/redact/index.js';
+import { maskNegotiateTokens, redactHeaderPairs, redactHeaders, redactRawHttp } from '#core/redact/index';
 
 describe('Negotiate tokens', () => {
   it('masks Authorization: Negotiate whole, as every Authorization is', () => {

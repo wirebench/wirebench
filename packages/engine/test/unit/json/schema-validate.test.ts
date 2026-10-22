@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import * as moduleValidator from '../../../src/json/schema-validate.js';
-import { jsonSchemaValidator } from '../../../src/json/schema-validate.js';
+import * as moduleValidator from '#core/json/schema-validate';
+import { jsonSchemaValidator } from '#core/json/schema-validate';
 
 /**
  * Every case runs twice: against the module, and against `jsonSchemaValidator.toString()` evaluated

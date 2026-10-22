@@ -1,0 +1,36 @@
+{
+  "name": "@wirebench/protocol-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Wirebench engine: the MCP request kind. Composed by @wirebench/engine, which vendors it; not published on its own.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "development": "./src/*.ts",
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "imports": {
+    "#core/*": "@wirebench/core/*"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@wirebench/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.31.0",
+    "undici": "^8",
+    "zod": "^4.6.1"
+  }
+}

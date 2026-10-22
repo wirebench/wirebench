@@ -5,14 +5,14 @@
  * no value is dialled as the literal `{name}` it wrote (#287).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { importAsyncApi } from '../../../src/asyncapi/import.js';
+import { importAsyncApi } from '#protocol-ws/asyncapi/import';
 import { createProject } from '../../../src/index.js';
-import type { Project } from '../../../src/project/model.js';
-import type { RunContext } from '../../../src/run/context.js';
-import { openExchange } from '../../../src/run/open.js';
-import { createRunScope } from '../../../src/run/scope.js';
-import type { WsApi } from '../../../src/ws/model.js';
-import type { WsSelected } from '../../../src/ws/run.js';
+import type { Project } from '#core/project/model';
+import type { RunContext } from '#core/run/context';
+import { openExchange } from '#core/run/open';
+import { createRunScope } from '#core/run/scope';
+import type { WsApi } from '#protocol-ws/ws/model';
+import type { WsSelected } from '#protocol-ws/ws/run';
 import { fileFetch } from '../../helpers/file-fetch.js';
 import { testHost } from '../../helpers/send-host.js';
 import { startTestWsServer, type TestWsServer } from '../../helpers/test-ws-server.js';

@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { inlineFiles } from '../../../../src/soap/mime/inline-files.js';
+import { inlineFiles } from '#protocol-soap/soap/mime/inline-files';
 
 const CONTENT = new TextEncoder().encode('hello attachment');
 const BASE64 = Buffer.from(CONTENT).toString('base64');

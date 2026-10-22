@@ -5,9 +5,9 @@
 
 import forge from 'node-forge';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { sendHttp } from '../../../src/http/client.js';
-import { loadKeystore, toTlsClientIdentity } from '../../../src/keystore/index.js';
-import type { HttpRequest } from '../../../src/http/types.js';
+import { sendHttp } from '#core/http/client';
+import { loadKeystore, toTlsClientIdentity } from '#core/keystore/index';
+import type { HttpRequest } from '#core/http/types';
 import {
   generateClientCert,
   generateServerCert,

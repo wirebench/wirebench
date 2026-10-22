@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { argvFor, parseSourceOutput } from '../../../../src/secrets/sources/kinds.js';
-import { withSource, secretSourceError } from '../../../../src/secrets/sources/errors.js';
+import { argvFor, parseSourceOutput } from '#core/secrets/sources/kinds';
+import { withSource, secretSourceError } from '#core/secrets/sources/errors';
 
 describe('argvFor', () => {
   it('builds each kind', () => {

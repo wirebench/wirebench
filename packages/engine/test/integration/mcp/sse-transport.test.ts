@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { runMcpSession, type McpOperationCall } from '../../../src/mcp/session.js';
-import { openSseTransport, type McpSseTransport } from '../../../src/mcp/sse-transport.js';
+import { runMcpSession, type McpOperationCall } from '#protocol-mcp/mcp/session';
+import { openSseTransport, type McpSseTransport } from '#protocol-mcp/mcp/sse-transport';
 import {
   startTestMcpSseServer,
   type TestMcpSseServer,

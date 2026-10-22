@@ -4,15 +4,15 @@
  * in before protobufjs resolves them.
  */
 import { describe, expect, it } from 'vitest';
-import { ProtoError } from '../../../src/errors.js';
-import { encodeMessage } from '../../../src/grpc/codec.js';
-import { describeServices } from '../../../src/grpc/proto/describe.js';
-import { loadProtoSet } from '../../../src/grpc/proto/load.js';
+import { ProtoError } from '#core/errors';
+import { encodeMessage } from '#protocol-grpc/grpc/codec';
+import { describeServices } from '#protocol-grpc/grpc/proto/describe';
+import { loadProtoSet } from '#protocol-grpc/grpc/proto/load';
 import {
   descriptorHeader,
   encodeFileDescriptorSet,
   protoSetFromDescriptors,
-} from '../../../src/grpc/reflection/descriptors.js';
+} from '#protocol-grpc/grpc/reflection/descriptors';
 import {
   DESCRIPTOR_HEADER_TYPE,
   REFLECTION_METHOD,
@@ -22,7 +22,7 @@ import {
   reflectionProtoSet,
   reflectionProtoSource,
   reflectionServiceName,
-} from '../../../src/grpc/reflection/proto.js';
+} from '#protocol-grpc/grpc/reflection/proto';
 import { reflectionCatalog } from '../../helpers/test-grpc-reflection.js';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
 

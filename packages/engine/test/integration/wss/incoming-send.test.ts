@@ -5,11 +5,11 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { sendSoapRequest } from '../../../src/soap/send.js';
-import { loadKeystore } from '../../../src/keystore/index.js';
-import { createWssContext } from '../../../src/wss/model.js';
-import type { Keystore } from '../../../src/keystore/model.js';
-import type { WssIncomingConfig } from '../../../src/wss/model.js';
+import { sendSoapRequest } from '#protocol-soap/soap/send';
+import { loadKeystore } from '#core/keystore/index';
+import { createWssContext } from '#protocol-soap/wss/model';
+import type { Keystore } from '#core/keystore/model';
+import type { WssIncomingConfig } from '#protocol-soap/wss/model';
 import { generateClientCert, generateSigningCert, generateTestCa } from '../../helpers/test-certs.js';
 import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';
 

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { MappedClientImport } from '../../../../src/import/client-import.js';
-import { eventsOf } from '../../../../src/import/scripts.js';
+import { eventsOf } from '#core/import/scripts';
 import { mapThunderClient } from '../../../../src/import/thunder/convert.js';
 import { parseThunderExport, parseThunderFolder } from '../../../../src/import/thunder/parse.js';
-import { apiFolders, apiRequests } from '../../../../src/rest/model.js';
+import { apiFolders, apiRequests } from '#protocol-rest/rest/model';
 
 type Item = Record<string, unknown>;
 

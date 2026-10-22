@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_ITERATIONS, planIterations } from '../../../src/run/iterations.js';
+import { MAX_ITERATIONS, planIterations } from '#core/run/iterations';
 
 const rows = [{ n: 'a' }, { n: 'b' }, { n: 'c' }];
 const rowIndexes = (plan: ReturnType<typeof planIterations>): (number | undefined)[] =>

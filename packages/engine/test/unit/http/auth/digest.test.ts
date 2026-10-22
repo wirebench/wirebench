@@ -4,8 +4,8 @@
  */
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { parseWwwAuthenticate } from '../../../../src/http/auth/basic.js';
-import { digestAuthorization, DigestNonceCache, pickDigestChallenge } from '../../../../src/http/auth/digest.js';
+import { parseWwwAuthenticate } from '#core/http/auth/basic';
+import { digestAuthorization, DigestNonceCache, pickDigestChallenge } from '#core/http/auth/digest';
 
 const RFC7616 = [
   'Digest realm="http-auth@example.org", qop="auth, auth-int", algorithm=SHA-256, nonce="7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v", opaque="FQhe/qaU925kfnzjCev0ciny7QMkPqMAFRtzCUYo5tdS"',

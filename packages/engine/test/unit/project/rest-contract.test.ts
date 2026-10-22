@@ -5,12 +5,12 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadProject } from '../../../src/project/load.js';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { projectFiles } from '../../../src/project/serialize.js';
-import { createApi, createRestRequest, restApisOf } from '../../../src/rest/model.js';
-import type { RestRequestDef } from '../../../src/rest/model.js';
+import { loadProject } from '#core/project/load';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { projectFiles } from '#core/project/serialize';
+import { createApi, createRestRequest, restApisOf } from '#protocol-rest/rest/model';
+import type { RestRequestDef } from '#protocol-rest/rest/model';
 import { tempProjectDir } from './fixture.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';

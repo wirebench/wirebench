@@ -12,15 +12,15 @@ import {
   createGrpcRequest,
   grpcApisOf,
   withGrpcApis,
-} from '../../../src/grpc/model.js';
-import type { GrpcApi } from '../../../src/grpc/model.js';
-import { loadProject } from '../../../src/project/load.js';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { APIS_DIR } from '../../../src/project/paths.js';
-import { saveProject } from '../../../src/project/save.js';
-import { projectFiles } from '../../../src/project/serialize.js';
-import { createApi, createRestRequest, entry, restApisOf } from '../../../src/rest/model.js';
+} from '#protocol-grpc/grpc/model';
+import type { GrpcApi } from '#protocol-grpc/grpc/model';
+import { loadProject } from '#core/project/load';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { APIS_DIR } from '#core/project/paths';
+import { saveProject } from '#core/project/save';
+import { projectFiles } from '#core/project/serialize';
+import { createApi, createRestRequest, entry, restApisOf } from '#protocol-rest/rest/model';
 import { listTree, tempProjectDir } from './fixture.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';

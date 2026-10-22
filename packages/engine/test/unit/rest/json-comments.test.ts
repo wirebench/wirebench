@@ -4,7 +4,7 @@
  * ever taken for a comment.
  */
 import { describe, expect, it } from 'vitest';
-import { hasJsonComments, stripJsonComments, stripRestBodyComments } from '../../../src/rest/json-comments.js';
+import { hasJsonComments, stripJsonComments, stripRestBodyComments } from '#protocol-rest/rest/json-comments';
 
 describe('stripJsonComments', () => {
   it('returns a body with no comment exactly as it was', () => {

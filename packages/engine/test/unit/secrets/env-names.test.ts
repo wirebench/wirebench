@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { envVariablesFor, secretNeedsOfAuth } from '../../../src/secrets/env-names.js';
+import { envVariablesFor, secretNeedsOfAuth } from '#core/secrets/env-names';
 
 describe('secret needs', () => {
   it('lists a basic password with its declared name', () => {

@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { parseXml } from '../../../src/xml/parse.js';
-import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
-import type { SchemaSet } from '../../../src/xsd/schema-set.js';
+import { parseXml } from '#core/xml/parse';
+import { buildSchemaSet } from '#protocol-soap/xsd/schema-set';
+import type { SchemaSet } from '#protocol-soap/xsd/schema-set';
 import {
   attributesAllowedAt,
   childrenAllowedAt,
   completionContextAt,
   declarationOf,
   elementPathAt,
-} from '../../../src/xsd/locate.js';
+} from '#protocol-soap/xsd/locate';
 
 const TEM = 'http://tempuri.org/';
 const q = (ns: string, local: string) => ({ namespaceUri: ns, localName: local });

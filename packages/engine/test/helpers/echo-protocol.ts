@@ -8,16 +8,16 @@
  */
 import { join } from 'node:path';
 import { z } from 'zod';
-import type { Assertion, AssertionSubject } from '../../src/assert/model.js';
-import { readFileIfExists, readdirIfExists } from '../../src/project/fs.js';
-import { readYaml } from '../../src/project/load-helpers.js';
-import { containersOf, protocolDataOf, withContainersOf, withProtocolData } from '../../src/project/model.js';
-import type { Project } from '../../src/project/model.js';
-import { API_FILE, APIS_DIR, assertPathSegment, REQUEST_SUFFIX, REQUESTS_DIR } from '../../src/project/paths.js';
-import { expand } from '../../src/project/properties.js';
-import { nonEmpty, parseFile } from '../../src/project/schema-parts.js';
-import { stringifyYaml } from '../../src/project/yaml.js';
-import { defineProtocol } from '../../src/protocol/module.js';
+import type { Assertion, AssertionSubject } from '#core/assert/model';
+import { readFileIfExists, readdirIfExists } from '#core/project/fs';
+import { readYaml } from '#core/project/load-helpers';
+import { containersOf, protocolDataOf, withContainersOf, withProtocolData } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { API_FILE, APIS_DIR, assertPathSegment, REQUEST_SUFFIX, REQUESTS_DIR } from '#core/project/paths';
+import { expand } from '#core/project/properties';
+import { nonEmpty, parseFile } from '#core/project/schema-parts';
+import { stringifyYaml } from '#core/project/yaml';
+import { defineProtocol } from '#core/protocol/module';
 import type {
   ProtocolProjectFiles,
   ProtocolRun,
@@ -25,12 +25,12 @@ import type {
   ProtocolStorage,
   RunScope,
   ScriptedSend,
-} from '../../src/protocol/module.js';
-import { scopesFor } from '../../src/run/context.js';
-import { exchangeController } from '../../src/run/exchange.js';
-import type { SentRequest } from '../../src/run/run.js';
-import { unresolvedError, withSecrets } from '../../src/run/send-helpers.js';
-import type { RequestScripts } from '../../src/script/model.js';
+} from '#core/protocol/module';
+import { scopesFor } from '#core/run/context';
+import { exchangeController } from '#core/run/exchange';
+import type { SentRequest } from '#core/run/run';
+import { unresolvedError, withSecrets } from '#core/run/send-helpers';
+import type { RequestScripts } from '#core/script/model';
 
 /** A saved echo request: the text it sends is the text it gets back. */
 export interface EchoRequest {

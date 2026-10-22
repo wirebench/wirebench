@@ -6,8 +6,8 @@
  * (#287).
  */
 import { describe, expect, it } from 'vitest';
-import { importAsyncApi } from '../../../src/asyncapi/import.js';
-import { expand, type PropertyScopes } from '../../../src/project/properties.js';
+import { importAsyncApi } from '#protocol-ws/asyncapi/import';
+import { expand, type PropertyScopes } from '#core/project/properties';
 import { fileFetch } from '../../helpers/file-fetch.js';
 
 const scopes: PropertyScopes = {

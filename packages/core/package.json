@@ -1,0 +1,44 @@
+{
+  "name": "@wirebench/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Wirebench engine: the project format, workspaces, environments, secrets, assertions, scripts, sequences, the run loop, HTTP, XML, JSON and the protocol interface. Composed by @wirebench/engine, which vendors it; not published on its own.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "development": "./src/*.ts",
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
+    "@xmldom/xmldom": "^0.9.12",
+    "fontoxpath": "^3.34.0",
+    "jose": "^6.2.12",
+    "jsonpath-plus": "^10.4.0",
+    "node-forge": "^1.3.1",
+    "quickjs-emscripten-core": "0.32.0",
+    "typescript": "~5.9.3",
+    "ulidx": "^2.4.1",
+    "undici": "^8",
+    "yaml": "^2.9",
+    "zod": "^4.6.1"
+  },
+  "optionalDependencies": {
+    "kerberos": "7.0.0"
+  }
+}

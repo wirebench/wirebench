@@ -3,11 +3,11 @@
  * never lets a project read the server's environment.
  */
 import { describe, expect, it } from 'vitest';
-import { createProject } from '../../../src/project/model.js';
-import type { Environment, Project } from '../../../src/project/model.js';
-import { expand } from '../../../src/project/properties.js';
-import { scopesFor, type RunContext } from '../../../src/run/context.js';
-import { createWorkspace } from '../../../src/workspace/model.js';
+import { createProject } from '#core/project/model';
+import type { Environment, Project } from '#core/project/model';
+import { expand } from '#core/project/properties';
+import { scopesFor, type RunContext } from '#core/run/context';
+import { createWorkspace } from '#core/workspace/model';
 import { testHost } from '../../helpers/send-host.js';
 
 const environment: Environment = {

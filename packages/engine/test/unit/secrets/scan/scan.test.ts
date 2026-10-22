@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { createProject } from '../../../../src/project/model.js';
-import { createInterface, createRequest } from '../../../../src/soap/model.js';
-import type { Project } from '../../../../src/project/model.js';
-import { createApi, createFolder, createRestRequest, entry as kv } from '../../../../src/rest/model.js';
-import { createGrpcApi, createGrpcRequest } from '../../../../src/grpc/model.js';
-import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../../src/ws/model.js';
-import type { GrpcApi } from '../../../../src/grpc/model.js';
-import type { WsApi } from '../../../../src/ws/model.js';
-import { maskedPreview, scanProjectForSecrets } from '../../../../src/secrets/scan/scan.js';
+import { createProject } from '#core/project/model';
+import { createInterface, createRequest } from '#protocol-soap/soap/model';
+import type { Project } from '#core/project/model';
+import { createApi, createFolder, createRestRequest, entry as kv } from '#protocol-rest/rest/model';
+import { createGrpcApi, createGrpcRequest } from '#protocol-grpc/grpc/model';
+import { createWsApi, createWsRequest, createWsSavedMessage } from '#protocol-ws/ws/model';
+import type { GrpcApi } from '#protocol-grpc/grpc/model';
+import type { WsApi } from '#protocol-ws/ws/model';
+import { maskedPreview, scanProjectForSecrets } from '#core/secrets/scan/scan';
 import { hooksProject } from '../../webhooks/fixture.js';
 
 const GH = 'ghp_FAKEFAKEFAKEFAKEFAKEFAKEFAKE1234';

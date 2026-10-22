@@ -1,15 +1,15 @@
 import { constants, createCipheriv, privateDecrypt, publicEncrypt, randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { applyOutgoingWss } from '../../../../src/wss/apply.js';
-import { decryptEnvelope, encryptEnvelope } from '../../../../src/wss/outgoing/encryption.js';
-import { parseXml } from '../../../../src/xml/parse.js';
-import { verifySignature } from '../../../../src/wss/outgoing/signature.js';
-import { createWssContext } from '../../../../src/wss/model.js';
-import { WSS_TOKEN_TYPES } from '../../../../src/wss/key-identifiers.js';
-import { NS } from '../../../../src/xml/namespaces.js';
-import { WssError } from '../../../../src/errors.js';
+import { applyOutgoingWss } from '#protocol-soap/wss/apply';
+import { decryptEnvelope, encryptEnvelope } from '#protocol-soap/wss/outgoing/encryption';
+import { parseXml } from '#core/xml/parse';
+import { verifySignature } from '#protocol-soap/wss/outgoing/signature';
+import { createWssContext } from '#protocol-soap/wss/model';
+import { WSS_TOKEN_TYPES } from '#protocol-soap/wss/key-identifiers';
+import { NS } from '#core/xml/namespaces';
+import { WssError } from '#core/errors';
 import { generateClientCert, generateSigningCert, generateTestCa } from '../../../helpers/test-certs.js';
-import type { Keystore, KeystoreAlias } from '../../../../src/keystore/model.js';
+import type { Keystore, KeystoreAlias } from '#core/keystore/model';
 import type {
   WssEncryptionEntry,
   WssEntry,
@@ -19,7 +19,7 @@ import type {
   WssPart,
   WssSignatureEntry,
   WssSymmetricAlgorithm,
-} from '../../../../src/wss/model.js';
+} from '#protocol-soap/wss/model';
 
 const SOAP11 =
   '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">' +

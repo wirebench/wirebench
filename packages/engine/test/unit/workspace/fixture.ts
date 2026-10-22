@@ -1,8 +1,8 @@
 import { mkdtemp, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { WORKSPACE_FORMAT_VERSION } from '../../../src/workspace/model.js';
-import type { Workspace } from '../../../src/workspace/model.js';
+import { WORKSPACE_FORMAT_VERSION } from '#core/workspace/model';
+import type { Workspace } from '#core/workspace/model';
 
 /** Deterministic ids so the fixture workspace is byte-stable across runs. */
 export function fixedIds(prefix = 'ID'): () => string {

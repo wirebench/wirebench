@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { sendSoapRequest } from '../../../src/soap/send.js';
-import { DEFAULT_WSA_CONFIG } from '../../../src/wsa/model.js';
+import { sendSoapRequest } from '#protocol-soap/soap/send';
+import { DEFAULT_WSA_CONFIG } from '#protocol-soap/wsa/model';
 import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';
 
 const ENVELOPE = `<?xml version="1.0" encoding="utf-8"?>

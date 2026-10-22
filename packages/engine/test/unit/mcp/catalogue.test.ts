@@ -4,9 +4,9 @@
  */
 import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it } from 'vitest';
-import { collectMcpCatalogue, MCP_CATALOGUE_MAX_PAGES, storedMcpCatalogue } from '../../../src/mcp/catalogue.js';
-import { serializeMcpCatalogue } from '../../../src/mcp/files.js';
-import type { McpWireHandlers, McpWireTransport } from '../../../src/mcp/transport.js';
+import { collectMcpCatalogue, MCP_CATALOGUE_MAX_PAGES, storedMcpCatalogue } from '#protocol-mcp/mcp/catalogue';
+import { serializeMcpCatalogue } from '#protocol-mcp/mcp/files';
+import type { McpWireHandlers, McpWireTransport } from '#protocol-mcp/mcp/transport';
 
 type Answer = (method: string, params: Record<string, unknown> | undefined) => unknown;
 

@@ -17,7 +17,7 @@
 
 import protobuf from 'protobufjs';
 import descriptorExt from 'protobufjs/ext/descriptor.js';
-import type { ProtoSet } from '../../src/grpc/proto/load.js';
+import type { ProtoSet } from '#protocol-grpc/grpc/proto/load';
 
 const FileDescriptorProto = (descriptorExt as unknown as Record<string, protobuf.Type>)['FileDescriptorProto']!;
 

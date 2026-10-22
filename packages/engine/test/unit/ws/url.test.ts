@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { WsError } from '../../../src/errors.js';
-import { resolveWsUrl } from '../../../src/ws/url.js';
+import { WsError } from '#core/errors';
+import { resolveWsUrl } from '#protocol-ws/ws/url';
 
 const row = (name: string, value: string, enabled = true) => ({ name, value, enabled });
 

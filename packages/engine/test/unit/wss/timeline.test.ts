@@ -4,12 +4,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { applyOutgoingWss } from '../../../src/wss/apply.js';
-import { loadKeystore } from '../../../src/keystore/index.js';
-import { createWssContext, DEFAULT_WSS_SIGNATURE_PARTS } from '../../../src/wss/model.js';
-import { describeSecurityHeader } from '../../../src/wss/timeline.js';
-import { processIncomingWss } from '../../../src/wss/incoming/index.js';
-import type { WssOutgoingConfig } from '../../../src/wss/model.js';
+import { applyOutgoingWss } from '#protocol-soap/wss/apply';
+import { loadKeystore } from '#core/keystore/index';
+import { createWssContext, DEFAULT_WSS_SIGNATURE_PARTS } from '#protocol-soap/wss/model';
+import { describeSecurityHeader } from '#protocol-soap/wss/timeline';
+import { processIncomingWss } from '#protocol-soap/wss/incoming/index';
+import type { WssOutgoingConfig } from '#protocol-soap/wss/model';
 import { generateClientCert, generateSigningCert, generateTestCa } from '../../helpers/test-certs.js';
 
 const SOAP11 = 'http://schemas.xmlsoap.org/soap/envelope/';

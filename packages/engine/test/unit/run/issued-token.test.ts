@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createIssuedTokenSource, issuedCacheKey } from '../../../src/wss/trust/issued-token.js';
-import { createWssContext } from '../../../src/wss/model.js';
-import type { IssuedToken, WssIssuedTokenEntry } from '../../../src/wss/model.js';
-import type { IssuedTokenTarget } from '../../../src/wss/trust/client.js';
+import { createIssuedTokenSource, issuedCacheKey } from '#protocol-soap/wss/trust/issued-token';
+import { createWssContext } from '#protocol-soap/wss/model';
+import type { IssuedToken, WssIssuedTokenEntry } from '#protocol-soap/wss/model';
+import type { IssuedTokenTarget } from '#protocol-soap/wss/trust/client';
 
 const entry: WssIssuedTokenEntry = {
   kind: 'issued-token',

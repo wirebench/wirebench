@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { samlTokenReference } from '../../../src/wss/key-identifiers.js';
-import { NS } from '../../../src/xml/namespaces.js';
-import { parseXml } from '../../../src/xml/parse.js';
-import type { PlacedSamlToken } from '../../../src/wss/outgoing/saml.js';
+import { samlTokenReference } from '#protocol-soap/wss/key-identifiers';
+import { NS } from '#core/xml/namespaces';
+import { parseXml } from '#core/xml/parse';
+import type { PlacedSamlToken } from '#protocol-soap/wss/outgoing/saml';
 
 const ATTACHED =
   `<wsse:SecurityTokenReference xmlns:wsse="${NS.WSSE}">` +

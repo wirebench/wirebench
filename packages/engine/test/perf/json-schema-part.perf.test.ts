@@ -6,9 +6,9 @@
 import { newQuickJSWASMModuleFromVariant, type QuickJSWASMModule } from 'quickjs-emscripten-core';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { CI_GATE_FACTOR, SKIP_PERF, median } from '../bench/budgets.js';
-import { PART_JSON_SCHEMA } from '../../src/script/api/layer-parts.js';
-import { executeJob } from '../../src/script/sandbox/execute.js';
-import { SCRIPT_LIMITS, type SandboxJob } from '../../src/script/sandbox/model.js';
+import { PART_JSON_SCHEMA } from '#core/script/api/layer-parts';
+import { executeJob } from '#core/script/sandbox/execute';
+import { SCRIPT_LIMITS, type SandboxJob } from '#core/script/sandbox/model';
 
 const PROPERTIES = 50;
 const properties: Record<string, unknown> = {};

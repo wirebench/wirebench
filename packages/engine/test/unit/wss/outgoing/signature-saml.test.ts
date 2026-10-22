@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { applyOutgoingWss } from '../../../../src/wss/apply.js';
-import { verifySignature } from '../../../../src/wss/outgoing/signature.js';
-import { createWssContext, SAML_TOKEN_PART } from '../../../../src/wss/model.js';
+import { applyOutgoingWss } from '#protocol-soap/wss/apply';
+import { verifySignature } from '#protocol-soap/wss/outgoing/signature';
+import { createWssContext, SAML_TOKEN_PART } from '#protocol-soap/wss/model';
 import { generateClientCert, generateSigningCert, generateTestCa } from '../../../helpers/test-certs.js';
-import type { Keystore } from '../../../../src/keystore/model.js';
-import type { WssContext, WssOutgoingConfig, WssSignatureEntry } from '../../../../src/wss/model.js';
+import type { Keystore } from '#core/keystore/model';
+import type { WssContext, WssOutgoingConfig, WssSignatureEntry } from '#protocol-soap/wss/model';
 
 const ca = generateTestCa();
 const user = generateSigningCert(ca);

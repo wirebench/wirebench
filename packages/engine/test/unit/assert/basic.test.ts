@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateAssertions } from '../../../src/assert/index.js';
-import type { AssertionSubject } from '../../../src/assert/model.js';
+import { evaluateAssertions } from '#core/assert/index';
+import type { AssertionSubject } from '#core/assert/model';
 
 const subject = (over: Partial<AssertionSubject> = {}): AssertionSubject => ({
   protocol: 'soap',

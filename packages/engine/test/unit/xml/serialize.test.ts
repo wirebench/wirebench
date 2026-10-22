@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseXml } from '../../../src/xml/parse.js';
-import { serializeXml } from '../../../src/xml/serialize.js';
+import { parseXml } from '#core/xml/parse';
+import { serializeXml } from '#core/xml/serialize';
 
 describe('serializeXml', () => {
   it('round-trips parse -> serialize preserving namespaces, attributes, and text', () => {

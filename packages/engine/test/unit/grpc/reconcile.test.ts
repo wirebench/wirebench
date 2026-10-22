@@ -3,11 +3,11 @@
  * method that vanished is flagged rather than deleted, and one that came back is un-flagged.
  */
 import { describe, expect, it } from 'vitest';
-import { grpcApiRequests } from '../../../src/grpc/model.js';
-import type { GrpcApi } from '../../../src/grpc/model.js';
-import { importProto } from '../../../src/grpc/import.js';
-import { loadProtoSet } from '../../../src/grpc/proto/load.js';
-import { reconcileGrpcApi } from '../../../src/grpc/reconcile.js';
+import { grpcApiRequests } from '#protocol-grpc/grpc/model';
+import type { GrpcApi } from '#protocol-grpc/grpc/model';
+import { importProto } from '#protocol-grpc/grpc/import';
+import { loadProtoSet } from '#protocol-grpc/grpc/proto/load';
+import { reconcileGrpcApi } from '#protocol-grpc/grpc/reconcile';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
 
 const FULL = `syntax = "proto3";

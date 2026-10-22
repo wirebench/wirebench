@@ -4,9 +4,9 @@
  * left alone kept exactly, and the post-response snapshot.
  */
 import { describe, expect, it } from 'vitest';
-import type { McpExchange } from '../../../src/mcp/exchange.js';
-import type { McpResolvedInput } from '../../../src/mcp/run.js';
-import { applyMcpSnapshot, mcpRequestSnapshot, mcpResponseSnapshot } from '../../../src/mcp/scripting.js';
+import type { McpExchange } from '#protocol-mcp/mcp/exchange';
+import type { McpResolvedInput } from '#protocol-mcp/mcp/run';
+import { applyMcpSnapshot, mcpRequestSnapshot, mcpResponseSnapshot } from '#protocol-mcp/mcp/scripting';
 
 const input = (operation: McpResolvedInput['operation'], http = true): McpResolvedInput => ({
   transport: http

@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { importWsdl } from '../../../../src/soap/import.js';
-import { WSI_WSDL_ASSERTIONS } from '../../../../src/validate/wsi/assertions/index.js';
-import { runWsdlAssertions, wsiProblems, wsiWsdlContext } from '../../../../src/validate/wsi/run-wsdl.js';
-import type { WsiWsdlContext } from '../../../../src/validate/wsi/types.js';
+import { importWsdl } from '#protocol-soap/soap/import';
+import { WSI_WSDL_ASSERTIONS } from '#protocol-soap/validate/wsi/assertions/index';
+import { runWsdlAssertions, wsiProblems, wsiWsdlContext } from '#protocol-soap/validate/wsi/run-wsdl';
+import type { WsiWsdlContext } from '#protocol-soap/validate/wsi/types';
 
 const fixtureRoot = fileURLToPath(new URL('../../../../../../fixtures/wsdl/crafted/', import.meta.url));
 

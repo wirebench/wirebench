@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BUDGETS_MS, CI_GATE_FACTOR, GATE_SAMPLES, SKIP_PERF, median } from '../bench/budgets.js';
-import { mapHar } from '../../src/rest/har/map.js';
-import { parseHarText } from '../../src/rest/har/parse.js';
+import { mapHar } from '#protocol-rest/rest/har/map';
+import { parseHarText } from '#protocol-rest/rest/har/parse';
 
 const ENTRIES = 20_000;
 const PATHS = 50;

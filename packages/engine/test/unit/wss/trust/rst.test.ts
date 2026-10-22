@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildRst } from '../../../../src/wss/trust/rst.js';
-import { createWssContext } from '../../../../src/wss/model.js';
+import { buildRst } from '#protocol-soap/wss/trust/rst';
+import { createWssContext } from '#protocol-soap/wss/model';
 import { generateSigningCert, generateTestCa } from '../../../helpers/test-certs.js';
-import type { Keystore } from '../../../../src/keystore/model.js';
-import type { WssIssuedTokenEntry } from '../../../../src/wss/model.js';
+import type { Keystore } from '#core/keystore/model';
+import type { WssIssuedTokenEntry } from '#protocol-soap/wss/model';
 
 const ca = generateTestCa();
 const client = generateSigningCert(ca);

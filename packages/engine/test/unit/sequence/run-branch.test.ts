@@ -4,14 +4,14 @@
  * stop-on-failure.
  */
 import { describe, expect, it } from 'vitest';
-import type { AssertionSubject } from '../../../src/assert/model.js';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
-import { createSequence, createSequenceStep, SEQUENCE_LIMITS } from '../../../src/sequence/model.js';
-import type { BranchRule, SequenceStep } from '../../../src/sequence/model.js';
-import { runSequence } from '../../../src/sequence/run.js';
-import type { ResolvedStep, SequenceStepSender } from '../../../src/sequence/run.js';
+import type { AssertionSubject } from '#core/assert/model';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { createApi, createRestRequest } from '#protocol-rest/rest/model';
+import { createSequence, createSequenceStep, SEQUENCE_LIMITS } from '#core/sequence/model';
+import type { BranchRule, SequenceStep } from '#core/sequence/model';
+import { runSequence } from '#core/sequence/run';
+import type { ResolvedStep, SequenceStepSender } from '#core/sequence/run';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';
 

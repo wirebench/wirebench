@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { WirebenchError } from '../../../src/errors.js';
+import { WirebenchError } from '#core/errors';
 import {
   assertBranchName,
   assertRemoteUrl,
@@ -19,8 +19,8 @@ import {
   GitCli,
   parseGitVersion,
   refusedLocalConfigKeys,
-} from '../../../src/sync/git-cli.js';
-import type { Runner } from '../../../src/sync/git-cli.js';
+} from '#core/sync/git-cli';
+import type { Runner } from '#core/sync/git-cli';
 
 describe('parseGitVersion', () => {
   it.each([

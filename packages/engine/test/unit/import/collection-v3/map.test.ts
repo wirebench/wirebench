@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { PostmanError } from '../../../../src/errors.js';
+import { PostmanError } from '#core/errors';
 import type { MappedCollectionV3 } from '../../../../src/import/collection-v3/map.js';
 import { mapCollectionV3 } from '../../../../src/import/collection-v3/map.js';
 import { readCollectionV3 } from '../../../../src/import/collection-v3/parse.js';
-import { REDACTED_MARKER } from '../../../../src/redact/index.js';
-import type { RestFolder, RestRequestDef } from '../../../../src/rest/model.js';
-import { folderRequests } from '../../../../src/rest/model.js';
+import { REDACTED_MARKER } from '#core/redact/index';
+import type { RestFolder, RestRequestDef } from '#protocol-rest/rest/model';
+import { folderRequests } from '#protocol-rest/rest/model';
 import { fixtureFiles } from './fixture-files.js';
 
 function counter(): () => string {

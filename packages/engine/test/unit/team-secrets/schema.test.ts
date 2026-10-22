@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateMachineKeys } from '../../../src/team-secrets/keys.js';
+import { generateMachineKeys } from '#core/team-secrets/keys';
 import {
   accessEntryFileSchema,
   accessEntryPath,
@@ -13,8 +13,8 @@ import {
   vaultEntryId,
   vaultEntryIdOfPath,
   vaultEntryPath,
-} from '../../../src/team-secrets/schema.js';
-import { signDocument } from '../../../src/team-secrets/sign.js';
+} from '#core/team-secrets/schema';
+import { signDocument } from '#core/team-secrets/sign';
 
 describe('team-secrets paths and ids', () => {
   it('derives a stable 26-character id per secret, different for a ref and a token', () => {

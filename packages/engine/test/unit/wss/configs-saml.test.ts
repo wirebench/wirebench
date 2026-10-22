@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { toWssOutgoingConfig, toWssOutgoingRef } from '../../../src/wss/configs.js';
-import { wssOutgoingFileSchema } from '../../../src/project/schema.js';
-import type { WssRef } from '../../../src/project/model.js';
+import { toWssOutgoingConfig, toWssOutgoingRef } from '#protocol-soap/wss/configs';
+import { wssOutgoingFileSchema } from '#core/project/schema';
+import type { WssRef } from '#core/project/model';
 
 function ref(entries: unknown[]): WssRef {
   return { id: 'w1', name: 'Federated', document: { id: 'w1', name: 'Federated', entries } };
