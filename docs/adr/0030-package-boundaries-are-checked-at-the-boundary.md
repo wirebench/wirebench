@@ -63,8 +63,12 @@ call, as before.
 
 **The unions are open interfaces a module augments.** Core declares `SelectedRequests`,
 `SentExchanges`, `LiveEvents`, `RequestSnapshots` and `ResponseSnapshots` as empty interfaces and
-each union as the interface's values. A protocol module adds its member by module augmentation.
-`RunContext`'s SOAP hooks are added the same way by `soap/run.ts`. Core's own code works on the
+each union as the interface's values. A protocol adds its member by module augmentation, written beside the member's own definition
+(its `run.ts`, `scripting.ts`, `events.ts`, `model.ts`) so that any program holding the file that
+builds a value of it also holds the augmentation, and the composition re-exports one type from each
+such file, since a value import leaves no trace in a `.d.ts` and a host compiling against `dist`
+would otherwise see an incomplete union. `RunContext`'s SOAP hooks are added the same way by
+`soap/run.ts`. Core's own code works on the
 erased base types and never reads a union member, so in a compile of core alone the unions are
 `never` and nothing notices; in every compile that holds the modules, which is every compile of
 `engine` and its hosts, they are the unions `protocols.ts` exported before.

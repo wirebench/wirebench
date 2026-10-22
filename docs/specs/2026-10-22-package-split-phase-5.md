@@ -146,11 +146,17 @@ effect.
 
 `protocol/unions.ts` (core) declares `SelectedRequests`, `SentExchanges`, `LiveEvents`,
 `RequestSnapshots` and `ResponseSnapshots` as empty interfaces, and the unions as
-`SelectedRequests[keyof SelectedRequests]` and so on. Each protocol module adds its member by
-module augmentation in its `module.ts` (`declare module '../protocol/unions.js' { interface
-SentExchanges { soap: SoapSentExchange } }`). In a compile that holds every module, which is every
+`SelectedRequests[keyof SelectedRequests]` and so on. Each protocol adds its member by module augmentation in the file that defines the member
+(`run.ts` for the selected request and the exchange, `scripting.ts` for the snapshots, `events.ts`
+for the live event, `model.ts` for the request): `declare module '../protocol/unions.js' { interface
+SentExchanges { soap: { … } } }`. Beside the member, not in `module.ts`, so that any program which
+holds the file that builds the literal also holds the augmentation; the desktop's tests, which
+import engine source files directly, found the gap when the augmentations sat in `module.ts`. In a compile that holds every module, which is every
 compile of `engine` and of its hosts, the unions are what `protocols.ts` builds today; `protocols.ts`
-keeps exporting them under the same names. In a compile of core alone each union is `never`, which
+keeps exporting them under the same names, and re-exports one type from each augmenting file: a
+value import of a module leaves no trace in a `.d.ts`, so a host compiling against `dist` would
+otherwise see a union missing the members of every file its own imports do not reach (the CLI and
+the desktop both did, for different members). In a compile of core alone each union is `never`, which
 is the point: core never looks inside one. Core's run loop and selector work on `SelectedBase`
 (`run/select.ts` already casts every item through it) and store an exchange or event as the
 module's `send` returned it; the five places that hand an item or an exchange to a host callback
