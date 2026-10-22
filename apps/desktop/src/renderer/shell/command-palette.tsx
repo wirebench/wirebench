@@ -24,6 +24,7 @@ import { effectiveShortcut, formatKeybinding } from '../lib/keybindings.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
 import { paletteFilter, paletteKeywords } from './palette-filter.js';
+import { recentCommandIds, recordRecentCommand } from './recent-commands.js';
 import type { QuickOpenEntry } from './quick-open.js';
 import {
   quickOpenEntries,
@@ -167,6 +168,20 @@ export function availableFirst<T extends { readonly disabledReason?: string }>(
  */
 const UNAVAILABLE_GROUP_CLASS = `${GROUP_CLASS} [[cmdk-group]:not([hidden])+&_[cmdk-group-heading]]:hidden`;
 
+/**
+ * Categories most people never use, listed after the rest when nothing is typed: an empty palette
+ * used to lead with Account: Sign in to a server… only because "Account" sorts first (G05).
+ */
+const QUIET_CATEGORIES: ReadonlySet<CommandCategory> = new Set<CommandCategory>(['Account']);
+
+/** The groups in their given order, with the {@link QUIET_CATEGORIES} moved to the end. */
+export function quietGroupsLast<G extends readonly [CommandCategory, unknown]>(groups: readonly G[]): readonly G[] {
+  return [
+    ...groups.filter(([category]) => !QUIET_CATEGORIES.has(category)),
+    ...groups.filter(([category]) => QUIET_CATEGORIES.has(category)),
+  ];
+}
+
 /** What {@link rankGroups} scores an item by. */
 interface PaletteNamed {
   readonly id?: string;
@@ -211,7 +226,13 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   // re-evaluates `when` against the current world, rather than reusing whatever was computed the
   // last time `context` itself happened to change identity — which, before this, only reliably
   // happened once, coincidentally, from a library's mount-time resize callback.
-  const groups = useMemo(() => groupByCategory(listPaletteCommands(context)), [context, open]);
+  const groups = useMemo(() => quietGroupsLast(groupByCategory(listPaletteCommands(context))), [context, open]);
+  // The commands run lately lead an empty palette (G05); read again on every open.
+  const recentRows = useMemo(() => {
+    if (!open) return [];
+    const runnable = groups.flatMap(([, rows]) => rows).filter((row) => row.disabledReason === undefined);
+    return recentCommandIds().flatMap((id) => runnable.filter((row) => row.command.id === id));
+  }, [groups, open]);
   const [search, setSearch] = useState('');
   // A new mode or a reopen starts from an empty search, as the keyed `Command` below does.
   useEffect(() => {
@@ -590,6 +611,34 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                   ))}
                 </Command.Group>
               )}
+              {!picker && search.trim() === '' && recentRows.length > 0 && (
+                <Command.Group heading="Recently used" data-testid="palette-recent-group" className={GROUP_CLASS}>
+                  {recentRows.map(({ command }) => {
+                    const shortcut = effectiveShortcut(command);
+                    return (
+                      <Command.Item
+                        key={`recent:${command.id}`}
+                        // Its own value, so cmdk never takes it for the same command's row below.
+                        value={`recent ${command.category} ${command.label}`}
+                        data-testid="palette-recent-command"
+                        onSelect={() => {
+                          onOpenChange(false);
+                          recordRecentCommand(command.id);
+                          void runCommand(command.id, context);
+                        }}
+                        className="flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-1.5 text-md text-fg-muted data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"
+                      >
+                        <span className="min-w-0 truncate">{command.label}</span>
+                        {shortcut !== undefined && (
+                          <span className="font-mono text-xs text-fg-subtle">
+                            {formatKeybinding(shortcut, context.platform)}
+                          </span>
+                        )}
+                      </Command.Item>
+                    );
+                  })}
+                </Command.Group>
+              )}
               {!picker &&
                 rankedGroups.map(([category, rows]) => {
                   const [available, unavailable] = availableFirst(rows);
@@ -605,6 +654,7 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                         data-testid="palette-command"
                         onSelect={() => {
                           onOpenChange(false);
+                          recordRecentCommand(command.id);
                           void runCommand(command.id, context);
                         }}
                         className="flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-1.5 text-md text-fg-muted data-[disabled=true]:text-fg-faint data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"

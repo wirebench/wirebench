@@ -21,6 +21,10 @@ All notable changes to this project are documented here. The format follows
   line. A click opens the entry as the preview tab, which the next click replaces, and a double-click or
   Enter keeps it. An entry with no request body says so under a **Request** label, apart from the
   response.
+- **The empty palette leads with what you use (#748).** With nothing typed, ⌘K lists the commands run
+  from it lately under **Recently used**, and the Account commands sit at the end instead of opening
+  the list with Sign in. **Preferences: Keyboard Shortcuts** opens the shortcuts page, and "keys" or
+  "bindings" find it.
 - **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
   shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
   the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.
