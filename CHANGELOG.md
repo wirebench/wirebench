@@ -22,6 +22,8 @@ All notable changes to this project are documented here. The format follows
 - **The environment switcher asks for a project instead of saying "No project" (#686).** With
   several projects open and no request focused yet, it reads **Pick a project**: the menu lists the
   workspace's projects, and the one picked shows its environments straight away.
+- **The Start page and the Explorer agree in an empty workspace (#686).** Both offer **New project**
+  first, then **Import…**.
 - **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
   shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
   the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.

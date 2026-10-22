@@ -14,6 +14,7 @@ import type { WorkspaceProjectWire } from '../../../shared/wire-base.js';
 import { explorerActions } from './explorer-actions.js';
 import { projectRowActions } from './project-actions.js';
 import { buildExplorerTree } from './tree-nodes.js';
+import { workspaceActions } from '../workspace/workspace-actions.js';
 
 /** Stable empty projects, so the page does not rerender while no workspace is open. */
 const NO_PROJECTS: readonly WorkspaceProjectWire[] = [];
@@ -81,6 +82,7 @@ export function StartPage() {
     (state) => target !== undefined && target.status === 'ready' && projectIsEmpty(state, target.id),
   );
   const restApiId = useProjectStore((state) => restApiFor(state, projects, target, selection));
+  const noProjects = hasWorkspace && projects.length === 0;
 
   if (target !== undefined && empty) {
     const projectId = target.id;
@@ -129,8 +131,19 @@ export function StartPage() {
           New request
         </Button>
       )}
+      {/* An empty workspace offers what the Explorer's own empty state offers, in its order (#686 E20). */}
+      {noProjects && (
+        <Button
+          variant="primary"
+          onClick={() => {
+            workspaceActions.newProject();
+          }}
+        >
+          New project
+        </Button>
+      )}
       <Button
-        variant={restApiId === undefined ? 'primary' : 'secondary'}
+        variant={restApiId === undefined && !noProjects ? 'primary' : 'secondary'}
         onClick={() => {
           openImportDialog();
         }}
