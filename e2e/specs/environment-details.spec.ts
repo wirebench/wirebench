@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { environmentRow, openEnvironment, openEnvironmentsView } from '../helpers/environments.js';
+import { addEnvironment, environmentRow, openEnvironment, openEnvironmentsView } from '../helpers/environments.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace, expectProjectCount, expectReopenedWorkspace } from '../helpers/project.js';
 
@@ -47,8 +47,7 @@ test.describe('environment details panel', () => {
     // Environments share the request strip (#607), so it is the tab in front, not the area, that
     // swaps Code for the environment's details.
     await openEnvironmentsView(page);
-    await page.getByRole('button', { name: 'Add environment' }).click();
-    await expect(environmentRow(page, 'Environment 1')).toBeVisible();
+    await addEnvironment(page);
     await openEnvironment(page, 'Environment 1');
     await expect(page.getByTestId('rail-code')).toHaveCount(0);
 

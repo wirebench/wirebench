@@ -322,14 +322,33 @@ export function EnvironmentsView() {
 
   const [renamingId, setRenamingId] = useState<string | undefined>(undefined);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | undefined>(undefined);
+  // The environment "Add environment" just made, until its rename ends: that is when it becomes
+  // the current project's active environment (#746), so the next send already resolves against it.
+  const [createdId, setCreatedId] = useState<string | undefined>(undefined);
+  const projects = useWorkspaceStore((state) => state.workspace?.projects ?? NO_PROJECTS);
 
-  // Adds the next "Environment N" and opens it, from the header's + or the empty state's button.
+  // Adds the next "Environment N", opens it and puts its row into rename (#746): a new environment
+  // wants a name of its own before anything else, and the input takes the focus so it can be typed.
   const addEnvironment = (): void => {
     void mutate({ kind: 'add-workspace-environment', name: nextEnvironmentName(environments) }).then((result) => {
       if (result.createdEnvironmentId !== undefined) {
         openEnvironmentTab({ kind: 'environment', id: result.createdEnvironmentId });
+        setCreatedId(result.createdEnvironmentId);
+        setRenamingId(result.createdEnvironmentId);
       }
     });
+  };
+
+  // Once a new environment has its name (Enter or a click away; Escape keeps the default), it is made
+  // active for the current project — when there is one and the environment applies to it.
+  const activateCreated = (environment: WorkspaceEnvironmentWire): void => {
+    if (environment.id !== createdId) {
+      return;
+    }
+    setCreatedId(undefined);
+    if (currentProject !== undefined && activeBlocker(environment, currentProject, projects) === undefined) {
+      void setProjectEnvironment(currentProject, environment.id);
+    }
   };
 
   const pendingDelete = environments.find((candidate) => candidate.id === pendingDeleteId);
@@ -416,6 +435,12 @@ export function EnvironmentsView() {
                   environmentId: environment.id,
                   patch: { name: trimmed },
                 });
+              }
+              if (name !== undefined) {
+                activateCreated(environment);
+              } else if (environment.id === createdId) {
+                // Escape keeps "Environment N" and leaves the choice of environment as it was.
+                setCreatedId(undefined);
               }
             }}
             onDelete={() => {

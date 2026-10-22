@@ -22,6 +22,10 @@ All notable changes to this project are documented here. The format follows
   There is no **Retry** for an error that cannot change on its own (the same for an unclosed `${` or a
   URL that is not one), and the code and the engine's message sit behind **Details**. Like a refused
   connection or a timeout, it is no longer counted as a problem, so the status bar stays calm.
+- **A new environment is ready in one step (#746).** **Add environment** puts the new row straight
+  into rename with the focus in it, and once the name is in (Enter, or a click away) the environment
+  becomes the current project's active environment, so the switcher and the next send already use it.
+  Escape keeps "Environment N" and leaves the choice of environment as it was.
 - **The Problems tab counts what the status bar counts (#745).** The console's Problems tab no longer
   badges lint findings: with a freshly imported definition the status bar read "0 problems · 57 lint
   findings" while the tab beside it read "Problems 57". Lint now has its own **Lint** chip in the

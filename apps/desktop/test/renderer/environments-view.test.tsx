@@ -277,6 +277,108 @@ describe('EnvironmentsView', () => {
         { id: 'env:e3', kind: 'environment', title: 'Environment 1', environmentId: 'e3' },
       ]);
     });
+    // The new row starts in rename with the focus in it (#746): a name of its own comes first.
+    const input = await screen.findByLabelText('Rename Environment 1');
+    expect(document.activeElement).toBe(input);
+    expect((input as HTMLInputElement).value).toBe('Environment 1');
+  });
+
+  it('makes a new environment active for the current project once it is named (#746)', async () => {
+    const created: WorkspaceEnvironmentWire = {
+      id: 'e3',
+      name: 'Environment 1',
+      slug: 'environment-1',
+      order: 2,
+      endpoints: {},
+      properties: {},
+      disabled: [],
+    };
+    const mutate = vi.fn().mockImplementation((mutation: { kind: string }) => {
+      if (mutation.kind === 'add-workspace-environment') {
+        const current = useWorkspaceStore.getState().workspace!;
+        useWorkspaceStore.setState({ workspace: { ...current, environments: [...current.environments, created] } });
+        return Promise.resolve({ createdEnvironmentId: 'e3' });
+      }
+      return Promise.resolve({});
+    });
+    const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        projects: [{ id: 'p1', name: 'Billing', slug: 'billing', source: 'internal', dir: '/tmp/b', status: 'ready' }],
+        environments: [dev],
+        activeEnvironments: {},
+      }),
+      lastProjectId: 'p1',
+      mutate,
+      setActiveEnvironment,
+    });
+    render(
+      <TooltipPrimitive.Provider>
+        <EnvironmentsView />
+      </TooltipPrimitive.Provider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Add environment' }));
+    const input = await screen.findByLabelText('Rename Environment 1');
+    // Nothing is active until the name is in: the switcher must not flip on a half-typed row.
+    expect(setActiveEnvironment).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: 'uat' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        kind: 'update-workspace-environment',
+        environmentId: 'e3',
+        patch: { name: 'uat' },
+      });
+    });
+    expect(setActiveEnvironment).toHaveBeenCalledWith('p1', 'e3');
+    expect(setActiveEnvironment).toHaveBeenCalledOnce();
+
+    // A later rename of the same environment does not set it active again.
+    fireEvent.contextMenu(screen.getAllByTestId('environment-row')[3]!);
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }));
+    const again = await screen.findByLabelText('Rename Environment 1');
+    fireEvent.keyDown(again, { key: 'Enter' });
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Rename Environment 1')).toBeNull();
+    });
+    expect(setActiveEnvironment).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the environment choice alone when the new row's rename is cancelled (#746)", async () => {
+    const created: WorkspaceEnvironmentWire = {
+      id: 'e3',
+      name: 'Environment 1',
+      slug: 'environment-1',
+      order: 2,
+      endpoints: {},
+      properties: {},
+      disabled: [],
+    };
+    const mutate = vi.fn().mockImplementation(() => {
+      const current = useWorkspaceStore.getState().workspace!;
+      useWorkspaceStore.setState({ workspace: { ...current, environments: [...current.environments, created] } });
+      return Promise.resolve({ createdEnvironmentId: 'e3' });
+    });
+    const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({ environments: [dev], activeEnvironments: { p1: 'e1' } }),
+      lastProjectId: 'p1',
+      mutate,
+      setActiveEnvironment,
+    });
+    render(
+      <TooltipPrimitive.Provider>
+        <EnvironmentsView />
+      </TooltipPrimitive.Provider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Add environment' }));
+    const input = await screen.findByLabelText('Rename Environment 1');
+    fireEvent.keyDown(input, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Rename Environment 1')).toBeNull();
+    });
+    expect(setActiveEnvironment).not.toHaveBeenCalled();
+    expect(mutate).toHaveBeenCalledOnce();
   });
 
   it('collapses the sidebar from the toolbar chevron', () => {
