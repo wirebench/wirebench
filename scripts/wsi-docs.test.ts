@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { renderWsiAssertionsMarkdown } from '../packages/engine/src/validate/wsi/docs.js';
+import { renderWsiAssertionsMarkdown } from '../packages/protocol-soap/src/validate/wsi/docs.js';
 
 const target = fileURLToPath(new URL('../docs/ws-i-assertions.md', import.meta.url));
 

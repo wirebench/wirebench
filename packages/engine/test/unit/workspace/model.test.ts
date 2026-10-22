@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createWorkspace, createWorkspaceEnvironment, WORKSPACE_FORMAT_VERSION } from '../../../src/workspace/model.js';
+import { createWorkspace, createWorkspaceEnvironment, WORKSPACE_FORMAT_VERSION } from '#core/workspace/model';
 
 describe('createWorkspace', () => {
   it('builds an empty workspace with defaults from the injected id/now', () => {

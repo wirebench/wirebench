@@ -3,10 +3,10 @@
  * land, and a header that would carry a line break refused rather than sent.
  */
 import { describe, expect, it } from 'vitest';
-import type { MockRequest, MockRequestView } from '../../../src/mock/contract.js';
-import { createMockResponse } from '../../../src/mock/model.js';
-import type { CreateMockResponseInput } from '../../../src/mock/model.js';
-import { renderResponse } from '../../../src/mock/render.js';
+import type { MockRequest, MockRequestView } from '#core/mock/contract';
+import { createMockResponse } from '#core/mock/model';
+import type { CreateMockResponseInput } from '#core/mock/model';
+import { renderResponse } from '#core/mock/render';
 
 function request(over: Partial<MockRequest> = {}): MockRequest {
   const bodyText = over.bodyText ?? '';

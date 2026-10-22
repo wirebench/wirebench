@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { HttpError } from '../../../src/errors.js';
-import { describeFetchFailure } from '../../../src/wsdl/fetch-failure.js';
+import { HttpError } from '#core/errors';
+import { describeFetchFailure } from '#protocol-soap/wsdl/fetch-failure';
 
 const URL = 'http://svc.example.test/calc?wsdl';
 

@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { OpenCollectionError } from '../../../../src/errors.js';
+import { OpenCollectionError } from '#core/errors';
 import type { OcItem } from '../../../../src/import/opencollection/index.js';
 import { isOpenCollection, parseOpenCollection } from '../../../../src/import/opencollection/parse.js';
 

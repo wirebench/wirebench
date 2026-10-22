@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createProject } from '../../../src/project/model.js';
-import { exchangeController } from '../../../src/run/exchange.js';
-import type { SentRequest } from '../../../src/run/run.js';
-import { createRunScope } from '../../../src/run/scope.js';
+import { createProject } from '#core/project/model';
+import { exchangeController } from '#core/run/exchange';
+import type { SentRequest } from '#core/run/run';
+import { createRunScope } from '#core/run/scope';
 import { testHost } from '../../helpers/send-host.js';
 
 const sent: SentRequest = {

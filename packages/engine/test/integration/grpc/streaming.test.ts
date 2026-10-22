@@ -8,10 +8,10 @@
  * a fact about ordering, not a guess about timing.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { GrpcError } from '../../../src/errors.js';
-import { callGrpc, type GrpcCallStreamHandle, type GrpcResponseMessage } from '../../../src/grpc/call.js';
-import { encodeMessage } from '../../../src/grpc/codec.js';
-import { sendGrpc } from '../../../src/grpc/send.js';
+import { GrpcError } from '#core/errors';
+import { callGrpc, type GrpcCallStreamHandle, type GrpcResponseMessage } from '#protocol-grpc/grpc/call';
+import { encodeMessage } from '#protocol-grpc/grpc/codec';
+import { sendGrpc } from '#protocol-grpc/grpc/send';
 import { startTestGrpcServer, type TestGrpcServer } from '../../helpers/test-grpc-server.js';
 
 let server: TestGrpcServer;

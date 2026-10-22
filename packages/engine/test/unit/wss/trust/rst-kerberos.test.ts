@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildRst } from '../../../../src/wss/trust/rst.js';
-import { createWssContext } from '../../../../src/wss/model.js';
+import { buildRst } from '#protocol-soap/wss/trust/rst';
+import { createWssContext } from '#protocol-soap/wss/model';
 
 describe('the Kerberos credential', () => {
   it('puts the AP-REQ into a GSS_Kerberosv5_AP_REQ BinarySecurityToken after the Timestamp', async () => {

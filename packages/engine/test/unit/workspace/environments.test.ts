@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WorkspaceError } from '../../../src/errors.js';
+import { WorkspaceError } from '#core/errors';
 import {
   activeEnvironmentFor,
   appliesToProject,
@@ -7,15 +7,15 @@ import {
   environmentsForProject,
   isProtectedEnvironment,
   linkedEnvironment,
-  resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
   workspaceForProject,
-} from '../../../src/workspace/environments.js';
-import { createProject, type Environment, type Project } from '../../../src/project/model.js';
-import { createInterface, type Interface } from '../../../src/soap/model.js';
-import type { Workspace, WorkspaceEnvironment } from '../../../src/workspace/model.js';
-import { WORKSPACE_FORMAT_VERSION } from '../../../src/workspace/model.js';
-import { expand } from '../../../src/project/properties.js';
+} from '#core/workspace/environments';
+import { resolveWorkspaceEndpoint } from '#protocol-soap/soap/workspace-endpoint';
+import { createProject, type Environment, type Project } from '#core/project/model';
+import { createInterface, type Interface } from '#protocol-soap/soap/model';
+import type { Workspace, WorkspaceEnvironment } from '#core/workspace/model';
+import { WORKSPACE_FORMAT_VERSION } from '#core/workspace/model';
+import { expand } from '#core/project/properties';
 
 const projectEnv: Environment = {
   id: 'penv-1',

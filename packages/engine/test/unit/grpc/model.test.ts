@@ -9,7 +9,7 @@ import {
   grpcApiRequests,
   grpcMethodPath,
   serverStreams,
-} from '../../../src/grpc/model.js';
+} from '#protocol-grpc/grpc/model';
 
 describe('gRPC model', () => {
   it('creates an API whose TLS default follows the target spelling', () => {

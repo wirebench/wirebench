@@ -7,10 +7,10 @@
  */
 import { MockAgent } from 'undici';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { sendHttp } from '../../../src/http/client.js';
-import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
-import { decodeRestResponse } from '../../../src/rest/send.js';
-import { sendSoapRequest } from '../../../src/soap/send.js';
+import { sendHttp } from '#core/http/client';
+import type { HttpExchange, HttpRequest } from '#core/http/types';
+import { decodeRestResponse } from '#protocol-rest/rest/send';
+import { sendSoapRequest } from '#protocol-soap/soap/send';
 
 const HTTP = 'http://soap.example';
 const HTTPS = 'https://soap.example';

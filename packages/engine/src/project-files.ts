@@ -14,9 +14,9 @@
  * and is left to the loader.
  */
 import { z } from 'zod';
-import { grpcApiFileSchema, grpcRequestFileSchema } from './grpc/files.js';
-import { mcpRequestFileSchema, mcpServerFileSchema } from './mcp/files.js';
-import { FORMAT_VERSION } from './project/model.js';
+import { grpcApiFileSchema, grpcRequestFileSchema } from '#protocol-grpc/grpc/files';
+import { mcpRequestFileSchema, mcpServerFileSchema } from '#protocol-mcp/mcp/files';
+import { FORMAT_VERSION } from '#core/project/model';
 import {
   apiDefinitionCacheManifestSchema,
   definitionCacheManifestSchema,
@@ -28,16 +28,16 @@ import {
   restFolderFileSchema,
   wssIncomingFileSchema,
   wssOutgoingFileSchema,
-} from './project/schema.js';
-import { apiFileSchema, restRequestFileSchema } from './rest/files.js';
-import { webhookFolderFileSchema, webhooksFileSchema } from './webhooks/schema.js';
-import { mockFileSchema, operationFileSchema, responseFileSchema } from './mock/file.js';
-import { sequenceFileSchema } from './sequence/file.js';
-import { goldenFileSchema } from './snapshot/golden-file.js';
-import { interfaceFileSchema, requestFileSchema } from './soap/files.js';
-import { wsApiFileSchema, wsRequestFileSchema } from './ws/files.js';
-import { WORKSPACE_FORMAT_VERSION } from './workspace/model.js';
-import { workspaceEnvironmentFileSchema } from './workspace/schema.js';
+} from '#core/project/schema';
+import { apiFileSchema, restRequestFileSchema } from '#protocol-rest/rest/files';
+import { webhookFolderFileSchema, webhooksFileSchema } from '#protocol-rest/webhooks/schema';
+import { mockFileSchema, operationFileSchema, responseFileSchema } from '#core/mock/file';
+import { sequenceFileSchema } from '#core/sequence/file';
+import { goldenFileSchema } from '#core/snapshot/golden-file';
+import { interfaceFileSchema, requestFileSchema } from '#protocol-soap/soap/files';
+import { wsApiFileSchema, wsRequestFileSchema } from '#protocol-ws/ws/files';
+import { WORKSPACE_FORMAT_VERSION } from '#core/workspace/model';
+import { workspaceEnvironmentFileSchema } from '#core/workspace/schema';
 
 /** One kind of file in a project folder and the schema it is read with. */
 export interface ProjectFileKind {

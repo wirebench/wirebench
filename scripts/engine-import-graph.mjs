@@ -1,21 +1,28 @@
 /**
- * The import graph of `packages/engine/src`, by group (protocol modules spec §7).
+ * The import graph of the engine's packages, by package (package split spec §4; ADR-0030).
  *
- * Every folder of the engine belongs to one group: a protocol (`soap`, `rest`, `grpc`, `ws`) or
- * `core`. Two rules hold between them:
+ * The engine is seven workspace packages under `packages/`: `core`, one `protocol-<name>` per protocol
+ * (`soap`, `rest`, `grpc`, `ws`, `mcp`) and `engine`, the composition. A package is a group, and three
+ * rules hold between the groups, with no exceptions:
  *
- *  1. a protocol group imports core and itself, never another protocol group;
- *  2. core imports no protocol group, except the edges listed in {@link CORE_EXCEPTIONS}.
+ *  1. a protocol imports core and itself, never another protocol;
+ *  2. core imports core;
+ *  3. compose (`engine`) imports anything, and nothing imports compose.
  *
- * `node scripts/engine-import-graph.mjs` prints every import that leaves its group for a protocol
- * group, one per line: `[core->rest] project/history.ts -> rest/model.ts : RestRequest (type-only)`.
- * `--check` prints only what breaks a rule and exits non-zero when anything does; an exception that
- * no import uses any more breaks it too, so the list cannot outlive its reasons. `--json` prints the
- * same as JSON. `--src <dir>` reads another tree (the test's fixture).
+ * The rules hold for the imports a source file writes (`#core/…`, `#protocol-rest/…`, `@wirebench/…`)
+ * and for the `@wirebench/*` entries of each package's manifest. Two more checks: a relative import
+ * never leaves its package (`../../core/src/…` compiles under `tsc -b` only by accident and never from
+ * `dist`), and no file imports Electron, React or the desktop (`BANNED_PACKAGES`), which
+ * `eslint.config.js` also says for `packages/engine/**`.
+ *
+ * `node scripts/engine-import-graph.mjs` prints every import that crosses a package, one per line:
+ * `[rest->core] rest/model.ts -> #core/project/model : Container (type-only)`. `--check` prints only
+ * what breaks a rule and exits non-zero when anything does. `--json` prints the same as JSON.
+ * `--root <dir>` reads another `packages/` tree (the test's fixture).
  *
  * Wired into `pnpm check` as `pnpm check:engine-layers`, which is the only enforcement: there is no
  * lint rule for these imports, so an editor does not flag a wrong import. The script is exact because
- * it resolves each import to a file, tells a type-only import from a value import, and sees
+ * it resolves each relative import to a file, tells a type-only import from a value import, and sees
  * `import()` types.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -23,110 +30,53 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import ts from 'typescript';
 
-/** The top-level folders of `packages/engine/src` that make up each protocol group (spec §7.1). */
-export const GROUP_FOLDERS = Object.freeze({
-  soap: ['soap', 'wsdl', 'xsd', 'wss', 'wsa', 'validate'],
-  rest: ['rest', 'webhooks'],
-  grpc: ['grpc'],
-  ws: ['ws', 'asyncapi'],
-  mcp: ['mcp'],
+/** The packages under `packages/` that make up the engine, and the group each one is. */
+export const PACKAGE_GROUPS = Object.freeze({
+  core: 'core',
+  'protocol-soap': 'soap',
+  'protocol-rest': 'rest',
+  'protocol-grpc': 'grpc',
+  'protocol-ws': 'ws',
+  'protocol-mcp': 'mcp',
+  engine: 'compose',
 });
 
+/** Bare imports no engine file may make: the engine stays free of Electron and React. */
+export const BANNED_PACKAGES = Object.freeze(['electron', 'react', 'react-dom', '@wirebench/desktop']);
+
 /**
- * One import core is allowed to make of a protocol group.
+ * One import of a package no engine file may import.
  *
- * @typedef {object} CoreException
- * @property {string} from the importing file, relative to the source root
- * @property {string} to the imported file; a value ending in `/` allows every file under that
- *   folder, and `*` allows any protocol file
- * @property {boolean} [typeOnly] when true, only a type-only import is allowed
- * @property {string} until what removes the exception
+ * @typedef {object} BannedImport
+ * @property {string} from the importing file, `<package>/<path under src>` (or `<package>/package.json`)
+ * @property {string} specifier the import as written
  */
 
 /**
- * The imports core makes of a protocol group (spec §7.2, rule 2). Rule 1 has no exceptions.
- *
- * Two kinds, told apart by `until`: the three files that are what they are (`protocols.ts`,
- * `index.ts`, `project-files.ts`); and the attachments cache and the environments, which hold SOAP
- * types until the phase of #184 that splits them. Format detection and the `.http`, OpenCollection
- * and folder (v3) collection importers, which turn one file or collection into several protocols' APIs, wait
- * for phase 7, which decides import's API. Each importer keeps its protocol imports in its `map.ts`;
- * the collection exporters, which read every protocol's APIs, keep theirs in `export/tree.ts`.
- *
- * The spec's table also names `project/save.ts`; it imports no protocol folder, so it has no entry
- * here, and an entry nothing uses fails the check.
- *
- * @type {readonly CoreException[]}
- */
-export const CORE_EXCEPTIONS = Object.freeze([
-  { from: 'protocols.ts', to: '*', until: 'stays: the composition file' },
-  { from: 'index.ts', to: '*', until: 'stays: the public exports' },
-  { from: 'project-files.ts', to: '*', until: 'stays: the published schemas list every protocol file' },
-  { from: 'project/attachments-cache.ts', to: 'soap/model.ts', typeOnly: true, until: 'phase 5' },
-  { from: 'project/environments.ts', to: 'soap/model.ts', typeOnly: true, until: 'phase 5' },
-  { from: 'workspace/environments.ts', to: 'soap/model.ts', typeOnly: true, until: 'phase 5' },
-  { from: 'import-detect.ts', to: 'rest/postman/parse.ts', until: 'phase 7' },
-  { from: 'import-detect.ts', to: 'rest/har/parse.ts', until: 'phase 7' },
-  { from: 'import-detect.ts', to: 'soap/legacy-project/format.ts', until: 'phase 7' },
-  { from: 'import/http-file/map.ts', to: 'rest/model.ts', until: 'phase 7' },
-  { from: 'import/http-file/map.ts', to: 'rest/url.ts', until: 'phase 7' },
-  { from: 'import/http-file/map.ts', to: 'rest/http-file/parse.ts', typeOnly: true, until: 'phase 7' },
-  { from: 'import/http-file/map.ts', to: 'rest/http-file/values.ts', until: 'phase 7' },
-  { from: 'import/http-file/map.ts', to: 'ws/model.ts', until: 'phase 7' },
-  { from: 'import/http-file/import.ts', to: 'rest/http-file/parse.ts', until: 'phase 7' },
-  { from: 'import/opencollection/map.ts', to: 'rest/model.ts', until: 'phase 7' },
-  { from: 'import/opencollection/map.ts', to: 'rest/url.ts', until: 'phase 7' },
-  { from: 'import/opencollection/map.ts', to: 'grpc/model.ts', until: 'phase 7' },
-  { from: 'import/opencollection/map.ts', to: 'ws/model.ts', until: 'phase 7' },
-  { from: 'import/collection-v3/map.ts', to: 'rest/model.ts', until: 'phase 7' },
-  { from: 'import/collection-v3/map.ts', to: 'rest/url.ts', until: 'phase 7' },
-  { from: 'import/collection-v3/map.ts', to: 'rest/postman/', until: 'phase 7' },
-  { from: 'import/collection-v3/map.ts', to: 'grpc/model.ts', until: 'phase 7' },
-  { from: 'import/collection-v3/map.ts', to: 'ws/model.ts', until: 'phase 7' },
-  { from: 'import/insomnia/map.ts', to: 'rest/model.ts', until: 'phase 7' },
-  { from: 'import/insomnia/map.ts', to: 'rest/url.ts', until: 'phase 7' },
-  { from: 'import/insomnia/map.ts', to: 'rest/postman/', until: 'phase 7' },
-  { from: 'import/insomnia/map.ts', to: 'grpc/model.ts', until: 'phase 7' },
-  { from: 'import/insomnia/map.ts', to: 'ws/model.ts', until: 'phase 7' },
-  { from: 'import/hoppscotch/convert.ts', to: 'rest/model.ts', until: 'phase 7' },
-  { from: 'import/hoppscotch/convert.ts', to: 'rest/postman/', until: 'phase 7' },
-  { from: 'import/thunder/convert.ts', to: 'rest/model.ts', until: 'phase 7' },
-  { from: 'import/thunder/convert.ts', to: 'rest/postman/', until: 'phase 7' },
-  { from: 'export/tree.ts', to: 'rest/model.ts', until: 'phase 7' },
-  { from: 'export/tree.ts', to: 'rest/url.ts', until: 'phase 7' },
-  { from: 'export/tree.ts', to: 'rest/graphql/body.ts', until: 'phase 7' },
-  { from: 'export/tree.ts', to: 'soap/model.ts', until: 'phase 7' },
-  { from: 'export/tree.ts', to: 'grpc/model.ts', until: 'phase 7' },
-  { from: 'export/tree.ts', to: 'ws/model.ts', until: 'phase 7' },
-]);
-
-/**
- * One import that leaves its group for a protocol group.
+ * One import that crosses a package.
  *
  * @typedef {object} Edge
- * @property {string} from the importing file, relative to the source root, `/`-separated
- * @property {string} to the imported file, likewise
+ * @property {string} from the importing file, `<package>/<path under src>`, `/`-separated; a manifest
+ *   entry is `<package>/package.json`
+ * @property {string} to the specifier as written, or the file a relative import names, relative to the
+ *   packages root
  * @property {string} fromGroup
- * @property {string} toGroup
+ * @property {string} toGroup a group, or `outside` for a relative import that leaves every package
  * @property {readonly string[]} names the imported names, as the imported file exports them
  * @property {boolean} typeOnly true when the import disappears at build time
+ * @property {boolean} relative true for a relative import that left its package
  */
 
 /**
- * The group a source file belongs to.
+ * The group a bare specifier names, or undefined when it names no engine package.
  *
- * @param {string} file relative to the source root, `/`-separated
- * @returns {string} `soap`, `rest`, `grpc`, `ws` or `core`
+ * @param {string} specifier `#core/project/model`, `@wirebench/protocol-rest/rest/model`, `@wirebench/engine`
+ * @returns {string | undefined}
  */
-export function groupOf(file) {
-  const slash = file.indexOf('/');
-  const top = slash === -1 ? '' : file.slice(0, slash);
-  for (const [group, folders] of Object.entries(GROUP_FOLDERS)) {
-    if (folders.includes(top)) {
-      return group;
-    }
-  }
-  return 'core';
+export function groupOfSpecifier(specifier) {
+  const match = /^(?:#|@wirebench\/)([a-z-]+)(?:\/|$)/.exec(specifier);
+  const name = match?.[1];
+  return name === undefined ? undefined : PACKAGE_GROUPS[name];
 }
 
 /**
@@ -162,7 +112,7 @@ function resolveSpecifier(importer, specifier) {
 }
 
 /**
- * Every module a file names: static imports, re-exports, `import()` calls and `import()` types.
+ * The imports of one file: static, re-exports, `import()` types and dynamic `import()` calls.
  *
  * @param {string} file absolute path
  * @returns {{ specifier: string, names: string[], typeOnly: boolean }[]}
@@ -171,29 +121,24 @@ function importsOf(file) {
   const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
   /** @type {{ specifier: string, names: string[], typeOnly: boolean }[]} */
   const found = [];
-  /** @param {import('typescript').Node} node */
+  /** @param {ts.Node} node */
   const visit = (node) => {
     if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
       const clause = node.importClause;
+      /** @type {string[]} */
       const names = [];
-      let typeOnly = clause?.isTypeOnly ?? false;
-      if (clause === undefined) {
-        names.push('(side effect)');
+      let typeOnly = clause?.isTypeOnly === true;
+      if (clause?.namedBindings !== undefined && ts.isNamedImports(clause.namedBindings)) {
+        for (const element of clause.namedBindings.elements) {
+          names.push((element.propertyName ?? element.name).text);
+        }
+        typeOnly ||= clause.namedBindings.elements.every((element) => element.isTypeOnly);
+      } else if (clause?.namedBindings !== undefined) {
+        names.push('*');
+      } else if (clause?.name !== undefined) {
+        names.push('default');
       } else {
-        if (clause.name !== undefined) {
-          names.push('default');
-        }
-        const bindings = clause.namedBindings;
-        if (bindings !== undefined && ts.isNamespaceImport(bindings)) {
-          names.push('*');
-        }
-        if (bindings !== undefined && ts.isNamedImports(bindings)) {
-          for (const element of bindings.elements) {
-            names.push((element.propertyName ?? element.name).text);
-          }
-          const allTyped = bindings.elements.length > 0 && bindings.elements.every((element) => element.isTypeOnly);
-          typeOnly = typeOnly || (clause.name === undefined && allTyped);
-        }
+        names.push('(side effect)');
       }
       found.push({ specifier: node.moduleSpecifier.text, names, typeOnly });
     } else if (
@@ -202,16 +147,16 @@ function importsOf(file) {
       ts.isStringLiteral(node.moduleSpecifier)
     ) {
       const clause = node.exportClause;
-      const names = [];
-      let typeOnly = node.isTypeOnly;
-      if (clause === undefined || ts.isNamespaceExport(clause)) {
-        names.push('*');
-      } else {
-        for (const element of clause.elements) {
-          names.push((element.propertyName ?? element.name).text);
-        }
-        typeOnly = typeOnly || (clause.elements.length > 0 && clause.elements.every((element) => element.isTypeOnly));
-      }
+      const names =
+        clause !== undefined && ts.isNamedExports(clause)
+          ? clause.elements.map((element) => (element.propertyName ?? element.name).text)
+          : ['*'];
+      const typeOnly =
+        node.isTypeOnly ||
+        (clause !== undefined &&
+          ts.isNamedExports(clause) &&
+          clause.elements.length > 0 &&
+          clause.elements.every((element) => element.isTypeOnly));
       found.push({ specifier: node.moduleSpecifier.text, names, typeOnly });
     } else if (
       ts.isImportTypeNode(node) &&
@@ -235,76 +180,131 @@ function importsOf(file) {
 }
 
 /**
- * Walks `srcDir` and returns every import that leaves its group for a protocol group, plus the
- * relative imports that name no file.
+ * The bare package a specifier names: `@scope/name` or `name`.
  *
- * @param {string} srcDir
- * @returns {{ edges: Edge[], unresolved: string[] }}
+ * @param {string} specifier
+ * @returns {string}
  */
-export function collectEdges(srcDir) {
-  const root = resolve(srcDir);
+function bareName(specifier) {
+  return specifier.startsWith('@')
+    ? specifier.split('/').slice(0, 2).join('/')
+    : (specifier.split('/')[0] ?? specifier);
+}
+
+/**
+ * Walks every engine package under `packagesDir` and returns every import that crosses a package
+ * (from a source file or a manifest), every import of a banned package, and the relative imports
+ * that name no file.
+ *
+ * @param {string} packagesDir
+ * @returns {{ edges: Edge[], banned: BannedImport[], unresolved: string[] }}
+ */
+export function collectEdges(packagesDir) {
+  const root = resolve(packagesDir);
   /** @type {Edge[]} */
   const edges = [];
+  /** @type {BannedImport[]} */
+  const banned = [];
   /** @type {string[]} */
   const unresolved = [];
-  for (const file of sourceFiles(root)) {
-    const from = relative(root, file).split(sep).join('/');
-    for (const found of importsOf(file)) {
-      if (!found.specifier.startsWith('.')) {
-        continue;
+  for (const [pkg, fromGroup] of Object.entries(PACKAGE_GROUPS)) {
+    const pkgDir = join(root, pkg);
+    const srcDir = join(pkgDir, 'src');
+    if (!existsSync(srcDir)) {
+      continue;
+    }
+    const manifestPath = join(pkgDir, 'package.json');
+    if (existsSync(manifestPath)) {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      const listed = { ...manifest.dependencies, ...manifest.devDependencies, ...manifest.optionalDependencies };
+      for (const name of Object.keys(listed)) {
+        if (BANNED_PACKAGES.includes(name)) {
+          banned.push({ from: `${pkg}/package.json`, specifier: name });
+        }
+        const toGroup = groupOfSpecifier(name);
+        if (toGroup !== undefined && toGroup !== fromGroup) {
+          edges.push({
+            from: `${pkg}/package.json`,
+            to: name,
+            fromGroup,
+            toGroup,
+            names: ['(dependency)'],
+            typeOnly: false,
+            relative: false,
+          });
+        }
       }
-      const target = resolveSpecifier(file, found.specifier);
-      if (target === undefined) {
-        unresolved.push(`${from} -> ${found.specifier}`);
-        continue;
-      }
-      const to = relative(root, target).split(sep).join('/');
-      const fromGroup = groupOf(from);
-      const toGroup = groupOf(to);
-      if (toGroup !== 'core' && toGroup !== fromGroup) {
-        edges.push({ from, to, fromGroup, toGroup, names: found.names, typeOnly: found.typeOnly });
+    }
+    for (const file of sourceFiles(srcDir)) {
+      const from = `${pkg}/${relative(srcDir, file).split(sep).join('/')}`;
+      for (const found of importsOf(file)) {
+        if (found.specifier.startsWith('.')) {
+          const target = resolveSpecifier(file, found.specifier);
+          if (target === undefined) {
+            unresolved.push(`${from} -> ${found.specifier}`);
+            continue;
+          }
+          const inside = relative(srcDir, target);
+          if (!inside.startsWith('..')) {
+            continue;
+          }
+          const to = relative(root, target).split(sep).join('/');
+          const toGroup = PACKAGE_GROUPS[to.split('/')[0] ?? ''] ?? 'outside';
+          edges.push({ from, to, fromGroup, toGroup, names: found.names, typeOnly: found.typeOnly, relative: true });
+          continue;
+        }
+        if (BANNED_PACKAGES.includes(bareName(found.specifier))) {
+          banned.push({ from, specifier: found.specifier });
+          continue;
+        }
+        const toGroup = groupOfSpecifier(found.specifier);
+        if (toGroup !== undefined && toGroup !== fromGroup) {
+          edges.push({
+            from,
+            to: found.specifier,
+            fromGroup,
+            toGroup,
+            names: found.names,
+            typeOnly: found.typeOnly,
+            relative: false,
+          });
+        }
       }
     }
   }
-  return { edges, unresolved };
+  return { edges, banned, unresolved };
 }
 
 /**
- * @param {CoreException} exception
+ * The rule an edge breaks, or undefined when the rules allow it.
+ *
  * @param {Edge} edge
- * @returns {boolean}
+ * @returns {string | undefined}
  */
-function allows(exception, edge) {
-  if (exception.from !== edge.from || (exception.typeOnly === true && !edge.typeOnly)) {
-    return false;
+export function ruleBroken(edge) {
+  if (edge.relative) {
+    return 'a relative import never leaves its package';
   }
-  if (exception.to === '*') {
-    return true;
+  if (edge.fromGroup === 'compose') {
+    return undefined;
   }
-  return exception.to.endsWith('/') ? edge.to.startsWith(exception.to) : edge.to === exception.to;
+  if (edge.toGroup === 'compose') {
+    return 'rule 3: nothing imports compose';
+  }
+  if (edge.toGroup === 'core') {
+    return undefined;
+  }
+  return edge.fromGroup === 'core' ? 'rule 2: core imports no protocol' : 'rule 1: no other protocol';
 }
 
 /**
- * Splits `edges` into what the rules allow and what they do not.
+ * The edges that break a rule.
  *
  * @param {readonly Edge[]} edges
- * @param {readonly CoreException[]} [exceptions]
- * @returns {{ violations: Edge[], stale: CoreException[] }} `violations` break rule 1 or rule 2;
- *   `stale` are exceptions no edge uses
+ * @returns {Edge[]}
  */
-export function checkEdges(edges, exceptions = CORE_EXCEPTIONS) {
-  const used = new Set();
-  const violations = edges.filter((edge) => {
-    if (edge.fromGroup !== 'core') {
-      return true;
-    }
-    const matching = exceptions.filter((exception) => allows(exception, edge));
-    for (const exception of matching) {
-      used.add(exception);
-    }
-    return matching.length === 0;
-  });
-  return { violations, stale: exceptions.filter((exception) => !used.has(exception)) };
+export function checkEdges(edges) {
+  return edges.filter((edge) => ruleBroken(edge) !== undefined);
 }
 
 /**
@@ -321,41 +321,37 @@ export function formatEdge(edge) {
 
 /** @param {readonly string[]} argv */
 function main(argv) {
-  const srcFlag = argv.indexOf('--src');
-  const srcDir =
-    srcFlag === -1
-      ? fileURLToPath(new URL('../packages/engine/src', import.meta.url))
-      : resolve(argv[srcFlag + 1] ?? '.');
-  const { edges, unresolved } = collectEdges(srcDir);
-  const { violations, stale } = checkEdges(edges);
+  const rootFlag = argv.indexOf('--root');
+  const packagesDir =
+    rootFlag === -1 ? fileURLToPath(new URL('../packages', import.meta.url)) : resolve(argv[rootFlag + 1] ?? '.');
+  const { edges, banned, unresolved } = collectEdges(packagesDir);
+  const violations = checkEdges(edges);
 
   if (argv.includes('--json')) {
-    console.log(JSON.stringify({ edges, violations, stale, unresolved }, null, 2));
+    console.log(JSON.stringify({ edges, violations, banned, unresolved }, null, 2));
   } else if (argv.includes('--check')) {
     for (const edge of violations) {
-      const rule =
-        edge.fromGroup === 'core' ? 'rule 2: core imports no protocol group' : 'rule 1: no other protocol group';
-      console.error(`${formatEdge(edge)}\n    breaks ${rule} (protocol modules spec §7.2)`);
+      console.error(`${formatEdge(edge)}\n    breaks ${ruleBroken(edge) ?? ''} (package split spec §4)`);
     }
-    for (const exception of stale) {
-      console.error(`stale exception: ${exception.from} -> ${exception.to} is no longer imported; remove it`);
+    for (const entry of banned) {
+      console.error(`banned import: ${entry.from} -> ${entry.specifier} (the engine stays free of Electron and React)`);
     }
     for (const line of unresolved) {
       console.error(`unresolved import: ${line}`);
     }
     const allowed = edges.length - violations.length;
     console.log(
-      `engine layers: ${String(violations.length)} violation(s), ${String(stale.length)} stale exception(s), ` +
-        `${String(allowed)} allowed import(s) from core`,
+      `engine layers: ${String(violations.length)} violation(s), ${String(banned.length)} banned import(s), ` +
+        `${String(allowed)} allowed import(s) across packages`,
     );
   } else {
     for (const edge of edges) {
       console.log(formatEdge(edge));
     }
-    console.log(`${String(edges.length)} cross-group import(s)`);
+    console.log(`${String(edges.length)} cross-package import(s)`);
   }
 
-  if (argv.includes('--check') && violations.length + stale.length + unresolved.length > 0) {
+  if (argv.includes('--check') && violations.length + banned.length + unresolved.length > 0) {
     process.exitCode = 1;
   }
 }

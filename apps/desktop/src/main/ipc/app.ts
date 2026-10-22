@@ -7,7 +7,7 @@ import { channels, events } from '../../shared/ipc.js';
 import { applyCommandMenu } from '../menu.js';
 import type { MenuApi } from '../menu.js';
 import { emitEvent } from './events.js';
-import type { AppFeaturesWire, UpdateStatusWire } from '../../shared/wire-base.js';
+import type { AppFeaturesWire, FeatureStateWire, UpdateStatusWire } from '../../shared/wire-base.js';
 import { registerHandler } from './register.js';
 import { KINDS } from '../../shared/kinds/kind-module.js';
 
@@ -39,6 +39,8 @@ export function registerAppChannels(
   localTerminal = enabledAreas.includes('ssh'),
   telnet = enabledAreas.includes('ssh'),
   serial = enabledAreas.includes('ssh'),
+  /** The area rows Settings → Features → Areas shows (#360); a test's default has none. */
+  areaStates: () => readonly FeatureStateWire[] = () => [],
 ): void {
   registerHandler(channels.app.version, () =>
     Promise.resolve({
@@ -59,7 +61,7 @@ export function registerAppChannels(
     }),
   );
 
-  registerHandler(channels.app.features, () => Promise.resolve(features.states()));
+  registerHandler(channels.app.features, () => Promise.resolve({ ...features.states(), areas: [...areaStates()] }));
 
   registerHandler(channels.app.checkForUpdates, async () => ({ status: await checkForUpdates() }));
 

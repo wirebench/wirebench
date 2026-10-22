@@ -1,10 +1,10 @@
 import { createServer } from 'node:net';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { HttpError } from '../../../src/errors.js';
-import { sendHttp } from '../../../src/http/client.js';
-import { ntlmHandshake } from '../../../src/http/auth/ntlm-transport.js';
-import { resolveProxyFor } from '../../../src/http/proxy.js';
-import type { HttpRequest } from '../../../src/http/types.js';
+import { HttpError } from '#core/errors';
+import { sendHttp } from '#core/http/client';
+import { ntlmHandshake } from '#core/http/auth/ntlm-transport';
+import { resolveProxyFor } from '#core/http/proxy';
+import type { HttpRequest } from '#core/http/types';
 import { generateServerCert, generateTestCa, type TestCertificate } from '../../helpers/test-certs.js';
 import { startNtlmServer, type NtlmServer } from '../../helpers/ntlm-server.js';
 import { startTestProxy, type TestProxy } from '../../helpers/test-proxy.js';

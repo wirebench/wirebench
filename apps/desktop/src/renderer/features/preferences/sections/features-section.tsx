@@ -67,8 +67,9 @@ export function FeaturesSection({ preferences, update }: SectionProps) {
       </SettingsGroup>
     );
   }
-  const titles = new Map(answer.states.map((state) => [state.id, state.title]));
+  const titles = new Map([...answer.states, ...(answer.areas ?? [])].map((state) => [state.id, state.title]));
   const policyWorkspace = answer.policy?.workspace;
+  const areas = answer.areas ?? [];
   return (
     <>
       {groupsOf(answer.states).map((group) => (
@@ -119,6 +120,40 @@ export function FeaturesSection({ preferences, update }: SectionProps) {
           })}
         </SettingsGroup>
       ))}
+      {areas.length > 0 && (
+        <SettingsGroup
+          title="Areas"
+          hint="Switched by your organisation's policy file; there is no per-machine setting."
+        >
+          {areas.map((state) => {
+            // An area has no preference (#360): the row reports what this run resolved and cannot be changed
+            // here. The managed policy is the "policy" level of that resolution, WIREBENCH_AREAS the "preference".
+            const notes: string[] = [];
+            if (state.policy) {
+              notes.push('Set by your organisation');
+            } else if (state.reason?.by === 'preference') {
+              notes.push('Off by WIREBENCH_AREAS for this run');
+            }
+            if (state.reason?.by === 'requires') {
+              notes.push(`Requires ${titles.get(state.reason.feature) ?? state.reason.feature}`);
+            }
+            return (
+              <BooleanSetting
+                key={state.id}
+                label={state.title}
+                testId={`area-switch-${state.id}`}
+                value={state.enabled}
+                disabled
+                locked={state.policy}
+                onChange={() => undefined}
+                {...(notes.length > 0
+                  ? { note: <span data-testid={`area-note-${state.id}`}>{notes.join(' · ')}</span> }
+                  : {})}
+              />
+            );
+          })}
+        </SettingsGroup>
+      )}
     </>
   );
 }

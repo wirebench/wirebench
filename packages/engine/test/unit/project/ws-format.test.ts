@@ -7,16 +7,18 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { Assertion } from '../../../src/assert/model.js';
-import { assertSupportedKind } from '../../../src/project/schema.js';
-import { loadProject } from '../../../src/project/load.js';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { projectFiles } from '../../../src/project/serialize.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
-import { createWsApi, createWsRequest, createWsSavedMessage, wsApisOf } from '../../../src/ws/model.js';
+import type { Assertion } from '#core/assert/model';
+import { assertSupportedKind } from '#core/project/schema';
+import { loadProject } from '#core/project/load';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { projectFiles } from '#core/project/serialize';
+import { createApi, createRestRequest } from '#protocol-rest/rest/model';
+import { createGrpcApi, createGrpcRequest } from '#protocol-grpc/grpc/model';
+import { createWsApi, createWsRequest, createWsSavedMessage, wsApisOf } from '#protocol-ws/ws/model';
 import { tempProjectDir } from './fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 function emptyProject(): Project {
   return createProject('WS Project', { id: 'P1' });

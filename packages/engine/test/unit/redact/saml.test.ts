@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { redactXml, REDACTED_XML_MARKER } from '../../../src/redact/index.js';
+import { redactXml, REDACTED_XML_MARKER } from '#core/redact/index';
 
 const SIGNED =
   '<saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion" ID="_a1">' +

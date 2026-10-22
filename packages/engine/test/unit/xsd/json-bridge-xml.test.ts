@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { importWsdl } from '../../../src/soap/import.js';
-import type { WsdlImportResult } from '../../../src/soap/types.js';
-import type { BridgeTarget } from '../../../src/xsd/json-bridge.js';
-import { jsonFromXml, jsonSchemaOf, withoutSections, xmlFromJson } from '../../../src/xsd/json-bridge.js';
+import { importWsdl } from '#protocol-soap/soap/import';
+import type { WsdlImportResult } from '#protocol-soap/soap/types';
+import type { BridgeTarget } from '#protocol-soap/xsd/json-bridge';
+import { jsonFromXml, jsonSchemaOf, withoutSections, xmlFromJson } from '#protocol-soap/xsd/json-bridge';
 
 const FIXTURE = fileURLToPath(new URL('../../fixtures/json-bridge/service.wsdl', import.meta.url));
 const BRIDGE = 'urn:wb:bridge';

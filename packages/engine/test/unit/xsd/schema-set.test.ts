@@ -1,12 +1,12 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { parseXml } from '../../../src/xml/parse.js';
-import { NS } from '../../../src/xml/namespaces.js';
-import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
-import { parseWsdl } from '../../../src/wsdl/parse-wsdl.js';
-import { resolveDefinition } from '../../../src/wsdl/resolver.js';
-import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
-import type { SchemaSet } from '../../../src/xsd/schema-set.js';
-import type { All, Choice, ComplexType, LocalElement, Particle, Sequence, SimpleType } from '../../../src/xsd/model.js';
+import { parseXml } from '#core/xml/parse';
+import { NS } from '#core/xml/namespaces';
+import { createDefaultFetchDocument } from '#core/http/fetch-document';
+import { parseWsdl } from '#protocol-soap/wsdl/parse-wsdl';
+import { resolveDefinition } from '#protocol-soap/wsdl/resolver';
+import { buildSchemaSet } from '#protocol-soap/xsd/schema-set';
+import type { SchemaSet } from '#protocol-soap/xsd/schema-set';
+import type { All, Choice, ComplexType, LocalElement, Particle, Sequence, SimpleType } from '#protocol-soap/xsd/model';
 import { fileUrl, fixtureUrl, readPublicFixture } from '../../helpers/fixtures.js';
 
 const TNS = 'urn:wb:sc';

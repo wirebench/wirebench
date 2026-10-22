@@ -3,14 +3,14 @@
  * before any step is looked at when its registry has the feature off, and runs as before with it on.
  */
 import { describe, expect, it } from 'vitest';
-import type { AssertionSubject } from '../../../src/assert/model.js';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
+import type { AssertionSubject } from '#core/assert/model';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
 import { createBuiltinRegistry } from '../../../src/protocols.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
-import { createSequence, createSequenceStep } from '../../../src/sequence/model.js';
-import { runSequence } from '../../../src/sequence/run.js';
-import type { SequenceStepSender } from '../../../src/sequence/run.js';
+import { createApi, createRestRequest } from '#protocol-rest/rest/model';
+import { createSequence, createSequenceStep } from '#core/sequence/model';
+import { runSequence } from '#core/sequence/run';
+import type { SequenceStepSender } from '#core/sequence/run';
 
 function project(): Project {
   return {

@@ -7,22 +7,24 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Assertion } from '../../../src/assert/model.js';
-import { writeProtoDefinitionCache } from '../../../src/grpc/cache.js';
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
-import type { GrpcApi, GrpcRequestDef } from '../../../src/grpc/model.js';
-import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
-import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { AuthConfig, Project } from '../../../src/project/model.js';
-import { apiDefinitionDir } from '../../../src/project/paths.js';
-import type { RunContext } from '../../../src/run/context.js';
-import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
-import { runRequests } from '../../../src/run/run.js';
-import { selectRequests } from '../../../src/run/select.js';
+import type { Assertion } from '#core/assert/model';
+import { writeProtoDefinitionCache } from '#protocol-grpc/grpc/cache';
+import { createGrpcApi, createGrpcRequest } from '#protocol-grpc/grpc/model';
+import type { GrpcApi, GrpcRequestDef } from '#protocol-grpc/grpc/model';
+import type { HttpExchange, HttpRequest } from '#core/http/types';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '#core/project/model';
+import type { AuthConfig, Project } from '#core/project/model';
+import { apiDefinitionDir } from '#core/project/paths';
+import type { RunContext } from '#core/run/context';
+import { createRunTokenSource } from '#core/run/oauth2-token';
+import { runRequests } from '#core/run/run';
+import { selectRequests } from '#core/run/select';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
 import { testHost } from '../../helpers/send-host.js';
 import { startTestGrpcServer } from '../../helpers/test-grpc-server.js';
 import type { TestGrpcServer } from '../../helpers/test-grpc-server.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const SERVICE = 'wirebench.greet.Greeter';
 

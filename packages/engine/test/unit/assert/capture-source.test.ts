@@ -4,9 +4,9 @@ import {
   captureDetailView,
   captureSourceOver,
   unavailableCaptureSource,
-} from '../../../src/assert/capture-source.js';
-import type { CaptureServerReads } from '../../../src/assert/capture-source.js';
-import type { Capture, CaptureSummary } from '../../../src/server-api/hooks.js';
+} from '#core/assert/capture-source';
+import type { CaptureServerReads } from '#core/assert/capture-source';
+import type { Capture, CaptureSummary } from '#core/server-api/hooks';
 
 const HOOK = '01K000000000000000000000H1';
 const capId = (n: number): string => `01K${String(n).padStart(23, '0')}`;

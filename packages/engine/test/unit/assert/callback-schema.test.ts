@@ -1,16 +1,16 @@
 // packages/engine/test/unit/assert/callback-schema.test.ts
 import { describe, expect, it } from 'vitest';
-import { evaluateAssertions } from '../../../src/assert/index.js';
-import { CALLBACK_LIMITS } from '../../../src/assert/model.js';
-import type { CallbackAssertion } from '../../../src/assert/model.js';
+import { evaluateAssertions } from '#core/assert/index';
+import { CALLBACK_LIMITS } from '#core/assert/model';
+import type { CallbackAssertion } from '#core/assert/model';
 import {
   assertionsSchema,
   callbackAssertionSchema,
   stepAssertionsSchema,
   toCallbackAssertion,
-} from '../../../src/assert/schema.js';
-import { parseSequenceFile, sequenceDocument } from '../../../src/sequence/file.js';
-import { createSequence, createSequenceStep } from '../../../src/sequence/model.js';
+} from '#core/assert/schema';
+import { parseSequenceFile, sequenceDocument } from '#core/sequence/file';
+import { createSequence, createSequenceStep } from '#core/sequence/model';
 
 const ORDERS: CallbackAssertion = {
   type: 'callback',

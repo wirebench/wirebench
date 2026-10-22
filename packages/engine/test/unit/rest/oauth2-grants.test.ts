@@ -5,9 +5,9 @@
  */
 import { X509Certificate, createHash, createHmac, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { WirebenchError } from '../../../src/errors.js';
-import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
-import type { OAuth2Auth } from '../../../src/project/model.js';
+import { WirebenchError } from '#core/errors';
+import type { HttpExchange, HttpRequest } from '#core/http/types';
+import type { OAuth2Auth } from '#core/project/model';
 import {
   CLIENT_ASSERTION_TYPE,
   DEVICE_CODE_GRANT_TYPE,
@@ -17,7 +17,7 @@ import {
   clientAuthSecrets,
   parseDeviceAuthorizationResponse,
   pollDeviceToken,
-} from '../../../src/http/auth/oauth2.js';
+} from '#core/http/auth/oauth2';
 import { generateClientCert, generateTestCa } from '../../helpers/test-certs.js';
 
 const NOW = new Date('2026-10-12T09:00:00Z');

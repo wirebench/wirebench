@@ -1,7 +1,7 @@
 import diagnosticsChannel from 'node:diagnostics_channel';
 import { describe, expect, it } from 'vitest';
-import { TimingTracker } from '../../../src/http/timings.js';
-import type { TlsSocketLike } from '../../../src/http/tls.js';
+import { TimingTracker } from '#core/http/timings';
+import type { TlsSocketLike } from '#core/http/tls';
 
 /** A minimal TLS socket the `sendHeaders` handler will accept (it gates on `encrypted === true`). */
 function fakeSocket(fingerprint: string): TlsSocketLike & { encrypted: boolean } {

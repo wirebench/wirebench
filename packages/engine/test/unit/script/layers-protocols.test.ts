@@ -6,11 +6,13 @@
  * there every layer has only to start.
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import type { LayeredApi, ScriptOutcome } from '../../../src/script/model.js';
-import type { ScriptRunInput } from '../../../src/script/run.js';
-import { runScript } from '../../../src/script/run.js';
-import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
+import type { LayeredApi, ScriptOutcome } from '#core/script/model';
+import type { ScriptRunInput } from '#core/script/run';
+import { runScript } from '#core/script/run';
+import { createScriptSandbox } from '#core/script/sandbox/host';
 import { GRPC, GRPC_RESPONSE, MCP, MCP_RESPONSE, SOAP, SOAP_RESPONSE } from './snapshots.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const sandbox = createScriptSandbox();
 afterAll(async () => {

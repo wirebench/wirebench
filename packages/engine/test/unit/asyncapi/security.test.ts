@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { authFromScheme } from '../../../src/asyncapi/security.js';
+import { authFromScheme } from '#protocol-ws/asyncapi/security';
 
 describe('authFromScheme', () => {
   it.each([

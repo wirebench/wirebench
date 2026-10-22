@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { importWsdl } from '../../../src/soap/import.js';
-import type { WsdlImportResult } from '../../../src/soap/types.js';
-import { bindingContextFor, validateMessage } from '../../../src/validate/index.js';
-import type { ValidationBinding } from '../../../src/validate/index.js';
+import { importWsdl } from '#protocol-soap/soap/import';
+import type { WsdlImportResult } from '#protocol-soap/soap/types';
+import { bindingContextFor, validateMessage } from '#protocol-soap/validate/index';
+import type { ValidationBinding } from '#protocol-soap/validate/index';
 
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 

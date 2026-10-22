@@ -3,8 +3,8 @@
  * project in, the files' text and a report out. The host names the folder and writes the files.
  */
 
-import type { ImportReport } from '../import/report.js';
-import type { Project, PropertyMap } from '../project/model.js';
+import type { ImportReport } from '#core/import/report';
+import type { Project, PropertyMap } from '#core/project/model';
 
 export type CollectionExportFormat = 'postman' | 'opencollection';
 

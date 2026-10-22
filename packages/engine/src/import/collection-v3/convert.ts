@@ -5,7 +5,7 @@
  * document cannot say is reported here, per file.
  */
 
-import type { ReportBuilder } from '../report.js';
+import type { ReportBuilder } from '#core/import/report';
 import type { V3Folder, V3Request, V3Script } from './model.js';
 
 type Rec = Readonly<Record<string, unknown>>;

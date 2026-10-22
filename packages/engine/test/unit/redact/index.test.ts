@@ -11,8 +11,8 @@ import {
   redactRawHttp,
   redactUrl,
   redactXml,
-} from '../../../src/redact/index.js';
-import { maskRecordedResponse } from '../../../src/import/examples.js';
+} from '#core/redact/index';
+import { maskRecordedResponse } from '#core/import/examples';
 
 describe('containsRedaction', () => {
   it('is true when the text contains the redaction marker', () => {

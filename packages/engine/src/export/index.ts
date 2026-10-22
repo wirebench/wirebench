@@ -4,7 +4,7 @@ import type { CollectionExportFormat, CollectionExportInput, CollectionExportRes
 import { writeOpenCollection } from './opencollection.js';
 import { writePostman } from './postman.js';
 import { ExportContext } from './shared.js';
-import type { ScriptApi } from '../script/model.js';
+import type { ScriptApi } from '#core/script/model';
 import { buildTree } from './tree.js';
 
 export type {

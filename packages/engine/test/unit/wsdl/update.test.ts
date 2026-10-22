@@ -4,15 +4,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { importWsdl } from '../../../src/soap/import.js';
-import type { WsdlImportResult } from '../../../src/soap/types.js';
-import { createProject } from '../../../src/project/model.js';
-import { createInterface, createRequest, soapInterfacesOf } from '../../../src/soap/model.js';
-import type { Project } from '../../../src/project/model.js';
-import type { OperationDef, SoapRequestDef } from '../../../src/soap/model.js';
-import { saveProject } from '../../../src/project/save.js';
-import { generateSoapRequest } from '../../../src/soap/generate.js';
-import { applyUpdate, planUpdate } from '../../../src/wsdl/update-definition.js';
+import { importWsdl } from '#protocol-soap/soap/import';
+import type { WsdlImportResult } from '#protocol-soap/soap/types';
+import { createProject } from '#core/project/model';
+import { createInterface, createRequest, soapInterfacesOf } from '#protocol-soap/soap/model';
+import type { Project } from '#core/project/model';
+import type { OperationDef, SoapRequestDef } from '#protocol-soap/soap/model';
+import { saveProject } from '#core/project/save';
+import { generateSoapRequest } from '#protocol-soap/soap/generate';
+import { applyUpdate, planUpdate } from '#protocol-soap/wsdl/update-definition';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const craftedRoot = fileURLToPath(new URL('../../../../../fixtures/wsdl/crafted/', import.meta.url));
 
@@ -316,7 +318,7 @@ describe('saveProject backups', () => {
       'utf8',
     );
     expect(yaml).toContain('orphaned: true');
-    const { loadProject } = await import('../../../src/project/load.js');
+    const { loadProject } = await import('#core/project/load');
     const loaded = await loadProject(dir);
     const legacy = soapInterfacesOf(loaded.project)[0]?.operations.find((op) => op.name === 'Legacy');
     expect(legacy?.requests[0]?.orphaned).toBe(true);

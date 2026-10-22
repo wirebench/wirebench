@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderDnRfc2253 } from '../../../../src/keystore/certificate.js';
+import { renderDnRfc2253 } from '#core/keystore/certificate';
 import type forge from 'node-forge';
 
 /** A forge `CertificateField`-shaped attribute, built from just what `renderDnRfc2253` reads. */

@@ -9,14 +9,16 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createMock } from '../../../src/mock/model.js';
-import { startRecorder } from '../../../src/mock/record.js';
-import { addRecordedStubs } from '../../../src/mock/record-stubs.js';
-import { startMock } from '../../../src/mock/server.js';
-import { loadProject } from '../../../src/project/load.js';
-import { saveProject } from '../../../src/project/save.js';
+import { createMock } from '#core/mock/model';
+import { startRecorder } from '#core/mock/record';
+import { addRecordedStubs } from '#core/mock/record-stubs';
+import { startMock } from '#core/mock/server';
+import { loadProject } from '#core/project/load';
+import { saveProject } from '#core/project/save';
 import { mockProject } from '../mock/fixture.js';
 import { tempProjectDir } from '../project/fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const OPENAPI = `openapi: 3.0.3
 info: { title: Orders, version: '1' }

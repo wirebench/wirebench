@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ThunderError } from '../../../../src/errors.js';
+import { ThunderError } from '#core/errors';
 import type { MappedClientImport } from '../../../../src/import/client-import.js';
 import { joinBaseUrl, mapThunderClient } from '../../../../src/import/thunder/convert.js';
 import { importThunderClient } from '../../../../src/import/thunder/import.js';
 import { parseThunderExport } from '../../../../src/import/thunder/parse.js';
-import type { RestApi, RestFolder, RestRequestDef } from '../../../../src/rest/model.js';
+import type { RestApi, RestFolder, RestRequestDef } from '#protocol-rest/rest/model';
 import { thunderFixture, thunderFixtureDir } from './fixtures.js';
 
 function mapped(name: string): MappedClientImport {

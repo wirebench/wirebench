@@ -3780,7 +3780,7 @@ function samePolicy(a: readonly string[], b: readonly string[]): boolean {
 }
 
 /** The engine's row, as the wire restates it (the same fields, with `requires` copied). */
-function toFeatureStateWire(state: FeatureState): FeatureStateWire {
+export function toFeatureStateWire(state: FeatureState): FeatureStateWire {
   return {
     id: state.id,
     title: state.title,

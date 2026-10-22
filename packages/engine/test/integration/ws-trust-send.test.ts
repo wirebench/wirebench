@@ -8,22 +8,24 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { configureKerberos } from '../../src/http/auth/kerberos-native.js';
-import type { RunContext } from '../../src/run/context.js';
-import { loadKeystore } from '../../src/keystore/index.js';
-import { createIssuedTokenSource } from '../../src/wss/trust/issued-token.js';
-import { runRequests } from '../../src/run/run.js';
-import { selectRequests } from '../../src/run/select.js';
-import { soapIssuedTokenKeyTarget, soapIssuedTokenTarget, soapItemFor } from '../../src/soap/run.js';
-import type { Project } from '../../src/project/model.js';
-import type { WssIssuedTokenEntry } from '../../src/wss/model.js';
+import { configureKerberos } from '#core/http/auth/kerberos-native';
+import type { RunContext } from '#core/run/context';
+import { loadKeystore } from '#core/keystore/index';
+import { createIssuedTokenSource } from '#protocol-soap/wss/trust/issued-token';
+import { runRequests } from '#core/run/run';
+import { selectRequests } from '#core/run/select';
+import { soapIssuedTokenKeyTarget, soapIssuedTokenTarget, soapItemFor } from '#protocol-soap/soap/run';
+import type { Project } from '#core/project/model';
+import type { WssIssuedTokenEntry } from '#protocol-soap/wss/model';
 import { fakeKerberos } from '../helpers/fake-kerberos.js';
 import { projectWithWss } from '../helpers/fixtures.js';
 import { generateSigningCert, generateTestCa } from '../helpers/test-certs.js';
 import { testHost } from '../helpers/send-host.js';
 import { startTestSts } from '../helpers/test-sts-server.js';
 import type { TestSts } from '../helpers/test-sts-server.js';
-import { soapInterfacesOf } from '../../src/soap/model.js';
+import { soapInterfacesOf } from '#protocol-soap/soap/model';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../src/protocols.js';
 
 /** The fixture's lifetime has passed; push it far enough ahead that the cache keeps the token. */
 const fixture = (name: string): string =>

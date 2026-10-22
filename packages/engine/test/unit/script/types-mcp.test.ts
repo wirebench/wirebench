@@ -4,10 +4,12 @@
  * script has to narrow on, and the untyped forms when the catalogue does not have the tool.
  */
 import { describe, expect, it } from 'vitest';
-import { mcpScriptTypes, mcpToolFor } from '../../../src/mcp/script-types.js';
-import type { McpCatalogueTool } from '../../../src/mcp/model.js';
-import { apiDeclarations, secretNameType } from '../../../src/script/types/api.js';
+import { mcpScriptTypes, mcpToolFor } from '#protocol-mcp/mcp/script-types';
+import type { McpCatalogueTool } from '#protocol-mcp/mcp/model';
+import { apiDeclarations, secretNameType } from '#core/script/types/api';
 import { typeErrors } from './ts-check.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const TOOL: McpCatalogueTool = {
   name: 'search',

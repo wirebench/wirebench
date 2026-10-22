@@ -4,7 +4,7 @@ import { basename, dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, type Locator, type Page } from '@playwright/test';
 import { setMonacoText } from './editor.js';
-import { environmentRow, openEnvironmentsView, setVariable } from './environments.js';
+import { addEnvironment, openEnvironmentsView, setVariable } from './environments.js';
 import { ADA, gitConfigEnv, remoteContains, remoteFiles, remoteLog, type GitIdentity } from './git-remote.js';
 import { launchApp, removeDirSync, type LaunchedApp } from './launch-app.js';
 import { runCommand } from './palette.js';
@@ -184,13 +184,10 @@ export async function addActiveEnvironment(page: Page, variable: string, value: 
   // The switcher acts for the last focused request's project (#468); it offers nothing before one.
   await openFirstRequest(page);
   await openEnvironmentsView(page);
-  await page.getByRole('button', { name: 'Add environment' }).click();
-  await expect(environmentRow(page, ENVIRONMENT_NAME)).toBeVisible();
-  // "Add environment" already opened this environment's page.
-  await setVariable(page, variable, value);
-  await page.getByTestId('env-switcher').click();
-  await page.getByRole('menuitem', { name: ENVIRONMENT_NAME, exact: true }).click();
+  // Naming the new row makes it the project's active environment (#746); the page is already open.
+  await addEnvironment(page, ENVIRONMENT_NAME);
   await expect(page.getByTestId('env-switcher')).toContainText(ENVIRONMENT_NAME);
+  await setVariable(page, variable, value);
   await page.getByRole('button', { name: 'Explorer', exact: true }).click();
 }
 

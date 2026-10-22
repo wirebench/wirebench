@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveSecretTokens, secretTokenMissingMessage } from '../../../src/secrets/resolve.js';
+import { resolveSecretTokens, secretTokenMissingMessage } from '#core/secrets/resolve';
 
 describe('resolveSecretTokens', () => {
   it('resolves each name once through its secret: pseudo-ref', async () => {

@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { WorkspaceError } from '../../../src/errors.js';
+import { WorkspaceError } from '#core/errors';
 import {
   assertPathSegment,
   workspaceDir,
@@ -8,8 +8,8 @@ import {
   workspaceManifestFile,
   workspaceProjectDir,
   workspaceTreeDir,
-} from '../../../src/workspace/paths.js';
-import { DEFAULT_GIT_SHARE_SETTINGS } from '../../../src/workspace/share.js';
+} from '#core/workspace/paths';
+import { DEFAULT_GIT_SHARE_SETTINGS } from '#core/workspace/share';
 
 describe('path builders', () => {
   it('workspaceDir joins the user-data root, WORKSPACES_DIR, and the workspace id', () => {

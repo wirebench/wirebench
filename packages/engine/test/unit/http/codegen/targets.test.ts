@@ -3,8 +3,8 @@
  * snippet is the exact text a user pastes, so the snapshot is the whole of it.
  */
 import { describe, expect, it } from 'vitest';
-import { CODE_TARGETS, envMarker, generateCode, splitEnv } from '../../../../src/http/codegen/index.js';
-import type { CodeRequest } from '../../../../src/http/codegen/index.js';
+import { CODE_TARGETS, envMarker, generateCode, splitEnv } from '#core/http/codegen/index';
+import type { CodeRequest } from '#core/http/codegen/index';
 
 const BASE: Omit<CodeRequest, 'method' | 'url' | 'headers' | 'body'> = { followRedirects: true };
 

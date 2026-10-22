@@ -3,12 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
-import { resolveDefinition } from '../../../src/wsdl/resolver.js';
-import { parseWsdlBundle } from '../../../src/wsdl/merge.js';
-import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
-import { summarizeSoapOperations } from '../../../src/soap/operations.js';
-import { exportDefinition } from '../../../src/wsdl/export-definition.js';
+import { createDefaultFetchDocument } from '#core/http/fetch-document';
+import { resolveDefinition } from '#protocol-soap/wsdl/resolver';
+import { parseWsdlBundle } from '#protocol-soap/wsdl/merge';
+import { buildSchemaSet } from '#protocol-soap/xsd/schema-set';
+import { summarizeSoapOperations } from '#protocol-soap/soap/operations';
+import { exportDefinition } from '#protocol-soap/wsdl/export-definition';
 
 const craftedRoot = fileURLToPath(new URL('../../../../../fixtures/wsdl/crafted/', import.meta.url));
 const publicRoot = fileURLToPath(new URL('../../../../../fixtures/wsdl/public/', import.meta.url));

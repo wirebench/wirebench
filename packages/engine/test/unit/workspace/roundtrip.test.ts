@@ -1,12 +1,12 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { WorkspaceError } from '../../../src/errors.js';
-import { parseSecretSources } from '../../../src/secrets/sources/parse.js';
-import { loadWorkspace } from '../../../src/workspace/load.js';
-import { saveWorkspace } from '../../../src/workspace/save.js';
-import { workspaceFiles } from '../../../src/workspace/serialize.js';
-import type { Workspace } from '../../../src/workspace/model.js';
+import { WorkspaceError } from '#core/errors';
+import { parseSecretSources } from '#core/secrets/sources/parse';
+import { loadWorkspace } from '#core/workspace/load';
+import { saveWorkspace } from '#core/workspace/save';
+import { workspaceFiles } from '#core/workspace/serialize';
+import type { Workspace } from '#core/workspace/model';
 import { listTree, readBytes, sampleWorkspace, tempWorkspaceDir } from './fixture.js';
 
 /** Drops `keys` from `value`, exercising the optional-field-omitted case without an unused destructured binding. */

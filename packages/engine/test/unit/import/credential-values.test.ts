@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  blankJsonText,
-  blankText,
-  blankUrlCredentials,
-  blankXmlText,
-  scanXml,
-} from '../../../src/import/credential-values.js';
+import { blankJsonText, blankText, blankUrlCredentials, blankXmlText, scanXml } from '#core/import/credential-values';
 
 function blankXml(text: string): { text: string; blanked: string[] } {
   const blanked = new Set<string>();

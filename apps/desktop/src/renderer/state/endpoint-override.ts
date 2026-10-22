@@ -1,7 +1,7 @@
 /**
  * The one place the renderer decides which of a linked project's own environment override and
  * the workspace environment's override for an interface wins, when both exist. Mirrors the
- * engine's `resolveWorkspaceEndpoint` precedence (`packages/engine/src/workspace/environments.ts`):
+ * engine's `resolveWorkspaceEndpoint` precedence (`packages/core/src/workspace/environments.ts`):
  * the linked project's own environment beats the workspace environment, unconditionally — a
  * project opened inside a workspace still owns its own deployment story.
  *

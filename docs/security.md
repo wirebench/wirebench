@@ -314,7 +314,7 @@ world: a definition imported from a file may reference only files inside that fi
 may reference any `http(s)` host but never `file:`; a pasted or dropped one may never reach
 the disk at all. A refused reference becomes an `import-ref-refused` problem and the import
 completes with what did resolve. The graph is capped at 32 levels and 500 documents
-(`import-limit`). Implementation: `packages/engine/src/http/ref-policy.ts`.
+(`import-limit`). Implementation: `packages/core/src/http/ref-policy.ts`.
 
 A legacy SOAP project import (`project.importLegacy`) adds three rules of its own, because the project
 file is untrusted input that names further locations. Its definitions are served from the copy the file
@@ -325,7 +325,7 @@ project (the report asks for them to be re-entered in the keychain), and its scr
 under `imported-scripts/`, which nothing in Wirebench reads. Each script file is created exclusively, so
 a file or link already at its name, even one that appeared a moment before, is never replaced or followed;
 the script takes the next `-2`, `-3` name instead. Implementation:
-`packages/engine/src/soap/legacy-project/` and `ProjectHost.importLegacyProject`.
+`packages/protocol-soap/src/soap/legacy-project/` and `ProjectHost.importLegacyProject`.
 
 What this deliberately does *not* prevent: a remote WSDL naming an internal `http://` host.
 Fetching what the document points at is the whole of what "import this WSDL" means, and the
@@ -475,7 +475,7 @@ XPath 3.1 and XQuery 3.1 run under `fontoxpath`, which has no facility for calli
 all. JSONPath runs under `jsonpath-plus`, which does: its `?(...)` filters and `(...)` script
 expressions can be evaluated either with the platform's real `eval`/`Function`, or with a `jsep`
 expression parser that cannot reach the host. Wirebench passes `eval: 'safe'`, which selects the
-parser (`packages/engine/src/xpath/jsonpath.ts`). Filters keep working — that mode is not a
+parser (`packages/core/src/xpath/jsonpath.ts`). Filters keep working — that mode is not a
 restriction on what a user can express — but the classic escape through
 `constructor.constructor('…')()` is refused rather than executed, whether it is reached through
 `this` or through a value in the document. Two tests in
@@ -627,6 +627,12 @@ switch promises:
   sandbox, the cookie jar's rules and TLS verification have no descriptor and read no switch.
 - **No remote flag service.** The only remote input is the workspace's own policy, fetched with its
   sync head from the server the person signed in to, and it can only switch off.
+- **A desktop area is switched off the same way (#360).** The managed `policy.yaml` an administrator
+  deploys (the file that locks the proxy and the CA bundle) may carry `areas: { ssh: false }`: the area
+  resolves through the same precedence (policy, then `WIREBENCH_AREAS`, then the default), a policy
+  entry can only switch off, and an area that is off registers none of its IPC channels, so a renderer
+  cannot reach `ssh.connect` or `sftp.open` at all. Tests: `areas-switch.test.ts`, `policy.test.ts`,
+  the `area-locked-off` e2e.
 
 ## A mock listens on loopback and serves data
 

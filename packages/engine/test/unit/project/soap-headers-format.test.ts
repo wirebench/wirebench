@@ -1,10 +1,12 @@
 import { cp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadProject } from '../../../src/project/load.js';
-import { saveProject } from '../../../src/project/save.js';
+import { loadProject } from '#core/project/load';
+import { saveProject } from '#core/project/save';
 import { tempProjectDir } from './fixture.js';
-import { soapInterfacesOf } from '../../../src/soap/model.js';
+import { soapInterfacesOf } from '#protocol-soap/soap/model';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const V3_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v3', 'project');
 const SMOKE = join('interfaces', 'CountryInfo', 'operations', 'ListOfCountryNamesByCode', 'Smoke test.request.yaml');

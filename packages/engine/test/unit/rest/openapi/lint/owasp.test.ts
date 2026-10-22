@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { OWASP_RULES, loopback, plainHttpHost } from '../../../../../src/rest/openapi/lint/owasp.js';
-import { lintWithRules } from '../../../../../src/rest/openapi/lint/run.js';
+import { OWASP_RULES, loopback, plainHttpHost } from '#protocol-rest/rest/openapi/lint/owasp';
+import { lintWithRules } from '#protocol-rest/rest/openapi/lint/run';
 import { brief, fixture, recordingFetch } from './helpers.js';
 
 const owasp = async (name: string) =>

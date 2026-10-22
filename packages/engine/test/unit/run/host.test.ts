@@ -1,14 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { SendAuth } from '../../../src/http/auth/send-auth.js';
-import { createProject } from '../../../src/project/model.js';
-import { expand } from '../../../src/project/properties.js';
-import type { AuthConfig } from '../../../src/project/model.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
-import { scopesFor, type RunContext } from '../../../src/run/context.js';
-import { createRunSender } from '../../../src/run/run.js';
-import { selectRequests } from '../../../src/run/select.js';
-import { reportedAuth } from '../../../src/run/send-helpers.js';
+import type { SendAuth } from '#core/http/auth/send-auth';
+import { createProject } from '#core/project/model';
+import { expand } from '#core/project/properties';
+import type { AuthConfig } from '#core/project/model';
+import { createApi, createRestRequest } from '#protocol-rest/rest/model';
+import { scopesFor, type RunContext } from '#core/run/context';
+import { createRunSender } from '#core/run/run';
+import { selectRequests } from '#core/run/select';
+import { reportedAuth } from '#core/run/send-helpers';
 import { testHost } from '../../helpers/send-host.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 /** A context for one REST request with `auth`, aimed at port 1 where nothing listens. */
 function contextWith(auth: AuthConfig, extra: Partial<RunContext['host']> = {}, secret = 'v'): RunContext {

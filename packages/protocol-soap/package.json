@@ -1,0 +1,39 @@
+{
+  "name": "@wirebench/protocol-soap",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Wirebench engine: SOAP, WSDL, XSD, WS-Security, WS-Addressing and SOAP validation. Composed by @wirebench/engine, which vendors it; not published on its own.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "development": "./src/*.ts",
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "imports": {
+    "#core/*": "@wirebench/core/*"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@wirebench/core": "workspace:*",
+    "@xmldom/xmldom": "^0.9.12",
+    "node-forge": "^1.3.1",
+    "undici": "^8",
+    "xml-crypto": "^6.1.2",
+    "xmllint-wasm": "5.3.0",
+    "zod": "^4.6.1"
+  }
+}

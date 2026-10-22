@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_REQUEST_PROPERTIES } from '../../src/soap/model.js';
-import type { RequestProperties } from '../../src/soap/model.js';
-import { DEFAULT_PREFERENCES, mergePreferences } from '../../src/project/preferences.js';
-import { toRestSendInput } from '../../src/rest/send-input.js';
-import { toSoapSendInput } from '../../src/soap/send-input.js';
-import type { SoapSendRequestInput, ToSoapSendInputArgs } from '../../src/soap/send-input.js';
+import { DEFAULT_REQUEST_PROPERTIES } from '#protocol-soap/soap/model';
+import type { RequestProperties } from '#protocol-soap/soap/model';
+import { DEFAULT_PREFERENCES, mergePreferences } from '#core/project/preferences';
+import { toRestSendInput } from '#protocol-rest/rest/send-input';
+import { toSoapSendInput } from '#protocol-soap/soap/send-input';
+import type { SoapSendRequestInput, ToSoapSendInputArgs } from '#protocol-soap/soap/send-input';
 
 const ENVELOPE =
   '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><a><b>?</b><c>1</c></a></soapenv:Body></soapenv:Envelope>';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatXml } from '../../../src/xml/pretty.js';
+import { formatXml } from '#core/xml/pretty';
 
 describe('formatXml', () => {
   it('re-indents a mangled SOAP envelope', () => {

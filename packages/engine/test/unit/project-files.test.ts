@@ -8,8 +8,8 @@ import { cp, readFile, rm } from 'node:fs/promises';
 import { join, matchesGlob } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
-import { createMcpFolder, createMcpRequest, createMcpServer } from '../../src/mcp/model.js';
-import { createMock, createMockOperation, createMockResponse } from '../../src/mock/model.js';
+import { createMcpFolder, createMcpRequest, createMcpServer } from '#protocol-mcp/mcp/model';
+import { createMock, createMockOperation, createMockResponse } from '#core/mock/model';
 import {
   PROJECT_FILE_KINDS,
   PROJECT_SCHEMA_BASE_URL,
@@ -17,14 +17,16 @@ import {
   projectJsonSchemas,
   workspaceJsonSchemas,
 } from '../../src/project-files.js';
-import { loadProject } from '../../src/project/load.js';
-import { FORMAT_VERSION } from '../../src/project/model.js';
-import { saveProject } from '../../src/project/save.js';
-import { parseYaml } from '../../src/project/yaml.js';
-import { WORKSPACE_FORMAT_VERSION } from '../../src/workspace/model.js';
-import { saveWorkspace } from '../../src/workspace/save.js';
+import { loadProject } from '#core/project/load';
+import { FORMAT_VERSION } from '#core/project/model';
+import { saveProject } from '#core/project/save';
+import { parseYaml } from '#core/project/yaml';
+import { WORKSPACE_FORMAT_VERSION } from '#core/workspace/model';
+import { saveWorkspace } from '#core/workspace/save';
 import { listTree, sampleProject, tempProjectDir } from './project/fixture.js';
 import { sampleWorkspace, tempWorkspaceDir } from './workspace/fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../src/protocols.js';
 
 const ENGINE_FIXTURES = join(import.meta.dirname, '..', 'fixtures');
 const PROJECTS = {

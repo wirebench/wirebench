@@ -3,11 +3,13 @@
  * union by status that `response.status === …` narrows, and all of it compiling with a script.
  */
 import { describe, expect, it } from 'vitest';
-import type { OpenApiOperation } from '../../../src/rest/openapi/model.js';
-import { apiDeclarations, secretNameType } from '../../../src/script/types/api.js';
-import { JsonSchemaTypes } from '../../../src/script/types/json-schema.js';
-import { restScriptTypes } from '../../../src/rest/script-types.js';
+import type { OpenApiOperation } from '#protocol-rest/rest/openapi/model';
+import { apiDeclarations, secretNameType } from '#core/script/types/api';
+import { JsonSchemaTypes } from '#core/script/types/json-schema';
+import { restScriptTypes } from '#protocol-rest/rest/script-types';
 import { typeErrors } from './ts-check.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const pet: Record<string, unknown> = {
   type: 'object',

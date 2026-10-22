@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { classifyParseEvent, getPosition, parseXml, parseXmlDetailed } from '../../../src/xml/parse.js';
-import { isWirebenchError } from '../../../src/errors.js';
+import { classifyParseEvent, getPosition, parseXml, parseXmlDetailed } from '#core/xml/parse';
+import { isWirebenchError } from '#core/errors';
 
 describe('parseXml', () => {
   it('parses well-formed XML into a Document', () => {

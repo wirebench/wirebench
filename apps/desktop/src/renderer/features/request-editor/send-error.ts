@@ -36,6 +36,12 @@ export interface SendErrorView {
   /** `neutral` for the person's own choice (a cancel, a declined prompt), never a failure colour. */
   readonly tone: 'danger' | 'neutral';
   readonly hint: SendErrorHint | undefined;
+  /**
+   * Whether sending again, unchanged, could end differently. False when the request itself is what
+   * failed — a variable nothing resolves, an unclosed `${`, a URL that is not one — so the panel
+   * offers no Retry that would fail the same way (#747).
+   */
+  readonly retryable: boolean;
 }
 
 /** Codes that record a choice the person made, not something that went wrong. */
@@ -56,9 +62,19 @@ export function isChosenOutcome(code: string): boolean {
  */
 const TRANSPORT = new Set(['connection-refused', 'dns', 'timeout', 'tls', 'proxy', 'network']);
 
-/** Whether a failed send belongs in Problems: not the person's own choice, and not the network's doing. */
+/** The `<protocol>-unresolved-properties` codes: a send refused because a `${name}` has no value. */
+function isUnresolvedCode(code: string): boolean {
+  return code.endsWith('-unresolved-properties');
+}
+
+/**
+ * Whether a failed send belongs in Problems: not the person's own choice, not the network's doing,
+ * and not a variable nothing resolves (#747). The last is shown like a transport failure: the panel
+ * names the variables and links to where they sit, and the send never went, so there is nothing a
+ * red count would add.
+ */
 export function isProblemOutcome(code: string): boolean {
-  return !CHOSEN.has(code) && !TRANSPORT.has(code);
+  return !CHOSEN.has(code) && !TRANSPORT.has(code) && !isUnresolvedCode(code);
 }
 
 const TEXT_HINTS: Readonly<Record<string, { readonly title: string; readonly hint?: string }>> = {
@@ -168,19 +184,25 @@ function unresolvedRefs(error: SendErrorLike): readonly string[] {
   return [...new Set((error.message.match(/\$\{[^}]*\}/g) ?? []).filter((ref) => !isUnclosed(ref)))];
 }
 
+/** Codes whose send fails on the request as written: a Retry without a change cannot help. */
+const NOT_RETRYABLE = new Set(['invalid-url', 'rest-url-incomplete']);
+
 /** The title, headline, detail, tone and hint for one failed send. */
 export function describeSendError(error: SendErrorLike): SendErrorView {
   const view = describeBare(error);
+  const named = view.hint?.kind === 'unresolved' || view.hint?.kind === 'unclosed';
   return {
     ...view,
     headline: headlineOf(error, view.title),
-    // "references nothing resolves: ${$rand" says less about an unclosed `${` than its hint does.
-    detail: view.hint?.kind === 'unclosed' ? undefined : detailOf(error, view.title),
+    // "references nothing resolves: ${host}" only repeats what the hint says, with the variables
+    // as links; the same for an unclosed `${`, which the engine's message names oddly.
+    detail: named ? undefined : detailOf(error, view.title),
+    retryable: !named && !NOT_RETRYABLE.has(error.code),
   };
 }
 
-function describeBare(error: SendErrorLike): Omit<SendErrorView, 'headline' | 'detail'> {
-  if (error.code.endsWith('-unresolved-properties')) {
+function describeBare(error: SendErrorLike): Omit<SendErrorView, 'headline' | 'detail' | 'retryable'> {
+  if (isUnresolvedCode(error.code)) {
     const refs = unresolvedRefs(error);
     // A `${` never closed is a typing slip, not a variable missing from the environment. Missing
     // variables are named first when there are both: the list links each to its field.

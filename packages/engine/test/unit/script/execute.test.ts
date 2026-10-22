@@ -4,8 +4,8 @@
  */
 import { newQuickJSWASMModuleFromVariant, type QuickJSWASMModule } from 'quickjs-emscripten-core';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { executeJob } from '../../../src/script/sandbox/execute.js';
-import { SCRIPT_LIMITS, type SandboxJob } from '../../../src/script/sandbox/model.js';
+import { executeJob } from '#core/script/sandbox/execute';
+import { SCRIPT_LIMITS, type SandboxJob } from '#core/script/sandbox/model';
 
 let module: QuickJSWASMModule;
 beforeAll(async () => {

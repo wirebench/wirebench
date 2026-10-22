@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DYNAMIC_GENERATORS, DynamicValues, generateDynamic, isDynamicName } from '../../../src/project/dynamic.js';
+import { DYNAMIC_GENERATORS, DynamicValues, generateDynamic, isDynamicName } from '#core/project/dynamic';
 
 const NOW = new Date('2026-10-11T12:00:00.000Z');
 

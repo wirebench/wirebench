@@ -3,17 +3,19 @@
  * every validation mode, the fault in each SOAP version, and generation from the binding.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { createMock, createMockOperation, createMockResponse } from '../../../src/mock/model.js';
-import type { MockDef, MockValidation } from '../../../src/mock/model.js';
-import { startMock } from '../../../src/mock/server.js';
-import type { MockExchangeEvent, RunningMock } from '../../../src/mock/server.js';
-import { nodeFs } from '../../../src/project/fs.js';
-import { soapMocking } from '../../../src/soap/mock.js';
+import { createMock, createMockOperation, createMockResponse } from '#core/mock/model';
+import type { MockDef, MockValidation } from '#core/mock/model';
+import { startMock } from '#core/mock/server';
+import type { MockExchangeEvent, RunningMock } from '#core/mock/server';
+import { nodeFs } from '#core/project/fs';
+import { soapMocking } from '#protocol-soap/soap/mock';
 import { mockProject, wsdlFixture } from '../mock/fixture.js';
-import { soapInterfacesOf } from '../../../src/soap/model.js';
+import { soapInterfacesOf } from '#protocol-soap/soap/model';
 import { fileURLToPath } from 'node:url';
-import { importWsdl } from '../../../src/soap/import.js';
-import { bindingContextFor, validateMessage } from '../../../src/validate/index.js';
+import { importWsdl } from '#protocol-soap/soap/import';
+import { bindingContextFor, validateMessage } from '#protocol-soap/validate/index';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const CALCULATOR = wsdlFixture('public/calculator/service.wsdl');
 const SOAP11 = 'http://schemas.xmlsoap.org/soap/envelope/';

@@ -15,7 +15,7 @@ import {
   createRestRequest,
   entry,
   folderRequests,
-} from '../../../src/rest/model.js';
+} from '#protocol-rest/rest/model';
 
 describe('createRestRequest', () => {
   it('is a GET with no body whose credentials are inherited', () => {

@@ -7,8 +7,8 @@
 import { cp, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadWorkspace } from '../../../src/workspace/load.js';
-import { saveWorkspace } from '../../../src/workspace/save.js';
+import { loadWorkspace } from '#core/workspace/load';
+import { saveWorkspace } from '#core/workspace/save';
 import { tempWorkspaceDir } from './fixture.js';
 
 const FIXTURE_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v1', 'workspace');

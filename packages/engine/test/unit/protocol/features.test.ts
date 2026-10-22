@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createFeatureSet, resolveFeatures } from '../../../src/protocol/features.js';
-import type { FeatureDescriptor } from '../../../src/protocol/features.js';
+import { createFeatureSet, resolveFeatures } from '#core/protocol/features';
+import type { FeatureDescriptor } from '#core/protocol/features';
 
 function feature(id: string, extra: Partial<FeatureDescriptor> = {}): FeatureDescriptor {
   return { id, title: id.toUpperCase(), default: true, stage: 'stable', requires: [], ...extra };

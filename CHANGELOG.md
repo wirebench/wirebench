@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **An organisation can switch a desktop area off (#360).** The managed `policy.yaml` takes an `areas`
+  section (`ssh: false`, or `local-terminal`, `telnet`, `serial` on their own) that removes the area's
+  activity-bar item, commands, views, tabs and IPC channels on that machine and wins over
+  `WIREBENCH_AREAS`; a policy entry can only switch off. **Settings → Features** gains an **Areas** group
+  that shows each area's state and why (_Set by your organisation_, marked Managed).
+
+### Fixed
+
+- **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
+  shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
+  the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.
+  There is no **Retry** for an error that cannot change on its own (the same for an unclosed `${` or a
+  URL that is not one), and the code and the engine's message sit behind **Details**. Like a refused
+  connection or a timeout, it is no longer counted as a problem, so the status bar stays calm.
+- **A new environment is ready in one step (#746).** **Add environment** puts the new row straight
+  into rename with the focus in it, and once the name is in (Enter, or a click away) the environment
+  becomes the current project's active environment, so the switcher and the next send already use it.
+  Escape keeps "Environment N" and leaves the choice of environment as it was.
+- **The Problems tab counts what the status bar counts (#745).** The console's Problems tab no longer
+  badges lint findings: with a freshly imported definition the status bar read "0 problems · 57 lint
+  findings" while the tab beside it read "Problems 57". Lint now has its own **Lint** chip in the
+  Problems view, off by default, and **All**, **Errors** and **Warnings** list only the problems; the
+  status bar's lint item and **Lint definition** open the lint list directly.
+
 ## [6.1.0] - 2026-10-22
 
 ### Added

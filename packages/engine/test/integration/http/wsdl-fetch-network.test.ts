@@ -6,8 +6,8 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { configureKerberos } from '../../../src/http/auth/kerberos-native.js';
-import { importWsdl } from '../../../src/soap/import.js';
+import { configureKerberos } from '#core/http/auth/kerberos-native';
+import { importWsdl } from '#protocol-soap/soap/import';
 import { fakeKerberos } from '../../helpers/fake-kerberos.js';
 import { readPublicFixture } from '../../helpers/fixtures.js';
 import { generateServerCert, generateTestCa, type TestCertificate } from '../../helpers/test-certs.js';

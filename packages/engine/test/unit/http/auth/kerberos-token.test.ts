@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { HttpError } from '../../../../src/errors.js';
+import { HttpError } from '#core/errors';
 import {
   defaultSpn,
   kerberosToken,
@@ -7,7 +7,7 @@ import {
   normaliseSpn,
   startKerberosContext,
   withNegotiate,
-} from '../../../../src/http/auth/kerberos-token.js';
+} from '#core/http/auth/kerberos-token';
 import { fakeKerberos } from '../../../helpers/fake-kerberos.js';
 
 describe('normaliseSpn', () => {

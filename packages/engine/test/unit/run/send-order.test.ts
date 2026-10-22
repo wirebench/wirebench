@@ -12,27 +12,29 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { writeProtoDefinitionCache } from '../../../src/grpc/cache.js';
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
-import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
-import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
-import { DEFAULT_REQUEST_PROPERTIES } from '../../../src/soap/model.js';
-import type { OAuth2Auth, Project } from '../../../src/project/model.js';
-import type { Interface, SoapRequestDef } from '../../../src/soap/model.js';
-import { apiDefinitionDir } from '../../../src/project/paths.js';
-import { createApi, createRestRequest, entry } from '../../../src/rest/model.js';
-import type { RunContext } from '../../../src/run/context.js';
-import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
-import { createRunSender } from '../../../src/run/run.js';
-import { selectRequests } from '../../../src/run/select.js';
-import type { SelectedRequest } from '../../../src/run/select.js';
-import type { RequestScripts, ScriptOutcome, ScriptPhase } from '../../../src/script/model.js';
-import { RequestScripting, type ScriptedRequest, type ScriptRunLevel } from '../../../src/script/request-scripts.js';
-import type { ScriptSandbox } from '../../../src/script/sandbox/host.js';
-import { createWebhookCollection } from '../../../src/webhooks/model.js';
-import { normalizeWsa } from '../../../src/wsa/model.js';
+import { writeProtoDefinitionCache } from '#protocol-grpc/grpc/cache';
+import { createGrpcApi, createGrpcRequest } from '#protocol-grpc/grpc/model';
+import type { HttpExchange, HttpRequest } from '#core/http/types';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '#core/project/model';
+import { DEFAULT_REQUEST_PROPERTIES } from '#protocol-soap/soap/model';
+import type { OAuth2Auth, Project } from '#core/project/model';
+import type { Interface, SoapRequestDef } from '#protocol-soap/soap/model';
+import { apiDefinitionDir } from '#core/project/paths';
+import { createApi, createRestRequest, entry } from '#protocol-rest/rest/model';
+import type { RunContext } from '#core/run/context';
+import { createRunTokenSource } from '#core/run/oauth2-token';
+import { createRunSender } from '#core/run/run';
+import { selectRequests } from '#core/run/select';
+import type { SelectedRequest } from '#core/run/select';
+import type { RequestScripts, ScriptOutcome, ScriptPhase } from '#core/script/model';
+import { RequestScripting, type ScriptedRequest, type ScriptRunLevel } from '#core/script/request-scripts';
+import type { ScriptSandbox } from '#core/script/sandbox/host';
+import { createWebhookCollection } from '#protocol-rest/webhooks/model';
+import { normalizeWsa } from '#protocol-soap/wsa/model';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
-import { webhooksOf, withWebhooks } from '../../../src/webhooks/model.js';
+import { webhooksOf, withWebhooks } from '#protocol-rest/webhooks/model';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const { events, wire } = vi.hoisted(() => ({
   events: [] as string[],
@@ -40,16 +42,16 @@ const { events, wire } = vi.hoisted(() => ({
   wire: { httpStatus: 200, grpcStatus: 0 },
 }));
 
-vi.mock('../../../src/wsdl/cache.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../src/wsdl/cache.js')>()),
+vi.mock('#protocol-soap/wsdl/cache', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#protocol-soap/wsdl/cache')>()),
   readDefinitionCache: () => {
     events.push('load definition');
     return Promise.reject(new Error('this test has no definition cache'));
   },
 }));
 
-vi.mock('../../../src/grpc/cache.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../src/grpc/cache.js')>();
+vi.mock('#protocol-grpc/grpc/cache', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('#protocol-grpc/grpc/cache')>();
   return {
     ...actual,
     readGrpcDefinitionCache: (...args: Parameters<typeof actual.readGrpcDefinitionCache>) => {
@@ -59,16 +61,16 @@ vi.mock('../../../src/grpc/cache.js', async (importOriginal) => {
   };
 });
 
-vi.mock('../../../src/rest/script-types.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../src/rest/script-types.js')>()),
+vi.mock('#protocol-rest/rest/script-types', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#protocol-rest/rest/script-types')>()),
   loadOpenApiDocument: () => {
     events.push('load openapi');
     return Promise.resolve(undefined);
   },
 }));
 
-vi.mock('../../../src/soap/send.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../src/soap/send.js')>()),
+vi.mock('#protocol-soap/soap/send', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#protocol-soap/soap/send')>()),
   sendSoapRequest: () => {
     events.push('send');
     return Promise.resolve({
@@ -88,8 +90,8 @@ vi.mock('../../../src/soap/send.js', async (importOriginal) => ({
   },
 }));
 
-vi.mock('../../../src/rest/send.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../src/rest/send.js')>()),
+vi.mock('#protocol-rest/rest/send', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#protocol-rest/rest/send')>()),
   sendRest: () => {
     events.push('send');
     return Promise.resolve({
@@ -110,8 +112,8 @@ vi.mock('../../../src/rest/send.js', async (importOriginal) => ({
   },
 }));
 
-vi.mock('../../../src/grpc/call.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../src/grpc/call.js')>()),
+vi.mock('#protocol-grpc/grpc/call', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#protocol-grpc/grpc/call')>()),
   callGrpc: () => {
     events.push('send');
     return Promise.resolve({

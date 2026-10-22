@@ -1,9 +1,9 @@
 /** WebSocket as a module: registered, its run facet offers every request, and any can be a sequence step. */
 import { describe, expect, it } from 'vitest';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { createWsApi, createWsFolder, createWsRequest } from '../../../src/ws/model.js';
-import { wsProtocol } from '../../../src/ws/module.js';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { createWsApi, createWsFolder, createWsRequest } from '#protocol-ws/ws/model';
+import { wsProtocol } from '#protocol-ws/ws/module';
 
 const project: Project = {
   ...createProject('WebSocket module', { id: 'proj-ws' }),

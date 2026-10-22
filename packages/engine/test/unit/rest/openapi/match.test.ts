@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchOperation } from '../../../../src/rest/openapi/match.js';
+import { matchOperation } from '#protocol-rest/rest/openapi/match';
 
 const operations = [
   { method: 'get', path: '/pets' },

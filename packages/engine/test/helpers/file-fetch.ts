@@ -4,7 +4,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import type { FetchDocument } from '../../src/wsdl/resolver.js';
+import type { FetchDocument } from '#protocol-soap/wsdl/resolver';
 
 export const fileFetch: FetchDocument = async (location) => {
   const bytes = new Uint8Array(await readFile(fileURLToPath(location)));

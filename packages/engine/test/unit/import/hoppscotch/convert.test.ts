@@ -3,7 +3,7 @@ import type { MappedClientImport } from '../../../../src/import/client-import.js
 import { hoppscotchEnvironmentPlan, mapHoppscotch, urlencodedRows } from '../../../../src/import/hoppscotch/convert.js';
 import { importHoppscotch, importHoppscotchEnvironments } from '../../../../src/import/hoppscotch/import.js';
 import { parseHoppscotchCollections, parseHoppscotchEnvironments } from '../../../../src/import/hoppscotch/parse.js';
-import type { RestApi, RestFolder, RestRequestDef } from '../../../../src/rest/model.js';
+import type { RestApi, RestFolder, RestRequestDef } from '#protocol-rest/rest/model';
 import { hoppscotchFixture, hoppscotchFixtureDir } from './fixtures.js';
 
 function mapped(name: string, options: Parameters<typeof mapHoppscotch>[2] = {}): MappedClientImport {

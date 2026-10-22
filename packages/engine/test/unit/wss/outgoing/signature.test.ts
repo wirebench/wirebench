@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { applyOutgoingWss } from '../../../../src/wss/apply.js';
-import { verifySignature } from '../../../../src/wss/outgoing/signature.js';
-import { createWssContext } from '../../../../src/wss/model.js';
-import { WSS_TOKEN_TYPES } from '../../../../src/wss/key-identifiers.js';
-import { NS } from '../../../../src/xml/namespaces.js';
+import { applyOutgoingWss } from '#protocol-soap/wss/apply';
+import { verifySignature } from '#protocol-soap/wss/outgoing/signature';
+import { createWssContext } from '#protocol-soap/wss/model';
+import { WSS_TOKEN_TYPES } from '#protocol-soap/wss/key-identifiers';
+import { NS } from '#core/xml/namespaces';
 import { generateClientCert, generateSigningCert, generateTestCa } from '../../../helpers/test-certs.js';
-import type { Keystore, KeystoreAlias } from '../../../../src/keystore/model.js';
+import type { Keystore, KeystoreAlias } from '#core/keystore/model';
 import type {
   WssDigestAlgorithm,
   WssEntry,
@@ -14,7 +14,7 @@ import type {
   WssPart,
   WssSignatureAlgorithm,
   WssSignatureEntry,
-} from '../../../../src/wss/model.js';
+} from '#protocol-soap/wss/model';
 
 const SOAP11 =
   '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">' +

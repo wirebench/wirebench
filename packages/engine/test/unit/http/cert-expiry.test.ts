@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  certificateExpiry,
-  isCertificateVerifyError,
-  pemCertificates,
-  tlsProbeTarget,
-} from '../../../src/http/cert-expiry.js';
+import { certificateExpiry, isCertificateVerifyError, pemCertificates, tlsProbeTarget } from '#core/http/cert-expiry';
 import { generateServerCert, generateTestCa } from '../../helpers/test-certs.js';
 
 const DAY = 24 * 60 * 60 * 1000;

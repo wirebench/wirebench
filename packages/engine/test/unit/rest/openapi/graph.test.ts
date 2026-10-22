@@ -12,10 +12,10 @@
  * flake, but an exponential walk over this shape cannot finish at all.
  */
 import { describe, expect, it } from 'vitest';
-import { parseOpenApiDocument, parseSchema } from '../../../../src/rest/openapi/parse.js';
-import { resolveRefs } from '../../../../src/json/schema/refs.js';
-import { sampleFromSchema, sampleXml, MAX_SAMPLE_NODES } from '../../../../src/json/schema/sample.js';
-import type { FetchDocument } from '../../../../src/wsdl/resolver.js';
+import { parseOpenApiDocument, parseSchema } from '#protocol-rest/rest/openapi/parse';
+import { resolveRefs } from '#core/json/schema/refs';
+import { sampleFromSchema, sampleXml, MAX_SAMPLE_NODES } from '#core/json/schema/sample';
+import type { FetchDocument } from '#protocol-soap/wsdl/resolver';
 
 const SCHEMAS = 25;
 const PROPERTIES = 12;

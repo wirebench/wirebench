@@ -13,18 +13,18 @@ import {
   restItemFor,
 } from '../../../src/index.js';
 import type { CookieJarHost, Project, RestRequestDef } from '../../../src/index.js';
-import type { ExchangeOptions } from '../../../src/run/exchange.js';
-import type { SendHost } from '../../../src/run/host.js';
-import { openExchange } from '../../../src/run/open.js';
-import { createRunScope } from '../../../src/run/scope.js';
-import { selectRequests } from '../../../src/run/select.js';
-import type { RunContext } from '../../../src/run/context.js';
+import type { ExchangeOptions } from '#core/run/exchange';
+import type { SendHost } from '#core/run/host';
+import { openExchange } from '#core/run/open';
+import { createRunScope } from '#core/run/scope';
+import { selectRequests } from '#core/run/select';
+import type { RunContext } from '#core/run/context';
 import { startTestRestServer } from '../../helpers/index.js';
 import type { TestRestServer } from '../../helpers/index.js';
 import { generateServerCert, generateTestCa } from '../../helpers/test-certs.js';
 import { startTestProxy } from '../../helpers/test-proxy.js';
 import { testHost } from '../../helpers/send-host.js';
-import { withRestApis } from '../../../src/rest/model.js';
+import { withRestApis } from '#protocol-rest/rest/model';
 
 let server: TestRestServer;
 let dir: string;

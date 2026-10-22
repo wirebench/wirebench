@@ -3,8 +3,8 @@
  * step, whichever client's call it uses.
  */
 import { describe, expect, it } from 'vitest';
-import { ScriptImportLog } from '../../../src/import/scripts.js';
-import type { LayeredApi } from '../../../src/script/model.js';
+import { ScriptImportLog } from '#core/import/scripts';
+import type { LayeredApi } from '#core/script/model';
 
 const warningsFor = (api: LayeredApi, text: string): string[] => {
   const log = new ScriptImportLog(api);

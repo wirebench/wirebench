@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { WsaError } from '../../../src/errors.js';
-import { createEnvelope } from '../../../src/soap/envelope.js';
-import { serializeXml } from '../../../src/xml/serialize.js';
+import { WsaError } from '#core/errors';
+import { createEnvelope } from '#protocol-soap/soap/envelope';
+import { serializeXml } from '#core/xml/serialize';
 import {
   anonymousAddress,
   applyWsaHeaders,
@@ -12,9 +12,9 @@ import {
   effectiveTo,
   stripWsaHeaders,
   wsaNamespace,
-} from '../../../src/wsa/headers.js';
-import { DEFAULT_WSA_CONFIG, effectiveWsa, normalizeWsa } from '../../../src/wsa/model.js';
-import type { WsaConfig } from '../../../src/wsa/model.js';
+} from '#protocol-soap/wsa/headers';
+import { DEFAULT_WSA_CONFIG, effectiveWsa, normalizeWsa } from '#protocol-soap/wsa/model';
+import type { WsaConfig } from '#protocol-soap/wsa/model';
 
 const CTX = {
   endpoint: 'http://example.invalid/soap',

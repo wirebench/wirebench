@@ -2,10 +2,10 @@
  * Test helper: one request and response snapshot per protocol, as a send hands them to a script.
  * Shared by the layer tests over non-REST requests and the converter's equivalence harness.
  */
-import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from '../../../src/grpc/scripting.js';
-import type { McpRequestSnapshot, McpResponseSnapshot } from '../../../src/mcp/scripting.js';
-import type { RestRequestSnapshot, RestResponseSnapshot } from '../../../src/rest/scripting.js';
-import type { SoapRequestSnapshot, SoapResponseSnapshot } from '../../../src/soap/scripting.js';
+import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from '#protocol-grpc/grpc/scripting';
+import type { McpRequestSnapshot, McpResponseSnapshot } from '#protocol-mcp/mcp/scripting';
+import type { RestRequestSnapshot, RestResponseSnapshot } from '#protocol-rest/rest/scripting';
+import type { SoapRequestSnapshot, SoapResponseSnapshot } from '#protocol-soap/soap/scripting';
 
 export const REST: RestRequestSnapshot = {
   protocol: 'rest',

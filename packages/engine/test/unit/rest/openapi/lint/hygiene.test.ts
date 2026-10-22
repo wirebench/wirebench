@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { OpenApiError } from '../../../../../src/errors.js';
-import { lintOpenApi } from '../../../../../src/rest/openapi/lint/run.js';
-import { HYGIENE_RULES } from '../../../../../src/rest/openapi/lint/hygiene.js';
-import { lintWithRules } from '../../../../../src/rest/openapi/lint/run.js';
+import { OpenApiError } from '#core/errors';
+import { lintOpenApi } from '#protocol-rest/rest/openapi/lint/run';
+import { HYGIENE_RULES } from '#protocol-rest/rest/openapi/lint/hygiene';
+import { lintWithRules } from '#protocol-rest/rest/openapi/lint/run';
 import { brief, fixture, recordingFetch } from './helpers.js';
 
 const hygiene = async (name: string) =>

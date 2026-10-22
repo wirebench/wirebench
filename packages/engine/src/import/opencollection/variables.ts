@@ -5,15 +5,15 @@
  * credential rule makes it a secret, whose value travels only in `secretValue`.
  */
 
-import type { ReportBuilder } from '../report.js';
-import { uniqueName } from '../report.js';
-import type { ImportedScriptFile } from '../scripts.js';
-import { importedScriptPath, scriptText } from '../scripts.js';
-import { rewriteMustache } from '../templates.js';
-import type { ImportedVariable, ImportedVariableSet } from '../variables.js';
-import { VariableSetBuilder, credentialSafeVariable } from '../variables.js';
-import { slugify } from '../../project/paths.js';
-import type { RequestScripts } from '../../script/model.js';
+import type { ReportBuilder } from '#core/import/report';
+import { uniqueName } from '#core/import/report';
+import type { ImportedScriptFile } from '#core/import/scripts';
+import { importedScriptPath, scriptText } from '#core/import/scripts';
+import { rewriteMustache } from '#core/import/templates';
+import type { ImportedVariable, ImportedVariableSet } from '#core/import/variables';
+import { VariableSetBuilder, credentialSafeVariable } from '#core/import/variables';
+import { slugify } from '#core/project/paths';
+import type { RequestScripts } from '#core/script/model';
 import type { OcCollection, OcEnvironment, OcItem, OcScript, OcVariable } from './model.js';
 
 type Scalar = string | number | boolean;

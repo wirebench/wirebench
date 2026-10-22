@@ -2,7 +2,7 @@ import { chmod, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { findSourceTool, runSourceTool } from '../../../../src/secrets/sources/exec.js';
+import { findSourceTool, runSourceTool } from '#core/secrets/sources/exec';
 
 async function toolDir(scripts: Record<string, string>): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'wb-src-'));

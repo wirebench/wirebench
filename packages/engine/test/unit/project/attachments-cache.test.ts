@@ -2,17 +2,17 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ProjectError } from '../../../src/errors.js';
-import type { Attachment } from '../../../src/soap/model.js';
+import { ProjectError } from '#core/errors';
+import type { Attachment } from '#protocol-soap/soap/model';
 import {
   attachmentFile,
   attachmentsIndexFile,
-  createFileAttachmentResolver,
   listAttachments,
   pruneAttachments,
   putAttachment,
   readAttachment,
-} from '../../../src/project/attachments-cache.js';
+} from '#core/project/attachments-cache';
+import { createFileAttachmentResolver } from '#protocol-soap/soap/attachments';
 import { tempProjectDir } from './fixture.js';
 
 const INVOICE = new TextEncoder().encode('%PDF-1.4 invoice');

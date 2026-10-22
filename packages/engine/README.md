@@ -2,6 +2,19 @@
 
 `@wirebench/engine` is an internal dependency of [`@wirebench/cli`](https://github.com/wirebench/wirebench/tree/main/packages/cli) and is published so the CLI can depend on a versioned package rather than a workspace link. It has no stability promise of its own: a major release may rename or remove exports, as 3.1 did, and the exports tagged `@internal` may change in any release. See the [Wirebench repository](https://github.com/wirebench/wirebench) for usage, documentation, and issue tracking.
 
+## Packages
+
+The engine is seven workspace packages, and this is the one that publishes. `@wirebench/core` holds the
+protocol interface, the registry, the run loop, the project and workspace formats, HTTP, the script
+sandbox and everything else the protocols share; `@wirebench/protocol-soap`, `-rest`, `-grpc`, `-ws` and
+`-mcp` each hold one protocol; `@wirebench/engine` composes them (`protocols.ts`) and exports the
+API (`index.ts` and the subpaths). The six others are private: this package reaches them through the
+import maps `#core/*` and `#protocol-<name>/*`, which in the workspace name the packages and in the
+published tarball name copies under `dist/vendor/<package>/` that `scripts/vendor-packages.mjs` makes at
+prepack. Their third-party dependencies are listed here as this package's own. Three rules hold between
+them, checked by `pnpm check:engine-layers`: a protocol imports core and itself; core imports core; the
+engine imports anything, and nothing imports the engine (ADR-0030).
+
 ## Migrating to 6.0
 
 6.0 finishes taking the protocols out of the engine's core ([ADR-0017](https://github.com/wirebench/wirebench/blob/main/docs/adr/0017-a-protocol-is-a-module-behind-one-interface.md), #184 phase 3). Nothing was kept as a deprecated alias.

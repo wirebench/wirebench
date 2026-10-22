@@ -1,9 +1,9 @@
 import { Agent } from 'undici';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { HttpError } from '../../../src/errors.js';
-import { createSingleConnectionDispatcher, sendHttp } from '../../../src/http/client.js';
-import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
-import { splitPemBundle } from '../../../src/http/tls.js';
+import { HttpError } from '#core/errors';
+import { createSingleConnectionDispatcher, sendHttp } from '#core/http/client';
+import type { HttpExchange, HttpRequest } from '#core/http/types';
+import { splitPemBundle } from '#core/http/tls';
 import {
   generateClientCert,
   generateServerCert,

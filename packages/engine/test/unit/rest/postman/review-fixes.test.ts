@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { PostmanError } from '../../../../src/errors.js';
-import { importPostmanCollection } from '../../../../src/rest/postman/import.js';
-import { apiFromPostmanCollection } from '../../../../src/rest/postman/map.js';
-import type { PostmanCollection, PostmanItem } from '../../../../src/rest/postman/model.js';
+import { PostmanError } from '#core/errors';
+import { importPostmanCollection } from '#protocol-rest/rest/postman/import';
+import { apiFromPostmanCollection } from '#protocol-rest/rest/postman/map';
+import type { PostmanCollection, PostmanItem } from '#protocol-rest/rest/postman/model';
 import {
   normalizePostmanPath,
   parsePostmanCollection,
   translatePostmanVariables,
-} from '../../../../src/rest/postman/parse.js';
+} from '#protocol-rest/rest/postman/parse';
 
 const info = { name: 'C', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' };
 

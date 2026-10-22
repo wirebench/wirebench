@@ -8,8 +8,8 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { generateMock, startMock } from '../../../src/index.js';
 import type { RunningMock } from '../../../src/index.js';
-import { loadProject } from '../../../src/project/load.js';
-import { saveProject } from '../../../src/project/save.js';
+import { loadProject } from '#core/project/load';
+import { saveProject } from '#core/project/save';
 import { listTree, tempProjectDir } from '../project/fixture.js';
 import { mockProject, wsdlFixture } from './fixture.js';
 

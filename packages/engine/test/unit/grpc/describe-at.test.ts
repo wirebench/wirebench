@@ -6,8 +6,8 @@
  * whose items are the field's own type, and a map, whose entries the user names.
  */
 import { describe, expect, it } from 'vitest';
-import { describeMessageAt } from '../../../src/grpc/proto/describe.js';
-import { loadProtoSet } from '../../../src/grpc/proto/load.js';
+import { describeMessageAt } from '#protocol-grpc/grpc/proto/describe';
+import { loadProtoSet } from '#protocol-grpc/grpc/proto/load';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
 
 const greeter = () => loadProtoSet(readProtoFixture('greeter'), { roots: ['greeter.proto'] });

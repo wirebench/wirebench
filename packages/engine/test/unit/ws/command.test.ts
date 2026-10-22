@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { wsToCommand } from '../../../src/ws/command.js';
+import { wsToCommand } from '#protocol-ws/ws/command';
 
 describe('wsToCommand', () => {
   it('renders a websocat line with headers and no flags', () => {

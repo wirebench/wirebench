@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { expand, secretNamesIn } from '../../../src/project/properties.js';
-import type { PropertyScopes } from '../../../src/project/properties.js';
+import { expand, secretNamesIn } from '#core/project/properties';
+import type { PropertyScopes } from '#core/project/properties';
 
 function scopes(data: Record<string, string>, env: Record<string, string> = {}): PropertyScopes {
   return {

@@ -2,9 +2,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { HYGIENE_RULES } from '../../../../../src/rest/openapi/lint/hygiene.js';
-import { lintWithRules } from '../../../../../src/rest/openapi/lint/run.js';
-import { referenceLocation, runnerSource } from '../../../../../src/rest/openapi/lint/resolver.js';
+import { HYGIENE_RULES } from '#protocol-rest/rest/openapi/lint/hygiene';
+import { lintWithRules } from '#protocol-rest/rest/openapi/lint/run';
+import { referenceLocation, runnerSource } from '#protocol-rest/rest/openapi/lint/resolver';
 import { FIXTURES, fixture, recordingFetch } from './helpers.js';
 
 const REMOTE = 'https://remote.test/paths.yaml';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { expand } from '../../../src/project/properties.js';
-import { propertyReferences } from '../../../src/project/references.js';
+import { expand } from '#core/project/properties';
+import { propertyReferences } from '#core/project/references';
 
 describe('propertyReferences', () => {
   it('finds the shorthand, scoped, secret and dynamic forms with their spans', () => {

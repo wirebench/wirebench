@@ -5,7 +5,7 @@
  * sign and the `Authorization` must match the suite byte for byte.
  */
 import { describe, expect, it } from 'vitest';
-import { signSigV4, sigV4SignedHeaderNames } from '../../../../src/http/auth/sigv4.js';
+import { signSigV4, sigV4SignedHeaderNames } from '#core/http/auth/sigv4';
 
 const SUITE = {
   accessKeyId: 'AKIDEXAMPLE',

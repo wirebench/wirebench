@@ -1,10 +1,10 @@
 import { createPrivateKey } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { generateSigningCert, generateTestCa } from '../../../helpers/test-certs.js';
-import type { Keystore } from '../../../../src/keystore/model.js';
-import { applyOutgoingWss } from '../../../../src/wss/apply.js';
-import { createWssContext } from '../../../../src/wss/model.js';
-import type { WssOutgoingConfig } from '../../../../src/wss/model.js';
+import type { Keystore } from '#core/keystore/model';
+import { applyOutgoingWss } from '#protocol-soap/wss/apply';
+import { createWssContext } from '#protocol-soap/wss/model';
+import type { WssOutgoingConfig } from '#protocol-soap/wss/model';
 
 const SOAP11 =
   '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">' +

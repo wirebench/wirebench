@@ -7,18 +7,20 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Assertion } from '../../../src/assert/model.js';
-import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { OAuth2Auth, Project } from '../../../src/project/model.js';
-import { createApi, createRestRequest, withRestApis } from '../../../src/rest/model.js';
-import type { RunContext } from '../../../src/run/context.js';
-import type { ClientIdentity } from '../../../src/run/host.js';
-import { runRequests } from '../../../src/run/run.js';
-import { selectRequests } from '../../../src/run/select.js';
+import type { Assertion } from '#core/assert/model';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '#core/project/model';
+import type { OAuth2Auth, Project } from '#core/project/model';
+import { createApi, createRestRequest, withRestApis } from '#protocol-rest/rest/model';
+import type { RunContext } from '#core/run/context';
+import type { ClientIdentity } from '#core/run/host';
+import { runRequests } from '#core/run/run';
+import { selectRequests } from '#core/run/select';
 import { testHost } from '../../helpers/send-host.js';
 import { generateClientCert, generateServerCert, generateTestCa } from '../../helpers/test-certs.js';
 import { startTestRestServer } from '../../helpers/test-rest-server.js';
 import type { TestRestServer } from '../../helpers/test-rest-server.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const ca = generateTestCa();
 const clientCert = generateClientCert(ca);

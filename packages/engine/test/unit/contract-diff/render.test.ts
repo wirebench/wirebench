@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { ContractDiff } from '../../../src/contract-diff/model.js';
+import type { ContractDiff } from '#core/contract-diff/model';
 import {
   contractDiffJson,
   escapeMarkdownCell,
   renderContractDiffHtml,
   renderContractDiffMarkdown,
   summaryLine,
-} from '../../../src/contract-diff/render.js';
+} from '#core/contract-diff/render';
 
 const DIFF: ContractDiff = {
   format: 'openapi',

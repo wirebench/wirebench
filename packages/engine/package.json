@@ -25,36 +25,47 @@
         "default": "./dist/index.js"
       },
       "./xml": {
-        "types": "./dist/xml/index.d.ts",
-        "default": "./dist/xml/index.js"
+        "types": "./dist/xml.d.ts",
+        "default": "./dist/xml.js"
       },
       "./rest": {
-        "types": "./dist/rest/browser.d.ts",
-        "default": "./dist/rest/browser.js"
+        "types": "./dist/rest.d.ts",
+        "default": "./dist/rest.js"
       },
       "./json": {
-        "types": "./dist/json/cursor.d.ts",
-        "default": "./dist/json/cursor.js"
+        "types": "./dist/json.d.ts",
+        "default": "./dist/json.js"
       },
       "./grpc": {
-        "types": "./dist/grpc/browser.d.ts",
-        "default": "./dist/grpc/browser.js"
+        "types": "./dist/grpc.d.ts",
+        "default": "./dist/grpc.js"
       },
       "./asyncapi": {
-        "types": "./dist/asyncapi/browser.d.ts",
-        "default": "./dist/asyncapi/browser.js"
+        "types": "./dist/asyncapi.d.ts",
+        "default": "./dist/asyncapi.js"
       },
       "./snapshot": {
-        "types": "./dist/snapshot/index.d.ts",
-        "default": "./dist/snapshot/index.js"
+        "types": "./dist/snapshot.d.ts",
+        "default": "./dist/snapshot.js"
+      },
+      "./ws": {
+        "types": "./dist/ws.d.ts",
+        "default": "./dist/ws.js"
       },
       "./detect": {
         "types": "./dist/import-detect.d.ts",
         "default": "./dist/import-detect.js"
       }
+    },
+    "imports": {
+      "#core/*": "./dist/vendor/core/*.js",
+      "#protocol-soap/*": "./dist/vendor/protocol-soap/*.js",
+      "#protocol-rest/*": "./dist/vendor/protocol-rest/*.js",
+      "#protocol-grpc/*": "./dist/vendor/protocol-grpc/*.js",
+      "#protocol-ws/*": "./dist/vendor/protocol-ws/*.js",
+      "#protocol-mcp/*": "./dist/vendor/protocol-mcp/*.js"
     }
   },
-  "prepack": "node -e \"require('fs').copyFileSync('../../LICENSE', 'LICENSE')\"",
   "exports": {
     ".": {
       "development": "./src/index.ts",
@@ -62,39 +73,39 @@
       "default": "./dist/index.js"
     },
     "./xml": {
-      "development": "./src/xml/index.ts",
-      "types": "./dist/xml/index.d.ts",
-      "default": "./dist/xml/index.js"
+      "development": "./src/xml.ts",
+      "types": "./dist/xml.d.ts",
+      "default": "./dist/xml.js"
     },
     "./rest": {
-      "development": "./src/rest/browser.ts",
-      "types": "./dist/rest/browser.d.ts",
-      "default": "./dist/rest/browser.js"
+      "development": "./src/rest.ts",
+      "types": "./dist/rest.d.ts",
+      "default": "./dist/rest.js"
     },
     "./json": {
-      "development": "./src/json/cursor.ts",
-      "types": "./dist/json/cursor.d.ts",
-      "default": "./dist/json/cursor.js"
+      "development": "./src/json.ts",
+      "types": "./dist/json.d.ts",
+      "default": "./dist/json.js"
     },
     "./grpc": {
-      "development": "./src/grpc/browser.ts",
-      "types": "./dist/grpc/browser.d.ts",
-      "default": "./dist/grpc/browser.js"
+      "development": "./src/grpc.ts",
+      "types": "./dist/grpc.d.ts",
+      "default": "./dist/grpc.js"
     },
     "./asyncapi": {
-      "development": "./src/asyncapi/browser.ts",
-      "types": "./dist/asyncapi/browser.d.ts",
-      "default": "./dist/asyncapi/browser.js"
+      "development": "./src/asyncapi.ts",
+      "types": "./dist/asyncapi.d.ts",
+      "default": "./dist/asyncapi.js"
     },
     "./snapshot": {
-      "development": "./src/snapshot/index.ts",
-      "types": "./dist/snapshot/index.d.ts",
-      "default": "./dist/snapshot/index.js"
+      "development": "./src/snapshot.ts",
+      "types": "./dist/snapshot.d.ts",
+      "default": "./dist/snapshot.js"
     },
     "./ws": {
-      "development": "./src/ws/browser.ts",
-      "types": "./dist/ws/browser.d.ts",
-      "default": "./dist/ws/browser.js"
+      "development": "./src/ws.ts",
+      "types": "./dist/ws.d.ts",
+      "default": "./dist/ws.js"
     },
     "./detect": {
       "development": "./src/import-detect.ts",
@@ -107,7 +118,8 @@
     "build": "tsc -b",
     "test": "vitest run --root ../.. --project engine-unit --project engine-integration",
     "test:perf": "vitest run --root ../.. --project engine-perf",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "prepack": "node -e \"require('fs').copyFileSync('../../LICENSE', 'LICENSE')\" && node scripts/vendor-packages.mjs"
   },
   "dependencies": {
     "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
@@ -135,6 +147,20 @@
     "kerberos": "7.0.0"
   },
   "devDependencies": {
-    "ajv": "^8.20.0"
+    "ajv": "^8.20.0",
+    "@wirebench/core": "workspace:*",
+    "@wirebench/protocol-soap": "workspace:*",
+    "@wirebench/protocol-rest": "workspace:*",
+    "@wirebench/protocol-grpc": "workspace:*",
+    "@wirebench/protocol-ws": "workspace:*",
+    "@wirebench/protocol-mcp": "workspace:*"
+  },
+  "imports": {
+    "#core/*": "@wirebench/core/*",
+    "#protocol-soap/*": "@wirebench/protocol-soap/*",
+    "#protocol-rest/*": "@wirebench/protocol-rest/*",
+    "#protocol-grpc/*": "@wirebench/protocol-grpc/*",
+    "#protocol-ws/*": "@wirebench/protocol-ws/*",
+    "#protocol-mcp/*": "@wirebench/protocol-mcp/*"
   }
 }

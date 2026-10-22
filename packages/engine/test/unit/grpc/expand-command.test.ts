@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { grpcToCommand, GRPC_COMMAND_REDACTED } from '../../../src/grpc/command.js';
-import { expandGrpcInput } from '../../../src/grpc/expand.js';
-import { entry } from '../../../src/rest/model.js';
-import { toGrpcSendInput } from '../../../src/grpc/send-input.js';
-import { DEFAULT_PREFERENCES } from '../../../src/project/preferences.js';
+import { grpcToCommand, GRPC_COMMAND_REDACTED } from '#protocol-grpc/grpc/command';
+import { expandGrpcInput } from '#protocol-grpc/grpc/expand';
+import { entry } from '#protocol-rest/rest/model';
+import { toGrpcSendInput } from '#protocol-grpc/grpc/send-input';
+import { DEFAULT_PREFERENCES } from '#core/project/preferences';
 
 describe('expandGrpcInput', () => {
   const scopes = { project: { host: 'api.test', tenant: 'acme', quote: 'say "hi"' }, global: {}, system: {} };

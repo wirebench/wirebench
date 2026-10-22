@@ -3,8 +3,8 @@
  * declarations — in-process (the service) and through the worker (the host).
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import type { OpenApiOperation } from '../../../src/rest/openapi/model.js';
-import { createScriptChecker } from '../../../src/script/check/host.js';
+import type { OpenApiOperation } from '#protocol-rest/rest/openapi/model';
+import { createScriptChecker } from '#core/script/check/host';
 import {
   MAX_MODELS,
   checkOnce,
@@ -14,9 +14,11 @@ import {
   removeModel,
   signatureHelpAt,
   updateModel,
-} from '../../../src/script/check/service.js';
-import { scriptDeclarations } from '../../../src/script/types/api.js';
-import { restScriptTypes } from '../../../src/rest/script-types.js';
+} from '#core/script/check/service';
+import { scriptDeclarations } from '#core/script/types/api';
+import { restScriptTypes } from '#protocol-rest/rest/script-types';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const pet = {
   type: 'object',

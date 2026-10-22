@@ -6,13 +6,13 @@
 
 import { readFile, stat } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
-import { BrunoError } from '../../errors.js';
+import { BrunoError } from '#core/errors';
 import type { MappedClientEntry, MappedClientImport, MappedProtoSet } from '../client-import.js';
 import type { ImportFolderErrorCode } from '../read-folder.js';
 import { readImportFolder } from '../read-folder.js';
-import type { ImportReport } from '../report.js';
-import { ReportBuilder } from '../report.js';
-import { unshieldTemplates } from '../template-dialects.js';
+import type { ImportReport } from '#core/import/report';
+import { ReportBuilder } from '#core/import/report';
+import { unshieldTemplates } from '#core/import/template-dialects';
 import type { MapOpenCollectionOptions } from '../opencollection/map.js';
 import { mapOpenCollection } from '../opencollection/map.js';
 import type { OcCollection } from '../opencollection/model.js';

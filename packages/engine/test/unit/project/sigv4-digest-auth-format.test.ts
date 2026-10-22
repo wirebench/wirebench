@@ -1,11 +1,13 @@
 import { cp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadProject } from '../../../src/project/load.js';
-import { saveProject } from '../../../src/project/save.js';
+import { loadProject } from '#core/project/load';
+import { saveProject } from '#core/project/save';
 import { tempProjectDir } from './fixture.js';
-import { FORMAT_VERSION } from '../../../src/project/model.js';
-import { authConfigSchema, definitionAuthSchema, soapOwnerAuthSchema } from '../../../src/project/schema-parts.js';
+import { FORMAT_VERSION } from '#core/project/model';
+import { authConfigSchema, definitionAuthSchema, soapOwnerAuthSchema } from '#core/project/schema-parts';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const SIGV4 = {
   type: 'aws-sigv4',

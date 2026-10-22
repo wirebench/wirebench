@@ -3,16 +3,18 @@
  * that a secret never leaves the engine unmasked.
  */
 import { describe, expect, it } from 'vitest';
-import type { AssertionSubject } from '../../../src/assert/model.js';
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
-import { createProject } from '../../../src/project/model.js';
-import type { Project, PropertyMap } from '../../../src/project/model.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
-import { createSequence, createSequenceStep, SEQUENCE_LIMITS } from '../../../src/sequence/model.js';
-import type { SequenceStep } from '../../../src/sequence/model.js';
-import { runSequence } from '../../../src/sequence/run.js';
-import type { ResolvedStep, SequenceStepSender } from '../../../src/sequence/run.js';
-import { createWsApi, createWsRequest } from '../../../src/ws/model.js';
+import type { AssertionSubject } from '#core/assert/model';
+import { createGrpcApi, createGrpcRequest } from '#protocol-grpc/grpc/model';
+import { createProject } from '#core/project/model';
+import type { Project, PropertyMap } from '#core/project/model';
+import { createApi, createRestRequest } from '#protocol-rest/rest/model';
+import { createSequence, createSequenceStep, SEQUENCE_LIMITS } from '#core/sequence/model';
+import type { SequenceStep } from '#core/sequence/model';
+import { runSequence } from '#core/sequence/run';
+import type { ResolvedStep, SequenceStepSender } from '#core/sequence/run';
+import { createWsApi, createWsRequest } from '#protocol-ws/ws/model';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 function project(): Project {
   return {

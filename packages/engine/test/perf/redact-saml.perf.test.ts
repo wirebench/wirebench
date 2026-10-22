@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SKIP_PERF } from '../bench/budgets.js';
-import { redactXml } from '../../src/redact/index.js';
+import { redactXml } from '#core/redact/index';
 
 describe.skipIf(SKIP_PERF)('security-token redaction', () => {
   it('stays linear on an unclosed assertion in a large response', { retry: 1 }, () => {

@@ -3,8 +3,8 @@
  * then media type (exact, `+json`, `application/*`, `*\/*`), media-type parameters ignored.
  */
 import { describe, expect, it } from 'vitest';
-import { selectResponse } from '../../../../src/rest/openapi/responses.js';
-import type { OpenApiResponses } from '../../../../src/rest/openapi/model.js';
+import { selectResponse } from '#protocol-rest/rest/openapi/responses';
+import type { OpenApiResponses } from '#protocol-rest/rest/openapi/model';
 
 const s = (name: string): { title: string } => ({ title: name });
 

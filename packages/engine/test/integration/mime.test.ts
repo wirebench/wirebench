@@ -2,13 +2,13 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Attachment } from '../../src/soap/model.js';
-import { DEFAULT_REQUEST_PROPERTIES } from '../../src/soap/model.js';
-import { mergePreferences } from '../../src/project/preferences.js';
-import { parseMultipartRelated } from '../../src/soap/mime/multipart.js';
-import type { AttachmentResolver } from '../../src/soap/mime/types.js';
-import { toSoapSendInput } from '../../src/soap/send-input.js';
-import { sendSoapRequest } from '../../src/soap/send.js';
+import type { Attachment } from '#protocol-soap/soap/model';
+import { DEFAULT_REQUEST_PROPERTIES } from '#protocol-soap/soap/model';
+import { mergePreferences } from '#core/project/preferences';
+import { parseMultipartRelated } from '#protocol-soap/soap/mime/multipart';
+import type { AttachmentResolver } from '#protocol-soap/soap/mime/types';
+import { toSoapSendInput } from '#protocol-soap/soap/send-input';
+import { sendSoapRequest } from '#protocol-soap/soap/send';
 import {
   MIME_FIXTURE_CID,
   MIME_FIXTURE_PNG,

@@ -5,21 +5,23 @@
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { WirebenchError } from '../../../../src/errors.js';
-import { loadProject } from '../../../../src/project/load.js';
-import { createProject, FORMAT_VERSION } from '../../../../src/project/model.js';
-import type { Project } from '../../../../src/project/model.js';
-import type { PropertyScopes } from '../../../../src/project/properties.js';
-import { saveProject } from '../../../../src/project/save.js';
-import { projectFiles } from '../../../../src/project/serialize.js';
-import { encodeRestBody } from '../../../../src/rest/body.js';
-import { expandRestSendInput } from '../../../../src/rest/expand.js';
-import { graphqlPayload, graphqlPayloadText } from '../../../../src/rest/graphql/body.js';
-import { createApi, createRestRequest, restApisOf } from '../../../../src/rest/model.js';
-import type { RestBody, RestRequestDef } from '../../../../src/rest/model.js';
-import { restSecrets } from '../../../../src/rest/secrets.js';
-import type { RestSendInput } from '../../../../src/rest/send.js';
+import { WirebenchError } from '#core/errors';
+import { loadProject } from '#core/project/load';
+import { createProject, FORMAT_VERSION } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import type { PropertyScopes } from '#core/project/properties';
+import { saveProject } from '#core/project/save';
+import { projectFiles } from '#core/project/serialize';
+import { encodeRestBody } from '#protocol-rest/rest/body';
+import { expandRestSendInput } from '#protocol-rest/rest/expand';
+import { graphqlPayload, graphqlPayloadText } from '#protocol-rest/rest/graphql/body';
+import { createApi, createRestRequest, restApisOf } from '#protocol-rest/rest/model';
+import type { RestBody, RestRequestDef } from '#protocol-rest/rest/model';
+import { restSecrets } from '#protocol-rest/rest/secrets';
+import type { RestSendInput } from '#protocol-rest/rest/send';
 import { tempProjectDir } from '../../project/fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../../src/protocols.js';
 
 const REQUESTS = 'apis/shop/requests';
 

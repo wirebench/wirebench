@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { CI_GATE_FACTOR, GATE_SAMPLES, SKIP_PERF, median } from '../bench/budgets.js';
-import { createProject } from '../../src/project/model.js';
-import { createApi, createRestRequest, entry as kv } from '../../src/rest/model.js';
-import { scanProjectForSecrets } from '../../src/secrets/scan/scan.js';
+import { createProject } from '#core/project/model';
+import { createApi, createRestRequest, entry as kv } from '#protocol-rest/rest/model';
+import { scanProjectForSecrets } from '#core/secrets/scan/scan';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../src/protocols.js';
 
 describe.skipIf(SKIP_PERF)('secret scan', () => {
   it('a 2,000-request project scans in under 100 ms (SC-7)', { retry: 1 }, () => {

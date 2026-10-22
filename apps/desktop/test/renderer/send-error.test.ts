@@ -22,6 +22,9 @@ describe('describeSendError', () => {
     expect(view.title).toBe('Unresolved variables');
     expect(view.tone).toBe('danger');
     expect(view.hint).toEqual({ kind: 'unresolved', refs: ['${petId}', '${#Env#token}'] });
+    // The engine's message only repeats the hint, and sending again unchanged fails the same way (#747).
+    expect(view.detail).toBeUndefined();
+    expect(view.retryable).toBe(false);
   });
 
   it('reads an unclosed ${ as a syntax slip, not a missing value', () => {
@@ -72,6 +75,7 @@ describe('describeSendError', () => {
       detail: undefined,
       tone: 'neutral',
       hint: undefined,
+      retryable: true,
     });
     expect(describeSendError({ code: 'send-declined', message: 'x' }).tone).toBe('neutral');
   });
@@ -83,7 +87,30 @@ describe('describeSendError', () => {
       detail: 'x',
       tone: 'danger',
       hint: undefined,
+      retryable: true,
     });
+  });
+
+  it('offers no Retry for a request that fails as written, and one for everything else (#747)', () => {
+    for (const code of ['invalid-url', 'rest-url-incomplete']) {
+      expect(describeSendError({ code, message: 'x' }).retryable, code).toBe(false);
+    }
+    const unclosed = describeSendError({
+      code: 'rest-unresolved-properties',
+      message: 'x',
+      details: { unresolved: ['${$rand'] },
+    });
+    expect(unclosed.retryable).toBe(false);
+    for (const code of [
+      'connection-refused',
+      'dns',
+      'timeout',
+      'tls-untrusted',
+      'script-type-error',
+      'secret-missing',
+    ]) {
+      expect(describeSendError({ code, message: 'x' }).retryable, code).toBe(true);
+    }
   });
 
   it('puts the host and port to check in the headline, and keeps the title short', () => {
@@ -146,13 +173,11 @@ describe('isProblemOutcome', () => {
     ]) {
       expect(isProblemOutcome(code), code).toBe(false);
     }
-    for (const code of [
-      'rest-unresolved-properties',
-      'rest-url-incomplete',
-      'invalid-url',
-      'script-type-error',
-      'tls-untrusted',
-    ]) {
+    // A variable nothing resolves is shown like a transport failure (#747): named in the panel, not counted.
+    for (const code of ['rest-unresolved-properties', 'grpc-unresolved-properties', 'ws-unresolved-properties']) {
+      expect(isProblemOutcome(code), code).toBe(false);
+    }
+    for (const code of ['rest-url-incomplete', 'invalid-url', 'script-type-error', 'tls-untrusted']) {
       expect(isProblemOutcome(code), code).toBe(true);
     }
   });

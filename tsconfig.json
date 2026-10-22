@@ -1,6 +1,12 @@
 {
   "files": [],
   "references": [
+    { "path": "packages/core" },
+    { "path": "packages/protocol-soap" },
+    { "path": "packages/protocol-rest" },
+    { "path": "packages/protocol-grpc" },
+    { "path": "packages/protocol-ws" },
+    { "path": "packages/protocol-mcp" },
     { "path": "packages/engine" },
     { "path": "packages/engine/tsconfig.test.json" },
     { "path": "packages/cli" },

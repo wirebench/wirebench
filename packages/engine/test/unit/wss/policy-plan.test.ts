@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { WssEntry } from '../../../src/wss/model.js';
-import type { WssPolicy } from '../../../src/wss/policy/model.js';
-import { checkWssPolicy, describeWssPolicy, proposeWssEntries, suiteAlgorithms } from '../../../src/wss/policy/plan.js';
-import { NS } from '../../../src/xml/namespaces.js';
+import type { WssEntry } from '#protocol-soap/wss/model';
+import type { WssPolicy } from '#protocol-soap/wss/policy/model';
+import { checkWssPolicy, describeWssPolicy, proposeWssEntries, suiteAlgorithms } from '#protocol-soap/wss/policy/plan';
+import { NS } from '#core/xml/namespaces';
 
 const BASE: WssPolicy = {
   version: '1.2',

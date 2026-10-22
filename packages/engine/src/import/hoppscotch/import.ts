@@ -4,7 +4,7 @@
  */
 
 import { readFile, stat } from 'node:fs/promises';
-import { HoppscotchError } from '../../errors.js';
+import { HoppscotchError } from '#core/errors';
 import type { MappedClientImport } from '../client-import.js';
 import type { MapHoppscotchOptions } from './convert.js';
 import { hoppscotchEnvironmentPlan, mapHoppscotch } from './convert.js';

@@ -7,9 +7,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { writeProtoDefinitionCache } from '../../../src/grpc/cache.js';
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
-import type { GrpcSelected } from '../../../src/grpc/run.js';
+import { writeProtoDefinitionCache } from '#protocol-grpc/grpc/cache';
+import { createGrpcApi, createGrpcRequest } from '#protocol-grpc/grpc/model';
+import type { GrpcSelected } from '#protocol-grpc/grpc/run';
 import {
   createApi,
   createInterface,
@@ -20,14 +20,14 @@ import {
   soapItemFor,
 } from '../../../src/index.js';
 import type { Project, SoapRequestDef } from '../../../src/index.js';
-import { apiDefinitionDir } from '../../../src/project/paths.js';
-import type { RunContext } from '../../../src/run/context.js';
-import type { SendHost } from '../../../src/run/host.js';
-import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
-import { openExchange } from '../../../src/run/open.js';
-import { createRunScope } from '../../../src/run/scope.js';
-import { selectRequests } from '../../../src/run/select.js';
-import type { SelectedRequest } from '../../../src/run/select.js';
+import { apiDefinitionDir } from '#core/project/paths';
+import type { RunContext } from '#core/run/context';
+import type { SendHost } from '#core/run/host';
+import { createRunTokenSource } from '#core/run/oauth2-token';
+import { openExchange } from '#core/run/open';
+import { createRunScope } from '#core/run/scope';
+import { selectRequests } from '#core/run/select';
+import type { SelectedRequest } from '#core/run/select';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
 import { testHost } from '../../helpers/send-host.js';
 import { startTestGrpcServer } from '../../helpers/test-grpc-server.js';
@@ -36,7 +36,7 @@ import { startTestRestServer } from '../../helpers/test-rest-server.js';
 import type { TestRestServer } from '../../helpers/test-rest-server.js';
 import { startTestSoapServer } from '../../helpers/test-soap-server.js';
 import type { TestSoapServer } from '../../helpers/test-soap-server.js';
-import { withRestApis } from '../../../src/rest/model.js';
+import { withRestApis } from '#protocol-rest/rest/model';
 
 let rest: TestRestServer;
 let soap: TestSoapServer;

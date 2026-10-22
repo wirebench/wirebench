@@ -113,10 +113,11 @@ pnpm build && WIREBENCH_SCREENSHOTS=1 pnpm test:e2e -- screenshots.spec.ts
 
 A protocol is one module behind the `ProtocolModule` interface
 ([ADR-0017](docs/adr/0017-a-protocol-is-a-module-behind-one-interface.md)). Adding one to the engine
-changes its own folder, plus registration edits that are expected: the module in `BUILTIN_PROTOCOLS`
-and its types in the `SelectedRequest`, `RequestSnapshot` and `ResponseSnapshot` unions of
-`packages/engine/src/protocols.ts`, its exports in `packages/engine/src/index.ts`, and its folder in
-`GROUP_FOLDERS` in `scripts/engine-import-graph.mjs` (steps 3 and 4 below). If a change needs any other
+changes its own package, plus registration edits that are expected: the module in `BUILTIN_PROTOCOLS`
+of `packages/engine/src/protocols.ts` and its types in core's open unions (`SelectedRequest`,
+`RequestSnapshot`, `ResponseSnapshot` and the others, by augmentation), its exports in
+`packages/engine/src/index.ts`, and its package in
+`PACKAGE_GROUPS` in `scripts/engine-import-graph.mjs` (steps 3 and 4 below). If a change needs any other
 core file to know the protocol's name, the interface is missing something, and that is worth an issue
 before the code.
 
@@ -126,7 +127,10 @@ work, and until then the app does not show its containers.
 
 The checklist, with `packages/engine/test/helpers/echo-protocol.ts` as the smallest complete example:
 
-1. **A folder**, `packages/engine/src/<name>/`, holding the model and a file per facet. Leave a facet
+1. **A package**, `packages/protocol-<name>/`, with a `package.json` (private, depending on
+   `@wirebench/core` and its own third-party packages), a `tsconfig.json` referencing `../core`, and
+   `src/<name>/` holding the model and a file per facet. Core files are imported as `#core/<path>`
+   (an import map every package declares); a relative import never leaves a package. Leave a facet
    out when the protocol has none: a module that leaves the `run` facet out cannot run its requests
    (WebSocket defines a run facet inline in `ws/module.ts` that offers no requests), and one that
    leaves out `scripting` cannot have scripts.
@@ -146,13 +150,19 @@ The checklist, with `packages/engine/test/helpers/echo-protocol.ts` as the small
    - `module.ts`: `defineProtocol({ kind, feature, storage, run, scripting })`.
 2. **The feature descriptor.** `feature.id` equals `kind`. Give it a `title`, `default`, `stage`
    (`experimental` for a protocol that should ship off) and the features it `requires`.
-3. **Register it**: add the module to `BUILTIN_PROTOCOLS` in `packages/engine/src/protocols.ts`, and
-   its selection, exchange and snapshot types to the unions declared there. Add what a host needs to
-   `packages/engine/src/index.ts`.
-4. **The dependency rules.** A protocol's folders import core and themselves, never another
-   protocol's; core imports no protocol. Add the new folder to `GROUP_FOLDERS` in
-   `scripts/engine-import-graph.mjs`. `pnpm check:engine-layers`, which `pnpm check` runs, fails on an
-   import that breaks either rule (`scripts/engine-layers.test.ts` proves it bites). It is the only
+3. **Register it**: list the package in `packages/engine/package.json` (`devDependencies`, an import
+   map `#protocol-<name>/*`, its `publishConfig.imports` entry) and in `scripts/vendor-packages.mjs`,
+   reference it from `packages/engine/tsconfig.json` and the root `tsconfig.json`, add the module to
+   `BUILTIN_PROTOCOLS` in `packages/engine/src/protocols.ts`, and add its selection, exchange, event
+   and snapshot types to core's open unions by module augmentation beside each member's definition
+   (`packages/core/src/protocol/unions.ts` says how), re-exporting one type from each such file in
+   `protocols.ts`. Add what a host needs to `packages/engine/src/index.ts`, and list the package in
+   `apps/desktop/package.json` and the Dockerfiles' manifest copies.
+4. **The dependency rules.** A protocol imports core and itself, never another protocol; core imports
+   core; the engine imports anything, and nothing imports the engine. Add the new package to
+   `PACKAGE_GROUPS` in `scripts/engine-import-graph.mjs`. `pnpm check:engine-layers`, which
+   `pnpm check` runs, fails on an import or a manifest dependency that breaks a rule, and on a relative
+   import that leaves its package (`scripts/engine-layers.test.ts` proves it bites). It is the only
    enforcement: there is no lint rule, so an editor does not flag a wrong import, and you learn of one
    from `pnpm check`. If two protocols need the same code, it moves into core (`http/`, `json/`,
    `xml/`), in its own commit.

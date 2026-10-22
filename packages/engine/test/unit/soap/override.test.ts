@@ -7,20 +7,22 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
-import { DEFAULT_REQUEST_PROPERTIES, soapInterfacesOf, withSoapInterfaces } from '../../../src/soap/model.js';
-import type { Project } from '../../../src/project/model.js';
-import type { SoapRequestDef } from '../../../src/soap/model.js';
-import type { RunContext } from '../../../src/run/context.js';
-import { openExchange } from '../../../src/run/open.js';
-import { createRunScope } from '../../../src/run/scope.js';
-import type { RunScope } from '../../../src/protocol/module.js';
-import { resolveSoap } from '../../../src/soap/run.js';
-import type { SoapSelected } from '../../../src/soap/run.js';
-import { normalizeWsa } from '../../../src/wsa/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '#core/project/model';
+import { DEFAULT_REQUEST_PROPERTIES, soapInterfacesOf, withSoapInterfaces } from '#protocol-soap/soap/model';
+import type { Project } from '#core/project/model';
+import type { SoapRequestDef } from '#protocol-soap/soap/model';
+import type { RunContext } from '#core/run/context';
+import { openExchange } from '#core/run/open';
+import { createRunScope } from '#core/run/scope';
+import type { RunScope } from '#core/protocol/module';
+import { resolveSoap } from '#protocol-soap/soap/run';
+import type { SoapSelected } from '#protocol-soap/soap/run';
+import { normalizeWsa } from '#protocol-soap/wsa/model';
 import { startTestSoapServer } from '../../helpers/index.js';
 import type { TestSoapServer } from '../../helpers/index.js';
 import { testHost } from '../../helpers/send-host.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const ENVELOPE_WITH = (text: string): string =>
   `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><w:Echo xmlns:w="urn:wb"><w:text>${text}</w:text></w:Echo></soapenv:Body></soapenv:Envelope>`;

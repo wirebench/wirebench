@@ -35,7 +35,7 @@ import {
 } from './preferences.js';
 import { policyFilePath } from './policy.js';
 import { portableDataDir } from './portable.js';
-import { readLeftoverProjectFolders, WorkspaceService } from './workspace-service.js';
+import { readLeftoverProjectFolders, toFeatureStateWire, WorkspaceService } from './workspace-service.js';
 import { WorkspaceState } from './workspace-state.js';
 import { routeWorkspaces, scoped, WindowScopes } from './window-scope.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
@@ -53,10 +53,8 @@ import { events } from '../shared/ipc.js';
 import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
 import {
-  enabledAreasFromEnv,
-  localTerminalFromEnv,
-  serialFromEnv,
-  telnetFromEnv,
+  resolveAreas,
+  type AreasRun,
   hostsOnFileChange,
   hostsOnWorkspaceChange,
   registerEnabledAreaChannels,
@@ -542,12 +540,12 @@ const teamSecretStore = scoped(scopes, (scope) => scope.teamSecretStore);
 const secretSources = scoped(scopes, (scope) => scope.secretSources);
 const secretScans = scoped(scopes, (scope) => scope.secretScans);
 
-/** The areas `WIREBENCH_AREAS` leaves switched on (see `areas.ts`). */
-const enabledAreas = enabledAreasFromEnv();
-/** Whether the local terminal tab (#410) is on: with the SSH area, unless `local-terminal=off`. */
-const localTerminalOn = localTerminalFromEnv();
-const telnetOn = telnetFromEnv();
-const serialOn = serialFromEnv();
+/**
+ * This run's area switches (`areas.ts`): the managed policy's `areas` section (#360) over `WIREBENCH_AREAS`.
+ * Resolved again in `whenReady` once the policy is read, before any channel registers or window opens; what is
+ * built before that (the SSH service) reads the flags through a getter at connect.
+ */
+let areas: AreasRun = resolveAreas({ env: process.env });
 /** The device each serial host (#426) opens on this machine, per workspace. */
 const serialDevices = new SerialDeviceStore(join(app.getPath('userData'), SERIAL_DEVICES_FILE));
 
@@ -640,8 +638,8 @@ const sessionLogs = new SessionLogStore({
 });
 const sshService = new SshService({
   ...sshConnectDeps,
-  telnet: telnetOn,
-  serial: serialOn,
+  telnet: () => areas.telnet,
+  serial: () => areas.serial,
   // The serial-port binding is native and loads at the first serial connect, so a machine it does not load on
   // only loses serial consoles.
   openSerial: (options) => openSerialSession(options),
@@ -983,10 +981,10 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
         currentValues.syncWorkspace(snapshot);
         secretSources.noteChange();
         // This window's cached hosts.yaml was the workspace it left; only this window re-reads.
-        hostsOnWorkspaceChange(enabledAreas, hosts, () => {
+        hostsOnWorkspaceChange(areas.enabled, hosts, () => {
           send(events.ssh.hostsChanged, {});
         });
-        hostsOnWorkspaceChange(enabledAreas, snippets, () => {
+        hostsOnWorkspaceChange(areas.enabled, snippets, () => {
           send(events.ssh.snippetsChanged, {});
         });
         // A session belongs to the workspace it was opened in; its credentials were that workspace's.
@@ -1019,14 +1017,14 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
         send(events.engine.progress, progress);
       },
       onHostsFileChanged: () => {
-        hostsOnFileChange(enabledAreas, hosts, () => {
+        hostsOnFileChange(areas.enabled, hosts, () => {
           send(events.ssh.hostsChanged, {});
         });
         // An edit on disk may have changed a running forward's rule.
         void forwardService.hostsChanged(target);
       },
       onSnippetsFileChanged: () => {
-        hostsOnFileChange(enabledAreas, snippets, () => {
+        hostsOnFileChange(areas.enabled, snippets, () => {
           send(events.ssh.snippetsChanged, {});
         });
       },
@@ -1100,6 +1098,8 @@ void app.whenReady().then(async () => {
     env: process.env,
     isPackaged: app.isPackaged,
   });
+  // The managed policy (read by the load above) may switch an area off (#360); it beats the environment.
+  areas = resolveAreas({ policy: preferencesService.policy().areasOff, env: process.env });
   electronApp.setAppUserModelId('io.wirebench.desktop');
   registerAppProtocol();
 
@@ -1139,15 +1139,16 @@ void app.whenReady().then(async () => {
     () => {
       openWindow({ reopenLast: false });
     },
-    enabledAreas,
+    areas.enabled,
     {
       kinds: () => workspaceService.enabledKinds(),
       features: () => workspaceService.enabledFeatures(),
       states: () => workspaceService.featureStates(),
     },
-    localTerminalOn,
-    telnetOn,
-    serialOn,
+    areas.localTerminal,
+    areas.telnet,
+    areas.serial,
+    () => areas.states.map(toFeatureStateWire),
   );
   // The calling window's open projects' folders: the containment roots a renderer-named import path may sit in.
   const openProjectDirs = (): readonly string[] =>
@@ -1585,7 +1586,7 @@ void app.whenReady().then(async () => {
   });
   registerKeystoreChannels({ project: workspaceService, picks: dialogPicks });
   registerCertificateChannels({ project: workspaceService, preferences: preferencesService });
-  registerEnabledAreaChannels(enabledAreas, {
+  registerEnabledAreaChannels(areas.enabled, {
     hosts: hostsService,
     secrets: sshSecrets,
     ssh: sshService,
@@ -1622,7 +1623,7 @@ void app.whenReady().then(async () => {
     },
     terminalShares: { owner: terminalShareOwner, viewer: terminalShareViewer },
     keys: sshKeys,
-    localTerminal: localTerminalOn ? localTerminals : undefined,
+    localTerminal: areas.localTerminal ? localTerminals : undefined,
     importer: new SshImportService<WebContents>({
       home: () => homedir(),
       pick: (sender, options) => pickFile(sender, dialogPicks, options),

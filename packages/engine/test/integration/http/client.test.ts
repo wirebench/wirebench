@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { HttpError } from '../../../src/errors.js';
-import { sendHttp } from '../../../src/http/client.js';
+import { HttpError } from '#core/errors';
+import { sendHttp } from '#core/http/client';
 import { failedRequestOf } from '../../../src/index.js';
-import type { HttpRequest } from '../../../src/http/types.js';
+import type { HttpRequest } from '#core/http/types';
 import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';
 
 let server: TestSoapServer;

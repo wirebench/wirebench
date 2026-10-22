@@ -5,20 +5,20 @@
  * send refuses it. No engine code needs this dispatch: a module's `open` does it for itself
  * (ADR-0017), which is why it is not an export.
  */
-import { connectGrpc, resolveGrpc } from '../../src/grpc/run.js';
-import type { GrpcResolvedInput } from '../../src/grpc/run.js';
+import { connectGrpc, resolveGrpc } from '#protocol-grpc/grpc/run';
+import type { GrpcResolvedInput } from '#protocol-grpc/grpc/run';
 import type { SelectedRequest } from '../../src/protocols.js';
-import { resolveMcp } from '../../src/mcp/run.js';
-import type { McpResolvedInput } from '../../src/mcp/run.js';
-import type { PropertyScopes } from '../../src/project/properties.js';
-import { connectRest, resolveRest } from '../../src/rest/run.js';
-import type { RestSendInput } from '../../src/rest/send.js';
-import type { RunContext } from '../../src/run/context.js';
-import { unresolvedError } from '../../src/run/send-helpers.js';
-import { connectSoap, resolveSoap } from '../../src/soap/run.js';
-import type { SoapSendInput } from '../../src/soap/types.js';
-import type { WsCallInput } from '../../src/ws/expand.js';
-import { resolveWs } from '../../src/ws/run.js';
+import { resolveMcp } from '#protocol-mcp/mcp/run';
+import type { McpResolvedInput } from '#protocol-mcp/mcp/run';
+import type { PropertyScopes } from '#core/project/properties';
+import { connectRest, resolveRest } from '#protocol-rest/rest/run';
+import type { RestSendInput } from '#protocol-rest/rest/send';
+import type { RunContext } from '#core/run/context';
+import { unresolvedError } from '#core/run/send-helpers';
+import { connectSoap, resolveSoap } from '#protocol-soap/soap/run';
+import type { SoapSendInput } from '#protocol-soap/soap/types';
+import type { WsCallInput } from '#protocol-ws/ws/expand';
+import { resolveWs } from '#protocol-ws/ws/run';
 
 /** A request resolved and connected, told apart by `kind`. */
 export type Prepared =

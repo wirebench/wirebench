@@ -8,24 +8,24 @@
  * Pure.
  */
 
-import { HoppscotchError } from '../../errors.js';
-import type { IdGenerator } from '../../project/model.js';
-import { generateId } from '../../project/model.js';
-import { slugify } from '../../project/paths.js';
-import { folderRequests } from '../../rest/model.js';
-import { apiFromPostmanCollection } from '../../rest/postman/map.js';
-import { parsePostmanCollection } from '../../rest/postman/parse.js';
+import { HoppscotchError } from '#core/errors';
+import type { IdGenerator } from '#core/project/model';
+import { generateId } from '#core/project/model';
+import { slugify } from '#core/project/paths';
+import { folderRequests } from '#protocol-rest/rest/model';
+import { apiFromPostmanCollection } from '#protocol-rest/rest/postman/map';
+import { parsePostmanCollection } from '#protocol-rest/rest/postman/parse';
 import type { MappedClientEntry, MappedClientImport } from '../client-import.js';
 import { V21_SCHEMA } from '../collection-v3/convert.js';
 import { inlineQuery } from '../insomnia/convert.js';
-import type { ImportReport } from '../report.js';
-import { ReportBuilder } from '../report.js';
-import type { DroppedLevel, ImportedScriptFile } from '../scripts.js';
-import { droppedApiScriptFiles, eventsOf } from '../scripts.js';
-import { hoppscotchTemplates } from '../template-dialects.js';
-import { rewriteMustache } from '../templates.js';
-import type { ImportedVariable, ImportedVariables, ImportedVariableSet } from '../variables.js';
-import { credentialSafeVariable, VariableSetBuilder, warnCredentialLookingNames } from '../variables.js';
+import type { ImportReport } from '#core/import/report';
+import { ReportBuilder } from '#core/import/report';
+import type { DroppedLevel, ImportedScriptFile } from '#core/import/scripts';
+import { droppedApiScriptFiles, eventsOf } from '#core/import/scripts';
+import { hoppscotchTemplates } from '#core/import/template-dialects';
+import { rewriteMustache } from '#core/import/templates';
+import type { ImportedVariable, ImportedVariables, ImportedVariableSet } from '#core/import/variables';
+import { credentialSafeVariable, VariableSetBuilder, warnCredentialLookingNames } from '#core/import/variables';
 import type { HopBody, HopCollection, HopEnvironment, HopRec, HopRequest, HopRow, HopVariable } from './model.js';
 
 type Json = Record<string, unknown>;

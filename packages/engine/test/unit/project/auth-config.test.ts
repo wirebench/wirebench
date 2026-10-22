@@ -5,10 +5,10 @@
  * scheme may ever carry a credential *value* — only a keychain reference (ADR-0004).
  */
 import { describe, expect, it } from 'vitest';
-import type { ApiKeyAuth, AuthConfig, BearerAuth, OAuth2Auth } from '../../../src/project/model.js';
-import { DEFAULT_OAUTH2_AUTH } from '../../../src/project/model.js';
-import { authConfigSchema, endpointAuthSchema, soapOwnerAuthSchema } from '../../../src/project/schema.js';
-import { authDocument } from '../../../src/project/serialize.js';
+import type { ApiKeyAuth, AuthConfig, BearerAuth, OAuth2Auth } from '#core/project/model';
+import { DEFAULT_OAUTH2_AUTH } from '#core/project/model';
+import { authConfigSchema, endpointAuthSchema, soapOwnerAuthSchema } from '#core/project/schema';
+import { authDocument } from '#core/project/serialize';
 
 /** Parses a document the way the loader does, failing the test on a schema error. */
 function parse(document: unknown): AuthConfig {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { parseXml } from '../../../src/xml/parse.js';
-import { NS } from '../../../src/xml/namespaces.js';
-import { createEnvelope, detectEnvelopeVersion, envelopeNamespace } from '../../../src/soap/envelope.js';
+import { parseXml } from '#core/xml/parse';
+import { NS } from '#core/xml/namespaces';
+import { createEnvelope, detectEnvelopeVersion, envelopeNamespace } from '#protocol-soap/soap/envelope';
 
 describe('envelopeNamespace', () => {
   it('maps each version to its envelope namespace', () => {

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { Worker } from 'node:worker_threads';
 import { afterEach, describe, expect, it } from 'vitest';
-import { forwardWorkerOutput, routeWorkerOutput, workerOutputOptions } from '../../src/worker-output.js';
+import { forwardWorkerOutput, routeWorkerOutput, workerOutputOptions } from '#core/worker-output';
 
 const WRITES_TO_STDOUT = `process.stdout.write('stray line\\n');`;
 

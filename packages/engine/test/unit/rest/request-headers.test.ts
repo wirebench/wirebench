@@ -3,8 +3,8 @@
  * Headers tab's preview, so the two cannot disagree about what goes on the wire.
  */
 import { describe, expect, it } from 'vitest';
-import { entry } from '../../../src/rest/model.js';
-import { headersOfRows, restHeaderRows } from '../../../src/rest/request-headers.js';
+import { entry } from '#protocol-rest/rest/model';
+import { headersOfRows, restHeaderRows } from '#protocol-rest/rest/request-headers';
 
 describe('restHeaderRows', () => {
   it('lists each generated header with its source, lowest layer first', () => {

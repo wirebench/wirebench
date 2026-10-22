@@ -4,7 +4,7 @@
  * layout. See `docs/specs/2026-10-11-collection-v3-import-design.md`.
  */
 
-import type { ImportReport } from '../report.js';
+import type { ImportReport } from '#core/import/report';
 
 /** A YAML document read from the folder: its root-relative POSIX path and its top-level record. */
 export interface V3File {

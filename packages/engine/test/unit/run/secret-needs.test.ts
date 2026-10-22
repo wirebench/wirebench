@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { secretNeedsOf } from '../../../src/run/secret-needs.js';
-import { selectRequests } from '../../../src/run/select.js';
-import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
-import { DEFAULT_REQUEST_PROPERTIES } from '../../../src/soap/model.js';
-import type { EndpointAuth, Project, WssRef } from '../../../src/project/model.js';
-import type { Interface, SoapRequestDef } from '../../../src/soap/model.js';
-import { createGrpcApi, createGrpcFolder, createGrpcRequest, withGrpcApis } from '../../../src/grpc/model.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
-import type { RestApi } from '../../../src/rest/model.js';
-import { normalizeWsa } from '../../../src/wsa/model.js';
-import type { Workspace } from '../../../src/workspace/model.js';
+import { secretNeedsOf } from '#core/run/secret-needs';
+import { selectRequests } from '#core/run/select';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '#core/project/model';
+import { DEFAULT_REQUEST_PROPERTIES } from '#protocol-soap/soap/model';
+import type { EndpointAuth, Project, WssRef } from '#core/project/model';
+import type { Interface, SoapRequestDef } from '#protocol-soap/soap/model';
+import { createGrpcApi, createGrpcFolder, createGrpcRequest, withGrpcApis } from '#protocol-grpc/grpc/model';
+import { createApi, createRestRequest } from '#protocol-rest/rest/model';
+import type { RestApi } from '#protocol-rest/rest/model';
+import { normalizeWsa } from '#protocol-soap/wsa/model';
+import type { Workspace } from '#core/workspace/model';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 function soapRequest(extra: Partial<SoapRequestDef> = {}): SoapRequestDef {
   return {

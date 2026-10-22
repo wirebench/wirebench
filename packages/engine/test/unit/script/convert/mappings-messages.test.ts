@@ -5,18 +5,20 @@
  */
 import ts from 'typescript';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from '../../../../src/grpc/scripting.js';
-import { restScriptTypes } from '../../../../src/rest/script-types.js';
-import type { RestRequestSnapshot, RestResponseSnapshot } from '../../../../src/rest/scripting.js';
-import { sentRequestReason } from '../../../../src/script/api/prelude.js';
-import { TC_NO_RESPONSE_YET, THUNDER_CLIENT_LAYER } from '../../../../src/script/api/thunder-client.js';
-import { convertScript } from '../../../../src/script/convert/index.js';
-import type { ConvertProtocol } from '../../../../src/script/convert/roots.js';
-import type { LayeredApi, ScriptPhase } from '../../../../src/script/model.js';
-import { runScript, type ScriptRunInput } from '../../../../src/script/run.js';
-import { createScriptSandbox } from '../../../../src/script/sandbox/host.js';
-import { apiDeclarations, secretNameType } from '../../../../src/script/types/api.js';
+import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from '#protocol-grpc/grpc/scripting';
+import { restScriptTypes } from '#protocol-rest/rest/script-types';
+import type { RestRequestSnapshot, RestResponseSnapshot } from '#protocol-rest/rest/scripting';
+import { sentRequestReason } from '#core/script/api/prelude';
+import { TC_NO_RESPONSE_YET, THUNDER_CLIENT_LAYER } from '#core/script/api/thunder-client';
+import { convertScript } from '#core/script/convert/index';
+import type { ConvertProtocol } from '#core/script/convert/roots';
+import type { LayeredApi, ScriptPhase } from '#core/script/model';
+import { runScript, type ScriptRunInput } from '#core/script/run';
+import { createScriptSandbox } from '#core/script/sandbox/host';
+import { apiDeclarations, secretNameType } from '#core/script/types/api';
 import { typeErrors } from '../ts-check.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../../src/protocols.js';
 
 // A type check builds a program for its case; under coverage on a busy runner that outlasts the
 // default 5 s.
