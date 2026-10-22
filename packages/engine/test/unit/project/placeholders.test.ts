@@ -5,26 +5,26 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createGrpcApi, createGrpcRequest, grpcApisOf } from '../../../src/grpc/model.js';
-import { nodeFs } from '../../../src/project/fs.js';
-import type { FsLike } from '../../../src/project/fs.js';
-import { loadProject } from '../../../src/project/load.js';
-import { containersOf, createProject, unsupportedOf, withContainersOf } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { takenContainerSlugs } from '../../../src/project/container-slugs.js';
-import { uniqueSlug } from '../../../src/project/paths.js';
-import { saveProject } from '../../../src/project/save.js';
-import { defineProtocol } from '../../../src/protocol/module.js';
-import type { ContainerBase, ProtocolStorage } from '../../../src/protocol/module.js';
-import { createProtocolRegistry } from '../../../src/protocol/registry.js';
+import { createGrpcApi, createGrpcRequest, grpcApisOf } from '#protocol-grpc/grpc/model';
+import { nodeFs } from '#core/project/fs';
+import type { FsLike } from '#core/project/fs';
+import { loadProject } from '#core/project/load';
+import { containersOf, createProject, unsupportedOf, withContainersOf } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { takenContainerSlugs } from '#core/project/container-slugs';
+import { uniqueSlug } from '#core/project/paths';
+import { saveProject } from '#core/project/save';
+import { defineProtocol } from '#core/protocol/module';
+import type { ContainerBase, ProtocolStorage } from '#core/protocol/module';
+import { createProtocolRegistry } from '#core/protocol/registry';
 import { BUILTIN_PROTOCOLS, createBuiltinRegistry, SCRIPTS_FEATURE } from '../../../src/protocols.js';
-import { createApi, createRestRequest, restApisOf } from '../../../src/rest/model.js';
-import { createWebhookCollection } from '../../../src/webhooks/model.js';
-import { createWsApi, createWsRequest, createWsSavedMessage, wsApisOf } from '../../../src/ws/model.js';
-import { createMcpRequest, createMcpServer, mcpServersOf } from '../../../src/mcp/model.js';
+import { createApi, createRestRequest, restApisOf } from '#protocol-rest/rest/model';
+import { createWebhookCollection } from '#protocol-rest/webhooks/model';
+import { createWsApi, createWsRequest, createWsSavedMessage, wsApisOf } from '#protocol-ws/ws/model';
+import { createMcpRequest, createMcpServer, mcpServersOf } from '#protocol-mcp/mcp/model';
 import { sampleProject, tempProjectDir } from './fixture.js';
-import { soapInterfacesOf } from '../../../src/soap/model.js';
-import { webhooksOf } from '../../../src/webhooks/model.js';
+import { soapInterfacesOf } from '#protocol-soap/soap/model';
+import { webhooksOf } from '#protocol-rest/webhooks/model';
 
 /** One REST API and one gRPC API, both with a request. */
 function baseProject(): Project {

@@ -5,10 +5,10 @@ import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { sendWithAuth } from '../../../src/http/auth/apply.js';
-import { kerberosToken } from '../../../src/http/auth/kerberos-token.js';
-import { createWssContext } from '../../../src/wss/model.js';
-import { requestIssuedToken } from '../../../src/wss/trust/client.js';
+import { sendWithAuth } from '#core/http/auth/apply';
+import { kerberosToken } from '#core/http/auth/kerberos-token';
+import { createWssContext } from '#protocol-soap/wss/model';
+import { requestIssuedToken } from '#protocol-soap/wss/trust/client';
 import { describeKerberos } from '../../helpers/kerberos-gate.js';
 import { startTestSts } from '../../helpers/test-sts-server.js';
 

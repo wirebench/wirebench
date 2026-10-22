@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { ProjectError } from '../../../src/errors.js';
+import { ProjectError } from '#core/errors';
 import {
   toWssIncomingConfig,
   toWssIncomingRef,
   toWssOutgoingConfig,
   toWssOutgoingRef,
-} from '../../../src/wss/configs.js';
-import type { WssRef } from '../../../src/project/model.js';
-import type { WssOutgoingConfig } from '../../../src/wss/model.js';
+} from '#protocol-soap/wss/configs';
+import type { WssRef } from '#core/project/model';
+import type { WssOutgoingConfig } from '#protocol-soap/wss/model';
 
 const ref: WssRef = {
   id: 'w1',

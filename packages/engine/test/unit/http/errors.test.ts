@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toHttpError } from '../../../src/http/errors.js';
+import { toHttpError } from '#core/http/errors';
 
 function codedError(code: string): Error & { code: string } {
   const err = new Error(code) as Error & { code: string };

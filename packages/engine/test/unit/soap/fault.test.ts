@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseXml } from '../../../src/xml/parse.js';
-import { isSoapFault, parseFault } from '../../../src/soap/fault.js';
+import { parseXml } from '#core/xml/parse';
+import { isSoapFault, parseFault } from '#protocol-soap/soap/fault';
 
 const FAULT_11 = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
    <soapenv:Body>

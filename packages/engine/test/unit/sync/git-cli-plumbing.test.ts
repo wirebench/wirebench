@@ -11,7 +11,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { WirebenchError } from '../../../src/errors.js';
+import { WirebenchError } from '#core/errors';
 import { findGit, GIT_CALL_ENV, GIT_PLUMBING_SUBCOMMANDS, GIT_SUBCOMMANDS, GitCli } from '../../../src/index.js';
 import type { GitCallEnv, GitLocation, GitRunOptions, Runner } from '../../../src/index.js';
 

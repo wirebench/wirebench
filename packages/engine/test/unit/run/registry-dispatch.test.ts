@@ -1,27 +1,27 @@
 /** Select, step lookup, secret needs and the sender ask the registry, and a switch turns a protocol off. */
 import { describe, expect, it } from 'vitest';
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { defineProtocol } from '../../../src/protocol/module.js';
-import type { RunGroup, SelectedBase } from '../../../src/protocol/module.js';
-import { createProtocolRegistry } from '../../../src/protocol/registry.js';
+import { createGrpcApi, createGrpcRequest } from '#protocol-grpc/grpc/model';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { defineProtocol } from '#core/protocol/module';
+import type { RunGroup, SelectedBase } from '#core/protocol/module';
+import { createProtocolRegistry } from '#core/protocol/registry';
 import { BUILTIN_PROTOCOLS, SCRIPTS_FEATURE, createBuiltinRegistry, defaultRegistry } from '../../../src/protocols.js';
-import { createApi, createRestRequest, entry } from '../../../src/rest/model.js';
-import type { RunContext } from '../../../src/run/context.js';
-import { exchangeController } from '../../../src/run/exchange.js';
-import { openExchange } from '../../../src/run/open.js';
-import { checkRunScripts, createRunSender } from '../../../src/run/run.js';
-import type { SentRequest } from '../../../src/run/run.js';
-import { createRunScope } from '../../../src/run/scope.js';
+import { createApi, createRestRequest, entry } from '#protocol-rest/rest/model';
+import type { RunContext } from '#core/run/context';
+import { exchangeController } from '#core/run/exchange';
+import { openExchange } from '#core/run/open';
+import { checkRunScripts, createRunSender } from '#core/run/run';
+import type { SentRequest } from '#core/run/run';
+import { createRunScope } from '#core/run/scope';
 import { testHost } from '../../helpers/send-host.js';
-import { secretNeedsOf } from '../../../src/run/secret-needs.js';
-import { findStepRequest, selectRequests } from '../../../src/run/select.js';
-import { RequestScripting } from '../../../src/script/request-scripts.js';
-import type { ScriptSandbox } from '../../../src/script/sandbox/host.js';
-import { runSequence } from '../../../src/sequence/run.js';
-import type { SequenceDef } from '../../../src/sequence/model.js';
-import { createWsApi, createWsRequest } from '../../../src/ws/model.js';
+import { secretNeedsOf } from '#core/run/secret-needs';
+import { findStepRequest, selectRequests } from '#core/run/select';
+import { RequestScripting } from '#core/script/request-scripts';
+import type { ScriptSandbox } from '#core/script/sandbox/host';
+import { runSequence } from '#core/sequence/run';
+import type { SequenceDef } from '#core/sequence/model';
+import { createWsApi, createWsRequest } from '#protocol-ws/ws/model';
 import { emptyStorage } from '../../helpers/empty-storage.js';
 
 const project: Project = {

@@ -4,7 +4,7 @@
  * `version` refused whole.
  */
 import { describe, expect, it } from 'vitest';
-import { isWirebenchError } from '../../../src/errors.js';
+import { isWirebenchError } from '#core/errors';
 import {
   bodyFilePath,
   mockDocument,
@@ -16,15 +16,9 @@ import {
   responseDocument,
   responseSlugOf,
   validateMock,
-} from '../../../src/mock/file.js';
-import {
-  createMock,
-  createMockOperation,
-  createMockResponse,
-  MOCK_LIMITS,
-  mockPathPrefix,
-} from '../../../src/mock/model.js';
-import type { MockDef } from '../../../src/mock/model.js';
+} from '#core/mock/file';
+import { createMock, createMockOperation, createMockResponse, MOCK_LIMITS, mockPathPrefix } from '#core/mock/model';
+import type { MockDef } from '#core/mock/model';
 
 function orders(): MockDef {
   const outOfStock = createMockResponse('Out of stock', {

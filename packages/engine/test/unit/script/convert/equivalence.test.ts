@@ -5,19 +5,19 @@
  * each have a case that pins the difference instead.
  */
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { loadProtoSet } from '../../../../src/grpc/proto/load.js';
-import { grpcScriptTypes } from '../../../../src/grpc/script-types.js';
-import { mcpScriptTypes } from '../../../../src/mcp/script-types.js';
-import type { OpenApiOperation } from '../../../../src/rest/openapi/model.js';
-import { restScriptTypes } from '../../../../src/rest/script-types.js';
-import { soapScriptTypes } from '../../../../src/soap/script-types.js';
-import { convertLevelScripts } from '../../../../src/script/convert/index.js';
-import { MAPPINGS } from '../../../../src/script/convert/mappings.js';
-import type { ConvertProtocol } from '../../../../src/script/convert/roots.js';
-import type { LayeredApi, ScriptApi, ScriptOutcome, ScriptPhase } from '../../../../src/script/model.js';
-import { runScript, type ScriptRunInput } from '../../../../src/script/run.js';
-import { createScriptSandbox } from '../../../../src/script/sandbox/host.js';
-import { apiDeclarations, secretNameType } from '../../../../src/script/types/api.js';
+import { loadProtoSet } from '#protocol-grpc/grpc/proto/load';
+import { grpcScriptTypes } from '#protocol-grpc/grpc/script-types';
+import { mcpScriptTypes } from '#protocol-mcp/mcp/script-types';
+import type { OpenApiOperation } from '#protocol-rest/rest/openapi/model';
+import { restScriptTypes } from '#protocol-rest/rest/script-types';
+import { soapScriptTypes } from '#protocol-soap/soap/script-types';
+import { convertLevelScripts } from '#core/script/convert/index';
+import { MAPPINGS } from '#core/script/convert/mappings';
+import type { ConvertProtocol } from '#core/script/convert/roots';
+import type { LayeredApi, ScriptApi, ScriptOutcome, ScriptPhase } from '#core/script/model';
+import { runScript, type ScriptRunInput } from '#core/script/run';
+import { createScriptSandbox } from '#core/script/sandbox/host';
+import { apiDeclarations, secretNameType } from '#core/script/types/api';
 import { GRPC, GRPC_RESPONSE, MCP, MCP_RESPONSE, REST, REST_RESPONSE, SOAP, SOAP_RESPONSE } from '../snapshots.js';
 import { typeErrors } from '../ts-check.js';
 import {

@@ -7,9 +7,9 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { request as undiciRequest } from 'undici';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { WsError } from '../../../src/errors.js';
-import { openWsSession, type WsSessionHandle } from '../../../src/ws/session.js';
-import type { WsFrame } from '../../../src/ws/model.js';
+import { WsError } from '#core/errors';
+import { openWsSession, type WsSessionHandle } from '#protocol-ws/ws/session';
+import type { WsFrame } from '#protocol-ws/ws/model';
 import {
   generateClientCert,
   generateServerCert,

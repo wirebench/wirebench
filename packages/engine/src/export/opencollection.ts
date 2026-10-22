@@ -4,9 +4,9 @@
  */
 
 import { stringify } from 'yaml';
-import type { Assertion } from '../assert/model.js';
-import type { KeyValueEntry } from '../http/entries.js';
-import type { AuthConfig } from '../project/model.js';
+import type { Assertion } from '#core/assert/model';
+import type { KeyValueEntry } from '#core/http/entries';
+import type { AuthConfig } from '#core/project/model';
 import type { CollectionExportFile } from './model.js';
 import type { WrittenFiles } from './postman.js';
 import type { ExportContext } from './shared.js';

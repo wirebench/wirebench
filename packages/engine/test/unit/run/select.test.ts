@@ -1,20 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import {
-  findStepRequest,
-  normaliseSelector,
-  runSelectorOf,
-  selectorCovers,
-  selectRequests,
-} from '../../../src/run/select.js';
+import { findStepRequest, normaliseSelector, runSelectorOf, selectorCovers, selectRequests } from '#core/run/select';
 import * as engine from '../../../src/index.js';
 import { hooksProject } from '../webhooks/fixture.js';
-import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
-import { DEFAULT_REQUEST_PROPERTIES } from '../../../src/soap/model.js';
-import type { Project } from '../../../src/project/model.js';
-import type { Interface, OperationDef, SoapRequestDef } from '../../../src/soap/model.js';
-import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '../../../src/grpc/model.js';
-import { createApi, createFolder, createRestRequest } from '../../../src/rest/model.js';
-import { normalizeWsa } from '../../../src/wsa/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '#core/project/model';
+import { DEFAULT_REQUEST_PROPERTIES } from '#protocol-soap/soap/model';
+import type { Project } from '#core/project/model';
+import type { Interface, OperationDef, SoapRequestDef } from '#protocol-soap/soap/model';
+import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '#protocol-grpc/grpc/model';
+import { createApi, createFolder, createRestRequest } from '#protocol-rest/rest/model';
+import { normalizeWsa } from '#protocol-soap/wsa/model';
 
 function soapRequest(name: string, order: number, extra: Partial<SoapRequestDef> = {}): SoapRequestDef {
   return {

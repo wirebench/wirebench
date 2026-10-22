@@ -6,11 +6,11 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadProject } from '../../../src/project/load.js';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { saveProject } from '../../../src/project/save.js';
-import { projectFiles } from '../../../src/project/serialize.js';
+import { loadProject } from '#core/project/load';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { saveProject } from '#core/project/save';
+import { projectFiles } from '#core/project/serialize';
 import {
   createApi,
   createFolder,
@@ -19,8 +19,8 @@ import {
   exampleBodyExtension,
   restApisOf,
   withRestApis,
-} from '../../../src/rest/model.js';
-import type { RestRequestDef, RestResponseExample } from '../../../src/rest/model.js';
+} from '#protocol-rest/rest/model';
+import type { RestRequestDef, RestResponseExample } from '#protocol-rest/rest/model';
 import { listTree, tempProjectDir } from '../project/fixture.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';

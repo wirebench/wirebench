@@ -5,10 +5,10 @@
  * a file is only ever read through the injected resolver, and a disabled row or part is absent.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { WirebenchError } from '../../../src/errors.js';
-import type { AttachmentSource } from '../../../src/project/model.js';
-import { bodyLanguage, encodeFormFields, encodeRestBody, escapeForLanguage } from '../../../src/rest/body.js';
-import { entry } from '../../../src/rest/model.js';
+import { WirebenchError } from '#core/errors';
+import type { AttachmentSource } from '#core/project/model';
+import { bodyLanguage, encodeFormFields, encodeRestBody, escapeForLanguage } from '#protocol-rest/rest/body';
+import { entry } from '#protocol-rest/rest/model';
 
 const BOUNDARY = '----WirebenchBoundaryFIXED';
 

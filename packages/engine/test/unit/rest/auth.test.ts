@@ -3,13 +3,8 @@
  * wrongly if it is wrong here, and the application half decides what actually reaches the wire.
  */
 import { describe, expect, it } from 'vitest';
-import type { AuthConfig } from '../../../src/project/model.js';
-import {
-  applyAuth,
-  missingSecretRef,
-  resolveAuthChain,
-  resolveAuthChainIndex,
-} from '../../../src/http/auth/apply-auth.js';
+import type { AuthConfig } from '#core/project/model';
+import { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from '#core/http/auth/apply-auth';
 
 const inherit: AuthConfig = { type: 'inherit' };
 const none: AuthConfig = { type: 'none' };

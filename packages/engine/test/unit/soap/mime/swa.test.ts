@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { Attachment } from '../../../../src/soap/model.js';
-import { parseMultipartRelated } from '../../../../src/soap/mime/multipart.js';
-import { collectResponseAttachments, prepareSwaRequest } from '../../../../src/soap/mime/swa.js';
-import type { AttachmentResolver } from '../../../../src/soap/mime/types.js';
+import type { Attachment } from '#protocol-soap/soap/model';
+import { parseMultipartRelated } from '#protocol-soap/soap/mime/multipart';
+import { collectResponseAttachments, prepareSwaRequest } from '#protocol-soap/soap/mime/swa';
+import type { AttachmentResolver } from '#protocol-soap/soap/mime/types';
 
 const BYTES = new Uint8Array([1, 2, 3, 4]);
 const resolver: AttachmentResolver = () => Promise.resolve(BYTES);

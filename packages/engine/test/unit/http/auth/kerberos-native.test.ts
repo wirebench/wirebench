@@ -8,7 +8,7 @@ import {
   kerberosProvider,
   loadKerberosProvider,
   type KerberosProvider,
-} from '../../../../src/http/auth/kerberos-native.js';
+} from '#core/http/auth/kerberos-native';
 
 const FAKE = join(import.meta.dirname, '..', '..', '..', 'fixtures', 'kerberos', 'fake-binding.cjs');
 const PROMISE_ONLY = join(import.meta.dirname, '..', '..', '..', 'fixtures', 'kerberos', 'promise-binding.cjs');

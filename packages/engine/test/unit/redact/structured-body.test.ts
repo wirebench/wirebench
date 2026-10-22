@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { redactStructuredBody, SECRET_BODY_KEYS } from '../../../src/redact/index.js';
+import { redactStructuredBody, SECRET_BODY_KEYS } from '#core/redact/index';
 
 describe('redactStructuredBody', () => {
   it('lists the spec keys', () => {

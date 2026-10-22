@@ -140,15 +140,20 @@ environments/`) lists Globals, the workspace and every environment; opening one 
 variables and endpoint overrides, each variable with an *enabled* checkbox — see "The `disabled`
 list" below.
 
-**Engine.** `packages/engine`, `@wirebench/engine`. Zero Electron, DOM or React imports —
-enforced by lint, not convention. Every I/O entry point takes an `AbortSignal`, every export
+**Engine.** Seven workspace packages (ADR-0030): `packages/core`, one `packages/protocol-<name>`
+per protocol (`soap`, `rest`, `grpc`, `ws`, `mcp`) and `packages/engine`, which composes them and is
+the one that publishes, as `@wirebench/engine`. The six others stay private: `engine` reaches them
+through import maps (`#core/…`, `#protocol-rest/…`) that its `publishConfig` points at copies
+`scripts/vendor-packages.mjs` makes under `dist/vendor/` at prepack, so the npm package is one
+package as before. Zero Electron, DOM or React imports — enforced by lint and by
+`pnpm check:engine-layers`, not convention. Every I/O entry point takes an `AbortSignal`, every export
 carries JSDoc, every error is a `WirebenchError` subclass with a stable `code`, and every model
 object is `readonly`. It is a library, not a service: the same code runs in the desktop's main
 process, in `wirebench run` and in `wirebench mcp`.
 
 **Protocol modules (ADR-0017).** Each protocol is one module behind the `ProtocolModule` interface
-(`packages/engine/src/protocol/module.ts`), defined in its own folder: `soap/module.ts`,
-`rest/module.ts`, `grpc/module.ts`, `ws/module.ts` and `mcp/module.ts`. A module has up to three facets. *Storage*
+(`packages/core/src/protocol/module.ts`), defined in its own package: `protocol-soap`'s
+`soap/module.ts`, `protocol-rest`'s `rest/module.ts`, and the same for `grpc`, `ws` and `mcp`. A module has up to three facets. *Storage*
 reads and writes its containers in a project folder. *Run* lists the requests a run can send, sends
 one, and names the secrets it needs. *Scripting* describes what a script sees of a request and a
 response. WebSocket's run facet offers no request, so its requests load and save and a run cannot send them.
@@ -160,12 +165,14 @@ that registry for a module by `kind` where they used to branch on it. The regist
 (`Project.unsupported`) whose files a save leaves untouched. Every feature is on, and nothing in
 the app or the CLI switches one off yet.
 
-Two rules keep the modules apart, and `pnpm check:engine-layers` (part of `pnpm check`) enforces
-both: a protocol's folders import core and themselves, never another protocol's; core imports no
-protocol, apart from the exceptions ADR-0017 lists. Only that script enforces them; nothing flags a
-wrong import in the editor. The protocol folders are `soap/` with `wsdl/`, `xsd/`, `wss/`, `wsa/` and
-`validate/`; `rest/` with `rest/openapi/` and `webhooks/`; `grpc/`; and `ws/` with `asyncapi/`.
-What they share is core: `http/` (one dispatcher for every protocol, so keystores, TLS trust, the
+Three rules keep the packages apart, with no exceptions, and `pnpm check:engine-layers` (part of
+`pnpm check`) enforces them at the boundary: a protocol package imports `core` and itself, never
+another protocol; `core` imports `core`; `engine` imports anything, and nothing imports `engine`.
+The script checks a file's `#core/…` and `@wirebench/…` imports and a manifest's `@wirebench/*`
+dependencies alike, and refuses a relative import that leaves its package. Only that script enforces
+them; nothing flags a wrong import in the editor. The protocol packages hold `soap/` with `wsdl/`,
+`xsd/`, `wss/`, `wsa/` and `validate/`; `rest/` with `rest/openapi/` and `webhooks/`; `grpc/`; `ws/`
+with `asyncapi/`; and `mcp/`. What they share is `core`: `http/` (one dispatcher for every protocol, so keystores, TLS trust, the
 proxy, timeouts and raw-byte capture are shared code and not a second implementation; applying a
 configured auth; header entries; cookies; charsets), `json/schema/` (`$ref` resolution across
 documents, memoised per target, and sampling under a node budget, for OpenAPI and AsyncAPI alike),
@@ -269,7 +276,7 @@ stays in the `properties` map, but resolution skips it, so the request falls thr
 scope down as if the value were absent. On disk this is a sibling `disabled:` list of names next
 to the `properties` map (which itself stays a plain `name -> value` map), sorted, deduplicated,
 and omitted entirely when it would be empty; a file with no `disabled` key migrates as "all
-enabled". `enabledProperties` (`packages/engine/src/project/properties.ts`) is the one place the
+enabled". `enabledProperties` (`packages/core/src/project/properties.ts`) is the one place the
 filter is applied. This is an additive format change: project and workspace manifests moved to
 `formatVersion: 2` and the global properties file to `version: 2` (ADR-0003, ADR-0006). A
 version-1 file still loads (a missing list defaults to empty); a file from a newer build than
@@ -286,7 +293,7 @@ The project format has kept moving the same way since: APIs beside interfaces to
 (`…Env` beside a `passwordRef`/`tokenRef`/`valueRef`/`clientSecretRef`) take it to
 `formatVersion: 4`, and Bearer, API-key and OAuth2 auth on a SOAP interface, endpoint or request
 (`soapOwnerAuthSchema`) takes it to `formatVersion: 5` (`FORMAT_VERSION` in
-`packages/engine/src/project/model.ts`) — each step adds
+`packages/core/src/project/model.ts`) — each step adds
 fields an older file simply lacks, which the loader defaults, and each still bumps the version
 because this format drops unknown keys on save. An older project migrates to 5 in memory with no
 data moved; the CLI never writes a project (it only writes report files), so it can run an older
@@ -298,24 +305,24 @@ introduced.
 
 | Concern | Where |
 |---|---|
-| WSDL/XSD parsing, resolution, schema sets | `packages/engine/src/wsdl`, `packages/engine/src/xsd` |
-| The protocol interface, the registry, features | `packages/engine/src/protocol` |
+| WSDL/XSD parsing, resolution, schema sets | `packages/protocol-soap/src/wsdl`, `packages/protocol-soap/src/xsd` |
+| The protocol interface, the registry, features | `packages/core/src/protocol` |
 | The built-in modules composed; the default registry | `packages/engine/src/protocols.ts` |
-| WSDL import, sample requests, the SOAP send, envelopes, faults, MTOM/SwA | `packages/engine/src/soap` |
-| REST URL, bodies, send, the cookie jar, cURL; webhook items | `packages/engine/src/rest`, `packages/engine/src/webhooks` |
-| OpenAPI import, mapping, Update Definition, the definition cache | `packages/engine/src/rest/openapi` |
-| gRPC calls, `.proto` sets, server reflection | `packages/engine/src/grpc` |
-| WebSocket sessions; AsyncAPI import | `packages/engine/src/ws`, `packages/engine/src/asyncapi` |
-| MCP client sessions (stdio, Streamable HTTP, legacy SSE), the catalogue, the stdio command fingerprint | `packages/engine/src/mcp` |
-| JSON Schema `$ref` resolution, parsing and sampling | `packages/engine/src/json/schema` |
-| HTTP, auth (Basic, NTLMv2, OAuth2 token requests and PKCE, applying a configured scheme), header entries, cookies, charsets, TLS, proxy, timings | `packages/engine/src/http` |
-| WS-Security, WS-Addressing | `packages/engine/src/wss`, `packages/engine/src/wsa` |
-| Keystores (PKCS#12, PEM) | `packages/engine/src/keystore` |
-| Selection, the run loop, secret needs | `packages/engine/src/run` |
-| The script sandbox, the checker, the rules on a changed request | `packages/engine/src/script` |
-| Schema + WS-I validation, XPath/XQuery/JSONPath | `packages/engine/src/validate`, `.../xpath` |
-| Project folder format, environments, properties | `packages/engine/src/project` |
-| Workspace format, environments, properties (`${#Workspace#…}`) | `packages/engine/src/workspace` |
+| WSDL import, sample requests, the SOAP send, envelopes, faults, MTOM/SwA | `packages/protocol-soap/src/soap` |
+| REST URL, bodies, send, the cookie jar, cURL; webhook items | `packages/protocol-rest/src/rest`, `packages/protocol-rest/src/webhooks` |
+| OpenAPI import, mapping, Update Definition, the definition cache | `packages/protocol-rest/src/rest/openapi` |
+| gRPC calls, `.proto` sets, server reflection | `packages/protocol-grpc/src/grpc` |
+| WebSocket sessions; AsyncAPI import | `packages/protocol-ws/src/ws`, `packages/protocol-ws/src/asyncapi` |
+| MCP client sessions (stdio, Streamable HTTP, legacy SSE), the catalogue, the stdio command fingerprint | `packages/protocol-mcp/src/mcp` |
+| JSON Schema `$ref` resolution, parsing and sampling | `packages/core/src/json/schema` |
+| HTTP, auth (Basic, NTLMv2, OAuth2 token requests and PKCE, applying a configured scheme), header entries, cookies, charsets, TLS, proxy, timings | `packages/core/src/http` |
+| WS-Security, WS-Addressing | `packages/protocol-soap/src/wss`, `packages/protocol-soap/src/wsa` |
+| Keystores (PKCS#12, PEM) | `packages/core/src/keystore` |
+| Selection, the run loop, secret needs | `packages/core/src/run` |
+| The script sandbox, the checker, the rules on a changed request | `packages/core/src/script` |
+| Schema + WS-I validation, XPath/XQuery/JSONPath | `packages/protocol-soap/src/validate`, `.../xpath` |
+| Project folder format, environments, properties | `packages/core/src/project` |
+| Workspace format, environments, properties (`${#Workspace#…}`) | `packages/core/src/workspace` |
 | IPC channel schemas (one file, both directions) | `apps/desktop/src/shared/ipc.ts` |
 | IPC handlers | `apps/desktop/src/main/ipc/` |
 | WorkspaceService, ProjectHost, ProjectRouter, HistoryService | `apps/desktop/src/main/{workspace-service,project-host,project-router,history-service}.ts` |

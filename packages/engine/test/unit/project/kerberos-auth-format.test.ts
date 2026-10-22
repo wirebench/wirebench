@@ -4,9 +4,9 @@ import {
   definitionAuthSchema,
   kerberosAuthSchema,
   soapOwnerAuthSchema,
-} from '../../../src/project/schema-parts.js';
-import { FORMAT_VERSION } from '../../../src/project/model.js';
-import { effectiveAuth } from '../../../src/project/endpoints.js';
+} from '#core/project/schema-parts';
+import { FORMAT_VERSION } from '#core/project/model';
+import { effectiveAuth } from '#core/project/endpoints';
 
 const KERBEROS = {
   type: 'kerberos',

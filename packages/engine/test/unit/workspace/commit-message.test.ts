@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { commitMessage, describeTreePath, scopeChangeMessage } from '../../../src/workspace/commit-message.js';
-import type { TreeChange, TreeEntity } from '../../../src/workspace/commit-message.js';
+import { commitMessage, describeTreePath, scopeChangeMessage } from '#core/workspace/commit-message';
+import type { TreeChange, TreeEntity } from '#core/workspace/commit-message';
 
 describe('describeTreePath', () => {
   const cases: ReadonlyArray<[string, TreeEntity]> = [

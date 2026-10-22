@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { createFrameChecker, checkFrame, MAX_CHECKED_FRAME_BYTES } from '../../../src/asyncapi/frame-check.js';
-import { parseAsyncApi } from '../../../src/asyncapi/parse.js';
-import type { WsFrame } from '../../../src/ws/model.js';
+import { createFrameChecker, checkFrame, MAX_CHECKED_FRAME_BYTES } from '#protocol-ws/asyncapi/frame-check';
+import { parseAsyncApi } from '#protocol-ws/asyncapi/parse';
+import type { WsFrame } from '#protocol-ws/ws/model';
 import { fileFetch } from '../../helpers/file-fetch.js';
 
 const fixture = (name: string) => new URL(`../../fixtures/asyncapi/${name}`, import.meta.url);

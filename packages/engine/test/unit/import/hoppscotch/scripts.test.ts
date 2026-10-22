@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { MappedClientImport } from '../../../../src/import/client-import.js';
 import { mapHoppscotch } from '../../../../src/import/hoppscotch/convert.js';
 import { parseHoppscotchCollections } from '../../../../src/import/hoppscotch/parse.js';
-import { apiFolders, apiRequests } from '../../../../src/rest/model.js';
+import { apiFolders, apiRequests } from '#protocol-rest/rest/model';
 
 type Item = Record<string, unknown>;
 

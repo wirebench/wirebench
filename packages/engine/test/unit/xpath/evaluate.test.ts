@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluate } from '../../../src/xpath/evaluate.js';
+import { evaluate } from '#core/xpath/evaluate';
 
 const TEM = 'http://tempuri.org/';
 const ADD_RESPONSE =

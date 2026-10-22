@@ -5,9 +5,9 @@
  */
 
 import type { MappedCollectionV3Entry } from './collection-v3/map.js';
-import type { ImportReport } from './report.js';
-import type { ImportedScriptFile } from './scripts.js';
-import type { ImportedVariables } from './variables.js';
+import type { ImportReport } from '#core/import/report';
+import type { ImportedScriptFile } from '#core/import/scripts';
+import type { ImportedVariables } from '#core/import/variables';
 
 export type ClientFormat = 'insomnia' | 'bruno' | 'hoppscotch' | 'thunder-client';
 

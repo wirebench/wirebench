@@ -4,9 +4,9 @@
  * assertions, which the format has no field for.
  */
 
-import { ExportError } from '../errors.js';
-import type { KeyValueEntry } from '../http/entries.js';
-import type { AuthConfig } from '../project/model.js';
+import { ExportError } from '#core/errors';
+import type { KeyValueEntry } from '#core/http/entries';
+import type { AuthConfig } from '#core/project/model';
 import type { CollectionExportFile } from './model.js';
 import type { ExportContext } from './shared.js';
 import { uniqueFileStem } from './shared.js';

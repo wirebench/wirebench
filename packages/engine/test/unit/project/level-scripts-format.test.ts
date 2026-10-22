@@ -12,13 +12,13 @@ import {
   createGrpcRequest,
   grpcApisOf,
   withGrpcApis,
-} from '../../../src/grpc/model.js';
-import { loadProject } from '../../../src/project/load.js';
-import type { Project } from '../../../src/project/model.js';
-import { saveProject } from '../../../src/project/save.js';
-import { createFolder, restApisOf, withRestApis } from '../../../src/rest/model.js';
-import type { RequestScripts } from '../../../src/script/model.js';
-import { soapInterfacesOf, withSoapInterfaces } from '../../../src/soap/model.js';
+} from '#protocol-grpc/grpc/model';
+import { loadProject } from '#core/project/load';
+import type { Project } from '#core/project/model';
+import { saveProject } from '#core/project/save';
+import { createFolder, restApisOf, withRestApis } from '#protocol-rest/rest/model';
+import type { RequestScripts } from '#core/script/model';
+import { soapInterfacesOf, withSoapInterfaces } from '#protocol-soap/soap/model';
 import { tempProjectDir } from './fixture.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';

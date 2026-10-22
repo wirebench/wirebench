@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { NS } from '../../../src/xml/namespaces.js';
-import { BUILTIN_TYPES, XSD_BUILTIN_NAMES, isBuiltinType, lookupBuiltin } from '../../../src/xsd/builtins.js';
+import { NS } from '#core/xml/namespaces';
+import { BUILTIN_TYPES, XSD_BUILTIN_NAMES, isBuiltinType, lookupBuiltin } from '#protocol-soap/xsd/builtins';
 
 const EXPECTED_NAMES = [
   'string',

@@ -6,33 +6,33 @@
  * switched off. Pure.
  */
 
-import { InsomniaError } from '../../errors.js';
-import type { GrpcApi, GrpcFolder, GrpcRequestDef } from '../../grpc/model.js';
-import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '../../grpc/model.js';
-import { entry } from '../../http/entries.js';
-import type { KeyValueEntry } from '../../http/entries.js';
-import type { AuthConfig, IdGenerator } from '../../project/model.js';
-import { generateId } from '../../project/model.js';
-import { slugify, SlugSet, uniqueSlug } from '../../project/paths.js';
-import { folderRequests } from '../../rest/model.js';
-import { apiFromPostmanCollection, hasCredentials, mapPostmanAuth } from '../../rest/postman/map.js';
-import { parsePostmanAuth, parsePostmanCollection } from '../../rest/postman/parse.js';
-import { splitQueryKeepingReferences } from '../../rest/url.js';
-import type { WsApi, WsFolder, WsRequestDef } from '../../ws/model.js';
-import { createWsApi, createWsFolder, createWsRequest, createWsSavedMessage } from '../../ws/model.js';
+import { InsomniaError } from '#core/errors';
+import type { GrpcApi, GrpcFolder, GrpcRequestDef } from '#protocol-grpc/grpc/model';
+import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '#protocol-grpc/grpc/model';
+import { entry } from '#core/http/entries';
+import type { KeyValueEntry } from '#core/http/entries';
+import type { AuthConfig, IdGenerator } from '#core/project/model';
+import { generateId } from '#core/project/model';
+import { slugify, SlugSet, uniqueSlug } from '#core/project/paths';
+import { folderRequests } from '#protocol-rest/rest/model';
+import { apiFromPostmanCollection, hasCredentials, mapPostmanAuth } from '#protocol-rest/rest/postman/map';
+import { parsePostmanAuth, parsePostmanCollection } from '#protocol-rest/rest/postman/parse';
+import { splitQueryKeepingReferences } from '#protocol-rest/rest/url';
+import type { WsApi, WsFolder, WsRequestDef } from '#protocol-ws/ws/model';
+import { createWsApi, createWsFolder, createWsRequest, createWsSavedMessage } from '#protocol-ws/ws/model';
 import type { MappedClientEntry, MappedClientImport, MappedProtoSet } from '../client-import.js';
 import { flattenValue } from '../client-import.js';
-import type { DroppedLevel, ImportedScriptFile } from '../scripts.js';
-import { droppedApiScriptFiles } from '../scripts.js';
+import type { DroppedLevel, ImportedScriptFile } from '#core/import/scripts';
+import { droppedApiScriptFiles } from '#core/import/scripts';
 import { GRPC_METHOD, grpcTarget } from '../collection-v3/map.js';
-import { blankIfLiteral, blankUrlCredentials } from '../credential-values.js';
-import { isCredentialName } from '../credentials.js';
-import { ReportBuilder } from '../report.js';
-import { stripUserinfo } from '../values.js';
-import { insomniaTemplates, unshieldTemplates } from '../template-dialects.js';
-import { rewriteMustache } from '../templates.js';
-import type { ImportedVariable, ImportedVariableSet } from '../variables.js';
-import { credentialSafeVariable, VariableSetBuilder, warnCredentialLookingNames } from '../variables.js';
+import { blankIfLiteral, blankUrlCredentials } from '#core/import/credential-values';
+import { isCredentialName } from '#core/import/credentials';
+import { ReportBuilder } from '#core/import/report';
+import { stripUserinfo } from '#core/import/values';
+import { insomniaTemplates, unshieldTemplates } from '#core/import/template-dialects';
+import { rewriteMustache } from '#core/import/templates';
+import type { ImportedVariable, ImportedVariableSet } from '#core/import/variables';
+import { credentialSafeVariable, VariableSetBuilder, warnCredentialLookingNames } from '#core/import/variables';
 import type { InheritedHeaders, InsomniaConvertContext } from './convert.js';
 import { handDown, inlineQuery, ItemTemplates, v21AuthOf, v21OfInsomnia, withInherited } from './convert.js';
 import type {

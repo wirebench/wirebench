@@ -4,18 +4,18 @@
  * the library's contract with the echo protocol, which reaches no network.
  */
 import { describe, expect, it } from 'vitest';
-import { unavailableCaptureSource } from '../../../src/assert/capture-source.js';
-import { isWirebenchError } from '../../../src/errors.js';
-import { createProject } from '../../../src/project/model.js';
-import type { Environment, Project } from '../../../src/project/model.js';
-import { createProtocolRegistry } from '../../../src/protocol/registry.js';
+import { unavailableCaptureSource } from '#core/assert/capture-source';
+import { isWirebenchError } from '#core/errors';
+import { createProject } from '#core/project/model';
+import type { Environment, Project } from '#core/project/model';
+import { createProtocolRegistry } from '#core/protocol/registry';
 import { BUILTIN_PROTOCOLS, SCRIPTS_FEATURE } from '../../../src/protocols.js';
-import type { RunContext } from '../../../src/run/context.js';
-import { planIterations } from '../../../src/run/iterations.js';
-import { maskRequestResult } from '../../../src/run/mask.js';
-import type { RequestResult } from '../../../src/run/run.js';
-import { runSuite, selectSuite } from '../../../src/run/suite.js';
-import type { RunSuiteOptions, SuiteSelection } from '../../../src/run/suite.js';
+import type { RunContext } from '#core/run/context';
+import { planIterations } from '#core/run/iterations';
+import { maskRequestResult } from '#core/run/mask';
+import type { RequestResult } from '#core/run/run';
+import { runSuite, selectSuite } from '#core/run/suite';
+import type { RunSuiteOptions, SuiteSelection } from '#core/run/suite';
 import { echoApi, echoProtocol, echoRequest, withEchoApis } from '../../helpers/echo-protocol.js';
 
 const registry = createProtocolRegistry([...BUILTIN_PROTOCOLS, echoProtocol], { features: [SCRIPTS_FEATURE] });

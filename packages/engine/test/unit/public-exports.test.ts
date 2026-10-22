@@ -144,7 +144,10 @@ const REHOMED = [
   'soapScriptTypes',
 ] as const;
 
-/** File under `src/`, and the declarations in it that carry `@internal` as their JSDoc's last line. */
+/**
+ * File under a package's `src/` (`packages/core` unless the path names another package), and the declarations in
+ * it that carry `@internal` as their JSDoc's last line.
+ */
 const INTERNAL: Readonly<Record<string, readonly string[]>> = {
   'protocol/features.ts': ['FeatureDescriptor', 'WhyDisabled', 'FeatureSet', 'createFeatureSet'],
   'protocol/module.ts': [
@@ -165,9 +168,9 @@ const INTERNAL: Readonly<Record<string, readonly string[]>> = {
     'defineProtocol',
   ],
   'protocol/registry.ts': ['ProtocolRegistry', 'ProtocolRegistryOptions', 'createProtocolRegistry'],
-  'grpc/status.ts': ['grpcStatusNames'],
+  'protocol-grpc:grpc/status.ts': ['grpcStatusNames'],
   'assert/model.ts': ['StatusNames'],
-  'protocols.ts': ['BUILTIN_PROTOCOLS', 'createBuiltinRegistry'],
+  'engine:protocols.ts': ['BUILTIN_PROTOCOLS', 'createBuiltinRegistry'],
   'project/model.ts': ['UnsupportedContainer', 'unsupportedOf'],
   'project/container-slugs.ts': ['takenContainerSlugs'],
 };
@@ -179,7 +182,13 @@ const INTERNAL_FIELDS: Readonly<Record<string, readonly string[]>> = {
 };
 
 function source(file: string): string {
-  return readFileSync(fileURLToPath(new URL(`../../src/${file}`, import.meta.url)), 'utf8').replaceAll('\r\n', '\n');
+  const colon = file.indexOf(':');
+  const pkg = colon === -1 ? 'core' : file.slice(0, colon);
+  const path = colon === -1 ? file : file.slice(colon + 1);
+  return readFileSync(fileURLToPath(new URL(`../../../${pkg}/src/${path}`, import.meta.url)), 'utf8').replaceAll(
+    '\r\n',
+    '\n',
+  );
 }
 
 describe('the public exports of 3.0', () => {

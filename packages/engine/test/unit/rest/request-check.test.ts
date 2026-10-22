@@ -4,9 +4,9 @@
  * of every message.
  */
 import { describe, expect, it } from 'vitest';
-import type { JsonSchema, OpenApiOperation } from '../../../src/rest/openapi/model.js';
-import { checkRestRequest } from '../../../src/rest/request-check.js';
-import type { RestRequestInput } from '../../../src/rest/request-check.js';
+import type { JsonSchema, OpenApiOperation } from '#protocol-rest/rest/openapi/model';
+import { checkRestRequest } from '#protocol-rest/rest/request-check';
+import type { RestRequestInput } from '#protocol-rest/rest/request-check';
 
 /** Validation keywords the sample model does not type; the validator reads them. */
 const s = (schema: JsonSchema & Readonly<Record<string, unknown>>): JsonSchema => schema;

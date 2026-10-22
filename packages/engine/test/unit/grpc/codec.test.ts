@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { ProtoError } from '../../../src/errors.js';
-import { decodeMessage, encodeMessage, parseMessageText } from '../../../src/grpc/codec.js';
-import { loadProtoSet } from '../../../src/grpc/proto/load.js';
+import { ProtoError } from '#core/errors';
+import { decodeMessage, encodeMessage, parseMessageText } from '#protocol-grpc/grpc/codec';
+import { loadProtoSet } from '#protocol-grpc/grpc/proto/load';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
 
 const set = loadProtoSet(readProtoFixture('greeter'), { roots: ['greeter.proto'] });

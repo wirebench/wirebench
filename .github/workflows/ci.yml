@@ -101,7 +101,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @wirebench/engine build
+      - run: pnpm --filter @wirebench/engine... build
       - run: pnpm --filter @wirebench/server test
 
   # Kerberos against a real MIT KDC (#40): the real binding and the real GSSAPI, end to end. `check`

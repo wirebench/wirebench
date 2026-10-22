@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InsomniaError } from '../../../../src/errors.js';
+import { InsomniaError } from '#core/errors';
 import type { InsFolder, InsHttp, InsNode } from '../../../../src/import/insomnia/model.js';
 import { parseInsomnia } from '../../../../src/import/insomnia/parse.js';
 import { insomniaFixture } from './fixtures.js';

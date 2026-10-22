@@ -4,12 +4,12 @@
  */
 import { DOMParser } from '@xmldom/xmldom';
 import { afterAll, describe, expect, it } from 'vitest';
-import { runScript } from '../../../src/script/run.js';
-import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
-import { apiDeclarations, secretNameType } from '../../../src/script/types/api.js';
-import { projectSoapBody, replaceSoapBody, soapBodyElement, soapScriptTypes } from '../../../src/soap/script-types.js';
-import type { SoapRequestSnapshot } from '../../../src/soap/scripting.js';
-import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
+import { runScript } from '#core/script/run';
+import { createScriptSandbox } from '#core/script/sandbox/host';
+import { apiDeclarations, secretNameType } from '#core/script/types/api';
+import { projectSoapBody, replaceSoapBody, soapBodyElement, soapScriptTypes } from '#protocol-soap/soap/script-types';
+import type { SoapRequestSnapshot } from '#protocol-soap/soap/scripting';
+import { buildSchemaSet } from '#protocol-soap/xsd/schema-set';
 import { typeErrors } from './ts-check.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';

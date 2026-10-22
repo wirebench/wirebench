@@ -6,7 +6,7 @@
  */
 
 import { parse as parseYaml } from 'yaml';
-import { ReportBuilder } from '../report.js';
+import { ReportBuilder } from '#core/import/report';
 import type { V3Collection, V3File, V3Folder, V3Request, V3Script, V3Workspace } from './model.js';
 import { MAX_V3_DEPTH } from './model.js';
 

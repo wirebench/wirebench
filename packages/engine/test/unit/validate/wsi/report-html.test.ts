@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { escapeHtml, renderWsiReportHtml } from '../../../../src/validate/wsi/report-html.js';
-import type { WsiReport } from '../../../../src/validate/wsi/types.js';
+import { escapeHtml, renderWsiReportHtml } from '#protocol-soap/validate/wsi/report-html';
+import type { WsiReport } from '#protocol-soap/validate/wsi/types';
 
 const REPORT: WsiReport = {
   target: 'http://example.invalid/wsi?a=1&b=2',

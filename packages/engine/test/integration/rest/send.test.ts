@@ -6,11 +6,11 @@
  * receives and sends rather than on what the client believes it built.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { HttpError, WirebenchError } from '../../../src/errors.js';
-import { CookieJar, jarCookieHost } from '../../../src/rest/cookie-jar.js';
-import { entry } from '../../../src/rest/model.js';
-import { sendRest } from '../../../src/rest/send.js';
-import type { RestSendInput } from '../../../src/rest/send.js';
+import { HttpError, WirebenchError } from '#core/errors';
+import { CookieJar, jarCookieHost } from '#protocol-rest/rest/cookie-jar';
+import { entry } from '#protocol-rest/rest/model';
+import { sendRest } from '#protocol-rest/rest/send';
+import type { RestSendInput } from '#protocol-rest/rest/send';
 import { startTestRestServer, type TestRestServer } from '../../helpers/test-rest-server.js';
 
 let server: TestRestServer;

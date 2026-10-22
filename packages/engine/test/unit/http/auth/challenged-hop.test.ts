@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { challengedRequest } from '../../../../src/http/auth/challenged-hop.js';
-import type { HttpExchange, HttpRequest } from '../../../../src/http/types.js';
+import { challengedRequest } from '#core/http/auth/challenged-hop';
+import type { HttpExchange, HttpRequest } from '#core/http/types';
 
 const request: HttpRequest = {
   url: 'http://soap.example/svc',

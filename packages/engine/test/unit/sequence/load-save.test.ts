@@ -6,12 +6,12 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { isWirebenchError } from '../../../src/errors.js';
-import { loadProject } from '../../../src/project/load.js';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { saveProject } from '../../../src/project/save.js';
-import { createSequence, createSequenceStep } from '../../../src/sequence/model.js';
+import { isWirebenchError } from '#core/errors';
+import { loadProject } from '#core/project/load';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { saveProject } from '#core/project/save';
+import { createSequence, createSequenceStep } from '#core/sequence/model';
 import { listTree, tempProjectDir } from '../project/fixture.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';

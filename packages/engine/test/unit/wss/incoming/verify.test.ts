@@ -7,18 +7,18 @@
 import { createHash, createSign } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { ExclusiveCanonicalization } from 'xml-crypto';
-import { applyOutgoingWss } from '../../../../src/wss/apply.js';
-import { loadKeystore } from '../../../../src/keystore/index.js';
-import { createWssContext, DEFAULT_WSS_SIGNATURE_PARTS } from '../../../../src/wss/model.js';
-import { verifyIncoming } from '../../../../src/wss/incoming/verify.js';
-import { decryptIncoming } from '../../../../src/wss/incoming/decrypt.js';
-import { parseXml } from '../../../../src/xml/parse.js';
-import { serializeXml } from '../../../../src/xml/serialize.js';
-import { NS } from '../../../../src/xml/namespaces.js';
-import { certificateBase64 } from '../../../../src/wss/key-identifiers.js';
+import { applyOutgoingWss } from '#protocol-soap/wss/apply';
+import { loadKeystore } from '#core/keystore/index';
+import { createWssContext, DEFAULT_WSS_SIGNATURE_PARTS } from '#protocol-soap/wss/model';
+import { verifyIncoming } from '#protocol-soap/wss/incoming/verify';
+import { decryptIncoming } from '#protocol-soap/wss/incoming/decrypt';
+import { parseXml } from '#core/xml/parse';
+import { serializeXml } from '#core/xml/serialize';
+import { NS } from '#core/xml/namespaces';
+import { certificateBase64 } from '#protocol-soap/wss/key-identifiers';
 import type { Element } from '@xmldom/xmldom';
-import type { Keystore } from '../../../../src/keystore/model.js';
-import type { WssKeyIdentifierType, WssOutgoingConfig, WssPart } from '../../../../src/wss/model.js';
+import type { Keystore } from '#core/keystore/model';
+import type { WssKeyIdentifierType, WssOutgoingConfig, WssPart } from '#protocol-soap/wss/model';
 import { generateSigningCert, generateTestCa, generateUntrustedCert } from '../../../helpers/test-certs.js';
 
 const ENVELOPE =

@@ -6,8 +6,8 @@ import {
   thunderTemplates,
   unshieldTemplates,
   unshieldText,
-} from '../../../src/import/template-dialects.js';
-import { rewriteMustache } from '../../../src/import/templates.js';
+} from '#core/import/template-dialects';
+import { rewriteMustache } from '#core/import/templates';
 
 /** What a value becomes after the dialect, the shared rewrite and the unshield step. */
 function through(dialect: (text: string) => string, text: string): string {

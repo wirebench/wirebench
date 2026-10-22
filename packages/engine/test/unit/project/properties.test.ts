@@ -1,14 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import {
-  enabledProperties,
-  expand,
-  hasExpansions,
-  secretNamesIn,
-  type PropertyScopes,
-} from '../../../src/project/properties.js';
-import { DynamicValues } from '../../../src/project/dynamic.js';
-import { expandSendInput } from '../../../src/soap/expand.js';
-import type { SoapSendInput } from '../../../src/soap/types.js';
+import { enabledProperties, expand, hasExpansions, secretNamesIn, type PropertyScopes } from '#core/project/properties';
+import { DynamicValues } from '#core/project/dynamic';
+import { expandSendInput } from '#protocol-soap/soap/expand';
+import type { SoapSendInput } from '#protocol-soap/soap/types';
 
 const scopes: PropertyScopes = {
   project: { name: 'proj-name', which: 'name', selfRef: '${#Project#selfRef}' },

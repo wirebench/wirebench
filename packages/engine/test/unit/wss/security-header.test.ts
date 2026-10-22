@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Element } from '@xmldom/xmldom';
-import { WssError } from '../../../src/errors.js';
-import { securityIndex } from '../../../src/wss/security-header.js';
-import { NS } from '../../../src/xml/namespaces.js';
-import { parseXml } from '../../../src/xml/parse.js';
+import { WssError } from '#core/errors';
+import { securityIndex } from '#protocol-soap/wss/security-header';
+import { NS } from '#core/xml/namespaces';
+import { parseXml } from '#core/xml/parse';
 
 const ENVELOPE_NS = 'http://schemas.xmlsoap.org/soap/envelope/';
 

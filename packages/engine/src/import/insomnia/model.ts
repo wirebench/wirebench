@@ -3,7 +3,7 @@
  * converter: one tree per workspace, siblings in Insomnia's own order.
  */
 
-import type { ImportReport } from '../report.js';
+import type { ImportReport } from '#core/import/report';
 
 /** Insomnia's file size limit, the Postman one. */
 export const MAX_INSOMNIA_BYTES = 50 * 1024 * 1024;

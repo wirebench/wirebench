@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { buildSampleRequest } from '../../../../src/soap/request-builder.js';
-import type { RequestBuildInput } from '../../../../src/soap/request-builder.js';
-import { createDefaultFetchDocument } from '../../../../src/http/fetch-document.js';
-import { parseWsdl } from '../../../../src/wsdl/parse-wsdl.js';
-import { buildSchemaSet } from '../../../../src/xsd/schema-set.js';
+import { buildSampleRequest } from '#protocol-soap/soap/request-builder';
+import type { RequestBuildInput } from '#protocol-soap/soap/request-builder';
+import { createDefaultFetchDocument } from '#core/http/fetch-document';
+import { parseWsdl } from '#protocol-soap/wsdl/parse-wsdl';
+import { buildSchemaSet } from '#protocol-soap/xsd/schema-set';
 
 const repoRoot = fileURLToPath(new URL('../../../../../../', import.meta.url));
 const location = `${repoRoot}fixtures/wsdl/crafted/attachments/service.wsdl`;

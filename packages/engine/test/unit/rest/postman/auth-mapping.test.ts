@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { apiFromPostmanCollection } from '../../../../src/rest/postman/map.js';
-import { parsePostmanCollection } from '../../../../src/rest/postman/parse.js';
+import { apiFromPostmanCollection } from '#protocol-rest/rest/postman/map';
+import { parsePostmanCollection } from '#protocol-rest/rest/postman/parse';
 
 const info = { name: 'C', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' };
 

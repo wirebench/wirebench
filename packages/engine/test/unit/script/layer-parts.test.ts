@@ -6,11 +6,11 @@
  */
 import { createContext, runInContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { BRUNO_LAYER } from '../../../src/script/api/bruno.js';
-import { HOPPSCOTCH_LAYER } from '../../../src/script/api/hoppscotch.js';
-import { INSOMNIA_LAYER } from '../../../src/script/api/insomnia.js';
-import { POSTMAN_LAYER } from '../../../src/script/api/postman.js';
-import { THUNDER_CLIENT_LAYER } from '../../../src/script/api/thunder-client.js';
+import { BRUNO_LAYER } from '#core/script/api/bruno';
+import { HOPPSCOTCH_LAYER } from '#core/script/api/hoppscotch';
+import { INSOMNIA_LAYER } from '#core/script/api/insomnia';
+import { POSTMAN_LAYER } from '#core/script/api/postman';
+import { THUNDER_CLIENT_LAYER } from '#core/script/api/thunder-client';
 import {
   PART_CRYPTO,
   PART_EXPECT,
@@ -22,7 +22,7 @@ import {
   PART_RESPONSE,
   PART_UNSUPPORTED,
   PART_VARIABLES,
-} from '../../../src/script/api/layer-parts.js';
+} from '#core/script/api/layer-parts';
 
 const PARTS: ReadonlyArray<readonly [string, string]> = [
   ['PART_UNSUPPORTED', PART_UNSUPPORTED],

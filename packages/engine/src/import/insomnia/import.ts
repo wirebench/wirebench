@@ -4,7 +4,7 @@
  */
 
 import { readFile, stat } from 'node:fs/promises';
-import { InsomniaError } from '../../errors.js';
+import { InsomniaError } from '#core/errors';
 import type { MappedClientImport } from '../client-import.js';
 import type { MapInsomniaOptions } from './map.js';
 import { mapInsomnia } from './map.js';

@@ -6,7 +6,7 @@
  * before the call, so the offsets stay readable as the documents grow.
  */
 import { describe, expect, it } from 'vitest';
-import { jsonCompletionContextAt } from '../../../src/json/cursor.js';
+import { jsonCompletionContextAt } from '#core/json/cursor';
 
 /**
  * Runs the analysis on a document whose cursor is marked with `|`.

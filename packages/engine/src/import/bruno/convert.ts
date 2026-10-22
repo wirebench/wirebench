@@ -10,10 +10,10 @@
  * line, and the rest of the collection still converts.
  */
 
-import { BrunoError } from '../../errors.js';
-import type { ImportReport } from '../report.js';
-import { ReportBuilder } from '../report.js';
-import { brunoTemplates } from '../template-dialects.js';
+import { BrunoError } from '#core/errors';
+import type { ImportReport } from '#core/import/report';
+import { ReportBuilder } from '#core/import/report';
+import { brunoTemplates } from '#core/import/template-dialects';
 import type {
   OcAssertion,
   OcCollection,

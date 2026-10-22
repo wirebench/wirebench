@@ -2,11 +2,11 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { countFindings, failsAt } from '../../../../../src/rest/openapi/lint/model.js';
-import type { LintFinding } from '../../../../../src/rest/openapi/lint/model.js';
-import { readProjectLintRulesets } from '../../../../../src/rest/openapi/lint/project.js';
-import { lintReportJson, lintReportSarif } from '../../../../../src/rest/openapi/lint/report.js';
-import { lintOpenApi } from '../../../../../src/rest/openapi/lint/run.js';
+import { countFindings, failsAt } from '#protocol-rest/rest/openapi/lint/model';
+import type { LintFinding } from '#protocol-rest/rest/openapi/lint/model';
+import { readProjectLintRulesets } from '#protocol-rest/rest/openapi/lint/project';
+import { lintReportJson, lintReportSarif } from '#protocol-rest/rest/openapi/lint/report';
+import { lintOpenApi } from '#protocol-rest/rest/openapi/lint/run';
 import { fixture, recordingFetch } from './helpers.js';
 
 const tool = { name: 'wirebench', version: '9.9.9' };

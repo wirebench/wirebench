@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { NS } from '../../../src/xml/namespaces.js';
-import { NamespaceScope } from '../../../src/soap/namespace-scope.js';
+import { NS } from '#core/xml/namespaces';
+import { NamespaceScope } from '#protocol-soap/soap/namespace-scope';
 
 describe('NamespaceScope', () => {
   it('pins xsd/xsi/soapenc and names seeds with mnemonics', () => {

@@ -18,11 +18,11 @@
  * a read-only demo too and belongs in the table below.
  */
 import { expect, it } from 'vitest';
-import { generateSoapRequest } from '../../src/soap/generate.js';
-import { importWsdl } from '../../src/soap/import.js';
-import { sendSoapRequest } from '../../src/soap/send.js';
+import { generateSoapRequest } from '#protocol-soap/soap/generate';
+import { importWsdl } from '#protocol-soap/soap/import';
+import { sendSoapRequest } from '#protocol-soap/soap/send';
 import { describeNetwork } from '../helpers/network-gate.js';
-import type { GenerateOptions } from '../../src/xsd/sample-generator.js';
+import type { GenerateOptions } from '#protocol-soap/xsd/sample-generator';
 
 /** Generous: these are public servers on a shared internet, not a loopback socket. */
 const TIMEOUT_MS = 60_000;

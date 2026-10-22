@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { ProblemsView } from '../../src/renderer/features/problems/problems-view.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
@@ -21,7 +21,7 @@ const request = {
 
 describe('ProblemsView', () => {
   beforeEach(() => {
-    useProblemsStore.setState({ items: [] });
+    useProblemsStore.setState({ items: [], filter: 'all' });
     useEditorsStore.setState({ tabs: [], activeId: undefined });
     useProjectStore.setState({ requests: { 'req-1': request } });
   });
@@ -115,6 +115,47 @@ describe('ProblemsView', () => {
 
     fireEvent.click(screen.getByTestId('problems-filter-warning'));
     expect(screen.getAllByTestId('problem-row')[0]?.textContent).toContain('Content-Type disagrees');
+  });
+
+  it('keeps lint findings behind their own chip, with counts that leave them out (#745)', () => {
+    useProblemsStore.setState({
+      items: [
+        {
+          groupId: 'validation:req-1:request',
+          source: 'validation',
+          severity: 'warning',
+          requestId: 'req-1',
+          problem: { code: 'content-type-mismatch', message: 'Content-Type disagrees', source: 'structure' },
+        },
+      ],
+    });
+    useProblemsStore.getState().setLint('api-1', [
+      { rule: 'info-description', severity: 'warning', message: 'Add a description', path: '/info', source: 's' },
+      { rule: 'oas3-schema', severity: 'error', message: 'Not a schema', path: '/paths', source: 's' },
+    ]);
+    render(<ProblemsView />);
+
+    // All, Errors and Warnings count and list the one problem; Lint counts the two findings.
+    expect(screen.getByTestId('problems-filter-error').textContent).toBe('Errors');
+    expect(screen.getByTestId('problems-filter-warning').textContent).toBe('Warnings (1)');
+    expect(screen.getByTestId('problems-filter-lint').textContent).toBe('Lint (2)');
+    expect(screen.getAllByTestId('problem-row')).toHaveLength(1);
+    expect(screen.queryByText('Add a description')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('problems-filter-lint'));
+    expect(screen.getByTestId('problems-filter-lint').getAttribute('aria-pressed')).toBe('true');
+    const rows = screen.getAllByTestId('problem-row');
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining('Add a description'),
+      expect.stringContaining('Not a schema'),
+    ]);
+
+    // An empty lint list says so, instead of the blanket "No problems found."
+    act(() => {
+      useProblemsStore.getState().setLint('api-1', []);
+    });
+    expect(screen.getByTestId('problems-empty').textContent).toBe('No lint findings.');
   });
 
   it('opens the request a validation problem belongs to when its row is clicked', () => {

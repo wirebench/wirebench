@@ -10,11 +10,11 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { parseOpenApi } from '../../../../src/rest/openapi/import.js';
-import { apiFromDocument } from '../../../../src/rest/openapi/map.js';
-import type { MappedApi } from '../../../../src/rest/openapi/map.js';
-import type { RestRequestDef } from '../../../../src/rest/model.js';
-import type { FetchDocument } from '../../../../src/wsdl/resolver.js';
+import { parseOpenApi } from '#protocol-rest/rest/openapi/import';
+import { apiFromDocument } from '#protocol-rest/rest/openapi/map';
+import type { MappedApi } from '#protocol-rest/rest/openapi/map';
+import type { RestRequestDef } from '#protocol-rest/rest/model';
+import type { FetchDocument } from '#protocol-soap/wsdl/resolver';
 
 const publicDir = fileURLToPath(new URL('../../../../../../fixtures/openapi/public/', import.meta.url));
 

@@ -1,10 +1,10 @@
 import { SignedXml } from 'xml-crypto';
 import { describe, expect, it } from 'vitest';
-import { buildSamlAssertion } from '../../../../src/wss/saml/build.js';
-import { readAssertion } from '../../../../src/wss/saml/read.js';
+import { buildSamlAssertion } from '#protocol-soap/wss/saml/build';
+import { readAssertion } from '#protocol-soap/wss/saml/read';
 import { generateSigningCert, generateTestCa } from '../../../helpers/test-certs.js';
-import type { KeystoreAlias } from '../../../../src/keystore/model.js';
-import type { WssSamlFormEntry } from '../../../../src/wss/model.js';
+import type { KeystoreAlias } from '#core/keystore/model';
+import type { WssSamlFormEntry } from '#protocol-soap/wss/model';
 
 const ca = generateTestCa();
 const issuerCert = generateSigningCert(ca);

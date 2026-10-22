@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { AssertionSubject } from '../../../src/assert/model.js';
-import { extractTransfer } from '../../../src/sequence/transfer.js';
+import type { AssertionSubject } from '#core/assert/model';
+import { extractTransfer } from '#core/sequence/transfer';
 
 const jsonSubject: AssertionSubject = {
   protocol: 'rest',

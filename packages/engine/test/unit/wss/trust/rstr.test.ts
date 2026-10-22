@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { SignedXml } from 'xml-crypto';
 import { describe, expect, it } from 'vitest';
-import { parseRstr } from '../../../../src/wss/trust/rstr.js';
-import { readAssertion } from '../../../../src/wss/saml/read.js';
+import { parseRstr } from '#protocol-soap/wss/trust/rstr';
+import { readAssertion } from '#protocol-soap/wss/saml/read';
 
 const fixture = (name: string) =>
   readFileSync(fileURLToPath(new URL(`../../../fixtures/ws-trust/${name}`, import.meta.url)), 'utf8');

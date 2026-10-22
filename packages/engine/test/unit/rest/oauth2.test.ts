@@ -8,8 +8,8 @@
  * client-credentials flow is refused.
  */
 import { describe, expect, it } from 'vitest';
-import { WirebenchError } from '../../../src/errors.js';
-import type { OAuth2Auth } from '../../../src/project/model.js';
+import { WirebenchError } from '#core/errors';
+import type { OAuth2Auth } from '#core/project/model';
 import {
   TOKEN_REFRESH_MARGIN_MS,
   authorizationUrl,
@@ -18,7 +18,7 @@ import {
   newState,
   parseTokenResponse,
   pkce,
-} from '../../../src/http/auth/oauth2.js';
+} from '#core/http/auth/oauth2';
 
 const NOW = new Date('2026-09-13T12:00:00Z');
 

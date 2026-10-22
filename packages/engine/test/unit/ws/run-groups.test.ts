@@ -1,11 +1,11 @@
 /** WebSocket's run facet offers a run its requests, as REST does: every one but the orphaned ones. */
 import { describe, expect, it } from 'vitest';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { ORPHANED_STEP_REASON } from '../../../src/run/tree.js';
-import { createWsApi, createWsFolder, createWsRequest } from '../../../src/ws/model.js';
-import { wsEffectiveAuth, wsItemFor, wsRun } from '../../../src/ws/run.js';
-import type { WsSelected } from '../../../src/ws/run.js';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { ORPHANED_STEP_REASON } from '#core/run/tree';
+import { createWsApi, createWsFolder, createWsRequest } from '#protocol-ws/ws/model';
+import { wsEffectiveAuth, wsItemFor, wsRun } from '#protocol-ws/ws/run';
+import type { WsSelected } from '#protocol-ws/ws/run';
 
 const ticker = createWsRequest('Ticker', { id: 'ws-ticker', slug: 'ticker', order: 0 });
 const gone = { ...createWsRequest('Gone', { id: 'ws-gone', order: 1 }), orphaned: true };

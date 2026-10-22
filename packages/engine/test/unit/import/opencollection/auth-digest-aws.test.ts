@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mapOcAuth } from '../../../../src/import/opencollection/auth.js';
-import { ReportBuilder } from '../../../../src/import/report.js';
+import { ReportBuilder } from '#core/import/report';
 
 describe('mapOcAuth: digest and AWS Signature', () => {
   it('maps digest with its user name, and warns about a literal password', () => {

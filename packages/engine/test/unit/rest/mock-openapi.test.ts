@@ -8,10 +8,10 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parse as parseYamlDocument } from 'yaml';
-import { createMock } from '../../../src/mock/model.js';
-import { startMock } from '../../../src/mock/server.js';
-import type { RunningMock } from '../../../src/mock/server.js';
-import { openApiReply } from '../../../src/rest/mock-openapi.js';
+import { createMock } from '#core/mock/model';
+import { startMock } from '#core/mock/server';
+import type { RunningMock } from '#core/mock/server';
+import { openApiReply } from '#protocol-rest/rest/mock-openapi';
 import { mockProject } from '../mock/fixture.js';
 import { tempProjectDir } from '../project/fixture.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).

@@ -4,8 +4,8 @@
  */
 
 import { parse as parseYaml } from 'yaml';
-import { InsomniaError } from '../../errors.js';
-import { ReportBuilder } from '../report.js';
+import { InsomniaError } from '#core/errors';
+import { ReportBuilder } from '#core/import/report';
 import type {
   InsBody,
   InsDocument,

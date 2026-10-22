@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse as parseYaml } from 'yaml';
-import { EMPTY_LOCAL_STATE, loadLocalState, saveLocalState } from '../../../src/workspace/local-state.js';
+import { EMPTY_LOCAL_STATE, loadLocalState, saveLocalState } from '#core/workspace/local-state';
 import { tempWorkspaceDir } from './fixture.js';
 
 describe('local.yaml', () => {

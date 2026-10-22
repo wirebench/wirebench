@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { decodeTime, ulid } from 'ulidx';
-import { generateMachineKeys, type MachineKeys } from '../../../src/team-secrets/keys.js';
-import { nextAccessEntryId, replayAccessLog, verifiedKeys } from '../../../src/team-secrets/log.js';
-import type { AccessAction, AccessEntryFile, KeyRequestFile } from '../../../src/team-secrets/schema.js';
-import { signDocument } from '../../../src/team-secrets/sign.js';
+import { generateMachineKeys, type MachineKeys } from '#core/team-secrets/keys';
+import { nextAccessEntryId, replayAccessLog, verifiedKeys } from '#core/team-secrets/log';
+import type { AccessAction, AccessEntryFile, KeyRequestFile } from '#core/team-secrets/schema';
+import { signDocument } from '#core/team-secrets/sign';
 
 let clock = Date.parse('2026-09-26T10:00:00.000Z');
 

@@ -10,7 +10,7 @@
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import type { ApiReferenceSection } from '../packages/engine/src/script/types/api.ts';
+import type { ApiReferenceSection } from '../packages/core/src/script/types/api.ts';
 
 const target = fileURLToPath(new URL('../docs-site/src/content/docs/reference/script-api.md', import.meta.url));
 

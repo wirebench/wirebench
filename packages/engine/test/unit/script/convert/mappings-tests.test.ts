@@ -4,11 +4,11 @@
  * and calls left as TODOs.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { restScriptTypes } from '../../../../src/rest/script-types.js';
-import { convertScript } from '../../../../src/script/convert/index.js';
-import type { ConvertProtocol } from '../../../../src/script/convert/roots.js';
-import type { LayeredApi, ScriptPhase } from '../../../../src/script/model.js';
-import { apiDeclarations, secretNameType } from '../../../../src/script/types/api.js';
+import { restScriptTypes } from '#protocol-rest/rest/script-types';
+import { convertScript } from '#core/script/convert/index';
+import type { ConvertProtocol } from '#core/script/convert/roots';
+import type { LayeredApi, ScriptPhase } from '#core/script/model';
+import { apiDeclarations, secretNameType } from '#core/script/types/api';
 import { typeErrors } from '../ts-check.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../../src/protocols.js';

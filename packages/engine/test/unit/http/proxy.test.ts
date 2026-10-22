@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { WirebenchError } from '../../../src/errors.js';
-import { isExcluded, parseSystemProxy, resolveProxyFor, type ProxyConfig } from '../../../src/http/proxy.js';
+import { WirebenchError } from '#core/errors';
+import { isExcluded, parseSystemProxy, resolveProxyFor, type ProxyConfig } from '#core/http/proxy';
 
 describe('isExcluded', () => {
   it.each([

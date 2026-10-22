@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ThunderError } from '../../../../src/errors.js';
+import { ThunderError } from '#core/errors';
 import { readThunderFolder } from '../../../../src/import/thunder/import.js';
 import { lines, parseThunderExport, parseThunderFolder } from '../../../../src/import/thunder/parse.js';
 import { thunderFixture, thunderFixtureDir } from './fixtures.js';

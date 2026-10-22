@@ -2,7 +2,7 @@ import { rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { WorkspaceError } from '../../../src/errors.js';
+import { WorkspaceError } from '#core/errors';
 import {
   DEFAULT_GIT_SHARE_SETTINGS,
   DEFAULT_SYNC_SETTINGS,
@@ -11,7 +11,7 @@ import {
   saveShare,
   shareSyncSettings,
   type WorkspaceShare,
-} from '../../../src/workspace/share.js';
+} from '#core/workspace/share';
 import { tempWorkspaceDir } from './fixture.js';
 
 /** A ULID, as the server mints workspace ids (TEAMS_ID_PATTERN). */

@@ -59,7 +59,7 @@ function seedApi(cache: boolean): void {
 
 describe('lint findings in Problems', () => {
   beforeEach(() => {
-    useProblemsStore.setState({ items: [] });
+    useProblemsStore.setState({ items: [], filter: 'all' });
     restLint.mockReset();
     toasts.length = 0;
     opened.length = 0;
@@ -94,6 +94,10 @@ describe('lint findings in Problems', () => {
         finding('media-example', 'warning', 15, '/paths/~1json/get/responses/200/content/application~1json'),
       ]);
     render(<ProblemsView />);
+    // Lint is its own list (#745): All shows none of it, the Lint chip all of it.
+    expect(screen.queryAllByRole('row')).toHaveLength(0);
+    expect(screen.getByTestId('problems-empty').textContent).toBe('No problems found.');
+    fireEvent.click(screen.getByTestId('problems-filter-lint'));
     const row = screen.getByRole('row');
     expect(row.textContent).toContain('media-example broke');
     expect(row.textContent).not.toContain('media-example: ');
@@ -113,6 +117,7 @@ describe('lint findings in Problems', () => {
         finding('info-description', 'warning', 2, '/info'),
         finding('operation-operationId', 'warning', 30, '/paths/~1pets/delete'),
       ]);
+    useProblemsStore.getState().setFilter('lint');
     render(<ProblemsView />);
     for (const row of screen.getAllByTestId('problem-row')) fireEvent.click(row);
     expect(opened).toEqual(['request:req-get', 'api:api-1', 'api:api-1']);
@@ -125,6 +130,8 @@ describe('lint findings in Problems', () => {
     expect(restLint).toHaveBeenCalledWith({ apiId: 'api-1' });
     expect(useProblemsStore.getState().items).toHaveLength(1);
     expect(useUiStore.getState().console.activeTab).toBe('problems');
+    // Opened on the lint list, since that is what was asked for (#745).
+    expect(useProblemsStore.getState().filter).toBe('lint');
   });
 
   it('says so when a lint the user asked for finds nothing or fails, and stays quiet otherwise', async () => {

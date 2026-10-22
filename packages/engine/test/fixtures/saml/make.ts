@@ -15,7 +15,7 @@ register(
       }
     }`),
 );
-const { buildSamlAssertion } = await import('../../../src/wss/saml/build.js');
+const { buildSamlAssertion } = await import('#protocol-soap/wss/saml/build');
 const { generateSigningCert, generateTestCa, LONG_VALIDITY_MS } = await import('../../helpers/test-certs.js');
 
 // The certificate is checked in, so it must outlive the test suite by years, not a day.

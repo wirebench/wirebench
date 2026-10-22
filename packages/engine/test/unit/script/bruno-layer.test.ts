@@ -3,11 +3,11 @@
  * the calls the sandbox cannot honour fail with `script-unsupported`, and the sandbox limits hold.
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import type { RestRequestSnapshot, RestResponseSnapshot } from '../../../src/rest/scripting.js';
-import type { ScriptOutcome } from '../../../src/script/model.js';
-import { runScript } from '../../../src/script/run.js';
-import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
-import { SCRIPT_LIMITS } from '../../../src/script/sandbox/model.js';
+import type { RestRequestSnapshot, RestResponseSnapshot } from '#protocol-rest/rest/scripting';
+import type { ScriptOutcome } from '#core/script/model';
+import { runScript } from '#core/script/run';
+import { createScriptSandbox } from '#core/script/sandbox/host';
+import { SCRIPT_LIMITS } from '#core/script/sandbox/model';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';
 

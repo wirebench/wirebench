@@ -10,15 +10,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  MAX_IMPORT_DEPTH,
-  MAX_IMPORT_DOCUMENTS,
-  classifyLocation,
-  referencePolicyFor,
-} from '../../../src/http/ref-policy.js';
-import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
-import type { FetchDocument, FetchedDocument } from '../../../src/wsdl/resolver.js';
-import { resolveDefinition } from '../../../src/wsdl/resolver.js';
+import { MAX_IMPORT_DEPTH, MAX_IMPORT_DOCUMENTS, classifyLocation, referencePolicyFor } from '#core/http/ref-policy';
+import { createDefaultFetchDocument } from '#core/http/fetch-document';
+import type { FetchDocument, FetchedDocument } from '#protocol-soap/wsdl/resolver';
+import { resolveDefinition } from '#protocol-soap/wsdl/resolver';
 
 const { readFileSpy } = vi.hoisted(() => ({ readFileSpy: vi.fn<(path: unknown) => void>() }));
 

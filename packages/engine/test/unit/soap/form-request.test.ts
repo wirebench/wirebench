@@ -1,13 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
-import { parseWsdl } from '../../../src/wsdl/parse-wsdl.js';
-import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
-import { applyForm } from '../../../src/xsd/form-model.js';
-import { applyFormEdit } from '../../../src/xsd/form-edits.js';
-import { buildRequestForm } from '../../../src/soap/form-request.js';
-import type { RequestBuildInput } from '../../../src/soap/request-builder.js';
+import { createDefaultFetchDocument } from '#core/http/fetch-document';
+import { parseWsdl } from '#protocol-soap/wsdl/parse-wsdl';
+import { buildSchemaSet } from '#protocol-soap/xsd/schema-set';
+import { applyForm } from '#protocol-soap/xsd/form-model';
+import { applyFormEdit } from '#protocol-soap/xsd/form-edits';
+import { buildRequestForm } from '#protocol-soap/soap/form-request';
+import type { RequestBuildInput } from '#protocol-soap/soap/request-builder';
 
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 

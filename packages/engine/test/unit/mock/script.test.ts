@@ -3,11 +3,11 @@
  * that a failure of any kind is an answer, never a crash.
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import type { MockRequest } from '../../../src/mock/contract.js';
-import { MockState, dispatch } from '../../../src/mock/dispatch.js';
-import { createMockOperation, createMockResponse } from '../../../src/mock/model.js';
-import { createDispatchScriptRunner } from '../../../src/mock/script.js';
-import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
+import type { MockRequest } from '#core/mock/contract';
+import { MockState, dispatch } from '#core/mock/dispatch';
+import { createMockOperation, createMockResponse } from '#core/mock/model';
+import { createDispatchScriptRunner } from '#core/mock/script';
+import { createScriptSandbox } from '#core/script/sandbox/host';
 
 const sandbox = createScriptSandbox();
 afterAll(() => sandbox.dispose());

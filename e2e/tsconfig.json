@@ -4,6 +4,7 @@
     "composite": false,
     "noEmit": true,
     "allowImportingTsExtensions": true,
+    "lib": ["ES2023", "DOM"],
     "types": ["node"]
   },
   "include": ["**/*.ts"]

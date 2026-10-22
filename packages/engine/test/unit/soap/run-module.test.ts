@@ -1,32 +1,32 @@
 /** SOAP's run facet on its own: what it offers a run, why a request cannot run, its needs, one send. */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
-import { DEFAULT_REQUEST_PROPERTIES, soapInterfacesOf } from '../../../src/soap/model.js';
-import type { Project } from '../../../src/project/model.js';
-import type { Interface, SoapRequestDef } from '../../../src/soap/model.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
-import type { RunContext } from '../../../src/run/context.js';
-import { createRunScope } from '../../../src/run/scope.js';
-import { selectRequests } from '../../../src/run/select.js';
-import { soapProtocol } from '../../../src/soap/module.js';
-import { soapRun } from '../../../src/soap/run.js';
-import { normalizeWsa } from '../../../src/wsa/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '#core/project/model';
+import { DEFAULT_REQUEST_PROPERTIES, soapInterfacesOf } from '#protocol-soap/soap/model';
+import type { Project } from '#core/project/model';
+import type { Interface, SoapRequestDef } from '#protocol-soap/soap/model';
+import { createApi, createRestRequest } from '#protocol-rest/rest/model';
+import type { RunContext } from '#core/run/context';
+import { createRunScope } from '#core/run/scope';
+import { selectRequests } from '#core/run/select';
+import { soapProtocol } from '#protocol-soap/soap/module';
+import { soapRun } from '#protocol-soap/soap/run';
+import { normalizeWsa } from '#protocol-soap/wsa/model';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';
 
 const { events, cacheReads } = vi.hoisted(() => ({ events: [] as string[], cacheReads: [] as string[] }));
 
 // Every read of an interface's definition cache, which holds nothing here: the run then has no definition.
-vi.mock('../../../src/wsdl/cache.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../src/wsdl/cache.js')>()),
+vi.mock('#protocol-soap/wsdl/cache', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#protocol-soap/wsdl/cache')>()),
   readDefinitionCache: (dir: string) => {
     cacheReads.push(dir);
     return Promise.reject(new Error('no cache here'));
   },
 }));
 
-vi.mock('../../../src/soap/send.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../src/soap/send.js')>()),
+vi.mock('#protocol-soap/soap/send', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#protocol-soap/soap/send')>()),
   sendSoapRequest: (input: { readonly endpoint: string }) => {
     events.push(`send ${input.endpoint}`);
     return Promise.resolve({

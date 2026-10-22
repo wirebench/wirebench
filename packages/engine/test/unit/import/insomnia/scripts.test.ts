@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { MappedClientImport } from '../../../../src/import/client-import.js';
 import { mapInsomnia } from '../../../../src/import/insomnia/map.js';
 import { parseInsomnia } from '../../../../src/import/insomnia/parse.js';
-import { apiFolders, apiRequests } from '../../../../src/rest/model.js';
+import { apiFolders, apiRequests } from '#protocol-rest/rest/model';
 
 function mapV5(collection: unknown[], extra: Record<string, unknown> = {}): MappedClientImport {
   let n = 0;

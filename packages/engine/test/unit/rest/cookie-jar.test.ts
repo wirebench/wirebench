@@ -3,7 +3,7 @@
  * the server deleted it is a credential leak, so the refusals matter as much as the matches.
  */
 import { describe, expect, it } from 'vitest';
-import type { Cookie } from '../../../src/http/cookies.js';
+import type { Cookie } from '#core/http/cookies';
 import {
   CookieJar,
   jarCookieHost,
@@ -11,7 +11,7 @@ import {
   MAX_COOKIES_PER_DOMAIN,
   mergeCookieHeader,
   type StoredCookie,
-} from '../../../src/rest/cookie-jar.js';
+} from '#protocol-rest/rest/cookie-jar';
 
 const NOW = Date.parse('2026-10-03T12:00:00Z');
 

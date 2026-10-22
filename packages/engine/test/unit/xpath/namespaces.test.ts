@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectNamespaces, suggestPrefixes } from '../../../src/xpath/namespaces.js';
+import { collectNamespaces, suggestPrefixes } from '#core/xpath/namespaces';
 
 describe('collectNamespaces', () => {
   it('collects prefixed and default namespace declarations', () => {

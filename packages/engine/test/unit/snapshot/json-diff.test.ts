@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffJson } from '../../../src/snapshot/json-diff.js';
+import { diffJson } from '#core/snapshot/json-diff';
 
 describe('diffJson', () => {
   it('ignores key order', () => {

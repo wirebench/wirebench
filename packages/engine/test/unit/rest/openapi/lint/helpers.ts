@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { FetchDocument } from '../../../../../src/http/fetch-document.js';
-import type { LintFinding } from '../../../../../src/rest/openapi/lint/model.js';
+import type { FetchDocument } from '#core/http/fetch-document';
+import type { LintFinding } from '#protocol-rest/rest/openapi/lint/model';
 
 export const FIXTURES = fileURLToPath(new URL('../../../../fixtures/lint/', import.meta.url));
 

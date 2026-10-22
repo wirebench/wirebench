@@ -1,9 +1,9 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { configureKerberos } from '../../../src/http/auth/kerberos-native.js';
-import { createHttpFetchDocument } from '../../../src/http/document-fetch.js';
-import { importWsdl } from '../../../src/soap/import.js';
+import { configureKerberos } from '#core/http/auth/kerberos-native';
+import { createHttpFetchDocument } from '#core/http/document-fetch';
+import { importWsdl } from '#protocol-soap/soap/import';
 import { fakeKerberos } from '../../helpers/fake-kerberos.js';
 
 const TOKEN = Buffer.from('ap-req').toString('base64');

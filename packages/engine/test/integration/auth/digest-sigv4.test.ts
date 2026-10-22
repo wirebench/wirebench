@@ -10,12 +10,12 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { sendWithAuth } from '../../../src/http/auth/apply.js';
-import { DigestNonceCache } from '../../../src/http/auth/digest.js';
-import type { SendAuth } from '../../../src/http/auth/send-auth.js';
-import { signSigV4 } from '../../../src/http/auth/sigv4.js';
-import { sendRest } from '../../../src/rest/send.js';
-import { sendSoapRequest } from '../../../src/soap/send.js';
+import { sendWithAuth } from '#core/http/auth/apply';
+import { DigestNonceCache } from '#core/http/auth/digest';
+import type { SendAuth } from '#core/http/auth/send-auth';
+import { signSigV4 } from '#core/http/auth/sigv4';
+import { sendRest } from '#protocol-rest/rest/send';
+import { sendSoapRequest } from '#protocol-soap/soap/send';
 
 const USER = 'admin';
 const PASSWORD = 'Circle of Life';

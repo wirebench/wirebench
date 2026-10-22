@@ -3,10 +3,10 @@
  * without stays version 1, and every loop's maximum is required and bounded.
  */
 import { describe, expect, it } from 'vitest';
-import { isWirebenchError } from '../../../src/errors.js';
-import { parseSequenceFile, sequenceDocument } from '../../../src/sequence/file.js';
-import { createSequence, createSequenceStep, SEQUENCE_LIMITS } from '../../../src/sequence/model.js';
-import type { BranchRule, SequenceDef } from '../../../src/sequence/model.js';
+import { isWirebenchError } from '#core/errors';
+import { parseSequenceFile, sequenceDocument } from '#core/sequence/file';
+import { createSequence, createSequenceStep, SEQUENCE_LIMITS } from '#core/sequence/model';
+import type { BranchRule, SequenceDef } from '#core/sequence/model';
 
 function poll(branches: readonly BranchRule[]): SequenceDef {
   return createSequence('Poll', {

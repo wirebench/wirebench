@@ -15,26 +15,26 @@ import {
   blankXmlText,
   headersAndAuth,
   resolvePath,
-} from '../credential-values.js';
-import { isCredentialName } from '../credentials.js';
-import type { ImportReport } from '../report.js';
-import { ReportBuilder } from '../report.js';
-import type { ImportedScriptFile } from '../scripts.js';
-import { importedScriptPath } from '../scripts.js';
-import type { ImportedVariableSet } from '../variables.js';
-import { VariableSetBuilder } from '../variables.js';
-import type { IdGenerator } from '../../project/model.js';
-import { generateId } from '../../project/model.js';
-import { slugify, SlugSet, uniqueSlug } from '../../project/paths.js';
-import type { WsApi, WsRequestDef } from '../../ws/model.js';
-import { createWsApi, createWsRequest, createWsSavedMessage } from '../../ws/model.js';
-import type { KeyValueEntry, RestApi, RestBody, RestRequestDef, RestRequestSettings } from '../../rest/model.js';
-import { NO_BODY, createApi, createRestRequest, entry } from '../../rest/model.js';
-import { splitQueryKeepingReferences as splitUrl } from '../../rest/url.js';
-import type { HttpFileRequest, ParsedHttpFile } from '../../rest/http-file/parse.js';
-import type { HttpRewriteContext } from '../../rest/http-file/values.js';
-import { newRewriteContext, rewriteHttpValue } from '../../rest/http-file/values.js';
-import { USERINFO, looksLikeBareAuthority, referencesOnly, stripUserinfo } from '../values.js';
+} from '#core/import/credential-values';
+import { isCredentialName } from '#core/import/credentials';
+import type { ImportReport } from '#core/import/report';
+import { ReportBuilder } from '#core/import/report';
+import type { ImportedScriptFile } from '#core/import/scripts';
+import { importedScriptPath } from '#core/import/scripts';
+import type { ImportedVariableSet } from '#core/import/variables';
+import { VariableSetBuilder } from '#core/import/variables';
+import type { IdGenerator } from '#core/project/model';
+import { generateId } from '#core/project/model';
+import { slugify, SlugSet, uniqueSlug } from '#core/project/paths';
+import type { WsApi, WsRequestDef } from '#protocol-ws/ws/model';
+import { createWsApi, createWsRequest, createWsSavedMessage } from '#protocol-ws/ws/model';
+import type { KeyValueEntry, RestApi, RestBody, RestRequestDef, RestRequestSettings } from '#protocol-rest/rest/model';
+import { NO_BODY, createApi, createRestRequest, entry } from '#protocol-rest/rest/model';
+import { splitQueryKeepingReferences as splitUrl } from '#protocol-rest/rest/url';
+import type { HttpFileRequest, ParsedHttpFile } from '#protocol-rest/rest/http-file/parse';
+import type { HttpRewriteContext } from '#protocol-rest/rest/http-file/values';
+import { newRewriteContext, rewriteHttpValue } from '#protocol-rest/rest/http-file/values';
+import { USERINFO, looksLikeBareAuthority, referencesOnly, stripUserinfo } from '#core/import/values';
 
 export interface MappedHttpFile {
   readonly rest: RestApi;

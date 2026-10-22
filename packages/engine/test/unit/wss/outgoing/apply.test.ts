@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { WssError } from '../../../../src/errors.js';
-import { createWssContext } from '../../../../src/wss/model.js';
-import { applyOutgoingWss, removeOutgoingWss } from '../../../../src/wss/apply.js';
-import type { WssEntry, WssOutgoingConfig } from '../../../../src/wss/model.js';
+import { WssError } from '#core/errors';
+import { createWssContext } from '#protocol-soap/wss/model';
+import { applyOutgoingWss, removeOutgoingWss } from '#protocol-soap/wss/apply';
+import type { WssEntry, WssOutgoingConfig } from '#protocol-soap/wss/model';
 
 const ctx = createWssContext({
   clock: () => new Date('2026-09-09T12:00:00Z'),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NS, PREFIX } from '../../../src/xml/namespaces.js';
+import { NS, PREFIX } from '#core/xml/namespaces';
 
 describe('NS', () => {
   it('matches the known namespace table', () => {

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { AssertionSubject } from '../../../src/assert/model.js';
-import { BASELINE_MAX_BYTES } from '../../../src/run/baseline.js';
-import { finishBaselineUpdate, planBaselineUpdate } from '../../../src/run/baseline-update.js';
-import type { BaselineUpdateInput } from '../../../src/run/baseline-update.js';
-import type { GoldenRead } from '../../../src/snapshot/golden-file.js';
+import type { AssertionSubject } from '#core/assert/model';
+import { BASELINE_MAX_BYTES } from '#core/run/baseline';
+import { finishBaselineUpdate, planBaselineUpdate } from '#core/run/baseline-update';
+import type { BaselineUpdateInput } from '#core/run/baseline-update';
+import type { GoldenRead } from '#core/snapshot/golden-file';
 
 const NOW = new Date('2026-10-03T12:00:00.000Z');
 const subject = (
