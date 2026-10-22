@@ -213,9 +213,10 @@ test.describe('workspaces', () => {
     await scratchRow.click({ button: 'right' });
     await page.getByRole('menuitem', { name: 'Remove from workspace' }).click();
     await expect(page.getByTestId('remove-project-dialog')).toBeVisible();
-    // Moving the folder to the trash is the default for an internal project; assert it rather
-    // than tick it, so a change of default is caught here.
-    await expect(page.getByTestId('remove-project-delete-files')).toBeChecked();
+    // Moving the folder to the trash is opt-in for an internal project (#684): assert the default
+    // before ticking it, so a change of default is caught here.
+    await expect(page.getByTestId('remove-project-delete-files')).not.toBeChecked();
+    await page.getByTestId('remove-project-delete-files').check();
     await page.getByTestId('remove-project-confirm').click();
     await expect(page.getByTestId('explorer-project-row')).toHaveCount(1);
     // Nothing is ever deleted: the folder is in the e2e trash, named after the project slug.

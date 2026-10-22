@@ -44,6 +44,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Remove from workspace keeps the project folder unless asked.** The **Move the project folder to
+  the trash** box in **Remove project?** starts unchecked, so tidying the workspace list never moves
+  files on its own; tick it to trash the folder as before (#684).
 - **SOAP, after a daily-use review (#725–#732).** Imported requests are named after their operation
   ("Add", or "Add (SOAP 1.2)" when a 1.1 and a 1.2 binding offer it) instead of "Request 1" (#726).
   Importing a WSDL already in the project asks **Update Definition…** or **Import as a copy**, a copy
