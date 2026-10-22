@@ -41,7 +41,9 @@ All notable changes to this project are documented here. The format follows
   takes an array now imports with its example, or its items' default or first enum value, instead of
   an empty cell: a required `status` arrives as `status=available`, not `status=`. An exploded
   form-style query parameter gets one row per item (`tags=a&tags=b`); other styles join the items with
-  commas. Optional parameters still arrive switched off.
+  commas. A required parameter the document gives no value at all arrives as a `${name}` reference
+  (`tags=${tags}`), so the URL marks it and a send names what is missing instead of sending `tags=`.
+  Optional parameters still arrive switched off.
 - **A new POST body is ready to type into (#748).** Switching a request with no body from GET (or any
   method without one) to POST, PUT or PATCH sets the body to Raw · JSON. A body you set to None on a
   POST stays None.

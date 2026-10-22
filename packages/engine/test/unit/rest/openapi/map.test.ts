@@ -495,6 +495,22 @@ describe('array query parameters (G10)', () => {
     ]);
   });
 
+  it('fills a required parameter the document gives no value with a ${name} reference', () => {
+    expect(
+      queryOf([
+        { name: 'tags', in: 'query', required: true, schema: { type: 'array', items: { type: 'string' } } },
+        { name: 'page[size]', in: 'query', required: true, schema: { type: 'string' } },
+        { name: 'note', in: 'query', schema: { type: 'string' } },
+      ]),
+    ).toEqual([
+      { name: 'tags', value: '${tags}', enabled: true },
+      // A reference cannot carry this name: left for the user.
+      { name: 'page[size]', value: '', enabled: true },
+      // Optional: switched off, so nothing is sent and nothing needs filling.
+      { name: 'note', value: '', enabled: false },
+    ]);
+  });
+
   it('keeps an optional parameter switched off, whatever its value', () => {
     expect(queryOf([{ name: 'limit', in: 'query', schema: { type: 'integer', default: 20 } }])).toEqual([
       { name: 'limit', value: '20', enabled: false },
