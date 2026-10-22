@@ -148,6 +148,13 @@ export const soapExplorer: KindExplorer = {
     },
     operation: {
       icon: Workflow,
+      // An operation with no request is a leaf (#685 E14): a click makes its first request. One with
+      // requests folds on a click and does nothing on a double-click, as before.
+      open: (node) => {
+        if (node.children === undefined) {
+          explorerActions.newRequest(node.interfaceId, node.bindingName, node.operationName);
+        }
+      },
       menu: (node) =>
         groups(
           [

@@ -271,6 +271,26 @@ const KIND_BY_ID_PREFIX: Readonly<Record<string, ExplorerNode['kind']>> = {
   iface: 'interface',
 };
 
+/**
+ * The rows **Expand all** leaves folded (#685 E14): an operation's requests are one click away and named
+ * after it, so unfolding every operation only doubles the rows; an interface's endpoints are read on its tab.
+ */
+const EXPAND_ALL_STOPS: ReadonlySet<ExplorerNode['kind']> = new Set<ExplorerNode['kind']>(['operation', 'endpoints']);
+
+/** Unfolds every container down to the request level: projects, interfaces, APIs, bindings and folders. */
+export function expandExplorerAll(): void {
+  const tree = getExplorerTree();
+  if (tree === null) return;
+  tree.openAll();
+  const stops: string[] = [];
+  const visit = (node: NodeApi<ExplorerNode>): void => {
+    if (node.isInternal && EXPAND_ALL_STOPS.has(node.data.kind)) stops.push(node.id);
+    for (const child of node.children ?? []) visit(child);
+  };
+  for (const root of tree.root.children ?? []) visit(root);
+  for (const id of stops) tree.close(id);
+}
+
 /** Starts an inline rename of the first target row, if its kind renames inline. */
 export function renameExplorerTarget(): void {
   const [node] = explorerTargets();

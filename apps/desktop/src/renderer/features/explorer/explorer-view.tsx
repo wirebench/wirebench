@@ -18,7 +18,6 @@ import {
   Link,
   Link2,
   Loader2,
-  RefreshCw,
   UnfoldVertical,
   Webhook,
 } from 'lucide-react';
@@ -47,6 +46,7 @@ import { getExplorerTree, registerExplorerTree, revealNode } from './explorer-ap
 import {
   activeTabTreeNodeId,
   deleteExplorerNodes,
+  expandExplorerAll,
   REQUEST_ROW_KINDS,
   runNodeDeletion,
 } from './explorer-tree-actions.js';
@@ -177,6 +177,10 @@ const INLINE_BUTTON_CLASS =
  */
 const ROW_PADDING_LEFT = 6;
 
+/** A row's height, and the two-line height of the row that says a linked project's folder is gone (#685 E17). */
+const ROW_HEIGHT = 26;
+const MISSING_ROW_HEIGHT = 46;
+
 /** A mock row's marker while it runs: where it listens, as its tooltip. */
 function MockRunningBadge({ mockId }: { readonly mockId: string }) {
   const state = useMockRunsStore((s) => s.states[mockId]);
@@ -232,6 +236,8 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   // What a single click opens, if anything; a row with nothing to open folds instead.
   const opens =
     role?.click === 'open' ||
+    // A leaf with nothing to fold opens what its kind says (an empty SOAP operation makes its first request).
+    (node.isLeaf && role?.open !== undefined) ||
     node.data.kind === 'project' ||
     node.data.kind === 'webhook-request' ||
     node.data.kind === 'catch-url' ||
@@ -353,7 +359,46 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             Icon !== undefined && <Icon size={13} />
           )}
         </span>
-        {node.isEditing ? (
+        {node.data.kind === 'project-missing' ? (
+          <span className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 pl-1 leading-tight">
+            <span className="flex min-w-0 items-baseline gap-1.5">
+              <span className="shrink-0 text-status-danger">{label}</span>
+              {node.data.dir !== undefined && (
+                <span
+                  data-testid="explorer-project-missing-path"
+                  className="min-w-0 truncate text-xs text-fg-subtle"
+                  title={node.data.dir}
+                >
+                  {node.data.dir}
+                </span>
+              )}
+            </span>
+            {node.data.projectId !== undefined && (
+              <span className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  className={INLINE_BUTTON_CLASS}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    projectRowActions.locate(node.data.projectId ?? '');
+                  }}
+                >
+                  Locate…
+                </button>
+                <button
+                  type="button"
+                  className={INLINE_BUTTON_CLASS}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    projectRowActions.remove(node.data.projectId ?? '');
+                  }}
+                >
+                  Remove
+                </button>
+              </span>
+            )}
+          </span>
+        ) : node.isEditing ? (
           <input
             autoFocus
             data-testid="explorer-rename-input"
@@ -373,13 +418,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           />
         ) : (
           <span
-            className={`min-w-0 flex-1 truncate pl-1 ${
-              node.data.kind === 'project-missing'
-                ? 'text-status-danger'
-                : node.data.kind === 'placeholder'
-                  ? 'text-fg-faint'
-                  : ''
-            }`}
+            className={`min-w-0 flex-1 truncate pl-1 ${node.data.kind === 'placeholder' ? 'text-fg-faint' : ''}`}
             title={node.data.kind === 'placeholder' ? node.data.message : label}
           >
             {label}
@@ -393,30 +432,6 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             title={node.data.suffix}
           >
             · {node.data.suffix}
-          </span>
-        )}
-        {node.data.kind === 'project-missing' && node.data.projectId !== undefined && (
-          <span className="flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              className={INLINE_BUTTON_CLASS}
-              onClick={(e) => {
-                e.stopPropagation();
-                projectRowActions.locate(node.data.projectId ?? '');
-              }}
-            >
-              Locate…
-            </button>
-            <button
-              type="button"
-              className={INLINE_BUTTON_CLASS}
-              onClick={(e) => {
-                e.stopPropagation();
-                projectRowActions.remove(node.data.projectId ?? '');
-              }}
-            >
-              Remove
-            </button>
           </span>
         )}
         {node.data.kind === 'placeholder' && node.data.placeholderKind !== undefined && (
@@ -696,15 +711,14 @@ export function ExplorerView() {
         >
           <Link2 size={14} aria-hidden="true" />
         </IconButton>
-        <IconButton label="Expand all" onClick={() => treeRef?.openAll()}>
+        <IconButton label="Expand all" onClick={() => expandExplorerAll()}>
           <UnfoldVertical size={14} aria-hidden="true" />
         </IconButton>
         <IconButton label="Collapse all" onClick={() => treeRef?.closeAll()}>
           <FoldVertical size={14} aria-hidden="true" />
         </IconButton>
-        <IconButton label="Refresh" disabled onClick={() => {}}>
-          <RefreshCw size={14} aria-hidden="true" />
-        </IconButton>
+        {/* No Refresh button (#685 E13): the folder watcher reports a project changed on disk, and its banner
+            offers Reload; a button that re-read every project would discard unsaved edits for nothing. */}
       </div>
 
       <div ref={containerRef} className="min-h-0 flex-1">
@@ -736,7 +750,8 @@ export function ExplorerView() {
               data={data}
               width={size.width}
               height={size.height}
-              rowHeight={26}
+              // A missing linked project's row takes two lines (#685 E17); every other row one.
+              rowHeight={(node) => (node.data.kind === 'project-missing' ? MISSING_ROW_HEIGHT : ROW_HEIGHT)}
               // Half react-arborist's 24px default: enough that a subfolder reads as sitting inside
               // its folder at a glance, without the four levels of this tree — project › API ›
               // folder › request — marching a request off to the right.

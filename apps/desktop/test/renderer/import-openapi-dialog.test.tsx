@@ -284,7 +284,10 @@ describe('ImportOpenApiDialog', () => {
     await userEvent.click(screen.getByTestId('import-openapi-submit'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('import-openapi-error').textContent).toBe('Swagger 2.0 is not supported');
+      // The dialog adds what to check after the message main sent (#685 E15).
+      expect(screen.getByTestId('import-openapi-error').textContent).toBe(
+        'Swagger 2.0 is not supported. Check the URL, the authentication or the format.',
+      );
     });
     expect(screen.queryByTestId('import-openapi-summary')).toBeNull();
   });

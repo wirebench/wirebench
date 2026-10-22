@@ -517,6 +517,8 @@ export function buildExplorerTree(
               project.message ??
               (project.status === 'missing' ? 'This project folder is missing.' : 'This project could not be opened.'),
             projectId: project.id,
+            // The folder that is gone (or unreadable): the row's second line names it (#685 E17).
+            dir: project.dir,
             ...(project.message !== undefined ? { message: project.message } : {}),
           },
         ]

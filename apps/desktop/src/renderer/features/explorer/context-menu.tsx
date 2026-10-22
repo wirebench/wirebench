@@ -385,7 +385,16 @@ export function explorerMultiMenuGroups(nodes: readonly ExplorerNode[]): readonl
  * menu must not hand focus back to the row it was opened on after one of these, or the rename field would lose
  * focus at once and commit the name unchanged.
  */
-const RENAMING_ITEMS: ReadonlySet<string> = new Set(['rename', 'new-folder', 'new-request', 'new-graphql-request']);
+const RENAMING_ITEMS: ReadonlySet<string> = new Set([
+  'rename',
+  'new-folder',
+  'new-request',
+  'new-graphql-request',
+  'new-grpc-api',
+  'new-ws-api',
+  'new-sequence',
+  'new-webhook',
+]);
 
 /** The right-click menu for one explorer node; the items shown depend on `node.kind`. */
 export function ExplorerContextMenu({ node, children, selection, onOpenChange, onAction }: ExplorerContextMenuProps) {
