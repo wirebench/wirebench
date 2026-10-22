@@ -63,7 +63,8 @@
       "#protocol-rest/*": "./dist/vendor/protocol-rest/*.js",
       "#protocol-grpc/*": "./dist/vendor/protocol-grpc/*.js",
       "#protocol-ws/*": "./dist/vendor/protocol-ws/*.js",
-      "#protocol-mcp/*": "./dist/vendor/protocol-mcp/*.js"
+      "#protocol-mcp/*": "./dist/vendor/protocol-mcp/*.js",
+      "#protocol-graphql/*": "./dist/vendor/protocol-graphql/*.js"
     }
   },
   "exports": {
@@ -153,7 +154,8 @@
     "@wirebench/protocol-rest": "workspace:*",
     "@wirebench/protocol-grpc": "workspace:*",
     "@wirebench/protocol-ws": "workspace:*",
-    "@wirebench/protocol-mcp": "workspace:*"
+    "@wirebench/protocol-mcp": "workspace:*",
+    "@wirebench/protocol-graphql": "workspace:*"
   },
   "imports": {
     "#core/*": "@wirebench/core/*",
@@ -161,6 +163,7 @@
     "#protocol-rest/*": "@wirebench/protocol-rest/*",
     "#protocol-grpc/*": "@wirebench/protocol-grpc/*",
     "#protocol-ws/*": "@wirebench/protocol-ws/*",
-    "#protocol-mcp/*": "@wirebench/protocol-mcp/*"
+    "#protocol-mcp/*": "@wirebench/protocol-mcp/*",
+    "#protocol-graphql/*": "@wirebench/protocol-graphql/*"
   }
 }

@@ -20,9 +20,10 @@ import { SAVE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
+import { useUiStore } from '../../state/ui.js';
 import { selectApiOf, useProjectStore } from '../../state/project.js';
-import { GraphqlBody } from './graphql-body.js';
-import { forgetGraphqlMethodChange, methodForBodySwitch } from './graphql-method.js';
+import { GraphqlBody } from '../../kinds/graphql/body-editor.js';
+import { forgetGraphqlMethodChange, methodForBodySwitch } from '../../kinds/graphql/method.js';
 import { JsonFormView } from './json-form-view.js';
 import type { RestBodyWire, RestRequestPatchWire, RestSettingsWire } from '../../../shared/kinds/rest/wire.js';
 import type { KeyValueWire } from '../../../shared/wire-base.js';
@@ -183,6 +184,8 @@ export function BodyTab({
   // One remembered draft per kind, seeded with the saved body's own kind.
   const [drafts, setDrafts] = useState<Partial<Record<BodyKind, RestBodyWire>>>({ [body.kind]: body });
   const indent = usePreferencesStore((state) => state.preferences.editor.tabSize);
+  // On until main has answered, as `featureOn` reads it.
+  const graphqlOn = useUiStore((state) => state.enabledFeatures?.includes('graphql') ?? true);
   const source = useMemo(() => schemaSource ?? IPC_SCHEMA_SOURCE, [schemaSource]);
   const [schema, setSchema] = useState<JsonSchema | null>(null);
   const view = useEditorsStore((state) => state.restBodyViews[requestId] ?? 'text');
@@ -292,6 +295,9 @@ export function BodyTab({
     </label>
   );
 
+  // GraphQL is offered while its switch is on (phase 6 spec §3.4); a body that is GraphQL already keeps its option.
+  const kinds = KINDS.filter((kind) => kind.id !== 'graphql' || graphqlOn || body.kind === 'graphql');
+
   return (
     <div data-testid="rest-body" className="flex h-full min-h-0 flex-col gap-2 p-3">
       <div className="flex shrink-0 items-center gap-2">
@@ -304,7 +310,7 @@ export function BodyTab({
             switchTo(event.target.value as BodyKind);
           }}
         >
-          {KINDS.map((kind) => (
+          {kinds.map((kind) => (
             <option key={kind.id} value={kind.id}>
               {kind.label}
             </option>

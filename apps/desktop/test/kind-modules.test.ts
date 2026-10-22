@@ -3,7 +3,7 @@
  * the same order, the same feature descriptors, and tab kinds no two kinds share. `shared/kinds/` is
  * value-imported by the renderer, so its kind files import nothing but types and each other.
  */
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BUILTIN_PROTOCOLS } from '@wirebench/engine';
@@ -37,7 +37,9 @@ describe('KINDS', () => {
       'kind-module.ts',
       ...readdirSync(kindsDir, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
-        .map((entry) => `${entry.name}/kind.ts`),
+        .map((entry) => `${entry.name}/kind.ts`)
+        // GraphQL's folder holds a REST body kind's wire and channels, and no kind module (phase 6 spec §3.4).
+        .filter((file) => existsSync(join(kindsDir, file))),
     ];
     for (const file of files) {
       const text = readFileSync(join(kindsDir, file), 'utf8');

@@ -13,6 +13,12 @@ All notable changes to this project are documented here. The format follows
   activity-bar item, commands, views, tabs and IPC channels on that machine and wins over
   `WIREBENCH_AREAS`; a policy entry can only switch off. **Settings → Features** gains an **Areas** group
   that shows each area's state and why (_Set by your organisation_, marked Managed).
+- **GraphQL is a switch (#760).** **Settings → Features** lists **GraphQL** under Protocols, marked
+  experimental and on by default, so 6.1.0 projects keep sending it; it needs REST. With it off,
+  **New GraphQL request** and the body's **GraphQL** option are gone, a request that already has a
+  GraphQL body still opens, and its send is refused with `feature-disabled` in the app, `wirebench run`
+  (`--features graphql=off`, `WIREBENCH_FEATURES`) and the MCP server alike. A team policy can switch it
+  off for a workspace. No project file changes.
 
 ### Fixed
 

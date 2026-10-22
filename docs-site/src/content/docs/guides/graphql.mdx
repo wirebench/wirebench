@@ -13,6 +13,11 @@ scripts, assertions, runs, sequences and *Copy as command* without anything more
 
 Subscriptions are not supported yet.
 
+GraphQL is **experimental** and on by default. It can be switched off on one machine in
+**Settings → Features**, for one CLI run with `--features graphql=off`, or for a shared workspace
+by its team policy; see [Feature switches](/wirebench/docs/guides/feature-switches/). With it off, a request that
+already has a GraphQL body still opens and keeps its body, and its send is refused.
+
 ## Create a GraphQL request
 
 <Steps>

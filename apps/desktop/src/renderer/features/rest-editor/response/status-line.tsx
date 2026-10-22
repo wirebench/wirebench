@@ -14,7 +14,7 @@ import type { RestLiveState } from '../../../state/exchanges.js';
 import { describeSendError } from '../../request-editor/send-error.js';
 import { failedAssertionCount } from '../../assertions/assertion-results.js';
 import { ContractChip } from './contract-chip.js';
-import { GraphqlChip } from './graphql-chip.js';
+import { GraphqlChip } from '../../../kinds/graphql/response-chip.js';
 
 /** The colour class for a status code, by its class. */
 export function statusToneClass(status: number): string {

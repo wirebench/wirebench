@@ -3,6 +3,7 @@
  * installs the built-in registry every entry point falls back to, and re-exports the unions a host
  * that narrows on `kind` uses, which the modules fill (`protocol/unions.ts`).
  */
+import { GRAPHQL_FEATURE, graphqlSupport } from '#protocol-graphql/graphql/support';
 import { grpcProtocol } from '#protocol-grpc/grpc/module';
 import { mcpProtocol } from '#protocol-mcp/mcp/module';
 import type { FeatureDescriptor } from '#core/protocol/features';
@@ -10,6 +11,7 @@ import type { ProtocolModule } from '#core/protocol/module';
 import { installDefaultRegistry } from '#core/protocol/default-registry';
 import { createProtocolRegistry } from '#core/protocol/registry';
 import type { ProtocolRegistry } from '#core/protocol/registry';
+import { installRestGraphql } from '#protocol-rest/rest/graphql-slot';
 import { restProtocol } from '#protocol-rest/rest/module';
 import { soapProtocol } from '#protocol-soap/soap/module';
 import { wsProtocol } from '#protocol-ws/ws/module';
@@ -61,11 +63,14 @@ export const SCRIPTS_FEATURE: FeatureDescriptor = {
 
 /**
  * The switchable features that are not protocols (phase 4 spec §2), in the order Settings lists
- * them: automation first, then what needs a server. `scripts` is {@link SCRIPTS_FEATURE}.
+ * them: GraphQL beside the protocols, automation, then what needs a server. `scripts` is
+ * {@link SCRIPTS_FEATURE}.
  *
  * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
  */
 export const BUILTIN_FEATURES: readonly FeatureDescriptor[] = [
+  // A REST body kind, not a protocol module, so the registry is told of it (phase 6 spec §3.3).
+  GRAPHQL_FEATURE,
   SCRIPTS_FEATURE,
   { id: 'sequences', title: 'Sequences', default: true, stage: 'stable', requires: [] },
   { id: 'webhooks', title: 'Webhooks', default: true, stage: 'stable', requires: ['rest'] },
@@ -94,6 +99,9 @@ export function createBuiltinRegistry(switches?: Readonly<Record<string, boolean
 // The registry an entry point uses when its caller passes none (spec §3.3): the built-in protocols
 // with every feature on. Core holds the slot; loading this file fills it.
 installDefaultRegistry(createBuiltinRegistry);
+// GraphQL is a REST body kind whose meaning lives in its own package (phase 6 spec §3.2): REST's slot
+// is filled here, the one place that composes both.
+installRestGraphql(graphqlSupport);
 export { defaultRegistry } from '#core/protocol/default-registry';
 
 export type {

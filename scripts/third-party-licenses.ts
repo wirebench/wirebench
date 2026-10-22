@@ -71,6 +71,7 @@ const VENDORED_PACKAGES = [
   'protocol-grpc',
   'protocol-ws',
   'protocol-mcp',
+  'protocol-graphql',
 ] as const;
 
 /** Workspace packages: Wirebench's own code, covered by the repository's own LICENSE files. */
@@ -86,6 +87,7 @@ const OWN_PACKAGES = new Set([
   '@wirebench/protocol-grpc',
   '@wirebench/protocol-ws',
   '@wirebench/protocol-mcp',
+  '@wirebench/protocol-graphql',
 ]);
 
 /**

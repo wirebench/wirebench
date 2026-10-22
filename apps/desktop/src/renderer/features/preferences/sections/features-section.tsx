@@ -7,7 +7,7 @@ import type { SectionProps } from './section-props.js';
 
 /** The groups the rows sit in (phase 4 spec §4.3), by feature id; anything else lands in Other. */
 const GROUPS: readonly { readonly title: string; readonly ids: readonly string[] }[] = [
-  { title: 'Protocols', ids: ['soap', 'rest', 'grpc', 'websocket', 'mcp'] },
+  { title: 'Protocols', ids: ['soap', 'rest', 'graphql', 'grpc', 'websocket', 'mcp'] },
   { title: 'Automation', ids: ['scripts', 'sequences', 'webhooks'] },
   { title: 'Team', ids: ['server-sync', 'team-secrets', 'mcp-server'] },
 ];

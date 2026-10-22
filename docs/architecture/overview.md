@@ -140,9 +140,10 @@ environments/`) lists Globals, the workspace and every environment; opening one 
 variables and endpoint overrides, each variable with an *enabled* checkbox — see "The `disabled`
 list" below.
 
-**Engine.** Seven workspace packages (ADR-0030): `packages/core`, one `packages/protocol-<name>`
-per protocol (`soap`, `rest`, `grpc`, `ws`, `mcp`) and `packages/engine`, which composes them and is
-the one that publishes, as `@wirebench/engine`. The six others stay private: `engine` reaches them
+**Engine.** Eight workspace packages (ADR-0030): `packages/core`, one `packages/protocol-<name>`
+per protocol (`soap`, `rest`, `grpc`, `ws`, `mcp`), `packages/protocol-graphql` for GraphQL, a REST
+body kind in a package of its own (phase 6 of #184), and `packages/engine`, which composes them and
+is the one that publishes, as `@wirebench/engine`. The seven others stay private: `engine` reaches them
 through import maps (`#core/…`, `#protocol-rest/…`) that its `publishConfig` points at copies
 `scripts/vendor-packages.mjs` makes under `dist/vendor/` at prepack, so the npm package is one
 package as before. Zero Electron, DOM or React imports — enforced by lint and by
@@ -314,6 +315,7 @@ introduced.
 | gRPC calls, `.proto` sets, server reflection | `packages/protocol-grpc/src/grpc` |
 | WebSocket sessions; AsyncAPI import | `packages/protocol-ws/src/ws`, `packages/protocol-ws/src/asyncapi` |
 | MCP client sessions (stdio, Streamable HTTP, legacy SSE), the catalogue, the stdio command fingerprint | `packages/protocol-mcp/src/mcp` |
+| GraphQL bodies: lowering to JSON, the API's schema store, the response check; REST's slot for them | `packages/protocol-graphql/src/graphql`, `packages/protocol-rest/src/rest/graphql-slot.ts` |
 | JSON Schema `$ref` resolution, parsing and sampling | `packages/core/src/json/schema` |
 | HTTP, auth (Basic, NTLMv2, OAuth2 token requests and PKCE, applying a configured scheme), header entries, cookies, charsets, TLS, proxy, timings | `packages/core/src/http` |
 | WS-Security, WS-Addressing | `packages/protocol-soap/src/wss`, `packages/protocol-soap/src/wsa` |

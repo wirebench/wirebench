@@ -1,8 +1,8 @@
 /** A GraphQL response's check on the REST exchange summary (#77). */
 import { describe, expect, it } from 'vitest';
 import { recordSecretValue } from '../src/main/redact.js';
-import { toGraphqlCheckWire } from '../src/main/send/record.js';
-import { graphqlCheckWireSchema } from '../src/shared/kinds/rest/wire.js';
+import { toGraphqlCheckWire } from '../src/main/kinds/graphql/check-wire.js';
+import { graphqlCheckWireSchema } from '../src/shared/kinds/graphql/wire.js';
 
 describe('toGraphqlCheckWire', () => {
   const result = {

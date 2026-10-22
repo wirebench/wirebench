@@ -12,7 +12,15 @@
 import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-const PACKAGES = ['core', 'protocol-soap', 'protocol-rest', 'protocol-grpc', 'protocol-ws', 'protocol-mcp'];
+const PACKAGES = [
+  'core',
+  'protocol-soap',
+  'protocol-rest',
+  'protocol-grpc',
+  'protocol-ws',
+  'protocol-mcp',
+  'protocol-graphql',
+];
 
 const engine = join(import.meta.dirname, '..');
 const target = process.argv[2] === undefined ? engine : resolve(process.argv[2]);

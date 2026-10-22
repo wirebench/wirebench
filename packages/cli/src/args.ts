@@ -96,9 +96,10 @@ export const HELP_TEXT = `wirebench run <path> [selector…] [options]
 
 Every verb: --features <id=on|off,…>
                        Switch features off (or back on) for this process: soap, rest, grpc, websocket,
-                       mcp, scripts, sequences, webhooks, server-sync, team-secrets, mcp-server. Laid over
-                       WIREBENCH_FEATURES, which takes the same list. A request of a kind that is off
-                       errors with feature-disabled; a verb that needs an off feature exits 2.
+                       mcp, graphql, scripts, sequences, webhooks, server-sync, team-secrets,
+                       mcp-server. Laid over WIREBENCH_FEATURES, which takes the same list. A request
+                       of a kind that is off errors with feature-disabled; a verb that needs an off
+                       feature exits 2.
 
 wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [--var <k=v>…]
                        Prints every secret the selection needs: variable name, where it is used,

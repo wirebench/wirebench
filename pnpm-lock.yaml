@@ -72,6 +72,9 @@ importers:
       '@wirebench/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@wirebench/protocol-graphql':
+        specifier: workspace:*
+        version: link:../../packages/protocol-graphql
       '@wirebench/protocol-grpc':
         specifier: workspace:*
         version: link:../../packages/protocol-grpc
@@ -387,6 +390,9 @@ importers:
       '@wirebench/core':
         specifier: workspace:*
         version: link:../core
+      '@wirebench/protocol-graphql':
+        specifier: workspace:*
+        version: link:../protocol-graphql
       '@wirebench/protocol-grpc':
         specifier: workspace:*
         version: link:../protocol-grpc
@@ -405,6 +411,15 @@ importers:
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
+
+  packages/protocol-graphql:
+    dependencies:
+      '@wirebench/core':
+        specifier: workspace:*
+        version: link:../core
+      graphql:
+        specifier: ^17.0.2
+        version: 17.0.2
 
   packages/protocol-grpc:
     dependencies:
@@ -447,9 +462,6 @@ importers:
       '@wirebench/core':
         specifier: workspace:*
         version: link:../core
-      graphql:
-        specifier: ^17.0.2
-        version: 17.0.2
       yaml:
         specifier: ^2.9
         version: 2.9.0

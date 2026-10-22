@@ -6,7 +6,7 @@ import {
   graphqlHover,
   graphqlQueryCompletion,
   graphqlVariableCompletion,
-} from '../src/main/kinds/rest/graphql-assist.js';
+} from '../src/main/kinds/graphql/assist.js';
 
 const schema = buildSchema(`
   type Query {

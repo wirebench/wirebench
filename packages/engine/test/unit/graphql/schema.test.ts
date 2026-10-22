@@ -14,7 +14,7 @@ import {
   sdlFromIntrospection,
   sdlFromSchemaFile,
   writeGraphqlSchema,
-} from '#protocol-rest/rest/graphql/schema';
+} from '#protocol-graphql/graphql/schema';
 
 const SDL = 'type Query {\n  "A product by id"\n  product(id: ID!): Product\n}\n\ntype Product {\n  name: String!\n}\n';
 

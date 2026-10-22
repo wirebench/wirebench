@@ -96,7 +96,15 @@ describe('packPackages', () => {
     };
     const entries = new Set(listTarballEntries(tarballs.engine));
 
-    for (const name of ['core', 'protocol-soap', 'protocol-rest', 'protocol-grpc', 'protocol-ws', 'protocol-mcp']) {
+    for (const name of [
+      'core',
+      'protocol-soap',
+      'protocol-rest',
+      'protocol-grpc',
+      'protocol-ws',
+      'protocol-mcp',
+      'protocol-graphql',
+    ]) {
       expect(manifest.imports?.[`#${name}/*`]).toBe(`./dist/vendor/${name}/*.js`);
       expect(entries.has(`dist/vendor/${name}/index.js`), `${name} is vendored`).toBe(true);
       expect(entries.has(`dist/vendor/${name}/index.d.ts`), `${name}'s declarations are vendored`).toBe(true);

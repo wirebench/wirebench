@@ -75,9 +75,10 @@ wirebench run <path> [selector…] [options]
 
 Every verb: --features <id=on|off,…>
                        Switch features off (or back on) for this process: soap, rest, grpc, websocket,
-                       mcp, scripts, sequences, webhooks, server-sync, team-secrets, mcp-server. Laid over
-                       WIREBENCH_FEATURES, which takes the same list. A request of a kind that is off
-                       errors with feature-disabled; a verb that needs an off feature exits 2.
+                       mcp, graphql, scripts, sequences, webhooks, server-sync, team-secrets,
+                       mcp-server. Laid over WIREBENCH_FEATURES, which takes the same list. A request
+                       of a kind that is off errors with feature-disabled; a verb that needs an off
+                       feature exits 2.
 
 wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [--var <k=v>…]
                        Prints every secret the selection needs: variable name, where it is used,
@@ -779,11 +780,14 @@ Three codes come from the engine's protocol modules and feature switches
 Every verb takes `--features <list>` and reads `WIREBENCH_FEATURES`: a comma-separated list of
 `<id>=on|off` entries (case-insensitive, spaces ignored), the flag laid over the variable per id. The
 ids are the protocols `soap`, `rest`, `grpc`, `websocket` and `mcp` (the MCP request kind) and the
-features `scripts`, `sequences`, `webhooks`, `server-sync`, `team-secrets` and `mcp-server`. A
-feature that is off behaves as the desktop's switch makes it behave:
+features `graphql` (experimental, needs `rest`), `scripts`, `sequences`, `webhooks`, `server-sync`,
+`team-secrets` and `mcp-server`. A feature that is off behaves as the desktop's switch makes it
+behave:
 
 - An interface or API of a kind that is off loads as a placeholder (`container-unsupported`, a
   warning): its folder is left untouched and its requests cannot be selected or sent.
+- A REST request with a GraphQL body errors with `feature-disabled` while `graphql` is off, before
+  anything is sent; the request file is left as it is.
 - `wirebench run --sequence` with `sequences` off exits 2 with `feature-disabled` before anything is
   sent; `scripts` off errors a request that has active scripts.
 - `generate` and `validate` need `soap`; `import` refuses a WSDL while `soap` is off and an OpenAPI
@@ -792,7 +796,7 @@ feature that is off behaves as the desktop's switch makes it behave:
 
 A flag entry that is not `<id>=on|off` is a usage error (exit 2); such an entry in the variable is
 ignored, since one variable serves many commands. An id with no feature in this version is warned
-about on stderr (`unknown feature "graphql" ignored`) and dropped, never an error, so a variable set
+about on stderr (`unknown feature "mqtt" ignored`) and dropped, never an error, so a variable set
 for a newer version does not break an older one.
 
 ```bash

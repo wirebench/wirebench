@@ -1,0 +1,34 @@
+{
+  "name": "@wirebench/protocol-graphql",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Wirebench engine: GraphQL, a REST body kind (phase 6 of #184). Composed by @wirebench/engine, which vendors it; not published on its own.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "development": "./src/*.ts",
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "imports": {
+    "#core/*": "@wirebench/core/*"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@wirebench/core": "workspace:*",
+    "graphql": "^17.0.2"
+  }
+}

@@ -7,8 +7,7 @@
  */
 import { containerScriptLevels } from '#core/script/levels';
 import { readFile } from 'node:fs/promises';
-import type { GraphQLSchema } from 'graphql';
-import type { AssertionResult, AssertionSubject } from '#core/assert/model';
+import type { AssertionSubject } from '#core/assert/model';
 import { readAttachment } from '#core/project/attachments-cache';
 import type { AttachmentSource, AuthConfig, Project } from '#core/project/model';
 import { REQUESTS_DIR, WEBHOOKS_DIR } from '#core/project/paths';
@@ -51,63 +50,23 @@ import {
 import type { EffectiveSigning, WebhookCollection, WebhookFolder } from '../webhooks/model.js';
 import { webhooksOf } from '../webhooks/model.js';
 import { resolveAuthChain } from '#core/http/auth/apply-auth';
+import { defaultRegistry } from '#core/protocol/default-registry';
+import { featureDisabled } from '#core/protocol/registry';
 import { expandRestSendInput } from './expand.js';
 import { stripRestBodyComments } from './json-comments.js';
 import type { RestLiveEvent } from './events.js';
 import { createApi, restApisOf } from './model.js';
 import type { RestApi, RestFolder, RestRequestDef } from './model.js';
-import { checkGraphqlResponse } from './graphql/check.js';
-import type { GraphqlCheckResult } from './graphql/check.js';
-import { cachedGraphqlSchema, readGraphqlSchema } from './graphql/schema.js';
+import { GRAPHQL_FEATURE_ID, restGraphql } from './graphql-slot.js';
+import type { RestGraphqlCheck } from './graphql-slot.js';
 import { sendRest } from './send.js';
 import { joinBase } from './url.js';
 import type { RestExchange, RestSendInput } from './send.js';
 
-/** The query and operation name a sent JSON body carries, or `undefined` when it carries none. */
-function sentOperation(input: RestSendInput): { readonly query: string; readonly operationName?: string } | undefined {
-  const { body } = input.request;
-  if (body.kind !== 'raw') return undefined;
-  try {
-    const parsed = JSON.parse(body.text) as unknown;
-    if (parsed === null || typeof parsed !== 'object') return undefined;
-    const { query, operationName } = parsed as Record<string, unknown>;
-    return typeof query !== 'string'
-      ? undefined
-      : { query, ...(typeof operationName === 'string' ? { operationName } : {}) };
-  } catch {
-    return undefined;
-  }
-}
-
 /** A GraphQL request's response checked against the operation as it went out (a script may have changed it). */
-function graphqlCheckOf(
-  input: RestSendInput,
-  exchange: RestExchange,
-  schema: GraphQLSchema | undefined,
-): GraphqlCheckResult {
-  const operation = sentOperation(input);
-  return checkGraphqlResponse({
-    bodyText: exchange.text,
-    query: operation?.query ?? '',
-    ...(operation?.operationName !== undefined ? { operationName: operation.operationName } : {}),
-    ...(schema !== undefined ? { schema } : {}),
-  });
-}
-
-/** The run's check of a GraphQL response: it fails when the response carries errors, whatever its status. */
-export function graphqlErrorsCheck(result: GraphqlCheckResult): AssertionResult {
-  const count = result.errors.length;
-  const shown = result.errors.slice(0, 3).map((error) => error.message);
-  return {
-    type: 'graphql',
-    label: 'GraphQL errors',
-    outcome: count === 0 ? 'passed' : 'failed',
-    expected: 'none',
-    actual:
-      count === 0
-        ? 'none'
-        : `${String(count)} error${count === 1 ? '' : 's'}: ${shown.join('; ')}${count > shown.length ? '; …' : ''}`,
-  };
+function graphqlCheckOf(input: RestSendInput, exchange: RestExchange, schema: unknown): RestGraphqlCheck {
+  const { body } = input.request;
+  return restGraphql().checkSent(body.kind === 'raw' ? body.text : undefined, exchange.text, schema);
 }
 
 /** One saved REST request, or one webhook item, selected for a run. */
@@ -389,7 +348,7 @@ async function connectAndSend(
   resolve: () => Promise<Resolved<RestSendInput>>,
   controller: ExchangeController<RestLiveEvent>,
   live: boolean,
-  graphqlSchema: () => Promise<GraphQLSchema | undefined>,
+  graphqlSchema: () => Promise<unknown>,
   /** The pre-request script's step, inside the prepare stage so its failure is reported with it. */
   script?: (input: RestSendInput) => Promise<RestSendInput>,
 ): Promise<{ readonly connected: RestSendInput; readonly sent: SentRequest }> {
@@ -411,6 +370,13 @@ async function connectAndSend(
   let input: RestSendInput | undefined;
   let connected: RestSendInput;
   try {
+    // A GraphQL body is sent only while its feature is on (phase 6 spec §3.2); the request itself is
+    // never rewritten, and a preview or an export still lowers it.
+    if (selected.request.body.kind === 'graphql') {
+      const registry = context.registry ?? defaultRegistry();
+      if (!registry.features.isEnabled(GRAPHQL_FEATURE_ID))
+        throw featureDisabled(registry.features, GRAPHQL_FEATURE_ID);
+    }
     const resolved = await resolve();
     input = resolved.input;
     if (resolved.unresolved.length > 0) {
@@ -467,7 +433,9 @@ async function connectAndSend(
         ...(contract !== undefined ? { contract } : {}),
         ...(graphql !== undefined ? { graphql } : {}),
       },
-      ...(graphql !== undefined && graphql.schema !== 'not-graphql' ? { checks: [graphqlErrorsCheck(graphql)] } : {}),
+      ...(graphql !== undefined && graphql.schema !== 'not-graphql'
+        ? { checks: [restGraphql().errorsCheck(graphql)] }
+        : {}),
       ...originOf(exchange.request.url),
     },
   };
@@ -483,7 +451,7 @@ async function sendRestItem(
   scripts: ScriptedSend | undefined,
   controller: ExchangeController<RestLiveEvent>,
   live: boolean,
-  graphqlSchema: () => Promise<GraphQLSchema | undefined>,
+  graphqlSchema: () => Promise<unknown>,
 ): Promise<SentRequest> {
   if (scripts === undefined) {
     return (
@@ -545,10 +513,9 @@ export const restRun: ProtocolRun<RestSelected> = {
     const context: RunContext = { ...scope.context, host, signal: controller.signal };
     // Read once per run (or per desktop send) and built once per SDL text.
     const graphqlSchema = () =>
-      scope.memo(`rest:${selected.api.id}:graphql`, async () => {
-        const sdl = await readGraphqlSchema(scope.context.projectDir, selected.api.slug);
-        return sdl === undefined ? undefined : cachedGraphqlSchema(sdl);
-      });
+      scope.memo(`rest:${selected.api.id}:graphql`, () =>
+        restGraphql().readSchema(scope.context.projectDir, selected.api.slug),
+      );
     return controller.handle(() =>
       sendRestItem(selected, context, options.scripts, controller, options.live === true, graphqlSchema),
     );
@@ -592,7 +559,7 @@ declare module '#core/protocol/unions' {
       readonly input: RestSendInput;
       readonly contract?: unknown;
       /** A GraphQL request's response, checked (#77). */
-      readonly graphql?: GraphqlCheckResult;
+      readonly graphql?: RestGraphqlCheck;
     };
   }
 }

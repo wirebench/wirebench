@@ -27,15 +27,13 @@ import {
   registerGraphqlLanguageOnce,
   setGraphqlModel,
   toGraphqlMarker,
-} from '../../src/renderer/editor/graphql-language.js';
+} from '../../src/renderer/kinds/graphql/language.js';
 import { BodyTab, type BodySchemaSource } from '../../src/renderer/features/rest-editor/body-tab.js';
-import { schemaLabel } from '../../src/renderer/features/rest-editor/graphql-body.js';
-import {
-  forgetGraphqlMethodChange,
-  methodForBodySwitch,
-} from '../../src/renderer/features/rest-editor/graphql-method.js';
+import { schemaLabel } from '../../src/renderer/kinds/graphql/body-editor.js';
+import { forgetGraphqlMethodChange, methodForBodySwitch } from '../../src/renderer/kinds/graphql/method.js';
 import { dismissToast, showToast } from '../../src/renderer/components/toast.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
+import { useUiStore } from '../../src/renderer/state/ui.js';
 import type { RestBodyWire, RestRequestPatchWire } from '../../src/shared/kinds/rest/wire.js';
 
 const graphqlDiagnostics = vi.fn();
@@ -344,6 +342,23 @@ describe('the GraphQL body kind', () => {
     await userEvent.click(screen.getByTestId('rest-body-escape'));
 
     expect(patches).toEqual([{ settings: { escapeProperties: true } }]);
+  });
+
+  // Phase 6 spec §3.4: GraphQL is a switch; off, it is not offered, and a GraphQL body stays visible.
+  it('offers GraphQL only while its switch is on, and keeps a GraphQL body visible when off', () => {
+    const options = () =>
+      [...screen.getByTestId<HTMLSelectElement>('rest-body-kind').options].map((option) => option.value);
+    useUiStore.setState({ enabledFeatures: ['rest'] });
+    try {
+      render(<Host initial={{ kind: 'none' }} />);
+      expect(options()).not.toContain('graphql');
+      cleanup();
+      render(<Host initial={{ kind: 'graphql', query: '{ a }', variables: '' }} />);
+      expect(options()).toContain('graphql');
+      expect(screen.getByLabelText('GraphQL query')).toBeTruthy();
+    } finally {
+      useUiStore.setState({ enabledFeatures: undefined });
+    }
   });
 
   it('labels the schema by where it came from', () => {

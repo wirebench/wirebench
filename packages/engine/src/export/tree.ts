@@ -49,7 +49,7 @@ export interface XEnvironment {
 export type XBody = RestBody;
 
 /** A GraphQL body as the JSON it is sent as, its variables as written: for an exporter with no GraphQL body of its own. */
-export { lowerGraphqlBodyText } from '#protocol-rest/rest/graphql/body';
+export { lowerGraphqlBodyText } from '#protocol-graphql/graphql/body';
 
 /** A recorded response, with the kind its body is by its content type. */
 export type XExample = RestResponseExample & { readonly bodyKind: 'json' | 'xml' | 'html' | 'text' };

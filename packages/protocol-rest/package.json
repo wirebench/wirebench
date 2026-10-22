@@ -32,7 +32,6 @@
     "@stoplight/spectral-core": "1.24.0",
     "@stoplight/spectral-parsers": "1.0.5",
     "@stoplight/spectral-ref-resolver": "1.0.5",
-    "graphql": "^17.0.2",
     "yaml": "^2.9",
     "zod": "^4.6.1"
   }

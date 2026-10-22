@@ -51,6 +51,9 @@ const FIXTURE: Readonly<Record<string, string>> = {
   'protocol-rest/package.json':
     '{ "name": "@wirebench/protocol-rest", "dependencies": { "@wirebench/core": "workspace:*" } }\n',
   'protocol-rest/src/rest/model.ts': 'export interface RestApi {\n  readonly id: string;\n}\nexport const REST = 1;\n',
+  // Rule 1 against GraphQL (phase 6 spec §4): REST reaches GraphQL only through the slot engine fills.
+  'protocol-rest/src/rest/graphql-slot.ts':
+    "import { lowered } from '#protocol-graphql/graphql/body';\nexport const slot = lowered;\n",
   // A protocol importing core and itself: allowed, and the core import is reported.
   'protocol-rest/src/rest/send.ts':
     "import { shared } from '#core/http/entries';\nimport { REST } from './model.js';\nexport const sent = shared + REST;\n",
@@ -65,10 +68,18 @@ const FIXTURE: Readonly<Record<string, string>> = {
   // A relative import that leaves its package: refused even where it would resolve.
   'protocol-soap/src/soap/send.ts':
     "import { shared } from '../../../core/src/http/entries.js';\nexport const sent = shared;\n",
+  'protocol-graphql/package.json':
+    '{ "name": "@wirebench/protocol-graphql", "dependencies": { "@wirebench/core": "workspace:*" } }\n',
+  // GraphQL imports core: allowed.
+  'protocol-graphql/src/graphql/body.ts':
+    "import { shared } from '#core/http/entries';\nexport const lowered = shared;\n",
   'engine/package.json':
     '{ "name": "@wirebench/engine", "devDependencies": { "@wirebench/core": "workspace:*", "@wirebench/protocol-rest": "workspace:*" } }\n',
   // Compose imports a protocol: allowed.
   'engine/src/protocols.ts': "import { REST } from '#protocol-rest/rest/model';\nexport const registry = REST;\n",
+  // Compose imports GraphQL: allowed.
+  'engine/src/graphql.ts':
+    "import { lowered } from '@wirebench/protocol-graphql/graphql/body';\nexport const composed = lowered;\n",
   'engine/src/import/http-file/map.ts':
     "import { REST } from '@wirebench/protocol-rest/rest/model';\nexport const mapped = REST;\n",
 };
@@ -99,12 +110,16 @@ describe('engine-import-graph.mjs', () => {
       'core/script/run.ts -> #protocol-rest/rest/model',
       'protocol-soap/soap/send.ts -> core/src/http/entries.ts',
       'protocol-rest/package.json -> @wirebench/core',
+      'protocol-rest/rest/graphql-slot.ts -> #protocol-graphql/graphql/body',
       'protocol-rest/rest/send.ts -> #core/http/entries',
       'protocol-grpc/package.json -> @wirebench/core',
       'protocol-grpc/package.json -> @wirebench/protocol-rest',
       'protocol-grpc/grpc/model.ts -> @wirebench/protocol-rest/rest/model',
+      'protocol-graphql/package.json -> @wirebench/core',
+      'protocol-graphql/graphql/body.ts -> #core/http/entries',
       'engine/package.json -> @wirebench/core',
       'engine/package.json -> @wirebench/protocol-rest',
+      'engine/graphql.ts -> @wirebench/protocol-graphql/graphql/body',
       'engine/import/http-file/map.ts -> @wirebench/protocol-rest/rest/model',
       'engine/protocols.ts -> #protocol-rest/rest/model',
     ]);
@@ -113,6 +128,7 @@ describe('engine-import-graph.mjs', () => {
       'core/run/select.ts',
       'core/script/run.ts',
       'protocol-soap/soap/send.ts',
+      'protocol-rest/rest/graphql-slot.ts',
       'protocol-grpc/package.json',
       'protocol-grpc/grpc/model.ts',
     ]);
@@ -131,6 +147,9 @@ describe('engine-import-graph.mjs', () => {
     );
     expect(result.stderr).toContain('breaks rule 1: no other protocol');
     expect(result.stderr).toContain(
+      '[rest->graphql] protocol-rest/rest/graphql-slot.ts -> #protocol-graphql/graphql/body : lowered',
+    );
+    expect(result.stderr).toContain(
       '[core->soap] core/project/environments.ts -> #protocol-soap/soap/model : Interface (type-only)',
     );
     expect(result.stderr).toContain('breaks rule 2: core imports no protocol');
@@ -140,6 +159,8 @@ describe('engine-import-graph.mjs', () => {
     expect(result.stderr).toContain('breaks a relative import never leaves its package');
     expect(result.stderr).toContain('banned import: core/xml/parse.ts -> electron');
     expect(result.stderr).not.toContain('engine/import/http-file/map.ts');
+    expect(result.stderr).not.toContain('engine/graphql.ts');
+    expect(result.stderr).not.toContain('protocol-graphql/graphql/body.ts');
     expect(result.stderr).not.toContain('protocol-rest/rest/send.ts');
   }, 30_000);
 
@@ -172,6 +193,7 @@ describe('packages/ssh layering', () => {
       'protocol-grpc',
       'protocol-ws',
       'protocol-mcp',
+      'protocol-graphql',
       'engine',
     ].flatMap((pkg) => listSourceFiles(`packages/${pkg}/src`));
     const sshFiles = listSourceFiles('packages/ssh/src');

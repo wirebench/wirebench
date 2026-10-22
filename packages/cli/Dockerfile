@@ -15,6 +15,7 @@ COPY packages/protocol-rest/package.json packages/protocol-rest/package.json
 COPY packages/protocol-grpc/package.json packages/protocol-grpc/package.json
 COPY packages/protocol-ws/package.json packages/protocol-ws/package.json
 COPY packages/protocol-mcp/package.json packages/protocol-mcp/package.json
+COPY packages/protocol-graphql/package.json packages/protocol-graphql/package.json
 COPY packages/ssh/package.json packages/ssh/package.json
 RUN pnpm install --frozen-lockfile --filter @wirebench/cli...
 

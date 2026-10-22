@@ -8,7 +8,7 @@ import { openSecretSourcesDialog } from '../features/secret-sources/actions.js';
 import { openSecretTokenDialog } from '../features/secrets/secret-token-actions.js';
 import { runValidation } from '../features/request-editor/validate-actions.js';
 import { recordContractProblems } from '../features/rest-editor/response/contract.js';
-import { recordGraphqlProblems } from '../features/rest-editor/response/graphql.js';
+import { recordGraphqlProblems } from '../kinds/graphql/response-problems.js';
 import type { AnyExchangeSummary } from '../features/request-editor/response-status.js';
 import type { EnvSendResult, ExchangeLoggedEvent } from '../../shared/wire-types.js';
 import type { GrpcExchangeSummary, GrpcLiveEvent, GrpcResponseMessageWire } from '../../shared/kinds/grpc/wire.js';
