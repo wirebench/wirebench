@@ -377,6 +377,10 @@ All are `WirebenchError`s with `details`, so the Problems tab, toasts and logs r
 - **A1. No audit entries in S1.** The desktop has no local activity log; `DesktopAuditEvent`
   (`packages/engine/src/server-api/audit.ts`) is a strict union the server validates. A `desktop.ssh_session`
   action is a follow-up with the server. D4 step 4 and the audit success criterion move to it.
+  _Shipped with #355:_ `desktop.ssh_session` (`packages/engine/src/server-api/audit.ts`) carries the
+  protocol, host id, address, port, user, start, end, reason and exit code; `SshService` reports it when
+  the channel closes, through the window's `AuditReporter`, for SSH, Mosh, Telnet and serial sessions
+  alike. Login secrets and secret-read environment values are masked out of the address and user.
 - **A2. `hosts.yaml` is owned by the desktop's `HostsService`.** `loadWorkspace` is untouched; the service
   reads and writes `<tree>/hosts.yaml` with `writeFileAtomic`. Parse problems come back on `ssh.listHosts`
   and show in the Hosts view and the Problems tab (source `hosts`).

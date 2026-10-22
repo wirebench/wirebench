@@ -1467,8 +1467,10 @@ This part does not include:
   command line or the MCP server,
 - sending requests through a host or a forward,
 - X11 or UDP forwarding, or SOCKS with a password,
-- audit entries for sessions,
 - session recording with replay.
+
+A session that ends is recorded in the team server's [audit log](/wirebench/docs/guides/server-audit-log/#desktop-activity)
+when the workspace records desktop activity: host, address, login name, start, end and exit code, never a credential.
 
 ## Related
 

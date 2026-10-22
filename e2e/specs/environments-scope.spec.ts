@@ -77,17 +77,20 @@ test.describe('project-scoped environments', () => {
     await addEnvironment(page, 'Shared');
     await addEnvironment(page, 'Billing sandbox');
     await openEnvironment(page, 'Billing sandbox');
-    const appliesTo = page.getByTestId('environment-applies-to');
-    await expect(appliesTo).toBeVisible({ timeout: 20_000 });
+    // The Projects panel (#393) holds the selection; the rail's icon opens it.
+    await page.getByTestId('rail-environment-projects').click();
+    const projects = page.getByRole('complementary', { name: 'Projects' }).getByTestId('environment-projects');
+    await expect(projects).toBeVisible({ timeout: 20_000 });
     // The controls show the saved scope, so they change only once main has written it: click,
     // then wait, rather than check()/uncheck(), which expect the state to flip on the click.
-    await appliesTo.getByLabel('Selected projects').click();
-    await expect(appliesTo.getByLabel('Selected projects')).toBeChecked();
-    // Narrowing starts from every project ticked.
-    await expect(appliesTo.getByLabel('Applies to Alpha API')).toBeChecked();
-    await expect(appliesTo.getByLabel('Applies to Beta API')).toBeChecked();
-    await appliesTo.getByLabel('Applies to Beta API').click();
-    await expect(appliesTo.getByLabel('Applies to Beta API')).not.toBeChecked();
+    await expect(projects.getByLabel('All projects')).toBeChecked();
+    await expect(projects.getByLabel('Applies to Alpha API')).toBeChecked();
+    await expect(projects.getByLabel('Applies to Beta API')).toBeChecked();
+    // Clearing a box under All projects narrows the environment to every other project.
+    await projects.getByLabel('Applies to Beta API').click();
+    await expect(projects.getByLabel('Applies to Beta API')).not.toBeChecked();
+    await expect(projects.getByLabel('All projects')).not.toBeChecked();
+    await expect(projects.getByLabel('Applies to Alpha API')).toBeChecked();
     await expect(environmentRow(page, 'Billing sandbox').getByTestId('environment-scope-chip')).toHaveText([
       'Alpha API',
     ]);

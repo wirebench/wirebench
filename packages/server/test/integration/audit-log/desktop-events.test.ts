@@ -39,6 +39,22 @@ const RUN = {
     sentAt: '2026-09-24T11:59:00.000Z',
   },
 } as const;
+const SESSION = {
+  action: 'desktop.ssh_session',
+  details: {
+    protocol: 'ssh',
+    hostId: 'web-1',
+    address: '10.0.0.1',
+    port: 22,
+    user: 'deploy',
+    exitCode: 0,
+    reason: 'exit',
+    durationMs: 65_000,
+    startedAt: '2026-09-24T11:57:55.000Z',
+    endedAt: '2026-09-24T11:59:00.000Z',
+    sentAt: '2026-09-24T11:59:00.000Z',
+  },
+} as const;
 
 describeDb('POST /workspaces/:id/audit/desktop-events (#211)', () => {
   let h: Awaited<ReturnType<typeof licensingHarness>>;
@@ -123,6 +139,22 @@ describeDb('POST /workspaces/:id/audit/desktop-events (#211)', () => {
     });
     expect(sent[0]!.at.toISOString()).toBe('2026-09-24T12:30:00.000Z');
     expect((await rows('desktop.run_finished'))[0]!.details).toEqual(RUN.details);
+  });
+
+  it('an ssh-session event (#355) is recorded on the workspace with its details as sent, never a credential', async () => {
+    expect((await call(h, viewer, 'POST', url, { events: [SESSION] })).status).toBe(204);
+    const sessions = await rows('desktop.ssh_session');
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toMatchObject({
+      actor_user_id: viewer.user.id,
+      target_kind: 'workspace',
+      target_id: workspaceId,
+      team_id: teamId,
+      details: SESSION.details,
+    });
+    const withSecret = { ...SESSION, details: { ...SESSION.details, password: 'hunter2' } };
+    expect((await call(h, viewer, 'POST', url, { events: [withSecret] })).status).toBe(400);
+    expect(await rows('desktop.ssh_session')).toHaveLength(1);
   });
 
   it('dropped alone writes one desktop.events_dropped with the count; with events it adds one beside them', async () => {
