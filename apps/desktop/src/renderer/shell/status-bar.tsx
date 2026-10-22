@@ -88,6 +88,8 @@ export function StatusBar() {
     lintWarnings,
   } = useProblemsStore(useShallow((state) => countProblems(state.items)));
   const lintCount = lintErrors + lintWarnings;
+  // The Problems view lists lint apart (#745): the problems item opens the problems, the lint item the findings.
+  const setProblemsFilter = useProblemsStore((state) => state.setFilter);
   // With the SSH area's tabs in front, the request items (TLS, the last send) say nothing about what is shown.
   const sshShown = useEditorsStore((state) => state.displayedSet === 'ssh');
   const showConsoleTab = useUiStore((state) => state.showConsoleTab);
@@ -187,6 +189,7 @@ export function StatusBar() {
                 errorCount > 0 ? 'text-status-danger' : problemCount > 0 ? 'text-status-warning' : ''
               }`}
               onClick={() => {
+                setProblemsFilter('all');
                 showConsoleTab('problems');
               }}
             >
@@ -205,6 +208,7 @@ export function StatusBar() {
                   aria-label={`Lint: ${lintSummary(lintErrors, lintWarnings)}. Show the Problems panel`}
                   className="rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default"
                   onClick={() => {
+                    setProblemsFilter('lint');
                     showConsoleTab('problems');
                   }}
                 >

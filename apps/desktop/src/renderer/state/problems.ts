@@ -59,9 +59,19 @@ export interface Problem {
   readonly problem: ProblemDetail;
 }
 
+/**
+ * What the Problems view lists: every problem, one severity of them, or the lint findings alone.
+ * Lint is its own list, never mixed in (#745): a definition's style findings are advice, and the
+ * tab's badge and the status bar count problems without them.
+ */
+export type ProblemsFilter = 'all' | ProblemSeverity | 'lint';
+
 /** The problems store: a flat list, grouped by `groupId` so a re-import replaces its own entries. */
 export interface ProblemsStore {
   readonly items: Problem[];
+  /** Which list the Problems view shows; not persisted. */
+  readonly filter: ProblemsFilter;
+  readonly setFilter: (filter: ProblemsFilter) => void;
   /** Replaces the `import` problems of one group (an interface id). */
   readonly set: (groupId: string, items: readonly ImportProblemWire[]) => void;
   /** Appends problems. Callers clear what they own first — see {@link ProblemsStore.clearSource}. */
@@ -96,6 +106,11 @@ export function lintGroupId(apiId: string): string {
 
 export const useProblemsStore = create<ProblemsStore>((set, get) => ({
   items: [],
+  filter: 'all',
+
+  setFilter: (filter) => {
+    set({ filter });
+  },
 
   set: (groupId, items) => {
     const rest = get().items.filter((item) => item.groupId !== groupId);
@@ -179,6 +194,22 @@ export interface ProblemCounts {
   readonly errors: number;
   readonly lintErrors: number;
   readonly lintWarnings: number;
+}
+
+/** Whether a problem is a lint finding, which the Problems view lists apart and the counts leave out. */
+export function isLintProblem(item: Problem): boolean {
+  return item.source === 'lint';
+}
+
+/**
+ * The problems the view lists under `filter`: lint findings alone, or everything else narrowed to
+ * one severity. Failed SSH connects stay listed; only the counts leave them out.
+ */
+export function filterProblems(items: readonly Problem[], filter: ProblemsFilter): Problem[] {
+  if (filter === 'lint') {
+    return items.filter(isLintProblem);
+  }
+  return items.filter((item) => !isLintProblem(item) && (filter === 'all' || item.severity === filter));
 }
 
 export function countProblems(items: readonly Problem[]): ProblemCounts {

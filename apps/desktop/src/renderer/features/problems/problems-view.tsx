@@ -1,25 +1,37 @@
-import { useState } from 'react';
 import { AlertTriangle, XCircle } from 'lucide-react';
 import { explorerActions } from '../explorer/explorer-actions.js';
 import { revealProblem } from '../request-editor/validate-actions.js';
 import { revealContractProblem } from '../rest-editor/response/contract.js';
 import { revealLintFinding } from '../rest-api/lint-actions.js';
 import { lintLocationLabel } from './lint-location.js';
-import type { Problem, ProblemSeverity } from '../../state/problems.js';
-import { useProblemsStore } from '../../state/problems.js';
+import type { Problem, ProblemsFilter } from '../../state/problems.js';
+import { filterProblems, isLintProblem, useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
 import { useGridNavigation } from '../../lib/grid-navigation.js';
 
 const SOURCE_CLASS = 'shrink-0 rounded-sm border border-hairline px-1 font-mono text-xs text-fg-subtle';
 
-/** Which severities the list is showing; the chips toggle these. */
-type Filter = 'all' | ProblemSeverity;
-
-const FILTERS: readonly { id: Filter; label: string }[] = [
+/**
+ * The chips: every problem, one severity, or the lint findings on their own (#745). Lint is a
+ * separate list rather than a severity, so All, Errors and Warnings never count a style finding.
+ */
+const FILTERS: readonly { id: ProblemsFilter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'error', label: 'Errors' },
   { id: 'warning', label: 'Warnings' },
+  { id: 'lint', label: 'Lint' },
 ];
+
+/** The count a chip shows after its label, or none when there is nothing to count. */
+function chipCount(id: ProblemsFilter, items: readonly Problem[]): string {
+  const count =
+    id === 'all'
+      ? 0
+      : id === 'lint'
+        ? items.filter(isLintProblem).length
+        : items.filter((item) => !isLintProblem(item) && item.severity === id).length;
+  return count > 0 ? ` (${String(count)})` : '';
+}
 
 function key(item: Problem, index: number): string {
   return `${item.groupId}:${String(index)}`;
@@ -73,13 +85,13 @@ export function ProblemsView() {
   const apis = useProjectStore((state) => state.apis);
   const projects = useProjectStore((state) => state.projects);
   const projectOf = useProjectStore((state) => state.projectOf);
-  const [filter, setFilter] = useState<Filter>('all');
+  // In the store, not local state, so the status bar's lint item can open the lint list (#745).
+  const filter = useProblemsStore((state) => state.filter);
+  const setFilter = useProblemsStore((state) => state.setFilter);
   // Filtered once: the row count the grid navigates and the rows it renders must be the same
   // list, and re-filtering for each would let them drift.
-  const visible = filter === 'all' ? items : items.filter((item) => item.severity === filter);
+  const visible = filterProblems(items, filter);
   const { gridProps, rowProps } = useGridNavigation(visible.length);
-
-  const errors = items.filter((item) => item.severity === 'error').length;
 
   if (items.length === 0) {
     return <p className="text-sm text-fg-subtle">No problems found.</p>;
@@ -102,11 +114,15 @@ export function ProblemsView() {
             }`}
           >
             {chip.label}
-            {chip.id === 'error' && errors > 0 ? ` (${String(errors)})` : ''}
-            {chip.id === 'warning' && items.length - errors > 0 ? ` (${String(items.length - errors)})` : ''}
+            {chipCount(chip.id, items)}
           </button>
         ))}
       </div>
+      {visible.length === 0 && (
+        <p data-testid="problems-empty" className="text-sm text-fg-subtle">
+          {filter === 'lint' ? 'No lint findings.' : 'No problems found.'}
+        </p>
+      )}
 
       {/* A grid rather than a plain list: every row is a record with the same columns, and
           Up/Down moving between rows is what a keyboard user expects of a Problems panel. */}

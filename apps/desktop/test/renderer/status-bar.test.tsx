@@ -198,6 +198,10 @@ describe('StatusBar', () => {
     expect(lint.className).not.toContain('text-status-');
     fireEvent.click(lint);
     expect(useUiStore.getState().console.activeTab).toBe('problems');
+    // The lint item opens the lint list; the problems item goes back to the problems (#745).
+    expect(useProblemsStore.getState().filter).toBe('lint');
+    fireEvent.click(problems);
+    expect(useProblemsStore.getState().filter).toBe('all');
   });
 
   it('shows no lint item without lint findings', () => {

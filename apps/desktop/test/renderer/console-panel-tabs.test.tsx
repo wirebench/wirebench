@@ -3,6 +3,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import type { InterfaceWire } from '../../src/shared/kinds/soap/wire.js';
 import { ConsolePanel } from '../../src/renderer/shell/console-panel.js';
+import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
@@ -26,10 +27,40 @@ describe('the console tabs', () => {
       console: { ...DEFAULT_UI_STATE.console, visible: true, openOnFirstSend: false },
     });
     useProjectStore.setState({ interfaces: {} });
+    useProblemsStore.setState({ items: [], filter: 'all' });
   });
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('badges the Problems tab with the problems alone, as the status bar counts them (#745)', () => {
+    useProblemsStore.getState().setLint('api-1', [
+      { rule: 'info-description', severity: 'warning', message: 'm', path: '/info', source: 's' },
+      { rule: 'oas3-schema', severity: 'error', message: 'm', path: '/paths', source: 's' },
+    ]);
+    const view = render(
+      <TooltipPrimitive.Provider>
+        <ConsolePanel />
+      </TooltipPrimitive.Provider>,
+    );
+    // Two lint findings and no problem: no badge, so the tab never looks like something failed.
+    expect(screen.getByRole('tab', { name: 'Problems' }).textContent).toBe('Problems');
+
+    useProblemsStore.getState().add([
+      {
+        groupId: 'iface-1',
+        source: 'import',
+        severity: 'error',
+        problem: { code: 'x', message: 'Schema not found' },
+      },
+    ]);
+    view.rerender(
+      <TooltipPrimitive.Provider>
+        <ConsolePanel />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByRole('tab', { name: /Problems/ }).textContent).toBe('Problems1');
   });
 
   it('has no WS-I Report tab in a workspace without a SOAP interface', () => {

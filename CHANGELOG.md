@@ -142,6 +142,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The Problems tab counts what the status bar counts (#745).** The console's Problems tab no longer
+  badges lint findings: with a freshly imported definition the status bar read "0 problems · 57 lint
+  findings" while the tab beside it read "Problems 57". Lint now has its own **Lint** chip in the
+  Problems view, off by default, and **All**, **Errors** and **Warnings** list only the problems; the
+  status bar's lint item and **Lint definition** open the lint list directly.
 - **Explorer, after a daily-use review (#685).** A SOAP operation with no request is a leaf, and a click on
   it creates the first request; **Expand all** unfolds down to the operations and Endpoints and leaves
   those folded, so a tree of many operations stays readable. A failed import names the HTTP status and
