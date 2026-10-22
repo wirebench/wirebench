@@ -32,6 +32,8 @@ All notable changes to this project are documented here. The format follows
   collapsed and a send that works leaves it so. It opens itself on the HTTP log for a failed send (no
   response, a fault, a 4xx or 5xx) and on Problems for a new problem, until you open, close or resize
   it yourself. Each workspace remembers its own console.
+- **Make secret no longer covers the value (#748).** It is a key button beside the row's **Remove**
+  button, so a long value stays readable to its end.
 - **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
   shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
   the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.
