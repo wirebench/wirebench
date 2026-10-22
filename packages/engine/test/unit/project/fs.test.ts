@@ -6,6 +6,8 @@ import type { FsLike } from '../../../src/project/fs.js';
 import { loadProject } from '../../../src/project/load.js';
 import { saveProject } from '../../../src/project/save.js';
 import { listTree, sampleProject, tempProjectDir } from './fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 describe('nodeFs', () => {
   it('implements the FsLike surface against the real file system', async () => {

@@ -19,6 +19,8 @@ import { testHost } from '../../helpers/send-host.js';
 import { generateClientCert, generateServerCert, generateTestCa } from '../../helpers/test-certs.js';
 import { startTestRestServer } from '../../helpers/test-rest-server.js';
 import type { TestRestServer } from '../../helpers/test-rest-server.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const ca = generateTestCa();
 const clientCert = generateClientCert(ca);

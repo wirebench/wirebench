@@ -23,6 +23,8 @@ import type { Project } from '../../../src/project/model.js';
 import { saveProject } from '../../../src/project/save.js';
 import { projectFiles } from '../../../src/project/serialize.js';
 import { tempProjectDir } from '../project/fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 function projectWith(...servers: McpServer[]): Project {
   return { ...createProject('MCP Project', { id: 'P1' }), containers: { mcp: servers } };

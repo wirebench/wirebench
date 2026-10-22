@@ -8,7 +8,7 @@
  */
 import type { ProtocolScripting } from '../../protocol/module.js';
 import type { ProtocolRegistry } from '../../protocol/registry.js';
-import { defaultRegistry } from '../../protocols.js';
+import { defaultRegistry } from '../../protocol/default-registry.js';
 import { requireScripting } from '../lookup.js';
 import type { ScriptPhase } from '../model.js';
 import { dispatchReference } from './dispatch.js';

@@ -10,7 +10,7 @@
 import { generateId } from '../project/model.js';
 import type { IdGenerator, Project, WssRef } from '../project/model.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
-import { defaultRegistry } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
 
 /**
  * Every entity id in `project`, in visit order (an id shared by two entities is deduplicated): the

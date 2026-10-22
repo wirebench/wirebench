@@ -13,6 +13,8 @@ import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import { createSequence, createSequenceStep } from '../../../src/sequence/model.js';
 import { runSequence } from '../../../src/sequence/run.js';
 import type { CallbackStep, SequenceStepSender } from '../../../src/sequence/run.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const HOOK = '01K000000000000000000000H1';
 

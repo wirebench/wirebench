@@ -25,6 +25,8 @@ import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
 import { startTestRestServer, startTestSoapServer } from '../../helpers/index.js';
 import type { TestRestServer, TestSoapServer } from '../../helpers/index.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const TOKEN = 'tok-9f2e-script';
 const SIGNING_KEY = 'sign-me-4471';

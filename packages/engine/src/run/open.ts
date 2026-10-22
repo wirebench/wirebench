@@ -3,7 +3,7 @@
  * `exchange.ts` because it reads the built-in registry, whose modules build their handles there.
  */
 import type { ProtocolRun, RunScope } from '../protocol/module.js';
-import { defaultRegistry } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
 import type { SelectedRequest } from '../protocols.js';
 import type { ExchangeHandle, ExchangeOptions } from './exchange.js';
 import type { SendHost } from './host.js';

@@ -20,6 +20,8 @@ import type { RestBody, RestRequestDef } from '../../../../src/rest/model.js';
 import { restSecrets } from '../../../../src/rest/secrets.js';
 import type { RestSendInput } from '../../../../src/rest/send.js';
 import { tempProjectDir } from '../../project/fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../../src/protocols.js';
 
 const REQUESTS = 'apis/shop/requests';
 

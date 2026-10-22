@@ -5,6 +5,8 @@ import { checkOnce } from '../../../src/script/check/service.js';
 import { isLayeredApi, scriptFileName, type ScriptApi } from '../../../src/script/model.js';
 import { SCRIPT_LAYERS } from '../../../src/script/api/layers.js';
 import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const sandbox = createScriptSandbox();
 afterAll(async () => {
@@ -53,6 +55,8 @@ describe('the layered script APIs', () => {
   it('a layered api with no layer fails with script-unsupported', async () => {
     vi.resetModules();
     vi.doMock('../../../src/script/api/layers.js', () => ({ SCRIPT_LAYERS: {} }));
+    // After the reset, the registry slot is empty again until the composition loads (spec §3.3).
+    await import('../../../src/protocols.js');
     const { runScript: runUnlayered } = await import('../../../src/script/run.js');
     const api: ScriptApi = 'thunder-client';
     const onSecretValue = vi.fn();

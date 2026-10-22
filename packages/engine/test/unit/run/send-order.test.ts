@@ -33,6 +33,8 @@ import { createWebhookCollection } from '../../../src/webhooks/model.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
 import { webhooksOf, withWebhooks } from '../../../src/webhooks/model.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const { events, wire } = vi.hoisted(() => ({
   events: [] as string[],

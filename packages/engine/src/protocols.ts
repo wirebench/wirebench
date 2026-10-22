@@ -17,6 +17,7 @@ import type { McpSelected } from './mcp/run.js';
 import type { McpRequestSnapshot, McpResponseSnapshot } from './mcp/scripting.js';
 import type { FeatureDescriptor } from './protocol/features.js';
 import type { ProtocolModule } from './protocol/module.js';
+import { installDefaultRegistry } from './protocol/default-registry.js';
 import { createProtocolRegistry } from './protocol/registry.js';
 import type { ProtocolRegistry } from './protocol/registry.js';
 import type { GraphqlCheckResult } from './rest/graphql/check.js';
@@ -90,18 +91,10 @@ export function createBuiltinRegistry(switches?: Readonly<Record<string, boolean
   });
 }
 
-let builtin: ProtocolRegistry | undefined;
-
-/**
- * The registry an entry point uses when its caller passes none: the built-in protocols with every
- * feature on, always: a host that switches protocols off passes its own registry to each call.
- * Created on first use and kept. Call it inside a function, never at module scope: the
- * modules import core files that import this one.
- */
-export function defaultRegistry(): ProtocolRegistry {
-  builtin ??= createBuiltinRegistry();
-  return builtin;
-}
+// The registry an entry point uses when its caller passes none (spec §3.3): the built-in protocols
+// with every feature on. Core holds the slot; loading this file fills it.
+installDefaultRegistry(createBuiltinRegistry);
+export { defaultRegistry } from './protocol/default-registry.js';
 
 /** One saved request selected for a run, of any built-in protocol a run can send. */
 export type SelectedRequest = SoapSelected | RestSelected | GrpcSelected | WsSelected | McpSelected;

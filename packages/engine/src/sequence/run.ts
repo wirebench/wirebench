@@ -17,7 +17,7 @@ import type { PropertyMap, Project } from '../project/model.js';
 import type { PropertyScopes } from '../project/properties.js';
 import { featureDisabled } from '../protocol/registry.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
-import { defaultRegistry } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
 import { findStepRequest } from '../run/select.js';
 import type { SelectedRequest } from '../run/select.js';
 import { SEQUENCE_LIMITS } from './model.js';

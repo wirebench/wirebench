@@ -8,6 +8,8 @@ import { mcpScriptTypes, mcpToolFor } from '../../../src/mcp/script-types.js';
 import type { McpCatalogueTool } from '../../../src/mcp/model.js';
 import { apiDeclarations, secretNameType } from '../../../src/script/types/api.js';
 import { typeErrors } from './ts-check.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const TOOL: McpCatalogueTool = {
   name: 'search',

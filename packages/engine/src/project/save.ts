@@ -17,7 +17,7 @@ import { dirname } from 'node:path';
 import { ProjectError } from '../errors.js';
 import type { ContainerDir } from '../protocol/module.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
-import { defaultRegistry } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
 import { MOCKS_DIR } from '../mock/file.js';
 import { readMocks } from '../mock/load.js';
 import { SEQUENCES_DIR } from '../sequence/file.js';

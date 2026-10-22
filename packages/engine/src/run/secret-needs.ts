@@ -10,7 +10,7 @@ import type { Project, PropertyMap } from '../project/model.js';
 import type { PropertyScopes } from '../project/properties.js';
 import type { SelectedBase } from '../protocol/module.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
-import { defaultRegistry } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
 import type { SelectedRequest } from '../protocols.js';
 import { activeLevels, activeScripts } from '../script/request-scripts.js';
 import type { SecretNeed } from '../secrets/env-names.js';

@@ -17,6 +17,8 @@ import type { Project } from '../../../src/project/model.js';
 import { requestFileLocation } from '../../../src/project/request-location.js';
 import { createApi, createRestRequest, withRestApis } from '../../../src/rest/model.js';
 import { readGoldenFile, writeGoldenFile } from '../../../src/snapshot/golden-file.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 // Passes through to the real `writeFile` unless a test overrides one call.
 vi.mock('node:fs/promises', async (importOriginal) => {

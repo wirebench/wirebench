@@ -16,6 +16,8 @@ import { SCRIPT_LIMITS } from '../../../src/script/sandbox/model.js';
 import { tempProjectDir } from './fixture.js';
 import { restApisOf, withRestApis } from '../../../src/rest/model.js';
 import { soapInterfacesOf } from '../../../src/soap/model.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const V5_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v5', 'project');
 const REQUESTS = 'apis/Shop/requests';

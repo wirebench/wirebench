@@ -15,6 +15,8 @@ import { nodeFs } from '../../../src/project/fs.js';
 import { restMocking } from '../../../src/rest/mock.js';
 import { mockProject } from '../mock/fixture.js';
 import { tempProjectDir } from '../project/fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const OPENAPI = `openapi: 3.0.3
 info: { title: Orders, version: '1' }

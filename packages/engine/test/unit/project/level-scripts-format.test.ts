@@ -20,6 +20,8 @@ import { createFolder, restApisOf, withRestApis } from '../../../src/rest/model.
 import type { RequestScripts } from '../../../src/script/model.js';
 import { soapInterfacesOf, withSoapInterfaces } from '../../../src/soap/model.js';
 import { tempProjectDir } from './fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const V5_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v5', 'project');
 const SHOP = 'apis/Shop';

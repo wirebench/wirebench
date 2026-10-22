@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { saveProject } from '../../../src/project/save.js';
 import { readBytes, sampleProject, tempProjectDir } from './fixture.js';
 import { soapInterfacesOf } from '../../../src/soap/model.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const REQUEST_PATH = 'interfaces/CountryInfo/operations/ListOfCountryNamesByCode/Request 1.xml';
 const BACKUP_REQUEST = `${REQUEST_PATH}.bak`;

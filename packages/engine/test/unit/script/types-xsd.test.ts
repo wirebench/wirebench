@@ -11,6 +11,8 @@ import { projectSoapBody, replaceSoapBody, soapBodyElement, soapScriptTypes } fr
 import type { SoapRequestSnapshot } from '../../../src/soap/scripting.js';
 import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
 import { typeErrors } from './ts-check.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const NS = 'urn:shop';
 const XSD = `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:tns="${NS}" targetNamespace="${NS}" elementFormDefault="qualified">
