@@ -39,6 +39,8 @@ export async function lintRestDefinition(apiId: string, options: LintRestOptions
   }
   useProblemsStore.getState().setLint(apiId, result.value.findings);
   if (options.reveal) {
+    // Lint has its own list in Problems (#745); a lint the user asked for opens that list.
+    useProblemsStore.getState().setFilter('lint');
     useUiStore.getState().showConsoleTab('problems');
     if (result.value.findings.length === 0) showToast('Lint found no problems.');
   }

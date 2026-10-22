@@ -116,6 +116,35 @@ test.describe('OpenAPI import', () => {
     await expect(restRequestRow(page, 'JSON with an example')).toBeVisible({ timeout: 20_000 });
   });
 
+  test('counts lint findings apart from the problems, on the status bar and the Problems tab (#745)', async () => {
+    server = await serveBodies();
+    launched = await launchApp();
+    const page = launched.window;
+    await createWorkspace(page, 'OpenAPI');
+    await createProject(page, 'Bodies');
+    await importOpenApiByUrl(page, `${server.url}/openapi.yaml`);
+
+    // The import lints the cached document quietly: the fixture has no info.description, so the
+    // status bar gets a lint item while the problem count stays at zero and untinted.
+    const lint = page.getByTestId('status-bar-lint');
+    await expect(lint).toContainText(/\d+ lint findings?/, { timeout: 20_000 });
+    await expect(page.getByTestId('status-bar-problems')).toHaveText('0 problems');
+
+    // The lint item opens Problems on its Lint chip, and the tab carries no badge: a definition's
+    // style findings are not something that failed.
+    await lint.click();
+    const problemsTab = page.getByRole('tab', { name: 'Problems', exact: true });
+    await expect(problemsTab).toBeVisible();
+    await expect(problemsTab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('problems-filter-lint')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('problem-rule').first()).toBeVisible();
+
+    // Back on All there is nothing: the findings never counted as problems.
+    await page.getByTestId('problems-filter-all').click();
+    await expect(page.getByTestId('problems-empty')).toHaveText('No problems found.');
+    await expect(page.getByTestId('problem-row')).toHaveCount(0);
+  });
+
   test('sends an imported request’s generated body over the base URL it was given', async () => {
     server = await serveBodies();
     launched = await launchApp();

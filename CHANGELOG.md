@@ -14,6 +14,14 @@ All notable changes to this project are documented here. The format follows
   `WIREBENCH_AREAS`; a policy entry can only switch off. **Settings → Features** gains an **Areas** group
   that shows each area's state and why (_Set by your organisation_, marked Managed).
 
+### Fixed
+
+- **The Problems tab counts what the status bar counts (#745).** The console's Problems tab no longer
+  badges lint findings: with a freshly imported definition the status bar read "0 problems · 57 lint
+  findings" while the tab beside it read "Problems 57". Lint now has its own **Lint** chip in the
+  Problems view, off by default, and **All**, **Errors** and **Warnings** list only the problems; the
+  status bar's lint item and **Lint definition** open the lint list directly.
+
 ## [6.1.0] - 2026-10-22
 
 ### Added
