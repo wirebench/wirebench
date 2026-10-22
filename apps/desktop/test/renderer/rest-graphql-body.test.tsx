@@ -27,13 +27,10 @@ import {
   registerGraphqlLanguageOnce,
   setGraphqlModel,
   toGraphqlMarker,
-} from '../../src/renderer/editor/graphql-language.js';
+} from '../../src/renderer/kinds/graphql/language.js';
 import { BodyTab, type BodySchemaSource } from '../../src/renderer/features/rest-editor/body-tab.js';
-import { schemaLabel } from '../../src/renderer/features/rest-editor/graphql-body.js';
-import {
-  forgetGraphqlMethodChange,
-  methodForBodySwitch,
-} from '../../src/renderer/features/rest-editor/graphql-method.js';
+import { schemaLabel } from '../../src/renderer/kinds/graphql/body-editor.js';
+import { forgetGraphqlMethodChange, methodForBodySwitch } from '../../src/renderer/kinds/graphql/method.js';
 import { dismissToast, showToast } from '../../src/renderer/components/toast.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';

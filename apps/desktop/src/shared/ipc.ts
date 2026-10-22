@@ -475,6 +475,7 @@ import {
 import { apiImportPostmanVariablesResponseSchema } from './kinds/rest/wire.js';
 import { soapChannels } from './kinds/soap/channels.js';
 import { restChannels, restEvents } from './kinds/rest/channels.js';
+import { graphqlChannels } from './kinds/graphql/channels.js';
 import { grpcChannels, grpcEvents } from './kinds/grpc/channels.js';
 import { wsChannels, wsEvents } from './kinds/ws/channels.js';
 import { mcpChannels, mcpEvents } from './kinds/mcp/channels.js';
@@ -595,6 +596,7 @@ export const channels = {
     code: defineChannel('request.code', requestCodeRequestSchema, requestCurlResponseSchema),
     ...soapChannels.request,
     ...restChannels.request,
+    ...graphqlChannels.request,
     ...grpcChannels.request,
     ...wsChannels.request,
     ...mcpChannels.request,
@@ -825,6 +827,7 @@ export const channels = {
     ),
     exportDefinition: defineChannel('api.exportDefinition', apiIdRequestSchema, apiExportDefinitionResponseSchema),
     ...restChannels.api,
+    ...graphqlChannels.api,
     ...grpcChannels.api,
     ...wsChannels.api,
     ...mcpChannels.api,

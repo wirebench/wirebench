@@ -104,8 +104,12 @@ The GraphQL-only files move into one folder per process, beside the other kinds:
 | `renderer/kinds/graphql/response-markers.ts` | the GraphQL half of `renderer/editor/markers.ts` |
 
 GraphQL is not a `KindId`, so it gets no entry in `KINDS` or `RENDERER_KINDS`. Its desktop
-registration is: `shared/ipc.ts` spreads `graphqlChannels.request`, main's channel setup calls
-`registerGraphqlChannels`, and the Features section lists `graphql` under Protocols. REST keeps the
+registration is: `shared/ipc.ts` spreads `graphqlChannels.request` and `graphqlChannels.api` beside
+REST's; REST's channel registration (`main/kinds/rest/ipc.ts`), whose body kind GraphQL is, calls
+`registerGraphqlRequestChannels` and `registerGraphqlApiChannels`; and the Features section lists
+`graphql` under Protocols. Two desktop tests that list every kind folder learn of it: the
+renderer's eager-import rule lists its wire and channels, and the kind-module rule skips a folder
+with no `kind.ts`. REST keeps the
 data paths (mutations, project wire, the schema cache in its host, the body in the editor) and asks
 `featureOn('graphql')` before offering the GraphQL body option and **New GraphQL request**; a request
 that already has a GraphQL body still shows it, and its send says the switch is off.
@@ -122,8 +126,9 @@ of `@wirebench/protocol-graphql` or `#protocol-graphql/*` from any other protoco
    paths), `package.json` and `tsconfig.json` (the package beside the other six), `scripts/vendor-packages.mjs`.
 2. **The REST seam, once:** `graphql-slot.ts` plus the call sites in `body.ts`, `expand.ts`, `curl.ts`,
    `run.ts`; `protocol-rest/package.json` drops `graphql`.
-3. **Desktop registration:** `shared/ipc.ts`, the main channel setup, the Features section's group
-   list, and REST's editor and explorer importing from the GraphQL folders and asking `featureOn`.
+3. **Desktop registration:** `shared/ipc.ts`, REST's channel registration, the Features section's
+   group list, and REST's editor, explorer, response view and wire importing from the GraphQL
+   folders and asking `featureOn`.
 4. **Workspace plumbing every package has:** root `tsconfig.json`, `apps/desktop/package.json` and
    `electron-builder.yml`, the CLI and server `Dockerfile`s, `scripts/third-party-licenses.ts`,
    `scripts/pack-check.test.ts`, the gate and its test.

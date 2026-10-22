@@ -2,19 +2,8 @@
  * rest's IPC channels (spec §5.4), registered through its `registerChannels`.
  */
 import type { DefinitionAuth, RestOpRef, RestUpdatePlan, WebhookItemRef } from '@wirebench/engine';
-import {
-  composeUrl,
-  INTROSPECTION_QUERY,
-  joinBase,
-  sdlFromIntrospection,
-  sdlFromSchemaFile,
-  webhookItemsOf,
-  WirebenchError,
-} from '@wirebench/engine';
-import type { GraphQLSchema } from 'graphql';
+import { composeUrl, joinBase, webhookItemsOf, WirebenchError } from '@wirebench/engine';
 import { randomUUID } from 'node:crypto';
-import { readFile, stat } from 'node:fs/promises';
-import { basename } from 'node:path';
 import { channels, events } from '../../../shared/ipc.js';
 import type { HistoryEntryWire } from '../../../shared/wire-types.js';
 import type {
@@ -55,13 +44,7 @@ import {
 import { type WebhookUrlSource } from '../../webhook-send.js';
 import type { KindChannelDeps } from '../kind-main.js';
 import { restHeaders } from './header-preview.js';
-import {
-  graphqlDiagnostics,
-  graphqlHover,
-  graphqlQueryCompletion,
-  graphqlVariableCompletion,
-} from './graphql-assist.js';
-import { redactUrl } from '../../redact.js';
+import { registerGraphqlApiChannels, registerGraphqlRequestChannels } from '../graphql/ipc.js';
 
 /** True for a base URL the webhook collection supplied: its target, or a callback's own URL. */
 function isWebhookUrlSource(source: RestUrlSource): source is WebhookUrlSource {
@@ -182,73 +165,6 @@ export function registerRestRequestChannels(service: EngineService, deps: Reques
   registerGraphqlRequestChannels(sendDeps, deps);
 }
 
-/** An API's GraphQL schema for the editor; none for no API, or one that cannot be read. */
-async function editorSchema(deps: RequestChannelDeps, apiId: string | undefined): Promise<GraphQLSchema | undefined> {
-  if (apiId === undefined) return undefined;
-  return await deps.project.graphqlSchemaFor?.(apiId).catch(() => undefined);
-}
-
-/** The GraphQL editor's `request.*` channels (#77): fetching the schema, and its language features. */
-function registerGraphqlRequestChannels(sendDeps: SendThroughEngineDeps, deps: RequestChannelDeps): void {
-  registerHandler(channels.request.graphqlIntrospect, async (request) => {
-    const store = deps.project.setGraphqlSchema;
-    if (store === undefined) {
-      throw new WirebenchError('invalid-argument', 'No project can store a GraphQL schema here');
-    }
-    let answer: { readonly text: string; readonly status: number; readonly url: string } | undefined;
-    // The request as edited, sent as a POST of the introspection query: quiet, so no script runs and
-    // nothing reaches History or the HTTP Log.
-    await sendThroughEngine(sendDeps, `graphql-introspect:${randomUUID()}`, request.requestId, {
-      draft: {
-        kind: 'rest',
-        draft: {
-          ...(request.draft ?? {}),
-          method: 'POST',
-          body: { kind: 'graphql', query: INTROSPECTION_QUERY, variables: '' },
-        },
-      },
-      quiet: true,
-      onSent: (sent) => {
-        if (sent.exchange?.kind === 'rest') {
-          const { rest } = sent.exchange;
-          answer = { text: rest.text, status: rest.status, url: rest.request.url };
-        }
-      },
-    });
-    if (answer === undefined) {
-      throw new WirebenchError('graphql-schema-invalid', 'The introspection query got no answer');
-    }
-    let document: unknown;
-    try {
-      document = JSON.parse(answer.text) as unknown;
-    } catch {
-      throw new WirebenchError(
-        'graphql-schema-invalid',
-        `The server did not answer the introspection query with JSON (HTTP ${String(answer.status)})`,
-        { details: { status: answer.status } },
-      );
-    }
-    // The server's own error, when it sent one, is the message: introspection switched off, say.
-    const sdl = sdlFromIntrospection(document);
-    return await store(request.apiId, sdl, redactUrl(answer.url, { show: false }));
-  });
-  registerHandler(channels.request.graphqlDiagnostics, async (request) =>
-    graphqlDiagnostics(await editorSchema(deps, request.apiId), request),
-  );
-  registerHandler(channels.request.graphqlComplete, async (request) => ({
-    items:
-      request.target === 'query'
-        ? graphqlQueryCompletion(await editorSchema(deps, request.apiId), request.query, request.line, request.column)
-        : graphqlVariableCompletion(request),
-  }));
-  registerHandler(channels.request.graphqlHover, async (request) => ({
-    markdown: graphqlHover(await editorSchema(deps, request.apiId), request.query, request.line, request.column),
-  }));
-}
-
-/** A schema file above this is refused before it is read. */
-const MAX_GRAPHQL_SCHEMA_BYTES = 20 * 1024 * 1024;
-
 /** A webhook/callback item onto the wire: the engine's ref, minus the fields the wire has no use for. */
 function toWebhookItemWire(item: WebhookItemRef): WebhookItemWire {
   return { key: item.key, kind: item.kind, name: item.name, method: item.method, label: item.label };
@@ -308,24 +224,7 @@ export function registerRestApiChannels(deps: ApiChannelDeps): void {
     const parsed = await deps.imports.readOpenApi(toEngineSource(checked), auth);
     return { parsed, label: sourceLabel(checked), auth };
   };
-  registerHandler(channels.api.importGraphqlSchema, async (request) => {
-    const checked = await checkedImportSource(deps.projectDirs(), deps.picks, { kind: 'file', path: request.path });
-    if (checked.kind !== 'file') throw new WirebenchError('invalid-argument', 'Expected a file');
-    const { size } = await stat(checked.path);
-    if (size > MAX_GRAPHQL_SCHEMA_BYTES) {
-      throw new WirebenchError('graphql-schema-invalid', 'The schema file is larger than 20 MB', {
-        details: { size },
-      });
-    }
-    const name = basename(checked.path);
-    const sdl = sdlFromSchemaFile(await readFile(checked.path, 'utf8'), name);
-    if (router.setGraphqlSchema === undefined) throw new WirebenchError('invalid-argument', 'No project is open');
-    return await router.setGraphqlSchema(request.apiId, sdl, name);
-  });
-  registerHandler(channels.api.clearGraphqlSchema, async (request) => {
-    await router.clearGraphqlSchema?.(request.apiId);
-    return {};
-  });
+  registerGraphqlApiChannels(deps);
   registerHandler(channels.api.importOpenApi, async (request, sender) => {
     // A `file` source is a read at a renderer-named path, answered before any project is created,
     // so a refusal changes nothing — the same order `project.addInterface` uses.

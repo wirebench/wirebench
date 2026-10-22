@@ -20,7 +20,8 @@ import { InspectorIconButton } from '../../request-editor/inspectors/inspector-s
 import { formatBytes } from '../../../lib/format-size.js';
 import { usePreferencesStore } from '../../../state/preferences.js';
 import { formatRawBody } from '../body-tab.js';
-import { contractRange, setContractMarkers, setGraphqlResponseMarkers } from '../../../editor/markers.js';
+import { contractRange, setContractMarkers } from '../../../editor/markers.js';
+import { setGraphqlResponseMarkers } from '../../../kinds/graphql/response-markers.js';
 import { useContractRevealStore } from './contract.js';
 import { useResponseWrapStore } from './wrap.js';
 import { HtmlPreview } from './html-preview.js';

@@ -7,19 +7,20 @@ import { cleanup, render, screen } from '@testing-library/react';
 
 vi.mock('../../src/renderer/components/toast.js', () => ({ showToast: vi.fn() }));
 
-import { graphqlResponseMarkerData } from '../../src/renderer/editor/markers.js';
+import { graphqlResponseMarkerData } from '../../src/renderer/kinds/graphql/response-markers.js';
 import { explorerActions } from '../../src/renderer/features/explorer/explorer-actions.js';
-import { GraphqlChip } from '../../src/renderer/features/rest-editor/response/graphql-chip.js';
+import { GraphqlChip } from '../../src/renderer/kinds/graphql/response-chip.js';
 import {
   graphqlChip,
   graphqlGroupId,
   recordGraphqlProblems,
-} from '../../src/renderer/features/rest-editor/response/graphql.js';
+} from '../../src/renderer/kinds/graphql/response-problems.js';
 import { restExplorer } from '../../src/renderer/kinds/rest/explorer.js';
 import { restExplorerTree } from '../../src/renderer/kinds/rest/explorer-tree.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { GraphqlCheckWire, RestRequestWire } from '../../src/shared/kinds/rest/wire.js';
+import type { GraphqlCheckWire } from '../../src/shared/kinds/graphql/wire.js';
+import type { RestRequestWire } from '../../src/shared/kinds/rest/wire.js';
 
 const ERRORS: GraphqlCheckWire = {
   schema: 'checked',
