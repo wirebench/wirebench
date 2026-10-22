@@ -123,7 +123,7 @@
   },
   "dependencies": {
     "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
-    "@modelcontextprotocol/sdk": "1.31.0",
+    "@modelcontextprotocol/sdk": "1.32.0",
     "@stoplight/spectral-core": "1.24.0",
     "@stoplight/spectral-parsers": "1.0.5",
     "@stoplight/spectral-ref-resolver": "1.0.5",
