@@ -42,6 +42,9 @@ All notable changes to this project are documented here. The format follows
   an empty cell: a required `status` arrives as `status=available`, not `status=`. An exploded
   form-style query parameter gets one row per item (`tags=a&tags=b`); other styles join the items with
   commas. Optional parameters still arrive switched off.
+- **A new POST body is ready to type into (#748).** Switching a request with no body from GET (or any
+  method without one) to POST, PUT or PATCH sets the body to Raw · JSON. A body you set to None on a
+  POST stays None.
 - **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
   shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
   the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.

@@ -39,6 +39,7 @@ import { useUiStore } from '../../state/ui.js';
 import { WebhookUrlNote } from '../webhook-items/webhook-url-note.js';
 import { RestAuthTab } from './auth-tab.js';
 import { BodyTab } from './body-tab.js';
+import { bodyForMethodChange } from './method-body.js';
 import { HeadersTab } from './headers-tab.js';
 import { ParamsTab } from './params-tab.js';
 import { RestBreadcrumb } from './rest-breadcrumb.js';
@@ -435,7 +436,9 @@ export function RestEditor({ requestId }: RestEditorProps) {
         sending={sending}
         live={exchange?.live !== undefined}
         onMethodChange={(method) => {
-          stage({ method });
+          // POST, PUT or PATCH with no body starts on Raw · JSON (G11).
+          const body = bodyForMethodChange(request.method, method, request.body);
+          stage(body === undefined ? { method } : { method, body });
         }}
         onUrlChange={(next) => {
           // The tables follow the URL, so the Params tab and the field can never disagree: a
