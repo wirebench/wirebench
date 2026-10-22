@@ -15,13 +15,13 @@ import {
   revealActiveTab,
 } from '../features/explorer/explorer-tree-actions.js';
 import { openRunnerTab, runnerTargetOf } from '../features/runner/runner-actions.js';
-import { featureOn } from '../state/ui.js';
 import { kindExplorer } from '../kinds/index.js';
 import type { TabContainer } from '../kinds/tab-contribution.js';
 import { registerCommand } from '../lib/commands.js';
 import { useProjectStore } from '../state/project.js';
 import { useScriptValuesStore } from '../state/script-values.js';
 import { currentProjectId } from '../state/workspace-tabs.js';
+import { featureOn } from '../state/ui.js';
 import type { Selection } from '../state/ui.js';
 import { kindTarget } from './command-helpers.js';
 
