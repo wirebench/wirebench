@@ -49,7 +49,7 @@ describe('sourceSnippet', () => {
     expect(sourceSnippet(XSD, undefined)).toBe('');
   });
 
-  // Shared with the engine's own `sourceSnippet` (packages/engine/src/wsdl/docs-generator.ts)
+  // Shared with the engine's own `sourceSnippet` (packages/protocol-soap/src/wsdl/docs-generator.ts)
   // — a deliberate second implementation, not a copy of it; see the comment atop this file.
   for (const testCase of SOURCE_SNIPPET_CASES) {
     it(`matches the engine's implementation: ${testCase.name}`, () => {

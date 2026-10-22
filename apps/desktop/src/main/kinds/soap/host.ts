@@ -136,7 +136,7 @@ function sanitizeDroppedName(name: string): string {
 
 /**
  * The absolute paths a `path`-source attachment's declared path could mean, in the exact order
- * `createFileAttachmentResolver` (`@wirebench/engine`'s `packages/engine/src/soap/attachments.ts`)
+ * `createFileAttachmentResolver` (`@wirebench/engine`'s `packages/protocol-soap/src/soap/attachments.ts`)
  * would try them: an absolute path is itself the only candidate; a relative one is tried under
  * `resourceRoot` first (when the project has one), then under the project folder. Kept in sync
  * with that function deliberately, so the path main checks is always the path the engine would

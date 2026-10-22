@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
  * from the engine's source as text, so the site does not depend on the engine package.
  */
 const page = readFileSync(new URL('../src/pages/editions.astro', import.meta.url), 'utf-8');
-const licensing = readFileSync(new URL('../../packages/engine/src/server-api/licensing.ts', import.meta.url), 'utf-8');
+const licensing = readFileSync(new URL('../../packages/core/src/server-api/licensing.ts', import.meta.url), 'utf-8');
 
 function constant(name: string): number {
   const match = new RegExp(`export const ${name} = (\\d+);`).exec(licensing);

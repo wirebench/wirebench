@@ -9,11 +9,20 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/server/package.json packages/server/package.json
 COPY packages/engine/package.json packages/engine/package.json
+COPY packages/core/package.json packages/core/package.json
+COPY packages/protocol-soap/package.json packages/protocol-soap/package.json
+COPY packages/protocol-rest/package.json packages/protocol-rest/package.json
+COPY packages/protocol-grpc/package.json packages/protocol-grpc/package.json
+COPY packages/protocol-ws/package.json packages/protocol-ws/package.json
+COPY packages/protocol-mcp/package.json packages/protocol-mcp/package.json
 RUN pnpm install --frozen-lockfile --filter @wirebench/server...
 
 COPY . .
 RUN pnpm --filter @wirebench/server... build
 RUN pnpm deploy --filter @wirebench/server --prod /out
+# The engine's core and protocol packages are private dev dependencies of the engine: its deployed copy
+# carries its own, as the npm package does.
+RUN node packages/engine/scripts/vendor-packages.mjs /out/node_modules/@wirebench/engine
 
 FROM node:24-bookworm-slim AS runtime
 ARG VERSION
