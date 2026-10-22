@@ -552,3 +552,21 @@ export const grpcRun: ProtocolRun<GrpcSelected> = {
     ];
   },
 };
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface SelectedRequests {
+    grpc: GrpcSelected;
+  }
+  interface SentExchanges {
+    grpc: {
+      readonly kind: 'grpc';
+      /** The call whole: every request message as sent, every response message decoded. */
+      readonly grpc: GrpcCallResult;
+      /** What was sent: after the script, with the credentials resolved. */
+      readonly input: GrpcResolvedInput;
+      /** The request message text as sent, after the script. */
+      readonly messageText: string;
+    };
+  }
+}

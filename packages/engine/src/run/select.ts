@@ -7,10 +7,10 @@ import type { Project } from '../project/model.js';
 import type { RunGroup, SelectedBase } from '../protocol/module.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
 import { defaultRegistry } from '../protocol/default-registry.js';
-import type { SelectedRequest } from '../protocols.js';
+import type { SelectedRequest } from '../protocol/unions.js';
 import { byOrder } from './tree.js';
 
-export type { SelectedRequest } from '../protocols.js';
+export type { SelectedRequest } from '../protocol/unions.js';
 
 interface Candidate {
   readonly item: SelectedBase;
@@ -21,10 +21,11 @@ interface Candidate {
 }
 
 /**
- * A module's selection under the built-in union. A registry may hold a module that is not built in;
- * its items travel under this type too, and a caller that narrows on `kind` simply never matches them.
+ * A module's selection under the composed union (package split spec §3.4). Core works on
+ * `SelectedBase` and casts where it hands an item to a host; a registry may hold a module that is not
+ * composed, whose items travel under the union too, and a caller that narrows on `kind` never matches them.
  */
-const asSelected = (item: SelectedBase): SelectedRequest => item as SelectedRequest;
+export const asSelected = (item: SelectedBase): SelectedRequest => item as SelectedRequest;
 
 /** Every runnable request, container by container in explorer order, `explicitOnly` groups last. */
 function candidates(project: Project, registry: ProtocolRegistry): Candidate[] {

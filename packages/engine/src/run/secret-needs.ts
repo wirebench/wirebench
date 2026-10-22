@@ -11,7 +11,6 @@ import type { PropertyScopes } from '../project/properties.js';
 import type { SelectedBase } from '../protocol/module.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
 import { defaultRegistry } from '../protocol/default-registry.js';
-import type { SelectedRequest } from '../protocols.js';
 import { activeLevels, activeScripts } from '../script/request-scripts.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { secretEnvName, secretPseudoRef } from '../secrets/secret-token.js';
@@ -80,7 +79,7 @@ function workspaceScopeSets(workspace: Workspace, project: Project): PropertySco
  * modules asked for their needs; the built-in ones by default.
  */
 export function secretNeedsOf(
-  selected: readonly SelectedRequest[],
+  selected: readonly SelectedBase[],
   project: Project,
   overrides: PropertyMap = {},
   workspace?: Workspace,

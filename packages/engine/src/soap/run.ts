@@ -23,6 +23,7 @@ import { expand } from '../project/properties.js';
 import type { PropertyScopes } from '../project/properties.js';
 import { toWssIncomingConfig, toWssOutgoingConfig } from '../wss/configs.js';
 import type { ProtocolRun, RunScope, ScriptedSend } from '../protocol/module.js';
+import type { WsdlImportResult } from './types.js';
 import { scopesFor } from '../run/context.js';
 import type { RunContext } from '../run/context.js';
 import { exchangeController } from '../run/exchange.js';
@@ -622,6 +623,27 @@ function incomingNeeds(project: Project, config: WssIncomingConfig): SecretNeed[
   ];
 }
 
+/** A SOAP interface's definition as a host already holds it in memory: imported and compiled. */
+export type HeldSoapDefinition = Pick<WsdlImportResult, 'definition' | 'bundle' | 'schemaSet' | 'wsa'>;
+
+/** SOAP's hooks on the run context (package split spec §3.4): what a host lends a SOAP send. */
+declare module '../run/context.js' {
+  interface RunContext {
+    /**
+     * The WSDL-derived default `wsa:Action` for a SOAP request, as the app takes it from the
+     * interface's imported definition. Absent (or returning `''`) when no definition is at hand:
+     * an explicit `wsa:Action` or the request's SOAPAction then still applies.
+     */
+    readonly defaultWsaActionFor?: (selected: SoapSelected) => string;
+    /**
+     * The definition a host already holds for a SOAP request's interface (the app's, imported and
+     * compiled), so a send neither reads nor compiles the definition cache. Absent, or answering
+     * undefined: the run reads the interface's cached definition itself, once per run scope.
+     */
+    readonly loadedDefinitionFor?: (selected: SoapSelected) => HeldSoapDefinition | undefined;
+  }
+}
+
 /** The definition the host holds for the request's interface, else the cached one, read once per run scope. */
 function definitionFor(selected: SoapSelected, scope: RunScope): Promise<LoadedDefinition | undefined> {
   const held = scope.context.loadedDefinitionFor?.(selected);
@@ -894,3 +916,18 @@ export const soapRun: ProtocolRun<SoapSelected> = {
     ];
   },
 };
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface SelectedRequests {
+    soap: SoapSelected;
+  }
+  interface SentExchanges {
+    soap: {
+      readonly kind: 'soap';
+      readonly soap: SoapExchange;
+      /** The request as resolved: references unexpanded, before its script and its credentials. */
+      readonly input: SoapSendInput;
+    };
+  }
+}

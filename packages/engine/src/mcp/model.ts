@@ -285,3 +285,10 @@ export function mcpServersOf(project: Project): readonly McpServer[] {
 export function withMcpServers(project: Project, servers: readonly McpServer[]): Project {
   return withContainersOf(project, 'mcp', servers);
 }
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface RequestDefs {
+    mcp: McpRequestDef;
+  }
+}

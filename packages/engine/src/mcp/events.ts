@@ -2,3 +2,10 @@
 import type { McpMessage } from './session.js';
 
 export type McpLiveEvent = { readonly protocol: 'mcp'; readonly kind: 'message'; readonly message: McpMessage };
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface LiveEvents {
+    mcp: McpLiveEvent;
+  }
+}
