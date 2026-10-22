@@ -23,6 +23,7 @@ import {
   restRequestRow,
   sendRest,
   setMethodAndUrl,
+  unfoldRow,
 } from '../helpers/rest.js';
 import { startTestRestServer, type TestRestServer } from '../helpers/test-server.js';
 
@@ -107,7 +108,7 @@ test.describe('OpenAPI import', () => {
 
     // One API, one folder per path segment, one request per operation.
     await expect(apiRow(page, 'Bodies')).toBeVisible({ timeout: 20_000 });
-    await apiRow(page, 'Bodies').click();
+    await unfoldRow(apiRow(page, 'Bodies'));
     for (const folder of ['json', 'form', 'multipart', 'binary']) {
       await expect(folderRow(page, folder)).toBeVisible({ timeout: 20_000 });
     }
@@ -129,7 +130,7 @@ test.describe('OpenAPI import', () => {
     await expect(page.getByTestId('api-tab')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('api-base-url')).toHaveValue(server.url);
 
-    await apiRow(page, 'Bodies').click();
+    await unfoldRow(apiRow(page, 'Bodies'));
     await folderRow(page, 'json').click();
     await restRequestRow(page, 'JSON with an example').dblclick();
     await expect(page.getByTestId('rest-editor')).toBeVisible({ timeout: 20_000 });

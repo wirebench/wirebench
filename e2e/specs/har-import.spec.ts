@@ -8,7 +8,7 @@
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace, openImportDialog } from '../helpers/project.js';
-import { apiRow, restRequestRow } from '../helpers/rest.js';
+import { apiRow, restRequestRow, unfoldRow } from '../helpers/rest.js';
 
 /** One HAR 1.2 entry: a GET to `url` answered with `status` and a JSON body. */
 function harEntry(url: string, status: number, statusText: string, body: string) {
@@ -80,7 +80,7 @@ test.describe('HAR import', () => {
     await page.getByTestId('import-done').click();
 
     await expect(apiRow(page, 'api.example.com')).toBeVisible({ timeout: 20_000 });
-    await apiRow(page, 'api.example.com').click();
+    await unfoldRow(apiRow(page, 'api.example.com'));
     await restRequestRow(page, '/pets').dblclick();
     await expect(page.getByTestId('rest-editor')).toBeVisible({ timeout: 20_000 });
 

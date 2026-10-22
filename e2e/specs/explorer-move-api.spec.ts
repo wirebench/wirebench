@@ -6,7 +6,14 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace } from '../helpers/project.js';
-import { apiRow, chooseContextMenuItem, createApi, createRestRequest, restRequestRow } from '../helpers/rest.js';
+import {
+  apiRow,
+  chooseContextMenuItem,
+  createApi,
+  createRestRequest,
+  restRequestRow,
+  unfoldRow,
+} from '../helpers/rest.js';
 
 /** The explorer's rows top to bottom, by label: where a row sits says which project it is under. */
 async function rowLabels(page: Page): Promise<string[]> {
@@ -101,7 +108,7 @@ test.describe('Explorer: move an API to another project', () => {
     await expect(page.getByRole('tab', { name: /List pets/ })).toBeVisible();
 
     // Its request opens from the new place.
-    await apiRow(page, 'Pets').click();
+    await unfoldRow(apiRow(page, 'Pets'));
     await restRequestRow(page, 'List pets').click();
     await expect(page.getByTestId('rest-editor')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('rest-breadcrumb-name')).toHaveText('List pets');

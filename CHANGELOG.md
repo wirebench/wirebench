@@ -17,6 +17,12 @@ All notable changes to this project are documented here. The format follows
   policy per shared workspace (**Team → Workspaces → Features**), carried on every sync (ADR-0029). A
   feature that is off is refused by the engine, not only hidden, and its files are never rewritten
   (#735, phase 4 of #184).
+- **The Explorer selects like a desktop tree (#681).** Shift-click selects a range and Ctrl/⌘-click adds
+  or removes a row. A selection of several rows gets a menu of its own — **Move to…**, **Duplicate** and
+  **Delete 3 requests…** — and Delete, ⌘⌫ (Ctrl+Backspace) and Backspace delete it through one confirm. F2
+  starts an inline rename. The palette gains **Explorer: Collapse All**, **Expand All**, **Reveal Active
+  Tab**, **Focus Explorer**, **Rename**, **Duplicate**, **Delete** and **New Folder**, acting on the
+  selection or the active tab, and the new keys are listed under Settings → Keyboard shortcuts.
 - **A Projects panel for an environment.** Which projects a workspace environment applies to is chosen in
   its own panel on the right of the environment's page, opened from the rail's **Projects** icon or
   **Choose projects…** in Environment details: **All projects** at the top (projects added later
@@ -129,6 +135,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A click in the Explorer no longer folds the row it opens (#680).** Clicking a project or API row opens
+  its tab and leaves its children where they are; folding is the chevron's, the arrow keys' and a
+  double-click's job. The row a context menu was opened on is outlined while the menu is up, and an item
+  from the menu selects that row before acting on it, so the dialog it opens names the row under the
+  pointer.
 - **The desktop package drops the last of ssh2's native-binding tree.** `nan`, the C++ headers only
   ssh2's never-built cipher binding compiles against, no longer ships inside the app; the binding's
   build folder and `cpu-features` were already left out, and the packaged app runs ssh2's pure-JS

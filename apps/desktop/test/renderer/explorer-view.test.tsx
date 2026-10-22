@@ -10,6 +10,7 @@ import { useSyncStore } from '../../src/renderer/state/sync.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWebhooksStore } from '../../src/renderer/state/webhooks.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import type { InterfaceWire } from '../../src/shared/kinds/soap/wire.js';
 import type { WorkspaceProjectWire, WorkspaceWire } from '../../src/shared/wire-base.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -565,7 +566,7 @@ describe('ExplorerView with APIs', () => {
     expect(screen.queryByText('POST /echo')).toBeNull();
   });
 
-  it('opens a project tab and folds the project under the same single click', () => {
+  it('opens a project tab on a single click and leaves the project unfolded (#680)', () => {
     seedRest();
     mount();
 
@@ -575,12 +576,73 @@ describe('ExplorerView with APIs', () => {
     // The tab opens...
     expect(useEditorsStore.getState().tabs.length).toBeGreaterThan(before);
     expect(useEditorsStore.getState().tabs.some((tab) => tab.kind === 'project')).toBe(true);
-    // ...and the click also folds the row, so its children go with it.
-    expect(screen.queryByTestId('api-row')).toBeNull();
+    // ...and the row stays open: the requests being worked on do not vanish under the click.
+    expect(screen.getByTestId('api-row')).not.toBeNull();
 
-    // A second click unfolds it again.
+    // Nor under a second one.
     fireEvent.click(screen.getByText('Demo'));
     expect(screen.getByTestId('api-row')).not.toBeNull();
+  });
+
+  it('folds a project or API row on its chevron and on a double-click, never on a click (#680)', () => {
+    seedRest();
+    mount();
+
+    // The API row's chevron folds it shut, and open again.
+    const apiRow = screen.getByTestId('api-row');
+    fireEvent.click(apiRow.querySelector('[data-testid="explorer-row-twisty"]')!);
+    expect(screen.queryByTestId('folder-row')).toBeNull();
+    fireEvent.click(apiRow.querySelector('[data-testid="explorer-row-twisty"]')!);
+    expect(screen.getByTestId('folder-row')).not.toBeNull();
+
+    // A click on the API row opens its tab and leaves the fold alone.
+    fireEvent.click(screen.getByText('Petstore'));
+    expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['api:api-1']);
+    expect(screen.getByTestId('folder-row')).not.toBeNull();
+
+    // The second click of a double-click folds it (and keeps the tab, #679).
+    fireEvent.click(screen.getByText('Petstore'), { detail: 2 });
+    expect(screen.queryByTestId('folder-row')).toBeNull();
+    expect(useUiStore.getState().workspaces['w1']?.explorerOpen?.['api:api-1']).toBe(false);
+
+    // Same for the project row.
+    fireEvent.click(screen.getByText('Demo'), { detail: 2 });
+    expect(screen.queryByTestId('api-row')).toBeNull();
+    fireEvent.click(screen.getByText('Demo'), { detail: 2 });
+    expect(screen.getByTestId('api-row')).not.toBeNull();
+  });
+
+  it('outlines the row a context menu was opened on, and a menu action selects that row (#680)', async () => {
+    seedRest();
+    mount();
+
+    // The selection sits on one request; the menu opens on the other.
+    fireEvent.click(screen.getByText('At root'));
+    expect(useUiStore.getState().selection).toMatchObject({ requestId: 'rest-root' });
+    const target = screen.getByText('In folder').closest('[data-tree-id]')!;
+    expect(target.getAttribute('data-menu-open')).toBeNull();
+
+    fireEvent.contextMenu(target);
+    const item = await screen.findByRole('menuitem', { name: 'Duplicate' });
+    expect(target.getAttribute('data-menu-open')).toBe('true');
+    // The menu's target is the row under the pointer, not the selected one.
+    expect(screen.getByText('At root').closest('[data-tree-id]')!.getAttribute('data-menu-open')).toBeNull();
+
+    fireEvent.click(item);
+    // The action selected its target first, so what it did and what is highlighted agree.
+    expect(useUiStore.getState().selection).toMatchObject({ kind: 'rest-request', requestId: 'rest-deep' });
+    await waitFor(() => expect(target.getAttribute('data-menu-open')).toBeNull());
+  });
+
+  it('selects a project for a menu action without opening its tab (#680)', async () => {
+    seedRest();
+    mount();
+
+    fireEvent.contextMenu(screen.getByText('Demo').closest('[data-tree-id]')!);
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }));
+
+    expect(useUiStore.getState().selection).toMatchObject({ kind: 'project', id: 'p1' });
+    expect(useEditorsStore.getState().tabs.some((tab) => tab.kind === 'project')).toBe(false);
   });
 
   it('opens a REST request tab on a single click, and the same tab on a second click', () => {
@@ -627,10 +689,144 @@ describe('ExplorerView with APIs', () => {
     seedRest();
     mount();
 
-    fireEvent.click(screen.getByText('Petstore'));
+    fireEvent.click(screen.getByTestId('api-row').querySelector('[data-testid="explorer-row-twisty"]')!);
 
-    // The click opened the tab and folded the row shut; the fold state records it per workspace.
+    // The chevron folded the row shut; the fold state records it per workspace.
     expect(useUiStore.getState().workspaces['w1']?.explorerOpen?.['api:api-1']).toBe(false);
+  });
+
+  describe('selection with modifiers (#681)', () => {
+    const row = (name: string): HTMLElement => screen.getByText(name).closest('[role="treeitem"]')!;
+    /**
+     * Mounts and lets a frame pass: the tab a previous test opened queued a reveal of its row on the next
+     * animation frame, which would otherwise land in this test's tree and collapse its selection midway.
+     */
+    async function mountSettled(): Promise<void> {
+      mount();
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+    }
+    const selectedNames = (): string[] =>
+      screen
+        .getAllByRole('treeitem')
+        .filter((item) => item.getAttribute('aria-selected') === 'true')
+        .map((item) => item.textContent ?? '');
+
+    it('extends the selection from the anchor on Shift-click, and toggles a row on Ctrl/Cmd-click', async () => {
+      seedRest();
+      await mountSettled();
+
+      // Rows top to bottom: Demo › Petstore › Pets (folder) › In folder › At root. The API row is the anchor:
+      // a click on it opens its tab and, since #680, leaves its children in view.
+      fireEvent.click(screen.getByText('Petstore'));
+      fireEvent.click(screen.getByText('At root'), { shiftKey: true });
+      expect(selectedNames()).toEqual([
+        expect.stringContaining('Petstore'),
+        expect.stringContaining('Pets'),
+        expect.stringContaining('In folder'),
+        expect.stringContaining('At root'),
+      ]);
+      // A Shift-click opens nothing beyond what the anchor's own click did.
+      expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['api:api-1']);
+
+      // Ctrl/⌘ takes one row out of the range, and puts it back.
+      fireEvent.click(screen.getByText('In folder'), { ctrlKey: true });
+      expect(selectedNames()).toHaveLength(3);
+      expect(selectedNames()).not.toContainEqual(expect.stringContaining('In folder'));
+      fireEvent.click(screen.getByText('In folder'), { metaKey: true });
+      expect(selectedNames()).toHaveLength(4);
+      expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['api:api-1']);
+
+      // A plain click is a single selection again, and opens the row (replacing the API's preview tab, #679).
+      fireEvent.click(screen.getByText('At root'));
+      expect(selectedNames()).toEqual([expect.stringContaining('At root')]);
+      expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['rest:rest-root']);
+    });
+
+    it('gives a right-click on one of several selected rows the selection menu', async () => {
+      seedRest();
+      await mountSettled();
+
+      fireEvent.click(screen.getByText('In folder'));
+      fireEvent.click(screen.getByText('At root'), { shiftKey: true });
+      fireEvent.contextMenu(screen.getByText('At root').closest('[data-tree-id]')!);
+
+      expect(await screen.findByRole('menuitem', { name: 'Delete 2 requests…' })).toBeTruthy();
+      expect(screen.getByRole('menuitem', { name: 'Move to…' })).toBeTruthy();
+      expect(screen.getByRole('menuitem', { name: 'Duplicate' })).toBeTruthy();
+      // The single row's items are not there.
+      expect(screen.queryByRole('menuitem', { name: 'Rename…' })).toBeNull();
+
+      // The selection stays whole: the action acts on both rows.
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Delete 2 requests…' }));
+      expect(useUiStore.getState().confirmDeleteNodes?.map((pending) => pending.id)).toEqual([
+        'rest-deep',
+        'rest-root',
+      ]);
+      expect(screen.getByText('Delete 2 requests?')).toBeTruthy();
+      expect(screen.getByText('"In folder" and "At root" will be deleted. This cannot be undone.')).toBeTruthy();
+    });
+
+    it('a right-click on a row outside the selection keeps that row its own menu', async () => {
+      seedRest();
+      await mountSettled();
+
+      fireEvent.click(screen.getByText('In folder'));
+      fireEvent.click(screen.getByText('At root'), { shiftKey: true });
+      fireEvent.contextMenu(screen.getByText('Pets').closest('[data-tree-id]')!);
+
+      expect(await screen.findByRole('menuitem', { name: 'Rename…' })).toBeTruthy();
+      expect(screen.queryByRole('menuitem', { name: /^Delete \d/ })).toBeNull();
+    });
+
+    it('Backspace and Cmd+Backspace in the tree delete the selection through one confirm', async () => {
+      seedRest();
+      await mountSettled();
+
+      fireEvent.click(screen.getByText('In folder'));
+      fireEvent.click(screen.getByText('At root'), { shiftKey: true });
+      fireEvent.keyDown(row('At root'), { key: 'Backspace', metaKey: true });
+
+      expect(useUiStore.getState().confirmDeleteNodes).toHaveLength(2);
+      expect(useUiStore.getState().confirmDeleteNode).toBeUndefined();
+      useUiStore.getState().requestDeleteNodes(undefined);
+
+      // One row goes through its own confirm, as before.
+      fireEvent.click(screen.getByText('At root'));
+      fireEvent.keyDown(row('At root'), { key: 'Backspace' });
+      expect(useUiStore.getState().confirmDeleteNode).toMatchObject({ kind: 'rest-request', id: 'rest-root' });
+      expect(useUiStore.getState().confirmDeleteNodes).toBeUndefined();
+    });
+
+    it('confirming the many-rows dialog deletes every row, and Settings can skip the dialog', async () => {
+      const mutate = vi.fn().mockResolvedValue({ ok: true, value: undefined });
+      installWirebenchApi({ project: { mutate } });
+      seedRest();
+      await mountSettled();
+
+      fireEvent.click(screen.getByText('In folder'));
+      fireEvent.click(screen.getByText('At root'), { shiftKey: true });
+      fireEvent.keyDown(row('At root'), { key: 'Backspace' });
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+      await waitFor(() => expect(mutate).toHaveBeenCalledTimes(2));
+      expect(useUiStore.getState().confirmDeleteNodes).toBeUndefined();
+
+      // With confirms off, the keystroke deletes at once.
+      usePreferencesStore.setState((state) => ({
+        preferences: { ...state.preferences, ui: { ...state.preferences.ui, confirmOnDelete: false } },
+      }));
+      mutate.mockClear();
+      fireEvent.click(screen.getByText('In folder'));
+      fireEvent.click(screen.getByText('At root'), { shiftKey: true });
+      fireEvent.keyDown(row('At root'), { key: 'Backspace' });
+      await waitFor(() => expect(mutate).toHaveBeenCalledTimes(2));
+      expect(useUiStore.getState().confirmDeleteNodes).toBeUndefined();
+      usePreferencesStore.setState((state) => ({
+        preferences: { ...state.preferences, ui: { ...state.preferences.ui, confirmOnDelete: true } },
+      }));
+    });
   });
 
   it('enters inline rename mode and commits the rename', async () => {

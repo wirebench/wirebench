@@ -8,7 +8,7 @@
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace, openImportDialog } from '../helpers/project.js';
-import { apiRow, restRequestRow } from '../helpers/rest.js';
+import { apiRow, restRequestRow, unfoldRow } from '../helpers/rest.js';
 
 /** A file variable, then two requests named by their `###` separators. */
 const HTTP_FILE =
@@ -40,7 +40,7 @@ test.describe('.http file import', () => {
 
     // Pasted text has no file name, so the API takes the importer's default name.
     await expect(apiRow(page, 'Imported requests')).toBeVisible({ timeout: 20_000 });
-    await apiRow(page, 'Imported requests').click();
+    await unfoldRow(apiRow(page, 'Imported requests'));
     await expect(restRequestRow(page, 'One')).toBeVisible({ timeout: 20_000 });
     await expect(restRequestRow(page, 'Two')).toBeVisible();
   });

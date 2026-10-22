@@ -6,15 +6,18 @@ import { showToast } from '../../components/toast.js';
 import { useProjectStore } from '../../state/project.js';
 import { moveTargets } from './move-targets.js';
 
-/** Which REST request **Move to…** is moving; `undefined` while the dialog is shut. */
+/**
+ * Which REST requests **Move to…** is moving — one from a row's menu, several from a multi-row selection's
+ * (#681), all in one API; empty while the dialog is shut.
+ */
 export const useMoveRequestStore = create<{
-  readonly requestId: string | undefined;
-  readonly open: (requestId: string) => void;
+  readonly requestIds: readonly string[];
+  readonly open: (requestIds: string | readonly string[]) => void;
   readonly close: () => void;
 }>((set) => ({
-  requestId: undefined,
-  open: (requestId) => set({ requestId }),
-  close: () => set({ requestId: undefined }),
+  requestIds: [],
+  open: (requestIds) => set({ requestIds: typeof requestIds === 'string' ? [requestIds] : requestIds }),
+  close: () => set({ requestIds: [] }),
 }));
 
 /**
@@ -23,8 +26,9 @@ export const useMoveRequestStore = create<{
  * never leaves its API (main refuses that), so only its API's folders are offered.
  */
 export function MoveRequestDialog() {
-  const requestId = useMoveRequestStore((state) => state.requestId);
+  const requestIds = useMoveRequestStore((state) => state.requestIds);
   const close = useMoveRequestStore((state) => state.close);
+  const requestId = requestIds[0];
   const request = useProjectStore((state) => (requestId === undefined ? undefined : state.restRequests[requestId]));
   const apiName = useProjectStore((state) => (request === undefined ? undefined : state.apis[request.apiId]?.name));
   const folders = useProjectStore((state) => state.folders);
@@ -44,10 +48,18 @@ export function MoveRequestDialog() {
     const index = Object.values(store.restRequests).filter(
       (candidate) => candidate.apiId === request.apiId && candidate.folderId === parentId,
     ).length;
+    const ids = requestIds;
     close();
-    void store.moveNode(request.id, parentId, index).catch((error: unknown) => {
-      showToast(error instanceof Error ? error.message : 'Could not move it');
-    });
+    // One at a time and in order, each after the one before it, so the rows keep their order in the target.
+    void (async () => {
+      for (const [offset, id] of ids.entries()) {
+        try {
+          await store.moveNode(id, parentId, index + offset);
+        } catch (error: unknown) {
+          showToast(error instanceof Error ? error.message : 'Could not move it');
+        }
+      }
+    })();
   };
 
   return (
@@ -63,9 +75,13 @@ export function MoveRequestDialog() {
           data-testid="move-request-dialog"
           className="fixed top-1/2 left-1/2 w-96 max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface-raised p-4 shadow-lg"
         >
-          <Dialog.Title className="text-md font-medium text-fg-default">Move “{request?.name}”</Dialog.Title>
+          <Dialog.Title className="text-md font-medium text-fg-default">
+            {requestIds.length > 1 ? `Move ${String(requestIds.length)} requests` : `Move “${request?.name ?? ''}”`}
+          </Dialog.Title>
           <Dialog.Description className="mt-1 text-xs text-fg-subtle">
-            A request moves within its own API, to the end of the folder you pick.
+            {requestIds.length > 1
+              ? 'The requests move within their API, to the end of the folder you pick, in their current order.'
+              : 'A request moves within its own API, to the end of the folder you pick.'}
           </Dialog.Description>
           <label className="mt-3 block text-sm text-fg-subtle" htmlFor="move-request-target">
             Move to

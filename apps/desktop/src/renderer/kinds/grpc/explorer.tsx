@@ -19,7 +19,7 @@ export const grpcExplorer: KindExplorer = {
       icon: Radio,
       testId: 'grpc-api-row',
       badge: 'gRPC',
-      click: 'open-and-fold',
+      click: 'open',
       dropTarget: true,
       open: (node) => explorerActions.openGrpcApi(node.apiId),
       runTarget: (node) => node.apiId,
