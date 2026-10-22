@@ -111,4 +111,18 @@ describe('the electron-builder exclusion list', () => {
     expect(excluded).toContain('prebuild-install');
     expect(excludedButNeeded('apps/desktop', excluded)).toEqual([]);
   });
+
+  // ssh2's native cipher binding is never built (#362). Its build folder and the two optional packages
+  // only the binding needs are excluded by name: the asar check cannot catch them by itself, since an
+  // optional dependency counts wherever it is present.
+  it('keeps the ssh2 binding, cpu-features and nan out of the asar', () => {
+    const builderYaml = readFileSync('apps/desktop/electron-builder.yml', 'utf8');
+    for (const pattern of [
+      "'!**/node_modules/ssh2/lib/protocol/crypto/build/**'",
+      "'!**/node_modules/cpu-features/**'",
+      "'!**/node_modules/nan/**'",
+    ]) {
+      expect(builderYaml).toContain(pattern);
+    }
+  });
 });

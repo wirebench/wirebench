@@ -147,6 +147,17 @@ it fails when an exclusion drops a package something else needs, and when a `ker
 brings a package the list does not name yet. (`THIRD-PARTY-LICENSES.md` still lists that tree:
 Wirebench Server's image installs the engine's optional dependencies, `kerberos` included.)
 
+`ssh2` is the same story in miniature (#362): its optional native cipher binding
+(`lib/protocol/crypto/build/`) is never built (`neverBuiltDependencies` in the root `package.json`),
+and the `files` list keeps it and the two optional packages only it needs, `cpu-features` and `nan`,
+out of the asar, so the packaged app always runs ssh2's pure-JS ciphers. The asar check does not
+report those two by itself: ssh2 declares them as optional dependencies, which count wherever they
+are present, so the unit test in `scripts/check-desktop-asar.test.ts` pins the three patterns and
+the manual check below looks inside the packed app. In the Windows builds ssh2 itself sits under
+`app.asar.unpacked`, because electron-builder unpacks a package whole when it holds an executable,
+and ssh2 ships `util/pagent.exe`, the Pageant helper it spawns on Windows; the mac and Linux builds
+carry no `.exe`, and ssh2 stays inside the asar there.
+
 ## Electron fuses
 
 `scripts/fuses.ts` runs as electron-builder's `afterPack` hook (before signing — flipping a
@@ -219,6 +230,27 @@ machine with a reachable KDC and a `kinit` ticket:
    **Kerberos** against an SPNEGO-protected site returns 200.
 3. The snap installed with `snap install --dangerous`: the Kerberos option is disabled and reads
    "Kerberos is not supported in the snap. Install the deb, rpm or AppImage build."
+
+## Manual SSH check (per release candidate)
+
+CI opens SSH sessions against the dev build, not the packaged app, and ssh2 picks its ciphers at
+run time: a packaged app that still carried the native binding or `cpu-features` would not fail
+the asar check inside `ssh2`. On each OS, with the release candidate installed (not a dev build):
+
+1. **SSH → Hosts → New host**: host name, port, user and a password or private key of any SSH
+   server the machine can reach (a VM, a container running `sshd`, or the OS's own `sshd` on
+   `localhost`). Save.
+2. **Connect** from the host's row. The connection screen walks through resolve, connect, host key
+   (accept it on the first connect) and shell, and the terminal shows the server's prompt.
+3. Type `echo ok` and press <kbd>Enter</kbd>: `ok` comes back. Close the tab.
+4. The packaged tree carries no native ssh2 code. In the installed app's `resources/` folder
+   (macOS: `Wirebench.app/Contents/Resources`; Linux: `/opt/Wirebench/resources` for the deb and rpm,
+   or `squashfs-root/resources` after `./Wirebench-<version>-linux-x86_64.AppImage --appimage-extract`;
+   Windows: `resources` beside `Wirebench.exe`), `npx @electron/asar list app.asar | grep -E
+   'ssh2/lib/protocol/crypto/build|node_modules/cpu-features|node_modules/nan'` prints nothing.
+
+Steps 1 to 3 need a person on each OS; step 4 is the same on all three and is what the asar check
+cannot see. Record the build and the result on the release's issue.
 
 ## Publishing the CLI: image and npm
 
