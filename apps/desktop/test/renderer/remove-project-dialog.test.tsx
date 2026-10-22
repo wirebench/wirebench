@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { RemoveProjectDialog } from '../../src/renderer/features/workspace/remove-project-dialog.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
@@ -64,29 +64,39 @@ describe('RemoveProjectDialog', () => {
     useWorkspaceStore.setState({ workspace: null });
   });
 
-  it('offers to trash an internal project folder, on by default', async () => {
+  it('offers to trash an internal project folder, off by default (#684)', async () => {
     const removeProject = open(wireProject());
 
     expect(screen.getByTestId('remove-project-dialog')).toBeTruthy();
     expect(screen.getByText(/“Calculator” is removed from this workspace\./)).toBeTruthy();
     const checkbox = screen.getByTestId<HTMLInputElement>('remove-project-delete-files');
-    expect(checkbox.checked).toBe(true);
+    expect(checkbox.checked).toBe(false);
 
     fireEvent.click(screen.getByTestId('remove-project-confirm'));
 
     await waitFor(() => expect(removeProject).toHaveBeenCalled());
-    expect(removeProject).toHaveBeenCalledWith({ projectId: 'p1', deleteFiles: true });
+    expect(removeProject).toHaveBeenCalledWith({ projectId: 'p1', deleteFiles: false });
     expect(useUiStore.getState().confirmRemoveProjectId).toBeUndefined();
   });
 
-  it('keeps the folder when the checkbox is cleared', async () => {
+  it('trashes the folder when the checkbox is ticked', async () => {
     const removeProject = open(wireProject());
 
     fireEvent.click(screen.getByTestId('remove-project-delete-files'));
     fireEvent.click(screen.getByTestId('remove-project-confirm'));
 
     await waitFor(() => expect(removeProject).toHaveBeenCalled());
-    expect(removeProject).toHaveBeenCalledWith({ projectId: 'p1', deleteFiles: false });
+    expect(removeProject).toHaveBeenCalledWith({ projectId: 'p1', deleteFiles: true });
+  });
+
+  it('starts unchecked again for the next project, after a tick on the previous one (#684)', () => {
+    open(wireProject(), { projects: [wireProject({ id: 'p2', name: 'Crm', slug: 'Crm' })] });
+    fireEvent.click(screen.getByTestId('remove-project-delete-files'));
+    expect(screen.getByTestId<HTMLInputElement>('remove-project-delete-files').checked).toBe(true);
+
+    act(() => useUiStore.getState().requestRemoveProject(undefined));
+    act(() => useUiStore.getState().requestRemoveProject('p2'));
+    expect(screen.getByTestId<HTMLInputElement>('remove-project-delete-files').checked).toBe(false);
   });
 
   it('says a linked folder is left alone, and offers no choice about it', async () => {

@@ -451,6 +451,21 @@ five-minute timeout — and the browser is only ever opened at the URL the serve
 them in constant time; passwords are scrypt hashes. A token the server refuses marks the account
 signed out; nothing retries or re-prompts.
 
+## What the desktop reports to a server's audit log
+
+When a workspace bound to Wirebench Server has **Record desktop activity** on, main queues an event per
+request sent, per test-suite run and per terminal session that ends (SSH, Mosh, Telnet or serial) and
+sends them to the server as that account (`docs/specs/2026-10-03-wirebench-desktop-audit-events-design.md`,
+#355 for sessions). The events are a strict union the server validates, so a fire site names fields and
+can never spread a request, a response or a host's credentials into one. A session's event carries the
+host id, the address and port reached, the login name, the start and end times, why it ended and the
+exit code. The values the session signed in with (password, key, passphrase, security-key PIN) and the
+values its environment read from secrets are masked out of the address and login name with the same
+masker that hides them on the screen, and then the session's recorded secrets are masked again, before
+the event is written to the outbox. What was typed or shown never enters the audit log; a session log is
+a separate, per-host opt-in. The renderer cannot write an event: the SSH service in main reports the
+session when its channel closes, under the workspace that was open when it connected.
+
 ## A response body never gets to run
 
 The Query view evaluates an expression the user wrote against bytes a server returned, which makes

@@ -273,7 +273,10 @@ export interface UiStore extends UiSnapshot {
   readonly closeCode: () => void;
   /** Shows or hides Host details beside the SSH Hosts tab; remembered on this machine like the rest of the layout. */
   readonly setHostDetailsOpen: (open: boolean) => void;
+  /** Shows or hides Environment details beside an open environment; showing it puts the Projects panel away. */
   readonly setEnvironmentDetailsOpen: (open: boolean) => void;
+  /** Shows or hides the Projects panel (#393) beside an open environment; showing it puts Environment details away. */
+  readonly setEnvironmentProjectsOpen: (open: boolean) => void;
   readonly showSidebarView: (view: SidebarView) => void;
   /** Selects a sidebar view without the collapse-on-reselect behaviour of {@link showSidebarView}. */
   readonly setSidebarView: (view: SidebarView) => void;
@@ -600,6 +603,12 @@ export const useUiStore = create<UiStore>((set, get) => {
     setEnvironmentDetailsOpen: (open) =>
       update((draft) => {
         draft.slideOver.environmentDetailsOpen = open;
+        if (open) draft.slideOver.environmentProjectsOpen = false;
+      }),
+    setEnvironmentProjectsOpen: (open) =>
+      update((draft) => {
+        draft.slideOver.environmentProjectsOpen = open;
+        if (open) draft.slideOver.environmentDetailsOpen = false;
       }),
 
     showSidebarView: (view) =>

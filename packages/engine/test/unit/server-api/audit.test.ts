@@ -44,7 +44,7 @@ describe('audit wire shapes (audit-log spec §3.4, §5.2)', () => {
     }
     for (const action of AUDIT_ACTIONS) expect(action).toMatch(/^[a-z_]+\.[a-z_]+$/);
     expect(new Set(AUDIT_ACTIONS).size).toBe(AUDIT_ACTIONS.length);
-    expect(AUDIT_ACTIONS).toHaveLength(70);
+    expect(AUDIT_ACTIONS).toHaveLength(71);
   });
 
   it('parses an event and refuses an unknown action or a nested details value', () => {
@@ -104,14 +104,29 @@ describe('audit wire shapes (audit-log spec §3.4, §5.2)', () => {
       startedAt: '2026-10-03T09:00:00.000Z',
       sentAt: '2026-10-03T09:00:01.200Z',
     };
+    const SESSION = {
+      protocol: 'ssh',
+      hostId: 'web-1',
+      address: '10.0.0.1',
+      port: 22,
+      user: 'deploy',
+      exitCode: 0,
+      reason: 'exit',
+      durationMs: 65_000,
+      startedAt: '2026-10-03T09:00:00.000Z',
+      endedAt: '2026-10-03T09:01:05.000Z',
+      sentAt: '2026-10-03T09:01:05.000Z',
+    };
     const requestEvent = (details: object = SENT) => ({ action: 'desktop.request_sent', details });
     const runEvent = (details: object = RUN) => ({ action: 'desktop.run_finished', details });
+    const sessionEvent = (details: object = SESSION) => ({ action: 'desktop.ssh_session', details });
 
     it('adds the four actions and the desktop group, and names the limits', () => {
       for (const a of [
         'workspace.desktop_recording_changed',
         'desktop.request_sent',
         'desktop.run_finished',
+        'desktop.ssh_session',
         'desktop.events_dropped',
       ]) {
         expect(AUDIT_ACTIONS).toContain(a);
@@ -145,6 +160,32 @@ describe('audit wire shapes (audit-log spec §3.4, §5.2)', () => {
       expect(desktopAuditBatchSchema.safeParse({ events: [runEvent({ ...RUN, outcome: 'cancelled' })] }).success).toBe(
         true,
       );
+    });
+
+    it('parses an ssh-session event (#355): a serial line with no user, a lost one with no exit code', () => {
+      expect(desktopAuditBatchSchema.parse({ events: [sessionEvent()] }).events).toHaveLength(1);
+      expect(
+        desktopAuditBatchSchema.safeParse({
+          events: [sessionEvent({ ...SESSION, protocol: 'serial', address: '/dev/ttyUSB0', port: 0, user: '' })],
+        }).success,
+      ).toBe(true);
+      expect(
+        desktopAuditBatchSchema.safeParse({ events: [sessionEvent({ ...SESSION, exitCode: null, reason: 'lost' })] })
+          .success,
+      ).toBe(true);
+    });
+
+    it('refuses an ssh-session event that carries a credential-shaped key, a bad port or a bad reason', () => {
+      for (const details of [
+        { ...SESSION, password: 'x' },
+        { ...SESSION, privateKey: 'x' },
+        { ...SESSION, env: { TOKEN: 'x' } },
+        { ...SESSION, port: 65536 },
+        { ...SESSION, reason: 'killed' },
+        { ...SESSION, address: '' },
+      ]) {
+        expect(desktopAuditBatchSchema.safeParse({ events: [sessionEvent(details)] }).success).toBe(false);
+      }
     });
 
     it('refuses unknown keys, an oversized url, too many hosts, and an unknown action', () => {

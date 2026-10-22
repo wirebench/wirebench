@@ -1,15 +1,17 @@
 /**
- * The two events a desktop reports (desktop audit events spec §2.2) and the URL masking they share
- * (§2.3). Pure: the callers (`send/`, the sequence runner) hand over what happened and the clock.
- * Electron-free.
+ * The events a desktop reports (desktop audit events spec §2.2; #355 for terminal sessions) and the
+ * masking they share (§2.3). Pure: the callers (`send/`, the sequence runner, the SSH service) hand over
+ * what happened and the clock. Electron-free.
  */
 import { DESKTOP_AUDIT_LIMITS, isSensitiveQueryParam, redactUrl } from '@wirebench/engine';
 import type {
   DesktopAuditEvent,
   DesktopRequestSentDetails,
+  DesktopSshSessionDetails,
   SequenceOutcome,
   SequenceRunResult,
 } from '@wirebench/engine';
+import { createStreamMasker } from '@wirebench/ssh';
 import { redactSecretValues } from '../redact.js';
 
 const MARKER = /<redacted>|%3Credacted%3E/gi;
@@ -113,6 +115,59 @@ export function runFinishedEvent(
       environment,
       startedAt,
       sentAt: now.toISOString(),
+    },
+  };
+}
+
+/**
+ * What the SSH service knows of a session when it ends, without its credentials: the type forbids a
+ * password, key, passphrase or environment value, and the two free-text fields are masked below.
+ */
+export interface SshSessionInput {
+  readonly protocol: DesktopSshSessionDetails['protocol'];
+  readonly hostId: string;
+  /** The target's address (the last hop's, the Telnet device's, or the serial device's path). */
+  readonly address: string;
+  readonly port: number;
+  /** The login name; `''` for a serial line. */
+  readonly user: string;
+  /** The values the session signed in with or read into its environment: masked wherever they appear. */
+  readonly secrets: readonly string[];
+  readonly startedAt: Date;
+  readonly endedAt: Date;
+  /** `undefined` when the window closed the session, so the channel reported no exit. */
+  readonly exit: { readonly code: number | null; readonly reason: 'exit' | 'lost' | 'closed' } | undefined;
+}
+
+/**
+ * `text` with every secret of the session masked, as the terminal's own masker masks the screen, and
+ * then the session's recorded secrets (`redactSecretValues`): a host whose address or login name was
+ * read from a secret never shows it in the trail.
+ */
+function maskSessionText(text: string, secrets: readonly string[]): string {
+  const masker = createStreamMasker();
+  masker.add(secrets);
+  const bytes = Buffer.from(text, 'utf8');
+  const masked = Buffer.concat([masker.push(bytes), masker.flush()]).toString('utf8');
+  return redactSecretValues(masked);
+}
+
+export function sshSessionEvent(input: SshSessionInput): DesktopAuditEvent {
+  const address = maskSessionText(input.address, input.secrets).slice(0, DESKTOP_AUDIT_LIMITS.maxUrlLength);
+  return {
+    action: 'desktop.ssh_session',
+    details: {
+      protocol: input.protocol,
+      hostId: input.hostId.slice(0, 128),
+      address: address.length === 0 ? '-' : address,
+      port: Math.min(65535, Math.max(0, Math.round(input.port))),
+      user: maskSessionText(input.user, input.secrets).slice(0, 256),
+      exitCode: input.exit?.code ?? null,
+      reason: input.exit?.reason ?? 'closed',
+      durationMs: Math.max(0, input.endedAt.getTime() - input.startedAt.getTime()),
+      startedAt: input.startedAt.toISOString(),
+      endedAt: input.endedAt.toISOString(),
+      sentAt: input.endedAt.toISOString(),
     },
   };
 }

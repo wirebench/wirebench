@@ -28,7 +28,7 @@ edited and no route deletes one. The only way an event leaves is retention, belo
 | License      | A license installed or removed                                                                    |
 | Exports      | Each export of the audit log itself                                                               |
 | Verification | Each run of `admin audit verify`, with its result (see _Tamper evidence_)                         |
-| Desktop      | Requests sent and test-suite runs in a workspace that records them, and a gap in that trail       |
+| Desktop      | Requests sent, test-suite runs and terminal sessions in a workspace that records them, and a gap in that trail |
 | Session logs | A team session log started, each read of one, and its deletion                                    |
 | Shared terminals | A terminal shared, each join, control granted or returned, a viewer removed, and the end |
 
@@ -48,8 +48,8 @@ A change to its *Record SSH sessions* setting is recorded as `workspace.session_
 ## Desktop activity
 
 A team that has to show what was sent where, for example to a production host, can have the desktop app
-report each request and each test-suite run to the server. It is off for every workspace until a
-workspace admin turns it on.
+report each request, each test-suite run and each terminal session to the server. It is off for every
+workspace until a workspace admin turns it on.
 
 **What is recorded**, only for a workspace that is shared to the team server and has recording on:
 
@@ -60,6 +60,12 @@ workspace admin turns it on.
 - `desktop.run_finished`: one per test-suite run that ends, including a run the person stopped. It
   carries the suite's id and name (`sequenceName`), the outcome, the counts of passed, failed, errored and skipped steps,
   the duration, the environment, the hosts the steps reached (up to 64) and the start and send times.
+- `desktop.ssh_session`: one per terminal session that ends, whether the shell exited, the connection was
+  lost or the person closed the tab. It carries the protocol (`ssh`, `mosh`, `telnet` or `serial`), the
+  host's id in `hosts.yaml`, the address and port the session reached (the last hop of a jump chain, or the
+  serial device's path with port `0`), the login name (empty for a serial line), the exit code (`null` when
+  the shell reported none), why it ended (`exit`, `lost` or `closed`), the duration and the start and end
+  times on the person's machine. A one-off connection is recorded under the host id of its pane.
 - `desktop.events_dropped`: a count of events the app had to discard (see below), so a gap in the trail
   is itself on the record.
 
@@ -69,7 +75,13 @@ time on the person's machine stays in the details as `sentAt`.
 **Not recorded:** headers, bodies, responses, and anything else a request carries besides its URL.
 Steps of a test-suite run are not listed one by one, the run's event covers them. Sends that belong to
 no project in the workspace, local workspaces, folder or Git shares, and requests made by the command
-line or the MCP server are not recorded. Wirebench has no load runs.
+line or the MCP server are not recorded. Wirebench has no load runs. A terminal session's event never
+carries a password, a key, a passphrase, a security-key PIN or a value the host's environment read from
+a secret: the event holds only the fields listed above, and any such value that appears in the address
+or login name is masked before the event leaves the app. What was typed or shown in the session is not
+in the audit log either; that is a [session log](/wirebench/docs/guides/hosts-and-terminals/#team-session-logs),
+recorded separately. Local terminals (a shell on this machine) and Files (SFTP) tabs are not sessions
+and leave no event.
 
 **The URL is masked** before it leaves the app, whatever the show-secrets setting says. A password in
 the URL and the values of secret-like query parameters become `<redacted>`. Any secret value the app
@@ -83,8 +95,8 @@ Each desktop learns of a change on its next sync fetch. Turning it off stops it 
 Recording is on for every edition, like the rest of the log.
 
 **The notice.** While the open workspace records, the status bar shows **Recorded**. Its tooltip says
-that requests and test runs in this workspace are recorded in the team server's audit log, so nobody is
-recorded without knowing.
+that requests, test runs and terminal sessions in this workspace are recorded in the team server's audit
+log, so nobody is recorded without knowing.
 
 **Offline and signed out.** The app writes each event to a queue in the workspace's folder first, then
 sends the queue in batches of at most 100. If the server cannot be reached the app tries again later,

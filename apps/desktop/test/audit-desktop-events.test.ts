@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { desktopAuditEventSchema } from '@wirebench/engine';
 import type { SequenceRunResult, SequenceStepResult } from '@wirebench/engine';
-import { maskAuditUrl, requestSentEvent, runFinishedEvent } from '../src/main/audit/desktop-events.js';
+import { maskAuditUrl, requestSentEvent, runFinishedEvent, sshSessionEvent } from '../src/main/audit/desktop-events.js';
+import type { SshSessionInput } from '../src/main/audit/desktop-events.js';
 import { recordSecretValue } from '../src/main/redact.js';
 
 describe('maskAuditUrl', () => {
@@ -132,5 +133,107 @@ describe('runFinishedEvent', () => {
     const event = runFinishedEvent(many, many.startedAt, now, null, true);
     expect(event.action === 'desktop.run_finished' && event.details.outcome).toBe('cancelled');
     expect(event.action === 'desktop.run_finished' && event.details.hosts).toHaveLength(64);
+  });
+});
+
+describe('sshSessionEvent (#355)', () => {
+  const startedAt = new Date('2026-10-20T08:00:00.000Z');
+  const endedAt = new Date('2026-10-20T08:01:05.250Z');
+  const PASSWORD = 'hunter2-pw';
+  const PRIVATE_KEY = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk\n-----END OPENSSH PRIVATE KEY-----';
+  const PASSPHRASE = 'open-sesame';
+  const ENV_VALUE = 'tok_from_env_secret';
+  const base: SshSessionInput = {
+    protocol: 'ssh',
+    hostId: 'web-1',
+    address: '10.0.0.1',
+    port: 22,
+    user: 'deploy',
+    secrets: [PASSWORD, PRIVATE_KEY, PASSPHRASE, ENV_VALUE],
+    startedAt,
+    endedAt,
+    exit: { code: 0, reason: 'exit' },
+  };
+
+  it('builds a schema-valid event with where the session went and how it ended', () => {
+    const event = sshSessionEvent(base);
+    expect(desktopAuditEventSchema.safeParse(event).success).toBe(true);
+    expect(event).toEqual({
+      action: 'desktop.ssh_session',
+      details: {
+        protocol: 'ssh',
+        hostId: 'web-1',
+        address: '10.0.0.1',
+        port: 22,
+        user: 'deploy',
+        exitCode: 0,
+        reason: 'exit',
+        durationMs: 65_250,
+        startedAt: '2026-10-20T08:00:00.000Z',
+        endedAt: '2026-10-20T08:01:05.250Z',
+        sentAt: '2026-10-20T08:01:05.250Z',
+      },
+    });
+  });
+
+  it('carries no credential: the details hold only the named fields, whatever the input knows', () => {
+    const event = sshSessionEvent({ ...base, password: PASSWORD, privateKey: PRIVATE_KEY } as SshSessionInput);
+    expect(Object.keys(event.details).sort()).toEqual(
+      [
+        'address',
+        'durationMs',
+        'endedAt',
+        'exitCode',
+        'hostId',
+        'port',
+        'protocol',
+        'reason',
+        'sentAt',
+        'startedAt',
+        'user',
+      ].sort(),
+    );
+    const text = JSON.stringify(event);
+    for (const secret of [PASSWORD, PRIVATE_KEY, PASSPHRASE, ENV_VALUE]) expect(text).not.toContain(secret);
+  });
+
+  it('masks a session secret, or a recorded one, wherever the address or user shows it', () => {
+    recordSecretValue('rec0rded-value');
+    const event = sshSessionEvent({
+      ...base,
+      address: `${PASSWORD}.example`,
+      user: `deploy-${ENV_VALUE}-rec0rded-value`,
+    });
+    expect(desktopAuditEventSchema.safeParse(event).success).toBe(true);
+    const text = JSON.stringify(event);
+    expect(text).not.toContain(PASSWORD);
+    expect(text).not.toContain(ENV_VALUE);
+    expect(text).not.toContain('rec0rded-value');
+    expect(event.action === 'desktop.ssh_session' && event.details.address).toBe('••••.example');
+    expect(event.action === 'desktop.ssh_session' && event.details.user).toBe('deploy-••••-<redacted>');
+  });
+
+  it('reports a window-closed session with no exit code and reason closed, and a serial line with no user', () => {
+    const closed = sshSessionEvent({ ...base, exit: undefined });
+    expect(closed.action === 'desktop.ssh_session' && closed.details).toMatchObject({
+      exitCode: null,
+      reason: 'closed',
+    });
+    const lost = sshSessionEvent({ ...base, exit: { code: null, reason: 'lost' } });
+    expect(lost.action === 'desktop.ssh_session' && lost.details).toMatchObject({ exitCode: null, reason: 'lost' });
+    const serial = sshSessionEvent({ ...base, protocol: 'serial', address: '/dev/ttyUSB0', port: 0, user: '' });
+    expect(desktopAuditEventSchema.safeParse(serial).success).toBe(true);
+    expect(serial.action === 'desktop.ssh_session' && serial.details).toMatchObject({
+      protocol: 'serial',
+      address: '/dev/ttyUSB0',
+      port: 0,
+      user: '',
+    });
+  });
+
+  it('keeps the event valid when the clock ran backwards or the address masks to nothing', () => {
+    const event = sshSessionEvent({ ...base, address: PASSWORD, startedAt: endedAt, endedAt: startedAt });
+    expect(desktopAuditEventSchema.safeParse(event).success).toBe(true);
+    expect(event.action === 'desktop.ssh_session' && event.details).toMatchObject({ durationMs: 0, address: '••••' });
   });
 });
