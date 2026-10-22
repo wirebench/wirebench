@@ -26,6 +26,8 @@ All notable changes to this project are documented here. The format follows
   first, then **Import…**.
 - **Two projects of one name tell apart (#686).** When another project shares a project's name (in
   any case), its Explorer row shows its folder's name faint after the name.
+- **A short drag no longer snaps the sidebar shut (#686).** Dragging its edge inward stops at the
+  minimum width; the sidebar collapses only when the drag carries on well past it.
 - **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
   shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
   the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.
