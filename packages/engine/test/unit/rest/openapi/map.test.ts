@@ -446,3 +446,58 @@ describe('request names (#633)', () => {
     ).toEqual(['List pets', 'createPet', '/pets/{id}']);
   });
 });
+
+describe('array query parameters (G10)', () => {
+  /** The query rows the one operation of `parameters` imports with. */
+  function queryOf(parameters: readonly Record<string, unknown>[]) {
+    let next = 0;
+    const { api } = apiFromDocument(
+      parseOpenApiDocument({
+        openapi: '3.0.3',
+        info: { title: 'T', version: '1' },
+        paths: { '/pets': { get: { parameters, responses: { '200': { description: 'ok' } } } } },
+      }),
+      {
+        newId: () => {
+          next += 1;
+          return `id-${String(next)}`;
+        },
+      },
+    );
+    return (api.requests[0] ?? api.folders[0]?.requests[0])?.query;
+  }
+
+  it("fills a required array from its items' default, never as an empty tags=", () => {
+    expect(
+      queryOf([
+        {
+          name: 'status',
+          in: 'query',
+          required: true,
+          explode: true,
+          schema: { type: 'array', items: { type: 'string', enum: ['available', 'sold'], default: 'available' } },
+        },
+      ]),
+    ).toEqual([{ name: 'status', value: 'available', enabled: true }]);
+  });
+
+  it('repeats an exploded form parameter once per example item, and joins one that is not exploded', () => {
+    expect(
+      queryOf([
+        { name: 'tags', in: 'query', required: true, example: ['cats', 'dogs'], schema: { type: 'array' } },
+        { name: 'ids', in: 'query', explode: false, example: [1, 2], schema: { type: 'array' } },
+      ]),
+    ).toEqual([
+      { name: 'tags', value: 'cats', enabled: true },
+      { name: 'tags', value: 'dogs', enabled: true },
+      // Optional: present, but switched off until the user wants it.
+      { name: 'ids', value: '1,2', enabled: false },
+    ]);
+  });
+
+  it('keeps an optional parameter switched off, whatever its value', () => {
+    expect(queryOf([{ name: 'limit', in: 'query', schema: { type: 'integer', default: 20 } }])).toEqual([
+      { name: 'limit', value: '20', enabled: false },
+    ]);
+  });
+});

@@ -179,7 +179,37 @@ function parameterValue(parameter: OpenApiParameter, options: MapApiOptions): st
   return typeof sampled === 'object' && sampled !== null ? '' : cellText(sampled);
 }
 
-/** One row per parameter in `location`, in document order. */
+/** Whether `value` is one of JSON's plain values: a string, a number, a boolean. */
+function isPlain(value: JsonValue): value is string | number | boolean {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+}
+
+/**
+ * The cells a path or query parameter fills (G10). An array of plain values — the parameter's
+ * example, or its schema's sample — is written the way the document serialises it: a query
+ * parameter in the default `form` style with `explode` repeats its name, one row per item
+ * (`tags=a&tags=b`); any other style joins the items with commas (`a,b`). Everything else is
+ * {@link parameterValue}'s one cell. A required `tags` array so arrives as `tags=string`, not as
+ * the empty `tags=` it used to send.
+ */
+function parameterCells(parameter: OpenApiParameter, location: 'path' | 'query', options: MapApiOptions): string[] {
+  const stated = parameter.example ?? firstNamedExample(parameter.examples);
+  const value =
+    stated ??
+    (parameter.schema === undefined
+      ? undefined
+      : sampleFromSchema(parameter.schema, {
+          ...(options.sampleValues !== undefined ? { sampleValues: options.sampleValues } : {}),
+        }));
+  if (!Array.isArray(value) || value.length === 0 || !value.every(isPlain)) {
+    return [parameterValue(parameter, options)];
+  }
+  const items = value.map(cellText);
+  const repeats = location === 'query' && (parameter.style ?? 'form') === 'form' && parameter.explode !== false;
+  return repeats ? items : [items.join(',')];
+}
+
+/** One row per parameter in `location`, in document order; an exploded array query parameter gets one per item. */
 function parameterRows(
   operation: OpenApiOperation,
   location: 'path' | 'query' | 'header',
@@ -199,14 +229,18 @@ function parameterRows(
       });
       continue;
     }
-    rows.push(
-      entry(parameter.name, parameterValue(parameter, options), {
-        // A path parameter is always part of the URL; a query one only when the document requires
-        // it; a header one never, so an import never silently changes what goes on the wire.
-        enabled: location === 'path' || (location === 'query' && parameter.required === true),
-        ...(parameter.description !== undefined ? { description: parameter.description } : {}),
-      }),
-    );
+    const cells =
+      location === 'header' ? [parameterValue(parameter, options)] : parameterCells(parameter, location, options);
+    for (const cell of cells) {
+      rows.push(
+        entry(parameter.name, cell, {
+          // A path parameter is always part of the URL; a query one only when the document requires
+          // it; a header one never, so an import never silently changes what goes on the wire.
+          enabled: location === 'path' || (location === 'query' && parameter.required === true),
+          ...(parameter.description !== undefined ? { description: parameter.description } : {}),
+        }),
+      );
+    }
   }
   return rows;
 }

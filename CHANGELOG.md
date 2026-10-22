@@ -37,6 +37,11 @@ All notable changes to this project are documented here. The format follows
 - **Params tells path parameters and variables apart (#748).** An empty path table reads "No path
   parameters like {id} in this URL." instead of "No {placeholders}", and a **Variables in this URL**
   list names each `${…}` the URL uses, where it resolves and its value (masked for a secret).
+- **Imported array parameters carry their values (#748).** An OpenAPI query or path parameter that
+  takes an array now imports with its example, or its items' default or first enum value, instead of
+  an empty cell: a required `status` arrives as `status=available`, not `status=`. An exploded
+  form-style query parameter gets one row per item (`tags=a&tags=b`); other styles join the items with
+  commas. Optional parameters still arrive switched off.
 - **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
   shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
   the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.
