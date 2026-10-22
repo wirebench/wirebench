@@ -1,5 +1,5 @@
-import { containersOf, withContainersOf } from '../../src/project/model.js';
-import type { ContainerDir, ProtocolStorage } from '../../src/protocol/module.js';
+import { containersOf, withContainersOf } from '#core/project/model';
+import type { ContainerDir, ProtocolStorage } from '#core/protocol/module';
 
 /**
  * A storage facet for a test module that is not about storage: it loads nothing, writes nothing,

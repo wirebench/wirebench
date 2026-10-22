@@ -84,6 +84,29 @@ describe('packPackages', () => {
     expect(manifest.exports).not.toHaveProperty('./test-helpers');
   }, 120_000);
 
+  it('packs the engine with its core and protocol packages vendored, and the import maps pointing at them', async () => {
+    const outDir = await makeTempDir('wirebench-pack-check-');
+    const tarballs = await packPackages(outDir);
+
+    const extractDir = await makeTempDir('wirebench-pack-check-extract-');
+    tar(tarballs.engine, ['-xzf'], extractDir);
+    const manifest = JSON.parse(await readFile(join(extractDir, 'package', 'package.json'), 'utf-8')) as {
+      imports?: Record<string, string>;
+      dependencies?: Record<string, string>;
+    };
+    const entries = new Set(listTarballEntries(tarballs.engine));
+
+    for (const name of ['core', 'protocol-soap', 'protocol-rest', 'protocol-grpc', 'protocol-ws', 'protocol-mcp']) {
+      expect(manifest.imports?.[`#${name}/*`]).toBe(`./dist/vendor/${name}/*.js`);
+      expect(entries.has(`dist/vendor/${name}/index.js`), `${name} is vendored`).toBe(true);
+      expect(entries.has(`dist/vendor/${name}/index.d.ts`), `${name}'s declarations are vendored`).toBe(true);
+    }
+    for (const [name, version] of Object.entries(manifest.dependencies ?? {})) {
+      expect(version.startsWith('workspace:'), `${name} depends on ${version}`).toBe(false);
+      expect(name.startsWith('@wirebench/'), `${name} is vendored, not depended on`).toBe(false);
+    }
+  }, 120_000);
+
   it('packs a CLI manifest with no workspace: dependency versions', async () => {
     const outDir = await makeTempDir('wirebench-pack-check-');
     const tarballs = await packPackages(outDir);

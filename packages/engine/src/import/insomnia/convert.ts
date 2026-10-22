@@ -7,9 +7,9 @@
  */
 
 import { V21_SCHEMA } from '../collection-v3/convert.js';
-import type { ReportBuilder } from '../report.js';
-import type { DroppedLevel } from '../scripts.js';
-import { eventsOf } from '../scripts.js';
+import type { ReportBuilder } from '#core/import/report';
+import type { DroppedLevel } from '#core/import/scripts';
+import { eventsOf } from '#core/import/scripts';
 import type { InsBody, InsFolder, InsHttp, InsNode, InsOtherSetting, InsRec, InsRow, InsWorkspace } from './model.js';
 
 type Json = Record<string, unknown>;

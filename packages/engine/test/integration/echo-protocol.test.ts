@@ -8,20 +8,20 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { loadProject } from '../../src/project/load.js';
-import { createProject, unsupportedOf } from '../../src/project/model.js';
-import type { Project } from '../../src/project/model.js';
-import { saveProject } from '../../src/project/save.js';
-import { createProtocolRegistry } from '../../src/protocol/registry.js';
+import { loadProject } from '#core/project/load';
+import { createProject, unsupportedOf } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { saveProject } from '#core/project/save';
+import { createProtocolRegistry } from '#core/protocol/registry';
 import { BUILTIN_PROTOCOLS, SCRIPTS_FEATURE } from '../../src/protocols.js';
-import { createApi, createRestRequest } from '../../src/rest/model.js';
-import type { RunContext } from '../../src/run/context.js';
-import { runRequests } from '../../src/run/run.js';
-import { secretNeedsOf } from '../../src/run/secret-needs.js';
-import { findStepRequest, selectRequests } from '../../src/run/select.js';
-import { createScriptChecker } from '../../src/script/check/host.js';
-import { RequestScripting } from '../../src/script/request-scripts.js';
-import { createScriptSandbox } from '../../src/script/sandbox/host.js';
+import { createApi, createRestRequest } from '#protocol-rest/rest/model';
+import type { RunContext } from '#core/run/context';
+import { runRequests } from '#core/run/run';
+import { secretNeedsOf } from '#core/run/secret-needs';
+import { findStepRequest, selectRequests } from '#core/run/select';
+import { createScriptChecker } from '#core/script/check/host';
+import { RequestScripting } from '#core/script/request-scripts';
+import { createScriptSandbox } from '#core/script/sandbox/host';
 import {
   echoApi,
   echoNotesOf,

@@ -1,6 +1,6 @@
 import { createCipheriv, diffieHellman, generateKeyPairSync, hkdfSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { WirebenchError } from '../../../src/errors.js';
+import { WirebenchError } from '#core/errors';
 import {
   decryptValue,
   encryptValue,
@@ -8,8 +8,8 @@ import {
   unwrapDataKey,
   WRAP_INFO,
   wrapDataKey,
-} from '../../../src/team-secrets/envelope.js';
-import { TEAM_SECRETS_MESSAGES, teamSecretsError } from '../../../src/team-secrets/errors.js';
+} from '#core/team-secrets/envelope';
+import { TEAM_SECRETS_MESSAGES, teamSecretsError } from '#core/team-secrets/errors';
 import {
   base32,
   base64url,
@@ -21,8 +21,8 @@ import {
   keyIdOf,
   parseMachineKeys,
   serializeMachineKeys,
-} from '../../../src/team-secrets/keys.js';
-import { canonicalJson, signDocument, verifyDocument } from '../../../src/team-secrets/sign.js';
+} from '#core/team-secrets/keys';
+import { canonicalJson, signDocument, verifyDocument } from '#core/team-secrets/sign';
 
 describe('machine keys (team secrets §2, §4)', () => {
   it('encodes base32 as RFC 4648 without padding', () => {

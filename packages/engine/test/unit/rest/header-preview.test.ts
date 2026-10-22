@@ -3,10 +3,10 @@
  * merges, plus the transport's own headers and a credential's handshake.
  */
 import { describe, expect, it } from 'vitest';
-import { CookieJar, jarCookieHost } from '../../../src/rest/cookie-jar.js';
-import { previewRestHeaders } from '../../../src/rest/header-preview.js';
-import { entry } from '../../../src/rest/model.js';
-import type { RestSendInput } from '../../../src/rest/send.js';
+import { CookieJar, jarCookieHost } from '#protocol-rest/rest/cookie-jar';
+import { previewRestHeaders } from '#protocol-rest/rest/header-preview';
+import { entry } from '#protocol-rest/rest/model';
+import type { RestSendInput } from '#protocol-rest/rest/send';
 
 type Overrides = Omit<Partial<RestSendInput>, 'request'> & { readonly request?: Partial<RestSendInput['request']> };
 

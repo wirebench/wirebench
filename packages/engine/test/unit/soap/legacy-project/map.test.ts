@@ -2,16 +2,16 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { importWsdl } from '../../../../src/soap/import.js';
-import { definitionRootOf, fetchDocumentFromCache } from '../../../../src/soap/legacy-project/definition-fetcher.js';
-import type { LegacyMapContext, ResolvedLegacyInterface } from '../../../../src/soap/legacy-project/map.js';
+import { importWsdl } from '#protocol-soap/soap/import';
+import { definitionRootOf, fetchDocumentFromCache } from '#protocol-soap/soap/legacy-project/definition-fetcher';
+import type { LegacyMapContext, ResolvedLegacyInterface } from '#protocol-soap/soap/legacy-project/map';
 import {
   formatLegacyImportReport,
   mapLegacyProject,
   resolvedOperationsOf,
-} from '../../../../src/soap/legacy-project/map.js';
-import type { LegacyProject } from '../../../../src/soap/legacy-project/model.js';
-import { parseLegacyProject } from '../../../../src/soap/legacy-project/parse.js';
+} from '#protocol-soap/soap/legacy-project/map';
+import type { LegacyProject } from '#protocol-soap/soap/legacy-project/model';
+import { parseLegacyProject } from '#protocol-soap/soap/legacy-project/parse';
 
 const FIXTURES = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../../fixtures/legacy-soap-project');
 const parsed = (name: string): LegacyProject => parseLegacyProject(readFileSync(resolve(FIXTURES, name), 'utf8'));

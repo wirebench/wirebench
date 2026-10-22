@@ -3,11 +3,11 @@
  * with `script-unsupported`, and the importer's scan names the same calls.
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import { runControlCalls, unsupportedCalls } from '../../../src/import/scripts.js';
-import type { RestRequestSnapshot, RestResponseSnapshot } from '../../../src/rest/scripting.js';
-import type { ScriptOutcome } from '../../../src/script/model.js';
-import { runScript } from '../../../src/script/run.js';
-import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
+import { runControlCalls, unsupportedCalls } from '#core/import/scripts';
+import type { RestRequestSnapshot, RestResponseSnapshot } from '#protocol-rest/rest/scripting';
+import type { ScriptOutcome } from '#core/script/model';
+import { runScript } from '#core/script/run';
+import { createScriptSandbox } from '#core/script/sandbox/host';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';
 

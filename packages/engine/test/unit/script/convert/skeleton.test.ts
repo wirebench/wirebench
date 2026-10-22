@@ -5,17 +5,13 @@
  */
 import { createContext, runInContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { unsupportedCall, UNSUPPORTED_CALLS } from '../../../../src/import/scripts.js';
-import { SCRIPT_LAYERS } from '../../../../src/script/api/layers.js';
-import {
-  PART_UNSUPPORTED,
-  UNSUPPORTED_DEFAULT_REASON,
-  UNSUPPORTED_WHY,
-} from '../../../../src/script/api/layer-parts.js';
-import { convertLevelScripts, convertScript } from '../../../../src/script/convert/index.js';
-import type { Matcher } from '../../../../src/script/convert/roots.js';
-import { TOP_LEVEL_IMPORT_REASON } from '../../../../src/script/module-syntax.js';
-import { typescript } from '../../../../src/script/convert/typescript.js';
+import { unsupportedCall, UNSUPPORTED_CALLS } from '#core/import/scripts';
+import { SCRIPT_LAYERS } from '#core/script/api/layers';
+import { PART_UNSUPPORTED, UNSUPPORTED_DEFAULT_REASON, UNSUPPORTED_WHY } from '#core/script/api/layer-parts';
+import { convertLevelScripts, convertScript } from '#core/script/convert/index';
+import type { Matcher } from '#core/script/convert/roots';
+import { TOP_LEVEL_IMPORT_REASON } from '#core/script/module-syntax';
+import { typescript } from '#core/script/convert/typescript';
 
 const header = (dialect: string, path: string): string =>
   `// Converted from a ${dialect} script; the original is in ${path}.`;

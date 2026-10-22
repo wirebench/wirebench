@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { WsFrame } from '../../../src/ws/model.js';
-import { capFrames } from '../../../src/ws/transcript.js';
+import type { WsFrame } from '#protocol-ws/ws/model';
+import { capFrames } from '#protocol-ws/ws/transcript';
 
 const text = (index: number, size = 10): WsFrame => ({
   index,

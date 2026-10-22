@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { PostmanError } from '../../../../src/errors.js';
+import { PostmanError } from '#core/errors';
 import {
   isPostmanCollection,
   normalizePostmanPath,
   parsePostmanCollectionText,
   translatePostmanVariables,
-} from '../../../../src/rest/postman/parse.js';
+} from '#protocol-rest/rest/postman/parse';
 
 describe('Postman parse and normalization', () => {
   describe('translatePostmanVariables', () => {

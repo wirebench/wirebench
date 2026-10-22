@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EventQueue } from '../../../src/run/event-queue.js';
+import { EventQueue } from '#core/run/event-queue';
 
 describe('EventQueue', () => {
   it('yields what was pushed before and after iteration starts, then ends', async () => {

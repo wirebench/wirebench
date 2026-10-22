@@ -302,7 +302,8 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @wirebench/engine --filter @wirebench/cli build
+      # `...` builds what the engine vendors (`packages/core`, `packages/protocol-*`) before its prepack copies them in.
+      - run: pnpm --filter @wirebench/engine... --filter @wirebench/cli... build
 
       - name: Pack and check the tarballs (rehearsal)
         if: github.event_name == 'workflow_dispatch'

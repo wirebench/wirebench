@@ -5,16 +5,16 @@
  * cannot hold is reported by that format.
  */
 
-import type { Assertion, StatusAssertion } from '../assert/model.js';
-import { ExportError } from '../errors.js';
-import { isCredentialName } from '../import/credentials.js';
-import { blankIfLiteral, blankUrlCredentials } from '../import/credential-values.js';
-import { referencesOnly } from '../import/values.js';
-import type { GrpcApi, GrpcFolder, GrpcMethodKind, GrpcRequestDef } from '../grpc/model.js';
-import type { KeyValueEntry } from '../http/entries.js';
-import type { AuthConfig, Project, PropertyMap, SoapOwnerAuth } from '../project/model.js';
-import { protocolDataOf } from '../project/model.js';
-import type { Interface, SoapRequestDef } from '../soap/model.js';
+import type { Assertion, StatusAssertion } from '#core/assert/model';
+import { ExportError } from '#core/errors';
+import { isCredentialName } from '#core/import/credentials';
+import { blankIfLiteral, blankUrlCredentials } from '#core/import/credential-values';
+import { referencesOnly } from '#core/import/values';
+import type { GrpcApi, GrpcFolder, GrpcMethodKind, GrpcRequestDef } from '#protocol-grpc/grpc/model';
+import type { KeyValueEntry } from '#core/http/entries';
+import type { AuthConfig, Project, PropertyMap, SoapOwnerAuth } from '#core/project/model';
+import { protocolDataOf } from '#core/project/model';
+import type { Interface, SoapRequestDef } from '#protocol-soap/soap/model';
 import type {
   MultipartFormPart,
   RestApi,
@@ -22,16 +22,16 @@ import type {
   RestFolder,
   RestRequestDef,
   RestResponseExample,
-} from '../rest/model.js';
-import { exampleBodyExtension, restApisOf } from '../rest/model.js';
-import { joinBase, splitQueryKeepingReferences } from '../rest/url.js';
-import type { RequestScripts, ScriptApi } from '../script/model.js';
-import type { WsApi, WsFolder, WsRequestDef } from '../ws/model.js';
+} from '#protocol-rest/rest/model';
+import { exampleBodyExtension, restApisOf } from '#protocol-rest/rest/model';
+import { joinBase, splitQueryKeepingReferences } from '#protocol-rest/rest/url';
+import type { RequestScripts, ScriptApi } from '#core/script/model';
+import type { WsApi, WsFolder, WsRequestDef } from '#protocol-ws/ws/model';
 import type { CollectionExportEnvironment, CollectionExportInput } from './model.js';
 import { colonPath, ExportContext, isSecretOnly } from './shared.js';
-import { soapInterfacesOf } from '../soap/model.js';
-import { grpcApisOf } from '../grpc/model.js';
-import { wsApisOf } from '../ws/model.js';
+import { soapInterfacesOf } from '#protocol-soap/soap/model';
+import { grpcApisOf } from '#protocol-grpc/grpc/model';
+import { wsApisOf } from '#protocol-ws/ws/model';
 
 export interface XVariable {
   readonly name: string;
@@ -49,7 +49,7 @@ export interface XEnvironment {
 export type XBody = RestBody;
 
 /** A GraphQL body as the JSON it is sent as, its variables as written: for an exporter with no GraphQL body of its own. */
-export { lowerGraphqlBodyText } from '../rest/graphql/body.js';
+export { lowerGraphqlBodyText } from '#protocol-rest/rest/graphql/body';
 
 /** A recorded response, with the kind its body is by its content type. */
 export type XExample = RestResponseExample & { readonly bodyKind: 'json' | 'xml' | 'html' | 'text' };

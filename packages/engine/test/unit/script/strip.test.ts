@@ -3,7 +3,7 @@
  * fixture is pinned: a change in how Node strips shows up here, not in a user's script.
  */
 import { describe, expect, it } from 'vitest';
-import { StripError, stripTypes } from '../../../src/script/strip.js';
+import { StripError, stripTypes } from '#core/script/strip';
 
 describe('stripTypes', () => {
   it('erases types in place', () => {

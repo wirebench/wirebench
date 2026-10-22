@@ -7,9 +7,9 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { createMock, createMockOperation, createMockResponse } from '../../../src/mock/model.js';
-import type { MockResponse } from '../../../src/mock/model.js';
-import { checkMockStubs } from '../../../src/mock/stub-check.js';
+import { createMock, createMockOperation, createMockResponse } from '#core/mock/model';
+import type { MockResponse } from '#core/mock/model';
+import { checkMockStubs } from '#core/mock/stub-check';
 import { tempProjectDir } from '../project/fixture.js';
 import { mockProject, wsdlFixture } from './fixture.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).

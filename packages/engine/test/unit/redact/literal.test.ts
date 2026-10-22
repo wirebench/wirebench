@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { createSecretMasker } from '../../../src/redact/literal.js';
-import { diffSnapshot } from '../../../src/snapshot/diff.js';
-import { truncateValue } from '../../../src/snapshot/format.js';
+import { createSecretMasker } from '#core/redact/literal';
+import { diffSnapshot } from '#core/snapshot/diff';
+import { truncateValue } from '#core/snapshot/format';
 
 describe('createSecretMasker', () => {
   it('masks every occurrence of every value', () => {

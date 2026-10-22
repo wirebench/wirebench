@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { parseWsdl } from '../../../src/wsdl/parse-wsdl.js';
-import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
-import { findPortType } from '../../../src/wsdl/model.js';
-import type { Binding, WsdlDefinition } from '../../../src/wsdl/model.js';
-import { defaultAction, detectWsaDefaults, summarizeWsa, wsaActionKey } from '../../../src/wsa/policy-detect.js';
+import { parseWsdl } from '#protocol-soap/wsdl/parse-wsdl';
+import { createDefaultFetchDocument } from '#core/http/fetch-document';
+import { findPortType } from '#protocol-soap/wsdl/model';
+import type { Binding, WsdlDefinition } from '#protocol-soap/wsdl/model';
+import { defaultAction, detectWsaDefaults, summarizeWsa, wsaActionKey } from '#protocol-soap/wsa/policy-detect';
 
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 const location = `${repoRoot}fixtures/wsdl/crafted/ws-addressing/service.wsdl`;

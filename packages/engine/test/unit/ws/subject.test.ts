@@ -4,8 +4,8 @@
  * or sent frame.
  */
 import { describe, expect, it } from 'vitest';
-import { wsSubject } from '../../../src/ws/run.js';
-import type { WsExchange } from '../../../src/ws/model.js';
+import { wsSubject } from '#protocol-ws/ws/run';
+import type { WsExchange } from '#protocol-ws/ws/model';
 
 function exchange(frames: readonly object[], refused = false): WsExchange {
   return {

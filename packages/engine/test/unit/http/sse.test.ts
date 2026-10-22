@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  createSseParser,
-  eventStreamDocument,
-  isEventStream,
-  serializeEventStream,
-  type SseRow,
-} from '../../../src/http/sse.js';
+import { createSseParser, eventStreamDocument, isEventStream, serializeEventStream, type SseRow } from '#core/http/sse';
 
 const enc = new TextEncoder();
 function parse(...chunks: (string | Uint8Array)[]): SseRow[] {

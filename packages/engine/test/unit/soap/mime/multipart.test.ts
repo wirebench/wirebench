@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { MultipartPart } from '../../../../src/soap/mime/types.js';
-import { buildMultipartRelated, mimeParameter, parseMultipartRelated } from '../../../../src/soap/mime/multipart.js';
+import type { MultipartPart } from '#protocol-soap/soap/mime/types';
+import { buildMultipartRelated, mimeParameter, parseMultipartRelated } from '#protocol-soap/soap/mime/multipart';
 
 const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
 const text = (bytes: Uint8Array): string => Buffer.from(bytes).toString('utf-8');

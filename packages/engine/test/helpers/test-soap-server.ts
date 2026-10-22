@@ -4,7 +4,7 @@ import { createServer as createHttpsServer } from 'node:https';
 import type { Socket } from 'node:net';
 import { createSecureServer as createSecureHttp2Server } from 'node:http2';
 import { createSecureContext, type SecureContext, type TLSSocket } from 'node:tls';
-import { buildMultipartRelated, mediaTypeOf, parseMultipartRelated } from '../../src/soap/mime/multipart.js';
+import { buildMultipartRelated, mediaTypeOf, parseMultipartRelated } from '#protocol-soap/soap/mime/multipart';
 import { readFixtureWsdl } from './fixtures.js';
 import { createNtlmAuthenticator } from './ntlm-server.js';
 import { secureResponse, type TestWssMode, type TestWssOptions } from './wss-responses.js';

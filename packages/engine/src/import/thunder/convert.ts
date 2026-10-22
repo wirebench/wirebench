@@ -7,25 +7,25 @@
  * switched off by the mapper. Pure.
  */
 
-import type { Assertion } from '../../assert/model.js';
-import { ThunderError } from '../../errors.js';
-import type { IdGenerator } from '../../project/model.js';
-import { generateId } from '../../project/model.js';
-import { slugify } from '../../project/paths.js';
-import type { RestApi, RestFolder, RestRequestDef } from '../../rest/model.js';
-import { folderRequests } from '../../rest/model.js';
-import { apiFromPostmanCollection } from '../../rest/postman/map.js';
-import { MAX_POSTMAN_DEPTH, parsePostmanCollection } from '../../rest/postman/parse.js';
+import type { Assertion } from '#core/assert/model';
+import { ThunderError } from '#core/errors';
+import type { IdGenerator } from '#core/project/model';
+import { generateId } from '#core/project/model';
+import { slugify } from '#core/project/paths';
+import type { RestApi, RestFolder, RestRequestDef } from '#protocol-rest/rest/model';
+import { folderRequests } from '#protocol-rest/rest/model';
+import { apiFromPostmanCollection } from '#protocol-rest/rest/postman/map';
+import { MAX_POSTMAN_DEPTH, parsePostmanCollection } from '#protocol-rest/rest/postman/parse';
 import type { MappedClientEntry, MappedClientImport } from '../client-import.js';
 import { V21_SCHEMA } from '../collection-v3/convert.js';
-import type { ImportReport } from '../report.js';
-import { ReportBuilder } from '../report.js';
-import type { DroppedLevel, ImportedScriptFile } from '../scripts.js';
-import { droppedApiScriptFiles, eventsOf } from '../scripts.js';
-import { thunderTemplates, unshieldTemplates } from '../template-dialects.js';
-import { rewriteMustache } from '../templates.js';
-import type { ImportedVariable, ImportedVariableSet } from '../variables.js';
-import { credentialSafeVariable, VariableSetBuilder, warnCredentialLookingNames } from '../variables.js';
+import type { ImportReport } from '#core/import/report';
+import { ReportBuilder } from '#core/import/report';
+import type { DroppedLevel, ImportedScriptFile } from '#core/import/scripts';
+import { droppedApiScriptFiles, eventsOf } from '#core/import/scripts';
+import { thunderTemplates, unshieldTemplates } from '#core/import/template-dialects';
+import { rewriteMustache } from '#core/import/templates';
+import type { ImportedVariable, ImportedVariableSet } from '#core/import/variables';
+import { credentialSafeVariable, VariableSetBuilder, warnCredentialLookingNames } from '#core/import/variables';
 import { lines, tests as readTests } from './parse.js';
 import type { TcCollection, TcEnvironment, TcExport, TcFolder, TcRec, TcRequest, TcRow, TcTest } from './model.js';
 import { assertionOfThunderTest, describeThunderTest } from './tests.js';

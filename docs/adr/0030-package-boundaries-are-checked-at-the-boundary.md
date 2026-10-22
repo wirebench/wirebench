@@ -90,9 +90,10 @@ erased base types and never reads a union member, so in a compile of core alone 
   or a wrapper per entry point in `engine`) costs every host a changed type to buy nothing.
 - The engine's tests stay in `packages/engine/test` and import the packages; a package has no
   tests of its own yet. Moving them is a follow-up, not a condition of this phase.
-- Whether the six packages publish or are vendored into `engine` at prepack (the `@wirebench/ssh`
-  route, #460) is the owner's choice, recorded in the spec §6.4 when made. Either way
-  `@wirebench/engine` is what hosts install.
+- The six packages are vendored into `engine` at prepack (the `@wirebench/ssh` route, #460), the
+  owner's choice recorded in the spec §6.4: they stay private, `engine` lists their third-party
+  dependencies as its own, and `@wirebench/engine` is what hosts install, one tarball as before. A
+  host cannot compose its own engine from npm; phase 7 can publish them if it wants that.
 
 ## Alternatives considered
 

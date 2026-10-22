@@ -5,7 +5,7 @@ import {
   parseSecretSource,
   parseSecretSources,
   serializeSecretSources,
-} from '../../../../src/secrets/sources/parse.js';
+} from '#core/secrets/sources/parse';
 
 describe('parseSecretSource', () => {
   it('accepts each kind with its required fields', () => {

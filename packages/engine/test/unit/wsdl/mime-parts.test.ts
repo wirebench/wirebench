@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { findBinding } from '../../../src/wsdl/model.js';
-import { parseWsdlDocument } from '../../../src/wsdl/parse-wsdl.js';
-import { parseXml } from '../../../src/xml/parse.js';
-import { summarizeSoapOperations } from '../../../src/soap/operations.js';
-import type { WsdlDefinition } from '../../../src/wsdl/model.js';
+import { findBinding } from '#protocol-soap/wsdl/model';
+import { parseWsdlDocument } from '#protocol-soap/wsdl/parse-wsdl';
+import { parseXml } from '#core/xml/parse';
+import { summarizeSoapOperations } from '#protocol-soap/soap/operations';
+import type { WsdlDefinition } from '#protocol-soap/wsdl/model';
 
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 

@@ -5,7 +5,7 @@
 import diagnosticsChannel from 'node:diagnostics_channel';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ProxyAgent, WebSocket, type ErrorEvent } from 'undici';
-import { createDispatcher, proxyAgentOptionsFor } from '../../../src/http/client.js';
+import { createDispatcher, proxyAgentOptionsFor } from '#core/http/client';
 import { generateClientCert, generateServerCert, generateTestCa } from '../../helpers/test-certs.js';
 import { startTestProxy, type TestProxy } from '../../helpers/test-proxy.js';
 import { startTestWsServer, type TestWsServer } from '../../helpers/test-ws-server.js';

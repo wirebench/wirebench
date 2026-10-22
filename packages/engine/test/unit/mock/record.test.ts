@@ -7,17 +7,17 @@ import { createServer, request as httpRequest } from 'node:http';
 import type { IncomingHttpHeaders, Server } from 'node:http';
 import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
-import { isWirebenchError } from '../../../src/errors.js';
-import type { MockContract, MockReply, ProtocolMocking } from '../../../src/mock/contract.js';
-import { MOCK_LIMITS, createMock } from '../../../src/mock/model.js';
-import type { MockDef } from '../../../src/mock/model.js';
-import { startRecorder } from '../../../src/mock/record.js';
-import type { RecordExchangeEvent, RunningRecorder, StartRecorderInput } from '../../../src/mock/record.js';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { createProtocolRegistry } from '../../../src/protocol/registry.js';
-import { createApi } from '../../../src/rest/model.js';
-import { restProtocol } from '../../../src/rest/module.js';
+import { isWirebenchError } from '#core/errors';
+import type { MockContract, MockReply, ProtocolMocking } from '#core/mock/contract';
+import { MOCK_LIMITS, createMock } from '#core/mock/model';
+import type { MockDef } from '#core/mock/model';
+import { startRecorder } from '#core/mock/record';
+import type { RecordExchangeEvent, RunningRecorder, StartRecorderInput } from '#core/mock/record';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { createProtocolRegistry } from '#core/protocol/registry';
+import { createApi } from '#protocol-rest/rest/model';
+import { restProtocol } from '#protocol-rest/rest/module';
 
 const plain = (status: number, body: string): MockReply => ({
   status,

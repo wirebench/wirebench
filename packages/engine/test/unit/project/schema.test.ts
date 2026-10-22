@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ProjectError } from '../../../src/errors.js';
+import { ProjectError } from '#core/errors';
 import {
   environmentFileSchema,
   keystoresFileSchema,
@@ -7,14 +7,14 @@ import {
   parseFile,
   wssIncomingFileSchema,
   wssOutgoingFileSchema,
-} from '../../../src/project/schema.js';
-import { apiFileSchema } from '../../../src/rest/files.js';
-import { interfaceFileSchema, requestFileSchema } from '../../../src/soap/files.js';
-import { wsApiFileSchema } from '../../../src/ws/files.js';
-import { migrate } from '../../../src/project/migrate.js';
-import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION, createProject, generateId } from '../../../src/project/model.js';
-import { DEFAULT_REQUEST_PROPERTIES, createInterface, createRequest } from '../../../src/soap/model.js';
-import { stringifyYaml, parseYaml } from '../../../src/project/yaml.js';
+} from '#core/project/schema';
+import { apiFileSchema } from '#protocol-rest/rest/files';
+import { interfaceFileSchema, requestFileSchema } from '#protocol-soap/soap/files';
+import { wsApiFileSchema } from '#protocol-ws/ws/files';
+import { migrate } from '#core/project/migrate';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION, createProject, generateId } from '#core/project/model';
+import { DEFAULT_REQUEST_PROPERTIES, createInterface, createRequest } from '#protocol-soap/soap/model';
+import { stringifyYaml, parseYaml } from '#core/project/yaml';
 
 const validManifest = {
   formatVersion: FORMAT_VERSION,

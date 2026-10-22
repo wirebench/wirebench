@@ -5,7 +5,7 @@ import {
   createWsSavedMessage,
   wsApiRequests,
   wsMessageFileName,
-} from '../../../src/ws/model.js';
+} from '#protocol-ws/ws/model';
 
 describe('ws model', () => {
   it('creates a request with inherited auth and nothing saved', () => {

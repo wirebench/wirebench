@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ProjectError } from '../../../src/errors.js';
+import { ProjectError } from '#core/errors';
 import {
   assertPathSegment,
   assertWssRelativePath,
@@ -15,7 +15,7 @@ import {
   SlugSet,
   uniqueSlug,
   wssFile,
-} from '../../../src/project/paths.js';
+} from '#core/project/paths';
 
 describe('slugify', () => {
   it('keeps display-name case and safe characters', () => {

@@ -3,11 +3,11 @@
  * each dialect and protocol, the TODO in the phase a row does not cover, and the calls left as TODOs.
  */
 import { describe, expect, it } from 'vitest';
-import { PART_VARIABLES, UNSUPPORTED_WHY } from '../../../../src/script/api/layer-parts.js';
-import { SKIP_REQUEST_PRE_ONLY } from '../../../../src/script/api/prelude.js';
-import { convertLevelScripts, convertScript } from '../../../../src/script/convert/index.js';
-import type { ConvertProtocol } from '../../../../src/script/convert/roots.js';
-import type { LayeredApi, ScriptPhase } from '../../../../src/script/model.js';
+import { PART_VARIABLES, UNSUPPORTED_WHY } from '#core/script/api/layer-parts';
+import { SKIP_REQUEST_PRE_ONLY } from '#core/script/api/prelude';
+import { convertLevelScripts, convertScript } from '#core/script/convert/index';
+import type { ConvertProtocol } from '#core/script/convert/roots';
+import type { LayeredApi, ScriptPhase } from '#core/script/model';
 
 const PROTOCOLS: readonly ConvertProtocol[] = ['rest', 'soap', 'grpc', 'mcp'];
 

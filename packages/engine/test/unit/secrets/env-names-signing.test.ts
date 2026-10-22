@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { envVariablesFor, SIGNING_PSEUDO_REF_PREFIX } from '../../../src/secrets/env-names.js';
-import { effectiveSigning, signingSecretMissing, signingSecretRef } from '../../../src/webhooks/model.js';
+import { envVariablesFor, SIGNING_PSEUDO_REF_PREFIX } from '#core/secrets/env-names';
+import { effectiveSigning, signingSecretMissing, signingSecretRef } from '#protocol-rest/webhooks/model';
 import { createRestRequest, createWebhookCollection } from '../../../src/index.js';
 
 describe('the CI variable for a signing secret (§5.2)', () => {

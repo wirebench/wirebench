@@ -2,14 +2,14 @@ import { mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { InsomniaError } from '../../../../src/errors.js';
+import { InsomniaError } from '#core/errors';
 import type { MappedClientImport } from '../../../../src/import/client-import.js';
 import { flattenEnvironment, mapInsomnia } from '../../../../src/import/insomnia/map.js';
 import { importInsomnia } from '../../../../src/import/insomnia/import.js';
 import { MAX_INSOMNIA_BYTES } from '../../../../src/import/insomnia/model.js';
 import { parseInsomnia } from '../../../../src/import/insomnia/parse.js';
-import type { RestRequestDef } from '../../../../src/rest/model.js';
-import { apiRequests } from '../../../../src/rest/model.js';
+import type { RestRequestDef } from '#protocol-rest/rest/model';
+import { apiRequests } from '#protocol-rest/rest/model';
 import { insomniaFixture } from './fixtures.js';
 
 function mapText(text: string): MappedClientImport {

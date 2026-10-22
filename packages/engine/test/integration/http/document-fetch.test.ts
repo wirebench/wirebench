@@ -12,10 +12,10 @@ import { join } from 'node:path';
 import { rootCertificates } from 'node:tls';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { HttpError } from '../../../src/errors.js';
-import { createHttpFetchDocument } from '../../../src/http/document-fetch.js';
-import { parseOpenApi } from '../../../src/rest/openapi/import.js';
-import type { SendAuth } from '../../../src/http/auth/send-auth.js';
+import { HttpError } from '#core/errors';
+import { createHttpFetchDocument } from '#core/http/document-fetch';
+import { parseOpenApi } from '#protocol-rest/rest/openapi/import';
+import type { SendAuth } from '#core/http/auth/send-auth';
 import { generateServerCert, generateTestCa, type TestCertificate } from '../../helpers/test-certs.js';
 import { startTestProxy, type TestProxy } from '../../helpers/test-proxy.js';
 import {

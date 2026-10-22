@@ -11,15 +11,15 @@
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ProjectError } from '../../../src/errors.js';
-import { loadProject } from '../../../src/project/load.js';
-import { createProject } from '../../../src/project/model.js';
-import { APIS_DIR, MAX_FOLDER_DEPTH } from '../../../src/project/paths.js';
-import { saveProject } from '../../../src/project/save.js';
-import { projectFiles } from '../../../src/project/serialize.js';
-import { createApi, createFolder, createRestRequest, entry, restApisOf } from '../../../src/rest/model.js';
-import type { DefinitionAuth, Project } from '../../../src/project/model.js';
-import type { RestApi } from '../../../src/rest/model.js';
+import { ProjectError } from '#core/errors';
+import { loadProject } from '#core/project/load';
+import { createProject } from '#core/project/model';
+import { APIS_DIR, MAX_FOLDER_DEPTH } from '#core/project/paths';
+import { saveProject } from '#core/project/save';
+import { projectFiles } from '#core/project/serialize';
+import { createApi, createFolder, createRestRequest, entry, restApisOf } from '#protocol-rest/rest/model';
+import type { DefinitionAuth, Project } from '#core/project/model';
+import type { RestApi } from '#protocol-rest/rest/model';
 import { listTree, tempProjectDir } from './fixture.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';

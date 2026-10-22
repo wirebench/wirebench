@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatHtml } from '../../../src/rest/format-html.js';
+import { formatHtml } from '#protocol-rest/rest/format-html';
 
 describe('formatHtml', () => {
   it('puts a one-line error page on one block tag per line, indented by depth', () => {

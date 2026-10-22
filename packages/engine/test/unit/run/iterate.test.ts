@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { RunContext } from '../../../src/run/context.js';
-import { createPacer, iterationContext, runIterations, tagIteration } from '../../../src/run/iterate.js';
-import { planIterations } from '../../../src/run/iterations.js';
-import type { Iteration } from '../../../src/run/iterations.js';
-import type { RequestOutcome, RunResult } from '../../../src/run/run.js';
+import type { RunContext } from '#core/run/context';
+import { createPacer, iterationContext, runIterations, tagIteration } from '#core/run/iterate';
+import { planIterations } from '#core/run/iterations';
+import type { Iteration } from '#core/run/iterations';
+import type { RequestOutcome, RunResult } from '#core/run/run';
 
 function result(outcomes: readonly RequestOutcome[], environment = 'staging'): RunResult {
   const count = (outcome: RequestOutcome): number => outcomes.filter((o) => o === outcome).length;

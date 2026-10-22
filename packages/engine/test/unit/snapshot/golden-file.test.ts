@@ -5,11 +5,11 @@ import * as fsp from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createProject } from '../../../src/project/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { requestFileLocation } from '../../../src/project/request-location.js';
-import { createApi, createRestRequest, withRestApis } from '../../../src/rest/model.js';
-import { readGoldenFile } from '../../../src/snapshot/golden-file.js';
+import { createProject } from '#core/project/model';
+import type { Project } from '#core/project/model';
+import { requestFileLocation } from '#core/project/request-location';
+import { createApi, createRestRequest, withRestApis } from '#protocol-rest/rest/model';
+import { readGoldenFile } from '#core/snapshot/golden-file';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';
 

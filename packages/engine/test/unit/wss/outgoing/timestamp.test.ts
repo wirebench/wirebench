@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildTimestamp } from '../../../../src/wss/outgoing/timestamp.js';
-import { serializeXml } from '../../../../src/xml/serialize.js';
+import { buildTimestamp } from '#protocol-soap/wss/outgoing/timestamp';
+import { serializeXml } from '#core/xml/serialize';
 
 const CLOCK = () => new Date('2026-09-09T12:00:00.250Z');
 const UUID = () => '11111111-2222-3333-4444-555555555555';

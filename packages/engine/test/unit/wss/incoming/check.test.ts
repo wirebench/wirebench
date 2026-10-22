@@ -7,17 +7,17 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { ExclusiveCanonicalization, SignedXml } from 'xml-crypto';
 import type { Element } from '@xmldom/xmldom';
-import { applyOutgoingWss } from '../../../../src/wss/apply.js';
-import { loadKeystore } from '../../../../src/keystore/index.js';
-import { createWssContext, DEFAULT_WSS_SIGNATURE_PARTS } from '../../../../src/wss/model.js';
-import { verifySignature } from '../../../../src/wss/outgoing/signature.js';
-import { processIncomingWss } from '../../../../src/wss/incoming/index.js';
-import { algorithmName } from '../../../../src/wss/incoming/check.js';
-import { internalsOf } from '../../../../src/wss/incoming/xml-crypto-seam.js';
-import { parseXml } from '../../../../src/xml/parse.js';
-import { serializeXml } from '../../../../src/xml/serialize.js';
-import { NS } from '../../../../src/xml/namespaces.js';
-import type { WssOutgoingConfig } from '../../../../src/wss/model.js';
+import { applyOutgoingWss } from '#protocol-soap/wss/apply';
+import { loadKeystore } from '#core/keystore/index';
+import { createWssContext, DEFAULT_WSS_SIGNATURE_PARTS } from '#protocol-soap/wss/model';
+import { verifySignature } from '#protocol-soap/wss/outgoing/signature';
+import { processIncomingWss } from '#protocol-soap/wss/incoming/index';
+import { algorithmName } from '#protocol-soap/wss/incoming/check';
+import { internalsOf } from '#protocol-soap/wss/incoming/xml-crypto-seam';
+import { parseXml } from '#core/xml/parse';
+import { serializeXml } from '#core/xml/serialize';
+import { NS } from '#core/xml/namespaces';
+import type { WssOutgoingConfig } from '#protocol-soap/wss/model';
 import { generateSigningCert, generateTestCa } from '../../../helpers/test-certs.js';
 
 const ENVELOPE =

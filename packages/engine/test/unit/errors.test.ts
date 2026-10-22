@@ -11,7 +11,7 @@ import {
   WsdlParseError,
   WssError,
   isWirebenchError,
-} from '../../src/errors.js';
+} from '#core/errors';
 
 describe('WirebenchError', () => {
   it('carries a code, message, details and cause', () => {

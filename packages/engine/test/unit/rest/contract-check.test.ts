@@ -7,8 +7,8 @@ import {
   MAX_CHECKED_BODY_BYTES,
   MAX_CONTRACT_PATH_LENGTH,
   MAX_REST_CHECK_NODES,
-} from '../../../src/rest/contract-check.js';
-import type { OpenApiResponses } from '../../../src/rest/openapi/model.js';
+} from '#protocol-rest/rest/contract-check';
+import type { OpenApiResponses } from '#protocol-rest/rest/openapi/model';
 
 const operation = { method: 'get', path: '/pets/{id}' };
 const pet = {

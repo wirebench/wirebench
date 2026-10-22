@@ -7,9 +7,9 @@
  */
 import { Agent } from 'undici';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { HttpError } from '../../../src/errors.js';
-import { sendHttp } from '../../../src/http/client.js';
-import type { HttpExchange, HttpRequest, HttpStreamHook } from '../../../src/http/types.js';
+import { HttpError } from '#core/errors';
+import { sendHttp } from '#core/http/client';
+import type { HttpExchange, HttpRequest, HttpStreamHook } from '#core/http/types';
 import { startTestRestServer, type TestRestServer } from '../../helpers/test-rest-server.js';
 
 let server: TestRestServer;

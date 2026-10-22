@@ -6,7 +6,7 @@
  * pin that the parsed document is the context item, which is what makes `?field` the natural start.
  */
 import { describe, expect, it } from 'vitest';
-import { evaluateJson } from '../../../src/xpath/evaluate.js';
+import { evaluateJson } from '#core/xpath/evaluate';
 
 const BODY = JSON.stringify({
   total: 3,

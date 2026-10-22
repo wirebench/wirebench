@@ -9,6 +9,12 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/cli/package.json packages/cli/package.json
 COPY packages/engine/package.json packages/engine/package.json
+COPY packages/core/package.json packages/core/package.json
+COPY packages/protocol-soap/package.json packages/protocol-soap/package.json
+COPY packages/protocol-rest/package.json packages/protocol-rest/package.json
+COPY packages/protocol-grpc/package.json packages/protocol-grpc/package.json
+COPY packages/protocol-ws/package.json packages/protocol-ws/package.json
+COPY packages/protocol-mcp/package.json packages/protocol-mcp/package.json
 COPY packages/ssh/package.json packages/ssh/package.json
 RUN pnpm install --frozen-lockfile --filter @wirebench/cli...
 
@@ -17,6 +23,9 @@ RUN pnpm --filter @wirebench/cli... build
 RUN pnpm deploy --filter @wirebench/cli --prod /out
 # `@wirebench/ssh` is private and a dev dependency: the image carries the CLI's own copy, as the npm package does.
 RUN node packages/cli/scripts/vendor-ssh.mjs /out
+# The engine's core and protocol packages are private dev dependencies of the engine: its deployed copy
+# carries its own, as the npm package does.
+RUN node packages/engine/scripts/vendor-packages.mjs /out/node_modules/@wirebench/engine
 
 FROM node:24-bookworm-slim AS runtime
 ARG VERSION

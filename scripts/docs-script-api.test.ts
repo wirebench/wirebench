@@ -1,8 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { createBuiltinRegistry } from '../packages/engine/src/protocols.js';
-import { apiReference } from '../packages/engine/src/script/types/api.js';
+import { apiReference, createBuiltinRegistry } from '../packages/engine/src/index.js';
 import { renderScriptApiReference } from './docs-script-api.ts';
 
 const target = fileURLToPath(new URL('../docs-site/src/content/docs/reference/script-api.md', import.meta.url));

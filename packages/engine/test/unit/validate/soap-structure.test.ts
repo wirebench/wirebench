@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkSoapStructure } from '../../../src/validate/soap-structure.js';
+import { checkSoapStructure } from '#protocol-soap/validate/soap-structure';
 
 const SOAP11 = 'http://schemas.xmlsoap.org/soap/envelope/';
 const SOAP12 = 'http://www.w3.org/2003/05/soap-envelope';

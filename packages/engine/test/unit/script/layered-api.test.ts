@@ -1,10 +1,10 @@
 /** The layered script APIs (format 11): every API but the typed one is JavaScript, syntax-checked only. */
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
-import type { RestRequestSnapshot } from '../../../src/rest/scripting.js';
-import { checkOnce } from '../../../src/script/check/service.js';
-import { isLayeredApi, scriptFileName, type ScriptApi } from '../../../src/script/model.js';
-import { SCRIPT_LAYERS } from '../../../src/script/api/layers.js';
-import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
+import type { RestRequestSnapshot } from '#protocol-rest/rest/scripting';
+import { checkOnce } from '#core/script/check/service';
+import { isLayeredApi, scriptFileName, type ScriptApi } from '#core/script/model';
+import { SCRIPT_LAYERS } from '#core/script/api/layers';
+import { createScriptSandbox } from '#core/script/sandbox/host';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';
 
@@ -24,7 +24,7 @@ const REQUEST: RestRequestSnapshot = {
 
 describe('the layered script APIs', () => {
   afterEach(() => {
-    vi.doUnmock('../../../src/script/api/layers.js');
+    vi.doUnmock('#core/script/api/layers');
     vi.resetModules();
   });
 
@@ -54,10 +54,10 @@ describe('the layered script APIs', () => {
   // Every layered API has a layer now, so the lookup is run against an empty table.
   it('a layered api with no layer fails with script-unsupported', async () => {
     vi.resetModules();
-    vi.doMock('../../../src/script/api/layers.js', () => ({ SCRIPT_LAYERS: {} }));
+    vi.doMock('#core/script/api/layers', () => ({ SCRIPT_LAYERS: {} }));
     // After the reset, the registry slot is empty again until the composition loads (spec §3.3).
     await import('../../../src/protocols.js');
-    const { runScript: runUnlayered } = await import('../../../src/script/run.js');
+    const { runScript: runUnlayered } = await import('#core/script/run');
     const api: ScriptApi = 'thunder-client';
     const onSecretValue = vi.fn();
     const outcome = await runUnlayered({

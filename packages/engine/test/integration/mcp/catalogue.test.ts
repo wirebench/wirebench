@@ -4,13 +4,13 @@
  */
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { refreshMcpCatalogue } from '../../../src/mcp/catalogue.js';
-import { serializeMcpCatalogue } from '../../../src/mcp/files.js';
-import { createMcpServer } from '../../../src/mcp/model.js';
-import type { McpServer, McpTransport } from '../../../src/mcp/model.js';
-import { createProject } from '../../../src/project/model.js';
-import type { CommandApprovalRequest, SendHost } from '../../../src/run/host.js';
-import { createRunScope } from '../../../src/run/scope.js';
+import { refreshMcpCatalogue } from '#protocol-mcp/mcp/catalogue';
+import { serializeMcpCatalogue } from '#protocol-mcp/mcp/files';
+import { createMcpServer } from '#protocol-mcp/mcp/model';
+import type { McpServer, McpTransport } from '#protocol-mcp/mcp/model';
+import { createProject } from '#core/project/model';
+import type { CommandApprovalRequest, SendHost } from '#core/run/host';
+import { createRunScope } from '#core/run/scope';
 import { startTestMcpHttpServer } from '../../helpers/mcp-http-server.js';
 import type { TestMcpHttpServer } from '../../helpers/mcp-http-server.js';
 import { testHost } from '../../helpers/send-host.js';

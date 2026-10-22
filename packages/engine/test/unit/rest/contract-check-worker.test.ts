@@ -2,9 +2,9 @@
  * Checking REST responses off the calling thread, each under a hard deadline.
  */
 import { describe, expect, it } from 'vitest';
-import type { RestContractInput } from '../../../src/rest/contract-check.js';
-import { createRestContractChecker, DEFAULT_REST_CHECK_QUEUE } from '../../../src/rest/contract-check-worker-host.js';
-import type { OpenApiResponses } from '../../../src/rest/openapi/model.js';
+import type { RestContractInput } from '#protocol-rest/rest/contract-check';
+import { createRestContractChecker, DEFAULT_REST_CHECK_QUEUE } from '#protocol-rest/rest/contract-check-worker-host';
+import type { OpenApiResponses } from '#protocol-rest/rest/openapi/model';
 
 const hanging = new URL('../../fixtures/rest/hanging-contract-worker.mjs', import.meta.url);
 const operation = { method: 'get', path: '/pets/{id}' };

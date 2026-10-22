@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { expand } from '../../../../src/project/properties.js';
-import { rewriteProjectRefsToEnv } from '../../../../src/soap/legacy-project/env-refs.js';
-import type { LegacyEnvironment, LegacyInterface, LegacyProject } from '../../../../src/soap/legacy-project/model.js';
+import { expand } from '#core/project/properties';
+import { rewriteProjectRefsToEnv } from '#protocol-soap/soap/legacy-project/env-refs';
+import type { LegacyEnvironment, LegacyInterface, LegacyProject } from '#protocol-soap/soap/legacy-project/model';
 
 const BASE_INTERFACE: LegacyInterface = {
   name: 'Iface',

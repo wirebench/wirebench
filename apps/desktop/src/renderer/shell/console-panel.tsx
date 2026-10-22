@@ -4,7 +4,7 @@ import { Tabs } from '../components/tabs.js';
 import { HttpLog } from '../features/console/http-log.js';
 import { WsiReport } from '../features/console/wsi-report.js';
 import { ProblemsView } from '../features/problems/problems-view.js';
-import { useProblemsStore } from '../state/problems.js';
+import { countProblems, useProblemsStore } from '../state/problems.js';
 import { useProjectStore } from '../state/project.js';
 import type { ConsoleTab } from '../state/ui-state.js';
 import { useUiStore } from '../state/ui.js';
@@ -37,7 +37,9 @@ export function ConsolePanel() {
   const activeTab = chosenTab === 'ws-i-report' && !showWsi ? 'http-log' : chosenTab;
   const showConsoleTab = useUiStore((state) => state.showConsoleTab);
   const collapseConsole = useUiStore((state) => state.collapseConsole);
-  const problemCount = useProblemsStore((state) => state.items.length);
+  // The same count as the status bar's "N problems" (#745): lint findings and failed SSH connects
+  // are left out, so the badge never says something failed when only style advice came in.
+  const problemCount = useProblemsStore((state) => countProblems(state.items).problems);
   const tabs = TABS.filter((tab) => tab.id !== 'ws-i-report' || showWsi).map((tab) =>
     tab.id === 'problems' && problemCount > 0 ? { ...tab, badge: String(problemCount) } : tab,
   );

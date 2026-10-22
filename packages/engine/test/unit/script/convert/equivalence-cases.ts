@@ -5,8 +5,8 @@
  * representative per dialect family. The inputs are ones where the layered and the typed behaviour
  * should agree; the documented differences (spec §6) are cases of their own in the test file.
  */
-import type { ConvertProtocol } from '../../../../src/script/convert/roots.js';
-import type { LayeredApi, ScriptPhase } from '../../../../src/script/model.js';
+import type { ConvertProtocol } from '#core/script/convert/roots';
+import type { LayeredApi, ScriptPhase } from '#core/script/model';
 
 /** A test whose name ends in `fails` fails in both runs; every other one passes in both. */
 export interface EquivalenceCase {

@@ -8,7 +8,7 @@
 
 import { lstat } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';
-import { PostmanError } from '../../errors.js';
+import { PostmanError } from '#core/errors';
 import type { ImportFolderErrorCode, ImportFolderLimits } from '../read-folder.js';
 import { IMPORT_FOLDER_LIMITS, readImportFolder } from '../read-folder.js';
 import type { MapCollectionV3Options, MappedCollectionV3 } from './map.js';

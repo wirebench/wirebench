@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { FORBIDDEN_HANDSHAKE_HEADERS, toWsSessionOptions, type WsCallInput } from '../../../src/ws/call.js';
-import { WsError } from '../../../src/errors.js';
-import { entry } from '../../../src/rest/model.js';
-import { createWsRequest } from '../../../src/ws/model.js';
+import { FORBIDDEN_HANDSHAKE_HEADERS, toWsSessionOptions, type WsCallInput } from '#protocol-ws/ws/call';
+import { WsError } from '#core/errors';
+import { entry } from '#protocol-rest/rest/model';
+import { createWsRequest } from '#protocol-ws/ws/model';
 
 function callInput(
   overrides: Partial<WsCallInput['request']> = {},

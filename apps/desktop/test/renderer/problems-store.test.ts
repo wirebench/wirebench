@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Problem } from '../../src/renderer/state/problems.js';
-import { countProblems, lintSummary, useProblemsStore } from '../../src/renderer/state/problems.js';
+import { countProblems, filterProblems, lintSummary, useProblemsStore } from '../../src/renderer/state/problems.js';
 
 function expansion(requestId: string, message: string): Problem {
   return {
@@ -73,6 +73,25 @@ describe('countProblems', () => {
 
   it('counts nothing in an empty list', () => {
     expect(countProblems([])).toEqual({ problems: 0, errors: 0, lintErrors: 0, lintWarnings: 0 });
+  });
+
+  it('lists lint findings on their own, never under All, Errors or Warnings (#745)', () => {
+    const items = [
+      problem('lint:api-1', 'lint', 'error'),
+      problem('lint:api-1', 'lint', 'warning'),
+      problem('expansion:req-1', 'expansion', 'warning'),
+      problem('iface-1', 'import', 'error'),
+    ];
+    expect(filterProblems(items, 'all').map((item) => item.source)).toEqual(['expansion', 'import']);
+    expect(filterProblems(items, 'error').map((item) => item.groupId)).toEqual(['iface-1']);
+    expect(filterProblems(items, 'warning').map((item) => item.groupId)).toEqual(['expansion:req-1']);
+    expect(filterProblems(items, 'lint').map((item) => item.severity)).toEqual(['error', 'warning']);
+  });
+
+  it('starts on All and remembers the chip picked', () => {
+    expect(useProblemsStore.getState().filter).toBe('all');
+    useProblemsStore.getState().setFilter('lint');
+    expect(useProblemsStore.getState().filter).toBe('lint');
   });
 });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { effectiveAuth } from '../../../src/project/endpoints.js';
-import type { EndpointAuth, SoapOwnerAuth } from '../../../src/project/model.js';
+import { effectiveAuth } from '#core/project/endpoints';
+import type { EndpointAuth, SoapOwnerAuth } from '#core/project/model';
 
 const NONE: EndpointAuth = { type: 'none' };
 const REQUEST: EndpointAuth = { type: 'basic', username: 'req', passwordRef: 'ref-req', preemptive: true };

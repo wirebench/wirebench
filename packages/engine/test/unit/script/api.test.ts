@@ -4,12 +4,12 @@
  */
 import { createHmac } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
-import type { GrpcRequestSnapshot } from '../../../src/grpc/scripting.js';
-import type { RestRequestSnapshot, RestResponseSnapshot } from '../../../src/rest/scripting.js';
-import type { ScriptOutcome } from '../../../src/script/model.js';
-import type { SoapRequestSnapshot } from '../../../src/soap/scripting.js';
-import { runScript, type ScriptRunInput } from '../../../src/script/run.js';
-import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
+import type { GrpcRequestSnapshot } from '#protocol-grpc/grpc/scripting';
+import type { RestRequestSnapshot, RestResponseSnapshot } from '#protocol-rest/rest/scripting';
+import type { ScriptOutcome } from '#core/script/model';
+import type { SoapRequestSnapshot } from '#protocol-soap/soap/scripting';
+import { runScript, type ScriptRunInput } from '#core/script/run';
+import { createScriptSandbox } from '#core/script/sandbox/host';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';
 

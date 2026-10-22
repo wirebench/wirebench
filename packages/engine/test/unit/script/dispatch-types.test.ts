@@ -4,8 +4,8 @@
  */
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { checkOnce } from '../../../src/script/check/service.js';
-import { dispatchDeclarations } from '../../../src/script/types/dispatch.js';
+import { checkOnce } from '#core/script/check/service';
+import { dispatchDeclarations } from '#core/script/types/dispatch';
 
 const DECLARATIONS = dispatchDeclarations(['ok', 'not found', 'ok']);
 
@@ -47,7 +47,7 @@ describe('a dispatch script', () => {
   });
 
   it('declares only globals the dispatch prelude defines', async () => {
-    const prelude = await readFile(new URL('../../../src/mock/script.ts', import.meta.url), 'utf8');
+    const prelude = await readFile(new URL('../../../../core/src/mock/script.ts', import.meta.url), 'utf8');
     const declared = [...DECLARATIONS.matchAll(/^declare (?:const|function) (\w+)/gm)].map((m) => m[1]);
     expect(declared.sort()).toEqual([
       'console',

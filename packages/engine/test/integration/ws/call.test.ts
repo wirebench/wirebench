@@ -4,11 +4,11 @@
  * the authorization header set.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { expandWsInput } from '../../../src/ws/expand.js';
-import { toWsSessionOptions } from '../../../src/ws/call.js';
-import { openWsSession, type WsSessionHandle } from '../../../src/ws/session.js';
-import { createWsRequest } from '../../../src/ws/model.js';
-import { entry } from '../../../src/rest/model.js';
+import { expandWsInput } from '#protocol-ws/ws/expand';
+import { toWsSessionOptions } from '#protocol-ws/ws/call';
+import { openWsSession, type WsSessionHandle } from '#protocol-ws/ws/session';
+import { createWsRequest } from '#protocol-ws/ws/model';
+import { entry } from '#protocol-rest/rest/model';
 import { startTestWsServer, type TestWsServer } from '../../helpers/test-ws-server.js';
 
 async function until(predicate: () => boolean, what: string): Promise<void> {

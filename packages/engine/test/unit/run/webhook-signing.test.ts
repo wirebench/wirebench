@@ -3,13 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { prepareFor } from '../../helpers/prepare-for.js';
-import type { RunContext } from '../../../src/run/context.js';
-import { secretNeedsOf } from '../../../src/run/secret-needs.js';
-import { selectRequests } from '../../../src/run/select.js';
-import { envVariablesFor } from '../../../src/secrets/env-names.js';
+import type { RunContext } from '#core/run/context';
+import { secretNeedsOf } from '#core/run/secret-needs';
+import { selectRequests } from '#core/run/select';
+import { envVariablesFor } from '#core/secrets/env-names';
 import type { Project, WebhookSigning } from '../../../src/index.js';
 import { hooksProject } from '../webhooks/fixture.js';
-import { webhooksOf, withWebhooks } from '../../../src/webhooks/model.js';
+import { webhooksOf, withWebhooks } from '#protocol-rest/webhooks/model';
 
 const dir = mkdtempSync(join(tmpdir(), 'wb-signing-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { AssertionSubject } from '../../../src/assert/model.js';
-import { BASELINE_MAX_BYTES, checkBaseline } from '../../../src/run/baseline.js';
-import type { GoldenRead } from '../../../src/snapshot/golden-file.js';
+import type { AssertionSubject } from '#core/assert/model';
+import { BASELINE_MAX_BYTES, checkBaseline } from '#core/run/baseline';
+import type { GoldenRead } from '#core/snapshot/golden-file';
 
 const subject = (bodyText: string, contentType = 'application/json'): AssertionSubject => ({
   protocol: 'rest',

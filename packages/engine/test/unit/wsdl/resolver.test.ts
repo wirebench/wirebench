@@ -2,10 +2,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
-import { parseWsdl } from '../../../src/wsdl/parse-wsdl.js';
-import type { FetchDocument, FetchedDocument } from '../../../src/wsdl/resolver.js';
-import { resolveDefinition } from '../../../src/wsdl/resolver.js';
+import { createDefaultFetchDocument } from '#core/http/fetch-document';
+import { parseWsdl } from '#protocol-soap/wsdl/parse-wsdl';
+import type { FetchDocument, FetchedDocument } from '#protocol-soap/wsdl/resolver';
+import { resolveDefinition } from '#protocol-soap/wsdl/resolver';
 import { readPublicFixture } from '../../helpers/fixtures.js';
 
 const craftedRoot = fileURLToPath(new URL('../../../../../fixtures/wsdl/crafted/', import.meta.url));

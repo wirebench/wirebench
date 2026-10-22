@@ -10,9 +10,9 @@ import {
   privateKeyOf,
   signJwt,
   templateJwtJson,
-} from '../../../../src/http/auth/jwt.js';
-import type { JwtAlgorithm, JwtTokenRequest } from '../../../../src/http/auth/jwt.js';
-import type { PropertyScopes } from '../../../../src/project/properties.js';
+} from '#core/http/auth/jwt';
+import type { JwtAlgorithm, JwtTokenRequest } from '#core/http/auth/jwt';
+import type { PropertyScopes } from '#core/project/properties';
 
 const SECRET = new TextEncoder().encode('a-shared-secret-that-is-long-enough-for-hs512-signing-0123456789');
 

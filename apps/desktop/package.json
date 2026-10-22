@@ -2,7 +2,7 @@
   "name": "@wirebench/desktop",
   "version": "6.1.0",
   "private": true,
-  "description": "Wirebench — a desktop workbench for SOAP and WSDL",
+  "description": "Wirebench \u2014 a desktop workbench for SOAP and WSDL",
   "author": {
     "name": "Wirebench contributors"
   },
@@ -29,7 +29,13 @@
     "@lydell/node-pty": "1.1.0",
     "@serialport/bindings-cpp": "13.0.1",
     "@serialport/stream": "13.0.0",
+    "@wirebench/core": "workspace:*",
     "@wirebench/engine": "workspace:*",
+    "@wirebench/protocol-grpc": "workspace:*",
+    "@wirebench/protocol-mcp": "workspace:*",
+    "@wirebench/protocol-rest": "workspace:*",
+    "@wirebench/protocol-soap": "workspace:*",
+    "@wirebench/protocol-ws": "workspace:*",
     "@wirebench/ssh": "workspace:*",
     "@xterm/addon-search": "0.16.0",
     "electron-updater": "^6.8.9",

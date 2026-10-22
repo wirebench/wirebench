@@ -1,6 +1,6 @@
 import { Agent, ProxyAgent } from 'undici';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createDispatcher, proxyAgentOptionsFor } from '../../../src/http/client.js';
+import { createDispatcher, proxyAgentOptionsFor } from '#core/http/client';
 
 describe('createDispatcher', () => {
   const created: { close(): Promise<void> }[] = [];

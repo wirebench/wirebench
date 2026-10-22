@@ -5,11 +5,11 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadProject } from '../../../src/project/load.js';
-import { createProject } from '../../../src/project/model.js';
-import { createInterface } from '../../../src/soap/model.js';
-import { saveProject } from '../../../src/project/save.js';
-import { createApi, createRestRequest, restApisOf, withRestApis } from '../../../src/rest/model.js';
+import { loadProject } from '#core/project/load';
+import { createProject } from '#core/project/model';
+import { createInterface } from '#protocol-soap/soap/model';
+import { saveProject } from '#core/project/save';
+import { createApi, createRestRequest, restApisOf, withRestApis } from '#protocol-rest/rest/model';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';
 

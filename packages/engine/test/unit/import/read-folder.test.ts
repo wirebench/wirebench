@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { WirebenchError } from '../../../src/errors.js';
+import { WirebenchError } from '#core/errors';
 import type { ImportFolderOptions } from '../../../src/import/read-folder.js';
 import { readImportFolder } from '../../../src/import/read-folder.js';
 

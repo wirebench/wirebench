@@ -4,9 +4,9 @@
  * mock — and nothing but bundle documents, by index.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { createMock } from '../../../src/mock/model.js';
-import { startMock } from '../../../src/mock/server.js';
-import type { RunningMock } from '../../../src/mock/server.js';
+import { createMock } from '#core/mock/model';
+import { startMock } from '#core/mock/server';
+import type { RunningMock } from '#core/mock/server';
 import { mockProject, wsdlFixture } from '../mock/fixture.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';

@@ -1,7 +1,7 @@
 import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it } from 'vitest';
-import { openStreamableHttpTransport, type McpStreamableHttpTransport } from '../../../src/mcp/http-transport.js';
-import { runMcpSession, type McpOperationCall } from '../../../src/mcp/session.js';
+import { openStreamableHttpTransport, type McpStreamableHttpTransport } from '#protocol-mcp/mcp/http-transport';
+import { runMcpSession, type McpOperationCall } from '#protocol-mcp/mcp/session';
 import {
   startTestMcpHttpServer,
   type TestMcpHttpServer,

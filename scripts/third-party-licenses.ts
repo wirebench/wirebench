@@ -10,7 +10,9 @@
  *
  * What counts as "ships":
  *   * `apps/desktop`'s `dependencies` and `packages/engine`'s `dependencies` and
- *     `optionalDependencies` (the Kerberos binding), transitively — these are resolved at runtime
+ *     `optionalDependencies` (the Kerberos binding), transitively, and the `dependencies` of the
+ *     packages the engine vendors (`packages/core`, `packages/protocol-*`), which the engine's own
+ *     list repeats (package split spec §6.4) — these are resolved at runtime
  *     from `node_modules` inside the asar. An optional package built for one platform and CPU (a
  *     prebuilt binding such as `@lydell/node-pty-linux-x64`) is covered by the package requiring it.
  *   * `packages/server`'s `dependencies`, transitively — the container image ships them.
@@ -61,6 +63,16 @@ const BUNDLED_DEV_DEPENDENCIES = [
   'zustand',
 ] as const;
 
+/** The packages `@wirebench/engine` vendors at prepack (package split spec §6.4). */
+const VENDORED_PACKAGES = [
+  'core',
+  'protocol-soap',
+  'protocol-rest',
+  'protocol-grpc',
+  'protocol-ws',
+  'protocol-mcp',
+] as const;
+
 /** Workspace packages: Wirebench's own code, covered by the repository's own LICENSE files. */
 const OWN_PACKAGES = new Set([
   '@wirebench/engine',
@@ -68,6 +80,12 @@ const OWN_PACKAGES = new Set([
   '@wirebench/cli',
   '@wirebench/server',
   '@wirebench/ssh',
+  '@wirebench/core',
+  '@wirebench/protocol-soap',
+  '@wirebench/protocol-rest',
+  '@wirebench/protocol-grpc',
+  '@wirebench/protocol-ws',
+  '@wirebench/protocol-mcp',
 ]);
 
 /**
@@ -278,6 +296,14 @@ export async function renderThirdPartyLicenses(): Promise<string> {
   if (desktop === undefined || engine === undefined || server === undefined || ssh === undefined) {
     throw new Error('Cannot read the workspace manifests');
   }
+  const vendored = await Promise.all(
+    VENDORED_PACKAGES.map(async (name) => {
+      const dir = join(repoRoot, 'packages', name);
+      const manifest = await readManifest(dir);
+      if (manifest === undefined) throw new Error(`Cannot read packages/${name}/package.json`);
+      return { dir, manifest };
+    }),
+  );
   const roots = [
     ...Object.keys(desktop.dependencies ?? {}).map((name) => ({ name, from: desktopDir })),
     ...Object.keys({ ...engine.dependencies, ...engine.optionalDependencies }).map((name) => ({
@@ -286,6 +312,11 @@ export async function renderThirdPartyLicenses(): Promise<string> {
     })),
     ...Object.keys(server.dependencies ?? {}).map((name) => ({ name, from: serverDir })),
     ...Object.keys(ssh.dependencies ?? {}).map((name) => ({ name, from: sshDir })),
+    ...vendored.flatMap(({ dir, manifest }) =>
+      Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies })
+        .filter((name) => !name.startsWith('@wirebench/'))
+        .map((name) => ({ name, from: dir })),
+    ),
     ...BUNDLED_DEV_DEPENDENCIES.map((name) => ({ name, from: desktopDir })),
   ];
   return render(await collect(roots));

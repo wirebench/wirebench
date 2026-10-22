@@ -5,13 +5,13 @@
  * edited after it was proposed is refused (Review Focus 4).
  */
 import { describe, expect, it } from 'vitest';
-import { createProject, type Project } from '../../../../src/project/model.js';
-import { createApi, createFolder, createRestRequest, restApisOf, withRestApis } from '../../../../src/rest/model.js';
-import type { RestApi, RestFolder, RestRequestDef } from '../../../../src/rest/model.js';
-import { createInterface, createRequest, soapInterfacesOf, withSoapInterfaces } from '../../../../src/soap/model.js';
-import type { Interface } from '../../../../src/soap/model.js';
-import type { RequestScripts } from '../../../../src/script/model.js';
-import { applyConversions, proposeConversions } from '../../../../src/script/convert/project.js';
+import { createProject, type Project } from '#core/project/model';
+import { createApi, createFolder, createRestRequest, restApisOf, withRestApis } from '#protocol-rest/rest/model';
+import type { RestApi, RestFolder, RestRequestDef } from '#protocol-rest/rest/model';
+import { createInterface, createRequest, soapInterfacesOf, withSoapInterfaces } from '#protocol-soap/soap/model';
+import type { Interface } from '#protocol-soap/soap/model';
+import type { RequestScripts } from '#core/script/model';
+import { applyConversions, proposeConversions } from '#core/script/convert/project';
 
 const header = (dialect: string, path: string): string =>
   `// Converted from a ${dialect} script; the original is in ${path}.`;

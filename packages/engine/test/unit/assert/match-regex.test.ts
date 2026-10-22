@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateAssertions } from '../../../src/assert/index.js';
-import type { AssertionSubject } from '../../../src/assert/model.js';
-import { matchRegexManyWithTimeout, matchRegexWithTimeout } from '../../../src/xpath/evaluate-async.js';
+import { evaluateAssertions } from '#core/assert/index';
+import type { AssertionSubject } from '#core/assert/model';
+import { matchRegexManyWithTimeout, matchRegexWithTimeout } from '#core/xpath/evaluate-async';
 
 const rest: AssertionSubject = {
   protocol: 'rest',

@@ -4,7 +4,7 @@
  * supports, a malformed document the user still has to be able to look at.
  */
 import { describe, expect, it } from 'vitest';
-import { detectLanguage, decodeResponseText, parseSetCookie, prettyBody } from '../../../src/rest/response.js';
+import { detectLanguage, decodeResponseText, parseSetCookie, prettyBody } from '#protocol-rest/rest/response';
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 

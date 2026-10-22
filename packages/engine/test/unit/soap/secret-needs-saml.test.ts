@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { soapRun } from '../../../src/soap/run.js';
+import { soapRun } from '#protocol-soap/soap/run';
 import { projectWithWss } from '../../helpers/fixtures.js';
 
 describe('secret needs of SAML entries', () => {

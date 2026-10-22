@@ -10,12 +10,12 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { sendSoapRequest } from '../../../src/soap/send.js';
-import { createWssContext } from '../../../src/wss/model.js';
-import { verifySignature } from '../../../src/wss/outgoing/signature.js';
-import { NS } from '../../../src/xml/namespaces.js';
-import type { Keystore, KeystoreAlias } from '../../../src/keystore/model.js';
-import type { WssPart, WssSignatureEntry } from '../../../src/wss/model.js';
+import { sendSoapRequest } from '#protocol-soap/soap/send';
+import { createWssContext } from '#protocol-soap/wss/model';
+import { verifySignature } from '#protocol-soap/wss/outgoing/signature';
+import { NS } from '#core/xml/namespaces';
+import type { Keystore, KeystoreAlias } from '#core/keystore/model';
+import type { WssPart, WssSignatureEntry } from '#protocol-soap/wss/model';
 import { generateSigningCert, generateTestCa } from '../../helpers/test-certs.js';
 import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';
 

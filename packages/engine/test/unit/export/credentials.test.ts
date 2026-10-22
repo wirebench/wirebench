@@ -5,11 +5,11 @@
 import { describe, expect, it } from 'vitest';
 import { exportCollection } from '../../../src/export/index.js';
 import type { CollectionExportFormat } from '../../../src/export/index.js';
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { createProject } from '../../../src/project/model.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
-import { createWsApi, createWsRequest } from '../../../src/ws/model.js';
+import { createGrpcApi, createGrpcRequest } from '#protocol-grpc/grpc/model';
+import type { Project } from '#core/project/model';
+import { createProject } from '#core/project/model';
+import { createApi, createRestRequest } from '#protocol-rest/rest/model';
+import { createWsApi, createWsRequest } from '#protocol-ws/ws/model';
 import { newId } from './fixture.js';
 
 const SECRETS = [

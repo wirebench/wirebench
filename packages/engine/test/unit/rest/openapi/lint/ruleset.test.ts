@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { LintRulesetFile } from '../../../../../src/rest/openapi/lint/model.js';
-import { planLintRules } from '../../../../../src/rest/openapi/lint/ruleset.js';
-import { lintWithRules } from '../../../../../src/rest/openapi/lint/run.js';
+import type { LintRulesetFile } from '#protocol-rest/rest/openapi/lint/model';
+import { planLintRules } from '#protocol-rest/rest/openapi/lint/ruleset';
+import { lintWithRules } from '#protocol-rest/rest/openapi/lint/run';
 import { brief, fixture, recordingFetch } from './helpers.js';
 
 const file = (text: string, name = 'lint/team.yaml'): LintRulesetFile => ({ name, text });

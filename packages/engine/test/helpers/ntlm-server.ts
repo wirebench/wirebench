@@ -20,7 +20,7 @@ import {
   ntowfv2,
   parseType3,
   toFileTime,
-} from '../../src/http/auth/ntlm.js';
+} from '#core/http/auth/ntlm';
 
 /** One request the NTLM server saw, with the identity of the socket it arrived on. */
 export interface NtlmRequestRecord {

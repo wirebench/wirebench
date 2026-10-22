@@ -306,6 +306,15 @@ Recommendation: vendor. It is the shape the CLI already has, keeps the release t
 and promises nothing phase 7 has not decided yet. The question to the owner is asked once, before
 PR B, together with whether `core` is a name they want published should they choose the first.
 
+**Ruled 2026-10-22, before PR B:** vendor into `engine`; the package is named `@wirebench/core`;
+MCP is its own package, `@wirebench/protocol-mcp`. PR B does what the second option says:
+`packages/engine/scripts/vendor-packages.mjs` runs at prepack (and, with a directory argument, on
+the engine `pnpm deploy` copies into the CLI's and the server's container images, since `deploy`
+applies neither `prepack` nor `publishConfig`), the six manifests stay `private`, and the pack check
+asserts the tarball holds each package's `index.js` and `index.d.ts` under `dist/vendor/` with the
+import maps pointing there. The declarations are vendored too, with the JavaScript: a host's
+compiler follows the engine's `.d.ts` through the same maps.
+
 ## 7. Release pipeline and the licence report
 
 - `release.yml`: the `npm` job builds `engine` with `pnpm --filter @wirebench/engine... build`

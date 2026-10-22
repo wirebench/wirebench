@@ -43,7 +43,7 @@ const SELF_RELATIVE_PATH = 'scripts/check-banned-terms.ts';
  * everything under that folder; any other entry exempts exactly that file.
  */
 export const FORMAT_IDENTIFIER_PATHS: readonly string[] = [
-  'packages/engine/src/soap/legacy-project/format.ts',
+  'packages/protocol-soap/src/soap/legacy-project/format.ts',
   'fixtures/legacy-soap-project/',
 ];
 

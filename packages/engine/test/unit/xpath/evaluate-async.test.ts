@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateWithTimeout } from '../../../src/xpath/evaluate-async.js';
+import { evaluateWithTimeout } from '#core/xpath/evaluate-async';
 
 const DOC = '<a><b>1</b></a>';
 

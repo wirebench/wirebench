@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { scanXml } from '../../../src/xsd/xml-scan.js';
+import { scanXml } from '#protocol-soap/xsd/xml-scan';
 
 describe('scanXml', () => {
   it('records exact ranges for text and attribute values', () => {

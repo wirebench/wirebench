@@ -1,10 +1,10 @@
 /** A small project with one container of each kind, for the exporter tests. */
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
-import type { Project } from '../../../src/project/model.js';
-import { createProject } from '../../../src/project/model.js';
-import { createInterface, createRequest } from '../../../src/soap/model.js';
-import { createApi, createFolder, createRestRequest } from '../../../src/rest/model.js';
-import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../src/ws/model.js';
+import { createGrpcApi, createGrpcRequest } from '#protocol-grpc/grpc/model';
+import type { Project } from '#core/project/model';
+import { createProject } from '#core/project/model';
+import { createInterface, createRequest } from '#protocol-soap/soap/model';
+import { createApi, createFolder, createRestRequest } from '#protocol-rest/rest/model';
+import { createWsApi, createWsRequest, createWsSavedMessage } from '#protocol-ws/ws/model';
 
 let counter = 0;
 export const newId = (): string => `id-${(counter += 1)}`;

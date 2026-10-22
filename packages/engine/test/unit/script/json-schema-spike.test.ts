@@ -8,10 +8,10 @@
  */
 import { newQuickJSWASMModuleFromVariant, type QuickJSWASMModule } from 'quickjs-emscripten-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { validateJsonSchema } from '../../../src/json/schema-validate.js';
-import { PART_JSON_SCHEMA } from '../../../src/script/api/layer-parts.js';
-import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
-import { SCRIPT_LIMITS } from '../../../src/script/sandbox/model.js';
+import { validateJsonSchema } from '#core/json/schema-validate';
+import { PART_JSON_SCHEMA } from '#core/script/api/layer-parts';
+import { createScriptSandbox } from '#core/script/sandbox/host';
+import { SCRIPT_LIMITS } from '#core/script/sandbox/model';
 
 const PROPERTIES = 50;
 const BODY_BYTES = 1024 * 1024;

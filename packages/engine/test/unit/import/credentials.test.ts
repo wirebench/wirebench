@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isCredentialName } from '../../../src/import/credentials.js';
+import { isCredentialName } from '#core/import/credentials';
 
 describe('isCredentialName', () => {
   it('matches a credential word anywhere in the name, ignoring case, _ and -', () => {

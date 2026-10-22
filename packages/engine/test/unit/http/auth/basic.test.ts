@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { basicAuthorization, isBasicChallenge, parseWwwAuthenticate } from '../../../../src/http/auth/basic.js';
+import { basicAuthorization, isBasicChallenge, parseWwwAuthenticate } from '#core/http/auth/basic';
 
 describe('basicAuthorization', () => {
   it('base64-encodes user:password per RFC 7617', () => {

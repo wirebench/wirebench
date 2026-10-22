@@ -1,13 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { proofCertOf, requestIssuedToken } from '../../src/wss/trust/client.js';
-import { sendHttp } from '../../src/http/client.js';
-import { createWssContext } from '../../src/wss/model.js';
+import { proofCertOf, requestIssuedToken } from '#protocol-soap/wss/trust/client';
+import { sendHttp } from '#core/http/client';
+import { createWssContext } from '#protocol-soap/wss/model';
 import { startTestSts } from '../helpers/test-sts-server.js';
 import { generateSigningCert, generateTestCa } from '../helpers/test-certs.js';
 import type { TestSts } from '../helpers/test-sts-server.js';
-import type { WssIssuedTokenEntry } from '../../src/wss/model.js';
+import type { WssIssuedTokenEntry } from '#protocol-soap/wss/model';
 
 const fixture = (name: string) =>
   readFileSync(fileURLToPath(new URL(`../fixtures/ws-trust/${name}`, import.meta.url)), 'utf8');

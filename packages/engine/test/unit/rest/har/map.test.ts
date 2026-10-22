@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { HarError } from '../../../../src/errors.js';
-import { REDACTED_MARKER } from '../../../../src/redact/index.js';
-import { importHar } from '../../../../src/rest/har/import.js';
-import { mapHar } from '../../../../src/rest/har/map.js';
-import type { HarEntryIn, HarLogIn } from '../../../../src/rest/har/model.js';
-import { parseHarText } from '../../../../src/rest/har/parse.js';
-import { entry } from '../../../../src/rest/model.js';
+import { HarError } from '#core/errors';
+import { REDACTED_MARKER } from '#core/redact/index';
+import { importHar } from '#protocol-rest/rest/har/import';
+import { mapHar } from '#protocol-rest/rest/har/map';
+import type { HarEntryIn, HarLogIn } from '#protocol-rest/rest/har/model';
+import { parseHarText } from '#protocol-rest/rest/har/parse';
+import { entry } from '#protocol-rest/rest/model';
 
 const here = dirname(fileURLToPath(import.meta.url));
 

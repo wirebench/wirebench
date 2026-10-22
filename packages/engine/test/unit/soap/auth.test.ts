@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applySoapAuth } from '../../../src/soap/auth.js';
+import { applySoapAuth } from '#protocol-soap/soap/auth';
 
 const URL_ = 'https://h/s';
 

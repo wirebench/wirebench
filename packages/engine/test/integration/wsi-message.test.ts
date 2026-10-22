@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { importWsdl } from '../../src/soap/import.js';
-import { generateSoapRequest } from '../../src/soap/generate.js';
-import { sendSoapRequest } from '../../src/soap/send.js';
-import { messageBindingFor, runMessageAssertions } from '../../src/validate/wsi/run-message.js';
+import { importWsdl } from '#protocol-soap/soap/import';
+import { generateSoapRequest } from '#protocol-soap/soap/generate';
+import { sendSoapRequest } from '#protocol-soap/soap/send';
+import { messageBindingFor, runMessageAssertions } from '#protocol-soap/validate/wsi/run-message';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-soap-server.js';
 
 const calculator = fileURLToPath(new URL('../../../../fixtures/wsdl/public/calculator/service.wsdl', import.meta.url));

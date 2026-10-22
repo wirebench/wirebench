@@ -14,7 +14,7 @@ export default defineConfig({
     benchmark: { include: [] },
     coverage: {
       provider: 'v8',
-      include: ['packages/engine/src/**'],
+      include: ['packages/core/src/**', 'packages/protocol-*/src/**', 'packages/engine/src/**'],
       exclude: ['packages/engine/src/index.ts'],
       thresholds: {
         lines: 85,

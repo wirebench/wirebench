@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WirebenchError } from '../../../../src/errors.js';
+import { WirebenchError } from '#core/errors';
 import {
   AV_IDS,
   DEFAULT_NEGOTIATE_FLAGS,
@@ -18,7 +18,7 @@ import {
   parseType2,
   parseType3,
   toFileTime,
-} from '../../../../src/http/auth/ntlm.js';
+} from '#core/http/auth/ntlm';
 
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString('hex');
 const bytes = (hexString: string): Uint8Array => new Uint8Array(Buffer.from(hexString, 'hex'));

@@ -6,16 +6,16 @@
 import { access, cp, readdir, readFile, rm } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createGrpcApi, grpcApisOf, withGrpcApis } from '../../../src/grpc/model.js';
-import { createMcpFolder, createMcpServer, mcpServersOf, withMcpServers } from '../../../src/mcp/model.js';
-import { nodeFs, writeFileAtomic, type FsLike } from '../../../src/project/fs.js';
-import { loadProject } from '../../../src/project/load.js';
-import { toAbsolute } from '../../../src/project/managed-files.js';
-import type { Project } from '../../../src/project/model.js';
-import { saveProject } from '../../../src/project/save.js';
-import { restApisOf, withRestApis } from '../../../src/rest/model.js';
-import type { RequestScripts } from '../../../src/script/model.js';
-import { applyConversions, proposeConversions } from '../../../src/script/convert/project.js';
+import { createGrpcApi, grpcApisOf, withGrpcApis } from '#protocol-grpc/grpc/model';
+import { createMcpFolder, createMcpServer, mcpServersOf, withMcpServers } from '#protocol-mcp/mcp/model';
+import { nodeFs, writeFileAtomic, type FsLike } from '#core/project/fs';
+import { loadProject } from '#core/project/load';
+import { toAbsolute } from '#core/project/managed-files';
+import type { Project } from '#core/project/model';
+import { saveProject } from '#core/project/save';
+import { restApisOf, withRestApis } from '#protocol-rest/rest/model';
+import type { RequestScripts } from '#core/script/model';
+import { applyConversions, proposeConversions } from '#core/script/convert/project';
 import { tempProjectDir } from '../project/fixture.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
 import '../../../src/protocols.js';

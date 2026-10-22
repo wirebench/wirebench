@@ -2,12 +2,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { SignedXml } from 'xml-crypto';
 import { describe, expect, it } from 'vitest';
-import { applyOutgoingWss } from '../../../../src/wss/apply.js';
-import { createWssContext, SAML_TOKEN_PART } from '../../../../src/wss/model.js';
-import { parseXml } from '../../../../src/xml/parse.js';
-import { serializeXml } from '../../../../src/xml/serialize.js';
+import { applyOutgoingWss } from '#protocol-soap/wss/apply';
+import { createWssContext, SAML_TOKEN_PART } from '#protocol-soap/wss/model';
+import { parseXml } from '#core/xml/parse';
+import { serializeXml } from '#core/xml/serialize';
 import { generateSigningCert, generateTestCa } from '../../../helpers/test-certs.js';
-import type { Keystore } from '../../../../src/keystore/model.js';
+import type { Keystore } from '#core/keystore/model';
 
 const fixture = (name: string) =>
   readFileSync(fileURLToPath(new URL(`../../../fixtures/saml/${name}`, import.meta.url)), 'utf8');

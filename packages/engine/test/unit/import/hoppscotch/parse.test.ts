@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HoppscotchError } from '../../../../src/errors.js';
+import { HoppscotchError } from '#core/errors';
 import type { HopRestRequest } from '../../../../src/import/hoppscotch/model.js';
 import { parseHoppscotchCollections, parseHoppscotchEnvironments } from '../../../../src/import/hoppscotch/parse.js';
 import { hoppscotchFixture } from './fixtures.js';

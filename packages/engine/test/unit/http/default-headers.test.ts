@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultUserAgent, isDefaultUserAgent } from '../../../src/http/default-headers.js';
+import { defaultUserAgent, isDefaultUserAgent } from '#core/http/default-headers';
 
 describe('defaultUserAgent', () => {
   it('names the version when the host knows it, and only the product when it does not', () => {

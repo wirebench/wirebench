@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { SoapExchange } from '../../../../src/soap/types.js';
-import { WSI_MESSAGE_ASSERTIONS } from '../../../../src/validate/wsi/assertions/message/index.js';
-import { runMessageAssertions, wsiMessageContext } from '../../../../src/validate/wsi/run-message.js';
-import type { WsiMessageBinding, WsiReport } from '../../../../src/validate/wsi/types.js';
+import type { SoapExchange } from '#protocol-soap/soap/types';
+import { WSI_MESSAGE_ASSERTIONS } from '#protocol-soap/validate/wsi/assertions/message/index';
+import { runMessageAssertions, wsiMessageContext } from '#protocol-soap/validate/wsi/run-message';
+import type { WsiMessageBinding, WsiReport } from '#protocol-soap/validate/wsi/types';
 
 const DOC_LITERAL: WsiMessageBinding = {
   soapVersion: '1.1',

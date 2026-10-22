@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
-import type { OAuth2Auth } from '../../../src/project/model.js';
-import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
+import type { HttpExchange, HttpRequest } from '#core/http/types';
+import type { OAuth2Auth } from '#core/project/model';
+import { createRunTokenSource } from '#core/run/oauth2-token';
 
 const CONFIG: OAuth2Auth = {
   type: 'oauth2',

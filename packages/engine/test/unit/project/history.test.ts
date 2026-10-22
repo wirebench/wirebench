@@ -1,10 +1,10 @@
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { appendHistory, openHistory } from '../../../src/project/history.js';
-import { nodeFs } from '../../../src/project/fs.js';
-import type { FsLike } from '../../../src/project/fs.js';
-import type { HistoryEntry } from '../../../src/project/history.js';
+import { appendHistory, openHistory } from '#core/project/history';
+import { nodeFs } from '#core/project/fs';
+import type { FsLike } from '#core/project/fs';
+import type { HistoryEntry } from '#core/project/history';
 import { tempProjectDir } from './fixture.js';
 
 let counter = 0;

@@ -10,15 +10,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ProjectError } from '../../../../src/errors.js';
+import { ProjectError } from '#core/errors';
 import {
   createCachedApiFetch,
   readApiDefinitionCache,
   writeApiDefinitionCache,
-} from '../../../../src/rest/openapi/cache.js';
-import { parseOpenApi } from '../../../../src/rest/openapi/import.js';
-import type { ResolvedDocument } from '../../../../src/json/schema/refs.js';
-import type { FetchDocument } from '../../../../src/wsdl/resolver.js';
+} from '#protocol-rest/rest/openapi/cache';
+import { parseOpenApi } from '#protocol-rest/rest/openapi/import';
+import type { ResolvedDocument } from '#core/json/schema/refs';
+import type { FetchDocument } from '#protocol-soap/wsdl/resolver';
 
 const craftedDir = fileURLToPath(new URL('../../../../../../fixtures/openapi/crafted/', import.meta.url));
 

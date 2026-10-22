@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { HttpError } from '../../../src/errors.js';
-import { sendWithAuth } from '../../../src/http/auth/apply.js';
-import { sendSoapRequest } from '../../../src/soap/send.js';
-import type { SendAuth } from '../../../src/http/auth/send-auth.js';
+import { HttpError } from '#core/errors';
+import { sendWithAuth } from '#core/http/auth/apply';
+import { sendSoapRequest } from '#protocol-soap/soap/send';
+import type { SendAuth } from '#core/http/auth/send-auth';
 import { startNtlmServer, type NtlmServer } from '../../helpers/ntlm-server.js';
 import { startRedirectServer, type RedirectServer } from '../../helpers/redirect-server.js';
 import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';

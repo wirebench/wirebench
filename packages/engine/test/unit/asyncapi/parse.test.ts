@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { parseAsyncApi } from '../../../src/asyncapi/parse.js';
+import { parseAsyncApi } from '#protocol-ws/asyncapi/parse';
 import { detectImportFormat } from '../../../src/import-detect.js';
-import { AsyncApiError } from '../../../src/errors.js';
+import { AsyncApiError } from '#core/errors';
 import { fileFetch } from '../../helpers/file-fetch.js';
 
 const fixture = (name: string) => new URL(`../../fixtures/asyncapi/${name}`, import.meta.url);

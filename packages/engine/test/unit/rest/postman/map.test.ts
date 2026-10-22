@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { apiFromPostmanCollection } from '../../../../src/rest/postman/map.js';
-import type { PostmanCollection } from '../../../../src/rest/postman/model.js';
-import { restBodySchema } from '../../../../src/rest/files.js';
+import { apiFromPostmanCollection } from '#protocol-rest/rest/postman/map';
+import type { PostmanCollection } from '#protocol-rest/rest/postman/model';
+import { restBodySchema } from '#protocol-rest/rest/files';
 
 describe('Postman entity mapping (map.ts)', () => {
   it('maps recursive folders, requests, and calculates summary', () => {
@@ -190,7 +190,7 @@ describe('Postman entity mapping (map.ts)', () => {
       new URL('../../../../../../fixtures/postman/crafted/v20/sample-collection.json', import.meta.url),
     );
     const json = readFileSync(fixturePath, 'utf-8');
-    const { parsePostmanCollectionText } = await import('../../../../src/rest/postman/parse.js');
+    const { parsePostmanCollectionText } = await import('#protocol-rest/rest/postman/parse');
     const collection = parsePostmanCollectionText(json);
 
     const { api, summary } = apiFromPostmanCollection(collection);

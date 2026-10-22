@@ -13,7 +13,7 @@ import {
 } from '../../../src/index.js';
 import type { Project } from '../../../src/index.js';
 import { tempProjectDir } from './fixture.js';
-import { webhooksOf, withWebhooks } from '../../../src/webhooks/model.js';
+import { webhooksOf, withWebhooks } from '#protocol-rest/webhooks/model';
 
 function webhookProject(): Project {
   return {

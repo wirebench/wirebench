@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isSensitiveHeaderName, isSensitiveQueryParam } from '../../../../src/redact/index.js';
-import { detectInText, SECRET_TEXT_SCAN_LIMIT, shannonEntropy } from '../../../../src/secrets/scan/rules.js';
+import { isSensitiveHeaderName, isSensitiveQueryParam } from '#core/redact/index';
+import { detectInText, SECRET_TEXT_SCAN_LIMIT, shannonEntropy } from '#core/secrets/scan/rules';
 
 const JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJGQUtFIn0.FAKEsignatureFAKEsignature';
 const GH = 'ghp_FAKEFAKEFAKEFAKEFAKEFAKEFAKE1234';
