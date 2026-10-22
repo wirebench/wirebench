@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace } from '../helpers/project.js';
-import { chooseContextMenuItem } from '../helpers/rest.js';
+import { chooseContextMenuItem, unfoldRow } from '../helpers/rest.js';
 import {
   startTestRestServer,
   startTestWsServer,
@@ -92,7 +92,7 @@ test.describe('AsyncAPI import', () => {
     const apiRow = page.getByTestId('ws-api-row').filter({ hasText: 'Chat service' });
     await expect(apiRow).toBeVisible({ timeout: 20_000 });
     const folder = page.getByTestId('folder-row').filter({ hasText: 'chat' });
-    if (!(await folder.isVisible())) await apiRow.click();
+    if (!(await folder.isVisible())) await unfoldRow(apiRow);
     await expect(folder).toBeVisible({ timeout: 20_000 });
     const requestRow = page.getByTestId('ws-request-row').filter({ hasText: 'userChat' });
     if (!(await requestRow.isVisible())) await folder.click();

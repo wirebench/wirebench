@@ -118,6 +118,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A click in the Explorer no longer folds the row it opens (#680).** Clicking a project or API row opens
+  its tab and leaves its children where they are; folding is the chevron's, the arrow keys' and a
+  double-click's job. The row a context menu was opened on is outlined while the menu is up, and an item
+  from the menu selects that row before acting on it, so the dialog it opens names the row under the
+  pointer.
 - **The desktop package drops the last of ssh2's native-binding tree.** `nan`, the C++ headers only
   ssh2's never-built cipher binding compiles against, no longer ships inside the app; the binding's
   build folder and `cpu-features` were already left out, and the packaged app runs ssh2's pure-JS

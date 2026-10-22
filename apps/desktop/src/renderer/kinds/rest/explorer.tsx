@@ -66,7 +66,7 @@ export const restExplorer: KindExplorer = {
       icon: Globe,
       testId: 'api-row',
       badge: 'REST',
-      click: 'open-and-fold',
+      click: 'open',
       dropTarget: true,
       open: (node) => explorerActions.openApi(node.apiId),
       runTarget: (node) => node.apiId,
