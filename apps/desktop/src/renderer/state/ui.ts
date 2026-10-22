@@ -148,6 +148,8 @@ export interface UiStore extends UiSnapshot {
   readonly confirmDeleteRequestId: string | undefined;
   /** The API, folder or REST request pending a delete confirmation. Transient. */
   readonly confirmDeleteNode: PendingNodeDeletion | undefined;
+  /** Several rows the user asked to delete at once (#681), held until they confirm as one. */
+  readonly confirmDeleteNodes: readonly PendingNodeDeletion[] | undefined;
   /** Whether the status bar's environment dropdown is open. Transient — never persisted. */
   readonly envSwitcherOpen: boolean;
   /** The sidebar areas this run has switched on (`WIREBENCH_AREAS`). Transient — answered by main. */
@@ -220,6 +222,7 @@ export interface UiStore extends UiSnapshot {
   readonly requestDeleteRequest: (requestId: string | undefined) => void;
   /** Asks for a REST node's deletion to be confirmed; `undefined` dismisses the dialog. */
   readonly requestDeleteNode: (pending: PendingNodeDeletion | undefined) => void;
+  readonly requestDeleteNodes: (pending: readonly PendingNodeDeletion[] | undefined) => void;
   readonly setEnvSwitcherOpen: (open: boolean) => void;
   readonly setWorkspaceSwitcherOpen: (open: boolean) => void;
   readonly setWorkspaceManageOpen: (open: boolean) => void;
@@ -332,6 +335,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     confirmRemoveInterfaceId: undefined,
     confirmDeleteRequestId: undefined,
     confirmDeleteNode: undefined,
+    confirmDeleteNodes: undefined,
     envSwitcherOpen: false,
     enabledKinds: KINDS.map((kind) => kind.kind),
     setEnabledKinds: (ids) => {
@@ -433,6 +437,9 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     requestDeleteNode: (pending) => {
       set({ confirmDeleteNode: pending });
+    },
+    requestDeleteNodes: (pending) => {
+      set({ confirmDeleteNodes: pending });
     },
     setEnvSwitcherOpen: (open) => {
       set({ envSwitcherOpen: open });

@@ -151,6 +151,14 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Explorer: Recreate Request (keep values) | — | — |
 | Explorer: Copy Endpoint Address | — | — |
 | Explorer: Check WSDL WS-I compliance | — | — |
+| Explorer: Collapse All | — | — |
+| Explorer: Expand All | — | — |
+| Explorer: Reveal Active Tab | — | — |
+| Explorer: Focus Explorer | — | — |
+| Explorer: Rename | <kbd>F2</kbd> | <kbd>F2</kbd> |
+| Explorer: Duplicate | — | — |
+| Explorer: Delete | <kbd>⌦</kbd> or <kbd>⌘⌫</kbd> | <kbd>Delete</kbd> or <kbd>Ctrl+Backspace</kbd> |
+| Explorer: New Folder | — | — |
 | REST: New API | — | — |
 | REST: New Folder | — | — |
 | REST: New Request | — | — |

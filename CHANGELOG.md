@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The Explorer selects like a desktop tree (#681).** Shift-click selects a range and Ctrl/⌘-click adds
+  or removes a row. A selection of several rows gets a menu of its own — **Move to…**, **Duplicate** and
+  **Delete 3 requests…** — and Delete, ⌘⌫ (Ctrl+Backspace) and Backspace delete it through one confirm. F2
+  starts an inline rename. The palette gains **Explorer: Collapse All**, **Expand All**, **Reveal Active
+  Tab**, **Focus Explorer**, **Rename**, **Duplicate**, **Delete** and **New Folder**, acting on the
+  selection or the active tab, and the new keys are listed under Settings → Keyboard shortcuts.
 - **A Projects panel for an environment.** Which projects a workspace environment applies to is chosen in
   its own panel on the right of the environment's page, opened from the rail's **Projects** icon or
   **Choose projects…** in Environment details: **All projects** at the top (projects added later
