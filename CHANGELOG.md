@@ -6,8 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
+### Fixed
 
+- **A new environment is ready in one step (#746).** **Add environment** puts the new row straight
+  into rename with the focus in it, and once the name is in (Enter, or a click away) the environment
+  becomes the current project's active environment, so the switcher and the next send already use it.
+  Escape keeps "Environment N" and leaves the choice of environment as it was.
+
+## [6.1.0] - 2026-10-22
+
+### Added
 - **Feature switches.** Every protocol and optional feature can be turned off: **Settings → Features**
   lists SOAP, REST, gRPC, WebSocket, MCP requests, Scripts, Sequences, Webhooks, Shared workspaces,
   Team secrets and the MCP server, with the stage of each and why one is off (_Requires REST_, _Off by
@@ -67,180 +75,6 @@ All notable changes to this project are documented here. The format follows
   Telnet or serial session that ends is reported to the team server as `desktop.ssh_session`: the host id,
   address, port and login name, when it started and ended, why it ended and the exit code. Never a
   password, key, passphrase or secret value; the **Recorded** notice names sessions too (#355).
-
-### Changed
-
-- **Wirebench Server is under the Elastic License 2.0.** The server package, `packages/server`, moves from
-  Apache-2.0 to the Elastic License 2.0: free to run for your own company and to modify, not to offer to
-  third parties as a hosted or managed service, and not to run with the license file check circumvented.
-  The desktop app, the engine, the CLI, the SSH package, the integrations, the site and the docs stay
-  Apache-2.0. Community, Team and Enterprise are unchanged: a server with no license file is still Community
-  with five enabled accounts, and nothing shipped as free becomes paid
-  ([ADR-0028](docs/adr/0028-the-server-is-licensed-under-the-elastic-license-2-0.md)).
-- The developer variable `WIREBENCH_KINDS` is gone; `WIREBENCH_FEATURES="grpc=off"` takes its place in a
-  development build, and the `features` preference in a shipped one (#735).
-- **Remove from workspace keeps the project folder unless asked.** The **Move the project folder to
-  the trash** box in **Remove project?** starts unchecked, so tidying the workspace list never moves
-  files on its own; tick it to trash the folder as before (#684).
-- **SOAP, after a daily-use review (#725–#732).** Imported requests are named after their operation
-  ("Add", or "Add (SOAP 1.2)" when a 1.1 and a 1.2 binding offer it) instead of "Request 1" (#726).
-  Importing a WSDL already in the project asks **Update Definition…** or **Import as a copy**, a copy
-  named "Calculator (2)" (#727). The request tabs fit: Details folds into Properties, SSL stays on the
-  response, and Headers, Attachments and Assertions carry counts that a **More · Assertions 1** button
-  repeats when they are hidden. Properties keeps what has no other home, with a line of help on each
-  row: the MTOM flags moved under Attachments and the WSS password type and time to live under Auth.
-  Auth says what an inheriting request sends and from where ("Inherits None from Calculator"), and the
-  WSS pickers gain **New…** and **Edit…**; WS-A inherit says whether WS-A is on and shows the values a
-  send would carry. The tree drops the **Operations** folder, lists a 1.1 and 1.2 binding's operation
-  once ("SOAP 1.1 · 1.2") with icons for operations, requests and endpoints, and a request's menu gains
-  **Send**, **Copy as cURL** and one **Recreate from definition** submenu. **soap** in the palette
-  leads with Import, New Request, Update Definition, Send and Validate, and a command whose name matches
-  ranks above one only its group matches. WS-Security configurations open in the right panel, where
-  every label and each password field's name fit, marked unsaved and asked about on close (#730, #731,
-  #732).
-
-- **A password left empty is asked for as a sign-in step, and used once.** Connecting to a host whose
-  password was left to be asked shows **Sign in to box** with the password field and **Connect**, instead
-  of a red missing-secret error; the password is used for that connection only, and **Remember on this
-  machine** stores it. When the SSH agent cannot sign in (none runs, or the server takes none of its keys),
-  the connection screen offers the same password field, for quick connects too (#721, #722).
-- **Snippet Run reaches every pane.** In a split tab, the Run dialog lists each connected pane
-  (**Box pair · box**, **Box pair · box-2**) and types into the one picked (#723).
-- **SSH polish.** The host form's footer line wraps instead of being cut; the SSH menu keeps its labels in
-  a narrow sidebar; a card's full target shows on hover; with an identity, the sign-in choices sit two by
-  two and the inherited note reads **Inherited from identity Tester: password tester_password**. A forward
-  rule in the host panel stacks its fields, and **New rule…** names the rule after its target
-  (**localhost-6000**). **Generate key** fills in the real `user@host` comment. The serial port field gives
-  this platform's example, and the form drops the line summary that repeated its fields. The share strip
-  says **has control**, host details say **not detected** for an OS the host never gave, and Keychain says
-  **No identities yet.** Files and **Save layout…** wait for a connected pane, the terminal scrollbar is
-  faint on light schemes, and a pane that reconnected loses its error mark (#723).
-- **Palette: SSH commands come first in the SSH area, and protocols find New host.** Typing in the
-  palette ranks the area's lead commands (**Connect…**, **New Host…**) above the area's other commands
-  that match only by area, a shorter name wins a tie, and "telnet", "serial" or "mosh" find New host and
-  Connect (#714, S40, S68).
-- **Host forms say which fields are missing, beside them.** Each empty required field reads what it needs
-  under its label, and the footer counts them (**2 fields need a value**). An SSH or Mosh password left
-  empty is asked for when connecting, as the form now says, instead of blocking Save; a Telnet password
-  stays as before. The Telnet sign-in note sits under the sign-in fields, and the Mosh server command and
-  UDP ports moved under **Advanced** (S59–S62).
-- **Host cards and details.** A host card no longer repeats its OS in the subtitle; the icon still names
-  it (#715). A connected host's details lead with **Go to terminal** and **New session**, and long values
-  wrap instead of being cut (S50, S51). The New card stays first in its group and names the protocol until
-  an address is typed (S45, S46). An empty group offers **Add host** inline (S49). The SSH sidebar's
-  button reads **Local terminal** (S69).
-- **SFTP toolbar and dates.** The Files toolbar shows labels when there is room and icons with tooltips
-  when there is not, and **Modified** shows the time for today and a short date otherwise (S66).
-- **New host opens in the right panel, with a draft card in Hosts.** New host (the Hosts button and its
-  menu, a group's Add host, the empty state, **Hosts: New Host…** and **Save as host…**) opens its form in
-  the right panel, where Edit host already was, instead of a dialog over the hosts. While it is open, a
-  dashed **New** card stands in the group the form names, picked, and shows the name and address or
-  serial line as they are typed; Save turns it into the host's card. **Duplicate** now opens the same form
-  filled in from the host and writes nothing until Save. Leaving a New host or Edit host form with changes
-  in it (Cancel, <kbd>Esc</kbd>, closing the panel, picking another host) asks first. **Protocol** moves up
-  under **Name** in the host and group forms, since it changes the fields below it (#674).
-
-### Fixed
-
-- **A new environment is ready in one step (#746).** **Add environment** puts the new row straight
-  into rename with the focus in it, and once the name is in (Enter, or a click away) the environment
-  becomes the current project's active environment, so the switcher and the next send already use it.
-  Escape keeps "Environment N" and leaves the choice of environment as it was.
-- **Explorer, after a daily-use review (#685).** A SOAP operation with no request is a leaf, and a click on
-  it creates the first request; **Expand all** unfolds down to the operations and Endpoints and leaves
-  those folded, so a tree of many operations stays readable. A failed import names the HTTP status and
-  the host ("The server answered 404 Not Found from api.example.test") and says what to check: the URL,
-  the authentication or the format. **New gRPC API**, **New WebSocket API**, **New Sequence** and **New
-  Webhook** put the new row into rename mode, as New Folder does. A linked project whose folder is gone
-  says so on two lines, with the folder's path and the **Locate…** and **Remove** buttons below it, and
-  the toolbar's disabled Refresh button is gone: the banner that reports a project changed on disk offers
-  Reload.
-- **A click in the Explorer no longer folds the row it opens (#680).** Clicking a project or API row opens
-  its tab and leaves its children where they are; folding is the chevron's, the arrow keys' and a
-  double-click's job. The row a context menu was opened on is outlined while the menu is up, and an item
-  from the menu selects that row before acting on it, so the dialog it opens names the row under the
-  pointer.
-- **The desktop package drops the last of ssh2's native-binding tree.** `nan`, the C++ headers only
-  ssh2's never-built cipher binding compiles against, no longer ships inside the app; the binding's
-  build folder and `cpu-features` were already left out, and the packaged app runs ssh2's pure-JS
-  ciphers on every platform (#362).
-- **SOAP, after a daily-use review (#725–#732).** A response's status and a send error have a line of
-  their own above the tabs, never pushed out of view (#725). A template **?** shows in the Form view as
-  a marked placeholder, Validate warns about each one, the first send of a request still holding them
-  asks, and the Runner counts them (#728). A new mock answers with schema-typed sample values its own
-  contract accepts, not **?** (#729). A failed WSDL fetch names the HTTP status, sign-in, certificate or
-  network cause and what to try. History's chip names a failed send's kind ("refused", "DNS"), and an
-  endpoint picked in the editor marks the tab unsaved and is sent before it is saved (#732).
-
-- **Duplicate from a host card's ⋯ menu opens the copy.** It did nothing: the menu's click also picked the
-  card, which dropped the form Duplicate had just opened. The right-click menu was not affected (#719).
-- **Closing a split tab names every host.** A tab split across box and box-2 asks **Close 2 sessions on
-  box and box-2?**, not only the first host's name (#720).
-- **The connection screen names the user it connects as.** A quick host shows `user@address:port`, the
-  user typed at the prompt wins over the saved one, and a failed attempt with nothing logged no longer
-  shows an empty log box (#716, S67).
-- **SSH round-5 polish.** The snippet editor keeps Run, Insert and Save in a footer while its body
-  scrolls (S63); the Keychain names the identities that use a secret ("Used by identity Tester") and
-  refreshes when secrets change (S64); the import dialog's first step has **Cancel** (S65); the host
-  details hint goes once Hosts is not in front (S41); an ended team session log with nothing recorded says
-  so, its dialog has a close button and opens large (S42); the status bar no longer starts with a
-  separator in Settings (S54).
-- **Device keys and the app lock say what they need.** Where they cannot be used, **Generate key** reads
-  **Device keys need macOS with a Secure Enclave or Windows Hello.** and Settings → Secrets reads **App
-  lock needs Touch ID, Windows Hello or the system password prompt.**, inside the App lock row under its
-  description, followed by the computer's own reason when there is one (such as **This Mac has no Secure
-  Enclave**). **Lock again after idle** is disabled while the app lock is off or unavailable, and the
-  Secrets page's subtitle now mentions the app lock (#691).
-- **Quick Open finds requests by name.** <kbd>⌘P</kbd> lists the requests and operations whose name
-  matches above those that match only by their project, API or folder, so "pet" puts Find pets first,
-  not every request in Swagger Petstore. A row listed by its path alone needs every typed word to be
-  missing from its name: "pet user" no longer lists Delete user because its API is Petstore (#683).
-- **Search heads each group with the request.** A group of Search results starts with the REST method
-  and the request name, with the project and API faint underneath, instead of a breadcrumb that cut
-  every group to the same "PAYMENTS › SWAGGER P…" (#683).
-- **Lint findings no longer count as Problems.** After importing an OpenAPI definition, its lint findings
-  get their own status bar item (**57 lint findings**, with errors and warnings named in the tooltip),
-  which is never coloured and opens the Problems panel. The **Problems** item and the **Console** badge
-  count only what went wrong, so a clean import of a real-world spec no longer turns the status bar red.
-  The import summary names the findings by severity (**Lint: 2 errors, 55 warnings**) and links to them
-  (#682).
-- **Save stays in view in the New host and Edit host forms.** Cancel and Save sit in a footer bar at the
-  bottom of the right panel and the form scrolls above it, so a short window or an open **Advanced**
-  section no longer scrolls them away. <kbd>Enter</kbd> in a field still saves. The panel is titled
-  **Edit host** while editing, and **Group** moves below the sign-in fields so it no longer sits between
-  **Address** and **User** (#689).
-- **A shared terminal's viewer counts themself.** Right after joining, the viewer's header reads
-  **1 watching** with their own chip, as the owner's strip does, instead of **0 watching**. Once the share
-  has ended the count and chips go, and the notice offers **Close tab**. A new share of the same session
-  has a new link, so there is no rejoin from the ended tab (#690).
-- **Telnet and serial terminals no longer offer Files.** The terminal tab's toolbar shows **Files** only
-  when the focused pane's host is reached over SSH or Mosh, as the pane's own menu already did (#688).
-- **Telnet and serial connects list their own steps.** A serial console's connection screen shows
-  **Opening /dev/ttyUSB0 at 9600 8N1** then **Ready**, and a Telnet host's shows **Resolving address**,
-  **Connecting** and, when a user is set, **Signing in at the prompt**, instead of SSH's host-key,
-  authentication and shell steps (#688).
-- **A serial console with no port yet asks for one calmly.** The first connect on a computer where no
-  port was picked shows **Choose the port for** the host, with the ports and **Use and connect**, instead
-  of a red failure with Retry, the log and a **Host settings** heading. A port that was set and has gone
-  is still shown as a failure (#688).
-- **Telnet hosts say so in the host list.** A Telnet host's card, its list row and the New host draft
-  card read **Telnet · admin@10.1.1.1** with the not-encrypted mark the Telnet tab already shows, and the
-  draft no longer shows a bare `:23` (#688).
-- **A large REST response scrolls smoothly in Raw.** Scrolling the Raw view of a multi-megabyte body
-  draws the new lines in the next frame and moves them without a layout pass, so it no longer drops
-  frames on a slower machine.
-- **The split-pane host picker opens the host you type.** Typing another host's name in Split right's
-  picker now selects that host, from either group, and Enter connects the new pane to it. Before, the
-  current host stayed selected (its id matched the typed digits), so the new pane opened on the wrong
-  machine. The picker matches on name, address, group path and tags only (#687).
-- **A script test with an async callback now fails.** `test(name, async () => …)` used to record a pass
-  whatever the callback did, because a script cannot wait for the promise. It now fails with "the test
-  callback is async, and a test cannot wait: make it synchronous", in the typed API and in every imported
-  script layer.
-
-## [6.1.0] - 2026-10-18
-
-### Added
 
 - **SSH connection defaults in Settings.** Settings → Workspace → **SSH** sets a default user, keep-alive
   and connect timeout (`ssh.user`, `ssh.keepAlive`, `ssh.connectTimeout`) for every host that does not
@@ -760,6 +594,75 @@ All notable changes to this project are documented here. The format follows
   #77).
 
 ### Changed
+- **Wirebench Server is under the Elastic License 2.0.** The server package, `packages/server`, moves from
+  Apache-2.0 to the Elastic License 2.0: free to run for your own company and to modify, not to offer to
+  third parties as a hosted or managed service, and not to run with the license file check circumvented.
+  The desktop app, the engine, the CLI, the SSH package, the integrations, the site and the docs stay
+  Apache-2.0. Community, Team and Enterprise are unchanged: a server with no license file is still Community
+  with five enabled accounts, and nothing shipped as free becomes paid
+  ([ADR-0028](docs/adr/0028-the-server-is-licensed-under-the-elastic-license-2-0.md)).
+- The developer variable `WIREBENCH_KINDS` is gone; `WIREBENCH_FEATURES="grpc=off"` takes its place in a
+  development build, and the `features` preference in a shipped one (#735).
+- **Remove from workspace keeps the project folder unless asked.** The **Move the project folder to
+  the trash** box in **Remove project?** starts unchecked, so tidying the workspace list never moves
+  files on its own; tick it to trash the folder as before (#684).
+- **SOAP, after a daily-use review (#725–#732).** Imported requests are named after their operation
+  ("Add", or "Add (SOAP 1.2)" when a 1.1 and a 1.2 binding offer it) instead of "Request 1" (#726).
+  Importing a WSDL already in the project asks **Update Definition…** or **Import as a copy**, a copy
+  named "Calculator (2)" (#727). The request tabs fit: Details folds into Properties, SSL stays on the
+  response, and Headers, Attachments and Assertions carry counts that a **More · Assertions 1** button
+  repeats when they are hidden. Properties keeps what has no other home, with a line of help on each
+  row: the MTOM flags moved under Attachments and the WSS password type and time to live under Auth.
+  Auth says what an inheriting request sends and from where ("Inherits None from Calculator"), and the
+  WSS pickers gain **New…** and **Edit…**; WS-A inherit says whether WS-A is on and shows the values a
+  send would carry. The tree drops the **Operations** folder, lists a 1.1 and 1.2 binding's operation
+  once ("SOAP 1.1 · 1.2") with icons for operations, requests and endpoints, and a request's menu gains
+  **Send**, **Copy as cURL** and one **Recreate from definition** submenu. **soap** in the palette
+  leads with Import, New Request, Update Definition, Send and Validate, and a command whose name matches
+  ranks above one only its group matches. WS-Security configurations open in the right panel, where
+  every label and each password field's name fit, marked unsaved and asked about on close (#730, #731,
+  #732).
+
+- **A password left empty is asked for as a sign-in step, and used once.** Connecting to a host whose
+  password was left to be asked shows **Sign in to box** with the password field and **Connect**, instead
+  of a red missing-secret error; the password is used for that connection only, and **Remember on this
+  machine** stores it. When the SSH agent cannot sign in (none runs, or the server takes none of its keys),
+  the connection screen offers the same password field, for quick connects too (#721, #722).
+- **Snippet Run reaches every pane.** In a split tab, the Run dialog lists each connected pane
+  (**Box pair · box**, **Box pair · box-2**) and types into the one picked (#723).
+- **SSH polish.** The host form's footer line wraps instead of being cut; the SSH menu keeps its labels in
+  a narrow sidebar; a card's full target shows on hover; with an identity, the sign-in choices sit two by
+  two and the inherited note reads **Inherited from identity Tester: password tester_password**. A forward
+  rule in the host panel stacks its fields, and **New rule…** names the rule after its target
+  (**localhost-6000**). **Generate key** fills in the real `user@host` comment. The serial port field gives
+  this platform's example, and the form drops the line summary that repeated its fields. The share strip
+  says **has control**, host details say **not detected** for an OS the host never gave, and Keychain says
+  **No identities yet.** Files and **Save layout…** wait for a connected pane, the terminal scrollbar is
+  faint on light schemes, and a pane that reconnected loses its error mark (#723).
+- **Palette: SSH commands come first in the SSH area, and protocols find New host.** Typing in the
+  palette ranks the area's lead commands (**Connect…**, **New Host…**) above the area's other commands
+  that match only by area, a shorter name wins a tie, and "telnet", "serial" or "mosh" find New host and
+  Connect (#714, S40, S68).
+- **Host forms say which fields are missing, beside them.** Each empty required field reads what it needs
+  under its label, and the footer counts them (**2 fields need a value**). An SSH or Mosh password left
+  empty is asked for when connecting, as the form now says, instead of blocking Save; a Telnet password
+  stays as before. The Telnet sign-in note sits under the sign-in fields, and the Mosh server command and
+  UDP ports moved under **Advanced** (S59–S62).
+- **Host cards and details.** A host card no longer repeats its OS in the subtitle; the icon still names
+  it (#715). A connected host's details lead with **Go to terminal** and **New session**, and long values
+  wrap instead of being cut (S50, S51). The New card stays first in its group and names the protocol until
+  an address is typed (S45, S46). An empty group offers **Add host** inline (S49). The SSH sidebar's
+  button reads **Local terminal** (S69).
+- **SFTP toolbar and dates.** The Files toolbar shows labels when there is room and icons with tooltips
+  when there is not, and **Modified** shows the time for today and a short date otherwise (S66).
+- **New host opens in the right panel, with a draft card in Hosts.** New host (the Hosts button and its
+  menu, a group's Add host, the empty state, **Hosts: New Host…** and **Save as host…**) opens its form in
+  the right panel, where Edit host already was, instead of a dialog over the hosts. While it is open, a
+  dashed **New** card stands in the group the form names, picked, and shows the name and address or
+  serial line as they are typed; Save turns it into the host's card. **Duplicate** now opens the same form
+  filled in from the host and writes nothing until Save. Leaving a New host or Edit host form with changes
+  in it (Cancel, <kbd>Esc</kbd>, closing the panel, picking another host) asks first. **Protocol** moves up
+  under **Name** in the host and group forms, since it changes the fields below it (#674).
 
 - **A REST response viewer that shows what each view is for.** Preview is offered only where it
   renders something, an image or an HTML page; a separate **Hex** view dumps the bytes of any body,
@@ -903,6 +806,97 @@ All notable changes to this project are documented here. The format follows
   (#635).
 
 ### Fixed
+- **Explorer, after a daily-use review (#685).** A SOAP operation with no request is a leaf, and a click on
+  it creates the first request; **Expand all** unfolds down to the operations and Endpoints and leaves
+  those folded, so a tree of many operations stays readable. A failed import names the HTTP status and
+  the host ("The server answered 404 Not Found from api.example.test") and says what to check: the URL,
+  the authentication or the format. **New gRPC API**, **New WebSocket API**, **New Sequence** and **New
+  Webhook** put the new row into rename mode, as New Folder does. A linked project whose folder is gone
+  says so on two lines, with the folder's path and the **Locate…** and **Remove** buttons below it, and
+  the toolbar's disabled Refresh button is gone: the banner that reports a project changed on disk offers
+  Reload.
+- **A click in the Explorer no longer folds the row it opens (#680).** Clicking a project or API row opens
+  its tab and leaves its children where they are; folding is the chevron's, the arrow keys' and a
+  double-click's job. The row a context menu was opened on is outlined while the menu is up, and an item
+  from the menu selects that row before acting on it, so the dialog it opens names the row under the
+  pointer.
+- **The desktop package drops the last of ssh2's native-binding tree.** `nan`, the C++ headers only
+  ssh2's never-built cipher binding compiles against, no longer ships inside the app; the binding's
+  build folder and `cpu-features` were already left out, and the packaged app runs ssh2's pure-JS
+  ciphers on every platform (#362).
+- **SOAP, after a daily-use review (#725–#732).** A response's status and a send error have a line of
+  their own above the tabs, never pushed out of view (#725). A template **?** shows in the Form view as
+  a marked placeholder, Validate warns about each one, the first send of a request still holding them
+  asks, and the Runner counts them (#728). A new mock answers with schema-typed sample values its own
+  contract accepts, not **?** (#729). A failed WSDL fetch names the HTTP status, sign-in, certificate or
+  network cause and what to try. History's chip names a failed send's kind ("refused", "DNS"), and an
+  endpoint picked in the editor marks the tab unsaved and is sent before it is saved (#732).
+
+- **Duplicate from a host card's ⋯ menu opens the copy.** It did nothing: the menu's click also picked the
+  card, which dropped the form Duplicate had just opened. The right-click menu was not affected (#719).
+- **Closing a split tab names every host.** A tab split across box and box-2 asks **Close 2 sessions on
+  box and box-2?**, not only the first host's name (#720).
+- **The connection screen names the user it connects as.** A quick host shows `user@address:port`, the
+  user typed at the prompt wins over the saved one, and a failed attempt with nothing logged no longer
+  shows an empty log box (#716, S67).
+- **SSH round-5 polish.** The snippet editor keeps Run, Insert and Save in a footer while its body
+  scrolls (S63); the Keychain names the identities that use a secret ("Used by identity Tester") and
+  refreshes when secrets change (S64); the import dialog's first step has **Cancel** (S65); the host
+  details hint goes once Hosts is not in front (S41); an ended team session log with nothing recorded says
+  so, its dialog has a close button and opens large (S42); the status bar no longer starts with a
+  separator in Settings (S54).
+- **Device keys and the app lock say what they need.** Where they cannot be used, **Generate key** reads
+  **Device keys need macOS with a Secure Enclave or Windows Hello.** and Settings → Secrets reads **App
+  lock needs Touch ID, Windows Hello or the system password prompt.**, inside the App lock row under its
+  description, followed by the computer's own reason when there is one (such as **This Mac has no Secure
+  Enclave**). **Lock again after idle** is disabled while the app lock is off or unavailable, and the
+  Secrets page's subtitle now mentions the app lock (#691).
+- **Quick Open finds requests by name.** <kbd>⌘P</kbd> lists the requests and operations whose name
+  matches above those that match only by their project, API or folder, so "pet" puts Find pets first,
+  not every request in Swagger Petstore. A row listed by its path alone needs every typed word to be
+  missing from its name: "pet user" no longer lists Delete user because its API is Petstore (#683).
+- **Search heads each group with the request.** A group of Search results starts with the REST method
+  and the request name, with the project and API faint underneath, instead of a breadcrumb that cut
+  every group to the same "PAYMENTS › SWAGGER P…" (#683).
+- **Lint findings no longer count as Problems.** After importing an OpenAPI definition, its lint findings
+  get their own status bar item (**57 lint findings**, with errors and warnings named in the tooltip),
+  which is never coloured and opens the Problems panel. The **Problems** item and the **Console** badge
+  count only what went wrong, so a clean import of a real-world spec no longer turns the status bar red.
+  The import summary names the findings by severity (**Lint: 2 errors, 55 warnings**) and links to them
+  (#682).
+- **Save stays in view in the New host and Edit host forms.** Cancel and Save sit in a footer bar at the
+  bottom of the right panel and the form scrolls above it, so a short window or an open **Advanced**
+  section no longer scrolls them away. <kbd>Enter</kbd> in a field still saves. The panel is titled
+  **Edit host** while editing, and **Group** moves below the sign-in fields so it no longer sits between
+  **Address** and **User** (#689).
+- **A shared terminal's viewer counts themself.** Right after joining, the viewer's header reads
+  **1 watching** with their own chip, as the owner's strip does, instead of **0 watching**. Once the share
+  has ended the count and chips go, and the notice offers **Close tab**. A new share of the same session
+  has a new link, so there is no rejoin from the ended tab (#690).
+- **Telnet and serial terminals no longer offer Files.** The terminal tab's toolbar shows **Files** only
+  when the focused pane's host is reached over SSH or Mosh, as the pane's own menu already did (#688).
+- **Telnet and serial connects list their own steps.** A serial console's connection screen shows
+  **Opening /dev/ttyUSB0 at 9600 8N1** then **Ready**, and a Telnet host's shows **Resolving address**,
+  **Connecting** and, when a user is set, **Signing in at the prompt**, instead of SSH's host-key,
+  authentication and shell steps (#688).
+- **A serial console with no port yet asks for one calmly.** The first connect on a computer where no
+  port was picked shows **Choose the port for** the host, with the ports and **Use and connect**, instead
+  of a red failure with Retry, the log and a **Host settings** heading. A port that was set and has gone
+  is still shown as a failure (#688).
+- **Telnet hosts say so in the host list.** A Telnet host's card, its list row and the New host draft
+  card read **Telnet · admin@10.1.1.1** with the not-encrypted mark the Telnet tab already shows, and the
+  draft no longer shows a bare `:23` (#688).
+- **A large REST response scrolls smoothly in Raw.** Scrolling the Raw view of a multi-megabyte body
+  draws the new lines in the next frame and moves them without a layout pass, so it no longer drops
+  frames on a slower machine.
+- **The split-pane host picker opens the host you type.** Typing another host's name in Split right's
+  picker now selects that host, from either group, and Enter connects the new pane to it. Before, the
+  current host stayed selected (its id matched the typed digits), so the new pane opened on the wrong
+  machine. The picker matches on name, address, group path and tags only (#687).
+- **A script test with an async callback now fails.** `test(name, async () => …)` used to record a pass
+  whatever the callback did, because a script cannot wait for the promise. It now fails with "the test
+  callback is async, and a test cannot wait: make it synchronous", in the typed API and in every imported
+  script layer.
 
 - **Cancelling Import cURL in an empty project leaves no empty API.** The API made to hold the
   request is removed again when the dialog closes without importing (#575).
@@ -2468,8 +2462,8 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v6.1.0-rc.4...HEAD
-[6.1.0]: https://github.com/wirebench/wirebench/compare/v6.0.0-rc.1...v6.1.0-rc.4
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v6.1.0-rc.5...HEAD
+[6.1.0]: https://github.com/wirebench/wirebench/compare/v6.0.0-rc.1...v6.1.0-rc.5
 [6.0.0]: https://github.com/wirebench/wirebench/compare/v5.0.0...v6.0.0
 [5.0.0]: https://github.com/wirebench/wirebench/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/wirebench/wirebench/compare/v3.1.0...v4.0.0
