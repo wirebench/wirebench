@@ -24,6 +24,8 @@ All notable changes to this project are documented here. The format follows
   workspace's projects, and the one picked shows its environments straight away.
 - **The Start page and the Explorer agree in an empty workspace (#686).** Both offer **New project**
   first, then **Import…**.
+- **Two projects of one name tell apart (#686).** When another project shares a project's name (in
+  any case), its Explorer row shows its folder's name faint after the name.
 - **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
   shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
   the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.

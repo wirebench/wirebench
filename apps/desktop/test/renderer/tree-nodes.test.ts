@@ -3,7 +3,13 @@ import type { InterfaceSummary } from '../../src/shared/kinds/soap/wire.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 import type { ExplorerNode } from '../../src/renderer/features/explorer/tree-nodes.js';
 import { endpointCountText } from '../../src/renderer/kinds/soap/explorer-tree.js';
-import { buildExplorerTree, nodeProjectId, restEntityId } from '../../src/renderer/features/explorer/tree-nodes.js';
+import {
+  buildExplorerTree,
+  clashingProjectNames,
+  folderName,
+  nodeProjectId,
+  restEntityId,
+} from '../../src/renderer/features/explorer/tree-nodes.js';
 import {
   REQUEST_PROPERTIES,
   grpcApiWire,
@@ -227,6 +233,27 @@ describe('buildExplorerTree', () => {
       'endpoints:iface-1',
       'op:iface-1:{tns}CalculatorSoap:Add',
     ]);
+  });
+
+  it('suffixes two projects of one name with their folders, and leaves a unique name alone (#686 E21)', () => {
+    const tree = buildExplorerTree(
+      [
+        { id: 'p1', name: 'Project 01', source: 'internal', dir: '/ws/projects/project-01', status: 'ready' },
+        { id: 'p2', name: 'project 01', source: 'linked', dir: 'C:\\work\\shared-01\\', status: 'ready' },
+        { id: 'p3', name: 'Billing', source: 'internal', dir: '/ws/projects/billing', status: 'ready' },
+      ],
+      [],
+      {},
+      [],
+    );
+    expect(tree.map((node) => node.suffix)).toEqual(['project-01', 'shared-01', undefined]);
+  });
+
+  it('names clashing projects case-insensitively, and a folder by its last segment', () => {
+    expect([...clashingProjectNames([{ name: 'A' }, { name: 'a' }, { name: 'B' }])]).toEqual(['a']);
+    expect(folderName('/ws/projects/demo/')).toBe('demo');
+    expect(folderName('C:\\work\\demo')).toBe('demo');
+    expect(folderName('demo')).toBe('demo');
   });
 
   it('gives a missing or unreadable project a single Locate…/Remove row instead of children', () => {

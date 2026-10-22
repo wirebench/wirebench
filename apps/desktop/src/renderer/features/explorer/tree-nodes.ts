@@ -160,9 +160,10 @@ export interface ExplorerNode {
   /** Set on `mock` nodes: the mock the row stands for. */
   readonly mockId?: string;
   /**
-   * Set on a `webhook-request` node imported as a callback: its parent operation, rendered muted
-   * after the label — the linked API's request for that operation when one is found, else the
-   * operation's own contract key (`hook.operation`).
+   * Muted text after the label. On a `webhook-request` node imported as a callback: its parent
+   * operation — the linked API's request for that operation when one is found, else the operation's
+   * own contract key (`hook.operation`). On a `project` node whose name another project shares: its
+   * folder's name (#686 E21).
    */
   readonly suffix?: string;
   /**
@@ -297,6 +298,25 @@ function webhookRequestNode(
     ...(request.orphaned === true ? { orphaned: true } : {}),
     ...(suffix !== undefined ? { suffix } : {}),
   };
+}
+
+/** The names, lower-cased, that more than one of `projects` carries: "Project 01" and "project 01" clash. */
+export function clashingProjectNames(projects: readonly { readonly name: string }[]): ReadonlySet<string> {
+  const seen = new Set<string>();
+  const clashing = new Set<string>();
+  for (const { name } of projects) {
+    const key = name.toLowerCase();
+    if (seen.has(key)) clashing.add(key);
+    seen.add(key);
+  }
+  return clashing;
+}
+
+/** The last segment of a folder path, on either separator; the whole path when it has none. */
+export function folderName(dir: string): string {
+  const trimmed = dir.replace(/[\\/]+$/, '');
+  const last = trimmed.split(/[\\/]/).pop();
+  return last === undefined || last === '' ? dir : last;
 }
 
 /**
@@ -506,6 +526,7 @@ export function buildExplorerTree(
       .filter((owner) => owner.scripts?.api !== undefined && owner.scripts.api !== 'wirebench')
       .map((owner) => owner.id),
   );
+  const clashing = clashingProjectNames(projects);
   const roots = projects.map((project) => {
     const broken = project.status === 'missing' || project.status === 'error';
     const children: ExplorerNode[] = broken
@@ -550,6 +571,8 @@ export function buildExplorerTree(
       label: project.name,
       projectId: project.id,
       dir: project.dir,
+      // Two projects of one name tell apart by their folder, shown faint after the name (#686 E21).
+      ...(clashing.has(project.name.toLowerCase()) ? { suffix: folderName(project.dir) } : {}),
       ...(project.source === 'linked' ? { linked: true } : {}),
       ...(project.status === 'loading' ? { loading: true } : {}),
       ...(conflicted.projectIds.has(project.id) ? { conflicted: true } : {}),
