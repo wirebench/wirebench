@@ -17,9 +17,10 @@ import type { PropertyMap, Project } from '../project/model.js';
 import type { PropertyScopes } from '../project/properties.js';
 import { featureDisabled } from '../protocol/registry.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
-import { defaultRegistry } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
 import { findStepRequest } from '../run/select.js';
 import type { SelectedRequest } from '../run/select.js';
+import type { SelectedBase } from '../protocol/module.js';
 import { SEQUENCE_LIMITS } from './model.js';
 import type { SequenceDef, SequenceStep } from './model.js';
 import { chooseBranch, pause } from './branch.js';
@@ -172,11 +173,11 @@ function worst(outcomes: readonly SequenceOutcome[]): SequenceOutcome {
   return outcomes.reduce<SequenceOutcome>((a, b) => (RANK[b] > RANK[a] ? b : a), 'skipped');
 }
 
-function stepName(step: SequenceStep, selected: SelectedRequest | undefined): string {
+function stepName(step: SequenceStep, selected: SelectedBase | undefined): string {
   return step.name ?? selected?.request.name ?? step.requestId;
 }
 
-function requestAssertionsOf(selected: SelectedRequest): readonly StepAssertion[] {
+function requestAssertionsOf(selected: SelectedBase): readonly StepAssertion[] {
   return ('assertions' in selected.request ? selected.request.assertions : undefined) ?? [];
 }
 
@@ -386,7 +387,7 @@ export async function runSequence(
   const baseAt = (index: number): { base: StepBase; target: ReturnType<typeof findStepRequest> } => {
     const step = sequence.steps[index]!;
     const target = findStepRequest(project, step.requestId, options.registry);
-    const selected = target.kind === 'found' ? target.selected : undefined;
+    const selected = target.kind === 'found' ? (target.selected as SelectedBase) : undefined;
     return {
       target,
       base: {
@@ -394,7 +395,8 @@ export async function runSequence(
         stepId: step.id,
         requestId: step.requestId,
         name: stepName(step, selected),
-        ...(selected !== undefined ? { protocol: selected.kind } : {}),
+        // The base's kind is any string; the step reports it under the composed union (spec §3.4).
+        ...(selected !== undefined ? { protocol: selected.kind as SelectedRequest['kind'] } : {}),
         assertions: [],
         transfers: [],
       },

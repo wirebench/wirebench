@@ -339,8 +339,10 @@ item and sidebar copy, composed in the static `AREAS` list, from which `AreaId` 
 (`renderer/areas/index.ts`) supplies the sidebar view, the area's extra commands and, optionally, a `StatusItem`
 component that the status bar (`shell/status-bar.tsx`) renders for each enabled area (the SSH area's counts running
 port forwards); the main half (`main/areas.ts`)
-registers its channels. `WIREBENCH_AREAS="ssh=off"` switches an area off: main registers none of its channels, the
-renderer none of its commands, and the rail leaves it out (`app.areas` carries the enabled ids). The contract is
+registers its channels. The managed policy file's `areas` section (`ssh: false`, #360) or `WIREBENCH_AREAS="ssh=off"`
+switches an area off, resolved through the engine's `resolveFeatures` with the policy as its restrict-only level
+(`main/areas.ts`, `resolveAreas`): main registers none of its channels, the renderer none of its commands, and the
+rail leaves it out (`app.areas` carries the enabled ids; `app.features` the rows Settings shows). The contract is
 `@internal`, not a plugin API. The SSH area is the first area to bring its own tab kind and channels; its model and
 sessions live in `packages/ssh`, which imports neither the engine nor Electron. See
 [ADR-0021](../adr/0021-a-desktop-area-is-a-module-behind-one-interface.md).

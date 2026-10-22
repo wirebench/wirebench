@@ -12,6 +12,8 @@ import type { MockResponse } from '../../../src/mock/model.js';
 import { checkMockStubs } from '../../../src/mock/stub-check.js';
 import { tempProjectDir } from '../project/fixture.js';
 import { mockProject, wsdlFixture } from './fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const CALCULATOR = wsdlFixture('public/calculator/service.wsdl');
 const SOAP11 = 'http://schemas.xmlsoap.org/soap/envelope/';

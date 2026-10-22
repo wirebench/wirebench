@@ -629,3 +629,17 @@ export const wsRun: ProtocolRun<WsSelected> = {
     ];
   },
 };
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface SelectedRequests {
+    websocket: WsSelected;
+  }
+  interface SentExchanges {
+    websocket: {
+      readonly kind: 'websocket';
+      /** The session whole: its handshake, every frame both ways, and how it closed. */
+      readonly ws: WsExchange;
+    };
+  }
+}

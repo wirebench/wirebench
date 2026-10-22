@@ -322,3 +322,10 @@ export function wsApisOf(project: Project): readonly WsApi[] {
 export function withWsApis(project: Project, apis: readonly WsApi[]): Project {
   return withContainersOf(project, 'websocket', apis);
 }
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface RequestDefs {
+    websocket: WsRequestDef;
+  }
+}

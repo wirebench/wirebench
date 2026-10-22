@@ -5,7 +5,7 @@
 
 import type { ContainerDir } from '../protocol/module.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
-import { defaultRegistry } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
 import type { Project } from './model.js';
 import { unsupportedOf } from './model.js';
 

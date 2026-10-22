@@ -9,3 +9,10 @@ export type RestLiveEvent =
       readonly headers: Readonly<Record<string, string>>;
     }
   | { readonly protocol: 'rest'; readonly kind: 'row'; readonly row: SseRow };
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface LiveEvents {
+    rest: RestLiveEvent;
+  }
+}

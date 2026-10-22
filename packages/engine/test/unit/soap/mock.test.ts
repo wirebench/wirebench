@@ -14,6 +14,8 @@ import { soapInterfacesOf } from '../../../src/soap/model.js';
 import { fileURLToPath } from 'node:url';
 import { importWsdl } from '../../../src/soap/import.js';
 import { bindingContextFor, validateMessage } from '../../../src/validate/index.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const CALCULATOR = wsdlFixture('public/calculator/service.wsdl');
 const SOAP11 = 'http://schemas.xmlsoap.org/soap/envelope/';

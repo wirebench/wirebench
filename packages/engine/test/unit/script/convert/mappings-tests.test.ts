@@ -10,6 +10,8 @@ import type { ConvertProtocol } from '../../../../src/script/convert/roots.js';
 import type { LayeredApi, ScriptPhase } from '../../../../src/script/model.js';
 import { apiDeclarations, secretNameType } from '../../../../src/script/types/api.js';
 import { typeErrors } from '../ts-check.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../../src/protocols.js';
 
 // A type check builds a program for its case; under coverage on a busy runner that outlasts the
 // default 5 s.

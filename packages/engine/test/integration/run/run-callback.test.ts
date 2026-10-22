@@ -19,6 +19,8 @@ import { runRequests } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';
 import { startTestRestServer } from '../../helpers/test-rest-server.js';
 import type { TestRestServer } from '../../helpers/test-rest-server.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const HOOK = '01K000000000000000000000H1';
 const CAPTURE: CaptureDetailView = {

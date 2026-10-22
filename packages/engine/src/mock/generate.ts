@@ -5,7 +5,7 @@
  */
 
 import { WirebenchError } from '../errors.js';
-import { defaultRegistry } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
 import { nodeFs } from '../project/fs.js';
 import type { FsLike } from '../project/fs.js';
 import type { CreateOptions, Project } from '../project/model.js';

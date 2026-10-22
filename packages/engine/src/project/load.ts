@@ -17,7 +17,7 @@
 import { ProjectError } from '../errors.js';
 import type { ContainerBase, LoadContext, ProtocolStorage } from '../protocol/module.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
-import { defaultRegistry } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
 import { readMocks } from '../mock/load.js';
 import { readSequences } from '../sequence/load.js';
 import type { FsLike } from './fs.js';

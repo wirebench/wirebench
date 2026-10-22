@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **An organisation can switch a desktop area off (#360).** The managed `policy.yaml` takes an `areas`
+  section (`ssh: false`, or `local-terminal`, `telnet`, `serial` on their own) that removes the area's
+  activity-bar item, commands, views, tabs and IPC channels on that machine and wins over
+  `WIREBENCH_AREAS`; a policy entry can only switch off. **Settings → Features** gains an **Areas** group
+  that shows each area's state and why (_Set by your organisation_, marked Managed).
+
 ### Fixed
 
 - **A new environment is ready in one step (#746).** **Add environment** puts the new row straight

@@ -441,3 +441,10 @@ export function restApisOf(project: Project): readonly RestApi[] {
 export function withRestApis(project: Project, apis: readonly RestApi[]): Project {
   return withContainersOf(project, 'rest', apis);
 }
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface RequestDefs {
+    rest: RestRequestDef;
+  }
+}

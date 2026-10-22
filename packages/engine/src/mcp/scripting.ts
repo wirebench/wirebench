@@ -332,3 +332,13 @@ export const mcpScripting: ProtocolScripting<McpRequestSnapshot, McpResponseSnap
       : undefined;
   },
 };
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface RequestSnapshots {
+    mcp: McpRequestSnapshot;
+  }
+  interface ResponseSnapshots {
+    mcp: McpResponseSnapshot;
+  }
+}

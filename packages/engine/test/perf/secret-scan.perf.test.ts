@@ -3,6 +3,8 @@ import { CI_GATE_FACTOR, GATE_SAMPLES, SKIP_PERF, median } from '../bench/budget
 import { createProject } from '../../src/project/model.js';
 import { createApi, createRestRequest, entry as kv } from '../../src/rest/model.js';
 import { scanProjectForSecrets } from '../../src/secrets/scan/scan.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../src/protocols.js';
 
 describe.skipIf(SKIP_PERF)('secret scan', () => {
   it('a 2,000-request project scans in under 100 ms (SC-7)', { retry: 1 }, () => {

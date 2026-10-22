@@ -9,7 +9,7 @@
 import type { Project } from './model.js';
 import type { RequestFileLocation } from './request-tree.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
-import { defaultRegistry } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
 
 /**
  * Locates the request identified by `requestId`: the folder it lives under and its file slug.

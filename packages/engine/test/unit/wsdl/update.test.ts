@@ -13,6 +13,8 @@ import type { OperationDef, SoapRequestDef } from '../../../src/soap/model.js';
 import { saveProject } from '../../../src/project/save.js';
 import { generateSoapRequest } from '../../../src/soap/generate.js';
 import { applyUpdate, planUpdate } from '../../../src/wsdl/update-definition.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const craftedRoot = fileURLToPath(new URL('../../../../../fixtures/wsdl/crafted/', import.meta.url));
 

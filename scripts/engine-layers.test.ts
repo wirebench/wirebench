@@ -1,5 +1,5 @@
 /**
- * The engine's dependency rules (protocol modules spec §7.2), checked by the import-graph script: against a
+ * The engine's dependency rules (package split spec §3.1), checked by the import-graph script: against a
  * fixture tree that breaks each rule once, and against the real tree.
  */
 import { spawnSync } from 'node:child_process';
@@ -23,6 +23,7 @@ interface ReportedEdge {
 interface Report {
   readonly edges: readonly ReportedEdge[];
   readonly violations: readonly ReportedEdge[];
+  readonly banned: readonly { readonly from: string; readonly specifier: string }[];
   readonly unresolved: readonly string[];
 }
 
@@ -44,15 +45,18 @@ const FIXTURE: Readonly<Record<string, string>> = {
   // Rule 2.
   'assert/status.ts': "import { REST } from '../rest/model.js';\nexport const status = REST;\n",
   'soap/model.ts': 'export interface Interface {\n  readonly id: string;\n}\n',
-  'rest/http-file/parse.ts': 'export const parseHttpFile = 1;\n',
-  // An exception, used as it is written: type-only.
+  // Rule 2 again: SOAP's type in core, type-only.
   'project/environments.ts':
     "import type { Interface } from '../soap/model.js';\nexport interface Endpoints {\n  readonly of?: Interface;\n}\n",
-  // An exception that allows a type, used for a value.
-  'import/http-file/map.ts':
-    "import { parseHttpFile } from '../../rest/http-file/parse.js';\nexport const mapped = parseHttpFile;\n",
+  // Compose imports a protocol: allowed.
+  'import/http-file/map.ts': "import { REST } from '../../rest/model.js';\nexport const mapped = REST;\n",
+  'protocols.ts': "import { REST } from './rest/model.js';\nexport const registry = REST;\n",
+  // Rule 3: core importing compose.
+  'run/select.ts': "import { registry } from '../protocols.js';\nexport const selected = registry;\n",
   // An `import()` type is an import.
   'script/run.ts': "export type Api = import('../rest/model.js').RestApi;\n",
+  // A banned package.
+  'xml/parse.ts': "import { app } from 'electron';\nexport const parse = app;\n",
 };
 
 describe('engine-import-graph.mjs', () => {
@@ -78,16 +82,20 @@ describe('engine-import-graph.mjs', () => {
     expect(report.edges.map((edge) => `${edge.from} -> ${edge.to}`)).toEqual([
       'assert/status.ts -> rest/model.ts',
       'grpc/model.ts -> rest/model.ts',
-      'import/http-file/map.ts -> rest/http-file/parse.ts',
+      'import/http-file/map.ts -> rest/model.ts',
       'project/environments.ts -> soap/model.ts',
+      'protocols.ts -> rest/model.ts',
+      'run/select.ts -> protocols.ts',
       'script/run.ts -> rest/model.ts',
     ]);
     expect(report.violations.map((edge) => edge.from)).toEqual([
       'assert/status.ts',
       'grpc/model.ts',
-      'import/http-file/map.ts',
+      'project/environments.ts',
+      'run/select.ts',
       'script/run.ts',
     ]);
+    expect(report.banned).toEqual([{ from: 'xml/parse.ts', specifier: 'electron' }]);
   }, 30_000);
 
   it('exits non-zero under --check and names the rule each import breaks', () => {
@@ -98,14 +106,19 @@ describe('engine-import-graph.mjs', () => {
     expect(result.stderr).toContain('breaks rule 1: no other protocol group');
     expect(result.stderr).toContain('[core->rest] assert/status.ts -> rest/model.ts : REST');
     expect(result.stderr).toContain('breaks rule 2: core imports no protocol group');
-    expect(result.stderr).not.toContain('project/environments.ts -> soap/model.ts');
+    expect(result.stderr).toContain('[core->compose] run/select.ts -> protocols.ts : registry');
+    expect(result.stderr).toContain('breaks rule 3: nothing imports compose');
+    expect(result.stderr).toContain('banned import: xml/parse.ts -> electron');
+    expect(result.stderr).not.toContain('import/http-file/map.ts -> rest/model.ts');
   }, 30_000);
 
-  it('finds no violation and no stale exception in the engine itself', () => {
+  it('finds no violation and no banned import in the engine itself', () => {
     const result = run(['--check']);
 
     expect(result.stderr).toBe('');
-    expect(result.stdout).toMatch(/^engine layers: 0 violation\(s\), 0 stale exception\(s\), \d+ allowed import\(s\)/);
+    expect(result.stdout).toMatch(
+      /^engine layers: 0 violation\(s\), 0 banned import\(s\), \d+ import\(s\) from compose/,
+    );
     expect(result.status).toBe(0);
   }, 30_000);
 });

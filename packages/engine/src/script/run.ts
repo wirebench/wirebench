@@ -9,7 +9,7 @@
 import { z } from 'zod';
 import type { RequestSnapshotBase, ResponseSnapshotBase } from '../protocol/module.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
-import type { ResponseSnapshot } from '../protocols.js';
+import type { ResponseSnapshot } from '../protocol/unions.js';
 import { TRANSFER_NAME_PATTERN } from '../sequence/model.js';
 import { applyRequestChanges } from './apply.js';
 import { buildPrelude } from './api/prelude.js';
@@ -46,7 +46,7 @@ export interface ScriptRunInput {
   /** For a pre-request script, the request it may change; for a post-response one, what was sent. */
   readonly request: RequestSnapshotBase;
   /**
-   * Required for a post-response script. Any module's response snapshot; the built-in union is
+   * Required for a post-response script. Any module's response snapshot; the composed union is
    * named only so that a literal of one of its members type-checks.
    */
   readonly response?: ResponseSnapshot | ResponseSnapshotBase;

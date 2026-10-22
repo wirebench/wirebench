@@ -16,6 +16,8 @@ import type { RunContext } from '../../../src/run/context.js';
 import { createRunScope } from '../../../src/run/scope.js';
 import { selectRequests } from '../../../src/run/select.js';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const { events } = vi.hoisted(() => ({ events: [] as string[] }));
 

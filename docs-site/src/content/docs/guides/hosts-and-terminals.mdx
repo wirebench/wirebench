@@ -453,8 +453,9 @@ groups:
 - A proxy set for the host is used when it is the first hop. A jump host must itself be an SSH host.
 - Files, port forwarding, agent forwarding, environment variables and **Install public key** need SSH, so a
   Telnet host does not show them.
-- An administrator can switch Telnet off for a build with `WIREBENCH_AREAS=telnet=off`: Telnet hosts then
-  refuse to connect and the form no longer offers Telnet.
+- An administrator can switch Telnet off with `telnet: false` under `areas` in the managed policy file, or
+  for one run with `WIREBENCH_AREAS=telnet=off`: Telnet hosts then refuse to connect and the form no longer
+  offers Telnet.
 
 ## Serial consoles
 
@@ -493,7 +494,8 @@ groups:
   and in again. A port another program has open is refused until that program lets go.
 - Files, port forwarding, agent forwarding, environment variables and **Install public key** need SSH, so a
   serial console does not show them.
-- An administrator can switch serial consoles off for a build with `WIREBENCH_AREAS=serial=off`.
+- An administrator can switch serial consoles off with `serial: false` under `areas` in the managed policy
+  file, or for one run with `WIREBENCH_AREAS=serial=off`.
 
 ## Opening a terminal
 
@@ -640,7 +642,8 @@ same colours, the multi-line paste prompt, copy on select and <kbd>⌘F</kbd> / 
 - When the shell exits, the tab shows **Shell ended (code N)** with **Restart**. Closing the tab, or
   switching to another workspace, ends the shell.
 - A local terminal holds one shell: it does not split, join a layout or take broadcast input.
-- `WIREBENCH_AREAS=local-terminal=off` removes it while keeping SSH; `ssh=off` removes both.
+- `local-terminal: false` in the managed policy file, or `WIREBENCH_AREAS=local-terminal=off`, removes it while
+  keeping SSH; `ssh` off removes both.
 
 ## Files
 
@@ -1439,8 +1442,17 @@ The preview shows:
 
 ## Switching the area off
 
-The SSH area is on by default in every edition. Operators and developers can switch it off with the
-`WIREBENCH_AREAS` environment variable, a comma-separated list of `id=on|off`:
+The SSH area is on by default in every edition. An organisation switches it off for a managed machine
+in the [managed preferences](/wirebench/docs/guides/managed-preferences/#areas) file, which wins over
+anything the environment says:
+
+```yaml
+areas:
+  ssh: false
+```
+
+Operators and developers can switch it off for one run with the `WIREBENCH_AREAS` environment
+variable, a comma-separated list of `id=on|off`:
 
 ```sh
 WIREBENCH_AREAS="ssh=off"

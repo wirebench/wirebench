@@ -329,3 +329,13 @@ export const restScripting: ProtocolScripting<RestRequestSnapshot, RestResponseS
       : { code: 'script-value-invalid', message: `"${after.method}" is not an HTTP method` };
   },
 };
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface RequestSnapshots {
+    rest: RestRequestSnapshot;
+  }
+  interface ResponseSnapshots {
+    rest: RestResponseSnapshot;
+  }
+}

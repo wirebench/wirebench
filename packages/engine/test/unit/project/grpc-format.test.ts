@@ -22,6 +22,8 @@ import { saveProject } from '../../../src/project/save.js';
 import { projectFiles } from '../../../src/project/serialize.js';
 import { createApi, createRestRequest, entry, restApisOf } from '../../../src/rest/model.js';
 import { listTree, tempProjectDir } from './fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 function greeter(): GrpcApi {
   return createGrpcApi('Greeter', {

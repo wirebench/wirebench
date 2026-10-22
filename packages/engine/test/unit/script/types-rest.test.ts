@@ -8,6 +8,8 @@ import { apiDeclarations, secretNameType } from '../../../src/script/types/api.j
 import { JsonSchemaTypes } from '../../../src/script/types/json-schema.js';
 import { restScriptTypes } from '../../../src/rest/script-types.js';
 import { typeErrors } from './ts-check.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const pet: Record<string, unknown> = {
   type: 'object',

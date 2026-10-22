@@ -11,6 +11,8 @@ import { selectRequests } from '../../../src/run/select.js';
 import { soapProtocol } from '../../../src/soap/module.js';
 import { soapRun } from '../../../src/soap/run.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const { events, cacheReads } = vi.hoisted(() => ({ events: [] as string[], cacheReads: [] as string[] }));
 

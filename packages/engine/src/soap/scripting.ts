@@ -267,3 +267,13 @@ export const soapScripting: ProtocolScripting<SoapRequestSnapshot, SoapResponseS
     },
   },
 };
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface RequestSnapshots {
+    soap: SoapRequestSnapshot;
+  }
+  interface ResponseSnapshots {
+    soap: SoapResponseSnapshot;
+  }
+}

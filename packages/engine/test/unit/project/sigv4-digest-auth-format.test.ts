@@ -6,6 +6,8 @@ import { saveProject } from '../../../src/project/save.js';
 import { tempProjectDir } from './fixture.js';
 import { FORMAT_VERSION } from '../../../src/project/model.js';
 import { authConfigSchema, definitionAuthSchema, soapOwnerAuthSchema } from '../../../src/project/schema-parts.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const SIGV4 = {
   type: 'aws-sigv4',

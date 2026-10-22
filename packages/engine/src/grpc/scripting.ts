@@ -183,3 +183,13 @@ export const grpcScripting: ProtocolScripting<GrpcRequestSnapshot, GrpcResponseS
       : { code: 'script-origin-change', message: 'A script cannot change the target of a gRPC call' };
   },
 };
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface RequestSnapshots {
+    grpc: GrpcRequestSnapshot;
+  }
+  interface ResponseSnapshots {
+    grpc: GrpcResponseSnapshot;
+  }
+}

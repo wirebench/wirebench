@@ -5,10 +5,10 @@
  * The engine never reads an attachment from disk on its own: the send path is
  * handed an {@link AttachmentResolver} so the desktop main process (which owns the
  * project directory and its cache) decides where bytes come from. See
- * `project/attachments-cache.ts` for the file-backed implementation.
+ * `soap/attachments.ts` for the file-backed implementation.
  */
 
-export type { AttachmentResolver } from '../../project/attachments-cache.js';
+export type { AttachmentResolver } from '../attachments.js';
 
 /** Content transfer encodings this layer writes or understands. */
 export type TransferEncoding = 'binary' | 'base64' | '8bit' | '7bit' | 'quoted-printable';

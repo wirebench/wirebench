@@ -1267,7 +1267,6 @@ export {
   attachmentFile,
   attachmentsDir,
   attachmentsIndexFile,
-  createFileAttachmentResolver,
   listAttachments,
   pruneAttachments,
   putAttachment,
@@ -1463,12 +1462,13 @@ export {
   findEnvironment,
   removeEnvironment,
   resolveApiBaseUrl,
-  resolveAuthEndpoint,
-  resolveEndpoint,
   resolveScopes,
   upsertEnvironment,
 } from './project/environments.js';
 export type { BaseUrlSource, EndpointSource } from './project/environments.js';
+export { resolveAuthEndpoint, resolveEndpoint } from './soap/endpoints.js';
+export { resolveWorkspaceEndpoint } from './soap/workspace-endpoint.js';
+export { createFileAttachmentResolver } from './soap/attachments.js';
 // Workspace
 export {
   WORKSPACE_FORMAT_VERSION,
@@ -1506,7 +1506,6 @@ export {
   parseWorkspaceFile,
   reidentifyProject,
   resolveWorkspaceApiBaseUrl,
-  resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
   saveLocalState,
   saveShare,

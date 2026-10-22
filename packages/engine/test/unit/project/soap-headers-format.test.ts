@@ -5,6 +5,8 @@ import { loadProject } from '../../../src/project/load.js';
 import { saveProject } from '../../../src/project/save.js';
 import { tempProjectDir } from './fixture.js';
 import { soapInterfacesOf } from '../../../src/soap/model.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const V3_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v3', 'project');
 const SMOKE = join('interfaces', 'CountryInfo', 'operations', 'ListOfCountryNamesByCode', 'Smoke test.request.yaml');
