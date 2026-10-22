@@ -27,6 +27,7 @@ import {
   nameNewRow,
   sendRest,
   setMethodAndUrl,
+  unfoldRow,
 } from '../helpers/rest.js';
 import {
   startTestRestServer,
@@ -135,7 +136,7 @@ test.describe('request assertions', () => {
     await expect(reopenedApiRow).toBeVisible({ timeout: 20_000 });
     const requestRow = page.getByTestId('ws-request-row').filter({ hasText: 'Echo' });
     if (!(await requestRow.isVisible())) {
-      await reopenedApiRow.click();
+      await unfoldRow(reopenedApiRow);
     }
     await expect(requestRow).toBeVisible({ timeout: 20_000 });
     await requestRow.click();

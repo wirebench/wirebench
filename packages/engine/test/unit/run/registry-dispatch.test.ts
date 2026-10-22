@@ -67,7 +67,7 @@ const context: RunContext = {
 };
 
 describe('the built-in registry', () => {
-  it('holds the five protocols in order, and the scripts feature', () => {
+  it('holds the five protocols in order, then the built-in features', () => {
     expect(BUILTIN_PROTOCOLS.map((module) => module.kind)).toEqual(['soap', 'rest', 'grpc', 'websocket', 'mcp']);
     expect(createBuiltinRegistry().features.descriptors.map((descriptor) => descriptor.id)).toEqual([
       'soap',
@@ -76,6 +76,11 @@ describe('the built-in registry', () => {
       'websocket',
       'mcp',
       'scripts',
+      'sequences',
+      'webhooks',
+      'server-sync',
+      'team-secrets',
+      'mcp-server',
     ]);
     expect(SCRIPTS_FEATURE).toEqual({ id: 'scripts', title: 'Scripts', default: true, stage: 'stable', requires: [] });
   });

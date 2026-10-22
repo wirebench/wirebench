@@ -48,6 +48,18 @@ export async function chooseContextMenuItem(page: Page, target: Locator, item: s
   }).toPass({ timeout: 30_000 });
 }
 
+/**
+ * Unfolds an explorer row by its chevron, if it is folded. A click on an API or project row opens its tab and
+ * leaves the fold alone (#680), so a spec that wants to see a row's children asks the chevron.
+ */
+export async function unfoldRow(row: Locator): Promise<void> {
+  await expect(row).toBeVisible({ timeout: 20_000 });
+  const item = row.locator('xpath=ancestor::*[@role="treeitem"][1]');
+  if ((await item.getAttribute('aria-expanded')) === 'true') return;
+  await row.getByTestId('explorer-row-twisty').click();
+  await expect(item).toHaveAttribute('aria-expanded', 'true', { timeout: 20_000 });
+}
+
 /** The explorer row for one API. */
 export function apiRow(page: Page, name: string): Locator {
   return page.getByTestId('api-row').filter({ hasText: name });
@@ -190,7 +202,8 @@ export function restRequestRow(page: Page, name: string): Locator {
 
 /** Opens the API tab for `name` by double-clicking its explorer row. */
 export async function openApiTab(page: Page, name: string): Promise<void> {
-  await apiRow(page, name).dblclick();
+  // One click opens the tab and leaves the API unfolded (#680); a double-click would fold it.
+  await apiRow(page, name).click();
   await expect(page.getByTestId('api-tab')).toBeVisible({ timeout: 20_000 });
 }
 

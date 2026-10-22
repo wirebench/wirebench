@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { expect, test, type Locator } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace, openImportDialog } from '../helpers/project.js';
-import { apiRow, chooseContextMenuItem, openRequestTab, restRequestRow } from '../helpers/rest.js';
+import { apiRow, chooseContextMenuItem, openRequestTab, restRequestRow, unfoldRow } from '../helpers/rest.js';
 import { startTestRestServer, type TestRestServer } from '../helpers/test-server.js';
 
 let server: TestRestServer;
@@ -78,7 +78,7 @@ test('imported Bruno scripts, once switched on, share a value across a run', asy
   await page.getByTestId('import-done').click();
 
   await expect(apiRow(page, 'script-demo').first()).toBeVisible({ timeout: 20_000 });
-  await apiRow(page, 'script-demo').first().click();
+  await unfoldRow(apiRow(page, 'script-demo').first());
 
   // Both requests arrive with their scripts attached and off: turn each on.
   for (const name of ['Create user', 'Get user']) {

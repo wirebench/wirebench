@@ -6,6 +6,7 @@ vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mock
 import {
   chordRecordingError,
   formatKeybinding,
+  inKeyScope,
   matchesEvent,
   parseKeybinding,
 } from '../../src/renderer/lib/keybindings.js';
@@ -45,6 +46,15 @@ describe('formatKeybinding', () => {
     expect(formatKeybinding('Mod+Shift+F', 'win')).toBe('Ctrl+Shift+F');
     expect(formatKeybinding('Mod+Alt+B', 'linux')).toBe('Ctrl+Alt+B');
     expect(formatKeybinding('Mod+Comma', 'win')).toBe('Ctrl+,');
+  });
+
+  it('names the Explorer keys: Delete as a glyph on mac, function keys upper-cased (#681)', () => {
+    expect(formatKeybinding('Delete', 'mac')).toBe('⌦');
+    expect(formatKeybinding('Delete', 'win')).toBe('Delete');
+    expect(formatKeybinding('Mod+Backspace', 'mac')).toBe('⌘⌫');
+    expect(formatKeybinding('Mod+Backspace', 'linux')).toBe('Ctrl+Backspace');
+    expect(formatKeybinding('F2', 'mac')).toBe('F2');
+    expect(formatKeybinding('f2', 'win')).toBe('F2');
   });
 
   it("writes the SSH hints in each platform's notation (#536)", () => {
@@ -143,5 +153,26 @@ describe('the REST shortcuts', () => {
     expect(getCommand('rest.send')?.shortcut).toBe('Mod+Enter');
     expect(getCommand('request.send')?.shortcut).toBe('Mod+Enter');
     expect(whenScopesOverlap(getCommand('rest.send')?.whenScope, getCommand('request.send')?.whenScope)).toBe(false);
+  });
+});
+
+describe('inKeyScope', () => {
+  it('lets an unscoped shortcut fire from anywhere, and a scoped one only with focus inside its element', () => {
+    const tree = document.createElement('div');
+    tree.setAttribute('role', 'tree');
+    tree.setAttribute('aria-label', 'Explorer');
+    const row = document.createElement('div');
+    row.tabIndex = -1;
+    tree.append(row);
+    const elsewhere = document.createElement('button');
+    document.body.append(tree, elsewhere);
+
+    row.focus();
+    expect(inKeyScope(undefined)).toBe(true);
+    expect(inKeyScope('[role="tree"][aria-label="Explorer"]')).toBe(true);
+    elsewhere.focus();
+    expect(inKeyScope('[role="tree"][aria-label="Explorer"]')).toBe(false);
+    tree.remove();
+    elsewhere.remove();
   });
 });

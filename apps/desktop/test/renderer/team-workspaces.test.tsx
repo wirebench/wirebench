@@ -128,6 +128,55 @@ describe('WorkspacesTab (teams-access §3.5)', () => {
     expect(screen.queryByLabelText('Record SSH sessions')).toBeNull();
   });
 
+  it('an admin sets the feature policy when the server stores one, and the list is merged with unknown ids (phase 4 spec §6.3)', async () => {
+    const updateWorkspace = ok({ workspace: workspace({ myRole: 'admin', disabledFeatures: ['grpc', 'scripts'] }) });
+    const list = ok({ teams: [team], serverAdmin: false, desktopActivity: false, featurePolicy: true });
+    const features = ok({
+      states: [
+        { id: 'grpc', title: 'gRPC', stage: 'stable', requires: [], default: true, policy: false, enabled: true },
+        { id: 'scripts', title: 'Scripts', stage: 'stable', requires: [], default: true, policy: false, enabled: true },
+      ],
+    });
+    const api = installWirebenchApi({
+      team: {
+        list,
+        listWorkspaces: ok({
+          workspaces: [workspace({ myRole: 'admin', source: 'grant', disabledFeatures: ['graphql'] })],
+        }),
+        members: ok({ members: [] }),
+        updateWorkspace,
+      },
+      app: { features },
+    });
+    await useTeamStore.getState().open(URL_);
+    useTeamStore.getState().setTab('workspaces');
+    render(<WorkspacesTab />);
+    expect(screen.getByTestId('workspace-features-W1').textContent).toBe('Features (1 off)');
+    fireEvent.click(screen.getByTestId('workspace-features-W1'));
+    await screen.findByTestId('workspace-policy-W1-grpc');
+    expect(screen.getByTestId('workspace-policy-W1').textContent).toContain('from another version: graphql');
+    fireEvent.click(screen.getByTestId('workspace-policy-W1-grpc'));
+    fireEvent.click(screen.getByTestId('workspace-policy-W1-scripts'));
+    fireEvent.click(screen.getByTestId('workspace-policy-save-W1'));
+    await vi.waitFor(() =>
+      expect(updateWorkspace).toHaveBeenCalledWith({
+        url: URL_,
+        workspaceId: 'W1',
+        disabledFeatures: ['graphql', 'grpc', 'scripts'],
+      }),
+    );
+    expect(api).toBeTruthy();
+    cleanup();
+    useTeamStore.getState().reset();
+    // A member sees the count; a server without the capability offers nothing.
+    await openWith([workspace({ disabledFeatures: ['grpc', 'scripts'] })], { list });
+    expect(screen.getByTestId('workspace-features-off-W1').textContent).toBe('2 features off by policy');
+    cleanup();
+    useTeamStore.getState().reset();
+    await openWith([workspace({ myRole: 'admin', source: 'grant' })]);
+    expect(screen.queryByTestId('workspace-features-W1')).toBeNull();
+  });
+
   it('without the desktop-activity capability the admin sees no switch, a member no note, and nothing is sent', async () => {
     const updateWorkspace = ok({ workspace: workspace({ myRole: 'admin' }) });
     const list = ok({ teams: [team], serverAdmin: false, desktopActivity: false });

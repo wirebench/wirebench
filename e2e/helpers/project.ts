@@ -107,11 +107,26 @@ export async function expandExplorer(page: Page, rowText?: string): Promise<void
   await expect(page.getByTestId('import-submit')).toBeHidden({ timeout: 20_000 });
   await page.getByRole('button', { name: 'Expand all' }).click();
   // With no `rowText`, any SOAP request row will do: generated requests are named after their
-  // operation (#726), so the name depends on the fixture.
-  const row = rowText === undefined ? page.locator(REQUEST_ROW) : page.locator('[data-tree-id]', { hasText: rowText });
-  await expect(row.first()).toBeVisible({
-    timeout: 20_000,
-  });
+  // operation (#726), so the name depends on the fixture. A named row is never an operation row:
+  // the operation "Subtract" would otherwise stand in for its request "Subtract (SOAP 1.1)".
+  const row =
+    rowText === undefined
+      ? page.locator(REQUEST_ROW)
+      : page.locator('[data-tree-id]:not([data-tree-id^="op:"])', { hasText: rowText });
+  // Expand all stops at the operations (#685 E14): a SOAP request row shows once its operation is
+  // unfolded too. One folded operation is opened per attempt, re-found each time: the tree is
+  // virtualised, so a row counted before the previous click may be gone after it. A leaf
+  // operation (no request, an empty twisty) is left alone: clicking its row would create one.
+  const foldedTwisty = page.locator(
+    '[role="treeitem"][aria-expanded="false"]:has([data-tree-id^="op:"]) [data-testid="explorer-row-twisty"]:has(svg)',
+  );
+  await expect(async () => {
+    if ((await foldedTwisty.count()) > 0) {
+      await foldedTwisty.first().click({ timeout: 2_000 });
+      throw new Error('unfolded one operation; looking for more');
+    }
+    await expect(row.first()).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000, intervals: [100, 200, 300] });
 }
 
 /**

@@ -16,6 +16,12 @@ export interface CommandCatalogEntry {
    * (a host, a snippet), whose bare form a palette twin already covers. Keybindings still reach it.
    */
   readonly paletteHidden?: boolean;
+  /**
+   * A CSS selector the focused element must sit inside for the shortcut to fire. For a key that means
+   * something else elsewhere (Delete in the Explorer tree): the palette and the menus still run the
+   * command from anywhere. Unset, the shortcut fires wherever the command's `when` holds.
+   */
+  readonly keyScope?: string;
 }
 
 /**
@@ -27,6 +33,9 @@ export interface CommandCatalogEntry {
  * Kept free of DOM and renderer imports so a Node script (the docs command reference) can
  * import it directly, without pulling in Electron, React or Monaco.
  */
+/** The Explorer tree: where its bare keys (Delete, F2) fire from, and nowhere else. */
+export const EXPLORER_TREE = '[role="tree"][aria-label="Explorer"]';
+
 export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> = {
   'app.checkForUpdates': {
     id: 'app.checkForUpdates',
@@ -516,6 +525,54 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   'explorer.checkWsiWsdl': {
     id: 'explorer.checkWsiWsdl',
     label: 'Explorer: Check WSDL WS-I compliance',
+    category: 'Explorer',
+  },
+  'explorer.collapseAll': {
+    id: 'explorer.collapseAll',
+    label: 'Explorer: Collapse All',
+    category: 'Explorer',
+  },
+  'explorer.expandAll': {
+    id: 'explorer.expandAll',
+    label: 'Explorer: Expand All',
+    category: 'Explorer',
+  },
+  'explorer.revealActiveTab': {
+    id: 'explorer.revealActiveTab',
+    label: 'Explorer: Reveal Active Tab',
+    category: 'Explorer',
+  },
+  'explorer.focus': {
+    id: 'explorer.focus',
+    label: 'Explorer: Focus Explorer',
+    category: 'Explorer',
+  },
+  'explorer.rename': {
+    id: 'explorer.rename',
+    label: 'Explorer: Rename',
+    category: 'Explorer',
+    // F2 is the desktop's rename key; Enter renames too, from the tree's own key handling, as it always has.
+    shortcut: 'F2',
+    keyScope: EXPLORER_TREE,
+  },
+  'explorer.duplicate': {
+    id: 'explorer.duplicate',
+    label: 'Explorer: Duplicate',
+    category: 'Explorer',
+  },
+  'explorer.delete': {
+    id: 'explorer.delete',
+    label: 'Explorer: Delete',
+    category: 'Explorer',
+    // Delete is the key; ⌘⌫ (Ctrl+Backspace elsewhere) and plain Backspace are the tree's own aliases,
+    // handled inside it, so they never reach a text field.
+    shortcut: 'Delete',
+    extraShortcuts: ['Mod+Backspace'],
+    keyScope: EXPLORER_TREE,
+  },
+  'explorer.newFolder': {
+    id: 'explorer.newFolder',
+    label: 'Explorer: New Folder',
     category: 'Explorer',
   },
   'rest.send': {

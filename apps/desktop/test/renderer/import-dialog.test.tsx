@@ -184,7 +184,8 @@ describe('ImportDialog', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Import' }));
 
-    expect(await screen.findByText('Could not reach the server')).toBeTruthy();
+    // The dialog adds what to check to the message main sent (#685 E15).
+    expect(await screen.findByText(/Could not reach the server/)).toBeTruthy();
   });
 
   it('cancelling produces no error and returns the dialog to idle', async () => {

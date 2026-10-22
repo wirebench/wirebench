@@ -18,7 +18,7 @@ export const wsExplorer: KindExplorer = {
       icon: Cable,
       testId: 'ws-api-row',
       badge: 'WS',
-      click: 'open-and-fold',
+      click: 'open',
       dropTarget: true,
       open: (node) => explorerActions.openWsApi(node.apiId),
       runTarget: (node) => node.apiId,

@@ -12,7 +12,7 @@ import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ProjectError } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
-import { kindRegistry } from '../src/main/kinds/enabled-kinds.js';
+import { startupFeatures } from '../src/main/features/startup.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import type { KindId } from '../src/shared/kinds/kind-module.js';
 import type { ProjectChange, ProjectWire } from '../src/shared/wire-types.js';
@@ -37,8 +37,12 @@ async function changeEverythingElse(
   off: KindId,
   refused: ProjectChange,
 ): Promise<{ readonly opened: ProjectWire; readonly error: unknown }> {
-  const enabledKinds = (['soap', 'rest', 'grpc', 'websocket'] as const).filter((kind) => kind !== off);
-  const host = new ProjectHost(new EngineService(), { enabledKinds, registry: kindRegistry(enabledKinds) });
+  const kindById = { soap: 'soap', rest: 'rest', grpc: 'grpc', websocket: 'websocket', mcp: 'mcp' } as const;
+  const { enabledKinds, registry } = startupFeatures({
+    preferences: { features: { [kindById[off]]: false, mcp: false } },
+    isPackaged: true,
+  });
+  const host = new ProjectHost(new EngineService(), { enabledKinds, registry });
   const opened = await host.openProject(dir);
   const error = await host.mutate(refused).then(
     () => undefined,

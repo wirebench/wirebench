@@ -67,8 +67,16 @@ function operationNode(
     bindingName: operation.binding,
     operationName: operation.name,
     ...(operation.soapAction !== undefined ? { soapAction: operation.soapAction } : {}),
-    children: requestNodes(interfaceId, operation, requests, conflicted),
+    ...withRequests(requestNodes(interfaceId, operation, requests, conflicted)),
   };
+}
+
+/**
+ * An operation's requests as its children, or no children at all when it has none (#685 E14): an empty
+ * operation is a leaf, with no chevron over nothing, and a click on it makes its first request.
+ */
+function withRequests(requests: readonly ExplorerNode[]): { readonly children?: ExplorerNode[] } {
+  return requests.length > 0 ? { children: [...requests] } : {};
 }
 
 function sortedOperations(operations: readonly OperationSummaryWire[]): OperationSummaryWire[] {
@@ -107,10 +115,12 @@ function operationChildren(
       if (variants.length === 1) {
         return { ...node, suffix: `SOAP ${primary.soapVersion}` };
       }
+      const { children: _own, ...rest } = node;
+      void _own;
       return {
-        ...node,
+        ...rest,
         suffix: `SOAP ${variants.map((op) => op.soapVersion).join(' · ')}`,
-        children: variants.flatMap((op) => requestNodes(interfaceId, op, requests, conflicted)),
+        ...withRequests(variants.flatMap((op) => requestNodes(interfaceId, op, requests, conflicted))),
       };
     });
   }

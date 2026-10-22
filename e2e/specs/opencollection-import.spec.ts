@@ -12,7 +12,7 @@ import { expect, test } from '@playwright/test';
 import { environmentRow, openEnvironmentsView } from '../helpers/environments.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace, openImportDialog } from '../helpers/project.js';
-import { apiRow, folderRow } from '../helpers/rest.js';
+import { apiRow, folderRow, unfoldRow } from '../helpers/rest.js';
 
 /** A collection with HTTP, GraphQL, gRPC and WebSocket items, a folder and a `dev` environment. */
 const COLLECTION = readFileSync(
@@ -48,7 +48,7 @@ test.describe('OpenCollection import', () => {
 
     // More than one kind of item: the REST API keeps the collection's name, the others say their kind.
     await expect(apiRow(page, 'Pets')).toBeVisible({ timeout: 20_000 });
-    await apiRow(page, 'Pets').click();
+    await unfoldRow(apiRow(page, 'Pets'));
     await expect(folderRow(page, 'Users')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('ws-api-row').filter({ hasText: 'Pets (WebSocket)' })).toBeVisible({
       timeout: 20_000,

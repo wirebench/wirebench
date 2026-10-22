@@ -18,9 +18,18 @@ import {
   readProjectLintRulesets,
   restApisOf,
 } from '@wirebench/engine';
-import type { FetchDocument, LintFinding, LintReport, LintReportOptions, LintRulesetFile } from '@wirebench/engine';
+import type {
+  FetchDocument,
+  LintFinding,
+  LintReport,
+  LintReportOptions,
+  LintRulesetFile,
+  ProtocolRegistry,
+} from '@wirebench/engine';
 import type { LintArgs, LintReporter } from '../args-lint.js';
 import { ExitCode } from '../exit-codes.js';
+import type { FeatureArgs } from '../features.js';
+import { featuresFor } from '../features.js';
 import type { CliIo } from '../main.js';
 import { OpsError, exitCodeForError, toOpsError } from '../ops/errors.js';
 import { fetcherFor, readSource } from '../ops/import.js';
@@ -46,8 +55,13 @@ interface Loaded {
 }
 
 /** The REST API of the project named `name` (or with that slug), its cached definition read offline. */
-async function fromProject(name: string, projectDir: string, warn: (message: string) => void): Promise<Loaded> {
-  const { project } = await openProject({ projectDir, warn });
+async function fromProject(
+  name: string,
+  projectDir: string,
+  warn: (message: string) => void,
+  registry: ProtocolRegistry,
+): Promise<Loaded> {
+  const { project } = await openProject({ projectDir, warn, registry });
   const api = restApisOf(project).find((candidate) => candidate.name === name || candidate.slug === name);
   if (api === undefined) {
     throw new OpsError('container-not-found', `No REST API is named "${name}"`, { container: name });
@@ -131,7 +145,7 @@ function render(reporter: LintReporter, report: LintReport, options: LintReportO
   return `${JSON.stringify(body, null, 2)}\n`;
 }
 
-export async function lintCommand(args: LintArgs, io: CliIo): Promise<ExitCode> {
+export async function lintCommand(args: LintArgs & FeatureArgs, io: CliIo): Promise<ExitCode> {
   const warn = (message: string): void => {
     io.stderr.write(`warning: ${message}\n`);
   };
@@ -140,7 +154,12 @@ export async function lintCommand(args: LintArgs, io: CliIo): Promise<ExitCode> 
     const rulesets = await rulesetFiles(args);
     let loaded: Loaded;
     if (args.definition.startsWith(PROJECT_PREFIX)) {
-      loaded = await fromProject(args.definition.slice(PROJECT_PREFIX.length), resolve(args.project ?? '.'), warn);
+      loaded = await fromProject(
+        args.definition.slice(PROJECT_PREFIX.length),
+        resolve(args.project ?? '.'),
+        warn,
+        featuresFor(args, io),
+      );
     } else {
       const fetchDocument = fetcherFor(io.env);
       const read = await readSource(args.definition, fetchDocument);

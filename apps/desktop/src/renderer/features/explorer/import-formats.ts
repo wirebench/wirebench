@@ -6,6 +6,7 @@
  */
 
 import type { ImportFormatKind } from '@wirebench/engine/detect';
+import type { KindId } from '../../../shared/kinds/kind-module.js';
 
 export type ImportFormatTab = 'url' | 'file' | 'paste';
 
@@ -32,6 +33,11 @@ export interface ImportFormatRow {
   readonly pickerTitle: string;
   /** The dialog's title while the format is picked by hand. */
   readonly dialogTitle: string;
+  /**
+   * The protocol kind the import lands in; a workspace with that kind off is not offered the format
+   * (phase 4 spec §4.4). Absent for a format that lands in the workspace (environments, Globals).
+   */
+  readonly protocol?: KindId;
 }
 
 const ALL_TABS: readonly ImportFormatTab[] = ['url', 'file', 'paste'];
@@ -69,6 +75,7 @@ function variablesRow(input: Omit<RowInput, RowDefaults>): ImportFormatRow {
 export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
   row({
     kind: 'openapi',
+    protocol: 'rest',
     label: 'OpenAPI / Swagger',
     fileFilters: [{ name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] }, ALL_FILES],
     pickerTitle: 'Import OpenAPI Specification',
@@ -76,6 +83,7 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
   }),
   row({
     kind: 'asyncapi',
+    protocol: 'websocket',
     label: 'AsyncAPI (WebSocket)',
     fileFilters: [{ name: 'AsyncAPI Document', extensions: ['json', 'yaml', 'yml'] }, ALL_FILES],
     pickerTitle: 'Import AsyncAPI Document',
@@ -83,6 +91,7 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
   }),
   row({
     kind: 'postman',
+    protocol: 'rest',
     label: 'Postman Collection',
     fileFirst: true,
     defaultName: 'Imported Collection',
@@ -92,6 +101,7 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
   }),
   row({
     kind: 'postman-v3',
+    protocol: 'rest',
     label: 'Postman Collection v3 (folder)',
     tabs: NO_URL_TABS,
     fileFirst: true,
@@ -117,6 +127,7 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
   }),
   row({
     kind: 'har',
+    protocol: 'rest',
     label: 'HAR (recorded traffic)',
     tabs: NO_URL_TABS,
     fileFirst: true,
@@ -127,6 +138,7 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
   }),
   row({
     kind: 'http-file',
+    protocol: 'rest',
     label: '.http file',
     tabs: NO_URL_TABS,
     fileFirst: true,
@@ -144,6 +156,7 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
   }),
   row({
     kind: 'opencollection',
+    protocol: 'rest',
     label: 'OpenCollection',
     tabs: NO_URL_TABS,
     fileFirst: true,
@@ -154,6 +167,7 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
   }),
   row({
     kind: 'insomnia',
+    protocol: 'rest',
     label: 'Insomnia export',
     tabs: NO_URL_TABS,
     fileFirst: true,
@@ -171,6 +185,7 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
   }),
   row({
     kind: 'hoppscotch',
+    protocol: 'rest',
     label: 'Hoppscotch collection',
     tabs: NO_URL_TABS,
     fileFirst: true,
@@ -188,6 +203,7 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
   }),
   row({
     kind: 'bruno',
+    protocol: 'rest',
     label: 'Bruno collection (folder)',
     tabs: NO_URL_TABS,
     fileFirst: true,
@@ -199,6 +215,7 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
   }),
   row({
     kind: 'thunder-client',
+    protocol: 'rest',
     label: 'Thunder Client collection',
     tabs: NO_URL_TABS,
     fileFirst: true,
@@ -217,6 +234,7 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
   }),
   row({
     kind: 'wsdl',
+    protocol: 'soap',
     label: 'WSDL (SOAP)',
     defaultName: 'Imported service',
     fileFilters: DEFINITIONS,
@@ -225,6 +243,7 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
   }),
   row({
     kind: 'proto',
+    protocol: 'grpc',
     label: 'Protocol Buffers (gRPC)',
     defaultName: 'Imported gRPC API',
     fileFilters: [{ name: 'Protocol Buffers', extensions: ['proto'] }, ALL_FILES],
@@ -233,6 +252,7 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
   }),
   row({
     kind: 'legacy-soap-project',
+    protocol: 'soap',
     label: 'Legacy SOAP project',
     fileFirst: true,
     fileFilters: [{ name: 'Legacy SOAP project', extensions: ['xml'] }, ALL_FILES],
@@ -256,4 +276,9 @@ const BY_KIND = new Map(IMPORT_FORMATS.map((format) => [format.kind, format]));
 /** The row for `kind`; a kind the picker does not offer is read as one nothing recognised. */
 export function importFormatRow(kind: ImportFormatKind): ImportFormatRow {
   return BY_KIND.get(kind) ?? UNKNOWN_ROW;
+}
+
+/** The formats a workspace with `enabledKinds` on is offered: every one whose protocol is on, or that has none. */
+export function offeredImportFormats(enabledKinds: readonly KindId[]): readonly ImportFormatRow[] {
+  return IMPORT_FORMATS.filter((row) => row.protocol === undefined || enabledKinds.includes(row.protocol));
 }

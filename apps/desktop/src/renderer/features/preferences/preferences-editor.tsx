@@ -18,6 +18,7 @@ import {
   Server,
   ShieldCheck,
   SlidersHorizontal,
+  ToggleRight,
   Smartphone,
   SquareTerminal,
   Waypoints,
@@ -44,6 +45,7 @@ import { RestSection } from './sections/rest-section.js';
 import { WsdlSection } from './sections/wsdl-section.js';
 import { AppearanceSection } from './sections/appearance-section.js';
 import { BehaviourSection } from './sections/behaviour-section.js';
+import { FeaturesSection } from './sections/features-section.js';
 import { UpdatesSection } from './sections/updates-section.js';
 import { AccountsSection } from './sections/accounts-section.js';
 import { SecretsSection } from './sections/secrets-section.js';
@@ -70,6 +72,7 @@ import {
 const ICONS: Readonly<Record<SettingsSectionId, LucideIcon>> = {
   appearance: Palette,
   behaviour: SlidersHorizontal,
+  features: ToggleRight,
   shortcuts: Keyboard,
   updates: RefreshCw,
   http: ArrowLeftRight,
@@ -102,6 +105,8 @@ function SectionBody({
       return <AppearanceSection {...props} />;
     case 'behaviour':
       return <BehaviourSection {...props} />;
+    case 'features':
+      return <FeaturesSection {...props} />;
     case 'shortcuts':
       return <ShortcutsSection context={context} />;
     case 'updates':

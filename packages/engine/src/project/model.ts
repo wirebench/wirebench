@@ -352,7 +352,8 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = Object.freeze({
  * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
  */
 export interface UnsupportedContainer {
-  readonly dir: 'interfaces' | 'apis';
+  /** A container directory, or `webhooks` for the collection folder when that feature is off. */
+  readonly dir: 'interfaces' | 'apis' | 'webhooks';
   readonly slug: string;
   /** As written in the container file. */
   readonly kind: string;

@@ -6,6 +6,14 @@ import { exportItems, groups, type ExplorerMenuGroup, type ExplorerMenuItem } fr
 import { explorerRole, kindExplorer } from '../../kinds/index.js';
 import { projectRowActions } from './project-actions.js';
 import { levelIdOf, type ExplorerNode } from './tree-nodes.js';
+import {
+  deleteExplorerNodes,
+  DUPLICABLE_KINDS,
+  duplicateExplorerNodes,
+  pendingDeletionOf,
+  REQUEST_ROW_KINDS,
+} from './explorer-tree-actions.js';
+import { useMoveRequestStore } from './move-request-dialog.js';
 import { webhooksActions } from '../webhooks/webhooks-actions.js';
 import { openRunnerTab } from '../runner/runner-actions.js';
 import { canManageSchedules, openScheduleTab, schedulesActions } from '../schedules/schedules-actions.js';
@@ -29,6 +37,15 @@ export type { ExplorerMenuGroup, ExplorerMenuItem } from './menu-items.js';
 export interface ExplorerContextMenuProps {
   readonly node: ExplorerNode;
   readonly children: ReactNode;
+  /**
+   * The tree's selected rows. When `node` is one of two or more, the menu is the selection's (#681) —
+   * what can be done to all of them at once — rather than the row's own.
+   */
+  readonly selection?: readonly ExplorerNode[];
+  /** Told when the menu opens and closes, so the row can mark itself as the menu's target (#680). */
+  readonly onOpenChange?: (open: boolean) => void;
+  /** Runs right before any item's action: the row selects itself, so the action's target is the selected row. */
+  readonly onAction?: () => void;
 }
 
 /**
@@ -333,15 +350,56 @@ export function explorerMenuItems(node: ExplorerNode): readonly ExplorerMenuItem
 }
 
 /**
+ * The right-click menu for a selection of several rows (#681): **Move to…** when they are REST requests of
+ * one API, **Duplicate** when every row is a request, a sequence or a mock, and **Delete N requests…** (or
+ * **items…**, when folders or APIs are among them) for the rows the explorer's confirm can delete. A row
+ * with no item in common with the others — a project, an interface — is left to its own menu.
+ */
+export function explorerMultiMenuGroups(nodes: readonly ExplorerNode[]): readonly ExplorerMenuGroup[] {
+  const restIds = nodes.flatMap((node) =>
+    node.kind === 'rest-request' && node.requestId !== undefined ? [node.requestId] : [],
+  );
+  const oneApi = restIds.length === nodes.length && new Set(nodes.map((node) => node.apiId)).size === 1;
+  const duplicable = nodes.every((node) => DUPLICABLE_KINDS.has(node.kind));
+  const deletable = nodes.filter((node) => pendingDeletionOf(node) !== undefined);
+  const requests = deletable.every((node) => REQUEST_ROW_KINDS.has(node.kind));
+  return groups(
+    [
+      ...(oneApi ? [{ key: 'move', label: 'Move to…', run: () => useMoveRequestStore.getState().open(restIds) }] : []),
+      ...(duplicable ? [{ key: 'duplicate', label: 'Duplicate', run: () => duplicateExplorerNodes(nodes) }] : []),
+    ],
+    deletable.length > 0
+      ? [
+          {
+            key: 'delete',
+            label: `Delete ${String(deletable.length)} ${requests ? 'requests' : 'items'}…`,
+            run: () => deleteExplorerNodes(deletable),
+          },
+        ]
+      : [],
+  );
+}
+
+/**
  * The items that leave a row in inline rename: Rename… itself, and the creators whose new row starts in it. The
  * menu must not hand focus back to the row it was opened on after one of these, or the rename field would lose
  * focus at once and commit the name unchanged.
  */
-const RENAMING_ITEMS: ReadonlySet<string> = new Set(['rename', 'new-folder', 'new-request', 'new-graphql-request']);
+const RENAMING_ITEMS: ReadonlySet<string> = new Set([
+  'rename',
+  'new-folder',
+  'new-request',
+  'new-graphql-request',
+  'new-grpc-api',
+  'new-ws-api',
+  'new-sequence',
+  'new-webhook',
+]);
 
 /** The right-click menu for one explorer node; the items shown depend on `node.kind`. */
-export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps) {
-  const menuGroups = explorerMenuGroups(node);
+export function ExplorerContextMenu({ node, children, selection, onOpenChange, onAction }: ExplorerContextMenuProps) {
+  const multi = selection !== undefined && selection.length > 1 && selection.some((other) => other.id === node.id);
+  const menuGroups = multi ? explorerMultiMenuGroups(selection) : explorerMenuGroups(node);
 
   const isRenamingRef = useRef(false);
 
@@ -349,8 +407,13 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
     return <>{children}</>;
   }
 
+  const run = (item: ExplorerMenuItem): void => {
+    onAction?.();
+    item.run();
+  };
+
   return (
-    <ContextMenu.Root>
+    <ContextMenu.Root {...(onOpenChange === undefined ? {} : { onOpenChange })}>
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content
@@ -383,7 +446,7 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
                         onClick={(event) => event.stopPropagation()}
                       >
                         {item.children.map((child) => (
-                          <ContextMenu.Item key={child.key} className={ITEM_CLASS} onSelect={() => child.run()}>
+                          <ContextMenu.Item key={child.key} className={ITEM_CLASS} onSelect={() => run(child)}>
                             {child.label}
                           </ContextMenu.Item>
                         ))}
@@ -398,7 +461,7 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
                       if (RENAMING_ITEMS.has(item.key)) {
                         isRenamingRef.current = true;
                       }
-                      item.run();
+                      run(item);
                     }}
                   >
                     {item.label}

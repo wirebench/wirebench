@@ -1,0 +1,98 @@
+---
+title: Feature switches
+description: Turn protocols and optional features off per machine, per CI run, or for a whole team workspace, and what a switch never touches.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Every protocol and every optional feature in Wirebench is a **switch**. Turn gRPC off on a machine that
+never sends it, run a CI job with scripts off, or forbid sequences in a shared workspace: the switch is
+read in one place, the engine refuses the feature, and nothing in any project file changes.
+
+## What can be switched
+
+| Group | Switch | Notes |
+| --- | --- | --- |
+| Protocols | SOAP, REST, gRPC, WebSocket, MCP requests | MCP requests are experimental and carry a badge |
+| Automation | Scripts, Sequences, Webhooks | Webhooks need REST: with REST off they are off too |
+| Team | Shared workspaces, Team secrets, MCP server | Team secrets need Shared workspaces; the MCP server is `wirebench mcp` |
+
+A switch that is **off** means the feature is registered but not activated:
+
+- The Explorer shows a container of that kind as a dimmed placeholder row that says why, and opens
+  nothing. Its files on disk are never rewritten or deleted.
+- The command palette, the Import dialog and the request editors offer nothing of it.
+- A send, a run or an import that needs it is refused with the error code `feature-disabled`, in the
+  app, the CLI and the MCP server alike.
+
+Security features are **not** switches: secret masking, path safety, the script sandbox and TLS
+verification stay on whatever the switches say.
+
+## Three levels, one answer
+
+| Level | Who sets it | Can it turn a feature on? |
+| --- | --- | --- |
+| Team policy | A workspace admin, in **Team → Workspaces → Features** | No: a policy only switches off |
+| Preference | You, in **Settings → Features**; `--features` for the CLI | Yes |
+| Default | The feature itself | — |
+
+The policy wins when it names a feature, then your preference, then the default. A feature whose
+requirement is off is off as well, and the Settings row names the requirement.
+
+## Settings → Features
+
+One row per switch, grouped as above. A toggle writes `features` in your preferences file and
+**applies the next time Wirebench starts**; the row says _Applies after restart_ until then. Under
+each row the reason it is off, when it is: _Off by team policy for Payments_, or _Requires REST_.
+A row under team policy is disabled; your own setting is kept and comes back when the policy no longer
+names the feature. **Reset** on a row removes your setting; **Reset section** removes them all.
+
+The preference belongs to the machine, under `preferences.yaml` beside your other settings:
+
+```yaml
+features:
+  grpc: false
+  mcp: true
+```
+
+## The CLI and the MCP server
+
+Every verb takes `--features`, and reads `WIREBENCH_FEATURES`, with the same grammar: a comma-separated
+list of `id=on` or `id=off`, where the ids are `soap`, `rest`, `grpc`, `websocket`, `mcp`, `scripts`,
+`sequences`, `webhooks`, `server-sync`, `team-secrets` and `mcp-server`. The flag is laid over the
+variable per id.
+
+```bash
+WIREBENCH_FEATURES="scripts=off" wirebench run ./checkout --sequence smoke
+```
+
+```bash
+wirebench mcp --project ./checkout --features soap=off,sequences=off
+```
+
+- `wirebench run` with `--sequence` while `sequences` is off exits 2 before anything is sent.
+- `wirebench mcp` lists only the tools of what is on: with `soap=off` the `generate` and `validate`
+  tools are gone, and so are the SOAP operation tools. A call to a tool that is off is refused with
+  `feature-disabled`. With `mcp-server=off` the server does not start.
+- An id the CLI does not know is a warning on stderr and nothing more, so a variable set for a newer
+  version does not break an older one.
+
+## Team policy
+
+A workspace admin opens **Team → Workspaces**, picks **Features** on a workspace and ticks what is off
+for it. The list is saved on the server, carried on every sync, and applied when a member opens the
+workspace: their project hosts load, save and run under the policy, and **Settings → Features** names
+the workspace on each row the policy switches off. A policy that changes while the workspace is open is
+noted in the Sync panel and applies at the next open.
+
+<Aside type="note" title="A policy only restricts">
+  The server stores a list of what is **off**. There is no way for a server, or for a project folder that
+  arrives through `git pull`, to turn a feature on anywhere: every _on_ is the person's own, on their
+  machine. See [ADR-0029](https://github.com/wirebench/wirebench/blob/main/docs/adr/0029-team-policy-only-restricts.md).
+</Aside>
+
+## Related
+
+- [Preferences](/wirebench/docs/guides/preferences/) and [Managed preferences](/wirebench/docs/guides/managed-preferences/)
+- [Shared workspaces](/wirebench/docs/guides/shared-workspaces/)
+- [Run in CI](/wirebench/docs/guides/run-in-ci/) and [Agents and MCP](/wirebench/docs/guides/agents-mcp/)

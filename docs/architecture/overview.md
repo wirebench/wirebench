@@ -353,9 +353,11 @@ static `KINDS` list), its wire schemas (`wire.ts`) and its IPC channel fragments
 `ipc.ts` compose them, and `wire-base.ts` holds what no kind owns. The main half (`main/kinds/<kind>/`, `MAIN_KINDS`)
 holds its mutations, project host, router, IPC channels, send steps and History, Log and Search facets; the renderer
 half (`renderer/kinds/<kind>/`, `RENDERER_KINDS`) its tabs, explorer tree and row roles, History, Search and Log facets
-and commands. The shell reads the lists and names no kind. `WIREBENCH_KINDS="grpc=off"` switches a kind off: main makes
-the filtered registry the engine's default, registers none of the kind's channels and reports the enabled kinds through
-`app.kinds`; the renderer registers none of its commands and shows its containers as placeholder rows. See
+and commands. The shell reads the lists and names no kind. A feature switch (Settings → Features, the `features`
+preference; `WIREBENCH_FEATURES="grpc=off"` in a development build) switches a kind off: main builds the registry from
+the preference at start-up, registers none of the kind's channels and reports the enabled kinds through `app.kinds`;
+the renderer registers none of its commands and shows its containers as placeholder rows. A workspace shared through
+Wirebench Server lays its team policy over that, which can only switch more off (ADR-0029). See
 [ADR-0023](../adr/0023-a-desktop-kind-is-a-module-behind-one-interface.md).
 
 ## Further reading

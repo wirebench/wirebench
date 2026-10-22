@@ -63,6 +63,8 @@ export interface ServerStateDoc {
   readonly recordDesktopActivity?: boolean;
   /** Whether the workspace records SSH session logs (#430), as the last fetch reported it; absent reads as false. */
   readonly recordSessionLogs?: boolean;
+  /** The feature ids the workspace's team policy switches off (ADR-0029), as the last fetch reported them. */
+  readonly disabledFeatures?: readonly string[];
   /** Local display only; the server attributes commits to the signed-in user (§3.1). */
   readonly identity?: { readonly name: string; readonly email: string };
   readonly lastSyncAt?: string;
@@ -112,6 +114,7 @@ const stateDocSchema = z.object({
   role: workspaceRoleSchema.optional(),
   recordDesktopActivity: z.boolean().optional(),
   recordSessionLogs: z.boolean().optional(),
+  disabledFeatures: z.array(z.string()).optional(),
   identity: z.object({ name: z.string().min(1), email: z.string().min(1) }).optional(),
   lastSyncAt: z.string().optional(),
 });
@@ -251,6 +254,7 @@ function toDoc(parsed: z.infer<typeof stateDocSchema>): ServerStateDoc {
     ...(parsed.role !== undefined ? { role: parsed.role } : {}),
     ...(parsed.recordDesktopActivity !== undefined ? { recordDesktopActivity: parsed.recordDesktopActivity } : {}),
     ...(parsed.recordSessionLogs !== undefined ? { recordSessionLogs: parsed.recordSessionLogs } : {}),
+    ...(parsed.disabledFeatures !== undefined ? { disabledFeatures: parsed.disabledFeatures } : {}),
     ...(parsed.identity !== undefined
       ? { identity: { name: parsed.identity.name, email: parsed.identity.email } }
       : {}),
@@ -266,16 +270,25 @@ export async function readRecordDesktopActivity(dir: string): Promise<boolean> {
   return (await readRecordingFlags(dir)).desktopActivity;
 }
 
-/** Both recording switches of the last fetched head under `dir`, read the same way: false when unknown. */
-export async function readRecordingFlags(dir: string): Promise<{ desktopActivity: boolean; sessionLogs: boolean }> {
+/** What the last fetched head said of the workspace's settings, read without touching anything. */
+export interface ServerHeadFlags {
+  readonly desktopActivity: boolean;
+  readonly sessionLogs: boolean;
+  /** The team policy's list (phase 4 spec §6.2); empty when unknown. */
+  readonly disabledFeatures: readonly string[];
+}
+
+/** The settings of the last fetched head under `dir`: false and empty when there is no state yet, or it cannot be read. */
+export async function readRecordingFlags(dir: string): Promise<ServerHeadFlags> {
   try {
     const parsed = stateDocSchema.safeParse(parseYaml(await readFile(join(dir, STATE_FILE), 'utf8')));
     return {
       desktopActivity: parsed.success && parsed.data.recordDesktopActivity === true,
       sessionLogs: parsed.success && parsed.data.recordSessionLogs === true,
+      disabledFeatures: parsed.success ? (parsed.data.disabledFeatures ?? []) : [],
     };
   } catch {
-    return { desktopActivity: false, sessionLogs: false };
+    return { desktopActivity: false, sessionLogs: false, disabledFeatures: [] };
   }
 }
 

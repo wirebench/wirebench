@@ -35,6 +35,8 @@ export const USAGE_CODES: ReadonlySet<string> = new Set([
   'operation-gone',
   'no-endpoint',
   'too-many-tools',
+  // A feature switched off for this process (feature switches spec §5): refused, like a wrong call.
+  'feature-disabled',
 ]);
 
 /** Any thrown value as an `OpsError`, keeping an engine error's code and details. */

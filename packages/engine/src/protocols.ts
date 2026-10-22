@@ -59,13 +59,33 @@ export const SCRIPTS_FEATURE: FeatureDescriptor = {
 };
 
 /**
- * A registry of the built-in protocols and the `scripts` feature, with `switches` applied.
+ * The switchable features that are not protocols (phase 4 spec §2), in the order Settings lists
+ * them: automation first, then what needs a server. `scripts` is {@link SCRIPTS_FEATURE}.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
+export const BUILTIN_FEATURES: readonly FeatureDescriptor[] = [
+  SCRIPTS_FEATURE,
+  { id: 'sequences', title: 'Sequences', default: true, stage: 'stable', requires: [] },
+  { id: 'webhooks', title: 'Webhooks', default: true, stage: 'stable', requires: ['rest'] },
+  { id: 'server-sync', title: 'Shared workspaces', default: true, stage: 'stable', requires: [] },
+  { id: 'team-secrets', title: 'Team secrets', default: true, stage: 'stable', requires: ['server-sync'] },
+  { id: 'mcp-server', title: 'MCP server', default: true, stage: 'stable', requires: [] },
+];
+
+/** Every built-in descriptor: the protocols' own, then {@link BUILTIN_FEATURES}. */
+export function builtinDescriptors(): readonly FeatureDescriptor[] {
+  return [...BUILTIN_PROTOCOLS.map((module) => module.feature), ...BUILTIN_FEATURES];
+}
+
+/**
+ * A registry of the built-in protocols and {@link BUILTIN_FEATURES}, with `switches` applied.
  *
  * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
  */
 export function createBuiltinRegistry(switches?: Readonly<Record<string, boolean>>): ProtocolRegistry {
   return createProtocolRegistry(BUILTIN_PROTOCOLS, {
-    features: [SCRIPTS_FEATURE],
+    features: BUILTIN_FEATURES,
     ...(switches !== undefined ? { switches } : {}),
   });
 }

@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { explorerMenuGroups, explorerMenuItems } from '../../src/renderer/features/explorer/context-menu.js';
+import {
+  explorerMenuGroups,
+  explorerMenuItems,
+  explorerMultiMenuGroups,
+} from '../../src/renderer/features/explorer/context-menu.js';
+import { useMoveRequestStore } from '../../src/renderer/features/explorer/move-request-dialog.js';
 import { buildExplorerTree, type ExplorerNode } from '../../src/renderer/features/explorer/tree-nodes.js';
 import { useConvertScriptsDialog } from '../../src/renderer/features/scripts/convert-scripts-dialog.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
@@ -580,5 +585,55 @@ describe('Convert scripts… in the explorer', () => {
       .find((item) => item.label === 'Convert scripts…')
       ?.run();
     expect(open).toHaveBeenCalledWith('p1', 'f1');
+  });
+});
+
+describe('explorerMultiMenuGroups (#681)', () => {
+  const labels = (groups: readonly (readonly { label: string }[])[]): string[][] =>
+    groups.map((group) => group.map((item) => item.label));
+
+  it('offers Move to…, Duplicate and a counted Delete for REST requests of one API', () => {
+    const rows = [
+      node({ kind: 'rest-request', id: 'rest:r1', apiId: 'a1', requestId: 'r1' }),
+      node({ kind: 'rest-request', id: 'rest:r2', apiId: 'a1', requestId: 'r2' }),
+      node({ kind: 'rest-request', id: 'rest:r3', apiId: 'a1', requestId: 'r3' }),
+    ];
+    const groups = explorerMultiMenuGroups(rows);
+
+    expect(labels(groups)).toEqual([['Move to…', 'Duplicate'], ['Delete 3 requests…']]);
+
+    // Move to… opens the move dialog on all three, in order.
+    groups[0]?.[0]?.run();
+    expect(useMoveRequestStore.getState().requestIds).toEqual(['r1', 'r2', 'r3']);
+    useMoveRequestStore.getState().close();
+  });
+
+  it('keeps Move to… for one API only, and says items when a folder is among the rows', () => {
+    const twoApis = explorerMultiMenuGroups([
+      node({ kind: 'rest-request', id: 'rest:r1', apiId: 'a1', requestId: 'r1' }),
+      node({ kind: 'rest-request', id: 'rest:r2', apiId: 'a2', requestId: 'r2' }),
+    ]);
+    expect(labels(twoApis)).toEqual([['Duplicate'], ['Delete 2 requests…']]);
+
+    const withFolder = explorerMultiMenuGroups([
+      node({ kind: 'rest-request', id: 'rest:r1', apiId: 'a1', requestId: 'r1' }),
+      node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }),
+    ]);
+    expect(labels(withFolder)).toEqual([['Delete 2 items…']]);
+  });
+
+  it('counts only the rows the confirm can delete, and offers nothing for rows it cannot', () => {
+    const mixed = explorerMultiMenuGroups([
+      node({ kind: 'rest-request', id: 'rest:r1', apiId: 'a1', requestId: 'r1' }),
+      node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }),
+    ]);
+    expect(labels(mixed)).toEqual([['Delete 1 requests…']]);
+
+    expect(
+      explorerMultiMenuGroups([
+        node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }),
+        node({ kind: 'interface', id: 'iface:i1', interfaceId: 'i1' }),
+      ]),
+    ).toEqual([]);
   });
 });

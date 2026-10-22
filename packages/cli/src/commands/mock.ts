@@ -5,10 +5,12 @@
  */
 import { join } from 'node:path';
 import { isWirebenchError, loadProject, startMock } from '@wirebench/engine';
+import type { ProtocolRegistry } from '@wirebench/engine';
 import type { MockDef, MockExchangeEvent, Project, RunningMock } from '@wirebench/engine';
 import { UsageError } from '../args.js';
-import type { MockArgs } from '../args.js';
+import type { FeatureArgs, MockArgs } from '../args.js';
 import { ExitCode } from '../exit-codes.js';
+import { featuresFor } from '../features.js';
 import type { CliIo } from '../main.js';
 import { exists } from '../workspace-lookup.js';
 import { stopped } from './mcp.js';
@@ -74,12 +76,16 @@ export interface MockCommandOptions {
  * The project at `path`, its load problems written to stderr as warnings; or the exit code when it is
  * a workspace or does not load (the error already written).
  */
-export async function loadMockProject(path: string, io: CliIo): Promise<Project | ExitCode> {
+export async function loadMockProject(
+  path: string,
+  io: CliIo,
+  registry: ProtocolRegistry,
+): Promise<Project | ExitCode> {
   try {
     if (!(await exists(join(path, 'wirebench.yaml'))) && (await exists(join(path, 'workspace.yaml')))) {
       return await refuseWorkspace(path, io);
     }
-    const loaded = await loadProject(path);
+    const loaded = await loadProject(path, { registry });
     for (const problem of loaded.problems) {
       io.stderr.write(`warning: ${problem.code}: ${problem.message} (${problem.file})\n`);
     }
@@ -93,8 +99,13 @@ export async function loadMockProject(path: string, io: CliIo): Promise<Project 
   }
 }
 
-export async function mockCommand(args: MockArgs, io: CliIo, options: MockCommandOptions = {}): Promise<ExitCode> {
-  const project = await loadMockProject(args.path, io);
+export async function mockCommand(
+  args: MockArgs & FeatureArgs,
+  io: CliIo,
+  options: MockCommandOptions = {},
+): Promise<ExitCode> {
+  const registry = featuresFor(args, io);
+  const project = await loadMockProject(args.path, io, registry);
   if (typeof project === 'number') return project;
 
   const mocks = selectMocks(project, args.mocks);
@@ -117,6 +128,7 @@ export async function mockCommand(args: MockArgs, io: CliIo, options: MockComman
         project,
         root: args.path,
         mockId: mock.id,
+        registry,
         host,
         ...(args.port !== undefined ? { port: args.port } : {}),
         onExchange: (event) => {

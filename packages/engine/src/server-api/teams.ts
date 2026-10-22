@@ -94,6 +94,15 @@ export const teamInvitationParamsSchema = z.object({ teamId: teamsIdSchema, id: 
 
 // ---- workspaces --------------------------------------------------------------------------
 
+/** A feature switch id as the policy names it: lower-case, digits and dashes, at most 32 characters. */
+export const featureIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
+/**
+ * The workspace's feature policy: the ids that are off for everyone on it (ADR-0029). Any id of the
+ * grammar is accepted, since a policy may name a feature this server version does not know; the
+ * desktop ignores an id it has no descriptor for.
+ */
+export const disabledFeaturesSchema = z.array(featureIdSchema).max(32);
+
 export const teamWorkspaceSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -106,6 +115,8 @@ export const teamWorkspaceSchema = z.object({
   recordDesktopActivity: z.boolean().default(false),
   /** Whether every SSH session on the workspace's hosts is logged and streamed to the server. */
   recordSessionLogs: z.boolean().default(false),
+  /** The feature ids a workspace admin switched off for the workspace; `[]` from an older server. */
+  disabledFeatures: disabledFeaturesSchema.default([]),
   createdAt: z.string(),
 });
 export type TeamWorkspace = z.infer<typeof teamWorkspaceSchema>;
@@ -122,6 +133,7 @@ export const teamWorkspaceUpdateRequestSchema = z.object({
   defaultRole: defaultRoleSchema.optional(),
   recordDesktopActivity: z.boolean().optional(),
   recordSessionLogs: z.boolean().optional(),
+  disabledFeatures: disabledFeaturesSchema.optional(),
 });
 export type TeamWorkspaceUpdateRequest = z.infer<typeof teamWorkspaceUpdateRequestSchema>;
 export const teamWorkspaceParamsSchema = z.object({ workspaceId: teamsIdSchema });

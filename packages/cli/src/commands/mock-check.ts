@@ -5,8 +5,9 @@
  */
 import { checkMockStubs, isWirebenchError } from '@wirebench/engine';
 import type { MockProblem, MockStubCheck } from '@wirebench/engine';
-import type { MockCheckArgs } from '../args.js';
+import type { FeatureArgs, MockCheckArgs } from '../args.js';
 import { ExitCode } from '../exit-codes.js';
+import { featuresFor } from '../features.js';
 import type { CliIo } from '../main.js';
 import { loadMockProject, selectMocks } from './mock.js';
 
@@ -31,14 +32,15 @@ function report(name: string, result: MockStubCheck): string {
   return `${lines.join('\n')}\n`;
 }
 
-export async function mockCheckCommand(args: MockCheckArgs, io: CliIo): Promise<ExitCode> {
-  const project = await loadMockProject(args.path, io);
+export async function mockCheckCommand(args: MockCheckArgs & FeatureArgs, io: CliIo): Promise<ExitCode> {
+  const registry = featuresFor(args, io);
+  const project = await loadMockProject(args.path, io, registry);
   if (typeof project === 'number') return project;
   let code: ExitCode = ExitCode.Ok;
   for (const mock of selectMocks(project, args.mocks)) {
     let result: MockStubCheck;
     try {
-      result = await checkMockStubs({ project, root: args.path, mockId: mock.id });
+      result = await checkMockStubs({ project, root: args.path, mockId: mock.id, registry });
     } catch (error) {
       if (!isWirebenchError(error)) throw error;
       io.stderr.write(`${mock.name}: ${error.code}: ${error.message}\n`);

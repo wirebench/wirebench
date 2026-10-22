@@ -361,6 +361,7 @@ export const explorerActions = {
       .addWebhookRequest(projectId, parentId)
       .then((requestId) => {
         openRestRequestTab(requestId);
+        startRenamingNode('webhook-request', requestId);
       })
       .catch((error: unknown) => {
         showToast(error instanceof Error ? error.message : 'New webhook failed');
@@ -428,6 +429,8 @@ export const explorerActions = {
       )
       .then((apiId) => {
         openGrpcApiTab(apiId);
+        // The tab is where the API is set up; its name is typed on the row, as a new folder's is (#685 E16).
+        startRenamingNode('grpc-api', apiId);
       })
       .catch((error: unknown) => {
         showToast(error instanceof Error ? error.message : 'New gRPC API failed');
@@ -604,6 +607,7 @@ export const explorerActions = {
       )
       .then((apiId) => {
         openWsApiTab(apiId);
+        startRenamingNode('ws-api', apiId);
       })
       .catch((error: unknown) => {
         showToast(error instanceof Error ? error.message : 'New WebSocket API failed');
@@ -847,6 +851,7 @@ export const explorerActions = {
       .addSequence(projectId, nextName('Sequence', names))
       .then((sequenceId) => {
         openSequenceTab(sequenceId);
+        startRenamingNode('sequence', sequenceId);
       })
       .catch((error: unknown) => {
         showToast(error instanceof Error ? error.message : 'New sequence failed');

@@ -20,6 +20,7 @@
 
 import { lintRestDefinition } from '../rest-api/lint-actions.js';
 import { importUrlCopy } from './import-url-copy.js';
+import { describeImportError } from './import-error.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useShallow } from 'zustand/react/shallow';
@@ -65,7 +66,7 @@ import { useUiStore, type ImportDialogFormat } from '../../state/ui.js';
 import { updateDefinition } from '../interface-editor/interface-actions.js';
 import { getExplorerTree } from './explorer-api.js';
 import { findExistingInterface } from './existing-interface.js';
-import { IMPORT_FORMATS, importFormatRow, type ImportFormatRow } from './import-formats.js';
+import { importFormatRow, offeredImportFormats, type ImportFormatRow } from './import-formats.js';
 import { CopyReport, ImportReportView, ReportItems } from './import-report.js';
 
 export type SourceTab = 'url' | 'file' | 'paste' | 'server';
@@ -212,6 +213,7 @@ export interface ImportDialogProps {
 
 export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: ImportDialogProps) {
   const storeFormat = useUiStore((state) => state.importDialogFormat);
+  const enabledKinds = useUiStore((state) => state.enabledKinds);
   const initialFmt = propFormat ?? storeFormat ?? 'auto';
   const [tab, setTab] = useState<SourceTab>(pickedRow(initialFmt)?.fileFirst === true ? 'file' : 'url');
   const [format, setFormat] = useState<ImportDialogFormat>(initialFmt);
@@ -670,7 +672,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       if (cancelledTokensRef.current.has(token)) {
         return;
       }
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       cancelledTokensRef.current.delete(token);
       if (tokenRef.current === token) {
@@ -780,7 +782,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       }
       setResult({ kind: 'variables', summary: res.value.summary, reportText: res.value.reportText });
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       setImporting(false);
     }
@@ -811,7 +813,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       getExplorerTree()?.open(`proj:${res.value.projectId}`);
       setResult({ kind: 'har', value: res.value, responses: harResponses });
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       setImporting(false);
     }
@@ -852,7 +854,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       getExplorerTree()?.open(`proj:${res.value.projectId}`);
       setResult({ kind: 'http-file', value: res.value });
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       setImporting(false);
     }
@@ -884,7 +886,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       getExplorerTree()?.open(`proj:${res.value.projectId}`);
       setResult({ kind: 'opencollection', value: res.value });
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       setImporting(false);
     }
@@ -931,7 +933,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       getExplorerTree()?.open(`proj:${res.value.projectId}`);
       setResult({ kind: 'client', value: res.value });
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       setImporting(false);
     }
@@ -963,7 +965,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       getExplorerTree()?.open(`proj:${res.value.projectId}`);
       setResult({ kind: 'postman-v3', value: res.value });
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       setImporting(false);
     }
@@ -1302,7 +1304,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       if (cancelledTokensRef.current.has(token)) {
         return;
       }
-      setImportError(error instanceof Error ? error.message : 'Import failed');
+      setImportError(describeImportError(error, url));
     } finally {
       cancelledTokensRef.current.delete(token);
       if (tokenRef.current === token) {
@@ -1433,7 +1435,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     className="rounded border border-hairline-strong bg-surface-base px-2 py-1 text-xs text-fg-default outline-none focus:ring-1 focus:ring-accent"
                   >
                     <option value="auto">Auto-detect</option>
-                    {IMPORT_FORMATS.map((row) => (
+                    {offeredImportFormats(enabledKinds).map((row) => (
                       <option key={row.kind} value={row.kind}>
                         {row.label}
                       </option>

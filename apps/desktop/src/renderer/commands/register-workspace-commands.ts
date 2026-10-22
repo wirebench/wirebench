@@ -7,7 +7,7 @@ import { openSecretSourcesDialog } from '../features/secret-sources/actions.js';
 import { runCertificateCheckCommand } from '../state/certificate-expiry.js';
 import { useProjectStore } from '../state/project.js';
 import { workspaceActions } from '../features/workspace/workspace-actions.js';
-import { useUiStore } from '../state/ui.js';
+import { featureOn, useUiStore } from '../state/ui.js';
 import { ipc } from '../state/ipc-client.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 
@@ -24,7 +24,8 @@ export function workspaceIsOpen(): boolean {
 /** Whether the open workspace is shared — the `when` gate for every `sync.*` command. */
 export function workspaceIsShared(): boolean {
   const workspace = useWorkspaceStore.getState().workspace;
-  return workspace !== null && workspace.share !== undefined;
+  // With `server-sync` off (phase 4 spec §7) the sync commands are gone; main refuses the calls too.
+  return workspace !== null && workspace.share !== undefined && featureOn('server-sync');
 }
 
 /**

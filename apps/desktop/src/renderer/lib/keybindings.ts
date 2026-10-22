@@ -242,6 +242,16 @@ function chordsFor(definition: CommandDefinition<CommandContext>): readonly stri
 }
 
 /**
+ * True when a shortcut scoped to `selector` (see `CommandCatalogEntry.keyScope`) may fire now: there is no
+ * scope, or keyboard focus sits inside an element it matches.
+ */
+export function inKeyScope(selector: string | undefined): boolean {
+  if (selector === undefined) return true;
+  const active = document.activeElement;
+  return active instanceof Element && active.closest(selector) !== null;
+}
+
+/**
  * Installs the single window-level `keydown` listener that turns keystrokes into commands.
  * Bindings come from the registry, so registering a command is all it takes to gain a shortcut.
  */
@@ -252,6 +262,9 @@ export function useKeybindings(context: CommandContext): void {
         for (const chord of chordsFor(definition)) {
           const binding = parseKeybinding(chord);
           if (!matchesEvent(binding, event, context.platform) || shouldIgnoreEvent(event, binding, definition.id)) {
+            continue;
+          }
+          if (!inKeyScope(definition.keyScope)) {
             continue;
           }
           event.preventDefault();

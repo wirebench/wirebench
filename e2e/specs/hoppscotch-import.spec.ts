@@ -11,7 +11,7 @@ import { expect, test } from '@playwright/test';
 import { environmentRow, openEnvironmentsView } from '../helpers/environments.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace, openImportDialog } from '../helpers/project.js';
-import { apiRow, folderRow } from '../helpers/rest.js';
+import { apiRow, folderRow, unfoldRow } from '../helpers/rest.js';
 
 const fixture = (name: string): string =>
   readFileSync(fileURLToPath(new URL(`../../fixtures/hoppscotch/crafted/${name}`, import.meta.url)), 'utf8');
@@ -40,7 +40,7 @@ test.describe('Hoppscotch import', () => {
     await page.getByTestId('import-done').click();
 
     await expect(apiRow(page, 'Shop API')).toBeVisible({ timeout: 20_000 });
-    await apiRow(page, 'Shop API').click();
+    await unfoldRow(apiRow(page, 'Shop API'));
     await expect(folderRow(page, 'Orders')).toBeVisible({ timeout: 20_000 });
 
     await openImportDialog(page);

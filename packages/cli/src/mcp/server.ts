@@ -58,7 +58,12 @@ export function createMcpServer(base: OpsBase, version: string, host?: ContractT
     { name: 'wirebench', version },
     { instructions: SERVER_INSTRUCTIONS, capabilities: { tools: { listChanged: true } } },
   );
-  const fixed = Object.values(OPS).map(fixedTool);
+  // A fixed tool whose feature is off is not listed (feature switches spec §5.2); the contract tools of
+  // an off kind are absent on their own, since the project loaded through the registry holds that kind
+  // as a placeholder. The instructions name no switch: the tool list is the truth.
+  const fixed = Object.values(OPS)
+    .filter((op) => op.feature === undefined || base.registry.features.isEnabled(op.feature))
+    .map(fixedTool);
   server.server.setRequestHandler(ListToolsRequestSchema, () => ({
     tools: [...fixed, ...(host?.current().tools ?? []).map(contractTool)],
   }));
@@ -67,6 +72,8 @@ export function createMcpServer(base: OpsBase, version: string, host?: ContractT
     const args = request.params.arguments ?? {};
     try {
       // `hasOwn`, so a name such as `constructor` is no tool rather than an Object.prototype member.
+      // A fixed tool left out of the list for its feature is still refused by name, with
+      // `feature-disabled` (from `runOp`) rather than `operation-gone`, so an agent reads why.
       if (Object.hasOwn(FIXED, name)) {
         return resultOf(await runOp(FIXED[name] as AnyOp, args, base));
       }

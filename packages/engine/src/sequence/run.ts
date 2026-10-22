@@ -15,7 +15,9 @@ import type { AssertionResult, AssertionSubject, StepAssertion } from '../assert
 import { isWirebenchError } from '../errors.js';
 import type { PropertyMap, Project } from '../project/model.js';
 import type { PropertyScopes } from '../project/properties.js';
+import { featureDisabled } from '../protocol/registry.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
+import { defaultRegistry } from '../protocols.js';
 import { findStepRequest } from '../run/select.js';
 import type { SelectedRequest } from '../run/select.js';
 import { SEQUENCE_LIMITS } from './model.js';
@@ -349,6 +351,11 @@ async function runStep(
  * After each run of a step its branches choose where the run goes (#347): the same step again, a
  * step by id, or past the next one. Every loop is bounded by its rule's `max`, and the run by
  * `SEQUENCE_LIMITS.stepRuns`. Only the last run of each step counts towards the outcome.
+ *
+ * The one thing it throws: `feature-disabled` for `sequences` when its registry has that feature
+ * off (feature switches spec §7), before any step is looked at.
+ *
+ * @throws WirebenchError `feature-disabled`
  */
 export async function runSequence(
   sequence: SequenceDef,
@@ -356,6 +363,8 @@ export async function runSequence(
   send: SequenceStepSender,
   options: RunSequenceOptions = {},
 ): Promise<SequenceRunResult> {
+  const registry = options.registry ?? defaultRegistry();
+  if (!registry.features.isEnabled('sequences')) throw featureDisabled(registry.features, 'sequences');
   const startedAt = (options.now ?? (() => new Date()))().toISOString();
   const signal = options.signal ?? new AbortController().signal;
   // A Map, not an object: a transfer may legitimately be named `__proto__` or `constructor`.

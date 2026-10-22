@@ -374,6 +374,7 @@ import {
   themeGetResponseSchema,
   workspaceAddProjectRequestSchema,
   workspaceAddProjectResponseSchema,
+  appFeaturesWireSchema,
   workspaceChangedEventSchema,
   workspaceChangedOnDiskEventSchema,
   workspaceCreateRequestSchema,
@@ -540,8 +541,21 @@ export const channels = {
         serial: z.boolean().optional(),
       }),
     ),
-    /** The protocol kinds this run has switched on (`WIREBENCH_KINDS`); the renderer shows the rest as placeholders. */
-    kinds: defineChannel('app.kinds', z.undefined(), z.object({ enabled: z.array(z.string()) })),
+    /**
+     * The protocol kinds the calling window's workspace has on (the machine's preference under the
+     * workspace's team policy, phase 4 spec §6.2); the renderer shows the rest as placeholders.
+     */
+    kinds: defineChannel(
+      'app.kinds',
+      z.undefined(),
+      z.object({
+        enabled: z.array(z.string()),
+        /** Every feature id that is on for that workspace, protocols included; absent from an older main. */
+        features: z.array(z.string()).optional(),
+      }),
+    ),
+    /** Every feature switch as this run resolved it for the calling window's workspace (phase 4 spec §4.3). */
+    features: defineChannel('app.features', z.undefined(), appFeaturesWireSchema),
     /**
      * Opens another window at the workspace picker (the "New Window" command). Each window holds its
      * own workspace; see the multi-window design.

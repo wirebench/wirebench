@@ -20,7 +20,7 @@ import type { HeaderPair, RequestScripts, ScriptFailure, ScriptPhase } from '../
 import type { RequestScriptTypes, ScriptLevel } from '../script/request-scripts.js';
 import type { SecretPlaceholders } from '../script/send.js';
 import type { ApiReferenceSection } from '../script/types/api.js';
-import type { FeatureDescriptor } from './features.js';
+import type { FeatureDescriptor, FeatureSet } from './features.js';
 
 /**
  * The two top-level directories a project keeps containers in (ADR-0003, ADR-0007).
@@ -52,6 +52,11 @@ export interface LoadContext {
   /** The project folder. */
   readonly root: string;
   readonly problems: ProjectProblem[];
+  /**
+   * The registry's feature set, for a module whose project files belong to a feature of their own
+   * (REST's `webhooks`): with it off the files are left unread and a placeholder stands for them.
+   */
+  readonly features?: FeatureSet;
 }
 
 /**
@@ -103,8 +108,11 @@ export interface ProtocolProjectFiles {
   load(ctx: LoadContext, project: Project): Promise<Project>;
   /** Every project-level file the protocol writes: path relative to the project root, to its text. */
   files(project: Project): ReadonlyMap<string, string>;
-  /** The project-level files a save may delete when it no longer writes them. */
-  managed(fs: FsLike, root: string): Promise<readonly string[]>;
+  /**
+   * The project-level files a save may delete when it no longer writes them. Nothing when `features`
+   * has the files' own feature off: the save then leaves the folder as it is, unread and unwritten.
+   */
+  managed(fs: FsLike, root: string, features?: FeatureSet): Promise<readonly string[]>;
   /** Where the request with `requestId` is written, when the project-level files hold it. */
   requestLocation?(project: Project, requestId: string): RequestFileLocation | undefined;
   /** Every entity id the project-level files hold, for a copy that takes fresh ids (`reidentifyProject`). */
