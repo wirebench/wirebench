@@ -58,7 +58,10 @@ third-party code.
   ids and that an off area is absent from `app.areas` and registers nothing.
 - Later SSH slices (snippets, SFTP, forwarding) extend the ssh module: new channels, tab kinds and commands, not the
   shell.
-- The switch is read from the environment only. An operator setting for it is a follow-up.
+- The switch is read from the environment only. An operator setting for it is a follow-up. _Update 2026-10-22
+  (#360): the managed `policy.yaml` gained an `areas` section that switches an area off and wins over the
+  environment; the resolution runs through the engine's `resolveFeatures` with that section as its
+  restrict-only policy level (`docs/specs/2026-10-22-operator-area-switches.md`)._
 - The filter in `shared/` can drift from the engine's `createFeatureSet`. The rules are two lines long and a unit test
   covers them; a parity test against the engine is possible later, from a place that may import the engine's values.
 - A loadable plugin API, manifests and sandboxing stay out of scope. The contract may change in any release.

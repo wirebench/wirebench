@@ -1,7 +1,16 @@
-import { enabledAreaIds } from '../shared/area-module.js';
+import { resolveFeatures, type FeatureState } from '@wirebench/engine';
+import { enabledAreaIds, toAreaIds } from '../shared/area-module.js';
 import type { AreaId } from '../shared/area-module.js';
+import {
+  AREA_SWITCH_DESCRIPTORS,
+  LOCAL_TERMINAL_SWITCH,
+  SERIAL_SWITCH,
+  TELNET_SWITCH,
+} from '../shared/area-switches.js';
 import { registerLocalTerminalChannels } from './areas/local-terminal-channels.js';
 import { registerSshChannels } from './areas/ssh.js';
+
+export { LOCAL_TERMINAL_SWITCH, SERIAL_SWITCH, TELNET_SWITCH };
 
 /** `WIREBENCH_AREAS="ssh=off,wss=off"`. Anything that is not `<id>=on|off` is ignored. */
 export function parseAreaSwitches(env: string | undefined): Record<string, boolean> {
@@ -14,38 +23,68 @@ export function parseAreaSwitches(env: string | undefined): Record<string, boole
   return switches;
 }
 
+/** This run's area switches resolved (operator area switches spec §3). */
+export interface AreasRun {
+  /** The areas that are on, in rail order. */
+  readonly enabled: readonly AreaId[];
+  /** Whether the local terminal tab (#410) is on: with the SSH area, unless switched off on its own. */
+  readonly localTerminal: boolean;
+  /** Whether Telnet hosts (#425) connect: with the SSH area, unless switched off on its own. */
+  readonly telnet: boolean;
+  /** Whether serial consoles (#426) connect: with the SSH area, unless switched off on its own. */
+  readonly serial: boolean;
+  /** One row per area switch, in `AREA_SWITCH_DESCRIPTORS` order, for Settings → Features → Areas. */
+  readonly states: readonly FeatureState[];
+}
+
+/**
+ * Resolves the area switches the way the engine resolves feature switches: the managed policy
+ * (`policy.yaml` `areas`, #360), when it names an id, wins and the area is off; else `WIREBENCH_AREAS`,
+ * when it names it; else the default (on). Then `requires` applies, so `ssh=off` takes the local
+ * terminal, Telnet and serial with it. The policy can only switch off: `ssh=on` in the environment
+ * under a policy that locks `ssh` off changes nothing.
+ */
+export function resolveAreas(input: {
+  /** The ids the managed policy switches off (`Policy.areasOff`). */
+  readonly policy?: readonly string[];
+  readonly env?: NodeJS.ProcessEnv;
+}): AreasRun {
+  const { states } = resolveFeatures(AREA_SWITCH_DESCRIPTORS, {
+    policy: input.policy ?? [],
+    preference: parseAreaSwitches((input.env ?? process.env)['WIREBENCH_AREAS']),
+  });
+  const on = (id: string): boolean => states.find((state) => state.id === id)?.enabled === true;
+  return {
+    enabled: toAreaIds(states.filter((state) => state.enabled).map((state) => state.id)),
+    localTerminal: on(LOCAL_TERMINAL_SWITCH),
+    telnet: on(TELNET_SWITCH),
+    serial: on(SERIAL_SWITCH),
+    states,
+  };
+}
+
+/**
+ * The areas `WIREBENCH_AREAS` leaves on, with no managed policy. Kept as the shared filter's parity
+ * check: `enabledAreaIds` (ADR-0021, a local copy of the engine's rules) and {@link resolveAreas} must
+ * agree, which the areas test pins.
+ */
 export function enabledAreasFromEnv(env: NodeJS.ProcessEnv = process.env): readonly AreaId[] {
   return enabledAreaIds(parseAreaSwitches(env['WIREBENCH_AREAS']));
 }
 
-/** The `WIREBENCH_AREAS` key that switches the local terminal tab (#410) off while leaving SSH on. */
-export const LOCAL_TERMINAL_SWITCH = 'local-terminal';
-
-/**
- * Whether the local terminal tab is on: it rides with the SSH area (`ssh=off` removes it too), and an enterprise
- * build can switch it off on its own with `local-terminal=off`.
- */
+/** Whether the local terminal tab is on with no managed policy; see {@link resolveAreas}. */
 export function localTerminalFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
-  const switches = parseAreaSwitches(env['WIREBENCH_AREAS']);
-  return enabledAreaIds(switches).includes('ssh') && switches[LOCAL_TERMINAL_SWITCH] !== false;
+  return resolveAreas({ env }).localTerminal;
 }
 
-/** The `WIREBENCH_AREAS` key that switches Telnet hosts (#425) off while leaving SSH on. */
-export const TELNET_SWITCH = 'telnet';
-
-/** Whether Telnet hosts connect: they ride with the SSH area, and an enterprise build can switch them off. */
+/** Whether Telnet hosts connect with no managed policy; see {@link resolveAreas}. */
 export function telnetFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
-  const switches = parseAreaSwitches(env['WIREBENCH_AREAS']);
-  return enabledAreaIds(switches).includes('ssh') && switches[TELNET_SWITCH] !== false;
+  return resolveAreas({ env }).telnet;
 }
 
-/** The `WIREBENCH_AREAS` key that switches serial consoles (#426) off while leaving SSH on. */
-export const SERIAL_SWITCH = 'serial';
-
-/** Whether serial hosts connect: they ride with the SSH area, and an enterprise build can switch them off. */
+/** Whether serial hosts connect with no managed policy; see {@link resolveAreas}. */
 export function serialFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
-  const switches = parseAreaSwitches(env['WIREBENCH_AREAS']);
-  return enabledAreaIds(switches).includes('ssh') && switches[SERIAL_SWITCH] !== false;
+  return resolveAreas({ env }).serial;
 }
 
 /** Registers the IPC channels of the areas that are switched on; an off area answers nothing. */

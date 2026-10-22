@@ -9,6 +9,11 @@
  * ignored rather than silently honoured, so an administrator learns at once that a key does
  * nothing.
  *
+ * The `areas` section (#360, operator area switches spec §2) is the one section that is not a
+ * preference: `areas: { ssh: false }` switches a desktop area off on this machine, whatever
+ * `WIREBENCH_AREAS` says. It can only switch off (ADR-0029's rule for every policy): a value other
+ * than `false`, or an id that names no area switch, is reported as ignored.
+ *
  * The file is read once at startup. It is not watched: a policy that changed mid-session would
  * have to re-lock controls the user is editing, and a restart is what managed machines expect.
  *
@@ -21,6 +26,7 @@ import { isAbsolute, posix, win32 } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { mergePreferences, preferencesSchema } from '@wirebench/engine';
 import type { Preferences, PreferencesPatch } from '@wirebench/engine';
+import { isAreaSwitchId } from '../shared/area-switches.js';
 
 /** File name of the policy inside its per-OS directory. */
 export const POLICY_FILE = 'policy.yaml';
@@ -43,8 +49,10 @@ export interface Policy {
   readonly path: string;
   /** The locked values, as a preferences patch. Empty when there is no policy. */
   readonly patch: PreferencesPatch;
-  /** Dotted keys (`proxy.mode`) the policy locks. */
+  /** Dotted keys (`proxy.mode`, `areas.ssh`) the policy locks. */
   readonly locked: readonly string[];
+  /** The area switch ids the `areas` section switches off (#360). */
+  readonly areasOff: readonly string[];
   /** Dotted keys the file sets that cannot be locked, or whose value is not valid. */
   readonly ignored: readonly string[];
   /** Why the file could not be read or parsed; no key is locked when this is set. */
@@ -53,7 +61,7 @@ export interface Policy {
 
 /** The policy of a machine with no policy file. */
 export function noPolicy(path: string): Policy {
-  return { path, patch: {}, locked: [], ignored: [] };
+  return { path, patch: {}, locked: [], ignored: [], areasOff: [] };
 }
 
 /**
@@ -118,8 +126,25 @@ export function parsePolicy(path: string, document: unknown): Policy {
   const patch: Record<string, Record<string, unknown>> = {};
   const locked: string[] = [];
   const ignored: string[] = [];
+  const areasOff: string[] = [];
   for (const [section, values] of Object.entries(document)) {
     if (section === 'version') {
+      continue;
+    }
+    if (section === 'areas') {
+      if (!isMapping(values)) {
+        ignored.push(section);
+        continue;
+      }
+      for (const [id, value] of Object.entries(values)) {
+        // Only `false` locks: a policy switches an area off, never on.
+        if (value !== false || !isAreaSwitchId(id)) {
+          ignored.push(`${section}.${id}`);
+          continue;
+        }
+        areasOff.push(id);
+        locked.push(`${section}.${id}`);
+      }
       continue;
     }
     if (!isLockable(section) || !isMapping(values)) {
@@ -137,7 +162,7 @@ export function parsePolicy(path: string, document: unknown): Policy {
       locked.push(`${section}.${key}`);
     }
   }
-  return { path, patch, locked, ignored };
+  return { path, patch, locked, ignored, areasOff };
 }
 
 /**

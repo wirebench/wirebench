@@ -72,12 +72,15 @@ export interface SshServiceDeps extends SshConnectDeps {
   readonly openMosh?: (options: OpenMoshOptions) => Promise<SshSession>;
   /** Tests inject a fake. */
   readonly openTelnet?: typeof openTelnetSession;
-  /** `false` when this build switched Telnet off (`WIREBENCH_AREAS=telnet=off`, #425): its hosts are refused. */
-  readonly telnet?: boolean;
+  /**
+   * `false` when this run switched Telnet off (`WIREBENCH_AREAS=telnet=off`, #425, or the managed policy, #360):
+   * its hosts are refused. A getter, because the policy is read after this service is built and before any connect.
+   */
+  readonly telnet?: boolean | (() => boolean);
   /** Opens a host whose protocol is `serial` (#426); without it such a host is refused (`serial-unavailable`). */
   readonly openSerial?: (options: Omit<OpenSerialOptions, 'modules'>) => Promise<SshSession>;
-  /** `false` when this build switched serial consoles off (`WIREBENCH_AREAS=serial=off`). */
-  readonly serial?: boolean;
+  /** `false` when this run switched serial consoles off (`WIREBENCH_AREAS=serial=off`, or the managed policy). */
+  readonly serial?: boolean | (() => boolean);
   /** The device this machine opens for the serial host, or `undefined` when none was picked yet. */
   readonly serialDevice?: (sender: WebContents, hostId: string) => Promise<string | undefined>;
   /** Milliseconds; tests inject a clock. */
@@ -241,6 +244,11 @@ function hopSecrets(hops: readonly HopCredentials[]): string[] {
  * close it, and only it receives its events. Credentials are resolved at connect and handed to the session;
  * none is ever in an answer, an event or an error. A host key is trusted only through {@link trust}.
  */
+/** Whether a switch dep (a boolean, or a getter read at connect) says off. */
+function switchOff(dep: boolean | (() => boolean) | undefined): boolean {
+  return (typeof dep === 'function' ? dep() : dep) === false;
+}
+
 export class SshService {
   private readonly live = new Map<string, Live>();
   /** Senders already watched for going away or reloading (one set of listeners per window, not per session). */
@@ -305,13 +313,13 @@ export class SshService {
       request.password,
     );
     const { env, secrets, forwardAgent, mosh, telnet, serial } = prepared;
-    if (telnet !== undefined && this.deps.telnet === false) {
+    if (telnet !== undefined && switchOff(this.deps.telnet)) {
       throw new WirebenchError(
         'telnet-off',
         'Telnet is switched off in this build of Wirebench. Connect to the device over SSH instead.',
       );
     }
-    if (serial !== undefined && this.deps.serial === false) {
+    if (serial !== undefined && switchOff(this.deps.serial)) {
       throw new WirebenchError('serial-off', 'Serial consoles are switched off in this build of Wirebench.');
     }
     const device = serial === undefined ? undefined : await this.serialDeviceOf(sender, request.hostId);

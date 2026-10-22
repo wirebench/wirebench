@@ -7,6 +7,7 @@ import {
   localTerminalFromEnv,
   parseAreaSwitches,
   registerEnabledAreaChannels,
+  resolveAreas,
   serialFromEnv,
   telnetFromEnv,
 } from '../src/main/areas.js';
@@ -47,6 +48,80 @@ describe('WIREBENCH_AREAS', () => {
       'history',
       'ssh',
     ]);
+  });
+});
+
+describe('resolveAreas (#360)', () => {
+  it('with no policy and no variable every area and sub-switch is on', () => {
+    const run = resolveAreas({ env: {} });
+    expect(run.enabled).toEqual(['explorer', 'environments', 'search', 'history', 'wss', 'ssh']);
+    expect(run.localTerminal).toBe(true);
+    expect(run.telnet).toBe(true);
+    expect(run.serial).toBe(true);
+    expect(run.states.map((state) => state.id)).toEqual([
+      'explorer',
+      'environments',
+      'search',
+      'history',
+      'wss',
+      'ssh',
+      'local-terminal',
+      'telnet',
+      'serial',
+    ]);
+    expect(run.states.every((state) => state.enabled && !state.policy)).toBe(true);
+  });
+
+  it('the managed policy wins over WIREBENCH_AREAS=ssh=on, and takes the sub-switches with it', () => {
+    const run = resolveAreas({ policy: ['ssh'], env: { WIREBENCH_AREAS: 'ssh=on' } });
+    expect(run.enabled).not.toContain('ssh');
+    expect(run.localTerminal).toBe(false);
+    expect(run.telnet).toBe(false);
+    expect(run.serial).toBe(false);
+    const ssh = run.states.find((state) => state.id === 'ssh');
+    expect(ssh).toMatchObject({ enabled: false, policy: true, preference: true, reason: { by: 'policy' } });
+    expect(run.states.find((state) => state.id === 'telnet')).toMatchObject({
+      enabled: false,
+      policy: false,
+      reason: { by: 'requires', feature: 'ssh' },
+    });
+  });
+
+  it('a policy entry for a sub-switch leaves the SSH area on', () => {
+    const run = resolveAreas({ policy: ['telnet'], env: {} });
+    expect(run.enabled).toContain('ssh');
+    expect(run.telnet).toBe(false);
+    expect(run.serial).toBe(true);
+    expect(run.states.find((state) => state.id === 'telnet')).toMatchObject({ policy: true, reason: { by: 'policy' } });
+  });
+
+  it('the variable alone still switches off, with the preference reason', () => {
+    const run = resolveAreas({ env: { WIREBENCH_AREAS: 'wss=off' } });
+    expect(run.enabled).toEqual(['explorer', 'environments', 'search', 'history', 'ssh']);
+    expect(run.states.find((state) => state.id === 'wss')).toMatchObject({
+      policy: false,
+      reason: { by: 'preference' },
+    });
+  });
+
+  it('a policy id with no descriptor, and an unknown variable id, change nothing', () => {
+    const run = resolveAreas({ policy: ['graphql'], env: { WIREBENCH_AREAS: 'nope=off' } });
+    expect(run.enabled).toHaveLength(6);
+  });
+
+  it('agrees with the shared filter enabledAreaIds for every variable value', () => {
+    for (const env of ['', 'ssh=off', 'wss=off,history=off', 'local-terminal=off', 'explorer=off']) {
+      expect(resolveAreas({ env: { WIREBENCH_AREAS: env } }).enabled).toEqual(
+        enabledAreasFromEnv({ WIREBENCH_AREAS: env }),
+      );
+    }
+  });
+
+  it('registers no ssh.* channel when the policy switches the area off, whatever the variable says', () => {
+    registered.clear();
+    const run = resolveAreas({ policy: ['ssh'], env: { WIREBENCH_AREAS: 'ssh=on' } });
+    registerEnabledAreaChannels(run.enabled, { localTerminal: run.localTerminal ? {} : undefined } as never);
+    expect([...registered].filter((n) => n.startsWith('ssh.') || n.startsWith('localTerminal.'))).toEqual([]);
   });
 });
 
