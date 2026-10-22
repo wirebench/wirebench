@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **An organisation can switch a desktop area off (#360).** The managed `policy.yaml` takes an `areas`
+  section (`ssh: false`, or `local-terminal`, `telnet`, `serial` on their own) that removes the area's
+  activity-bar item, commands, views, tabs and IPC channels on that machine and wins over
+  `WIREBENCH_AREAS`; a policy entry can only switch off. **Settings → Features** gains an **Areas** group
+  that shows each area's state and why (_Set by your organisation_, marked Managed).
 - **Feature switches.** Every protocol and optional feature can be turned off: **Settings → Features**
   lists SOAP, REST, gRPC, WebSocket, MCP requests, Scripts, Sequences, Webhooks, Shared workspaces,
   Team secrets and the MCP server, with the stage of each and why one is off (_Requires REST_, _Off by
