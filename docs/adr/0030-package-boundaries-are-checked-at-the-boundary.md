@@ -30,8 +30,8 @@ build.
 ## Decision
 
 **Three groups, three rules, no exceptions.** The groups are packages: `packages/core` is core;
-`packages/protocol-soap`, `protocol-rest`, `protocol-grpc`, `protocol-ws` and `protocol-mcp` are
-protocols; `packages/engine` is the composition. A protocol imports core and itself. Core imports
+`packages/protocol-soap`, `protocol-rest`, `protocol-grpc`, `protocol-ws`, `protocol-mcp` and
+`protocol-graphql` (phase 6, below) are protocols; `packages/engine` is the composition. A protocol imports core and itself. Core imports
 core. The composition imports anything, and nothing imports the composition. There is no exception
 list: what needed one has moved to the composition (`index.ts`, `protocols.ts`, `project-files.ts`,
 `import-detect.ts`, the exporters, the client importers) or to its protocol (SOAP's endpoint and
@@ -72,6 +72,15 @@ would otherwise see an incomplete union. `RunContext`'s SOAP hooks are added the
 erased base types and never reads a union member, so in a compile of core alone the unions are
 `never` and nothing notices; in every compile that holds the modules, which is every compile of
 `engine` and its hosts, they are the unions `protocols.ts` exported before.
+
+**Amended for phase 6 (#760): one protocol extends another through a slot.** GraphQL is a REST
+body kind, so REST must call GraphQL code while importing no other protocol. REST declares what it
+needs as an interface written out in its own package (`rest/graphql-slot.ts`) with an install
+function; `protocol-graphql` exports an object of that shape without importing REST; the
+composition, which may import both, installs one into the other, and the compiler checks the fit
+there. A build that installs nothing refuses the body with `feature-disabled`. This is the
+default-registry slot's pattern, and the one a later extension point can take for another protocol
+that lives inside an existing one.
 
 ## Consequences
 

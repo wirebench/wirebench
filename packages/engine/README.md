@@ -4,11 +4,12 @@
 
 ## Packages
 
-The engine is seven workspace packages, and this is the one that publishes. `@wirebench/core` holds the
+The engine is eight workspace packages, and this is the one that publishes. `@wirebench/core` holds the
 protocol interface, the registry, the run loop, the project and workspace formats, HTTP, the script
 sandbox and everything else the protocols share; `@wirebench/protocol-soap`, `-rest`, `-grpc`, `-ws` and
-`-mcp` each hold one protocol; `@wirebench/engine` composes them (`protocols.ts`) and exports the
-API (`index.ts` and the subpaths). The six others are private: this package reaches them through the
+`-mcp` each hold one protocol, and `@wirebench/protocol-graphql` holds GraphQL, a REST body kind
+that REST reaches through a slot this package fills; `@wirebench/engine` composes them
+(`protocols.ts`) and exports the API (`index.ts` and the subpaths). The seven others are private: this package reaches them through the
 import maps `#core/*` and `#protocol-<name>/*`, which in the workspace name the packages and in the
 published tarball name copies under `dist/vendor/<package>/` that `scripts/vendor-packages.mjs` makes at
 prepack. Their third-party dependencies are listed here as this package's own. Three rules hold between
