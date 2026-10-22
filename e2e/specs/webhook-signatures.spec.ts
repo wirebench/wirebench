@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { startFakeServer, type FakeServer, type FakeUser } from '../helpers/fake-server.js';
 import { createProject, createWorkspace } from '../helpers/project.js';
-import { chooseContextMenuItem, responseStatus, sendRest } from '../helpers/rest.js';
+import { chooseContextMenuItem, chooseProjectCreator, responseStatus, sendRest } from '../helpers/rest.js';
 import { shareToTeam, signIn } from '../helpers/server.js';
 import { SyncProfiles, SYNC_TIMEOUT } from '../helpers/sync.js';
 import { selectTab } from '../helpers/tabs.js';
@@ -96,7 +96,7 @@ test.describe('webhook signatures', () => {
     await expect(catchDialog).toBeHidden();
 
     // --- 2. A webhook item aimed at it, signing with the same scheme and secret -----------------
-    await chooseContextMenuItem(page, page.getByTestId('explorer-project-row'), 'New Webhook');
+    await chooseProjectCreator(page, page.getByTestId('explorer-project-row'), 'New Webhook…');
     const editor = page.getByTestId('rest-editor');
     await expect(editor).toBeVisible({ timeout: 20_000 });
     const collectionRow = page.getByTestId('webhook-collection-row');

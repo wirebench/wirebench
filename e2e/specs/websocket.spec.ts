@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { chooseContextMenuItem, nameNewRow } from '../helpers/rest.js';
+import { chooseContextMenuItem, chooseProjectCreator, nameNewRow } from '../helpers/rest.js';
 import { createProject, createWorkspace, saveAll, workspaceProjectDir } from '../helpers/project.js';
 import { startTestWsServer, type TestWsServer } from '../helpers/test-server.js';
 
@@ -42,7 +42,7 @@ test.describe('WebSocket: a request owns a session, its transcript, and its own 
 
     // New WebSocket API, its URL pointed at the test server's /echo path, then one request in it.
     const projectRow = page.getByTestId('explorer-project-row').first();
-    await chooseContextMenuItem(page, projectRow, 'New WebSocket API…');
+    await chooseProjectCreator(page, projectRow, 'New WebSocket API…');
     await expect(page.getByTestId('ws-api-tab')).toBeVisible({ timeout: 20_000 });
     const apiNameField = page.getByTestId('ws-api-name');
     await apiNameField.fill('Echo API');

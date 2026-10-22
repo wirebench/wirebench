@@ -96,7 +96,7 @@ export function StartPage() {
             explorerActions.newApi(projectId);
           }}
         >
-          New REST API
+          New REST API…
         </Button>
         <Button
           onClick={() => {

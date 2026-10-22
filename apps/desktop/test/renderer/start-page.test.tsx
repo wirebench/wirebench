@@ -54,9 +54,9 @@ describe('StartPage', () => {
     const card = screen.getByTestId('start-empty-project');
     expect(card.textContent).toContain('Pets has no APIs yet.');
     const buttons = screen.getAllByRole('button').map((button) => button.textContent);
-    expect(buttons).toEqual(['New REST API', 'Import definition…', 'Import cURL…']);
+    expect(buttons).toEqual(['New REST API…', 'Import definition…', 'Import cURL…']);
 
-    fireEvent.click(screen.getByRole('button', { name: 'New REST API' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New REST API…' }));
     expect(newApi).toHaveBeenCalledWith('p1');
     fireEvent.click(screen.getByRole('button', { name: 'Import cURL…' }));
     expect(importCurl).toHaveBeenCalledWith('p1');

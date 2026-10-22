@@ -3,7 +3,14 @@ import type { AddressInfo } from 'node:net';
 import { expect, test, type Locator } from '@playwright/test';
 import { startFakeServer, type FakeServer, type FakeUser } from '../helpers/fake-server.js';
 import { createProject, createWorkspace } from '../helpers/project.js';
-import { chooseContextMenuItem, createApi, createRestRequest, saveRequest, setMethodAndUrl } from '../helpers/rest.js';
+import {
+  chooseContextMenuItem,
+  chooseProjectCreator,
+  createApi,
+  createRestRequest,
+  saveRequest,
+  setMethodAndUrl,
+} from '../helpers/rest.js';
 import { shareToTeam, signIn } from '../helpers/server.js';
 import { SyncProfiles, SYNC_TIMEOUT } from '../helpers/sync.js';
 
@@ -134,7 +141,7 @@ test.describe('callback assertions', () => {
     await saveRequest(page);
 
     // --- A sequence whose one step expects the order's callback ---------------------------------
-    await chooseContextMenuItem(page, page.getByTestId('explorer-project-row').first(), 'New Sequence');
+    await chooseProjectCreator(page, page.getByTestId('explorer-project-row').first(), 'New Sequence…');
     const tab = page.getByTestId('sequence-tab');
     await expect(tab).toBeVisible({ timeout: 20_000 });
     await tab.getByTestId('sequence-add-step').click();
