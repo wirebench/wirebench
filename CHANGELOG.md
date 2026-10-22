@@ -70,6 +70,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Wirebench Server is under the Elastic License 2.0.** The server package, `packages/server`, moves from
+  Apache-2.0 to the Elastic License 2.0: free to run for your own company and to modify, not to offer to
+  third parties as a hosted or managed service, and not to run with the license file check circumvented.
+  The desktop app, the engine, the CLI, the SSH package, the integrations, the site and the docs stay
+  Apache-2.0. Community, Team and Enterprise are unchanged: a server with no license file is still Community
+  with five enabled accounts, and nothing shipped as free becomes paid
+  ([ADR-0028](docs/adr/0028-the-server-is-licensed-under-the-elastic-license-2-0.md)).
 - The developer variable `WIREBENCH_KINDS` is gone; `WIREBENCH_FEATURES="grpc=off"` takes its place in a
   development build, and the `features` preference in a shipped one (#735).
 - **Remove from workspace keeps the project folder unless asked.** The **Move the project folder to

@@ -1,6 +1,6 @@
 # ADR-0018: Licensing is a product boundary under one open license
 
-- Status: accepted
+- Status: superseded by [ADR-0028](0028-the-server-is-licensed-under-the-elastic-license-2-0.md)
 - Date: 2026-10-01
 - Context: `docs/specs/2026-10-01-wirebench-server-licensing-design.md`. Builds on
   [ADR-0009](0009-wirebench-server-is-a-fastify-postgres-process.md) (one server process, one module list).
