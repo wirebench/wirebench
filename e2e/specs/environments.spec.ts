@@ -184,8 +184,7 @@ test.describe('environments', () => {
     await createProjectWithCalculator(page, imported);
 
     await openEnvironmentsView(page);
-    await page.getByRole('button', { name: 'Add environment' }).click();
-    await expect(environmentRow(page, 'Environment 1')).toBeVisible();
+    await addEnvironment(page);
 
     // --- the sidebar: Globals, Workspace, Environment 1 ----------------------
     const environments = page.getByRole('grid', { name: 'Environments' });
