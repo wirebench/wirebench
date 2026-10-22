@@ -315,6 +315,8 @@ test.describe('accessibility and theming', () => {
       await createProjectWithCalculator(window, server);
       await openEnvironmentsView(window);
       await window.getByRole('button', { name: 'Add environment' }).click();
+      // The new row starts in rename (#746); Enter keeps the default name.
+      await window.getByLabel('Rename Environment 1').press('Enter');
       // "Add environment" opens the new environment's page, so the sidebar's grid and the
       // page's variables and endpoint-overrides grids are all on screen for the one scan.
       await expect(window.getByRole('grid', { name: 'Environments' })).toBeVisible();

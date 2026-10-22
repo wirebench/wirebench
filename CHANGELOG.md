@@ -142,6 +142,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A new environment is ready in one step (#746).** **Add environment** puts the new row straight
+  into rename with the focus in it, and once the name is in (Enter, or a click away) the environment
+  becomes the current project's active environment, so the switcher and the next send already use it.
+  Escape keeps "Environment N" and leaves the choice of environment as it was.
 - **Explorer, after a daily-use review (#685).** A SOAP operation with no request is a leaf, and a click on
   it creates the first request; **Expand all** unfolds down to the operations and Endpoints and leaves
   those folded, so a tree of many operations stays readable. A failed import names the HTTP status and

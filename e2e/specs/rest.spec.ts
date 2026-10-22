@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { monacoModelText, setMonacoText } from '../helpers/editor.js';
-import { environmentRow, openEnvironmentsView } from '../helpers/environments.js';
+import { addEnvironment, openEnvironmentsView } from '../helpers/environments.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace, workspaceProjectDir } from '../helpers/project.js';
 import {
@@ -305,8 +305,7 @@ test.describe('REST: make an API, send a request, read the response', () => {
 
     // --- add an environment and override the API's base URL ------------------
     await openEnvironmentsView(page);
-    await page.getByRole('button', { name: 'Add environment' }).click();
-    await expect(environmentRow(page, 'Environment 1')).toBeVisible();
+    await addEnvironment(page);
     const override = page.getByLabel('Endpoint override for Pets › Petstore');
     await expect(override).toBeVisible({ timeout: 20_000 });
     await override.fill(second.url);

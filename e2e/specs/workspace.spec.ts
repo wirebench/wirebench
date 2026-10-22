@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { runCommand } from '../helpers/palette.js';
+import { addEnvironment } from '../helpers/environments.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import {
   expandExplorer,
@@ -121,13 +122,7 @@ test.describe('workspaces', () => {
     // --- a `dev` workspace environment overriding the Calculator interface --------------
     await page.getByTestId('activity-environments').click();
     await expect(page.getByTestId('environments-view')).toBeVisible();
-    await page.getByRole('button', { name: 'Add environment' }).click();
-    const createdRow = page.getByTestId('environment-row').filter({ hasText: 'Environment 1' });
-    await expect(createdRow).toBeVisible();
-    await createdRow.click({ button: 'right' });
-    await page.getByRole('menuitem', { name: 'Rename' }).click();
-    await page.getByLabel('Rename Environment 1').fill('dev');
-    await page.getByLabel('Rename Environment 1').press('Enter');
+    await addEnvironment(page, 'dev');
     const devRow = page.getByTestId('environment-row').filter({ hasText: 'dev' });
     await expect(devRow).toBeVisible();
 

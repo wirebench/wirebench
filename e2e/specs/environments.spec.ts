@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { setMonacoText } from '../helpers/editor.js';
 import {
+  addEnvironment,
   environmentRow,
   openEnvironment,
   openEnvironmentsView,
@@ -75,14 +76,9 @@ test.describe('environments', () => {
 
     // --- add `uat` via the sidebar Environments view -------------------------
     await openEnvironmentsView(page);
-    await page.getByRole('button', { name: 'Add environment' }).click();
-    const created = environmentRow(page, 'Environment 1');
-    await expect(created).toBeVisible();
-    await created.click({ button: 'right' });
-    await page.getByRole('menuitem', { name: 'Rename' }).click();
-    await page.getByLabel('Rename Environment 1').fill('uat');
-    await page.getByLabel('Rename Environment 1').press('Enter');
-    await expect(environmentRow(page, 'uat')).toBeVisible();
+    // "Add environment" puts the new row into rename and makes it active once named (#746).
+    await addEnvironment(page, 'uat');
+    await expect(page.getByTestId('env-switcher')).toContainText('uat');
 
     // --- point it at the second server --------------------------------------
     // "Add environment" already opened this environment's page.
@@ -138,9 +134,7 @@ test.describe('environments', () => {
     await setVariable(page, 'intA', '100');
 
     await openEnvironmentsView(page);
-    await page.getByRole('button', { name: 'Add environment' }).click();
-    const created = environmentRow(page, 'Environment 1');
-    await expect(created).toBeVisible();
+    await addEnvironment(page);
     // "Add environment" already opened this environment's page.
     await setVariable(page, 'intA', '200');
 
