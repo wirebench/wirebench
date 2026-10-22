@@ -25,6 +25,9 @@ All notable changes to this project are documented here. The format follows
   from it lately under **Recently used**, and the Account commands sit at the end instead of opening
   the list with Sign in. **Preferences: Keyboard Shortcuts** opens the shortcuts page, and "keys" or
   "bindings" find it.
+- **Escape leaves Settings opened from the rail (#748).** After a click on the Settings button the
+  focus stayed on it with its tooltip open, and Escape only closed the tooltip. Escape now leaves
+  Settings whatever has focus, unless a menu, dialog or text field is open.
 - **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
   shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
   the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.

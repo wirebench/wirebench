@@ -110,4 +110,16 @@ test.describe('request properties and preferences', () => {
       // Two spaces before `<soapenv:Header`, and never the three the default indent produces.
       .toEqual(expect.arrayContaining([expect.stringMatching(/^ {2}<soapenv:Header/)]));
   });
+
+  test('Escape leaves Settings opened from the rail button, with the focus still on it (G06)', async () => {
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+
+    // The click leaves the focus, and the button's tooltip, on the rail button.
+    await page.getByTestId('activity-settings').click();
+    await expect(page.getByTestId('preferences-editor')).toBeVisible({ timeout: 20_000 });
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('settings-page')).toHaveCount(0);
+  });
 });

@@ -140,12 +140,28 @@ function SectionBody({
   }
 }
 
+/** The layers that own Escape while they are open. */
+const ESCAPE_LAYERS = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
+
+/**
+ * Whether an Escape someone already handled was spent closing a layer that is still open (a menu,
+ * a dialog, a listbox), so it must not also leave Settings.
+ *
+ * A tooltip handles Escape too: Radix closes it and marks the key handled in the capture phase.
+ * After a click on the rail's Settings button the focus stays on that button, its tooltip is
+ * open, and Escape used to stop there (G06). A tooltip is not a layer the key belongs to, so an
+ * Escape that only closed one still leaves Settings.
+ */
+export function escapeClaimedElsewhere(event: Pick<KeyboardEvent, 'defaultPrevented'>, doc: Document): boolean {
+  return event.defaultPrevented && doc.querySelector(ESCAPE_LAYERS) !== null;
+}
+
 /** Whether a key press in `target` belongs to that element (typing, picking) rather than the page. */
 function capturesEscape(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
     return false;
   }
-  if (target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]') !== null) {
+  if (target.closest(ESCAPE_LAYERS) !== null) {
     return true;
   }
   if (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
@@ -229,7 +245,7 @@ export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
-        if (event.defaultPrevented) {
+        if (escapeClaimedElsewhere(event, document)) {
           return;
         }
         const inSearch = event.target === searchRef.current;
