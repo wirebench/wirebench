@@ -269,8 +269,11 @@ export interface UiStore extends UiSnapshot {
   /** The console's equivalent of {@link restoreSidebarSize}. */
   readonly restoreConsoleSize: () => void;
   readonly toggleConsole: () => void;
-  /** Opens the console for a send, once: only while `console.openOnFirstSend` is still set. */
-  readonly openConsoleForFirstSend: () => void;
+  /**
+   * Opens the console unasked, for a failed send or a new problem, on `tab` when given: only while
+   * `console.openOnFirstSend` is still set, that is until the user has opened, closed or resized it.
+   */
+  readonly openConsoleForFirstSend: (tab?: ConsoleTab) => void;
   /** Flips the Code slide-over open or closed — what the right rail's icon does. */
   readonly toggleCode: () => void;
   /** Opens the Code slide-over unconditionally — what the "Show code" command does. */
@@ -287,6 +290,8 @@ export interface UiStore extends UiSnapshot {
   /** Selects a sidebar view without the collapse-on-reselect behaviour of {@link showSidebarView}. */
   readonly setSidebarView: (view: SidebarView) => void;
   readonly showConsoleTab: (tab: ConsoleTab) => void;
+  /** Sets the console as a workspace left it, or as a new workspace starts (G07); the size is kept. */
+  readonly resetWorkspaceConsole: (console: { readonly visible: boolean; readonly openOnFirstSend: boolean }) => void;
   readonly setSidebarSize: (size: number) => void;
   readonly setConsoleSize: (size: number) => void;
   /** Remembers the Code slide-over's width, dragged from its left-edge handle. */
@@ -585,7 +590,7 @@ export const useUiStore = create<UiStore>((set, get) => {
           draft.console.size = draft.console.lastSize;
         }
       }),
-    openConsoleForFirstSend: () =>
+    openConsoleForFirstSend: (tab) =>
       update((draft) => {
         if (!draft.console.openOnFirstSend) {
           return;
@@ -593,6 +598,7 @@ export const useUiStore = create<UiStore>((set, get) => {
         draft.console.openOnFirstSend = false;
         draft.console.visible = true;
         draft.console.size = draft.console.lastSize;
+        if (tab !== undefined) draft.console.activeTab = tab;
       }),
     toggleCode: () =>
       update((draft) => {
@@ -646,6 +652,13 @@ export const useUiStore = create<UiStore>((set, get) => {
         draft.console.activeTab = tab;
         draft.console.visible = true;
         draft.console.openOnFirstSend = false;
+      }),
+    resetWorkspaceConsole: ({ visible, openOnFirstSend }) =>
+      update((draft) => {
+        if (draft.console.visible && !visible) draft.console.lastSize = draft.console.size;
+        if (!draft.console.visible && visible) draft.console.size = draft.console.lastSize;
+        draft.console.visible = visible;
+        draft.console.openOnFirstSend = openOnFirstSend;
       }),
 
     setSidebarSize: (size) =>

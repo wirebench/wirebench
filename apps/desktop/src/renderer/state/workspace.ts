@@ -30,7 +30,7 @@ import { useExchangesStore } from './exchanges.js';
 import { useProjectStore } from './project.js';
 import { reviewSecrets } from './secret-review.js';
 import { activeEnvironmentFor } from './environment-scope.js';
-import { restoreWorkspaceTabs, saveWorkspaceTabs } from './workspace-tabs.js';
+import { restoreWorkspaceConsole, restoreWorkspaceTabs, saveWorkspaceTabs } from './workspace-tabs.js';
 import { ipc } from './ipc-client.js';
 import { restoreUnsaved, stashDrafts, subscribeToDraftStash } from './unsaved-drafts.js';
 
@@ -247,6 +247,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
     }
     const opening = tabsOwner === undefined;
     tabsOwner = workspace.id;
+    if (opening) restoreWorkspaceConsole(workspace.id);
     const pulled = pullMissingProjects(workspace);
     if (opening) {
       // The remembered tabs name entities of projects the mirror may not hold yet, so the

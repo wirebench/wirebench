@@ -102,7 +102,8 @@ describe('applyRestUpdate', () => {
     const result = applyRestUpdate(api, old, next, { newId: ids });
     const req = find(result.api, 'post', '/pets/{id}');
     expect(req.pathParams).toEqual([{ name: 'id', value: '2', enabled: true }]);
-    expect(req.query).toEqual([{ name: 'limit', value: '', enabled: true }]);
+    // Now required with no value in the document: a reference that names what is missing (G10).
+    expect(req.query).toEqual([{ name: 'limit', value: '${limit}', enabled: true }]);
     expect(req.body).toEqual({ kind: 'raw', language: 'json', text: JSON.stringify({ a: 2 }, null, 2) });
     expect(result.requestsRewritten).toBe(1);
     expect(result.requestsAdded).toBe(0);

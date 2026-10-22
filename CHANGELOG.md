@@ -16,6 +16,37 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **History rows say where a send went (#748).** A REST row leads with its path, the host faint beside
+  it, so sends to `/pets` and `/pets/1` on one host tell apart; the request's name moves to the second
+  line. A click opens the entry as the preview tab, which the next click replaces, and a double-click or
+  Enter keeps it. An entry with no request body says so under a **Request** label, apart from the
+  response.
+- **The empty palette leads with what you use (#748).** With nothing typed, ⌘K lists the commands run
+  from it lately under **Recently used**, and the Account commands sit at the end instead of opening
+  the list with Sign in. **Preferences: Keyboard Shortcuts** opens the shortcuts page, and "keys" or
+  "bindings" find it.
+- **Escape leaves Settings opened from the rail (#748).** After a click on the Settings button the
+  focus stayed on it with its tooltip open, and Escape only closed the tooltip. Escape now leaves
+  Settings whatever has focus, unless a menu, dialog or text field is open.
+- **The console stays out of the way until something goes wrong (#748).** A workspace's console starts
+  collapsed and a send that works leaves it so. It opens itself on the HTTP log for a failed send (no
+  response, a fault, a 4xx or 5xx) and on Problems for a new problem, until you open, close or resize
+  it yourself. Each workspace remembers its own console.
+- **Make secret no longer covers the value (#748).** It is a key button beside the row's **Remove**
+  button, so a long value stays readable to its end.
+- **Params tells path parameters and variables apart (#748).** An empty path table reads "No path
+  parameters like {id} in this URL." instead of "No {placeholders}", and a **Variables in this URL**
+  list names each `${…}` the URL uses, where it resolves and its value (masked for a secret).
+- **Imported array parameters carry their values (#748).** An OpenAPI query or path parameter that
+  takes an array now imports with its example, or its items' default or first enum value, instead of
+  an empty cell: a required `status` arrives as `status=available`, not `status=`. An exploded
+  form-style query parameter gets one row per item (`tags=a&tags=b`); other styles join the items with
+  commas. A required parameter the document gives no value at all arrives as a `${name}` reference
+  (`tags=${tags}`), so the URL marks it and a send names what is missing instead of sending `tags=`.
+  Optional parameters still arrive switched off.
+- **A new POST body is ready to type into (#748).** Switching a request with no body from GET (or any
+  method without one) to POST, PUT or PATCH sets the body to Raw · JSON. A body you set to None on a
+  POST stays None.
 - **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
   shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
   the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.

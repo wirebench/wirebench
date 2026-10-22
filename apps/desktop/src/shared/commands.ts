@@ -68,6 +68,7 @@ export const COMMAND_IDS = [
   'view.showSettings',
   'view.toggleTheme',
   'preferences.open',
+  'preferences.keyboardShortcuts',
   'definition.import',
   'item.save',
   'project.save',
@@ -320,6 +321,8 @@ export interface CommandDefinition<Ctx = unknown> {
   readonly paletteHidden?: boolean;
   /** Where its shortcut fires from (see `CommandCatalogEntry.keyScope`). */
   readonly keyScope?: string;
+  /** Other words the palette finds it by (see `CommandCatalogEntry.aliases`). */
+  readonly aliases?: readonly string[];
   readonly when?: (context: Ctx) => boolean;
   /**
    * The declared identity of `when`, so two gated commands can be compared without calling

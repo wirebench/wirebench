@@ -22,6 +22,8 @@ export interface CommandCatalogEntry {
    * command from anywhere. Unset, the shortcut fires wherever the command's `when` holds.
    */
   readonly keyScope?: string;
+  /** Other words the palette finds the command by ("keys" for Keyboard Shortcuts); never shown. */
+  readonly aliases?: readonly string[];
 }
 
 /**
@@ -361,6 +363,12 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     id: 'preferences.open',
     label: 'Open Preferences',
     category: 'General',
+  },
+  'preferences.keyboardShortcuts': {
+    id: 'preferences.keyboardShortcuts',
+    label: 'Preferences: Keyboard Shortcuts',
+    category: 'General',
+    aliases: ['keys', 'bindings', 'keybindings'],
   },
   'definition.import': {
     id: 'definition.import',

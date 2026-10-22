@@ -44,7 +44,7 @@ import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
 import { subscribeToSync } from '../state/sync.js';
 import { subscribeToHosts } from '../features/ssh/hosts-store.js';
-import { collapseConsoleInShortWindow, subscribeConsoleToFirstSend } from '../state/console-first-send.js';
+import { collapseConsoleInShortWindow, subscribeConsoleToTrouble } from '../state/console-first-send.js';
 import {
   useWssConfigPanelLabel,
   useWssConfigPanelShown,
@@ -437,7 +437,7 @@ export function AppShell() {
   useEffect(() => subscribeToSync(), []);
   useEffect(() => subscribeToTeamSecrets(), []);
   useEffect(() => subscribeToHosts(), []);
-  useEffect(() => subscribeConsoleToFirstSend(), []);
+  useEffect(() => subscribeConsoleToTrouble(), []);
   useEffect(() => collapseConsoleInShortWindow(), []);
   // The `forward.*` channels exist only while the SSH area is on.
   useEffect(() => (sshEnabled ? subscribeToForwards() : undefined), [sshEnabled]);

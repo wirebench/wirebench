@@ -126,7 +126,8 @@ describe('RestEditor', () => {
 
     fireEvent.change(screen.getByTestId('rest-method'), { target: { value: 'POST' } });
 
-    expect(staged()).toEqual({ method: 'POST' });
+    // A bodiless request switched to POST starts on Raw · JSON (G11).
+    expect(staged()).toEqual({ method: 'POST', body: { kind: 'raw', language: 'json', text: '' } });
     expect(useProjectStore.getState().restRequests['rest-1']?.method).toBe('POST');
     expect(useDraftsStore.getState().isRestRequestDirty('rest-1')).toBe(true);
   });

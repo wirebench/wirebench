@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { runCommand } from '../helpers/palette.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
+import { createProjectWithCalculator, createWorkspace, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 import { selectTab } from '../helpers/tabs.js';
 
@@ -109,5 +109,19 @@ test.describe('request properties and preferences', () => {
       )
       // Two spaces before `<soapenv:Header`, and never the three the default indent produces.
       .toEqual(expect.arrayContaining([expect.stringMatching(/^ {2}<soapenv:Header/)]));
+  });
+
+  test('Escape leaves Settings opened from the rail button, with the focus still on it (G06)', async () => {
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+    // The activity bar, and its Settings button, belong to an open workspace.
+    await createWorkspace(page);
+
+    // The click leaves the focus, and the button's tooltip, on the rail button.
+    await page.getByTestId('activity-settings').click();
+    await expect(page.getByTestId('preferences-editor')).toBeVisible({ timeout: 20_000 });
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('settings-page')).toHaveCount(0);
   });
 });

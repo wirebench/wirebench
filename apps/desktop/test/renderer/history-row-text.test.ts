@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  endpointParts,
   historyCountLabel,
   historyStatusChip,
   historyTabTitle,
@@ -21,6 +22,14 @@ describe('History row text', () => {
   it('reads the host of a URL, and keeps a placeholder as it is', () => {
     expect(hostOf('https://api.test:8443/pet/1')).toBe('api.test:8443');
     expect(hostOf('${base}/pet')).toBe('${base}/pet');
+  });
+
+  it('splits a URL into the path a row leads with and its host (G04)', () => {
+    expect(endpointParts('https://api.test:8443/pets/1?full=1')).toEqual({
+      path: '/pets/1?full=1',
+      host: 'api.test:8443',
+    });
+    expect(endpointParts('${base}/pet')).toEqual({ path: '${base}/pet', host: '' });
   });
 
   it('names the kind of failure on a send that got no status (#732 X12)', () => {

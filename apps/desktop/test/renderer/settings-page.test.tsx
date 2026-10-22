@@ -123,6 +123,32 @@ describe('Settings as a page', () => {
     expect(useUiStore.getState().preferences.open).toBe(false);
   });
 
+  it('closes on an Escape a tooltip already handled, and not on one an open menu spent (G06)', async () => {
+    renderInShell(<SettingsPage />);
+    useUiStore.getState().openPreferences();
+    await screen.findByTestId('preferences-editor');
+    // A tooltip (or any layer) marks Escape handled in the capture phase, before the page sees it.
+    const claim = (event: KeyboardEvent): void => {
+      event.preventDefault();
+    };
+    document.addEventListener('keydown', claim, { capture: true });
+    try {
+      // An open menu still owns the key.
+      const menu = document.createElement('div');
+      menu.setAttribute('role', 'menu');
+      document.body.append(menu);
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(useUiStore.getState().preferences.open).toBe(true);
+
+      // With only a tooltip closing, Settings closes too.
+      menu.remove();
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(useUiStore.getState().preferences.open).toBe(false);
+    } finally {
+      document.removeEventListener('keydown', claim, { capture: true });
+    }
+  });
+
   it('focuses the search on Mod+F', async () => {
     renderInShell(<SettingsPage />);
     useUiStore.getState().openPreferences();

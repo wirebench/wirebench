@@ -377,30 +377,31 @@ function VariableRow({
             className={INPUT_CLASS}
             {...valueField}
           />
-          {onMakeSecret !== undefined && (
-            <button
-              type="button"
-              data-testid="env-variable-make-secret"
-              aria-label={`Make ${name} a secret`}
-              title={`Store this value as a project secret on this machine, and put \${secret:${secretNameFor(name)}} here instead`}
-              disabled={makingSecret}
-              className="inline-flex shrink-0 items-center gap-1 rounded px-1 text-xs whitespace-nowrap text-fg-muted hover:bg-surface-hover hover:text-fg-default disabled:opacity-50"
-              onClick={onMakeSecret}
-            >
-              <KeyRound size={12} aria-hidden="true" />
-              Make secret
-            </button>
-          )}
         </div>
       </td>
       {currentCell !== undefined && <CurrentCell name={name} committed={value} {...currentCell} />}
       <td role="gridcell" className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
         {origin}
       </td>
-      <td role="gridcell" className="px-2 py-1 text-center">
-        <IconButton label={`Remove ${name}`} data-testid="env-variable-delete" onClick={onRemove}>
-          <Trash2 size={13} aria-hidden="true" />
-        </IconButton>
+      <td role="gridcell" className="px-2 py-1">
+        {/* Make secret sits with the row's actions, never over the value it would replace (G08). */}
+        <div className="flex items-center justify-end gap-0.5">
+          {onMakeSecret !== undefined && (
+            <IconButton
+              label={`Make ${name} a secret`}
+              data-testid="env-variable-make-secret"
+              title={`Store this value as a project secret on this machine, and put \${secret:${secretNameFor(name)}} here instead`}
+              disabled={makingSecret}
+              className="disabled:opacity-50"
+              onClick={onMakeSecret}
+            >
+              <KeyRound size={13} aria-hidden="true" />
+            </IconButton>
+          )}
+          <IconButton label={`Remove ${name}`} data-testid="env-variable-delete" onClick={onRemove}>
+            <Trash2 size={13} aria-hidden="true" />
+          </IconButton>
+        </div>
       </td>
     </tr>
   );
@@ -731,7 +732,8 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
             <col />
             {current !== undefined && <col className="w-[22%]" />}
             <col className="w-[26%]" />
-            <col className="w-9" />
+            {/* Room for Make secret beside Remove. */}
+            <col className="w-16" />
           </colgroup>
           <thead>
             <tr

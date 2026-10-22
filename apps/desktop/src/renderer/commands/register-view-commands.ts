@@ -103,6 +103,12 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
     },
   });
   registerCommand({
+    ...catalogEntry('preferences.keyboardShortcuts'),
+    run: () => {
+      ui().openPreferences('shortcuts');
+    },
+  });
+  registerCommand({
     ...catalogEntry('view.toggleTheme'),
     run: () => {
       cycleTheme();

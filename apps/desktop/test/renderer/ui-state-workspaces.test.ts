@@ -12,6 +12,7 @@ import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import {
   rememberOpenWorkspaceTabs,
+  restoreWorkspaceConsole,
   restoreWorkspaceTabs,
   saveWorkspaceTabs,
 } from '../../src/renderer/state/workspace-tabs.js';
@@ -74,6 +75,41 @@ describe('per-workspace UI state', () => {
     );
 
     expect(readUi(storage).workspaces['w1']?.explorerOpen).toEqual({ 'proj:p1': false, i1: true });
+  });
+
+  it('remembers the console per workspace and starts a new one collapsed (G07)', () => {
+    useUiStore.setState({ console: { ...DEFAULT_UI_STATE.console, visible: true, openOnFirstSend: false } });
+    saveWorkspaceTabs('w1');
+    expect(useUiStore.getState().workspaces['w1']?.console).toEqual({ visible: true, openOnFirstSend: false });
+
+    // A workspace never seen before: collapsed, and opening itself on trouble.
+    restoreWorkspaceConsole('w2');
+    expect(useUiStore.getState().console.visible).toBe(false);
+    expect(useUiStore.getState().console.openOnFirstSend).toBe(true);
+
+    // Back to the first one: open, as it was left.
+    restoreWorkspaceConsole('w1');
+    expect(useUiStore.getState().console.visible).toBe(true);
+    expect(useUiStore.getState().console.openOnFirstSend).toBe(false);
+  });
+
+  it('reads a stored console only when both flags are booleans (G07)', () => {
+    const storage = memoryStorage();
+    storage.setItem(
+      UI_STORAGE_KEY,
+      JSON.stringify({
+        version: UI_STORAGE_VERSION,
+        state: {
+          workspaces: {
+            w1: { tabs: [], console: { visible: true, openOnFirstSend: false } },
+            w2: { tabs: [], console: { visible: 'yes' } },
+          },
+        },
+      }),
+    );
+    const workspaces = readUi(storage).workspaces;
+    expect(workspaces['w1']?.console).toEqual({ visible: true, openOnFirstSend: false });
+    expect(workspaces['w2']?.console).toBeUndefined();
   });
 
   it('keeps the explorer fold state when the tabs are saved', () => {
@@ -140,6 +176,10 @@ describe('per-workspace UI state', () => {
         { kind: 'environment', id: 'e1' },
       ],
       sidebarView: 'explorer',
+      console: {
+        visible: useUiStore.getState().console.visible,
+        openOnFirstSend: useUiStore.getState().console.openOnFirstSend,
+      },
     });
   });
 
