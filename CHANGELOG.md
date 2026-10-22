@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A Projects panel for an environment.** Which projects a workspace environment applies to is chosen in
+  its own panel on the right of the environment's page, opened from the rail's **Projects** icon or
+  **Choose projects…** in Environment details: **All projects** at the top (projects added later
+  included), then one checkbox per project. Clearing a box narrows the environment to the others, and a
+  narrowed environment stays narrowed until **All projects** is ticked again. Environment details reads
+  the choice. The workspace environment file has a published JSON Schema of its own, under
+  `schemas/workspace/v<format>/`, that covers `projects` (#393).
 - **Closing live sessions asks first.** Closing tabs that hold a connected SSH, Telnet or serial session,
   or a running local terminal, asks once for the whole batch (**Close 2 sessions on web-1?**); **Cancel**
   keeps every tab. **Don't ask again** turns it off, and **Settings → Terminal → Confirm closing live

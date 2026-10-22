@@ -86,7 +86,13 @@ export type {
 export { createProtocolRegistry } from './protocol/registry.js';
 export type { ProtocolRegistry, ProtocolRegistryOptions } from './protocol/registry.js';
 export { BUILTIN_PROTOCOLS, createBuiltinRegistry } from './protocols.js';
-export { PROJECT_FILE_KINDS, PROJECT_SCHEMA_BASE_URL, projectJsonSchemas } from './project-files.js';
+export {
+  PROJECT_FILE_KINDS,
+  PROJECT_SCHEMA_BASE_URL,
+  WORKSPACE_FILE_KINDS,
+  projectJsonSchemas,
+  workspaceJsonSchemas,
+} from './project-files.js';
 export type { ProjectFileKind, ProjectJsonSchema } from './project-files.js';
 export {
   allContainers,

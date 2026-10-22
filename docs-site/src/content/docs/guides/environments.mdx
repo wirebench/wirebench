@@ -58,13 +58,18 @@ sandbox` that a CRM request can never pick by accident.
 
 <Steps>
 
-1. Open the environment's page. The **Environment details** panel opens on the right; its
-   **Applies to** reads **All projects** or **Selected projects**.
-2. Choose **Selected projects**. A list of the workspace's projects appears with every one ticked,
-   so nothing drops out until you clear a box.
-3. Clear the projects it should not apply to.
+1. Open the environment's page and choose **Projects** on the right rail (or **Choose projects…**
+   in the **Environment details** panel). The **Projects** panel lists the workspace's projects,
+   each with a checkbox, under **All projects**.
+2. Clear the projects it should not apply to. Clearing the first box narrows the environment to
+   every other project, so nothing drops out until you clear a box.
 
 </Steps>
+
+**All projects** means every project, the ones added to the workspace later included. A narrowed
+environment lists the projects it applies to, so a project added later stays out until you tick it,
+and ticking every box by hand does not turn **All projects** back on. The **Environment details**
+panel reads the choice as **All projects**, the project names, or **No project**.
 
 - The switcher lists two groups: **All projects** for the environments that apply everywhere, then
   a group named after the current project for the environments scoped to it. **Next environment**
@@ -81,7 +86,7 @@ sandbox` that a CRM request can never pick by accident.
   project in its scope.
 - Removing a project from the workspace removes it from every scope. An environment left with no
   project is kept, shown as **No project**, and the removal dialog names it first, so nothing you
-  typed is lost. Choose **Selected projects** again to give it projects.
+  typed is lost. Tick projects again in the **Projects** panel to give it some.
 
 The scope is saved in the environment's file as `projects`, a list of project ids; an environment
 without it applies to every project. A teammate on an older build sees a scoped environment as
@@ -91,8 +96,9 @@ applying to every project, and if they edit it the scope is lost.
 
 Production should look different from local, and should be hard to hit by accident. Both settings
 are in the **Environment details** panel, on the right of an environment's page. The panel also
-shows the environment's name, where it lives and how many variables it sets. The right rail's
-icon opens and closes it, and <kbd>Escape</kbd> puts it away. It stays as you left it, open or put
+shows the environment's name, where it lives, how many variables it sets and which projects it
+applies to. The right rail's icon opens and closes it (its second icon opens the **Projects**
+panel in its place), and <kbd>Escape</kbd> puts it away. It stays as you left it, open or put
 away, when you come back to an environment, and after a restart. There is no Code panel in the
 Environments area.
 

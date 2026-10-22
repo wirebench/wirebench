@@ -36,6 +36,8 @@ import { sequenceFileSchema } from './sequence/file.js';
 import { goldenFileSchema } from './snapshot/golden-file.js';
 import { interfaceFileSchema, requestFileSchema } from './soap/files.js';
 import { wsApiFileSchema, wsRequestFileSchema } from './ws/files.js';
+import { WORKSPACE_FORMAT_VERSION } from './workspace/model.js';
+import { workspaceEnvironmentFileSchema } from './workspace/schema.js';
 
 /** One kind of file in a project folder and the schema it is read with. */
 export interface ProjectFileKind {
@@ -138,9 +140,34 @@ export const PROJECT_FILE_KINDS: readonly ProjectFileKind[] = [
   },
 ];
 
+/**
+ * The published schema of a workspace environment (`environments/*.yaml` beside `workspace.yaml`,
+ * #393). The loader reads `projects` leniently — a malformed list is taken as absent so a hand
+ * edit never drops the file — but an editor should flag what the loader would silently ignore, so
+ * the published field is the list of project ids the file is meant to hold.
+ */
+const workspaceEnvironmentPublishedSchema = workspaceEnvironmentFileSchema.extend({
+  projects: z
+    .array(z.string().min(1))
+    .optional()
+    .describe(
+      'Ids of the projects this environment applies to (the ids in workspace.yaml). Absent: every project, including ones added later. Empty: no project.',
+    ),
+});
+
+/** Every kind of YAML file a workspace folder holds a schema for; `files` are relative to the workspace folder. */
+export const WORKSPACE_FILE_KINDS: readonly ProjectFileKind[] = [
+  {
+    name: 'environment',
+    title: 'Workspace environment',
+    files: ['environments/*.yaml'],
+    schema: workspaceEnvironmentPublishedSchema,
+  },
+];
+
 /** One generated schema: where it goes under the schemas folder, its kind and the document. */
 export interface ProjectJsonSchema {
-  /** `v<formatVersion>/<name>.schema.json`. */
+  /** `v<formatVersion>/<name>.schema.json`, or `workspace/v<workspaceFormatVersion>/<name>.schema.json`. */
   readonly path: string;
   readonly kind: ProjectFileKind;
   readonly schema: Readonly<Record<string, unknown>>;
@@ -148,8 +175,28 @@ export interface ProjectJsonSchema {
 
 /** The JSON Schema (draft 2020-12) of every kind of project file, in {@link PROJECT_FILE_KINDS} order. */
 export function projectJsonSchemas(kinds: readonly ProjectFileKind[] = PROJECT_FILE_KINDS): ProjectJsonSchema[] {
+  return jsonSchemas(kinds, { folder: `v${FORMAT_VERSION}`, owner: 'project', version: FORMAT_VERSION });
+}
+
+/**
+ * The JSON Schema of every kind of workspace file, in {@link WORKSPACE_FILE_KINDS} order, under
+ * `workspace/v<workspace format version>/`: a workspace folder has its own format version.
+ */
+export function workspaceJsonSchemas(kinds: readonly ProjectFileKind[] = WORKSPACE_FILE_KINDS): ProjectJsonSchema[] {
+  return jsonSchemas(kinds, {
+    folder: `workspace/v${WORKSPACE_FORMAT_VERSION}`,
+    owner: 'workspace',
+    version: WORKSPACE_FORMAT_VERSION,
+  });
+}
+
+function jsonSchemas(
+  kinds: readonly ProjectFileKind[],
+  at: { readonly folder: string; readonly owner: 'project' | 'workspace'; readonly version: number },
+): ProjectJsonSchema[] {
+  const Owner = at.owner === 'project' ? 'Project' : 'Workspace';
   return kinds.map((kind) => {
-    const path = `v${FORMAT_VERSION}/${kind.name}.schema.json`;
+    const path = `${at.folder}/${kind.name}.schema.json`;
     // `input`: a file is what the loader reads, so a field with a default may be left out.
     const { $schema, ...body } = z.toJSONSchema(kind.schema, {
       target: 'draft-2020-12',
@@ -162,8 +209,8 @@ export function projectJsonSchemas(kinds: readonly ProjectFileKind[] = PROJECT_F
       schema: {
         $schema,
         $id: `${PROJECT_SCHEMA_BASE_URL}/${path}`,
-        title: `Wirebench project file: ${kind.title}`,
-        description: `Project format ${FORMAT_VERSION}: ${kind.files.map((file) => `\`${file}\``).join(', ')}.`,
+        title: `Wirebench ${at.owner} file: ${kind.title}`,
+        description: `${Owner} format ${String(at.version)}: ${kind.files.map((file) => `\`${file}\``).join(', ')}.`,
         ...body,
       },
     };
