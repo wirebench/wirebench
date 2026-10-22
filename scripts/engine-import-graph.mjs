@@ -1,8 +1,9 @@
 /**
  * The import graph of the engine's packages, by package (package split spec §4; ADR-0030).
  *
- * The engine is seven workspace packages under `packages/`: `core`, one `protocol-<name>` per protocol
- * (`soap`, `rest`, `grpc`, `ws`, `mcp`) and `engine`, the composition. A package is a group, and three
+ * The engine is eight workspace packages under `packages/`: `core`, one `protocol-<name>` per protocol
+ * (`soap`, `rest`, `grpc`, `ws`, `mcp`, and `graphql`, a REST body kind in a package of its own, phase 6
+ * spec §4) and `engine`, the composition. A package is a group, and three
  * rules hold between the groups, with no exceptions:
  *
  *  1. a protocol imports core and itself, never another protocol;
@@ -38,6 +39,7 @@ export const PACKAGE_GROUPS = Object.freeze({
   'protocol-grpc': 'grpc',
   'protocol-ws': 'ws',
   'protocol-mcp': 'mcp',
+  'protocol-graphql': 'graphql',
   engine: 'compose',
 });
 
