@@ -17,6 +17,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Show All Commands | <kbd>⌘K</kbd> or <kbd>⌘⇧P</kbd> | <kbd>Ctrl+K</kbd> or <kbd>Ctrl+Shift+P</kbd> |
 | Go to Operation or Request… | <kbd>⌘P</kbd> | <kbd>Ctrl+P</kbd> |
 | Open Preferences | — | — |
+| Preferences: Keyboard Shortcuts | — | — |
 
 ## View
 

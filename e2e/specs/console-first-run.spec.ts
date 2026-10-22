@@ -1,6 +1,6 @@
 /**
- * A fresh REST workspace (#575): the console starts collapsed with no SOAP-only WS-I Report tab,
- * and the first send opens it on the HTTP Log.
+ * A fresh REST workspace (#575): the console starts collapsed with no SOAP-only WS-I Report tab. A
+ * send that works leaves it collapsed, and the first failed one opens it on the HTTP Log (#748 G07).
  */
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
@@ -21,7 +21,7 @@ test.describe('the console in a fresh REST workspace', () => {
     server = undefined;
   });
 
-  test('starts collapsed without a WS-I tab and opens on the first send', async () => {
+  test('starts collapsed without a WS-I tab, stays so on a send that works, and opens on a failed one', async () => {
     server = await startTestRestServer();
     // The adaptive layout is the one a user gets: the fixed one opens the console for older specs.
     launched = await launchApp({ adaptiveLayout: true });
@@ -38,6 +38,12 @@ test.describe('the console in a fresh REST workspace', () => {
     await setMethodAndUrl(page, 'GET', '/echo?x=1');
     await sendRest(page);
     await expect(responseStatus(page)).toContainText('200', { timeout: 20_000 });
+    // A send that worked is no reason to take the editor's space.
+    await expect(page.getByTestId('console')).toBeHidden();
+
+    await setMethodAndUrl(page, 'GET', '/status/500');
+    await sendRest(page);
+    await expect(responseStatus(page)).toContainText('500', { timeout: 20_000 });
 
     const panel = page.getByTestId('console');
     await expect(panel).toBeVisible();

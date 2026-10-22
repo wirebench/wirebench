@@ -95,10 +95,11 @@ describe('Swagger Petstore (3.0)', () => {
     expect(routes.get('POST /pet/{petId}')?.pathParams).toEqual([
       { name: 'petId', value: '0', enabled: true, description: 'ID of pet that needs to be updated' },
     ]);
-    // Both login parameters are required, so both rows arrive enabled.
+    // Both login parameters are required with no value in the document, so both rows arrive enabled
+    // with a reference naming what to fill in (G10), never sent empty.
     expect(routes.get('GET /user/login')?.query).toEqual([
-      { name: 'username', value: '', enabled: true, description: 'The user name for login' },
-      { name: 'password', value: '', enabled: true, description: 'The password for login in clear text' },
+      { name: 'username', value: '${username}', enabled: true, description: 'The user name for login' },
+      { name: 'password', value: '${password}', enabled: true, description: 'The password for login in clear text' },
     ]);
     // The `api_key` header parameter arrives as a switched-off header row.
     expect(routes.get('DELETE /pet/{petId}')?.headers).toEqual([{ name: 'api_key', value: '', enabled: false }]);

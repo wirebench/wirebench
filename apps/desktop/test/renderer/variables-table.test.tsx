@@ -912,6 +912,16 @@ describe('VariablesTable Make secret (#634)', () => {
     expect(screen.queryByTestId('env-variable-make-secret')).toBeNull();
   });
 
+  it('sits with the row actions, never in the value cell (G08)', () => {
+    renderTable(baseTarget({ properties: { token: 's3cret' }, secretProjectIds: ['p1'] }));
+    const button = within(row('token')).getByTestId('env-variable-make-secret');
+    const valueCell = within(row('token')).getByLabelText('Value of token').closest('td');
+    expect(valueCell?.contains(button)).toBe(false);
+    const actionsCell = within(row('token')).getByTestId('env-variable-delete').closest('td');
+    expect(actionsCell?.contains(button)).toBe(true);
+    expect(button.getAttribute('aria-label')).toBe('Make token a secret');
+  });
+
   it('stores the value and puts the token in its place', async () => {
     const onSet = vi.fn();
     renderTable(baseTarget({ properties: { token: 's3cret' }, secretProjectIds: ['p1'], onSet }));

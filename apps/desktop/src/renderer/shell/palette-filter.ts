@@ -50,9 +50,13 @@ export function paletteKeywords(command: {
   readonly id?: string;
   readonly category: string;
   readonly label: string;
+  readonly aliases?: readonly string[];
 }): string[] {
   const prefix = /^([^:]+):\s/.exec(command.label)?.[1];
-  const names = prefix === undefined || prefix === command.category ? [command.category] : [command.category, prefix];
+  const names = [
+    ...(prefix === undefined || prefix === command.category ? [command.category] : [command.category, prefix]),
+    ...(command.aliases ?? []),
+  ];
   if (command.id === undefined) {
     return names;
   }

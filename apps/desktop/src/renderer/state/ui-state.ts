@@ -69,6 +69,11 @@ export interface PersistedWorkspaceUi {
    * A node with no entry uses the tree's default: project roots open, everything below shut.
    */
   readonly explorerOpen?: Readonly<Record<string, boolean>>;
+  /**
+   * Whether the console was open, and whether it still opens itself on trouble, when the workspace
+   * was left (G07). A workspace never seen before starts with it collapsed.
+   */
+  readonly console?: { readonly visible: boolean; readonly openOnFirstSend: boolean };
 }
 
 /** Theme preference; `system` follows the OS via `prefers-color-scheme`. */
@@ -379,9 +384,20 @@ function mergeWorkspaces(stored: unknown): Record<string, PersistedWorkspaceUi> 
       ...(typeof activeId === 'string' ? { activeId } : {}),
       ...(SIDEBAR_VIEWS.includes(sidebarView as SidebarView) ? { sidebarView: sidebarView as SidebarView } : {}),
       ...(explorerOpen !== undefined ? { explorerOpen } : {}),
+      ...readWorkspaceConsole(entry['console']),
     };
   }
   return merged;
+}
+
+/** A stored workspace's console, when both of its flags read as booleans; otherwise nothing. */
+function readWorkspaceConsole(stored: unknown): Pick<PersistedWorkspaceUi, 'console'> {
+  const record = asRecord(stored);
+  const visible = record?.['visible'];
+  const openOnFirstSend = record?.['openOnFirstSend'];
+  return typeof visible === 'boolean' && typeof openOnFirstSend === 'boolean'
+    ? { console: { visible, openOnFirstSend } }
+    : {};
 }
 
 /**

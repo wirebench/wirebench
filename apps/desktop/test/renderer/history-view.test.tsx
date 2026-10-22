@@ -105,6 +105,49 @@ describe('HistoryView', () => {
     expect(activeId).toBe('history:a');
   });
 
+  it('opens a click as the preview tab, which the next click replaces, and pins on a double-click (G04)', async () => {
+    useEditorsStore.setState({ previewId: undefined });
+    useHistoryStore.setState({
+      entries: [makeEntry({ id: 'a' }), makeEntry({ id: 'b', requestName: 'Sub', operationName: 'Sub' })],
+      total: 2,
+    });
+    render(<HistoryView />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open Add' }));
+    expect(useEditorsStore.getState().previewId).toBe('history:a');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open Sub' }));
+    expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['history:b']);
+    expect(useEditorsStore.getState().previewId).toBe('history:b');
+
+    await userEvent.dblClick(screen.getByRole('button', { name: 'Open Sub' }));
+    expect(useEditorsStore.getState().previewId).toBeUndefined();
+    expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['history:b']);
+  });
+
+  it('leads a REST row with its path and the host faint, and names the request on the second line (G04)', () => {
+    useHistoryStore.setState({
+      entries: [
+        makeEntry({
+          kind: 'rest',
+          method: 'GET',
+          requestName: 'Find pet',
+          operationName: '',
+          endpoint: 'https://petstore.test/pets/1?full=true',
+          soapVersion: 'none',
+        }),
+      ],
+      total: 1,
+    });
+    render(<HistoryView />);
+
+    expect(screen.getByTestId('history-row-path').textContent).toBe('/pets/1?full=true');
+    const host = screen.getByTestId('history-row-host');
+    expect(host.textContent?.trim()).toBe('petstore.test');
+    expect(host.className).toContain('text-fg-faint');
+    expect(screen.getByTestId('history-row').textContent).toContain('Find pet');
+  });
+
   it('opens the entry from a click anywhere on the row, and never re-sends it', async () => {
     const resend = vi.fn();
     installWirebenchApi({ history: { resend } });
