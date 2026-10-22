@@ -75,6 +75,7 @@ describe('the built-in registry', () => {
       'grpc',
       'websocket',
       'mcp',
+      'graphql',
       'scripts',
       'sequences',
       'webhooks',
@@ -83,6 +84,14 @@ describe('the built-in registry', () => {
       'mcp-server',
     ]);
     expect(SCRIPTS_FEATURE).toEqual({ id: 'scripts', title: 'Scripts', default: true, stage: 'stable', requires: [] });
+    // Phase 6 spec §3.3: a REST body kind, so a feature rather than a module; on, since 6.1.0 shipped it on.
+    expect(createBuiltinRegistry().features.descriptors.find((descriptor) => descriptor.id === 'graphql')).toEqual({
+      id: 'graphql',
+      title: 'GraphQL',
+      default: true,
+      stage: 'experimental',
+      requires: ['rest'],
+    });
   });
 
   it('is created once as the default, with every feature on', () => {

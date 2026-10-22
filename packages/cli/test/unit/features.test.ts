@@ -95,9 +95,9 @@ describe('parseFeatureSwitches', () => {
   });
 
   it('warns once per unknown id and drops it', () => {
-    const { switches, warnings } = parse('graphql=off,grpc=off', { WIREBENCH_FEATURES: 'graphql=on' });
+    const { switches, warnings } = parse('mqtt=off,grpc=off', { WIREBENCH_FEATURES: 'mqtt=on' });
     expect(switches).toEqual({ grpc: false });
-    expect(warnings).toEqual(['unknown feature "graphql" ignored']);
+    expect(warnings).toEqual(['unknown feature "mqtt" ignored']);
   });
 
   it('names every built-in feature', () => {
@@ -201,14 +201,14 @@ describe('wirebench run --sequence with sequences off', () => {
 
   it('still runs requests, and warns about an unknown id once', async () => {
     const stderr = sink();
-    const code = await main(['run', FIXTURE, '-e', 'local', 'apis/demo/nothing-here', '--features', 'graphql=off'], {
+    const code = await main(['run', FIXTURE, '-e', 'local', 'apis/demo/nothing-here', '--features', 'mqtt=off'], {
       stdout: sink().stream,
       stderr: stderr.stream,
-      env: { WIREBENCH_FEATURES: 'graphql=off' },
+      env: { WIREBENCH_FEATURES: 'mqtt=off' },
     });
     // The selector matches nothing: refused as usage, after the feature line was parsed once.
     expect(code).toBe(ExitCode.Usage);
-    expect(stderr.text().match(/unknown feature "graphql" ignored/g)).toHaveLength(1);
+    expect(stderr.text().match(/unknown feature "mqtt" ignored/g)).toHaveLength(1);
   });
 });
 

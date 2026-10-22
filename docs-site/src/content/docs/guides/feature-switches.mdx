@@ -13,7 +13,7 @@ read in one place, the engine refuses the feature, and nothing in any project fi
 
 | Group | Switch | Notes |
 | --- | --- | --- |
-| Protocols | SOAP, REST, gRPC, WebSocket, MCP requests | MCP requests are experimental and carry a badge |
+| Protocols | SOAP, REST, GraphQL, gRPC, WebSocket, MCP requests | GraphQL and MCP requests are experimental and carry a badge; GraphQL needs REST |
 | Automation | Scripts, Sequences, Webhooks | Webhooks need REST: with REST off they are off too |
 | Team | Shared workspaces, Team secrets, MCP server | Team secrets need Shared workspaces; the MCP server is `wirebench mcp` |
 
@@ -24,6 +24,9 @@ A switch that is **off** means the feature is registered but not activated:
 - The command palette, the Import dialog and the request editors offer nothing of it.
 - A send, a run or an import that needs it is refused with the error code `feature-disabled`, in the
   app, the CLI and the MCP server alike.
+- GraphQL is a kind of REST body rather than a kind of API, so with it off a REST API stays as it is:
+  **New GraphQL request** and the body's **GraphQL** option are gone, a request that already has a
+  GraphQL body still opens and shows it, and its send is refused.
 
 Security features are **not** switches: secret masking, path safety, the script sandbox and TLS
 verification stay on whatever the switches say.
@@ -58,9 +61,9 @@ features:
 ## The CLI and the MCP server
 
 Every verb takes `--features`, and reads `WIREBENCH_FEATURES`, with the same grammar: a comma-separated
-list of `id=on` or `id=off`, where the ids are `soap`, `rest`, `grpc`, `websocket`, `mcp`, `scripts`,
-`sequences`, `webhooks`, `server-sync`, `team-secrets` and `mcp-server`. The flag is laid over the
-variable per id.
+list of `id=on` or `id=off`, where the ids are `soap`, `rest`, `grpc`, `websocket`, `mcp`, `graphql`,
+`scripts`, `sequences`, `webhooks`, `server-sync`, `team-secrets` and `mcp-server`. The flag is laid
+over the variable per id.
 
 ```bash
 WIREBENCH_FEATURES="scripts=off" wirebench run ./checkout --sequence smoke

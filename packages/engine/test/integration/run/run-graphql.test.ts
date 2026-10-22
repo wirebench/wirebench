@@ -19,7 +19,7 @@ import { GRAPHQL_SDL, startTestRestServer } from '../../helpers/index.js';
 import type { TestRestServer } from '../../helpers/index.js';
 import { testHost } from '../../helpers/send-host.js';
 // The composition: the entry points fall back to the registry it installs (package split spec §3.3).
-import '../../../src/protocols.js';
+import { createBuiltinRegistry } from '../../../src/protocols.js';
 
 let server: TestRestServer;
 let dir: string;
@@ -41,9 +41,15 @@ function project(body: Extract<RestBody, { kind: 'graphql' }>): Project {
   ]);
 }
 
-async function run(body: Extract<RestBody, { kind: 'graphql' }>) {
+async function run(body: Extract<RestBody, { kind: 'graphql' }>, switches?: Readonly<Record<string, boolean>>) {
   const p = project(body);
-  const context: RunContext = { project: p, projectDir: dir, overrides: {}, host: testHost() };
+  const context: RunContext = {
+    project: p,
+    projectDir: dir,
+    overrides: {},
+    host: testHost(),
+    ...(switches !== undefined ? { registry: createBuiltinRegistry(switches) } : {}),
+  };
   const result = await runRequests(selectRequests(p, []).selected, context, {
     onSent: (_item, sent) => {
       last = sent;
@@ -100,5 +106,30 @@ describe('a GraphQL request in a run', () => {
     const result = await run({ kind: 'graphql', query: '{ boom }', variables: '{' });
     expect(result.outcome).toBe('errored');
     expect(result.error?.code).toBe('graphql-variables-invalid');
+  });
+  // Phase 6 spec §3.2: the switch is checked before resolve, so nothing reaches the server.
+  it('refuses a GraphQL send while the graphql switch is off, sending nothing', async () => {
+    const before = server.requests.length;
+    const result = await run(
+      { kind: 'graphql', query: '{ product(id: "1") { name } }', variables: '' },
+      {
+        graphql: false,
+      },
+    );
+    expect(result.outcome).toBe('errored');
+    expect(result.error).toMatchObject({ code: 'feature-disabled' });
+    expect(server.requests.length).toBe(before);
+  });
+
+  it('refuses it too while REST, which GraphQL requires, is off', () => {
+    const registry = createBuiltinRegistry({ rest: false });
+    expect(registry.features.isEnabled('graphql')).toBe(false);
+    expect(registry.features.whyDisabled('graphql')).toEqual({ by: 'requires', feature: 'rest' });
+  });
+
+  it('sends a GraphQL body with the switch on, the default', async () => {
+    expect(createBuiltinRegistry().features.isEnabled('graphql')).toBe(true);
+    const result = await run({ kind: 'graphql', query: '{ product(id: "1") { name } }', variables: '' }, {});
+    expect(result.outcome).not.toBe('errored');
   });
 });

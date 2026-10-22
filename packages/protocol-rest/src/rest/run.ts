@@ -51,6 +51,8 @@ import {
 import type { EffectiveSigning, WebhookCollection, WebhookFolder } from '../webhooks/model.js';
 import { webhooksOf } from '../webhooks/model.js';
 import { resolveAuthChain } from '#core/http/auth/apply-auth';
+import { defaultRegistry } from '#core/protocol/default-registry';
+import { featureDisabled } from '#core/protocol/registry';
 import { expandRestSendInput } from './expand.js';
 import { stripRestBodyComments } from './json-comments.js';
 import type { RestLiveEvent } from './events.js';
@@ -411,6 +413,12 @@ async function connectAndSend(
   let input: RestSendInput | undefined;
   let connected: RestSendInput;
   try {
+    // A GraphQL body is sent only while its feature is on (phase 6 spec §3.2); the request itself is
+    // never rewritten, and a preview or an export still lowers it.
+    if (selected.request.body.kind === 'graphql') {
+      const registry = context.registry ?? defaultRegistry();
+      if (!registry.features.isEnabled('graphql')) throw featureDisabled(registry.features, 'graphql');
+    }
     const resolved = await resolve();
     input = resolved.input;
     if (resolved.unresolved.length > 0) {

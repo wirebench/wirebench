@@ -223,6 +223,18 @@ describe('explorerMenuItems on a REST row', () => {
     ]);
   });
 
+  // Phase 6 spec §3.4: GraphQL is a switch; with it off the API offers no GraphQL request.
+  it('leaves out New GraphQL request while the graphql switch is off', () => {
+    useUiStore.setState({ enabledFeatures: ['rest'] });
+    try {
+      const labels = explorerMenuItems(node({ kind: 'api', id: 'api:a1', apiId: 'a1' })).map((item) => item.label);
+      expect(labels).toContain('New request');
+      expect(labels).not.toContain('New GraphQL request');
+    } finally {
+      useUiStore.setState({ enabledFeatures: undefined });
+    }
+  });
+
   it('offers Update Definition… only on an API that records a definition', () => {
     const imported = explorerMenuGroups(node({ kind: 'api', id: 'api:a1', apiId: 'a1', hasDefinition: true }));
     expect(imported.map((group) => group.map((item) => item.label))).toEqual([

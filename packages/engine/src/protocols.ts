@@ -61,11 +61,14 @@ export const SCRIPTS_FEATURE: FeatureDescriptor = {
 
 /**
  * The switchable features that are not protocols (phase 4 spec §2), in the order Settings lists
- * them: automation first, then what needs a server. `scripts` is {@link SCRIPTS_FEATURE}.
+ * them: GraphQL beside the protocols, automation, then what needs a server. `scripts` is
+ * {@link SCRIPTS_FEATURE}.
  *
  * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
  */
 export const BUILTIN_FEATURES: readonly FeatureDescriptor[] = [
+  // A REST body kind, not a protocol module, so the registry is told of it (phase 6 spec §3.3).
+  { id: 'graphql', title: 'GraphQL', default: true, stage: 'experimental', requires: ['rest'] },
   SCRIPTS_FEATURE,
   { id: 'sequences', title: 'Sequences', default: true, stage: 'stable', requires: [] },
   { id: 'webhooks', title: 'Webhooks', default: true, stage: 'stable', requires: ['rest'] },

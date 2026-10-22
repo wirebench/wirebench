@@ -6,7 +6,7 @@ import { copyAsCurl } from '../../features/request-editor/request-actions.js';
 import { openRestRequestTab } from '../../features/rest-editor/rest-actions.js';
 import { restSendBlocked } from '../../features/rest-editor/send-blocked.js';
 import { useExchangesStore } from '../../state/exchanges.js';
-import { useUiStore } from '../../state/ui.js';
+import { featureOn, useUiStore } from '../../state/ui.js';
 import { explorerActions } from '../../features/explorer/explorer-actions.js';
 import { exportItems, groups, reportRenameFailure } from '../../features/explorer/menu-items.js';
 import type { ExplorerNode } from '../../features/explorer/tree-nodes.js';
@@ -84,11 +84,16 @@ export const restExplorer: KindExplorer = {
             { key: 'open', label: 'Open', run: () => explorerActions.openApi(apiId) },
             { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId) },
             { key: 'new-request', label: 'New request', run: () => explorerActions.newRestRequest(apiId) },
-            {
-              key: 'new-graphql-request',
-              label: 'New GraphQL request',
-              run: () => explorerActions.newGraphqlRequest(apiId),
-            },
+            // Offered while the GraphQL switch is on (phase 6 spec §3.4).
+            ...(featureOn('graphql')
+              ? [
+                  {
+                    key: 'new-graphql-request',
+                    label: 'New GraphQL request',
+                    run: () => explorerActions.newGraphqlRequest(apiId),
+                  },
+                ]
+              : []),
             { key: 'import-curl', label: 'Import cURL…', run: () => explorerActions.importCurlInto(apiId) },
           ],
           // Only an API imported from a definition has one to read again, and one to import webhooks
