@@ -91,8 +91,42 @@ noted in the Sync panel and applies at the next open.
   machine. See [ADR-0029](https://github.com/wirebench/wirebench/blob/main/docs/adr/0029-team-policy-only-restricts.md).
 </Aside>
 
+## Areas
+
+The desktop's **areas** (the activity-bar items: Explorer, Environments, Search, History, WS-Security
+and Hosts, which is the SSH area) are switches of their own, and so are the three that ride with Hosts:
+the local terminal tab, Telnet hosts and serial consoles. They are not features of the engine, so the
+CLI and the MCP server never see them, and they have no per-machine preference: an area is a surface an
+organisation composes, not a setting a person tunes.
+
+An administrator switches an area off in the
+[managed preferences](/wirebench/docs/guides/managed-preferences/) file, `policy.yaml`:
+
+```yaml
+version: 1
+areas:
+  ssh: false            # the whole SSH area: Hosts, terminals, files, forwarding, snippets, layouts
+  local-terminal: false # the local terminal tab only, leaving SSH on
+  telnet: false         # Telnet hosts refuse to connect; the host form no longer offers Telnet
+  serial: false         # serial consoles, likewise
+```
+
+The ids are `explorer`, `environments`, `search`, `history`, `wss`, `ssh`, `local-terminal`, `telnet` and
+`serial`. The policy wins over the `WIREBENCH_AREAS` environment variable (the same ids, `ssh=off`), which
+operators and developers use for one run; the default is on. A policy entry can only switch off: `ssh:
+true` is ignored and listed in the Settings note, like any key a policy cannot lock. With `ssh` off the
+three sub-switches are off as well.
+
+An area that is off is gone, not greyed: its activity-bar item, its views, its commands and quick-open
+entries, its tabs and its status-bar item, and the app registers none of its IPC channels, so nothing
+in the window can reach it. **Settings → Features → Areas** lists every area with its state and why:
+_Set by your organisation_ with a **Managed** mark for a policy entry, _Off by WIREBENCH_AREAS for this
+run_ for the variable, _Requires SSH_ for a sub-switch that followed the area. The rows cannot be
+changed there.
+
 ## Related
 
 - [Preferences](/wirebench/docs/guides/preferences/) and [Managed preferences](/wirebench/docs/guides/managed-preferences/)
+- [Hosts and terminals](/wirebench/docs/guides/hosts-and-terminals/) for what the SSH area holds
 - [Shared workspaces](/wirebench/docs/guides/shared-workspaces/)
 - [Run in CI](/wirebench/docs/guides/run-in-ci/) and [Agents and MCP](/wirebench/docs/guides/agents-mcp/)

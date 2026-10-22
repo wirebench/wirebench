@@ -627,6 +627,12 @@ switch promises:
   sandbox, the cookie jar's rules and TLS verification have no descriptor and read no switch.
 - **No remote flag service.** The only remote input is the workspace's own policy, fetched with its
   sync head from the server the person signed in to, and it can only switch off.
+- **A desktop area is switched off the same way (#360).** The managed `policy.yaml` an administrator
+  deploys (the file that locks the proxy and the CA bundle) may carry `areas: { ssh: false }`: the area
+  resolves through the same precedence (policy, then `WIREBENCH_AREAS`, then the default), a policy
+  entry can only switch off, and an area that is off registers none of its IPC channels, so a renderer
+  cannot reach `ssh.connect` or `sftp.open` at all. Tests: `areas-switch.test.ts`, `policy.test.ts`,
+  the `area-locked-off` e2e.
 
 ## A mock listens on loopback and serves data
 

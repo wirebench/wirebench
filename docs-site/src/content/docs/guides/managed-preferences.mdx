@@ -1,6 +1,6 @@
 ---
 title: Managed preferences
-description: Lock the proxy, the CA bundle and update checks on managed machines with a policy file.
+description: Lock the proxy, the CA bundle and update checks, and switch areas off, on managed machines with a policy file.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -42,6 +42,8 @@ ssl:
   caBundlePath: /etc/ssl/certs/corp-ca.pem
 updates:
   checkOnLaunch: false
+areas:
+  ssh: false # switch the SSH area off on this machine (see below)
 ```
 
 These are the keys a policy can lock:
@@ -54,6 +56,17 @@ These are the keys a policy can lock:
 | `ssl.minVersion` | `TLSv1.2` or `TLSv1.3` |
 | `ssl.caBundlePath` | An absolute path to a PEM file of extra trust anchors, or `''` to lock "no bundle" |
 | `updates.checkOnLaunch` | `true` or `false` |
+
+### Areas
+
+The `areas` section is the one section that is not a preference: it switches a desktop area off on the
+machine, whatever the `WIREBENCH_AREAS` environment variable says. The ids are `explorer`,
+`environments`, `search`, `history`, `wss`, `ssh`, and the three that ride with the SSH area,
+`local-terminal`, `telnet` and `serial`. Only `false` is accepted: a policy switches off and never on,
+so `ssh: true` is ignored and listed in the Settings note. An area that is off is removed from the
+activity bar, the palette and the app's IPC surface; **Settings → Features → Areas** shows it as
+**Managed** with _Set by your organisation_. The [feature switches](/wirebench/docs/guides/feature-switches/#areas)
+guide has the detail.
 
 The proxy password is never part of a policy: it's kept in each user's OS keychain, so users with a
 locked manual proxy still enter their own password in **Settings → Proxy**.
