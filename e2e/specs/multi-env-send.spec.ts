@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { environmentRow, openEnvironmentsView } from '../helpers/environments.js';
+import { addEnvironment as addNamedEnvironment, openEnvironmentsView } from '../helpers/environments.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createProjectWithCalculator, createWorkspace, openFirstRequest } from '../helpers/project.js';
 import { createApi, createRestRequest, saveRequest, setMethodAndUrl } from '../helpers/rest.js';
@@ -17,14 +17,7 @@ import {
  */
 async function addEnvironment(page: Page, name: string, overrideLabel: string, url: string): Promise<void> {
   await openEnvironmentsView(page);
-  await page.getByRole('button', { name: 'Add environment' }).click();
-  const created = environmentRow(page, 'Environment 1');
-  await expect(created).toBeVisible();
-  await created.click({ button: 'right' });
-  await page.getByRole('menuitem', { name: 'Rename' }).click();
-  await page.getByLabel('Rename Environment 1').fill(name);
-  await page.getByLabel('Rename Environment 1').press('Enter');
-  await expect(environmentRow(page, name)).toBeVisible();
+  await addNamedEnvironment(page, name);
 
   // "Add environment" already opened this environment's page, and only the active tab renders,
   // so the override field below is this environment's alone.

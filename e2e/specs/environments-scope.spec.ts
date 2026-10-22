@@ -2,7 +2,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { environmentRow, openEnvironment, openEnvironmentsView } from '../helpers/environments.js';
+import {
+  addEnvironment as addNamedEnvironment,
+  environmentRow,
+  openEnvironment,
+  openEnvironmentsView,
+} from '../helpers/environments.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import {
   createProject,
@@ -15,18 +20,10 @@ import {
 import { chooseContextMenuItem } from '../helpers/rest.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
-/** Adds a workspace environment through the Environments view and renames it. */
+/** Adds a workspace environment through the Environments view and names it (#746). */
 async function addEnvironment(page: Page, name: string): Promise<void> {
   await openEnvironmentsView(page);
-  await page.getByRole('button', { name: 'Add environment' }).click();
-  const created = page.getByTestId('environment-row').filter({ hasText: 'Environment ' }).last();
-  await expect(created).toBeVisible();
-  await created.click({ button: 'right' });
-  await page.getByRole('menuitem', { name: 'Rename' }).click();
-  const field = page.getByRole('textbox', { name: /^Rename Environment / });
-  await field.fill(name);
-  await field.press('Enter');
-  await expect(environmentRow(page, name)).toBeVisible();
+  await addNamedEnvironment(page, name);
 }
 
 /** Picks `name` in the title-bar switcher, which acts for the project of the focused request. */

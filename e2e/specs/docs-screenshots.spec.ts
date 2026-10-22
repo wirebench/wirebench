@@ -12,7 +12,7 @@ import {
   timingRegions,
 } from '../helpers/capture.js';
 import { setMonacoText } from '../helpers/editor.js';
-import { environmentRow, openEnvironmentsView } from '../helpers/environments.js';
+import { addEnvironment, openEnvironmentsView } from '../helpers/environments.js';
 import { createBareRemote } from '../helpers/git-remote.js';
 import { grpcStatus, importProto, openGrpcRequest, placeGreeterProtos, sendGrpc, setMessage } from '../helpers/grpc.js';
 import { logRows, selectLogRow } from '../helpers/http-log.js';
@@ -427,14 +427,7 @@ test.describe('docs site screenshots', () => {
 
     await createProjectWithCalculator(window, server);
     await openEnvironmentsView(window);
-    await window.getByRole('button', { name: 'Add environment' }).click();
-    const created = environmentRow(window, 'Environment 1');
-    await expect(created).toBeVisible();
-    await created.click({ button: 'right' });
-    await window.getByRole('menuitem', { name: 'Rename' }).click();
-    await window.getByLabel('Rename Environment 1').fill('uat');
-    await window.getByLabel('Rename Environment 1').press('Enter');
-    await expect(environmentRow(window, 'uat')).toBeVisible();
+    await addEnvironment(window, 'uat');
     // "Add environment" already opened this environment's page.
     const override = window.getByLabel('Endpoint override for Calculator');
     await expect(override).toBeVisible({ timeout: 20_000 });

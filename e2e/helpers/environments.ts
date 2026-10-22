@@ -14,6 +14,20 @@ export async function openEnvironmentsView(page: Page): Promise<void> {
   await expect(page.getByTestId('environments-view')).toBeVisible();
 }
 
+/**
+ * Adds a workspace environment from the Environments view's toolbar and names it. "Add environment"
+ * puts the new row straight into rename (#746); Enter commits the name and makes the environment
+ * active for the current project, when there is one. Assumes the view is already showing.
+ */
+export async function addEnvironment(page: Page, name = 'Environment 1'): Promise<void> {
+  await page.getByRole('button', { name: 'Add environment' }).click();
+  const input = page.getByLabel(/^Rename Environment \d+$/);
+  await expect(input).toBeFocused();
+  await input.fill(name);
+  await input.press('Enter');
+  await expect(environmentRow(page, name)).toBeVisible();
+}
+
 /** The Environments view's row for one workspace environment, matched by its name. */
 export function environmentRow(page: Page, name: string): Locator {
   return page.getByTestId('environment-row').filter({ hasText: name });
