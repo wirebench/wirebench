@@ -142,8 +142,9 @@ Enterprise license; the console export works on any edition:
     docker compose -f packages/server/compose.yaml exec -T server node /app/dist/bin.js admin audit export --from 2026-10-01T00:00:00Z > audit.ndjson
 
 A workspace admin can turn on **Record desktop activity** for a workspace: the app then reports each
-request sent and each test-suite run (`POST /api/v1/workspaces/:id/audit/desktop-events`), URL masked, no
-headers or bodies.
+request sent, each test-suite run and each terminal session (SSH, Mosh, Telnet or serial) that ends
+(`POST /api/v1/workspaces/:id/audit/desktop-events`), URL masked, no headers or bodies, and for a session
+only the host id, address, port, login name, start, end and exit code, never a credential.
 
 With `WIREBENCH_SERVER_AUDIT_CHAIN_KEY` set (at least 32 bytes, kept outside the database, never rotated,
 and the same on every instance that shares the database), a background sealer links events into a keyed

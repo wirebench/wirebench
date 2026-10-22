@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { EnvironmentDetails } from '../../src/renderer/features/environments/environment-details.js';
 import { EnvironmentPage } from '../../src/renderer/features/environments/environment-page.js';
+import { EnvironmentProjects } from '../../src/renderer/features/environments/environment-projects.js';
 import { queueEnvironmentPatch } from '../../src/renderer/features/environments/environment-queue.js';
 import { useCurrentValuesStore } from '../../src/renderer/state/current-values.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -19,6 +20,7 @@ function renderPage(target: Parameters<typeof EnvironmentPage>[0]['target']) {
     <TooltipPrimitive.Provider>
       <EnvironmentPage target={target} />
       {target.kind === 'environment' && <EnvironmentDetails environmentId={target.id} />}
+      {target.kind === 'environment' && <EnvironmentProjects environmentId={target.id} />}
     </TooltipPrimitive.Provider>,
   );
 }
@@ -318,13 +320,13 @@ describe('EnvironmentPage — a workspace environment', () => {
 
   it('applies to all projects by default, without a project list', () => {
     setUp();
-    expect(screen.getByRole<HTMLInputElement>('radio', { name: 'All projects' }).checked).toBe(true);
-    expect(screen.queryByRole('checkbox', { name: 'Applies to Billing' })).toBeNull();
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'All projects' }).checked).toBe(true);
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'Applies to Billing' }).checked).toBe(true);
   });
 
-  it('narrows to Selected projects starting from every project, so no switcher loses it yet', async () => {
+  it('narrows from All projects starting from every project, so no switcher loses it yet', async () => {
     const { mutate } = setUp();
-    fireEvent.click(screen.getByRole('radio', { name: 'Selected projects' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'All projects' }));
     await vi.waitFor(() => {
       expect(mutate).toHaveBeenLastCalledWith({
         kind: 'update-workspace-environment',
@@ -336,8 +338,8 @@ describe('EnvironmentPage — a workspace environment', () => {
 
   it('sends projects: null when switched back to All projects', async () => {
     const { mutate } = setUp({ ...environment, projects: ['p1'] });
-    expect(screen.getByRole<HTMLInputElement>('radio', { name: 'Selected projects' }).checked).toBe(true);
-    fireEvent.click(screen.getByRole('radio', { name: 'All projects' }));
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'All projects' }).checked).toBe(false);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'All projects' }));
     await vi.waitFor(() => {
       expect(mutate).toHaveBeenLastCalledWith({
         kind: 'update-workspace-environment',
@@ -375,7 +377,7 @@ describe('EnvironmentPage — a workspace environment', () => {
   it('leaves All projects in place when a tick was queued behind switching to it', async () => {
     const { mutate } = setUp({ ...environment, projects: ['p1'] });
     // Both edits are queued before the first round trip: the tick's turn finds every project.
-    fireEvent.click(screen.getByRole('radio', { name: 'All projects' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'All projects' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Applies to Crm' }));
     await vi.waitFor(() => {
       expect(mutate).toHaveBeenCalledWith({
