@@ -1,7 +1,9 @@
 /**
  * What a response pane shows when a send produced no response: what happened in plain words (naming
- * the host and port to check when the error says), the message when it adds to that, the one hint that points at the fix, and Retry. The code is kept, small, for
- * searching and for bug reports, but it is no longer the headline.
+ * the host and port to check when the error says), the message when it adds to that, the one hint
+ * that points at the fix, and Retry when sending again could end differently. The code and the
+ * engine's own message are kept for bug reports, behind a Details disclosure (#747), so they never
+ * read as part of the explanation.
  *
  * Protocol-neutral: the hint's links are callbacks, so each request kind wires them to its own
  * editor (a REST request's Settings tab, the field a `${name}` sits in).
@@ -63,8 +65,8 @@ export function SendErrorPanel({
           />
         </div>
       )}
-      <div className="mt-1 flex items-center gap-3">
-        {onRetry !== undefined && (
+      {onRetry !== undefined && view.retryable && (
+        <div className="mt-1 flex items-center gap-3">
           <Button
             variant={view.tone === 'danger' ? 'primary' : 'secondary'}
             data-testid="send-error-retry"
@@ -74,11 +76,21 @@ export function SendErrorPanel({
           >
             Retry
           </Button>
-        )}
-        <span data-testid="send-error-code" className="font-mono text-2xs text-fg-subtle">
-          {error.code}
-        </span>
-      </div>
+        </div>
+      )}
+      <details data-testid="send-error-details" className="mt-1 text-2xs text-fg-subtle">
+        <summary className="cursor-pointer select-none">Details</summary>
+        <div className="mt-1 flex flex-col gap-0.5">
+          <code data-testid="send-error-code" className="font-mono">
+            {error.code}
+          </code>
+          {view.detail === undefined && error.message.trim() !== '' && (
+            <span data-testid="send-error-raw" className="font-mono break-words whitespace-pre-wrap">
+              {error.message}
+            </span>
+          )}
+        </div>
+      </details>
     </div>
   );
 }
@@ -135,17 +147,22 @@ function Hint({
   if (hint.refs.length === 0) {
     return <p>A variable in this request has no value in the active environment.</p>;
   }
+  // One plain sentence naming the variables (#747), each a link to the field it sits in: "${host}
+  // has no value…", "${host} and ${port} have no value…", "${a}, ${b} and ${c} have no value…".
+  const links = hint.refs.map((ref) => (
+    <ReferenceLink key={ref} reference={ref} onRevealReference={onRevealReference} />
+  ));
+  const named =
+    links.length === 1
+      ? links
+      : links.flatMap((link, index) =>
+          index === 0 ? [link] : index === links.length - 1 ? [' and ', link] : [', ', link],
+        );
   return (
-    <div>
-      <p>Nothing gives these a value in the active environment:</p>
-      <ul className="mt-1 flex flex-wrap gap-2">
-        {hint.refs.map((ref) => (
-          <li key={ref}>
-            <ReferenceLink reference={ref} onRevealReference={onRevealReference} />
-          </li>
-        ))}
-      </ul>
-    </div>
+    <p data-testid="send-error-unresolved">
+      {named} {links.length === 1 ? 'has' : 'have'} no value in the active environment. Define{' '}
+      {links.length === 1 ? 'it' : 'them'} there, or pick an environment that does.
+    </p>
   );
 }
 
