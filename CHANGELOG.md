@@ -28,6 +28,9 @@ All notable changes to this project are documented here. The format follows
   any case), its Explorer row shows its folder's name faint after the name.
 - **A short drag no longer snaps the sidebar shut (#686).** Dragging its edge inward stops at the
   minimum width; the sidebar collapses only when the drag carries on well past it.
+- **Deep breadcrumbs stay readable (#686).** A request's path line with four or more segments keeps
+  the project and the request's name whole and folds the segments between them into **…**, whose
+  menu lists them in order.
 - **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
   shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
   the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.
