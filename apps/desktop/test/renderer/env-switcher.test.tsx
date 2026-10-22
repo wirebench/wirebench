@@ -205,9 +205,32 @@ describe('EnvSwitcher', () => {
     expect(trigger.textContent).toContain('dev');
   });
 
-  it('is disabled, showing "No project", while several projects are open and none was focused', async () => {
+  it('asks which project while several are open and none was focused, then lists its environments (#686 E19)', async () => {
     setUp('e1');
     useWorkspaceStore.setState({ lastProjectId: undefined });
+    render(<EnvSwitcher />);
+    const trigger = screen.getByTestId<HTMLButtonElement>('env-switcher');
+    expect(trigger.disabled).toBe(false);
+    expect(trigger.textContent).toContain('Pick a project');
+    expect(trigger.textContent).not.toContain('No project');
+
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    const picks = await screen.findAllByTestId('env-switcher-pick-project');
+    expect(picks.map((pick) => pick.textContent)).toEqual(['Billing', 'Crm']);
+
+    fireEvent.click(picks[0]!);
+    // The menu stays open and now offers Billing's environments.
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().lastProjectId).toBe('p1');
+    });
+    const items = await screen.findAllByRole('menuitem');
+    expect(items.map((item) => item.textContent)).toEqual(['dev', 'uat', 'No environment', 'Manage environments…']);
+    expect(screen.getByTestId('env-switcher-project').textContent).toBe('Billing');
+  });
+
+  it('is disabled, showing "No project", while the workspace has no project', async () => {
+    setUp('e1');
+    useWorkspaceStore.setState({ workspace: { ...workspaceFor('e1'), projects: [] }, lastProjectId: undefined });
     render(<EnvSwitcher />);
     const trigger = screen.getByTestId<HTMLButtonElement>('env-switcher');
     expect(trigger.disabled).toBe(true);

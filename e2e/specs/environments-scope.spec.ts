@@ -67,8 +67,8 @@ test.describe('project-scoped environments', () => {
     await importCalculator(page, server);
     await expectProjectCount(page, 2);
 
-    // Until a request tab has been focused the switcher has no project to act for.
-    await expect(page.getByTestId('env-switcher')).toBeDisabled();
+    // Until a request tab has been focused the switcher asks which project to act for (#686 E19).
+    await expect(page.getByTestId('env-switcher')).toContainText('Pick a project');
 
     // --- two environments: `Shared` for every project, `Billing sandbox` for Alpha only -
     await addEnvironment(page, 'Shared');

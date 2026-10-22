@@ -19,6 +19,9 @@ All notable changes to this project are documented here. The format follows
 - **The project menu is shorter (#686).** A project's six creators sit under one **New ▸** submenu,
   named alike: **New REST API…** (as on the Start page), **New gRPC API…**, **New WebSocket API…**,
   **New MCP server…**, **New Webhook…** and **New Sequence…**.
+- **The environment switcher asks for a project instead of saying "No project" (#686).** With
+  several projects open and no request focused yet, it reads **Pick a project**: the menu lists the
+  workspace's projects, and the one picked shows its environments straight away.
 - **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
   shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
   the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.
