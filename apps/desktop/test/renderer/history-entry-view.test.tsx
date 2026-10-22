@@ -206,6 +206,9 @@ describe('a REST entry with no request body', () => {
     useHistoryStore.setState({ entries: [restEntry()], total: 1 });
     render(<HistoryEntryView historyId="h-get" />);
     expect(screen.getByTestId('history-no-request-body').textContent).toBe('The request had no body.');
+    // The note belongs to the Request section, not to the response below it (G04).
+    const section = screen.getByRole('region', { name: 'Request' });
+    expect(section.contains(screen.getByTestId('history-no-request-body'))).toBe(true);
   });
 
   it('keeps both halves when the request carried a body', () => {

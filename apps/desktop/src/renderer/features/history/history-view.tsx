@@ -7,10 +7,10 @@ import { Button } from '../../components/button.js';
 import { formatClockTime, formatDuration } from '../../lib/format-size.js';
 import type { GridRowProps } from '../../lib/grid-navigation.js';
 import { useGridNavigation } from '../../lib/grid-navigation.js';
-import { useEditorsStore } from '../../state/editors.js';
+import { previewing, useEditorsStore } from '../../state/editors.js';
 import { useHistoryStore } from '../../state/history.js';
 import { canResendHistoryEntry, entrySide, openCompareTab, resendHistoryEntry } from './history-actions.js';
-import { historyCountLabel, historyStatusChip, historyTabTitle, hostOf } from './history-row-text.js';
+import { endpointParts, historyCountLabel, historyStatusChip, historyTabTitle, hostOf } from './history-row-text.js';
 import { compareBannerText, compareStep } from './history-compare.js';
 import { requestDisplayName } from '../rest-api/request-display-name.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
@@ -52,7 +52,10 @@ interface RowProps {
   /** Roving-tabindex props from {@link useGridNavigation}. */
   readonly rowProps: GridRowProps;
   readonly compareArmed: boolean;
+  /** A click: opens the entry as the preview tab. */
   readonly onOpen: () => void;
+  /** A double-click or Enter: opens the entry as a tab of its own. */
+  readonly onPin: () => void;
   readonly onResend: () => void;
   readonly onCompare: () => void;
   readonly onCompareWithCurrent: () => void;
@@ -60,8 +63,10 @@ interface RowProps {
 }
 
 /**
- * One recorded send, on two lines: what it was (kind badge, name, status) and when and where it
- * went (time · host · duration). A click anywhere on it opens the entry. Its actions are behind
+ * One recorded send, on two lines. A send with an HTTP method leads with it and the path, the host
+ * faint beside them, so sends to `/pets` and `/pets/1` tell apart (G04); the second line says when,
+ * which request and how long. A send without one (SOAP) leads with its request and operation, and
+ * the host sits on the second line. A click anywhere on it opens the entry. Its actions are behind
  * one 24px ⋯ button at the far right, so however narrow the sidebar, a click on the row never
  * re-sends, compares or deletes: each of those is a menu choice.
  */
@@ -72,14 +77,19 @@ function Row({
   rowProps,
   compareArmed,
   onOpen,
+  onPin,
   onResend,
   onCompare,
   onCompareWithCurrent,
   onDelete,
 }: RowProps) {
   const Badge = rendererKindOf(entry.kind)?.history.Badge;
-  const details = [formatClockTime(entry.at), projectName, hostOf(entry.endpoint), formatDuration(entry.durationMs)];
   const name = requestDisplayName(entry.requestName, entry.method);
+  const byPath = entry.method !== undefined && entry.method.length > 0;
+  const { path, host } = endpointParts(entry.endpoint);
+  const details = byPath
+    ? [formatClockTime(entry.at), name, projectName, formatDuration(entry.durationMs)]
+    : [formatClockTime(entry.at), projectName, hostOf(entry.endpoint), formatDuration(entry.durationMs)];
   // A right-click opens the same menu as ⋯, so the row's actions are where a right-click looks first.
   const [menuOpen, setMenuOpen] = useState(false);
   return (
@@ -92,7 +102,7 @@ function Row({
         // Enter on the row itself; the focused ⋯ button handles its own Enter.
         if (event.key === 'Enter' && event.target === event.currentTarget) {
           event.preventDefault();
-          onOpen();
+          onPin();
         }
       }}
       onContextMenu={(event) => {
@@ -110,6 +120,7 @@ function Row({
           type="button"
           tabIndex={-1}
           onClick={onOpen}
+          onDoubleClick={onPin}
           className="flex w-full min-w-0 flex-col justify-center gap-0.5 px-2 text-left"
           aria-label={`Open ${name}`}
         >
@@ -117,10 +128,24 @@ function Row({
             {/* A REST row carries its method; a SOAP row its version. Both are the one thing that
                 says what kind of send this was, so the badge is never empty. */}
             {Badge !== undefined && <Badge entry={entry} place="row" />}
-            <span className="min-w-0 flex-1 truncate">
-              <span className="text-fg-default">{name}</span>
-              {entry.operationName.length > 0 && <span className="text-fg-subtle"> · {entry.operationName}</span>}
-            </span>
+            {byPath ? (
+              <span className="min-w-0 flex-1 truncate" title={entry.endpoint}>
+                <span data-testid="history-row-path" className="font-mono text-fg-default">
+                  {path}
+                </span>
+                {host.length > 0 && (
+                  <span data-testid="history-row-host" className="text-fg-faint">
+                    {' '}
+                    {host}
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span className="min-w-0 flex-1 truncate">
+                <span className="text-fg-default">{name}</span>
+                {entry.operationName.length > 0 && <span className="text-fg-subtle"> · {entry.operationName}</span>}
+              </span>
+            )}
             <span
               data-testid="history-status-chip"
               title={entry.error?.message}
@@ -208,6 +233,11 @@ export function HistoryView() {
     openTab({ id: `history:${entry.id}`, kind: 'history', title: historyTabTitle(entry), historyId: entry.id });
   };
 
+  // A click browses: the entry opens as the preview tab, which the next click replaces (G04, #679).
+  const previewEntry = (entry: HistoryEntryWire) => {
+    previewing(() => openEntry(entry));
+  };
+
   const resend = (entry: HistoryEntryWire) => {
     void resendHistoryEntry(entry);
   };
@@ -234,12 +264,12 @@ export function HistoryView() {
   };
 
   // While a first side is picked, a click on another row picks the second, as the banner says.
-  const openOrPick = (entry: HistoryEntryWire) => {
+  const openOrPick = (entry: HistoryEntryWire, open: (entry: HistoryEntryWire) => void) => {
     if (armed !== undefined && armed !== entry.id) {
       compare(entry);
       return;
     }
-    openEntry(entry);
+    open(entry);
   };
 
   // Compares with the request's latest response: a REST request's from its own exchange map, since
@@ -364,7 +394,8 @@ export function HistoryView() {
                       rowIndex={item.index + 1}
                       rowProps={rowProps(item.index)}
                       compareArmed={armed === entry.id}
-                      onOpen={() => openOrPick(entry)}
+                      onOpen={() => openOrPick(entry, previewEntry)}
+                      onPin={() => openOrPick(entry, openEntry)}
                       onResend={() => resend(entry)}
                       onCompare={() => compare(entry)}
                       onCompareWithCurrent={() => compareWithCurrent(entry)}
@@ -383,7 +414,8 @@ export function HistoryView() {
                   rowIndex={index + 1}
                   rowProps={rowProps(index)}
                   compareArmed={armed === entry.id}
-                  onOpen={() => openOrPick(entry)}
+                  onOpen={() => openOrPick(entry, previewEntry)}
+                  onPin={() => openOrPick(entry, openEntry)}
                   onResend={() => resend(entry)}
                   onCompare={() => compare(entry)}
                   onCompareWithCurrent={() => compareWithCurrent(entry)}

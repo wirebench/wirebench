@@ -153,11 +153,20 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
             </div>
           ) : requestBody.trim().length === 0 ? (
             // A GET (or any send with no body) has nothing to show on the request side: the response
-            // takes the whole tab rather than sitting beside an empty editor.
+            // takes the rest of the tab rather than sitting beside an empty editor. The note sits in a
+            // Request section of its own, so it never reads as something about the response (G04).
             <div className="flex min-h-0 flex-1 flex-col">
-              <p data-testid="history-no-request-body" className="shrink-0 px-3 py-1 text-xs text-fg-faint">
-                The request had no body.
-              </p>
+              <section
+                aria-label="Request"
+                data-testid="history-request-section"
+                className="flex shrink-0 items-baseline gap-2 border-b border-hairline px-3 py-1 text-xs"
+              >
+                <h3 className="font-medium text-fg-subtle">Request</h3>
+                <p data-testid="history-no-request-body" className="text-fg-faint">
+                  The request had no body.
+                </p>
+              </section>
+              <h3 className="shrink-0 px-3 py-1 text-xs font-medium text-fg-subtle">Response</h3>
               <div className="min-h-0 flex-1">
                 <CodeEditor
                   ariaLabel="History response body"

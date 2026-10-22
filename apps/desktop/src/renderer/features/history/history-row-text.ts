@@ -12,6 +12,20 @@ export function hostOf(url: string): string {
 }
 
 /**
+ * A URL split for a History row's first line (G04): the path and query, which tell sends to one host
+ * apart, and the host, shown faint beside it. A URL that doesn't parse (a `${...}` placeholder, say)
+ * is all path and no host, so the row still shows what was sent.
+ */
+export function endpointParts(url: string): { readonly path: string; readonly host: string } {
+  try {
+    const parsed = new URL(url);
+    return { path: `${parsed.pathname}${parsed.search}`, host: parsed.host };
+  } catch {
+    return { path: url, host: '' };
+  }
+}
+
+/**
  * An entry tab's title: the request's name and the time it was sent, so the tab never reads as the
  * request's own editor tab and two entries of one request tell apart.
  */

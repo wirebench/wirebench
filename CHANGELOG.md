@@ -16,6 +16,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **History rows say where a send went (#748).** A REST row leads with its path, the host faint beside
+  it, so sends to `/pets` and `/pets/1` on one host tell apart; the request's name moves to the second
+  line. A click opens the entry as the preview tab, which the next click replaces, and a double-click or
+  Enter keeps it. An entry with no request body says so under a **Request** label, apart from the
+  response.
 - **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
   shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
   the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.
