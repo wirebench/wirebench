@@ -16,9 +16,8 @@
  */
 
 import type { Environment, Project, PropertyMap } from '../project/model.js';
-import type { Endpoint, Interface, SoapRequestDef } from '../soap/model.js';
-import type { BaseUrlSource, EndpointSource } from '../project/environments.js';
-import { resolveApiBaseUrl, resolveEndpoint } from '../project/environments.js';
+import type { BaseUrlSource } from '../project/environments.js';
+import { resolveApiBaseUrl } from '../project/environments.js';
 import type { PropertyScopes } from '../project/properties.js';
 import { enabledProperties } from '../project/properties.js';
 import { WorkspaceError } from '../errors.js';
@@ -131,7 +130,7 @@ export function assertEnvironmentInScope(workspace: Workspace, environmentId: st
 }
 
 /** Finds `workspace`'s active environment (per `activeEnvironmentId`), or `undefined` when none is active. */
-function activeWorkspaceEnvironment(workspace: Workspace): WorkspaceEnvironment | undefined {
+export function activeWorkspaceEnvironment(workspace: Workspace): WorkspaceEnvironment | undefined {
   if (workspace.activeEnvironmentId === undefined) {
     return undefined;
   }
@@ -183,46 +182,11 @@ export function resolveWorkspaceScopes(input: {
 }
 
 /**
- * Resolves the URL a request should actually be sent to for a project open inside `workspace`.
- * See the module doc for the precedence order. `endpoint` is present only when the URL came
- * from an `Endpoint` object (i.e. the fallback to {@link resolveEndpoint} landed on
- * `request-endpoint` or `interface-default`) — the two environment-override branches name no
- * `Endpoint`, matching `resolveEndpoint`'s own contract.
- */
-export function resolveWorkspaceEndpoint(input: {
-  readonly workspace: Workspace;
-  readonly project: Project;
-  readonly projectSlug: string;
-  readonly iface: Interface;
-  readonly request: Pick<SoapRequestDef, 'endpointId' | 'endpointUrl'>;
-}): { url: string | undefined; source: EndpointSource; endpoint?: Endpoint } {
-  const { workspace, project, projectSlug, iface, request } = input;
-  const activeWorkspaceEnv = activeWorkspaceEnvironment(workspace);
-  const linkedProjectEnv = linkedEnvironment(project, activeWorkspaceEnv);
-
-  if (linkedProjectEnv !== undefined) {
-    const override = linkedProjectEnv.endpoints[iface.slug];
-    if (override !== undefined) {
-      return { url: override, source: 'environment' };
-    }
-  }
-
-  if (activeWorkspaceEnv !== undefined) {
-    const override = activeWorkspaceEnv.endpoints[`${projectSlug}/${iface.slug}`];
-    if (override !== undefined) {
-      return { url: override, source: 'workspace-environment' };
-    }
-  }
-
-  return resolveEndpoint(project, undefined, iface, request);
-}
-
-/**
  * Resolves an API's base URL the way a project open inside a workspace actually resolves it:
  * a linked project's own environment first, then the workspace environment's override keyed
  * `<projectSlug>/<apiSlug>`, then the API's own base URL.
  *
- * The same ladder {@link resolveWorkspaceEndpoint} climbs for a SOAP interface, and keyed the same
+ * The same ladder `soap/workspace-endpoint.ts` climbs for a SOAP interface, and keyed the same
  * way — which is why an API and an interface may not share a slug (`project/load.ts` refuses it).
  */
 export function resolveWorkspaceApiBaseUrl(input: {

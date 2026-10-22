@@ -45,9 +45,9 @@ const FIXTURE: Readonly<Record<string, string>> = {
   'assert/status.ts': "import { REST } from '../rest/model.js';\nexport const status = REST;\n",
   'soap/model.ts': 'export interface Interface {\n  readonly id: string;\n}\n',
   'rest/http-file/parse.ts': 'export const parseHttpFile = 1;\n',
-  // An exception, used as it is written: type-only.
-  'project/environments.ts':
-    "import type { Interface } from '../soap/model.js';\nexport interface Endpoints {\n  readonly of?: Interface;\n}\n",
+  // An exception, used as it is written.
+  'import/http-file/import.ts':
+    "import type { parseHttpFile } from '../../rest/http-file/parse.js';\nexport type Parse = typeof parseHttpFile;\n",
   // An exception that allows a type, used for a value.
   'import/http-file/map.ts':
     "import { parseHttpFile } from '../../rest/http-file/parse.js';\nexport const mapped = parseHttpFile;\n",
@@ -78,8 +78,8 @@ describe('engine-import-graph.mjs', () => {
     expect(report.edges.map((edge) => `${edge.from} -> ${edge.to}`)).toEqual([
       'assert/status.ts -> rest/model.ts',
       'grpc/model.ts -> rest/model.ts',
+      'import/http-file/import.ts -> rest/http-file/parse.ts',
       'import/http-file/map.ts -> rest/http-file/parse.ts',
-      'project/environments.ts -> soap/model.ts',
       'script/run.ts -> rest/model.ts',
     ]);
     expect(report.violations.map((edge) => edge.from)).toEqual([
@@ -98,7 +98,7 @@ describe('engine-import-graph.mjs', () => {
     expect(result.stderr).toContain('breaks rule 1: no other protocol group');
     expect(result.stderr).toContain('[core->rest] assert/status.ts -> rest/model.ts : REST');
     expect(result.stderr).toContain('breaks rule 2: core imports no protocol group');
-    expect(result.stderr).not.toContain('project/environments.ts -> soap/model.ts');
+    expect(result.stderr).not.toContain('import/http-file/import.ts -> rest/http-file/parse.ts');
   }, 30_000);
 
   it('finds no violation and no stale exception in the engine itself', () => {

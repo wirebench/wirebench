@@ -7,10 +7,10 @@ import {
   environmentsForProject,
   isProtectedEnvironment,
   linkedEnvironment,
-  resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
   workspaceForProject,
 } from '../../../src/workspace/environments.js';
+import { resolveWorkspaceEndpoint } from '../../../src/soap/workspace-endpoint.js';
 import { createProject, type Environment, type Project } from '../../../src/project/model.js';
 import { createInterface, type Interface } from '../../../src/soap/model.js';
 import type { Workspace, WorkspaceEnvironment } from '../../../src/workspace/model.js';

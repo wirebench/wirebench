@@ -82,7 +82,6 @@ export {
   resolveWorkspaceApiBaseUrl,
   isProtectedEnvironment,
   linkedEnvironment,
-  resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
 } from './environments.js';
 
