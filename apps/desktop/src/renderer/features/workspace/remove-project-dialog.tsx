@@ -17,9 +17,9 @@ function quotedList(names: readonly string[]): string {
  *
  * A *linked* project's folder belongs to wherever the user keeps it, so it is never touched and
  * the dialog says so plainly. An *internal* project lives inside the workspace, so the dialog
- * offers to move its folder to the trash — on by default, because leaving an orphaned folder
- * behind in the workspace is the surprising outcome, not the safe one. Trash only: nothing in
- * the app deletes permanently.
+ * offers to move its folder to the trash — off by default (#684): a user tidying the workspace
+ * list must opt in to touching files, and an orphaned folder is recoverable where a trashed one
+ * is a surprise. Trash only: nothing in the app deletes permanently.
  *
  * Removing the project also drops it from every environment's scope (#468). An environment scoped
  * to it alone is kept as *No project*, and the dialog names those first, checked here with the
@@ -42,13 +42,13 @@ export function RemoveProjectDialog() {
   );
   const linked = entry?.source === 'linked';
   const name = storeName ?? entry?.name;
-  const [deleteFiles, setDeleteFiles] = useState(true);
+  const [deleteFiles, setDeleteFiles] = useState(false);
 
-  // Every opening starts from the default again, so a previous "keep the folder" choice cannot
+  // Every opening starts from the default again, so a previous "trash the folder" choice cannot
   // silently carry over to the next project.
   useEffect(() => {
     if (projectId !== undefined) {
-      setDeleteFiles(true);
+      setDeleteFiles(false);
     }
   }, [projectId]);
 

@@ -1,9 +1,11 @@
 /**
  * The open environment, in the right slide-over (where the Code panel shows for a request): its
  * name, where it lives, whether it is protected and how many variables it sets, and the two
- * settings that change how it is offered — its **Colour** (#345) and, for a workspace environment,
- * which projects it **Applies to** (#468). The page beside it keeps the name, the Active toggle and
- * the variables. The right rail's icon, its close icon and Escape put the panel away.
+ * settings that change how it is offered — its **Colour** (#345) and whether it is protected. For a
+ * workspace environment it also reads which projects it **Applies to** (#468); the choice itself is
+ * made in the Projects panel (#393), which **Choose projects…** opens in its place. The page beside
+ * it keeps the name, the Active toggle and the variables. The right rail's icon, its close icon and
+ * Escape put the panel away.
  */
 import type { ReactNode } from 'react';
 import { EnvironmentColour } from './environment-look.js';
@@ -48,10 +50,15 @@ export function useOpenEnvironmentId(): string | undefined {
   });
 }
 
-/** Whether the panel is in front: an environment that still exists is open, and the panel was not put away. */
+/**
+ * Whether the panel is in front: an environment that still exists is open, the panel was not put
+ * away, and the Projects panel (#393) is not showing in its place.
+ */
 export function useEnvironmentDetailsShown(): boolean {
   const environmentId = useOpenEnvironmentId();
-  const open = useEnvironmentDetailsOpen();
+  const wanted = useEnvironmentDetailsOpen();
+  const projectsInstead = useUiStore((state) => state.slideOver.environmentProjectsOpen === true);
+  const open = wanted && !projectsInstead;
   const inWorkspace = useWorkspaceStore(
     (state) =>
       environmentId !== undefined &&
@@ -76,88 +83,14 @@ function Row({ label, children }: { readonly label: string; readonly children: R
   );
 }
 
-const SCOPE_OPTION_CLASS = 'flex items-center gap-1.5 text-sm text-fg-default';
-
 /**
- * A workspace environment's **Applies to** (#468): every project, or the ones ticked. Narrowing
- * starts from every project of the workspace, so nothing drops out of a switcher until a box is
- * cleared; clearing every box is allowed and leaves the environment in no project. Each edit is
- * built from the environment as it stands when its turn comes, so an id this machine does not know
- * (a project a teammate has and this machine has not pulled) is kept.
+ * What a workspace environment's **Applies to** reads (#468): every project, the ticked ones by
+ * name, or *No project*. The choice itself is made in the Projects panel (#393).
  */
-function AppliesTo({
-  environment,
-  projects,
-}: {
-  readonly environment: WorkspaceEnvironmentWire;
-  readonly projects: readonly WorkspaceProjectWire[];
-}) {
-  const scoped = environment.projects !== undefined;
-  const groupName = `applies-to-${environment.id}`;
-  return (
-    <fieldset data-testid="environment-applies-to" className="flex min-w-0 flex-col gap-1.5">
-      <legend className="sr-only">Applies to</legend>
-      <label className={SCOPE_OPTION_CLASS}>
-        <input
-          type="radio"
-          name={groupName}
-          checked={!scoped}
-          onChange={() => {
-            void queueEnvironmentPatch(environment.id, (current) =>
-              current.projects === undefined ? undefined : { projects: null },
-            );
-          }}
-        />
-        All projects
-      </label>
-      <label className={SCOPE_OPTION_CLASS}>
-        <input
-          type="radio"
-          name={groupName}
-          checked={scoped}
-          onChange={() => {
-            void queueEnvironmentPatch(environment.id, (current) =>
-              current.projects !== undefined ? undefined : { projects: projects.map((project) => project.id) },
-            );
-          }}
-        />
-        Selected projects
-      </label>
-      {scoped && (
-        <ul className="flex flex-col gap-1 pl-5">
-          {projects.map((project) => (
-            <li key={project.id}>
-              <label className={SCOPE_OPTION_CLASS}>
-                <input
-                  type="checkbox"
-                  aria-label={`Applies to ${project.name}`}
-                  checked={appliesToProject(environment, project.id)}
-                  onChange={(event) => {
-                    const include = event.currentTarget.checked;
-                    void queueEnvironmentPatch(environment.id, (current) => {
-                      // Queued behind a switch to All projects: that choice stands, a tick must
-                      // not narrow it back to one project.
-                      if (current.projects === undefined) {
-                        return undefined;
-                      }
-                      const list = current.projects;
-                      if (include === list.includes(project.id)) {
-                        return undefined;
-                      }
-                      return {
-                        projects: include ? [...list, project.id] : list.filter((id) => id !== project.id),
-                      };
-                    });
-                  }}
-                />
-                <span className="min-w-0 truncate">{project.name}</span>
-              </label>
-            </li>
-          ))}
-        </ul>
-      )}
-    </fieldset>
-  );
+function appliesToSummary(environment: WorkspaceEnvironmentWire, projects: readonly WorkspaceProjectWire[]): string {
+  if (environment.projects === undefined) return 'All projects';
+  const names = projects.filter((project) => appliesToProject(environment, project.id)).map((project) => project.name);
+  return names.length === 0 ? 'No project' : names.join(', ');
 }
 
 /** The slide-over's content: the open environment's details, or nothing when none is open. */
@@ -232,7 +165,21 @@ export function EnvironmentDetails({ environmentId }: { readonly environmentId: 
       </Row>
       <Row label="Applies to">
         {workspaceEnvironment !== undefined ? (
-          <AppliesTo environment={workspaceEnvironment} projects={projects} />
+          <div className="flex min-w-0 flex-col items-start gap-1">
+            <span data-testid="environment-applies-to" className="break-words">
+              {appliesToSummary(workspaceEnvironment, projects)}
+            </span>
+            <button
+              type="button"
+              data-testid="environment-choose-projects"
+              className="text-xs text-accent hover:underline"
+              onClick={() => {
+                useUiStore.getState().setEnvironmentProjectsOpen(true);
+              }}
+            >
+              Choose projects…
+            </button>
+          </div>
         ) : (
           // A linked project's own environment belongs to that project; there is no scope to choose.
           <span data-testid="environment-applies-to-fixed" className="text-fg-subtle">

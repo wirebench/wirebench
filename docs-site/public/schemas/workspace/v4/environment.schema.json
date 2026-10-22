@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wirebench.github.io/wirebench/docs/schemas/workspace/v4/environment.schema.json",
+  "title": "Wirebench workspace file: Workspace environment",
+  "description": "Workspace format 4: `environments/*.yaml`.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "order": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+    "properties": {
+      "type": "object",
+      "propertyNames": { "type": "string" },
+      "additionalProperties": { "type": "string" }
+    },
+    "endpoints": {
+      "type": "object",
+      "propertyNames": { "type": "string" },
+      "additionalProperties": { "type": "string" }
+    },
+    "disabled": { "type": "array", "items": { "type": "string" } },
+    "color": { "type": "string" },
+    "protected": { "type": "boolean" },
+    "projects": {
+      "description": "Ids of the projects this environment applies to (the ids in workspace.yaml). Absent: every project, including ones added later. Empty: no project.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "required": ["id", "name", "order", "properties", "endpoints"],
+  "additionalProperties": {}
+}

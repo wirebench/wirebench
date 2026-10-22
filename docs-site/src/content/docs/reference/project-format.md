@@ -102,7 +102,13 @@ mistyped key or a wrong value before Wirebench does. They are served under
 version, and attached to every [GitHub release](https://github.com/wirebench/wirebench/releases).
 
 A schema describes what Wirebench accepts when it loads a file: a field with a default may be left
-out, and an unknown key is allowed, because it is ignored on load. A few checks are made only by
+out, and an unknown key is allowed, because it is ignored on load.
+
+A workspace's own files have schemas of their own, under
+`https://wirebench.github.io/wirebench/docs/schemas/workspace/v<workspace format>/`:
+`environment.schema.json` describes a workspace environment (`environments/*.yaml` beside
+`workspace.yaml`), with `projects`, the ids of the projects it applies to. They are not in the
+editor settings below, whose `environments/*.yaml` pattern is the project environment's. A few checks are made only by
 Wirebench itself — a plaintext secret beside a `secretRef`, for one — so a file that passes its
 schema can still be refused when the project opens.
 

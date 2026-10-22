@@ -3,9 +3,10 @@
  * `projectJsonSchemas()`, which converts the Zod schemas the loader parses with, so the published
  * schemas can never drift from what a build reads.
  *
- * The schemas go to `docs-site/public/schemas/v<formatVersion>/`, which the documentation site
- * serves at each schema's `$id`; the folders of earlier format versions stay as they were, so a URL
- * a project already points at keeps working. The release attaches the folder to each GitHub release.
+ * The schemas go to `docs-site/public/schemas/v<formatVersion>/` (and the workspace file schemas to
+ * `workspace/v<workspaceFormatVersion>/`), which the documentation site serves at each schema's
+ * `$id`; the folders of earlier format versions stay as they were, so a URL a project already
+ * points at keeps working. The release attaches the folder to each GitHub release.
  * The editor settings in the project-format reference page, between its `schemas:` markers, are
  * written from the same list.
  *
@@ -55,12 +56,15 @@ export async function renderSchemaFiles(schemas: readonly ProjectJsonSchema[]): 
 
 async function main(): Promise<void> {
   // Imported here, not at the top: a test that imports the renderers needs no build.
-  const { projectJsonSchemas } = await import('../packages/engine/dist/index.js');
+  const { projectJsonSchemas, workspaceJsonSchemas } = await import('../packages/engine/dist/index.js');
   const schemas = projectJsonSchemas();
+  // The workspace schemas (#393) are published too, but stay out of the editor settings: their
+  // `environments/*.yaml` glob is the project environment's, and one glob maps to one schema.
+  const published = [...schemas, ...workspaceJsonSchemas()];
   const check = process.argv.includes('--check');
   const stale: string[] = [];
 
-  const files = await renderSchemaFiles(schemas);
+  const files = await renderSchemaFiles(published);
   // Only the current version's folder is this build's: a file in it that no kind writes is stale too.
   const folders = new Set([...files.keys()].map((file) => dirname(file)));
   for (const folder of folders) {
