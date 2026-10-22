@@ -17,6 +17,13 @@ All notable changes to this project are documented here. The format follows
   policy per shared workspace (**Team → Workspaces → Features**), carried on every sync (ADR-0029). A
   feature that is off is refused by the engine, not only hidden, and its files are never rewritten
   (#735, phase 4 of #184).
+- **A Projects panel for an environment.** Which projects a workspace environment applies to is chosen in
+  its own panel on the right of the environment's page, opened from the rail's **Projects** icon or
+  **Choose projects…** in Environment details: **All projects** at the top (projects added later
+  included), then one checkbox per project. Clearing a box narrows the environment to the others, and a
+  narrowed environment stays narrowed until **All projects** is ticked again. Environment details reads
+  the choice. The workspace environment file has a published JSON Schema of its own, under
+  `schemas/workspace/v<format>/`, that covers `projects` (#393).
 - **Closing live sessions asks first.** Closing tabs that hold a connected SSH, Telnet or serial session,
   or a running local terminal, asks once for the whole batch (**Close 2 sessions on web-1?**); **Cancel**
   keeps every tab. **Don't ask again** turns it off, and **Settings → Terminal → Confirm closing live
@@ -50,11 +57,18 @@ All notable changes to this project are documented here. The format follows
   comment is never resolved. Desktop and CLI sends, MCP, runs, **Copy as cURL**, generated code,
   History and the HTTP log all use the body without comments. GraphQL variables accept them too.
   **Format** and the JSON form refuse a body with comments instead of dropping them (#702).
+- **Terminal sessions in the audit log.** In a workspace that records desktop activity, every SSH, Mosh,
+  Telnet or serial session that ends is reported to the team server as `desktop.ssh_session`: the host id,
+  address, port and login name, when it started and ended, why it ended and the exit code. Never a
+  password, key, passphrase or secret value; the **Recorded** notice names sessions too (#355).
 
 ### Changed
 
 - The developer variable `WIREBENCH_KINDS` is gone; `WIREBENCH_FEATURES="grpc=off"` takes its place in a
   development build, and the `features` preference in a shipped one (#735).
+- **Remove from workspace keeps the project folder unless asked.** The **Move the project folder to
+  the trash** box in **Remove project?** starts unchecked, so tidying the workspace list never moves
+  files on its own; tick it to trash the folder as before (#684).
 - **SOAP, after a daily-use review (#725–#732).** Imported requests are named after their operation
   ("Add", or "Add (SOAP 1.2)" when a 1.1 and a 1.2 binding offer it) instead of "Request 1" (#726).
   Importing a WSDL already in the project asks **Update Definition…** or **Import as a copy**, a copy
@@ -115,6 +129,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The desktop package drops the last of ssh2's native-binding tree.** `nan`, the C++ headers only
+  ssh2's never-built cipher binding compiles against, no longer ships inside the app; the binding's
+  build folder and `cpu-features` were already left out, and the packaged app runs ssh2's pure-JS
+  ciphers on every platform (#362).
 - **SOAP, after a daily-use review (#725–#732).** A response's status and a send error have a line of
   their own above the tabs, never pushed out of view (#725). A template **?** shows in the Form view as
   a marked placeholder, Validate warns about each one, the first send of a request still holding them

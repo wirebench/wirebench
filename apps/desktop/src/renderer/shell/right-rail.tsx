@@ -1,9 +1,13 @@
-import { Code2, PanelRight } from 'lucide-react';
+import { Code2, Folders, PanelRight } from 'lucide-react';
 import {
   useEnvironmentDetailsShown,
   setEnvironmentDetailsOpen,
   useOpenEnvironmentId,
 } from '../features/environments/environment-details.js';
+import {
+  setEnvironmentProjectsOpen,
+  useEnvironmentProjectsShown,
+} from '../features/environments/environment-projects.js';
 import { useForwardDetailsShown, useHostDetailsShown } from '../features/ssh/details-shown.js';
 import { useForwardsStore } from '../features/ssh/forwarding/forwards-store.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
@@ -26,6 +30,7 @@ export function RightRail({ platform }: { readonly platform: Platform }) {
   const panel = useEditorsStore((state) => rightPanelFor(state));
   const hostDetailsShown = useHostDetailsShown();
   const environmentDetailsShown = useEnvironmentDetailsShown();
+  const environmentProjectsShown = useEnvironmentProjectsShown();
   const hasEnvironment = useOpenEnvironmentId() !== undefined;
   // On the Port forwarding view the icon is the picked forward's details instead; host details stay hidden.
   const onForwarding = useHostsStore((state) => state.homeView === 'forwarding');
@@ -89,6 +94,23 @@ export function RightRail({ platform }: { readonly platform: Platform }) {
           }}
         >
           <PanelRight size={17} aria-hidden="true" />
+        </IconButton>
+      )}
+      {panel === 'environment-details' && (
+        // Which projects the environment applies to (#393): its own panel, in the same slide-over.
+        <IconButton
+          label="Projects"
+          active={environmentProjectsShown}
+          disabled={!hasEnvironment}
+          data-testid="rail-environment-projects"
+          aria-pressed={undefined}
+          aria-expanded={environmentProjectsShown}
+          aria-controls="slide-over"
+          onClick={() => {
+            setEnvironmentProjectsOpen(!environmentProjectsShown);
+          }}
+        >
+          <Folders size={17} aria-hidden="true" />
         </IconButton>
       )}
       {panel === 'code' && (

@@ -44,6 +44,7 @@ afterEach(() => {
   useProjectStore.getState().reset();
   useEditorsStore.setState({ tabs: [], activeId: undefined, displayedSet: 'explorer', activeBySet: {} });
   useUiStore.getState().setEnvironmentDetailsOpen(true);
+  useUiStore.getState().setEnvironmentProjectsOpen(false);
 });
 
 describe('EnvironmentDetails — a workspace environment', () => {
@@ -64,14 +65,23 @@ describe('EnvironmentDetails — a workspace environment', () => {
     });
   });
 
-  it('narrows Applies to through the same path', async () => {
-    const { mutate } = setUpWorkspace();
+  it('reads Applies to as a summary and opens the Projects panel to change it (#393)', () => {
+    setUpWorkspace({ ...environment, projects: ['p1'] });
     render(<EnvironmentDetails environmentId="e1" />);
-    expect(screen.getByRole<HTMLInputElement>('radio', { name: 'All projects' }).checked).toBe(true);
-    fireEvent.click(screen.getByRole('radio', { name: 'Selected projects' }));
-    await vi.waitFor(() => {
-      expect(mutate).toHaveBeenCalledWith(patched({ projects: ['p1'] }));
-    });
+    expect(screen.getByTestId('environment-applies-to').textContent).toBe('Billing');
+    expect(screen.queryByRole('radio')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose projects…' }));
+    expect(useUiStore.getState().slideOver.environmentProjectsOpen).toBe(true);
+    expect(useUiStore.getState().slideOver.environmentDetailsOpen).toBe(false);
+  });
+
+  it.each([
+    ['every project', undefined, 'All projects'],
+    ['no project', [], 'No project'],
+  ])('summarises a scope of %s', (_label, projects, expected) => {
+    setUpWorkspace({ ...environment, ...(projects === undefined ? {} : { projects }) });
+    render(<EnvironmentDetails environmentId="e1" />);
+    expect(screen.getByTestId('environment-applies-to').textContent).toBe(expected);
   });
 
   it('shows a protected environment ticked, and unticking it drops the flag', async () => {
@@ -89,8 +99,7 @@ describe('EnvironmentDetails — a workspace environment', () => {
     setUpWorkspace();
     render(<EnvironmentDetails environmentId="e1" />);
     expect(screen.getByRole('group', { name: 'Colour of prod' })).toBeTruthy();
-    expect(screen.getByRole('group', { name: 'Applies to' })).toBeTruthy();
-    for (const control of screen.getAllByRole('button').concat(screen.getAllByRole('radio'))) {
+    for (const control of screen.getAllByRole('button')) {
       expect(control.getAttribute('tabindex')).not.toBe('-1');
     }
   });
@@ -108,7 +117,7 @@ describe("EnvironmentDetails — a linked project's own environment", () => {
     });
     render(<EnvironmentDetails environmentId="e1" />);
     expect(screen.getByTestId('environment-details-variables').textContent).toBe('1 variable');
-    expect(screen.queryByRole('radio', { name: 'All projects' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Choose projects…' })).toBeNull();
     expect(screen.getByTestId('environment-applies-to-fixed')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Colour orange' }));
     expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', { color: 'orange' });
@@ -158,6 +167,29 @@ describe('the right rail in the Environments area', () => {
     expect(icon.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('offers Projects too, and the two panels take turns in the one slide-over (#393)', () => {
+    useEditorsStore.setState({
+      tabs: [{ id: 'env:e1', kind: 'environment', title: 'prod', environmentId: 'e1' }] as never,
+      activeId: 'env:e1',
+      displayedSet: 'explorer',
+    });
+    renderRail();
+    const details = screen.getByTestId('rail-environment-details');
+    const projects = screen.getByTestId('rail-environment-projects');
+    expect(details.getAttribute('aria-expanded')).toBe('true');
+    expect(projects.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(projects);
+    expect(projects.getAttribute('aria-expanded')).toBe('true');
+    expect(details.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(details);
+    expect(details.getAttribute('aria-expanded')).toBe('true');
+    expect(projects.getAttribute('aria-expanded')).toBe('false');
+    // Putting the shown panel away leaves nothing in the slide-over.
+    fireEvent.click(details);
+    expect(details.getAttribute('aria-expanded')).toBe('false');
+    expect(projects.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('remembers the choice in the per-machine layout, so coming back keeps it', () => {
     const storage = new Map<string, string>();
     const fake = {
@@ -185,5 +217,6 @@ describe('the right rail in the Environments area', () => {
     });
     renderRail();
     expect(screen.getByTestId<HTMLButtonElement>('rail-environment-details').disabled).toBe(true);
+    expect(screen.getByTestId<HTMLButtonElement>('rail-environment-projects').disabled).toBe(true);
   });
 });

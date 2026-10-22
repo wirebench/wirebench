@@ -108,6 +108,12 @@ import {
   setEnvironmentDetailsOpen,
   useEnvironmentDetailsShown,
 } from '../features/environments/environment-details.js';
+import {
+  EnvironmentProjectsPanel,
+  environmentProjectsOpen,
+  setEnvironmentProjectsOpen,
+  useEnvironmentProjectsShown,
+} from '../features/environments/environment-projects.js';
 import { rightPanelFor } from './right-panel.js';
 import { RightRail } from './right-rail.js';
 import { Sidebar } from './sidebar.js';
@@ -251,6 +257,14 @@ export function AppShell() {
   }, []);
   const toggleEnvironmentDetails = useCallback(() => {
     setEnvironmentDetailsOpen(!environmentDetailsOpen());
+  }, []);
+  // Or, in the details' place, which projects the environment applies to (#393).
+  const environmentProjectsShown = useEnvironmentProjectsShown();
+  const closeEnvironmentProjects = useCallback(() => {
+    setEnvironmentProjectsOpen(false);
+  }, []);
+  const toggleEnvironmentProjects = useCallback(() => {
+    setEnvironmentProjectsOpen(!environmentProjectsOpen());
   }, []);
   // On the Snippets view it holds the snippet being edited.
   const snippetEditorShown = useSnippetEditorShown();
@@ -679,6 +693,16 @@ export function AppShell() {
                   onClose={closeEnvironmentDetails}
                 >
                   <EnvironmentDetailsPanel />
+                </SlideOver>
+                <SlideOver
+                  label="Projects"
+                  open={environmentProjectsShown && !settingsOpen}
+                  width={slideOverWidth}
+                  onWidthChange={setSlideOverWidth}
+                  onToggle={toggleEnvironmentProjects}
+                  onClose={closeEnvironmentProjects}
+                >
+                  <EnvironmentProjectsPanel />
                 </SlideOver>
                 <SlideOver
                   label={wssConfigLabel}

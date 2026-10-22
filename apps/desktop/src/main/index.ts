@@ -675,6 +675,14 @@ const sshService = new SshService({
   onSessionsChange: (sender, hostId, open) => {
     forwardService.sessionsChanged(sender, hostId, open);
   },
+  // Audited under the window's workspace (#355), by the reporter that owns it; it drops the event unless
+  // the workspace records. The workspace is read at connect, so a session ending after a switch is credited
+  // to the one it ran in.
+  auditWorkspace: (sender) => scopes.get(sender.id)?.audit.workspaceId,
+  audit: (event, workspaceId) => {
+    const scope = scopes.all().find((candidate) => candidate.audit.workspaceId === workspaceId);
+    void scope?.audit.enqueue(event, workspaceId);
+  },
   sessionLog: sessionLogPlanner({
     store: sessionLogs,
     switches: sessionLogSwitches,

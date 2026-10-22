@@ -47,10 +47,10 @@ describe('StatusBar', () => {
     const item = screen.getByTestId('status-bar-recorded');
     expect(item.textContent).toBe('Recorded');
     expect(item.getAttribute('title')).toBe(
-      "Requests and test runs in this workspace are recorded in the team server's audit log.",
+      "Requests, test runs and terminal sessions in this workspace are recorded in the team server's audit log.",
     );
     expect(item.getAttribute('aria-label')).toBe(
-      "Recorded. Requests and test runs in this workspace are recorded in the team server's audit log.",
+      "Recorded. Requests, test runs and terminal sessions in this workspace are recorded in the team server's audit log.",
     );
     useWorkspaceStore.setState({ workspace: null });
   });
