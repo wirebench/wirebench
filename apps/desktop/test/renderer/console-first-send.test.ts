@@ -3,51 +3,91 @@ import type { LogEntry } from '../../src/renderer/state/exchanges.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import {
   collapseConsoleInShortWindow,
-  subscribeConsoleToFirstSend,
+  isFailedSend,
+  subscribeConsoleToTrouble,
 } from '../../src/renderer/state/console-first-send.js';
+import { useProblemsStore, type Problem } from '../../src/renderer/state/problems.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { makeRestExchange } from '../mocks/wire-fixtures.js';
 
-const entry = { kind: 'exchange' } as unknown as LogEntry;
+/** A REST send's log row that got `status` back. */
+function answered(status: number): LogEntry {
+  const exchange = makeRestExchange();
+  return { kind: 'exchange', exchange: { ...exchange, http: { ...exchange.http, status } } } as unknown as LogEntry;
+}
+const ok = (): LogEntry => answered(200);
+const notFound = (): LogEntry => answered(404);
+const refused = (): LogEntry =>
+  ({ kind: 'failure', failure: { code: 'connection-refused', message: 'Connection refused.' } }) as unknown as LogEntry;
+const problem = (source: string): Problem =>
+  ({ id: `p-${source}`, groupId: 'g', source, severity: 'error', message: 'Bad' }) as unknown as Problem;
 
-describe('subscribeConsoleToFirstSend', () => {
+describe('subscribeConsoleToTrouble (G07)', () => {
   beforeEach(() => {
     useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
     useExchangesStore.setState({ log: [] });
+    useProblemsStore.setState({ items: [] });
   });
 
-  it('opens a fresh console when the log gains its first row', () => {
-    const stop = subscribeConsoleToFirstSend();
-    useExchangesStore.setState({ log: [entry] });
+  it('names a refused send, a 4xx and a 5xx as failed, and a 200 as not', () => {
+    expect(isFailedSend(refused())).toBe(true);
+    expect(isFailedSend(notFound())).toBe(true);
+    expect(isFailedSend(ok())).toBe(false);
+  });
+
+  it('leaves a fresh console collapsed on a send that worked', () => {
+    const stop = subscribeConsoleToTrouble();
+    useExchangesStore.setState({ log: [ok()] });
+    stop();
+    expect(useUiStore.getState().console.visible).toBe(false);
+    expect(useUiStore.getState().console.openOnFirstSend).toBe(true);
+  });
+
+  it('opens a fresh console on the HTTP log for a failed send', () => {
+    useUiStore.setState((state) => ({ console: { ...state.console, activeTab: 'problems' } }));
+    const stop = subscribeConsoleToTrouble();
+    useExchangesStore.setState({ log: [ok(), refused()] });
     stop();
     expect(useUiStore.getState().console.visible).toBe(true);
+    expect(useUiStore.getState().console.activeTab).toBe('http-log');
+  });
+
+  it('opens a fresh console on Problems for a new problem, but not for a lint finding', () => {
+    const stop = subscribeConsoleToTrouble();
+    useProblemsStore.setState({ items: [problem('lint')] });
+    expect(useUiStore.getState().console.visible).toBe(false);
+    useProblemsStore.setState({ items: [problem('lint'), problem('validation')] });
+    stop();
+    expect(useUiStore.getState().console.visible).toBe(true);
+    expect(useUiStore.getState().console.activeTab).toBe('problems');
   });
 
   it('leaves a console the user collapsed alone', () => {
     useUiStore.getState().expandConsole();
     useUiStore.getState().collapseConsole();
-    const stop = subscribeConsoleToFirstSend();
-    useExchangesStore.setState({ log: [entry] });
+    const stop = subscribeConsoleToTrouble();
+    useExchangesStore.setState({ log: [refused()] });
     stop();
     expect(useUiStore.getState().console.visible).toBe(false);
   });
 
   it('does nothing when the log is cleared', () => {
-    useExchangesStore.setState({ log: [entry] });
-    const stop = subscribeConsoleToFirstSend();
+    useExchangesStore.setState({ log: [refused()] });
+    const stop = subscribeConsoleToTrouble();
     useExchangesStore.setState({ log: [] });
     stop();
     expect(useUiStore.getState().console.visible).toBe(false);
   });
 
-  it('keeps a fresh console collapsed when the first send lands in a short window (#636)', () => {
+  it('keeps a fresh console collapsed when a failure lands in a short window (#636)', () => {
     let height = 700;
-    const stop = subscribeConsoleToFirstSend(() => height);
-    useExchangesStore.setState({ log: [entry] });
+    const stop = subscribeConsoleToTrouble(() => height);
+    useExchangesStore.setState({ log: [refused()] });
     expect(useUiStore.getState().console.visible).toBe(false);
-    // The promise is kept: a later send in a taller window opens it.
+    // The promise is kept: a later failure in a taller window opens it.
     height = 900;
-    useExchangesStore.setState({ log: [entry, entry] });
+    useExchangesStore.setState({ log: [refused(), refused()] });
     stop();
     expect(useUiStore.getState().console.visible).toBe(true);
   });

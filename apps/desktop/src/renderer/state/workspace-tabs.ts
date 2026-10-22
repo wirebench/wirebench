@@ -9,10 +9,10 @@
 import { entityIdOf, TAB_KINDS, tabOwner, type TabContribution } from '../kinds/index.js';
 import { kindLabel } from '../kinds/placeholders.js';
 import type { WorkspaceWire } from '../../shared/wire-base.js';
-import type { PersistedTab } from './ui-state.js';
+import type { PersistedTab, PersistedWorkspaceUi } from './ui-state.js';
 import { useEditorsStore, type EditorTab } from './editors.js';
 import { useProjectStore } from './project.js';
-import { useUiStore } from './ui.js';
+import { fixedLayout, useUiStore } from './ui.js';
 import { useWorkspaceStore } from './workspace.js';
 
 /** The contribution of a tab kind that survives a workspace switch. */
@@ -54,6 +54,10 @@ export function saveWorkspaceTabs(workspaceId: string): void {
     ...(activeEntity === undefined ? {} : { activeId: activeEntity.id }),
     sidebarView: useUiStore.getState().sidebar.view,
     ...(explorerOpen === undefined ? {} : { explorerOpen }),
+    console: {
+      visible: useUiStore.getState().console.visible,
+      openOnFirstSend: useUiStore.getState().console.openOnFirstSend,
+    },
   });
 }
 
@@ -95,6 +99,23 @@ export function restoreWorkspaceTabs(workspaceId: string): void {
   }
   if (entry.sidebarView !== undefined) {
     useUiStore.getState().setSidebarView(entry.sidebarView);
+  }
+}
+
+/**
+ * Puts the console back as `workspaceId` left it (G07). A workspace never opened in this window
+ * starts with it collapsed, opening itself on the first failed send or new problem; one saved
+ * before the console was remembered keeps whatever the window has. A fixed e2e layout keeps the
+ * console its tests expect. Runs as the workspace opens, before its projects are pulled, so a
+ * problem the pull raises opens the console of the right workspace.
+ */
+export function restoreWorkspaceConsole(workspaceId: string): void {
+  if (fixedLayout()) return;
+  const entry: PersistedWorkspaceUi | undefined = useUiStore.getState().workspaces[workspaceId];
+  if (entry === undefined) {
+    useUiStore.getState().resetWorkspaceConsole({ visible: false, openOnFirstSend: true });
+  } else if (entry.console !== undefined) {
+    useUiStore.getState().resetWorkspaceConsole(entry.console);
   }
 }
 

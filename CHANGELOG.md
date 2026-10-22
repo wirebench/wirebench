@@ -28,6 +28,10 @@ All notable changes to this project are documented here. The format follows
 - **Escape leaves Settings opened from the rail (#748).** After a click on the Settings button the
   focus stayed on it with its tooltip open, and Escape only closed the tooltip. Escape now leaves
   Settings whatever has focus, unless a menu, dialog or text field is open.
+- **The console stays out of the way until something goes wrong (#748).** A workspace's console starts
+  collapsed and a send that works leaves it so. It opens itself on the HTTP log for a failed send (no
+  response, a fault, a 4xx or 5xx) and on Problems for a new problem, until you open, close or resize
+  it yourself. Each workspace remembers its own console.
 - **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
   shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
   the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.

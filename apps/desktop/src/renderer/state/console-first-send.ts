@@ -1,19 +1,42 @@
-import { useExchangesStore } from './exchanges.js';
+import { toneFor } from '../features/request-editor/response-status.js';
+import { useExchangesStore, type LogEntry } from './exchanges.js';
+import { countProblems, useProblemsStore } from './problems.js';
 import { CONSOLE_COLLAPSED_BELOW_PX, fixedLayout, useUiStore } from './ui.js';
+import type { ConsoleTab } from './ui-state.js';
+
+/** A send the console should show unasked: no response at all, a fault, a 4xx or 5xx, a gRPC error. */
+export function isFailedSend(entry: LogEntry): boolean {
+  return entry.kind === 'failure' || toneFor(entry.exchange) === 'bad';
+}
 
 /**
- * Opens the console the first time the HTTP log gains a row, so a fresh workspace (whose console
- * starts collapsed) shows the log of its first send. After that, and once the user has opened,
- * closed or resized the console, a send leaves it as it is. A short window keeps it collapsed and
- * the first-send promise for later: open there, it left the editor and response about 150px each
- * (#636). Returns the unsubscribe.
+ * Opens the console when something goes wrong: a send fails (see {@link isFailedSend}) or a new
+ * problem appears. A workspace's console starts collapsed and a send that worked leaves it so
+ * (G07); it keeps opening itself only until the user opens, closes or resizes it, the choice the
+ * workspace then remembers. A short window keeps it collapsed and the promise for later: open
+ * there, it left the editor and response about 150px each (#636). Returns the unsubscribe.
  */
-export function subscribeConsoleToFirstSend(windowHeight: () => number = () => globalThis.innerHeight): () => void {
-  return useExchangesStore.subscribe((state, previous) => {
-    if (state.log.length > previous.log.length && !isShortWindow(windowHeight())) {
-      useUiStore.getState().openConsoleForFirstSend();
+export function subscribeConsoleToTrouble(windowHeight: () => number = () => globalThis.innerHeight): () => void {
+  const open = (tab: ConsoleTab): void => {
+    if (!isShortWindow(windowHeight())) useUiStore.getState().openConsoleForFirstSend(tab);
+  };
+  const offLog = useExchangesStore.subscribe((state, previous) => {
+    // The newest row, not the length: a full log drops its oldest row as it adds one.
+    const newest = state.log.at(-1);
+    if (newest !== undefined && newest !== previous.log.at(-1) && isFailedSend(newest)) open('http-log');
+  });
+  const offProblems = useProblemsStore.subscribe((state, previous) => {
+    if (
+      state.items !== previous.items &&
+      countProblems(state.items).problems > countProblems(previous.items).problems
+    ) {
+      open('problems');
     }
   });
+  return () => {
+    offLog();
+    offProblems();
+  };
 }
 
 /** Whether a window this tall is too short for the console beside the editor; never in a fixed e2e layout. */
