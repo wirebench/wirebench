@@ -14,7 +14,9 @@ of `docs/specs/2026-09-24-wirebench-server-capability-map.md` (fourth slice, fir
 - Decisions recorded here (owner, 2026-10-01):
   - **Everything stays Apache-2.0.** The key check is a product boundary, not a legal one; a fork may
     remove it. [ADR-0018](../adr/0018-licensing-is-a-product-boundary.md) records this and its
-    consequences.
+    consequences. Superseded on 2026-10-18 by
+    [ADR-0028](../adr/0028-the-server-is-licensed-under-the-elastic-license-2-0.md): the server package is
+    under the Elastic License 2.0, the rest of the repository stays Apache-2.0.
   - **The boundary is a seat cap plus enterprise features.** Community is the server as shipped today,
     for up to five enabled accounts. Team lifts the cap. Enterprise adds the gated features. Nothing
     already shipped becomes paid.

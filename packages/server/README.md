@@ -127,6 +127,11 @@ built into the server; nothing is sent anywhere. Install it from the app's Licen
 Community. An expired license keeps its edition for 30 days, then the server is Community again, with
 nobody signed out and nothing locked. See the docs site's _Editions and licenses_ guide.
 
+The server's source is under the [Elastic License 2.0](LICENSE), unlike the rest of the repository, which is
+Apache-2.0 ([ADR-0028](../../docs/adr/0028-the-server-is-licensed-under-the-elastic-license-2-0.md)). You may
+run it for your own company, modify it and redistribute it with the notices intact. You may not offer it to
+third parties as a hosted or managed service, and you may not circumvent the license file check.
+
 ## Audit log
 
 The server records who did what: sign-ins and failed sign-ins, users, teams, workspace roles, pushes,

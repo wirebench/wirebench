@@ -46,9 +46,11 @@ snippets, a local terminal, identities, certificates and security keys, device-b
 lock, Mosh, Telnet and serial console hosts, a terminal type and character set per host, session logs
 and host import from other SSH tools; client-signed JWT, Digest, AWS Signature v4 and more OAuth 2 grants;
 GraphQL requests; MCP servers as a fifth kind of container; `wirebench lint` for OpenAPI; environments
-that apply to chosen projects; HTTP/2 offered by default; and, on the server, scheduled runs and SAML
-sign-in with SCIM, team session logs and live terminal sharing; imported scripts from other API clients
-that run against their own script API; and install files for Homebrew, winget and a team server
+that apply to chosen projects; HTTP/2 offered by default; feature switches that turn any protocol or
+optional feature off, in Settings, on the CLI and by a restrict-only team policy; an Explorer that
+selects like a desktop tree; and, on the server, scheduled runs and SAML sign-in with SCIM, team session
+logs, live terminal sharing and an audit trail for terminal sessions; imported scripts from other API
+clients that run against their own script API; and install files for Homebrew, winget and a team server
 compose. It took the project format to version 11.
 Everything below is what is still open, and
 [Milestones and tracking](#milestones-and-tracking) maps it to the issues and milestones that track it.
@@ -96,7 +98,7 @@ is picked up.
 | 14 | Full functional testing: suites, data-driven runs, callback listener | Both | XL | phase 2 | Suites, CSV and XLSX data sources, and a listener for WS-Addressing callbacks, after Sequences and scripting have proved the model. |
 | 15 | Self-hosted Wirebench Server: sign-in, teams, SSO | Ent | XL | new | Spec 2 of the shared-workspaces design (§5.4): the same repository with the server running git, live updates, presence and OIDC-first sign-in; SCIM and audit second. The enterprise offer, with data inside their own network. |
 | 16 | JKS keystores, WS-ReliableMessaging | Ent | S each | spec 1.1 | Build when a customer asks; each is a niche. SAML tokens moved into item 7. |
-| 18 | Editions and compliance on the server: license boundary, audit log | Ent | M + M | licensing built (#197); audit log built (#198) | The feature list is already enterprise-shaped; what no enterprise can do yet is buy it. A signed offline license file sets the edition (Community, Team, Enterprise) and caps free seats; an audit log is the first gated feature and the first thing a compliance reviewer asks for. Everything stays Apache-2.0 ([ADR-0018](adr/0018-licensing-is-a-product-boundary.md)). See [Editions and compliance](#editions-and-compliance). |
+| 18 | Editions and compliance on the server: license boundary, audit log | Ent | M + M | licensing built (#197); audit log built (#198) | The feature list is already enterprise-shaped; what no enterprise can do yet is buy it. A signed offline license file sets the edition (Community, Team, Enterprise) and caps free seats; an audit log is the first gated feature and the first thing a compliance reviewer asks for. The server is under the Elastic License 2.0 since [ADR-0028](adr/0028-the-server-is-licensed-under-the-elastic-license-2-0.md); the rest stays Apache-2.0. See [Editions and compliance](#editions-and-compliance). |
 | 17 | gRPC (shipped), streaming over HTTP and WebSocket (shipped), and GraphQL | Dev | L each | gRPC shipped 2026-09-16; WebSocket shipped 2026-09-19; GraphQL queries and mutations 2026-10-13; subscriptions later | gRPC landed as the third container on the shape [ADR-0007](adr/0007-apis-beside-interfaces.md) was written to survive — see [the gRPC spec](specs/2026-09-16-wirebench-grpc-client-design.md). [Server reflection](specs/2026-09-17-grpc-server-reflection-design.md) shipped 2026-09-17 [live streaming with interactive bidirectional send](specs/2026-09-18-grpc-live-streaming-design.md) and [message completion from the descriptor](specs/2026-09-18-grpc-message-completion-design.md) on 2026-09-18; resend from History followed 2026-09-22 ([spec](specs/2026-09-22-grpc-history-resend-design.md)). That work paid for a live pane and a multi-message record, which the WebSocket request kind reused to land as the fourth container 2026-09-19 — see [the WebSocket spec](specs/2026-09-19-websocket-request-kind-design.md) and [Streaming](#streaming-server-sent-events-websocket-and-graphql-subscriptions). Server-Sent Events shipped 2026-09-21 the same way — see [the SSE spec](specs/2026-09-21-rest-sse-responses-design.md) — reusing the same live pane and History record rather than a new request kind. GraphQL is cut in two: queries and mutations over HTTP shipped 2026-10-13 as a REST body mode — see [the GraphQL spec](specs/2026-10-13-graphql-client-design.md) — and subscriptions ([#99](https://github.com/wirebench/wirebench/issues/99)) wait on a streaming transport. |
 | — | Load testing, WSDL coverage and refactoring, code generation | — | XL | phase 4 | Deferred indefinitely; other tools do these better. The TCP monitor's use case, recording traffic, is absorbed by the mock recorder. |
 | — | MQTT, Kafka and JMS transports | — | L each | watch | A different buyer and native modules; only on a customer's ask. |
@@ -467,9 +469,11 @@ design, and the shipped shared workspaces embody the first two:
 Item 18. The server as shipped is the **Community** edition and stays free: everything above, for up to
 five enabled accounts. A signed license file, verified offline against a key compiled into the server and
 never reporting anywhere, makes it **Team** (the seat cap lifted) or **Enterprise** (Team plus the gated
-features). The boundary is a product boundary under one Apache-2.0 license, not a legal one
-([ADR-0018](adr/0018-licensing-is-a-product-boundary.md)): nothing already shipped becomes paid, a lapsed
-license disables nobody and locks nothing, and after 30 days of grace the server is Community again.
+features). The server's source is under the Elastic License 2.0
+([ADR-0028](adr/0028-the-server-is-licensed-under-the-elastic-license-2-0.md), superseding ADR-0018): free to
+run for your own company, not to offer to others as a hosted service, and not to run with the check
+circumvented. Nothing already shipped becomes paid, a lapsed license disables nobody and locks nothing, and
+after 30 days of grace the server is Community again.
 
 The gated features, in the order they are planned:
 

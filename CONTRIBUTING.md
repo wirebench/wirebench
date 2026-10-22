@@ -179,11 +179,14 @@ Do not add `Co-Authored-By` trailers to commit messages.
 
 ## License and provenance
 
-Wirebench is [Apache-2.0](LICENSE). By contributing you agree your contribution is licensed the
-same way.
+Wirebench is [Apache-2.0](LICENSE), except `packages/server`, which is under the
+[Elastic License 2.0](packages/server/LICENSE)
+([ADR-0028](docs/adr/0028-the-server-is-licensed-under-the-elastic-license-2-0.md)). By contributing you
+agree your contribution is licensed the same way as the package it lands in. Code under Apache-2.0 must
+not import from `@wirebench/server`.
 
 **Clean-room implementation: do not copy code from other SOAP tools.** Many of them are under
-copyleft licences incompatible with Apache-2.0. Wirebench is implemented from public
+copyleft licences incompatible with either licence. Wirebench is implemented from public
 specifications (WSDL 1.1, XML Schema, SOAP 1.1 and 1.2, WS-Security, WS-Addressing, WS-I Basic
 Profile) and from published, user-facing documentation — behaviour may match, implementation may
 not be derived. If you have recently read the source of another SOAP tool, say so in the pull

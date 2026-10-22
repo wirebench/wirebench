@@ -7,6 +7,7 @@
 [![CI](https://github.com/wirebench/wirebench/actions/workflows/ci.yml/badge.svg)](https://github.com/wirebench/wirebench/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/wirebench/wirebench?sort=semver)](https://github.com/wirebench/wirebench/releases/latest)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Server: Elastic-2.0](https://img.shields.io/badge/server-Elastic--2.0-blue.svg)](packages/server/LICENSE)
 
 [Download](https://wirebench.github.io/wirebench/download/) ·
 [User guide](https://wirebench.github.io/wirebench/docs/) ·
@@ -112,6 +113,11 @@ public issue.
 
 ## License
 
-[Apache-2.0](LICENSE), every line in the repository. Wirebench is a clean-room implementation built from public
-specifications; no code from other SOAP tools is copied into it. Bundled third-party packages and their notices are
-listed in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) and shipped in every installer.
+[Apache-2.0](LICENSE) for the desktop app, the engine, the CLI, the SSH package, the integrations, the site and
+the docs. The one exception is Wirebench Server, `packages/server`, which is under the
+[Elastic License 2.0](packages/server/LICENSE): free to run for your own company and to modify, not to offer to
+third parties as a hosted service, and not to run with the license check circumvented
+([ADR-0028](docs/adr/0028-the-server-is-licensed-under-the-elastic-license-2-0.md)). Wirebench is a clean-room
+implementation built from public specifications; no code from other SOAP tools is copied into it. Bundled
+third-party packages and their notices are listed in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) and
+shipped in every installer.
