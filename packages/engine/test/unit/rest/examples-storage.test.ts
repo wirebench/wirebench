@@ -22,6 +22,8 @@ import {
 } from '../../../src/rest/model.js';
 import type { RestRequestDef, RestResponseExample } from '../../../src/rest/model.js';
 import { listTree, tempProjectDir } from '../project/fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const REQUESTS = 'apis/pets/requests';
 

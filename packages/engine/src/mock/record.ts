@@ -11,7 +11,7 @@ import { HttpError, WirebenchError } from '../errors.js';
 import { decodeBody } from '../http/charset.js';
 import { sendHttp } from '../http/client.js';
 import type { HttpExchange, HttpRequest, ProxyOptions, TlsOptions } from '../http/types.js';
-import { defaultRegistry } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
 import { nodeFs } from '../project/fs.js';
 import type { FsLike } from '../project/fs.js';
 import type { Project } from '../project/model.js';

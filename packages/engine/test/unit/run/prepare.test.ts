@@ -21,6 +21,8 @@ import { normalizeWsa } from '../../../src/wsa/model.js';
 import type { WsaConfigPatch } from '../../../src/wsa/model.js';
 import type { Workspace, WorkspaceEnvironment } from '../../../src/workspace/model.js';
 import { generateClientCert, generateTestCa } from '../../helpers/test-certs.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 interface ProjectOptions {
   readonly soapAuth?: SoapOwnerAuth;

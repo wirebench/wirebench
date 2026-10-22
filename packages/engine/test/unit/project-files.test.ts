@@ -25,6 +25,8 @@ import { WORKSPACE_FORMAT_VERSION } from '../../src/workspace/model.js';
 import { saveWorkspace } from '../../src/workspace/save.js';
 import { listTree, sampleProject, tempProjectDir } from './project/fixture.js';
 import { sampleWorkspace, tempWorkspaceDir } from './workspace/fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../src/protocols.js';
 
 const ENGINE_FIXTURES = join(import.meta.dirname, '..', 'fixtures');
 const PROJECTS = {

@@ -65,7 +65,14 @@ an editor does not flag a wrong import, and `pnpm check` (and CI) does.
 | `import-detect.ts` | format detectors | phase 7 |
 
 The groups are: SOAP (`soap/`, `wsdl/`, `xsd/`, `wss/`, `wsa/`, `validate/`), REST (`rest/`, `webhooks/`), gRPC
-(`grpc/`), WebSocket (`ws/`, `asyncapi/`), and core, which is everything else. What two protocols shared moved into
+(`grpc/`), WebSocket (`ws/`, `asyncapi/`), and core, which is everything else.
+
+_Amended for #750 (phase 5, [ADR-0030](0030-package-boundaries-are-checked-at-the-boundary.md)):_ the exception
+table is gone. The files it named are either the composition's (`protocols.ts`, `index.ts`, `project-files.ts`,
+`import-detect.ts`, the exporters and the client importers, now the `compose` group, which nothing imports) or
+SOAP's (the endpoint and attachment resolvers moved under `soap/`). The built-in registry a caller does not pass is
+a slot in core that the composition fills, and the unions over every protocol's types are open interfaces each
+protocol augments. The rules are three, with no exceptions, and the packages of phase 5 make them boundaries. What two protocols shared moved into
 core: header entries, escaping, applying a configured auth, cookies, charsets and the document fetcher into `http/`,
 with media types (`http/media-type.ts`), the transcript cap (`http/transcript-cap.ts`), webhook signatures
 (`http/webhook-signature.ts`) and the OAuth2 messages (`http/auth/oauth2.ts`); QNames, locating a node, decoding,

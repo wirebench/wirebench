@@ -7,7 +7,7 @@
  */
 
 import type { ProtocolRegistry } from '../protocol/registry.js';
-import { defaultRegistry } from '../protocols.js';
+import { defaultRegistry } from '../protocol/default-registry.js';
 import { mockFiles } from '../mock/file.js';
 import { sequenceDocument, sequenceFilePath } from '../sequence/file.js';
 import type { Project, PropertyMap } from './model.js';

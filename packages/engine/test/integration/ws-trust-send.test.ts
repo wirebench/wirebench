@@ -24,6 +24,8 @@ import { testHost } from '../helpers/send-host.js';
 import { startTestSts } from '../helpers/test-sts-server.js';
 import type { TestSts } from '../helpers/test-sts-server.js';
 import { soapInterfacesOf } from '../../src/soap/model.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../src/protocols.js';
 
 /** The fixture's lifetime has passed; push it far enough ahead that the cache keeps the token. */
 const fixture = (name: string): string =>

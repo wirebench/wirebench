@@ -7,12 +7,12 @@ import type { Attachment } from '../../../src/soap/model.js';
 import {
   attachmentFile,
   attachmentsIndexFile,
-  createFileAttachmentResolver,
   listAttachments,
   pruneAttachments,
   putAttachment,
   readAttachment,
 } from '../../../src/project/attachments-cache.js';
+import { createFileAttachmentResolver } from '../../../src/soap/attachments.js';
 import { tempProjectDir } from './fixture.js';
 
 const INVOICE = new TextEncoder().encode('%PDF-1.4 invoice');

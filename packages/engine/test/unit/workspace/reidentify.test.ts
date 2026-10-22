@@ -5,6 +5,8 @@ import type { Project, SoapOwnerAuth } from '../../../src/project/model.js';
 import { fixedIds, sampleProject } from '../project/fixture.js';
 import { soapInterfacesOf } from '../../../src/soap/model.js';
 import { wssConfigsOf, withWssConfigs } from '../../../src/wss/project.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 /** Every entity id in `project`, in the order `reidentifyProject` visits them. */
 function allIds(project: Project): string[] {

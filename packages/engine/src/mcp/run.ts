@@ -483,3 +483,17 @@ export const mcpRun: ProtocolRun<McpSelected> = {
     ];
   },
 };
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface SelectedRequests {
+    mcp: McpSelected;
+  }
+  interface SentExchanges {
+    mcp: {
+      readonly kind: 'mcp';
+      /** The session whole: every message both ways, the transport's record, and the operation's answer. */
+      readonly mcp: McpExchange;
+    };
+  }
+}

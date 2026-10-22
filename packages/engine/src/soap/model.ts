@@ -252,3 +252,10 @@ export function soapInterfacesOf(project: Project): readonly Interface[] {
 export function withSoapInterfaces(project: Project, interfaces: readonly Interface[]): Project {
   return withContainersOf(project, 'soap', interfaces);
 }
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface RequestDefs {
+    soap: SoapRequestDef;
+  }
+}

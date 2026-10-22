@@ -11,6 +11,8 @@ import type { SoapRequestDef } from '../../../src/soap/model.js';
 import { CRLF_ENVELOPE, listTree, readBytes, sampleProject, tempProjectDir } from './fixture.js';
 import { soapInterfacesOf, withSoapInterfaces } from '../../../src/soap/model.js';
 import { wssConfigsOf, withWssConfigs } from '../../../src/wss/project.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 function withRequests(project: Project, map: (r: SoapRequestDef) => SoapRequestDef | undefined): Project {
   return {

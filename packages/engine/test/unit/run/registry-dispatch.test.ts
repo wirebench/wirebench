@@ -270,7 +270,7 @@ describe('openExchange', () => {
       registry,
     });
     const item = { kind: 'fake', path: 'g/r', group: 'g', request: { id: 'r', name: 'r', slug: 'r' } };
-    await openExchange(item as never, testHost(), { scope, interactive: false }).result;
+    await openExchange(item, testHost(), { scope, interactive: false }).result;
     expect(opened).toEqual(['g/r']);
     expect(() => fake.run?.open({ ...item, kind: 'other' }, scope, testHost(), { scope, interactive: false })).toThrow(
       'The "fake" protocol was handed a "other" request',

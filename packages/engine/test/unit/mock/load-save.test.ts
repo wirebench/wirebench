@@ -13,6 +13,8 @@ import { createProject, FORMAT_VERSION } from '../../../src/project/model.js';
 import type { Project } from '../../../src/project/model.js';
 import { saveProject } from '../../../src/project/save.js';
 import { listTree, tempProjectDir } from '../project/fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const OP = 'mocks/orders/operations/place';
 

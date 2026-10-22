@@ -5,7 +5,6 @@
  */
 import { resolveScopes } from '../project/environments.js';
 import type { Project, PropertyMap } from '../project/model.js';
-import type { HeldSoapDefinition } from '../protocols.js';
 import { DynamicValues } from '../project/dynamic.js';
 import type { PropertyScopes } from '../project/properties.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
@@ -17,7 +16,6 @@ import type { Workspace } from '../workspace/model.js';
 import type { CurrentValues } from './current-values.js';
 import { withCurrentValues } from './current-values.js';
 import type { SendHost } from './host.js';
-import type { SelectedRequest } from './select.js';
 
 /**
  * The workspace a project is run inside, and the slug its manifest addresses the project by (the
@@ -58,20 +56,8 @@ export interface RunContext {
   readonly timeoutMs?: number;
   readonly insecure?: boolean;
   readonly signal?: AbortSignal;
-  /**
-   * The WSDL-derived default `wsa:Action` for a SOAP request, as the app takes it from the
-   * interface's imported definition. Absent (or returning `''`) when no definition is at hand:
-   * an explicit `wsa:Action` or the request's SOAPAction then still applies.
-   */
-  readonly defaultWsaActionFor?: (selected: Extract<SelectedRequest, { kind: 'soap' }>) => string;
-  /**
-   * The definition a host already holds for a SOAP request's interface (the app's, imported and
-   * compiled), so a send neither reads nor compiles the definition cache. Absent, or answering
-   * undefined: the run reads the interface's cached definition itself, once per run scope.
-   */
-  readonly loadedDefinitionFor?: (
-    selected: Extract<SelectedRequest, { kind: 'soap' }>,
-  ) => HeldSoapDefinition | undefined;
+  // A protocol's own hooks are added here by its module (package split spec §3.4): SOAP's
+  // `defaultWsaActionFor` and `loadedDefinitionFor` in `soap/run.ts`.
   /** A sequence step's `${#Sequence#…}` values, from the responses of the steps before it. */
   readonly sequence?: PropertyMap;
   /** The data row this iteration of a data-driven run reads, as `${#Data#column}` (#336). */

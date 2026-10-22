@@ -578,3 +578,21 @@ export const restRun: ProtocolRun<RestSelected> = {
     ];
   },
 };
+
+/** This protocol's member of the unions over every composed protocol (package split spec §3.4). */
+declare module '../protocol/unions.js' {
+  interface SelectedRequests {
+    rest: RestSelected;
+  }
+  interface SentExchanges {
+    rest: {
+      readonly kind: 'rest';
+      readonly rest: RestExchange;
+      /** What was sent: after the script, with the credentials resolved. */
+      readonly input: RestSendInput;
+      readonly contract?: unknown;
+      /** A GraphQL request's response, checked (#77). */
+      readonly graphql?: GraphqlCheckResult;
+    };
+  }
+}

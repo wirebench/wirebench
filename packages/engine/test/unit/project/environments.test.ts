@@ -2,11 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   findEnvironment,
   removeEnvironment,
-  resolveAuthEndpoint,
-  resolveEndpoint,
   resolveScopes,
   upsertEnvironment,
 } from '../../../src/project/environments.js';
+import { resolveAuthEndpoint, resolveEndpoint } from '../../../src/soap/endpoints.js';
 import { createProject, type Environment, type Project } from '../../../src/project/model.js';
 import { createInterface } from '../../../src/soap/model.js';
 import { expand } from '../../../src/project/properties.js';

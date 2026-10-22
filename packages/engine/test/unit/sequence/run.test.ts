@@ -13,6 +13,8 @@ import type { SequenceStep } from '../../../src/sequence/model.js';
 import { runSequence } from '../../../src/sequence/run.js';
 import type { ResolvedStep, SequenceStepSender } from '../../../src/sequence/run.js';
 import { createWsApi, createWsRequest } from '../../../src/ws/model.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 function project(): Project {
   return {

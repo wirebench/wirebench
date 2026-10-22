@@ -8,6 +8,8 @@ import { createMock } from '../../../src/mock/model.js';
 import { startMock } from '../../../src/mock/server.js';
 import type { RunningMock } from '../../../src/mock/server.js';
 import { mockProject, wsdlFixture } from '../mock/fixture.js';
+// The composition: the entry points fall back to the registry it installs (package split spec §3.3).
+import '../../../src/protocols.js';
 
 const running: RunningMock[] = [];
 afterEach(async () => {

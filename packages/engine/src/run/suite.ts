@@ -34,6 +34,7 @@ import {
 import type { RequestResult, RunOptions, RunRequestSender, RunResult, SentRequest } from './run.js';
 import { findStepRequest, selectRequests } from './select.js';
 import type { SelectedRequest } from './select.js';
+import type { SelectedBase } from '../protocol/module.js';
 
 function normalise(selector: string): string {
   return selector.replace(/\\/g, '/').replace(/^\.\//, '');
@@ -82,7 +83,8 @@ export function resolveSteps(
     for (const [index, step] of sequence.steps.entries()) {
       const target = findStepRequest(project, step.requestId, registry);
       if (target.kind === 'found') {
-        requests.set(target.selected.request.id, target.selected);
+        const found: SelectedBase = target.selected;
+        requests.set(found.request.id, target.selected);
       } else {
         const reason = target.kind === 'missing' ? `its request (${step.requestId}) no longer exists` : target.reason;
         problems.push(
@@ -106,9 +108,10 @@ export function withDefaultSla(sequence: SequenceDef, project: Project, slaMs: n
     ...sequence,
     steps: sequence.steps.map((step) => {
       const target = findStepRequest(project, step.requestId);
+      const found = target.kind === 'found' ? (target.selected as SelectedBase) : undefined;
       const own: readonly StepAssertion[] = [
-        ...(step.requestAssertions && target.kind === 'found' && 'assertions' in target.selected.request
-          ? (target.selected.request.assertions ?? [])
+        ...(step.requestAssertions && found !== undefined && 'assertions' in found.request
+          ? (found.request.assertions ?? [])
           : []),
         ...step.assertions,
       ];
@@ -160,7 +163,7 @@ export async function runSequences(
     const raw = new Map<string, SentRequest['raw']>();
     const sender: SequenceStepSender = async (step, sequenceScope) => {
       // A post-response script's tests count as the step's assertions (#63), a level's too (#334).
-      const { request } = step.selected;
+      const { request } = step.selected as SelectedBase;
       const declared =
         (step.step.requestAssertions && 'assertions' in request ? (request.assertions ?? []).length : 0) +
         step.step.assertions.length +
