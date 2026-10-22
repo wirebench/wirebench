@@ -16,7 +16,7 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 export async function createApi(page: Page, name: string, baseUrl: string): Promise<void> {
   const projectRow = page.getByTestId('explorer-project-row').first();
   await expect(projectRow).toBeVisible({ timeout: 20_000 });
-  await chooseContextMenuItem(page, projectRow, 'New API…');
+  await chooseProjectCreator(page, projectRow, 'New REST API…');
 
   // The API tab opens on creation, which is where its name and base URL are edited.
   await expect(page.getByTestId('api-tab')).toBeVisible({ timeout: 20_000 });
@@ -35,7 +35,12 @@ export async function createApi(page: Page, name: string, baseUrl: string): Prom
  * the row is re-rendering after an edit elsewhere (an editor committing on blur), in which case the
  * menu closes before it is seen; the gesture is retried until the item is there.
  */
-export async function chooseContextMenuItem(page: Page, target: Locator, item: string): Promise<void> {
+export async function chooseContextMenuItem(
+  page: Page,
+  target: Locator,
+  item: string,
+  options: { readonly under?: string } = {},
+): Promise<void> {
   await expect(target).toBeVisible({ timeout: 20_000 });
   const menuItem = page.getByRole('menuitem', { name: item });
   // The click is part of the retried gesture: a row re-rendering after the menu opened replaces the
@@ -43,9 +48,18 @@ export async function chooseContextMenuItem(page: Page, target: Locator, item: s
   // timeout retrying a node that will never come back.
   await expect(async () => {
     await target.click({ button: 'right' });
+    // An item in a submenu (a project's New ▸, #686 E18): open the submenu first.
+    if (options.under !== undefined) {
+      await page.getByRole('menuitem', { name: options.under, exact: true }).click({ timeout: 2_000 });
+    }
     await expect(menuItem).toBeVisible({ timeout: 2_000 });
     await menuItem.click({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
+}
+
+/** One of a project row's creators, from its New ▸ submenu (#686 E18). */
+export async function chooseProjectCreator(page: Page, projectRow: Locator, item: string): Promise<void> {
+  await chooseContextMenuItem(page, projectRow, item, { under: 'New' });
 }
 
 /**

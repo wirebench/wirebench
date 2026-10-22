@@ -3,7 +3,7 @@ import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace } from '../helpers/project.js';
 import {
   addHeader,
-  chooseContextMenuItem,
+  chooseProjectCreator,
   createApi,
   createRestRequest,
   saveRequest,
@@ -52,7 +52,7 @@ test('a sequence carries a secret token from one step to the next', async () => 
   await addHeader(page, 'Authorization', 'Bearer ${#Sequence#token}');
   await saveRequest(page);
 
-  await chooseContextMenuItem(page, page.getByTestId('explorer-project-row').first(), 'New Sequence');
+  await chooseProjectCreator(page, page.getByTestId('explorer-project-row').first(), 'New Sequence…');
   const tab = page.getByTestId('sequence-tab');
   await expect(tab).toBeVisible({ timeout: 20_000 });
 

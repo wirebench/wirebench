@@ -22,6 +22,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The project menu is shorter (#686).** A project's six creators sit under one **New ▸** submenu,
+  named alike: **New REST API…** (as on the Start page), **New gRPC API…**, **New WebSocket API…**,
+  **New MCP server…**, **New Webhook…** and **New Sequence…**.
+- **The environment switcher asks for a project instead of saying "No project" (#686).** With
+  several projects open and no request focused yet, it reads **Pick a project**: the menu lists the
+  workspace's projects, and the one picked shows its environments straight away.
+- **The Start page and the Explorer agree in an empty workspace (#686).** Both offer **New project**
+  first, then **Import…**.
+- **Two projects of one name tell apart (#686).** When another project shares a project's name (in
+  any case), its Explorer row shows its folder's name faint after the name.
+- **A short drag no longer snaps the sidebar shut (#686).** Dragging its edge inward stops at the
+  minimum width; the sidebar collapses only when the drag carries on well past it.
+- **Deep breadcrumbs stay readable (#686).** A request's path line with four or more segments keeps
+  the project and the request's name whole and folds the segments between them into **…**, whose
+  menu lists them in order.
 - **History rows say where a send went (#748).** A REST row leads with its path, the host faint beside
   it, so sends to `/pets` and `/pets/1` on one host tell apart; the request's name moves to the second
   line. A click opens the entry as the preview tab, which the next click replaces, and a double-click or

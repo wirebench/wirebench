@@ -42,12 +42,7 @@ describe('explorerMenuItems', () => {
 
     expect(items.map((item) => item.label)).toEqual([
       'Import…',
-      'New API…',
-      'New gRPC API…',
-      'New WebSocket API…',
-      'New MCP server…',
-      'New Webhook',
-      'New Sequence',
+      'New',
       'Run…',
       'Settings…',
       REVEAL,
@@ -57,6 +52,18 @@ describe('explorerMenuItems', () => {
       'Move to workspace…',
       'Rename',
       'Remove from workspace',
+    ]);
+  });
+
+  it('groups the project creators under New, each named New … with an ellipsis (#686 E18)', () => {
+    const items = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }));
+    expect(items.find((item) => item.key === 'new')?.children?.map((item) => item.label)).toEqual([
+      'New REST API…',
+      'New gRPC API…',
+      'New WebSocket API…',
+      'New MCP server…',
+      'New Webhook…',
+      'New Sequence…',
     ]);
   });
 
@@ -75,12 +82,7 @@ describe('explorerMenuItems', () => {
     // own — an internal project's environments are the workspace's, edited in the grid.
     expect(linked.map((item) => item.label)).toEqual([
       'Import…',
-      'New API…',
-      'New gRPC API…',
-      'New WebSocket API…',
-      'New MCP server…',
-      'New Webhook',
-      'New Sequence',
+      'New',
       'Run…',
       'Settings…',
       'Project environments (linked project)',
@@ -172,7 +174,7 @@ describe('explorerMenuItems', () => {
 
     expect(internal.every((group) => group.length > 0)).toBe(true);
     expect(internal.map((group) => group.map((i) => i.key))).toEqual([
-      ['import', 'new-api', 'new-grpc-api', 'new-ws-api', 'new-mcp-server', 'new-webhook', 'new-sequence'],
+      ['import', 'new'],
       ['runner'],
       ['settings'],
       ['reveal', 'export', 'export-postman', 'export-opencollection'],
@@ -442,16 +444,17 @@ describe('explorerMenuItems on a WebSocket row', () => {
 });
 
 describe('explorerMenuItems on a project’s webhook collection (openapi-webhooks-import §3.1)', () => {
-  it('offers New Webhook on a project', () => {
-    const labels = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' })).map(
-      (item) => item.label,
-    );
-    expect(labels.indexOf('New Webhook')).toBe(labels.indexOf('New MCP server…') + 1);
+  it('offers New Webhook… on a project, in its New submenu after New MCP server…', () => {
+    const creators = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' })).find(
+      (item) => item.key === 'new',
+    )?.children;
+    const labels = (creators ?? []).map((item) => item.label);
+    expect(labels.indexOf('New Webhook…')).toBe(labels.indexOf('New MCP server…') + 1);
   });
 
   it('offers the collection’s own operations', () => {
     const items = explorerMenuItems(node({ kind: 'webhook-collection', id: 'webhook-collection:p1', projectId: 'p1' }));
-    expect(items.map((item) => item.label)).toEqual(['New Webhook', 'New Folder', 'Settings…']);
+    expect(items.map((item) => item.label)).toEqual(['New Webhook…', 'New Folder', 'Settings…']);
   });
 
   it('offers folder and request operations on webhook items', () => {
@@ -459,7 +462,7 @@ describe('explorerMenuItems on a project’s webhook collection (openapi-webhook
       explorerMenuItems(node({ kind: 'webhook-folder', id: 'webhook-folder:f1', projectId: 'p1', folderId: 'f1' })).map(
         (item) => item.label,
       ),
-    ).toEqual(['New Webhook', 'New Folder', 'Settings…', 'Rename…', 'Auth…', 'Delete']);
+    ).toEqual(['New Webhook…', 'New Folder', 'Settings…', 'Rename…', 'Auth…', 'Delete']);
     expect(
       explorerMenuItems(
         node({ kind: 'webhook-request', id: 'webhook-request:r1', projectId: 'p1', requestId: 'r1' }),

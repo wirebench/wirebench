@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { StartPage, projectIsEmpty } from '../../src/renderer/features/explorer/start-page.js';
 import { explorerActions } from '../../src/renderer/features/explorer/explorer-actions.js';
+import { workspaceActions } from '../../src/renderer/features/workspace/workspace-actions.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
@@ -54,9 +55,9 @@ describe('StartPage', () => {
     const card = screen.getByTestId('start-empty-project');
     expect(card.textContent).toContain('Pets has no APIs yet.');
     const buttons = screen.getAllByRole('button').map((button) => button.textContent);
-    expect(buttons).toEqual(['New REST API', 'Import definition…', 'Import cURL…']);
+    expect(buttons).toEqual(['New REST API…', 'Import definition…', 'Import cURL…']);
 
-    fireEvent.click(screen.getByRole('button', { name: 'New REST API' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New REST API…' }));
     expect(newApi).toHaveBeenCalledWith('p1');
     fireEvent.click(screen.getByRole('button', { name: 'Import cURL…' }));
     expect(importCurl).toHaveBeenCalledWith('p1');
@@ -107,6 +108,17 @@ describe('StartPage', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('offers New project first, then Import…, in a workspace with no project, as the Explorer does (#686 E20)', () => {
+    const newProject = vi.spyOn(workspaceActions, 'newProject').mockImplementation(() => undefined);
+    openWorkspace([]);
+    render(<StartPage />);
+    const buttons = screen.getAllByRole('button').map((button) => button.textContent);
+    expect(buttons).toEqual(['New project', 'Import…', 'Switch workspace…']);
+    fireEvent.click(screen.getByRole('button', { name: 'New project' }));
+    expect(newProject).toHaveBeenCalled();
+    newProject.mockRestore();
   });
 });
 

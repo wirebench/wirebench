@@ -6,7 +6,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { setMonacoText } from '../helpers/editor.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace } from '../helpers/project.js';
-import { chooseContextMenuItem } from '../helpers/rest.js';
+import { chooseProjectCreator } from '../helpers/rest.js';
 
 /**
  * The stdio fixture server, from this file rather than the process's cwd: CI runs the specs with the
@@ -63,7 +63,7 @@ test.describe('MCP: a stdio server is approved, catalogued and called', () => {
 
     // --- New MCP server…: a local process, the fixture run by this Node ---------------------------
     const projectRow = page.getByTestId('explorer-project-row').first();
-    await chooseContextMenuItem(page, projectRow, 'New MCP server…');
+    await chooseProjectCreator(page, projectRow, 'New MCP server…');
     const dialog = page.getByTestId('new-mcp-server-dialog');
     await expect(dialog).toBeVisible({ timeout: 20_000 });
     await page.getByTestId('new-mcp-server-name').fill('Fixture');

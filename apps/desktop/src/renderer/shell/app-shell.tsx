@@ -117,6 +117,7 @@ import {
 import { rightPanelFor } from './right-panel.js';
 import { RightRail } from './right-rail.js';
 import { Sidebar } from './sidebar.js';
+import { panelDragStep } from './panel-drag.js';
 import { SlideOver } from './slide-over.js';
 import { StatusBar } from './status-bar.js';
 import { TitleBar } from './title-bar.js';
@@ -300,6 +301,8 @@ export function AppShell() {
   // and stops the small jitter inside a double-click from reopening what it just shut. Reset when
   // the gesture ends, so a drag that never reached the minimum does not carry into the next one.
   const sidebarReopenPx = useRef(0);
+  // How far the current drag has carried the open sidebar's edge past its minimum, in pixels.
+  const sidebarPastMinPx = useRef(0);
   const consoleReopenPx = useRef(0);
 
   const dragSidebar = useCallback((deltaPx: number) => {
@@ -319,13 +322,27 @@ export function AppShell() {
       }
       return;
     }
-    const next = store.sidebar.size + (deltaPx / width) * 100;
-    resizePercentPanel(next, SIDEBAR_MIN, SIDEBAR_MAX, store.collapseSidebar, store.setSidebarSize);
+    // Narrowing stops at the minimum; only a drag that carries on well past it collapses (E22).
+    const step = panelDragStep(
+      { size: store.sidebar.size, pastMinPx: sidebarPastMinPx.current },
+      deltaPx,
+      width,
+      SIDEBAR_MIN,
+      SIDEBAR_MAX,
+    );
+    if (step.kind === 'collapse') {
+      sidebarPastMinPx.current = 0;
+      store.collapseSidebar();
+    } else {
+      sidebarPastMinPx.current = step.pastMinPx;
+      store.setSidebarSize(step.size);
+    }
   }, []);
 
   // A gesture that ended without reopening the panel starts the next one from zero again.
   const endSidebarDrag = useCallback(() => {
     sidebarReopenPx.current = 0;
+    sidebarPastMinPx.current = 0;
   }, []);
 
   const endConsoleDrag = useCallback(() => {

@@ -111,9 +111,9 @@ describe('MCP rows in the explorer tree', () => {
 describe('MCP menus', () => {
   it('offers New MCP server… on a project, which opens the dialog with a free name', () => {
     useProjectStore.setState({ mcpServers: { s1: mcpServerWire({ id: 's1', name: 'MCP server 1' }) } });
-    const item = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' })).find(
-      (candidate) => candidate.key === 'new-mcp-server',
-    );
+    const item = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }))
+      .flatMap((candidate) => candidate.children ?? [])
+      .find((candidate) => candidate.key === 'new-mcp-server');
     expect(item?.label).toBe('New MCP server…');
     item?.run();
     expect(useNewMcpServerDialog.getState()).toMatchObject({ projectId: 'p1', suggestedName: 'MCP server 2' });

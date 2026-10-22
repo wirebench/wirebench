@@ -22,6 +22,7 @@ import {
 } from '../helpers/project.js';
 import {
   chooseContextMenuItem,
+  chooseProjectCreator,
   createApi,
   createRestRequest,
   nameNewRow,
@@ -89,7 +90,7 @@ test.describe('request assertions', () => {
     await createWorkspace(page, 'WS');
     await createProject(page, 'Feeds');
     const projectRow = page.getByTestId('explorer-project-row').first();
-    await chooseContextMenuItem(page, projectRow, 'New WebSocket API…');
+    await chooseProjectCreator(page, projectRow, 'New WebSocket API…');
     await expect(page.getByTestId('ws-api-tab')).toBeVisible({ timeout: 20_000 });
     const apiNameField = page.getByTestId('ws-api-name');
     await apiNameField.fill('Echo API');

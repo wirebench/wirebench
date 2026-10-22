@@ -97,6 +97,22 @@ function scheduleItems(entityId: string, linked = false): readonly ExplorerMenuI
 /** The kinds whose folders carry scripts (#334). */
 const SCRIPTED_FOLDER_KINDS: ReadonlySet<string> = new Set(['rest', 'grpc']);
 
+/**
+ * What a project's New submenu creates (#686 E18). Every one is named "New … " with an ellipsis,
+ * since each asks for more (a name typed inline, or a dialog), and a REST API is "New REST API…"
+ * here as on the Start page, beside its gRPC, WebSocket and MCP siblings.
+ */
+export function projectCreators(projectId: string): ExplorerMenuItem[] {
+  return [
+    { key: 'new-api', label: 'New REST API…', run: () => explorerActions.newApi(projectId) },
+    { key: 'new-grpc-api', label: 'New gRPC API…', run: () => explorerActions.newGrpcApi(projectId) },
+    { key: 'new-ws-api', label: 'New WebSocket API…', run: () => explorerActions.newWsApi(projectId) },
+    { key: 'new-mcp-server', label: 'New MCP server…', run: () => explorerActions.newMcpServer(projectId) },
+    { key: 'new-webhook', label: 'New Webhook…', run: () => explorerActions.newWebhook(projectId) },
+    { key: 'new-sequence', label: 'New Sequence…', run: () => explorerActions.newSequence(projectId) },
+  ];
+}
+
 function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
   // A node a protocol kind owns gets that kind's menu, and Run… when the kind names it a Runner target.
   const role = explorerRole(node.kind);
@@ -113,14 +129,14 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
     return groups(
       [
         { key: 'import', label: 'Import…', run: () => projectRowActions.importInto(projectId) },
-        // §3.1 puts _New API…_ on the project row: an API is created in a project, and this is the
-        // only row that names one.
-        { key: 'new-api', label: 'New API…', run: () => explorerActions.newApi(projectId) },
-        { key: 'new-grpc-api', label: 'New gRPC API…', run: () => explorerActions.newGrpcApi(projectId) },
-        { key: 'new-ws-api', label: 'New WebSocket API…', run: () => explorerActions.newWsApi(projectId) },
-        { key: 'new-mcp-server', label: 'New MCP server…', run: () => explorerActions.newMcpServer(projectId) },
-        { key: 'new-webhook', label: 'New Webhook', run: () => explorerActions.newWebhook(projectId) },
-        { key: 'new-sequence', label: 'New Sequence', run: () => explorerActions.newSequence(projectId) },
+        // §3.1 puts the creators on the project row: an API is created in a project, and this is the
+        // only row that names one. They sit under one New submenu, so the menu stays short (#686 E18).
+        {
+          key: 'new',
+          label: 'New',
+          run: () => undefined,
+          children: projectCreators(projectId),
+        },
       ],
       [runItem(projectId, node.label), ...scheduleItems(projectId, node.linked === true)],
       [
@@ -209,7 +225,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
     const projectId = node.projectId;
     return groups(
       [
-        { key: 'new-webhook', label: 'New Webhook', run: () => explorerActions.newWebhook(projectId) },
+        { key: 'new-webhook', label: 'New Webhook…', run: () => explorerActions.newWebhook(projectId) },
         { key: 'new-folder', label: 'New Folder', run: () => explorerActions.newWebhookFolder(projectId) },
       ],
       [{ key: 'settings', label: 'Settings…', run: () => explorerActions.openWebhookSettings(projectId) }],
@@ -221,7 +237,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
     const folderId = node.folderId;
     return groups(
       [
-        { key: 'new-webhook', label: 'New Webhook', run: () => explorerActions.newWebhook(projectId, folderId) },
+        { key: 'new-webhook', label: 'New Webhook…', run: () => explorerActions.newWebhook(projectId, folderId) },
         { key: 'new-folder', label: 'New Folder', run: () => explorerActions.newWebhookFolder(projectId, folderId) },
       ],
       [
@@ -246,7 +262,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
 
   if (node.kind === 'sequences' && node.projectId !== undefined) {
     const projectId = node.projectId;
-    return groups([{ key: 'new-sequence', label: 'New Sequence', run: () => explorerActions.newSequence(projectId) }]);
+    return groups([{ key: 'new-sequence', label: 'New Sequence…', run: () => explorerActions.newSequence(projectId) }]);
   }
 
   if ((node.kind === 'values' || node.kind === 'value') && node.projectId !== undefined) {

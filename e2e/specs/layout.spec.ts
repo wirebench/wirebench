@@ -53,6 +53,32 @@ test.describe('layout: collapsible, resizable panels', () => {
     await expectSidebarCollapsed(page);
   });
 
+  test('short drags narrow the sidebar to its minimum and stop there, without collapsing it (#686 E22)', async () => {
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+    await createWorkspace(page);
+    await expectSidebarVisible(page);
+
+    // Each drag is its own gesture, 24 px inward: never far enough past the minimum to collapse.
+    const widthNow = async (): Promise<number> => {
+      const measured = await sidebarWidth(page);
+      expect(measured).toBeDefined();
+      return measured ?? 0;
+    };
+    let width = await widthNow();
+    for (let step = 0; step < 20; step += 1) {
+      await dragHandle(page, 'panel-handle-sidebar', -24, 0);
+      await expectSidebarVisible(page);
+      const next = await widthNow();
+      if (next >= width) break;
+      width = next;
+    }
+    // It reached a floor and held it: one more short drag leaves the width as it is.
+    await dragHandle(page, 'panel-handle-sidebar', -24, 0);
+    await expectSidebarVisible(page);
+    expect(await widthNow()).toBeGreaterThanOrEqual(width - 1);
+  });
+
   test('a panel handle tints to the handle-hover colour under the pointer and relaxes when it leaves', async () => {
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;

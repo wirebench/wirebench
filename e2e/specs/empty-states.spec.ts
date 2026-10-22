@@ -25,7 +25,7 @@ test.describe('empty states', () => {
     const emptyProject = page.getByTestId('start-empty-project');
     await expect(emptyProject).toBeVisible({ timeout: 20_000 });
     await expect(emptyProject).toContainText('Pets has no APIs yet');
-    for (const name of ['New REST API', 'Import definition…', 'Import cURL…']) {
+    for (const name of ['New REST API…', 'Import definition…', 'Import cURL…']) {
       await expect(emptyProject.getByRole('button', { name, exact: true })).toBeVisible();
     }
 
@@ -38,7 +38,7 @@ test.describe('empty states', () => {
     await expect(page.getByTestId('api-row')).toHaveCount(0, { timeout: 20_000 });
     await expect(emptyProject).toBeVisible({ timeout: 20_000 });
 
-    await emptyProject.getByRole('button', { name: 'New REST API', exact: true }).click();
+    await emptyProject.getByRole('button', { name: 'New REST API…', exact: true }).click();
     await expect(page.getByTestId('api-tab')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('api-row')).toHaveCount(1, { timeout: 20_000 });
 

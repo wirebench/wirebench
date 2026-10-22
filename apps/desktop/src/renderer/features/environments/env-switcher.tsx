@@ -23,6 +23,12 @@ export const NO_ENVIRONMENT_LABEL = 'No environment';
  */
 export const NO_PROJECT_LABEL = 'No project';
 
+/**
+ * What the trigger reads while several projects are open and none is current yet (#686 E19, owner
+ * ruling 2026-10-22): the menu lists the projects, and the one picked becomes the current project.
+ */
+export const PICK_PROJECT_LABEL = 'Pick a project';
+
 /** Stable empty groups, so the switcher does not rerender while there is nothing to offer. */
 const NO_GROUPS: SwitcherGroups = { allProjects: [], project: [] };
 
@@ -73,8 +79,11 @@ export function EnvSwitcher() {
 
   const environments = [...groups.allProjects, ...groups.project];
   const active = environments.find((environment) => environment.id === activeId);
-  // With several projects and none focused yet there is no project for a pick to apply to.
-  const disabled = projectId === undefined;
+  // With several projects and none focused yet, the menu first asks which project (E19); with no
+  // project at all there is nothing for a pick to apply to.
+  const workspaceProjects = workspace?.projects ?? [];
+  const picking = projectId === undefined && workspaceProjects.length > 0;
+  const disabled = projectId === undefined && !picking;
   // An open request made while disabled is dropped, not kept: otherwise focusing a project tab
   // later would pop the menu open unasked (Radix resets it only on user interaction).
   useEffect(() => {
@@ -124,13 +133,27 @@ export function EnvSwitcher() {
           type="button"
           data-testid="env-switcher"
           disabled={disabled}
-          aria-label={projectName === undefined ? 'Active environment' : `Active environment for ${projectName}`}
-          title={disabled ? 'Open a request to choose its project\u2019s environment' : undefined}
+          aria-label={
+            picking
+              ? 'Active environment: pick a project'
+              : projectName === undefined
+                ? 'Active environment'
+                : `Active environment for ${projectName}`
+          }
+          title={
+            picking
+              ? 'Each project keeps its own environment: pick the project to choose one for'
+              : disabled
+                ? 'Open a request to choose its project\u2019s environment'
+                : undefined
+          }
           // `wb-no-drag`: the title bar drags the window, so every control on it has to opt out.
           className="wb-no-drag inline-flex h-row max-w-64 items-center gap-1.5 rounded-md border border-hairline bg-surface-raised px-2 text-xs text-fg-muted transition-colors hover:border-hairline-strong hover:text-fg-default disabled:cursor-default disabled:opacity-60 disabled:hover:border-hairline disabled:hover:text-fg-muted"
         >
           <Braces size={12} aria-hidden="true" className="shrink-0 text-fg-subtle" />
-          {disabled ? (
+          {picking ? (
+            <span className="min-w-0 truncate">{PICK_PROJECT_LABEL}</span>
+          ) : disabled ? (
             <span className="min-w-0 truncate">{NO_PROJECT_LABEL}</span>
           ) : (
             <>
@@ -155,36 +178,58 @@ export function EnvSwitcher() {
           sideOffset={4}
           className="z-dropdown min-w-48 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
         >
-          {group('All projects', groups.allProjects)}
-          {group(projectName ?? 'This project', groups.project)}
-          {environments.length > 0 && <DropdownMenu.Separator className="my-1 h-px bg-hairline" />}
-          <DropdownMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
-              select(null);
-            }}
-          >
-            <Check
-              size={12}
-              aria-hidden="true"
-              className={activeId === undefined ? 'text-accent' : 'text-transparent'}
-            />
-            {NO_ENVIRONMENT_LABEL}
-          </DropdownMenu.Item>
-          <DropdownMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
-              showSidebarView('environments');
-              // Also opens the active environment's editor tab, when there is one — the sidebar
-              // list alone does not show its contents.
-              const target = activeId ?? environments[0]?.id;
-              if (target !== undefined) {
-                openEnvironmentTab({ kind: 'environment', id: target });
-              }
-            }}
-          >
-            Manage environments…
-          </DropdownMenu.Item>
+          {picking ? (
+            <DropdownMenu.Group>
+              <DropdownMenu.Label className={GROUP_LABEL_CLASS}>{PICK_PROJECT_LABEL}</DropdownMenu.Label>
+              {workspaceProjects.map((project) => (
+                <DropdownMenu.Item
+                  key={project.id}
+                  data-testid="env-switcher-pick-project"
+                  className={ITEM_CLASS}
+                  onSelect={(event) => {
+                    // The menu stays open and turns into the picked project's environments.
+                    event.preventDefault();
+                    useWorkspaceStore.setState({ lastProjectId: project.id });
+                  }}
+                >
+                  {project.name}
+                </DropdownMenu.Item>
+              ))}
+            </DropdownMenu.Group>
+          ) : (
+            <>
+              {group('All projects', groups.allProjects)}
+              {group(projectName ?? 'This project', groups.project)}
+              {environments.length > 0 && <DropdownMenu.Separator className="my-1 h-px bg-hairline" />}
+              <DropdownMenu.Item
+                className={ITEM_CLASS}
+                onSelect={() => {
+                  select(null);
+                }}
+              >
+                <Check
+                  size={12}
+                  aria-hidden="true"
+                  className={activeId === undefined ? 'text-accent' : 'text-transparent'}
+                />
+                {NO_ENVIRONMENT_LABEL}
+              </DropdownMenu.Item>
+              <DropdownMenu.Item
+                className={ITEM_CLASS}
+                onSelect={() => {
+                  showSidebarView('environments');
+                  // Also opens the active environment's editor tab, when there is one — the sidebar
+                  // list alone does not show its contents.
+                  const target = activeId ?? environments[0]?.id;
+                  if (target !== undefined) {
+                    openEnvironmentTab({ kind: 'environment', id: target });
+                  }
+                }}
+              >
+                Manage environments…
+              </DropdownMenu.Item>
+            </>
+          )}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
