@@ -142,6 +142,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
+  shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
+  the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.
+  There is no **Retry** for an error that cannot change on its own (the same for an unclosed `${` or a
+  URL that is not one), and the code and the engine's message sit behind **Details**. Like a refused
+  connection or a timeout, it is no longer counted as a problem, so the status bar stays calm.
 - **Explorer, after a daily-use review (#685).** A SOAP operation with no request is a leaf, and a click on
   it creates the first request; **Expand all** unfolds down to the operations and Endpoints and leaves
   those folded, so a tree of many operations stays readable. A failed import names the HTTP status and

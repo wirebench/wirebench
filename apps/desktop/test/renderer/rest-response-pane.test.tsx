@@ -145,9 +145,73 @@ describe('RestResponsePane', () => {
     expect(screen.queryByText('Send the request to see its response.')).toBeNull();
     expect(screen.getByTestId('send-error-message').textContent).toBe('not found');
     expect(screen.getByTestId('send-error-hint').textContent).toContain('did not resolve');
+    // The code is kept for bug reports, behind Details (#747).
     expect(screen.getByTestId('send-error-code').textContent).toBe('dns');
+    expect(screen.getByTestId('send-error-details').querySelector('summary')?.textContent).toBe('Details');
     // No Retry without someone to send it.
     expect(screen.queryByTestId('send-error-retry')).toBeNull();
+  });
+
+  it('names a missing variable in one sentence, with no repeat, no code and no Retry (#747)', () => {
+    const onRetry = vi.fn();
+    const onRevealReference = vi.fn();
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{
+            status: 'error',
+            sendId: 's1',
+            error: {
+              code: 'rest-unresolved-properties',
+              message: '"/pets" has property references nothing resolves: ${host}',
+              details: { path: '/pets', unresolved: ['${host}'] },
+            },
+          }}
+          onRetry={onRetry}
+          onRevealReference={onRevealReference}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByTestId('send-error-title').textContent).toBe('Unresolved variables');
+    // The engine's sentence is not repeated under the heading…
+    expect(screen.queryByTestId('send-error-message')).toBeNull();
+    // …the hint is one plain sentence that names the variable, as a link to its field…
+    expect(screen.getByTestId('send-error-unresolved').textContent).toBe(
+      '${host} has no value in the active environment. Define it there, or pick an environment that does.',
+    );
+    fireEvent.click(screen.getByTestId('send-error-reference'));
+    expect(onRevealReference).toHaveBeenCalledWith('${host}');
+    // …a Retry would fail the same way, so there is none even with a sender…
+    expect(screen.queryByTestId('send-error-retry')).toBeNull();
+    // …and the code and raw message sit behind Details, not in the explanation.
+    const details = screen.getByTestId('send-error-details');
+    expect(details.tagName).toBe('DETAILS');
+    expect(details.hasAttribute('open')).toBe(false);
+    expect(screen.getByTestId('send-error-code').textContent).toBe('rest-unresolved-properties');
+    expect(screen.getByTestId('send-error-raw').textContent).toContain('nothing resolves');
+  });
+
+  it('joins several missing variables into one sentence (#747)', () => {
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{
+            status: 'error',
+            sendId: 's1',
+            error: {
+              code: 'rest-unresolved-properties',
+              message: 'x',
+              details: { unresolved: ['${a}', '${b}', '${c}'] },
+            },
+          }}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByTestId('send-error-unresolved').textContent).toBe(
+      '${a}, ${b} and ${c} have no value in the active environment. Define them there, or pick an environment that does.',
+    );
   });
 
   it('names the host and port refused, and says "Connection refused" once in the panel', () => {

@@ -244,9 +244,18 @@ test.describe('REST: make an API, send a request, read the response', () => {
     await sendRest(page);
 
     await expect(responseStatus(page)).toContainText('Unresolved variables');
-    // The panel names the reference and keeps the code, small, under it.
+    // One heading, then one sentence naming the reference as a link (#747): no repeat of the engine's
+    // message, no Retry that would fail the same way, and the code only behind Details.
+    await expect(page.getByTestId('send-error-title')).toHaveText('Unresolved variables');
+    await expect(page.getByTestId('send-error-message')).toHaveCount(0);
+    await expect(page.getByTestId('send-error-unresolved')).toContainText('has no value in the active environment');
     await expect(page.getByTestId('send-error-reference')).toHaveText('${#Env#missing}');
+    await expect(page.getByTestId('send-error-retry')).toHaveCount(0);
+    await expect(page.getByTestId('send-error-code')).not.toBeVisible();
+    await page.getByTestId('send-error-details').locator('summary').click();
     await expect(page.getByTestId('send-error-code')).toHaveText('rest-unresolved-properties');
+    // Like a transport failure, it is not a Problem: the count stays at zero.
+    await expect(page.getByTestId('status-bar-problems')).toHaveText('0 problems');
     // And nothing reached the server.
     expect(server.requests.filter((request) => request.url.startsWith('/pet'))).toHaveLength(0);
   });
