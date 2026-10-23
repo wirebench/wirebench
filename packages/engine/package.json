@@ -55,6 +55,10 @@
       "./detect": {
         "types": "./dist/import-detect.d.ts",
         "default": "./dist/import-detect.js"
+      },
+      "./plugin": {
+        "types": "./dist/plugin.d.ts",
+        "default": "./dist/plugin.js"
       }
     },
     "imports": {
@@ -112,6 +116,11 @@
       "development": "./src/import-detect.ts",
       "types": "./dist/import-detect.d.ts",
       "default": "./dist/import-detect.js"
+    },
+    "./plugin": {
+      "development": "./src/plugin.ts",
+      "types": "./dist/plugin.d.ts",
+      "default": "./dist/plugin.js"
     },
     "./test-helpers": "./test/helpers/index.ts"
   },

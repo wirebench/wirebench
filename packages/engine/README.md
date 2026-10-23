@@ -2,6 +2,15 @@
 
 `@wirebench/engine` is an internal dependency of [`@wirebench/cli`](https://github.com/wirebench/wirebench/tree/main/packages/cli) and is published so the CLI can depend on a versioned package rather than a workspace link. It has no stability promise of its own: a major release may rename or remove exports, as 3.1 did, and the exports tagged `@internal` may change in any release. See the [Wirebench repository](https://github.com/wirebench/wirebench) for usage, documentation, and issue tracking.
 
+## The plugin API
+
+`@wirebench/engine/plugin` is the exception to "no stability promise": it holds the types a plugin
+author builds against (an importer, a reporter, a code generator, the `wirebench-plugin.json`
+manifest), imports nothing, and is versioned on its own by `PLUGIN_API_VERSION`. Its surface is the
+committed report [`api/plugin.api.md`](api/plugin.api.md); `pnpm check:plugin-api` refuses a change to
+it that does not bump the version (minor to add, major to break). How a plugin is installed and what it
+may do is [ADR-0031](https://github.com/wirebench/wirebench/blob/main/docs/adr/0031-a-plugin-is-installed-by-the-user-and-runs-with-what-its-manifest-declares.md).
+
 ## Packages
 
 The engine is eight workspace packages, and this is the one that publishes. `@wirebench/core` holds the

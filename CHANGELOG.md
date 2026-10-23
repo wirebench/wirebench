@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **`@wirebench/engine/plugin`, the plugin API's types (#765).** A types-only subpath for writing an
+  importer, a reporter or a code generator, with the `wirebench-plugin.json` manifest. It is versioned
+  on its own (`PLUGIN_API_VERSION` 1.0.0) and its surface is a committed report a check compares, so a
+  change to it is a reviewed, versioned change. Loading plugins comes next.
+
 ### Changed
 - **`wirebench import` refuses every format whose protocol is off (#765).** An Insomnia, Hoppscotch,
   Thunder Client or Bruno export and a folder collection are refused with `feature-disabled` when REST
