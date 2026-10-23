@@ -8,6 +8,7 @@ import type { CodeOptions, CodeRequest, GeneratedCode } from '../http/codegen/in
 import { featureDisabled } from '../protocol/registry.js';
 import type { FeatureSet } from '../protocol/features.js';
 import type { RunResult } from '../run/run.js';
+import type { PluginImportData } from './plugin/results.js';
 
 /** Where a contribution comes from: Wirebench itself, or a plugin the user installed. */
 export type ContributionOrigin = { readonly kind: 'builtin' } | { readonly kind: 'plugin'; readonly plugin: string };
@@ -33,12 +34,15 @@ export type ImportConfidence = 'definite' | 'probable';
 
 /**
  * An import format. A built-in's detection and placement stay where they are (`import-detect.ts`
- * and each host's import code); a plugin's entry brings its own `detect`.
+ * and each host's import code); a plugin's entry brings its own `detect` and `import`, both of
+ * which run in the plugin sandbox.
  */
 export interface ImporterContribution extends ContributionBase {
   /** The file extensions the format is read from, for a host's file picker. */
   readonly extensions?: readonly string[];
-  detect?(source: ImportDetectSource): ImportConfidence | null;
+  detect?(source: ImportDetectSource): Promise<ImportConfidence | null>;
+  /** @throws WirebenchError `plugin-error` */
+  import?(source: ImportDetectSource): Promise<PluginImportData>;
 }
 
 /** What a reporter is told about the tool that ran: the JSON report's `tool` field. */
@@ -51,7 +55,8 @@ export interface ReportTool {
 export interface ReporterContribution extends ContributionBase {
   /** The file extension a report usually takes, with its dot. */
   readonly extension: string;
-  render(result: RunResult, tool: ReportTool): string;
+  /** @throws WirebenchError `plugin-error` for a plugin's reporter */
+  render(result: RunResult, tool: ReportTool): string | Promise<string>;
 }
 
 /** A code generator: one resolved request in, one snippet out. */
@@ -60,7 +65,8 @@ export interface CodeGeneratorContribution extends ContributionBase {
   readonly language: string;
   /** The indent the language uses when the user chose none. */
   readonly indent: number | 'tab';
-  generate(request: CodeRequest, options?: CodeOptions): GeneratedCode;
+  /** @throws WirebenchError `plugin-error` for a plugin's generator */
+  generate(request: CodeRequest, options?: CodeOptions): GeneratedCode | Promise<GeneratedCode>;
 }
 
 /**

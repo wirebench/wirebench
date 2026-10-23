@@ -63,8 +63,8 @@ function cliTool(): { readonly name: string; readonly version: string } {
 /** A file reporter's `onRunDone` renders once the whole result is in, then writes it — the path
  * resolves against the process's working directory (Node's own default for a relative path),
  * never against the project directory. */
-function createFileReporter(file: string, render: (result: RunResult) => string): Reporter {
-  return { onRunDone: (result) => writeReport(file, render(result)) };
+function createFileReporter(file: string, render: (result: RunResult) => string | Promise<string>): Reporter {
+  return { onRunDone: async (result) => writeReport(file, await render(result)) };
 }
 
 /** A workspace where a project was expected: name the projects instead of guessing which one. */

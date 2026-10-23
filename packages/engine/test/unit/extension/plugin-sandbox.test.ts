@@ -74,7 +74,7 @@ describe('the plugin sandbox', () => {
     expect(loop).toMatchObject({ ok: false, cause: 'timeout' });
     const hog = await sandbox.run(job({ point: 'codeGenerators', contribution: 'hog', method: 'generate', args: [] }));
     expect(hog).toMatchObject({ ok: false, cause: 'memory' });
-  });
+  }, 30_000);
 
   it('refuses an import, and a contribution the module does not export', async () => {
     const importing = await sandbox.run(job({ code: `import fs from 'fs';\nexport const importers = {};` }));

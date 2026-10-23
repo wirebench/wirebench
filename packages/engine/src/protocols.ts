@@ -17,6 +17,7 @@ import { restProtocol } from '#protocol-rest/rest/module';
 import { soapProtocol } from '#protocol-soap/soap/module';
 import { wsProtocol } from '#protocol-ws/ws/module';
 import { builtinExtensions } from './extensions.js';
+import { PLUGINS_FEATURE } from './plugins.js';
 
 // The declarations of @wirebench/engine reach every file that fills the unions (package split spec
 // §3.4) only through these re-exports: a value import of a module leaves no trace in a `.d.ts`, and a
@@ -79,6 +80,8 @@ export const BUILTIN_FEATURES: readonly FeatureDescriptor[] = [
   { id: 'server-sync', title: 'Shared workspaces', default: true, stage: 'stable', requires: [] },
   { id: 'team-secrets', title: 'Team secrets', default: true, stage: 'stable', requires: ['server-sync'] },
   { id: 'mcp-server', title: 'MCP server', default: true, stage: 'stable', requires: [] },
+  // Every installed plugin's own switch needs this one (ADR-0031): a policy can keep all of them out.
+  PLUGINS_FEATURE,
 ];
 
 /** Every built-in descriptor: the protocols' own, then {@link BUILTIN_FEATURES}. */
@@ -95,9 +98,11 @@ export function builtinDescriptors(): readonly FeatureDescriptor[] {
 export function createBuiltinRegistry(
   switches?: Readonly<Record<string, boolean>>,
   extensions?: ExtensionContributions,
+  /** Descriptors a host adds: each installed plugin's `plugin:<id>` (`PluginHost.features`). */
+  features: readonly FeatureDescriptor[] = [],
 ): ProtocolRegistry {
   return createProtocolRegistry(BUILTIN_PROTOCOLS, {
-    features: BUILTIN_FEATURES,
+    features: [...BUILTIN_FEATURES, ...features],
     extensions: builtinExtensions(extensions),
     ...(switches !== undefined ? { switches } : {}),
   });
