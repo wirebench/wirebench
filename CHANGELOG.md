@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [6.1.0] - 2026-10-23
+
 ### Added
 - **`@wirebench/engine/plugin`, the plugin API's types (#765).** A types-only subpath for writing an
   importer, a reporter or a code generator, with the `wirebench-plugin.json` manifest. It is versioned
@@ -25,17 +27,6 @@ All notable changes to this project are documented here. The format follows
   for all of them and one per plugin, which a team policy can turn off. No plugin code runs in the
   window; a new **Plugins** guide covers installing and writing one.
 
-### Changed
-- **`wirebench import` refuses every format whose protocol is off (#765).** An Insomnia, Hoppscotch,
-  Thunder Client or Bruno export and a folder collection are refused with `feature-disabled` when REST
-  is off, as a WSDL was with SOAP off and an OpenAPI document with REST off; the app's Import dialog
-  already left those formats out. `--reporter` ids are now looked up in one registry of importers,
-  reporters and code generators, the groundwork for plugins (ADR-0031); the ids and the files they
-  write are unchanged.
-
-## [6.1.0] - 2026-10-23
-
-### Added
 - **An organisation can switch a desktop area off (#360).** The managed `policy.yaml` takes an `areas`
   section (`ssh: false`, or `local-terminal`, `telnet`, `serial` on their own) that removes the area's
   activity-bar item, commands, views, tabs and IPC channels on that machine and wins over
@@ -626,6 +617,13 @@ All notable changes to this project are documented here. The format follows
   #77).
 
 ### Changed
+- **`wirebench import` refuses every format whose protocol is off (#765).** An Insomnia, Hoppscotch,
+  Thunder Client or Bruno export and a folder collection are refused with `feature-disabled` when REST
+  is off, as a WSDL was with SOAP off and an OpenAPI document with REST off; the app's Import dialog
+  already left those formats out. `--reporter` ids are now looked up in one registry of importers,
+  reporters and code generators, the groundwork for plugins (ADR-0031); the ids and the files they
+  write are unchanged.
+
 - **Wirebench Server is under the Elastic License 2.0.** The server package, `packages/server`, moves from
   Apache-2.0 to the Elastic License 2.0: free to run for your own company and to modify, not to offer to
   third parties as a hosted or managed service, and not to run with the license file check circumvented.
@@ -2556,8 +2554,8 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v6.1.0-rc.6...HEAD
-[6.1.0]: https://github.com/wirebench/wirebench/compare/v6.0.0-rc.1...v6.1.0-rc.6
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v6.1.0-rc.7...HEAD
+[6.1.0]: https://github.com/wirebench/wirebench/compare/v6.0.0-rc.1...v6.1.0-rc.7
 [6.0.0]: https://github.com/wirebench/wirebench/compare/v5.0.0...v6.0.0
 [5.0.0]: https://github.com/wirebench/wirebench/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/wirebench/wirebench/compare/v3.1.0...v4.0.0
