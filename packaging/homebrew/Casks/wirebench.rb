@@ -1,9 +1,9 @@
 cask "wirebench" do
   arch arm: "arm64", intel: "x64"
 
-  version "5.0.0"
-  sha256 arm:   "6713097c7eb862a11c282c499000afcb4f611cf9bdbe2838038de1fcf50821a7",
-         intel: "74bc30e317452f3737735d7d7feb4008b851ba405a52d3f7eb083e127707f480"
+  version "6.1.0"
+  sha256 arm:   "7302350a9672ce3c67bf2ad4274bc043d3da077d813a7e1ea1ee01d2eefc4e61",
+         intel: "0c35f36f9c44e75b2e64e2dce54f72fdfad83bc27d58ded8e3eb7957f95e87fa"
 
   url "https://github.com/wirebench/wirebench/releases/download/v#{version}/Wirebench-#{version}-mac-#{arch}.dmg"
   name "Wirebench"
