@@ -21,6 +21,7 @@ export type SettingsSectionId =
   | 'appearance'
   | 'behaviour'
   | 'features'
+  | 'plugins'
   | 'shortcuts'
   | 'updates'
   | 'http'
@@ -120,6 +121,15 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         keys: stored('features'),
         searchable: true,
         keywords: ['switch', 'protocol', 'experimental', 'policy', 'grpc', 'soap', 'rest', 'websocket', 'scripts'],
+      },
+      {
+        id: 'plugins',
+        label: 'Plugins',
+        subtitle: 'Importers, reporters and code generators you installed.',
+        // The plugins live in their own folder, not in the preferences file.
+        keys: { kind: 'none' },
+        searchable: true,
+        keywords: ['plugin', 'extension', 'importer', 'reporter', 'code generator', 'install'],
       },
       {
         id: 'shortcuts',

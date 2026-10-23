@@ -10,6 +10,8 @@ const GROUPS: readonly { readonly title: string; readonly ids: readonly string[]
   { title: 'Protocols', ids: ['soap', 'rest', 'graphql', 'grpc', 'websocket', 'mcp'] },
   { title: 'Automation', ids: ['scripts', 'sequences', 'webhooks'] },
   { title: 'Team', ids: ['server-sync', 'team-secrets', 'mcp-server'] },
+  // Each installed plugin's `plugin:<id>` joins this group after the switch that covers them all.
+  { title: 'Plugins', ids: ['plugins'] },
 ];
 
 /** The rows as main resolved them for the open workspace; `undefined` until it answered. */
@@ -44,6 +46,12 @@ function groupsOf(
       return [state];
     }),
   }));
+  const plugins = groups.find((group) => group.title === 'Plugins');
+  for (const state of states) {
+    if (!state.id.startsWith('plugin:') || placed.has(state.id)) continue;
+    plugins?.rows.push(state);
+    placed.add(state.id);
+  }
   const other = states.filter((state) => !placed.has(state.id));
   return [...groups, ...(other.length > 0 ? [{ title: 'Other', rows: other }] : [])].filter(
     (group) => group.rows.length > 0,

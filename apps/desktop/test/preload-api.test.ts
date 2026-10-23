@@ -73,6 +73,7 @@ describe('buildApi', () => {
       'oauth2',
       'on',
       'pathForFile',
+      'plugins',
       'preferences',
       'project',
       'provisioning',

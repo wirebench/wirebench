@@ -17,6 +17,7 @@ import {
   resolveFeatures,
   type FeatureState,
   type FsLike,
+  type PluginHost,
   type Preferences,
   type ProtocolRegistry,
 } from '@wirebench/engine';
@@ -47,9 +48,15 @@ export function featureSwitchesFromEnv(env: NodeJS.ProcessEnv): Readonly<Record<
   return parseAreaSwitches(env['WIREBENCH_FEATURES']);
 }
 
-function resolve(preference: Readonly<Record<string, boolean>>, policy: readonly string[]): ResolvedFeatures {
-  const { switches, states } = resolveFeatures(builtinDescriptors(), { preference, policy });
-  const registry = createBuiltinRegistry(switches);
+function resolve(
+  preference: Readonly<Record<string, boolean>>,
+  policy: readonly string[],
+  plugins: PluginHost | undefined,
+): ResolvedFeatures {
+  // A plugin's switch is resolved like a built-in's, so a team policy can name it (ADR-0031).
+  const descriptors = [...builtinDescriptors(), ...(plugins?.features ?? [])];
+  const { switches, states } = resolveFeatures(descriptors, { preference, policy });
+  const registry = createBuiltinRegistry(switches, plugins?.contributions, plugins?.features ?? []);
   return {
     registry,
     states,
@@ -66,11 +73,13 @@ export function startupFeatures(input: {
   readonly preferences: Pick<Preferences, 'features'>;
   readonly env?: NodeJS.ProcessEnv;
   readonly isPackaged: boolean;
+  /** The plugins loaded at start-up (`main/plugins/desktop-plugins.ts`); absent, none. */
+  readonly plugins?: PluginHost;
 }): FeaturesRun {
   const preference: Readonly<Record<string, boolean>> = input.isPackaged
     ? input.preferences.features
     : { ...input.preferences.features, ...featureSwitchesFromEnv(input.env ?? {}) };
-  const machine = resolve(preference, []);
+  const machine = resolve(preference, [], input.plugins);
   const byPolicy = new Map<string, ResolvedFeatures>();
   return {
     ...machine,
@@ -80,7 +89,7 @@ export function startupFeatures(input: {
       const key = [...new Set(disabled)].sort().join(',');
       let found = byPolicy.get(key);
       if (found === undefined) {
-        found = resolve(preference, disabled);
+        found = resolve(preference, disabled, input.plugins);
         byPolicy.set(key, found);
       }
       return found;

@@ -1345,6 +1345,14 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   );
 
   registerHandler(channels.request.curl, (request) => curl(service, deps, sendDeps, request));
+  registerHandler(channels.request.codeTargets, () => {
+    const extensions = deps.extensions?.() ?? createBuiltinRegistry().extensions;
+    // The built-in languages are the renderer's own list; only a plugin's generators are new to it.
+    const targets = extensions.codeGenerators
+      .filter((generator) => generator.origin.kind === 'plugin')
+      .map((generator) => ({ id: generator.id, label: generator.title, language: generator.language }));
+    return Promise.resolve({ targets });
+  });
   registerHandler(channels.request.code, (request) => code(deps, sendDeps, request));
 
   registerHandler(channels.request.variables, (request) => variablesFor(deps, request.requestId));

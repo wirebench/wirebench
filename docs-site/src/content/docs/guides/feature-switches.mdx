@@ -16,6 +16,7 @@ read in one place, the engine refuses the feature, and nothing in any project fi
 | Protocols | SOAP, REST, GraphQL, gRPC, WebSocket, MCP requests | GraphQL and MCP requests are experimental and carry a badge; GraphQL needs REST |
 | Automation | Scripts, Sequences, Webhooks | Webhooks need REST: with REST off they are off too |
 | Team | Shared workspaces, Team secrets, MCP server | Team secrets need Shared workspaces; the MCP server is `wirebench mcp` |
+| Plugins | Plugins, and one switch per installed plugin | Each plugin needs Plugins; see [Plugins](/wirebench/docs/guides/plugins/) |
 
 A switch that is **off** means the feature is registered but not activated:
 

@@ -17,6 +17,13 @@ All notable changes to this project are documented here. The format follows
   built-in format claims to the plugin importers. Plugins run in the script sandbox; only an importer
   may fetch, from the origins its manifest lists, through the engine's network path. `--no-plugins`,
   `WIREBENCH_PLUGINS=off` and the `plugins` / `plugin:<id>` switches turn them off (ADR-0031).
+- **Plugins in the app (#765).** **Settings → Plugins** lists the plugins installed for you, with what
+  each contributes and which origins it may reach, and installs one from a folder or a `.tgz` after
+  showing that, or removes one; either applies at the next start. A plugin's importer is offered by the
+  Import dialog for a file no built-in format claims, and its code generators join the Code panel's
+  languages, each marked _(plugin)_. **Settings → Features** has a **Plugins** group with the switch
+  for all of them and one per plugin, which a team policy can turn off. No plugin code runs in the
+  window; a new **Plugins** guide covers installing and writing one.
 
 ### Changed
 - **`wirebench import` refuses every format whose protocol is off (#765).** An Insomnia, Hoppscotch,

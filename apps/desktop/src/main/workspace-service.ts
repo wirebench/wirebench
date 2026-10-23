@@ -73,8 +73,9 @@ import {
   WORKSPACES_DIR,
   writeFileAtomic,
   wsApisOf,
+  createBuiltinRegistry,
 } from '@wirebench/engine';
-import type { ProtocolRegistry } from '@wirebench/engine';
+import type { ExtensionRegistry, ProtocolRegistry } from '@wirebench/engine';
 import type {
   FeatureState,
   CollectionExportFormat,
@@ -3613,6 +3614,14 @@ export class WorkspaceService implements ProjectRouter {
   enabledFeatures(): readonly string[] {
     const resolved = this.resolvedFeatures(this.current);
     return resolved.enabledFeatures ?? resolved.states?.filter((state) => state.enabled).map((state) => state.id) ?? [];
+  }
+
+  /**
+   * The importers, reporters and code generators the open workspace has on: this run's, plugins
+   * included, under its team policy (ADR-0031); the built-ins when this run has no registry.
+   */
+  extensions(): ExtensionRegistry {
+    return this.resolvedFeatures(this.current).registry?.extensions ?? createBuiltinRegistry().extensions;
   }
 
   /** Every feature switch as resolved for the open workspace, with its team policy when it has one (`app.features`). */

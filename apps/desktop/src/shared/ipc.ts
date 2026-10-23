@@ -407,6 +407,7 @@ import {
 import {
   apiImportClientEnvironmentsRequestSchema,
   apiImportClientRequestSchema,
+  apiImportPluginRequestSchema,
   apiImportClientResponseSchema,
   apiImportOpenCollectionRequestSchema,
   apiImportOpenCollectionResponseSchema,
@@ -474,6 +475,16 @@ import {
 } from './schedules-wire.js';
 import { apiImportPostmanVariablesResponseSchema } from './kinds/rest/wire.js';
 import { soapChannels } from './kinds/soap/channels.js';
+import {
+  apiDetectPluginImportRequestSchema,
+  apiDetectPluginImportResponseSchema,
+  pluginsInstallRequestSchema,
+  pluginsListResponseSchema,
+  pluginsRemoveRequestSchema,
+  pluginsStageRequestSchema,
+  pluginsStageResponseSchema,
+  requestCodeTargetsResponseSchema,
+} from './plugins-wire.js';
 import { restChannels, restEvents } from './kinds/rest/channels.js';
 import { graphqlChannels } from './kinds/graphql/channels.js';
 import { grpcChannels, grpcEvents } from './kinds/grpc/channels.js';
@@ -594,6 +605,8 @@ export const channels = {
      */
     variables: defineChannel('request.variables', requestVariablesRequestSchema, requestVariablesResponseSchema),
     code: defineChannel('request.code', requestCodeRequestSchema, requestCurlResponseSchema),
+    /** The plugin code generators this run has on (phase 7 §9); the built-in languages are the renderer's own list. */
+    codeTargets: defineChannel('request.codeTargets', z.undefined(), requestCodeTargetsResponseSchema),
     ...soapChannels.request,
     ...restChannels.request,
     ...graphqlChannels.request,
@@ -809,6 +822,14 @@ export const channels = {
       apiImportClientRequestSchema,
       apiImportClientResponseSchema,
     ),
+    /** Pasted or dropped text no built-in format claims, offered to the plugin importers (phase 7 §3.1). */
+    detectPluginImport: defineChannel(
+      'api.detectPluginImport',
+      apiDetectPluginImportRequestSchema,
+      apiDetectPluginImportResponseSchema,
+    ),
+    /** A file or text through a plugin's importer, placed as another client's export is. */
+    importPlugin: defineChannel('api.importPlugin', apiImportPluginRequestSchema, apiImportClientResponseSchema),
     importClientEnvironments: defineChannel(
       'api.importClientEnvironments',
       apiImportClientEnvironmentsRequestSchema,
@@ -969,6 +990,14 @@ export const channels = {
   theme: {
     /** The OS colour scheme right now; the renderer asks once at startup, then listens. */
     get: defineChannel('theme.get', z.undefined(), themeGetResponseSchema),
+  },
+  /** Settings → Plugins (phase 7 §9, ADR-0031): what is installed, and installing and removing one. */
+  plugins: {
+    list: defineChannel('plugins.list', z.undefined(), pluginsListResponseSchema),
+    /** Reads the plugin at a path the person just picked, without writing anything. */
+    stage: defineChannel('plugins.stage', pluginsStageRequestSchema, pluginsStageResponseSchema),
+    install: defineChannel('plugins.install', pluginsInstallRequestSchema, z.object({ id: z.string() })),
+    remove: defineChannel('plugins.remove', pluginsRemoveRequestSchema, z.object({})),
   },
   dialogs: {
     openFile: defineChannel('dialogs.openFile', dialogsOpenFileRequestSchema, dialogsOpenFileResponseSchema),
