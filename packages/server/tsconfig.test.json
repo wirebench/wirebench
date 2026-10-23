@@ -25,6 +25,7 @@
     "../../apps/desktop/src/shared/wire-base.ts",
     "../../apps/desktop/src/shared/kinds/*/wire.ts",
     "../../apps/desktop/src/shared/code-targets.ts",
+    "../../apps/desktop/src/shared/plugins-wire.ts",
     "../../apps/desktop/src/shared/multi-env-limits.ts",
     "../../apps/desktop/src/shared/environment-colors.ts",
     "../../apps/desktop/src/shared/jwt-algorithms.ts"

@@ -10,6 +10,7 @@
 
 import { z } from 'zod';
 import { CODE_TARGET_IDS } from './code-targets.js';
+import { PLUGIN_CONTRIBUTION_ID } from './plugins-wire.js';
 import { MAX_SEND_ENVIRONMENTS } from './multi-env-limits.js';
 import {
   authConfigWireSchema,
@@ -220,7 +221,8 @@ export const codeSettingsSchema = z.object({
  */
 export const requestCodeRequestSchema = z.object({
   requestId: z.string(),
-  target: z.enum(CODE_TARGET_IDS),
+  // A built-in language, or a plugin's generator, `<plugin>/<generator>` (phase 7 §3.3).
+  target: z.union([z.enum(CODE_TARGET_IDS), z.string().regex(PLUGIN_CONTRIBUTION_ID)]),
   settings: codeSettingsSchema.optional(),
   draft: restRequestPatchSchema.optional(),
 });
@@ -1035,6 +1037,12 @@ export const apiImportClientRequestSchema = z.object({
   name: z.string().max(200).optional(),
 });
 export type ApiImportClientRequest = z.infer<typeof apiImportClientRequestSchema>;
+
+/** `api.importPlugin`: a file or text through a plugin's importer, placed as a client export is. */
+export const apiImportPluginRequestSchema = apiImportClientRequestSchema.extend({
+  importer: z.string().regex(PLUGIN_CONTRIBUTION_ID),
+});
+export type ApiImportPluginRequest = z.infer<typeof apiImportPluginRequestSchema>;
 
 const apiImportClientResponseObject = z.object({
   projectId: z.string(),

@@ -23,6 +23,7 @@ import {
   SquareTerminal,
   Waypoints,
   type LucideIcon,
+  Puzzle,
 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import {
@@ -46,6 +47,7 @@ import { WsdlSection } from './sections/wsdl-section.js';
 import { AppearanceSection } from './sections/appearance-section.js';
 import { BehaviourSection } from './sections/behaviour-section.js';
 import { FeaturesSection } from './sections/features-section.js';
+import { PluginsSection } from './sections/plugins-section.js';
 import { UpdatesSection } from './sections/updates-section.js';
 import { AccountsSection } from './sections/accounts-section.js';
 import { SecretsSection } from './sections/secrets-section.js';
@@ -73,6 +75,7 @@ const ICONS: Readonly<Record<SettingsSectionId, LucideIcon>> = {
   appearance: Palette,
   behaviour: SlidersHorizontal,
   features: ToggleRight,
+  plugins: Puzzle,
   shortcuts: Keyboard,
   updates: RefreshCw,
   http: ArrowLeftRight,
@@ -107,6 +110,8 @@ function SectionBody({
       return <BehaviourSection {...props} />;
     case 'features':
       return <FeaturesSection {...props} />;
+    case 'plugins':
+      return <PluginsSection />;
     case 'shortcuts':
       return <ShortcutsSection context={context} />;
     case 'updates':

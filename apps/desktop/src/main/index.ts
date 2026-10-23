@@ -93,6 +93,8 @@ import { TransferQueue } from './transfers.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
 import { clearAttachmentsTmp } from './kinds/soap/channels/attachments.js';
 import { startupFeatures, type FeaturesRun } from './features/startup.js';
+import { loadDesktopPlugins, type DesktopPlugins } from './plugins/desktop-plugins.js';
+import { registerPluginChannels } from './ipc/plugins.js';
 import { MAIN_KINDS } from './kinds/kind-main.js';
 import { registerKeystoreChannels } from './ipc/keystores.js';
 import { registerCertificateChannels } from './ipc/certificates.js';
@@ -556,6 +558,9 @@ const serialDevices = new SerialDeviceStore(join(app.getPath('userData'), SERIAL
  * which pass it to every load, save and send, so a project's containers of a kind that is off load as
  * placeholders and are saved untouched. A changed preference applies at the next start.
  */
+/** This run's plugins, loaded in `whenReady` with the preferences (phase 7 §6); none before that. */
+let plugins: DesktopPlugins = loadDesktopPlugins({ userData: app.getPath('userData'), off: true });
+
 let features: FeaturesRun = startupFeatures({
   preferences: { features: {} },
   env: process.env,
@@ -1093,10 +1098,18 @@ app.setAboutPanelOptions({ applicationName: 'Wirebench', applicationVersion: app
 
 void app.whenReady().then(async () => {
   // The switches come from the preferences file, so it is read before anything registers a kind.
+  const startupPreferences = await preferencesService.load();
+  // Plugins load once, from the app's own data folder (ADR-0031), before the registry is built.
+  plugins = loadDesktopPlugins({
+    userData: app.getPath('userData'),
+    off: startupPreferences.features['plugins'] === false,
+    network: (url) => mainHttpOptions(url, mainHttpDeps),
+  });
   features = startupFeatures({
-    preferences: await preferencesService.load(),
+    preferences: startupPreferences,
     env: process.env,
     isPackaged: app.isPackaged,
+    ...(plugins.host !== undefined ? { plugins: plugins.host } : {}),
   });
   // The managed policy (read by the load above) may switch an area off (#360); it beats the environment.
   areas = resolveAreas({ policy: preferencesService.policy().areasOff, env: process.env });
@@ -1182,7 +1195,7 @@ void app.whenReady().then(async () => {
   });
   const requestDeps: RequestChannelDeps = {
     project: workspaceService,
-    extensions: () => features.registry.extensions,
+    extensions: () => workspaceService.extensions(),
     mcpApprovals,
     secretSources: () => workspaceService.secretSourcesSnapshot(),
     adHocScopes: () => {
@@ -1382,6 +1395,7 @@ void app.whenReady().then(async () => {
   };
   const apiDeps: ApiChannelDeps = {
     router: workspaceService,
+    importers: () => workspaceService.extensions().importers,
     imports: openApiImports,
     asyncApiImports: openApiImports,
     protoImports,
@@ -1529,6 +1543,7 @@ void app.whenReady().then(async () => {
     broadcast(events.theme.changed, payload);
   });
   registerDialogsChannels(dialogPicks);
+  registerPluginChannels({ plugins: () => plugins, picks: dialogPicks });
   registerFsChannels();
   // A kind that is off registers no channels: a call to one is refused as an unknown channel.
   for (const kind of MAIN_KINDS.filter((candidate) => features.enabledKinds.includes(candidate.kind))) {

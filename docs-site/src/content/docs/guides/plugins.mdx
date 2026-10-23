@@ -1,0 +1,115 @@
+---
+title: Plugins
+description: Add your own importers, report formats and code generators, what a plugin may do, and how to write one.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A **plugin** adds an importer, a report format or a code generator to your Wirebench. It is installed
+by you, on your machine, and runs in the same sandbox as request scripts. A project can never bring or
+switch on a plugin: a `git pull` cannot install code.
+
+## Install, list and remove
+
+In the app: **Settings → Plugins → Install from folder…** (or **Install from file…** for a `.tgz`).
+Wirebench reads the plugin, shows what it contributes and which network origins it may reach, and
+asks before it writes anything. Replacing an installed plugin shows the old and the new origins.
+
+From a terminal:
+
+```bash
+wirebench plugin install ./acme-plugin
+wirebench plugin list
+wirebench plugin remove acme
+```
+
+The app and the CLI share one folder, `plugins/` in the app's data folder, so a plugin installed in
+either is there for both. A change applies the next time Wirebench (or a `wirebench` command) starts.
+
+## Where a plugin shows up
+
+| Contribution | In the app | In the CLI |
+| --- | --- | --- |
+| Importer | The Import dialog offers it for a file no built-in format claims, and names it with **(plugin)** | `wirebench import <file>` and the MCP `import` tool |
+| Reporter | | `wirebench run --reporter <plugin>/<reporter>=<file>` |
+| Code generator | The Code panel lists it after the built-in languages, marked **(plugin)** | |
+
+A built-in format always wins: a plugin is never asked about a WSDL, an OpenAPI document or a Postman
+collection. When two plugins are equally sure about a file, nothing is guessed.
+
+## What a plugin may do
+
+- **Nothing but its job.** A plugin is handed its input (the file being imported, the finished run,
+  the request to turn into code) and returns data. It has no files, environment, timers or secrets,
+  and none of its code runs in the app's window.
+- **Network for importers only, to the origins it lists.** An importer that needs, say, the schemas a
+  document references lists their origins in its manifest. Its requests go through Wirebench's own
+  network path, so your proxy and trusted CAs apply; private and loopback addresses are refused, and
+  each exchange is recorded in `history/plugin-<id>.jsonl` without its body. A reporter or a code
+  generator never has network.
+- **No secrets.** A reporter sees outcomes, not request or response text. A code generator sees
+  `Authorization`, `Proxy-Authorization`, `Cookie` and a basic password only as environment reads.
+- **The files you installed.** A plugin whose files changed after it was installed is not loaded until
+  you install it again.
+
+<Aside>
+**Settings → Features → Plugins** switches every plugin off, and each plugin has its own switch
+below it. A team workspace's policy can switch either off, and never on.
+</Aside>
+
+## Writing a plugin
+
+A plugin is a folder with two files: `wirebench-plugin.json` and one bundled ES module that imports
+nothing. The types are in [`@wirebench/engine/plugin`](https://www.npmjs.com/package/@wirebench/engine),
+versioned on their own (`PLUGIN_API_VERSION`).
+
+```json
+{
+  "manifestVersion": 1,
+  "id": "acme",
+  "name": "Acme formats",
+  "version": "1.0.0",
+  "api": 1,
+  "main": "main.js",
+  "contributes": {
+    "importers": [{ "id": "collection", "title": "Acme collection", "extensions": [".acme"] }],
+    "reporters": [{ "id": "summary", "title": "Acme summary", "extension": ".txt" }]
+  },
+  "capabilities": { "network": ["https://schemas.acme.example"] }
+}
+```
+
+```js
+// main.js, bundled: no imports.
+export const importers = {
+  collection: {
+    detect(input) {
+      return input.text.startsWith('ACME COLLECTION') ? 'definite' : null;
+    },
+    async import(input, context) {
+      const schema = await context.net.fetch({ url: 'https://schemas.acme.example/v1.json' });
+      context.log(`schema ${schema.status}`);
+      return {
+        apis: [
+          {
+            name: 'Acme API',
+            items: [{ kind: 'request', name: 'Ping', method: 'GET', url: '${baseUrl}/ping' }],
+          },
+        ],
+        variables: [{ name: 'baseUrl', value: 'https://api.acme.example' }],
+      };
+    },
+  },
+};
+
+export const reporters = {
+  summary: {
+    render(report) {
+      return `${report.summary.passed} of ${report.summary.total} passed\n`;
+    },
+  },
+};
+```
+
+Each call runs in a fresh sandbox with a time limit of 60 seconds (one second for `detect`) and
+128 MiB of memory.

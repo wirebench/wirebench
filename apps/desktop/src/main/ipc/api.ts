@@ -14,6 +14,8 @@ import { parse as parseYaml } from 'yaml';
 import {
   detectImportFolder,
   detectImportFormat,
+  detectPluginFormat,
+  mapPluginImport,
   formatImportReport,
   HTTP_ENV_FILE,
   HTTP_PRIVATE_ENV_FILE,
@@ -41,6 +43,7 @@ import {
   WirebenchError,
 } from '@wirebench/engine';
 import type {
+  ImporterContribution,
   ImportedVariables,
   DefinitionAuth,
   MappedClientImport,
@@ -119,6 +122,11 @@ export interface ApiChannelDeps {
   readonly history: Pick<HistoryService, 'open' | 'recordImportedRestBatch'>;
   /** Tells every window a project's History changed under it: an import wrote entries. */
   readonly onHistoryChanged: (projectId: string) => void;
+  /**
+   * The open workspace's importers, plugins' included (phase 7 §3.1): a file no built-in format claims
+   * is offered to them. Absent (a test), there are none.
+   */
+  readonly importers?: () => readonly ImporterContribution[];
 }
 
 /** `count` with the noun that fits it: `1 entry`, `2 entries`. */
@@ -234,6 +242,9 @@ function sharedNamesOf(text: string): string[] {
 
 /** The most of a picked file read to detect its format: the import's own file limit. */
 const DETECT_MAX_BYTES = 50 * 1024 * 1024;
+
+/** The most a plugin importer is handed: the plugin sandbox's own input limit. */
+const PLUGIN_IMPORT_MAX_BYTES = 32 * 1024 * 1024;
 
 /** The root document of an OpenCollection directory, in any case. */
 const OC_ROOT_FILE = /^opencollection\.ya?ml$/i;
@@ -496,6 +507,52 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
    * one whose `collections/` holds its `tc_col_*.json` files, is told apart from a folder collection
    * here. The path must pass {@link checkedImportSource} first.
    */
+  /** A file no built-in format claims, as the plugin importers see it; `unknown` when none is sure, or two are. */
+  const pluginDetected = async (
+    text: string,
+    filename: string | undefined,
+  ): Promise<{ kind: string; label: string; confidence: 'definite' | 'probable' | 'unknown' }> => {
+    const found = await detectPluginFormat(deps.importers?.() ?? [], {
+      ...(filename !== undefined ? { filename } : {}),
+      text,
+    });
+    if (found.kind !== 'found') return { kind: 'unknown', label: 'Unknown format', confidence: 'unknown' };
+    return { kind: `plugin:${found.importer.id}`, label: found.importer.title, confidence: found.confidence };
+  };
+
+  registerHandler(channels.api.detectPluginImport, async (request) => pluginDetected(request.text, request.filename));
+
+  /**
+   * A file or text through a plugin's importer (ADR-0031): its result is checked in the engine, mapped
+   * as a REST export is, and placed as another client's export; a secret value it names is not kept.
+   */
+  registerHandler(channels.api.importPlugin, async (request) => {
+    const importer = (deps.importers?.() ?? []).find((entry) => entry.id === request.importer);
+    if (importer?.import === undefined) {
+      throw new WirebenchError('plugin-missing', `No plugin importer "${request.importer}" is on`, {
+        details: { id: request.importer },
+      });
+    }
+    const checkedSource = await checkedPostmanSource(request.source);
+    const tooLarge = (): Error =>
+      new WirebenchError('plugin-error', 'The file is larger than a plugin may be handed (32 MiB)');
+    const bytes =
+      checkedSource.kind === 'file'
+        ? await readNoFollow(checkedSource.path, PLUGIN_IMPORT_MAX_BYTES, tooLarge)
+        : undefined;
+    if (checkedSource.kind === 'file' && bytes === undefined) {
+      throw new WirebenchError('invalid-argument', `${checkedSource.path} is not a regular file`);
+    }
+    const text = checkedSource.kind === 'file' ? (bytes?.toString('utf8') ?? '') : checkedSource.text;
+    const result = await importer.import({
+      ...(checkedSource.kind === 'file' ? { filename: basename(checkedSource.path) } : {}),
+      text,
+    });
+    const mapped = mapPluginImport(result, importer.title);
+    const source = checkedSource.kind === 'file' ? checkedSource.path : `inline:plugin:${importer.id}`;
+    return await placeClientImport(request.target, mapped, { source, declaredVersion: `plugin:${importer.id}` });
+  });
+
   registerHandler(channels.api.detectImportSource, async (request) => {
     const checked = await checkedPostmanSource({ kind: 'file', path: request.path });
     if (checked.kind !== 'file') throw new WirebenchError('invalid-argument', 'Expected a path');
@@ -503,10 +560,10 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       const bytes = await readNoFollow(checked.path, DETECT_MAX_BYTES, () => new Error('too large')).catch(
         () => undefined,
       );
-      return detectImportFormat({
-        ...(bytes !== undefined ? { text: bytes.toString('utf8') } : {}),
-        filename: checked.path,
-      });
+      const text = bytes?.toString('utf8');
+      const detected = detectImportFormat({ ...(text !== undefined ? { text } : {}), filename: checked.path });
+      if (detected.kind !== 'unknown' || text === undefined) return detected;
+      return await pluginDetected(text, checked.path);
     }
     const entries = await readdir(checked.path, { withFileTypes: true });
     const children = entries.map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name));

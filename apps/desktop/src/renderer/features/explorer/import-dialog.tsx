@@ -74,6 +74,20 @@ export type SourceTab = 'url' | 'file' | 'paste' | 'server';
 /** The `import-target-project` value standing for *New project "<name>"*. Never a project id. */
 export const NEW_PROJECT = '';
 
+/** A plugin importer main said a source is for (phase 7 §3.1): its registry id and its title. */
+interface PluginPick {
+  readonly importer: string;
+  readonly label: string;
+}
+
+/** What main answered for a picked file or folder: the engine's detection, or a plugin's format. */
+interface SourceAnswer {
+  readonly detected: DetectedImportFormat;
+  readonly plugin?: PluginPick;
+}
+
+const UNKNOWN_DETECTED: DetectedImportFormat = { kind: 'unknown', label: 'Unknown format', confidence: 'unknown' };
+
 const TABS = [
   { id: 'url', label: 'URL' },
   { id: 'file', label: 'File' },
@@ -341,11 +355,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   const nameOnly = pickedKey !== '' && !folderPicked ? detectImportFormat({ filename: filePath }) : undefined;
   const detectKey = open && pickedKey !== '' && (folderPicked || nameOnly?.confidence !== 'definite') ? pickedKey : '';
   const [sourceDetection, setSourceDetection] = useState<
-    { readonly key: string; readonly detected: DetectedImportFormat } | undefined
+    { readonly key: string; readonly detected: DetectedImportFormat; readonly plugin?: PluginPick } | undefined
   >(undefined);
-  const detectionRef = useRef<{ key: string; answer: Promise<DetectedImportFormat | undefined> } | undefined>(
-    undefined,
-  );
+  const detectionRef = useRef<{ key: string; answer: Promise<SourceAnswer | undefined> } | undefined>(undefined);
 
   useEffect(() => {
     if (detectKey === '') {
@@ -355,15 +367,20 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     const [path, folder] = JSON.parse(detectKey) as [string, boolean];
     const answer = Promise.resolve()
       .then(() => ipc().api.detectImportSource({ path, folder }))
-      .then((res): DetectedImportFormat | undefined =>
-        // Main answers with the engine's own detection, so its kind is one of the engine's kinds.
-        res.ok ? { ...res.value, kind: res.value.kind as ImportFormatKind } : undefined,
+      .then((res): SourceAnswer | undefined =>
+        !res.ok
+          ? undefined
+          : // A file no built-in format claims may be a plugin's (phase 7 §3.1); main says which.
+            res.value.kind.startsWith('plugin:')
+            ? { detected: UNKNOWN_DETECTED, plugin: { importer: res.value.kind.slice(7), label: res.value.label } }
+            : // Otherwise main answers with the engine's own detection, so its kind is one of the engine's kinds.
+              { detected: { ...res.value, kind: res.value.kind as ImportFormatKind } },
       )
       .catch(() => undefined);
     detectionRef.current = { key: detectKey, answer };
     let current = true;
-    void answer.then((detected) => {
-      if (current && detected !== undefined) setSourceDetection({ key: detectKey, detected });
+    void answer.then((found) => {
+      if (current && found !== undefined) setSourceDetection({ key: detectKey, ...found });
     });
     return () => {
       current = false;
@@ -386,6 +403,56 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   }, [tab, pasted, dropped, filePath, url, folderPicked, pickedKey, sourceDetection]);
 
   const effectiveFormat: ImportFormatKind = format !== 'auto' ? format : detected.kind;
+
+  /*
+   * Text no built-in format claims (pasted, or a dropped file) is offered to the plugin importers in
+   * main, shortly after it settles; a picked file's answer already says. Only the plugin's title and
+   * id come back: no plugin code reaches this window (ADR-0031).
+   */
+  const pluginTextKey =
+    open && format === 'auto' && pickedKey === '' && detected.kind === 'unknown'
+      ? tab === 'paste' && pasted.trim().length > 0
+        ? JSON.stringify(['paste', pasted])
+        : tab === 'file' && dropped !== undefined
+          ? JSON.stringify(['drop', dropped.name, dropped.text])
+          : ''
+      : '';
+  const [textPlugin, setTextPlugin] = useState<{ readonly key: string; readonly plugin?: PluginPick } | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    if (pluginTextKey === '') return;
+    const [, first, second] = JSON.parse(pluginTextKey) as [string, string, string | undefined];
+    const request = second === undefined ? { text: first } : { text: second, filename: first };
+    let current = true;
+    const timer = setTimeout(() => {
+      void ipc()
+        .api.detectPluginImport(request)
+        .then((res) => {
+          if (!current || !res.ok) return;
+          const { kind, label } = res.value;
+          setTextPlugin({
+            key: pluginTextKey,
+            ...(kind.startsWith('plugin:') ? { plugin: { importer: kind.slice(7), label } } : {}),
+          });
+        })
+        .catch(() => undefined);
+    }, 300);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [pluginTextKey]);
+  const pluginFormat: PluginPick | undefined =
+    format !== 'auto' || detected.kind !== 'unknown'
+      ? undefined
+      : pickedKey !== ''
+        ? sourceDetection?.key === pickedKey
+          ? sourceDetection.plugin
+          : undefined
+        : textPlugin?.key === pluginTextKey
+          ? textPlugin.plugin
+          : undefined;
 
   /*
    * An AsyncAPI document's servers are alternative addresses for one application, so the import
@@ -981,9 +1048,50 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     const pending = detectionRef.current;
     if (pending !== undefined && pending.key === detectKey && sourceDetection?.key !== detectKey) {
       const answer = await pending.answer;
-      if (answer !== undefined && answer.kind !== 'unknown') return answer.kind;
+      if (answer !== undefined && answer.detected.kind !== 'unknown') return answer.detected.kind;
     }
     return effectiveFormat;
+  }
+
+  /** The plugin importer an unknown source is for, waiting for main as {@link importKind} does. */
+  async function importPluginFormat(): Promise<PluginPick | undefined> {
+    if (format !== 'auto') return undefined;
+    const pending = detectionRef.current;
+    if (pending !== undefined && pending.key === detectKey && sourceDetection?.key !== detectKey) {
+      return (await pending.answer)?.plugin;
+    }
+    return pluginFormat;
+  }
+
+  /** A source through a plugin's importer: main runs it in the sandbox and places it as a client export. */
+  async function importWithPlugin(plugin: PluginPick, source: ImportSourceWire): Promise<void> {
+    if (source.kind === 'url') {
+      setImportError('A plugin imports a file or pasted text. Pick the file or paste its contents.');
+      return;
+    }
+    setImporting(true);
+    const chosen = openProjects.some((project) => project.id === target) ? target : NEW_PROJECT;
+    try {
+      const res = await ipc().api.importPlugin({
+        importer: plugin.importer,
+        target: chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen },
+        source:
+          source.kind === 'file'
+            ? { kind: 'file' as const, path: source.path }
+            : { kind: 'text' as const, text: source.text },
+        ...(name.trim().length > 0 ? { name: name.trim() } : {}),
+      });
+      if (!res.ok) {
+        setImportError(res.error.message);
+        return;
+      }
+      getExplorerTree()?.open(`proj:${res.value.projectId}`);
+      setResult({ kind: 'client', value: res.value });
+    } catch (error) {
+      setImportError(describeImportError(error, url));
+    } finally {
+      setImporting(false);
+    }
   }
 
   async function onImport(asCopy = false): Promise<void> {
@@ -1097,6 +1205,14 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     if (kind === 'insomnia' || kind === 'bruno' || kind === 'hoppscotch' || kind === 'thunder-client') {
       await importClient(kind, source);
       return;
+    }
+
+    if (kind === 'unknown') {
+      const plugin = await importPluginFormat();
+      if (plugin !== undefined) {
+        await importWithPlugin(plugin, source);
+        return;
+      }
     }
 
     // Determine target format
@@ -1443,13 +1559,13 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                   </select>
                 </div>
 
-                {format === 'auto' && detected.kind !== 'unknown' && (
+                {format === 'auto' && (detected.kind !== 'unknown' || pluginFormat !== undefined) && (
                   <span
                     data-testid="detected-format-badge"
                     className="flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-xs font-medium text-accent"
                   >
                     <Sparkles size={11} aria-hidden="true" />
-                    {detected.label}
+                    {pluginFormat !== undefined ? `${pluginFormat.label} (plugin)` : detected.label}
                   </span>
                 )}
               </div>

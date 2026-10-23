@@ -40,6 +40,7 @@ export const DOCS_LINKS = {
   serverScheduledRuns: 'guides/server-scheduled-runs',
   managedPreferences: 'guides/managed-preferences',
   featureSwitches: 'guides/feature-switches',
+  plugins: 'guides/plugins',
   agentsMcp: 'guides/agents-mcp',
   codingAgents: 'guides/coding-agents',
   teaching: 'guides/teaching',

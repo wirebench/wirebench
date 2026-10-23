@@ -7,8 +7,14 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { GENERATED_CODE_TARGETS } from '@shared/code-targets.js';
-import type { CodeLanguage, CodeSettings, CodeTarget, GeneratedCodeTarget } from '@shared/code-targets.js';
+import { GENERATED_CODE_TARGETS, isPluginCodeTarget } from '@shared/code-targets.js';
+import type {
+  CodeLanguage,
+  CodeSettings,
+  CodeTarget,
+  GeneratedCodeTarget,
+  PluginCodeTarget,
+} from '@shared/code-targets.js';
 import { Button } from '../components/button.js';
 import { showToast } from '../components/toast.js';
 import { ImportCurlDialog } from '../features/request-editor/import-curl-dialog.js';
@@ -75,10 +81,45 @@ function generatedTarget(language: CodeLanguage): GeneratedCodeTarget | undefine
 }
 
 /** What one language reads as in a toast. */
-function languageLabel(language: CodeLanguage, shell: CodeShell): string {
+function languageLabel(
+  language: CodeLanguage,
+  shell: CodeShell,
+  plugins: readonly { readonly id: string; readonly label: string }[],
+): string {
   if (language === 'curl') return shell === 'powershell' ? 'cURL (PowerShell)' : 'cURL';
   if (language === 'wirebench-run') return 'wirebench run';
-  return GENERATED_CODE_TARGETS.find((target) => target.id === language)?.label ?? language;
+  return (
+    GENERATED_CODE_TARGETS.find((target) => target.id === language)?.label ??
+    plugins.find((target) => target.id === language)?.label ??
+    language
+  );
+}
+
+/**
+ * The plugin code generators this run has on (phase 7 §9), asked of main once per panel: only their
+ * ids and titles reach the renderer. A plugin is installed or removed for the next start, so the list
+ * does not change while the app runs.
+ */
+function usePluginCodeTargets(): readonly { readonly id: PluginCodeTarget; readonly label: string }[] {
+  const [targets, setTargets] = useState<readonly { readonly id: PluginCodeTarget; readonly label: string }[]>([]);
+  useEffect(() => {
+    let current = true;
+    void Promise.resolve()
+      .then(() => ipc().request.codeTargets(undefined))
+      .then((result) => {
+        if (!current || !result.ok) return;
+        setTargets(
+          result.value.targets.flatMap((target) =>
+            isPluginCodeTarget(target.id) ? [{ id: target.id, label: `${target.label} (plugin)` }] : [],
+          ),
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, []);
+  return targets;
 }
 
 /**
@@ -133,6 +174,7 @@ interface Generated {
 
 export function CodePanel() {
   const requestId = useCodePanelRequestId();
+  const pluginTargets = usePluginCodeTargets();
   const restRequestId = useCodePanelRestRequestId();
   const grpcRequestId = useCodePanelGrpcRequestId();
   const wsRequestId = useCodePanelWsRequestId();
@@ -342,7 +384,7 @@ export function CodePanel() {
     }
     try {
       await navigator.clipboard.writeText(generated.command);
-      showToast(codeable ? `Copied as ${languageLabel(language, shell)}` : 'Copied as command');
+      showToast(codeable ? `Copied as ${languageLabel(language, shell, pluginTargets)}` : 'Copied as command');
     } catch (error: unknown) {
       showToast(error instanceof Error ? error.message : 'Could not copy to the clipboard');
     }
@@ -372,7 +414,10 @@ export function CodePanel() {
           }}
           className={SELECT_CLASS}
         >
-          {(codeable ? LANGUAGE_OPTIONS : COMMAND_OPTIONS).map((option) => (
+          {(codeable
+            ? [...LANGUAGE_OPTIONS, ...pluginTargets.map((target) => ({ value: target.id, label: target.label }))]
+            : COMMAND_OPTIONS
+          ).map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>

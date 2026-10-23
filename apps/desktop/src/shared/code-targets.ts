@@ -27,7 +27,17 @@ export const CODE_TARGET_IDS: readonly [
   ...(GeneratedCodeTarget | 'wirebench-run')[],
 ] = ['wirebench-run', ...GENERATED_CODE_TARGETS.map((target) => target.id)];
 
-export type CodeTarget = GeneratedCodeTarget | 'wirebench-run';
+/** A plugin's code generator, `<plugin>/<generator>` (phase 7 §3.3); main lists the ones on. */
+export type PluginCodeTarget = `${string}/${string}`;
+
+const PLUGIN_TARGET = /^[a-z0-9][a-z0-9-]{1,62}\/[a-z0-9][a-z0-9-]{0,62}$/;
+
+/** Whether `value` is spelled as a plugin's generator; whether one is installed is main's to say. */
+export function isPluginCodeTarget(value: string): value is PluginCodeTarget {
+  return PLUGIN_TARGET.test(value);
+}
+
+export type CodeTarget = GeneratedCodeTarget | 'wirebench-run' | PluginCodeTarget;
 
 /** What the Code panel shows: `curl` (today's command, in the remembered shell), or a `request.code` target. */
 export type CodeLanguage = 'curl' | CodeTarget;
@@ -41,7 +51,9 @@ export const CODE_LANGUAGES: readonly CodeLanguage[] = [
 
 /** A language as its own string, for a value read back from storage. */
 export function isCodeLanguage(value: unknown): value is CodeLanguage {
-  return typeof value === 'string' && (CODE_LANGUAGES as readonly string[]).includes(value);
+  return (
+    typeof value === 'string' && ((CODE_LANGUAGES as readonly string[]).includes(value) || isPluginCodeTarget(value))
+  );
 }
 
 /** One language's layout choices. An absent field takes the request's own value (or, for indent, the language's). */

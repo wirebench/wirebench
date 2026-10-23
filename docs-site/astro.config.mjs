@@ -71,6 +71,7 @@ export default defineConfig({
             { label: 'Preferences and layout', slug: 'guides/preferences' },
             { label: 'Managed preferences', slug: 'guides/managed-preferences' },
             { label: 'Feature switches', slug: 'guides/feature-switches' },
+            { label: 'Plugins', slug: 'guides/plugins' },
             { label: 'Run in CI', slug: 'guides/run-in-ci' },
             { label: 'Teach APIs with Wirebench', slug: 'guides/teaching' },
             { label: 'Use Wirebench from your coding agent', slug: 'guides/coding-agents' },
