@@ -69,8 +69,8 @@ channel.
 - Plugins cannot be shared through a project or a team workspace. A team that standardises on a
   plugin installs it on each machine; this is deliberate, and the policy switch lets an
   administrator keep plugins out.
-- The engine gains one runtime dependency, the asyncify build of the QuickJS release it already uses
-  (MIT), because a brokered call must wait on the host. Scripts keep the sync build.
+- No runtime dependency is added: plugins run on the QuickJS build scripts use, and a brokered call
+  is a promise the host settles.
 - Plugins load at start-up. Installing, removing or switching one takes effect at the next start.
 - The plugin API is versioned apart from the engine (`PLUGIN_API_VERSION`) and its surface is a
   committed report a check compares, so a change to what plugin authors rely on is a reviewed,
