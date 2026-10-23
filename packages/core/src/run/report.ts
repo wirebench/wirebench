@@ -70,17 +70,17 @@ export interface JsonReportRequest {
     readonly details?: Readonly<Record<string, unknown>>;
   };
   readonly exchange?: { readonly request: string; readonly response: string };
-  readonly sequence?: RequestResult['sequence'];
-  readonly transfers?: RequestResult['transfers'];
+  readonly sequence?: NonNullable<RequestResult['sequence']>;
+  readonly transfers?: NonNullable<RequestResult['transfers']>;
   readonly origin?: string;
   readonly attempt?: number;
   readonly retried?: true;
-  readonly branch?: RequestResult['branch'];
+  readonly branch?: NonNullable<RequestResult['branch']>;
   readonly scriptLog?: readonly string[];
   readonly scriptsOff?: true;
-  readonly control?: RequestResult['control'];
-  readonly baseline?: RequestResult['baseline'];
-  readonly iteration?: RequestResult['iteration'];
+  readonly control?: NonNullable<RequestResult['control']>;
+  readonly baseline?: NonNullable<RequestResult['baseline']>;
+  readonly iteration?: NonNullable<RequestResult['iteration']>;
 }
 
 function toReportRequest(result: RequestResult): JsonReportRequest {
