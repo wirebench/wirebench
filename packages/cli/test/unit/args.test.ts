@@ -50,7 +50,7 @@ describe('parseCliArgs', () => {
       selectors: ['sel1', 'sel2'],
       env: 'staging',
       vars: { a: '1', b: 'x=y' },
-      reporters: [{ kind: 'junit', file: 'a.xml' }, { kind: 'cli' }],
+      reporters: [{ kind: 'file', reporter: 'junit', file: 'a.xml' }, { kind: 'cli' }],
       bail: true,
       timeoutMs: 5000,
       slaMs: 800,
@@ -86,7 +86,8 @@ describe('parseCliArgs', () => {
   it.each([
     [['run']],
     [['run', './p', '--reporter', 'junit']],
-    [['run', './p', '--reporter', 'xml=a']],
+    [['run', './p', '--reporter', 'Bad id=a']],
+    [['run', './p', '--reporter', 'junit=']],
     [['run', './p', '--var', 'novalue']],
     [['secrets', 'list', './p', '--var', 'novalue']],
     [['run', './p', '--sla', 'abc']],

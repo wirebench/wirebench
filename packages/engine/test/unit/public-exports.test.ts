@@ -65,6 +65,11 @@ const ADDED = [
   'commandDisplay',
   'mcpItemFor',
   'mcpEffectiveAuth',
+  'createExtensionRegistry',
+  'BUILTIN_IMPORTERS',
+  'BUILTIN_REPORTERS',
+  'BUILTIN_CODE_GENERATORS',
+  'builtinExtensions',
 ] as const;
 
 /** 2.x name, 3.0 name. */
@@ -171,6 +176,8 @@ const INTERNAL: Readonly<Record<string, readonly string[]>> = {
   'protocol-grpc:grpc/status.ts': ['grpcStatusNames'],
   'assert/model.ts': ['StatusNames'],
   'engine:protocols.ts': ['BUILTIN_PROTOCOLS', 'createBuiltinRegistry'],
+  'extension/registry.ts': ['ExtensionContributions', 'ExtensionRegistry', 'createExtensionRegistry'],
+  'engine:extensions.ts': ['BUILTIN_IMPORTERS', 'BUILTIN_REPORTERS', 'BUILTIN_CODE_GENERATORS', 'builtinExtensions'],
   'project/model.ts': ['UnsupportedContainer', 'unsupportedOf'],
   'project/container-slugs.ts': ['takenContainerSlugs'],
 };

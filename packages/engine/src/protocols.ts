@@ -6,6 +6,7 @@
 import { GRAPHQL_FEATURE, graphqlSupport } from '#protocol-graphql/graphql/support';
 import { grpcProtocol } from '#protocol-grpc/grpc/module';
 import { mcpProtocol } from '#protocol-mcp/mcp/module';
+import type { ExtensionContributions } from '#core/extension/registry';
 import type { FeatureDescriptor } from '#core/protocol/features';
 import type { ProtocolModule } from '#core/protocol/module';
 import { installDefaultRegistry } from '#core/protocol/default-registry';
@@ -15,6 +16,7 @@ import { installRestGraphql } from '#protocol-rest/rest/graphql-slot';
 import { restProtocol } from '#protocol-rest/rest/module';
 import { soapProtocol } from '#protocol-soap/soap/module';
 import { wsProtocol } from '#protocol-ws/ws/module';
+import { builtinExtensions } from './extensions.js';
 
 // The declarations of @wirebench/engine reach every file that fills the unions (package split spec
 // §3.4) only through these re-exports: a value import of a module leaves no trace in a `.d.ts`, and a
@@ -85,13 +87,18 @@ export function builtinDescriptors(): readonly FeatureDescriptor[] {
 }
 
 /**
- * A registry of the built-in protocols and {@link BUILTIN_FEATURES}, with `switches` applied.
+ * A registry of the built-in protocols and {@link BUILTIN_FEATURES}, with `switches` applied, and the
+ * built-in importers, reporters and code generators with a host's `extensions` after them.
  *
  * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
  */
-export function createBuiltinRegistry(switches?: Readonly<Record<string, boolean>>): ProtocolRegistry {
+export function createBuiltinRegistry(
+  switches?: Readonly<Record<string, boolean>>,
+  extensions?: ExtensionContributions,
+): ProtocolRegistry {
   return createProtocolRegistry(BUILTIN_PROTOCOLS, {
     features: BUILTIN_FEATURES,
+    extensions: builtinExtensions(extensions),
     ...(switches !== undefined ? { switches } : {}),
   });
 }

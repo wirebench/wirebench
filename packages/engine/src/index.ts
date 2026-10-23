@@ -99,6 +99,20 @@ export {
   createBuiltinRegistry,
   SCRIPTS_FEATURE,
 } from './protocols.js';
+export { createExtensionRegistry } from '#core/extension/registry';
+export type {
+  CodeGeneratorContribution,
+  ContributionBase,
+  ContributionOrigin,
+  ExtensionContributions,
+  ExtensionRegistry,
+  ImportConfidence,
+  ImportDetectSource,
+  ImporterContribution,
+  ReporterContribution,
+  ReportTool,
+} from '#core/extension/registry';
+export { BUILTIN_CODE_GENERATORS, BUILTIN_IMPORTERS, BUILTIN_REPORTERS, builtinExtensions } from './extensions.js';
 export {
   PROJECT_FILE_KINDS,
   PROJECT_SCHEMA_BASE_URL,
@@ -1696,7 +1710,12 @@ export { renderWsiAssertionsMarkdown, WSI_PLANNED_ASSERTIONS } from '#protocol-s
 export type { PlannedAssertion } from '#protocol-soap/validate/wsi/index';
 
 export { detectImportFolder, detectImportFormat } from './import-detect.js';
-export type { ImportFormatKind, DetectedImportFormat, ImportDetectInput } from './import-detect.js';
+export type {
+  BuiltinImportFormatKind,
+  ImportFormatKind,
+  DetectedImportFormat,
+  ImportDetectInput,
+} from './import-detect.js';
 
 // gRPC: the third protocol, a sibling container to a SOAP interface and a REST API (ADR-0007).
 export {

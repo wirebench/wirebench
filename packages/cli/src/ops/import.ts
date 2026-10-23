@@ -17,7 +17,6 @@ import {
   definitionCacheDir,
   detectImportFormat,
   endpointsFromContract,
-  featureDisabled,
   generateId,
   generateSoapRequest,
   importBruno,
@@ -40,6 +39,7 @@ import {
   writeDefinitionCache,
 } from '@wirebench/engine';
 import type {
+  BuiltinImportFormatKind,
   Endpoint,
   FetchDocument,
   ImportedScriptFile,
@@ -507,12 +507,25 @@ async function addBruno(
   return addMappedCollections(context, project, mapped, 'bruno');
 }
 
-/** @throws WirebenchError `feature-disabled` when the kind the source would add is off */
-function refuseOffKind(context: OpsContext, kind: 'soap' | 'rest'): void {
-  if (!context.registry.features.isEnabled(kind)) {
-    throw featureDisabled(context.registry.features, kind);
-  }
+/**
+ * Through the registry's importer for `format` (phase 7 spec §4): a format that lands in a kind that
+ * is off is refused, as the desktop's Import dialog does not offer it.
+ *
+ * @throws WirebenchError `feature-disabled` when the kind the source would add is off
+ */
+function refuseOffFormat(context: OpsContext, format: BuiltinImportFormatKind): void {
+  context.registry.extensions.importer(format);
 }
+
+/** The formats this op imports; any other is refused below with its own message. */
+const IMPORTED_FORMATS: ReadonlySet<BuiltinImportFormatKind> = new Set<BuiltinImportFormatKind>([
+  'wsdl',
+  'openapi',
+  'insomnia',
+  'hoppscotch',
+  'thunder-client',
+  'bruno',
+]);
 
 export const importOp = defineOp({
   name: 'import',
@@ -533,9 +546,11 @@ export const importOp = defineOp({
     }
     const { project } = await openProject(context);
     if (await isBrunoFolder(value.source)) {
+      refuseOffFormat(context, 'bruno');
       return addBruno(context, project, { kind: 'folder', path: resolve(value.source) }, value.name);
     }
     if (await isThunderFolder(value.source)) {
+      refuseOffFormat(context, 'thunder-client');
       const mapped = await importThunderClient(
         { kind: 'folder', path: resolve(value.source) },
         { firstOrder: nextApiOrder(project), ...(value.name !== undefined ? { name: value.name } : {}) },
@@ -543,6 +558,7 @@ export const importOp = defineOp({
       return addMappedCollections(context, project, mapped, 'thunder-client');
     }
     if (await isCollectionFolder(value.source)) {
+      refuseOffFormat(context, 'postman-v3');
       const path = resolve(value.source);
       const mapped = await importCollectionV3Folder(path, {
         firstOrder: nextApiOrder(project),
@@ -553,13 +569,14 @@ export const importOp = defineOp({
     const fetchDocument = fetcherFor(context.env);
     const read = await readSource(value.source, fetchDocument);
     const detected = detectImportFormat({ text: read.text, filename: read.filename, url: read.url });
-    // Per format (feature switches spec §5.2): a WSDL needs SOAP on, an OpenAPI document REST.
+    // Per format (feature switches spec §5.2): a WSDL needs SOAP on, every other format here REST.
+    if (detected.kind !== 'unknown' && IMPORTED_FORMATS.has(detected.kind)) {
+      refuseOffFormat(context, detected.kind);
+    }
     if (detected.kind === 'wsdl') {
-      refuseOffKind(context, 'soap');
       return addWsdl(context, project, read, fetchDocument, value.name);
     }
     if (detected.kind === 'openapi') {
-      refuseOffKind(context, 'rest');
       return addOpenApi(context, project, read, fetchDocument, value.name);
     }
     if (detected.kind === 'insomnia') {

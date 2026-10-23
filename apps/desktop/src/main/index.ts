@@ -1182,6 +1182,7 @@ void app.whenReady().then(async () => {
   });
   const requestDeps: RequestChannelDeps = {
     project: workspaceService,
+    extensions: () => features.registry.extensions,
     mcpApprovals,
     secretSources: () => workspaceService.secretSourcesSnapshot(),
     adHocScopes: () => {
