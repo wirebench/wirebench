@@ -36,6 +36,9 @@ export type ImportFormatKind =
   | 'legacy-soap-project'
   | 'unknown';
 
+/** A format Wirebench itself imports: every kind but `unknown`. */
+export type BuiltinImportFormatKind = Exclude<ImportFormatKind, 'unknown'>;
+
 export interface DetectedImportFormat {
   readonly kind: ImportFormatKind;
   readonly label: string;

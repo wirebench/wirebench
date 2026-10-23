@@ -9,7 +9,7 @@ import {
   fromCurl,
   fromRestCurl,
   notCurlReason,
-  generateCode,
+  createBuiltinRegistry,
   grpcToCommand,
   isWirebenchError,
   ProjectError,
@@ -28,6 +28,7 @@ import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import type {
   AuthConfig,
+  ExtensionRegistry,
   JwtAuth,
   CodeOptions,
   CodeRequest,
@@ -163,6 +164,11 @@ export function ownerOf(project: Pick<RequestChannelProject, 'projectId'>, entit
 export interface RequestChannelDeps {
   /** Supplies the scopes; `ProjectRouter` in the app, a stub in tests. */
   readonly project: RequestChannelProject;
+  /**
+   * The code generators the Code panel's languages are looked up in (phase 7): the start-up
+   * registry's. Absent (a test), the built-in ones.
+   */
+  readonly extensions?: () => ExtensionRegistry;
   /**
    * This machine's MCP stdio approvals and their prompt (#79). Absent (a test, a headless caller),
    * every stdio send is refused, as the engine's gate refuses a host that lends no approver.
@@ -648,7 +654,8 @@ async function code(
   const rest = await previewRest(sendDeps, request.requestId, request.draft);
   const built =
     rest !== undefined ? await restCode(deps, rest, show) : await soapCode(deps, sendDeps, request.requestId, show);
-  const generated = generateCode(target, built.request, codeOptions(request.settings));
+  const extensions = deps.extensions?.() ?? createBuiltinRegistry().extensions;
+  const generated = extensions.codeGenerator(target).generate(built.request, codeOptions(request.settings));
   const notes = [...built.notes, ...generated.notes];
   return { command: redactSecretText(generated.code, { show }), ...(notes.length > 0 ? { notes } : {}) };
 }

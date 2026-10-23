@@ -1,5 +1,7 @@
 /** The modules a host composed, with its feature set (spec §4.2). */
 import { ProjectError, WirebenchError } from '../errors.js';
+import { createExtensionRegistry } from '../extension/registry.js';
+import type { ExtensionContributions, ExtensionRegistry } from '../extension/registry.js';
 import { createFeatureSet } from './features.js';
 import type { FeatureDescriptor, FeatureSet } from './features.js';
 import type { ProtocolModule } from './module.js';
@@ -11,6 +13,8 @@ import type { ProtocolModule } from './module.js';
  */
 export interface ProtocolRegistry {
   readonly features: FeatureSet;
+  /** The importers, reporters and code generators, read through the same feature set (phase 7). */
+  readonly extensions: ExtensionRegistry;
   /** The enabled modules, in registration order. */
   readonly modules: readonly ProtocolModule[];
   status(kind: string): 'enabled' | 'disabled' | 'unknown';
@@ -29,6 +33,8 @@ export interface ProtocolRegistryOptions {
   /** Descriptors for features that are not protocols (`scripts`). */
   readonly features?: readonly FeatureDescriptor[];
   readonly switches?: Readonly<Record<string, boolean>>;
+  /** The host's importers, reporters and code generators. Absent: none. */
+  readonly extensions?: ExtensionContributions;
 }
 
 /**
@@ -73,6 +79,7 @@ export function createProtocolRegistry(
     status(kind) === 'enabled' ? byKind.get(kind) : undefined;
   return {
     features,
+    extensions: createExtensionRegistry(options.extensions ?? {}, features),
     modules: modules.filter((module) => features.isEnabled(module.kind)),
     status,
     find,

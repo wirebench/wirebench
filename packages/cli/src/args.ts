@@ -141,8 +141,9 @@ wirebench ssh forward <host> [rule…] | --group <id> [--port <rule>=<n>]… [--
 wirebench --version | --help
 wirebench <verb> --help`;
 
+/** `cli`, or a registered reporter's id and the file it writes (phase 7 spec §3.2). */
 export type ReporterSpec =
-  { readonly kind: 'cli' } | { readonly kind: 'junit' | 'json' | 'html'; readonly file: string };
+  { readonly kind: 'cli' } | { readonly kind: 'file'; readonly reporter: string; readonly file: string };
 
 export interface RunArgs extends RunDataArgs {
   readonly command: 'run';
@@ -203,7 +204,8 @@ type VerbArgs =
   | { readonly command: 'help'; readonly topic?: string }
   | { readonly command: 'version' };
 
-const REPORTER_KINDS = new Set(['junit', 'json', 'html']);
+/** A reporter id as the registry spells one: `junit`, or a plugin's `<plugin>/<reporter>`. */
+const REPORTER_ID = /^[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)?$/;
 
 /** The verbs `--allow-commands` applies to: those that send saved MCP requests (#79). */
 const COMMAND_VERBS: ReadonlySet<string> = new Set(['run', 'send', 'mcp']);
@@ -217,12 +219,13 @@ function parseReporter(spec: string): ReporterSpec {
   if (eq === -1) {
     throw new UsageError(`--reporter must be "cli" or "<kind>=<file>", got "${spec}"`);
   }
-  const kind = spec.slice(0, eq);
+  const reporter = spec.slice(0, eq);
   const file = spec.slice(eq + 1);
-  if (!REPORTER_KINDS.has(kind) || file.length === 0) {
+  if (!REPORTER_ID.test(reporter) || file.length === 0) {
     throw new UsageError(`--reporter must be "cli" or "<kind>=<file>", got "${spec}"`);
   }
-  return { kind: kind as 'junit' | 'json' | 'html', file };
+  // Whether the id names a reporter is the registry's to say, once the verb has built it.
+  return { kind: 'file', reporter, file };
 }
 
 /** Parses `--var <k=v>`, splitting on the first `=` so a value may itself contain `=`. */

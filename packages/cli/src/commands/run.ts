@@ -28,6 +28,7 @@ import type {
   GoldenFile,
   Project,
   ProtocolRegistry,
+  ReporterContribution,
   RunContext,
   RunResult,
   RunWorkspace,
@@ -48,9 +49,6 @@ import { proxyFromEnv } from '../proxy-env.js';
 import { explainFailure, maskerDetects } from '../secret-advice.js';
 import { captureSourceFromEnv } from '../server-captures.js';
 import { createCliReporter } from '../reporters/cli.js';
-import { renderHtml } from '../reporters/html.js';
-import { renderJson } from '../reporters/json.js';
-import { renderJunit } from '../reporters/junit.js';
 import { createMaskedReporters } from '../reporters/mask.js';
 import type { Reporter } from '../reporters/types.js';
 import { writeReport } from '../reporters/write.js';
@@ -81,7 +79,12 @@ export async function refuseWorkspace(path: string, io: CliIo): Promise<ExitCode
   return ExitCode.Usage;
 }
 
-function buildReporters(args: RunArgs, io: CliIo): Reporter[] {
+/**
+ * The run's reporters: the console one, or each file reporter the registry has under the id given.
+ *
+ * @throws UsageError for an id no enabled reporter has, before anything is read or sent
+ */
+function buildReporters(args: RunArgs, io: CliIo, registry: ProtocolRegistry): Reporter[] {
   const color = args.color && io.env['NO_COLOR'] === undefined && io.stdout.isTTY === true;
   return args.reporters.map((spec) => {
     if (spec.kind === 'cli') {
@@ -92,15 +95,15 @@ function buildReporters(args: RunArgs, io: CliIo): Reporter[] {
         interactive: io.stdout.isTTY === true,
       });
     }
-    if (spec.kind === 'junit') {
-      return createFileReporter(spec.file, renderJunit);
-    }
-    if (spec.kind === 'json') {
-      const tool = cliTool();
-      return createFileReporter(spec.file, (result) => renderJson(result, tool));
+    let reporter: ReporterContribution;
+    try {
+      reporter = registry.extensions.reporter(spec.reporter);
+    } catch (error) {
+      const off = isWirebenchError(error) && error.code === 'feature-disabled' ? ` (${error.message})` : '';
+      throw new UsageError(`--reporter must be "cli" or "<kind>=<file>", got "${spec.reporter}=${spec.file}"${off}`);
     }
     const tool = cliTool();
-    return createFileReporter(spec.file, (result) => renderHtml(result, tool));
+    return createFileReporter(spec.file, (result) => reporter.render(result, tool));
   });
 }
 
@@ -233,6 +236,7 @@ export async function runCommand(args: RunArgs & FeatureArgs, io: CliIo): Promis
     io.stderr.write(`${off.code}: ${off.message}\n`);
     return ExitCode.Usage;
   }
+  const reporters = buildReporters(args, io, registry);
   const loaded = await loadSelection(args, io, registry);
   if (typeof loaded === 'number') {
     return loaded;
@@ -267,7 +271,7 @@ export async function runCommand(args: RunArgs & FeatureArgs, io: CliIo): Promis
     maskNow()(text),
   );
   known = () => [...secrets.values(), ...tokens];
-  const output = createMaskedReporters(buildReporters(args, io), maskNow, (raw) => explainFailure(raw, needs));
+  const output = createMaskedReporters(reporters, maskNow, (raw) => explainFailure(raw, needs));
   const proxyFor = proxyFromEnv(io.env);
   // Callback assertions read captures with a CI token (callback-assertion §4); masked like every secret.
   const captures = captureSourceFromEnv(io.env, { proxyFor });

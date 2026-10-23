@@ -276,3 +276,22 @@ describe('junit and json report files', () => {
     expect(json).toContain('sys7chr');
   });
 });
+
+describe('a reporter id the registry does not have', () => {
+  it('is a usage error before anything is sent', async () => {
+    const dir = await tempDir();
+    const { code, stderr } = await runCli([
+      'run',
+      FIXTURE,
+      '-e',
+      'local',
+      ...vars(),
+      '--reporter',
+      `xml=${join(dir, 'r.xml')}`,
+      'demo/ok',
+    ]);
+    expect(code).toBe(2);
+    expect(stderr).toContain('--reporter must be "cli" or "<kind>=<file>"');
+    expect(demo.requests).toHaveLength(0);
+  });
+});

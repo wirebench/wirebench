@@ -6,6 +6,7 @@
  */
 import { builtinDescriptors, createBuiltinRegistry } from '@wirebench/engine';
 import type { ProtocolRegistry } from '@wirebench/engine';
+import { CLI_REPORTERS } from './reporters/builtins.js';
 import { UsageError } from './usage-error.js';
 
 /** The environment variable every verb reads. */
@@ -63,10 +64,11 @@ export function parseFeatureSwitches(
 
 /**
  * The registry a verb runs with: the built-in protocols and features, with `switches` applied (the
- * preference level; the CLI has no policy, so there is nothing else to resolve).
+ * preference level; the CLI has no policy, so there is nothing else to resolve), and the CLI's own
+ * reporters beside the engine's.
  */
 export function registryFor(switches: Readonly<Record<string, boolean>>): ProtocolRegistry {
-  return createBuiltinRegistry(switches);
+  return createBuiltinRegistry(switches, { reporters: CLI_REPORTERS });
 }
 
 /**

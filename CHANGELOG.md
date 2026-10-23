@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- **`wirebench import` refuses every format whose protocol is off (#765).** An Insomnia, Hoppscotch,
+  Thunder Client or Bruno export and a folder collection are refused with `feature-disabled` when REST
+  is off, as a WSDL was with SOAP off and an OpenAPI document with REST off; the app's Import dialog
+  already left those formats out. `--reporter` ids are now looked up in one registry of importers,
+  reporters and code generators, the groundwork for plugins (ADR-0031); the ids and the files they
+  write are unchanged.
+
 ## [6.1.0] - 2026-10-23
 
 ### Added
