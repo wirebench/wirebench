@@ -7,8 +7,9 @@
  */
 import type { Layout as EngineLayout } from '#core/http/codegen/target';
 import type { GeneratedCode as EngineGeneratedCode } from '#core/http/codegen/index';
+import type { PluginManifestData } from '#core/extension/plugin/manifest';
 import type { JsonReport } from '#core/run/report';
-import type { GeneratedCode, Layout, RunReport } from '../../src/plugin.js';
+import type { GeneratedCode, Layout, PluginManifest, RunReport } from '../../src/plugin.js';
 
 type Assignable<From, To> = [From] extends [To] ? true : false;
 type Same<A, B> = Assignable<A, B> extends true ? Assignable<B, A> : false;
@@ -16,3 +17,11 @@ type Same<A, B> = Assignable<A, B> extends true ? Assignable<B, A> : false;
 export const layout: Same<Layout, EngineLayout> = true;
 export const generated: Same<GeneratedCode, EngineGeneratedCode> = true;
 export const report: Assignable<JsonReport, RunReport> = true;
+type DeepReadonly<T> = T extends readonly (infer U)[]
+  ? readonly DeepReadonly<U>[]
+  : T extends object
+    ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+    : T;
+
+// Every manifest an author types against the plugin API is one the loader's schema can hold.
+export const manifest: Assignable<PluginManifest, DeepReadonly<PluginManifestData>> = true;
