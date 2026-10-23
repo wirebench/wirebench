@@ -27,7 +27,8 @@ export function mcpBaseFor(args: McpArgs & FeatureArgs, io: Pick<CliIo, 'stderr'
     {
       project: args.project,
       historyDir: args.historyDir,
-      registry: featuresFor(args, io),
+      // The import tool may use a plugin's importer.
+      registry: featuresFor(args, io, { plugins: true }),
       gates: {
         write: args.allowWrite,
         send: args.allowSend,

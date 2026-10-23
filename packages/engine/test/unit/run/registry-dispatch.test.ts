@@ -82,6 +82,7 @@ describe('the built-in registry', () => {
       'server-sync',
       'team-secrets',
       'mcp-server',
+      'plugins',
     ]);
     expect(SCRIPTS_FEATURE).toEqual({ id: 'scripts', title: 'Scripts', default: true, stage: 'stable', requires: [] });
     // Phase 6 spec §3.3: a REST body kind, so a feature rather than a module; on, since 6.1.0 shipped it on.

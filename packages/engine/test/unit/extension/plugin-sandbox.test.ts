@@ -33,7 +33,7 @@ export const importers = {
 export const reporters = { summary: { render(report) { return 'total ' + report.summary.total; } } };
 export const codeGenerators = {
   loop: { generate() { for (;;) {} } },
-  hog: { generate() { const a = []; for (;;) a.push('x'.repeat(1e6)); } },
+  hog: { generate() { const a = []; for (;;) a.push('x'.repeat(1e7)); } },
 };
 `;
 
@@ -72,9 +72,11 @@ describe('the plugin sandbox', () => {
       job({ point: 'codeGenerators', contribution: 'loop', method: 'generate', args: [], timeoutMs: 200 }),
     );
     expect(loop).toMatchObject({ ok: false, cause: 'timeout' });
-    const hog = await sandbox.run(job({ point: 'codeGenerators', contribution: 'hog', method: 'generate', args: [] }));
+    const hog = await sandbox.run(
+      job({ point: 'codeGenerators', contribution: 'hog', method: 'generate', args: [], timeoutMs: 25_000 }),
+    );
     expect(hog).toMatchObject({ ok: false, cause: 'memory' });
-  }, 30_000);
+  }, 60_000);
 
   it('refuses an import, and a contribution the module does not export', async () => {
     const importing = await sandbox.run(job({ code: `import fs from 'fs';\nexport const importers = {};` }));

@@ -7,11 +7,13 @@ import { mockCommand } from './commands/mock.js';
 import { mockCheckCommand } from './commands/mock-check.js';
 import { mockRecordCommand } from './commands/mock-record.js';
 import { opCommand } from './commands/ops.js';
+import { pluginCommand } from './commands/plugin.js';
 import { runCommand } from './commands/run.js';
 import { scriptsConvertCommand } from './commands/scripts-convert.js';
 import { secretsListCommand } from './commands/secrets-list.js';
 import { sshForwardCommand } from './commands/ssh-forward.js';
 import { ExitCode } from './exit-codes.js';
+import { disposeCliPluginHost } from './features.js';
 import { cliVersion } from './version.js';
 import { HELP_TEXT, HELP_TOPICS, UsageError, parseCliArgs } from './args.js';
 
@@ -79,6 +81,11 @@ export async function main(
       case 'ssh-forward': {
         return await sshForwardCommand(args, io);
       }
+      case 'plugin-install':
+      case 'plugin-list':
+      case 'plugin-remove': {
+        return await pluginCommand(args, io);
+      }
     }
   } catch (error) {
     if (error instanceof UsageError) {
@@ -87,5 +94,7 @@ export async function main(
     }
     io.stderr.write(`internal-error: ${error instanceof Error ? error.message : String(error)}\n`);
     return ExitCode.RunError;
+  } finally {
+    await disposeCliPluginHost();
   }
 }

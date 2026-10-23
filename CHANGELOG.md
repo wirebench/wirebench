@@ -10,7 +10,13 @@ All notable changes to this project are documented here. The format follows
 - **`@wirebench/engine/plugin`, the plugin API's types (#765).** A types-only subpath for writing an
   importer, a reporter or a code generator, with the `wirebench-plugin.json` manifest. It is versioned
   on its own (`PLUGIN_API_VERSION` 1.0.0) and its surface is a committed report a check compares, so a
-  change to it is a reviewed, versioned change. Loading plugins comes next.
+  change to it is a reviewed, versioned change.
+- **Plugins for the CLI (#765).** `wirebench plugin install <folder | .tgz>`, `list` and `remove`
+  manage this user's plugins in the app's data folder; a project can never bring one. A plugin's
+  reporter is `--reporter <plugin>/<reporter>=<file>`, and `wirebench import` offers a file no
+  built-in format claims to the plugin importers. Plugins run in the script sandbox; only an importer
+  may fetch, from the origins its manifest lists, through the engine's network path. `--no-plugins`,
+  `WIREBENCH_PLUGINS=off` and the `plugins` / `plugin:<id>` switches turn them off (ADR-0031).
 
 ### Changed
 - **`wirebench import` refuses every format whose protocol is off (#765).** An Insomnia, Hoppscotch,

@@ -26,6 +26,8 @@ import type { ScriptsConvertArgs } from './args-scripts.js';
 import { parseSsh, SSH_HELP } from './args-ssh.js';
 import type { SshForwardArgs } from './args-ssh.js';
 import type { FeatureArgs } from './features.js';
+import { parsePlugin, PLUGIN_HELP } from './args-plugin.js';
+import type { PluginArgs } from './args-plugin.js';
 import { secretSourcesOptionsFrom, type CliSecretSourcesOptions } from './source-secrets.js';
 import { UsageError } from './usage-error.js';
 
@@ -47,6 +49,7 @@ export const HELP_TOPICS: Readonly<Record<string, string>> = {
   mock: `${MOCK_HELP}\n\n${MOCK_CHECK_HELP}\n\n${MOCK_RECORD_HELP}`,
   scripts: SCRIPTS_HELP,
   ssh: SSH_HELP,
+  plugin: PLUGIN_HELP,
 };
 
 /** Spec §3.1: `wirebench run <path> [selector…] [options]`. */
@@ -97,9 +100,11 @@ export const HELP_TEXT = `wirebench run <path> [selector…] [options]
 Every verb: --features <id=on|off,…>
                        Switch features off (or back on) for this process: soap, rest, grpc, websocket,
                        mcp, graphql, scripts, sequences, webhooks, server-sync, team-secrets,
-                       mcp-server. Laid over WIREBENCH_FEATURES, which takes the same list. A request
+                       mcp-server, plugins, plugin:<id>. Laid over WIREBENCH_FEATURES, which takes the same list. A request
                        of a kind that is off errors with feature-disabled; a verb that needs an off
                        feature exits 2.
+Every verb: --no-plugins
+                       Load no installed plugin in this process; WIREBENCH_PLUGINS=off does the same.
 
 wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [--var <k=v>…]
                        Prints every secret the selection needs: variable name, where it is used,
@@ -137,6 +142,10 @@ wirebench ssh forward <host> [rule…] | --group <id> [--port <rule>=<n>]… [--
                        [--json] [-q]
                        Opens a host's port forwarding rules, or a forwarding group's, from hosts.yaml
                        until stopped (see wirebench ssh --help).
+
+wirebench plugin install <folder | file.tgz> [--yes] | list | remove <id>
+                       Installs, lists or removes this user's plugins: importers, reporters and code
+                       generators that run in the script sandbox (see wirebench plugin --help).
 
 wirebench --version | --help
 wirebench <verb> --help`;
@@ -201,6 +210,7 @@ type VerbArgs =
   | MockRecordArgs
   | SshForwardArgs
   | ScriptsConvertArgs
+  | PluginArgs
   | { readonly command: 'help'; readonly topic?: string }
   | { readonly command: 'version' };
 
@@ -265,17 +275,24 @@ function refuseDiffOnly(values: { readonly 'fail-on'?: string | undefined }, ver
 
 /** Parses `process.argv.slice(2)` into a {@link ParsedArgs}, or throws {@link UsageError}. */
 export function parseCliArgs(argv: readonly string[]): ParsedArgs {
+  if (argv[0] === 'plugin') {
+    return parsePlugin(argv.slice(1));
+  }
   if (argv[0] === 'ssh') {
     return parseSsh(argv.slice(1));
   }
   const { values, positionals } = parseShared(argv);
   const verb = parseVerb(values, positionals);
   // Added only when given, so a verb's arguments read exactly as they did without the flag.
-  return typeof values.features === 'string' ? { ...verb, features: values.features } : verb;
+  return {
+    ...verb,
+    ...(typeof values.features === 'string' ? { features: values.features } : {}),
+    ...(values['no-plugins'] === true ? { noPlugins: true as const } : {}),
+  };
 }
 
 /** `--features`, on every verb (feature switches spec §5.1). */
-const FEATURE_OPTIONS = { features: { type: 'string' } } as const;
+const FEATURE_OPTIONS = { features: { type: 'string' }, 'no-plugins': { type: 'boolean' } } as const;
 
 /** The options every verb but `ssh` parses with; each verb refuses the ones that are not its own. */
 const SHARED_OPTIONS = {

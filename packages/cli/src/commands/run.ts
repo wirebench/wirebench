@@ -229,7 +229,10 @@ async function readDataTable(path: string, io: CliIo): Promise<DataTable | ExitC
  * wrapper, so no reporter — one added later included — can be handed a secret value.
  */
 export async function runCommand(args: RunArgs & FeatureArgs, io: CliIo): Promise<ExitCode> {
-  const registry = featuresFor(args, io);
+  // A plugin's reporter is named `<plugin>/<reporter>`; only then are the installed plugins loaded.
+  const registry = featuresFor(args, io, {
+    plugins: args.reporters.some((spec) => spec.kind === 'file' && spec.reporter.includes('/')),
+  });
   if (args.sequences.length > 0 && !registry.features.isEnabled('sequences')) {
     // Refused before the project is read, let alone anything sent (feature switches spec §5.1).
     const off = featureDisabled(registry.features, 'sequences');
@@ -378,7 +381,16 @@ export async function runCommand(args: RunArgs & FeatureArgs, io: CliIo): Promis
     process.removeListener('SIGINT', onSigint);
   }
 
-  await output.onRunDone(result);
+  try {
+    await output.onRunDone(result);
+  } catch (error) {
+    // A plugin's reporter that fails is the plugin's error, not the run's internals (ADR-0031).
+    if (isWirebenchError(error) && error.code === 'plugin-error') {
+      io.stderr.write(`${error.code}: ${error.message}\n`);
+      return ExitCode.RunError;
+    }
+    throw error;
+  }
   // A request cut off mid-flight comes back errored; the interruption is what the pipeline needs.
   return interrupted ? ExitCode.Interrupted : exitCodeFor(result.summary);
 }
