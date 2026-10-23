@@ -47,7 +47,8 @@ lock, Mosh, Telnet and serial console hosts, a terminal type and character set p
 and host import from other SSH tools; client-signed JWT, Digest, AWS Signature v4 and more OAuth 2 grants;
 GraphQL requests; MCP servers as a fifth kind of container; `wirebench lint` for OpenAPI; environments
 that apply to chosen projects; HTTP/2 offered by default; feature switches that turn any protocol or
-optional feature off, in Settings, on the CLI and by a restrict-only team policy; an Explorer that
+optional feature off, in Settings, on the CLI, by a restrict-only team policy and, for whole
+desktop areas, by an operator's managed policy; GraphQL in a protocol package of its own; an Explorer that
 selects like a desktop tree; and, on the server, scheduled runs and SAML sign-in with SCIM, team session
 logs, live terminal sharing and an audit trail for terminal sessions; imported scripts from other API
 clients that run against their own script API; and install files for Homebrew, winget and a team server

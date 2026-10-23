@@ -6,8 +6,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
+## [6.1.0] - 2026-10-23
 
+### Added
 - **An organisation can switch a desktop area off (#360).** The managed `policy.yaml` takes an `areas`
   section (`ssh: false`, or `local-terminal`, `telnet`, `serial` on their own) that removes the area's
   activity-bar item, commands, views, tabs and IPC channels on that machine and wins over
@@ -20,73 +21,6 @@ All notable changes to this project are documented here. The format follows
   (`--features graphql=off`, `WIREBENCH_FEATURES`) and the MCP server alike. A team policy can switch it
   off for a workspace. No project file changes.
 
-### Fixed
-
-- **The project menu is shorter (#686).** A project's six creators sit under one **New ▸** submenu,
-  named alike: **New REST API…** (as on the Start page), **New gRPC API…**, **New WebSocket API…**,
-  **New MCP server…**, **New Webhook…** and **New Sequence…**.
-- **The environment switcher asks for a project instead of saying "No project" (#686).** With
-  several projects open and no request focused yet, it reads **Pick a project**: the menu lists the
-  workspace's projects, and the one picked shows its environments straight away.
-- **The Start page and the Explorer agree in an empty workspace (#686).** Both offer **New project**
-  first, then **Import…**.
-- **Two projects of one name tell apart (#686).** When another project shares a project's name (in
-  any case), its Explorer row shows its folder's name faint after the name.
-- **A short drag no longer snaps the sidebar shut (#686).** Dragging its edge inward stops at the
-  minimum width; the sidebar collapses only when the drag carries on well past it.
-- **Deep breadcrumbs stay readable (#686).** A request's path line with four or more segments keeps
-  the project and the request's name whole and folds the segments between them into **…**, whose
-  menu lists them in order.
-- **History rows say where a send went (#748).** A REST row leads with its path, the host faint beside
-  it, so sends to `/pets` and `/pets/1` on one host tell apart; the request's name moves to the second
-  line. A click opens the entry as the preview tab, which the next click replaces, and a double-click or
-  Enter keeps it. An entry with no request body says so under a **Request** label, apart from the
-  response.
-- **The empty palette leads with what you use (#748).** With nothing typed, ⌘K lists the commands run
-  from it lately under **Recently used**, and the Account commands sit at the end instead of opening
-  the list with Sign in. **Preferences: Keyboard Shortcuts** opens the shortcuts page, and "keys" or
-  "bindings" find it.
-- **Escape leaves Settings opened from the rail (#748).** After a click on the Settings button the
-  focus stayed on it with its tooltip open, and Escape only closed the tooltip. Escape now leaves
-  Settings whatever has focus, unless a menu, dialog or text field is open.
-- **The console stays out of the way until something goes wrong (#748).** A workspace's console starts
-  collapsed and a send that works leaves it so. It opens itself on the HTTP log for a failed send (no
-  response, a fault, a 4xx or 5xx) and on Problems for a new problem, until you open, close or resize
-  it yourself. Each workspace remembers its own console.
-- **Make secret no longer covers the value (#748).** It is a key button beside the row's **Remove**
-  button, so a long value stays readable to its end.
-- **Params tells path parameters and variables apart (#748).** An empty path table reads "No path
-  parameters like {id} in this URL." instead of "No {placeholders}", and a **Variables in this URL**
-  list names each `${…}` the URL uses, where it resolves and its value (masked for a secret).
-- **Imported array parameters carry their values (#748).** An OpenAPI query or path parameter that
-  takes an array now imports with its example, or its items' default or first enum value, instead of
-  an empty cell: a required `status` arrives as `status=available`, not `status=`. An exploded
-  form-style query parameter gets one row per item (`tags=a&tags=b`); other styles join the items with
-  commas. A required parameter the document gives no value at all arrives as a `${name}` reference
-  (`tags=${tags}`), so the URL marks it and a send names what is missing instead of sending `tags=`.
-  Optional parameters still arrive switched off.
-- **A new POST body is ready to type into (#748).** Switching a request with no body from GET (or any
-  method without one) to POST, PUT or PATCH sets the body to Raw · JSON. A body you set to None on a
-  POST stays None.
-- **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
-  shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
-  the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.
-  There is no **Retry** for an error that cannot change on its own (the same for an unclosed `${` or a
-  URL that is not one), and the code and the engine's message sit behind **Details**. Like a refused
-  connection or a timeout, it is no longer counted as a problem, so the status bar stays calm.
-- **A new environment is ready in one step (#746).** **Add environment** puts the new row straight
-  into rename with the focus in it, and once the name is in (Enter, or a click away) the environment
-  becomes the current project's active environment, so the switcher and the next send already use it.
-  Escape keeps "Environment N" and leaves the choice of environment as it was.
-- **The Problems tab counts what the status bar counts (#745).** The console's Problems tab no longer
-  badges lint findings: with a freshly imported definition the status bar read "0 problems · 57 lint
-  findings" while the tab beside it read "Problems 57". Lint now has its own **Lint** chip in the
-  Problems view, off by default, and **All**, **Errors** and **Warnings** list only the problems; the
-  status bar's lint item and **Lint definition** open the lint list directly.
-
-## [6.1.0] - 2026-10-22
-
-### Added
 - **Feature switches.** Every protocol and optional feature can be turned off: **Settings → Features**
   lists SOAP, REST, gRPC, WebSocket, MCP requests, Scripts, Sequences, Webhooks, Shared workspaces,
   Team secrets and the MCP server, with the stage of each and why one is off (_Requires REST_, _Off by
@@ -877,6 +811,68 @@ All notable changes to this project are documented here. The format follows
   (#635).
 
 ### Fixed
+- **The project menu is shorter (#686).** A project's six creators sit under one **New ▸** submenu,
+  named alike: **New REST API…** (as on the Start page), **New gRPC API…**, **New WebSocket API…**,
+  **New MCP server…**, **New Webhook…** and **New Sequence…**.
+- **The environment switcher asks for a project instead of saying "No project" (#686).** With
+  several projects open and no request focused yet, it reads **Pick a project**: the menu lists the
+  workspace's projects, and the one picked shows its environments straight away.
+- **The Start page and the Explorer agree in an empty workspace (#686).** Both offer **New project**
+  first, then **Import…**.
+- **Two projects of one name tell apart (#686).** When another project shares a project's name (in
+  any case), its Explorer row shows its folder's name faint after the name.
+- **A short drag no longer snaps the sidebar shut (#686).** Dragging its edge inward stops at the
+  minimum width; the sidebar collapses only when the drag carries on well past it.
+- **Deep breadcrumbs stay readable (#686).** A request's path line with four or more segments keeps
+  the project and the request's name whole and folds the segments between them into **…**, whose
+  menu lists them in order.
+- **History rows say where a send went (#748).** A REST row leads with its path, the host faint beside
+  it, so sends to `/pets` and `/pets/1` on one host tell apart; the request's name moves to the second
+  line. A click opens the entry as the preview tab, which the next click replaces, and a double-click or
+  Enter keeps it. An entry with no request body says so under a **Request** label, apart from the
+  response.
+- **The empty palette leads with what you use (#748).** With nothing typed, ⌘K lists the commands run
+  from it lately under **Recently used**, and the Account commands sit at the end instead of opening
+  the list with Sign in. **Preferences: Keyboard Shortcuts** opens the shortcuts page, and "keys" or
+  "bindings" find it.
+- **Escape leaves Settings opened from the rail (#748).** After a click on the Settings button the
+  focus stayed on it with its tooltip open, and Escape only closed the tooltip. Escape now leaves
+  Settings whatever has focus, unless a menu, dialog or text field is open.
+- **The console stays out of the way until something goes wrong (#748).** A workspace's console starts
+  collapsed and a send that works leaves it so. It opens itself on the HTTP log for a failed send (no
+  response, a fault, a 4xx or 5xx) and on Problems for a new problem, until you open, close or resize
+  it yourself. Each workspace remembers its own console.
+- **Make secret no longer covers the value (#748).** It is a key button beside the row's **Remove**
+  button, so a long value stays readable to its end.
+- **Params tells path parameters and variables apart (#748).** An empty path table reads "No path
+  parameters like {id} in this URL." instead of "No {placeholders}", and a **Variables in this URL**
+  list names each `${…}` the URL uses, where it resolves and its value (masked for a secret).
+- **Imported array parameters carry their values (#748).** An OpenAPI query or path parameter that
+  takes an array now imports with its example, or its items' default or first enum value, instead of
+  an empty cell: a required `status` arrives as `status=available`, not `status=`. An exploded
+  form-style query parameter gets one row per item (`tags=a&tags=b`); other styles join the items with
+  commas. A required parameter the document gives no value at all arrives as a `${name}` reference
+  (`tags=${tags}`), so the URL marks it and a send names what is missing instead of sending `tags=`.
+  Optional parameters still arrive switched off.
+- **A new POST body is ready to type into (#748).** Switching a request with no body from GET (or any
+  method without one) to POST, PUT or PATCH sets the body to Raw · JSON. A body you set to None on a
+  POST stays None.
+- **A missing variable is explained once (#747).** A send refused because a `${name}` has no value now
+  shows one heading and one sentence naming each variable, linked to the field it sits in, instead of
+  the heading, the engine's sentence and the code `rest-unresolved-properties` one under the other.
+  There is no **Retry** for an error that cannot change on its own (the same for an unclosed `${` or a
+  URL that is not one), and the code and the engine's message sit behind **Details**. Like a refused
+  connection or a timeout, it is no longer counted as a problem, so the status bar stays calm.
+- **A new environment is ready in one step (#746).** **Add environment** puts the new row straight
+  into rename with the focus in it, and once the name is in (Enter, or a click away) the environment
+  becomes the current project's active environment, so the switcher and the next send already use it.
+  Escape keeps "Environment N" and leaves the choice of environment as it was.
+- **The Problems tab counts what the status bar counts (#745).** The console's Problems tab no longer
+  badges lint findings: with a freshly imported definition the status bar read "0 problems · 57 lint
+  findings" while the tab beside it read "Problems 57". Lint now has its own **Lint** chip in the
+  Problems view, off by default, and **All**, **Errors** and **Warnings** list only the problems; the
+  status bar's lint item and **Lint definition** open the lint list directly.
+
 - **Explorer, after a daily-use review (#685).** A SOAP operation with no request is a leaf, and a click on
   it creates the first request; **Expand all** unfolds down to the operations and Endpoints and leaves
   those folded, so a tree of many operations stays readable. A failed import names the HTTP status and
@@ -2533,8 +2529,8 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v6.1.0-rc.5...HEAD
-[6.1.0]: https://github.com/wirebench/wirebench/compare/v6.0.0-rc.1...v6.1.0-rc.5
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v6.1.0-rc.6...HEAD
+[6.1.0]: https://github.com/wirebench/wirebench/compare/v6.0.0-rc.1...v6.1.0-rc.6
 [6.0.0]: https://github.com/wirebench/wirebench/compare/v5.0.0...v6.0.0
 [5.0.0]: https://github.com/wirebench/wirebench/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/wirebench/wirebench/compare/v3.1.0...v4.0.0
