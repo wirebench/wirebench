@@ -655,7 +655,7 @@ async function code(
   const built =
     rest !== undefined ? await restCode(deps, rest, show) : await soapCode(deps, sendDeps, request.requestId, show);
   const extensions = deps.extensions?.() ?? createBuiltinRegistry().extensions;
-  const generated = extensions.codeGenerator(target).generate(built.request, codeOptions(request.settings));
+  const generated = await extensions.codeGenerator(target).generate(built.request, codeOptions(request.settings));
   const notes = [...built.notes, ...generated.notes];
   return { command: redactSecretText(generated.code, { show }), ...(notes.length > 0 ? { notes } : {}) };
 }

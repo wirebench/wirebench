@@ -743,6 +743,14 @@ One self-contained file — inline CSS, no script, no network fetch — with the
 expandable entry per request. The redacted request and response are included for failed and
 errored requests only.
 
+### `<plugin>/<reporter>=<file>`
+
+A reporter an installed plugin contributes (see [Plugins](#plugins)), named by the plugin's id and
+the reporter's: `--reporter acme/summary=reports/summary.txt`. It is handed the masked run as the
+plugin API's `RunReport` (outcomes, statuses, assertions, errors; no request or response text) and
+returns the file's text. A plugin's reporter that fails is exit 3 with `plugin-error`; an id no
+installed plugin has is exit 2, as an unknown built-in id is.
+
 Several reporters can be requested in one run: `--reporter junit=reports/wirebench.xml --reporter json=reports/wirebench.json`.
 A report's directory is created if missing; a report that cannot be written is exit 2.
 
@@ -793,6 +801,8 @@ behave:
 - `generate` and `validate` need `soap`; `import` refuses a WSDL while `soap` is off and an OpenAPI
   document while `rest` is off. `wirebench mcp` with `mcp-server` off exits 2, and its `tools/list`
   leaves out a tool whose feature is off (a call to one is refused with `feature-disabled`).
+
+`plugins` switches every installed plugin, and `plugin:<id>` one of them (see [Plugins](#plugins)).
 
 A flag entry that is not `<id>=on|off` is a usage error (exit 2); such an entry in the variable is
 ignored, since one variable serves many commands. An id with no feature in this version is warned
@@ -1571,3 +1581,42 @@ A CI system's service containers start before the repository is checked out, so 
 project; start the mock from the job itself, as above, or bake the project into an image built
 `FROM ghcr.io/wirebench/wirebench-cli` with it copied under `/work`.
 
+
+## Plugins
+
+A plugin adds an importer, a reporter or a code generator to this user's Wirebench, and nothing
+else ([ADR-0031](adr/0031-a-plugin-is-installed-by-the-user-and-runs-with-what-its-manifest-declares.md)).
+Plugins live in the app's data folder, `plugins/`, which the CLI shares with the desktop app
+(`~/Library/Application Support/Wirebench` on macOS, `%APPDATA%\Wirebench` on Windows,
+`$XDG_CONFIG_HOME/Wirebench` elsewhere). A project can never bring or enable one, and no flag or
+variable points the CLI at another folder.
+
+```bash
+wirebench plugin install ./acme-plugin            # a folder, or acme-plugin.tgz
+wirebench plugin install ./acme-plugin.tgz --yes  # without asking, as in CI
+wirebench plugin list
+wirebench plugin remove acme
+```
+
+`install` reads the plugin, prints what it contributes and which origins it may reach, and asks
+before it writes; `--yes` skips the question, and outside a terminal it is required. It keeps only
+the manifest, the module, `README` and `LICENSE`, and records their SHA-256 in
+`plugins.lock.json`. A plugin whose files change afterwards is skipped (`plugin-modified`) until it is
+installed again. `list` shows every plugin and why one is skipped.
+
+Where a plugin is used:
+
+- `wirebench run --reporter <plugin>/<reporter>=<file>` (see [Reports](#reports)).
+- `wirebench import <file>` and the MCP `import` tool: a file no built-in format claims is offered to
+  each plugin importer; the one that is sure imports it, as REST APIs, plain variables and
+  environments (a secret variable is reported and not written). Two plugins equally sure is
+  `import-ambiguous`, never a guess. The output's `format` is `plugin:<plugin>/<importer>`.
+
+A verb that uses plugins names each one it loaded on stderr (`plugin: acme 1.0.0 (network: …)`).
+`--no-plugins`, `WIREBENCH_PLUGINS=off` or `--features plugins=off` loads none.
+
+A plugin runs in the script sandbox with no files, environment, timers or secrets. Only an importer
+whose manifest lists origins may fetch, and only from those origins, through the engine's network
+path: the proxy variables apply, private and loopback addresses are refused, and each exchange is
+recorded, redacted and without bodies, in `history/plugin-<id>.jsonl`. Writing one: the types are
+`@wirebench/engine/plugin`.

@@ -83,7 +83,8 @@ export async function opCommand(args: OpArgs & FeatureArgs, io: CliIo): Promise<
       gates: args.allowCommands === true ? { ...OPEN_GATES, commands: true } : OPEN_GATES,
       origin: 'cli',
       secretSources: args.secretSources,
-      registry: featuresFor(args, io),
+      // Only `import` reaches a plugin's contribution, so only it loads the installed plugins.
+      registry: featuresFor(args, io, { plugins: args.op === 'import' }),
     },
     io,
   );

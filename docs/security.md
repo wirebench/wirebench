@@ -602,6 +602,43 @@ What this does not change: a script someone else wrote runs when you send its re
 request already sends what it says to where it says. The rules above make sure the script gains
 nothing a declarative request could not already do, beyond CPU and memory within its limits.
 
+## A plugin is installed by the user and runs with what it declares
+
+A plugin adds an importer, a reporter or a code generator (phase 7 of #184). It is code from outside
+the project, so it is held to [ADR-0031](adr/0031-a-plugin-is-installed-by-the-user-and-runs-with-what-its-manifest-declares.md)
+on top of ADR-0016:
+
+- **Installed by the person, never by a project.** Plugins are read only from `<userData>/plugins/`,
+  put there by `wirebench plugin install` or **Settings → Plugins** after the person has seen what the
+  plugin contributes and which origins it may reach. No project file, server or environment variable
+  can install one, enable one or point at another folder. Tests:
+  `packages/engine/test/unit/extension/plugin-store.test.ts`.
+- **The files installed are the files that run.** The manifest's and the module's SHA-256 are kept in
+  `plugins.lock.json`, outside the plugin folders. A symlinked plugin folder, a folder with no lock
+  entry, or a file that changed is skipped. The module is read once, without following a link, and
+  the bytes hashed are the bytes evaluated.
+- **An archive is read strictly.** A `.tgz` with a link, a device, an absolute name, a `..`, more
+  than 16 files or more than 64 MiB unpacked is refused before anything is written.
+- **The script sandbox, every call.** QuickJS in WebAssembly on a worker, a fresh runtime per call,
+  60 s and 128 MiB, every `import` refused, no host object, file, environment, timer or secret. A
+  result is checked before it is used. Tests: `packages/engine/test/unit/extension/plugin-sandbox.test.ts`.
+- **Network only for importers, only to listed origins.** A reporter is handed run results and a
+  code generator a request, which can carry what no mask catches, so neither has network. An
+  importer's `net.fetch` goes through the engine: the origin and every redirect hop must be listed;
+  a name that resolves to a loopback, private, link-local or metadata address is refused and the
+  connect is pinned to the address checked; no configured auth, cookie or secret is attached; each
+  exchange is recorded, redacted and without bodies. Tests:
+  `packages/engine/test/unit/extension/plugin-net.test.ts`.
+- **What a plugin sees.** An importer sees the file the person chose to import. A reporter sees
+  outcomes, not request or response text. A code generator sees `Authorization`,
+  `Proxy-Authorization`, `Cookie` and a basic password only as environment reads.
+- **No plugin code in the renderer.** The app shows what manifests declare; plugin code runs in main.
+- **A switch like any other.** `plugins` and `plugin:<id>` are feature switches; a team policy can
+  turn either off and never on (ADR-0029).
+
+What this does not change: a plugin the person installed can do wrong with what it is given, as any
+tool can. A report it writes is a file Wirebench writes and never opens.
+
 ## A feature that is off is refused, not hidden
 
 Every protocol and optional feature is a switch (phase 4 of #184, the

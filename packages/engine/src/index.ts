@@ -114,6 +114,39 @@ export type {
 } from '#core/extension/registry';
 export { BUILTIN_CODE_GENERATORS, BUILTIN_IMPORTERS, BUILTIN_REPORTERS, builtinExtensions } from './extensions.js';
 export {
+  createPluginHost,
+  detectPluginFormat,
+  PLUGINS_FEATURE,
+  pluginFeature,
+  toPluginCodeRequest,
+  toPluginReport,
+} from './plugins.js';
+export type { PluginDetection, PluginHost, PluginHostOptions } from './plugins.js';
+export { mapPluginImport } from './import/plugin-import.js';
+export { MANIFEST_FILE, parsePluginManifest, PLUGIN_API_MAJOR } from '#core/extension/plugin/manifest';
+export type { PluginManifestData } from '#core/extension/plugin/manifest';
+export {
+  installedManifest,
+  installStaged,
+  loadInstalledPlugins,
+  lockFileOf,
+  pluginsDirOf,
+  readPluginLock,
+  removePlugin,
+  stagePlugin,
+} from '#core/extension/plugin/store';
+export type {
+  InstalledPlugin,
+  PluginLock,
+  PluginLockEntry,
+  PluginProblem,
+  PluginProblemCode,
+  StagedPlugin,
+} from '#core/extension/plugin/store';
+export { appendPluginNetRecord, pluginHistoryFile } from '#core/extension/plugin/history';
+export type { PluginNetRecord } from '#core/extension/plugin/net';
+export type { PluginImportData } from '#core/extension/plugin/results';
+export {
   PROJECT_FILE_KINDS,
   PROJECT_SCHEMA_BASE_URL,
   WORKSPACE_FILE_KINDS,

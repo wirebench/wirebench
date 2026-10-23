@@ -7,6 +7,8 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
+  detectPluginFormat,
+  mapPluginImport,
   apiDefinitionDir,
   containersOf,
   contractPorts,
@@ -76,7 +78,9 @@ export interface ImportProblemView {
 }
 
 export interface ImportOutput {
-  readonly format: 'wsdl' | 'openapi' | 'postman-v3' | 'insomnia' | 'bruno' | 'hoppscotch' | 'thunder-client';
+  /** A built-in format, or `plugin:<plugin-id>/<importer-id>` for a plugin's (ADR-0031). */
+  readonly format:
+    'wsdl' | 'openapi' | 'postman-v3' | 'insomnia' | 'bruno' | 'hoppscotch' | 'thunder-client' | `plugin:${string}`;
   readonly added: readonly ImportedItem[];
   /** What the importer reported it could not map. */
   readonly problems: readonly ImportProblemView[];
@@ -395,7 +399,7 @@ async function addMappedCollections(
   context: OpsContext,
   project: Project,
   mapped: MappedCollections,
-  format: 'postman-v3' | 'insomnia' | 'bruno' | 'hoppscotch' | 'thunder-client',
+  format: ImportOutput['format'],
 ): Promise<ImportOutput> {
   const taken = new Set([...takenContainerSlugs(project, 'apis'), ...takenContainerSlugs(project, 'interfaces')]);
   const added: ImportedItem[] = [];
@@ -605,6 +609,28 @@ export const importOp = defineOp({
         folder ? { kind: 'folder', path: dirname(read.source) } : { kind: 'text', text: read.text },
         value.name,
       );
+    }
+    if (detected.kind === 'unknown') {
+      // Only a file no built-in format claims is offered to the plugins (spec §3.1).
+      const found = await detectPluginFormat(context.registry.extensions.importers, {
+        ...(read.filename !== undefined ? { filename: read.filename } : {}),
+        text: read.text,
+      });
+      if (found.kind === 'ambiguous') {
+        throw new OpsError(
+          'import-ambiguous',
+          `${value.source} reads as more than one plugin format: ${found.importers.map((entry) => entry.id).join(', ')}`,
+          { formats: found.importers.map((entry) => entry.id) },
+        );
+      }
+      if (found.kind === 'found' && found.importer.import !== undefined) {
+        const result = await found.importer.import({
+          ...(read.filename !== undefined ? { filename: read.filename } : {}),
+          text: read.text,
+        });
+        const mapped = mapPluginImport(result, found.importer.title, { firstOrder: nextApiOrder(project) });
+        return addMappedCollections(context, project, mapped, `plugin:${found.importer.id}`);
+      }
     }
     if (detected.kind.endsWith('-environment')) {
       throw new OpsError(

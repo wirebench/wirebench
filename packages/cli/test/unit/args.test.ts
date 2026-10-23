@@ -478,3 +478,36 @@ describe('parseCliArgs — scripts convert', () => {
     expect(parseCliArgs(['scripts', '--help'])).toEqual({ command: 'help', topic: 'scripts' });
   });
 });
+
+describe('parseCliArgs: plugin', () => {
+  it('parses install, list and remove', () => {
+    expect(parseCliArgs(['plugin', 'install', './acme', '--yes'])).toEqual({
+      command: 'plugin-install',
+      source: './acme',
+      yes: true,
+    });
+    expect(parseCliArgs(['plugin', 'install', './acme.tgz'])).toEqual({
+      command: 'plugin-install',
+      source: './acme.tgz',
+      yes: false,
+    });
+    expect(parseCliArgs(['plugin', 'list'])).toEqual({ command: 'plugin-list' });
+    expect(parseCliArgs(['plugin', 'remove', 'acme'])).toEqual({ command: 'plugin-remove', id: 'acme' });
+    expect(parseCliArgs(['plugin', '--help'])).toEqual({ command: 'help', topic: 'plugin' });
+  });
+
+  it.each([
+    [['plugin']],
+    [['plugin', 'install']],
+    [['plugin', 'remove']],
+    [['plugin', 'list', '--yes']],
+    [['plugin', 'frob']],
+  ])('rejects %j as a usage error', (argv) => {
+    expect(() => parseCliArgs(argv)).toThrow(UsageError);
+  });
+
+  it('takes --no-plugins on any verb', () => {
+    expect(parseCliArgs(['run', './p', '--no-plugins'])).toMatchObject({ command: 'run', noPlugins: true });
+    expect(parseCliArgs(['run', './p'])).not.toHaveProperty('noPlugins');
+  });
+});

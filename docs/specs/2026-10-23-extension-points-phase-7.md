@@ -200,9 +200,10 @@ interface CodeGenerator { language: string; generate(request: CodeRequest, layou
 
 - Same design as scripts (ADR-0016): QuickJS in WebAssembly, on a worker thread, a fresh runtime
   per call, no host object reachable, plain functions passing strings and JSON across.
-- It uses the **asyncify** build of the same QuickJS release
-  (`@jitl/quickjs-wasmfile-release-asyncify@0.32.0`, MIT), because `net.fetch` must wait on the
-  host. Scripts keep the sync build. One new runtime dependency.
+- It uses the same sync build of QuickJS as scripts. `net.fetch` returns a QuickJS promise the host
+  settles when the brokered request ends, and the host runs the runtime's pending jobs until the
+  call's own promise settles. (The asyncify build first planned here corrupts its memory when a
+  plugin awaits before calling the host, so it is not used, and no dependency is added.)
 - `main.js` is evaluated as a module; the module loader refuses every import.
 - Limits per call: 60 s wall clock, network included; 128 MiB memory; 32 MiB input and output;
   the script limits for stack and log; at most 16 calls queued. A breach is `plugin-error` with the
@@ -265,7 +266,7 @@ nothing; `engine/src/extensions.ts` is composition.
 2. **Plugin subpath.** `@wirebench/engine/plugin`, `PLUGIN_API_VERSION`, the two-way type test,
    the API report and `pnpm check:plugin-api`.
 3. **Loading in the engine and CLI.** Manifest schema, installer, `installed.json` hashes, the
-   asyncify sandbox, the network broker, the `plugins` and `plugin:<id>` descriptors,
+   plugin sandbox, the network broker, the `plugins` and `plugin:<id>` descriptors,
    `wirebench plugin install|list|remove`, plugin importers in `import`, plugin reporters in `run`.
 4. **Desktop.** Plugins loaded at start-up in main; Settings → Plugins; plugin formats in the
    import dialog; plugin generators in the code panel; guide page and `docs/security.md`.
