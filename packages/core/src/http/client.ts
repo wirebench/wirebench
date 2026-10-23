@@ -1,4 +1,5 @@
 import { Agent, ProxyAgent, request as undiciRequest, type buildConnector, type Dispatcher } from 'undici';
+import type { LookupFunction } from 'node:net';
 import { pipeline, type Readable } from 'node:stream';
 import { createDecompressStream, decompressBody } from './decompress.js';
 import { failedRequestFor, withFailedRequest, type FailedRequest } from './failed-request.js';
@@ -76,6 +77,11 @@ export function createDispatcher(opts: {
   readonly localAddress?: string;
   /** Offer HTTP/2 in the ALPN handshake. On unless `false`; see `HttpRequest.allowH2`. */
   readonly allowH2?: boolean;
+  /**
+   * How the socket resolves a host name: the plugin broker pins the address it checked, so a DNS
+   * answer that changes between the check and the connect cannot move the request (phase 7 §8).
+   */
+  readonly lookup?: LookupFunction;
 }): Dispatcher {
   const connect = connectOptions(opts);
   const allowH2 = opts.allowH2 !== false;
@@ -162,13 +168,15 @@ export function createSingleConnectionDispatcher(opts: {
 function connectOptions(opts: {
   readonly tls?: TlsOptions;
   readonly localAddress?: string;
+  readonly lookup?: LookupFunction;
 }): Record<string, unknown> | undefined {
-  if (opts.tls === undefined && opts.localAddress === undefined) {
+  if (opts.tls === undefined && opts.localAddress === undefined && opts.lookup === undefined) {
     return undefined;
   }
   return {
     ...(opts.tls !== undefined ? tlsConnectOptions(opts.tls) : {}),
     ...(opts.localAddress !== undefined ? { localAddress: opts.localAddress } : {}),
+    ...(opts.lookup !== undefined ? { lookup: opts.lookup } : {}),
   };
 }
 

@@ -17,7 +17,10 @@ const WORKER_STACK_MB = 8;
 const SPAWN_GRACE_MS = 2_000;
 
 export interface PluginSandboxOptions {
-  /** The broker for one plugin's `net.fetch`; undefined, or no function, means no network. */
+  /**
+   * The fetch one call of one plugin uses, asked once per call that may use the network, so each
+   * call has its own request budget. Undefined means no network.
+   */
   readonly fetchFor?: (pluginId: string) => PluginFetch | undefined;
   /** The worker script; tests substitute one. Defaults to the compiled `worker.js`. */
   readonly workerUrl?: URL;
@@ -48,6 +51,7 @@ interface Pending {
   readonly id: number;
   readonly job: PluginJob;
   readonly resolve: (result: PluginJobResult) => void;
+  fetch?: PluginFetch | undefined;
 }
 
 const failed = (cause: 'error' | 'timeout', message: string): PluginJobResult => ({
@@ -88,8 +92,7 @@ export function createPluginSandbox(options: PluginSandboxOptions = {}): PluginS
   };
 
   const answerFetch = (from: Worker, ask: PluginFetchAsk): void => {
-    const job = current;
-    const fetch = job?.id === ask.id ? options.fetchFor?.(job.job.pluginId) : undefined;
+    const fetch = current?.id === ask.id ? current.fetch : undefined;
     const reply = (ok: boolean, text: string): void => {
       if (worker === from) from.postMessage({ kind: 'fetched', fetchId: ask.fetchId, ok, text });
     };
@@ -144,6 +147,7 @@ export function createPluginSandbox(options: PluginSandboxOptions = {}): PluginS
     const job = queue.shift();
     if (job === undefined) return;
     current = job;
+    job.fetch = job.job.net ? options.fetchFor?.(job.job.pluginId) : undefined;
     const fresh = worker === undefined;
     try {
       worker ??= spawn();
