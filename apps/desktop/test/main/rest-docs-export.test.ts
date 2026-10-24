@@ -71,7 +71,7 @@ describe('apiDocsFile', () => {
 
     const markdown = apiDocsFile(PROJECT, 'A1', 'markdown');
     expect(markdown.fileName).toBe('Cards - v1.md');
-    expect(markdown.text).toContain('`Bearer ${secret:token}`');
+    expect(markdown.text).toContain('| Authorization | Bearer $\\{secret:token\\} |');
   });
 
   it('refuses an id that is not a REST API of the project', () => {

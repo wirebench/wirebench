@@ -25,11 +25,6 @@ function plain(text: string): string {
   return text.replace(/\s*\n\s*/g, ' ').replace(/([\\`*_{}[\]()#+\-.!|<>~])/g, '\\$1');
 }
 
-/** A table cell: one line, pipes escaped. */
-function cell(text: string): string {
-  return text.replace(/\s*\n\s*/g, ' ').replace(/\|/g, '\\|');
-}
-
 function heading(depth: number): string {
   return '#'.repeat(Math.min(6, depth + 2));
 }
@@ -43,7 +38,9 @@ function table(title: string, rows: readonly DocParam[]): string[] {
     '| --- | --- | --- |',
     ...rows.map(
       (row) =>
-        `| ${cell(code(row.name))} | ${row.value === '' ? '' : cell(code(row.value))} | ${cell(row.description)} |`,
+        // Plain, fully escaped text: a pipe or a backslash in a value can neither end the cell nor
+        // escape the character after it, which a code span inside a table cell cannot promise.
+        `| ${plain(row.name)} | ${plain(row.value)} | ${plain(row.description)} |`,
     ),
     '',
   ];

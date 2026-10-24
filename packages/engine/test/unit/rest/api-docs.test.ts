@@ -88,9 +88,16 @@ describe('apiDocumentToMarkdown', () => {
     expect(markdown).toContain('- **Auth:** Bearer token');
     expect(markdown).toContain('  - [POST Issue a card](#issue-a-card)');
     expect(markdown).toContain('`POST ${base_url}/cards/{programId}`');
-    expect(markdown).toContain('| `Authorization` | `Bearer ${secret:token}` |  |');
+    expect(markdown).toContain('| Authorization | Bearer $\\{secret:token\\} |  |');
     expect(markdown).not.toContain('X-Off');
     expect(markdown).toContain('```json\n{"id":"c1"}\n```');
+  });
+
+  it('keeps a pipe or a backslash in a table value inside its cell', () => {
+    const doc = buildApiDocument(
+      createApi('Pipes', { requests: [createRestRequest('Get', { headers: [entry('X-Path', 'a|b\\c')] })] }),
+    );
+    expect(apiDocumentToMarkdown(doc)).toContain('| X\\-Path | a\\|b\\\\c |  |');
   });
 
   it('escapes names so they stay text', () => {
@@ -111,7 +118,7 @@ describe('markdownToSafeHtml', () => {
     const html = markdownToSafeHtml(
       'Hi <script>alert(1)</script> <b>x</b>\n\n<img src="https://evil.test/a.png">\n\n![diagram](https://evil.test/b.png)\n\n[click](javascript:alert(1)) [web](https://ok.test)',
     );
-    expect(html).not.toMatch(/<script|<b>|<img/);
+    expect(html).not.toMatch(/<script|<b>|<img/i);
     expect(html).not.toContain('evil.test');
     expect(html).not.toContain('javascript:');
     expect(html).toContain('<span>diagram</span>');
@@ -140,6 +147,6 @@ describe('apiDocumentToHtml', () => {
       requests: [createRestRequest('<b>n</b>', { url: '"><script>', headers: [entry('<h>', '<v>')] })],
     });
     const html = apiDocumentToHtml(buildApiDocument(hostile));
-    expect(html).not.toMatch(/<img|<b>|<script|<h>|<v>/);
+    expect(html).not.toMatch(/<img|<b>|<script|<h>|<v>/i);
   });
 });
