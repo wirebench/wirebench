@@ -5,12 +5,14 @@ import type { UpdaterBackend, UpdaterUi, UpdateStatus } from '../src/main/update
 /** A fake `electron-updater` `AppUpdater`: records what was asked of it, answers as scripted. */
 function fakeBackend(script: Partial<UpdaterBackend> = {}): UpdaterBackend & { readonly calls: string[] } {
   const calls: string[] = [];
-  return {
+  const backend: UpdaterBackend & { readonly calls: string[] } = {
     calls,
     autoDownload: true,
     autoInstallOnAppQuit: true,
+    allowPrerelease: true,
+    allowDowngrade: true,
     async checkForUpdates() {
-      calls.push('check');
+      calls.push(backend.allowPrerelease ? 'check:preview' : 'check');
       return script.checkForUpdates === undefined ? null : await script.checkForUpdates();
     },
     async downloadUpdate() {
@@ -24,6 +26,7 @@ function fakeBackend(script: Partial<UpdaterBackend> = {}): UpdaterBackend & { r
       /* no progress in the default script */
     },
   };
+  return backend;
 }
 
 /** A fake UI that answers every consent prompt the same way and records what it was told. */
@@ -90,6 +93,27 @@ describe('UpdateController', () => {
 
     expect(backend.autoDownload).toBe(false);
     expect(backend.autoInstallOnAppQuit).toBe(false);
+    expect(backend.allowDowngrade).toBe(false);
+  });
+
+  it('asks for pre-releases only on the Preview channel, read at every check', async () => {
+    const backend = fakeBackend();
+    let channel: 'stable' | 'preview' = 'preview';
+    const controller = new UpdateController(backend, fakeUi(), { channel: () => channel });
+
+    await controller.check({ trigger: 'user' });
+    channel = 'stable';
+    await controller.check({ trigger: 'user' });
+
+    expect(backend.calls).toEqual(['check:preview', 'check']);
+  });
+
+  it('turns pre-releases off without a channel, even though a preview build defaults them on', async () => {
+    const backend = fakeBackend();
+    await new UpdateController(backend, fakeUi()).check({ trigger: 'user' });
+
+    expect(backend.allowPrerelease).toBe(false);
+    expect(backend.calls).toEqual(['check']);
   });
 
   it('reports "up to date" and downloads nothing when there is no update', async () => {

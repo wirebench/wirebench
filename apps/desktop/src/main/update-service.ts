@@ -17,7 +17,7 @@ import { appVersion } from './app-version.js';
 // destructured instead. The main bundle externalises it, so this is what actually runs.
 import electronUpdater from 'electron-updater';
 import { githubFeedFrom, UpdateController } from './updater.js';
-import type { UpdateStatus } from './updater.js';
+import type { UpdateChannel, UpdateStatus } from './updater.js';
 
 const { autoUpdater } = electronUpdater;
 
@@ -49,16 +49,22 @@ async function confirm(message: string, detail: string, confirmLabel: string): P
   return response === 0;
 }
 
+/** "6.2.0-rc.1 (preview)" for a pre-release, the bare version otherwise. */
+export function versionLabel(version: string): string {
+  return version.includes('-') ? `${version} (preview)` : version;
+}
+
 /**
  * Builds the app's single {@link UpdateController}.
  *
  * @param report - broadcasts a status to every window (the status bar renders it)
  * @param options.portable - the portable Windows build, which is updated by downloading the new
  *   zip rather than by running an installer (see `portable.ts`)
+ * @param options.channel - the `updates.channel` preference, read at every check
  */
 export function createUpdateController(
   report: (status: UpdateStatus) => void,
-  options: { readonly portable?: boolean } = {},
+  options: { readonly portable?: boolean; readonly channel?: () => UpdateChannel } = {},
 ): UpdateController {
   const portable = options.portable === true;
   const feed = githubFeedFrom(repositoryUrl(app.getAppPath()));
@@ -75,18 +81,18 @@ export function createUpdateController(
       confirmDownload: async (version) =>
         portable
           ? await confirm(
-              `Wirebench ${version} is available.`,
+              `Wirebench ${versionLabel(version)} is available.`,
               `You are running ${appVersion()}, the portable build. Open the release page to download the new zip? Unpack it and move this copy's data folder into it.`,
               'Open Release Page',
             )
           : await confirm(
-              `Wirebench ${version} is available.`,
+              `Wirebench ${versionLabel(version)} is available.`,
               `You are running ${appVersion()}. Download the update now? Nothing is installed until you say so.`,
               'Download',
             ),
       confirmInstall: async (version) =>
         await confirm(
-          `Wirebench ${version} is ready to install.`,
+          `Wirebench ${versionLabel(version)} is ready to install.`,
           'Wirebench will restart to finish installing.',
           'Restart and Install',
         ),
@@ -97,6 +103,10 @@ export function createUpdateController(
       },
       report,
     },
-    { feedConfigured: feed !== undefined && app.isPackaged, selfInstall: !portable },
+    {
+      feedConfigured: feed !== undefined && app.isPackaged,
+      selfInstall: !portable,
+      ...(options.channel !== undefined ? { channel: options.channel } : {}),
+    },
   );
 }

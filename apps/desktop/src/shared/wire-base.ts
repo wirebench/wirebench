@@ -2055,7 +2055,7 @@ export const preferencesWireSchema = z.object({
     historyCap: z.number(),
     logSize: z.number(),
   }),
-  updates: z.object({ checkOnLaunch: z.boolean() }),
+  updates: z.object({ checkOnLaunch: z.boolean(), channel: z.enum(['stable', 'preview']) }),
   accounts: z.object({ showInStatusBar: z.boolean() }),
   secrets: z.object({ sourceCacheSeconds: z.number(), appLock: z.boolean(), appLockIdleMinutes: z.number() }),
   mocks: z.object({ listenOnAllInterfaces: z.boolean() }),

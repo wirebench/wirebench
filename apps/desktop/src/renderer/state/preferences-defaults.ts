@@ -55,7 +55,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     historyCap: 1000,
     logSize: 500,
   },
-  updates: { checkOnLaunch: false },
+  updates: { checkOnLaunch: false, channel: 'stable' },
   accounts: { showInStatusBar: true },
   secrets: { sourceCacheSeconds: 300, appLock: false, appLockIdleMinutes: 15 },
   mocks: { listenOnAllInterfaces: false },

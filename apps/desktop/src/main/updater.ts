@@ -20,6 +20,17 @@ export interface UpdaterBackend {
   /** Set to `false` on construction: quitting the app must never silently install anything. */
   autoInstallOnAppQuit: boolean;
   /**
+   * Set before every check from the update channel. `electron-updater` defaults it to `true` when
+   * the running version is itself a pre-release, so it is always set explicitly: a preview build
+   * whose user picked Stable must stop being offered previews.
+   */
+  allowPrerelease: boolean;
+  /**
+   * Set to `false` on construction: going back to Stable from a preview build waits for the next
+   * stable release that is newer, rather than offering an older one.
+   */
+  allowDowngrade: boolean;
+  /**
    * Resolves with the newest release's info **whether or not it is newer than the running app** —
    * `isUpdateAvailable` is what says so — or `null`/`undefined` when the check could not run.
    */
@@ -68,7 +79,12 @@ const DOWNLOAD_FAILED = 'Could not download the update';
 export interface UpdateControllerOptions {
   readonly feedConfigured?: boolean;
   readonly selfInstall?: boolean;
+  /** The `updates.channel` preference, read at the start of every check. Stable when absent. */
+  readonly channel?: () => UpdateChannel;
 }
+
+/** Which releases a check offers: stable ones only, or pre-releases (`6.2.0-rc.1`) as well. */
+export type UpdateChannel = 'stable' | 'preview';
 
 /**
  * Matches a GitHub repository URL *whole*, with `github.com` anchored as the host.
@@ -108,6 +124,7 @@ export class UpdateController {
   ) {
     this.backend.autoDownload = false;
     this.backend.autoInstallOnAppQuit = false;
+    this.backend.allowDowngrade = false;
     this.backend.on('download-progress', (progress) => {
       this.ui.report({ kind: 'downloading', percent: Math.round(progress.percent) });
     });
@@ -136,6 +153,7 @@ export class UpdateController {
       if (trigger === 'user') {
         this.ui.report({ kind: 'checking' });
       }
+      this.backend.allowPrerelease = (this.options.channel?.() ?? 'stable') === 'preview';
       const result = await this.backend.checkForUpdates().catch(() => undefined);
       if (result === undefined) {
         return this.settle({ kind: 'error', message: CHECK_FAILED }, trigger);

@@ -1357,6 +1357,7 @@ export type {
   SshPreferences,
   SslPreferences,
   UiPreferences,
+  UpdateChannel,
   UpdatePreferences,
   WsdlPreferences,
   RestPreferences,

@@ -83,6 +83,14 @@ describe('mergePreferences', () => {
   });
 });
 
+describe('updates preferences', () => {
+  it('defaults to the Stable channel, reads Preview and ignores an unknown channel', () => {
+    expect(DEFAULT_PREFERENCES.updates).toEqual({ checkOnLaunch: false, channel: 'stable' });
+    expect(mergePreferences({ updates: { channel: 'preview' } }).updates.channel).toBe('preview');
+    expect(mergePreferences({ updates: { channel: 'nightly', checkOnLaunch: true } }).updates.channel).toBe('stable');
+  });
+});
+
 describe('secrets preferences', () => {
   it('defaults, reads and clamps secrets.sourceCacheSeconds', () => {
     const read = (value: number) =>

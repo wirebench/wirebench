@@ -38,7 +38,7 @@ export const POLICY_FILE = 'policy.yaml';
 export const LOCKABLE_KEYS = {
   proxy: ['mode', 'host', 'port', 'username', 'excludes'],
   ssl: ['minVersion', 'caBundlePath'],
-  updates: ['checkOnLaunch'],
+  updates: ['checkOnLaunch', 'channel'],
 } as const;
 
 type LockableSection = keyof typeof LOCKABLE_KEYS;

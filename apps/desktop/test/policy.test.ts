@@ -31,7 +31,7 @@ describe('parsePolicy', () => {
       version: 1,
       proxy: { mode: 'manual', host: 'proxy.corp.test', port: 8080, excludes: ['localhost'] },
       ssl: { minVersion: 'TLSv1.3', caBundlePath: '/etc/ssl/corp.pem' },
-      updates: { checkOnLaunch: false },
+      updates: { checkOnLaunch: false, channel: 'stable' },
     });
     expect(policy.error).toBeUndefined();
     expect(policy.ignored).toEqual([]);
@@ -43,6 +43,7 @@ describe('parsePolicy', () => {
       'ssl.minVersion',
       'ssl.caBundlePath',
       'updates.checkOnLaunch',
+      'updates.channel',
     ]);
   });
 

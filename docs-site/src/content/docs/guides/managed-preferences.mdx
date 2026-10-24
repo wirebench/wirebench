@@ -42,6 +42,7 @@ ssl:
   caBundlePath: /etc/ssl/certs/corp-ca.pem
 updates:
   checkOnLaunch: false
+  channel: stable # stable | preview
 areas:
   ssh: false # switch the SSH area off on this machine (see below)
 ```
@@ -56,6 +57,7 @@ These are the keys a policy can lock:
 | `ssl.minVersion` | `TLSv1.2` or `TLSv1.3` |
 | `ssl.caBundlePath` | An absolute path to a PEM file of extra trust anchors, or `''` to lock "no bundle" |
 | `updates.checkOnLaunch` | `true` or `false` |
+| `updates.channel` | `stable` or `preview` |
 
 ### Areas
 

@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Preview updates.** **Settings → Updates → Update channel** picks Stable (the default) or Preview.
+  On Preview, **Check for Updates…** also offers release candidates such as `6.2.0-rc.1`, marked
+  "(preview)" in the download prompt. Going back to Stable never downgrades: a preview build waits for
+  the next stable release that is newer. A managed-preferences policy can lock the channel.
+
 ### Changed
 - **The open editor tab stands out.** It carries an accent bar along its bottom edge, and the editor
   tab strip is taller, so the tab you are on is easy to pick out at a glance.
