@@ -215,7 +215,7 @@ export function restRequestRow(page: Page, name: string): Locator {
   return rowNamed(page, 'rest-request-row', name);
 }
 
-/** Shows one tab of the open REST API page (Overview, General, Authentication, Scripts, Definition). */
+/** Shows one tab of the open REST API page (General, Authentication, Scripts, Definition). */
 export async function openApiSettingsTab(page: Page, tab: string): Promise<void> {
   await page.getByRole('tablist', { name: 'API settings' }).getByRole('tab', { name: tab }).click();
 }

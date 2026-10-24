@@ -8,6 +8,7 @@ import {
   createApi,
   folderRow,
   nameNewRow,
+  openApiSettingsTab,
   openApiTab,
   openResponseTab,
   responseStatus,
@@ -60,8 +61,9 @@ test('an API’s and a folder’s scripts run around a request in the folder, AP
   await page.getByTestId('folder-scripts-done').click();
   await expect(dialog).toBeHidden();
 
-  // The API's script, on its tab.
+  // The API's script, on its page's Scripts tab.
   await openApiTab(page, 'Shop API');
+  await openApiSettingsTab(page, 'Scripts');
   await setMonacoText(page, 'Pre-request script for this API', "request.headers.set('X-Order', 'api');");
 
   // A request in the folder, with no scripts of its own.
