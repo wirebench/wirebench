@@ -208,6 +208,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       resolve: fail('sync.resolve'),
       abortMerge: fail('sync.abortMerge'),
       log: fail('sync.log'),
+      apiHistory: fail('sync.apiHistory'),
       updateSettings: fail('sync.updateSettings'),
       setIdentity: fail('sync.setIdentity'),
       revealTree: fail('sync.revealTree'),

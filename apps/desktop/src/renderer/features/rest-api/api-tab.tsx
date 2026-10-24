@@ -19,6 +19,7 @@ import { Button } from '../../components/button.js';
 import { ApiDefinitionCard } from './api-definition-card.js';
 import { OverviewTab } from './overview-tab.js';
 import { ApiSummary } from './api-summary.js';
+import { RecentChanges } from './recent-changes.js';
 import { updateRestDefinition } from './api-actions.js';
 import { RestUpdateDialog } from './rest-update-dialog.js';
 import { useRestUpdateStore } from './rest-update-state.js';
@@ -114,7 +115,11 @@ export function ApiTab({ apiId }: ApiTabProps) {
       content: (
         <OverviewTab
           apiId={apiId}
-          aside={<ApiSummary apiId={apiId} baseUrl={{ url: effective.url, from: SOURCE_LABEL[effective.source] }} />}
+          aside={
+            <ApiSummary apiId={apiId} baseUrl={{ url: effective.url, from: SOURCE_LABEL[effective.source] }}>
+              <RecentChanges apiId={apiId} />
+            </ApiSummary>
+          }
         />
       ),
     },

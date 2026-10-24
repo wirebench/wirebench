@@ -332,6 +332,7 @@
     "ssl.clearCaBundle",
     "ssl.pickCaBundle",
     "sync.abortMerge",
+    "sync.apiHistory",
     "sync.commit",
     "sync.conflicts",
     "sync.fetch",

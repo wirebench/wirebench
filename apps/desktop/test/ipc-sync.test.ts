@@ -10,7 +10,7 @@ import { WirebenchError } from '@wirebench/engine';
 import { registerSyncChannels } from '../src/main/ipc/sync.js';
 import type { SyncService } from '../src/main/sync/sync-service.js';
 import { channels } from '../src/shared/ipc.js';
-import type { SyncStatusWire } from '../src/shared/wire-base.js';
+import type { SyncApiHistoryWire, SyncStatusWire } from '../src/shared/wire-base.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -79,6 +79,7 @@ let service: {
   treeDir: ReturnType<typeof vi.fn<() => string>>;
   updateSyncSettings: ReturnType<typeof vi.fn<(patch: unknown) => Promise<SyncStatusWire>>>;
   requireFeature: (feature: string) => void;
+  apiHistory: ReturnType<typeof vi.fn<(apiId: string, limit: number) => Promise<SyncApiHistoryWire>>>;
 };
 let reveal: ReturnType<typeof vi.fn<(path: string) => void>>;
 
@@ -91,6 +92,9 @@ beforeEach(() => {
     treeDir: vi.fn<() => string>().mockReturnValue(TREE),
     updateSyncSettings: vi.fn<(patch: unknown) => Promise<SyncStatusWire>>().mockResolvedValue(SHARED_STATUS),
     requireFeature: () => undefined,
+    apiHistory: vi
+      .fn<(apiId: string, limit: number) => Promise<SyncApiHistoryWire>>()
+      .mockResolvedValue({ status: 'unavailable', reason: 'no-history' }),
   };
   reveal = vi.fn<(path: string) => void>();
   registerSyncChannels({ service, reveal });
@@ -150,6 +154,26 @@ describe('sync.* channels', () => {
       value: { entries: [{ id: 'c1', subject: 'Save', author: 'a', at: '2026-09-13T00:00:00.000Z' }] },
     });
     expect(sync?.log).toHaveBeenCalledWith(10);
+  });
+
+  it('apiHistory answers through the service, even for a workspace that is not shared', async () => {
+    sync = undefined;
+    await expect(invoke('sync.apiHistory', { apiId: 'api-1', limit: 20 })).resolves.toEqual({
+      ok: true,
+      value: { status: 'unavailable', reason: 'no-history' },
+    });
+    expect(service.apiHistory).toHaveBeenCalledWith('api-1', 20);
+  });
+
+  it('apiHistory rejects a limit over 100 or an empty id', async () => {
+    for (const request of [
+      { apiId: 'api-1', limit: 101 },
+      { apiId: '', limit: 5 },
+    ]) {
+      const result = await invoke('sync.apiHistory', request);
+      expect(result).toMatchObject({ ok: false, error: { code: 'ipc-invalid-request' } });
+    }
+    expect(service.apiHistory).not.toHaveBeenCalled();
   });
 
   it('log rejects a limit that is negative, fractional, zero or over the 200 cap', async () => {
