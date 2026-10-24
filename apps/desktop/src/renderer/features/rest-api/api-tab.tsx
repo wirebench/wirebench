@@ -18,6 +18,7 @@ import { ScriptsTab } from '../scripts/scripts-tab.js';
 import { Button } from '../../components/button.js';
 import { ApiDefinitionCard } from './api-definition-card.js';
 import { OverviewTab } from './overview-tab.js';
+import { ApiSummary } from './api-summary.js';
 import { updateRestDefinition } from './api-actions.js';
 import { RestUpdateDialog } from './rest-update-dialog.js';
 import { useRestUpdateStore } from './rest-update-state.js';
@@ -107,7 +108,16 @@ export function ApiTab({ apiId }: ApiTabProps) {
 
   const tabs: SettingsPageTab<'overview' | 'general' | 'auth' | 'scripts' | 'definition'>[] = [
     // First, so an API opens on what it is for; the description is edited here, not in General.
-    { id: 'overview', label: 'Overview', content: <OverviewTab apiId={apiId} /> },
+    {
+      id: 'overview',
+      label: 'Overview',
+      content: (
+        <OverviewTab
+          apiId={apiId}
+          aside={<ApiSummary apiId={apiId} baseUrl={{ url: effective.url, from: SOURCE_LABEL[effective.source] }} />}
+        />
+      ),
+    },
     {
       id: 'general',
       label: 'General',
