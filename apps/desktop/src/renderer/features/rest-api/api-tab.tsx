@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react';
 import { AuthFields } from '../../components/auth-fields.js';
 import { SettingsGroup, TextSetting } from '../../components/settings-grid.js';
+import { PagePath } from '../explorer/page-path.js';
 import { SettingsPageTabs, type SettingsPageTab } from '../../components/settings-page-tabs.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
 import { ScriptsTab } from '../scripts/scripts-tab.js';
@@ -254,7 +255,7 @@ export function ApiTab({ apiId }: ApiTabProps) {
 
   return (
     <section aria-label={`API ${api.name}`} data-testid="api-tab" className="h-full min-h-0">
-      <SettingsPageTabs pageId={apiId} label="API settings" tabs={tabs} />
+      <SettingsPageTabs pageId={apiId} label="API settings" header={<PagePath apiId={apiId} />} tabs={tabs} />
       {updating && api.definition?.cache === true && (
         <RestUpdateDialog
           apiId={apiId}

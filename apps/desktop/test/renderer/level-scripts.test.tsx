@@ -3,7 +3,7 @@
  * under its heading, the Scripts editor says it runs for every request inside a level, and a folder's
  * Scripts… dialog edits the folder's own scripts.
  */
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import type { RequestScriptsWire, ScriptResultWire } from '../../src/shared/wire-base.js';
@@ -13,9 +13,7 @@ vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mock
 
 const { ScriptResults, scriptLevelHeading } = await import('../../src/renderer/features/scripts/script-results.js');
 const { ScriptsTab, levelHint } = await import('../../src/renderer/features/scripts/scripts-tab.js');
-const { FolderScriptsDialog } = await import('../../src/renderer/features/scripts/folder-scripts-dialog.js');
 const { useProjectStore } = await import('../../src/renderer/state/project.js');
-const { useUiStore } = await import('../../src/renderer/state/ui.js');
 
 const updateRequestScripts = vi.fn();
 
@@ -29,7 +27,6 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  useUiStore.getState().setFolderScriptsId(undefined);
 });
 
 const RESULT: ScriptResultWire = {
@@ -170,31 +167,5 @@ describe('the level hint states the post-response order', () => {
       />,
     );
     expect(screen.getByTestId('scripts-level-hint').textContent).toBe(levelHint('API', 'inner-first'));
-  });
-});
-
-describe('the folder Scripts… dialog', () => {
-  it('edits the folder’s own scripts', async () => {
-    useProjectStore.setState({
-      folders: {
-        f1: {
-          id: 'f1',
-          apiId: 'api-1',
-          name: 'Orders',
-          order: 0,
-          auth: { type: 'inherit' },
-          scripts: { api: 'postman', enabled: false, secrets: [], pre: 'pm.test("t", () => {});' },
-        } as never,
-      },
-    });
-    render(<FolderScriptsDialog />);
-    act(() => {
-      useUiStore.getState().setFolderScriptsId('f1');
-    });
-
-    expect(screen.getByTestId('folder-scripts-dialog').textContent).toContain('Scripts for “Orders”');
-    expect((await screen.findByTestId('scripts-level-hint')).textContent).toBe(levelHint('folder', undefined));
-    fireEvent.click(screen.getByTestId('scripts-switch-on'));
-    expect(updateRequestScripts).toHaveBeenCalledWith('f1', { enabled: true });
   });
 });

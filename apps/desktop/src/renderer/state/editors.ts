@@ -68,6 +68,7 @@ export interface EditorTab {
     | 'rest-request'
     | 'api'
     | 'api-docs'
+    | 'folder'
     | 'grpc-request'
     | 'grpc-api'
     | 'ws-request'
@@ -97,6 +98,8 @@ export interface EditorTab {
   readonly restRequestId?: string;
   /** Set when `kind` is `'api'`: the API this tab shows. */
   readonly apiId?: string;
+  /** Set when `kind` is `'folder'`: the folder (of any kind's API) whose page this tab shows. */
+  readonly folderId?: string;
   /** Set when `kind` is `'api-docs'`: the API whose documentation this tab shows (API Overview §3.3). */
   readonly apiDocsId?: string;
   /** Set when `kind` is `'grpc-request'`: the gRPC request this tab edits, its own field like `restRequestId`. */

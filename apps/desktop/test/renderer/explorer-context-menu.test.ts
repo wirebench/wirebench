@@ -12,6 +12,7 @@ import { restApiWire, restFolderWire, restRequestWire } from '../helpers/wire-de
 import { useMockRunsStore } from '../../src/renderer/state/mock-runs.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { useSettingsPageTabStore } from '../../src/renderer/components/settings-page-tabs.js';
 import { runnerTargetOf } from '../../src/renderer/features/runner/runner-actions.js';
 
 function node(patch: Partial<ExplorerNode> & Pick<ExplorerNode, 'kind'>): ExplorerNode {
@@ -275,10 +276,15 @@ describe('explorerMenuItems on a REST row', () => {
     ]);
   });
 
-  it('Scripts… opens the folder scripts dialog on a REST or gRPC folder, and a WebSocket folder has none (#334)', () => {
+  it('Scripts… opens the folder’s page on Scripts for a REST or gRPC folder, and a WebSocket folder has none (#334)', () => {
+    useEditorsStore.getState().reset();
+    useProjectStore.setState({ folders: { f1: restFolderWire({ id: 'f1', name: 'Orders' }) } });
     const rest = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }));
     rest.find((item) => item.label === 'Scripts…')?.run();
-    expect(useUiStore.getState().folderScriptsId).toBe('f1');
+    expect(useEditorsStore.getState().tabs).toEqual([
+      expect.objectContaining({ id: 'folder:f1', kind: 'folder', folderId: 'f1', title: 'Orders' }),
+    ]);
+    expect(useSettingsPageTabStore.getState().selected['f1']).toBe('scripts');
 
     const grpc = node({ kind: 'folder', id: 'folder:g1', apiId: 'a1', folderId: 'g1', ownerKind: 'grpc' });
     expect(explorerMenuItems(grpc).map((item) => item.label)).toContain('Scripts…');
@@ -286,11 +292,15 @@ describe('explorerMenuItems on a REST row', () => {
     expect(explorerMenuItems(ws).map((item) => item.label)).not.toContain('Scripts…');
   });
 
-  it('Auth… opens the folder credentials dialog, which is a folder’s only editable field', () => {
+  it('Auth… opens the folder’s page on Authentication', () => {
+    useEditorsStore.getState().reset();
+    useProjectStore.setState({ folders: { f1: restFolderWire({ id: 'f1', name: 'Orders' }) } });
     const items = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }));
     items.find((item) => item.label === 'Auth…')?.run();
 
-    expect(useUiStore.getState().folderAuthId).toBe('f1');
+    expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['folder:f1']);
+    expect(useSettingsPageTabStore.getState().selected['f1']).toBe('auth');
+    expect(useUiStore.getState().folderAuthId).toBeUndefined();
   });
 
   it('offers a REST request send, copy, run, move, duplicate, rename and delete, and no Open', () => {

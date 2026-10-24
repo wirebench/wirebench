@@ -36,6 +36,12 @@ const CatchUrlTab = lazy(async () => {
   return { default: ({ id }: { readonly id: string }) => <module.CatchUrlTab hookId={id} /> };
 });
 
+// A folder's page: its scripts editor is Monaco, so the page loads with its tab.
+const FolderPage = lazy(async () => {
+  const module = await import('../features/folder/folder-tab.js');
+  return { default: ({ id }: { readonly id: string }) => <module.FolderTab folderId={id} /> };
+});
+
 const ScheduleTab = lazy(async () => {
   const module = await import('../features/schedules/schedule-tab.js');
   return { default: ({ id }: { readonly id: string }) => <module.ScheduleTab scheduleId={id} /> };
@@ -77,6 +83,15 @@ export const GENERIC_TABS: readonly TabContribution[] = [
     persisted: true,
     Component: ProjectPage,
     title: (id, { project }) => project.projects[id]?.name,
+  },
+  {
+    kind: 'folder',
+    idField: 'folderId',
+    prefix: 'folder:',
+    persisted: true,
+    Component: FolderPage,
+    treeNode: (id) => `folder:${id}`,
+    title: (id, { project }) => project.folders[id]?.name,
   },
   {
     kind: 'sequence',

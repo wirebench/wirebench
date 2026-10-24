@@ -8,6 +8,7 @@
  */
 import { AuthFields } from '../../components/auth-fields.js';
 import { Button } from '../../components/button.js';
+import { PagePath } from '../explorer/page-path.js';
 import { SettingsPageTabs } from '../../components/settings-page-tabs.js';
 import { KvTable } from '../../components/kv-table.js';
 import { BooleanSetting, SettingsGroup, TextSetting } from '../../components/settings-grid.js';
@@ -60,6 +61,7 @@ export function GrpcApiTab({ apiId }: GrpcApiTabProps) {
       <SettingsPageTabs
         pageId={apiId}
         label="gRPC API settings"
+        header={<PagePath apiId={apiId} />}
         tabs={[
           {
             id: 'general',

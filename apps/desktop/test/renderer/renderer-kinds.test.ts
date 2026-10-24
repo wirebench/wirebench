@@ -6,6 +6,7 @@ import { environmentTabId } from '../../src/renderer/features/environments/envir
 import { grpcApiTabId } from '../../src/renderer/features/grpc-api/grpc-api-actions.js';
 import { grpcTabId } from '../../src/renderer/features/grpc-editor/grpc-actions.js';
 import { projectTabId } from '../../src/renderer/features/explorer/project-actions.js';
+import { folderTabId } from '../../src/renderer/features/folder/folder-actions.js';
 import { mockTabId } from '../../src/renderer/features/mock/mock-actions.js';
 import { interfaceTabId } from '../../src/renderer/features/interface-editor/interface-actions.js';
 import { restTabId } from '../../src/renderer/features/rest-editor/rest-actions.js';
@@ -55,6 +56,7 @@ describe('renderer kinds (kind modules spec §6)', () => {
       'mcp-api': mcpApiTabId,
       environment: (id) => environmentTabId({ kind: 'environment', id }),
       project: projectTabId,
+      folder: folderTabId,
       sequence: sequenceTabId,
       mock: mockTabId,
       history: (id) => `history:${id}`,

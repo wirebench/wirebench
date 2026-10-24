@@ -26,6 +26,7 @@ export interface PersistedTab {
     | 'interface'
     | 'environment'
     | 'project'
+    | 'folder'
     | 'rest-request'
     | 'api'
     | 'grpc-request'
@@ -46,6 +47,7 @@ export const PERSISTED_TAB_KINDS: readonly PersistedTab['kind'][] = [
   'interface',
   'environment',
   'project',
+  'folder',
   'rest-request',
   'api',
   'grpc-request',

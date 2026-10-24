@@ -4,6 +4,7 @@
  * WebSocket API tab's are, so the project goes dirty and saves the same way. Loaded lazily.
  */
 import { NumberSetting, SettingsGroup, TextSetting } from '../../components/settings-grid.js';
+import { PagePath } from '../explorer/page-path.js';
 import { SettingsPageTabs } from '../../components/settings-page-tabs.js';
 import { useProjectStore } from '../../state/project.js';
 import type { McpServerPatchWire } from '../../../shared/kinds/mcp/wire.js';
@@ -32,6 +33,7 @@ export function McpApiTab({ apiId }: McpApiTabProps) {
       <SettingsPageTabs
         pageId={apiId}
         label="MCP server settings"
+        header={<PagePath apiId={apiId} />}
         tabs={[
           {
             id: 'general',

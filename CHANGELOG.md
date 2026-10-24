@@ -12,6 +12,12 @@ All notable changes to this project are documented here. The format follows
   where its requests go and where its definition came from, and Recent changes, the commits that
   touched this API in a git-shared workspace. An imported description's raw HTML is left out, its
   images are not loaded, and only web links stay links.
+- **A page for every folder.** Clicking a folder in the explorer opens its page and unfolds it:
+  **General** (its name, its description shown and edited in place, and how many requests and folders
+  it holds), **Authentication** and, for REST and gRPC folders, **Scripts**. Auth… and Scripts… in its
+  menu open those tabs; they replace the folder's credentials and scripts dialogs.
+- **Where a page sits.** API and folder pages show their path above the tabs (project › API ›
+  folders); each part before the last opens its page.
 - **Complete documentation for a REST API.** View complete documentation opens a tab with every
   folder and request, their descriptions, URLs, parameters, bodies and examples, and exports it as
   one self-contained HTML page or a Markdown file. Values stay as written; nothing is filled in.

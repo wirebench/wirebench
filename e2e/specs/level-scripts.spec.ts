@@ -45,21 +45,18 @@ test('an API’s and a folder’s scripts run around a request in the folder, AP
   await createProject(page, 'Shop');
   await createApi(page, 'Shop API', server.url);
 
-  // The folder's script, in its Scripts… dialog. A new folder lands in inline rename mode, with the API
-  // unfolded to it; Escape keeps the name it was given.
+  // The folder's script, on its page's Scripts tab. A new folder lands in inline rename mode, with the
+  // API unfolded to it; Escape keeps the name it was given.
   await chooseContextMenuItem(page, apiRow(page, 'Shop API'), 'New folder');
   await expect(page.getByTestId('explorer-rename-input')).toBeFocused({ timeout: 20_000 });
   await page.keyboard.press('Escape');
   await chooseContextMenuItem(page, folderRow(page, 'Folder 1'), 'Scripts…');
-  const dialog = page.getByTestId('folder-scripts-dialog');
-  await expect(dialog).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('folder-scripts')).toBeVisible({ timeout: 20_000 });
   await setMonacoText(
     page,
     'Pre-request script for this folder',
     "request.headers.set('X-Order', request.headers.get('X-Order') + ',folder');\nlog(request.headers.get('X-Order'));",
   );
-  await page.getByTestId('folder-scripts-done').click();
-  await expect(dialog).toBeHidden();
 
   // The API's script, on its page's Scripts tab.
   await openApiTab(page, 'Shop API');

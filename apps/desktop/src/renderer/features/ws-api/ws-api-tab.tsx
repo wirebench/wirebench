@@ -7,6 +7,7 @@
  * when one does the override is where requests connect. The row shows both.
  */
 import { AuthFields } from '../../components/auth-fields.js';
+import { PagePath } from '../explorer/page-path.js';
 import { SettingsPageTabs } from '../../components/settings-page-tabs.js';
 import { KvTable } from '../../components/kv-table.js';
 import { SettingsGroup, TextSetting } from '../../components/settings-grid.js';
@@ -56,6 +57,7 @@ export function WsApiTab({ apiId }: WsApiTabProps) {
       <SettingsPageTabs
         pageId={apiId}
         label="WebSocket API settings"
+        header={<PagePath apiId={apiId} />}
         tabs={[
           {
             id: 'general',
