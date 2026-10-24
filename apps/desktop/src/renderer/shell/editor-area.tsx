@@ -94,6 +94,12 @@ function panelId(id: string): string {
 const STRIP_BUTTON_CLASS =
   'inline-flex w-7 shrink-0 items-center justify-center text-fg-subtle hover:bg-surface-raised hover:text-fg-default';
 
+// The open tab carries an accent bar along its bottom edge so it reads at a glance. It is a
+// pseudo-element, not a box-shadow, because the drag-and-drop marker already uses box-shadow.
+const ACTIVE_TAB_CLASS =
+  'relative bg-surface-raised text-fg-default after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-accent';
+const INACTIVE_TAB_CLASS = 'text-fg-subtle hover:bg-surface-raised hover:text-fg-muted';
+
 const MENU_ITEM_CLASS =
   'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
 
@@ -348,7 +354,8 @@ export function EditorArea() {
       <SyncBanner />
       <div
         data-testid="editor-tab-strip"
-        className={`flex h-row shrink-0 border-b border-hairline${
+        // The editor tabs sit taller than a standard row so the open one is easier to pick out.
+        className={`flex h-[calc(var(--spacing-row)*1.44)] shrink-0 border-b border-hairline${
           envColor !== undefined ? ' box-content border-t-[3px] border-t-[var(--env-color)]' : ''
         }`}
         style={envColor !== undefined ? ({ '--env-color': envColor } as React.CSSProperties) : undefined}
@@ -392,7 +399,7 @@ export function EditorArea() {
                 showStart();
               }}
               className={`inline-flex shrink-0 items-center gap-1.5 border-r border-hairline px-3 text-sm ${
-                showingStart ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
+                showingStart ? ACTIVE_TAB_CLASS : INACTIVE_TAB_CLASS
               }`}
             >
               {FixedIcon !== undefined && <FixedIcon size={13} aria-hidden="true" className="shrink-0" />}
@@ -519,7 +526,7 @@ export function EditorArea() {
                   data-preview={tab.id === previewId ? 'true' : undefined}
                   title={tab.id === previewId ? `${label} (preview)` : label}
                   className={`group inline-flex max-w-[14rem] shrink-0 items-center gap-2 border-r border-hairline px-3 text-sm ${
-                    tab.id === activeId ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
+                    tab.id === activeId ? ACTIVE_TAB_CLASS : INACTIVE_TAB_CLASS
                   } ${draggingId === tab.id ? 'opacity-50' : ''} data-[drop=after]:shadow-[inset_-2px_0_0_var(--color-accent)] data-[drop=before]:shadow-[inset_2px_0_0_var(--color-accent)]`}
                 >
                   {status !== undefined && (

@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- **The open editor tab stands out.** It carries an accent bar along its bottom edge, and the editor
+  tab strip is taller, so the tab you are on is easy to pick out at a glance.
+
 ## [6.1.0] - 2026-10-23
 
 ### Added
