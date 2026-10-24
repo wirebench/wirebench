@@ -20,6 +20,22 @@ export function openApiTab(apiId: string, fallbackTitle?: string): void {
   useEditorsStore.getState().open({ id: apiTabId(apiId), kind: 'api', title, apiId });
 }
 
+/** The editor-tab id for one API's documentation. */
+export function apiDocsTabId(apiId: string): string {
+  return `api-docs:${apiId}`;
+}
+
+/** Opens (or focuses) the API's documentation tab: one per API. An API the mirror does not hold is ignored. */
+export function openApiDocsTab(apiId: string): void {
+  const name = useProjectStore.getState().apis[apiId]?.name;
+  if (name === undefined) {
+    return;
+  }
+  useEditorsStore
+    .getState()
+    .open({ id: apiDocsTabId(apiId), kind: 'api-docs', title: `${name} — Docs`, apiDocsId: apiId });
+}
+
 /**
  * Opens the API's tab and its Update Definition dialog. Does nothing for an API that did not cache
  * its definition: there is nothing to compare an update against.

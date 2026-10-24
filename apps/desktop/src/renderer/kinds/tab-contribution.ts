@@ -16,6 +16,7 @@ export type TabIdField =
   | 'interfaceId'
   | 'restRequestId'
   | 'apiId'
+  | 'apiDocsId'
   | 'grpcRequestId'
   | 'grpcApiId'
   | 'wsRequestId'
