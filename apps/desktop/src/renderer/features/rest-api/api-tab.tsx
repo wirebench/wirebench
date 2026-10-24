@@ -17,6 +17,7 @@ import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
 import { ScriptsTab } from '../scripts/scripts-tab.js';
 import { Button } from '../../components/button.js';
 import { ApiDefinitionCard } from './api-definition-card.js';
+import { OverviewTab } from './overview-tab.js';
 import { updateRestDefinition } from './api-actions.js';
 import { RestUpdateDialog } from './rest-update-dialog.js';
 import { useRestUpdateStore } from './rest-update-state.js';
@@ -104,7 +105,9 @@ export function ApiTab({ apiId }: ApiTabProps) {
     void updateApi(apiId, changes);
   };
 
-  const tabs: SettingsPageTab<'general' | 'auth' | 'scripts' | 'definition'>[] = [
+  const tabs: SettingsPageTab<'overview' | 'general' | 'auth' | 'scripts' | 'definition'>[] = [
+    // First, so an API opens on what it is for; the description is edited here, not in General.
+    { id: 'overview', label: 'Overview', content: <OverviewTab apiId={apiId} /> },
     {
       id: 'general',
       label: 'General',
@@ -118,14 +121,6 @@ export function ApiTab({ apiId }: ApiTabProps) {
               if (name.trim().length > 0) {
                 patch({ name: name.trim() });
               }
-            }}
-          />
-          <TextSetting
-            label="Description"
-            testId="api-description"
-            value={api.description ?? ''}
-            onCommit={(description) => {
-              patch({ description: description === '' ? null : description });
             }}
           />
           {/* Top-aligned, the label kept to the input's height: the line under the input must not pull it down. */}

@@ -18,6 +18,7 @@ vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 import { workspaceWire } from '../helpers/workspace-wire.js';
 import { openSettingsTab, resetSettingsTabs } from '../helpers/settings-page-tabs.js';
+import { useSettingsPageTabStore } from '../../src/renderer/components/settings-page-tabs.js';
 import { NO_REST, PROJECT_SETTINGS, restApiWire } from '../helpers/wire-defaults.js';
 import type { ProjectWire } from '../../src/shared/wire-types.js';
 import type { RestApiWire } from '../../src/shared/kinds/rest/wire.js';
@@ -50,8 +51,12 @@ function environment(endpoints: Record<string, string>, id = 'env-1'): Environme
   return { id, name: 'uat', slug: 'uat', order: 0, endpoints, properties: {}, disabled: [] };
 }
 
-/** Mirrors one API, then mounts its tab. */
-function mount(api: RestApiWire = restApiWire(), projectOverrides: Partial<ProjectWire> = {}): void {
+/** Mirrors one API, then mounts its tab on General, where most of these tests' fields are. */
+function mount(
+  api: RestApiWire = restApiWire(),
+  projectOverrides: Partial<ProjectWire> = {},
+  tab: string | null = 'general',
+): void {
   const wire = project({ apis: [api], ...projectOverrides });
   useProjectStore.setState({
     projects: { p1: wire },
@@ -59,6 +64,9 @@ function mount(api: RestApiWire = restApiWire(), projectOverrides: Partial<Proje
     projectOf: { [api.id]: 'p1', p1: 'p1' },
     updateApi,
   });
+  if (tab !== null) {
+    useSettingsPageTabStore.setState({ selected: { [api.id]: tab } });
+  }
   render(
     <TooltipPrimitive.Provider>
       <ApiTab apiId={api.id} />
@@ -103,11 +111,19 @@ describe('effectiveBaseUrl', () => {
 });
 
 describe('ApiTab', () => {
-  it('shows the name, description and base URL, and says the API itself is what requests use', () => {
+  it('opens on the Overview, which shows the description rendered', () => {
+    mount(restApiWire({ description: 'Pets, and **their** people' }), {}, null);
+
+    expect(screen.getByRole('tab', { name: 'Overview' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('api-overview').querySelector('strong')?.textContent).toBe('their');
+  });
+
+  it('shows the name and base URL, and says the API itself is what requests use', () => {
     mount(restApiWire({ description: 'Pets, and their people' }));
 
     expect(screen.getByTestId<HTMLInputElement>('api-name').value).toBe('Petstore');
-    expect(screen.getByTestId<HTMLInputElement>('api-description').value).toBe('Pets, and their people');
+    // The description is the Overview's; General no longer edits it.
+    expect(screen.queryByTestId('api-description')).toBeNull();
     expect(screen.getByTestId<HTMLInputElement>('api-base-url').value).toBe('https://api.test');
     expect(screen.getByTestId('api-base-url-source').textContent).toBe('Requests use this value.');
   });
@@ -166,16 +182,6 @@ describe('ApiTab', () => {
     fireEvent.change(baseUrl, { target: { value: 'https://other.test' } });
     fireEvent.keyDown(baseUrl, { key: 'Enter' });
     expect(updateApi).toHaveBeenLastCalledWith('api-1', { baseUrl: 'https://other.test' });
-  });
-
-  it('clears a description back to absent rather than storing an empty string', () => {
-    mount(restApiWire({ description: 'gone soon' }));
-
-    const description = screen.getByTestId('api-description');
-    fireEvent.change(description, { target: { value: '' } });
-    fireEvent.blur(description);
-
-    expect(updateApi).toHaveBeenCalledWith('api-1', { description: null });
   });
 
   it('refuses to write an empty name', () => {

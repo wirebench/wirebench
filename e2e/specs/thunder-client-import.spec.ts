@@ -11,7 +11,7 @@ import { expect, test } from '@playwright/test';
 import { environmentRow, openEnvironmentsView } from '../helpers/environments.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace, openImportDialog } from '../helpers/project.js';
-import { apiRow, restRequestRow, unfoldRow } from '../helpers/rest.js';
+import { apiRow, openApiSettingsTab, restRequestRow, unfoldRow } from '../helpers/rest.js';
 
 /** A folder with `collections/tc_col_api.json`, `environments/tc_env_dev.json` and a backup to skip. */
 const FOLDER = fileURLToPath(new URL('../../fixtures/thunder-client/crafted/folder-v3', import.meta.url));
@@ -50,6 +50,7 @@ test.describe('Thunder Client import', () => {
     await expect(apiRow(page, 'Auth')).toBeVisible({ timeout: 20_000 });
     await apiRow(page, 'Auth').dblclick();
     await expect(page.getByTestId('api-tab')).toBeVisible({ timeout: 20_000 });
+    await openApiSettingsTab(page, 'General');
     await expect(page.getByTestId('api-base-url')).toHaveValue('http://localhost:5000/api');
     await unfoldRow(apiRow(page, 'Auth'));
     await expect(restRequestRow(page, 'login')).toBeVisible({ timeout: 20_000 });

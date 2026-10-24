@@ -17,6 +17,7 @@ import {
   apiRow,
   folderRow,
   importOpenApiByUrl,
+  openApiSettingsTab,
   openImportOpenApi,
   openResponseTab,
   responseStatus,
@@ -157,6 +158,7 @@ test.describe('OpenAPI import', () => {
     // it — nothing to correct, which is the point of taking the base URL from the document.
     await apiRow(page, 'Bodies').dblclick();
     await expect(page.getByTestId('api-tab')).toBeVisible({ timeout: 20_000 });
+    await openApiSettingsTab(page, 'General');
     await expect(page.getByTestId('api-base-url')).toHaveValue(server.url);
 
     await unfoldRow(apiRow(page, 'Bodies'));
@@ -195,7 +197,7 @@ test.describe('OpenAPI import', () => {
     // The definition card reads the cache main wrote, which is three documents for this fixture.
     await apiRow(page, 'Refs').dblclick();
     await expect(page.getByTestId('api-tab')).toBeVisible({ timeout: 20_000 });
-    await page.getByRole('tablist', { name: 'API settings' }).getByRole('tab', { name: 'Definition' }).click();
+    await openApiSettingsTab(page, 'Definition');
     await expect(page.getByTestId('api-definition-source')).toContainText('/refs/openapi.yaml');
     await page.getByTestId('api-definition-view').click();
     const select = page.getByTestId('api-definition-document');
