@@ -18,7 +18,8 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, realpath } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, join, relative, sep } from 'node:path';
+import { isInsideReal, realpathOfPrefix } from './path-containment.js';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import {
@@ -74,6 +75,7 @@ import {
   writeFileAtomic,
   wsApisOf,
   createBuiltinRegistry,
+  apiDir,
 } from '@wirebench/engine';
 import type { ExtensionRegistry, ProtocolRegistry } from '@wirebench/engine';
 import type {
@@ -195,6 +197,7 @@ import type {
   WorkspaceWire,
   AppFeaturesWire,
   FeatureStateWire,
+  SyncApiHistoryWire,
 } from '../shared/wire-base.js';
 
 /**
@@ -1594,6 +1597,34 @@ export class WorkspaceService implements ProjectRouter {
   /** The open workspace's tree root: `sync.revealTree` joins its (tree-relative) path against this. */
   treeDir(): string {
     return this.requireOpen().tree;
+  }
+
+  /**
+   * The commits that touched one REST API's folder (API Overview spec §3.2). The folder is found
+   * here from the id, so no path crosses the bridge. A workspace that is not shared, or a share
+   * without per-path history, has none; a project outside the shared tree (a linked one) neither.
+   *
+   * @throws WirebenchError `not-found` when no open project has a REST API with that id.
+   */
+  async apiHistory(apiId: string, limit: number): Promise<SyncApiHistoryWire> {
+    const projectId = this.projectId(apiId);
+    const snapshot = projectId === undefined ? null : this.projectSnapshot(projectId);
+    const api = snapshot?.apis.find((candidate) => candidate.id === apiId);
+    if (snapshot === null || api === undefined) {
+      throw new WirebenchError('not-found', `No REST API with id "${apiId}"`, { details: { apiId } });
+    }
+    const sync = this.current?.sync;
+    if (sync === undefined) {
+      return { status: 'unavailable', reason: 'no-history' };
+    }
+    // Real paths on both sides: the workspace folder may sit behind a symlink (macOS /var → /private/var).
+    const tree = await realpathOfPrefix(this.treeDir());
+    const folder = await realpathOfPrefix(apiDir(snapshot.dir, api.slug));
+    if (!isInsideReal(tree, folder)) {
+      return { status: 'unavailable', reason: 'outside-tree' };
+    }
+    const entries = await sync.pathLog(relative(tree, folder).split(sep).join('/'), limit);
+    return entries === undefined ? { status: 'unavailable', reason: 'no-history' } : { status: 'ok', entries };
   }
 
   /**

@@ -2469,6 +2469,17 @@ export const syncConflictsResponseSchema = z.object({ conflicts: z.array(syncCon
 export const syncResolveRequestSchema = z.object({ path: z.string(), side: z.enum(['mine', 'theirs']) });
 export const syncLogRequestSchema = z.object({ limit: z.number().int().min(1).max(200) });
 export const syncLogResponseSchema = z.object({ entries: z.array(syncLogEntryWireSchema) });
+/** One REST API's own history: the commits that touched its folder (API Overview spec §3.2). */
+export const syncApiHistoryRequestSchema = z.object({
+  apiId: z.string().min(1).max(200),
+  limit: z.number().int().min(1).max(100),
+});
+export const syncApiHistoryResponseSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('ok'), entries: z.array(syncLogEntryWireSchema) }),
+  /** `no-history`: the workspace is not shared, or its share keeps no per-path history. */
+  z.object({ status: z.literal('unavailable'), reason: z.enum(['no-history', 'outside-tree']) }),
+]);
+export type SyncApiHistoryWire = z.infer<typeof syncApiHistoryResponseSchema>;
 export const syncSetIdentityRequestSchema = z.object({
   name: z.string().trim().min(1),
   email: z.string().trim().min(1),

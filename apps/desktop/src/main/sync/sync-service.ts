@@ -397,6 +397,15 @@ export class SyncService {
     return this.run(() => this.backend.log(limit));
   }
 
+  /**
+   * The commits that touched `relPath`, or `undefined` when this share keeps no per-path history.
+   * Read-only and not run through {@link run}: it must not flip the status to `syncing`, because a
+   * status change is what tells a Recent changes list to read again.
+   */
+  async pathLog(relPath: string, limit: number): Promise<SyncLogEntryWire[] | undefined> {
+    return this.backend.pathLog === undefined ? undefined : await this.backend.pathLog(relPath, limit);
+  }
+
   /** Sets the commit identity, then retries the commit (and push) that asked for it, if any. */
   async setIdentity(name: string, email: string): Promise<void> {
     await this.run(async () => {

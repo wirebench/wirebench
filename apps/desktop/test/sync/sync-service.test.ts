@@ -1821,3 +1821,22 @@ describe('team secrets (team-secrets §3.3, §3.5)', () => {
     expect(h.backend.calls).not.toContain('finishMerge');
   });
 });
+
+describe('SyncService.pathLog (API Overview §3.2)', () => {
+  it('reads one path’s history without flipping the status to syncing', async () => {
+    const h = harness();
+    const entry = { id: 'c1', subject: 'Cards: issue a card', author: 'Alice', at: '2026-10-24T10:00:00Z' };
+    const pathLog = vi.fn().mockResolvedValue([entry]);
+    Object.assign(h.backend, { pathLog });
+
+    await expect(h.service.pathLog('projects/caas/apis/Cards', 20)).resolves.toEqual([entry]);
+    expect(pathLog).toHaveBeenCalledWith('projects/caas/apis/Cards', 20);
+    // A status change is what makes a Recent changes list read again; reading must not cause one.
+    expect(h.statuses).toEqual([]);
+  });
+
+  it('answers undefined when the share keeps no per-path history', async () => {
+    const h = harness();
+    await expect(h.service.pathLog('projects/caas/apis/Cards', 20)).resolves.toBeUndefined();
+  });
+});
