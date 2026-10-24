@@ -59,6 +59,11 @@ export interface SyncBackend {
   abortMerge(): Promise<void>;
   /** The `limit` most recent commits, newest first. */
   log(limit: number): Promise<SyncLogEntryWire[]>;
+  /**
+   * The `limit` most recent commits that touched `relPath` (tree-relative, `/`-separated), newest
+   * first. Only a backend that keeps per-path history has it; the others leave it out.
+   */
+  pathLog?(relPath: string, limit: number): Promise<SyncLogEntryWire[]>;
   /** Uncommitted changes in the tree right now — used to build a commit message before committing. */
   changedPaths(): Promise<TreeChange[]>;
   /** The identity commits will be attributed to, if one is configured. */

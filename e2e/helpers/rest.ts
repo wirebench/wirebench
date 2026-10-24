@@ -20,6 +20,7 @@ export async function createApi(page: Page, name: string, baseUrl: string): Prom
 
   // The API tab opens on creation, which is where its name and base URL are edited.
   await expect(page.getByTestId('api-tab')).toBeVisible({ timeout: 20_000 });
+  await openApiSettingsTab(page, 'General');
   const nameField = page.getByTestId('api-name');
   await nameField.fill(name);
   await nameField.press('Enter');
@@ -214,6 +215,11 @@ export function restRequestRow(page: Page, name: string): Locator {
   return rowNamed(page, 'rest-request-row', name);
 }
 
+/** Shows one tab of the open REST API page (General, Authentication, Scripts, Definition). */
+export async function openApiSettingsTab(page: Page, tab: string): Promise<void> {
+  await page.getByRole('tablist', { name: 'API settings' }).getByRole('tab', { name: tab }).click();
+}
+
 /** Opens the API tab for `name` by double-clicking its explorer row. */
 export async function openApiTab(page: Page, name: string): Promise<void> {
   // One click opens the tab and leaves the API unfolded (#680); a double-click would fold it.
@@ -236,6 +242,7 @@ export async function setApiOAuth2ClientCredentials(
     readonly scopes?: string;
   },
 ): Promise<void> {
+  await openApiSettingsTab(page, 'Authentication');
   await page.getByLabel('API authentication type').selectOption('oauth2');
   await page.getByLabel('API token url').fill(options.tokenUrl);
   await page.getByLabel('API client id').fill(options.clientId);

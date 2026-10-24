@@ -205,7 +205,16 @@ export const LOG_SIZE_MAX = 5000;
 export interface UpdatePreferences {
   /** Check GitHub Releases for a newer version once, shortly after the app starts. */
   readonly checkOnLaunch: boolean;
+  /**
+   * Which releases a check offers: `stable` only, or `preview` (pre-releases such as `6.2.0-rc.1`)
+   * as well. Going back to `stable` never offers a downgrade: a preview build waits for the next
+   * stable release that is newer than it.
+   */
+  readonly channel: UpdateChannel;
 }
+
+/** The update channels: {@link UpdatePreferences.channel}. */
+export type UpdateChannel = 'stable' | 'preview';
 
 /** Account-related preferences. The account list itself lives elsewhere; this is display-only. */
 export interface AccountPreferences {
@@ -362,7 +371,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     historyCap: 1000,
     logSize: 500,
   }),
-  updates: Object.freeze({ checkOnLaunch: false }),
+  updates: Object.freeze({ checkOnLaunch: false, channel: 'stable' }),
   accounts: Object.freeze({ showInStatusBar: true }),
   secrets: Object.freeze({ sourceCacheSeconds: 300, appLock: false, appLockIdleMinutes: 15 }),
   mocks: Object.freeze({ listenOnAllInterfaces: false }),
@@ -578,7 +587,9 @@ export const preferencesSchema = z.object({
       logSize: limited('ui.logSize').optional(),
     })
     .optional(),
-  updates: z.object({ checkOnLaunch: z.boolean().optional() }).optional(),
+  updates: z
+    .object({ checkOnLaunch: z.boolean().optional(), channel: z.enum(['stable', 'preview']).optional() })
+    .optional(),
   accounts: z.object({ showInStatusBar: z.boolean().optional() }).optional(),
   secrets: z
     .object({

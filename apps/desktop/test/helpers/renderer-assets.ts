@@ -34,10 +34,12 @@ export const FORBIDDEN_WORKER_ASSETS = ['ts.worker', 'css.worker', 'html.worker'
  * The renderer's total JavaScript budget in bytes; the trimmed build is comfortably under it.
  * 13 MB since the SSH terminal (xterm, ~0.4 MB in its own lazily loaded chunk) took the build past 12;
  * 14 MB since the SSH area's snippets, SFTP, forwarding and broadcast slices filled the last of that
- * (multi-host snippet runs, #452, crossed it by 1.5 KB). The budget is there to catch a regression the
- * size of a Monaco worker (megabytes), not a feature's kilobytes.
+ * (multi-host snippet runs, #452, crossed it by 1.5 KB). 15 MB since the REST API Overview's Markdown
+ * renderer (react-markdown and remark-gfm, ~0.37 MB in the API page's lazily loaded chunk) took the
+ * build from 13.96 to 14.33. The budget is there to catch a regression the size of a Monaco worker
+ * (megabytes), not a feature's kilobytes.
  */
-export const RENDERER_JS_BUDGET_BYTES = 14 * 1024 * 1024;
+export const RENDERER_JS_BUDGET_BYTES = 15 * 1024 * 1024;
 
 /** What {@link inspectRendererAssets} found in a renderer build. */
 export interface RendererAssets {

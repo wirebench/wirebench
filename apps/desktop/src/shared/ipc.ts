@@ -328,6 +328,8 @@ import {
   sslClearCaBundleResponseSchema,
   sslPickCaBundleRequestSchema,
   sslPickCaBundleResponseSchema,
+  syncApiHistoryRequestSchema,
+  syncApiHistoryResponseSchema,
   syncCommitRequestSchema,
   syncConflictEventSchema,
   syncConflictsResponseSchema,
@@ -1047,6 +1049,8 @@ export const channels = {
     resolve: defineChannel('sync.resolve', syncResolveRequestSchema, syncStatusWireSchema),
     abortMerge: defineChannel('sync.abortMerge', z.undefined(), syncStatusWireSchema),
     log: defineChannel('sync.log', syncLogRequestSchema, syncLogResponseSchema),
+    /** One REST API's own commits; answers `unavailable` (never throws) for a workspace that is not shared. */
+    apiHistory: defineChannel('sync.apiHistory', syncApiHistoryRequestSchema, syncApiHistoryResponseSchema),
     updateSettings: defineChannel('sync.updateSettings', syncSettingsPatchWireSchema, syncStatusWireSchema),
     setIdentity: defineChannel('sync.setIdentity', syncSetIdentityRequestSchema, syncSetIdentityResponseSchema),
     revealTree: defineChannel('sync.revealTree', syncRevealTreeRequestSchema, syncRevealTreeResponseSchema),

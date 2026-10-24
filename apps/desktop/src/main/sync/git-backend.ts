@@ -497,9 +497,18 @@ export class GitBackend implements SyncBackend {
   }
 
   async log(limit: number): Promise<SyncLogEntryWire[]> {
+    return await this.readLog(['-n', String(limit)]);
+  }
+
+  /** `git log -- <relPath>`: no `--follow` (it takes a single file), so a renamed folder starts afresh. */
+  async pathLog(relPath: string, limit: number): Promise<SyncLogEntryWire[]> {
+    return await this.readLog(['-n', String(limit), '--', relPath]);
+  }
+
+  private async readLog(args: readonly string[]): Promise<SyncLogEntryWire[]> {
     let stdout: string;
     try {
-      ({ stdout } = await this.git.run(this.tree, ['log', '--format=%H%x00%s%x00%an%x00%aI', '-n', String(limit)]));
+      ({ stdout } = await this.git.run(this.tree, ['log', '--format=%H%x00%s%x00%an%x00%aI', ...args]));
     } catch (error) {
       if (isExpectedGitFailure(error, 128, /does not have any commits yet/i)) {
         return [];

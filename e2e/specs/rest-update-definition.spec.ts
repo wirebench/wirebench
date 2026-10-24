@@ -22,6 +22,7 @@ import {
   chooseContextMenuItem,
   folderRow,
   importOpenApiByUrl,
+  openApiSettingsTab,
   openApiTab,
   openRequestTab,
   restRequestRow,
@@ -73,6 +74,7 @@ test.describe('REST Update Definition', () => {
     // The API took its base URL from the old document's `servers[0]`; nothing has touched it, so it
     // is what must follow the new document.
     await openApiTab(page, 'Petstore Update');
+    await openApiSettingsTab(page, 'General');
     await expect(page.getByTestId('api-base-url')).toHaveValue('https://v1.pets.test');
 
     // One edit by hand: `limit`'s value on List pets. The merge must keep it even though the new
@@ -127,6 +129,7 @@ test.describe('REST Update Definition', () => {
 
     // The untouched base URL followed the new document's server.
     await openApiTab(page, 'Petstore Update');
+    await openApiSettingsTab(page, 'General');
     await expect(page.getByTestId('api-base-url')).toHaveValue('https://v2.pets.test', { timeout: 20_000 });
 
     // The edited value survived the rewrite of the very parameter it sits on.

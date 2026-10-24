@@ -8,6 +8,8 @@
  */
 import { AuthFields } from '../../components/auth-fields.js';
 import { Button } from '../../components/button.js';
+import { PagePath } from '../explorer/page-path.js';
+import { SettingsPageTabs } from '../../components/settings-page-tabs.js';
 import { KvTable } from '../../components/kv-table.js';
 import { BooleanSetting, SettingsGroup, TextSetting } from '../../components/settings-grid.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
@@ -55,116 +57,150 @@ export function GrpcApiTab({ apiId }: GrpcApiTabProps) {
   };
 
   return (
-    <section aria-label={`gRPC API ${api.name}`} data-testid="grpc-api-tab" className="h-full overflow-auto p-3">
-      <SettingsGroup title="gRPC API">
-        <TextSetting
-          label="Name"
-          testId="grpc-api-name"
-          value={api.name}
-          onCommit={(name) => {
-            if (name.trim().length > 0) {
-              patch({ name: name.trim() });
-            }
-          }}
-        />
-        <TextSetting
-          label="Description"
-          testId="grpc-api-description"
-          value={api.description ?? ''}
-          onCommit={(description) => {
-            patch({ description: description === '' ? null : description });
-          }}
-        />
-        <TextSetting
-          label="Target"
-          testId="grpc-api-target"
-          value={api.target}
-          monospace
-          placeholder="host:port"
-          hint={
-            effective.source === 'api'
-              ? 'host:port, or a grpc:// / grpcs:// address. Calls use this value.'
-              : `Overridden: calls go to ${effective.url} — from ${SOURCE_LABEL[effective.source]}.`
-          }
-          onCommit={(target) => {
-            if (target.trim() !== api.target) {
-              patch({ target: target.trim() });
-            }
-          }}
-        />
-        <BooleanSetting
-          label="TLS"
-          testId="grpc-api-tls"
-          value={api.tls}
-          hint="Connect with TLS (grpcs). Off speaks plain HTTP/2 to the target."
-          onChange={(tls) => {
-            patch({ tls });
-          }}
-        />
-      </SettingsGroup>
-
-      <SettingsGroup title="Metadata" hint="Sent with every call in this API, before the request’s own.">
-        <KvTable
-          label="API metadata"
-          testidPrefix="grpc-api-metadata"
-          rows={api.metadata}
-          columns={['enabled', 'name', 'value', 'description']}
-          placeholders={{ name: 'key', value: 'value' }}
-          emptyMessage="No metadata."
-          onChange={(rows) => {
-            patch({ metadata: [...rows] });
-          }}
-        />
-      </SettingsGroup>
-
-      <SettingsGroup
-        title="Authentication"
-        hint="What every call in this API sends unless a folder or the request itself says otherwise."
-      >
-        <AuthFields
-          scope="API"
-          labels="settings"
-          auth={api.auth === undefined || api.auth.type === 'inherit' ? undefined : api.auth}
-          onChange={(auth: AuthConfigWire | null) => {
-            patch({ auth });
-          }}
-          oauth2Status={
-            api.auth?.type === 'oauth2' ? <OAuth2StatusPanel ownerId={apiId} grant={api.auth.grant} /> : undefined
-          }
-        />
-      </SettingsGroup>
-
-      {/* The scripts tab says when a level's scripts run; the group repeats none of it. */}
-      <SettingsGroup title="Scripts">
-        <div data-testid="grpc-api-scripts" className="flex h-[28rem] flex-col rounded-md border border-hairline">
-          <ScriptsTab requestId={apiId} scripts={api.scripts} level="API" />
-        </div>
-      </SettingsGroup>
-
-      <SettingsGroup title="Definition">
-        {api.definition !== undefined ? (
-          <GrpcDefinitionCard apiId={apiId} definition={api.definition} />
-        ) : (
-          <div className="flex flex-col gap-2">
-            <p className="text-sm text-fg-subtle">
-              No definition. Requests can still name a service and method by hand, but a message cannot be encoded
-              without one — import <span className="font-mono">.proto</span> files, or discover them from a running
-              server.
-            </p>
-            <div>
-              <Button
-                variant="secondary"
-                data-testid="grpc-api-import-proto"
-                onClick={() => {
-                  openImportDialog('proto');
-                }}
+    <section aria-label={`gRPC API ${api.name}`} data-testid="grpc-api-tab" className="h-full min-h-0">
+      <SettingsPageTabs
+        pageId={apiId}
+        label="gRPC API settings"
+        header={<PagePath apiId={apiId} />}
+        tabs={[
+          {
+            id: 'general',
+            label: 'General',
+            content: (
+              <SettingsGroup>
+                <TextSetting
+                  label="Name"
+                  testId="grpc-api-name"
+                  value={api.name}
+                  onCommit={(name) => {
+                    if (name.trim().length > 0) {
+                      patch({ name: name.trim() });
+                    }
+                  }}
+                />
+                <TextSetting
+                  label="Description"
+                  testId="grpc-api-description"
+                  value={api.description ?? ''}
+                  onCommit={(description) => {
+                    patch({ description: description === '' ? null : description });
+                  }}
+                />
+                <TextSetting
+                  label="Target"
+                  testId="grpc-api-target"
+                  value={api.target}
+                  monospace
+                  placeholder="host:port"
+                  hint={
+                    effective.source === 'api'
+                      ? 'host:port, or a grpc:// / grpcs:// address. Calls use this value.'
+                      : `Overridden: calls go to ${effective.url} — from ${SOURCE_LABEL[effective.source]}.`
+                  }
+                  onCommit={(target) => {
+                    if (target.trim() !== api.target) {
+                      patch({ target: target.trim() });
+                    }
+                  }}
+                />
+                <BooleanSetting
+                  label="TLS"
+                  testId="grpc-api-tls"
+                  value={api.tls}
+                  hint="Connect with TLS (grpcs). Off speaks plain HTTP/2 to the target."
+                  onChange={(tls) => {
+                    patch({ tls });
+                  }}
+                />
+              </SettingsGroup>
+            ),
+          },
+          {
+            id: 'metadata',
+            label: 'Metadata',
+            content: (
+              <SettingsGroup hint="Sent with every call in this API, before the request’s own.">
+                <KvTable
+                  label="API metadata"
+                  testidPrefix="grpc-api-metadata"
+                  rows={api.metadata}
+                  columns={['enabled', 'name', 'value', 'description']}
+                  placeholders={{ name: 'key', value: 'value' }}
+                  emptyMessage="No metadata."
+                  onChange={(rows) => {
+                    patch({ metadata: [...rows] });
+                  }}
+                />
+              </SettingsGroup>
+            ),
+          },
+          {
+            id: 'auth',
+            label: 'Authentication',
+            content: (
+              <SettingsGroup hint="What every call in this API sends unless a folder or the request itself says otherwise.">
+                <AuthFields
+                  scope="API"
+                  labels="settings"
+                  auth={api.auth === undefined || api.auth.type === 'inherit' ? undefined : api.auth}
+                  onChange={(auth: AuthConfigWire | null) => {
+                    patch({ auth });
+                  }}
+                  oauth2Status={
+                    api.auth?.type === 'oauth2' ? (
+                      <OAuth2StatusPanel ownerId={apiId} grant={api.auth.grant} />
+                    ) : undefined
+                  }
+                />
+              </SettingsGroup>
+            ),
+          },
+          // The scripts tab says when a level's scripts run; the page repeats none of it.
+          {
+            id: 'scripts',
+            label: 'Scripts',
+            fill: true,
+            content: (
+              <div
+                data-testid="grpc-api-scripts"
+                className="flex min-h-0 flex-1 flex-col rounded-md border border-hairline"
               >
-                Import definition…
-              </Button>
-            </div>
-          </div>
-        )}
-      </SettingsGroup>
+                <ScriptsTab requestId={apiId} scripts={api.scripts} level="API" />
+              </div>
+            ),
+          },
+          {
+            id: 'definition',
+            label: 'Definition',
+            content: (
+              <SettingsGroup>
+                {api.definition !== undefined ? (
+                  <GrpcDefinitionCard apiId={apiId} definition={api.definition} />
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-sm text-fg-subtle">
+                      No definition. Requests can still name a service and method by hand, but a message cannot be
+                      encoded without one — import <span className="font-mono">.proto</span> files, or discover them
+                      from a running server.
+                    </p>
+                    <div>
+                      <Button
+                        variant="secondary"
+                        data-testid="grpc-api-import-proto"
+                        onClick={() => {
+                          openImportDialog('proto');
+                        }}
+                      >
+                        Import definition…
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </SettingsGroup>
+            ),
+          },
+        ]}
+      />
     </section>
   );
 }

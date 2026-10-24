@@ -20,8 +20,11 @@ export interface KindModule<K extends string = string> {
   readonly feature: FeatureDescriptor;
   /** How the kind is named to a person: `SOAP`, `REST`, `gRPC`, `WebSocket`, `MCP`. */
   readonly label: string;
-  /** Its editor tab kinds, as `EditorTab.kind` names them. */
-  readonly tabs: { readonly request: string; readonly container: string };
+  /**
+   * Its editor tab kinds, as `EditorTab.kind` names them: a request's, a container's, and any other
+   * tab of its own (REST's API documentation).
+   */
+  readonly tabs: { readonly request: string; readonly container: string; readonly extra?: readonly string[] };
   /**
    * A send of this kind is a session the person drives once it opens (WebSocket): its send id is
    * its address for every push and close, so a second open of one still held is refused.

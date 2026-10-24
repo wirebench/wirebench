@@ -61,6 +61,7 @@ test.describe('gRPC: discover a server, then call what it described', () => {
     await discoverProto(page, server!.target, 'Greeter');
 
     await grpcApiRow(page, 'Greeter').click();
+    await page.getByRole('tablist', { name: 'gRPC API settings' }).getByRole('tab', { name: 'Definition' }).click();
     await expect(page.getByTestId('grpc-definition-card')).toBeVisible({ timeout: 20_000 });
     await page.getByTestId('grpc-definition-version').selectOption('v1');
     await page.getByTestId('grpc-definition-refresh').click();

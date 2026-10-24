@@ -83,7 +83,7 @@ export function CatalogueSection({ apiId, name, info, catalogue }: CatalogueSect
   }));
 
   return (
-    <SettingsGroup title="Catalogue" hint="What the server listed at the last refresh, kept in the project.">
+    <SettingsGroup hint="What the server listed at the last refresh, kept in the project.">
       <div className="flex items-center gap-3 py-1">
         <Button data-testid="mcp-api-refresh" disabled={busy} aria-busy={busy} onClick={refresh}>
           {busy ? 'Refreshing…' : 'Refresh'}

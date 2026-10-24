@@ -1141,7 +1141,10 @@ void app.whenReady().then(async () => {
     (status) => {
       broadcast(events.app.updateStatus, { status });
     },
-    { portable: e2eUserDataDir === undefined && portableDir !== undefined },
+    {
+      portable: e2eUserDataDir === undefined && portableDir !== undefined,
+      channel: () => preferencesService.get().updates.channel,
+    },
   );
   setUpKerberos({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
   registerKerberosChannels();

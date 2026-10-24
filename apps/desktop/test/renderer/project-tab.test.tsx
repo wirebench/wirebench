@@ -9,6 +9,7 @@ import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { NO_REST } from '../helpers/wire-defaults.js';
 import type { ProjectWire } from '../../src/shared/wire-types.js';
+import { openSettingsTab, resetSettingsTabs } from '../helpers/settings-page-tabs.js';
 
 function project(patch: Partial<ProjectWire> = {}): ProjectWire {
   return {
@@ -41,6 +42,7 @@ function renderTab(projectId = 'p1'): void {
 
 describe('ProjectTab', () => {
   beforeEach(() => {
+    resetSettingsTabs();
     installWirebenchApi({});
     useProjectStore.getState().reset();
     useWorkspaceStore.setState({
@@ -75,6 +77,7 @@ describe('ProjectTab', () => {
     installWirebenchApi({ currentValues: { set } });
     useProjectStore.setState({ projects: { p1: project() } });
     renderTab();
+    openSettingsTab('Properties');
     const cell = screen.getByLabelText<HTMLInputElement>('Current value of host');
     fireEvent.change(cell, { target: { value: 'mine' } });
     fireEvent.keyDown(cell, { key: 'Enter' });
@@ -118,6 +121,7 @@ describe('ProjectTab', () => {
     const updateProjectSettings = vi.fn().mockResolvedValue(undefined);
     useProjectStore.setState({ projects: { p1: project() }, updateProjectSettings });
     renderTab();
+    openSettingsTab('Settings');
 
     fireEvent.click(screen.getByLabelText('Cache definitions'));
     await waitFor(() => {
@@ -150,6 +154,7 @@ describe('ProjectTab', () => {
       setProjectPropertyEnabled,
     });
     renderTab();
+    openSettingsTab('Properties');
 
     expect(screen.getByTestId('project-properties-table')).toBeTruthy();
     expect(screen.getByLabelText<HTMLInputElement>('Value of host').value).toBe('example.test');
@@ -196,6 +201,7 @@ describe('ProjectTab', () => {
     } as never);
     useProjectStore.setState({ projects: { p1: project() } });
     renderTab();
+    openSettingsTab('Properties');
 
     const table = screen.getByTestId('project-properties-table');
     expect(

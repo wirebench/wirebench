@@ -678,6 +678,14 @@ export type ApiWebhookItemsResponse = z.infer<typeof apiWebhookItemsResponseSche
 
 /** Request for `api.restLint`: lint one REST API's cached definition with the project's rule sets. */
 export const apiRestLintRequestSchema = z.object({ apiId: z.string().max(MAX_REST_UPDATE_ID_CHARS) });
+
+/** `api.exportDocs` (API Overview §3.3): main builds the document, runs the Save dialog and writes it. */
+export const apiExportDocsRequestSchema = z.object({
+  apiId: z.string().min(1).max(MAX_REST_UPDATE_ID_CHARS),
+  format: z.enum(['html', 'markdown']),
+});
+export const apiExportDocsResponseSchema = z.object({ cancelled: z.boolean(), path: z.string().optional() });
+export type ApiExportDocsResponse = z.infer<typeof apiExportDocsResponseSchema>;
 export type ApiRestLintRequest = z.infer<typeof apiRestLintRequestSchema>;
 
 const lintPositionWireSchema = z.object({ line: z.number().int(), column: z.number().int() });

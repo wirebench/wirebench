@@ -321,6 +321,27 @@ describeGit('WorkspaceService — git sync', { timeout: 60_000 }, () => {
     await vi.waitFor(() => expect(a.service.sync()?.status()).toMatchObject({ state: 'clean', ahead: 0 }), WAIT);
   });
 
+  it('lists one REST API’s own history, and refuses an id that is not an API (API Overview §3.2)', async () => {
+    const a = await openMachine(await seedShared());
+    const host = a.service.hostFor(PROJECT_ID);
+    const { createdId } = await host.mutate({ kind: 'add-api', name: 'Cards', baseUrl: 'https://cards.test' });
+    const apiId = createdId ?? '';
+    await host.save({ reason: 'manual' });
+    await vi.waitFor(async () => {
+      const history = await a.service.apiHistory(apiId, 10);
+      expect(history.status).toBe('ok');
+      expect(history.status === 'ok' ? history.entries.length : 0).toBe(1);
+    }, WAIT);
+
+    // The SOAP request's later commit is not this API's.
+    await editRequest(a, '<Add>3</Add>', { save: true });
+    await waitForSubject(a, /^Update request AddOne in calc$/);
+    const history = await a.service.apiHistory(apiId, 10);
+    expect(history.status === 'ok' ? history.entries.length : -1).toBe(1);
+
+    await expect(a.service.apiHistory('no-such-api', 10)).rejects.toMatchObject({ code: 'not-found' });
+  });
+
   it('holds the save commit while the saved request carries a possible secret, and commits once it is kept', async () => {
     const a = await openMachine(await seedShared(), { withScans: true });
     const [before] = (await a.service.sync()?.log(1)) ?? [];

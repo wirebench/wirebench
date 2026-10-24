@@ -6,6 +6,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **An overview of every REST API.** The API's page opens on General: its name and base URL, its
+  description rendered as formatted text and edited in place, a summary of how many requests and folders it holds, its auth,
+  where its requests go and where its definition came from, and Recent changes, the commits that
+  touched this API in a git-shared workspace. An imported description's raw HTML is left out, its
+  images are not loaded, and only web links stay links.
+- **A page for every folder.** Clicking a folder in the explorer opens its page and unfolds it:
+  **General** (its name, its description shown and edited in place, and how many requests and folders
+  it holds), **Authentication** and, for REST and gRPC folders, **Scripts**. Auth… and Scripts… in its
+  menu open those tabs; they replace the folder's credentials and scripts dialogs.
+- **Where a page sits.** API and folder pages show their path above the tabs (project › API ›
+  folders); each part before the last opens its page.
+- **Complete documentation for a REST API.** View complete documentation opens a tab with every
+  folder and request, their descriptions, URLs, parameters, bodies and examples, and exports it as
+  one self-contained HTML page or a Markdown file. Values stay as written; nothing is filled in.
+- **Preview updates.** **Settings → Updates → Update channel** picks Stable (the default) or Preview.
+  On Preview, **Check for Updates…** also offers release candidates such as `6.2.0-rc.1`, marked
+  "(preview)" in the download prompt. Going back to Stable never downgrades: a preview build waits for
+  the next stable release that is newer. A managed-preferences policy can lock the channel.
+
+### Changed
+- **The open editor tab stands out.** It carries an accent bar along its bottom edge, and the editor
+  tab strip is taller, so the tab you are on is easy to pick out at a glance.
+- **Project and API pages use tabs.** The project page (General, Settings, Properties) and every API
+  page — REST, WebSocket, gRPC and MCP — show one section at a time behind a tab instead of one long
+  page, and the Scripts tab's editor fills the page. Each page remembers the tab it was on.
+
 ## [6.1.0] - 2026-10-23
 
 ### Added

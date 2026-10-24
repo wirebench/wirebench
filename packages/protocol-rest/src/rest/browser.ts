@@ -21,6 +21,19 @@ export {
 } from './url.js';
 export type { KeyValueEntry } from './model.js';
 export { formatHtml } from './format-html.js';
+// The API docs tab builds the same document main exports, so the tab and the file agree (Overview §3.3).
+export {
+  buildApiDocument,
+  type ApiDocument,
+  type DocBody,
+  type DocExample,
+  type DocFolder,
+  type DocParam,
+  type DocRequest,
+  type DocsApiInput,
+  type DocsFolderInput,
+  type DocsRequestInput,
+} from './docs/document.js';
 // Whether a JSON body has comments, so Format and the JSON form refuse rather than drop them (#702).
 export { hasJsonComments, stripJsonComments } from './json-comments.js';
 // Which request calls a definition's operation, so a lint finding in Problems opens that request.

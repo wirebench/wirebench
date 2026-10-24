@@ -75,6 +75,7 @@ test.describe('MCP: a stdio server is approved, catalogued and called', () => {
 
     const serverTab = page.getByTestId('mcp-api-tab');
     await expect(serverTab).toBeVisible({ timeout: 20_000 });
+    await serverTab.getByRole('tab', { name: 'Catalogue' }).click();
     await expect(page.getByTestId('mcp-api-row').filter({ hasText: 'Fixture' })).toBeVisible({ timeout: 20_000 });
     await expect(serverTab.getByTestId('mcp-api-fetched')).toHaveText('Not fetched yet.');
 

@@ -40,6 +40,7 @@ import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { explorerActions } from './explorer-actions.js';
 import { openProjectTab, projectRowActions } from './project-actions.js';
+import { openFolderTab } from '../folder/folder-actions.js';
 import { isContainerRow, isDropDisabled, planContainerDrop, planMoves } from './drag-drop.js';
 import { dropApiOnProject } from './move-api-dialog.js';
 import { getExplorerTree, registerExplorerTree, revealNode } from './explorer-api.js';
@@ -239,6 +240,8 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
     // A leaf with nothing to fold opens what its kind says (an empty SOAP operation makes its first request).
     (node.isLeaf && role?.open !== undefined) ||
     node.data.kind === 'project' ||
+    // A folder opens its page (General, Authentication, Scripts) and unfolds, as an API row does.
+    node.data.kind === 'folder' ||
     node.data.kind === 'webhook-request' ||
     node.data.kind === 'catch-url' ||
     node.data.kind === 'schedule' ||
@@ -860,6 +863,11 @@ export function ExplorerView() {
                 if (node.data.kind === 'project') {
                   // A project's tab opens from `onSelect`; a double-click or Enter keeps it (#679).
                   if (node.data.projectId !== undefined) openProjectTab(node.data.projectId);
+                  return;
+                }
+                if (node.data.kind === 'folder' && node.data.folderId !== undefined) {
+                  openFolderTab(node.data.folderId);
+                  node.open();
                   return;
                 }
                 const role = explorerRole(node.data.kind);

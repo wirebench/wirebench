@@ -15,6 +15,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { RestUpdateDialog } from '../../src/renderer/features/rest-api/rest-update-dialog.js';
 import { ApiTab } from '../../src/renderer/features/rest-api/api-tab.js';
+import { useSettingsPageTabStore } from '../../src/renderer/components/settings-page-tabs.js';
 import { updateRestDefinition } from '../../src/renderer/features/rest-api/api-actions.js';
 import { useRestUpdateStore } from '../../src/renderer/features/rest-api/rest-update-state.js';
 import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
@@ -671,6 +672,8 @@ describe('REST Update Definition entry points', () => {
       projectOf: { [api.id]: 'p1' },
       updateApi: vi.fn(),
     } as never);
+    // Update definition… sits on the Definition tab; an API without a definition shows General.
+    useSettingsPageTabStore.setState({ selected: { [api.id]: 'definition' } });
     render(
       <TooltipPrimitive.Provider>
         <ApiTab apiId={api.id} />

@@ -14,13 +14,54 @@ authentication every request under it inherits.
 
 <Steps>
 
-1. Right-click a project in the explorer and choose **New ▸ New REST API…**. The API tab opens; set its
-   **Base URL**.
+1. Right-click a project in the explorer and choose **New ▸ New REST API…**. The API's page opens;
+   set its **Base URL** on the **General** tab it opens on.
 2. Right-click the API and choose **New request**. Its row opens in the tree ready to rename: type
    a name and press Enter. (Double-clicking the breadcrumb renames it later.)
 3. Set the method in the method picker and the path or URL next to it.
 
 </Steps>
+
+## The API's page
+
+Clicking an API in the explorer opens its page. Each part is a tab: **General**, **Authentication**,
+**Scripts**, and **Definition** for an imported API. The page remembers the tab it was on. Above the
+tabs, the path (project › API) says where the page sits; each part before the last opens its page.
+
+A folder has a page too: click it in the explorer (which also unfolds it), or choose **Auth…** or
+**Scripts…** in its menu. **General** holds its name, its description (shown and edited as an API's
+is) and how many requests and folders it holds; **Authentication** and **Scripts** are what every
+request inside uses unless it says otherwise. A WebSocket folder has no **Scripts** tab. Its path
+runs project › API › each folder down to it.
+
+### General
+
+The page opens on **General**: the API's name and base URL, then its description, shown formatted
+(headings, lists, tables, links, code). **Edit** swaps in the description's Markdown source; **Save**
+(`⌘/Ctrl+Enter`) keeps it and **Cancel** (`Escape`) leaves it as it was. An API without a
+description offers **Add description**. A description that came with an import is shown the same
+way, but any raw HTML in it is left out, images show as their alt text and are never loaded, and
+only web links stay links; they open in your browser.
+
+Beside the description, a summary lists how many requests and folders the API holds, its
+authentication, the base URL its requests go to (and whether an environment overrides it), and
+where its definition came from. **Authentication** and the definition's name jump to their tabs.
+
+**Recent changes** lists the commits that touched this API, newest first, grouped by day, with the
+time, the author and the commit message; **Show more** goes back further. The list needs a
+[workspace shared through git](/wirebench/docs/guides/shared-workspaces/); otherwise it says there is no
+history. A renamed API starts a fresh history.
+
+### Complete documentation
+
+**View complete documentation**, under the description, opens the API's documentation in a tab of
+its own: the description, a contents list, then every folder and request in the explorer's order,
+each with its description, method and URL, path and query parameters, headers, body and saved
+examples. A long example shows its first lines; **Show all** shows the rest. Values are shown as
+written: `${…}` references and secrets are never filled in.
+
+**Export HTML…** and **Export Markdown…** save the same documentation as a file, to hand to
+someone without Wirebench. The HTML file is one page that loads nothing from the network.
 
 ## Find a request again
 

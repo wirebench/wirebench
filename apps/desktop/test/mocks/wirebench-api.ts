@@ -84,6 +84,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
     },
     api: {
       importOpenApi: fail('api.importOpenApi'),
+      exportDocs: fail('api.exportDocs'),
       importPostman: fail('api.importPostman'),
       importProto: fail('api.importProto'),
       grpcDefinition: fail('api.grpcDefinition'),
@@ -208,6 +209,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       resolve: fail('sync.resolve'),
       abortMerge: fail('sync.abortMerge'),
       log: fail('sync.log'),
+      apiHistory: fail('sync.apiHistory'),
       updateSettings: fail('sync.updateSettings'),
       setIdentity: fail('sync.setIdentity'),
       revealTree: fail('sync.revealTree'),

@@ -17,6 +17,7 @@ import { useMoveRequestStore } from './move-request-dialog.js';
 import { webhooksActions } from '../webhooks/webhooks-actions.js';
 import { openRunnerTab } from '../runner/runner-actions.js';
 import { canManageSchedules, openScheduleTab, schedulesActions } from '../schedules/schedules-actions.js';
+import { openFolderTab } from '../folder/folder-actions.js';
 
 /**
  * The OS file manager's own name for itself, so the menu reads the way the platform does.
@@ -207,11 +208,11 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
       [runItem(folderId, node.label)],
       [
         { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('folder', folderId) },
-        // A folder has no editor tab, so its other fields get dialogs of their own.
-        { key: 'auth', label: 'Auth…', run: () => explorerActions.editFolderAuth(folderId) },
+        // Both open the folder's page on their tab.
+        { key: 'auth', label: 'Auth…', run: () => openFolderTab(folderId, 'auth') },
         // Scripts run around a REST or gRPC request (#334); a WebSocket folder has none.
         ...(SCRIPTED_FOLDER_KINDS.has(node.ownerKind ?? 'rest')
-          ? [{ key: 'scripts', label: 'Scripts…', run: () => explorerActions.editFolderScripts(folderId) }]
+          ? [{ key: 'scripts', label: 'Scripts…', run: () => openFolderTab(folderId, 'scripts') }]
           : []),
       ],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeFolder(folderId) }],

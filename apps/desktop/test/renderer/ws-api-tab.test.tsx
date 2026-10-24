@@ -21,6 +21,7 @@ import { NO_REST, PROJECT_SETTINGS, wsApiWire } from '../helpers/wire-defaults.j
 import type { ProjectWire } from '../../src/shared/wire-types.js';
 import type { WsApiWire } from '../../src/shared/kinds/ws/wire.js';
 import type { EnvironmentWire } from '../../src/shared/wire-base.js';
+import { openSettingsTab, resetSettingsTabs } from '../helpers/settings-page-tabs.js';
 
 const updateWsApi = vi.fn();
 
@@ -66,6 +67,7 @@ function mount(api: WsApiWire = wsApiWire(), projectOverrides: Partial<ProjectWi
 }
 
 beforeEach(() => {
+  resetSettingsTabs();
   updateWsApi.mockReset().mockResolvedValue(undefined);
   installWirebenchApi();
   useWorkspaceStore.setState({ workspace: null });
@@ -146,6 +148,7 @@ describe('WsApiTab', () => {
 
   it('sets the headers every request in the API inherits', () => {
     mount();
+    openSettingsTab('Headers');
 
     const newName = screen.getByTestId('ws-api-headers-new-name');
     fireEvent.change(newName, { target: { value: 'X-Auth' } });
@@ -157,6 +160,7 @@ describe('WsApiTab', () => {
 
   it('sets the credentials every request in the API inherits', () => {
     mount();
+    openSettingsTab('Authentication');
 
     fireEvent.change(screen.getByLabelText('API authentication type'), { target: { value: 'basic' } });
 

@@ -17,6 +17,8 @@ import { installWirebenchApi } from '../mocks/wirebench-api.js';
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 import { workspaceWire } from '../helpers/workspace-wire.js';
+import { openSettingsTab, resetSettingsTabs } from '../helpers/settings-page-tabs.js';
+import { useSettingsPageTabStore } from '../../src/renderer/components/settings-page-tabs.js';
 import { NO_REST, PROJECT_SETTINGS, restApiWire } from '../helpers/wire-defaults.js';
 import type { ProjectWire } from '../../src/shared/wire-types.js';
 import type { RestApiWire } from '../../src/shared/kinds/rest/wire.js';
@@ -49,8 +51,12 @@ function environment(endpoints: Record<string, string>, id = 'env-1'): Environme
   return { id, name: 'uat', slug: 'uat', order: 0, endpoints, properties: {}, disabled: [] };
 }
 
-/** Mirrors one API, then mounts its tab. */
-function mount(api: RestApiWire = restApiWire(), projectOverrides: Partial<ProjectWire> = {}): void {
+/** Mirrors one API, then mounts its tab on General, where most of these tests' fields are. */
+function mount(
+  api: RestApiWire = restApiWire(),
+  projectOverrides: Partial<ProjectWire> = {},
+  tab: string | null = 'general',
+): void {
   const wire = project({ apis: [api], ...projectOverrides });
   useProjectStore.setState({
     projects: { p1: wire },
@@ -58,6 +64,9 @@ function mount(api: RestApiWire = restApiWire(), projectOverrides: Partial<Proje
     projectOf: { [api.id]: 'p1', p1: 'p1' },
     updateApi,
   });
+  if (tab !== null) {
+    useSettingsPageTabStore.setState({ selected: { [api.id]: tab } });
+  }
   render(
     <TooltipPrimitive.Provider>
       <ApiTab apiId={api.id} />
@@ -69,6 +78,7 @@ beforeEach(() => {
   updateApi.mockReset().mockResolvedValue(undefined);
   installWirebenchApi();
   useWorkspaceStore.setState({ workspace: null });
+  resetSettingsTabs();
 });
 
 afterEach(() => {
@@ -101,11 +111,21 @@ describe('effectiveBaseUrl', () => {
 });
 
 describe('ApiTab', () => {
-  it('shows the name, description and base URL, and says the API itself is what requests use', () => {
+  it('opens on General, which shows the description rendered beside the name and base URL', () => {
+    mount(restApiWire({ description: 'Pets, and **their** people' }), {}, null);
+
+    expect(screen.getByRole('tab', { name: 'General' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.queryByRole('tab', { name: 'Overview' })).toBeNull();
+    expect(screen.getByTestId('api-name')).toBeTruthy();
+    expect(screen.getByTestId('api-overview').querySelector('strong')?.textContent).toBe('their');
+  });
+
+  it('shows the name and base URL, and says the API itself is what requests use', () => {
     mount(restApiWire({ description: 'Pets, and their people' }));
 
     expect(screen.getByTestId<HTMLInputElement>('api-name').value).toBe('Petstore');
-    expect(screen.getByTestId<HTMLInputElement>('api-description').value).toBe('Pets, and their people');
+    // The description is edited in place on General, not in a field of its own.
+    expect(screen.queryByTestId('api-description')).toBeNull();
     expect(screen.getByTestId<HTMLInputElement>('api-base-url').value).toBe('https://api.test');
     expect(screen.getByTestId('api-base-url-source').textContent).toBe('Requests use this value.');
   });
@@ -166,16 +186,6 @@ describe('ApiTab', () => {
     expect(updateApi).toHaveBeenLastCalledWith('api-1', { baseUrl: 'https://other.test' });
   });
 
-  it('clears a description back to absent rather than storing an empty string', () => {
-    mount(restApiWire({ description: 'gone soon' }));
-
-    const description = screen.getByTestId('api-description');
-    fireEvent.change(description, { target: { value: '' } });
-    fireEvent.blur(description);
-
-    expect(updateApi).toHaveBeenCalledWith('api-1', { description: null });
-  });
-
   it('refuses to write an empty name', () => {
     mount();
 
@@ -199,6 +209,7 @@ describe('ApiTab', () => {
 
   it('sets the credentials every request in the API inherits', () => {
     mount();
+    openSettingsTab('Authentication');
 
     fireEvent.change(screen.getByLabelText('API authentication type'), { target: { value: 'basic' } });
 
@@ -207,6 +218,7 @@ describe('ApiTab', () => {
 
   it('says once when the scripts run, without an issue number', () => {
     mount();
+    openSettingsTab('Scripts');
 
     const section = screen.getByTestId('api-tab');
     expect(section.textContent).not.toMatch(/#\d+/);
@@ -216,9 +228,9 @@ describe('ApiTab', () => {
 
   it('sets the credential labels in the same column as Name and Description', () => {
     mount();
-
-    const authLabel = screen.getByText('Authentication', { selector: 'span' });
     const nameLabel = screen.getByText('Name', { selector: 'label' });
+    openSettingsTab('Authentication');
+    const authLabel = screen.getByText('Authentication', { selector: 'span' });
     expect(authLabel.className).toContain('w-44');
     expect(nameLabel.className).toContain('w-44');
   });
@@ -226,9 +238,12 @@ describe('ApiTab', () => {
   it('shows the definition card only for an imported API', () => {
     mount();
     expect(screen.queryByTestId('api-definition-card')).toBeNull();
+    // Without a definition the page has no tab for one.
+    expect(screen.queryByRole('tab', { name: 'Definition' })).toBeNull();
     cleanup();
 
     mount(restApiWire({ definition: { source: 'https://api.test/openapi.yaml', cache: true, version: '3.0.3' } }));
+    openSettingsTab('Definition');
     expect(screen.getByTestId('api-definition-source').textContent).toBe('https://api.test/openapi.yaml');
   });
 

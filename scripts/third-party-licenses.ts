@@ -58,7 +58,9 @@ const BUNDLED_DEV_DEPENDENCIES = [
   'react',
   'react-arborist',
   'react-dom',
+  'react-markdown',
   'react-resizable-panels',
+  'remark-gfm',
   'tailwindcss',
   'zustand',
 ] as const;

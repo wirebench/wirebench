@@ -219,15 +219,15 @@ test.describe('secrets', () => {
     await expect(page.getByTestId('explorer-rename-input')).toBeFocused({ timeout: 20_000 });
     await page.keyboard.press('Escape');
     await chooseContextMenuItem(page, folderRow(page, 'Folder 1'), 'Auth…');
-    const dialog = page.getByTestId('folder-auth-dialog');
-    await expect(dialog).toBeVisible({ timeout: 20_000 });
+    // Auth… opens the folder's page on its Authentication tab.
+    const folderPage = page.getByTestId('folder-tab');
+    await expect(folderPage).toBeVisible({ timeout: 20_000 });
     await page.getByLabel('Folder authentication type').selectOption('bearer');
-    await dialog.getByRole('button', { name: 'Set…' }).click();
+    await folderPage.getByRole('button', { name: 'Set…' }).click();
     await page.getByLabel('Folder token').fill(TOKEN);
-    await dialog.getByRole('button', { name: 'Save' }).click();
-    // Same keychain round trip as below: let the field settle before closing the dialog.
+    await folderPage.getByRole('button', { name: 'Save' }).click();
+    // Same keychain round trip as below: let the field settle before moving on.
     await expect(page.getByLabel('Folder token')).toHaveText('••••••••');
-    await page.getByTestId('folder-auth-done').click();
 
     // A request: an API key.
     await createRestRequest(page, 'Secure', 'Keyed');

@@ -165,6 +165,16 @@ export {
 export { takenContainerSlugs } from '#core/project/container-slugs';
 export { soapInterfacesOf, withSoapInterfaces } from '#protocol-soap/soap/model';
 export { restApisOf, withRestApis } from '#protocol-rest/rest/model';
+// The API Overview's documentation (spec §3.3): one document, as Markdown and as safe HTML.
+export {
+  buildApiDocument,
+  type ApiDocument,
+  type DocsApiInput,
+  type DocsFolderInput,
+  type DocsRequestInput,
+} from '#protocol-rest/rest/docs/document';
+export { apiDocumentToMarkdown } from '#protocol-rest/rest/docs/markdown';
+export { apiDocumentToHtml } from '#protocol-rest/rest/docs/html';
 export { grpcApisOf, withGrpcApis } from '#protocol-grpc/grpc/model';
 export { wsApisOf, withWsApis } from '#protocol-ws/ws/model';
 export { mcpServersOf, withMcpServers } from '#protocol-mcp/mcp/model';
@@ -1347,6 +1357,7 @@ export type {
   SshPreferences,
   SslPreferences,
   UiPreferences,
+  UpdateChannel,
   UpdatePreferences,
   WsdlPreferences,
   RestPreferences,

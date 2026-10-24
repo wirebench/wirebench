@@ -24,7 +24,7 @@ import { registerHandler } from './register.js';
 /** The `WorkspaceService` surface the `sync.*` channels drive. */
 export type SyncChannelService = Pick<
   WorkspaceService,
-  'sync' | 'syncStatus' | 'treeDir' | 'updateSyncSettings' | 'requireFeature'
+  'sync' | 'syncStatus' | 'treeDir' | 'updateSyncSettings' | 'requireFeature' | 'apiHistory'
 >;
 
 /** What `sync.*` needs beyond the service itself. */
@@ -69,6 +69,9 @@ export function registerSyncChannels(deps: SyncChannelDeps): void {
   registerHandler(channels.sync.abortMerge, async () => await requireSync(service).abortMerge());
 
   registerHandler(channels.sync.log, async (request) => ({ entries: await requireSync(service).log(request.limit) }));
+
+  // A read, not a sync operation: a workspace that is not shared answers "no history" instead of refusing.
+  registerHandler(channels.sync.apiHistory, async (request) => await service.apiHistory(request.apiId, request.limit));
 
   registerHandler(channels.sync.updateSettings, async (request) => await service.updateSyncSettings(request));
 

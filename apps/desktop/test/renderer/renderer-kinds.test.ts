@@ -6,11 +6,12 @@ import { environmentTabId } from '../../src/renderer/features/environments/envir
 import { grpcApiTabId } from '../../src/renderer/features/grpc-api/grpc-api-actions.js';
 import { grpcTabId } from '../../src/renderer/features/grpc-editor/grpc-actions.js';
 import { projectTabId } from '../../src/renderer/features/explorer/project-actions.js';
+import { folderTabId } from '../../src/renderer/features/folder/folder-actions.js';
 import { mockTabId } from '../../src/renderer/features/mock/mock-actions.js';
 import { interfaceTabId } from '../../src/renderer/features/interface-editor/interface-actions.js';
 import { restTabId } from '../../src/renderer/features/rest-editor/rest-actions.js';
 import { catchUrlTabId } from '../../src/renderer/features/webhooks/webhooks-actions.js';
-import { apiTabId } from '../../src/renderer/features/rest-api/api-actions.js';
+import { apiDocsTabId, apiTabId } from '../../src/renderer/features/rest-api/api-actions.js';
 import { wsApiTabId } from '../../src/renderer/features/ws-api/ws-api-actions.js';
 import { sequenceTabId } from '../../src/renderer/features/sequence/sequence-actions.js';
 import { wsTabId } from '../../src/renderer/features/ws-editor/ws-actions.js';
@@ -27,7 +28,9 @@ describe('renderer kinds (kind modules spec §6)', () => {
   it('gives each kind the request and container tabs its shared half names', () => {
     for (const kind of KINDS) {
       const renderer = RENDERER_KINDS.find((candidate) => candidate.kind === kind.kind);
-      expect(renderer?.tabs.map((tab) => tab.kind).sort()).toEqual([kind.tabs.request, kind.tabs.container].sort());
+      expect(renderer?.tabs.map((tab) => tab.kind).sort()).toEqual(
+        [kind.tabs.request, kind.tabs.container, ...('extra' in kind.tabs ? kind.tabs.extra : [])].sort(),
+      );
     }
   });
 
@@ -44,6 +47,7 @@ describe('renderer kinds (kind modules spec §6)', () => {
       interface: interfaceTabId,
       'rest-request': restTabId,
       api: apiTabId,
+      'api-docs': apiDocsTabId,
       'grpc-request': grpcTabId,
       'grpc-api': grpcApiTabId,
       'ws-request': wsTabId,
@@ -52,6 +56,7 @@ describe('renderer kinds (kind modules spec §6)', () => {
       'mcp-api': mcpApiTabId,
       environment: (id) => environmentTabId({ kind: 'environment', id }),
       project: projectTabId,
+      folder: folderTabId,
       sequence: sequenceTabId,
       mock: mockTabId,
       history: (id) => `history:${id}`,

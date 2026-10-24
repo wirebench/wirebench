@@ -16,6 +16,7 @@ import {
   createApi,
   createRestRequest,
   oauth2State,
+  openApiSettingsTab,
   openApiTab,
   openRequestTab,
   responseStatus,
@@ -94,6 +95,7 @@ test.describe('OAuth2', () => {
     await createProject(page, 'Secure');
     await createApi(page, 'Secure', server.url);
     await openApiTab(page, 'Secure');
+    await openApiSettingsTab(page, 'Authentication');
     await page.getByLabel('API authentication type').selectOption('oauth2');
 
     // Client credentials has no authorization request, so neither field is shown for it.

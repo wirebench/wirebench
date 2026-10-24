@@ -18,6 +18,7 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { mcpRequestWire, mcpServerWire } from '../helpers/wire-defaults.js';
 import type { McpServerWire, McpTransportWire } from '../../src/shared/kinds/mcp/wire.js';
+import { openSettingsTab, resetSettingsTabs } from '../helpers/settings-page-tabs.js';
 
 const updateMcpServer = vi.fn();
 const refreshMcpCatalogue = vi.fn();
@@ -48,6 +49,7 @@ function commit(testId: string, value: string): void {
 }
 
 beforeEach(() => {
+  resetSettingsTabs();
   showToast.mockClear();
   updateMcpServer.mockReset().mockResolvedValue(undefined);
   refreshMcpCatalogue.mockReset();
@@ -67,6 +69,7 @@ describe('McpApiTab — the stdio form', () => {
         transport: { type: 'stdio', command: 'node', args: ['server.js', '--root', 'a b'], cwd: 'tools', env: [] },
       }),
     );
+    openSettingsTab('Connection');
 
     expect(screen.getByTestId<HTMLSelectElement>('mcp-api-transport').value).toBe('stdio');
     expect(screen.getByTestId<HTMLInputElement>('mcp-api-command').value).toBe('node');
@@ -77,6 +80,7 @@ describe('McpApiTab — the stdio form', () => {
 
   it('patches the whole transport for a command, an argument added, edited or removed, and the folder', () => {
     mount();
+    openSettingsTab('Connection');
     const base = { type: 'stdio', command: 'node', args: ['server.js'], env: [] };
 
     commit('mcp-api-command', 'npx');
@@ -99,6 +103,7 @@ describe('McpApiTab — the stdio form', () => {
 
   it('writes no folder when the field is emptied', () => {
     mount(mcpServerWire({ transport: { type: 'stdio', command: 'node', args: [], cwd: 'tools', env: [] } }));
+    openSettingsTab('Connection');
 
     commit('mcp-api-cwd', '');
 
@@ -109,6 +114,7 @@ describe('McpApiTab — the stdio form', () => {
 
   it('edits the environment through the shared table', () => {
     mount();
+    openSettingsTab('Connection');
 
     fireEvent.change(screen.getByTestId('mcp-api-env-new-name'), { target: { value: 'API_TOKEN' } });
 
@@ -126,6 +132,7 @@ describe('McpApiTab — the stdio form', () => {
 describe('McpApiTab — the HTTP and SSE forms', () => {
   it('shows the URL, the headers and the credentials of a Streamable HTTP server', () => {
     mount(mcpServerWire({ transport: { ...HTTP, headers: [{ enabled: true, name: 'X-Team', value: 'qa' }] } }));
+    openSettingsTab('Connection');
 
     expect(screen.getByTestId<HTMLSelectElement>('mcp-api-transport').value).toBe('http');
     expect(screen.getByTestId<HTMLInputElement>('mcp-api-url').value).toBe('https://mcp.test/mcp');
@@ -136,6 +143,7 @@ describe('McpApiTab — the HTTP and SSE forms', () => {
 
   it('patches the URL, a header and the auth', () => {
     mount(mcpServerWire({ transport: HTTP }));
+    openSettingsTab('Connection');
 
     commit('mcp-api-url', 'https://other.test/mcp');
     expect(updateMcpServer).toHaveBeenLastCalledWith('mcp-api-1', {
@@ -153,6 +161,7 @@ describe('McpApiTab — the HTTP and SSE forms', () => {
 
   it('says an SSE server’s URL is the event-stream endpoint', () => {
     mount(mcpServerWire({ transport: { ...HTTP, type: 'sse' as const, url: 'https://mcp.test/sse' } }));
+    openSettingsTab('Connection');
 
     expect(screen.getByTestId<HTMLSelectElement>('mcp-api-transport').value).toBe('sse');
     // A compact row carries its hint as the label's title.
@@ -161,6 +170,7 @@ describe('McpApiTab — the HTTP and SSE forms', () => {
 
   it('switches transport, keeping the HTTP fields between HTTP and SSE only', () => {
     mount();
+    openSettingsTab('Connection');
 
     fireEvent.change(screen.getByTestId('mcp-api-transport'), { target: { value: 'http' } });
     expect(updateMcpServer).toHaveBeenCalledWith('mcp-api-1', { transport: { type: 'http', url: '', headers: [] } });
@@ -178,6 +188,7 @@ describe('McpApiTab — name and settings', () => {
 
     commit('mcp-api-name', 'Disk');
     expect(updateMcpServer).toHaveBeenLastCalledWith('mcp-api-1', { name: 'Disk' });
+    openSettingsTab('Settings');
 
     commit('mcp-api-protocol-version', '2025-06-18');
     expect(updateMcpServer).toHaveBeenLastCalledWith('mcp-api-1', {
@@ -216,6 +227,7 @@ describe('McpApiTab — the catalogue', () => {
 
   it('lists each kind with its descriptions, and where it came from', () => {
     mount(catalogued);
+    openSettingsTab('Catalogue');
 
     expect(screen.getAllByTestId('mcp-api-tools-row')).toHaveLength(2);
     expect(screen.getByText('Reads a file')).toBeTruthy();
@@ -229,6 +241,7 @@ describe('McpApiTab — the catalogue', () => {
 
   it('says it was never fetched', () => {
     mount();
+    openSettingsTab('Catalogue');
 
     expect(screen.getByTestId('mcp-api-fetched').textContent).toBe('Not fetched yet.');
     expect(screen.queryByTestId('mcp-api-tools')).toBeNull();
@@ -242,6 +255,7 @@ describe('McpApiTab — the catalogue', () => {
       }),
     );
     mount();
+    openSettingsTab('Catalogue');
 
     fireEvent.click(screen.getByTestId('mcp-api-refresh'));
     expect(refreshMcpCatalogue).toHaveBeenCalledWith('mcp-api-1');
@@ -265,6 +279,7 @@ describe('McpApiTab — the catalogue', () => {
   it('shows why a refresh failed, and clears it on the next try', async () => {
     refreshMcpCatalogue.mockRejectedValueOnce(new Error('mcp-server-exited: the server stopped'));
     mount();
+    openSettingsTab('Catalogue');
 
     fireEvent.click(screen.getByTestId('mcp-api-refresh'));
 
@@ -278,6 +293,7 @@ describe('McpApiTab — the catalogue', () => {
 
   it('makes a tools/call request from a tool row and opens it', async () => {
     mount(catalogued);
+    openSettingsTab('Catalogue');
 
     fireEvent.click(screen.getByRole('button', { name: 'New request for read_file' }));
 

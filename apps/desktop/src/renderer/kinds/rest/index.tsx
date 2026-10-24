@@ -26,7 +26,12 @@ const ApiTab = lazy(async () => {
   return { default: ({ id }: { readonly id: string }) => <module.ApiTab apiId={id} /> };
 });
 
-/** REST in the renderer: its request editor and its API tab. */
+const ApiDocsTab = lazy(async () => {
+  const module = await import('../../features/rest-api/api-docs-tab.js');
+  return { default: ({ id }: { readonly id: string }) => <module.ApiDocsTab apiId={id} /> };
+});
+
+/** REST in the renderer: its request editor, its API tab and the API's documentation. */
 export const restRenderer: RendererKind = {
   kind: 'rest',
   explorer: restExplorer,
@@ -58,6 +63,20 @@ export const restRenderer: RendererKind = {
       persisted: true,
       Component: ApiTab,
       title: (id, { project }) => project.apis[id]?.name,
+    },
+    {
+      // Read-only and rebuilt from the project on open, so it is not saved with the workspace.
+      kind: 'api-docs',
+      treeNode: (id) => `api:${id}`,
+      idField: 'apiDocsId',
+      prefix: 'api-docs:',
+      persisted: false,
+      Component: ApiDocsTab,
+      loading: 'Loading documentation…',
+      title: (id, { project }) => {
+        const name = project.apis[id]?.name;
+        return name === undefined ? undefined : `${name} — Docs`;
+      },
     },
   ],
 };

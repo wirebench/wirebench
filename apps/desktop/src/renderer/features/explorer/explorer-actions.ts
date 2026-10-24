@@ -333,17 +333,10 @@ export const explorerActions = {
       });
   },
 
-  /** Opens a folder's credentials dialog, which is where a folder's one editable field lives. */
+  /** Opens a webhook folder's credentials dialog; an ordinary folder's are on its page. */
   editFolderAuth(folderId: string | undefined): void {
     if (folderId !== undefined) {
       useUiStore.getState().setFolderAuthId(folderId);
-    }
-  },
-
-  /** Opens a folder's scripts dialog (#334), the editor for what runs around its requests. */
-  editFolderScripts(folderId: string | undefined): void {
-    if (folderId !== undefined) {
-      useUiStore.getState().setFolderScriptsId(folderId);
     }
   },
 
