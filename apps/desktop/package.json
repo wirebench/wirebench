@@ -2,7 +2,7 @@
   "name": "@wirebench/desktop",
   "version": "6.1.0",
   "private": true,
-  "description": "Wirebench \u2014 a desktop workbench for SOAP and WSDL",
+  "description": "Wirebench — a desktop workbench for SOAP and WSDL",
   "author": {
     "name": "Wirebench contributors"
   },
@@ -76,7 +76,9 @@
     "react": "^19.3.0",
     "react-arborist": "^3.4.3",
     "react-dom": "^19.3.0",
+    "react-markdown": "^10.1.0",
     "react-resizable-panels": "^4.12.4",
+    "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.3.3",
     "vite": "^7.3.7",
     "zustand": "^5.0.15"
