@@ -17,6 +17,7 @@ import { installWirebenchApi } from '../mocks/wirebench-api.js';
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 import { workspaceWire } from '../helpers/workspace-wire.js';
+import { openSettingsTab, resetSettingsTabs } from '../helpers/settings-page-tabs.js';
 import { NO_REST, PROJECT_SETTINGS, restApiWire } from '../helpers/wire-defaults.js';
 import type { ProjectWire } from '../../src/shared/wire-types.js';
 import type { RestApiWire } from '../../src/shared/kinds/rest/wire.js';
@@ -69,6 +70,7 @@ beforeEach(() => {
   updateApi.mockReset().mockResolvedValue(undefined);
   installWirebenchApi();
   useWorkspaceStore.setState({ workspace: null });
+  resetSettingsTabs();
 });
 
 afterEach(() => {
@@ -199,6 +201,7 @@ describe('ApiTab', () => {
 
   it('sets the credentials every request in the API inherits', () => {
     mount();
+    openSettingsTab('Authentication');
 
     fireEvent.change(screen.getByLabelText('API authentication type'), { target: { value: 'basic' } });
 
@@ -207,6 +210,7 @@ describe('ApiTab', () => {
 
   it('says once when the scripts run, without an issue number', () => {
     mount();
+    openSettingsTab('Scripts');
 
     const section = screen.getByTestId('api-tab');
     expect(section.textContent).not.toMatch(/#\d+/);
@@ -216,9 +220,9 @@ describe('ApiTab', () => {
 
   it('sets the credential labels in the same column as Name and Description', () => {
     mount();
-
-    const authLabel = screen.getByText('Authentication', { selector: 'span' });
     const nameLabel = screen.getByText('Name', { selector: 'label' });
+    openSettingsTab('Authentication');
+    const authLabel = screen.getByText('Authentication', { selector: 'span' });
     expect(authLabel.className).toContain('w-44');
     expect(nameLabel.className).toContain('w-44');
   });
@@ -226,9 +230,12 @@ describe('ApiTab', () => {
   it('shows the definition card only for an imported API', () => {
     mount();
     expect(screen.queryByTestId('api-definition-card')).toBeNull();
+    // Without a definition the page has no tab for one.
+    expect(screen.queryByRole('tab', { name: 'Definition' })).toBeNull();
     cleanup();
 
     mount(restApiWire({ definition: { source: 'https://api.test/openapi.yaml', cache: true, version: '3.0.3' } }));
+    openSettingsTab('Definition');
     expect(screen.getByTestId('api-definition-source').textContent).toBe('https://api.test/openapi.yaml');
   });
 

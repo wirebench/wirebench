@@ -42,7 +42,7 @@ export interface ConnectionSectionProps {
 export function ConnectionSection({ apiId, transport, onChange }: ConnectionSectionProps) {
   return (
     <>
-      <SettingsGroup title="Connection" hint="How a session reaches the server.">
+      <SettingsGroup hint="How a session reaches the server.">
         <EnumSetting
           label="Transport"
           testId="mcp-api-transport"

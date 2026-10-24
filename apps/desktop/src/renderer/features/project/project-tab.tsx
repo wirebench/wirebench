@@ -5,6 +5,7 @@ import {
   SettingsGroup,
   TextSetting,
 } from '../../components/settings-grid.js';
+import { SettingsPageTabs } from '../../components/settings-page-tabs.js';
 import { useGlobalsStore } from '../../state/globals.js';
 import { useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
@@ -74,72 +75,88 @@ export function ProjectTab({ projectId }: ProjectTabProps) {
   };
 
   return (
-    <section
-      data-testid="project-tab"
-      aria-label={`Project ${project.name}`}
-      className="flex h-full min-h-0 flex-col gap-4 overflow-auto p-4"
-    >
-      {/* Above the first field rather than beside one: every group below writes through the same
-          autosave, so one indicator speaks for the whole tab. */}
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="truncate text-md font-medium text-fg-default">{project.name}</h2>
-        <SaveIndicator projectId={projectId} />
-      </div>
-
-      <SettingsGroup title="Project">
-        <ReadOnlySetting label="Name" value={project.name} />
-        <div className="flex items-end gap-2">
-          <div className="min-w-0 flex-1">
-            <TextSetting label="Folder" value={project.dir} readOnly monospace onCommit={() => undefined} />
+    <section data-testid="project-tab" aria-label={`Project ${project.name}`} className="h-full min-h-0">
+      <SettingsPageTabs
+        pageId={projectId}
+        label="Project settings"
+        header={
+          // Above the tabs rather than in one: every tab writes through the same autosave, so one
+          // indicator speaks for the whole page.
+          <div className="flex shrink-0 items-center justify-between gap-3 px-4 pt-3 pb-1">
+            <h2 className="truncate text-md font-medium text-fg-default">{project.name}</h2>
+            <SaveIndicator projectId={projectId} />
           </div>
-          <button
-            type="button"
-            className="mb-0.5 h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default hover:bg-surface-hover"
-            onClick={() => {
-              void workspaceActions.revealProject(projectId);
-            }}
-          >
-            Reveal
-          </button>
-        </div>
-        <ReadOnlySetting label="Source" value={source === 'linked' ? 'Linked' : 'Internal'} />
-      </SettingsGroup>
-
-      <SettingsGroup title="Settings">
-        <BooleanSetting
-          label="Cache definitions"
-          value={project.settings.cacheDefinitions}
-          onChange={(cacheDefinitions) => patch({ cacheDefinitions })}
-        />
-        <NumberSetting
-          label="Default timeout (ms)"
-          value={project.settings.defaultTimeoutMs}
-          min={0}
-          onCommit={(defaultTimeoutMs) => {
-            if (defaultTimeoutMs !== undefined) {
-              patch({ defaultTimeoutMs });
-            }
-          }}
-        />
-        <TextSetting
-          label="Resource root"
-          value={project.settings.resourceRoot ?? ''}
-          placeholder="the project folder"
-          onCommit={(resourceRoot) => patch({ resourceRoot: resourceRoot.length > 0 ? resourceRoot : null })}
-        />
-        <BooleanSetting
-          label="Pretty print responses"
-          value={project.settings.prettyPrintResponses}
-          onChange={(prettyPrintResponses) => patch({ prettyPrintResponses })}
-        />
-      </SettingsGroup>
-
-      <div className="flex flex-col gap-1">
-        <h3 className="text-xs font-medium tracking-wider text-fg-subtle uppercase">Properties</h3>
-        <div data-testid="project-properties-table">
-          <VariablesTable target={propertiesTarget} />
-        </div>
-      </div>
+        }
+        tabs={[
+          {
+            id: 'general',
+            label: 'General',
+            content: (
+              <SettingsGroup>
+                <ReadOnlySetting label="Name" value={project.name} />
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1">
+                    <TextSetting label="Folder" value={project.dir} readOnly monospace onCommit={() => undefined} />
+                  </div>
+                  <button
+                    type="button"
+                    className="mb-0.5 h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default hover:bg-surface-hover"
+                    onClick={() => {
+                      void workspaceActions.revealProject(projectId);
+                    }}
+                  >
+                    Reveal
+                  </button>
+                </div>
+                <ReadOnlySetting label="Source" value={source === 'linked' ? 'Linked' : 'Internal'} />
+              </SettingsGroup>
+            ),
+          },
+          {
+            id: 'settings',
+            label: 'Settings',
+            content: (
+              <SettingsGroup>
+                <BooleanSetting
+                  label="Cache definitions"
+                  value={project.settings.cacheDefinitions}
+                  onChange={(cacheDefinitions) => patch({ cacheDefinitions })}
+                />
+                <NumberSetting
+                  label="Default timeout (ms)"
+                  value={project.settings.defaultTimeoutMs}
+                  min={0}
+                  onCommit={(defaultTimeoutMs) => {
+                    if (defaultTimeoutMs !== undefined) {
+                      patch({ defaultTimeoutMs });
+                    }
+                  }}
+                />
+                <TextSetting
+                  label="Resource root"
+                  value={project.settings.resourceRoot ?? ''}
+                  placeholder="the project folder"
+                  onCommit={(resourceRoot) => patch({ resourceRoot: resourceRoot.length > 0 ? resourceRoot : null })}
+                />
+                <BooleanSetting
+                  label="Pretty print responses"
+                  value={project.settings.prettyPrintResponses}
+                  onChange={(prettyPrintResponses) => patch({ prettyPrintResponses })}
+                />
+              </SettingsGroup>
+            ),
+          },
+          {
+            id: 'properties',
+            label: 'Properties',
+            content: (
+              <div data-testid="project-properties-table">
+                <VariablesTable target={propertiesTarget} />
+              </div>
+            ),
+          },
+        ]}
+      />
     </section>
   );
 }

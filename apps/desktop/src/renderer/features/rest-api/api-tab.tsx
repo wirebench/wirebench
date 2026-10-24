@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react';
 import { AuthFields } from '../../components/auth-fields.js';
 import { SettingsGroup, TextSetting } from '../../components/settings-grid.js';
+import { SettingsPageTabs, type SettingsPageTab } from '../../components/settings-page-tabs.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
 import { ScriptsTab } from '../scripts/scripts-tab.js';
 import { Button } from '../../components/button.js';
@@ -103,105 +104,121 @@ export function ApiTab({ apiId }: ApiTabProps) {
     void updateApi(apiId, changes);
   };
 
-  return (
-    <section aria-label={`API ${api.name}`} data-testid="api-tab" className="h-full overflow-auto p-3">
-      <SettingsGroup title="API">
-        <TextSetting
-          label="Name"
-          testId="api-name"
-          value={api.name}
-          onCommit={(name) => {
-            if (name.trim().length > 0) {
-              patch({ name: name.trim() });
-            }
-          }}
-        />
-        <TextSetting
-          label="Description"
-          testId="api-description"
-          value={api.description ?? ''}
-          onCommit={(description) => {
-            patch({ description: description === '' ? null : description });
-          }}
-        />
-        {/* Top-aligned, the label kept to the input's height: the line under the input must not pull it down. */}
-        <div className="flex items-start gap-2 py-0.5">
-          <label
-            htmlFor="api-base-url"
-            className="flex h-row w-44 shrink-0 items-center truncate text-sm text-fg-muted"
-          >
-            Base URL
-          </label>
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <input
-              id="api-base-url"
-              aria-label="Base URL"
-              data-testid="api-base-url"
-              list={api.servers.length > 0 ? 'api-servers' : undefined}
-              value={baseUrlDraft}
-              placeholder="https://api.example.com"
-              className="h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 font-mono text-sm text-fg-default focus:ring-1 focus:ring-accent focus:outline-none"
-              onChange={(event) => {
-                setBaseUrlDraft(event.target.value);
-              }}
-              onBlur={() => {
-                if (baseUrlDraft !== api.baseUrl) {
-                  patch({ baseUrl: baseUrlDraft });
-                }
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  patch({ baseUrl: event.currentTarget.value });
-                }
-              }}
-            />
-            {api.servers.length > 0 && (
-              <datalist id="api-servers">
-                {api.servers.map((server) => (
-                  <option key={server.url} value={server.url}>
-                    {server.description ?? server.url}
-                  </option>
-                ))}
-              </datalist>
-            )}
-            <p data-testid="api-base-url-source" className="truncate text-xs text-fg-subtle">
-              {effective.source === 'api'
-                ? 'Requests use this value.'
-                : `Overridden: requests go to ${effective.url} — from ${SOURCE_LABEL[effective.source]}.`}
-            </p>
+  const tabs: SettingsPageTab<'general' | 'auth' | 'scripts' | 'definition'>[] = [
+    {
+      id: 'general',
+      label: 'General',
+      content: (
+        <SettingsGroup>
+          <TextSetting
+            label="Name"
+            testId="api-name"
+            value={api.name}
+            onCommit={(name) => {
+              if (name.trim().length > 0) {
+                patch({ name: name.trim() });
+              }
+            }}
+          />
+          <TextSetting
+            label="Description"
+            testId="api-description"
+            value={api.description ?? ''}
+            onCommit={(description) => {
+              patch({ description: description === '' ? null : description });
+            }}
+          />
+          {/* Top-aligned, the label kept to the input's height: the line under the input must not pull it down. */}
+          <div className="flex items-start gap-2 py-0.5">
+            <label
+              htmlFor="api-base-url"
+              className="flex h-row w-44 shrink-0 items-center truncate text-sm text-fg-muted"
+            >
+              Base URL
+            </label>
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <input
+                id="api-base-url"
+                aria-label="Base URL"
+                data-testid="api-base-url"
+                list={api.servers.length > 0 ? 'api-servers' : undefined}
+                value={baseUrlDraft}
+                placeholder="https://api.example.com"
+                className="h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 font-mono text-sm text-fg-default focus:ring-1 focus:ring-accent focus:outline-none"
+                onChange={(event) => {
+                  setBaseUrlDraft(event.target.value);
+                }}
+                onBlur={() => {
+                  if (baseUrlDraft !== api.baseUrl) {
+                    patch({ baseUrl: baseUrlDraft });
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    patch({ baseUrl: event.currentTarget.value });
+                  }
+                }}
+              />
+              {api.servers.length > 0 && (
+                <datalist id="api-servers">
+                  {api.servers.map((server) => (
+                    <option key={server.url} value={server.url}>
+                      {server.description ?? server.url}
+                    </option>
+                  ))}
+                </datalist>
+              )}
+              <p data-testid="api-base-url-source" className="truncate text-xs text-fg-subtle">
+                {effective.source === 'api'
+                  ? 'Requests use this value.'
+                  : `Overridden: requests go to ${effective.url} — from ${SOURCE_LABEL[effective.source]}.`}
+              </p>
+            </div>
           </div>
-        </div>
-      </SettingsGroup>
-
-      <SettingsGroup
-        title="Authentication"
-        hint="What every request in this API sends unless a folder or the request itself says otherwise."
-      >
-        <AuthFields
-          scope="API"
-          labels="settings"
-          auth={api.auth === undefined || api.auth.type === 'inherit' ? undefined : api.auth}
-          onChange={(auth: AuthConfigWire | null) => {
-            patch({ auth });
-          }}
-          oauth2Status={
-            api.auth?.type === 'oauth2' ? <OAuth2StatusPanel ownerId={apiId} grant={api.auth.grant} /> : undefined
-          }
-        />
-      </SettingsGroup>
-
-      {/* The scripts tab says when a level's scripts run; the group repeats none of it. */}
-      <SettingsGroup title="Scripts">
-        <div data-testid="api-scripts" className="flex h-[28rem] flex-col rounded-md border border-hairline">
+        </SettingsGroup>
+      ),
+    },
+    {
+      id: 'auth',
+      label: 'Authentication',
+      content: (
+        <SettingsGroup hint="What every request in this API sends unless a folder or the request itself says otherwise.">
+          <AuthFields
+            scope="API"
+            labels="settings"
+            auth={api.auth === undefined || api.auth.type === 'inherit' ? undefined : api.auth}
+            onChange={(auth: AuthConfigWire | null) => {
+              patch({ auth });
+            }}
+            oauth2Status={
+              api.auth?.type === 'oauth2' ? <OAuth2StatusPanel ownerId={apiId} grant={api.auth.grant} /> : undefined
+            }
+          />
+        </SettingsGroup>
+      ),
+    },
+    {
+      id: 'scripts',
+      label: 'Scripts',
+      fill: true,
+      // The scripts tab says when a level's scripts run; the page repeats none of it.
+      content: (
+        <div data-testid="api-scripts" className="flex min-h-0 flex-1 flex-col rounded-md border border-hairline">
           <ScriptsTab requestId={apiId} scripts={api.scripts} level="API" />
         </div>
-      </SettingsGroup>
-
-      {api.definition !== undefined && (
-        <SettingsGroup title="Definition">
-          <ApiDefinitionCard apiId={apiId} definition={api.definition} />
+      ),
+    },
+  ];
+  if (api.definition !== undefined) {
+    const { definition } = api;
+    tabs.push({
+      id: 'definition',
+      label: 'Definition',
+      content: (
+        <SettingsGroup>
+          <ApiDefinitionCard apiId={apiId} definition={definition} />
           {/* Only with the cached document an update compares against; without it the dialog dead-ends. */}
-          {api.definition.cache === true && (
+          {definition.cache === true && (
             <>
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <Button
@@ -222,7 +239,13 @@ export function ApiTab({ apiId }: ApiTabProps) {
             </>
           )}
         </SettingsGroup>
-      )}
+      ),
+    });
+  }
+
+  return (
+    <section aria-label={`API ${api.name}`} data-testid="api-tab" className="h-full min-h-0">
+      <SettingsPageTabs pageId={apiId} label="API settings" tabs={tabs} />
       {updating && api.definition?.cache === true && (
         <RestUpdateDialog
           apiId={apiId}

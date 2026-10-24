@@ -94,6 +94,7 @@ test.describe('OAuth2', () => {
     await createProject(page, 'Secure');
     await createApi(page, 'Secure', server.url);
     await openApiTab(page, 'Secure');
+    await page.getByRole('tablist', { name: 'API settings' }).getByRole('tab', { name: 'Authentication' }).click();
     await page.getByLabel('API authentication type').selectOption('oauth2');
 
     // Client credentials has no authorization request, so neither field is shown for it.

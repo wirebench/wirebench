@@ -9,6 +9,9 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 - **The open editor tab stands out.** It carries an accent bar along its bottom edge, and the editor
   tab strip is taller, so the tab you are on is easy to pick out at a glance.
+- **Project and API pages use tabs.** The project page (General, Settings, Properties) and every API
+  page — REST, WebSocket, gRPC and MCP — show one section at a time behind a tab instead of one long
+  page, and the Scripts tab's editor fills the page. Each page remembers the tab it was on.
 
 ## [6.1.0] - 2026-10-23
 

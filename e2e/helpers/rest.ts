@@ -236,6 +236,7 @@ export async function setApiOAuth2ClientCredentials(
     readonly scopes?: string;
   },
 ): Promise<void> {
+  await page.getByRole('tablist', { name: 'API settings' }).getByRole('tab', { name: 'Authentication' }).click();
   await page.getByLabel('API authentication type').selectOption('oauth2');
   await page.getByLabel('API token url').fill(options.tokenUrl);
   await page.getByLabel('API client id').fill(options.clientId);

@@ -195,6 +195,7 @@ test.describe('OpenAPI import', () => {
     // The definition card reads the cache main wrote, which is three documents for this fixture.
     await apiRow(page, 'Refs').dblclick();
     await expect(page.getByTestId('api-tab')).toBeVisible({ timeout: 20_000 });
+    await page.getByRole('tablist', { name: 'API settings' }).getByRole('tab', { name: 'Definition' }).click();
     await expect(page.getByTestId('api-definition-source')).toContainText('/refs/openapi.yaml');
     await page.getByTestId('api-definition-view').click();
     const select = page.getByTestId('api-definition-document');
