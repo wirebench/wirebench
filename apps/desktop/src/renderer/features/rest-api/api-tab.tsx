@@ -107,88 +107,84 @@ export function ApiTab({ apiId }: ApiTabProps) {
     void updateApi(apiId, changes);
   };
 
-  const tabs: SettingsPageTab<'overview' | 'general' | 'auth' | 'scripts' | 'definition'>[] = [
-    // First, so an API opens on what it is for; the description is edited here, not in General.
+  const tabs: SettingsPageTab<'general' | 'auth' | 'scripts' | 'definition'>[] = [
+    // First: what the API is for and where its requests go, the description edited in place.
     {
-      id: 'overview',
-      label: 'Overview',
+      id: 'general',
+      label: 'General',
       content: (
         <OverviewTab
           apiId={apiId}
           onOpenDocs={() => {
             openApiDocsTab(apiId);
           }}
+          fields={
+            <SettingsGroup>
+              <TextSetting
+                label="Name"
+                testId="api-name"
+                value={api.name}
+                onCommit={(name) => {
+                  if (name.trim().length > 0) {
+                    patch({ name: name.trim() });
+                  }
+                }}
+              />
+              {/* Top-aligned, the label kept to the input's height: the line under the input must not pull it down. */}
+              <div className="flex items-start gap-2 py-0.5">
+                <label
+                  htmlFor="api-base-url"
+                  className="flex h-row w-44 shrink-0 items-center truncate text-sm text-fg-muted"
+                >
+                  Base URL
+                </label>
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <input
+                    id="api-base-url"
+                    aria-label="Base URL"
+                    data-testid="api-base-url"
+                    list={api.servers.length > 0 ? 'api-servers' : undefined}
+                    value={baseUrlDraft}
+                    placeholder="https://api.example.com"
+                    className="h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 font-mono text-sm text-fg-default focus:ring-1 focus:ring-accent focus:outline-none"
+                    onChange={(event) => {
+                      setBaseUrlDraft(event.target.value);
+                    }}
+                    onBlur={() => {
+                      if (baseUrlDraft !== api.baseUrl) {
+                        patch({ baseUrl: baseUrlDraft });
+                      }
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        patch({ baseUrl: event.currentTarget.value });
+                      }
+                    }}
+                  />
+                  {api.servers.length > 0 && (
+                    <datalist id="api-servers">
+                      {api.servers.map((server) => (
+                        <option key={server.url} value={server.url}>
+                          {server.description ?? server.url}
+                        </option>
+                      ))}
+                    </datalist>
+                  )}
+                  <p data-testid="api-base-url-source" className="truncate text-xs text-fg-subtle">
+                    {effective.source === 'api'
+                      ? 'Requests use this value.'
+                      : `Overridden: requests go to ${effective.url} — from ${SOURCE_LABEL[effective.source]}.`}
+                  </p>
+                </div>
+              </div>
+            </SettingsGroup>
+          }
           aside={
             <ApiSummary apiId={apiId} baseUrl={{ url: effective.url, from: SOURCE_LABEL[effective.source] }}>
               <RecentChanges apiId={apiId} />
             </ApiSummary>
           }
         />
-      ),
-    },
-    {
-      id: 'general',
-      label: 'General',
-      content: (
-        <SettingsGroup>
-          <TextSetting
-            label="Name"
-            testId="api-name"
-            value={api.name}
-            onCommit={(name) => {
-              if (name.trim().length > 0) {
-                patch({ name: name.trim() });
-              }
-            }}
-          />
-          {/* Top-aligned, the label kept to the input's height: the line under the input must not pull it down. */}
-          <div className="flex items-start gap-2 py-0.5">
-            <label
-              htmlFor="api-base-url"
-              className="flex h-row w-44 shrink-0 items-center truncate text-sm text-fg-muted"
-            >
-              Base URL
-            </label>
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <input
-                id="api-base-url"
-                aria-label="Base URL"
-                data-testid="api-base-url"
-                list={api.servers.length > 0 ? 'api-servers' : undefined}
-                value={baseUrlDraft}
-                placeholder="https://api.example.com"
-                className="h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 font-mono text-sm text-fg-default focus:ring-1 focus:ring-accent focus:outline-none"
-                onChange={(event) => {
-                  setBaseUrlDraft(event.target.value);
-                }}
-                onBlur={() => {
-                  if (baseUrlDraft !== api.baseUrl) {
-                    patch({ baseUrl: baseUrlDraft });
-                  }
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    patch({ baseUrl: event.currentTarget.value });
-                  }
-                }}
-              />
-              {api.servers.length > 0 && (
-                <datalist id="api-servers">
-                  {api.servers.map((server) => (
-                    <option key={server.url} value={server.url}>
-                      {server.description ?? server.url}
-                    </option>
-                  ))}
-                </datalist>
-              )}
-              <p data-testid="api-base-url-source" className="truncate text-xs text-fg-subtle">
-                {effective.source === 'api'
-                  ? 'Requests use this value.'
-                  : `Overridden: requests go to ${effective.url} — from ${SOURCE_LABEL[effective.source]}.`}
-              </p>
-            </div>
-          </div>
-        </SettingsGroup>
       ),
     },
     {

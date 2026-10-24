@@ -16,9 +16,11 @@ export interface OverviewTabProps {
   readonly onOpenDocs?: () => void;
   /** The summary column beside the description. */
   readonly aside?: ReactNode;
+  /** The page's own settings (the API's name and base URL), between the heading and the description. */
+  readonly fields?: ReactNode;
 }
 
-export function OverviewTab({ apiId, onOpenDocs, aside }: OverviewTabProps) {
+export function OverviewTab({ apiId, onOpenDocs, aside, fields }: OverviewTabProps) {
   const api = useProjectStore((state) => state.apis[apiId]);
   const updateApi = useProjectStore((state) => state.updateApi);
   const [draft, setDraft] = useState<string | undefined>(undefined);
@@ -59,7 +61,9 @@ export function OverviewTab({ apiId, onOpenDocs, aside }: OverviewTabProps) {
               </Button>
             )}
           </div>
+          {fields !== undefined && <div className="mb-4">{fields}</div>}
 
+          <h3 className="mb-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">Description</h3>
           {draft !== undefined ? (
             <div className="flex flex-col gap-2">
               <textarea

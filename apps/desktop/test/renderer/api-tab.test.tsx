@@ -111,10 +111,12 @@ describe('effectiveBaseUrl', () => {
 });
 
 describe('ApiTab', () => {
-  it('opens on the Overview, which shows the description rendered', () => {
+  it('opens on General, which shows the description rendered beside the name and base URL', () => {
     mount(restApiWire({ description: 'Pets, and **their** people' }), {}, null);
 
-    expect(screen.getByRole('tab', { name: 'Overview' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: 'General' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.queryByRole('tab', { name: 'Overview' })).toBeNull();
+    expect(screen.getByTestId('api-name')).toBeTruthy();
     expect(screen.getByTestId('api-overview').querySelector('strong')?.textContent).toBe('their');
   });
 
@@ -122,7 +124,7 @@ describe('ApiTab', () => {
     mount(restApiWire({ description: 'Pets, and their people' }));
 
     expect(screen.getByTestId<HTMLInputElement>('api-name').value).toBe('Petstore');
-    // The description is the Overview's; General no longer edits it.
+    // The description is edited in place on General, not in a field of its own.
     expect(screen.queryByTestId('api-description')).toBeNull();
     expect(screen.getByTestId<HTMLInputElement>('api-base-url').value).toBe('https://api.test');
     expect(screen.getByTestId('api-base-url-source').textContent).toBe('Requests use this value.');

@@ -7,8 +7,8 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
-- **An Overview for every REST API.** The API's page opens on Overview: its description rendered as
-  formatted text and edited in place, a summary of how many requests and folders it holds, its auth,
+- **An overview of every REST API.** The API's page opens on General: its name and base URL, its
+  description rendered as formatted text and edited in place, a summary of how many requests and folders it holds, its auth,
   where its requests go and where its definition came from, and Recent changes, the commits that
   touched this API in a git-shared workspace. An imported description's raw HTML is left out, its
   images are not loaded, and only web links stay links.
