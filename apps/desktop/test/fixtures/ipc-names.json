@@ -20,6 +20,7 @@
     "api.detectImportSource",
     "api.detectPluginImport",
     "api.exportDefinition",
+    "api.exportDocs",
     "api.grpcDefinition",
     "api.grpcFields",
     "api.grpcRefresh",

@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { ApiDocsTab, EXAMPLE_PREVIEW_LINES, docsTree } from '../../src/renderer/features/rest-api/api-docs-tab.js';
 import { apiDocsTabId, openApiDocsTab } from '../../src/renderer/features/rest-api/api-actions.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
@@ -123,5 +124,18 @@ describe('openApiDocsTab', () => {
   it('ignores an API the mirror does not hold', () => {
     openApiDocsTab('gone');
     expect(useEditorsStore.getState().tabs).toHaveLength(0);
+  });
+});
+
+describe('ApiDocsTab export', () => {
+  it('asks main to export in the chosen format', async () => {
+    const exportDocs = vi.fn().mockResolvedValue({ ok: true, value: { cancelled: false, path: '/tmp/CaaS.md' } });
+    installWirebenchApi({ api: { exportDocs } });
+    render(<ApiDocsTab apiId="api-1" />);
+
+    fireEvent.click(screen.getByTestId('api-docs-export-markdown'));
+    await waitFor(() => expect(exportDocs).toHaveBeenCalledWith({ apiId: 'api-1', format: 'markdown' }));
+    fireEvent.click(await screen.findByTestId('api-docs-export-html'));
+    await waitFor(() => expect(exportDocs).toHaveBeenLastCalledWith({ apiId: 'api-1', format: 'html' }));
   });
 });

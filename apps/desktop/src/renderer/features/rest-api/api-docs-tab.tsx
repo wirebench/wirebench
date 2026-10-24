@@ -7,7 +7,10 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { buildApiDocument, type DocParam, type DocRequest, type DocsFolderInput } from '@wirebench/engine/rest';
 import { authTypeLabel } from '../../components/auth-fields.js';
+import { Button } from '../../components/button.js';
 import { MarkdownView } from '../../components/markdown-view.js';
+import { showToast } from '../../components/toast.js';
+import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import type { RestApiWire, RestRequestWire } from '../../../shared/kinds/rest/wire.js';
 import type { RestFolderWire } from '../../../shared/wire-base.js';
@@ -128,7 +131,18 @@ function headingClass(depth: number): string {
   return depth === 0 ? 'text-lg' : depth === 1 ? 'text-md' : 'text-sm';
 }
 
+/** Main builds the file and runs the Save dialog; the tab only names the format and reports the outcome. */
+async function exportDocs(apiId: string, format: 'html' | 'markdown'): Promise<void> {
+  const result = await ipc().api.exportDocs({ apiId, format });
+  if (!result.ok) {
+    showToast(`The documentation could not be saved: ${result.error.message}`);
+  } else if (!result.value.cancelled && result.value.path !== undefined) {
+    showToast(`Documentation written to ${result.value.path}`);
+  }
+}
+
 export function ApiDocsTab({ apiId }: ApiDocsTabProps) {
+  const [exporting, setExporting] = useState(false);
   const api: RestApiWire | undefined = useProjectStore((state) => state.apis[apiId]);
   const folders = useProjectStore((state) => state.folders);
   const requests = useProjectStore((state) => state.restRequests);
@@ -156,7 +170,26 @@ export function ApiDocsTab({ apiId }: ApiDocsTabProps) {
     <section aria-label={`${doc.name} documentation`} data-testid="api-docs-tab" className="h-full overflow-auto">
       <div className="mx-auto max-w-4xl px-6 py-5">
         <header className="mb-4">
-          <h2 className="text-2xl font-semibold text-fg-default">{doc.name}</h2>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <h2 className="min-w-0 text-2xl font-semibold break-words text-fg-default">{doc.name}</h2>
+            <div className="flex shrink-0 gap-2">
+              {(['html', 'markdown'] as const).map((format) => (
+                <Button
+                  key={format}
+                  data-testid={`api-docs-export-${format}`}
+                  disabled={exporting}
+                  onClick={() => {
+                    setExporting(true);
+                    void exportDocs(apiId, format).finally(() => {
+                      setExporting(false);
+                    });
+                  }}
+                >
+                  {format === 'html' ? 'Export HTML…' : 'Export Markdown…'}
+                </Button>
+              ))}
+            </div>
+          </div>
           <ul className="mt-1 flex flex-wrap gap-x-4 text-xs text-fg-subtle">
             {doc.baseUrl !== '' && (
               <li>

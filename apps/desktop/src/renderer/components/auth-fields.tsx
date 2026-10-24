@@ -25,23 +25,13 @@ import { useProjectStore } from '../state/project.js';
 import { VariableInput } from './variable-field.js';
 import type { SoapOwnerAuthWire } from '../../shared/kinds/soap/wire.js';
 import type { AuthConfigWire } from '../../shared/wire-base.js';
+import { AUTH_TYPE_OPTIONS, authTypeLabel } from '../../shared/auth-types.js';
 
 const INPUT_CLASS =
   'h-row w-full min-w-0 rounded-md border border-hairline bg-surface-base px-2 text-sm text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';
 
 /** Every scheme, in the order the form offers them. */
-const TYPES: readonly { readonly value: AuthConfigWire['type']; readonly label: string }[] = [
-  { value: 'none', label: 'None' },
-  { value: 'basic', label: 'Basic' },
-  { value: 'ntlm', label: 'NTLM' },
-  { value: 'bearer', label: 'Bearer token' },
-  { value: 'api-key', label: 'API key' },
-  { value: 'oauth2', label: 'OAuth2' },
-  { value: 'kerberos', label: 'Kerberos' },
-  { value: 'digest', label: 'Digest' },
-  { value: 'aws-sigv4', label: 'AWS Signature v4' },
-  { value: 'jwt', label: 'JWT (signed here)' },
-];
+const TYPES = AUTH_TYPE_OPTIONS;
 
 /** Every scheme but Kerberos: what a webhook delivery can be given. */
 export const WEBHOOK_AUTH_TYPES: readonly AuthConfigWire['type'][] = TYPES.map((option) => option.value).filter(
@@ -55,10 +45,7 @@ export const WEBHOOK_AUTH_TYPES: readonly AuthConfigWire['type'][] = TYPES.map((
  * A SOAP owner has nothing above it to inherit from (the project format refuses `inherit` there),
  * so the form offers every other scheme and leaves "configures nothing" to *Not configured*.
  */
-/** A scheme's name as the type picker shows it ("Basic", "Bearer token"). */
-export function authTypeLabel(type: AuthConfigWire['type']): string {
-  return TYPES.find((entry) => entry.value === type)?.label ?? type;
-}
+export { authTypeLabel };
 
 export const SOAP_AUTH_TYPES: readonly AuthConfigWire['type'][] = [
   'none',

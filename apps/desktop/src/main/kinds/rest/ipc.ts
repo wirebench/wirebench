@@ -44,6 +44,7 @@ import {
 import { type WebhookUrlSource } from '../../webhook-send.js';
 import type { KindChannelDeps } from '../kind-main.js';
 import { restHeaders } from './header-preview.js';
+import { registerRestDocsChannels } from './docs-export.js';
 import { registerGraphqlApiChannels, registerGraphqlRequestChannels } from '../graphql/ipc.js';
 
 /** True for a base URL the webhook collection supplied: its target, or a callback's own URL. */
@@ -463,5 +464,6 @@ export function registerRestHistoryChannels(history: HistoryService, deps: Histo
 export function registerRestChannels(deps: KindChannelDeps): void {
   registerRestRequestChannels(deps.engine, deps.request);
   registerRestApiChannels(deps.api);
+  registerRestDocsChannels({ router: deps.router, picks: deps.picks });
   registerRestHistoryChannels(deps.history, deps.historyDeps);
 }
