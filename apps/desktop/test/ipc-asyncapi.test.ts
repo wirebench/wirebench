@@ -36,6 +36,7 @@ import type { WsApi } from '@wirebench/engine';
 import { tableInto } from './helpers/ipc-table.js';
 import { fakeNativeDialogs } from './helpers/fake-platform.js';
 import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const hostState = createHostState();
 
@@ -122,7 +123,15 @@ beforeEach(async () => {
   );
   await copyFile(join(fixtures, 'schemas.yaml'), join(projectDir, 'schemas.yaml'));
 
-  const host = new ProjectHost(new EngineService(), {}, undefined, undefined, undefined, undefined, new DialogPicks());
+  const host = new ProjectHost(
+    new EngineService(),
+    testHooks(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    new DialogPicks(),
+  );
   await host.create({ dir: join(projectDir, 'project'), name: 'Chat' });
   hosts.set('p1', host);
 
@@ -179,7 +188,7 @@ beforeEach(async () => {
     addProject: async (name) => {
       const created = new ProjectHost(
         new EngineService(),
-        {},
+        testHooks(),
         undefined,
         undefined,
         undefined,

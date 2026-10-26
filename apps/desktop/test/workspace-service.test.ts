@@ -23,6 +23,7 @@ import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 import type { WorkspaceWire } from '../src/shared/wire-base.js';
 import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const hostState = createHostState();
 
@@ -45,7 +46,7 @@ function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceSer
  * reference for it — the id is the project's own, as the spec requires.
  */
 async function seedProject(wsDir: string, slug: string, name: string): Promise<WorkspaceProjectRef> {
-  const host = new ProjectHost(new EngineService());
+  const host = new ProjectHost(new EngineService(), testHooks());
   const project = await host.create({ dir: workspaceProjectDir(wsDir, slug), name });
   await host.close();
   return { id: project.id, slug, source: 'internal' };
@@ -524,7 +525,7 @@ describe('WorkspaceService current values', () => {
     const created = await bootstrap.create('Values');
     await bootstrap.close();
     const dir = workspaceDir(root, created.id);
-    const seeded = new ProjectHost(new EngineService());
+    const seeded = new ProjectHost(new EngineService(), testHooks());
     const project = await seeded.create({ dir: workspaceProjectDir(dir, 'pets'), name: 'Pets' });
     await seeded.mutate({ kind: 'set-project-property', name: 'tenant', value: 'alpha' });
     await seeded.save();

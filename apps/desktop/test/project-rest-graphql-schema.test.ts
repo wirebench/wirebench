@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const SDL = 'type Query {\n  ping: String\n}\n';
 
@@ -20,7 +21,7 @@ afterEach(() => {
 async function opened(): Promise<{ host: ProjectHost; dir: string; apiId: string }> {
   root = mkdtempSync(join(tmpdir(), 'wirebench-graphql-'));
   const dir = join(root, 'Shop');
-  const host = new ProjectHost(new EngineService(), {});
+  const host = new ProjectHost(new EngineService(), testHooks());
   await host.create({ dir, name: 'Shop' });
   const added = await host.mutate({ kind: 'add-api', name: 'Shop', baseUrl: 'https://shop.test' });
   await host.save({ reason: 'add-api' });
@@ -38,7 +39,7 @@ describe('the GraphQL schema of an API', () => {
     expect((await host.kind('rest').graphqlSchemaFor(apiId))?.getQueryType()?.name).toBe('Query');
     await host.close();
 
-    const reopened = new ProjectHost(new EngineService(), {});
+    const reopened = new ProjectHost(new EngineService(), testHooks());
     const project = await reopened.openProject(dir);
     expect(project.apis.find((api) => api.id === apiId)?.graphqlSchema).toEqual(ref);
     expect((await reopened.kind('rest').graphqlSchemaFor(apiId))?.getType('Query')).toBeDefined();

@@ -15,6 +15,7 @@ import { ProjectHost } from '../src/main/project-host.js';
 import { ExchangeRegistry, previewRest, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { webhookCollectionId } from '../src/main/webhook-ids.js';
 import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const hostState = createHostState();
 
@@ -25,7 +26,7 @@ beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'wirebench-host-webhook-'));
   host = new ProjectHost(
     new EngineService(),
-    { newestRest: () => undefined },
+    testHooks({ newestRest: () => undefined }),
     undefined,
     undefined,
     undefined,

@@ -17,6 +17,7 @@ import {
 } from '../src/main/kinds/soap/wss-mutations.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import type { Project } from '@wirebench/engine';
+import { testHooks } from './helpers/project-hooks.js';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -32,7 +33,7 @@ function tempDir(prefix: string): string {
 }
 
 function newService(secrets?: { get(ref: string): Promise<string | undefined> }): ProjectHost {
-  return new ProjectHost(new EngineService(), {}, undefined, undefined, secrets);
+  return new ProjectHost(new EngineService(), testHooks(), undefined, undefined, secrets);
 }
 
 /** A project with one request, so the ref-clearing and send paths have something to point at. */

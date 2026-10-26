@@ -21,6 +21,7 @@ import { apiRestApplyUpdateResponseSchema, type ProjectWire } from '../src/share
 import { apiRestLintResponseSchema, apiRestPlanUpdateResponseSchema } from '../src/shared/kinds/rest/wire.js';
 import { tableInto } from './helpers/ipc-table.js';
 import { fakeNativeDialogs } from './helpers/fake-platform.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 const table = tableInto(handlers);
@@ -155,7 +156,15 @@ beforeEach(async () => {
   docPath = join(projectDir, 'openapi.yaml');
   await writeFile(docPath, V1);
 
-  host = new ProjectHost(new EngineService(), {}, undefined, undefined, undefined, undefined, new DialogPicks());
+  host = new ProjectHost(
+    new EngineService(),
+    testHooks(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    new DialogPicks(),
+  );
   await host.create({ dir: join(projectDir, 'project'), name: 'Pets' });
 
   secrets = { 'ref-p': 'hunter2', 'ref-t': 'tok-123' };

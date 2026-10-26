@@ -22,6 +22,7 @@ import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import { sendThroughEngine } from '../src/main/send/exchange.js';
 import { sendDepsFor } from './helpers/send-deps.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const PASSWORD = 'p12-password';
 
@@ -54,7 +55,7 @@ describe('a SOAP send signing with a picked keystore', () => {
     const picks = new DialogPicks();
     const host = new ProjectHost(
       new EngineService(),
-      {},
+      testHooks(),
       undefined,
       undefined,
       { get: () => Promise.resolve(PASSWORD) },

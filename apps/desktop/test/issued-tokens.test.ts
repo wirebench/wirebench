@@ -14,6 +14,7 @@ import type { IssuedToken, IssuedTokenTarget, Project, TrustDeps, WssIssuedToken
 import type { IssuedTokenStatusWire } from '../src/shared/kinds/soap/wire.js';
 import { tableInto } from './helpers/ipc-table.js';
 import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const hostState = createHostState();
 
@@ -209,7 +210,7 @@ describe('ProjectHost.issuedTokenTarget', () => {
   async function open(refs: (configId: string) => readonly (string | undefined)[]) {
     const dir = mkdtempSync(join(tmpdir(), 'wirebench-issued-'));
     dirs.push(dir);
-    const host = new ProjectHost(new EngineService(), {}, undefined, undefined, {
+    const host = new ProjectHost(new EngineService(), testHooks(), undefined, undefined, {
       get: (ref) => Promise.resolve(ref === 'sec' ? 'hunter2' : undefined),
     });
     await host.create({ dir, name: 'Demo' });

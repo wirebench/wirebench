@@ -26,6 +26,7 @@ vi.mock('../src/main/write-new-file.js', async (importOriginal) => {
 
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const made: string[] = [];
 afterEach(() => {
@@ -37,7 +38,7 @@ describe('ProjectHost.writeImportedScripts and a file created just before the wr
     const parent = mkdtempSync(join(tmpdir(), 'wirebench-scripts-race-'));
     made.push(parent);
     const dir = join(parent, 'Race');
-    const host = new ProjectHost(new EngineService(), {});
+    const host = new ProjectHost(new EngineService(), testHooks());
     await host.create({ dir, name: 'Race' });
     race.plant = join('imported-scripts', 'api', 'login.handler.js');
 

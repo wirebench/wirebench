@@ -16,6 +16,7 @@ import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 import { asCaller } from './helpers/ipc-table.js';
 import { fakeNativeDialogs } from './helpers/fake-platform.js';
 import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const hostState = createHostState();
 
@@ -101,7 +102,7 @@ async function sendThroughHost(service: WorkspaceService, _projectId: string, re
 /** A standalone project folder with its own `dev` environment, ready to be linked. */
 async function seedLinkedProject(name: string, properties: Record<string, string>): Promise<string> {
   const dir = join(realpathSync(mkdtempSync(join(tmpdir(), 'wirebench-linked-'))), name);
-  const host = new ProjectHost(engine);
+  const host = new ProjectHost(engine, testHooks());
   await host.create({ dir, name });
   await host.kind('soap').addInterface({ source: { kind: 'url', url: primary.wsdlUrl } });
   await host.whenHydrated();

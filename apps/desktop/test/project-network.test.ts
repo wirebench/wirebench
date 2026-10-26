@@ -16,6 +16,7 @@ import {
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const PASSWORD = 'p12-password';
 
@@ -53,7 +54,7 @@ interface ServiceOptions {
 function newService(options: ServiceOptions = {}): ProjectHost {
   return new ProjectHost(
     new EngineService(),
-    {},
+    testHooks(),
     undefined,
     undefined,
     options.secrets,
@@ -217,7 +218,7 @@ describe('ProjectHost.tlsFor', () => {
     let preferences = DEFAULT_PREFERENCES;
     const service = new ProjectHost(
       new EngineService(),
-      {},
+      testHooks(),
       undefined,
       undefined,
       { get: () => Promise.resolve(PASSWORD) },

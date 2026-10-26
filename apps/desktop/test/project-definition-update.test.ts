@@ -12,6 +12,7 @@ import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 /**
  * An `FsLike` that behaves exactly like the real file system until `fail()` is called, after
@@ -71,7 +72,7 @@ beforeEach(async () => {
   userData = tempDir('userdata');
   projectDir = join(tempDir('projects'), 'Versioned');
   picks = new DialogPicks();
-  service = new ProjectHost(new EngineService(), {}, undefined, undefined, undefined, undefined, picks);
+  service = new ProjectHost(new EngineService(), testHooks(), undefined, undefined, undefined, undefined, picks);
   await service.create({ dir: projectDir, name: 'Versioned' });
   // The v1 file is outside the project, so it needs the same dialog evidence a user would give.
   picks.rememberRead(v1Path);
@@ -154,7 +155,7 @@ describe('ProjectHost — Update Definition', () => {
     const txUserData = tempDir('userdata-tx');
     const txProjectDir = join(tempDir('projects-tx'), 'VersionedTx');
     const txPicks = new DialogPicks();
-    const txService = new ProjectHost(new EngineService(), {}, fs, undefined, undefined, undefined, txPicks);
+    const txService = new ProjectHost(new EngineService(), testHooks(), fs, undefined, undefined, undefined, txPicks);
     try {
       await txService.create({ dir: txProjectDir, name: 'VersionedTx' });
       txPicks.rememberRead(v1Path);
@@ -250,7 +251,7 @@ describe('ProjectHost — Update Definition auth across origins', () => {
     const preview = vi.spyOn(engine, 'importPreview').mockRejectedValue(new Error('stop after capture'));
     const host = new ProjectHost(
       engine,
-      {},
+      testHooks(),
       undefined,
       undefined,
       { get: () => Promise.resolve('hunter2') },

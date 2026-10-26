@@ -7,6 +7,7 @@ import { createWorkspace, saveWorkspace, workspaceDir, workspaceProjectDir } fro
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import { readLeftoverProjectFolders } from '../src/main/workspace-service.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 let root: string;
 
@@ -59,7 +60,7 @@ describe('readLeftoverProjectFolders', () => {
     mkdirSync(wsDir, { recursive: true });
     const projectDir = workspaceProjectDir(wsDir, 'billing');
     mkdirSync(projectDir, { recursive: true });
-    const host = new ProjectHost(new EngineService());
+    const host = new ProjectHost(new EngineService(), testHooks());
     const project = await host.create({ dir: projectDir, name: 'Billing' });
     await host.close();
     await saveWorkspace({ ...workspace, projects: [{ id: project.id, slug: 'billing', source: 'internal' }] }, wsDir);

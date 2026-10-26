@@ -8,6 +8,7 @@ import { DEFAULT_PREFERENCES, mergePreferences } from '@wirebench/engine';
 import type { Preferences } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { AUTOSAVE_DEBOUNCE_MS, ProjectHost } from '../src/main/project-host.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 let root: string | undefined;
 
@@ -26,7 +27,7 @@ afterEach(() => {
 function hostWith(autosave: boolean | undefined) {
   let preferences: Preferences =
     autosave === undefined ? DEFAULT_PREFERENCES : mergePreferences({ editor: { autosave } });
-  const host = new ProjectHost(new EngineService(), {}, undefined, undefined, undefined, {
+  const host = new ProjectHost(new EngineService(), testHooks(), undefined, undefined, undefined, {
     get: () => preferences,
   });
   return {

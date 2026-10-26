@@ -12,6 +12,7 @@ import { createIssuedTokenSource, DEFAULT_PREFERENCES } from '@wirebench/engine'
 import type { IssuedToken, requestIssuedToken } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const hostState = createHostState();
 
@@ -56,7 +57,7 @@ describe('an issued token fetched by a desktop send', () => {
   it("is the token the panel's status reports for that request", async () => {
     const dir = mkdtempSync(join(tmpdir(), 'wirebench-issued-send-'));
     dirs.push(dir);
-    const host = new ProjectHost(new EngineService(), {}, undefined, undefined, {
+    const host = new ProjectHost(new EngineService(), testHooks(), undefined, undefined, {
       get: (ref) => Promise.resolve(ref === 'sec' ? 'hunter2' : undefined),
     });
     await host.create({ dir, name: 'Demo' });

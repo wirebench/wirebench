@@ -12,6 +12,7 @@ import type { RestApi, RestRequestDef } from '@wirebench/engine';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const DOCUMENT = `openapi: 3.0.3
 info: { title: Pets, version: '1' }
@@ -81,7 +82,15 @@ function requestNamed(api: RestApi, method: string): RestRequestDef {
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'wirebench-rest-body-schema-'));
-  host = new ProjectHost(new EngineService(), {}, undefined, undefined, undefined, undefined, new DialogPicks());
+  host = new ProjectHost(
+    new EngineService(),
+    testHooks(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    new DialogPicks(),
+  );
   await host.create({ dir: join(dir, 'project'), name: 'Pets' });
 });
 

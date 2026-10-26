@@ -20,6 +20,7 @@ import { ProjectHost } from '../src/main/project-host.js';
 import type { McpApprovalAnswerWire, McpApprovalPromptEvent } from '../src/shared/kinds/mcp/wire.js';
 import { tableInto } from './helpers/ipc-table.js';
 import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const hostState = createHostState();
 
@@ -69,7 +70,7 @@ let approvals: McpApprovals;
 beforeEach(async () => {
   handlers.clear();
   root = mkdtempSync(join(tmpdir(), 'wirebench-mcp-ipc-'));
-  host = new ProjectHost(new EngineService(), {});
+  host = new ProjectHost(new EngineService(), testHooks());
   await host.create({ dir: join(root, 'Demo'), name: 'Demo' });
   approvals = new McpApprovals({ store: new McpApprovalStore(join(root, 'userData', MCP_APPROVALS_FILE)) });
   const request = {
@@ -118,7 +119,7 @@ describe('an MCP server in a project', () => {
     const { apiId, requestId } = await seedServer();
     const dir = join(root, 'Demo');
     await host.close();
-    host = new ProjectHost(new EngineService(), {});
+    host = new ProjectHost(new EngineService(), testHooks());
     const opened = await host.openProject(dir);
     expect(opened.mcpServers).toEqual([
       expect.objectContaining({

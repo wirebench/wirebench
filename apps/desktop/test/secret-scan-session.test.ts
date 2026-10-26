@@ -29,6 +29,7 @@ import {
   secretScanSetValueResponseSchema,
   secretScanTokensResponseSchema,
 } from '../src/shared/wire-base.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 /** Obviously fake: three base64url segments decoding to `{"fake":1}`, `{"fake":1}` and `fake`. */
 const FAKE_JWT = 'eyJmYWtlIjoxfQ.eyJmYWtlIjoxfQ.ZmFrZQ';
@@ -320,7 +321,7 @@ describe('SecretScanSession.move', () => {
 
   it('rewrites a real host model as one dirty, announced change', async () => {
     const changed = vi.fn();
-    const host = new ProjectHost(new EngineService(), { onChanged: changed });
+    const host = new ProjectHost(new EngineService(), testHooks({ onChanged: changed }));
     await host.create({ dir: join(dir, 'Billing'), name: 'Billing' });
     host.applyModelUpdate((project) => ({
       ...project,
