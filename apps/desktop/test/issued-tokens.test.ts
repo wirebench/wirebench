@@ -13,9 +13,12 @@ import { createIssuedTokenSource, createWssContext } from '@wirebench/engine';
 import type { IssuedToken, IssuedTokenTarget, Project, TrustDeps, WssIssuedTokenEntry } from '@wirebench/engine';
 import type { IssuedTokenStatusWire } from '../src/shared/kinds/soap/wire.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -31,7 +34,6 @@ const { EngineService } = await import('../src/main/engine-service.js');
 const { ProjectHost } = await import('../src/main/project-host.js');
 const { addWssOutgoing } = await import('../src/main/kinds/soap/wss-mutations.js');
 const { desktopSecrets } = await import('../src/main/send/host.js');
-const { recordSecretValue } = await import('../src/main/redact.js');
 
 const ASSERTION =
   '<saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion" ID="_issued" Version="2.0"' +
@@ -64,7 +66,11 @@ function issued(): IssuedToken {
 }
 
 function service(request: () => Promise<IssuedToken> = () => Promise.resolve(issued())) {
-  return new IssuedTokensService(() => Promise.resolve({ entry, target, deps }), createIssuedTokenSource({ request }));
+  return new IssuedTokensService(
+    () => Promise.resolve({ entry, target, deps }),
+    hostState.redactor,
+    createIssuedTokenSource({ request }),
+  );
 }
 
 describe('IssuedTokensService', () => {
@@ -95,7 +101,7 @@ describe('IssuedTokensService', () => {
   });
 
   it('masks recorded secret values in lastError unless secrets show', async () => {
-    recordSecretValue('pw-quoted-by-the-fault');
+    hostState.redactor.recordSecretValue('pw-quoted-by-the-fault');
     const tokens = service(() => Promise.reject(new Error('denied for pw-quoted-by-the-fault')));
     const hidden = await tokens.fetch(locator, false);
     expect(hidden.lastError).toContain('denied for');

@@ -29,7 +29,12 @@ export function registerLogChannels(table: HandlerTable, deps: LogChannelDeps): 
   // The request channels' own send through the engine, cancelled through the same registry.
   const sendDeps = toSendDeps(deps.service, deps.request);
   registerHandler(table, channels.log.curl, (request) =>
-    Promise.resolve(curlForLogEntry(request.entry, { shell: request.shell, show: deps.showSecrets.get() })),
+    Promise.resolve(
+      curlForLogEntry(table.redactor, request.entry, {
+        shell: request.shell,
+        show: deps.showSecrets.get(),
+      }),
+    ),
   );
 
   // Replays the saved request behind a row as it is now — never the row's own (redacted) copy.
@@ -43,7 +48,10 @@ export function registerLogChannels(table: HandlerTable, deps: LogChannelDeps): 
 
   registerHandler(table, channels.log.exportHar, async (request, sender) => {
     // Always show:false, whatever the toggle says: a HAR file is made to be shared.
-    const har = harOf(request.entries, { name: 'Wirebench', version: deps.appVersion });
+    const har = harOf(table.redactor, request.entries, {
+      name: 'Wirebench',
+      version: deps.appVersion,
+    });
     // The path is never the renderer's to choose: it comes from the native dialog or the e2e override.
     const path = await deps.dialogs.pickSaveFile(sender, deps.picks, {
       title: 'Export HAR',

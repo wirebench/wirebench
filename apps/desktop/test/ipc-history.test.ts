@@ -22,6 +22,9 @@ import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import { sendDepsFor, type SendDepsExtra } from './helpers/send-deps.js';
 import { registerHistoryChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 /**
  * The engine send every re-send goes through, spied on: it sends for real unless a test stubs it,
@@ -99,7 +102,7 @@ function sendDeps(
 }
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -939,7 +942,7 @@ describe('restResendDraft', () => {
   });
 
   it('refuses History’s truncated copy of a body with history-resend-truncated', () => {
-    const stored = buildRestHistoryEntry('proj-1', {
+    const stored = buildRestHistoryEntry(hostState.redactor, 'proj-1', {
       requestId: 'r-1',
       requestName: 'Pet',
       apiName: 'Petstore',
@@ -1101,7 +1104,7 @@ describe('history.resendRest', () => {
   });
 
   it('refuses History’s truncated copy of a body with history-resend-truncated, sending nothing', async () => {
-    const stored = buildRestHistoryEntry('proj-1', {
+    const stored = buildRestHistoryEntry(hostState.redactor, 'proj-1', {
       requestId: 'r-1',
       requestName: 'Pet',
       apiName: 'Petstore',

@@ -12,9 +12,12 @@ import { type RequestChannelDeps } from '../src/main/ipc/request.js';
 import type { FailedExchangeWire } from '../src/shared/wire-base.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -84,6 +87,7 @@ describe('request.sendRest → onSendFailed', () => {
   it('emits a rest failure row with the joined URL and redacted headers, and still fails the call', async () => {
     const onSendFailed = vi.fn<(failure: FailedExchangeWire) => void>();
     registerRequestChannelsWithKinds(table, new EngineService(), {
+      hostState,
       project: project(),
       adHocScopes: () => ({ project: {}, global: {}, system: {} }),
       showSecrets: { get: () => true },
@@ -119,6 +123,7 @@ describe('request.sendRest → onSendFailed', () => {
     const onSendFailed = vi.fn<(failure: FailedExchangeWire) => void>();
     const auth = { type: 'api-key', name: 'Ocp-Apim-Subscription-Key', in: 'header', valueRef: 'sec_key' } as const;
     registerRequestChannelsWithKinds(table, new EngineService(), {
+      hostState,
       project: project(auth),
       getSecret: (ref) => Promise.resolve(ref === 'sec_key' ? 'hdr-key' : undefined),
       adHocScopes: () => ({ project: {}, global: {}, system: {} }),

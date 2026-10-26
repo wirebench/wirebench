@@ -108,7 +108,7 @@ const CORE_ROUTER_METHODS = {
 } satisfies Record<Exclude<keyof ProjectRouter, keyof KindRouters>, true>;
 
 /** Entity-addressed `WorkspaceService` methods: every router method, the core's and each kind's, plus the host lookups main itself uses. */
-const ENTITY_ROUTED = new Set<string>([
+const ENTITY_ROUTED: ReadonlySet<string> = new Set<string>([
   ...Object.keys(CORE_ROUTER_METHODS),
   ...Object.values(KIND_ROUTES).flatMap((routes) => Object.keys(routes)),
   'hostFor',

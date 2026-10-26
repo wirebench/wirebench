@@ -5,6 +5,7 @@
  */
 
 import type { LiveEvent, Project, SelectedRequest, SentRequest, WsExchange } from '@wirebench/engine';
+import type { Redactor } from '../host/redactor.js';
 import type { DraftOf } from '../send/draft.js';
 import type { AuditedSend, HeldFailure, Recorded, SendSummary, SendThroughEngineDeps } from '../send/exchange.js';
 import type { LiveEventWire } from '../send/live.js';
@@ -177,7 +178,13 @@ export interface KindSend<K extends SendKind> {
   /** The saved request as a send item with the editor's draft applied; undefined: no such request of this kind. */
   selected(project: Project, requestId: string, draft: Extract<DraftOf, { kind: K }>): ItemOf<K> | undefined;
   /** One live event as the renderer receives it; absent for a kind that reports none. */
-  liveEvent?(sendId: string, event: LiveOf<K>, show: boolean, keyParams?: readonly string[]): LiveEventWire;
+  liveEvent?(
+    redactor: Redactor,
+    sendId: string,
+    event: LiveOf<K>,
+    show: boolean,
+    keyParams?: readonly string[],
+  ): LiveEventWire;
   /** The summary the renderer is handed and, where History records more, the unredacted one. */
   summarise(input: SummariseInput<K>): { readonly summary: SendSummary; readonly unredacted?: ExchangeSummary };
   /** Writes History for a send that got its answer. */

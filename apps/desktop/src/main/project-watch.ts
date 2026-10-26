@@ -99,7 +99,7 @@ const MAX_RETRIES = 3;
 const DEFAULT_RETRY_DELAY_MS = 500;
 
 /** Error codes that mean the directory is simply not there (any more): nothing to retry. */
-const GONE_CODES = new Set(['ENOENT', 'ENOTDIR']);
+const GONE_CODES: ReadonlySet<string> = new Set(['ENOENT', 'ENOTDIR']);
 
 function codeOf(error: unknown): string | undefined {
   return typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : undefined;
@@ -153,7 +153,15 @@ export interface ProjectWatcherOptions {
 const MAX_WATCH_DEPTH = 3 + MAX_FOLDER_DEPTH;
 
 /** The top-level folders under which {@link isManagedPath} reports files at all. */
-const MANAGED_TOP_DIRS = new Set(['interfaces', 'apis', 'environments', 'wss', 'sequences', 'webhooks', 'mocks']);
+const MANAGED_TOP_DIRS: ReadonlySet<string> = new Set([
+  'interfaces',
+  'apis',
+  'environments',
+  'wss',
+  'sequences',
+  'webhooks',
+  'mocks',
+]);
 
 /**
  * True when the per-directory watch should cover `dir` (relative, `/`-separated): a folder that can

@@ -11,6 +11,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { createIssuedTokenSource, DEFAULT_PREFERENCES } from '@wirebench/engine';
 import type { IssuedToken, requestIssuedToken } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
 
@@ -86,11 +89,13 @@ describe('an issued token fetched by a desktop send', () => {
     const issuedTokens = new IssuedTokensService(
       (locator) =>
         host.kind('soap').issuedTokenTarget(locator.projectId, locator.configId, locator.entryIndex, locator.requestId),
+      hostState.redactor,
       createIssuedTokenSource({ request }),
     );
     const located = host.runContextFor(requestId);
     if (located === undefined) throw new Error('no project is open');
     const deps = sendDepsFor(located.project, {
+      hostState,
       preferences: () => DEFAULT_PREFERENCES,
       issuedTokens,
       project: { runContextFor: (id, envId) => host.runContextFor(id, envId) },

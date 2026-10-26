@@ -19,9 +19,12 @@ import { MCP_APPROVALS_FILE, McpApprovals, McpApprovalStore } from '../src/main/
 import { ProjectHost } from '../src/main/project-host.js';
 import type { McpApprovalAnswerWire, McpApprovalPromptEvent } from '../src/shared/kinds/mcp/wire.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -70,6 +73,7 @@ beforeEach(async () => {
   await host.create({ dir: join(root, 'Demo'), name: 'Demo' });
   approvals = new McpApprovals({ store: new McpApprovalStore(join(root, 'userData', MCP_APPROVALS_FILE)) });
   const request = {
+    hostState,
     project: {
       projectId: () => host.snapshot()?.id,
       runContextFor: (id: string, envId?: string) => host.runContextFor(id, envId),

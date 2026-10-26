@@ -12,6 +12,9 @@ import { buildGrpcHistoryEntry } from '../src/main/history-service.js';
 import { previewGrpc, sendThroughEngine } from '../src/main/send/exchange.js';
 import type { GrpcRequestPatchWire } from '../src/shared/kinds/grpc/wire.js';
 import { sendDepsFor } from './helpers/send-deps.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 let server: TestGrpcServer;
 
@@ -59,7 +62,7 @@ function project(): Project {
 function resolve(overrides: { readonly draft?: GrpcRequestPatchWire; readonly requestId?: string } = {}) {
   const model = project();
   const withHost: Project = { ...model, properties: { ...model.properties, host: server.target } };
-  return previewGrpc(sendDepsFor(withHost), overrides.requestId ?? 'q-1', overrides.draft);
+  return previewGrpc(sendDepsFor(withHost, { hostState }), overrides.requestId ?? 'q-1', overrides.draft);
 }
 
 /**
@@ -74,6 +77,7 @@ function send(
   const model = project();
   const withHost: Project = { ...model, properties: { ...model.properties, host: server.target } };
   const deps = sendDepsFor(withHost, {
+    hostState,
     getSecret,
     project: { grpcProtoSetFor: () => Promise.resolve(server.set), grpcMeta: () => undefined },
     ...(options.show === true ? { showSecrets: { get: () => true } } : {}),
@@ -154,7 +158,7 @@ describe('buildGrpcHistoryEntry', () => {
   it('records the call with its messages, redacting the metadata', async () => {
     const resolved = (await resolve())!;
     const summary = await send('s5', () => Promise.resolve('good-token'));
-    const entry = buildGrpcHistoryEntry('p1', {
+    const entry = buildGrpcHistoryEntry(hostState.redactor, 'p1', {
       requestId: 'q-1',
       requestName: 'SayHello',
       apiName: 'Greeter',

@@ -25,6 +25,9 @@ import type { HistoryEntryWire, LogEntryWire } from '../src/shared/wire-types.js
 import type { FailedExchangeWire } from '../src/shared/wire-base.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -161,7 +164,8 @@ function project(overrides: Record<string, unknown> = {}) {
 /** Registers the channels; answers the registry they keep their sessions in. */
 function register(overrides: Partial<RequestChannelDeps> = {}, projectOverrides: Record<string, unknown> = {}) {
   const registry = new ExchangeRegistry();
-  registerRequestChannelsWithKinds(tableInto(handlers), new EngineService(), {
+  registerRequestChannelsWithKinds(tableInto(handlers, hostState.redactor), new EngineService(), {
+    hostState,
     project: project(projectOverrides),
     adHocScopes: () => ({ project: {}, global: {}, system: {} }),
     getSecret: () => Promise.resolve(undefined),
@@ -224,7 +228,7 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
   it('masks an API key configured "in query" everywhere the URL leaves main, and shows it when secrets are shown', async () => {
     // The real value is always resolved and always dialled with — REST masks the *display* of its
     // URL the same way, never the credential the send itself actually uses. The parameter is named
-    // something `redactUrl`'s own built-in sensitive-name list would never catch on its own (that
+    // something `hostState.redactor.redactUrl`'s own built-in sensitive-name list would never catch on its own (that
     // list already masks `api_key`), so this actually exercises the `keyParams` plumbing derived
     // from the resolved auth, not the built-in default.
     const withKeyInQuery = locatedAt('/echo', {
@@ -522,7 +526,7 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
 
     expect(registry.endWhere(() => true, 'websocket')).toBe(1);
     expect(recorded).toBe(false);
-    await whenWsSessionsRecorded(8000);
+    await whenWsSessionsRecorded(hostState.openCalls, 8000);
 
     expect(recorded).toBe(true);
     expect(recordWsSession).toHaveBeenCalledTimes(1);
@@ -550,7 +554,7 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     expect(registry.endWhere(() => true, 'websocket')).toBe(0);
     expect(recorded).toBe(false);
 
-    await whenWsSessionsRecorded(8000);
+    await whenWsSessionsRecorded(hostState.openCalls, 8000);
 
     expect(recorded).toBe(true);
     await openPromise;
@@ -571,7 +575,7 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     await waitForHandshake(second.events);
 
     expect(registry.endWhere((requestId) => owners[requestId] === 'p1', 'websocket')).toBe(1);
-    await whenWsSessionsRecorded(8000, (requestId) => owners[requestId] === 'p1');
+    await whenWsSessionsRecorded(hostState.openCalls, 8000, (requestId) => owners[requestId] === 'p1');
 
     // The other project's session is untouched: its invoke is still pending.
     expect(recordWsSession).toHaveBeenCalledTimes(1);

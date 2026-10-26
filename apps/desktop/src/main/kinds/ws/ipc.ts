@@ -15,7 +15,6 @@ import { registerHandler, type HandlerTable } from '../../ipc/register.js';
 import {
   NO_PREFLIGHT,
   nothingToWarnAbout,
-  openWsCalls,
   preflightAuth,
   preflightSecretRefs,
   preflightUnresolved,
@@ -42,16 +41,20 @@ function wsDisplayUrl(input: {
   }
 }
 
-/** Registers one `request.openWs` call in {@link openWsCalls} for the life of its session. */
-function trackOpenWs(requestId: string, call: Promise<WsExchangeSummary>): Promise<WsExchangeSummary> {
+/** Registers one `request.openWs` call in `openCalls.ws` for the life of its session. */
+function trackOpenWs(
+  openCalls: RequestChannelDeps['hostState']['openCalls'],
+  requestId: string,
+  call: Promise<WsExchangeSummary>,
+): Promise<WsExchangeSummary> {
   // A rejection is a fact about that one session, not about the wait: `whenWsSessionsRecorded`
   // only cares that the call has *finished*, and the caller still gets the original promise.
   const settled = call.then(
     () => undefined,
     () => undefined,
   );
-  openWsCalls.set(settled, requestId);
-  void settled.finally(() => openWsCalls.delete(settled));
+  openCalls.ws.set(settled, requestId);
+  void settled.finally(() => openCalls.ws.delete(settled));
   return call;
 }
 
@@ -101,6 +104,7 @@ export function registerWsRequestChannels(table: HandlerTable, service: EngineSe
   // registry refuses it with `ws-session-exists` from the moment the first open begins.
   registerHandler(table, channels.request.openWs, async (request, sender) => {
     return await trackOpenWs(
+      deps.hostState.openCalls,
       request.requestId,
       sendThroughEngine(sendDeps, request.sendId, request.requestId, {
         draft: { kind: 'websocket', ...(request.draft !== undefined ? { draft: request.draft } : {}) },
@@ -135,7 +139,7 @@ export function registerWsRequestChannels(table: HandlerTable, service: EngineSe
           ? { text: request.content, expand: true, scopes: deps.project.scopesFor(request.requestId) }
           : { text: request.content },
     );
-    return toWsFrameWire(frame as WsFrame, { show: deps.showSecrets?.get() ?? false });
+    return toWsFrameWire(deps.hostState.redactor, frame as WsFrame, { show: deps.showSecrets?.get() ?? false });
   });
   registerHandler(table, channels.request.wsClose, (request) =>
     Promise.resolve({ closed: sendDeps.registry.closeWs(request.sendId, request.code, request.reason) }),

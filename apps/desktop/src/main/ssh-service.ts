@@ -1,4 +1,5 @@
 import type { Caller, HostPlatform } from './host/platform.js';
+import type { Redactor } from './host/redactor.js';
 import { readFile } from 'node:fs/promises';
 import type { z } from 'zod';
 import { WirebenchError, nodeFs, secretPseudoRef, writeFileAtomic } from '@wirebench/engine';
@@ -61,6 +62,8 @@ import { RefusalStore, createSshConnector, readKnownHosts } from './ssh-connect.
 import type { SshConnectDeps, SshConnector } from './ssh-connect.js';
 
 export interface SshServiceDeps extends SshConnectDeps {
+  /** The host's: a session's address and login are masked by it in the audit event. */
+  readonly redactor: Redactor;
   /** `userData/ssh-host-os.json`: per machine, the OS each server was found or chosen to run. */
   readonly hostOsFile: string;
   readonly emit: (target: Caller, event: IpcEvent<z.ZodType>, payload: unknown) => void;
@@ -504,7 +507,7 @@ export class SshService {
         if (audited === undefined) return;
         try {
           this.deps.audit?.(
-            sshSessionEvent({
+            sshSessionEvent(this.deps.redactor, {
               ...audited.input,
               endedAt: new Date(this.now()),
               exit: exit === undefined ? undefined : { code: exit.code, reason: exit.reason },

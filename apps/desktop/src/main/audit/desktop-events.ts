@@ -3,6 +3,7 @@
  * masking they share (§2.3). Pure: the callers (`send/`, the sequence runner, the SSH service) hand over
  * what happened and the clock. Electron-free.
  */
+import type { Redactor } from '../host/redactor.js';
 import { DESKTOP_AUDIT_LIMITS, isSensitiveQueryParam, redactUrl } from '@wirebench/engine';
 import type {
   DesktopAuditEvent,
@@ -12,7 +13,6 @@ import type {
   SequenceRunResult,
 } from '@wirebench/engine';
 import { createStreamMasker } from '@wirebench/ssh';
-import { redactSecretValues } from '../redact.js';
 
 const MARKER = /<redacted>|%3Credacted%3E/gi;
 
@@ -59,15 +59,15 @@ function cutWhole(text: string, max: number): string {
  * and again after it. A URL that does not parse gets the same masking by text: sensitive query values
  * and a userinfo password.
  */
-export function maskAuditUrl(url: string): string {
+export function maskAuditUrl(redactor: Redactor, url: string): string {
   let parsable = true;
   try {
     new URL(url);
   } catch {
     parsable = false;
   }
-  const first = redactSecretValues(url);
-  const masked = redactSecretValues(
+  const first = redactor.redactSecretValues(url);
+  const masked = redactor.redactSecretValues(
     parsable ? redactUrl(first, { show: false }) : maskUserinfoText(maskQueryText(first)),
   );
   return cutWhole(masked, DESKTOP_AUDIT_LIMITS.maxUrlLength);
@@ -75,12 +75,12 @@ export function maskAuditUrl(url: string): string {
 
 export type RequestSentInput = Omit<DesktopRequestSentDetails, 'durationMs'> & { readonly durationMs: number };
 
-export function requestSentEvent(input: RequestSentInput): DesktopAuditEvent {
+export function requestSentEvent(redactor: Redactor, input: RequestSentInput): DesktopAuditEvent {
   return {
     action: 'desktop.request_sent',
     details: {
       ...input,
-      url: maskAuditUrl(input.url),
+      url: maskAuditUrl(redactor, input.url),
       durationMs: Math.max(0, Math.round(input.durationMs)),
       method: input.method === null ? null : input.method.slice(0, 256),
       requestName: input.requestName.slice(0, 256),
@@ -90,6 +90,7 @@ export function requestSentEvent(input: RequestSentInput): DesktopAuditEvent {
 
 /** `cancelled` is for a run the user stopped; the engine's outcome has no such value. */
 export function runFinishedEvent(
+  redactor: Redactor,
   result: SequenceRunResult,
   startedAt: string,
   now: Date,
@@ -101,7 +102,7 @@ export function runFinishedEvent(
   for (const step of result.steps) {
     // A run of a step that a later run superseded (#347) does not count, so it counts as skipped.
     counts[step.retried === true ? 'skipped' : step.outcome]++;
-    if (step.origin !== undefined) hosts.add(maskAuditUrl(step.origin));
+    if (step.origin !== undefined) hosts.add(maskAuditUrl(redactor, step.origin));
   }
   return {
     action: 'desktop.run_finished',
@@ -144,16 +145,16 @@ export interface SshSessionInput {
  * then the session's recorded secrets (`redactSecretValues`): a host whose address or login name was
  * read from a secret never shows it in the trail.
  */
-function maskSessionText(text: string, secrets: readonly string[]): string {
+function maskSessionText(redactor: Redactor, text: string, secrets: readonly string[]): string {
   const masker = createStreamMasker();
   masker.add(secrets);
   const bytes = Buffer.from(text, 'utf8');
   const masked = Buffer.concat([masker.push(bytes), masker.flush()]).toString('utf8');
-  return redactSecretValues(masked);
+  return redactor.redactSecretValues(masked);
 }
 
-export function sshSessionEvent(input: SshSessionInput): DesktopAuditEvent {
-  const address = maskSessionText(input.address, input.secrets).slice(0, DESKTOP_AUDIT_LIMITS.maxUrlLength);
+export function sshSessionEvent(redactor: Redactor, input: SshSessionInput): DesktopAuditEvent {
+  const address = maskSessionText(redactor, input.address, input.secrets).slice(0, DESKTOP_AUDIT_LIMITS.maxUrlLength);
   return {
     action: 'desktop.ssh_session',
     details: {
@@ -161,7 +162,7 @@ export function sshSessionEvent(input: SshSessionInput): DesktopAuditEvent {
       hostId: input.hostId.slice(0, 128),
       address: address.length === 0 ? '-' : address,
       port: Math.min(65535, Math.max(0, Math.round(input.port))),
-      user: maskSessionText(input.user, input.secrets).slice(0, 256),
+      user: maskSessionText(redactor, input.user, input.secrets).slice(0, 256),
       exitCode: input.exit?.code ?? null,
       reason: input.exit?.reason ?? 'closed',
       durationMs: Math.max(0, input.endedAt.getTime() - input.startedAt.getTime()),

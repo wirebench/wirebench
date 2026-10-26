@@ -5,7 +5,8 @@
  * `bindIpc` would install them on `ipcMain`, so the test can keep invoking `handlers.get(name)`.
  */
 import type { Caller } from '../../src/main/host/platform.js';
-import type { HandlerTable } from '../../src/main/ipc/register.js';
+import { Redactor } from '../../src/main/host/redactor.js';
+import { HandlerTable } from '../../src/main/ipc/register.js';
 import { runAsCaller } from '../../src/main/window-scope.js';
 
 type Fake = Record<string, unknown>;
@@ -43,8 +44,9 @@ export function asCaller<T extends object>(sender: T): T & Caller {
 /** A table whose entries are also installed in `handlers`, each run as `bindIpc` runs one; clearing `handlers` clears the table too. */
 export function tableInto(
   handlers: Map<string, (event: never, payload: never) => unknown> | Map<string, (...args: never[]) => unknown>,
+  redactor: Redactor = new Redactor(),
 ): HandlerTable {
-  const table: HandlerTable = new Map();
+  const table = new HandlerTable(redactor);
   const set = table.set.bind(table);
   // A test that empties its `handlers` between cases starts a fresh registration, as a new app would.
   const clear = (handlers as Map<string, unknown>).clear.bind(handlers);

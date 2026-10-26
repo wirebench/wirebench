@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import type { HandlerTable } from '../src/main/ipc/register.js';
+import { HandlerTable } from '../src/main/ipc/register.js';
 import {
   enabledAreasFromEnv,
   hostsOnFileChange,
@@ -12,9 +12,10 @@ import {
   serialFromEnv,
   telnetFromEnv,
 } from '../src/main/areas.js';
+import { Redactor } from '../src/main/host/redactor.js';
 
 /** Registering only fills this table; nothing is bound, so no handler is called. */
-const table: HandlerTable = new Map();
+const table = new HandlerTable(new Redactor());
 
 /** The channel names registering the enabled areas leaves behind; no handler is called. */
 function channelsFor(env: string): string[] {

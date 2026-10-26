@@ -38,6 +38,9 @@ import {
   removeTempDir,
   setTestIdentity,
 } from './sync/git-fixture.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const WAIT = { timeout: 20_000, interval: 50 };
 /** The ref the seeded workspace's `password` property names: a secret the workspace uses, so it is shared. */
@@ -106,9 +109,10 @@ async function openMachine(root: string, teamDeps: Partial<TeamSecretsServiceDep
   const team = new TeamSecretsService({ store, machine: () => root, ...teamDeps });
   const conflicts: SyncConflictWire[][] = [];
   const service = new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine: new EngineService(),
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     watchDebounceMs: 30,
     git: () => Promise.resolve(git),
     teamSecrets: team,
@@ -201,9 +205,10 @@ it('leaves a local workspace alone (§13.6)', async () => {
     backfill: vi.fn(() => Promise.resolve()),
   };
   const service = new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine: new EngineService(),
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     teamSecrets: team,
   });
   await service.create('Solo');
@@ -328,9 +333,10 @@ describeGit('WorkspaceService — team secrets over git', { timeout: 90_000 }, (
         backfill: vi.fn(() => Promise.resolve()),
       };
       const service = new WorkspaceService({
+        hostState,
         userDataDir: root,
         engine: new EngineService(),
-        history: new HistoryService(root),
+        history: new HistoryService(root, hostState.redactor),
         watchDebounceMs: 30,
         git: () => Promise.resolve(git),
         teamSecrets: team,
@@ -398,9 +404,10 @@ describeGit('WorkspaceService — sharing turns team secrets on', { timeout: 60_
       osUser: () => 'os-person',
     });
     const service = new WorkspaceService({
+      hostState,
       userDataDir: root,
       engine: new EngineService(),
-      history: new HistoryService(root),
+      history: new HistoryService(root, hostState.redactor),
       watchDebounceMs: 30,
       git: () => Promise.resolve(git),
       picks: new DialogPicks(),

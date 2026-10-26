@@ -21,8 +21,8 @@ import {
 import type { EnvSendResult, RequestSendToEnvironmentsResponse } from '../shared/wire-types.js';
 import type { RequestSendToEnvironmentsRequest } from '../shared/kinds/rest/wire.js';
 
-/** The child send ids of every fan-out still running, keyed by its batch id. */
-const batches = new Map<string, readonly string[]>();
+/** The child send ids of every fan-out still running, keyed by its batch id (`HostState.multiEnvBatches`). */
+export type EnvironmentBatches = Map<string, readonly string[]>;
 
 /** The send id of one environment's child in a batch. */
 function childSendId(batchId: string, envId: string): string {
@@ -34,6 +34,7 @@ function childSendId(batchId: string, envId: string): string {
  * running, so `request.cancel` can fall through to an ordinary send id.
  */
 export function cancelEnvironmentBatch(
+  batches: EnvironmentBatches,
   registry: ExchangeRegistry,
   batchId: string,
 ): { cancelled: boolean } | undefined {
@@ -123,6 +124,7 @@ async function sendOne(
 export async function sendToEnvironments(
   sendDeps: SendThroughEngineDeps,
   deps: Pick<RequestChannelDeps, 'project'>,
+  batches: EnvironmentBatches,
   request: RequestSendToEnvironmentsRequest,
 ): Promise<RequestSendToEnvironmentsResponse> {
   // The environments that apply to the request: the workspace's inside a workspace, else its

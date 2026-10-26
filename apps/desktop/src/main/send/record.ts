@@ -29,7 +29,7 @@ import {
   toWsExchangeSummary,
 } from '../engine-wire.js';
 import { failedExchangeOf } from '../failed-exchange.js';
-import { redactSecretValues } from '../redact.js';
+import type { Redactor } from '../host/redactor.js';
 import type { SendThroughEngineDeps } from './exchange.js';
 import { reportSendFailed } from './host.js';
 import type { ResolvedSendInputWire } from '../../shared/wire-types.js';
@@ -40,7 +40,7 @@ import type { ExchangeSummary } from '../../shared/kinds/soap/wire.js';
 import type { WsExchangeSummary } from '../../shared/kinds/ws/wire.js';
 import type { FailedExchangeWire } from '../../shared/wire-base.js';
 
-export type RecordDeps = Pick<SendThroughEngineDeps, 'project' | 'history' | 'onHistoryAppended'>;
+export type RecordDeps = Pick<SendThroughEngineDeps, 'project' | 'history' | 'onHistoryAppended' | 'hostState'>;
 
 /** The label used when the send's `requestId` is unknown or no longer exists. */
 export interface HistoryNameFallback {
@@ -123,7 +123,7 @@ export async function recordSoap(deps: RecordDeps, record: SoapRecord): Promise<
     operationName: name.operationName,
     input: soapInputWire(record.input),
     ...(record.exchange !== undefined ? { exchange: record.exchange } : {}),
-    ...(record.error !== undefined ? { error: restErrorDetail(record.error) } : {}),
+    ...(record.error !== undefined ? { error: restErrorDetail(deps.hostState.redactor, record.error) } : {}),
     durationMs: record.durationMs,
     ...(meta?.tags !== undefined ? { tags: meta.tags } : {}),
   });
@@ -149,6 +149,7 @@ function soapInputWire(input: SoapSendInput): ResolvedSendInputWire {
  * when the show-secrets flag changes. Returns the unredacted summary too, which History records.
  */
 export function summariseSoap(
+  redactor: Redactor,
   service: EngineService,
   sendId: string,
   exchange: SoapExchange,
@@ -165,14 +166,14 @@ export function summariseSoap(
     ...(options.keyParams !== undefined ? { keyParams: options.keyParams } : {}),
     ...(options.keyHeaders !== undefined ? { keyHeaders: options.keyHeaders } : {}),
   };
-  const full = toExchangeSummary(exchange, sendId, { show: true });
+  const full = toExchangeSummary(redactor, exchange, sendId, { show: true });
   service.exchanges.put(sendId, full, exchange.response?.attachments, {
     exchange,
     ...(options.requestId !== undefined ? { requestId: options.requestId } : {}),
     requestEnvelopeXml: options.requestEnvelopeXml,
     ...keys,
   });
-  return { summary: redactExchangeSummary(full, { show: options.show, ...keys }), full };
+  return { summary: redactExchangeSummary(redactor, full, { show: options.show, ...keys }), full };
 }
 
 /**
@@ -208,7 +209,7 @@ export async function recordRest(
     ),
     requestBody: body.kind === 'raw' ? body.text : '',
     ...(summary !== undefined ? { exchange: summary } : {}),
-    ...(error !== undefined ? { error: restErrorDetail(error) } : {}),
+    ...(error !== undefined ? { error: restErrorDetail(deps.hostState.redactor, error) } : {}),
     durationMs,
     ...(keyParams !== undefined ? { keyParams } : {}),
     ...(meta?.tags !== undefined ? { tags: meta.tags } : {}),
@@ -219,14 +220,14 @@ export async function recordRest(
 }
 
 /** One failure, as a history line records it. */
-export function restErrorDetail(error: unknown): { code: string; message: string } {
+export function restErrorDetail(redactor: Redactor, error: unknown): { code: string; message: string } {
   // History is always redacted: a message quoting what the request carried keeps no secret value.
   if (isWirebenchError(error)) {
-    return { code: error.code, message: redactSecretValues(error.message) };
+    return { code: error.code, message: redactor.redactSecretValues(error.message) };
   }
   return {
     code: 'internal-error',
-    message: redactSecretValues(error instanceof Error ? error.message : String(error)),
+    message: redactor.redactSecretValues(error instanceof Error ? error.message : String(error)),
   };
 }
 
@@ -235,6 +236,7 @@ export function restErrorDetail(error: unknown): { code: string; message: string
  * the unredacted summary and the body, and re-renders it when the show-secrets flag changes.
  */
 export function summariseRest(
+  redactor: Redactor,
   service: EngineService,
   sendId: string,
   exchange: RestExchange,
@@ -254,11 +256,11 @@ export function summariseRest(
     ...(options.keyHeaders !== undefined ? { keyHeaders: options.keyHeaders } : {}),
   };
   const summaryOf = (show: boolean): RestExchangeSummary => {
-    const summary = toRestExchangeSummary(exchange, sendId, { ...context, show });
+    const summary = toRestExchangeSummary(redactor, exchange, sendId, { ...context, show });
     return {
       ...summary,
       ...(contract !== undefined ? { contract: toRestContractWire(contract) } : {}),
-      ...(options.graphql !== undefined ? { graphql: toGraphqlCheckWire(options.graphql, show) } : {}),
+      ...(options.graphql !== undefined ? { graphql: toGraphqlCheckWire(redactor, options.graphql, show) } : {}),
     };
   };
   service.exchanges.putRest(sendId, summaryOf(true), exchange.body, summaryOf);
@@ -304,7 +306,7 @@ export async function recordGrpc(
     ),
     requestMessage: sent.messageText,
     ...(summary !== undefined ? { exchange: summary } : {}),
-    ...(error !== undefined ? { error: restErrorDetail(error) } : {}),
+    ...(error !== undefined ? { error: restErrorDetail(deps.hostState.redactor, error) } : {}),
     durationMs,
     ...(meta?.tags !== undefined ? { tags: meta.tags } : {}),
   });
@@ -314,17 +316,23 @@ export async function recordGrpc(
 }
 
 /** A gRPC call as `request.sendGrpc` answers it, redacted for `show`. History records the same. */
-export function summariseGrpc(result: GrpcCallResult, sendId: string, show: boolean): GrpcExchangeSummary {
-  return toGrpcExchangeSummary(result, sendId, { show });
+export function summariseGrpc(
+  redactor: Redactor,
+  result: GrpcCallResult,
+  sendId: string,
+  show: boolean,
+): GrpcExchangeSummary {
+  return toGrpcExchangeSummary(redactor, result, sendId, { show });
 }
 
 /** A WebSocket session as `request.openWs` answers it, redacted for `show`. History records the same. */
 export function summariseWs(
+  redactor: Redactor,
   exchange: WsExchange,
   sendId: string,
   options: { readonly show: boolean; readonly keyParams?: readonly string[] },
 ): WsExchangeSummary {
-  return toWsExchangeSummary(exchange, sendId, options);
+  return toWsExchangeSummary(redactor, exchange, sendId, options);
 }
 
 /**
@@ -379,7 +387,10 @@ export async function recordWs(
  * must stay provably exclusive.
  */
 export function reportWsHandshakeFailure(
-  deps: { readonly onSendFailed?: ((failure: FailedExchangeWire) => void) | undefined },
+  deps: {
+    readonly onSendFailed?: ((failure: FailedExchangeWire) => void) | undefined;
+    readonly hostState: Pick<RecordDeps['hostState'], 'redactor'>;
+  },
   sendId: string,
   requestId: string,
   summary: WsExchangeSummary,
@@ -391,7 +402,7 @@ export function reportWsHandshakeFailure(
   }
   const { handshake } = summary;
   reportSendFailed(deps.onSendFailed, () =>
-    failedExchangeOf({
+    failedExchangeOf(deps.hostState.redactor, {
       sendId,
       protocol: 'websocket',
       requestId,

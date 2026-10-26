@@ -3,7 +3,8 @@ import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { defineChannel } from '../../src/shared/ipc-contract.js';
-import type { HandlerTable } from '../../src/main/ipc/register.js';
+import { HandlerTable } from '../../src/main/ipc/register.js';
+import { Redactor } from '../../src/main/host/redactor.js';
 import { callerId } from '../../src/main/window-scope.js';
 import { fakeCaller } from '../helpers/fake-platform.js';
 
@@ -36,14 +37,14 @@ beforeEach(() => {
 
 describe('registerHandler', () => {
   it('records the wrapped handler in the table under the channel name, binding nothing itself', () => {
-    const table: HandlerTable = new Map();
+    const table = new HandlerTable(new Redactor());
     registerHandler(table, echo, (request) => Promise.resolve(request));
     expect([...table.keys()]).toEqual(['test.echo']);
     expect(electron.ipcMain.handle).not.toHaveBeenCalled();
   });
 
   it('gives the handler the caller and the validated request, with the envelope wrapHandler produces', async () => {
-    const table: HandlerTable = new Map();
+    const table = new HandlerTable(new Redactor());
     const seen: unknown[] = [];
     registerHandler(table, echo, (request, caller) => {
       seen.push(request, caller);
@@ -60,7 +61,7 @@ describe('registerHandler', () => {
   });
 
   it('refuses a second handler for the same channel', () => {
-    const table: HandlerTable = new Map();
+    const table = new HandlerTable(new Redactor());
     registerHandler(table, echo, (request) => Promise.resolve(request));
     expect(() => {
       registerHandler(table, echo, (request) => Promise.resolve(request));
@@ -68,7 +69,7 @@ describe('registerHandler', () => {
   });
 
   it('wraps a thrown error in the error envelope', async () => {
-    const table: HandlerTable = new Map();
+    const table = new HandlerTable(new Redactor());
     registerHandler(table, echo, () => Promise.reject(new Error('nope')));
     await expect(table.get('test.echo')?.({ text: 'a' }, fakeCaller())).resolves.toEqual({
       ok: false,
@@ -79,7 +80,7 @@ describe('registerHandler', () => {
 
 describe('bindIpc', () => {
   it('installs every entry on ipcMain and hands the handler the caller for the sender', async () => {
-    const table: HandlerTable = new Map();
+    const table = new HandlerTable(new Redactor());
     let received: unknown;
     registerHandler(table, echo, (request, caller) => {
       received = caller;
@@ -97,7 +98,7 @@ describe('bindIpc', () => {
   });
 
   it('runs the handler as a call from the sender window', async () => {
-    const table: HandlerTable = new Map();
+    const table = new HandlerTable(new Redactor());
     let inside: number | undefined;
     registerHandler(table, echo, (request) => {
       inside = callerId();

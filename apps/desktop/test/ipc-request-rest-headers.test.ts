@@ -17,9 +17,12 @@ import type { RequestRestHeadersResponse, RestHeaderRowWire } from '../src/share
 import { NO_REST, PROJECT_SETTINGS, restApiWire } from './helpers/wire-defaults.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -126,6 +129,7 @@ function setup(options: {
 }): void {
   handlers.clear();
   registerRequestChannelsWithKinds(table, new EngineService(), {
+    hostState,
     project: project({
       ...(options.rest !== undefined ? { rest: options.rest } : {}),
       ...(options.changes !== undefined ? { changes: options.changes } : {}),

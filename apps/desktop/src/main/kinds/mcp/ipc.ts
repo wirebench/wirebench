@@ -76,7 +76,11 @@ export function registerMcpChannels(table: HandlerTable, deps: KindChannelDeps):
       ...(request.sendId !== undefined
         ? {
             onMessage: (message) => {
-              emitEvent(sender, events.mcp.live, { kind: 'message', sendId, message: toMcpMessageWire(message, show) });
+              emitEvent(sender, events.mcp.live, {
+                kind: 'message',
+                sendId,
+                message: toMcpMessageWire(deps.request.hostState.redactor, message, show),
+              });
             },
           }
         : {}),

@@ -18,14 +18,16 @@ import {
 } from '@wirebench/engine';
 import type { AuthConfig, Project, SoapOwnerAuth } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
-import { recordSecretValue } from '../src/main/redact.js';
 import { type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { GENERATED_CODE_TARGETS } from '../src/shared/code-targets.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -110,6 +112,7 @@ const getSecret = vi.fn((ref: string) =>
 function register(model: Project, options: { readonly show?: boolean; readonly environmentId?: string } = {}): void {
   handlers.clear();
   registerRequestChannelsWithKinds(table, new EngineService(getSecret), {
+    hostState,
     project: {
       projectId: () => 'p1',
       requestMeta: () => undefined,
@@ -165,7 +168,7 @@ describe('request.code for a REST request', () => {
   });
 
   it('masks a value the masker has recorded unless show-secrets is on', async () => {
-    recordSecretValue('rec-code-secret-337');
+    hostState.redactor.recordSecretValue('rec-code-secret-337');
     register(restProject(undefined, '/pets/rec-code-secret-337'));
     expect((await code({ requestId: 'rest-1', target: 'httpie' })).command).not.toContain('rec-code-secret-337');
     register(restProject(undefined, '/pets/rec-code-secret-337'), { show: true });

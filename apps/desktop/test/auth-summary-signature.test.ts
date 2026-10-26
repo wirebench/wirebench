@@ -5,7 +5,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import { toAuthSummaryWire } from '../src/main/engine-wire.js';
-import { containsRedaction, recordAuthValues, redactSecretText } from '../src/main/redact.js';
+import { containsRedaction } from '../src/main/redact.js';
+import { Redactor } from '../src/main/host/redactor.js';
+
+const redactor = new Redactor();
 
 const HEADER_CREQ = [
   'GET',
@@ -28,11 +31,11 @@ describe('toAuthSummaryWire', () => {
   };
 
   it('masks the session token line unless secrets are shown', () => {
-    const masked = toAuthSummaryWire(auth, false);
+    const masked = toAuthSummaryWire(redactor, auth, false);
     expect(masked.signature?.canonicalRequest).not.toContain('TOKEN-339');
     expect(masked.signature?.canonicalRequest).toContain('x-amz-security-token:<redacted>');
     expect(masked.signature?.stringToSign).toBe(auth.signature.stringToSign);
-    expect(toAuthSummaryWire(auth, true).signature?.canonicalRequest).toContain('TOKEN-339');
+    expect(toAuthSummaryWire(redactor, auth, true).signature?.canonicalRequest).toContain('TOKEN-339');
   });
 
   it('masks a presign credential and token in the canonical query', () => {
@@ -44,14 +47,14 @@ describe('toAuthSummaryWire', () => {
         stringToSign: 's',
       },
     };
-    const text = toAuthSummaryWire(presigned, false).signature?.canonicalRequest ?? '';
+    const text = toAuthSummaryWire(redactor, presigned, false).signature?.canonicalRequest ?? '';
     expect(text).not.toContain('AKID339');
     expect(text).not.toContain('TOK339');
     expect(text).toContain('X-Amz-Date=1');
   });
 
   it('carries no signature for any other scheme', () => {
-    expect(toAuthSummaryWire({ scheme: 'digest', challenged: true, attempts: 2 }, false)).toEqual({
+    expect(toAuthSummaryWire(redactor, { scheme: 'digest', challenged: true, attempts: 2 }, false)).toEqual({
       scheme: 'digest',
       challenged: true,
       attempts: 2,
@@ -59,9 +62,9 @@ describe('toAuthSummaryWire', () => {
   });
 });
 
-describe('recordAuthValues', () => {
+describe('redactor.recordAuthValues', () => {
   it('records the AWS access key id and session token, never the secret key', () => {
-    recordAuthValues({
+    redactor.recordAuthValues({
       type: 'aws-sigv4',
       region: 'r',
       service: 's',
@@ -70,8 +73,8 @@ describe('recordAuthValues', () => {
       sessionToken: 'TOKENRECORD339',
       placement: 'header',
     });
-    expect(containsRedaction(redactSecretText('echo AKIDRECORD339', { show: false }))).toBe(true);
-    expect(containsRedaction(redactSecretText('echo TOKENRECORD339', { show: false }))).toBe(true);
-    expect(redactSecretText('echo SECRETRECORD339', { show: false })).toBe('echo SECRETRECORD339');
+    expect(containsRedaction(redactor.redactSecretText('echo AKIDRECORD339', { show: false }))).toBe(true);
+    expect(containsRedaction(redactor.redactSecretText('echo TOKENRECORD339', { show: false }))).toBe(true);
+    expect(redactor.redactSecretText('echo SECRETRECORD339', { show: false })).toBe('echo SECRETRECORD339');
   });
 });

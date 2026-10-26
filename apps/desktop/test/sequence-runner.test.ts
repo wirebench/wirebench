@@ -49,6 +49,9 @@ import { SequenceRunner } from '../src/main/sequence-runner.js';
 import type { HistoryEntryWire, LogEntryWire } from '../src/shared/wire-types.js';
 import type { RestExchangeSummary } from '../src/shared/kinds/rest/wire.js';
 import type { SequenceProgressEvent, SequenceWaitingEvent } from '../src/shared/wire-base.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 /** Under a JSON key no redaction rule knows, so only the recorded value can mask it. */
 const JWT = 'jwt-value-long-7e21c0';
@@ -185,7 +188,7 @@ function surface(projectId: string, model: Project) {
 async function harness(steps: SequenceStep[], projectId: string, settings?: SequenceSettings) {
   meCalls = [];
   const service = new EngineService();
-  const history = new HistoryService(userDataDir);
+  const history = new HistoryService(userDataDir, hostState.redactor);
   await history.open(projectId);
   const logged: { exchange: RestExchangeSummary }[] = [];
   const rows: LogEntryWire[] = [];
@@ -193,6 +196,7 @@ async function harness(steps: SequenceStep[], projectId: string, settings?: Sequ
   const events: SequenceProgressEvent[] = [];
   const model = project(steps, settings);
   const requests = {
+    hostState,
     project: surface(projectId, model),
     history,
     onHistoryAppended: (entry: HistoryEntryWire) => appended.push(entry),

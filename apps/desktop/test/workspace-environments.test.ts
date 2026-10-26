@@ -15,6 +15,9 @@ import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 import { asCaller } from './helpers/ipc-table.js';
 import { fakeNativeDialogs } from './helpers/fake-platform.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 /** What the next folder picker answers; `undefined` is a cancelled dialog. */
 let folderPick: string | undefined;
@@ -43,9 +46,10 @@ const SENDER = asCaller({});
 
 function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceService {
   return new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine,
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     picks,
     dialogs,
     trash: () => Promise.resolve(),
@@ -86,6 +90,7 @@ async function workspaceWithCalculator(): Promise<{
 /** Sends `requestId` exactly as `request.send` would: through the engine, over the workspace's projects. */
 async function sendThroughHost(service: WorkspaceService, _projectId: string, requestId: string): Promise<void> {
   const deps = {
+    hostState,
     service: engine,
     registry: new ExchangeRegistry(),
     project: service as unknown as SendThroughEngineDeps['project'],

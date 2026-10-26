@@ -18,6 +18,9 @@ import { sendThroughEngine } from '../src/main/send/exchange.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import type { RestExchangeSummary } from '../src/shared/kinds/rest/wire.js';
 import { sendDepsFor } from './helpers/send-deps.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
 
@@ -66,9 +69,10 @@ interface Sent {
 
 /** Sends `req-1` of `model` through main's REST path, into a real History. */
 async function send(model: Project, showSecrets: boolean): Promise<Sent> {
-  const history = new HistoryService(userDataDir);
+  const history = new HistoryService(userDataDir, hostState.redactor);
   await history.open('p1');
   const deps = sendDepsFor(model, {
+    hostState,
     getSecret: (ref) => Promise.resolve(SECRETS[ref]),
     history,
     showSecrets: { get: () => showSecrets },
@@ -124,7 +128,7 @@ describe('a credential a server echoes back', () => {
       },
     };
 
-    const history = buildRestHistoryEntry('p1', {
+    const history = buildRestHistoryEntry(hostState.redactor, 'p1', {
       requestId: 'req-1',
       requestName: 'Echo',
       apiName: 'Petstore',

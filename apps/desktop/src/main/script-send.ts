@@ -15,7 +15,7 @@
 
 import type { PropertyMap, RequestScripting, ScriptTest, ScriptValue, SentScripts } from '@wirebench/engine';
 import type { ScriptLookup } from './script-host.js';
-import { redactSecretText } from './redact.js';
+import type { Redactor } from './host/redactor.js';
 import type { ScriptResultWire } from '../shared/wire-base.js';
 
 /** What a send needs of the app's script host. */
@@ -70,18 +70,17 @@ export function scriptsFailed(error: unknown): SentScripts {
   };
 }
 
-const mask = (text: string): string => redactSecretText(text, { show: false });
-
-const maskTest = (test: ScriptTest): ScriptResultWire['tests'][number] => ({
+const maskTest = (mask: (text: string) => string, test: ScriptTest): ScriptResultWire['tests'][number] => ({
   name: mask(test.name),
   passed: test.passed,
   ...(test.message !== undefined ? { message: mask(test.message) } : {}),
 });
 
 /** What a send's scripts did, as its summary carries it: every string masked. */
-export function toScriptResultWire(sent: SentScripts): ScriptResultWire {
+export function toScriptResultWire(redactor: Redactor, sent: SentScripts): ScriptResultWire {
+  const mask = (text: string): string => redactor.redactSecretText(text, { show: false });
   return {
-    tests: sent.tests.map(maskTest),
+    tests: sent.tests.map((test) => maskTest(mask, test)),
     log: sent.log.lines.map(mask),
     truncated: sent.log.truncated,
     ...(sent.error !== undefined ? { error: { code: sent.error.code, message: mask(sent.error.message) } } : {}),
@@ -89,7 +88,7 @@ export function toScriptResultWire(sent: SentScripts): ScriptResultWire {
       level: level.level,
       name: level.name,
       phase: level.phase,
-      tests: level.tests.map(maskTest),
+      tests: level.tests.map((test) => maskTest(mask, test)),
       log: level.log.lines.map(mask),
       truncated: level.log.truncated,
       ...(level.error !== undefined ? { error: { code: level.error.code, message: mask(level.error.message) } } : {}),
@@ -99,6 +98,7 @@ export function toScriptResultWire(sent: SentScripts): ScriptResultWire {
 
 /** Hands a send's script values to the run, or keeps them in the session; the summary's `script`. */
 export function finishScripts(
+  redactor: Redactor,
   deps: ScriptSendDeps,
   projectId: string | undefined,
   sent: SentScripts,
@@ -108,5 +108,5 @@ export function finishScripts(
   } else if (projectId !== undefined) {
     deps.scripts?.keepValues(projectId, sent.values);
   }
-  return { script: toScriptResultWire(sent) };
+  return { script: toScriptResultWire(redactor, sent) };
 }

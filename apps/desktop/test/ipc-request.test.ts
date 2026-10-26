@@ -21,10 +21,18 @@ import { ExchangeRegistry } from '../src/main/send/exchange.js';
 import { channels } from '../src/shared/ipc.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+import { Redactor } from '../src/main/host/redactor.js';
+
+const hostState = createHostState();
 
 describe('request.* IPC validation', () => {
   it('rejects a malformed request.send payload with ipc-invalid-request', async () => {
-    const wrapped = wrapHandler(channels.request.send, () => Promise.reject(new Error('never reached')));
+    const wrapped = wrapHandler(
+      channels.request.send,
+      () => Promise.reject(new Error('never reached')),
+      new Redactor(),
+    );
 
     const result = await wrapped({ sendId: 'x' /* missing `input` */ });
 
@@ -32,7 +40,11 @@ describe('request.* IPC validation', () => {
   });
 
   it('rejects a request.send payload whose input.soapVersion is invalid', async () => {
-    const wrapped = wrapHandler(channels.request.send, () => Promise.reject(new Error('never reached')));
+    const wrapped = wrapHandler(
+      channels.request.send,
+      () => Promise.reject(new Error('never reached')),
+      new Redactor(),
+    );
 
     const result = await wrapped({
       sendId: 'x',
@@ -45,7 +57,11 @@ describe('request.* IPC validation', () => {
   it('returns cancelled: false for an unknown sendId without touching the engine', async () => {
     const registry = new ExchangeRegistry();
     const cancelSpy = vi.spyOn(registry, 'cancel');
-    const wrapped = wrapHandler(channels.request.cancel, (request) => Promise.resolve(registry.cancel(request.sendId)));
+    const wrapped = wrapHandler(
+      channels.request.cancel,
+      (request) => Promise.resolve(registry.cancel(request.sendId)),
+      new Redactor(),
+    );
 
     const result = await wrapped({ sendId: 'never-sent' });
 
@@ -55,7 +71,11 @@ describe('request.* IPC validation', () => {
 
   it('rejects a malformed request.generate payload', async () => {
     const service = new EngineService();
-    const wrapped = wrapHandler(channels.request.generate, (request) => Promise.resolve(service.generate(request)));
+    const wrapped = wrapHandler(
+      channels.request.generate,
+      (request) => Promise.resolve(service.generate(request)),
+      new Redactor(),
+    );
 
     const result = await wrapped({ interfaceId: 'iface-1' /* missing bindingName/operationName */ });
 
@@ -64,7 +84,11 @@ describe('request.* IPC validation', () => {
 
   it('maps an unknown interfaceId to the engine error code via the envelope', async () => {
     const service = new EngineService();
-    const wrapped = wrapHandler(channels.request.generate, (request) => Promise.resolve(service.generate(request)));
+    const wrapped = wrapHandler(
+      channels.request.generate,
+      (request) => Promise.resolve(service.generate(request)),
+      new Redactor(),
+    );
 
     const result = await wrapped({ interfaceId: 'does-not-exist', bindingName: '{ns}B', operationName: 'Op' });
 
@@ -75,7 +99,7 @@ describe('request.* IPC validation', () => {
 // `registerRequestChannels` binds through `ipcMain.handle`; the stub below captures the bound
 // handlers so the registration itself (not a re-spelled copy of it) is what these tests drive.
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -226,8 +250,8 @@ describe('toSendDeps', () => {
   it('lends the workspace cookie jar to every send, and none when the channel has none', () => {
     const cookies = () => ({ cookiesFor: () => [], remember: () => [] });
     const project = stubProject(seeded({ envelopeXml: '<a/>' }));
-    expect(toSendDeps(new EngineService(), { project, cookies }).cookies).toBe(cookies);
-    expect(toSendDeps(new EngineService(), { project }).cookies).toBeUndefined();
+    expect(toSendDeps(new EngineService(), { hostState, project, cookies }).cookies).toBe(cookies);
+    expect(toSendDeps(new EngineService(), { hostState, project }).cookies).toBeUndefined();
   });
 });
 
@@ -248,6 +272,7 @@ describe('registerRequestChannels', () => {
     const runContextFor = vi.fn(() => ({ project: model, projectDir: '/tmp/none', globals: {} }));
     const adHoc: PropertyScopes = { project: {}, global: { only: 'globals' }, env: {} };
     registerRequestChannelsWithKinds(table, new EngineService(), {
+      hostState,
       project: { ...stubProject(model), runContextFor },
       adHocScopes: () => adHoc,
     });
@@ -287,6 +312,7 @@ describe('registerRequestChannels', () => {
     // the keychain while the project still references it.
     const model = seeded({ auth: { type: 'basic', username: 'alice', passwordRef: 'sec_deleted' } });
     registerRequestChannelsWithKinds(table, new EngineService(() => Promise.resolve(undefined)), {
+      hostState,
       project: { ...stubProject(model), projectId: () => undefined },
       getSecret: () => Promise.resolve(undefined),
     });
@@ -308,7 +334,7 @@ describe('registerRequestChannels', () => {
       projectId: vi.fn().mockReturnValue(undefined),
       ...noActionSupport,
     };
-    registerRequestChannelsWithKinds(table, new EngineService(), { project });
+    registerRequestChannelsWithKinds(table, new EngineService(), { hostState, project });
 
     const result = await invoke('request.preflight', { requestId: 'req-1' });
 
@@ -318,6 +344,7 @@ describe('registerRequestChannels', () => {
 
   it('rejects a malformed request.preflight payload', async () => {
     registerRequestChannelsWithKinds(table, new EngineService(), {
+      hostState,
       project: {
         scopesFor: () => scopes,
         preflight: () => preflight,
@@ -350,6 +377,7 @@ describe('request.send applies the saved request properties', () => {
     extra: Partial<RequestChannelDeps> = {},
   ) {
     registerRequestChannelsWithKinds(table, new EngineService(), {
+      hostState,
       project: { ...stubProject(model), ...project },
       ...extra,
     });

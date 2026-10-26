@@ -54,7 +54,7 @@ interface Link {
   readonly off: () => void;
 }
 
-const WILDCARDS = new Set(['0.0.0.0', '::']);
+const WILDCARDS: ReadonlySet<string> = new Set(['0.0.0.0', '::']);
 const EMIT_GAP_MS = 1000 / FORWARD_EVENTS_PER_SECOND;
 
 const keyOf = (senderId: number, hostId: string, ruleId?: string): string =>

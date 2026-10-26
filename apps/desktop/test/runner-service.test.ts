@@ -26,6 +26,9 @@ import { RunnerService, withUnchecked } from '../src/main/runner/runner-service.
 import { RunnerHistoryStore, RunnerSettingsStore } from '../src/main/runner/stores.js';
 import { defaultRunnerSettings } from '../src/shared/runner-defaults.js';
 import type { RunnerProgressEvent, RunnerRequestResult } from '../src/shared/runner-wire.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 let url = '';
 let userDataDir = '';
@@ -121,7 +124,7 @@ const PROD = {
 
 async function harness(projectId: string, files: Record<string, string> = {}, guard?: Guard) {
   seen = [];
-  const history = new HistoryService(userDataDir);
+  const history = new HistoryService(userDataDir, hostState.redactor);
   await history.open(projectId);
   const model = guard === undefined ? project() : { ...project(), environments: [PROD] };
   const events: RunnerProgressEvent[] = [];
@@ -131,6 +134,7 @@ async function harness(projectId: string, files: Record<string, string> = {}, gu
   const runner = new RunnerService({
     service: new EngineService(),
     requests: {
+      hostState,
       project: surface(projectId, model, guard !== undefined ? PROD.id : undefined),
       history,
       ...(guard !== undefined ? { confirmProtected: guard.confirm } : {}),

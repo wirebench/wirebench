@@ -64,4 +64,5 @@ export type ProjectHostCore = Pick<
   | 'getSecret'
   | 'workspaceContext'
   | 'kind'
+  | 'hostState'
 >;

@@ -13,7 +13,6 @@ import type { ApiChannelDeps } from '../../ipc/api.js';
 import { registerHandler, type HandlerTable } from '../../ipc/register.js';
 import type { RequestChannelDeps } from '../../ipc/request.js';
 import { checkedImportSource } from '../../path-access.js';
-import { redactUrl } from '../../redact.js';
 import { sendThroughEngine, type SendThroughEngineDeps } from '../../send/exchange.js';
 import { graphqlDiagnostics, graphqlHover, graphqlQueryCompletion, graphqlVariableCompletion } from './assist.js';
 
@@ -69,7 +68,7 @@ export function registerGraphqlRequestChannels(
     }
     // The server's own error, when it sent one, is the message: introspection switched off, say.
     const sdl = sdlFromIntrospection(document);
-    return await store(request.apiId, sdl, redactUrl(answer.url, { show: false }));
+    return await store(request.apiId, sdl, deps.hostState.redactor.redactUrl(answer.url, { show: false }));
   });
   registerHandler(table, channels.request.graphqlDiagnostics, async (request) =>
     graphqlDiagnostics(await editorSchema(deps, request.apiId), request),

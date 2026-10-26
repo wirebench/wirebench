@@ -16,6 +16,9 @@ import type { WorkspaceWire } from '../src/shared/wire-base.js';
 import { tableInto } from './helpers/ipc-table.js';
 import { asCaller } from './helpers/ipc-table.js';
 import { fakeNativeDialogs } from './helpers/fake-platform.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 /**
  * What the next folder picker answers. `undefined` is a cancelled dialog.
@@ -29,7 +32,7 @@ let folderPick: string | undefined;
 
 /** `project.*` handlers, registered for the one test that drives the channel end to end. */
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 /** The native pickers over a fake platform whose folder dialog answers `folderPick`. */
 const dialogs = fakeNativeDialogs({
@@ -53,9 +56,10 @@ const SENDER = asCaller({});
 
 function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceService {
   return new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine: new EngineService(),
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     picks,
     dialogs,
     trash: (path: string) => {
@@ -270,7 +274,7 @@ describe('WorkspaceService.removeProject', () => {
     // A session records its History entry when it closes, and the entry has nowhere to go once
     // `history.close` has run — so the sessions must be closed, and awaited, first.
     const order: string[] = [];
-    const history = new HistoryService(root);
+    const history = new HistoryService(root, hostState.redactor);
     const close = history.close.bind(history);
     vi.spyOn(history, 'close').mockImplementation((projectId: string) => {
       order.push(`history.close:${projectId}`);

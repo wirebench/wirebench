@@ -19,7 +19,7 @@ export const soapSend: KindSend<'soap'> = {
 
   summarise({ deps, sendId, sent, masks, show, requestId }) {
     const exchange = soapSent(sent);
-    const { summary, full } = summariseSoap(deps.service, sendId, exchange.soap, {
+    const { summary, full } = summariseSoap(deps.hostState.redactor, deps.service, sendId, exchange.soap, {
       ...(requestId !== undefined ? { requestId } : {}),
       requestEnvelopeXml: exchange.input.envelopeXml,
       ...masks,

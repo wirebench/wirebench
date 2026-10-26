@@ -15,9 +15,12 @@ import type { HistoryService } from '../src/main/history-service.js';
 import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import { registerRestApiChannels, registerRestRequestChannels } from '../src/main/kinds/rest/ipc.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -64,6 +67,7 @@ function harness(model: Project) {
     return Promise.resolve({ source, fetchedAt: '2026-10-13T00:00:00.000Z' });
   };
   const deps: RequestChannelDeps = {
+    hostState,
     project: {
       projectId: () => 'p1',
       restMeta: () => undefined,

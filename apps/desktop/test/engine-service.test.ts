@@ -11,6 +11,7 @@ import type { ResolvedSendInputWire } from '../src/shared/wire-types.js';
 import type { EngineProgressEvent } from '../src/shared/wire-base.js';
 import { readPublicFixture } from './helpers/fixtures.js';
 import { sendDepsFor } from './helpers/send-deps.js';
+import { Redactor } from '../src/main/host/redactor.js';
 
 /** A running local echo server plus its base URL and a way to shut it down. */
 interface EchoServer {
@@ -110,7 +111,11 @@ describe('EngineService', () => {
 
   it('cancelling a pending send aborts it, surfacing an `aborted` HttpError through the IPC envelope', async () => {
     const registry = new ExchangeRegistry();
-    const wrapped = wrapHandler(channels.request.send, (request) => sendAdHoc(registry, request.sendId, request.input));
+    const wrapped = wrapHandler(
+      channels.request.send,
+      (request) => sendAdHoc(registry, request.sendId, request.input),
+      new Redactor(),
+    );
     const sendId = 'send-cancel-1';
 
     const pending = wrapped({

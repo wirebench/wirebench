@@ -101,7 +101,8 @@ import type { ScriptConversions } from './project-script-mutations.js';
 import type { ProjectWireContext } from './project-wire.js';
 import { findRequest, toProjectWire } from './project-wire.js';
 import { ProjectWatcher, SELF_WRITE_TTL_MS } from './project-watch.js';
-import { recordSecretValue } from './redact.js';
+import { createHostState } from './host/host-state.js';
+import type { HostState } from './host/host-state.js';
 import { mergeUnsaved, overlayFs } from './unsaved-store.js';
 import type { UnsavedProjectFiles } from './unsaved-store.js';
 import type { SecretSourcesSnapshot } from './secret-sources-service.js';
@@ -153,6 +154,11 @@ export interface ProjectHostHooks {
    * that is off loads as placeholders and its files are left alone. Absent, the built-in one, all on.
    */
   readonly registry?: ProtocolRegistry;
+  /**
+   * The host's state, whose redactor records the system values a send expands and whose e2e trust
+   * anchors a token fetch reads. Absent (a standalone host, a test), the project host keeps its own.
+   */
+  readonly hostState?: Pick<HostState, 'redactor' | 'e2eTrustAnchors'>;
 }
 
 /** What {@link ProjectHost.openProject} did with an unsaved-changes record it was handed. */
@@ -226,6 +232,9 @@ export class ProjectHost {
   /** The workspace's secret sources, read afresh by every preflight. Set by `WorkspaceService`; absent standalone and in tests. */
   private secretSources: (() => SecretSourcesSnapshot | undefined) | undefined;
 
+  /** What this host records secrets into and reads the e2e trust anchors from. */
+  readonly hostState: Pick<HostState, 'redactor' | 'e2eTrustAnchors'>;
+
   constructor(
     readonly engine: EngineService,
     readonly hooks: ProjectHostHooks = {},
@@ -254,6 +263,7 @@ export class ProjectHost {
      */
     private readonly resolveSystemProxy?: (url: string) => Promise<string | undefined>,
   ) {
+    this.hostState = hooks.hostState ?? createHostState();
     this.kindHosts = Object.fromEntries(
       MAIN_KINDS.map((kind) => [kind.kind, kind.createHost(this)]),
     ) as unknown as KindHosts;
@@ -458,7 +468,7 @@ export class ProjectHost {
     // a pushed WebSocket message and a sequence step's callback assertions expand against them.
     // A fresh `${#Dynamic#…}` memo each call: one push or check shares its values, the next does not.
     return {
-      ...withSystemValuesReported(this.unreportedScopesFor(envId), recordSecretValue),
+      ...withSystemValuesReported(this.unreportedScopesFor(envId), this.hostState.redactor.recordSecretValue),
       dynamic: new DynamicValues(),
     };
   }

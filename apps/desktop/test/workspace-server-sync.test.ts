@@ -32,6 +32,9 @@ import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 import type { AuditTarget } from '../src/main/audit/reporter.js';
 import type { WorkspaceWire } from '../src/shared/wire-base.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const SERVER_URL = 'https://wb.test';
 const HEAD = 'a'.repeat(40);
@@ -152,9 +155,10 @@ function newService(
   hooks?: WorkspaceServiceDeps['hooks'],
 ): WorkspaceService {
   const service = new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine: new EngineService(),
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     server,
     ...(hooks !== undefined ? { hooks } : {}),
   });

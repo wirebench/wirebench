@@ -24,7 +24,6 @@ import { registerHandler, type HandlerTable } from '../../ipc/register.js';
 import {
   NO_PREFLIGHT,
   nothingToWarnAbout,
-  openRestCalls,
   preflightAuth,
   preflightSecretRefs,
   preflightUnresolved,
@@ -121,14 +120,18 @@ async function preflightRest(
   };
 }
 
-/** Registers one editor REST send in {@link openRestCalls} until it has recorded its History entry. */
-function trackRestSend<T>(requestId: string, call: Promise<T>): Promise<T> {
+/** Registers one editor REST send in `openCalls.rest` until it has recorded its History entry. */
+function trackRestSend<T>(
+  openCalls: RequestChannelDeps['hostState']['openCalls'],
+  requestId: string,
+  call: Promise<T>,
+): Promise<T> {
   const settled = call.then(
     () => undefined,
     () => undefined,
   );
-  openRestCalls.set(settled, requestId);
-  void settled.finally(() => openRestCalls.delete(settled));
+  openCalls.rest.set(settled, requestId);
+  void settled.finally(() => openCalls.rest.delete(settled));
   return call;
 }
 /** Registers REST's `request.*` channels (spec §5.4). */
@@ -142,6 +145,7 @@ export function registerRestRequestChannels(
   // whole exchange. A window that has gone away swallows its own events.
   registerHandler(table, channels.request.sendRest, (request, sender) =>
     trackRestSend(
+      deps.hostState.openCalls,
       request.requestId,
       sendThroughEngine(sendDeps, request.sendId, request.requestId, {
         draft: { kind: 'rest', ...(request.draft !== undefined ? { draft: request.draft } : {}) },

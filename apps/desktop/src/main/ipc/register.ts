@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import type { ChannelRequest, ChannelResponse, IpcChannel, IpcResult } from '../../shared/ipc.js';
 import type { Caller } from '../host/platform.js';
+import type { Redactor } from '../host/redactor.js';
 import { wrapHandler } from './envelope.js';
 
 /**
@@ -8,7 +9,12 @@ import { wrapHandler } from './envelope.js';
  * starts the host and passed to each `register*Channels` function; a transport (`bindIpc` for
  * Electron's `ipcMain`) then serves it. There is no shared table: nothing here holds state.
  */
-export type HandlerTable = Map<string, (raw: unknown, caller: Caller) => Promise<IpcResult<unknown>>>;
+export class HandlerTable extends Map<string, (raw: unknown, caller: Caller) => Promise<IpcResult<unknown>>> {
+  /** @param redactor The host's: every error a handler throws is masked by it before it crosses. */
+  constructor(readonly redactor: Redactor) {
+    super();
+  }
+}
 
 /**
  * Records `handler` for `channel` in `table`. Every call is validated against the channel's
@@ -31,5 +37,7 @@ export function registerHandler<Req extends z.ZodType, Res extends z.ZodType>(
 ): void {
   // A second handler for a channel is a bug, as a second `ipcMain.handle` was: refuse it at startup.
   if (table.has(channel.name)) throw new Error(`Attempted to register a second handler for '${channel.name}'`);
-  table.set(channel.name, (raw, caller) => wrapHandler(channel, (request) => handler(request, caller))(raw));
+  table.set(channel.name, (raw, caller) =>
+    wrapHandler(channel, (request) => handler(request, caller), table.redactor)(raw),
+  );
 }

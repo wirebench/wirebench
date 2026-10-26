@@ -43,7 +43,7 @@ import type {
   SequenceStepSender,
 } from '@wirebench/engine';
 import { UNLINKED_WORKSPACE_MESSAGE } from '../hooks/capture-source.js';
-import { containsRecordedSecret, recordSecretValue, redactSecretText } from '../redact.js';
+import type { Redactor } from '../host/redactor.js';
 import { toSendDeps } from '../ipc/request.js';
 import { confirmProtectedSend, environmentNameOf, protectedEnvironmentOf, sendDeclined } from '../send/exchange.js';
 import type {
@@ -75,10 +75,9 @@ export interface RunnerDeps extends DesktopSendDeps {
   readonly readText?: (path: string) => Promise<string>;
 }
 
-const mask = (text: string): string => redactSecretText(text, { show: false });
-
 /** A request's result as it may cross to the renderer and be kept: every string masked. */
-export function toRunnerResult(result: RequestResult): RunnerRequestResult {
+export function toRunnerResult(redactor: Redactor, result: RequestResult): RunnerRequestResult {
+  const mask = (text: string): string => redactor.redactSecretText(text, { show: false });
   return {
     path: mask(result.path),
     name: mask(result.name),
@@ -160,6 +159,11 @@ export class RunnerService {
 
   constructor(private readonly deps: RunnerDeps) {}
 
+  /** `text` with every secret value of this host masked. */
+  private mask(text: string): string {
+    return this.deps.requests.hostState.redactor.redactSecretText(text, { show: false });
+  }
+
   private readText(path: string): Promise<string> {
     return (this.deps.readText ?? ((file: string) => readFile(file, 'utf8')))(path);
   }
@@ -185,7 +189,7 @@ export class RunnerService {
       return { name: basename(path), columns: [...table.columns], rows: table.rows.length };
     } catch (error) {
       const { code, message } = errorOf(error);
-      return { name: basename(path), columns: [], rows: 0, error: { code, message: mask(message) } };
+      return { name: basename(path), columns: [], rows: 0, error: { code, message: this.mask(message) } };
     }
   }
 
@@ -293,9 +297,12 @@ export class RunnerService {
       ...(located?.registry !== undefined ? { registry: located.registry } : {}),
       overrides: {},
       // The run's own sender sends; this host only hears of a value to mask.
-      host: { getSecret: () => Promise.resolve(undefined), onSecretValue: recordSecretValue },
+      host: {
+        getSecret: () => Promise.resolve(undefined),
+        onSecretValue: this.deps.requests.hostState.redactor.recordSecretValue,
+      },
       signal,
-      containsKnownSecret: containsRecordedSecret,
+      containsKnownSecret: this.deps.requests.hostState.redactor.containsRecordedSecret,
     };
     const send = createDesktopRunSend(
       this.deps,
@@ -309,7 +316,7 @@ export class RunnerService {
       this.deps.emit({
         runId: request.runId,
         targetId: request.targetId,
-        request: toRunnerResult(tagIteration(result, iteration)),
+        request: toRunnerResult(this.deps.requests.hostState.redactor, tagIteration(result, iteration)),
       });
     };
     const once = (iteration: Iteration): Promise<RunResult> => {
@@ -332,13 +339,13 @@ export class RunnerService {
     try {
       const result = await runIterations(plan, once, { bail: settings.bail, signal });
       const environment = located !== undefined ? environmentNameOf(located) : null;
-      const results = result.requests.map(toRunnerResult);
+      const results = result.requests.map((request) => toRunnerResult(this.deps.requests.hostState.redactor, request));
       const run: RunnerRunResult = {
         runId: request.runId,
         targetId: request.targetId,
-        name: mask(target.name),
+        name: this.mask(target.name),
         startedAt,
-        ...(environment !== null ? { environment: mask(environment) } : {}),
+        ...(environment !== null ? { environment: this.mask(environment) } : {}),
         ...(stored.dataPath !== undefined ? { dataFile: basename(stored.dataPath) } : {}),
         cancelled: signal.aborted,
         summary: withUnchecked(result.summary, results),
@@ -381,8 +388,11 @@ export class RunnerService {
           async (exchange) => {
             for (const transfer of resolved.step.transfers) {
               const found = await extractTransfer(exchange.subject, transfer);
-              if (found.kind === 'value' && (transfer.secret === true || containsRecordedSecret(found.value))) {
-                recordSecretValue(found.value);
+              if (
+                found.kind === 'value' &&
+                (transfer.secret === true || this.deps.requests.hostState.redactor.containsRecordedSecret(found.value))
+              ) {
+                this.deps.requests.hostState.redactor.recordSecretValue(found.value);
               }
             }
           },
@@ -401,8 +411,8 @@ export class RunnerService {
     const ran = await runSequence(sequence, project, stepSender, {
       ...(context.signal !== undefined ? { signal: context.signal } : {}),
       onStepDone: (step) => onDone(stepAsRequest(sequence, step)),
-      onSecretValue: recordSecretValue,
-      containsKnownSecret: containsRecordedSecret,
+      onSecretValue: this.deps.requests.hostState.redactor.recordSecretValue,
+      containsKnownSecret: this.deps.requests.hostState.redactor.containsRecordedSecret,
       captures,
       ...(context.registry !== undefined ? { registry: context.registry } : {}),
       // The scopes a step's own send expands against, plus the run's Sequence values and the row.

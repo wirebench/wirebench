@@ -13,7 +13,6 @@
  */
 
 import { channels } from '../../../../shared/ipc.js';
-import { redactXml } from '../../../redact.js';
 import type { ProjectRouter } from '../../../project-router.js';
 import type { WssEntryWire, WssPolicyStatusResponse } from '../../../../shared/kinds/soap/wire.js';
 import {
@@ -98,7 +97,9 @@ export function wssPolicyStatus(inputs: ReturnType<ProjectRouter['wssPolicyInput
 /** Registers the `wss.*` channels. */
 export function registerWssChannels(table: HandlerTable, deps: WssChannelDeps): void {
   registerHandler(table, channels.wss.previewOutgoing, async (request) => {
-    const envelopeXml = redactXml(await deps.project.previewOutgoingWss(request.requestId, request.envelopeXml));
+    const envelopeXml = table.redactor.redactXml(
+      await deps.project.previewOutgoingWss(request.requestId, request.envelopeXml),
+    );
     // Read from the redacted envelope, so the timeline describes exactly what the preview shows.
     return { envelopeXml, timeline: describeSecurityHeader(envelopeXml).map(toTimelineStepWire) };
   });
@@ -106,7 +107,7 @@ export function registerWssChannels(table: HandlerTable, deps: WssChannelDeps): 
   registerHandler(table, channels.wss.insertEntry, async (request) => {
     const entry = toEngineEntry(request.entry, request.passwordRef);
     const envelopeXml = await deps.project.insertWssEntry(request.requestId, entry, request.envelopeXml);
-    return { envelopeXml: redactXml(envelopeXml) };
+    return { envelopeXml: table.redactor.redactXml(envelopeXml) };
   });
 
   registerHandler(table, channels.wss.policyStatus, (request) =>

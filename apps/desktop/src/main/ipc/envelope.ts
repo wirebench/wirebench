@@ -1,6 +1,6 @@
+import type { Redactor } from '../host/redactor.js';
 import { isWirebenchError, WirebenchError } from '@wirebench/engine';
 import type { z } from 'zod';
-import { redactSecretValues } from '../redact.js';
 import type { ChannelRequest, ChannelResponse, IpcChannel, IpcError, IpcEvent, IpcResult } from '../../shared/ipc.js';
 
 /**
@@ -40,18 +40,18 @@ function wireSafeDetails(details: Readonly<Record<string, unknown>>): Record<str
  * (or subclass) keeps its own `code`/`message`/`details`; anything else becomes a generic
  * `internal-error` so no unexpected error detail (e.g. stack traces) leaks to the renderer.
  */
-export function toIpcError(err: unknown): IpcError {
+export function toIpcError(redactor: Redactor, err: unknown): IpcError {
   if (isWirebenchError(err)) {
     return {
       code: err.code,
       // A message may quote what the request carried (the URL a socket could not dial): every secret
       // value main has handed out is masked in it, whatever the show-secrets toggle says.
-      message: redactSecretValues(err.message),
+      message: redactor.redactSecretValues(err.message),
       ...(err.details !== undefined ? { details: wireSafeDetails(err.details) } : {}),
     };
   }
   const message = err instanceof Error ? err.message : String(err);
-  return { code: 'internal-error', message: redactSecretValues(message) };
+  return { code: 'internal-error', message: redactor.redactSecretValues(message) };
 }
 
 /**
@@ -63,6 +63,7 @@ export function toIpcError(err: unknown): IpcError {
 export function wrapHandler<Req extends z.ZodType, Res extends z.ZodType>(
   channel: IpcChannel<Req, Res>,
   handler: (request: ChannelRequest<IpcChannel<Req, Res>>) => Promise<ChannelResponse<IpcChannel<Req, Res>>>,
+  redactor: Redactor,
 ): (raw: unknown) => Promise<IpcResult<ChannelResponse<IpcChannel<Req, Res>>>> {
   return async (raw: unknown) => {
     const parsed = parseRequest(channel, raw);
@@ -84,7 +85,7 @@ export function wrapHandler<Req extends z.ZodType, Res extends z.ZodType>(
       }
       return { ok: true, value: parsedResponse.data as ChannelResponse<IpcChannel<Req, Res>> };
     } catch (err) {
-      return { ok: false, error: toIpcError(err) };
+      return { ok: false, error: toIpcError(redactor, err) };
     }
   };
 }

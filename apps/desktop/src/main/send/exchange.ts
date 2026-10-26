@@ -63,9 +63,9 @@ import type {
   WsCallInput,
   WsExchange,
 } from '@wirebench/engine';
+import type { Redactor } from '../host/redactor.js';
 import { requestSentEvent } from '../audit/desktop-events.js';
 import type { HistoryService } from '../history-service.js';
-import { containsRecordedSecret, recordSecretValue } from '../redact.js';
 import { finishScripts, scriptsFailed, scriptsForSend, sessionValuesFor, type SendScripts } from '../script-send.js';
 import { callbackUrlFor, type WebhookUrlSource } from '../webhook-send.js';
 import { editorAssertionResults } from './assertions.js';
@@ -520,14 +520,14 @@ async function sendReserved(
     ...(options.iteration !== undefined ? { iteration: options.iteration } : {}),
     ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
     ...(deps.scripts !== undefined ? { scripting: deps.scripts.scripting } : {}),
-    containsKnownSecret: containsRecordedSecret,
+    containsKnownSecret: deps.hostState.redactor.containsRecordedSecret,
   };
   const scope = createRunScope(context);
   // The workspace this send happens in: one that closes before the send ends must not take it.
   const auditWorkspaceId = deps.auditWorkspace?.();
   const scripted =
     scripts.kind === 'on' && deps.scripts !== undefined
-      ? scriptedSend(deps.scripts, scripts.request, context)
+      ? scriptedSend(deps.hostState.redactor, deps.scripts, scripts.request, context)
       : undefined;
   // An interactive session's events are always read: its frames are checked, its handshake opens it.
   const session = isInteractive(item.kind) ? wsSessionOf(deps, sendId, requestId, send, options.onLive) : undefined;
@@ -541,7 +541,7 @@ async function sendReserved(
   // Only a session the person drives is spared a cancel once open: a run's has no close to end it by.
   deps.registry.attach(sendId, token, handle, options.interactive === true ? session?.opened : undefined);
   const show = deps.showSecrets?.get() ?? false;
-  const forwarding = forwardLive(sendId, handle, { show, ...masks }, options.onLive, session);
+  const forwarding = forwardLive(deps.hostState.redactor, sendId, handle, { show, ...masks }, options.onLive, session);
   try {
     const sent = await handle.result;
     await forwarding;
@@ -550,7 +550,7 @@ async function sendReserved(
     const summarised = summarise(deps, sendId, item, sent, masks, show, namedId, checked);
     const full: SendSummary = {
       ...summarised.summary,
-      ...(sent.script !== undefined ? finishScripts(stepDeps, projectId, sent.script) : {}),
+      ...(sent.script !== undefined ? finishScripts(deps.hostState.redactor, stepDeps, projectId, sent.script) : {}),
       ...(scripts.kind === 'off' ? { scriptsOff: true } : {}),
     };
     const recorded: Recorded = {
@@ -561,7 +561,7 @@ async function sendReserved(
     reportSend(deps, options, projectId, located, item, auditWorkspaceId, () => sentAudit(sent, full));
     // After History is written, so a result never reaches it (request-assertions spec §6).
     const own = options.checkAssertions === true && 'assertions' in item.request ? (item.request.assertions ?? []) : [];
-    const assertions = await editorAssertionResults(own, sent.subject);
+    const assertions = await editorAssertionResults(deps.hostState.redactor, own, sent.subject);
     return assertions === undefined ? full : { ...full, assertions };
   } catch (error) {
     await forwarding;
@@ -1005,10 +1005,15 @@ function deferredSendFailure(base: SendHost): {
  * scripts list, and records each secret value a script sets, as the app's other sends do. A
  * post-response script that cannot finish is reported as the scripts' error, never as the send's.
  */
-function scriptedSend(scripts: SendScripts, request: ScriptedRequest, context: RunContext): ScriptedSend {
+function scriptedSend(
+  redactor: Redactor,
+  scripts: SendScripts,
+  request: ScriptedRequest,
+  context: RunContext,
+): ScriptedSend {
   const session = deferredSession(scripts.scripting, request, context, {
-    onSecretValue: recordSecretValue,
-    containsKnownSecret: containsRecordedSecret,
+    onSecretValue: redactor.recordSecretValue,
+    containsKnownSecret: redactor.containsRecordedSecret,
   });
   return {
     session: { pre: session.pre, post: (sent, response) => session.post(sent, response).catch(scriptsFailed) },
@@ -1018,6 +1023,7 @@ function scriptedSend(scripts: SendScripts, request: ScriptedRequest, context: R
 
 /** Hands each live event to `onLive`, redacted; one that cannot be delivered never affects the send. */
 async function forwardLive(
+  redactor: Redactor,
   sendId: string,
   handle: ExchangeHandle,
   redaction: { readonly show: boolean; readonly keyParams?: readonly string[] },
@@ -1028,7 +1034,7 @@ async function forwardLive(
     const event = raw as LiveEvent;
     session?.seen(event);
     try {
-      onLive?.(toWireEvent(sendId, event, redaction.show, redaction.keyParams));
+      onLive?.(toWireEvent(redactor, sendId, event, redaction.show, redaction.keyParams));
     } catch (error) {
       console.warn(
         `[${event.protocol}] a live event ("${event.kind}") for send "${sendId}" could not be delivered: ${
@@ -1155,7 +1161,7 @@ function reportSend(
     const sent = of();
     if (sent === undefined || sent.url.length === 0) return;
     deps.audit(
-      requestSentEvent({
+      requestSentEvent(deps.hostState.redactor, {
         protocol: item.kind,
         ...sent,
         environment: environmentNameOf(located),

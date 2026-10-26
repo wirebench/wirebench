@@ -44,9 +44,12 @@ import { sendDepsFor } from './helpers/send-deps.js';
 import { registerHistoryChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
 import { fakeNativeDialogs } from './helpers/fake-platform.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -178,6 +181,7 @@ function restModel(baseUrl: string): Project {
 function audited(model: Project, environmentId?: string, extraProject: Record<string, unknown> = {}) {
   const events: DesktopAuditEvent[] = [];
   const deps = sendDepsFor(model, {
+    hostState,
     getSecret: secrets,
     audit: (event) => events.push(event),
     project: {
@@ -328,6 +332,7 @@ describe('a send under one environment, then another', () => {
     const events: DesktopAuditEvent[] = [];
     let active = 'env-qa';
     const deps = sendDepsFor(model, {
+      hostState,
       getSecret: secrets,
       audit: (event) => events.push(event),
       project: {
@@ -350,7 +355,7 @@ describe('a resend', () => {
     const entries: HistoryEntryWire[] = [];
     const history = {
       recordRestSend: (projectId: string, record: RecordRestSendInput) => {
-        const wire = toHistoryEntryWire(buildRestHistoryEntry(projectId, record));
+        const wire = toHistoryEntryWire(buildRestHistoryEntry(hostState.redactor, projectId, record));
         entries.unshift(wire);
         return Promise.resolve(wire);
       },
@@ -359,6 +364,7 @@ describe('a resend', () => {
     const events: DesktopAuditEvent[] = [];
     const workspaces: (string | undefined)[] = [];
     const requestDeps: RequestChannelDeps = {
+      hostState,
       project: {
         projectId: () => 'p1',
         restMeta: () => undefined,

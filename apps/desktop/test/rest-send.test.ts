@@ -32,6 +32,9 @@ import { resolveAuthConfig } from '../src/main/secret-resolver.js';
 import { previewRest, sendThroughEngine, type RestPreview } from '../src/main/send/exchange.js';
 import type { RestRequestPatchWire } from '../src/shared/kinds/rest/wire.js';
 import { sendDepsFor } from './helpers/send-deps.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const UAT: Environment = {
   id: 'env-uat',
@@ -82,6 +85,7 @@ async function resolve(
 ): Promise<RestPreview | undefined> {
   const { preferences } = options;
   const deps = sendDepsFor(project, {
+    hostState,
     project: {
       runContextFor: () => ({
         project,
@@ -215,7 +219,7 @@ describe('resolving a REST send (previewRest)', () => {
           auth: { type: 'none' },
           requests: [{ ...request, settings: { ...request.settings, trustInvalid } }],
         });
-        return sendThroughEngine(sendDepsFor(project), 's1', 'req-tls', { draft: { kind: 'rest' } });
+        return sendThroughEngine(sendDepsFor(project, { hostState }), 's1', 'req-tls', { draft: { kind: 'rest' } });
       };
       expect((await sendWith(true)).http.status).toBe(200);
       await expect(sendWith(false)).rejects.toMatchObject({ code: expect.stringMatching(/tls/) as unknown });
@@ -229,6 +233,7 @@ describe('resolving a REST send (previewRest)', () => {
     try {
       const project = seeded({ baseUrl: server.url, auth: { type: 'none' } });
       const deps = sendDepsFor(project, {
+        hostState,
         getSecret: () => Promise.resolve('tok'),
         project: { proxyFor: () => Promise.resolve({ url: proxy.url }) },
       });
@@ -246,29 +251,37 @@ describe('resolveAuthConfig', () => {
   const getSecret = (ref: string): Promise<string | undefined> => Promise.resolve(secrets[ref]);
 
   it('resolves every reference-bearing scheme into values', async () => {
-    await expect(resolveAuthConfig({ type: 'bearer', tokenRef: 'sec_token' }, getSecret)).resolves.toEqual({
+    await expect(
+      resolveAuthConfig(hostState.redactor, { type: 'bearer', tokenRef: 'sec_token' }, getSecret),
+    ).resolves.toEqual({
       type: 'bearer',
       token: 'tok',
     });
     await expect(
-      resolveAuthConfig({ type: 'api-key', name: 'api_key', in: 'query', valueRef: 'sec_key' }, getSecret),
+      resolveAuthConfig(
+        hostState.redactor,
+        { type: 'api-key', name: 'api_key', in: 'query', valueRef: 'sec_key' },
+        getSecret,
+      ),
     ).resolves.toEqual({ type: 'api-key', name: 'api_key', value: 'k3y', in: 'query' });
     await expect(
-      resolveAuthConfig({ type: 'basic', username: 'u', passwordRef: 'sec_pw' }, getSecret),
+      resolveAuthConfig(hostState.redactor, { type: 'basic', username: 'u', passwordRef: 'sec_pw' }, getSecret),
     ).resolves.toEqual({ type: 'basic', username: 'u', password: 'pw', preemptive: true });
   });
 
   it('fails loudly on a dangling reference instead of sending nothing', async () => {
-    await expect(resolveAuthConfig({ type: 'bearer', tokenRef: 'sec_gone' }, getSecret)).rejects.toMatchObject({
+    await expect(
+      resolveAuthConfig(hostState.redactor, { type: 'bearer', tokenRef: 'sec_gone' }, getSecret),
+    ).rejects.toMatchObject({
       code: 'secret-missing',
     });
   });
 
   it('is no credentials for none, inherit, or a scheme with nothing configured', async () => {
-    await expect(resolveAuthConfig({ type: 'none' }, getSecret)).resolves.toBeUndefined();
-    await expect(resolveAuthConfig({ type: 'inherit' }, getSecret)).resolves.toBeUndefined();
-    await expect(resolveAuthConfig({ type: 'bearer' }, getSecret)).resolves.toBeUndefined();
-    await expect(resolveAuthConfig(undefined, getSecret)).resolves.toBeUndefined();
+    await expect(resolveAuthConfig(hostState.redactor, { type: 'none' }, getSecret)).resolves.toBeUndefined();
+    await expect(resolveAuthConfig(hostState.redactor, { type: 'inherit' }, getSecret)).resolves.toBeUndefined();
+    await expect(resolveAuthConfig(hostState.redactor, { type: 'bearer' }, getSecret)).resolves.toBeUndefined();
+    await expect(resolveAuthConfig(hostState.redactor, undefined, getSecret)).resolves.toBeUndefined();
   });
 
   it('takes an OAuth2 access token from the caller, never from the store', async () => {
@@ -281,8 +294,8 @@ describe('resolveAuthConfig', () => {
       clientAuth: 'basic' as const,
       pkce: true,
     };
-    await expect(resolveAuthConfig(config, getSecret)).resolves.toBeUndefined();
-    await expect(resolveAuthConfig(config, getSecret, { accessToken: 'at' })).resolves.toEqual({
+    await expect(resolveAuthConfig(hostState.redactor, config, getSecret)).resolves.toBeUndefined();
+    await expect(resolveAuthConfig(hostState.redactor, config, getSecret, { accessToken: 'at' })).resolves.toEqual({
       type: 'oauth2',
       accessToken: 'at',
     });

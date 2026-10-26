@@ -58,12 +58,14 @@ import type {
 import { findGrpcRequest, grpcApiOwning } from './kinds/grpc/mutations.js';
 import { findRestRequest, restApiOwning } from './kinds/rest/mutations.js';
 import { findRequest } from './project-wire.js';
-import { containsRecordedSecret, recordSecretValue, redactSecretText } from './redact.js';
+import type { Redactor } from './host/redactor.js';
 
 /** The most values one project's session keeps; the oldest goes first. */
 export const SESSION_VALUE_LIMIT = 1_000;
 
 export interface ScriptHostDeps {
+  /** The host's: a secret value a script sets is recorded in it, and the session values listed are masked by it. */
+  readonly redactor: Redactor;
   /** The open model (unsaved edits included) of the project that owns `entityId`. */
   readonly modelOf: (entityId: string) => Project | undefined;
   readonly openApiDocumentFor: (apiId: string) => Promise<OpenApiDocument>;
@@ -179,7 +181,7 @@ export class ScriptHost {
       this.scriptingInstance = new RequestScripting({
         sandbox: this.sandbox,
         checker: this.checkerOf(),
-        onSecretValue: recordSecretValue,
+        onSecretValue: this.deps.redactor.recordSecretValue,
       });
     }
     return this.scriptingInstance;
@@ -466,8 +468,8 @@ export class ScriptHost {
       this.sessions.set(projectId, session);
     }
     for (const { name, value, secret } of values) {
-      const isSecret = secret || containsRecordedSecret(value);
-      if (isSecret) recordSecretValue(value);
+      const isSecret = secret || this.deps.redactor.containsRecordedSecret(value);
+      if (isSecret) this.deps.redactor.recordSecretValue(value);
       session.delete(name);
       session.set(name, { value, secret: isSecret });
     }
@@ -481,7 +483,7 @@ export class ScriptHost {
   /** A project's session values for the explorer: masked, and a secret one without its value. */
   listValues(projectId: string): SessionValueListing[] {
     return [...(this.sessions.get(projectId) ?? [])].map(([name, { value, secret }]) =>
-      secret ? { name, secret } : { name, value: redactSecretText(value, { show: false }), secret },
+      secret ? { name, secret } : { name, value: this.deps.redactor.redactSecretText(value, { show: false }), secret },
     );
   }
 

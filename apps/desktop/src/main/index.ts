@@ -21,6 +21,7 @@ import { app, BrowserWindow, powerMonitor, protocol } from 'electron';
 import { registerAppProtocol } from './electron/app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES, isExternalUrlAllowed } from './security.js';
 import { createNativeDialogs } from './native-dialogs.js';
+import { createHostState } from './host/host-state.js';
 import { DialogPicks } from './dialog-picks.js';
 import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
@@ -38,7 +39,6 @@ import { readLeftoverProjectFolders, toFeatureStateWire, WorkspaceService } from
 import { WorkspaceState } from './workspace-state.js';
 import { routeWorkspaces, scoped, WindowScopes } from './window-scope.js';
 import { platformSecretsBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
-import { recordSecretValue, redactSecretText } from './redact.js';
 import { SecretSourcesService } from './secret-sources-service.js';
 import { projectSecretGetter, secretStoreLabel } from './secret-resolver.js';
 import { AppLock, lockedGetter } from './app-lock.js';
@@ -54,7 +54,7 @@ import { registerAppChannels } from './ipc/app.js';
 import { bindIpc } from './electron/ipc-binding.js';
 import { callerForWebContents, createElectronPlatform } from './electron/electron-platform.js';
 import type { Caller } from './host/platform.js';
-import type { HandlerTable } from './ipc/register.js';
+import { HandlerTable } from './ipc/register.js';
 import {
   resolveAreas,
   type AreasRun,
@@ -182,6 +182,8 @@ protocol.registerSchemesAsPrivileged([{ scheme: APP_SCHEME, privileges: APP_SCHE
 
 /** The Electron end of the host seam: every module below reaches the machine through this, not `electron`. */
 const platform = createElectronPlatform();
+/** What this host holds in memory: the one `createHostState()` result, handed to the pieces below. */
+const hostState = createHostState();
 const nativeDialogs = createNativeDialogs(platform);
 const hostShell = requireCapability(platform, 'shell');
 
@@ -257,7 +259,7 @@ const preferencesService = new PreferencesService(platform.paths.userData(), {
 
 /**
  * The secret getter every send resolves through, for one project's `${secret:name}` tokens (or,
- * with no project, for plain refs only). Each value it hands out is recorded in `redact.ts`, so it
+ * with no project, for plain refs only). Each value it hands out is recorded in the host's `Redactor`, so it
  * is masked in the HTTP log and History like any `Authorization` header. Team secrets gets a look
  * first: a value the vault holds that this machine cannot open refuses the send with why (waiting,
  * removed or declined) instead of the plain "not on this machine". Secret sources (spec D6) sit in
@@ -268,7 +270,7 @@ const preferencesService = new PreferencesService(platform.paths.userData(), {
  * plain store answers.
  */
 const secretsFor = (projectId: string | undefined): GetSecret => {
-  const plain = projectSecretGetter(secretStore, projectId, recordSecretValue);
+  const plain = projectSecretGetter(secretStore, projectId, hostState.redactor.recordSecretValue);
   return async (ref) => {
     const scope =
       projectId === undefined
@@ -349,7 +351,7 @@ const issuedTokensService: IssuedTokensService = new IssuedTokensService(
         ...resolved.deps,
         onExchange: (http) => {
           try {
-            const entry = stsLogEntry(http, {
+            const entry = stsLogEntry(hostState.redactor, http, {
               show: showSecretsFlag.get(),
               ...(locator.requestId !== undefined ? { requestId: locator.requestId } : {}),
             });
@@ -361,6 +363,7 @@ const issuedTokensService: IssuedTokensService = new IssuedTokensService(
       },
     };
   },
+  hostState.redactor,
 );
 
 /**
@@ -499,10 +502,15 @@ const cookieStore = scoped(scopes, (scope) => scope.cookies);
 const currentValues = scoped(scopes, (scope) => scope.currentValues);
 
 /** Persistent request history — one jsonl file per open project under `userData`, watched for other writers. */
-const historyService = new HistoryService(platform.paths.userData(), () => preferencesService.get().ui.historyCap, {
-  watch: watchHistoryFile,
-  onChanged: (projectId) => broadcast(events.history.changed, { projectId }),
-});
+const historyService = new HistoryService(
+  platform.paths.userData(),
+  hostState.redactor,
+  () => preferencesService.get().ui.historyCap,
+  {
+    watch: watchHistoryFile,
+    onChanged: (projectId) => broadcast(events.history.changed, { projectId }),
+  },
+);
 
 /**
  * Where a deleted workspace (or project folder) goes. `shell.trashItem` in a real run; under
@@ -620,7 +628,7 @@ const appLock = new AppLock({
 });
 /** Every SSH secret read waits for the app lock; the keychain's listing reads public halves and does not. */
 const sshSecretsUnlocked = (sender: Caller): GetSecret =>
-  sshSecretsFor(secretStore, sshScopeOf(scopes, sender), recordSecretValue);
+  sshSecretsFor(secretStore, sshScopeOf(scopes, sender), hostState.redactor.recordSecretValue);
 
 const sshConnectDeps = {
   hosts: (sender: Caller) => sshScopeOf(scopes, sender).hosts,
@@ -658,6 +666,7 @@ const sessionLogs = new SessionLogStore({
   },
 });
 const sshService = new SshService({
+  redactor: hostState.redactor,
   ...sshConnectDeps,
   telnet: () => areas.telnet,
   serial: () => areas.serial,
@@ -878,6 +887,7 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
   const audit = new AuditReporter({
     client: serverClient,
     accounts: accountService,
+    outboxes: hostState.auditOutboxes,
     now: () => new Date(),
     setTimeout: (fn, ms) => setTimeout(fn, ms),
     clearTimeout: (handle) => {
@@ -888,8 +898,8 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
   const secretSources = new SecretSourcesService({
     snapshot: () => workspace.secretSourcesSnapshot(),
     cacheSeconds: () => preferencesService.get().secrets.sourceCacheSeconds,
-    onValue: recordSecretValue,
-    mask: redactSecretText,
+    onValue: hostState.redactor.recordSecretValue,
+    mask: hostState.redactor.redactSecretText,
   });
   const secretScans: SecretScanSessions = new SecretScanSessions({
     host: (projectId) => workspace.hostFor(projectId),
@@ -897,6 +907,7 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
     holdAutosave: (projectId) => workspace.hostFor(projectId).holdAutosave(),
   });
   const workspace: WorkspaceService = new WorkspaceService({
+    hostState,
     userDataDir: platform.paths.userData(),
     dialogs: nativeDialogs,
     state: workspaceState,
@@ -978,8 +989,8 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
       // Every other send through the engine — a resend, a sequence step, a multi-environment child —
       // is waited for the same way.
       await Promise.all([
-        whenWsSessionsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
-        whenRestSendsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
+        whenWsSessionsRecorded(hostState.openCalls, WS_SESSION_RECORD_TIMEOUT_MS, matches),
+        whenRestSendsRecorded(hostState.openCalls, WS_SESSION_RECORD_TIMEOUT_MS, matches),
         exchanges.whenRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
         stoppingMocks,
       ]);
@@ -1166,7 +1177,7 @@ void app.whenReady().then(async () => {
   );
   setUpKerberos({ isPackaged: platform.app.packaged(), resourcesPath: process.resourcesPath });
   // Every channel's handler goes into this one table; `bindIpc` serves it over `ipcMain` once all are in.
-  const handlerTable: HandlerTable = new Map();
+  const handlerTable = new HandlerTable(hostState.redactor);
   registerKerberosChannels(handlerTable);
   registerAppChannels(
     handlerTable,
@@ -1195,6 +1206,7 @@ void app.whenReady().then(async () => {
       .filter((dir): dir is string => dir !== undefined);
   // Request scripts (#63): one sandbox and one checker for the app, started on first use.
   const scripts = new ScriptHost({
+    redactor: hostState.redactor,
     modelOf: (entityId) =>
       workspaceService.projectId(entityId) === undefined ? undefined : workspaceService.hostOfEntity(entityId).model(),
     openApiDocumentFor: async (apiId) =>
@@ -1218,6 +1230,7 @@ void app.whenReady().then(async () => {
     },
   });
   const requestDeps: RequestChannelDeps = {
+    hostState,
     project: workspaceService,
     extensions: () => workspaceService.extensions(),
     mcpApprovals,

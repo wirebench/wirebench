@@ -1,17 +1,17 @@
 /** A GraphQL response's check onto the wire (phase 6 spec §3.4). */
+import type { Redactor } from '../../host/redactor.js';
 import type { GraphqlCheckResult } from '@wirebench/engine';
-import { redactSecretText } from '../../redact.js';
 import type { GraphqlCheckWire } from '../../../shared/kinds/graphql/wire.js';
 
 /**
  * A GraphQL check onto the wire. An error's message is the server's text, so a recorded secret in it
  * is masked unless the session shows secrets; a data problem names only the schema's side.
  */
-export function toGraphqlCheckWire(result: GraphqlCheckResult, show: boolean): GraphqlCheckWire {
+export function toGraphqlCheckWire(redactor: Redactor, result: GraphqlCheckResult, show: boolean): GraphqlCheckWire {
   return {
     schema: result.schema,
     errors: result.errors.map((error) => ({
-      message: redactSecretText(error.message, { show }),
+      message: redactor.redactSecretText(error.message, { show }),
       ...(error.path !== undefined ? { path: [...error.path] } : {}),
       pointer: error.pointer,
     })),

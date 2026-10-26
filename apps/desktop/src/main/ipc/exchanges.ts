@@ -62,7 +62,7 @@ export function registerExchangeChannels(
     }
     const cached = cache.getExchange(request.sendId);
     return Promise.resolve(
-      redactExchangeSummary(summary, {
+      redactExchangeSummary(table.redactor, summary, {
         show: showSecrets.get(),
         ...(cached?.keyParams !== undefined ? { keyParams: cached.keyParams } : {}),
         ...(cached?.keyHeaders !== undefined ? { keyHeaders: cached.keyHeaders } : {}),

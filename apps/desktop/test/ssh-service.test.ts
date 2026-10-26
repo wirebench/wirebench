@@ -15,6 +15,9 @@ import {
 import type { SshServiceDeps } from '../src/main/ssh-service.js';
 import type { SshListHostsResponse } from '../src/shared/ssh-wire.js';
 import { asCaller } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const FILE = parseHostsFile(
   `version: 1\nhosts:\n  - { id: a, name: a, address: 10.0.0.1, ssh: { user: me, auth: { password: '\${secret:a_pw}' } } }\n`,
@@ -140,6 +143,7 @@ function make(
     Promise.resolve({ file: { version: 1 as const, packages: [], snippets: [] }, snippets: [], problems: [] }),
   );
   const service = new SshService({
+    redactor: hostState.redactor,
     hosts: opts.hostsFor ?? (() => ({ current: () => opts.file ?? FILE, list })),
     snippets: () => ({ current: () => snippetsFile, list: listSnippets }),
     secretsFor:

@@ -12,9 +12,12 @@ import { EngineService } from '../src/main/engine-service.js';
 import { type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -106,6 +109,7 @@ const accessToken = vi.fn(() => Promise.resolve('fetched-token'));
 function registerOver(model: Project): void {
   handlers.clear();
   registerRequestChannelsWithKinds(table, new EngineService(read), {
+    hostState,
     project: project(model),
     showSecrets: { get: () => showSecrets },
     getSecret: read,

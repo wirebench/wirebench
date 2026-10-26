@@ -21,24 +21,27 @@ export const wsSend: KindSend<'websocket'> = {
       : { ...found, request: withWsPatch(found.request, draft.draft) };
   },
 
-  liveEvent(sendId, event, show, keyParams) {
+  liveEvent(redactor, sendId, event, show, keyParams) {
     switch (event.kind) {
       case 'handshake':
         return {
           kind: 'handshake',
           sendId,
-          handshake: toWsHandshakeWire(event.handshake, { show, ...(keyParams !== undefined ? { keyParams } : {}) }),
+          handshake: toWsHandshakeWire(redactor, event.handshake, {
+            show,
+            ...(keyParams !== undefined ? { keyParams } : {}),
+          }),
         };
       case 'frame':
-        return { kind: 'frame', sendId, frame: toWsFrameWire(event.frame, { show }) };
+        return { kind: 'frame', sendId, frame: toWsFrameWire(redactor, event.frame, { show }) };
       case 'closed':
         return { kind: 'closed', sendId };
     }
   },
 
-  summarise({ sendId, sent, masks, show, checked }) {
+  summarise({ deps, sendId, sent, masks, show, checked }) {
     return {
-      summary: summariseWs(checked ?? wsSent(sent).ws, sendId, {
+      summary: summariseWs(deps.hostState.redactor, checked ?? wsSent(sent).ws, sendId, {
         show,
         ...(masks.keyParams !== undefined ? { keyParams: masks.keyParams } : {}),
       }),
@@ -60,7 +63,7 @@ export const wsSend: KindSend<'websocket'> = {
     // none to record.
     if (failed.exchange === undefined) return;
     const { masks } = recorded;
-    const summary = summariseWs(failed.exchange as WsExchange, summaryOf.sendId, {
+    const summary = summariseWs(deps.hostState.redactor, failed.exchange as WsExchange, summaryOf.sendId, {
       show: summaryOf.show,
       ...(masks.keyParams !== undefined ? { keyParams: masks.keyParams } : {}),
     });

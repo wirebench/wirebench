@@ -13,7 +13,7 @@
 import { cp, rename, rm } from 'node:fs/promises';
 
 /** Errors that mean "something else has it open right now", not "this can never work". */
-const TRANSIENT_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
+const TRANSIENT_CODES: ReadonlySet<string> = new Set(['EPERM', 'EBUSY', 'EACCES']);
 
 /** How long to keep retrying before giving up and surfacing the error. */
 const TOTAL_WAIT_MS = 2_000;

@@ -10,15 +10,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApi, createProject, createRestRequest } from '@wirebench/engine';
 import type { AuthConfig, KeyValueEntry, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
-import { recordSecretValue } from '../src/main/redact.js';
 import { importedRequestName, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import type { ProjectChange } from '../src/shared/wire-types.js';
 import { NO_REST, PROJECT_SETTINGS, restApiWire } from './helpers/wire-defaults.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -118,6 +120,7 @@ function setup(options: {
 }): void {
   handlers.clear();
   registerRequestChannelsWithKinds(table, new EngineService(), {
+    hostState,
     project: project({
       ...(options.rest !== undefined ? { rest: options.rest } : {}),
       ...(options.changes !== undefined ? { changes: options.changes } : {}),
@@ -156,6 +159,7 @@ describe('request.curl for a REST request', () => {
     const getSecret = vi.fn().mockResolvedValue('tok-live');
     handlers.clear();
     registerRequestChannelsWithKinds(table, new EngineService(), {
+      hostState,
       project: project({ rest: resolution({ auth: { type: 'bearer', tokenRef: 'sec_1' } }) }),
       adHocScopes: () => ({ project: {}, global: {}, system: {} }),
       showSecrets: { get: () => false },
@@ -176,6 +180,7 @@ describe('request.curl for a REST request', () => {
       const getSecret = vi.fn().mockResolvedValue('pw-live');
       handlers.clear();
       registerRequestChannelsWithKinds(table, new EngineService(), {
+        hostState,
         project: project({
           rest: resolution({
             auth: { type: 'kerberos', username: 'alice', domain: 'CORP', passwordRef: 'sec_pw' },
@@ -199,7 +204,7 @@ describe('request.curl for a REST request', () => {
   );
 
   it('masks a recorded secret value in the URL, a header and the body, but not with show-secrets on', async () => {
-    recordSecretValue('rec-secret-value-284');
+    hostState.redactor.recordSecretValue('rec-secret-value-284');
     const rest = createRestRequest('Echo', {
       id: 'rest-1',
       method: 'POST',
@@ -491,6 +496,7 @@ describe('request.curl — Digest and AWS Signature v4', () => {
   function register(auth: AuthConfig, shown: boolean, getSecret = vi.fn().mockResolvedValue('live-value')) {
     handlers.clear();
     registerRequestChannelsWithKinds(table, new EngineService(), {
+      hostState,
       project: project({ rest: resolution({ auth }) }),
       adHocScopes: () => ({ project: {}, global: {}, system: {} }),
       showSecrets: { get: () => shown },

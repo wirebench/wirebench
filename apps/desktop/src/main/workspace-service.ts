@@ -15,6 +15,7 @@
  * of these methods taking a `Caller`.
  */
 
+import type { HostState } from './host/host-state.js';
 import type { Caller } from './host/platform.js';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -262,6 +263,8 @@ export interface WorkspaceServiceDeps {
   readonly userDataDir: string;
   /** The single in-process engine every host shares. */
   readonly engine: EngineService;
+  /** This host's state, handed on to every project host it opens. */
+  readonly hostState: Pick<HostState, 'redactor' | 'e2eTrustAnchors'>;
   /** The `${#Global#name}` scope. Omitted in tests that never expand properties. */
   readonly globals?: Pick<GlobalProperties, 'get'>;
   /** Resolves `passwordRef`s at import time. Omitted in tests that never import with auth. */
@@ -1206,6 +1209,7 @@ export class WorkspaceService implements ProjectRouter {
     const host = new ProjectHost(
       this.deps.engine,
       {
+        hostState: this.deps.hostState,
         onChanged: (project) => {
           if (project !== null) {
             entry.projectId = project.id;

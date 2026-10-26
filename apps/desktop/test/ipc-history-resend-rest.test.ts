@@ -21,6 +21,9 @@ import { sendThroughEngine } from '../src/main/send/exchange.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import { registerHistoryChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -81,7 +84,7 @@ function harness(model: Project, secrets: GetSecret = () => Promise.resolve(unde
   const entries: HistoryEntryWire[] = [];
   const history = {
     recordRestSend: (projectId: string, record: RecordRestSendInput) => {
-      const wire = toHistoryEntryWire(buildRestHistoryEntry(projectId, record));
+      const wire = toHistoryEntryWire(buildRestHistoryEntry(hostState.redactor, projectId, record));
       entries.unshift(wire);
       return Promise.resolve(wire);
     },
@@ -89,6 +92,7 @@ function harness(model: Project, secrets: GetSecret = () => Promise.resolve(unde
   };
   const keychain: GetSecret = (ref) => (ref === 'sec_key' ? Promise.resolve('good-key') : secrets(ref));
   const requestDeps: RequestChannelDeps = {
+    hostState,
     project: {
       projectId: () => 'p1',
       restMeta: () => undefined,
@@ -98,7 +102,7 @@ function harness(model: Project, secrets: GetSecret = () => Promise.resolve(unde
     secretsFor: () => keychain,
   };
   const sendDeps = toSendDeps(engine, requestDeps);
-  registerHistoryChannelsWithKinds(tableInto(handlers), history as never, {
+  registerHistoryChannelsWithKinds(tableInto(handlers, hostState.redactor), history as never, {
     project: { projectId: () => 'p1', endpointFor: () => undefined },
     send: sendDeps,
   });

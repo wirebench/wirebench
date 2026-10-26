@@ -9,6 +9,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { REFUSAL_TTL_MS, RefusalStore, createSshConnector } from '../src/main/ssh-connect.js';
 import { SshService } from '../src/main/ssh-service.js';
 import type { SshListHostsResponse } from '../src/shared/ssh-wire.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const FILE = parseHostsFile(
   [
@@ -283,6 +286,7 @@ describe('createSshConnector', () => {
   it('one store serves both services: ssh.trust records a key another connector refused, for that window only', async () => {
     const { connector, refusals, deps } = make();
     const ssh = new SshService({
+      redactor: hostState.redactor,
       ...deps,
       hostOsFile: join(mkdtempSync(join(tmpdir(), 'wb-connect-os-')), 'ssh-host-os.json'),
       emit: vi.fn(),

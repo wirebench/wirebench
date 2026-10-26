@@ -2,6 +2,7 @@
  * An engine live event as the renderer receives it: tagged with its send, and redacted for the
  * session's show-secrets flag exactly as `EngineService` redacted its own live events.
  */
+import type { Redactor } from '../host/redactor.js';
 import type { LiveEvent } from '@wirebench/engine';
 import { kindSend } from '../kinds/kind-send.js';
 import type { GrpcLiveEvent } from '../../shared/kinds/grpc/wire.js';
@@ -19,6 +20,7 @@ export type LiveEventWire = RestLiveEvent | GrpcLiveEvent | WsLiveEvent | McpLiv
  * @throws Error for a kind that reports no live events
  */
 export function toWireEvent(
+  redactor: Redactor,
   sendId: string,
   event: LiveEvent,
   show: boolean,
@@ -26,5 +28,5 @@ export function toWireEvent(
 ): LiveEventWire {
   const send = kindSend(event.protocol);
   if (send.liveEvent === undefined) throw new Error(`${event.protocol} sends report no live events`);
-  return send.liveEvent(sendId, event, show, keyParams);
+  return send.liveEvent(redactor, sendId, event, show, keyParams);
 }

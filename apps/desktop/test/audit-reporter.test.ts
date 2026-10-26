@@ -7,6 +7,9 @@ import type { DesktopAuditBatch, DesktopAuditEvent, ServerAccount } from '@wireb
 import { AuditOutbox, outboxFor } from '../src/main/audit/outbox.js';
 import { AuditReporter } from '../src/main/audit/reporter.js';
 
+/** The host's outboxes by folder, shared by the reporter under test and the assertions. */
+const outboxes = new Map<string, AuditOutbox>();
+
 const ev = (n: number): DesktopAuditEvent => ({
   action: 'desktop.request_sent',
   details: {
@@ -103,6 +106,7 @@ function setup(
       list: () => accountsOf(),
       ready,
     },
+    outboxes,
     now: () => new Date(clock.time),
     setTimeout: clock.setTimeout,
     clearTimeout: clock.clearTimeout,
@@ -250,7 +254,7 @@ describe('AuditReporter', () => {
     release();
     await pending;
     expect(await files()).toEqual([]);
-    expect(await outboxFor(dir).dropped()).toBe(1);
+    expect(await outboxFor(outboxes, dir).dropped()).toBe(1);
   });
 
   it('dispose during the accounts wait queues nothing', async () => {
@@ -264,7 +268,7 @@ describe('AuditReporter', () => {
     release();
     await pending;
     expect(await files()).toEqual([]);
-    expect(await outboxFor(dir).dropped()).toBe(0);
+    expect(await outboxFor(outboxes, dir).dropped()).toBe(0);
   });
 
   it('a 403 stop survives a recording flip that keeps the same role', async () => {
@@ -296,7 +300,7 @@ describe('AuditReporter', () => {
     const { batches, reporter } = setup(undefined, undefined, () => []);
     await reporter.enqueue(ev(1), 'w1');
     expect(await files()).toEqual([]);
-    expect(await outboxFor(dir).dropped()).toBe(1);
+    expect(await outboxFor(outboxes, dir).dropped()).toBe(1);
     expect(batches).toHaveLength(0);
   });
 
@@ -340,13 +344,13 @@ describe('AuditReporter', () => {
 
   it('sends a local dropped count over the cap in clamped batches', async () => {
     const { batches, reporter } = setup();
-    await outboxFor(dir).addDropped(1_500_000);
+    await outboxFor(outboxes, dir).addDropped(1_500_000);
     await reporter.flush();
     expect(batches).toEqual([
       { events: [], dropped: 1_000_000 },
       { events: [], dropped: 500_000 },
     ]);
-    expect(await outboxFor(dir).dropped()).toBe(0);
+    expect(await outboxFor(outboxes, dir).dropped()).toBe(0);
   });
 
   it('afterFetch sends nothing while a back-off timer is pending, until it fires', async () => {
@@ -388,7 +392,7 @@ describe('AuditReporter', () => {
 
   it('afterFetch sends at once when no timer is pending', async () => {
     const { clock, batches, reporter } = setup();
-    await outboxFor(dir).append(ev(1), 'u1');
+    await outboxFor(outboxes, dir).append(ev(1), 'u1');
     await reporter.afterFetch();
     expect(batches).toHaveLength(1);
     expect(clock.pending).toEqual([]);
@@ -554,7 +558,7 @@ describe('AuditReporter', () => {
     // One microtask puts the append's resolution after drainLoop's last check and before `running` clears.
     const TICKS = 1;
     const { clock, batches, reporter } = setup();
-    const outbox = outboxFor(dir);
+    const outbox = outboxFor(outboxes, dir);
     await reporter.enqueue(ev(1), 'w1');
     // Hold the late enqueue's append open, and release it just as the final drain pass finds nothing.
     let openGate: () => void = () => undefined;
@@ -589,16 +593,16 @@ describe('AuditReporter', () => {
       calls++;
       if (calls === 1) {
         // Two more events are dropped while this request is in flight.
-        await outboxFor(dir).addDropped(2);
+        await outboxFor(outboxes, dir).addDropped(2);
         throw new WirebenchError('server-bad-request', 'bad', { details: { status: 400 } });
       }
     });
-    await outboxFor(dir).addDropped(3);
+    await outboxFor(outboxes, dir).addDropped(3);
     await reporter.flush();
     expect(batches).toHaveLength(2);
     expect(batches[0]).toEqual({ events: [], dropped: 3 });
     expect(batches[1]).toEqual({ events: [], dropped: 2 });
-    expect(await outboxFor(dir).dropped()).toBe(0);
+    expect(await outboxFor(outboxes, dir).dropped()).toBe(0);
   });
 
   it("never sends one account's queued events as another: they are dropped and counted", async () => {
@@ -631,9 +635,9 @@ describe('AuditReporter', () => {
 
   it('sends the signed-in account its own events and drops the others in the same batch', async () => {
     const { batches, reporter } = setup();
-    await outboxFor(dir).append(ev(1), 'u1');
-    await outboxFor(dir).append(ev(2), 'u2');
-    await outboxFor(dir).append(ev(3), 'u1');
+    await outboxFor(outboxes, dir).append(ev(1), 'u1');
+    await outboxFor(outboxes, dir).append(ev(2), 'u2');
+    await outboxFor(outboxes, dir).append(ev(3), 'u1');
     await reporter.flush();
     expect(batches).toEqual([{ events: [ev(1), ev(3)], dropped: 1 }]);
   });
@@ -642,7 +646,7 @@ describe('AuditReporter', () => {
     const { reporter } = setup(undefined, undefined, () => []);
     await reporter.enqueue(ev(1), 'w1');
     expect(await files()).toEqual([]);
-    expect(await outboxFor(dir).dropped()).toBe(1);
+    expect(await outboxFor(outboxes, dir).dropped()).toBe(1);
   });
 
   it('re-picks the batch when the account changes while its token is read', async () => {

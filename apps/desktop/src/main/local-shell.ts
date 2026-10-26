@@ -83,7 +83,7 @@ export function localShellCwd(input: {
 }
 
 /** Variables that would make the shell's own programs run as Electron or Node with the app's options. */
-const DROPPED = new Set(['ELECTRON_RUN_AS_NODE', 'ELECTRON_NO_ATTACH_CONSOLE', 'NODE_OPTIONS']);
+const DROPPED: ReadonlySet<string> = new Set(['ELECTRON_RUN_AS_NODE', 'ELECTRON_NO_ATTACH_CONSOLE', 'NODE_OPTIONS']);
 
 /** The environment a local shell starts with: the app's own, minus {@link DROPPED}, naming the terminal. */
 export function localShellEnv(env: NodeJS.ProcessEnv): Record<string, string> {

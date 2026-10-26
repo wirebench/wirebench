@@ -16,6 +16,9 @@ import { HistoryService, historyFilePath } from '../src/main/history-service.js'
 import { sendThroughEngine } from '../src/main/send/exchange.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import { sendDepsFor } from './helpers/send-deps.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
 
@@ -53,10 +56,11 @@ function seeded(keyName: string, url: string): Project {
 
 /** Sends `req-1` of `model` through main's REST path with show-secrets on, into a real History. */
 async function sendShowingSecrets(model: Project): Promise<{ entry: HistoryEntryWire; onDisk: HistoryEntryWire }> {
-  const history = new HistoryService(userDataDir);
+  const history = new HistoryService(userDataDir, hostState.redactor);
   await history.open('p1');
   const appended: HistoryEntryWire[] = [];
   const deps = sendDepsFor(model, {
+    hostState,
     getSecret: (ref) => Promise.resolve(ref === 'sec_key' ? KEY : undefined),
     history,
     showSecrets: { get: () => true },

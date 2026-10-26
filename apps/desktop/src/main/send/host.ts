@@ -44,7 +44,8 @@ import { failedExchangeOf, type FailedExchangeInput } from '../failed-exchange.j
 import type { RequestChannelProject } from '../ipc/request.js';
 import type { IssuedTokensService } from '../issued-tokens.js';
 import type { OAuth2Service } from '../oauth2.js';
-import { recordSecretValue, redactSecretBytes, redactXml } from '../redact.js';
+import type { HostState } from '../host/host-state.js';
+import type { Redactor } from '../host/redactor.js';
 import { restContractOf } from '../rest-contract.js';
 import { callbackUrlFor } from '../webhook-send.js';
 import { AD_HOC_ID } from './draft.js';
@@ -52,6 +53,8 @@ import type { HistoryEntryWire, LogEntryWire } from '../../shared/wire-types.js'
 import type { FailedExchangeWire } from '../../shared/wire-base.js';
 
 export interface DesktopSendDeps {
+  /** This host's secret redactor and its e2e trust anchors: what a send records into and reads. */
+  readonly hostState: Pick<HostState, 'redactor' | 'e2eTrustAnchors'>;
   readonly project: RequestChannelProject;
   /** The exchange cache and the contract checker. */
   readonly service: EngineService;
@@ -104,14 +107,14 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
   // Bound before any await: a workspace switch while this send runs must not move it to another jar.
   const cookies = deps.cookies?.();
   const bundle = projectId === undefined ? undefined : await project.trustAnchorsFor?.(projectId);
-  const anchors = [...(bundle ?? []), ...extraTrustAnchors()];
+  const anchors = [...(bundle ?? []), ...extraTrustAnchors(deps.hostState)];
   const preferences = deps.preferences?.();
   const tokens = oauth2Tokens(deps);
   const issued = issuedTokensFor(deps, send);
   const approveCommand = send.approveCommand ?? deps.approveCommand;
   return {
     getSecret: desktopSecrets(deps, projectId),
-    onSecretValue: recordSecretValue,
+    onSecretValue: deps.hostState.redactor.recordSecretValue,
     proxyFor: async (url) => {
       const proxy = projectId === undefined ? undefined : await project.proxyFor?.(projectId, url);
       return proxy === undefined ? undefined : withoutUndefined<ProxyOptions>(proxy);
@@ -149,7 +152,9 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
         // Every module says what it attempted; without that there is no row to write.
         const { attempted } = failure;
         if (attempted === undefined) return;
-        reportSendFailed(deps.onSendFailed, () => failedExchangeOf(failureRowOf(send, item, failure, attempted)));
+        reportSendFailed(deps.onSendFailed, () =>
+          failedExchangeOf(deps.hostState.redactor, failureRowOf(send, item, failure, attempted)),
+        );
       },
       onExchange: (item, exchange) => {
         if (item.kind !== 'websocket') return;
@@ -197,7 +202,7 @@ function oauth2Tokens(deps: DesktopSendDeps): RunTokenSource | undefined {
         ...(request.signal !== undefined ? { signal: request.signal } : {}),
       });
       // As `resolveAuthConfig` (secret-resolver.ts) records the token it puts on the wire.
-      recordSecretValue(token);
+      deps.hostState.redactor.recordSecretValue(token);
       issued.set(token, config);
       return token;
     },
@@ -243,12 +248,13 @@ function issuedTokensFor(deps: DesktopSendDeps, send: DesktopSend): IssuedTokenS
  * key's secret and every recorded secret value (the assertion is one) are masked unless `show`.
  */
 export function stsLogEntry(
+  redactor: Redactor,
   http: HttpExchange,
   opts: { readonly show: boolean; readonly requestId?: string; readonly causedBy?: string },
 ): LogEntryWire {
   const { show } = opts;
-  const wire = toHttpExchangeWire(http, { show });
-  const body = redactBody(wire.bodyBase64, show);
+  const wire = toHttpExchangeWire(redactor, http, { show });
+  const body = redactBody(redactor, wire.bodyBase64, show);
   // A compressed body's bytes are not text the redaction reads, in the raw response as in the raw
   // body; the redacted, decoded body stands in for them under the response's own head.
   const compressed = wire.rawBodyBase64 !== wire.bodyBase64;
@@ -287,12 +293,12 @@ function withBody(rawBase64: string, body: string): string {
 }
 
 /** A token service's reply body, its XML secrets and recorded values masked unless `show`. */
-function redactBody(base64: string, show: boolean): string {
+function redactBody(redactor: Redactor, base64: string, show: boolean): string {
   if (show) return base64;
   const text = Buffer.from(base64, 'base64').toString('utf8');
-  const masked = redactXml(text);
+  const masked = redactor.redactXml(text);
   // Re-encoded only when something was masked, so a body that is not text keeps its bytes.
-  return redactSecretBytes(masked === text ? base64 : Buffer.from(masked, 'utf8').toString('base64'));
+  return redactor.redactSecretBytes(masked === text ? base64 : Buffer.from(masked, 'utf8').toString('base64'));
 }
 
 /** The STS exchange as its own HTTP Log row (never History), redacted like any SOAP row. */
@@ -300,7 +306,7 @@ function reportStsExchange(deps: DesktopSendDeps, send: DesktopSend, http: HttpE
   if (deps.onExchange === undefined) return;
   try {
     deps.onExchange(
-      stsLogEntry(http, {
+      stsLogEntry(deps.hostState.redactor, http, {
         show: deps.showSecrets?.get() ?? false,
         ...(send.requestId !== AD_HOC_ID ? { requestId: send.requestId } : {}),
         causedBy: send.sendId,
@@ -419,7 +425,7 @@ function reportWsHandshake(deps: DesktopSendDeps, send: DesktopSend, opened: WsH
   if (deps.onExchange === undefined) {
     return;
   }
-  const handshake = toWsHandshakeWire(opened, {
+  const handshake = toWsHandshakeWire(deps.hostState.redactor, opened, {
     show: deps.showSecrets?.get() ?? false,
     ...(send.keyParams !== undefined ? { keyParams: send.keyParams } : {}),
   });
@@ -468,20 +474,19 @@ function reportWsHandshake(deps: DesktopSendDeps, send: DesktopSend, opened: WsH
  * `WIREBENCH_E2E_FILE_DIALOG_PATH`.
  *
  * TLS verification itself is untouched: these anchors are *added* to a send's `tls.ca`, and
- * `rejectUnauthorized` keeps its default. The file is read once and remembered; an unset or
+ * `rejectUnauthorized` keeps its default. The file is read once and remembered on the host's state; an unset or
  * unreadable variable simply yields no anchors, so an ordinary run pays nothing for it.
  */
-let e2eTrustAnchors: readonly string[] | undefined;
-export function extraTrustAnchors(): readonly string[] {
-  if (e2eTrustAnchors === undefined) {
+export function extraTrustAnchors(state: Pick<HostState, 'e2eTrustAnchors'>): readonly string[] {
+  if (state.e2eTrustAnchors === undefined) {
     const path = process.env['WIREBENCH_E2E_EXTRA_CA_FILE'];
     try {
-      e2eTrustAnchors = path === undefined || path.length === 0 ? [] : [readFileSync(path, 'utf-8')];
+      state.e2eTrustAnchors = path === undefined || path.length === 0 ? [] : [readFileSync(path, 'utf-8')];
     } catch {
-      e2eTrustAnchors = [];
+      state.e2eTrustAnchors = [];
     }
   }
-  return e2eTrustAnchors;
+  return state.e2eTrustAnchors;
 }
 
 /**

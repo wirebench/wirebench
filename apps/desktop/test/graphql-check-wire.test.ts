@@ -1,8 +1,10 @@
 /** A GraphQL response's check on the REST exchange summary (#77). */
 import { describe, expect, it } from 'vitest';
-import { recordSecretValue } from '../src/main/redact.js';
 import { toGraphqlCheckWire } from '../src/main/kinds/graphql/check-wire.js';
 import { graphqlCheckWireSchema } from '../src/shared/kinds/graphql/wire.js';
+import { Redactor } from '../src/main/host/redactor.js';
+
+const redactor = new Redactor();
 
 describe('toGraphqlCheckWire', () => {
   const result = {
@@ -12,7 +14,7 @@ describe('toGraphqlCheckWire', () => {
   };
 
   it('carries errors and problems as the wire schema has them', () => {
-    const wire = toGraphqlCheckWire(result, true);
+    const wire = toGraphqlCheckWire(redactor, result, true);
     expect(graphqlCheckWireSchema.parse(wire)).toEqual(wire);
     expect(wire).toEqual({
       schema: 'checked',
@@ -22,8 +24,8 @@ describe('toGraphqlCheckWire', () => {
   });
 
   it("masks a recorded secret in an error's message unless the session shows secrets", () => {
-    recordSecretValue('gql-secret-77');
-    expect(toGraphqlCheckWire(result, false).errors[0]!.message).not.toContain('gql-secret-77');
-    expect(toGraphqlCheckWire(result, true).errors[0]!.message).toContain('gql-secret-77');
+    redactor.recordSecretValue('gql-secret-77');
+    expect(toGraphqlCheckWire(redactor, result, false).errors[0]!.message).not.toContain('gql-secret-77');
+    expect(toGraphqlCheckWire(redactor, result, true).errors[0]!.message).toContain('gql-secret-77');
   });
 });

@@ -25,6 +25,9 @@ import { secretSourcesStateOf } from '../src/main/secret-sources-state.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 import type { WorkspaceWire } from '../src/shared/wire-base.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 /** Copied from workspace-watch.test.ts: a short debounce over the real `fs.watch`. */
 const WATCH_DEBOUNCE_MS = 30;
@@ -42,9 +45,10 @@ function newService(overrides: Partial<WorkspaceServiceDeps> = {}): {
 } {
   const changed: (WorkspaceWire | null)[] = [];
   const service = new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine: new EngineService(),
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     watchDebounceMs: WATCH_DEBOUNCE_MS,
     hooks: { onChanged: (workspace) => changed.push(workspace) },
     ...overrides,

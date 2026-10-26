@@ -18,9 +18,11 @@ import type { RestExchangeSummary, RestLiveEvent } from '../src/shared/kinds/res
 import { harOf } from '../src/main/har.js';
 import { buildRestHistoryEntry } from '../src/main/history-service.js';
 import { curlForLogEntry } from '../src/main/log-curl.js';
-import { redactUrl } from '../src/main/redact.js';
 import { sendThroughEngine, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { sendDepsFor } from './helpers/send-deps.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
 
@@ -69,6 +71,7 @@ function send(
   const deps = sendDepsFor(
     { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } },
     {
+      hostState,
       getSecret: (ref) => Promise.resolve(options.secrets?.[ref]),
       showSecrets: { get: () => options.showSecrets ?? false },
     },
@@ -184,9 +187,9 @@ describe('a REST send through the engine', () => {
     expect(raw(shown.http.rawRequestBase64)).toContain('good-key');
     // A row held unmasked is masked again by its names on the way out.
     const row = { kind: 'exchange', protocol: 'rest', exchange: shown } as unknown as LogEntryWire;
-    const har = harOf([row], { name: 'Wirebench', version: '0' });
+    const har = harOf(hostState.redactor, [row], { name: 'Wirebench', version: '0' });
     expect(JSON.stringify(har.log.entries[0]!.request)).not.toContain('good-key');
-    expect(curlForLogEntry(row, { shell: 'posix', show: false }).command).not.toContain('good-key');
+    expect(curlForLogEntry(hostState.redactor, row, { shell: 'posix', show: false }).command).not.toContain('good-key');
   });
 
   it('fails loudly when a reference has no secret behind it', async () => {
@@ -247,7 +250,7 @@ describe('a REST history line', () => {
       headers: [entry('Authorization', 'Bearer leak')],
     });
 
-    const line = buildRestHistoryEntry('p1', {
+    const line = buildRestHistoryEntry(hostState.redactor, 'p1', {
       requestId: 'req-1',
       requestName: 'Create pet',
       apiName: 'Petstore',
@@ -279,7 +282,7 @@ describe('a REST history line', () => {
   });
 
   it('records a failed send with no response, and is not ok', () => {
-    const line = buildRestHistoryEntry('p1', {
+    const line = buildRestHistoryEntry(hostState.redactor, 'p1', {
       requestId: 'req-1',
       requestName: 'Create pet',
       apiName: 'Petstore',
@@ -306,7 +309,7 @@ describe('a REST history line', () => {
     const notFound = await sent('s12', { url: '/status/404' });
 
     const line = (exchange: typeof redirect) =>
-      buildRestHistoryEntry('p1', {
+      buildRestHistoryEntry(hostState.redactor, 'p1', {
         requestId: 'req-1',
         requestName: 'x',
         apiName: 'a',
@@ -324,7 +327,7 @@ describe('a REST history line', () => {
   });
 
   it('truncates a body too large to keep whole', () => {
-    const line = buildRestHistoryEntry('p1', {
+    const line = buildRestHistoryEntry(hostState.redactor, 'p1', {
       requestId: 'req-1',
       requestName: 'x',
       apiName: 'a',
@@ -344,7 +347,7 @@ describe('a REST history line', () => {
     const summary = await sent('s13', { url: '/sse/ticks?n=3&every=1' }, { onLive: () => undefined });
     expect(summary.stream).toBeDefined();
 
-    const line = buildRestHistoryEntry('p1', {
+    const line = buildRestHistoryEntry(hostState.redactor, 'p1', {
       requestId: 'req-1',
       requestName: 'Watch ticks',
       apiName: 'Petstore',
@@ -366,23 +369,27 @@ describe('a REST history line', () => {
   });
 });
 
-describe('redactUrl', () => {
+describe('hostState.redactor.redactUrl', () => {
   it('masks the credential-shaped parameters by name', () => {
-    expect(redactUrl('https://h/x?api_key=abc&page=2')).toBe('https://h/x?api_key=%3Credacted%3E&page=2');
-    expect(redactUrl('https://h/x?access_token=abc')).toContain('%3Credacted%3E');
+    expect(hostState.redactor.redactUrl('https://h/x?api_key=abc&page=2')).toBe(
+      'https://h/x?api_key=%3Credacted%3E&page=2',
+    );
+    expect(hostState.redactor.redactUrl('https://h/x?access_token=abc')).toContain('%3Credacted%3E');
   });
 
   it('masks a parameter the caller names, whatever it is called', () => {
-    expect(redactUrl('https://h/x?my_secret=abc', { extraParams: ['my_secret'] })).toContain('%3Credacted%3E');
-    expect(redactUrl('https://h/x?my_secret=abc')).toContain('my_secret=abc');
+    expect(hostState.redactor.redactUrl('https://h/x?my_secret=abc', { extraParams: ['my_secret'] })).toContain(
+      '%3Credacted%3E',
+    );
+    expect(hostState.redactor.redactUrl('https://h/x?my_secret=abc')).toContain('my_secret=abc');
   });
 
   it('leaves a URL alone when nothing matched, and when secrets are shown', () => {
-    expect(redactUrl('https://h/x?page=2')).toBe('https://h/x?page=2');
-    expect(redactUrl('https://h/x?api_key=abc', { show: true })).toBe('https://h/x?api_key=abc');
+    expect(hostState.redactor.redactUrl('https://h/x?page=2')).toBe('https://h/x?page=2');
+    expect(hostState.redactor.redactUrl('https://h/x?api_key=abc', { show: true })).toBe('https://h/x?api_key=abc');
   });
 
   it('returns something it cannot parse unchanged rather than mangling it', () => {
-    expect(redactUrl('/relative?api_key=abc')).toBe('/relative?api_key=abc');
+    expect(hostState.redactor.redactUrl('/relative?api_key=abc')).toBe('/relative?api_key=abc');
   });
 });

@@ -22,6 +22,9 @@ import type { RestExchangeSummary, RestLiveEvent } from '../src/shared/kinds/res
 import type { FailedExchangeWire } from '../src/shared/wire-base.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -127,7 +130,8 @@ function project(restSend: (requestId: string) => Project | undefined) {
 /** Registers the channels; answers the registry the sends are kept in. */
 function register(overrides: Partial<RequestChannelDeps> = {}, restSend: (requestId: string) => Project | undefined) {
   const registry = new ExchangeRegistry();
-  registerRequestChannelsWithKinds(tableInto(handlers), new EngineService(), {
+  registerRequestChannelsWithKinds(tableInto(handlers, hostState.redactor), new EngineService(), {
+    hostState,
     project: project(restSend),
     adHocScopes: () => ({ project: {}, global: {}, system: {} }),
     registry,
@@ -259,7 +263,7 @@ describe('closing the app or a project over an open stream', () => {
     expect(registry.endWhere(() => true, 'rest')).toBe(1);
 
     let waited = false;
-    const waiting = whenRestSendsRecorded(5_000).then(() => {
+    const waiting = whenRestSendsRecorded(hostState.openCalls, 5_000).then(() => {
       waited = true;
     });
     await waitFor(() => recordRestSend.mock.calls.length === 1, 'History to be asked to record the stream');
@@ -282,7 +286,7 @@ describe('closing the app or a project over an open stream', () => {
 
 describe('a live event that cannot be delivered', () => {
   it('is guarded so an onLive that always throws never affects the stream or the invoke', async () => {
-    const deps = sendDepsFor(resolution(server.url, '/sse/ticks?n=3&every=5'));
+    const deps = sendDepsFor(resolution(server.url, '/sse/ticks?n=3&every=5'), { hostState });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
       const summary = await sendThroughEngine(deps, 'g1', 'rest-1', {
@@ -358,7 +362,7 @@ describe('toRestEventStreamWire', () => {
       data: `${index}`,
       lastEventId: `${index}`,
     }));
-    const wire = toRestEventStreamWire({
+    const wire = toRestEventStreamWire(hostState.redactor, {
       rows,
       counts: { events: 12_000, comments: 0, retries: 0, bytes: 120_000 },
       lastEventId: '11999',

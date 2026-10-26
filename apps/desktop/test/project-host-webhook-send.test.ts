@@ -14,6 +14,9 @@ import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import { ExchangeRegistry, previewRest, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { webhookCollectionId } from '../src/main/webhook-ids.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 let dir: string;
 let host: ProjectHost;
@@ -58,6 +61,7 @@ async function webhookItem(): Promise<{ projectId: string; requestId: string }> 
 const resolve = (requestId: string) =>
   previewRest(
     {
+      hostState,
       service: new EngineService(),
       registry: new ExchangeRegistry(),
       project: host as unknown as SendThroughEngineDeps['project'],

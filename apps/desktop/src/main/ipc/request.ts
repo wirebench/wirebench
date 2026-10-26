@@ -51,7 +51,6 @@ import type { HistoryService } from '../history-service.js';
 import type { IssuedTokensService } from '../issued-tokens.js';
 import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
-import { redactHeaders, redactSecretText, redactUrl, redactXml } from '../redact.js';
 import {
   ExchangeRegistry,
   previewGrpc,
@@ -88,6 +87,7 @@ import type {
   RequestCurlResponse,
   RequestVariablesResponse,
 } from '../../shared/wire-base.js';
+import type { HostState } from '../host/host-state.js';
 import { cancelEnvironmentBatch, sendToEnvironments } from '../multi-env-send.js';
 import { toRestSettingsWire } from '../project-wire.js';
 import { requestVariables } from '../request-variables.js';
@@ -162,6 +162,8 @@ export function ownerOf(project: Pick<RequestChannelProject, 'projectId'>, entit
 
 /** What `request.*` needs beyond the engine: the property scopes a send expands against. */
 export interface RequestChannelDeps {
+  /** This host's state: its redactor, its fan-out batches, its open calls, its e2e trust anchors. */
+  readonly hostState: HostState;
   /** Supplies the scopes; `ProjectRouter` in the app, a stub in tests. */
   readonly project: RequestChannelProject;
   /**
@@ -287,6 +289,7 @@ export function toSendDeps(
 ): SendThroughEngineDeps {
   const { oauth2, preferences, history } = deps;
   return {
+    hostState: deps.hostState,
     project: deps.project,
     service,
     registry,
@@ -409,7 +412,11 @@ export async function shownAuth(
 ): Promise<SendAuth | undefined> {
   return resolved.auth.type === 'jwt'
     ? await resolved.signJwt(resolved.auth)
-    : await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined));
+    : await resolveAuthConfig(
+        deps.hostState.redactor,
+        resolved.auth,
+        (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined),
+      );
 }
 
 /**
@@ -438,7 +445,7 @@ async function restCurl(
       : placeholderAuth(resolved.auth);
   // The engine masks by header name; a value main recorded (a `${secret:…}` or secret-source value, a
   // long `${#System#…}` one) can sit in the URL, any header or the body, so the whole command is masked.
-  const command = redactSecretText(
+  const command = deps.hostState.redactor.redactSecretText(
     restToCurl(
       { ...resolved.input, ...(auth !== undefined ? { auth } : {}) },
       { shell: request.shell, redactSecrets: !show },
@@ -511,11 +518,11 @@ async function curl(
   const keyParams = auth?.type === 'api-key' && auth.in === 'query' ? [auth.name] : [];
   // A header API key may be called anything, so its header is masked by name as well.
   const keyHeaders = auth?.type === 'api-key' && auth.in === 'header' ? [auth.name] : [];
-  const headers = redactHeaders(effective.headers ?? {}, { show, extraHeaders: keyHeaders });
-  const envelopeXml = redactXml(effective.envelopeXml, { show });
+  const headers = deps.hostState.redactor.redactHeaders(effective.headers ?? {}, { show, extraHeaders: keyHeaders });
+  const envelopeXml = deps.hostState.redactor.redactXml(effective.envelopeXml, { show });
   const command = soapToCurl(
     {
-      endpoint: redactUrl(effective.endpoint, { show, extraParams: keyParams }),
+      endpoint: deps.hostState.redactor.redactUrl(effective.endpoint, { show, extraParams: keyParams }),
       envelopeXml,
       soapVersion: effective.soapVersion,
       ...(effective.soapAction !== undefined ? { soapAction: effective.soapAction } : {}),
@@ -657,7 +664,10 @@ async function code(
   const extensions = deps.extensions?.() ?? createBuiltinRegistry().extensions;
   const generated = await extensions.codeGenerator(target).generate(built.request, codeOptions(request.settings));
   const notes = [...built.notes, ...generated.notes];
-  return { command: redactSecretText(generated.code, { show }), ...(notes.length > 0 ? { notes } : {}) };
+  return {
+    command: deps.hostState.redactor.redactSecretText(generated.code, { show }),
+    ...(notes.length > 0 ? { notes } : {}),
+  };
 }
 
 /** A REST request as a {@link CodeRequest}, with what it does not carry. */
@@ -714,6 +724,7 @@ async function soapCode(
       ? undefined
       : show
         ? await resolveSoapAuth(
+            deps.hostState.redactor,
             owner,
             (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined),
             accessToken !== undefined ? { accessToken } : {},
@@ -722,8 +733,8 @@ async function soapCode(
   // Headers typed on the request are masked by name, as the `curl` export masks them.
   const typed = withWsaHeaders({
     ...soap.input,
-    headers: redactHeaders(soap.input.headers ?? {}, { show }),
-    envelopeXml: redactXml(soap.input.envelopeXml, { show }),
+    headers: deps.hostState.redactor.redactHeaders(soap.input.headers ?? {}, { show }),
+    envelopeXml: deps.hostState.redactor.redactXml(soap.input.envelopeXml, { show }),
   });
   const applied =
     auth === undefined || auth.type === 'basic' || auth.type === 'ntlm'
@@ -810,6 +821,7 @@ async function soapCurlInput(
       ? undefined
       : show
         ? await resolveSoapAuth(
+            deps.hostState.redactor,
             owner,
             (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined),
             accessToken !== undefined ? { accessToken } : {},
@@ -1244,18 +1256,15 @@ async function wsCommand(
 }
 
 /**
- * The `request.openWs` sends still running: one per open session, each settling only once its
- * History entry has been written.
+ * The `request.openWs` sends still running (`HostState.openCalls.ws`): one per open session, each
+ * settling only once its History entry has been written.
  *
  * A session's History entry is written by whoever awaits the session, which is the pending
  * `request.openWs` invoke — so closing a session is not the same as having recorded it. The two
  * moments that close sessions on the app's behalf (quitting, and closing a project) must wait for
  * the recording, or the entry is written into a history file that has already been closed, or not
  * at all because the process exited first. {@link whenWsSessionsRecorded} is that wait.
- */
-export const openWsCalls = new Map<Promise<unknown>, string>();
-
-/**
+ *
  * Resolves once every `request.openWs` in flight whose request `matches` — every one of them when
  * it is omitted — has finished recording its History entry, or after `timeoutMs`: a socket that
  * will not finish closing must never be the reason the app cannot quit.
@@ -1264,10 +1273,11 @@ export const openWsCalls = new Map<Promise<unknown>, string>();
  * still open and would hold it for the whole timeout.
  */
 export async function whenWsSessionsRecorded(
+  openCalls: HostState['openCalls'],
   timeoutMs: number,
   matches?: (requestId: string) => boolean,
 ): Promise<void> {
-  const waiting = [...openWsCalls]
+  const waiting = [...openCalls.ws]
     .filter(([, requestId]) => matches === undefined || matches(requestId))
     .map(([call]) => call);
   if (waiting.length === 0) {
@@ -1291,21 +1301,20 @@ export async function whenWsSessionsRecorded(
 
 /**
  * The editor's `request.sendRest` calls still running, each settling only once its History entry
- * has been written — the REST twin of {@link openWsCalls}, for an event stream that stays open
+ * has been written — the REST twin of `openCalls.ws`, for an event stream that stays open
  * until something stops it.
  */
-export const openRestCalls = new Map<Promise<unknown>, string>();
-
 /**
  * Resolves once every editor REST send in flight whose request `matches` has recorded its History
  * entry, or after `timeoutMs`. Paired with `ExchangeRegistry.endWhere(…, 'rest')` wherever
  * WebSocket sessions are closed on the app's behalf (quitting, closing a project).
  */
 export async function whenRestSendsRecorded(
+  openCalls: HostState['openCalls'],
   timeoutMs: number,
   matches?: (requestId: string) => boolean,
 ): Promise<void> {
-  const waiting = [...openRestCalls]
+  const waiting = [...openCalls.rest]
     .filter(([, requestId]) => matches === undefined || matches(requestId))
     .map(([call]) => call);
   if (waiting.length === 0) {
@@ -1337,11 +1346,16 @@ export async function whenRestSendsRecorded(
 export function registerRequestChannels(table: HandlerTable, service: EngineService, deps: RequestChannelDeps): void {
   const sendDeps = toSendDeps(service, deps);
 
-  registerHandler(table, channels.request.sendToEnvironments, (request) => sendToEnvironments(sendDeps, deps, request));
+  registerHandler(table, channels.request.sendToEnvironments, (request) =>
+    sendToEnvironments(sendDeps, deps, deps.hostState.multiEnvBatches, request),
+  );
 
   // Every send goes through the engine, so every one is cancelled through the registry.
   registerHandler(table, channels.request.cancel, ({ sendId }) =>
-    Promise.resolve(cancelEnvironmentBatch(sendDeps.registry, sendId) ?? sendDeps.registry.cancel(sendId)),
+    Promise.resolve(
+      cancelEnvironmentBatch(deps.hostState.multiEnvBatches, sendDeps.registry, sendId) ??
+        sendDeps.registry.cancel(sendId),
+    ),
   );
 
   registerHandler(table, channels.request.curl, (request) => curl(service, deps, sendDeps, request));

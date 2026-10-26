@@ -5,12 +5,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { SentScripts } from '@wirebench/engine';
-import { recordSecretValue } from '../src/main/redact.js';
 import { toScriptResultWire } from '../src/main/script-send.js';
+import { Redactor } from '../src/main/host/redactor.js';
+
+const redactor = new Redactor();
 
 describe('toScriptResultWire', () => {
   it('carries each level that ran, masked', () => {
-    recordSecretValue('lvl-secret-7731');
+    redactor.recordSecretValue('lvl-secret-7731');
     const sent: SentScripts = {
       tests: [{ name: 'api ok', passed: true }],
       values: [],
@@ -33,7 +35,7 @@ describe('toScriptResultWire', () => {
         },
       ],
     };
-    const wire = toScriptResultWire(sent);
+    const wire = toScriptResultWire(redactor, sent);
     expect(wire.levels).toEqual([
       {
         level: 'api',

@@ -17,6 +17,9 @@ import { sendThroughEngine, type SendThroughEngineDeps } from '../src/main/send/
 import type { LogEntryWire } from '../src/shared/wire-types.js';
 import type { FailedExchangeWire } from '../src/shared/wire-base.js';
 import { sendDepsFor, type SendDepsExtra } from './helpers/send-deps.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 interface Seen {
   readonly url: string;
@@ -80,6 +83,7 @@ function projectWith(auth: SoapOwnerAuth | undefined, endpoint: string): Project
 /** The send's dependencies over `projectWith(auth, endpoint)`, as `request.send` builds them. */
 function depsWith(auth: SoapOwnerAuth | undefined, endpoint: string, extra: SendDepsExtra = {}): SendThroughEngineDeps {
   return sendDepsFor(projectWith(auth, endpoint), {
+    hostState,
     ...extra,
     project: { requestMeta: () => ({ requestName: 'R', interfaceName: 'I', operationName: 'O' }) },
   });
@@ -172,17 +176,23 @@ describe('SOAP send with a token owner auth', () => {
     const full = service.exchanges.get('s-key')!;
     const keyParams = service.exchanges.getExchange('s-key')?.keyParams;
     expect(keyParams).toEqual(['api key']);
-    expect(redactExchangeSummary(full, { show: false, keyParams: keyParams! }).http.request.url).not.toMatch(KEY);
-    expect(redactExchangeSummary(full, { show: true, keyParams: keyParams! }).http.request.url).toMatch(KEY);
+    expect(
+      redactExchangeSummary(hostState.redactor, full, { show: false, keyParams: keyParams! }).http.request.url,
+    ).not.toMatch(KEY);
+    expect(
+      redactExchangeSummary(hostState.redactor, full, { show: true, keyParams: keyParams! }).http.request.url,
+    ).toMatch(KEY);
     // A redirect's first hop is the wire URL, key included: masked like the request URL.
     const redirected = { ...full, http: { ...full.http, redirects: [{ url: full.http.request.url, status: 302 }] } };
-    const hops = redactExchangeSummary(redirected, { show: false, keyParams: keyParams! }).http.redirects;
+    const hops = redactExchangeSummary(hostState.redactor, redirected, { show: false, keyParams: keyParams! }).http
+      .redirects;
     expect(hops[0]!.url).not.toMatch(KEY);
     expect(hops[0]!.url).toContain('redacted');
     // The raw request line is parsed, never prefix-trimmed: any target form is masked, and left as sent otherwise.
     const lineOf = (target: string): string => {
       const raw = Buffer.from(`POST ${target} HTTP/1.1\r\nHost: h\r\n\r\n`, 'latin1').toString('base64');
       const masked = redactExchangeSummary(
+        hostState.redactor,
         { ...full, http: { ...full.http, rawRequestBase64: raw } },
         { show: false, keyParams: keyParams! },
       );
@@ -194,10 +204,10 @@ describe('SOAP send with a token owner auth', () => {
     expect(lineOf('/calc?op')).toBe('POST /calc?op HTTP/1.1');
     // History stores the endpoint as configured, never the one carrying the key.
     const [projectId, record] = recordSend.mock.calls[0]!;
-    expect(JSON.stringify(buildHistoryEntry(projectId, record))).not.toMatch(KEY);
+    expect(JSON.stringify(buildHistoryEntry(hostState.redactor, projectId, record))).not.toMatch(KEY);
     // HAR is built from the log row, which carries the already-masked summary.
     const entry = { kind: 'exchange', protocol: 'soap', exchange: summary } as unknown as LogEntryWire;
-    expect(JSON.stringify(harOf([entry], { name: 'Wirebench', version: '0' }))).not.toMatch(KEY);
+    expect(JSON.stringify(harOf(hostState.redactor, [entry], { name: 'Wirebench', version: '0' }))).not.toMatch(KEY);
   });
 
   it('a header API key under a custom name is masked on every surface, and shown with show-secrets', async () => {
@@ -229,19 +239,21 @@ describe('SOAP send with a token owner auth', () => {
     const full = service.exchanges.get('s-hkey')!;
     const keyHeaders = service.exchanges.getExchange('s-hkey')?.keyHeaders;
     expect(keyHeaders).toEqual(['Ocp-Apim-Subscription-Key']);
-    const hidden = redactExchangeSummary(full, { show: false, keyHeaders: keyHeaders! });
+    const hidden = redactExchangeSummary(hostState.redactor, full, { show: false, keyHeaders: keyHeaders! });
     expect(JSON.stringify(hidden) + raw(hidden.http.rawRequestBase64)).not.toContain('my key');
-    const shown = redactExchangeSummary(full, { show: true, keyHeaders: keyHeaders! });
+    const shown = redactExchangeSummary(hostState.redactor, full, { show: true, keyHeaders: keyHeaders! });
     expect(raw(shown.http.rawRequestBase64)).toContain('my key');
     // History keeps the headers as authored, before the key was applied.
     const [projectId, record] = recordSend.mock.calls[0]!;
-    expect(JSON.stringify(buildHistoryEntry(projectId, record))).not.toContain('my key');
+    expect(JSON.stringify(buildHistoryEntry(hostState.redactor, projectId, record))).not.toContain('my key');
     // A row the renderer holds unmasked (shown with secrets on) is masked again by its names when it
     // leaves: in a HAR, and in the row's cURL with show-secrets off.
     const row = { kind: 'exchange', protocol: 'soap', exchange: shown } as unknown as LogEntryWire;
-    expect(JSON.stringify(harOf([row], { name: 'Wirebench', version: '0' }))).not.toContain('my key');
-    expect(curlForLogEntry(row, { shell: 'posix', show: false }).command).not.toContain('my key');
-    expect(curlForLogEntry(row, { shell: 'posix', show: true }).command).toContain('my key');
+    expect(JSON.stringify(harOf(hostState.redactor, [row], { name: 'Wirebench', version: '0' }))).not.toContain(
+      'my key',
+    );
+    expect(curlForLogEntry(hostState.redactor, row, { shell: 'posix', show: false }).command).not.toContain('my key');
+    expect(curlForLogEntry(hostState.redactor, row, { shell: 'posix', show: true }).command).toContain('my key');
   });
 
   it('a header API key under a custom name is masked in the failed row', async () => {

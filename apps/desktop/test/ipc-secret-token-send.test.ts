@@ -43,7 +43,6 @@ import {
   type RecordWsSessionInput,
 } from '../src/main/history-service.js';
 import { toSendDeps, type RequestChannelDeps } from '../src/main/ipc/request.js';
-import { recordSecretValue } from '../src/main/redact.js';
 import { projectSecretGetter, secretStoreLabel } from '../src/main/secret-resolver.js';
 import { SecretStore, type CryptoBackend } from '../src/main/secrets.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
@@ -52,9 +51,12 @@ import type { RestExchangeSummary, RestLiveEvent } from '../src/shared/kinds/res
 import type { WsFrameWire } from '../src/shared/kinds/ws/wire.js';
 import { registerHistoryChannelsWithKinds, registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -125,7 +127,7 @@ afterEach(() => {
 });
 
 function getterFor(projectId: string | undefined): GetSecret {
-  return projectSecretGetter(store, projectId, recordSecretValue);
+  return projectSecretGetter(store, projectId, hostState.redactor.recordSecretValue);
 }
 
 let wsServer: TestWsServer;
@@ -164,6 +166,7 @@ function registerWs(options: { header?: string; show?: boolean; secretsFor?: (id
   const project = wsProject(options.header ?? 'plain');
   const written: HistoryEntry[] = [];
   registerRequestChannelsWithKinds(table, new EngineService(), {
+    hostState,
     project: {
       scopesFor: () => SCOPES,
       projectId: () => 'p1',
@@ -176,7 +179,7 @@ function registerWs(options: { header?: string; show?: boolean; secretsFor?: (id
     ...(options.show === true ? { showSecrets: { get: () => true } } : {}),
     history: {
       recordWsSession: (projectId: string, record: RecordWsSessionInput) => {
-        written.push(buildWsHistoryEntry(projectId, record));
+        written.push(buildWsHistoryEntry(hostState.redactor, projectId, record));
         return Promise.resolve({ id: 'h', kind: 'websocket' } as HistoryEntryWire);
       },
     } as never,
@@ -531,6 +534,7 @@ describe('a gRPC call with tokens', () => {
   function grpcDeps(show: boolean, written: HistoryEntry[] = [], set: ProtoSet = grpcServer.set): RequestChannelDeps {
     const project = grpcProject();
     return {
+      hostState,
       project: {
         scopesFor: () => SCOPES,
         projectId: () => 'p1',
@@ -542,7 +546,7 @@ describe('a gRPC call with tokens', () => {
       ...(show ? { showSecrets: { get: () => true } } : {}),
       history: {
         recordGrpcSend: (projectId: string, record: RecordGrpcSendInput) => {
-          written.push(buildGrpcHistoryEntry(projectId, record));
+          written.push(buildGrpcHistoryEntry(hostState.redactor, projectId, record));
           return Promise.resolve(undefined);
         },
       } as never,
@@ -733,7 +737,7 @@ describe('an event stream that echoes a token value', () => {
   /** Streams from the server through `request.sendRest`, recording History through the real builder. */
   async function stream(sendId: string, show: boolean) {
     // As the getter records a value it hands out for `${secret:name}`.
-    recordSecretValue(value);
+    hostState.redactor.recordSecretValue(value);
     const request = createRestRequest('Stream', {
       id: 'rest-1',
       url: '/',
@@ -745,6 +749,7 @@ describe('an event stream that echoes a token value', () => {
     };
     const written: HistoryEntry[] = [];
     registerRequestChannelsWithKinds(table, new EngineService(), {
+      hostState,
       project: {
         scopesFor: () => SCOPES,
         requestMeta: () => undefined,
@@ -755,7 +760,7 @@ describe('an event stream that echoes a token value', () => {
       ...(show ? { showSecrets: { get: () => true } } : {}),
       history: {
         recordRestSend: (projectId: string, record: RecordRestSendInput) => {
-          written.push(buildRestHistoryEntry(projectId, record));
+          written.push(buildRestHistoryEntry(hostState.redactor, projectId, record));
           return Promise.resolve(undefined);
         },
       } as never,
@@ -825,7 +830,7 @@ describe('a History resend with a token', () => {
     await store.set('fake-resend-password-01', { label: secretStoreLabel('p1', 'resend_pw') });
     const written: HistoryEntry[] = [];
     const recordSend = vi.fn((projectId: string, record: RecordSendInput) => {
-      written.push(buildHistoryEntry(projectId, record));
+      written.push(buildHistoryEntry(hostState.redactor, projectId, record));
       return Promise.resolve(undefined);
     });
     const entry: HistoryEntryWire = {
@@ -879,11 +884,7 @@ describe('a History resend with a token', () => {
     } as unknown as RequestChannelDeps['project'];
     registerHistoryChannelsWithKinds(table, history as never, {
       project,
-      send: toSendDeps(new EngineService(), {
-        project,
-        history: history as never,
-        secretsFor: getterFor,
-      }),
+      send: toSendDeps(new EngineService(), { hostState, project, history: history as never, secretsFor: getterFor }),
     });
     const before = captured.length;
 

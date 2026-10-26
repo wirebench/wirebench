@@ -30,6 +30,9 @@ import { moveDir } from '../src/main/rename-dir.js';
 import { ExchangeRegistry, previewSoap, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { MAX_DROPPED_ATTACHMENT_BYTES } from '../src/shared/kinds/soap/wire.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 // The real `moveDir`, wrapped so one test can make the move of an import's definition cache fail.
 vi.mock('../src/main/rename-dir.js', async (importOriginal) => {
@@ -850,6 +853,7 @@ describe('ProjectHost: environments and property scopes', () => {
         (
           await previewSoap(
             {
+              hostState,
               service: new EngineService(),
               registry: new ExchangeRegistry(),
               project: service as unknown as SendThroughEngineDeps['project'],

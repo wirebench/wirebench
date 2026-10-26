@@ -23,6 +23,9 @@ import {
 import { ProjectHost } from '../src/main/project-host.js';
 import { ExchangeRegistry, previewSoap, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { toProjectWire } from '../src/main/project-wire.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const PASSWORD = 'p12-password';
 
@@ -278,6 +281,7 @@ describe('ProjectHost keystores', () => {
     // The input the cURL export resolves carries no key material.
     const preview = await previewSoap(
       {
+        hostState,
         service: new EngineService(),
         registry: new ExchangeRegistry(),
         project: service as unknown as SendThroughEngineDeps['project'],

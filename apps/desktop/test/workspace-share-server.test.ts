@@ -69,6 +69,9 @@ import type {
 } from '../src/main/workspace-share.js';
 import { WorkspaceState } from '../src/main/workspace-state.js';
 import type { SyncConflictWire, WorkspaceWire } from '../src/shared/wire-base.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const WAIT = { timeout: 15_000, interval: 50 };
 const URL_A = 'https://wirebench.example.test';
@@ -841,9 +844,10 @@ describe('WorkspaceService — shareToServer end to end', { timeout: 30_000 }, (
     const root = join(base, `service-${String(serial)}`);
     await mkdir(root, { recursive: true });
     const service = new WorkspaceService({
+      hostState,
       userDataDir: root,
       engine: new EngineService(),
-      history: new HistoryService(root),
+      history: new HistoryService(root, hostState.redactor),
       picks: new DialogPicks(),
       hooks,
       server: {

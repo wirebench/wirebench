@@ -22,6 +22,9 @@ import {
   type RestPreview,
   type SendThroughEngineDeps,
 } from '../src/main/send/exchange.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 let dir: string;
 let host: ProjectHost;
@@ -34,6 +37,7 @@ function target(resolution: RestPreview | undefined): string | undefined {
 
 /** The host as a send's dependencies see it. */
 const deps = (): SendThroughEngineDeps => ({
+  hostState,
   service: new EngineService(),
   registry: new ExchangeRegistry(),
   project: host as unknown as SendThroughEngineDeps['project'],

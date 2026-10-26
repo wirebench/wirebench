@@ -37,6 +37,9 @@ import {
   mkTempDir,
   removeTempDir,
 } from './sync/git-fixture.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const WAIT = { timeout: 15_000, interval: 50 };
 const sender = asCaller({});
@@ -55,9 +58,10 @@ async function newService(
   await mkdir(root, { recursive: true });
   const trashed: string[] = [];
   const service = new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine: new EngineService(),
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     git: () => Promise.resolve(git),
     picks: new DialogPicks(),
     trash: (path) => {

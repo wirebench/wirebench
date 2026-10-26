@@ -10,6 +10,9 @@ import {
   makeRestExchange,
   makeWsHandshakeExchange,
 } from './mocks/wire-fixtures.js';
+import { Redactor } from '../src/main/host/redactor.js';
+
+const redactor = new Redactor();
 
 const CREATOR = { name: 'Wirebench', version: '0.0.0-test' } as const;
 const golden = (name: string): unknown =>
@@ -43,7 +46,7 @@ describe('harOf', () => {
     ['grpc', { kind: 'exchange' as const, exchange: makeGrpcExchange() }],
     ['failure', { kind: 'failure' as const, failure: makeFailure({ stage: 'prepare' }) }],
   ])('%s matches its golden file and HAR 1.2 required fields', (name, entry) => {
-    const har = harOf([entry], CREATOR);
+    const har = harOf(redactor, [entry], CREATOR);
     expect(har.log.version).toBe('1.2');
     expect(har.log.creator).toEqual(CREATOR);
     requiredFieldsPresent(har.log.entries[0]!);
@@ -51,7 +54,8 @@ describe('harOf', () => {
   });
 
   it('a failure is status 0 with an _error and empty content', () => {
-    const entry = harOf([{ kind: 'failure', failure: makeFailure({ stage: 'prepare' }) }], CREATOR).log.entries[0]!;
+    const entry = harOf(redactor, [{ kind: 'failure', failure: makeFailure({ stage: 'prepare' }) }], CREATOR).log
+      .entries[0]!;
     expect(entry.response.status).toBe(0);
     expect(entry.response.headers).toEqual([]);
     expect(entry.response.content).toEqual({ size: 0, mimeType: 'x-unknown' });
@@ -68,13 +72,14 @@ describe('harOf', () => {
       ...exchange.http,
       timings: { startedAt: '2026-09-18T10:00:00.000Z', totalMs: 50, ttfbMs: 30, downloadMs: 5 },
     };
-    const entry = harOf([{ kind: 'exchange', exchange: { ...exchange, http } }], CREATOR).log.entries[0]!;
+    const entry = harOf(redactor, [{ kind: 'exchange', exchange: { ...exchange, http } }], CREATOR).log.entries[0]!;
     expect(entry.timings).toEqual({ blocked: -1, dns: -1, connect: -1, ssl: -1, send: 0, wait: 30, receive: 5 });
   });
 
   it('a truncated body is flagged and carries no text', () => {
     const exchange = makeRestExchange();
     const entry = harOf(
+      redactor,
       [{ kind: 'exchange', exchange: { ...exchange, http: { ...exchange.http, truncated: true } } }],
       CREATOR,
     ).log.entries[0]!;
@@ -97,7 +102,7 @@ describe('harOf', () => {
         omittedRows: 2,
       },
     });
-    const entry = harOf([{ kind: 'exchange', exchange }], CREATOR).log.entries[0]!;
+    const entry = harOf(redactor, [{ kind: 'exchange', exchange }], CREATOR).log.entries[0]!;
     expect(entry.response.content).toEqual({
       size: 8,
       mimeType: 'text/event-stream',
@@ -120,7 +125,7 @@ describe('harOf', () => {
         omittedRows: 0,
       },
     });
-    const entry = harOf([{ kind: 'exchange', exchange }], CREATOR).log.entries[0]!;
+    const entry = harOf(redactor, [{ kind: 'exchange', exchange }], CREATOR).log.entries[0]!;
     expect(entry._sseTruncated).toBe(true);
     expect(entry._sseOmittedRows).toBe(5);
   });
@@ -137,7 +142,7 @@ describe('harOf', () => {
         omittedRows: 0,
       },
     });
-    const entry = harOf([{ kind: 'exchange', exchange }], CREATOR).log.entries[0]!;
+    const entry = harOf(redactor, [{ kind: 'exchange', exchange }], CREATOR).log.entries[0]!;
     expect(entry._sseTruncated).toBeUndefined();
     expect(entry._sseOmittedRows).toBeUndefined();
   });
@@ -164,7 +169,7 @@ describe('harOf', () => {
         omittedRows: 0,
       },
     });
-    const entry = harOf([{ kind: 'exchange', exchange }], CREATOR).log.entries[0]!;
+    const entry = harOf(redactor, [{ kind: 'exchange', exchange }], CREATOR).log.entries[0]!;
     expect(entry.response.content.text).not.toContain('tok-placeholder');
     expect(entry.response.content.text).toContain('<redacted>');
   });
@@ -184,7 +189,7 @@ describe('harOf', () => {
       bodyBase64: b64('<s:Envelope><wsse:Password>pw-placeholder</wsse:Password></s:Envelope>'),
       headers: { 'content-type': 'text/xml' },
     };
-    const text = JSON.stringify(harOf([{ kind: 'exchange', exchange: { ...exchange, http } }], CREATOR));
+    const text = JSON.stringify(harOf(redactor, [{ kind: 'exchange', exchange: { ...exchange, http } }], CREATOR));
     for (const secret of ['k-placeholder', 'plain-token', 's3cr3t-placeholder', 'pw-placeholder'])
       expect(text).not.toContain(secret);
   });
@@ -214,6 +219,7 @@ describe('harOf', () => {
     });
     const text = JSON.stringify(
       harOf(
+        redactor,
         [
           { kind: 'exchange', exchange: { ...exchange, http } },
           { kind: 'failure', failure },
@@ -236,7 +242,7 @@ describe('harOf', () => {
 
 describe('harOf — WebSocket', () => {
   it('exports the handshake as an ordinary GET/101 pair, _resourceType: websocket, no _webSocketMessages', () => {
-    const entry = harOf([{ kind: 'exchange', exchange: makeWsHandshakeExchange() }], CREATOR).log.entries[0]!;
+    const entry = harOf(redactor, [{ kind: 'exchange', exchange: makeWsHandshakeExchange() }], CREATOR).log.entries[0]!;
     expect(entry.request.method).toBe('GET');
     expect(entry.request.url).toBe('https://api.test/chat');
     expect(entry.response.status).toBe(101);
@@ -249,6 +255,7 @@ describe('harOf — WebSocket', () => {
   it('masks the handshake headers unless shown; the wsUrl is not part of the HAR (only the masked http(s):// url)', () => {
     const text = JSON.stringify(
       harOf(
+        redactor,
         [
           {
             kind: 'exchange',
@@ -263,6 +270,7 @@ describe('harOf — WebSocket', () => {
 
   it('a WebSocket failure row (refused handshake) produces a valid HAR entry', () => {
     const entry = harOf(
+      redactor,
       [
         {
           kind: 'failure',

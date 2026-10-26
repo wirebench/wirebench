@@ -38,6 +38,9 @@ import type { RestExchangeSummary } from '../src/shared/kinds/rest/wire.js';
 import type { ExchangeSummary } from '../src/shared/kinds/soap/wire.js';
 import { tableInto } from './helpers/ipc-table.js';
 import { fakeNativeDialogs } from './helpers/fake-platform.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const LOG_EXTRA = {
   picks: { rememberWrite: () => undefined },
@@ -46,7 +49,7 @@ const LOG_EXTRA = {
 };
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -134,6 +137,7 @@ function model(options: { accept?: string; grpcKind?: GrpcMethodKind } = {}): Pr
 
 function requestDeps(overrides: Record<string, unknown>): RequestChannelDeps {
   return {
+    hostState,
     project: {
       scopesFor: () => ({ project: {}, global: {}, system: {} }),
       preflight: () => undefined as never,

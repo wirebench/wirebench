@@ -5,14 +5,19 @@ import { describe, expect, it, vi } from 'vitest';
 import { toIpcError, validateEventPayload, wrapHandler } from '../src/main/ipc/envelope.js';
 import { emitEvent } from '../src/main/ipc/events.js';
 import { channels, defineEvent } from '../src/shared/ipc.js';
+import { Redactor } from '../src/main/host/redactor.js';
 
 describe('wrapHandler', () => {
   it('rejects a malformed request payload before calling the handler', async () => {
     let called = false;
-    const wrapped = wrapHandler(channels.app.version, () => {
-      called = true;
-      return Promise.resolve({ version: '0.1.0', electron: '44.0.0', node: '24.0.0' });
-    });
+    const wrapped = wrapHandler(
+      channels.app.version,
+      () => {
+        called = true;
+        return Promise.resolve({ version: '0.1.0', electron: '44.0.0', node: '24.0.0' });
+      },
+      new Redactor(),
+    );
 
     const result = await wrapped({ bogus: 1 });
 
@@ -24,9 +29,13 @@ describe('wrapHandler', () => {
   });
 
   it('maps a thrown WirebenchError to its own code', async () => {
-    const wrapped = wrapHandler(channels.app.version, () => {
-      throw new WirebenchError('app.version.boom', 'boom');
-    });
+    const wrapped = wrapHandler(
+      channels.app.version,
+      () => {
+        throw new WirebenchError('app.version.boom', 'boom');
+      },
+      new Redactor(),
+    );
 
     const result = await wrapped(undefined);
 
@@ -34,9 +43,13 @@ describe('wrapHandler', () => {
   });
 
   it('maps a thrown plain Error to internal-error', async () => {
-    const wrapped = wrapHandler(channels.app.version, () => {
-      throw new Error('unexpected');
-    });
+    const wrapped = wrapHandler(
+      channels.app.version,
+      () => {
+        throw new Error('unexpected');
+      },
+      new Redactor(),
+    );
 
     const result = await wrapped(undefined);
 
@@ -44,8 +57,10 @@ describe('wrapHandler', () => {
   });
 
   it('returns a validated success value for a valid call', async () => {
-    const wrapped = wrapHandler(channels.app.version, () =>
-      Promise.resolve({ version: '0.1.0', electron: '44.0.0', node: '24.0.0' }),
+    const wrapped = wrapHandler(
+      channels.app.version,
+      () => Promise.resolve({ version: '0.1.0', electron: '44.0.0', node: '24.0.0' }),
+      new Redactor(),
     );
 
     const result = await wrapped(undefined);
@@ -57,9 +72,12 @@ describe('wrapHandler', () => {
   });
 
   it('maps a thrown handler result that fails the response schema to ipc-invalid-response', async () => {
-    const wrapped = wrapHandler(channels.app.version, () =>
-      // Deliberately wrong shape to exercise response-schema validation.
-      Promise.resolve({ version: 0.1 } as unknown as { version: string; electron: string; node: string }),
+    const wrapped = wrapHandler(
+      channels.app.version,
+      () =>
+        // Deliberately wrong shape to exercise response-schema validation.
+        Promise.resolve({ version: 0.1 } as unknown as { version: string; electron: string; node: string }),
+      new Redactor(),
     );
 
     const result = await wrapped(undefined);
@@ -147,7 +165,7 @@ describe('emitEvent', () => {
       },
     });
 
-    const wire = toIpcError(error);
+    const wire = toIpcError(new Redactor(), error);
 
     expect(JSON.stringify(wire)).not.toContain('plain-token');
     expect(wire.details).toEqual({ peerSubject: 'CN=example' });

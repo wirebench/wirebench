@@ -11,9 +11,12 @@ import { EngineService } from '../src/main/engine-service.js';
 import { type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -79,6 +82,7 @@ describe('request.curl with a SOAP token owner auth', () => {
       runContextFor: (id: string) => (id === 'req-1' ? { project: model(auth), projectDir: '/tmp/none' } : undefined),
     };
     registerRequestChannelsWithKinds(table, new EngineService((ref) => Promise.resolve(secrets[ref])), {
+      hostState,
       project: project as unknown as RequestChannelDeps['project'],
       showSecrets: { get: () => showSecrets },
       getSecret: (ref) => Promise.resolve(secrets[ref]),
@@ -127,6 +131,7 @@ describe('request.curl with a SOAP token owner auth', () => {
       const getSecret = vi.fn((ref: string) => Promise.resolve(secrets[ref]));
       handlers.clear();
       registerRequestChannelsWithKinds(table, new EngineService(), {
+        hostState,
         project: {
           projectId: () => 'p1',
           runContextFor: (id: string) =>

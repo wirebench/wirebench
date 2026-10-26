@@ -8,6 +8,7 @@ import { registerGlobalsChannels } from '../src/main/ipc/globals.js';
 import { channels } from '../src/shared/ipc.js';
 import type { GlobalsState } from '../src/shared/wire-base.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { Redactor } from '../src/main/host/redactor.js';
 
 const registeredHandlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 const table = tableInto(registeredHandlers);
@@ -41,10 +42,14 @@ describe('globals.get IPC handler', () => {
     const globals = new GlobalProperties(dir);
 
     // Mirrors the fix in src/main/ipc/globals.ts's `globals.get` handler.
-    const getHandler = wrapHandler(channels.globals.get, async () => {
-      await globals.ready();
-      return globals.get();
-    });
+    const getHandler = wrapHandler(
+      channels.globals.get,
+      async () => {
+        await globals.ready();
+        return globals.get();
+      },
+      new Redactor(),
+    );
 
     // Call the handler before anything has triggered `load()` — simulating the handler being
     // registered (and called) ahead of `main/index.ts`'s startup warm-up resolving.

@@ -6,6 +6,9 @@ import type { HistoryEntry } from '@wirebench/engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HistoryService, historyFilePath } from '../src/main/history-service.js';
 import type { HistoryWatch } from '../src/main/history-service.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 function fakeWatch(): { watch: HistoryWatch; fire: (file: string) => void; closed: string[] } {
   const listeners = new Map<string, () => void>();
@@ -53,7 +56,7 @@ describe('HistoryService watching its files', () => {
   it('reloads and notifies when another process appends', async () => {
     const fake = fakeWatch();
     const onChanged = vi.fn();
-    const history = new HistoryService(userDataDir, undefined, { watch: fake.watch, onChanged });
+    const history = new HistoryService(userDataDir, hostState.redactor, undefined, { watch: fake.watch, onChanged });
     await history.open('proj-1');
     const file = historyFilePath(userDataDir, 'proj-1');
 
@@ -68,7 +71,7 @@ describe('HistoryService watching its files', () => {
   it('does not notify for its own writes', async () => {
     const fake = fakeWatch();
     const onChanged = vi.fn();
-    const history = new HistoryService(userDataDir, undefined, { watch: fake.watch, onChanged });
+    const history = new HistoryService(userDataDir, hostState.redactor, undefined, { watch: fake.watch, onChanged });
     await history.open('proj-1');
 
     await history.recordRestSend('proj-1', {
@@ -93,7 +96,7 @@ describe('HistoryService watching its files', () => {
 
   it('stops watching a project when it closes', async () => {
     const fake = fakeWatch();
-    const history = new HistoryService(userDataDir, undefined, { watch: fake.watch });
+    const history = new HistoryService(userDataDir, hostState.redactor, undefined, { watch: fake.watch });
     await history.open('proj-1');
     await history.open('proj-2');
 
@@ -108,7 +111,7 @@ describe('HistoryService watching its files', () => {
     const watch: HistoryWatch = () => {
       throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
     };
-    const history = new HistoryService(userDataDir, undefined, { watch });
+    const history = new HistoryService(userDataDir, hostState.redactor, undefined, { watch });
 
     await expect(history.open('proj-1')).resolves.toBeUndefined();
 
@@ -138,7 +141,7 @@ describe('HistoryService watching its files', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const fake = fakeWatch();
     const onChanged = vi.fn();
-    const history = new HistoryService(userDataDir, undefined, { watch: fake.watch, onChanged });
+    const history = new HistoryService(userDataDir, hostState.redactor, undefined, { watch: fake.watch, onChanged });
     await history.open('proj-1');
     const file = historyFilePath(userDataDir, 'proj-1');
     // A directory where the file should be makes the reread fail.

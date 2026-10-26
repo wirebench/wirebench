@@ -27,16 +27,18 @@ import type { ExchangeHandle, GrpcMethodKind, GrpcRequestDef, Project } from '@w
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { type RequestChannelDeps } from '../src/main/ipc/request.js';
-import { recordSecretValue } from '../src/main/redact.js';
 import { ExchangeRegistry } from '../src/main/send/exchange.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import type { GrpcExchangeSummary, GrpcLiveEvent } from '../src/shared/kinds/grpc/wire.js';
 import type { FailedExchangeWire, RequestCurlResponse } from '../src/shared/wire-base.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -142,7 +144,7 @@ function seeded(req: GrpcRequestDef = request('SayHello'), target = server.targe
 }
 
 async function openHistory(): Promise<HistoryService> {
-  const history = new HistoryService(userDataDir);
+  const history = new HistoryService(userDataDir, hostState.redactor);
   await history.open('p1');
   return history;
 }
@@ -151,6 +153,7 @@ async function openHistory(): Promise<HistoryService> {
 function registerOver(model: Project, extra: Partial<RequestChannelDeps> = {}): void {
   handlers.clear();
   registerRequestChannelsWithKinds(table, new EngineService(), {
+    hostState,
     project: {
       projectId: () => model.id,
       runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),
@@ -407,7 +410,7 @@ describe('request.sendGrpc through the engine', () => {
     const secretsFor = () => (ref: string) => {
       const found = parseSecretPseudoRef(ref) === 'row_tok' ? value : ref === 'sec_tok' ? TOKEN : undefined;
       // As `projectSecretGetter` records a value it hands out.
-      if (found !== undefined) recordSecretValue(found);
+      if (found !== undefined) hostState.redactor.recordSecretValue(found);
       return Promise.resolve(found);
     };
     // Nothing listens on port 1: the call fails on the wire, after its metadata was resolved.

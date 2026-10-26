@@ -16,7 +16,9 @@ import {
 } from '@wirebench/engine';
 import type { Project, RequestScripts } from '@wirebench/engine';
 import { SESSION_VALUE_LIMIT, ScriptHost } from '../src/main/script-host.js';
-import { recordSecretValue } from '../src/main/redact.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const SCRIPTS: RequestScripts = {
   post: { text: 'log(response.status);' },
@@ -40,6 +42,7 @@ const changed: string[] = [];
 
 function hostFor(project: Project): ScriptHost {
   host = new ScriptHost({
+    redactor: hostState.redactor,
     modelOf: () => project,
     openApiDocumentFor: () => Promise.reject(new Error('no definition')),
     grpcProtoSetFor: () => Promise.reject(new Error('no definition')),
@@ -187,7 +190,7 @@ describe('level scripts (#334)', () => {
 describe('session values', () => {
   it('keeps them per project, lists a secret one without its value, and clears them', () => {
     const scripts = hostFor(model(undefined));
-    recordSecretValue('known-credential-41c7');
+    hostState.redactor.recordSecretValue('known-credential-41c7');
     scripts.keepValues('p1', [
       { name: 'token', value: 'tok-1', secret: true },
       { name: 'echo', value: 'has known-credential-41c7 in it', secret: false },
