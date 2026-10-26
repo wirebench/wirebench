@@ -1,0 +1,72 @@
+/** A `HostPlatform` and `Caller` for tests that must not touch Electron or the real user data. */
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { Caller, Capability, HostPlatform } from '../../src/main/host/platform.js';
+
+const ALL: readonly Capability[] = [
+  'files',
+  'keychain',
+  'ssh',
+  'pty',
+  'kerberos',
+  'dialogs',
+  'send:private',
+  'send:public',
+  'secret-sources',
+  'team-secrets',
+  'updates',
+  'app-lock',
+];
+
+/** Each call gets its own empty `userData` directory under the OS temp directory. */
+export function createFakePlatform(overrides: Partial<HostPlatform> & { userData?: string } = {}): HostPlatform {
+  const { userData, ...rest } = overrides;
+  const dir = userData ?? mkdtempSync(join(tmpdir(), 'wirebench-fake-'));
+  return {
+    paths: { userData: () => dir, temp: () => tmpdir(), logs: () => join(dir, 'logs') },
+    secrets: {
+      available: () => true,
+      encrypt: (plain) => Buffer.from(`sealed:${plain}`, 'utf8'),
+      decrypt: (sealed) => sealed.toString('utf8').replace(/^sealed:/, ''),
+    },
+    app: {
+      version: () => '0.0.0-test',
+      packaged: () => false,
+      quit: () => undefined,
+      osTheme: () => 'light',
+      onOsThemeChanged: () => () => undefined,
+    },
+    proxy: { resolve: () => Promise.resolve('DIRECT') },
+    capabilities: new Set(ALL),
+    ...rest,
+  };
+}
+
+/** A caller that records what it was sent; `close()` ends it. */
+export function fakeCaller(id = 1): Caller & { sent: Array<[string, unknown]>; close(): void } {
+  const sent: Array<[string, unknown]> = [];
+  const listeners = new Set<() => void>();
+  let closed = false;
+  return {
+    id,
+    sent,
+    send(channel, payload) {
+      if (!closed) sent.push([channel, payload]);
+    },
+    isClosed: () => closed,
+    onClosed(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    close() {
+      if (closed) return;
+      closed = true;
+      const pending = [...listeners];
+      listeners.clear();
+      for (const listener of pending) listener();
+    },
+  };
+}
