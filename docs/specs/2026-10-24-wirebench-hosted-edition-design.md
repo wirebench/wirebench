@@ -40,6 +40,17 @@ state); the rest are folded in where they apply · Issue: none yet · Module ids
      blocks a plain loopback socket from an `https` page; Safari users use the desktop app. A locally
      trusted certificate on loopback is a later option; a relay through the server is not taken, because
      private-target traffic must never pass through the hosted server.
+  7. **No free hosted tier** (popup, 2026-10-26). Signup requires a subscription from day one; Community
+     stays free self-hosted only. A hosted tenant is never free server-side sends, catch URLs or schedules
+     for an email address.
+  8. **EU only in the first hosted slice**, with a `region` column on `tenants` from day one so a second
+     region later needs no migration (popup, 2026-10-26).
+  9. **Pairing is always the code** (popup, 2026-10-26). The desktop app never pairs itself, even when it
+     and the browser share a signed-in account on the same machine.
+  10. **Team seats are paid by card through one payment provider's webhook; Enterprise tenants are invoiced
+      by Verathic outside it** and set by the operator command (popup, 2026-10-26).
+  11. **A server host instance is evicted 30 minutes after its last socket closes, and a tenant holds at
+      most as many live instances as it has seats** (popup, 2026-10-26).
 
 ## Assumptions I'm making
 
@@ -254,9 +265,9 @@ second working copy; there is one working copy, on the server host.
 ### 3.6 Tenants
 
 - **Create.** Hosted signup (`https://<site-domain>/signup`, served by the control plane): email, team name,
-  chosen slug, then email verification, then the tenant exists with one user who is server admin of that
-  tenant, Community edition, five enabled accounts. An operator can create a tenant by command line for a
-  sales-led deal.
+  chosen slug, email verification, then a Team subscription by card (decision 7: there is no free hosted
+  tier), then the tenant exists with one user who is server admin of that tenant. An operator creates an
+  Enterprise tenant by command line for an invoiced deal (decision 10).
 - **Slug.** 3–40 characters, `[a-z0-9-]`, not starting or ending with `-`, unique, never reused after
   deletion, and not on the reserved list (`app`, `api`, `www`, `docs`, `status`, `admin`, `agent`, `mail`,
   `help`, `support`, `billing`, `login`, `signup`, every protocol and area name the app has). Changing a
@@ -374,8 +385,9 @@ create table tenants (
   id          uuid primary key,
   slug        text not null unique,
   name        text not null,
-  edition     text not null default 'community',   -- community | team | enterprise
+  edition     text not null default 'community',   -- community (self-hosted only) | team | enterprise
   status      text not null default 'active',      -- active | suspended | deleting
+  region      text not null default 'eu',          -- decision 8: one value today, no migration later
   seats       integer,                              -- null = edition default
   data_key    bytea not null,                       -- wrapped per-tenant secrets key
   created_at  timestamptz not null default now(),
@@ -699,15 +711,8 @@ scheduled earlier on their own merits, each with its own spec amendment and issu
 | The public suffix list submission is slow | `__Host-` cookies and per-origin storage protect sessions before listing |
 | The Elastic License reserves hosting to the project, which is now also the host | ADR-0028 anticipated this; the control plane stays in the server package under the same license |
 
-## 16. Open questions (bold = proposed default)
+## 16. Open questions
 
-1. Which payment provider, and whether invoices for sales-led tenants are issued outside it. **Builder's
-   choice behind the `subscription.*` events; invoices outside for Enterprise.**
-2. The idle eviction period and the per-tenant instance cap. **30 minutes; cap at the tenant's seat count.**
-3. EU-only hosting or a region per tenant. **EU only in the first hosted slice; a region column is added
-   then so it never needs a migration.**
-4. Whether the desktop app should pair automatically when it and the browser share a signed-in account.
-   **Yes, with a confirmation in the desktop app; never silently.**
-5. Whether the hosted edition has a free Community tier at all, given that a free hosted tenant is free
-   server-side sends, catch URLs and schedules for anyone with an email address. **Not decided here; the
-   control plane's signup can require a subscription from day one without any other change.**
+None. The five questions this section held on 2026-10-24 (payment, eviction and the instance cap, region,
+auto-pairing, a free hosted tier) were put to the owner on 2026-10-26 and are decisions 7 to 11 above.
+Which payment provider stays the builder's choice behind the `subscription.*` events.
