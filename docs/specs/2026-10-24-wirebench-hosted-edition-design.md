@@ -49,11 +49,12 @@ state); the rest are folded in where they apply · Issue: none yet · Module ids
      and the browser share a signed-in account on the same machine.
   10. **Team seats are paid by card through one payment provider's subscription webhooks; Enterprise
       tenants are invoiced by Verathic outside it** and set by the operator command (popup, 2026-10-26).
-      The provider is not chosen: Verathic is an Algerian company, and Algeria is not a supported
-      business country for a direct Stripe account (it appears only on Connect payout lists), so the
-      choice depends on the selling entity: a foreign entity (Stripe Atlas or an EU company) with Stripe,
-      or a merchant of record such as Paddle or Lemon Squeezy that sells, handles EU VAT and pays out.
-      Either way the control plane speaks only `subscription.created|updated|deleted`.
+      **The provider is Paddle** (owner, 2026-10-26), as merchant of record: Paddle is the seller on the
+      customer's invoice, collects and remits EU VAT and sales tax, and pays out to Verathic, which is
+      what makes card payments workable for an Algerian company (Algeria is not a supported business
+      country for a direct Stripe account). The control plane still speaks only
+      `subscription.created|updated|deleted`, fed by Paddle's `subscription.*` webhooks through its
+      signature verifier; Paddle's checkout overlay is the only Paddle code on the signup page.
   11. **A server host instance is evicted 30 minutes after its last socket closes, and a tenant holds at
       most as many live instances as it has seats** (popup, 2026-10-26).
 
@@ -557,9 +558,10 @@ are already leased per run; the lease gains the tenant.
 ### 5.6 The control plane
 
 A server module, `packages/server/src/control-plane/`, loaded only when `WIREBENCH_SERVER_MODE=hosted`:
-signup pages and routes, slug rules, the subscription webhook from the payment provider (the provider is
-left to the builder; the module speaks `subscription.created|updated|deleted` and nothing provider-specific
-beyond the webhook verifier), edition changes, suspension, export and deletion jobs, and
+signup pages and routes, slug rules, the subscription webhook from Paddle (decision 10; the module speaks
+`subscription.created|updated|deleted` and nothing provider-specific beyond the webhook signature
+verifier and the checkout overlay, so a second provider is one adapter), edition changes, suspension,
+export and deletion jobs, and
 `wirebench-server admin tenant …` on the box. It owns `tenants`, `subscriptions`, `signups`,
 `tenant_exports` and the retired slugs. It uses the bypass database role (§4.2) and nothing else does.
 
@@ -597,7 +599,8 @@ beyond the webhook verifier), edition changes, suspension, export and deletion j
 
 Nothing new in kind: TypeScript, Fastify, `@fastify/websocket`, `ws`, PostgreSQL 16 with row-level
 security, Vite for the browser build, the engine for every send. New runtime dependencies are confined to
-the control plane (a payment provider SDK or a plain webhook verifier) and are listed in the licences test
+the control plane (Paddle's webhook verification, or a plain HMAC check of its signature header without
+the SDK) and are listed in the licences test
 before they are added. `packages/agent` is a library: the CLI's `wirebench agent` command and the
 desktop app both embed it. Shipping `@wirebench/host` in the CLI tarball drags the Kerberos binding,
 `node-pty`, the device-key helper and the vendored SSH binding along, each with its own packaging
@@ -720,5 +723,4 @@ scheduled earlier on their own merits, each with its own spec amendment and issu
 
 None. The five questions this section held on 2026-10-24 (payment, eviction and the instance cap, region,
 auto-pairing, a free hosted tier) were put to the owner on 2026-10-26 and are decisions 7 to 11 above.
-The payment provider, and the selling entity it requires, is decided with the first hosted slice
-(decision 10).
+The payment provider is Paddle, as merchant of record (decision 10).
