@@ -4,7 +4,7 @@ import { MAX_DOCUMENT_TEXT_BYTES } from '../../../../shared/kinds/soap/wire.js';
 import type { ReadPicks, RecordsWritePicks } from '../../../dialog-picks.js';
 import { checkedImportSource } from '../../../path-access.js';
 import type { EngineService } from '../../../engine-service.js';
-import { pickFolder, pickSaveFile } from '../../../native-dialogs.js';
+import type { NativeDialogs } from '../../../native-dialogs.js';
 import type { ProjectRouter } from '../../../project-router.js';
 import { declarationAtOffset, schemaIndexOf } from '../../../schema-index.js';
 import { emitEvent } from '../../../ipc/events.js';
@@ -39,6 +39,8 @@ export interface DefinitionChannelDeps {
    * chosen by the user rather than merely named by the renderer.
    */
   readonly picks: RecordsWritePicks & ReadPicks;
+  /** The folder and Save-as pickers the export and docs channels run. */
+  readonly dialogs: Pick<NativeDialogs, 'pickFolder' | 'pickSaveFile'>;
 }
 
 /** Default file name for a generated documentation file, per format. */
@@ -132,7 +134,7 @@ export function registerDefinitionChannels(
   if (deps === undefined) {
     return;
   }
-  const { project, picks } = deps;
+  const { project, picks, dialogs } = deps;
 
   registerHandler(table, channels.definition.planUpdate, (request) =>
     project.planDefinitionUpdate(request.interfaceId, request.source),
@@ -149,7 +151,7 @@ export function registerDefinitionChannels(
   });
 
   registerHandler(table, channels.definition.export, async (request, sender) => {
-    const dir = await pickFolder(sender, { title: 'Export definition to folder' });
+    const dir = await dialogs.pickFolder(sender, { title: 'Export definition to folder' });
     if (dir === undefined) {
       return { cancelled: true, files: [] };
     }
@@ -160,7 +162,7 @@ export function registerDefinitionChannels(
     // Render before the dialog: a definition that cannot be documented should say so rather
     // than asking the user where to put a file that will never be written.
     const document = project.definitionDocs(request.interfaceId, request.format);
-    const path = await pickSaveFile(sender, picks, {
+    const path = await dialogs.pickSaveFile(sender, picks, {
       title: 'Save documentation',
       defaultPath: docsFileName(request.format),
       filters:

@@ -55,7 +55,7 @@ import type { PostmanSourceWire } from '../../shared/kinds/rest/wire.js';
 import type { DefinitionAuthWire, OpenApiSourceWire } from '../../shared/wire-base.js';
 import { MAX_DOCUMENT_TEXT_BYTES } from '../../shared/kinds/soap/wire.js';
 import type { ReadPicks } from '../dialog-picks.js';
-import { pickFolder } from '../native-dialogs.js';
+import type { NativeDialogs } from '../native-dialogs.js';
 import type { OpenApiImportService } from '../openapi-import.js';
 import type { ProtoImportService } from '../proto-import.js';
 import { checkedCompanionPaths, checkedImportSource, readCompanionFile, readNoFollow } from '../path-access.js';
@@ -113,6 +113,8 @@ export interface ApiChannelDeps {
   readonly projectDirs: () => readonly string[];
   /** The session's dialog memory: proof a `file` source was picked by the user, not named. */
   readonly picks: ReadPicks;
+  /** The folder picker Export Definition runs. */
+  readonly dialogs: Pick<NativeDialogs, 'pickFolder'>;
   /**
    * Where imported variables are saved: the open workspace, Globals and the secret store, plus the
    * project with `projectId` when one is given (a collection's variables become its properties).
@@ -1101,7 +1103,7 @@ export function registerApiChannels(table: HandlerTable, deps: ApiChannelDeps): 
   });
 
   registerHandler(table, channels.api.exportDefinition, async (request, sender) => {
-    const dir = await pickFolder(sender, { title: 'Export definition to folder' });
+    const dir = await deps.dialogs.pickFolder(sender, { title: 'Export definition to folder' });
     if (dir === undefined) {
       return { cancelled: true, files: [] };
     }

@@ -9,9 +9,7 @@ const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<u
 const table = tableInto(handlers);
 const pickSaveFile = vi.fn<() => Promise<string | undefined>>();
 vi.mock('electron', () => ({ ipcMain: { handle: (n: string, h: never) => handlers.set(n, h) } }));
-vi.mock('../src/main/native-dialogs.js', () => ({
-  pickSaveFile: (...args: unknown[]) => pickSaveFile(...(args as [])),
-}));
+const dialogs = { pickSaveFile: (...args: unknown[]) => pickSaveFile(...(args as [])) };
 
 const { registerAuditChannels, auditFileName } = await import('../src/main/ipc/audit.js');
 const invoke = (channel: string, payload: unknown) => handlers.get(channel)!({ sender: {} }, payload);
@@ -23,7 +21,7 @@ const accounts = (signedIn: boolean) => ({
 });
 const dir = mkdtempSync(join(tmpdir(), 'audit-'));
 const register = (client: object, signedIn = true) =>
-  registerAuditChannels(table, { client: client as never, accounts: accounts(signedIn), picks: {} as never });
+  registerAuditChannels(table, { client: client as never, accounts: accounts(signedIn), picks: {} as never, dialogs });
 
 describe('audit.* channels (audit-log spec §3.6, §5.3)', () => {
   beforeEach(() => {

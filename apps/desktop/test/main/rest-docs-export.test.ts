@@ -55,7 +55,7 @@ beforeEach(() => {
       hostFor: () => ({ open: { project: PROJECT } }),
     },
     picks: { rememberWrite: vi.fn() },
-    pickSave: pickSave as never,
+    dialogs: { pickSaveFile: pickSave as never },
     write: (path, text) => {
       written.push({ path, text });
       return Promise.resolve();

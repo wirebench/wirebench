@@ -20,6 +20,7 @@ import type { DocumentFetchOptions, FetchDocument } from '@wirebench/engine';
 import { apiRestApplyUpdateResponseSchema, type ProjectWire } from '../src/shared/wire-types.js';
 import { apiRestLintResponseSchema, apiRestPlanUpdateResponseSchema } from '../src/shared/kinds/rest/wire.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 const table = tableInto(handlers);
@@ -209,6 +210,7 @@ beforeEach(async () => {
     removeProject: unused,
     projectDirs: () => [projectDir],
     picks: new DialogPicks(),
+    dialogs: fakeNativeDialogs(),
     variablesPorts: unused,
     history: { open: unused, recordImportedRestBatch: unused },
     onHistoryChanged: unused,

@@ -7,7 +7,7 @@ import { once } from 'node:events';
 import { createWriteStream, type WriteStream } from 'node:fs';
 import { channels } from '../../shared/ipc.js';
 import type { RecordsWritePicks } from '../dialog-picks.js';
-import { pickSaveFile } from '../native-dialogs.js';
+import type { NativeDialogs } from '../native-dialogs.js';
 import type { ServerClient } from '../server-client.js';
 import { withToken, type TokenSource } from '../server-token.js';
 import { registerHandler, type HandlerTable } from './register.js';
@@ -16,6 +16,8 @@ export interface AuditChannelDeps {
   readonly client: Pick<ServerClient, 'queryAudit' | 'streamAuditExport'>;
   readonly accounts: TokenSource;
   readonly picks: RecordsWritePicks;
+  /** The Save-as picker the audit export runs. */
+  readonly dialogs: Pick<NativeDialogs, 'pickSaveFile'>;
   /** Injected clock for the default file name. */
   readonly now?: () => Date;
 }
@@ -28,7 +30,7 @@ export function registerAuditChannels(table: HandlerTable, deps: AuditChannelDep
   );
 
   registerHandler(table, channels.audit.export, async (r, sender) => {
-    const path = await pickSaveFile(sender, deps.picks, {
+    const path = await deps.dialogs.pickSaveFile(sender, deps.picks, {
       title: 'Export audit log',
       filters: [{ name: 'Newline-delimited JSON', extensions: ['ndjson'] }],
       defaultPath: auditFileName((deps.now ?? (() => new Date()))()),

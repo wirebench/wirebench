@@ -97,16 +97,22 @@ export function callerForWebContents(contents: WebContents): Caller {
   return caller;
 }
 
-/**
- * The live window a caller's contents belongs to, if any.
- * Exported for the dialog call sites that still parent a native dialog themselves; they move onto
- * `HostPlatform.dialogs` (host-seam Task 3), and this export goes with them.
- */
-export function windowOf(owner: Caller | undefined): BrowserWindow | undefined {
-  if (owner === undefined || owner.isClosed()) return undefined;
+/** The live window a caller's contents belongs to, if any. */
+function windowOf(owner: Caller): BrowserWindow | undefined {
+  if (owner.isClosed()) return undefined;
   const contents = callers.get(owner.id)?.contents;
   if (contents === undefined) return undefined;
   return BrowserWindow.fromWebContents(contents) ?? undefined;
+}
+
+/**
+ * The window a native dialog opens over. No owner means "whichever window the user is in", the
+ * focused one if there is one; an owner that was given but whose window is gone opens the dialog
+ * unparented, not over some other window.
+ */
+function parentOf(owner: Caller | undefined): BrowserWindow | undefined {
+  if (owner === undefined) return BrowserWindow.getFocusedWindow() ?? undefined;
+  return windowOf(owner);
 }
 
 export function createElectronPlatform(): HostPlatform {
@@ -124,14 +130,14 @@ export function createElectronPlatform(): HostPlatform {
     dialogs: {
       async openFile(owner, opts) {
         const options = toMutable(opts);
-        const window = windowOf(owner);
+        const window = parentOf(owner);
         const result =
           window === undefined ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(window, options);
         return { canceled: result.canceled, filePaths: result.filePaths };
       },
       async saveFile(owner, opts) {
         const options = toMutable(opts);
-        const window = windowOf(owner);
+        const window = parentOf(owner);
         const result =
           window === undefined ? await dialog.showSaveDialog(options) : await dialog.showSaveDialog(window, options);
         return result.filePath === undefined
@@ -140,7 +146,7 @@ export function createElectronPlatform(): HostPlatform {
       },
       async message(owner, opts) {
         const options = toMutable(opts);
-        const window = windowOf(owner);
+        const window = parentOf(owner);
         const result =
           window === undefined ? await dialog.showMessageBox(options) : await dialog.showMessageBox(window, options);
         return { response: result.response, checkboxChecked: result.checkboxChecked };

@@ -19,7 +19,7 @@ import { authTypeLabel } from '../../../shared/auth-types.js';
 import { channels } from '../../../shared/ipc.js';
 import type { RecordsWritePicks } from '../../dialog-picks.js';
 import { registerHandler, type HandlerTable } from '../../ipc/register.js';
-import { pickSaveFile } from '../../native-dialogs.js';
+import type { NativeDialogs } from '../../native-dialogs.js';
 
 export type DocsFormat = 'html' | 'markdown';
 
@@ -50,13 +50,12 @@ export interface RestDocsChannelDeps {
   };
   readonly picks: RecordsWritePicks;
   /** The Save dialog; the native one in production. */
-  readonly pickSave?: typeof pickSaveFile;
+  readonly dialogs: Pick<NativeDialogs, 'pickSaveFile'>;
   /** Writes the file; atomic in production. */
   readonly write?: (path: string, text: string) => Promise<void>;
 }
 
 export function registerRestDocsChannels(table: HandlerTable, deps: RestDocsChannelDeps): void {
-  const pickSave = deps.pickSave ?? pickSaveFile;
   const write = deps.write ?? ((path: string, text: string) => writeFileAtomic(nodeFs, path, text));
 
   registerHandler(table, channels.api.exportDocs, async (request, sender: Caller) => {
@@ -69,7 +68,7 @@ export function registerRestDocsChannels(table: HandlerTable, deps: RestDocsChan
     }
     // Built before the dialog: an API that cannot be documented says so instead of asking for a path.
     const file = apiDocsFile(project, request.apiId, request.format);
-    const path = await pickSave(sender, deps.picks, {
+    const path = await deps.dialogs.pickSaveFile(sender, deps.picks, {
       title: 'Save documentation',
       defaultPath: file.fileName,
       filters:

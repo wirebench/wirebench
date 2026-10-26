@@ -18,6 +18,8 @@ import type { ApiChannelDeps } from '../ipc/api.js';
 import type { HistoryChannelDeps } from '../ipc/history.js';
 import type { RequestChannelDeps } from '../ipc/request.js';
 import type { DialogPicks } from '../dialog-picks.js';
+import type { HostPlatform } from '../host/platform.js';
+import type { NativeDialogs } from '../native-dialogs.js';
 import type { EngineService } from '../engine-service.js';
 import type { HistoryService } from '../history-service.js';
 import type { WorkspaceService } from '../workspace-service.js';
@@ -252,6 +254,10 @@ export interface KindChannelDeps {
   /** The folders of every project open in the calling window's workspace. */
   readonly projectDirs: () => readonly string[];
   readonly userDataDir: string;
+  /** The native pickers a kind's file channels run (Export Definition, docs, HAR). */
+  readonly dialogs: NativeDialogs;
+  /** The dialogs and shell a kind's channels reach the machine through. */
+  readonly platform: Pick<HostPlatform, 'dialogs' | 'shell'>;
   /** The native Save-as panel for an HTML export (with the e2e override), the chosen path or undefined. */
   readonly showSaveHtml: (options: { defaultPath: string; title: string }) => Promise<string | undefined>;
 }

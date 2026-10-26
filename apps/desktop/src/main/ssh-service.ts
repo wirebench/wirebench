@@ -1,4 +1,4 @@
-import type { Caller } from './host/platform.js';
+import type { Caller, HostPlatform } from './host/platform.js';
 import { readFile } from 'node:fs/promises';
 import type { z } from 'zod';
 import { WirebenchError, nodeFs, secretPseudoRef, writeFileAtomic } from '@wirebench/engine';
@@ -197,10 +197,10 @@ export function sshSessionsEndOnSwitch(
 
 /** Tells every window when the machine wakes from sleep, so a dropped terminal reconnects at once. */
 export function forwardResume(
-  powerMonitor: { on(event: 'resume', listener: () => void): unknown },
+  power: Pick<NonNullable<HostPlatform['power']>, 'onResume'>,
   broadcast: () => void,
 ): void {
-  powerMonitor.on('resume', broadcast);
+  power.onResume(broadcast);
 }
 
 /** A listener on one session's output as its window sees it, after the masker (a shared terminal, #429). */

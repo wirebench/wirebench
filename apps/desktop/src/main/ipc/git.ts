@@ -16,7 +16,7 @@ import type { Caller } from '../host/platform.js';
 import { findGit as defaultFindGit, WirebenchError } from '@wirebench/engine';
 import type { GitLocation } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
-import { pickFile } from '../native-dialogs.js';
+import type { NativeDialogs } from '../native-dialogs.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
 import { toPreferencesWire } from '../preferences.js';
 import type { PreferencesService } from '../preferences.js';
@@ -29,6 +29,8 @@ export interface GitChannelDeps {
   readonly preferences: Pick<PreferencesService, 'get' | 'update'>;
   /** The session's picked-path memory, the only evidence `GitCli` needs beyond the preference. */
   readonly picks: RecordsReadPicks;
+  /** The Open-file picker `git.locate` runs. */
+  readonly dialogs: Pick<NativeDialogs, 'pickFile'>;
   /**
    * Finds a git executable for `git.detect` — exactly `main/index.ts`'s `gitLocator`, built from
    * `gitLocatorOptions` (e2e override, then a marked `git.path`, then discovery). `git.detect`
@@ -65,7 +67,7 @@ export function registerGitChannels(table: HandlerTable, deps: GitChannelDeps): 
   registerHandler(table, channels.git.locate, async (_request, sender: Caller) => {
     // A cancelled dialog changes nothing, including the git already configured — exactly as
     // `ssl.pickCaBundle` behaves for a cancelled CA bundle pick.
-    const picked = await pickFile(sender, deps.picks, { title: 'Locate git' });
+    const picked = await deps.dialogs.pickFile(sender, deps.picks, { title: 'Locate git' });
     if (picked === undefined) {
       return { preferences: toPreferencesWire(deps.preferences.get()) };
     }

@@ -5,7 +5,7 @@ import type { RecordsWritePicks } from '../dialog-picks.js';
 import type { EngineService } from '../engine-service.js';
 import { harFileName, harOf } from '../har.js';
 import { curlForLogEntry } from '../log-curl.js';
-import { pickSaveFile } from '../native-dialogs.js';
+import type { NativeDialogs } from '../native-dialogs.js';
 import { MAIN_KINDS } from '../kinds/kind-main.js';
 import { registerHandler, type HandlerTable } from './register.js';
 import { toSendDeps, type RequestChannelDeps } from './request.js';
@@ -18,6 +18,8 @@ export interface LogChannelDeps {
   readonly request: RequestChannelDeps;
   /** Records the HAR path the save dialog returned, as every other write pick is. */
   readonly picks: RecordsWritePicks;
+  /** The Save-as picker the HAR export runs. */
+  readonly dialogs: Pick<NativeDialogs, 'pickSaveFile'>;
   /** The `creator.version` a HAR file carries. */
   readonly appVersion: string;
 }
@@ -43,7 +45,7 @@ export function registerLogChannels(table: HandlerTable, deps: LogChannelDeps): 
     // Always show:false, whatever the toggle says: a HAR file is made to be shared.
     const har = harOf(request.entries, { name: 'Wirebench', version: deps.appVersion });
     // The path is never the renderer's to choose: it comes from the native dialog or the e2e override.
-    const path = await pickSaveFile(sender, deps.picks, {
+    const path = await deps.dialogs.pickSaveFile(sender, deps.picks, {
       title: 'Export HAR',
       filters: [{ name: 'HAR', extensions: ['har'] }],
       defaultPath: harFileName(new Date()),

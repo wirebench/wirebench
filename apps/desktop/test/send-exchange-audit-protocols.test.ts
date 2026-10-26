@@ -43,6 +43,7 @@ import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import { sendDepsFor } from './helpers/send-deps.js';
 import { registerHistoryChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 const table = tableInto(handlers);
@@ -383,6 +384,7 @@ describe('a resend', () => {
       service: engine,
       request: requestDeps,
       picks: { rememberWrite: () => undefined },
+      dialogs: fakeNativeDialogs(),
       appVersion: '0.0.0-test',
     });
     return { sendDeps, entries, events, workspaces };

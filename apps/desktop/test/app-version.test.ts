@@ -1,22 +1,18 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { version as manifestVersion } from '../package.json' with { type: 'json' };
-
-const electron = { app: { getVersion: () => '9.9.9', isPackaged: true } };
-
-vi.mock('electron', () => electron);
 
 const { appVersion } = await import('../src/main/app-version.js');
 
+const app = (packaged: boolean) => ({ packaged: () => packaged, version: () => '9.9.9' });
+
 describe('appVersion', () => {
   it('reports what the packaged bundle carries', () => {
-    electron.app.isPackaged = true;
-    expect(appVersion()).toBe('9.9.9');
+    expect(appVersion(app(true))).toBe('9.9.9');
   });
 
   it('falls back to the manifest when unpackaged, where Electron only knows `0.0`', () => {
-    electron.app.isPackaged = false;
-    expect(appVersion()).toBe(manifestVersion);
-    expect(appVersion()).not.toBe('0.0');
+    expect(appVersion(app(false))).toBe(manifestVersion);
+    expect(appVersion(app(false))).not.toBe('0.0');
   });
 });

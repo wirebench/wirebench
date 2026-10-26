@@ -5,28 +5,20 @@ import { tableInto } from './helpers/ipc-table.js';
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 const table = tableInto(handlers);
 
-vi.mock('electron', () => ({
-  nativeTheme: { shouldUseDarkColors: true, on: () => undefined },
-  ipcMain: {
-    handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
-      handlers.set(name, handler);
-    },
-  },
-}));
-
 const { registerThemeChannels, themeOf } = await import('../src/main/ipc/theme.js');
 
-/** A fake `nativeTheme` whose `updated` listener the test can fire by hand. */
+/** A fake platform `app` whose OS-theme listener the test can fire by hand. */
 function fakeNativeTheme(dark: boolean) {
   const listeners: (() => void)[] = [];
+  let current = dark;
   return {
-    shouldUseDarkColors: dark,
-    on(_event: 'updated', listener: () => void) {
+    osTheme: () => (current ? ('dark' as const) : ('light' as const)),
+    onOsThemeChanged(listener: () => void) {
       listeners.push(listener);
-      return this;
+      return () => undefined;
     },
     flip(next: boolean) {
-      this.shouldUseDarkColors = next;
+      current = next;
       for (const listener of listeners) listener();
     },
   };

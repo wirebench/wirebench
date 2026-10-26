@@ -11,8 +11,8 @@
  * deletion is trash-only through the injected {@link WorkspaceServiceDeps.trash} (never an
  * `rm` of anything under `userData`, and never anything at all under a linked root).
  *
- * The one `electron` dependency is `./native-dialogs.js` — the folder picker itself, which is
- * the whole point of these methods taking a `Caller`.
+ * The folder picker is injected ({@link WorkspaceServiceDeps.dialogs}), which is the whole point
+ * of these methods taking a `Caller`.
  */
 
 import type { Caller } from './host/platform.js';
@@ -105,7 +105,6 @@ import type {
 } from '@wirebench/engine';
 import type { RecordsReadPicks, RecordsWritePicks, ReadPicks } from './dialog-picks.js';
 import { applyColorAndProtection } from './environment-flags.js';
-import { pickFolder, pickFolderToWrite } from './native-dialogs.js';
 import type { EngineService } from './engine-service.js';
 import type { CurrentValuesStore } from './current-values.js';
 import type { SecretSourcesSnapshot } from './secret-sources-service.js';
@@ -337,7 +336,7 @@ export interface WorkspaceServiceDeps {
   readonly git?: () => Promise<GitCli | undefined>;
   /** The empty `core.hooksPath` directory every `GitCli` is built with (clones and inits need it). */
   readonly hooksDir?: string;
-  /** The folder pickers share and join run; the native ones unless a test injects its own. */
+  /** The folder pickers share and join run; the native ones in the app, a test's own otherwise. */
   readonly dialogs?: WorkspaceDialogs;
   /** rename/cp/rm for moving a tree between folders; `node:fs` unless a test injects its own. */
   readonly files?: WorkspaceFileOps;
@@ -2309,7 +2308,12 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   private dialogs(): WorkspaceDialogs {
-    return this.deps.dialogs ?? { pickFolder, pickFolderToWrite };
+    if (this.deps.dialogs === undefined) {
+      throw new WirebenchError('host-capability-missing', 'This host has no dialogs', {
+        details: { capability: 'dialogs' },
+      });
+    }
+    return this.deps.dialogs;
   }
 
   // ——— projects ———————————————————————————————————————————————————————————————————————————

@@ -873,7 +873,15 @@ describe('SshService', () => {
   it('forwardResume broadcasts on every wake from sleep', () => {
     const listeners: (() => void)[] = [];
     const broadcast = vi.fn();
-    forwardResume({ on: (_event, listener) => listeners.push(listener) }, broadcast);
+    forwardResume(
+      {
+        onResume: (listener) => {
+          listeners.push(listener);
+          return () => undefined;
+        },
+      },
+      broadcast,
+    );
     for (const listener of listeners) listener();
     for (const listener of listeners) listener();
     expect(broadcast).toHaveBeenCalledTimes(2);

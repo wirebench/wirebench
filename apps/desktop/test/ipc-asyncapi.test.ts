@@ -34,6 +34,7 @@ import {
 import { wsApisOf } from '@wirebench/engine';
 import type { WsApi } from '@wirebench/engine';
 import { tableInto } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 const table = tableInto(handlers);
@@ -192,6 +193,7 @@ beforeEach(async () => {
     },
     projectDirs: () => [projectDir],
     picks: new DialogPicks(),
+    dialogs: fakeNativeDialogs(),
     variablesPorts: unused,
     history: { open: unused, recordImportedRestBatch: unused },
     onHistoryChanged: unused,

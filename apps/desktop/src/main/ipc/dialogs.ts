@@ -1,6 +1,6 @@
 import { channels } from '../../shared/ipc.js';
 import type { RecordsReadPicks, RecordsWritePicks } from '../dialog-picks.js';
-import { pickFile, pickFolder, pickSaveFile } from '../native-dialogs.js';
+import type { NativeDialogs } from '../native-dialogs.js';
 import { registerHandler, type HandlerTable } from './register.js';
 
 /**
@@ -15,20 +15,24 @@ import { registerHandler, type HandlerTable } from './register.js';
  * Open-file target as a *read* pick — so main-side containment checks can treat a user-driven
  * choice as an explicit exception to "stay inside the project" (see `main/path-access.ts`).
  */
-export function registerDialogsChannels(table: HandlerTable, picks: RecordsWritePicks & RecordsReadPicks): void {
+export function registerDialogsChannels(
+  table: HandlerTable,
+  picks: RecordsWritePicks & RecordsReadPicks,
+  dialogs: Pick<NativeDialogs, 'pickFile' | 'pickFolder' | 'pickSaveFile'>,
+): void {
   registerHandler(table, channels.dialogs.openFile, async (request, sender) => ({
-    path: await pickFile(sender, picks, {
+    path: await dialogs.pickFile(sender, picks, {
       ...(request.title !== undefined ? { title: request.title } : {}),
       ...(request.filters !== undefined ? { filters: request.filters } : {}),
     }),
   }));
 
   registerHandler(table, channels.dialogs.openFolder, async (request, sender) => ({
-    path: await pickFolder(sender, request.title !== undefined ? { title: request.title } : {}, picks),
+    path: await dialogs.pickFolder(sender, request.title !== undefined ? { title: request.title } : {}, picks),
   }));
 
   registerHandler(table, channels.dialogs.saveFile, async (request, sender) => ({
-    path: await pickSaveFile(sender, picks, {
+    path: await dialogs.pickSaveFile(sender, picks, {
       ...(request.title !== undefined ? { title: request.title } : {}),
       ...(request.filters !== undefined ? { filters: request.filters } : {}),
       ...(request.defaultPath !== undefined ? { defaultPath: request.defaultPath } : {}),

@@ -92,8 +92,6 @@ describe('createElectronPlatform', () => {
     expect(electron.dialog.showOpenDialog).toHaveBeenLastCalledWith(window, opts);
     await platform.dialogs?.openFile(owner, opts);
     expect(electron.dialog.showOpenDialog).toHaveBeenLastCalledWith(opts);
-    await platform.dialogs?.openFile(undefined, opts);
-    expect(electron.dialog.showOpenDialog).toHaveBeenLastCalledWith(opts);
   });
 });
 

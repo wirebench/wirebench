@@ -1,6 +1,6 @@
-import { windowOf } from '../electron/electron-platform.js';
+import type { HostPlatform } from '../host/platform.js';
+import { requireCapability } from '../host/capability.js';
 import { readFile, stat } from 'node:fs/promises';
-import { BrowserWindow, dialog } from 'electron';
 import { channels } from '../../shared/ipc.js';
 import { registerHandler, type HandlerTable } from './register.js';
 import { nodeFs, writeFileAtomic } from '@wirebench/engine';
@@ -21,15 +21,14 @@ function e2eOpenPathOverride(): string | undefined {
  * text. Distinct from `dialogs.*` (which only returns a chosen path) because these round-trip
  * file *content* through main, where Node's `fs` lives.
  */
-export function registerFsChannels(table: HandlerTable): void {
+export function registerFsChannels(table: HandlerTable, platform: Pick<HostPlatform, 'dialogs'>): void {
   registerHandler(table, channels.fs.saveText, async (request, sender) => {
     const override = e2eSavePathOverride();
     let targetPath: string | undefined;
     if (override !== undefined) {
       targetPath = override;
     } else {
-      const window = windowOf(sender);
-      const result = await dialog.showSaveDialog(window as BrowserWindow, {
+      const result = await requireCapability(platform, 'dialogs').saveFile(sender, {
         ...(request.defaultName !== undefined ? { defaultPath: request.defaultName } : {}),
       });
       targetPath = result.canceled ? undefined : result.filePath;
@@ -50,8 +49,7 @@ export function registerFsChannels(table: HandlerTable): void {
     if (override !== undefined) {
       targetPath = override;
     } else {
-      const window = windowOf(sender);
-      const result = await dialog.showOpenDialog(window as BrowserWindow, {
+      const result = await requireCapability(platform, 'dialogs').openFile(sender, {
         properties: ['openFile'],
         ...(request.filters !== undefined ? { filters: request.filters } : {}),
       });

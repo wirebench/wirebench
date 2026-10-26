@@ -3,6 +3,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ALL_CAPABILITIES, type Caller, type HostPlatform } from '../../src/main/host/platform.js';
+import { createNativeDialogs, type NativeDialogs } from '../../src/main/native-dialogs.js';
 
 /** Each call gets its own empty `userData` directory under the OS temp directory. */
 export function createFakePlatform(overrides: Partial<HostPlatform> & { userData?: string } = {}): HostPlatform {
@@ -80,4 +81,9 @@ export function fakeCaller(id = 1): Caller & { sent: Array<[string, unknown]>; c
       }
     },
   };
+}
+
+/** The native pickers over a fake platform; give it `dialogs` to answer them, or leave them for a test that never opens one. */
+export function fakeNativeDialogs(overrides: Partial<HostPlatform> = {}): NativeDialogs {
+  return createNativeDialogs(createFakePlatform(overrides));
 }

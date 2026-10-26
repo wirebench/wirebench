@@ -15,11 +15,12 @@ import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 import type { WorkspaceWire } from '../src/shared/wire-base.js';
 import { tableInto } from './helpers/ipc-table.js';
 import { asCaller } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
 
 /**
  * What the next folder picker answers. `undefined` is a cancelled dialog.
  *
- * The real {@link pickFolder} runs in every one of these tests — only Electron's `dialog` is
+ * The real `pickFolder` runs in every one of these tests — only the platform's dialog is
  * stubbed — so each test exercises the actual pick-recording path into {@link DialogPicks}
  * rather than a stub that skips it. That is the whole point: "the renderer never names a path"
  * is only true if the main-side picker really is the only way a path gets in.
@@ -30,22 +31,17 @@ let folderPick: string | undefined;
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 const table = tableInto(handlers);
 
-vi.mock('electron', () => ({
-  // The e2e dialog overrides are honoured only in an unpackaged run.
-  app: { isPackaged: false },
-  ipcMain: {
-    handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
-      handlers.set(name, handler);
-    },
-  },
-  BrowserWindow: { fromWebContents: () => undefined },
-  dialog: {
-    showOpenDialog: () =>
+/** The native pickers over a fake platform whose folder dialog answers `folderPick`. */
+const dialogs = fakeNativeDialogs({
+  dialogs: {
+    openFile: () =>
       Promise.resolve(
         folderPick === undefined ? { canceled: true, filePaths: [] } : { canceled: false, filePaths: [folderPick] },
       ),
+    saveFile: () => Promise.resolve({ canceled: true }),
+    message: () => Promise.resolve({ response: 0, checkboxChecked: false }),
   },
-}));
+});
 
 let server: TestSoapServer | undefined;
 let root: string;
@@ -61,6 +57,7 @@ function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceSer
     engine: new EngineService(),
     history: new HistoryService(root),
     picks,
+    dialogs,
     trash: (path: string) => {
       trashed.push(path);
       return Promise.resolve();

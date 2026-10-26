@@ -10,9 +10,7 @@ const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<u
 const table = tableInto(handlers);
 const pickSaveFile = vi.fn<() => Promise<string | undefined>>();
 vi.mock('electron', () => ({ ipcMain: { handle: (n: string, h: never) => handlers.set(n, h) } }));
-vi.mock('../src/main/native-dialogs.js', () => ({
-  pickSaveFile: (...args: unknown[]) => pickSaveFile(...(args as [])),
-}));
+const dialogs = { pickSaveFile: (...args: unknown[]) => pickSaveFile(...(args as [])) };
 
 const { registerLogChannels } = await import('../src/main/ipc/log.js');
 const invoke = (channel: string, payload: unknown) => handlers.get(channel)!({ sender: {} }, payload);
@@ -47,6 +45,7 @@ describe('log.exportHar', () => {
       service: {} as never,
       request: {} as never,
       picks: { rememberWrite: vi.fn() },
+      dialogs,
       appVersion: '1.2.3',
     });
   });

@@ -27,6 +27,7 @@ import type { TestSoapServer } from '@wirebench/engine/test-helpers';
 import { createInterface, createProject, createRequest, type Project, type PropertyScopes } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 const table = tableInto(handlers);
@@ -299,6 +300,7 @@ describe('a SOAP resend trusts the anchors of its project', () => {
       service: new EngineService(),
       request: { project },
       picks: { rememberWrite: () => undefined },
+      dialogs: fakeNativeDialogs(),
       appVersion: '0.0.0-test',
     });
 
@@ -338,6 +340,7 @@ describe('a SOAP resend trusts the anchors of its project', () => {
       service: new EngineService(),
       request: { project },
       picks: { rememberWrite: () => undefined },
+      dialogs: fakeNativeDialogs(),
       appVersion: '0.0.0-test',
     });
 

@@ -472,6 +472,6 @@ export function registerRestHistoryChannels(
 export function registerRestChannels(table: HandlerTable, deps: KindChannelDeps): void {
   registerRestRequestChannels(table, deps.engine, deps.request);
   registerRestApiChannels(table, deps.api);
-  registerRestDocsChannels(table, { router: deps.router, picks: deps.picks });
+  registerRestDocsChannels(table, { router: deps.router, picks: deps.picks, dialogs: deps.dialogs });
   registerRestHistoryChannels(table, deps.history, deps.historyDeps);
 }

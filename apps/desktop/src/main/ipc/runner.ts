@@ -6,11 +6,16 @@
 
 import { channels } from '../../shared/ipc.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
-import { pickFile } from '../native-dialogs.js';
+import type { NativeDialogs } from '../native-dialogs.js';
 import type { RunnerService } from '../runner/runner-service.js';
 import { registerHandler, type HandlerTable } from './register.js';
 
-export function registerRunnerChannels(table: HandlerTable, runner: RunnerService, picks: RecordsReadPicks): void {
+export function registerRunnerChannels(
+  table: HandlerTable,
+  runner: RunnerService,
+  picks: RecordsReadPicks,
+  dialogs: Pick<NativeDialogs, 'pickFile'>,
+): void {
   registerHandler(table, channels.runner.state, (request) => runner.state(request.targetId));
   registerHandler(table, channels.runner.settings.set, async (request) => {
     await runner.setSettings(request.targetId, request.settings);
@@ -18,7 +23,7 @@ export function registerRunnerChannels(table: HandlerTable, runner: RunnerServic
   });
   registerHandler(table, channels.runner.data.choose, (request, sender) =>
     runner.chooseData(request.targetId, () =>
-      pickFile(sender, picks, {
+      dialogs.pickFile(sender, picks, {
         title: 'Choose a data file',
         filters: [{ name: 'Data files', extensions: ['csv', 'json'] }],
       }),

@@ -15,6 +15,7 @@ import {
 import type { AttachmentChannelDeps } from '../src/main/kinds/soap/channels/attachments.js';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createFakePlatform } from './helpers/fake-platform.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 const table = tableInto(handlers);
@@ -22,19 +23,19 @@ const showSaveDialog = vi.fn();
 const showOpenDialog = vi.fn();
 const openPath = vi.fn();
 
-vi.mock('electron', () => ({
-  ipcMain: {
-    handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
-      handlers.set(name, handler);
-    },
+const platform = createFakePlatform({
+  dialogs: {
+    openFile: (owner, opts) => showOpenDialog(owner, opts) as Promise<{ canceled: boolean; filePaths: string[] }>,
+    saveFile: (owner, opts) => showSaveDialog(owner, opts) as Promise<{ canceled: boolean; filePath?: string }>,
+    message: () => Promise.resolve({ response: 0, checkboxChecked: false }),
   },
-  BrowserWindow: { fromWebContents: () => undefined },
-  dialog: {
-    showSaveDialog: (...args: unknown[]) => showSaveDialog(...args) as unknown,
-    showOpenDialog: (...args: unknown[]) => showOpenDialog(...args) as unknown,
+  shell: {
+    openExternal: () => Promise.resolve(),
+    openPath: (path) => openPath(path) as Promise<string>,
+    reveal: () => undefined,
+    trash: () => Promise.resolve(),
   },
-  shell: { openPath: (...args: unknown[]) => openPath(...args) as unknown },
-}));
+});
 
 function invoke(channel: string, payload: unknown): Promise<unknown> {
   const handler = handlers.get(channel);
@@ -85,6 +86,7 @@ describe('attachments.* IPC', () => {
       },
       picks,
       userDataDir,
+      platform,
     };
     registerAttachmentChannels(table, deps);
   }
@@ -168,13 +170,13 @@ describe('attachments.* IPC', () => {
   it('saveResponse offers the attachment name, and the Content-ID plus an extension without one', async () => {
     showSaveDialog.mockResolvedValue({ canceled: true });
     await invoke('attachments.saveResponse', { sendId: 'send-1', index: 0 });
-    expect(showSaveDialog).toHaveBeenLastCalledWith(undefined, {
+    expect(showSaveDialog).toHaveBeenLastCalledWith(expect.anything(), {
       title: 'Save attachment as…',
       defaultPath: 'logo.png',
     });
 
     await invoke('attachments.saveResponse', { sendId: 'send-1', index: 1 });
-    expect(showSaveDialog).toHaveBeenLastCalledWith(undefined, {
+    expect(showSaveDialog).toHaveBeenLastCalledWith(expect.anything(), {
       title: 'Save attachment as…',
       defaultPath: 'part2@wirebench.bin',
     });
@@ -251,7 +253,7 @@ describe('attachments.* IPC', () => {
   it('pickFiles returns every selected path, and splits the e2e override on commas', async () => {
     showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['/a.png', '/b.pdf'] });
     expect(await invoke('attachments.pickFiles', {})).toEqual({ ok: true, value: { paths: ['/a.png', '/b.pdf'] } });
-    expect(showOpenDialog).toHaveBeenCalledWith(undefined, {
+    expect(showOpenDialog).toHaveBeenCalledWith(expect.anything(), {
       title: 'Add attachments',
       properties: ['openFile', 'multiSelections'],
     });
@@ -350,6 +352,7 @@ describe('attachments.* IPC', () => {
       project: { resolveAttachmentPath: () => Promise.resolve(''), addAttachmentBytes: () => Promise.resolve('a') },
       picks: new DialogPicks(),
       userDataDir: dir,
+      platform,
     });
 
     const result = (await invoke('attachments.openResponse', { sendId: '../../escape', index: 0 })) as Envelope<{

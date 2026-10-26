@@ -37,8 +37,13 @@ function sent(n = 0): { sendId: string; requestId: string; options: Record<strin
 import type { RestExchangeSummary } from '../src/shared/kinds/rest/wire.js';
 import type { ExchangeSummary } from '../src/shared/kinds/soap/wire.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
 
-const LOG_EXTRA = { picks: { rememberWrite: () => undefined }, appVersion: '0.0.0-test' };
+const LOG_EXTRA = {
+  picks: { rememberWrite: () => undefined },
+  dialogs: fakeNativeDialogs(),
+  appVersion: '0.0.0-test',
+};
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 const table = tableInto(handlers);

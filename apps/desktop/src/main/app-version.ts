@@ -1,4 +1,4 @@
-import { app } from 'electron';
+import type { HostPlatform } from './host/platform.js';
 import { version as manifestVersion } from '../../package.json' with { type: 'json' };
 
 /**
@@ -12,6 +12,6 @@ import { version as manifestVersion } from '../../package.json' with { type: 'js
  * shows the real version in development and in the e2e runs without changing what a shipped
  * build reports. Same reasoning as the `app.setName('Wirebench')` call in `index.ts`.
  */
-export function appVersion(): string {
-  return app.isPackaged ? app.getVersion() : manifestVersion;
+export function appVersion(app: Pick<HostPlatform['app'], 'packaged' | 'version'>): string {
+  return app.packaged() ? app.version() : manifestVersion;
 }

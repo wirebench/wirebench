@@ -11,9 +11,8 @@
  * is picked again.
  */
 
-import { windowOf } from '../electron/electron-platform.js';
-import type { Caller } from '../host/platform.js';
-import { dialog } from 'electron';
+import type { Caller, HostPlatform } from '../host/platform.js';
+import { requireCapability } from '../host/capability.js';
 import { WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
@@ -28,6 +27,8 @@ export interface SslChannelDeps {
   readonly preferences: Pick<PreferencesService, 'update' | 'ready' | 'isLocked'>;
   /** The session's picked-path memory, the only evidence `ProjectHost.trustAnchors` accepts. */
   readonly picks: RecordsReadPicks;
+  /** The native Open-file dialog `pickCaBundle` runs. */
+  readonly platform: Pick<HostPlatform, 'dialogs'>;
   /** Called after each change so main can broadcast `preferences.changed` to every window. */
   readonly onChanged?: (preferences: PreferencesWire) => void;
 }
@@ -40,18 +41,15 @@ function e2eOpenPathOverride(): string | undefined {
   return process.env['WIREBENCH_E2E_OPEN_PATH'];
 }
 
-async function pickThroughDialog(sender: Caller): Promise<string | undefined> {
-  const window = windowOf(sender);
-  const options: Electron.OpenDialogOptions = {
+async function pickThroughDialog(platform: Pick<HostPlatform, 'dialogs'>, sender: Caller): Promise<string | undefined> {
+  const result = await requireCapability(platform, 'dialogs').openFile(sender, {
     title: 'Choose a CA bundle',
     properties: ['openFile'],
     filters: [
       { name: 'PEM certificates', extensions: CA_BUNDLE_EXTENSIONS },
       { name: 'All files', extensions: ['*'] },
     ],
-  };
-  const result =
-    window === undefined ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(window, options);
+  });
   return result.canceled ? undefined : result.filePaths[0];
 }
 
@@ -80,7 +78,7 @@ export function registerSslChannels(table: HandlerTable, deps: SslChannelDeps): 
     const path =
       override !== undefined
         ? override.split(',').filter((entry) => entry.length > 0)[0]
-        : await pickThroughDialog(sender);
+        : await pickThroughDialog(deps.platform, sender);
     if (path === undefined) {
       // A cancelled dialog changes nothing, including the bundle already configured.
       return { preferences: toPreferencesWire(await deps.preferences.update({})) };

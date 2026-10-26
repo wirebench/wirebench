@@ -21,6 +21,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
+import type { HostPlatform } from './host/platform.js';
 
 /** The pluggable encryption backend. Electron's `safeStorage` satisfies this shape directly. */
 export interface CryptoBackend {
@@ -403,17 +404,13 @@ export class ShowSecretsFlag {
   }
 }
 
-/** Wraps Electron's `safeStorage` module as a {@link CryptoBackend}. */
-export function safeStorageBackend(safeStorage: {
-  isEncryptionAvailable(): boolean;
-  encryptString(text: string): Buffer;
-  decryptString(buffer: Buffer): string;
-}): CryptoBackend {
+/** Wraps the platform's secret sealing (the OS keychain on the desktop) as a {@link CryptoBackend}. */
+export function platformSecretsBackend(secrets: HostPlatform['secrets']): CryptoBackend {
   return {
     get available() {
-      return safeStorage.isEncryptionAvailable();
+      return secrets.available();
     },
-    encrypt: (text) => safeStorage.encryptString(text),
-    decrypt: (buffer) => safeStorage.decryptString(buffer),
+    encrypt: (text) => secrets.encrypt(text),
+    decrypt: (buffer) => secrets.decrypt(buffer),
   };
 }

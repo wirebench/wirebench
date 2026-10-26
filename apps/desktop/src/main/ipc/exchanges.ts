@@ -1,5 +1,5 @@
-import { windowOf } from '../electron/electron-platform.js';
-import { BrowserWindow, dialog } from 'electron';
+import type { HostPlatform } from '../host/platform.js';
+import { requireCapability } from '../host/capability.js';
 import { nodeFs, WirebenchError, writeFileAtomic } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import { extensionForContentType } from '../kinds/soap/channels/attachments.js';
@@ -18,6 +18,7 @@ export function registerExchangeChannels(
   table: HandlerTable,
   cache: ExchangeCache,
   showSecrets: { get(): boolean },
+  platform: Pick<HostPlatform, 'dialogs'>,
 ): void {
   registerHandler(table, channels.exchanges.saveRestBody, async (request, sender) => {
     const summary = cache.getRest(request.sendId);
@@ -33,8 +34,7 @@ export function registerExchangeChannels(
     const contentType = summary.http.headers['content-type'] ?? 'application/octet-stream';
     let targetPath = process.env['WIREBENCH_E2E_SAVE_PATH'];
     if (targetPath === undefined) {
-      const window = windowOf(sender);
-      const result = await dialog.showSaveDialog(window as BrowserWindow, {
+      const result = await requireCapability(platform, 'dialogs').saveFile(sender, {
         title: 'Save response as…',
         defaultPath: `response${extensionForContentType(contentType)}`,
       });

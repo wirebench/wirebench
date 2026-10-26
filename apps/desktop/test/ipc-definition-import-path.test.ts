@@ -17,6 +17,7 @@ import type { DefinitionChannelProject } from '../src/main/kinds/soap/channels/d
 import { registerDefinitionChannels } from '../src/main/kinds/soap/channels/definition.js';
 import { readPublicFixture } from './helpers/fixtures.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
 
 const { readFileSpy } = vi.hoisted(() => ({ readFileSpy: vi.fn<(path: unknown) => void>() }));
 
@@ -86,7 +87,12 @@ describe('definition.import — a file path must be proven, not merely named', (
     picks = new DialogPicks();
     const project = {} as unknown as DefinitionChannelProject;
     // Every open project's folder counts as "inside the project"; this workspace has one.
-    registerDefinitionChannels(table, new EngineService(), { project, picks, projectDirs: () => [projectDir] });
+    registerDefinitionChannels(table, new EngineService(), {
+      project,
+      picks,
+      projectDirs: () => [projectDir],
+      dialogs: fakeNativeDialogs(),
+    });
   });
 
   afterEach(async () => {

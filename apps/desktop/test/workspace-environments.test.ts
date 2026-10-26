@@ -2,7 +2,7 @@
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadLocalState, loadWorkspace, parseSecretSources, secretSourcesHash } from '@wirebench/engine';
 import { readFileSync } from 'node:fs';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
@@ -14,21 +14,22 @@ import { ExchangeRegistry, sendThroughEngine, type SendThroughEngineDeps } from 
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 import { asCaller } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
 
 /** What the next folder picker answers; `undefined` is a cancelled dialog. */
 let folderPick: string | undefined;
 
-vi.mock('electron', () => ({
-  // The e2e dialog overrides are honoured only in an unpackaged run.
-  app: { isPackaged: false },
-  BrowserWindow: { fromWebContents: () => undefined },
-  dialog: {
-    showOpenDialog: () =>
+/** The native pickers over a fake platform whose folder dialog answers `folderPick`. */
+const dialogs = fakeNativeDialogs({
+  dialogs: {
+    openFile: () =>
       Promise.resolve(
         folderPick === undefined ? { canceled: true, filePaths: [] } : { canceled: false, filePaths: [folderPick] },
       ),
+    saveFile: () => Promise.resolve({ canceled: true }),
+    message: () => Promise.resolve({ response: 0, checkboxChecked: false }),
   },
-}));
+});
 
 /** The interface's WSDL is served by `primary`; `secondary` is what an environment redirects to. */
 let primary: TestSoapServer;
@@ -46,6 +47,7 @@ function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceSer
     engine,
     history: new HistoryService(root),
     picks,
+    dialogs,
     trash: () => Promise.resolve(),
     ...overrides,
   });

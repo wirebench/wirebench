@@ -33,11 +33,7 @@ vi.mock('electron', () => ({
 }));
 
 const pickFolder = vi.fn<() => Promise<string | undefined>>();
-vi.mock('../src/main/native-dialogs.js', () => ({
-  pickFolder: () => pickFolder(),
-  pickSaveFile: () => Promise.resolve(undefined),
-  pickOpenFile: () => Promise.resolve(undefined),
-}));
+const dialogs = { pickFolder: () => pickFolder() };
 
 const { registerApiChannelsWithKinds } = await import('./helpers/kind-channels.js');
 type ApiChannelDeps = Parameters<typeof registerApiChannelsWithKinds>[1];
@@ -239,6 +235,7 @@ function setup(overrides: Partial<ApiChannelDeps> = {}): {
     removeProject: vi.fn().mockResolvedValue(undefined),
     projectDirs: () => [],
     picks: new DialogPicks(),
+    dialogs,
     variablesPorts: () => fakeVariablesPorts().ports,
     history: {
       open: vi.fn().mockResolvedValue(undefined),

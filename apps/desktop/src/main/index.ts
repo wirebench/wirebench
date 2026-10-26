@@ -17,10 +17,10 @@ import {
   type GetSecret,
 } from '@wirebench/engine';
 import { setDeviceKeySigner } from '@wirebench/ssh';
-import { app, BrowserWindow, dialog, powerMonitor, protocol, safeStorage, session, shell } from 'electron';
-import { registerAppProtocol } from './app-protocol-handler.js';
+import { app, BrowserWindow, powerMonitor, protocol } from 'electron';
+import { registerAppProtocol } from './electron/app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES, isExternalUrlAllowed } from './security.js';
-import { confirmProtectedDialog, pickFile, saveOverride } from './native-dialogs.js';
+import { createNativeDialogs } from './native-dialogs.js';
 import { DialogPicks } from './dialog-picks.js';
 import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
@@ -37,7 +37,7 @@ import { portableDataDir } from './portable.js';
 import { readLeftoverProjectFolders, toFeatureStateWire, WorkspaceService } from './workspace-service.js';
 import { WorkspaceState } from './workspace-state.js';
 import { routeWorkspaces, scoped, WindowScopes } from './window-scope.js';
-import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
+import { platformSecretsBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { recordSecretValue, redactSecretText } from './redact.js';
 import { SecretSourcesService } from './secret-sources-service.js';
 import { projectSecretGetter, secretStoreLabel } from './secret-resolver.js';
@@ -52,7 +52,7 @@ import { events } from '../shared/ipc.js';
 import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
 import { bindIpc } from './electron/ipc-binding.js';
-import { callerForWebContents } from './electron/electron-platform.js';
+import { callerForWebContents, createElectronPlatform } from './electron/electron-platform.js';
 import type { Caller } from './host/platform.js';
 import type { HandlerTable } from './ipc/register.js';
 import {
@@ -167,8 +167,10 @@ import { registerSslChannels } from './ipc/ssl.js';
 import { registerGitChannels } from './ipc/git.js';
 import { registerSyncChannels } from './ipc/sync.js';
 import { registerThemeChannels } from './ipc/theme.js';
-import { createMainWindow } from './windows.js';
-import { createUpdateController } from './update-service.js';
+import { createMainWindow } from './electron/windows.js';
+import { createUpdateController } from './electron/update-service.js';
+import { createElectronAppMenu } from './electron/app-menu.js';
+import { requireCapability } from './host/capability.js';
 import type { IpcEvent } from '../shared/ipc.js';
 import type { z } from 'zod';
 import type { WorkspaceWire } from '../shared/wire-base.js';
@@ -177,6 +179,11 @@ import type { WorkspaceWire } from '../shared/wire-base.js';
 // early. This is what lets the packaged renderer be served from a real (non-`file://`)
 // origin, which Monaco's web workers need.
 protocol.registerSchemesAsPrivileged([{ scheme: APP_SCHEME, privileges: APP_SCHEME_PRIVILEGES }]);
+
+/** The Electron end of the host seam: every module below reaches the machine through this, not `electron`. */
+const platform = createElectronPlatform();
+const nativeDialogs = createNativeDialogs(platform);
+const hostShell = requireCapability(platform, 'shell');
 
 // e2e (see `e2e/helpers/launch-app.ts`) launches every test against a fresh, isolated
 // profile instead of the developer's real one, set via this env var rather than a CLI flag
@@ -188,7 +195,7 @@ const e2eUserDataDir = process.env['WIREBENCH_USER_DATA_DIR'];
 // (see `portable.ts`); same constraint, it has to be set before anything reads `userData`.
 const portableDir = portableDataDir({
   platform: process.platform,
-  isPackaged: app.isPackaged,
+  isPackaged: platform.app.packaged(),
   exePath: process.execPath,
 });
 if (e2eUserDataDir !== undefined) {
@@ -198,7 +205,7 @@ if (e2eUserDataDir !== undefined) {
 }
 
 /** The keychain-backed secret store; never exposes values to the renderer (no `secrets.get`). */
-const secretStore = new SecretStore(app.getPath('userData'), safeStorageBackend(safeStorage));
+const secretStore = new SecretStore(platform.paths.userData(), platformSecretsBackend(platform.secrets));
 /** Session-only "show secrets" toggle, consulted by `redact.ts` via `request.send`. */
 const showSecretsFlag = new ShowSecretsFlag();
 
@@ -241,11 +248,11 @@ interface WindowScope {
 const scopes = new WindowScopes<WindowScope>();
 
 /** The user's application preferences, shared by every project and every window. */
-const preferencesService = new PreferencesService(app.getPath('userData'), {
+const preferencesService = new PreferencesService(platform.paths.userData(), {
   // Managed machines: an administrator's policy file locks the settings it names (see `policy.ts`).
-  policyFile: policyFilePath({ platform: process.platform, env: process.env, isPackaged: app.isPackaged }),
+  policyFile: policyFilePath({ platform: process.platform, env: process.env, isPackaged: platform.app.packaged() }),
   // A default User-Agent names the release that sends it.
-  appVersion: appVersion(),
+  appVersion: appVersion(platform.app),
 });
 
 /**
@@ -307,7 +314,7 @@ const openExternalChecked = async (url: string): Promise<void> => {
   if (!isExternalUrlAllowed(url)) {
     throw new WirebenchError('external-url-refused', 'That sign-in URL is not an http(s) address');
   }
-  await shell.openExternal(url);
+  await hostShell.openExternal(url);
 };
 
 /**
@@ -376,7 +383,7 @@ const mainHttpDeps: MainHttpDeps = {
   // Preferences are the app's, so the paths they name are app picks.
   picks: appPicks,
   getSecret: secretsFor(undefined),
-  resolveSystemProxy: async (target) => await session.defaultSession.resolveProxy(target).catch(() => undefined),
+  resolveSystemProxy: async (target) => await platform.proxy.resolve(target).catch(() => undefined),
 };
 
 /** The Wirebench Server HTTP client, shared by every account and every server it signs into. */
@@ -390,7 +397,7 @@ const serverClient = new ServerClient({
 
 /** Who this installation is signed in as, per Wirebench Server (identity spec §3.8, §4.3). */
 const accountService = new AccountService({
-  userDataDir: app.getPath('userData'),
+  userDataDir: platform.paths.userData(),
   client: serverClient,
   secrets: secretStore,
   openExternal: openExternalChecked,
@@ -484,7 +491,7 @@ function applyWindowTitle(window: BrowserWindow, workspace: WorkspaceWire | null
 }
 
 /** The user's `${#Global#name}` scope, shared by every project and every window. */
-const globalProperties = new GlobalProperties(app.getPath('userData'));
+const globalProperties = new GlobalProperties(platform.paths.userData());
 
 /** The calling window's cookie jar (cookie jar spec §2); each window's follows its own workspace. */
 const cookieStore = scoped(scopes, (scope) => scope.cookies);
@@ -492,7 +499,7 @@ const cookieStore = scoped(scopes, (scope) => scope.cookies);
 const currentValues = scoped(scopes, (scope) => scope.currentValues);
 
 /** Persistent request history — one jsonl file per open project under `userData`, watched for other writers. */
-const historyService = new HistoryService(app.getPath('userData'), () => preferencesService.get().ui.historyCap, {
+const historyService = new HistoryService(platform.paths.userData(), () => preferencesService.get().ui.historyCap, {
   watch: watchHistoryFile,
   onChanged: (projectId) => broadcast(events.history.changed, { projectId }),
 });
@@ -508,9 +515,9 @@ const historyService = new HistoryService(app.getPath('userData'), () => prefere
  * choosing, so a packaged app always uses the real trash.
  */
 async function trashFolder(target: string): Promise<void> {
-  const e2eTrashDir = app.isPackaged ? undefined : process.env['WIREBENCH_E2E_TRASH_DIR'];
+  const e2eTrashDir = platform.app.packaged() ? undefined : process.env['WIREBENCH_E2E_TRASH_DIR'];
   if (e2eTrashDir === undefined) {
-    await shell.trashItem(target);
+    await hostShell.trash(target);
     return;
   }
   await mkdir(e2eTrashDir, { recursive: true });
@@ -520,7 +527,7 @@ async function trashFolder(target: string): Promise<void> {
 // `core.hooksPath` for every `GitCli.run` call points here: an empty, writable directory, so
 // a cloned or joined tree's own `.git/hooks` (or any hook a remote's push tries to install)
 // never runs. Created once in `whenReady`, before any workspace (and so any sync) can open.
-const hooksDir = join(app.getPath('userData'), 'git-hooks-empty');
+const hooksDir = join(platform.paths.userData(), 'git-hooks-empty');
 
 // e2e cannot install a real git on every runner, so this simulates "git missing"/"git found
 // at this exact path" instead. Honoured only in an unpackaged run, for the same reason every
@@ -530,7 +537,9 @@ const hooksDir = join(app.getPath('userData'), 'git-hooks-empty');
 // runner that has a real one), then a git.path preference main itself picked (`configuredGitPath`
 // — an unmarked or cleared value never counts), then plain discovery.
 const gitLocator = (): ReturnType<typeof findGit> =>
-  findGit(gitLocatorOptions({ env: process.env, isPackaged: app.isPackaged, preferences: preferencesService.get() }));
+  findGit(
+    gitLocatorOptions({ env: process.env, isPackaged: platform.app.packaged(), preferences: preferencesService.get() }),
+  );
 
 /**
  * How long closing WebSocket sessions may hold up a project close or the quit while their History
@@ -552,7 +561,7 @@ const secretScans = scoped(scopes, (scope) => scope.secretScans);
  */
 let areas: AreasRun = resolveAreas({ env: process.env });
 /** The device each serial host (#426) opens on this machine, per workspace. */
-const serialDevices = new SerialDeviceStore(join(app.getPath('userData'), SERIAL_DEVICES_FILE));
+const serialDevices = new SerialDeviceStore(join(platform.paths.userData(), SERIAL_DEVICES_FILE));
 
 /**
  * This run's feature switches (phase 4 spec §4.2): the `features` preference, resolved once the
@@ -562,12 +571,12 @@ const serialDevices = new SerialDeviceStore(join(app.getPath('userData'), SERIAL
  * placeholders and are saved untouched. A changed preference applies at the next start.
  */
 /** This run's plugins, loaded in `whenReady` with the preferences (phase 7 §6); none before that. */
-let plugins: DesktopPlugins = loadDesktopPlugins({ userData: app.getPath('userData'), off: true });
+let plugins: DesktopPlugins = loadDesktopPlugins({ userData: platform.paths.userData(), off: true });
 
 let features: FeaturesRun = startupFeatures({
   preferences: { features: {} },
   env: process.env,
-  isPackaged: app.isPackaged,
+  isPackaged: platform.app.packaged(),
 });
 
 /** The calling window's `hosts.yaml` (each window has its own, for its own workspace; see `createWindowScope`). */
@@ -585,7 +594,11 @@ const snippetsService = scoped(scopes, (scope) => scope.snippets);
  */
 const deviceHelper = new DeviceHelper({
   platform: process.platform,
-  dir: deviceHelperDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }),
+  dir: deviceHelperDir({
+    isPackaged: platform.app.packaged(),
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+  }),
 });
 const deviceKeys = new DeviceKeys(deviceHelper, process.platform);
 setDeviceKeySigner(deviceKeys);
@@ -612,14 +625,14 @@ const sshSecretsUnlocked = (sender: Caller): GetSecret =>
 const sshConnectDeps = {
   hosts: (sender: Caller) => sshScopeOf(scopes, sender).hosts,
   secretsFor: (sender: Caller) => lockedGetter(appLock, sshSecretsUnlocked(sender)),
-  knownHostsFile: join(app.getPath('userData'), 'ssh-known-hosts.json'),
+  knownHostsFile: join(platform.paths.userData(), 'ssh-known-hosts.json'),
   agentSocket: () => (process.platform === 'win32' ? 'pageant' : process.env['SSH_AUTH_SOCK']),
 };
 /** Keys refused to a terminal or a Files tab: one `ssh.trust` prompt serves both. */
 const sshRefusals = new RefusalStore();
 const sshConnector = createSshConnector({ ...sshConnectDeps, refusals: sshRefusals });
 /** Session logs (#414): per-machine switches, and the logs under `userData/session-logs` within the size limit. */
-const sessionLogSwitches = new SessionLogSwitches(join(app.getPath('userData'), SESSION_LOG_SWITCHES_FILE));
+const sessionLogSwitches = new SessionLogSwitches(join(platform.paths.userData(), SESSION_LOG_SWITCHES_FILE));
 /** Team session logs (#430): what a recording workspace's server should hold, streamed as it is written. */
 const sessionLogUploader = new SessionLogUploader({
   client: serverClient,
@@ -634,7 +647,7 @@ const sessionLogUploader = new SessionLogUploader({
   },
 });
 const sessionLogs = new SessionLogStore({
-  root: join(app.getPath('userData'), SESSION_LOGS_DIR),
+  root: join(platform.paths.userData(), SESSION_LOGS_DIR),
   uploader: sessionLogUploader,
   limits: () => {
     const terminal = preferencesService.get().terminal;
@@ -672,7 +685,7 @@ const sshService = new SshService({
       },
       options,
     ),
-  hostOsFile: join(app.getPath('userData'), 'ssh-host-os.json'),
+  hostOsFile: join(platform.paths.userData(), 'ssh-host-os.json'),
   emit: emitEvent,
   snippets: (sender: Caller) => sshScopeOf(scopes, sender).snippets,
   refusals: sshRefusals,
@@ -762,7 +775,7 @@ const localTerminals = new LocalTerminalService({
   cwd: (sender) => {
     const workspace = sshScopeOf(scopes, sender).workspace;
     const tree = workspace.openWorkspaceId() === undefined ? undefined : workspace.treeDir();
-    return localShellCwd({ tree, userData: app.getPath('userData'), home: homedir(), platform: process.platform });
+    return localShellCwd({ tree, userData: platform.paths.userData(), home: homedir(), platform: process.platform });
   },
   env: () => localShellEnv(process.env),
 });
@@ -771,13 +784,13 @@ const sftpService = new SftpService({ connector: sshConnector, emit: emitEvent }
 /** The Files tab's copies, a queue per window over that window's own SFTP sessions. */
 const sftpTransfers = new TransferQueue({ sftp: sftpService, emit: emitEvent });
 /** Where an edited remote file's copy lives while the system editor has it; swept at start-up. */
-const sftpEditRoot = join(app.getPath('userData'), 'sftp-edit');
+const sftpEditRoot = join(platform.paths.userData(), 'sftp-edit');
 /** The Files tab's edits in the system editor, uploaded on save, owned per window over its own sessions. */
 const sftpEdits = new SftpEditService({
   sftp: sftpService,
   emit: emitEvent,
   root: sftpEditRoot,
-  openPath: (path) => shell.openPath(path),
+  openPath: (path) => hostShell.openPath(path),
   // Copies a crash left behind go before the first edit makes a new one.
   swept: sweepEditCopies(sftpEditRoot),
 });
@@ -785,7 +798,7 @@ const sftpEdits = new SftpEditService({
 const forwardService = new ForwardService({
   hosts: sshConnectDeps.hosts,
   connector: sshConnector,
-  binds: createForwardBinds(join(app.getPath('userData'), 'ssh-forward-binds.json'), {
+  binds: createForwardBinds(join(platform.paths.userData(), 'ssh-forward-binds.json'), {
     report: (message) => {
       console.warn(`[forward] ${message}`);
     },
@@ -802,7 +815,7 @@ const sshKeys = new SshKeysService({
 });
 
 /** `workspace-state.json`, one queue for every window's workspace service. */
-const workspaceState = new WorkspaceState(app.getPath('userData'));
+const workspaceState = new WorkspaceState(platform.paths.userData());
 
 /**
  * Builds one window's own services (design D1), every callback aimed at that window alone: its
@@ -848,8 +861,8 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
   const teamSecretStore = new TeamSecretStore(secretStore, teamSecrets);
   // Saved encrypted with the keychain, or not at all; every change reaches the window as `cookies.changed`.
   const cookies = new CookieStore({
-    userDataDir: app.getPath('userData'),
-    crypto: safeStorageBackend(safeStorage),
+    userDataDir: platform.paths.userData(),
+    crypto: platformSecretsBackend(platform.secrets),
     onChanged: (state) => {
       send(events.cookies.changed, state);
     },
@@ -884,7 +897,8 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
     holdAutosave: (projectId) => workspace.hostFor(projectId).holdAutosave(),
   });
   const workspace: WorkspaceService = new WorkspaceService({
-    userDataDir: app.getPath('userData'),
+    userDataDir: platform.paths.userData(),
+    dialogs: nativeDialogs,
     state: workspaceState,
     sweepJoining,
     features,
@@ -973,7 +987,7 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
     trash: trashFolder,
     // "System proxy" means whatever Chromium's own network stack means by it — including any PAC
     // file or OS setting — rather than a second, subtly different guess of our own.
-    resolveSystemProxy: async (url) => await session.defaultSession.resolveProxy(url).catch(() => undefined),
+    resolveSystemProxy: async (url) => await platform.proxy.resolve(url).catch(() => undefined),
     // Read lazily: the scan sessions are built against this very service.
     secretScans: {
       findings: (projectId): number => secretScans.findings(projectId),
@@ -1097,21 +1111,21 @@ function auditSignedInFor(
 // the About panel read "Wirebench" in development too. A packaged bundle already carries it as
 // `productName` (CFBundleName); without this, a `pnpm dev` run shows Electron's own name.
 app.setName('Wirebench');
-app.setAboutPanelOptions({ applicationName: 'Wirebench', applicationVersion: appVersion() });
+app.setAboutPanelOptions({ applicationName: 'Wirebench', applicationVersion: appVersion(platform.app) });
 
 void app.whenReady().then(async () => {
   // The switches come from the preferences file, so it is read before anything registers a kind.
   const startupPreferences = await preferencesService.load();
   // Plugins load once, from the app's own data folder (ADR-0031), before the registry is built.
   plugins = loadDesktopPlugins({
-    userData: app.getPath('userData'),
+    userData: platform.paths.userData(),
     off: startupPreferences.features['plugins'] === false,
     network: (url) => mainHttpOptions(url, mainHttpDeps),
   });
   features = startupFeatures({
     preferences: startupPreferences,
     env: process.env,
-    isPackaged: app.isPackaged,
+    isPackaged: platform.app.packaged(),
     ...(plugins.host !== undefined ? { plugins: plugins.host } : {}),
   });
   // The managed policy (read by the load above) may switch an area off (#360); it beats the environment.
@@ -1123,7 +1137,7 @@ void app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window);
   });
 
-  forwardResume(powerMonitor, () => {
+  forwardResume(requireCapability(platform, 'power'), () => {
     broadcast(events.ssh.resumed, {});
   });
   // The app lock locks again when the machine does, and after the idle time (#428).
@@ -1141,6 +1155,7 @@ void app.whenReady().then(async () => {
   mkdirSync(hooksDir, { recursive: true });
 
   const updates = createUpdateController(
+    platform,
     (status) => {
       broadcast(events.app.updateStatus, { status });
     },
@@ -1149,13 +1164,13 @@ void app.whenReady().then(async () => {
       channel: () => preferencesService.get().updates.channel,
     },
   );
-  setUpKerberos({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
+  setUpKerberos({ isPackaged: platform.app.packaged(), resourcesPath: process.resourcesPath });
   // Every channel's handler goes into this one table; `bindIpc` serves it over `ipcMain` once all are in.
   const handlerTable: HandlerTable = new Map();
   registerKerberosChannels(handlerTable);
   registerAppChannels(
     handlerTable,
-    undefined,
+    { app: platform.app, menu: createElectronAppMenu(platform.app) },
     async () => await updates.check({ trigger: 'user' }),
     // New Window (design D7) opens at the picker.
     () => {
@@ -1196,7 +1211,7 @@ void app.whenReady().then(async () => {
   );
   // This machine's MCP stdio approvals (#79); a send with no window of its own asks in the focused one.
   const mcpApprovals = new McpApprovals({
-    store: new McpApprovalStore(join(app.getPath('userData'), MCP_APPROVALS_FILE)),
+    store: new McpApprovalStore(join(platform.paths.userData(), MCP_APPROVALS_FILE)),
     defaultWindow: () => {
       const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
       return window === undefined ? undefined : promptWindowOf(callerForWebContents(window.webContents));
@@ -1251,7 +1266,7 @@ void app.whenReady().then(async () => {
       void scope?.audit.enqueue(event, workspaceId);
     },
     auditWorkspace: () => scopes.callerOrOnly()?.audit.workspaceId,
-    confirmProtected: confirmProtectedDialog,
+    confirmProtected: nativeDialogs.confirmProtected,
   };
   registerRequestChannels(handlerTable, engineService, requestDeps);
   registerMockChannels(handlerTable, mockRunner, {
@@ -1296,8 +1311,8 @@ void app.whenReady().then(async () => {
       service: engineService,
       requests: requestDeps,
       modelOf: (entityId) => workspaceService.hostOfEntity(entityId).model(),
-      settings: new RunnerSettingsStore(app.getPath('userData')),
-      history: new RunnerHistoryStore(app.getPath('userData')),
+      settings: new RunnerSettingsStore(platform.paths.userData()),
+      history: new RunnerHistoryStore(platform.paths.userData()),
       emit: (event) => {
         emitToCaller(events.runner.progress, event);
       },
@@ -1308,6 +1323,7 @@ void app.whenReady().then(async () => {
         ),
     }),
     dialogPicks,
+    nativeDialogs,
   );
   registerOAuth2Channels(handlerTable, {
     oauth2: oauth2Service,
@@ -1330,7 +1346,12 @@ void app.whenReady().then(async () => {
   registerCiTokenChannels(handlerTable, { client: serverClient, accounts: accountService });
   registerLicenseChannels(handlerTable, { client: serverClient, accounts: accountService });
   registerProvisioningChannels(handlerTable, { client: serverClient, accounts: accountService });
-  registerAuditChannels(handlerTable, { client: serverClient, accounts: accountService, picks: dialogPicks });
+  registerAuditChannels(handlerTable, {
+    client: serverClient,
+    accounts: accountService,
+    picks: dialogPicks,
+    dialogs: nativeDialogs,
+  });
   registerHooksChannels(handlerTable, { hooks: hooksService });
   registerSchedulesChannels(handlerTable, {
     schedules: schedulesService,
@@ -1418,6 +1439,7 @@ void app.whenReady().then(async () => {
     },
     projectDirs: openProjectDirs,
     picks: dialogPicks,
+    dialogs: nativeDialogs,
     history: historyService,
     onHistoryChanged: (projectId) => broadcast(events.history.changed, { projectId }),
     // Every read goes to the live workspace, so a second environment of the same name in one
@@ -1486,11 +1508,11 @@ void app.whenReady().then(async () => {
   registerApiChannels(handlerTable, apiDeps);
   registerWorkspaceChannels(handlerTable, {
     service: workspaceService,
-    suggestions: async () => await readLeftoverProjectFolders(app.getPath('userData')),
+    suggestions: async () => await readLeftoverProjectFolders(platform.paths.userData()),
     // The calling window's reopen of the last workspace (see `openWindow`).
     ready: () => scopes.callerOrOnly()?.ready ?? Promise.resolve(),
     reveal: (dir) => {
-      shell.showItemInFolder(dir);
+      hostShell.reveal(dir);
     },
   });
   registerGlobalsChannels(handlerTable, globalProperties, onGlobalsChanged);
@@ -1528,6 +1550,7 @@ void app.whenReady().then(async () => {
   registerSslChannels(handlerTable, {
     preferences: preferencesService,
     picks: appPicks,
+    platform,
     onChanged: (preferences) => {
       broadcast(events.preferences.changed, { preferences });
     },
@@ -1535,6 +1558,7 @@ void app.whenReady().then(async () => {
   registerGitChannels(handlerTable, {
     preferences: preferencesService,
     picks: appPicks,
+    dialogs: nativeDialogs,
     // `git.detect` uses exactly `gitLocator`'s precedence (e2e override, then a marked
     // `git.path`, then discovery) — no configured-path logic of its own, so a marked preference
     // can never bypass the e2e "no git" override. `git.locate` keeps probing the picked file
@@ -1547,15 +1571,19 @@ void app.whenReady().then(async () => {
   registerSyncChannels(handlerTable, {
     service: workspaceService,
     reveal: (path) => {
-      shell.showItemInFolder(path);
+      hostShell.reveal(path);
     },
   });
-  registerThemeChannels(handlerTable, (payload) => {
-    broadcast(events.theme.changed, payload);
-  });
-  registerDialogsChannels(handlerTable, dialogPicks);
+  registerThemeChannels(
+    handlerTable,
+    (payload) => {
+      broadcast(events.theme.changed, payload);
+    },
+    platform.app,
+  );
+  registerDialogsChannels(handlerTable, dialogPicks, nativeDialogs);
   registerPluginChannels(handlerTable, { plugins: () => plugins, picks: dialogPicks });
-  registerFsChannels(handlerTable);
+  registerFsChannels(handlerTable, platform);
   // A kind that is off registers no channels: a call to one is refused as an unknown channel.
   for (const kind of MAIN_KINDS.filter((candidate) => features.enabledKinds.includes(candidate.kind))) {
     kind.registerChannels(handlerTable, {
@@ -1567,15 +1595,17 @@ void app.whenReady().then(async () => {
       router: workspaceService,
       picks: dialogPicks,
       projectDirs: openProjectDirs,
-      userDataDir: app.getPath('userData'),
+      userDataDir: platform.paths.userData(),
+      dialogs: nativeDialogs,
+      platform,
       // Mirrors `dialogs.saveFile`, including its e2e override: a Playwright run cannot drive a
       // native Save-as panel, so the same env var short-circuits both.
       showSaveHtml: async (options) => {
-        const override = saveOverride();
+        const override = nativeDialogs.saveOverride();
         if (override !== undefined) {
           return override;
         }
-        const result = await dialog.showSaveDialog({
+        const result = await requireCapability(platform, 'dialogs').saveFile(undefined, {
           title: options.title,
           defaultPath: options.defaultPath,
           filters: [{ name: 'HTML', extensions: ['html'] }],
@@ -1604,15 +1634,16 @@ void app.whenReady().then(async () => {
       }
     }),
   );
-  registerExchangeChannels(handlerTable, engineService.exchanges, showSecretsFlag);
+  registerExchangeChannels(handlerTable, engineService.exchanges, showSecretsFlag, platform);
   registerLogChannels(handlerTable, {
     showSecrets: showSecretsFlag,
     service: engineService,
     request: requestDeps,
     picks: dialogPicks,
-    appVersion: appVersion(),
+    dialogs: nativeDialogs,
+    appVersion: appVersion(platform.app),
   });
-  registerKeystoreChannels(handlerTable, { project: workspaceService, picks: dialogPicks });
+  registerKeystoreChannels(handlerTable, { project: workspaceService, picks: dialogPicks, platform });
   registerCertificateChannels(handlerTable, { project: workspaceService, preferences: preferencesService });
   registerEnabledAreaChannels(handlerTable, areas.enabled, {
     hosts: hostsService,
@@ -1621,7 +1652,7 @@ void app.whenReady().then(async () => {
     sftp: sftpService,
     snippets: snippetsService,
     layouts: {
-      layouts: new LayoutStore(join(app.getPath('userData'), LAYOUTS_FILE)),
+      layouts: new LayoutStore(join(platform.paths.userData(), LAYOUTS_FILE)),
       workspaceId: () => scopes.callerOrOnly()?.workspace.openWorkspaceId(),
     },
     transfers: sftpTransfers,
@@ -1646,7 +1677,7 @@ void app.whenReady().then(async () => {
         accounts: accountService,
       },
       reveal: (path) => {
-        shell.showItemInFolder(path);
+        hostShell.reveal(path);
       },
     },
     terminalShares: { owner: terminalShareOwner, viewer: terminalShareViewer },
@@ -1654,13 +1685,13 @@ void app.whenReady().then(async () => {
     localTerminal: areas.localTerminal ? localTerminals : undefined,
     importer: new SshImportService<Caller>({
       home: () => homedir(),
-      pick: (sender, options) => pickFile(sender, dialogPicks, options),
+      pick: (sender, options) => nativeDialogs.pickFile(sender, dialogPicks, options),
       hosts: hostsService,
       secrets: sshSecrets,
     }),
     knownHostsImporter: new KnownHostsImportService<Caller>({
       home: () => homedir(),
-      pick: (sender) => pickFile(sender, dialogPicks, { title: 'Choose a known_hosts file' }),
+      pick: (sender) => nativeDialogs.pickFile(sender, dialogPicks, { title: 'Choose a known_hosts file' }),
       hosts: hostsService,
       store: sshService,
     }),
@@ -1668,11 +1699,11 @@ void app.whenReady().then(async () => {
   bindIpc(handlerTable);
   // Last session's decrypted attachment copies are disposable; sweep them off the disk without
   // making the first window wait on it.
-  void clearAttachmentsTmp(app.getPath('userData'));
+  void clearAttachmentsTmp(platform.paths.userData());
   // A lowered size limit, or logs from before a crash, are brought under the limit; prune never throws.
   void sessionLogs.prune();
   // Logs an earlier run left half sent go on streaming; one cut off by a crash ends as lost.
-  void sessionLogUploader.resume(join(app.getPath('userData'), SESSION_LOGS_DIR));
+  void sessionLogUploader.resume(join(platform.paths.userData(), SESSION_LOGS_DIR));
   // Warms the in-memory map so the first send does not have to wait on a disk read, and corrects
   // any early `globals.get` subscriber that raced ahead of the load with the on-disk properties.
   void globalProperties.load().then(
@@ -1736,7 +1767,7 @@ let openedOne = false;
  * path for it alone before it goes.
  */
 function openWindow(options: { readonly reopenLast: boolean }): WindowScope {
-  const window = createMainWindow();
+  const window = createMainWindow(platform);
   const scope = createWindowScope(window, !openedOne);
   openedOne = true;
   scopes.add(scope.id, scope);

@@ -289,6 +289,7 @@ export function registerSoapChannels(table: HandlerTable, deps: KindChannelDeps)
     project: deps.router,
     picks: deps.picks,
     projectDirs: deps.projectDirs,
+    dialogs: deps.dialogs,
   });
   registerXmlChannels(table, deps.engine);
   registerXpathChannels(table);
@@ -303,6 +304,7 @@ export function registerSoapChannels(table: HandlerTable, deps: KindChannelDeps)
     project: deps.router,
     picks: deps.picks,
     userDataDir: deps.userDataDir,
+    platform: deps.platform,
   });
   registerWsaChannels(table, { project: deps.router });
   registerWssChannels(table, { project: deps.router });

@@ -2,25 +2,13 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { registerFsChannels } from '../src/main/ipc/fs.js';
 import { tableInto } from './helpers/ipc-table.js';
+import { createFakePlatform } from './helpers/fake-platform.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 const table = tableInto(handlers);
-
-vi.mock('electron', () => ({
-  ipcMain: {
-    handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
-      handlers.set(name, handler);
-    },
-  },
-  BrowserWindow: { fromWebContents: () => undefined },
-  dialog: {
-    showSaveDialog: vi.fn(),
-    showOpenDialog: vi.fn(),
-  },
-}));
 
 function invoke(channel: string, payload: unknown): Promise<unknown> {
   const handler = handlers.get(channel);
@@ -36,7 +24,7 @@ describe('fs.* IPC', () => {
   beforeEach(async () => {
     handlers.clear();
     dir = await mkdtemp(join(tmpdir(), 'wirebench-fs-test-'));
-    registerFsChannels(table);
+    registerFsChannels(table, createFakePlatform());
   });
 
   afterEach(async () => {
