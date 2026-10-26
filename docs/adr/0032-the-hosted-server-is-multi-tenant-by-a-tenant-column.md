@@ -1,7 +1,7 @@
 # ADR-0032: the hosted server is multi-tenant by a tenant column
 
 Date: 2026-10-24 · Status: accepted (owner, 2026-10-24, popup; design
-`docs/specs/2026-10-24-wirebench-hosted-edition-design.md` §4, §5.3, §5.4) · Issue: none yet
+`docs/specs/2026-10-24-wirebench-hosted-edition-design.md` §4, §5.3, §5.4) · Issue: #776
 
 ## Context
 
@@ -31,14 +31,24 @@ row-level security.** Precisely:
   the migration, whose slug is never shown. Hosted and self-hosted run the same image.
 - Every tenant-scoped table carries `tenant_id uuid not null references tenants(id)`, and every uniqueness
   rule of the earlier designs becomes composite with it.
-- Every tenant-scoped table has row-level security enabled with one policy,
-  `tenant_id = current_setting('wirebench.tenant_id')::uuid`. The server opens every request's
-  transaction with `set local wirebench.tenant_id`; a query outside such a transaction sees no rows.
+- Every tenant-scoped table has row-level security **enabled and forced**, with one policy,
+  `tenant_id = nullif(current_setting('wirebench.tenant_id', true), '')::uuid`. Forced, because
+  PostgreSQL applies no policy to a table's owner otherwise, and one role runs both the migrations and
+  the queries on every installation; without `force` the guard would be absent exactly where it matters.
+  `missing_ok` and `nullif`, so a query outside a tenant transaction sees no rows rather than raising.
+- The setting is scoped per unit of work: a repository call runs inside `withTenant(scope, fn)`, a short
+  transaction with `set local`, never one transaction per HTTP request.
 - Repositories take a `TenantScope` as their first argument, so a call without one does not compile.
-- A migration test fails when a table lacks the column or the policy and is not on the allowlist
-  (`schema_migrations`, `server_identity`).
-- Every module has an integration test with two tenants in which one writes and the other reads nothing.
-- Only the control plane, loaded in hosted mode alone, connects with a role that bypasses the policies.
+- A migration test fails when a table lacks the column, the policy or `force` and is not on the named
+  allowlist: `schema_migrations`, `server_identity`, and the control plane's own tables (`tenants`,
+  `tenant_slugs_retired`, `signups`).
+- Every module has an integration test with two tenants in which one writes and the other reads nothing,
+  run as the owner role on purpose.
+- Everything that runs outside a request (the scheduler, retention and forwarding jobs, token sweeps,
+  the live hub's queries) enumerates tenants through a reader that sees only `tenants` and runs one
+  `withTenant` transaction per tenant; the few truly global steps run on a named, audited bypass.
+- Only the control plane, loaded in hosted mode alone, connects with a role that has `BYPASSRLS`; the
+  default role has none.
 
 ## Consequences
 
