@@ -47,10 +47,13 @@ state); the rest are folded in where they apply · Issue: none yet · Module ids
      region later needs no migration (popup, 2026-10-26).
   9. **Pairing is always the code** (popup, 2026-10-26). The desktop app never pairs itself, even when it
      and the browser share a signed-in account on the same machine.
-  10. **Team seats are paid by card through Stripe's subscription webhooks; Enterprise tenants are invoiced
-      by Verathic outside it** and set by the operator command (popup, 2026-10-26; Stripe named by the
-      owner the same day, since it works for Verathic from Algeria). The control plane still speaks only
-      `subscription.created|updated|deleted`, so the provider stays replaceable.
+  10. **Team seats are paid by card through one payment provider's subscription webhooks; Enterprise
+      tenants are invoiced by Verathic outside it** and set by the operator command (popup, 2026-10-26).
+      The provider is not chosen: Verathic is an Algerian company, and Algeria is not a supported
+      business country for a direct Stripe account (it appears only on Connect payout lists), so the
+      choice depends on the selling entity: a foreign entity (Stripe Atlas or an EU company) with Stripe,
+      or a merchant of record such as Paddle or Lemon Squeezy that sells, handles EU VAT and pays out.
+      Either way the control plane speaks only `subscription.created|updated|deleted`.
   11. **A server host instance is evicted 30 minutes after its last socket closes, and a tenant holds at
       most as many live instances as it has seats** (popup, 2026-10-26).
 
@@ -717,4 +720,5 @@ scheduled earlier on their own merits, each with its own spec amendment and issu
 
 None. The five questions this section held on 2026-10-24 (payment, eviction and the instance cap, region,
 auto-pairing, a free hosted tier) were put to the owner on 2026-10-26 and are decisions 7 to 11 above.
-The payment provider is Stripe (decision 10).
+The payment provider, and the selling entity it requires, is decided with the first hosted slice
+(decision 10).
