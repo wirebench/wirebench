@@ -47,8 +47,10 @@ state); the rest are folded in where they apply · Issue: none yet · Module ids
      region later needs no migration (popup, 2026-10-26).
   9. **Pairing is always the code** (popup, 2026-10-26). The desktop app never pairs itself, even when it
      and the browser share a signed-in account on the same machine.
-  10. **Team seats are paid by card through one payment provider's webhook; Enterprise tenants are invoiced
-      by Verathic outside it** and set by the operator command (popup, 2026-10-26).
+  10. **Team seats are paid by card through Stripe's subscription webhooks; Enterprise tenants are invoiced
+      by Verathic outside it** and set by the operator command (popup, 2026-10-26; Stripe named by the
+      owner the same day, since it works for Verathic from Algeria). The control plane still speaks only
+      `subscription.created|updated|deleted`, so the provider stays replaceable.
   11. **A server host instance is evicted 30 minutes after its last socket closes, and a tenant holds at
       most as many live instances as it has seats** (popup, 2026-10-26).
 
@@ -715,4 +717,4 @@ scheduled earlier on their own merits, each with its own spec amendment and issu
 
 None. The five questions this section held on 2026-10-24 (payment, eviction and the instance cap, region,
 auto-pairing, a free hosted tier) were put to the owner on 2026-10-26 and are decisions 7 to 11 above.
-Which payment provider stays the builder's choice behind the `subscription.*` events.
+The payment provider is Stripe (decision 10).
