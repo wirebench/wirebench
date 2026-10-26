@@ -112,6 +112,12 @@ export interface HostPlatform {
   };
   /** Electron's PAC string for `target`; `'DIRECT'` when there is no proxy. */
   readonly proxy: { resolve(target: string): Promise<string> };
-  readonly power?: { onResume(listener: () => void): () => void };
+  readonly power?: {
+    onResume(listener: () => void): () => void;
+    /** Runs `listener` when the screen locks or the machine suspends; returns a function that unsubscribes. */
+    onLock(listener: () => void): () => void;
+    /** Seconds since the last input anywhere on the machine. */
+    idleSeconds(): number;
+  };
   readonly capabilities: ReadonlySet<Capability>;
 }

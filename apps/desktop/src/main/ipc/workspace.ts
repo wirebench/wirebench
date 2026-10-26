@@ -70,7 +70,7 @@ export interface WorkspaceChannelDeps {
  * pick, so the only folders the app touches outside the workspace are ones the user chose in
  * person — a renderer-supplied path would be a hole in exactly that rule.
  *
- * `workspace.changed` is raised through `WorkspaceHooks` in `main/index.ts` rather than from
+ * `workspace.changed` is raised through `WorkspaceHooks` in `main/host/create-host.ts` rather than from
  * here: it also fires outside any invocation (a project finishing its open, a save on quit).
  */
 export function registerWorkspaceChannels(table: HandlerTable, deps: WorkspaceChannelDeps): void {

@@ -15,6 +15,8 @@ import { conversionWire } from '../../src/main/convert-scripts.js';
 import { EngineService } from '../../src/main/engine-service.js';
 import { ProjectHost } from '../../src/main/project-host.js';
 import { ScriptHost } from '../../src/main/script-host.js';
+import { Redactor } from '../../src/main/host/redactor.js';
+import { testHooks } from '../helpers/project-hooks.js';
 
 const PRE = 'pm.environment.set("token", "abc");\npm.sendRequest("http://x.test");\nnotDeclared();\n';
 
@@ -26,7 +28,7 @@ const LAYERED: RequestScripts = {
 };
 
 const made: string[] = [];
-const hosts: { close(): Promise<void> | void }[] = [];
+const hosts: { close(): Promise<unknown> | void }[] = [];
 afterEach(async () => {
   for (const host of hosts.splice(0)) await host.close();
   for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
@@ -37,7 +39,7 @@ async function openProject(): Promise<{ host: ProjectHost; dir: string; parent: 
   const parent = mkdtempSync(join(tmpdir(), 'wirebench-convert-'));
   made.push(parent);
   const dir = join(parent, 'Demo');
-  const host = new ProjectHost(new EngineService(), {});
+  const host = new ProjectHost(new EngineService(), testHooks());
   hosts.push(host);
   await host.create({ dir, name: 'Demo' });
   host.applyModelUpdate((project: Project) => ({
@@ -80,6 +82,7 @@ describe('proposing conversions', () => {
   it('propose returns levels with diffs, TODO counts and type-check problems', { timeout: 60_000 }, async () => {
     const { host } = await openProject();
     const scripts = new ScriptHost({
+      redactor: new Redactor(),
       modelOf: () => host.model(),
       openApiDocumentFor: () => Promise.reject(new Error('no definition')),
       grpcProtoSetFor: () => Promise.reject(new Error('no definition')),

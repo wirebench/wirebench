@@ -52,7 +52,7 @@ describe('globals.get IPC handler', () => {
     );
 
     // Call the handler before anything has triggered `load()` — simulating the handler being
-    // registered (and called) ahead of `main/index.ts`'s startup warm-up resolving.
+    // registered (and called) ahead of `main/host/create-host.ts`'s startup warm-up resolving.
     const result = await getHandler(undefined);
 
     expect(result).toEqual({ ok: true, value: { properties: { token: 'abc' }, disabled: [] } });

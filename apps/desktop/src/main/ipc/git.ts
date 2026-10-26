@@ -7,7 +7,7 @@
  * renderer cannot write it (`preferences.update` refuses a patch carrying it, see
  * `MAIN_ONLY_KEYS` in `ipc/preferences.ts`), and instead asks main to detect it or run a picker.
  * Main records a picked path through `DialogPicks.rememberRead` (via the shared `pickFile`) and
- * persists it itself, alongside `pathPickedByMain: true`; `main/index.ts` re-records a pick at
+ * persists it itself, alongside `pathPickedByMain: true`; `main/host/create-host.ts` re-records a pick at
  * startup only for a path carrying that marker, exactly as `rememberPickedCaBundle` does for the
  * CA bundle.
  */
@@ -32,7 +32,7 @@ export interface GitChannelDeps {
   /** The Open-file picker `git.locate` runs. */
   readonly dialogs: Pick<NativeDialogs, 'pickFile'>;
   /**
-   * Finds a git executable for `git.detect` — exactly `main/index.ts`'s `gitLocator`, built from
+   * Finds a git executable for `git.detect` — exactly `main/host/create-host.ts`'s `gitLocator`, built from
    * `gitLocatorOptions` (e2e override, then a marked `git.path`, then discovery). `git.detect`
    * must apply no configured-path logic of its own: doing so previously let a *marked*
    * `git.path` preference bypass the e2e override entirely, since `configuredGitPath` was

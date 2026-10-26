@@ -151,7 +151,7 @@ describe('the pickers over the platform dialogs', () => {
   });
 
   it('refuses with host-capability-missing on a platform with no dialogs', async () => {
-    const bare = createNativeDialogs(createFakePlatform());
+    const bare = createNativeDialogs(createFakePlatform({ without: ['dialogs'] }));
     await expect(bare.pickFolder(SENDER)).rejects.toMatchObject({
       code: 'host-capability-missing',
       details: { capability: 'dialogs' },
@@ -161,6 +161,8 @@ describe('the pickers over the platform dialogs', () => {
 
   it('answers an e2e override even on a platform with no dialogs', async () => {
     process.env['WIREBENCH_E2E_DIALOG_FOLDER'] = '/e2e/only';
-    await expect(createNativeDialogs(createFakePlatform()).pickFolder(SENDER)).resolves.toBe('/e2e/only');
+    await expect(createNativeDialogs(createFakePlatform({ without: ['dialogs'] })).pickFolder(SENDER)).resolves.toBe(
+      '/e2e/only',
+    );
   });
 });

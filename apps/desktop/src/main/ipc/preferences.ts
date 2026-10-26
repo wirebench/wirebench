@@ -9,7 +9,7 @@ import { registerHandler, type HandlerTable } from './register.js';
  * Registers the `preferences.*` IPC channels against the shared {@link PreferencesService}.
  *
  * Preferences are user-scoped, not project-scoped, so a change made in one window has to reach
- * every other one: `onChanged` is invoked after each write and `main/index.ts` broadcasts it as
+ * every other one: `onChanged` is invoked after each write and `main/host/create-host.ts` broadcasts it as
  * the `preferences.changed` event. Every channel answers with the whole document, so the
  * renderer never merges a patch into a mirror that might have drifted.
  *

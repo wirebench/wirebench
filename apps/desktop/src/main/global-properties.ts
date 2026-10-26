@@ -185,7 +185,7 @@ export class GlobalProperties {
 
   /**
    * Resolves once the initial `load()` has completed. Every read/write handler awaits this
-   * before touching `properties`, so an early call (before `main/index.ts`'s startup warm-up
+   * before touching `properties`, so an early call (before `main/host/create-host.ts`'s startup warm-up
    * finishes) sees on-disk state rather than the empty default.
    */
   ready(): Promise<GlobalsState> {

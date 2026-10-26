@@ -183,6 +183,15 @@ export function createElectronPlatform(): HostPlatform {
           powerMonitor.off('resume', listener);
         };
       },
+      onLock(listener) {
+        powerMonitor.on('lock-screen', listener);
+        powerMonitor.on('suspend', listener);
+        return () => {
+          powerMonitor.off('lock-screen', listener);
+          powerMonitor.off('suspend', listener);
+        };
+      },
+      idleSeconds: () => powerMonitor.getSystemIdleTime(),
     },
     capabilities: new Set(ALL_CAPABILITIES),
   };

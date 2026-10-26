@@ -96,7 +96,7 @@ async function refuseLegacyProjectAsWsdl(source: { kind: string; path?: string }
  * names. Every request carries a `projectId` because a workspace has no single "open project".
  *
  * Only the request/response half lives here: `project.changed`, `project.changedOnDisk` and
- * `project.hydration` are raised through `WorkspaceHooks` wired up in `main/index.ts`, because
+ * `project.hydration` are raised through `WorkspaceHooks` wired up in `main/host/create-host.ts`, because
  * those fire outside any single invocation (autosave, the folder watcher, background
  * hydration) and so have no `sender` to reply to.
  */

@@ -7,7 +7,7 @@ import { registerHandler, type HandlerTable } from './register.js';
  * Registers the `globals.*` IPC channels against the shared {@link GlobalProperties} store.
  *
  * Global properties are user-scoped, not project-scoped, so a change made in one window has to
- * reach every other one: `onChanged` is invoked after each write and `main/index.ts` broadcasts
+ * reach every other one: `onChanged` is invoked after each write and `main/host/create-host.ts` broadcasts
  * it as the `globals.changed` event. Every channel answers with the whole state (map plus its
  * `disabled` names), so the renderer never has to merge a patch into a mirror that might have
  * drifted.

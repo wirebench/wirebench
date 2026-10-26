@@ -6,7 +6,7 @@
  * therefore cannot write it — `preferences.update` refuses a patch carrying it — and instead
  * asks main to run the picker. Main records the result through `DialogPicks.rememberRead`
  * (exactly as `keystores.pickFile` does) and persists the path itself, alongside
- * `caBundlePickedByMain: true`; `main/index.ts` re-records a pick at startup only for a path
+ * `caBundlePickedByMain: true`; `main/host/create-host.ts` re-records a pick at startup only for a path
  * carrying that marker, so a `preferences.yaml` edited by hand adds no trust until the bundle
  * is picked again.
  */

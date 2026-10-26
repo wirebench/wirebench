@@ -469,7 +469,7 @@ describe('secret source warnings in the SOAP preflight', () => {
   }, 60_000);
 
   it('hands the REST, gRPC and WebSocket preflights the same snapshot, in the app wiring', () => {
-    const index = readFileSync(join(__dirname, '../src/main/index.ts'), 'utf8');
+    const index = readFileSync(join(__dirname, '../src/main/host/create-host.ts'), 'utf8');
     expect(index).toContain('secretSources: () => workspaceService.secretSourcesSnapshot()');
   });
 });

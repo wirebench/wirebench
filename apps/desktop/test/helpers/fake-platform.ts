@@ -2,14 +2,20 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { OptionalPart } from '../../src/main/host/capability.js';
 import { ALL_CAPABILITIES, type Caller, type HostPlatform } from '../../src/main/host/platform.js';
 import { createNativeDialogs, type NativeDialogs } from '../../src/main/native-dialogs.js';
 
-/** Each call gets its own empty `userData` directory under the OS temp directory. */
-export function createFakePlatform(overrides: Partial<HostPlatform> & { userData?: string } = {}): HostPlatform {
-  const { userData, ...rest } = overrides;
+/**
+ * Each call gets its own empty `userData` directory under the OS temp directory. Every optional part is
+ * there, doing nothing (dialogs cancel, the shell and power never act), unless `without` names it.
+ */
+export function createFakePlatform(
+  overrides: Partial<HostPlatform> & { userData?: string; without?: readonly OptionalPart[] } = {},
+): HostPlatform {
+  const { userData, without = [], ...rest } = overrides;
   const dir = userData ?? mkdtempSync(join(tmpdir(), 'wirebench-fake-'));
-  return {
+  const platform: HostPlatform = {
     paths: { userData: () => dir, temp: () => tmpdir(), logs: () => join(dir, 'logs') },
     secrets: {
       available: () => true,
@@ -24,9 +30,26 @@ export function createFakePlatform(overrides: Partial<HostPlatform> & { userData
       onOsThemeChanged: () => () => undefined,
     },
     proxy: { resolve: () => Promise.resolve('DIRECT') },
+    dialogs: {
+      openFile: () => Promise.resolve({ canceled: true, filePaths: [] }),
+      saveFile: () => Promise.resolve({ canceled: true }),
+      message: (_owner, opts) => Promise.resolve({ response: opts.cancelId ?? 0, checkboxChecked: false }),
+    },
+    shell: {
+      openExternal: () => Promise.resolve(),
+      openPath: () => Promise.resolve(''),
+      reveal: () => undefined,
+      trash: () => Promise.resolve(),
+    },
+    power: { onResume: () => () => undefined, onLock: () => () => undefined, idleSeconds: () => 0 },
     capabilities: new Set(ALL_CAPABILITIES),
     ...rest,
   };
+  if (without.length === 0) return platform;
+  // Rebuilt rather than `delete`d: the platform's members are readonly.
+  return Object.fromEntries(
+    Object.entries(platform).filter(([key]) => !(without as readonly string[]).includes(key)),
+  ) as unknown as HostPlatform;
 }
 
 /** A caller that records what it was sent; `close()` ends it and `reset()` makes it start over, as a reloaded renderer does. */

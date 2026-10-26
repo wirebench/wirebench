@@ -198,12 +198,12 @@ export function sshSessionsEndOnSwitch(
   });
 }
 
-/** Tells every window when the machine wakes from sleep, so a dropped terminal reconnects at once. */
+/** Tells every window when the machine wakes from sleep, so a dropped terminal reconnects at once; returns a function that stops. */
 export function forwardResume(
   power: Pick<NonNullable<HostPlatform['power']>, 'onResume'>,
   broadcast: () => void,
-): void {
-  power.onResume(broadcast);
+): () => void {
+  return power.onResume(broadcast);
 }
 
 /** A listener on one session's output as its window sees it, after the masker (a shared terminal, #429). */

@@ -19,7 +19,7 @@ describe('requireCapability', () => {
     'refuses with host-capability-missing when there is no %s',
     (part) => {
       try {
-        requireCapability(createFakePlatform(), part);
+        requireCapability(createFakePlatform({ without: [part] }), part);
         expect.unreachable();
       } catch (error) {
         expect(error).toBeInstanceOf(WirebenchError);

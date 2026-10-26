@@ -508,7 +508,7 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
   });
 
   it('a session closed by the app still records its History entry before the wait resolves', async () => {
-    // The shutdown path in `main/index.ts`: ask every socket to close, then wait for each pending
+    // The shutdown path in `main/host/create-host.ts`: ask every socket to close, then wait for each pending
     // `request.openWs` to have written its entry. Quitting (or closing the project) before that
     // wait would drop the entry — the history file closes with the project, and the process with
     // the app.
