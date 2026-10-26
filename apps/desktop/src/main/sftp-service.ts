@@ -1,4 +1,4 @@
-import type { WebContents } from 'electron';
+import type { Caller } from './host/platform.js';
 import { WirebenchError } from '@wirebench/engine';
 import { openSftp } from '@wirebench/ssh';
 import type { RemoteEntry, SftpSession } from '@wirebench/ssh';
@@ -31,7 +31,7 @@ export interface SftpServiceDeps {
 
 interface Live {
   readonly session: SftpSession;
-  readonly sender: WebContents;
+  readonly sender: Caller;
   readonly stop: () => void;
 }
 
@@ -54,7 +54,7 @@ const entryWire = (entry: RemoteEntry): SftpEntryWire => ({
 });
 
 /**
- * The Files tab's SFTP sessions, each owned by the WebContents that opened it, as the terminal's are: only
+ * The Files tab's SFTP sessions, each owned by the Caller that opened it, as the terminal's are: only
  * that window can use or close it, and only it hears `sftp.closed`. Each session dials its own hop chain
  * through the shared {@link SshConnector}, so host keys and secrets are handled as for a terminal. A local
  * place works on this machine's paths as given (spec R5; `local-fs.ts`).
@@ -63,7 +63,7 @@ export class SftpService {
   private readonly live = new Map<string, Live>();
   /** Senders already watched for going away or reloading (one set of listeners per window). */
   private readonly watched = new Set<number>();
-  private readonly closedListeners = new Set<(sender: WebContents, sessionId: string) => void>();
+  private readonly closedListeners = new Set<(sender: Caller, sessionId: string) => void>();
   /** Bumped by {@link disposeAll}; an open that straddles it closes what it opened. */
   private epoch = 0;
   /** Windows with an open in flight, by sender id; {@link disposeFor} bumps the generation. */
@@ -75,7 +75,7 @@ export class SftpService {
    * @throws WirebenchError the `ssh.connect` refusals (`ssh-host-key-new`, `secret-missing`, …) |
    *   `sftp-unavailable` | `ssh-session-closed` when the window switched or went meanwhile
    */
-  async open(sender: WebContents, request: SftpOpenRequest): Promise<SftpOpenResponse> {
+  async open(sender: Caller, request: SftpOpenRequest): Promise<SftpOpenResponse> {
     let flight = this.inFlight.get(sender.id);
     if (!flight) {
       flight = { count: 0, generation: 0 };
@@ -91,14 +91,14 @@ export class SftpService {
   }
 
   private async openNow(
-    sender: WebContents,
+    sender: Caller,
     request: SftpOpenRequest,
     flight: { readonly generation: number },
   ): Promise<SftpOpenResponse> {
     const epoch = this.epoch;
     const generation = flight.generation;
     // A quit, or this window's workspace switching (or the window going), since the open began.
-    const stale = (): boolean => epoch !== this.epoch || generation !== flight.generation || sender.isDestroyed();
+    const stale = (): boolean => epoch !== this.epoch || generation !== flight.generation || sender.isClosed();
     const closed = (): WirebenchError =>
       new WirebenchError('ssh-session-closed', 'The session closed before it opened');
     const { connector } = this.deps;
@@ -139,14 +139,14 @@ export class SftpService {
   }
 
   /** Idempotent: a session already gone, or another window's, is left as it is. */
-  close(sender: WebContents, request: SftpCloseRequest): void {
+  close(sender: Caller, request: SftpCloseRequest): void {
     const live = this.live.get(request.sessionId);
     if (!live || live.sender.id !== sender.id) return;
     this.drop(request.sessionId);
   }
 
   /** @throws WirebenchError `sftp-session-unknown` | `sftp-not-found` | `sftp-permission-denied` | `sftp-failed` | `local-fs-failed` */
-  async list(sender: WebContents, request: SftpListRequest): Promise<SftpListResponse> {
+  async list(sender: Caller, request: SftpListRequest): Promise<SftpListResponse> {
     if (request.place.kind === 'local') return localList(request.path);
     const session = this.session(sender, request.place.sessionId);
     return remote(async () => {
@@ -156,27 +156,27 @@ export class SftpService {
   }
 
   /** @throws WirebenchError `sftp-exists` | `sftp-session-unknown` | another `sftp-*` | `local-fs-failed` */
-  async mkdir(sender: WebContents, request: SftpMkdirRequest): Promise<void> {
+  async mkdir(sender: Caller, request: SftpMkdirRequest): Promise<void> {
     if (request.place.kind === 'local') return localMkdir(request.path);
     const session = this.session(sender, request.place.sessionId);
     return remote(() => session.mkdir(request.path));
   }
 
   /** Never replaces. @throws WirebenchError `sftp-exists` | `sftp-session-unknown` | another `sftp-*` | `local-fs-failed` */
-  async rename(sender: WebContents, request: SftpRenameRequest): Promise<void> {
+  async rename(sender: Caller, request: SftpRenameRequest): Promise<void> {
     if (request.place.kind === 'local') return localRename(request.from, request.to);
     const session = this.session(sender, request.place.sessionId);
     return remote(() => session.rename(request.from, request.to));
   }
 
   /** In order; stops at the first failure, whose error names that path. */
-  async remove(sender: WebContents, request: SftpRemoveRequest): Promise<void> {
+  async remove(sender: Caller, request: SftpRemoveRequest): Promise<void> {
     const removeOne = this.removerFor(sender, request.place);
     for (const path of request.paths) await removeOne(path, { recursive: request.recursive });
   }
 
   private removerFor(
-    sender: WebContents,
+    sender: Caller,
     place: SftpPlaceWire,
   ): (path: string, options: { readonly recursive: boolean }) => Promise<void> {
     if (place.kind === 'local') return localRemove;
@@ -185,7 +185,7 @@ export class SftpService {
   }
 
   /** Remote only. @throws WirebenchError `sftp-failed` `{ reason: 'local-chmod' }` for a local place */
-  async chmod(sender: WebContents, request: SftpChmodRequest): Promise<void> {
+  async chmod(sender: Caller, request: SftpChmodRequest): Promise<void> {
     if (request.place.kind === 'local') {
       throw new WirebenchError('sftp-failed', 'Permissions are changed on a host only', {
         details: { path: request.path, op: 'chmod', reason: 'local-chmod' },
@@ -200,14 +200,14 @@ export class SftpService {
    *
    * @throws WirebenchError `sftp-session-unknown` for a foreign or dead id
    */
-  session(sender: WebContents, sessionId: string): SftpSession {
+  session(sender: Caller, sessionId: string): SftpSession {
     const live = this.live.get(sessionId);
     if (!live || live.sender.id !== sender.id) throw new WirebenchError('sftp-session-unknown', 'No such session');
     return live.session;
   }
 
   /** Told after every session ends (closed here, by the server, or with its window); returns the unsubscribe. */
-  onSessionClosed(listener: (sender: WebContents, sessionId: string) => void): () => void {
+  onSessionClosed(listener: (sender: Caller, sessionId: string) => void): () => void {
     this.closedListeners.add(listener);
     return () => {
       this.closedListeners.delete(listener);
@@ -218,7 +218,7 @@ export class SftpService {
    * Closes the sessions one window owns (the window went away, reloaded, or switched workspace), and an
    * open it has in flight; other windows' sessions are left alone.
    */
-  disposeFor(sender: WebContents): void {
+  disposeFor(sender: Caller): void {
     const flight = this.inFlight.get(sender.id);
     if (flight) flight.generation += 1;
     this.deps.connector.forget(sender);
@@ -233,15 +233,14 @@ export class SftpService {
     for (const sessionId of [...this.live.keys()]) this.drop(sessionId);
   }
 
-  private watch(sender: WebContents): void {
+  private watch(sender: Caller): void {
     if (this.watched.has(sender.id)) return;
     this.watched.add(sender.id);
     // A reload or a crash starts a renderer that knows nothing of the old sessions; they go too.
-    sender.on('render-process-gone', () => this.disposeFor(sender));
-    sender.on('did-start-navigation', (details) => {
-      if (details.isMainFrame && !details.isSameDocument) this.disposeFor(sender);
+    sender.onReset(() => {
+      this.disposeFor(sender);
     });
-    sender.once('destroyed', () => {
+    sender.onClosed(() => {
       this.watched.delete(sender.id);
       this.disposeFor(sender);
     });
@@ -254,7 +253,7 @@ export class SftpService {
     this.live.delete(sessionId);
     live.stop();
     live.session.close();
-    if (!live.sender.isDestroyed()) this.deps.emit(live.sender, events.sftp.closed, { sessionId });
+    if (!live.sender.isClosed()) this.deps.emit(live.sender, events.sftp.closed, { sessionId });
     for (const listener of [...this.closedListeners]) listener(live.sender, sessionId);
   }
 }

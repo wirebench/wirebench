@@ -14,8 +14,10 @@ import { EngineService } from '../src/main/engine-service.js';
 import type { HistoryService } from '../src/main/history-service.js';
 import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import { registerRestApiChannels, registerRestRequestChannels } from '../src/main/kinds/rest/ipc.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -77,8 +79,8 @@ function harness(model: Project) {
     secretsFor: () => () => Promise.resolve(undefined),
   };
   handlers.clear();
-  registerRestRequestChannels(new EngineService(), deps);
-  registerRestApiChannels({
+  registerRestRequestChannels(table, new EngineService(), deps);
+  registerRestApiChannels(table, {
     router: { setGraphqlSchema, clearGraphqlSchema: () => Promise.resolve() },
     projectDirs: () => [root],
     picks: undefined,

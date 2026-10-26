@@ -2,8 +2,10 @@
 // @vitest-environment node
 import type { HttpExchange, HttpRequest } from '@wirebench/engine';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
@@ -63,7 +65,7 @@ function register(signedIn = true): void {
         : exchange(404, { code: 'ci-token-not-found', message: 'That CI token was not found.' }),
     );
   };
-  registerCiTokenChannels({
+  registerCiTokenChannels(table, {
     client: new ServerClient({ send }),
     accounts: { tokenFor: () => Promise.resolve(signedIn ? TOKEN : undefined), markSignedOut: vi.fn() },
   });

@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerFsChannels } from '../src/main/ipc/fs.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -34,7 +36,7 @@ describe('fs.* IPC', () => {
   beforeEach(async () => {
     handlers.clear();
     dir = await mkdtemp(join(tmpdir(), 'wirebench-fs-test-'));
-    registerFsChannels();
+    registerFsChannels(table);
   });
 
   afterEach(async () => {

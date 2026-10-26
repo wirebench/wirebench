@@ -3,6 +3,7 @@
  * server, workspace and share; the account signed in to that server joins. Output arrives as it was on
  * the owner's screen, already masked there. While this user holds control, keystrokes go out as `input`.
  */
+import type { Caller } from '../host/platform.js';
 import {
   WirebenchError,
   parseTerminalShareInvite,
@@ -10,7 +11,6 @@ import {
   type TerminalShareInvite,
   type TerminalShareServerMessage,
 } from '@wirebench/engine';
-import type { WebContents } from 'electron';
 import type {
   TerminalShareEndReasonWire,
   TerminalShareJoinRequest,
@@ -28,13 +28,13 @@ export interface TerminalShareViewerDeps {
   readonly accounts: TokenSource & { list(): readonly { readonly url: string; readonly userId: string }[] };
   readonly connect: (wsUrl: string) => ConnectedWebSocket;
   readonly emit: {
-    data(sender: WebContents, event: { readonly viewId: string; readonly data: string }): void;
-    state(sender: WebContents, event: TerminalShareViewerStateEvent): void;
+    data(sender: Caller, event: { readonly viewId: string; readonly data: string }): void;
+    state(sender: Caller, event: TerminalShareViewerStateEvent): void;
   };
 }
 
 interface View {
-  readonly sender: WebContents;
+  readonly sender: Caller;
   readonly viewId: string;
   readonly self: string | undefined;
   connection: ShareConnection | undefined;
@@ -71,7 +71,7 @@ export class TerminalShareViewer {
   }
 
   /** @throws WirebenchError as {@link preview}, and `terminal-share-forbidden` | `terminal-share-full` */
-  async join(sender: WebContents, request: TerminalShareJoinRequest): Promise<TerminalShareJoinResponse> {
+  async join(sender: Caller, request: TerminalShareJoinRequest): Promise<TerminalShareJoinResponse> {
     const invite = inviteOf(request.link);
     if (this.views.has(request.viewId)) {
       throw new WirebenchError('terminal-share-view-exists', 'That view is already open.');
@@ -102,7 +102,7 @@ export class TerminalShareViewer {
               this.onMessage(view, message);
             },
             binary: (data) => {
-              if (!sender.isDestroyed())
+              if (!sender.isClosed())
                 this.deps.emit.data(sender, { viewId: view.viewId, data: data.toString('base64') });
             },
             closed: () => {
@@ -132,7 +132,7 @@ export class TerminalShareViewer {
     });
   }
 
-  leave(sender: WebContents, viewId: string): void {
+  leave(sender: Caller, viewId: string): void {
     const view = this.owned(sender, viewId);
     if (view === undefined) return;
     view.connection?.close();
@@ -140,24 +140,24 @@ export class TerminalShareViewer {
   }
 
   /** Typed keys: sent only while this user holds control, else dropped here. */
-  input(sender: WebContents, viewId: string, data: string): void {
+  input(sender: Caller, viewId: string, data: string): void {
     const view = this.owned(sender, viewId);
     if (view?.connection === undefined || view.self === undefined || view.control !== view.self) return;
     view.connection.send({ type: 'input', data });
   }
 
-  requestControl(sender: WebContents, viewId: string): void {
+  requestControl(sender: Caller, viewId: string): void {
     const view = this.owned(sender, viewId);
     if (view?.connection === undefined) return;
     view.declined = false;
     view.connection.send({ type: 'request-control' });
   }
 
-  release(sender: WebContents, viewId: string): void {
+  release(sender: Caller, viewId: string): void {
     this.owned(sender, viewId)?.connection?.send({ type: 'release' });
   }
 
-  disposeFor(sender: WebContents): void {
+  disposeFor(sender: Caller): void {
     for (const view of [...this.views.values()]) if (view.sender === sender) this.leave(sender, view.viewId);
   }
 
@@ -165,7 +165,7 @@ export class TerminalShareViewer {
     for (const view of [...this.views.values()]) this.leave(view.sender, view.viewId);
   }
 
-  private owned(sender: WebContents, viewId: string): View | undefined {
+  private owned(sender: Caller, viewId: string): View | undefined {
     const view = this.views.get(viewId);
     return view?.sender === sender ? view : undefined;
   }
@@ -217,7 +217,7 @@ export class TerminalShareViewer {
   }
 
   private publish(view: View): void {
-    if (view.sender.isDestroyed()) return;
+    if (view.sender.isClosed()) return;
     this.deps.emit.state(view.sender, {
       viewId: view.viewId,
       ...(view.owner !== undefined ? { owner: view.owner } : {}),

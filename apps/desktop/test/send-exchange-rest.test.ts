@@ -33,8 +33,10 @@ import type { RestExchangeSummary, RestLiveEvent } from '../src/shared/kinds/res
 import type { FailedExchangeWire } from '../src/shared/wire-base.js';
 import { sendDepsFor } from './helpers/send-deps.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -64,7 +66,7 @@ function unwrap<T>(result: unknown): T {
 /** Registers the `request.*` channels over `model`, with `extra` laid over the dependencies. */
 function registerOver(model: Project, extra: Partial<RequestChannelDeps> = {}): void {
   handlers.clear();
-  registerRequestChannelsWithKinds(new EngineService(), {
+  registerRequestChannelsWithKinds(table, new EngineService(), {
     project: {
       projectId: () => model.id,
       runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),

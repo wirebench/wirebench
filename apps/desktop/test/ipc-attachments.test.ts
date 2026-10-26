@@ -14,8 +14,10 @@ import {
 } from '../src/main/kinds/soap/channels/attachments.js';
 import type { AttachmentChannelDeps } from '../src/main/kinds/soap/channels/attachments.js';
 import { DialogPicks } from '../src/main/dialog-picks.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 const showSaveDialog = vi.fn();
 const showOpenDialog = vi.fn();
 const openPath = vi.fn();
@@ -84,7 +86,7 @@ describe('attachments.* IPC', () => {
       picks,
       userDataDir,
     };
-    registerAttachmentChannels(deps);
+    registerAttachmentChannels(table, deps);
   }
 
   beforeEach(async () => {
@@ -343,7 +345,7 @@ describe('attachments.* IPC', () => {
 
   it('does not let a Content-ID with separators steer the temp file out of its folder', async () => {
     handlers.clear();
-    registerAttachmentChannels({
+    registerAttachmentChannels(table, {
       exchanges: { getAttachment: () => ({ ...UNNAMED, contentType: 'image/png', contentId: '../../escaped' }) },
       project: { resolveAttachmentPath: () => Promise.resolve(''), addAttachmentBytes: () => Promise.resolve('a') },
       picks: new DialogPicks(),

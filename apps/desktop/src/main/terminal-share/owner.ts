@@ -5,6 +5,7 @@
  * from the viewer holding control is written to the session as if typed. Closing the session, or the
  * window, ends the share.
  */
+import type { Caller } from '../host/platform.js';
 import {
   TERMINAL_SHARE_CAPABILITY,
   TERMINAL_SHARE_LIMITS,
@@ -14,7 +15,6 @@ import {
   type TerminalShareEndReason,
   type TerminalShareServerMessage,
 } from '@wirebench/engine';
-import type { WebContents } from 'electron';
 import type {
   TerminalSharePresenceWire,
   TerminalShareStartRequest,
@@ -36,16 +36,16 @@ export interface TerminalShareOwnerDeps {
   readonly accounts: TokenSource;
   readonly connect: (wsUrl: string) => ConnectedWebSocket;
   /** The window's open workspace on a server that relays shared terminals, or `undefined`. */
-  readonly target: (sender: WebContents) => ShareTarget | undefined;
+  readonly target: (sender: Caller) => ShareTarget | undefined;
   readonly ssh: {
-    tap(sender: WebContents, sessionId: string, tap: SessionTap): () => void;
-    write(sender: WebContents, request: { readonly sessionId: string; readonly data: string }): void;
+    tap(sender: Caller, sessionId: string, tap: SessionTap): () => void;
+    write(sender: Caller, request: { readonly sessionId: string; readonly data: string }): void;
   };
-  readonly emit: (sender: WebContents, state: TerminalShareStateEvent) => void;
+  readonly emit: (sender: Caller, state: TerminalShareStateEvent) => void;
 }
 
 interface OwnedShare {
-  readonly sender: WebContents;
+  readonly sender: Caller;
   readonly sessionId: string;
   readonly shareId: string;
   readonly invite: string;
@@ -71,7 +71,7 @@ export class TerminalShareOwner {
   constructor(private readonly deps: TerminalShareOwnerDeps) {}
 
   /** The window's workspace is on a server that relays shared terminals. */
-  async available(sender: WebContents): Promise<boolean> {
+  async available(sender: Caller): Promise<boolean> {
     const target = this.deps.target(sender);
     if (target === undefined) return false;
     const meta = await this.deps.client.meta(target.url).catch(() => undefined);
@@ -82,7 +82,7 @@ export class TerminalShareOwner {
    * @throws WirebenchError `terminal-share-unavailable` | `terminal-share-active` | `ssh-session-unknown` | a
    *   server problem (`licensing-feature-required`, …) | `account-signed-out`
    */
-  async start(sender: WebContents, request: TerminalShareStartRequest): Promise<TerminalShareStartResponse> {
+  async start(sender: Caller, request: TerminalShareStartRequest): Promise<TerminalShareStartResponse> {
     const target = this.deps.target(sender);
     if (target === undefined) {
       throw new WirebenchError(
@@ -154,31 +154,31 @@ export class TerminalShareOwner {
   }
 
   /** Idempotent: a session not shared is left as it is. */
-  stop(sender: WebContents, sessionId: string): void {
+  stop(sender: Caller, sessionId: string): void {
     const share = this.owned(sender, sessionId);
     if (share === undefined) return;
     share.connection?.send({ type: 'end' });
     this.finish(share, 'ended');
   }
 
-  grant(sender: WebContents, sessionId: string, userId: string): void {
+  grant(sender: Caller, sessionId: string, userId: string): void {
     this.owned(sender, sessionId)?.connection?.send({ type: 'grant', userId });
   }
 
-  decline(sender: WebContents, sessionId: string, userId: string): void {
+  decline(sender: Caller, sessionId: string, userId: string): void {
     this.owned(sender, sessionId)?.connection?.send({ type: 'decline', userId });
   }
 
-  remove(sender: WebContents, sessionId: string, userId: string): void {
+  remove(sender: Caller, sessionId: string, userId: string): void {
     this.owned(sender, sessionId)?.connection?.send({ type: 'remove', userId });
   }
 
-  takeBack(sender: WebContents, sessionId: string): void {
+  takeBack(sender: Caller, sessionId: string): void {
     this.owned(sender, sessionId)?.connection?.send({ type: 'take-back' });
   }
 
   /** The window went away or switched workspace: its shares end. */
-  disposeFor(sender: WebContents): void {
+  disposeFor(sender: Caller): void {
     for (const share of [...this.shares.values()]) if (share.sender === sender) this.stop(sender, share.sessionId);
   }
 
@@ -186,7 +186,7 @@ export class TerminalShareOwner {
     for (const share of [...this.shares.values()]) this.stop(share.sender, share.sessionId);
   }
 
-  private owned(sender: WebContents, sessionId: string): OwnedShare | undefined {
+  private owned(sender: Caller, sessionId: string): OwnedShare | undefined {
     const share = this.shares.get(sessionId);
     return share?.sender === sender ? share : undefined;
   }
@@ -229,7 +229,7 @@ export class TerminalShareOwner {
   }
 
   private publish(share: OwnedShare, ended?: TerminalShareEndReason | 'lost'): void {
-    if (share.sender.isDestroyed()) return;
+    if (share.sender.isClosed()) return;
     this.deps.emit(share.sender, {
       sessionId: share.sessionId,
       shareId: share.shareId,

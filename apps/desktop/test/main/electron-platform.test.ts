@@ -2,7 +2,7 @@
 /** The Electron implementation of `HostPlatform`: thin delegation plus the per-contents `Caller`. */
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Capability } from '../../src/main/host/platform.js';
+import { ALL_CAPABILITIES } from '../../src/main/host/platform.js';
 
 const electron = vi.hoisted(() => ({
   app: { getPath: vi.fn(), getVersion: vi.fn(), isPackaged: true, quit: vi.fn() },
@@ -16,24 +16,7 @@ const electron = vi.hoisted(() => ({
 }));
 vi.mock('electron', () => electron);
 
-const { createElectronPlatform, callerForWebContents } = await import(
-  '../../src/main/electron/electron-platform.js'
-);
-
-const ALL: Capability[] = [
-  'files',
-  'keychain',
-  'ssh',
-  'pty',
-  'kerberos',
-  'dialogs',
-  'send:private',
-  'send:public',
-  'secret-sources',
-  'team-secrets',
-  'updates',
-  'app-lock',
-];
+const { createElectronPlatform, callerForWebContents } = await import('../../src/main/electron/electron-platform.js');
 
 class FakeContents extends EventEmitter {
   destroyed = false;
@@ -82,7 +65,7 @@ describe('createElectronPlatform', () => {
   });
 
   it('declares every capability', () => {
-    expect([...createElectronPlatform().capabilities].sort()).toEqual([...ALL].sort());
+    expect([...createElectronPlatform().capabilities].sort()).toEqual([...ALL_CAPABILITIES].sort());
   });
 
   it('reports the app facts and the OS theme', () => {
@@ -141,5 +124,50 @@ describe('callerForWebContents', () => {
     expect(caller.isClosed()).toBe(true);
     expect(closed).toHaveBeenCalledTimes(1);
     expect(removed).not.toHaveBeenCalled();
+  });
+
+  it('runs a listener added after close once, in a microtask, and lets it be cancelled first', async () => {
+    const contents = new FakeContents(10);
+    const caller = callerForWebContents(contents as never);
+    contents.destroy();
+    const late = vi.fn();
+    caller.onClosed(late);
+    const cancelled = vi.fn();
+    caller.onClosed(cancelled)();
+    expect(late).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(late).toHaveBeenCalledTimes(1);
+    expect(cancelled).not.toHaveBeenCalled();
+  });
+
+  it('keeps telling the other listeners when one throws', () => {
+    const contents = new FakeContents(11);
+    const caller = callerForWebContents(contents as never);
+    const after = vi.fn();
+    caller.onClosed(() => {
+      throw new Error('boom');
+    });
+    caller.onClosed(after);
+    expect(() => {
+      contents.destroy();
+    }).not.toThrow();
+    expect(after).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells reset listeners about a crash or a main-frame navigation, but not a same-document one', () => {
+    const contents = new FakeContents(12);
+    const caller = callerForWebContents(contents as never);
+    const reset = vi.fn();
+    const off = caller.onReset(reset);
+    contents.emit('did-start-navigation', { isMainFrame: false, isSameDocument: false });
+    contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true });
+    expect(reset).not.toHaveBeenCalled();
+    contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false });
+    contents.emit('render-process-gone', {}, {});
+    expect(reset).toHaveBeenCalledTimes(2);
+    expect(caller.isClosed()).toBe(false);
+    off();
+    contents.emit('render-process-gone', {}, {});
+    expect(reset).toHaveBeenCalledTimes(2);
   });
 });

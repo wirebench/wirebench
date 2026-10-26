@@ -6,8 +6,10 @@ import type { WsdlImportResult } from '@wirebench/engine';
 import { registerValidateChannels } from '../src/main/kinds/soap/channels/validate.js';
 import type { EngineService } from '../src/main/engine-service.js';
 import type { ValidateChannelProject } from '../src/main/kinds/soap/channels/validate.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -74,7 +76,7 @@ describe('validate.message IPC', () => {
   });
 
   it('reports nothing for a valid saved envelope', async () => {
-    registerValidateChannels(engine, project(savedTarget));
+    registerValidateChannels(table, engine, project(savedTarget));
     const result = (await invoke('validate.message', { requestId: 'req-1', direction: 'request' })) as Result;
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -84,7 +86,7 @@ describe('validate.message IPC', () => {
   });
 
   it('validates the xml the renderer sends instead of the saved envelope', async () => {
-    registerValidateChannels(engine, project(savedTarget));
+    registerValidateChannels(table, engine, project(savedTarget));
     const result = (await invoke('validate.message', {
       requestId: 'req-1',
       direction: 'request',
@@ -98,7 +100,7 @@ describe('validate.message IPC', () => {
   });
 
   it('cross-checks the request Content-Type against the binding version', async () => {
-    registerValidateChannels(engine, project({ ...savedTarget, contentType: 'application/soap+xml' }));
+    registerValidateChannels(table, engine, project({ ...savedTarget, contentType: 'application/soap+xml' }));
     const result = (await invoke('validate.message', { requestId: 'req-1', direction: 'request' })) as Result;
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -107,7 +109,7 @@ describe('validate.message IPC', () => {
   });
 
   it('validates a response against the operation output', async () => {
-    registerValidateChannels(engine, project(savedTarget));
+    registerValidateChannels(table, engine, project(savedTarget));
     const result = (await invoke('validate.message', {
       requestId: 'req-1',
       direction: 'response',
@@ -120,7 +122,7 @@ describe('validate.message IPC', () => {
   });
 
   it('fails with unknown-request when no saved request matches', async () => {
-    registerValidateChannels(engine, project(undefined));
+    registerValidateChannels(table, engine, project(undefined));
     const result = (await invoke('validate.message', { requestId: 'nope', direction: 'request' })) as Result;
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -129,7 +131,7 @@ describe('validate.message IPC', () => {
   });
 
   it('fails with unknown-operation when the binding has no such operation', async () => {
-    registerValidateChannels(engine, project({ ...savedTarget, operationName: 'Nope' }));
+    registerValidateChannels(table, engine, project({ ...savedTarget, operationName: 'Nope' }));
     const result = (await invoke('validate.message', { requestId: 'req-1', direction: 'request' })) as Result;
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -167,6 +169,7 @@ describe('validate.message IPC', () => {
     async function validate(envelopeXml: string, direction: 'request' | 'response' = 'request'): Promise<string[]> {
       const probe = await importWsdl({ kind: 'text', text: WSDL });
       registerValidateChannels(
+        table,
         { resultFor: () => probe } as unknown as EngineService,
         project({
           interfaceId: 'iface-p',

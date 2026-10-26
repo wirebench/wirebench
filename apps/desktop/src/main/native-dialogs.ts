@@ -7,9 +7,10 @@
  * answers, whether the caller is the `dialogs.*` channel or a feature handler.
  */
 
+import { windowOf } from './electron/electron-platform.js';
+import type { Caller } from './host/platform.js';
 import { delimiter } from 'node:path';
 import { app, BrowserWindow, dialog } from 'electron';
-import type { WebContents } from 'electron';
 import type { RecordsReadPicks, RecordsWritePicks } from './dialog-picks.js';
 
 /** A file-type filter, matching Electron's shape. */
@@ -69,13 +70,9 @@ function openFileOverride(): string | undefined {
   return e2eOverridesAllowed() ? process.env['WIREBENCH_E2E_FILE_DIALOG_PATH'] : undefined;
 }
 
-function windowOf(sender: WebContents): BrowserWindow | undefined {
-  return BrowserWindow.fromWebContents(sender) ?? undefined;
-}
-
 /** Runs the Open-file picker, recording the chosen path as a read pick. */
 export async function pickFile(
-  sender: WebContents,
+  sender: Caller,
   picks: RecordsReadPicks,
   options: { readonly title?: string; readonly filters?: readonly DialogFilter[] },
 ): Promise<string | undefined> {
@@ -110,7 +107,7 @@ export async function pickFile(
  * so the folder is recorded as a read pick exactly as `pickFile` records a file.
  */
 export async function pickFolder(
-  sender: WebContents,
+  sender: Caller,
   options: { readonly title?: string } = {},
   picks?: RecordsReadPicks,
 ): Promise<string | undefined> {
@@ -139,7 +136,7 @@ export async function pickFolder(
  * from never silently also grants it as a legal write target.
  */
 export async function pickFolderToWrite(
-  sender: WebContents,
+  sender: Caller,
   picks: RecordsWritePicks,
   options: { readonly title?: string } = {},
 ): Promise<string | undefined> {
@@ -161,7 +158,7 @@ export async function pickFolderToWrite(
 
 /** Runs the Save-as picker, recording the chosen path as a write pick and honouring the override. */
 export async function pickSaveFile(
-  sender: WebContents,
+  sender: Caller,
   picks: RecordsWritePicks,
   options: {
     readonly title?: string;

@@ -1,7 +1,9 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 let focusedWindow: { isDestroyed: () => boolean; webContents: unknown } | null = null;
 
@@ -18,9 +20,10 @@ vi.mock('electron', () => ({
 
 const { registerAppChannels } = await import('../src/main/ipc/app.js');
 
+let nextId = 1;
 /** A stand-in `WebContents` that records what was sent to it. */
 function webContents() {
-  return { isDestroyed: () => false, send: vi.fn() };
+  return { id: nextId++, isDestroyed: () => false, send: vi.fn(), once: vi.fn(), on: vi.fn() };
 }
 
 function invoke(channel: string, payload: unknown, sender: unknown): Promise<unknown> {
@@ -58,7 +61,7 @@ describe('app.* IPC', () => {
 
   it('dispatches a menu click to the focused window, not the one that registered the menu', async () => {
     let template: unknown;
-    registerAppChannels({
+    registerAppChannels(table, {
       install: (built) => {
         template = built;
       },
@@ -75,7 +78,7 @@ describe('app.* IPC', () => {
   });
 
   it('app.areas answers the enabled area ids, and the local terminal off with the SSH area', async () => {
-    registerAppChannels(undefined, undefined, undefined, ['explorer', 'history']);
+    registerAppChannels(table, undefined, undefined, undefined, ['explorer', 'history']);
     expect(await invoke('app.areas', undefined, webContents())).toEqual({
       ok: true,
       value: { enabled: ['explorer', 'history'], localTerminal: false, telnet: false, serial: false },
@@ -83,7 +86,7 @@ describe('app.* IPC', () => {
   });
 
   it('app.areas says whether the local terminal is on', async () => {
-    registerAppChannels(undefined, undefined, undefined, ['explorer', 'ssh'], undefined, false);
+    registerAppChannels(table, undefined, undefined, undefined, ['explorer', 'ssh'], undefined, false);
     expect(await invoke('app.areas', undefined, webContents())).toEqual({
       ok: true,
       value: { enabled: ['explorer', 'ssh'], localTerminal: false, telnet: true, serial: true },
@@ -91,7 +94,7 @@ describe('app.* IPC', () => {
   });
 
   it('app.areas says whether Telnet hosts connect (#425)', async () => {
-    registerAppChannels(undefined, undefined, undefined, ['explorer', 'ssh'], undefined, true, false);
+    registerAppChannels(table, undefined, undefined, undefined, ['explorer', 'ssh'], undefined, true, false);
     expect(await invoke('app.areas', undefined, webContents())).toEqual({
       ok: true,
       value: { enabled: ['explorer', 'ssh'], localTerminal: true, telnet: false, serial: true },
@@ -99,7 +102,7 @@ describe('app.* IPC', () => {
   });
 
   it('app.areas says whether serial consoles connect (#426)', async () => {
-    registerAppChannels(undefined, undefined, undefined, ['explorer', 'ssh'], undefined, true, true, false);
+    registerAppChannels(table, undefined, undefined, undefined, ['explorer', 'ssh'], undefined, true, true, false);
     expect(await invoke('app.areas', undefined, webContents())).toEqual({
       ok: true,
       value: { enabled: ['explorer', 'ssh'], localTerminal: true, telnet: true, serial: false },
@@ -107,7 +110,7 @@ describe('app.* IPC', () => {
   });
 
   it('app.features carries the area rows beside the feature rows (#360)', async () => {
-    registerAppChannels(undefined, undefined, undefined, ['explorer'], undefined, false, false, false, () => [
+    registerAppChannels(table, undefined, undefined, undefined, ['explorer'], undefined, false, false, false, () => [
       {
         id: 'ssh',
         title: 'SSH',
@@ -140,7 +143,7 @@ describe('app.* IPC', () => {
   });
 
   it('app.kinds answers the kinds this run has switched on', async () => {
-    registerAppChannels(undefined, undefined, undefined, undefined, {
+    registerAppChannels(table, undefined, undefined, undefined, undefined, {
       kinds: () => ['soap', 'rest'],
       states: () => ({ states: [] }),
     });
@@ -152,7 +155,7 @@ describe('app.* IPC', () => {
 
   it('falls back to the registering window when nothing is focused', async () => {
     let template: unknown;
-    registerAppChannels({
+    registerAppChannels(table, {
       install: (built) => {
         template = built;
       },
@@ -167,7 +170,7 @@ describe('app.* IPC', () => {
 
   it('falls back to the registering window when the focused one is being destroyed', async () => {
     let template: unknown;
-    registerAppChannels({
+    registerAppChannels(table, {
       install: (built) => {
         template = built;
       },

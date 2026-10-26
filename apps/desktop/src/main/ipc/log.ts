@@ -7,7 +7,7 @@ import { harFileName, harOf } from '../har.js';
 import { curlForLogEntry } from '../log-curl.js';
 import { pickSaveFile } from '../native-dialogs.js';
 import { MAIN_KINDS } from '../kinds/kind-main.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 import { toSendDeps, type RequestChannelDeps } from './request.js';
 
 /** What the HTTP Log's channels need from main. */
@@ -23,15 +23,15 @@ export interface LogChannelDeps {
 }
 
 /** Registers `log.*`: everything the HTTP Log asks main to do with a row it already holds. */
-export function registerLogChannels(deps: LogChannelDeps): void {
+export function registerLogChannels(table: HandlerTable, deps: LogChannelDeps): void {
   // The request channels' own send through the engine, cancelled through the same registry.
   const sendDeps = toSendDeps(deps.service, deps.request);
-  registerHandler(channels.log.curl, (request) =>
+  registerHandler(table, channels.log.curl, (request) =>
     Promise.resolve(curlForLogEntry(request.entry, { shell: request.shell, show: deps.showSecrets.get() })),
   );
 
   // Replays the saved request behind a row as it is now — never the row's own (redacted) copy.
-  registerHandler(channels.log.resend, async (request) => {
+  registerHandler(table, channels.log.resend, async (request) => {
     const log = MAIN_KINDS.find((kind) => kind.kind === request.protocol)?.log;
     if (log === undefined) {
       throw new WirebenchError('unknown-protocol', `Rows sent over ${request.protocol} cannot be resent.`);
@@ -39,7 +39,7 @@ export function registerLogChannels(deps: LogChannelDeps): void {
     return await log.resend({ request, deps, sendDeps, sendId: randomUUID() });
   });
 
-  registerHandler(channels.log.exportHar, async (request, sender) => {
+  registerHandler(table, channels.log.exportHar, async (request, sender) => {
     // Always show:false, whatever the toggle says: a HAR file is made to be shared.
     const har = harOf(request.entries, { name: 'Wirebench', version: deps.appVersion });
     // The path is never the renderer's to choose: it comes from the native dialog or the e2e override.

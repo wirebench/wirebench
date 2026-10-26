@@ -51,8 +51,10 @@ import type { GrpcExchangeSummary, GrpcResponseMessageWire } from '../src/shared
 import type { RestExchangeSummary, RestLiveEvent } from '../src/shared/kinds/rest/wire.js';
 import type { WsFrameWire } from '../src/shared/kinds/ws/wire.js';
 import { registerHistoryChannelsWithKinds, registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -161,7 +163,7 @@ function wsProject(header: string): Project {
 function registerWs(options: { header?: string; show?: boolean; secretsFor?: (id: string | undefined) => GetSecret }) {
   const project = wsProject(options.header ?? 'plain');
   const written: HistoryEntry[] = [];
-  registerRequestChannelsWithKinds(new EngineService(), {
+  registerRequestChannelsWithKinds(table, new EngineService(), {
     project: {
       scopesFor: () => SCOPES,
       projectId: () => 'p1',
@@ -554,7 +556,7 @@ describe('a gRPC call with tokens', () => {
     sender: unknown,
   ): Promise<GrpcExchangeSummary> {
     handlers.clear();
-    registerRequestChannelsWithKinds(new EngineService(), deps);
+    registerRequestChannelsWithKinds(table, new EngineService(), deps);
     return unwrap<GrpcExchangeSummary>(await invoke('request.sendGrpc', payload, sender));
   }
 
@@ -742,7 +744,7 @@ describe('an event stream that echoes a token value', () => {
       containers: { rest: [createApi('Api', { id: 'api-1', baseUrl: url, requests: [request] })] },
     };
     const written: HistoryEntry[] = [];
-    registerRequestChannelsWithKinds(new EngineService(), {
+    registerRequestChannelsWithKinds(table, new EngineService(), {
       project: {
         scopesFor: () => SCOPES,
         requestMeta: () => undefined,
@@ -875,7 +877,7 @@ describe('a History resend with a token', () => {
       runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),
       endpointFor: () => url,
     } as unknown as RequestChannelDeps['project'];
-    registerHistoryChannelsWithKinds(history as never, {
+    registerHistoryChannelsWithKinds(table, history as never, {
       project,
       send: toSendDeps(new EngineService(), {
         project,

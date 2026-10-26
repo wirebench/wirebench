@@ -8,8 +8,10 @@ import { registerExchangeChannels } from '../src/main/ipc/exchanges.js';
 import { ShowSecretsFlag } from '../src/main/secrets.js';
 import type { RestExchangeSummary } from '../src/shared/kinds/rest/wire.js';
 import type { ExchangeSummary } from '../src/shared/kinds/soap/wire.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 /** The native Save-as dialog, stubbed: the channel must be the thing that chooses nothing itself. */
 const showSaveDialog = vi.fn();
@@ -108,7 +110,7 @@ describe('exchanges.get', () => {
     const cache = new ExchangeCache();
     cache.put('send-1', unredactedExchange('send-1'));
     const flag = new ShowSecretsFlag();
-    registerExchangeChannels(cache, flag);
+    registerExchangeChannels(table, cache, flag);
 
     const hidden = (await invoke('exchanges.get', { sendId: 'send-1' })) as {
       ok: true;
@@ -128,7 +130,7 @@ describe('exchanges.get', () => {
   });
 
   it('answers unknown-send for an evicted or unknown sendId', async () => {
-    registerExchangeChannels(new ExchangeCache(), new ShowSecretsFlag());
+    registerExchangeChannels(table, new ExchangeCache(), new ShowSecretsFlag());
 
     expect(await invoke('exchanges.get', { sendId: 'nope' })).toMatchObject({
       ok: false,
@@ -137,7 +139,7 @@ describe('exchanges.get', () => {
   });
 
   it('rejects a malformed payload', async () => {
-    registerExchangeChannels(new ExchangeCache(), new ShowSecretsFlag());
+    registerExchangeChannels(table, new ExchangeCache(), new ShowSecretsFlag());
 
     expect(await invoke('exchanges.get', {})).toMatchObject({ ok: false, error: { code: 'ipc-invalid-request' } });
   });
@@ -158,7 +160,7 @@ describe('exchanges.get', () => {
     });
     cache.putRest('rest-1', rest(true), new Uint8Array(), rest);
     const flag = new ShowSecretsFlag();
-    registerExchangeChannels(cache, flag);
+    registerExchangeChannels(table, cache, flag);
 
     const hidden = (await invoke('exchanges.get', { sendId: 'rest-1' })) as { ok: true; value: RestExchangeSummary };
     expect(hidden.ok).toBe(true);
@@ -173,7 +175,7 @@ describe('exchanges.get', () => {
   it('never answers a REST exchange cached without a view, rather than risk it unredacted', async () => {
     const cache = new ExchangeCache();
     cache.putRest('rest-1', { ...({} as RestExchangeSummary), sendId: 'rest-1' }, new Uint8Array());
-    registerExchangeChannels(cache, new ShowSecretsFlag());
+    registerExchangeChannels(table, cache, new ShowSecretsFlag());
 
     expect(await invoke('exchanges.get', { sendId: 'rest-1' })).toMatchObject({
       ok: false,
@@ -222,7 +224,7 @@ describe('exchanges.saveRestBody', () => {
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: target });
     const cache = new ExchangeCache();
     cache.putRest('send-1', restExchange('send-1'), new TextEncoder().encode('{"id":1}'));
-    registerExchangeChannels(cache, new ShowSecretsFlag());
+    registerExchangeChannels(table, cache, new ShowSecretsFlag());
 
     const result = await invoke('exchanges.saveRestBody', { sendId: 'send-1' });
 
@@ -236,7 +238,7 @@ describe('exchanges.saveRestBody', () => {
     showSaveDialog.mockResolvedValue({ canceled: true });
     const cache = new ExchangeCache();
     cache.putRest('send-1', restExchange('send-1'), new TextEncoder().encode('{}'));
-    registerExchangeChannels(cache, new ShowSecretsFlag());
+    registerExchangeChannels(table, cache, new ShowSecretsFlag());
 
     expect(await invoke('exchanges.saveRestBody', { sendId: 'send-1' })).toMatchObject({
       ok: true,
@@ -245,7 +247,7 @@ describe('exchanges.saveRestBody', () => {
   });
 
   it('answers unknown-send for an exchange the cache has evicted', async () => {
-    registerExchangeChannels(new ExchangeCache(), new ShowSecretsFlag());
+    registerExchangeChannels(table, new ExchangeCache(), new ShowSecretsFlag());
 
     expect(await invoke('exchanges.saveRestBody', { sendId: 'gone' })).toMatchObject({
       ok: false,
@@ -254,7 +256,7 @@ describe('exchanges.saveRestBody', () => {
   });
 
   it('takes no path from the renderer: an extra field is rejected outright', async () => {
-    registerExchangeChannels(new ExchangeCache(), new ShowSecretsFlag());
+    registerExchangeChannels(table, new ExchangeCache(), new ShowSecretsFlag());
 
     // The schema is strict, so a renderer cannot smuggle a target past it.
     expect(await invoke('exchanges.saveRestBody', {})).toMatchObject({

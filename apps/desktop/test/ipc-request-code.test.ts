@@ -22,8 +22,10 @@ import { recordSecretValue } from '../src/main/redact.js';
 import { type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { GENERATED_CODE_TARGETS } from '../src/shared/code-targets.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -107,7 +109,7 @@ const getSecret = vi.fn((ref: string) =>
 
 function register(model: Project, options: { readonly show?: boolean; readonly environmentId?: string } = {}): void {
   handlers.clear();
-  registerRequestChannelsWithKinds(new EngineService(getSecret), {
+  registerRequestChannelsWithKinds(table, new EngineService(getSecret), {
     project: {
       projectId: () => 'p1',
       requestMeta: () => undefined,

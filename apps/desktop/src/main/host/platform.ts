@@ -4,20 +4,24 @@
  * is types only, so importing it never pulls in `electron`.
  */
 
+/** Every capability there is, in one place; a platform declares the subset it has. */
+export const ALL_CAPABILITIES = [
+  'files',
+  'keychain',
+  'ssh',
+  'pty',
+  'kerberos',
+  'dialogs',
+  'send:private',
+  'send:public',
+  'secret-sources',
+  'team-secrets',
+  'updates',
+  'app-lock',
+] as const;
+
 /** What a platform can do; a host switches features off when the platform lacks one. */
-export type Capability =
-  | 'files'
-  | 'keychain'
-  | 'ssh'
-  | 'pty'
-  | 'kerberos'
-  | 'dialogs'
-  | 'send:private'
-  | 'send:public'
-  | 'secret-sources'
-  | 'team-secrets'
-  | 'updates'
-  | 'app-lock';
+export type Capability = (typeof ALL_CAPABILITIES)[number];
 
 /** Whoever asked: a renderer window on the desktop, a connection elsewhere. */
 export interface Caller {
@@ -25,7 +29,17 @@ export interface Caller {
   /** Pushes `payload` on `channel`; a no-op once the caller is closed. */
   send(channel: string, payload: unknown): void;
   isClosed(): boolean;
-  /** Runs `listener` once when the caller closes; returns a function that unsubscribes. */
+  /**
+   * Runs `listener` each time the caller starts over while staying open: a renderer that reloads or
+   * crashes, and so knows nothing of what it was given before. A caller that cannot do that (a
+   * connection) never calls it; for it a drop is a close. Returns a function that unsubscribes.
+   */
+  onReset(listener: () => void): () => void;
+  /**
+   * Runs `listener` once when the caller closes; returns a function that unsubscribes. On a caller that
+   * is already closed the listener still runs exactly once, in a microtask, and unsubscribing before
+   * that microtask prevents the call. A listener that throws does not stop the others.
+   */
   onClosed(listener: () => void): () => void;
 }
 
@@ -69,7 +83,10 @@ export interface HostPlatform {
   readonly dialogs?: {
     openFile(owner: Caller | undefined, opts: OpenDialogOptions): Promise<{ canceled: boolean; filePaths: string[] }>;
     saveFile(owner: Caller | undefined, opts: SaveDialogOptions): Promise<{ canceled: boolean; filePath?: string }>;
-    message(owner: Caller | undefined, opts: MessageBoxOptions): Promise<{ response: number; checkboxChecked: boolean }>;
+    message(
+      owner: Caller | undefined,
+      opts: MessageBoxOptions,
+    ): Promise<{ response: number; checkboxChecked: boolean }>;
   };
   readonly shell?: {
     openExternal(url: string): Promise<void>;

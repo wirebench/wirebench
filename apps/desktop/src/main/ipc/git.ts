@@ -12,7 +12,7 @@
  * CA bundle.
  */
 
-import type { WebContents } from 'electron';
+import type { Caller } from '../host/platform.js';
 import { findGit as defaultFindGit, WirebenchError } from '@wirebench/engine';
 import type { GitLocation } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
@@ -21,7 +21,7 @@ import type { RecordsReadPicks } from '../dialog-picks.js';
 import { toPreferencesWire } from '../preferences.js';
 import type { PreferencesService } from '../preferences.js';
 import type { PreferencesWire } from '../../shared/wire-base.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /** What the `git.*` channels need; a stub stands in for each of these in tests. */
 export interface GitChannelDeps {
@@ -52,17 +52,17 @@ function toWire(location: GitLocation): GitLocation {
 }
 
 /** Registers the `git.*` channels. */
-export function registerGitChannels(deps: GitChannelDeps): void {
+export function registerGitChannels(table: HandlerTable, deps: GitChannelDeps): void {
   const findGit = deps.findGit ?? defaultFindGit;
 
-  registerHandler(channels.git.detect, async () => {
+  registerHandler(table, channels.git.detect, async () => {
     // `deps.locate` (main's `gitLocator`) owns the whole precedence — no configured-path logic
     // lives here, so a marked `git.path` can never bypass the e2e "no git" override.
     const location = await deps.locate();
     return { location: location === undefined ? null : toWire(location) };
   });
 
-  registerHandler(channels.git.locate, async (_request, sender: WebContents) => {
+  registerHandler(table, channels.git.locate, async (_request, sender: Caller) => {
     // A cancelled dialog changes nothing, including the git already configured — exactly as
     // `ssl.pickCaBundle` behaves for a cancelled CA bundle pick.
     const picked = await pickFile(sender, deps.picks, { title: 'Locate git' });
@@ -80,7 +80,7 @@ export function registerGitChannels(deps: GitChannelDeps): void {
     return { location: toWire(location), preferences: next };
   });
 
-  registerHandler(channels.git.clearPath, async () => {
+  registerHandler(table, channels.git.clearPath, async () => {
     // The marker goes with the path: what is cleared must not be re-recorded as a pick at the
     // next startup either.
     const next = toPreferencesWire(await deps.preferences.update({ git: { path: '', pathPickedByMain: false } }));

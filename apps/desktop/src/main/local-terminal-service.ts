@@ -1,5 +1,5 @@
+import type { Caller } from './host/platform.js';
 import { randomUUID } from 'node:crypto';
-import type { WebContents } from 'electron';
 import type { z } from 'zod';
 import { WirebenchError } from '@wirebench/engine';
 import { events } from '../shared/ipc.js';
@@ -32,11 +32,11 @@ export type LocalPtySpawn = (
 export interface LocalTerminalDeps {
   /** Loads the native pty binding; a rejection is a missing or broken binary, reported, never a crash. */
   readonly load: () => Promise<LocalPtySpawn>;
-  readonly emit: (target: WebContents, event: IpcEvent<z.ZodType>, payload: unknown) => void;
+  readonly emit: (target: Caller, event: IpcEvent<z.ZodType>, payload: unknown) => void;
   /** The shell to run, read per open so a changed preference applies to the next tab. */
   readonly shell: () => LocalShell;
   /** Where the window's shell starts: its workspace's own folder, or home. */
-  readonly cwd: (sender: WebContents) => string;
+  readonly cwd: (sender: Caller) => string;
   readonly env: () => Record<string, string>;
   /** Tests inject ids. */
   readonly newId?: () => string;
@@ -44,7 +44,7 @@ export interface LocalTerminalDeps {
 
 interface Live {
   readonly pty: LocalPty;
-  readonly sender: WebContents;
+  readonly sender: Caller;
   readonly stop: () => void;
 }
 
@@ -63,7 +63,7 @@ export class LocalTerminalService {
    * @throws WirebenchError `local-terminal-unavailable` when the pty binding does not load on this machine;
    * `local-terminal-failed` when the shell does not start.
    */
-  async open(sender: WebContents, request: LocalTerminalOpenRequest): Promise<LocalTerminalOpenResponse> {
+  async open(sender: Caller, request: LocalTerminalOpenRequest): Promise<LocalTerminalOpenResponse> {
     const spawn = await this.binding();
     const shell = this.deps.shell();
     let pty: LocalPty;
@@ -80,7 +80,7 @@ export class LocalTerminalService {
     }
     const sessionId = (this.deps.newId ?? randomUUID)();
     const data = pty.onData((text) => {
-      if (sender.isDestroyed()) return;
+      if (sender.isClosed()) return;
       this.deps.emit(sender, events.localTerminal.data, {
         sessionId,
         data: Buffer.from(text, 'utf8').toString('base64'),
@@ -89,7 +89,7 @@ export class LocalTerminalService {
     const exit = pty.onExit(({ exitCode }) => {
       if (!this.live.has(sessionId)) return;
       this.drop(sessionId);
-      if (!sender.isDestroyed()) this.deps.emit(sender, events.localTerminal.exit, { sessionId, code: exitCode });
+      if (!sender.isClosed()) this.deps.emit(sender, events.localTerminal.exit, { sessionId, code: exitCode });
     });
     this.live.set(sessionId, {
       pty,
@@ -104,17 +104,17 @@ export class LocalTerminalService {
   }
 
   /** @throws WirebenchError `local-terminal-unknown` for a foreign or ended session. */
-  write(sender: WebContents, request: LocalTerminalWriteRequest): void {
+  write(sender: Caller, request: LocalTerminalWriteRequest): void {
     this.owned(sender, request.sessionId).pty.write(Buffer.from(request.data, 'base64').toString('utf8'));
   }
 
   /** @throws WirebenchError `local-terminal-unknown` for a foreign or ended session. */
-  resize(sender: WebContents, request: LocalTerminalResizeRequest): void {
+  resize(sender: Caller, request: LocalTerminalResizeRequest): void {
     this.owned(sender, request.sessionId).pty.resize(request.cols, request.rows);
   }
 
   /** Idempotent: a session already gone, or another window's, is left as it is. The shell is killed quietly. */
-  close(sender: WebContents, request: LocalTerminalCloseRequest): void {
+  close(sender: Caller, request: LocalTerminalCloseRequest): void {
     const live = this.live.get(request.sessionId);
     if (!live || live.sender.id !== sender.id) return;
     this.drop(request.sessionId);
@@ -122,7 +122,7 @@ export class LocalTerminalService {
   }
 
   /** Ends the shells one window owns: it went away, reloaded, or switched workspace. */
-  disposeFor(sender: WebContents): void {
+  disposeFor(sender: Caller): void {
     for (const [sessionId, live] of [...this.live]) {
       if (live.sender.id !== sender.id) continue;
       this.drop(sessionId);
@@ -144,23 +144,20 @@ export class LocalTerminalService {
     }
   }
 
-  private watch(sender: WebContents): void {
+  private watch(sender: Caller): void {
     if (this.watched.has(sender.id)) return;
     this.watched.add(sender.id);
     // A reload or a crash starts a renderer that knows nothing of the old shells; they go too.
-    sender.on('render-process-gone', () => {
+    sender.onReset(() => {
       this.disposeFor(sender);
     });
-    sender.on('did-start-navigation', (details) => {
-      if (details.isMainFrame && !details.isSameDocument) this.disposeFor(sender);
-    });
-    sender.once('destroyed', () => {
+    sender.onClosed(() => {
       this.watched.delete(sender.id);
       this.disposeFor(sender);
     });
   }
 
-  private owned(sender: WebContents, sessionId: string): Live {
+  private owned(sender: Caller, sessionId: string): Live {
     const live = this.live.get(sessionId);
     if (!live || live.sender.id !== sender.id) {
       throw new WirebenchError('local-terminal-unknown', 'No such local terminal');

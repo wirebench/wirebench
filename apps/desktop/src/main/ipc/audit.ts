@@ -10,7 +10,7 @@ import type { RecordsWritePicks } from '../dialog-picks.js';
 import { pickSaveFile } from '../native-dialogs.js';
 import type { ServerClient } from '../server-client.js';
 import { withToken, type TokenSource } from '../server-token.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 export interface AuditChannelDeps {
   readonly client: Pick<ServerClient, 'queryAudit' | 'streamAuditExport'>;
@@ -22,12 +22,12 @@ export interface AuditChannelDeps {
 
 export const auditFileName = (at: Date): string => `wirebench-audit-${at.toISOString().slice(0, 10)}.ndjson`;
 
-export function registerAuditChannels(deps: AuditChannelDeps): void {
-  registerHandler(channels.audit.query, (r) =>
+export function registerAuditChannels(table: HandlerTable, deps: AuditChannelDeps): void {
+  registerHandler(table, channels.audit.query, (r) =>
     withToken(deps, r.url, (url, token) => deps.client.queryAudit(url, token, r.query)),
   );
 
-  registerHandler(channels.audit.export, async (r, sender) => {
+  registerHandler(table, channels.audit.export, async (r, sender) => {
     const path = await pickSaveFile(sender, deps.picks, {
       title: 'Export audit log',
       filters: [{ name: 'Newline-delimited JSON', extensions: ['ndjson'] }],

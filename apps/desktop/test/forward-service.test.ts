@@ -2,7 +2,8 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { WebContents } from 'electron';
+import type { Caller } from '../src/main/host/platform.js';
+import { asCaller } from './helpers/ipc-table.js';
 import {
   FORWARD_RECONNECT_ATTEMPTS,
   FORWARD_RECONNECT_DELAYS_MS,
@@ -83,7 +84,7 @@ function sender(id: number) {
   };
 }
 type Sender = ReturnType<typeof sender>;
-const as = (s: Sender) => s as unknown as WebContents;
+const as = (s: Sender) => asCaller(s);
 
 /** As the real runner: starting then running on the asked port; a refusal fails the rule and throws. */
 function fakeConnection(fail?: (rule: ForwardRule) => Error | undefined, beforeStart?: () => Promise<void>) {
@@ -141,7 +142,7 @@ function make(
   const knownHostsFile = join(dir, 'ssh-known-hosts.json');
   writeFileSync(knownHostsFile, JSON.stringify(opts.known ?? [KEY]));
   const files: Record<number, HostsFile> = opts.files ?? {};
-  const fileOf = (s: WebContents): HostsFile => files[s.id] ?? FILE;
+  const fileOf = (s: Caller): HostsFile => files[s.id] ?? FILE;
   const hosts: ForwardServiceDeps['hosts'] = (s) => ({
     current: () => fileOf(s),
     list: (): Promise<SshListHostsResponse> =>

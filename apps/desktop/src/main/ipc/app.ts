@@ -6,9 +6,10 @@ import { appVersion } from '../app-version.js';
 import { channels, events } from '../../shared/ipc.js';
 import { applyCommandMenu } from '../menu.js';
 import type { MenuApi } from '../menu.js';
+import { callerForWebContents } from '../electron/electron-platform.js';
 import { emitEvent } from './events.js';
 import type { AppFeaturesWire, FeatureStateWire, UpdateStatusWire } from '../../shared/wire-base.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 import { KINDS } from '../../shared/kinds/kind-module.js';
 
 /**
@@ -22,6 +23,7 @@ import { KINDS } from '../../shared/kinds/kind-module.js';
  * test), the channel answers without one.
  */
 export function registerAppChannels(
+  table: HandlerTable,
   menuApi: MenuApi = {
     install: (template) => {
       Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -42,7 +44,7 @@ export function registerAppChannels(
   /** The area rows Settings → Features → Areas shows (#360); a test's default has none. */
   areaStates: () => readonly FeatureStateWire[] = () => [],
 ): void {
-  registerHandler(channels.app.version, () =>
+  registerHandler(table, channels.app.version, () =>
     Promise.resolve({
       version: appVersion(),
       electron: process.versions.electron,
@@ -50,27 +52,29 @@ export function registerAppChannels(
     }),
   );
 
-  registerHandler(channels.app.areas, () =>
+  registerHandler(table, channels.app.areas, () =>
     Promise.resolve({ enabled: [...enabledAreas], localTerminal, telnet, serial }),
   );
 
-  registerHandler(channels.app.kinds, () =>
+  registerHandler(table, channels.app.kinds, () =>
     Promise.resolve({
       enabled: [...features.kinds()],
       ...(features.features !== undefined ? { features: [...features.features()] } : {}),
     }),
   );
 
-  registerHandler(channels.app.features, () => Promise.resolve({ ...features.states(), areas: [...areaStates()] }));
+  registerHandler(table, channels.app.features, () =>
+    Promise.resolve({ ...features.states(), areas: [...areaStates()] }),
+  );
 
-  registerHandler(channels.app.checkForUpdates, async () => ({ status: await checkForUpdates() }));
+  registerHandler(table, channels.app.checkForUpdates, async () => ({ status: await checkForUpdates() }));
 
-  registerHandler(channels.app.newWindow, () => {
+  registerHandler(table, channels.app.newWindow, () => {
     newWindow();
     return Promise.resolve({});
   });
 
-  registerHandler(channels.app.registerMenu, (request, sender) => {
+  registerHandler(table, channels.app.registerMenu, (request, sender) => {
     const items = applyCommandMenu(
       request.items,
       {
@@ -82,7 +86,7 @@ export function registerAppChannels(
         // are looking at. That window's registry then decides whether `when` allows it.
         dispatch: (id) => {
           const focused = BrowserWindow.getFocusedWindow();
-          const target = focused === null || focused.isDestroyed() ? sender : focused.webContents;
+          const target = focused === null || focused.isDestroyed() ? sender : callerForWebContents(focused.webContents);
           emitEvent(target, events.command.invoke, { id });
         },
       },

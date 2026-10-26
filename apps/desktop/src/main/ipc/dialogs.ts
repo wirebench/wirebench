@@ -1,7 +1,7 @@
 import { channels } from '../../shared/ipc.js';
 import type { RecordsReadPicks, RecordsWritePicks } from '../dialog-picks.js';
 import { pickFile, pickFolder, pickSaveFile } from '../native-dialogs.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /**
  * Registers the `dialogs.*` IPC channels: native Open-file and Save-as pickers scoped to the caller's
@@ -15,19 +15,19 @@ import { registerHandler } from './register.js';
  * Open-file target as a *read* pick — so main-side containment checks can treat a user-driven
  * choice as an explicit exception to "stay inside the project" (see `main/path-access.ts`).
  */
-export function registerDialogsChannels(picks: RecordsWritePicks & RecordsReadPicks): void {
-  registerHandler(channels.dialogs.openFile, async (request, sender) => ({
+export function registerDialogsChannels(table: HandlerTable, picks: RecordsWritePicks & RecordsReadPicks): void {
+  registerHandler(table, channels.dialogs.openFile, async (request, sender) => ({
     path: await pickFile(sender, picks, {
       ...(request.title !== undefined ? { title: request.title } : {}),
       ...(request.filters !== undefined ? { filters: request.filters } : {}),
     }),
   }));
 
-  registerHandler(channels.dialogs.openFolder, async (request, sender) => ({
+  registerHandler(table, channels.dialogs.openFolder, async (request, sender) => ({
     path: await pickFolder(sender, request.title !== undefined ? { title: request.title } : {}, picks),
   }));
 
-  registerHandler(channels.dialogs.saveFile, async (request, sender) => ({
+  registerHandler(table, channels.dialogs.saveFile, async (request, sender) => ({
     path: await pickSaveFile(sender, picks, {
       ...(request.title !== undefined ? { title: request.title } : {}),
       ...(request.filters !== undefined ? { filters: request.filters } : {}),

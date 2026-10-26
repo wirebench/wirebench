@@ -11,15 +11,16 @@
  * is picked again.
  */
 
-import { BrowserWindow, dialog } from 'electron';
-import type { WebContents } from 'electron';
+import { windowOf } from '../electron/electron-platform.js';
+import type { Caller } from '../host/platform.js';
+import { dialog } from 'electron';
 import { WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
 import { toPreferencesWire } from '../preferences.js';
 import type { PreferencesService } from '../preferences.js';
 import type { PreferencesWire } from '../../shared/wire-base.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /** What the `ssl.*` channels need; a stub stands in for each of these in tests. */
 export interface SslChannelDeps {
@@ -39,8 +40,8 @@ function e2eOpenPathOverride(): string | undefined {
   return process.env['WIREBENCH_E2E_OPEN_PATH'];
 }
 
-async function pickThroughDialog(sender: WebContents): Promise<string | undefined> {
-  const window = BrowserWindow.fromWebContents(sender);
+async function pickThroughDialog(sender: Caller): Promise<string | undefined> {
+  const window = windowOf(sender);
   const options: Electron.OpenDialogOptions = {
     title: 'Choose a CA bundle',
     properties: ['openFile'],
@@ -49,7 +50,8 @@ async function pickThroughDialog(sender: WebContents): Promise<string | undefine
       { name: 'All files', extensions: ['*'] },
     ],
   };
-  const result = window === null ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(window, options);
+  const result =
+    window === undefined ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(window, options);
   return result.canceled ? undefined : result.filePaths[0];
 }
 
@@ -68,8 +70,8 @@ async function assertCaBundleUnlocked(preferences: SslChannelDeps['preferences']
 }
 
 /** Registers the `ssl.*` channels. */
-export function registerSslChannels(deps: SslChannelDeps): void {
-  registerHandler(channels.ssl.pickCaBundle, async (_request, sender) => {
+export function registerSslChannels(table: HandlerTable, deps: SslChannelDeps): void {
+  registerHandler(table, channels.ssl.pickCaBundle, async (_request, sender) => {
     await assertCaBundleUnlocked(deps.preferences);
     // The override goes through `rememberRead` exactly as a real pick does, so e2e exercises
     // the containment path a user does rather than a bypass of it. Comma-separated for symmetry
@@ -91,7 +93,7 @@ export function registerSslChannels(deps: SslChannelDeps): void {
     return { path, preferences: next };
   });
 
-  registerHandler(channels.ssl.clearCaBundle, async () => {
+  registerHandler(table, channels.ssl.clearCaBundle, async () => {
     await assertCaBundleUnlocked(deps.preferences);
     // The marker goes with the path: what is cleared must not be re-recorded as a pick at the
     // next startup either.

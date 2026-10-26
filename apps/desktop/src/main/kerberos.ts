@@ -8,7 +8,7 @@
 import { join } from 'node:path';
 import { configureKerberos, kerberosProvider, loadKerberosProvider, type KerberosProvider } from '@wirebench/engine';
 import { channels } from '../shared/ipc.js';
-import { registerHandler } from './ipc/register.js';
+import { registerHandler, type HandlerTable } from './ipc/register.js';
 
 export function kerberosBindingPath(input: {
   readonly isPackaged: boolean;
@@ -48,8 +48,8 @@ export function setUpKerberos(input: { readonly isPackaged: boolean; readonly re
   );
 }
 
-export function registerKerberosChannels(): void {
-  registerHandler(channels.auth.kerberosAvailability, () => {
+export function registerKerberosChannels(table: HandlerTable): void {
+  registerHandler(table, channels.auth.kerberosAvailability, () => {
     const availability = kerberosProvider().availability();
     const platform = process.platform === 'win32' || process.platform === 'darwin' ? process.platform : 'linux';
     return Promise.resolve(

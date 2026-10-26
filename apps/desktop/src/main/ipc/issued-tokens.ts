@@ -6,7 +6,7 @@
  */
 import { channels } from '../../shared/ipc.js';
 import type { IssuedTokensService } from '../issued-tokens.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 export interface IssuedTokenChannelDeps {
   readonly issuedTokens: Pick<IssuedTokensService, 'status' | 'fetch' | 'clear'>;
@@ -15,9 +15,21 @@ export interface IssuedTokenChannelDeps {
 }
 
 /** Registers the three `issuedTokens.*` handlers. */
-export function registerIssuedTokenChannels(deps: IssuedTokenChannelDeps): void {
+export function registerIssuedTokenChannels(table: HandlerTable, deps: IssuedTokenChannelDeps): void {
   const show = (): boolean => deps.showSecrets?.get() ?? false;
-  registerHandler(channels.issuedTokens.status, async (locator) => await deps.issuedTokens.status(locator, show()));
-  registerHandler(channels.issuedTokens.fetch, async (locator) => await deps.issuedTokens.fetch(locator, show()));
-  registerHandler(channels.issuedTokens.clear, async (locator) => await deps.issuedTokens.clear(locator, show()));
+  registerHandler(
+    table,
+    channels.issuedTokens.status,
+    async (locator) => await deps.issuedTokens.status(locator, show()),
+  );
+  registerHandler(
+    table,
+    channels.issuedTokens.fetch,
+    async (locator) => await deps.issuedTokens.fetch(locator, show()),
+  );
+  registerHandler(
+    table,
+    channels.issuedTokens.clear,
+    async (locator) => await deps.issuedTokens.clear(locator, show()),
+  );
 }

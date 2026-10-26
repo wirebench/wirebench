@@ -13,6 +13,7 @@ import type { MutationDeps } from '../src/main/project-mutations.js';
 import { findRequest, toInterfaceWire, toRequestWire } from '../src/main/project-wire.js';
 import { preflightRequest } from '../src/main/expansion-preflight.js';
 import { registerWsaChannels } from '../src/main/kinds/soap/channels/wsa.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const BINDING = '{urn:wb:wsa}WsaBinding';
 
@@ -116,6 +117,7 @@ describe('preflight WS-Addressing', () => {
 });
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -131,7 +133,7 @@ describe('the wsa.* channels', () => {
       insertWsaHeaders: vi.fn().mockReturnValue('<addressed/>'),
       removeWsaHeadersFrom: vi.fn().mockReturnValue('<clean/>'),
     };
-    registerWsaChannels({ project });
+    registerWsaChannels(table, { project });
     const inserted = await handlers.get('wsa.insertHeaders')?.({}, { requestId: 'req-1', envelopeXml: '<x/>' });
     expect(inserted).toMatchObject({ ok: true, value: { envelopeXml: '<addressed/>' } });
     expect(project.insertWsaHeaders).toHaveBeenCalledWith('req-1', '<x/>');

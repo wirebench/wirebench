@@ -16,6 +16,7 @@ import { EngineService } from '../src/main/engine-service.js';
 import type { DefinitionChannelProject } from '../src/main/kinds/soap/channels/definition.js';
 import { registerDefinitionChannels } from '../src/main/kinds/soap/channels/definition.js';
 import { readPublicFixture } from './helpers/fixtures.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const { readFileSpy } = vi.hoisted(() => ({ readFileSpy: vi.fn<(path: unknown) => void>() }));
 
@@ -32,6 +33,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 });
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -84,7 +86,7 @@ describe('definition.import — a file path must be proven, not merely named', (
     picks = new DialogPicks();
     const project = {} as unknown as DefinitionChannelProject;
     // Every open project's folder counts as "inside the project"; this workspace has one.
-    registerDefinitionChannels(new EngineService(), { project, picks, projectDirs: () => [projectDir] });
+    registerDefinitionChannels(table, new EngineService(), { project, picks, projectDirs: () => [projectDir] });
   });
 
   afterEach(async () => {

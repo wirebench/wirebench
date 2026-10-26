@@ -22,8 +22,10 @@ import {
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { registerGitChannels } from '../src/main/ipc/git.js';
 import type { PreferencesWire } from '../src/shared/wire-base.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 const showOpenDialog = vi.fn();
 
@@ -63,7 +65,7 @@ describe('git.detect', () => {
     const location: GitLocation = { path: '/usr/bin/git', version: '2.40.0' };
     const locate = vi.fn().mockResolvedValue(location);
 
-    registerGitChannels({ preferences: new PreferencesService(dir), picks: new DialogPicks(), locate });
+    registerGitChannels(table, { preferences: new PreferencesService(dir), picks: new DialogPicks(), locate });
 
     const result = (await invoke('git.detect', {})) as { value: { location: GitLocation | null } };
     expect(result.value.location).toEqual(location);
@@ -71,7 +73,7 @@ describe('git.detect', () => {
   });
 
   it('answers with null when the locator finds nothing', async () => {
-    registerGitChannels({
+    registerGitChannels(table, {
       preferences: new PreferencesService(dir),
       picks: new DialogPicks(),
       locate: vi.fn().mockResolvedValue(undefined),
@@ -95,7 +97,7 @@ describe('git.detect', () => {
     // A marked preference is configured — the very case the bug let bypass the locator.
     await preferences.update({ git: { path: '/configured/git', pathPickedByMain: true } });
 
-    registerGitChannels({ preferences, picks: new DialogPicks(), locate, findGit });
+    registerGitChannels(table, { preferences, picks: new DialogPicks(), locate, findGit });
 
     const result = (await invoke('git.detect', {})) as { value: { location: GitLocation | null } };
     expect(result.value.location).toEqual(overrideResult);
@@ -109,7 +111,7 @@ describe('git.detect', () => {
     const preferences = new PreferencesService(dir);
     await preferences.update({ git: { path: '/configured/git', pathPickedByMain: true } });
 
-    registerGitChannels({ preferences, picks: new DialogPicks(), locate });
+    registerGitChannels(table, { preferences, picks: new DialogPicks(), locate });
 
     const result = (await invoke('git.detect', {})) as { value: { location: GitLocation | null } };
     expect(result.value.location).toEqual(markedLocation);
@@ -123,7 +125,7 @@ describe('git.locate', () => {
     const location: GitLocation = { path: picked, version: '2.41.0' };
     const picks = new DialogPicks();
     const changed: PreferencesWire[] = [];
-    registerGitChannels({
+    registerGitChannels(table, {
       preferences: new PreferencesService(dir),
       picks,
       locate: vi.fn(),
@@ -148,7 +150,7 @@ describe('git.locate', () => {
   it('fails with git-not-found when the picked file is not a usable git, and writes nothing', async () => {
     process.env['WIREBENCH_E2E_FILE_DIALOG_PATH'] = '/not/git';
     const changed: PreferencesWire[] = [];
-    registerGitChannels({
+    registerGitChannels(table, {
       preferences: new PreferencesService(dir),
       picks: new DialogPicks(),
       locate: vi.fn(),
@@ -166,7 +168,7 @@ describe('git.locate', () => {
     showOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] });
     const changed: PreferencesWire[] = [];
     const findGit = vi.fn();
-    registerGitChannels({
+    registerGitChannels(table, {
       preferences: new PreferencesService(dir),
       picks: new DialogPicks(),
       locate: vi.fn(),
@@ -188,7 +190,7 @@ describe('git.clearPath', () => {
     process.env['WIREBENCH_E2E_FILE_DIALOG_PATH'] = picked;
     const preferences = new PreferencesService(dir);
     const changed: PreferencesWire[] = [];
-    registerGitChannels({
+    registerGitChannels(table, {
       preferences,
       picks: new DialogPicks(),
       locate: vi.fn(),

@@ -1,3 +1,4 @@
+import type { HandlerTable } from './ipc/register.js';
 import { resolveFeatures, type FeatureState } from '@wirebench/engine';
 import { enabledAreaIds, toAreaIds } from '../shared/area-module.js';
 import type { AreaId } from '../shared/area-module.js';
@@ -89,15 +90,16 @@ export function serialFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
 
 /** Registers the IPC channels of the areas that are switched on; an off area answers nothing. */
 export function registerEnabledAreaChannels(
+  table: HandlerTable,
   enabled: readonly AreaId[],
-  deps: Parameters<typeof registerSshChannels>[0] & {
+  deps: Parameters<typeof registerSshChannels>[1] & {
     /** The local terminal's shells; `undefined` while {@link localTerminalFromEnv} has it off. */
-    readonly localTerminal?: Parameters<typeof registerLocalTerminalChannels>[0] | undefined;
+    readonly localTerminal?: Parameters<typeof registerLocalTerminalChannels>[1] | undefined;
   },
 ): void {
   if (!enabled.includes('ssh')) return;
-  registerSshChannels(deps);
-  if (deps.localTerminal !== undefined) registerLocalTerminalChannels(deps.localTerminal);
+  registerSshChannels(table, deps);
+  if (deps.localTerminal !== undefined) registerLocalTerminalChannels(table, deps.localTerminal);
 }
 
 /**

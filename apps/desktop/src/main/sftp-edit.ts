@@ -1,3 +1,4 @@
+import type { Caller } from './host/platform.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { createWriteStream, watch as fsWatch } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
@@ -5,7 +6,6 @@ import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { WebContents } from 'electron';
 import { WirebenchError } from '@wirebench/engine';
 import type { SftpSession } from '@wirebench/ssh';
 import { events } from '../shared/ipc.js';
@@ -32,7 +32,7 @@ export interface SftpEditDeps {
 
 interface Edit {
   readonly id: string;
-  readonly sender: WebContents;
+  readonly sender: Caller;
   readonly sessionId: string;
   readonly session: SftpSession;
   /** The server's real path: a symlink is edited at its target, never replaced by a file. */
@@ -80,7 +80,7 @@ export class SftpEditService {
    *   `confirmedLarge` | `sftp-failed` `{ reason: 'not-a-file' | 'unsafe-name' }` | `sftp-edit-open-failed` |
    *   another `sftp-*` | `local-fs-failed`
    */
-  async edit(sender: WebContents, request: SftpEditRequest): Promise<{ editId: string }> {
+  async edit(sender: Caller, request: SftpEditRequest): Promise<{ editId: string }> {
     const session = this.deps.sftp.session(sender, request.sessionId);
     const remotePath = await session.realpath(request.path).catch((error: unknown) => {
       throw asWirebenchError(error);
@@ -154,7 +154,7 @@ export class SftpEditService {
    *
    * @throws WirebenchError `sftp-edit-unknown` when no question is open for this window's edit
    */
-  reply(sender: WebContents, request: SftpEditReplyRequest): Promise<void> {
+  reply(sender: Caller, request: SftpEditReplyRequest): Promise<void> {
     const edit = this.own(sender, request.editId);
     if (!edit?.asking) return Promise.reject(new WirebenchError('sftp-edit-unknown', 'No such edit is asking'));
     edit.asking = false;
@@ -164,13 +164,13 @@ export class SftpEditService {
   }
 
   /** Stops watching and deletes the copy. Idempotent; another window's edit is left as it is. */
-  async end(sender: WebContents, request: { editId: string }): Promise<void> {
+  async end(sender: Caller, request: { editId: string }): Promise<void> {
     const edit = this.own(sender, request.editId);
     if (edit) await this.finish(edit);
   }
 
   /** The window went away, reloaded or switched workspace: its edits end and their copies go. */
-  async disposeFor(sender: WebContents): Promise<void> {
+  async disposeFor(sender: Caller): Promise<void> {
     await Promise.all([...this.edits.values()].filter((e) => e.sender.id === sender.id).map((e) => this.finish(e)));
   }
 
@@ -179,7 +179,7 @@ export class SftpEditService {
     await Promise.all([...this.edits.values()].map((e) => this.finish(e)));
   }
 
-  private own(sender: WebContents, editId: string): Edit | undefined {
+  private own(sender: Caller, editId: string): Edit | undefined {
     const edit = this.edits.get(editId);
     return edit?.sender.id === sender.id ? edit : undefined;
   }
@@ -263,7 +263,7 @@ export class SftpEditService {
   }
 
   private send(edit: Edit, payload: SftpEditEvent): void {
-    if (edit.ended || edit.sender.isDestroyed()) return;
+    if (edit.ended || edit.sender.isClosed()) return;
     this.deps.emit(edit.sender, events.sftp.edit, payload);
   }
 }

@@ -1,7 +1,9 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   nativeTheme: { shouldUseDarkColors: true, on: () => undefined },
@@ -49,14 +51,14 @@ describe('theme ipc', () => {
   });
 
   it('answers theme.get with the current OS scheme', async () => {
-    registerThemeChannels(vi.fn(), fakeNativeTheme(false));
+    registerThemeChannels(table, vi.fn(), fakeNativeTheme(false));
     await expect(invoke('theme.get', undefined)).resolves.toEqual({ ok: true, value: { os: 'light' } });
   });
 
   it('broadcasts theme.changed when the OS flips', () => {
     const broadcast = vi.fn();
     const theme = fakeNativeTheme(true);
-    registerThemeChannels(broadcast, theme);
+    registerThemeChannels(table, broadcast, theme);
     theme.flip(false);
     expect(broadcast).toHaveBeenCalledWith({ os: 'light' });
     theme.flip(true);

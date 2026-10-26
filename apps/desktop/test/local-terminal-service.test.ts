@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LocalTerminalService } from '../src/main/local-terminal-service.js';
 import type { LocalPty, LocalPtySpawn, LocalTerminalDeps } from '../src/main/local-terminal-service.js';
+import { asCaller } from './helpers/ipc-table.js';
 
 function sender(id: number) {
   const listeners = new Map<string, ((details?: unknown) => void)[]>();
@@ -72,7 +73,7 @@ function make(overrides: Partial<LocalTerminalDeps> = {}) {
   return { service, spawn, ptys, emit, events };
 }
 
-const w = (id = 1) => sender(id) as unknown as Parameters<LocalTerminalService['open']>[0];
+const w = (id = 1) => asCaller(sender(id));
 
 describe('LocalTerminalService', () => {
   it('starts the shell in a pseudo-terminal of the asked size, in the start folder', async () => {
@@ -140,12 +141,12 @@ describe('LocalTerminalService', () => {
     const { service, ptys } = make();
     const one = sender(1);
     const two = sender(2);
-    await service.open(one as never, { cols: 80, rows: 24 });
-    await service.open(two as never, { cols: 80, rows: 24 });
+    await service.open(asCaller(one), { cols: 80, rows: 24 });
+    await service.open(asCaller(two), { cols: 80, rows: 24 });
     one.fire('destroyed');
     expect(ptys[0]?.kill).toHaveBeenCalled();
     expect(ptys[1]?.kill).not.toHaveBeenCalled();
-    service.disposeFor(two as never);
+    service.disposeFor(asCaller(two));
     expect(ptys[1]?.kill).toHaveBeenCalled();
   });
 

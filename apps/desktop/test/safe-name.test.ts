@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import type { WebContents } from 'electron';
+import { asCaller } from './helpers/ipc-table.js';
 import type { RemoteEntry, SftpSession } from '@wirebench/ssh';
 import { describe, expect, it, vi } from 'vitest';
 import { keepBothName, safeLocalName } from '../src/main/safe-name.js';
@@ -67,7 +67,7 @@ describe('a download from a hostile server', () => {
       sftp: { session: () => session, onSessionClosed: () => () => undefined },
       emit,
     });
-    const sender = { id: 1, isDestroyed: () => false, once: vi.fn() } as unknown as WebContents;
+    const sender = asCaller({ id: 1, isDestroyed: () => false, once: vi.fn() });
     const { transferIds } = await queue.copy(sender, {
       batchId: 'b',
       from: { place: { kind: 'remote', sessionId: 'r1' }, paths: ['/d'] },

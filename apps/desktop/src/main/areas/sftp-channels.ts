@@ -1,5 +1,5 @@
 import { channels } from '../../shared/ipc.js';
-import { registerHandler } from '../ipc/register.js';
+import { registerHandler, type HandlerTable } from '../ipc/register.js';
 import { localHome } from '../local-fs.js';
 import type { SftpEditService } from '../sftp-edit.js';
 import type { SftpService } from '../sftp-service.js';
@@ -10,57 +10,60 @@ import type { TransferQueue } from '../transfers.js';
  * local place reaches this machine's paths as given (spec R5, the one exception to main's containment);
  * a remote one only the sender's own sessions.
  */
-export function registerSftpChannels(deps: {
-  sftp: Pick<SftpService, 'open' | 'close' | 'list' | 'mkdir' | 'rename' | 'remove' | 'chmod'>;
-  transfers: Pick<TransferQueue, 'copy' | 'resolve' | 'cancel' | 'retry'>;
-  edits: Pick<SftpEditService, 'edit' | 'reply' | 'end'>;
-}): void {
+export function registerSftpChannels(
+  table: HandlerTable,
+  deps: {
+    sftp: Pick<SftpService, 'open' | 'close' | 'list' | 'mkdir' | 'rename' | 'remove' | 'chmod'>;
+    transfers: Pick<TransferQueue, 'copy' | 'resolve' | 'cancel' | 'retry'>;
+    edits: Pick<SftpEditService, 'edit' | 'reply' | 'end'>;
+  },
+): void {
   const { sftp, transfers, edits } = deps;
   // Sessions belong to the window that opened them: the sender is the owner on every call.
-  registerHandler(channels.sftp.open, (request, sender) => sftp.open(sender, request));
-  registerHandler(channels.sftp.close, (request, sender) => {
+  registerHandler(table, channels.sftp.open, (request, sender) => sftp.open(sender, request));
+  registerHandler(table, channels.sftp.close, (request, sender) => {
     sftp.close(sender, request);
     return Promise.resolve({});
   });
-  registerHandler(channels.sftp.list, (request, sender) => sftp.list(sender, request));
-  registerHandler(channels.sftp.mkdir, async (request, sender) => {
+  registerHandler(table, channels.sftp.list, (request, sender) => sftp.list(sender, request));
+  registerHandler(table, channels.sftp.mkdir, async (request, sender) => {
     await sftp.mkdir(sender, request);
     return {};
   });
-  registerHandler(channels.sftp.rename, async (request, sender) => {
+  registerHandler(table, channels.sftp.rename, async (request, sender) => {
     await sftp.rename(sender, request);
     return {};
   });
-  registerHandler(channels.sftp.remove, async (request, sender) => {
+  registerHandler(table, channels.sftp.remove, async (request, sender) => {
     await sftp.remove(sender, request);
     return {};
   });
-  registerHandler(channels.sftp.chmod, async (request, sender) => {
+  registerHandler(table, channels.sftp.chmod, async (request, sender) => {
     await sftp.chmod(sender, request);
     return {};
   });
-  registerHandler(channels.sftp.localHome, () => Promise.resolve(localHome()));
+  registerHandler(table, channels.sftp.localHome, () => Promise.resolve(localHome()));
   // Copies are the window's own too: only it can answer, cancel or retry them.
-  registerHandler(channels.sftp.copy, (request, sender) => transfers.copy(sender, request));
-  registerHandler(channels.sftp.resolve, (request, sender) => {
+  registerHandler(table, channels.sftp.copy, (request, sender) => transfers.copy(sender, request));
+  registerHandler(table, channels.sftp.resolve, (request, sender) => {
     transfers.resolve(sender, request);
     return Promise.resolve({});
   });
-  registerHandler(channels.sftp.cancel, (request, sender) => {
+  registerHandler(table, channels.sftp.cancel, (request, sender) => {
     transfers.cancel(sender, request);
     return Promise.resolve({});
   });
-  registerHandler(channels.sftp.retry, (request, sender) => {
+  registerHandler(table, channels.sftp.retry, (request, sender) => {
     transfers.retry(sender, request);
     return Promise.resolve({});
   });
   // Edits are the window's own too: only it can answer or end them.
-  registerHandler(channels.sftp.edit, (request, sender) => edits.edit(sender, request));
-  registerHandler(channels.sftp.editReply, async (request, sender) => {
+  registerHandler(table, channels.sftp.edit, (request, sender) => edits.edit(sender, request));
+  registerHandler(table, channels.sftp.editReply, async (request, sender) => {
     await edits.reply(sender, request);
     return {};
   });
-  registerHandler(channels.sftp.endEdit, async (request, sender) => {
+  registerHandler(table, channels.sftp.endEdit, async (request, sender) => {
     await edits.end(sender, request);
     return {};
   });

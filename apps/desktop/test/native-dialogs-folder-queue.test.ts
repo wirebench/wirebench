@@ -5,7 +5,7 @@
  */
 import { delimiter } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WebContents } from 'electron';
+import { asCaller } from './helpers/ipc-table.js';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 
 const showOpenDialog = vi.fn();
@@ -23,7 +23,7 @@ vi.mock('electron', () => ({
   dialog: { showOpenDialog: (...args: unknown[]) => showOpenDialog(...args) as unknown },
 }));
 
-const SENDER = {} as WebContents;
+const SENDER = asCaller({});
 
 async function loadFresh() {
   // The queue position is module state; each test starts from a fresh module.

@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WirebenchError } from '@wirebench/engine';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
@@ -74,7 +76,7 @@ describe('team.* channels (teams-access §3.5, §5.2)', () => {
   });
 
   it('registers every channel the contract declares', () => {
-    registerTeamChannels(fakes());
+    registerTeamChannels(table, fakes());
     expect([...handlers.keys()].sort()).toEqual(
       Object.values(channels.team)
         .map((c) => c.name)
@@ -84,7 +86,7 @@ describe('team.* channels (teams-access §3.5, §5.2)', () => {
 
   it('team.list answers the teams and whether the caller is a server admin, with the account token', async () => {
     const f = fakes();
-    registerTeamChannels(f);
+    registerTeamChannels(table, f);
     expect(await invoke('team.list', { url: 'https://WB.test/some/path' })).toEqual({
       ok: true,
       value: { teams: [TEAM], serverAdmin: true, desktopActivity: true, sessionLogs: false, featurePolicy: false },
@@ -96,7 +98,7 @@ describe('team.* channels (teams-access §3.5, §5.2)', () => {
   it('team.list reports desktopActivity false when the server lacks the capability', async () => {
     const f = fakes();
     f.client.meta.mockResolvedValue({ capabilities: ['identity', 'teams'] });
-    registerTeamChannels(f);
+    registerTeamChannels(table, f);
     expect(await invoke('team.list', { url: 'https://wb.test' })).toMatchObject({
       ok: true,
       value: { desktopActivity: false },
@@ -106,7 +108,7 @@ describe('team.* channels (teams-access §3.5, §5.2)', () => {
   it('team.list still answers, with desktopActivity false, when GET /meta fails', async () => {
     const f = fakes();
     f.client.meta.mockRejectedValue(new Error('down'));
-    registerTeamChannels(f);
+    registerTeamChannels(table, f);
     expect(await invoke('team.list', { url: 'https://wb.test' })).toMatchObject({
       ok: true,
       value: { teams: [TEAM], desktopActivity: false },
@@ -115,7 +117,7 @@ describe('team.* channels (teams-access §3.5, §5.2)', () => {
 
   it('with no token it answers account-signed-out and never calls the server', async () => {
     const f = fakes(undefined);
-    registerTeamChannels(f);
+    registerTeamChannels(table, f);
     const res = await invoke('team.listWorkspaces', { url: 'https://wb.test' });
     expect(res).toMatchObject({ ok: false, error: { code: 'account-signed-out' } });
     expect(f.client.listWorkspaces).not.toHaveBeenCalled();
@@ -127,7 +129,7 @@ describe('team.* channels (teams-access §3.5, §5.2)', () => {
     f.client.setMemberRole.mockRejectedValueOnce(
       new WirebenchError('teams-last-admin', 'A team needs at least one admin.'),
     );
-    registerTeamChannels(f);
+    registerTeamChannels(table, f);
     expect(await invoke('team.list', { url: 'https://wb.test' })).toMatchObject({
       ok: false,
       error: { code: 'identity-unauthenticated' },
@@ -141,7 +143,7 @@ describe('team.* channels (teams-access §3.5, §5.2)', () => {
 
   it('passes bodies without undefined fields and wraps answers', async () => {
     const f = fakes();
-    registerTeamChannels(f);
+    registerTeamChannels(table, f);
     expect(
       await invoke('team.createWorkspace', { url: 'https://wb.test', teamId: TEAM_ID, name: 'Integration' }),
     ).toEqual({

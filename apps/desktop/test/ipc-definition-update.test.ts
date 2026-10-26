@@ -13,8 +13,10 @@ import type {
   DefinitionGenerateDocsResponse,
   UpdatePlanWire,
 } from '../src/shared/kinds/soap/wire.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   // The e2e dialog overrides are honoured only in an unpackaged run.
@@ -140,7 +142,7 @@ afterEach(() => {
 describe('definition.* update, export and docs IPC', () => {
   it('passes the source through to planDefinitionUpdate and returns its plan', async () => {
     const project = stubProject();
-    registerDefinitionChannels(new EngineService(), {
+    registerDefinitionChannels(table, new EngineService(), {
       project,
       picks: { rememberWrite: () => undefined, hasRead: () => false },
     });
@@ -155,7 +157,7 @@ describe('definition.* update, export and docs IPC', () => {
   });
 
   it('rejects a source that is neither a URL nor a file path', async () => {
-    registerDefinitionChannels(new EngineService(), {
+    registerDefinitionChannels(table, new EngineService(), {
       project: stubProject(),
       picks: { rememberWrite: () => undefined, hasRead: () => false },
     });
@@ -165,7 +167,7 @@ describe('definition.* update, export and docs IPC', () => {
   });
 
   it('returns the fresh project snapshot alongside what applying the update did', async () => {
-    registerDefinitionChannels(new EngineService(), {
+    registerDefinitionChannels(table, new EngineService(), {
       project: stubProject(),
       picks: { rememberWrite: () => undefined, hasRead: () => false },
     });
@@ -188,7 +190,7 @@ describe('definition.* update, export and docs IPC', () => {
 
   it('reports a cancelled folder picker instead of exporting', async () => {
     const project = stubProject();
-    registerDefinitionChannels(new EngineService(), {
+    registerDefinitionChannels(table, new EngineService(), {
       project,
       picks: { rememberWrite: () => undefined, hasRead: () => false },
     });
@@ -200,7 +202,7 @@ describe('definition.* update, export and docs IPC', () => {
   it('exports into the folder the picker answers with', async () => {
     process.env['WIREBENCH_E2E_DIALOG_FOLDER'] = tmp;
     const project = stubProject();
-    registerDefinitionChannels(new EngineService(), {
+    registerDefinitionChannels(table, new EngineService(), {
       project,
       picks: { rememberWrite: () => undefined, hasRead: () => false },
     });
@@ -213,7 +215,7 @@ describe('definition.* update, export and docs IPC', () => {
     const target = join(tmp, 'docs.html');
     process.env['WIREBENCH_E2E_DIALOG_SAVE'] = target;
     const picked: string[] = [];
-    registerDefinitionChannels(new EngineService(), {
+    registerDefinitionChannels(table, new EngineService(), {
       project: stubProject(),
       picks: { rememberWrite: (path) => picked.push(path), hasRead: () => false },
     });
@@ -227,7 +229,7 @@ describe('definition.* update, export and docs IPC', () => {
   });
 
   it('writes nothing when the save dialog is cancelled', async () => {
-    registerDefinitionChannels(new EngineService(), {
+    registerDefinitionChannels(table, new EngineService(), {
       project: stubProject(),
       picks: { rememberWrite: () => undefined, hasRead: () => false },
     });
@@ -239,7 +241,7 @@ describe('definition.* update, export and docs IPC', () => {
   });
 
   it('registers only the read-only channels when no project deps are given', () => {
-    registerDefinitionChannels(new EngineService());
+    registerDefinitionChannels(table, new EngineService());
     expect(handlers.has('definition.documents')).toBe(true);
     expect(handlers.has('definition.planUpdate')).toBe(false);
   });

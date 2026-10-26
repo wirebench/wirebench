@@ -11,7 +11,7 @@ import { toWsFrameWire } from '../../engine-wire.js';
 import type { PreflightResult } from '../../expansion-preflight.js';
 import { type ApiChannelDeps, fingerprintOf, sourceLabel, toDefinitionAuth, toEngineSource } from '../../ipc/api.js';
 import { emitEvent } from '../../ipc/events.js';
-import { registerHandler } from '../../ipc/register.js';
+import { registerHandler, type HandlerTable } from '../../ipc/register.js';
 import {
   NO_PREFLIGHT,
   nothingToWarnAbout,
@@ -93,13 +93,13 @@ async function preflightWs(
   };
 }
 /** Registers WebSocket's `request.*` channels (spec §5.4). */
-export function registerWsRequestChannels(service: EngineService, deps: RequestChannelDeps): void {
+export function registerWsRequestChannels(table: HandlerTable, service: EngineService, deps: RequestChannelDeps): void {
   const sendDeps = toSendDeps(service, deps);
   // The session as it happens: the invoke stays pending until it closes, while `ws.live` reports the
   // handshake, each frame and each frame's contract check. Its request side takes pushes and a close.
   // A reused `sendId` never replaces a session in flight, which nothing could reach again: the
   // registry refuses it with `ws-session-exists` from the moment the first open begins.
-  registerHandler(channels.request.openWs, async (request, sender) => {
+  registerHandler(table, channels.request.openWs, async (request, sender) => {
     return await trackOpenWs(
       request.requestId,
       sendThroughEngine(sendDeps, request.sendId, request.requestId, {
@@ -113,7 +113,7 @@ export function registerWsRequestChannels(service: EngineService, deps: RequestC
     );
   });
   // Pushed in the order the renderer sent them: a text waiting on the keychain holds back the next.
-  registerHandler(channels.request.wsSend, async (request) => {
+  registerHandler(table, channels.request.wsSend, async (request) => {
     const handle = sendDeps.registry.get(request.sendId, 'websocket');
     if (handle === undefined) {
       throw new WirebenchError('ws-session-unknown', 'That connection is no longer open.', {
@@ -137,10 +137,12 @@ export function registerWsRequestChannels(service: EngineService, deps: RequestC
     );
     return toWsFrameWire(frame as WsFrame, { show: deps.showSecrets?.get() ?? false });
   });
-  registerHandler(channels.request.wsClose, (request) =>
+  registerHandler(table, channels.request.wsClose, (request) =>
     Promise.resolve({ closed: sendDeps.registry.closeWs(request.sendId, request.code, request.reason) }),
   );
-  registerHandler(channels.request.preflightWs, (request) => preflightWs(sendDeps, deps.secretSources?.(), request));
+  registerHandler(table, channels.request.preflightWs, (request) =>
+    preflightWs(sendDeps, deps.secretSources?.(), request),
+  );
 }
 
 /** An update plan onto the wire: the engine's read-only arrays copied into the schema's own. */
@@ -153,7 +155,7 @@ function toAsyncApiUpdatePlanWire(plan: AsyncApiUpdatePlan): AsyncApiUpdatePlanW
   };
 }
 /** Registers WebSocket's `api.*` channels (spec §5.4). */
-export function registerWsApiChannels(deps: ApiChannelDeps): void {
+export function registerWsApiChannels(table: HandlerTable, deps: ApiChannelDeps): void {
   const { router } = deps;
   const readAsyncApiSource = async (apiId: string) => {
     const asyncApiImports = deps.asyncApiImports;
@@ -177,7 +179,7 @@ export function registerWsApiChannels(deps: ApiChannelDeps): void {
     // The credentials it was imported with, without asking again; a file is read without any.
     return asyncApiImports.readAsyncApi(toEngineSource(checked), checked.kind === 'url' ? auth : undefined);
   };
-  registerHandler(channels.api.importAsyncApi, async (request, sender) => {
+  registerHandler(table, channels.api.importAsyncApi, async (request, sender) => {
     const asyncApiImports = deps.asyncApiImports;
     if (asyncApiImports === undefined) {
       throw new WirebenchError('not-supported', 'This build cannot import AsyncAPI documents');
@@ -237,7 +239,7 @@ export function registerWsApiChannels(deps: ApiChannelDeps): void {
       throw error;
     }
   });
-  registerHandler(channels.api.asyncApiServers, async (request) => {
+  registerHandler(table, channels.api.asyncApiServers, async (request) => {
     const asyncApiImports = deps.asyncApiImports;
     if (asyncApiImports === undefined) {
       throw new WirebenchError('not-supported', 'This build cannot import AsyncAPI documents');
@@ -253,12 +255,12 @@ export function registerWsApiChannels(deps: ApiChannelDeps): void {
         .map((server) => ({ key: server.key, url: server.url })),
     };
   });
-  registerHandler(channels.api.asyncApiPlanUpdate, async (request) => {
+  registerHandler(table, channels.api.asyncApiPlanUpdate, async (request) => {
     const next = await readAsyncApiSource(request.apiId);
     const plan = toAsyncApiUpdatePlanWire(await router.asyncApiPlanUpdate(request.apiId, next.document));
     return { ...plan, fingerprint: fingerprintOf(next.documents) };
   });
-  registerHandler(channels.api.asyncApiApplyUpdate, async (request) => {
+  registerHandler(table, channels.api.asyncApiApplyUpdate, async (request) => {
     const next = await readAsyncApiSource(request.apiId);
     // The user agreed to the plan they were shown; a source edited since would apply something else.
     if (fingerprintOf(next.documents) !== request.fingerprint) {
@@ -285,7 +287,7 @@ export function registerWsApiChannels(deps: ApiChannelDeps): void {
 }
 
 /** Registers WebSocket's channels (spec §5.4). */
-export function registerWsChannels(deps: KindChannelDeps): void {
-  registerWsRequestChannels(deps.engine, deps.request);
-  registerWsApiChannels(deps.api);
+export function registerWsChannels(table: HandlerTable, deps: KindChannelDeps): void {
+  registerWsRequestChannels(table, deps.engine, deps.request);
+  registerWsApiChannels(table, deps.api);
 }

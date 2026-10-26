@@ -11,8 +11,10 @@ import { registerSyncChannels } from '../src/main/ipc/sync.js';
 import type { SyncService } from '../src/main/sync/sync-service.js';
 import { channels } from '../src/shared/ipc.js';
 import type { SyncApiHistoryWire, SyncStatusWire } from '../src/shared/wire-base.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -97,7 +99,7 @@ beforeEach(() => {
       .mockResolvedValue({ status: 'unavailable', reason: 'no-history' }),
   };
   reveal = vi.fn<(path: string) => void>();
-  registerSyncChannels({ service, reveal });
+  registerSyncChannels(table, { service, reveal });
 });
 
 describe('sync.* channels', () => {

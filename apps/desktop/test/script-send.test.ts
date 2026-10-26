@@ -33,8 +33,10 @@ import { sendDepsFor } from './helpers/send-deps.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import type { RestExchangeSummary } from '../src/shared/kinds/rest/wire.js';
 import { registerHistoryChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -444,6 +446,7 @@ describe('a SOAP resend from History', () => {
       } satisfies HistoryEntryWire;
       handlers.clear();
       registerHistoryChannelsWithKinds(
+        table,
         { get: (id: string) => (id === 'h-1' ? entry : undefined) } as unknown as HistoryService,
         {
           project: {

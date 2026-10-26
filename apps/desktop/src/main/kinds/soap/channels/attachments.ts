@@ -8,17 +8,18 @@
  * double-click-to-open and an Add-attachments picker.
  */
 
+import { windowOf } from '../../../electron/electron-platform.js';
+import type { Caller } from '../../../host/platform.js';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BrowserWindow, dialog, shell } from 'electron';
-import type { WebContents } from 'electron';
 import { nodeFs, WirebenchError, writeFileAtomic } from '@wirebench/engine';
 import { channels } from '../../../../shared/ipc.js';
 import { MAX_DROPPED_BASE64_LENGTH } from '../../../../shared/kinds/soap/wire.js';
 import type { RecordsReadPicks } from '../../../dialog-picks.js';
 import type { ExchangeCache } from '../../../exchange-cache.js';
 import type { ProjectRouter } from '../../../project-router.js';
-import { registerHandler } from '../../../ipc/register.js';
+import { registerHandler, type HandlerTable } from '../../../ipc/register.js';
 
 /** Subdirectory of `userData` that {@link registerAttachmentChannels}'s "open" writes into. */
 export const ATTACHMENTS_TMP_DIR = 'attachments-tmp';
@@ -116,8 +117,8 @@ function unknownAttachment(sendId: string, index: number): WirebenchError {
  * Save and open both read from the {@link ExchangeCache}, which is bounded — an exchange old
  * enough to have been evicted answers `unknown-attachment` rather than writing a wrong file.
  */
-export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
-  registerHandler(channels.attachments.saveResponse, async (request, sender) => {
+export function registerAttachmentChannels(table: HandlerTable, deps: AttachmentChannelDeps): void {
+  registerHandler(table, channels.attachments.saveResponse, async (request, sender) => {
     const attachment = deps.exchanges.getAttachment(request.sendId, request.index);
     if (attachment === undefined) {
       throw unknownAttachment(request.sendId, request.index);
@@ -130,7 +131,7 @@ export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
     // them anywhere the user can write. It comes from the native dialog, or the e2e override.
     let targetPath = e2eSavePathOverride();
     if (targetPath === undefined) {
-      const window = BrowserWindow.fromWebContents(sender) ?? undefined;
+      const window = windowOf(sender);
       const result = await dialog.showSaveDialog(window as BrowserWindow, {
         title: 'Save attachment as…',
         defaultPath: defaultName,
@@ -147,7 +148,7 @@ export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
     return { path: targetPath };
   });
 
-  registerHandler(channels.attachments.openResponse, async (request) => {
+  registerHandler(table, channels.attachments.openResponse, async (request) => {
     const attachment = deps.exchanges.getAttachment(request.sendId, request.index);
     if (attachment === undefined) {
       throw unknownAttachment(request.sendId, request.index);
@@ -163,7 +164,7 @@ export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
     return { path };
   });
 
-  registerHandler(channels.attachments.openRequest, async (request) => {
+  registerHandler(table, channels.attachments.openRequest, async (request) => {
     // `resolveAttachmentPath` owns the allow-list — inside the project folder or its attachment
     // cache, or a path the user picked through a dialog this session — and throws otherwise, so
     // the renderer cannot name a `.command`/`.desktop` and have the OS run it.
@@ -172,7 +173,7 @@ export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
     return { path };
   });
 
-  registerHandler(channels.attachments.pickFiles, async (_request, sender) => {
+  registerHandler(table, channels.attachments.pickFiles, async (_request, sender) => {
     const override = e2eOpenPathOverride();
     // Comma-separated so an e2e spec can exercise a multi-file add. The override goes through
     // `rememberRead` like a real pick does, so e2e exercises the same containment path as a user.
@@ -188,7 +189,7 @@ export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
     return { paths };
   });
 
-  registerHandler(channels.attachments.addDropped, async (request) => {
+  registerHandler(table, channels.attachments.addDropped, async (request) => {
     // Bytes, not paths: a drop leaves main no evidence that the user picked the file, so the
     // renderer sends what the browser sandbox gave it and main decides where it lands (always
     // the attachment cache). See `ProjectHost.addAttachmentBytes`.
@@ -216,8 +217,8 @@ export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
 }
 
 /** Shows the multi-select "Add attachments" picker on `sender`'s window; `[]` when cancelled. */
-async function pickThroughDialog(sender: WebContents): Promise<string[]> {
-  const window = BrowserWindow.fromWebContents(sender) ?? undefined;
+async function pickThroughDialog(sender: Caller): Promise<string[]> {
+  const window = windowOf(sender);
   const result = await dialog.showOpenDialog(window as BrowserWindow, {
     title: 'Add attachments',
     properties: ['openFile', 'multiSelections'],

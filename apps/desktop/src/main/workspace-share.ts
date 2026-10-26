@@ -18,6 +18,7 @@
  * being rolled back, or the source of a cross-volume move once its copy has landed).
  */
 
+import type { Caller } from './host/platform.js';
 import { existsSync } from 'node:fs';
 import { cp as nodeCp, mkdir, readdir, readFile, realpath, rename as nodeRename, rm as nodeRm } from 'node:fs/promises';
 import { basename, isAbsolute, join, relative, sep } from 'node:path';
@@ -67,7 +68,6 @@ import type {
   WorkspaceLocalState,
   WorkspaceShare,
 } from '@wirebench/engine';
-import type { WebContents } from 'electron';
 import type { AccountService } from './account-service.js';
 import type { RecordsReadPicks, RecordsWritePicks } from './dialog-picks.js';
 import { normalizeServerUrl } from './server-client.js';
@@ -86,12 +86,12 @@ import type { WorkspaceWire } from '../shared/wire-base.js';
 /** The folder pickers these operations run (`native-dialogs.ts` in the app; injected in tests). */
 export interface WorkspaceDialogs {
   readonly pickFolder: (
-    sender: WebContents,
+    sender: Caller,
     options: { readonly title?: string },
     picks?: RecordsReadPicks,
   ) => Promise<string | undefined>;
   readonly pickFolderToWrite: (
-    sender: WebContents,
+    sender: Caller,
     picks: RecordsWritePicks,
     options: { readonly title?: string },
   ) => Promise<string | undefined>;

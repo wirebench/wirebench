@@ -33,8 +33,10 @@ import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import type { GrpcExchangeSummary, GrpcLiveEvent } from '../src/shared/kinds/grpc/wire.js';
 import type { FailedExchangeWire, RequestCurlResponse } from '../src/shared/wire-base.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -148,7 +150,7 @@ async function openHistory(): Promise<HistoryService> {
 /** Registers the `request.*` channels over `model`, with `extra` laid over the dependencies. */
 function registerOver(model: Project, extra: Partial<RequestChannelDeps> = {}): void {
   handlers.clear();
-  registerRequestChannelsWithKinds(new EngineService(), {
+  registerRequestChannelsWithKinds(table, new EngineService(), {
     project: {
       projectId: () => model.id,
       runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),

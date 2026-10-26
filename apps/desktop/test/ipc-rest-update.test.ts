@@ -19,8 +19,10 @@ import { createDefaultFetchDocument, parseOpenApi, writeApiDefinitionCache } fro
 import type { DocumentFetchOptions, FetchDocument } from '@wirebench/engine';
 import { apiRestApplyUpdateResponseSchema, type ProjectWire } from '../src/shared/wire-types.js';
 import { apiRestLintResponseSchema, apiRestPlanUpdateResponseSchema } from '../src/shared/kinds/rest/wire.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 /** Lets one test make the definition-cache rewrite fail *after* the project has been saved. */
 const cacheState = vi.hoisted(() => ({ fails: false }));
@@ -43,7 +45,7 @@ vi.mock('electron', () => ({
 }));
 
 const { registerApiChannelsWithKinds } = await import('./helpers/kind-channels.js');
-type ApiChannelDeps = Parameters<typeof registerApiChannelsWithKinds>[0];
+type ApiChannelDeps = Parameters<typeof registerApiChannelsWithKinds>[1];
 
 const sender = { isDestroyed: () => false, send: vi.fn() };
 
@@ -211,7 +213,7 @@ beforeEach(async () => {
     history: { open: unused, recordImportedRestBatch: unused },
     onHistoryChanged: unused,
   };
-  registerApiChannelsWithKinds(deps);
+  registerApiChannelsWithKinds(table, deps);
 });
 
 afterEach(() => {

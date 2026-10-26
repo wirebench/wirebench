@@ -18,7 +18,7 @@ import { containsRedaction } from '../redact.js';
 import type { ProjectRouter } from '../project-router.js';
 import type { AuthConfig, EffectiveSigning, RestBody, RestRequestDef } from '@wirebench/engine';
 import { type SendThroughEngineDeps } from '../send/exchange.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 import { namedCredential } from '../kinds/key-masks.js';
 
 /** What the `history.*` channels need beyond `EngineService`/`HistoryService`. */
@@ -329,8 +329,8 @@ export function carriesSignature(entry: HistoryEntryWire, signing: SavedRest['we
   return signatureHeaderNames(signing.signing.scheme).every((name) => recorded.has(name.toLowerCase()));
 }
 
-export function registerHistoryChannels(history: HistoryService, deps: HistoryChannelDeps): void {
-  registerHandler(channels.history.list, (request) => {
+export function registerHistoryChannels(table: HandlerTable, history: HistoryService, deps: HistoryChannelDeps): void {
+  registerHandler(table, channels.history.list, (request) => {
     const projectIds = request.projectId === undefined ? deps.projectIds?.() : undefined;
     return Promise.resolve(
       history.list({
@@ -346,9 +346,9 @@ export function registerHistoryChannels(history: HistoryService, deps: HistoryCh
     );
   });
 
-  registerHandler(channels.history.get, (request) => Promise.resolve({ entry: history.get(request.id) }));
+  registerHandler(table, channels.history.get, (request) => Promise.resolve({ entry: history.get(request.id) }));
 
-  registerHandler(channels.history.clear, async () => ({ cleared: await history.clear(deps.projectIds?.()) }));
+  registerHandler(table, channels.history.clear, async () => ({ cleared: await history.clear(deps.projectIds?.()) }));
 
-  registerHandler(channels.history.remove, async (request) => ({ removed: await history.remove(request.id) }));
+  registerHandler(table, channels.history.remove, async (request) => ({ removed: await history.remove(request.id) }));
 }

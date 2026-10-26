@@ -8,15 +8,15 @@ import { channels } from '../../shared/ipc.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
 import { pickFile } from '../native-dialogs.js';
 import type { RunnerService } from '../runner/runner-service.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
-export function registerRunnerChannels(runner: RunnerService, picks: RecordsReadPicks): void {
-  registerHandler(channels.runner.state, (request) => runner.state(request.targetId));
-  registerHandler(channels.runner.settings.set, async (request) => {
+export function registerRunnerChannels(table: HandlerTable, runner: RunnerService, picks: RecordsReadPicks): void {
+  registerHandler(table, channels.runner.state, (request) => runner.state(request.targetId));
+  registerHandler(table, channels.runner.settings.set, async (request) => {
     await runner.setSettings(request.targetId, request.settings);
     return { ok: true as const };
   });
-  registerHandler(channels.runner.data.choose, (request, sender) =>
+  registerHandler(table, channels.runner.data.choose, (request, sender) =>
     runner.chooseData(request.targetId, () =>
       pickFile(sender, picks, {
         title: 'Choose a data file',
@@ -24,12 +24,12 @@ export function registerRunnerChannels(runner: RunnerService, picks: RecordsRead
       }),
     ),
   );
-  registerHandler(channels.runner.data.clear, async (request) => {
+  registerHandler(table, channels.runner.data.clear, async (request) => {
     await runner.clearData(request.targetId);
     return { ok: true as const };
   });
-  registerHandler(channels.runner.run, (request) => runner.run(request));
-  registerHandler(channels.runner.cancel, (request) => Promise.resolve(runner.cancel(request.runId)));
-  registerHandler(channels.runner.history.list, (request) => runner.historyList(request.targetId));
-  registerHandler(channels.runner.history.get, (request) => runner.historyGet(request.targetId, request.runId));
+  registerHandler(table, channels.runner.run, (request) => runner.run(request));
+  registerHandler(table, channels.runner.cancel, (request) => Promise.resolve(runner.cancel(request.runId)));
+  registerHandler(table, channels.runner.history.list, (request) => runner.historyList(request.targetId));
+  registerHandler(table, channels.runner.history.get, (request) => runner.historyGet(request.targetId, request.runId));
 }

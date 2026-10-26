@@ -29,6 +29,7 @@ import type { RestFolderPatchWire } from '../../shared/kinds/rest/wire.js';
 import type { ProjectHostCore } from '../project-host-core.js';
 import type { ProjectWireContext } from '../project-wire.js';
 import type { MutationDeps, MutationResult } from '../project-mutations.js';
+import type { HandlerTable } from '../ipc/register.js';
 import type { GrpcHost } from './grpc/host.js';
 import type { McpHost } from './mcp/host.js';
 import type { RestHost } from './rest/host.js';
@@ -271,7 +272,7 @@ export interface MainKind<K extends KindId = KindId> {
   /** The entity ids its channels address in a project snapshot, for the routing index. */
   readonly entityIds: KindEntityIds;
   /** Registers its channels against the routed workspace. */
-  registerChannels(deps: KindChannelDeps): void;
+  registerChannels(table: HandlerTable, deps: KindChannelDeps): void;
 }
 
 /** Any one kind's main half. */

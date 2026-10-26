@@ -1,4 +1,4 @@
-import type { WebContents } from 'electron';
+import type { Caller } from '../src/main/host/platform.js';
 import { WirebenchError } from '@wirebench/engine';
 import { z } from 'zod';
 import { describe, expect, it, vi } from 'vitest';
@@ -100,41 +100,41 @@ describe('validateEventPayload', () => {
 describe('emitEvent', () => {
   const testEvent = defineEvent('test.event', z.object({ message: z.string() }));
 
-  it('does not call send when the target WebContents is destroyed', () => {
+  it('does not call send when the target Caller is closed', () => {
     const sendMock = vi.fn();
-    const target: Partial<WebContents> = {
-      isDestroyed: () => true,
+    const target: Partial<Caller> = {
+      isClosed: () => true,
       send: sendMock,
     };
 
-    emitEvent(target as unknown as WebContents, testEvent, { message: 'hello' });
+    emitEvent(target as unknown as Caller, testEvent, { message: 'hello' });
 
     expect(sendMock).not.toHaveBeenCalled();
   });
 
-  it('calls send with the event name and validated payload when the target is not destroyed', () => {
+  it('calls send with the event name and validated payload when the target is not closed', () => {
     const sendMock = vi.fn();
-    const target: Partial<WebContents> = {
-      isDestroyed: () => false,
+    const target: Partial<Caller> = {
+      isClosed: () => false,
       send: sendMock,
     };
 
-    emitEvent(target as unknown as WebContents, testEvent, { message: 'hello' });
+    emitEvent(target as unknown as Caller, testEvent, { message: 'hello' });
 
     expect(sendMock).toHaveBeenCalledOnce();
     expect(sendMock).toHaveBeenCalledWith('test.event', { message: 'hello' });
   });
 
-  it('throws on invalid payload even when the target is destroyed (validates first)', () => {
+  it('throws on invalid payload even when the target is closed (validates first)', () => {
     const sendMock = vi.fn();
-    const target: Partial<WebContents> = {
-      isDestroyed: () => true,
+    const target: Partial<Caller> = {
+      isClosed: () => true,
       send: sendMock,
     };
 
     const invalidPayload = { message: 123 };
     expect(() =>
-      emitEvent(target as unknown as WebContents, testEvent, invalidPayload as unknown as { message: string }),
+      emitEvent(target as unknown as Caller, testEvent, invalidPayload as unknown as { message: string }),
     ).toThrowError(WirebenchError);
     expect(sendMock).not.toHaveBeenCalled();
   });

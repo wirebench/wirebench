@@ -91,7 +91,7 @@ import type {
 import { cancelEnvironmentBatch, sendToEnvironments } from '../multi-env-send.js';
 import { toRestSettingsWire } from '../project-wire.js';
 import { requestVariables } from '../request-variables.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /** The `ProjectRouter` surface the `request.*` channels drive; a stub stands in for it in tests. */
 export type RequestChannelProject = Pick<
@@ -1334,18 +1334,18 @@ export async function whenRestSendsRecorded(
  * into one chain. `request.preflight` runs the same expansion as a dry run so the UI can list
  * unresolved references before anything leaves the machine.
  */
-export function registerRequestChannels(service: EngineService, deps: RequestChannelDeps): void {
+export function registerRequestChannels(table: HandlerTable, service: EngineService, deps: RequestChannelDeps): void {
   const sendDeps = toSendDeps(service, deps);
 
-  registerHandler(channels.request.sendToEnvironments, (request) => sendToEnvironments(sendDeps, deps, request));
+  registerHandler(table, channels.request.sendToEnvironments, (request) => sendToEnvironments(sendDeps, deps, request));
 
   // Every send goes through the engine, so every one is cancelled through the registry.
-  registerHandler(channels.request.cancel, ({ sendId }) =>
+  registerHandler(table, channels.request.cancel, ({ sendId }) =>
     Promise.resolve(cancelEnvironmentBatch(sendDeps.registry, sendId) ?? sendDeps.registry.cancel(sendId)),
   );
 
-  registerHandler(channels.request.curl, (request) => curl(service, deps, sendDeps, request));
-  registerHandler(channels.request.codeTargets, () => {
+  registerHandler(table, channels.request.curl, (request) => curl(service, deps, sendDeps, request));
+  registerHandler(table, channels.request.codeTargets, () => {
     const extensions = deps.extensions?.() ?? createBuiltinRegistry().extensions;
     // The built-in languages are the renderer's own list; only a plugin's generators are new to it.
     const targets = extensions.codeGenerators
@@ -1353,9 +1353,9 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
       .map((generator) => ({ id: generator.id, label: generator.title, language: generator.language }));
     return Promise.resolve({ targets });
   });
-  registerHandler(channels.request.code, (request) => code(deps, sendDeps, request));
+  registerHandler(table, channels.request.code, (request) => code(deps, sendDeps, request));
 
-  registerHandler(channels.request.variables, (request) => variablesFor(deps, request.requestId));
+  registerHandler(table, channels.request.variables, (request) => variablesFor(deps, request.requestId));
 
-  registerHandler(channels.request.importCurl, (request) => importCurl(deps, request));
+  registerHandler(table, channels.request.importCurl, (request) => importCurl(deps, request));
 }

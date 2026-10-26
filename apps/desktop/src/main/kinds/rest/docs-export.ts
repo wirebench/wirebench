@@ -4,7 +4,7 @@
  * uses, renders it (Markdown, or one self-contained HTML page), runs the native Save dialog and
  * writes the file; no path crosses the bridge. Nothing is resolved, so no secret reaches the file.
  */
-import type { WebContents } from 'electron';
+import type { Caller } from '../../host/platform.js';
 import {
   apiDocumentToHtml,
   apiDocumentToMarkdown,
@@ -18,7 +18,7 @@ import type { Project } from '@wirebench/engine';
 import { authTypeLabel } from '../../../shared/auth-types.js';
 import { channels } from '../../../shared/ipc.js';
 import type { RecordsWritePicks } from '../../dialog-picks.js';
-import { registerHandler } from '../../ipc/register.js';
+import { registerHandler, type HandlerTable } from '../../ipc/register.js';
 import { pickSaveFile } from '../../native-dialogs.js';
 
 export type DocsFormat = 'html' | 'markdown';
@@ -55,11 +55,11 @@ export interface RestDocsChannelDeps {
   readonly write?: (path: string, text: string) => Promise<void>;
 }
 
-export function registerRestDocsChannels(deps: RestDocsChannelDeps): void {
+export function registerRestDocsChannels(table: HandlerTable, deps: RestDocsChannelDeps): void {
   const pickSave = deps.pickSave ?? pickSaveFile;
   const write = deps.write ?? ((path: string, text: string) => writeFileAtomic(nodeFs, path, text));
 
-  registerHandler(channels.api.exportDocs, async (request, sender: WebContents) => {
+  registerHandler(table, channels.api.exportDocs, async (request, sender: Caller) => {
     const projectId = deps.router.projectId(request.apiId);
     const project = projectId === undefined ? undefined : deps.router.hostFor(projectId).open?.project;
     if (project === undefined) {

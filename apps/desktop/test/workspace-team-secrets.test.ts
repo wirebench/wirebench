@@ -17,7 +17,7 @@ import {
   workspaceDir,
 } from '@wirebench/engine';
 import type { GitCli, Workspace } from '@wirebench/engine';
-import type { WebContents } from 'electron';
+import { asCaller } from './helpers/ipc-table.js';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
@@ -449,7 +449,7 @@ describeGit('WorkspaceService — sharing turns team secrets on', { timeout: 60_
     expect(existsSync(join(dir, TEAM_SECRETS_LOCAL_FILE))).toBe(false);
 
     // Shared again somewhere new: the old share's pins would read the new log as damaged.
-    await service.shareToFolder({} as WebContents);
+    await service.shareToFolder(asCaller({}));
 
     await vi.waitFor(async () => expect((await team.status()).on).toBe(true), WAIT);
     const status = await team.status();
@@ -466,7 +466,7 @@ describeGit('WorkspaceService — sharing turns team secrets on', { timeout: 60_
       dialogs: { pickFolder: () => Promise.resolve(target), pickFolderToWrite: () => Promise.resolve(target) },
     });
 
-    await service.shareToFolder({} as WebContents);
+    await service.shareToFolder(asCaller({}));
 
     await vi.waitFor(async () => expect((await team.status()).on).toBe(true), WAIT);
     expect(existsSync(join(target, 'team-secrets'))).toBe(true);

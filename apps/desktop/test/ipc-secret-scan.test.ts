@@ -7,8 +7,10 @@ import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerSecretScanChannels } from '../src/main/ipc/secret-scan.js';
 import type { SecretScanSession, SecretScanSessions, SecretTokenStatus } from '../src/main/secret-scan-session.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -48,7 +50,7 @@ function register(
     release: holds.release ?? (() => undefined),
     releaseOwner: holds.releaseOwner ?? (() => undefined),
   };
-  registerSecretScanChannels(sessions);
+  registerSecretScanChannels(table, sessions);
   return { projects };
 }
 
@@ -182,7 +184,7 @@ describe('secretScan channels', () => {
     expect(release).toHaveBeenCalledWith('hold-7');
   });
 
-  it.each(['destroyed', 'render-process-gone', 'did-navigate'])(
+  it.each(['destroyed', 'render-process-gone', 'did-start-navigation'])(
     "drops a renderer's holds when it goes away (%s), so autosave cannot stay off",
     async (event) => {
       const releaseOwner = vi.fn();
@@ -193,7 +195,7 @@ describe('secretScan channels', () => {
       await invoke('secretScan.hold', { projectIds: ['p1'] }, sender);
       expect(releaseOwner).not.toHaveBeenCalled();
 
-      sender.emit(event);
+      sender.emit(event, { isMainFrame: true, isSameDocument: false });
 
       expect(releaseOwner).toHaveBeenCalledTimes(1);
       expect(releaseOwner).toHaveBeenCalledWith(5);

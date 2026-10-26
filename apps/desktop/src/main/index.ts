@@ -18,7 +18,6 @@ import {
 } from '@wirebench/engine';
 import { setDeviceKeySigner } from '@wirebench/ssh';
 import { app, BrowserWindow, dialog, powerMonitor, protocol, safeStorage, session, shell } from 'electron';
-import type { WebContents } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES, isExternalUrlAllowed } from './security.js';
 import { confirmProtectedDialog, pickFile, saveOverride } from './native-dialogs.js';
@@ -52,6 +51,10 @@ import { TeamSecretStore, teamSecretGetter } from './team-secret-store.js';
 import { events } from '../shared/ipc.js';
 import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
+import { bindIpc } from './electron/ipc-binding.js';
+import { callerForWebContents } from './electron/electron-platform.js';
+import type { Caller } from './host/platform.js';
+import type { HandlerTable } from './ipc/register.js';
 import {
   resolveAreas,
   type AreasRun,
@@ -456,7 +459,7 @@ const protoImports = new ProtoImportService({
 /** Sends one event to every open window: preferences, globals, accounts and the like are the app's. */
 function broadcast<Payload extends z.ZodType>(event: IpcEvent<Payload>, payload: z.infer<Payload>): void {
   for (const window of BrowserWindow.getAllWindows()) {
-    emitEvent(window.webContents, event, payload);
+    emitEvent(callerForWebContents(window.webContents), event, payload);
   }
 }
 
@@ -469,7 +472,7 @@ function emitToCaller<Payload extends z.ZodType>(event: IpcEvent<Payload>, paylo
   if (scope === undefined) {
     broadcast(event, payload);
   } else {
-    emitEvent(scope.window.webContents, event, payload);
+    emitEvent(callerForWebContents(scope.window.webContents), event, payload);
   }
 }
 
@@ -603,12 +606,12 @@ const appLock = new AppLock({
   },
 });
 /** Every SSH secret read waits for the app lock; the keychain's listing reads public halves and does not. */
-const sshSecretsUnlocked = (sender: WebContents): GetSecret =>
+const sshSecretsUnlocked = (sender: Caller): GetSecret =>
   sshSecretsFor(secretStore, sshScopeOf(scopes, sender), recordSecretValue);
 
 const sshConnectDeps = {
-  hosts: (sender: WebContents) => sshScopeOf(scopes, sender).hosts,
-  secretsFor: (sender: WebContents) => lockedGetter(appLock, sshSecretsUnlocked(sender)),
+  hosts: (sender: Caller) => sshScopeOf(scopes, sender).hosts,
+  secretsFor: (sender: Caller) => lockedGetter(appLock, sshSecretsUnlocked(sender)),
   knownHostsFile: join(app.getPath('userData'), 'ssh-known-hosts.json'),
   agentSocket: () => (process.platform === 'win32' ? 'pageant' : process.env['SSH_AUTH_SOCK']),
 };
@@ -671,7 +674,7 @@ const sshService = new SshService({
     ),
   hostOsFile: join(app.getPath('userData'), 'ssh-host-os.json'),
   emit: emitEvent,
-  snippets: (sender: WebContents) => sshScopeOf(scopes, sender).snippets,
+  snippets: (sender: Caller) => sshScopeOf(scopes, sender).snippets,
   refusals: sshRefusals,
   connector: sshConnector,
   // A host's autoStart forwards start with its first terminal in a window and stop with its last.
@@ -807,7 +810,7 @@ const workspaceState = new WorkspaceState(app.getPath('userData'));
  * only the launch's first window empties `.joining/`.
  */
 function createWindowScope(window: BrowserWindow, sweepJoining: boolean): WindowScope {
-  const target = window.webContents;
+  const target = callerForWebContents(window.webContents);
   const send = <Payload extends z.ZodType>(event: IpcEvent<Payload>, payload: z.infer<Payload>): void => {
     emitEvent(target, event, payload);
   };
@@ -1147,8 +1150,11 @@ void app.whenReady().then(async () => {
     },
   );
   setUpKerberos({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
-  registerKerberosChannels();
+  // Every channel's handler goes into this one table; `bindIpc` serves it over `ipcMain` once all are in.
+  const handlerTable: HandlerTable = new Map();
+  registerKerberosChannels(handlerTable);
   registerAppChannels(
+    handlerTable,
     undefined,
     async () => await updates.check({ trigger: 'user' }),
     // New Window (design D7) opens at the picker.
@@ -1185,7 +1191,7 @@ void app.whenReady().then(async () => {
     },
   });
   scriptHost = scripts;
-  registerScriptChannels(scripts, (projectId, ownerId) =>
+  registerScriptChannels(handlerTable, scripts, (projectId, ownerId) =>
     workspaceService.hostFor(projectId).proposeConversions(ownerId),
   );
   // This machine's MCP stdio approvals (#79); a send with no window of its own asks in the focused one.
@@ -1193,7 +1199,7 @@ void app.whenReady().then(async () => {
     store: new McpApprovalStore(join(app.getPath('userData'), MCP_APPROVALS_FILE)),
     defaultWindow: () => {
       const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-      return window === undefined ? undefined : promptWindowOf(window.webContents);
+      return window === undefined ? undefined : promptWindowOf(callerForWebContents(window.webContents));
     },
   });
   const requestDeps: RequestChannelDeps = {
@@ -1247,8 +1253,8 @@ void app.whenReady().then(async () => {
     auditWorkspace: () => scopes.callerOrOnly()?.audit.workspaceId,
     confirmProtected: confirmProtectedDialog,
   };
-  registerRequestChannels(engineService, requestDeps);
-  registerMockChannels(mockRunner, {
+  registerRequestChannels(handlerTable, engineService, requestDeps);
+  registerMockChannels(handlerTable, mockRunner, {
     locate: (mockId) => {
       const projectId = workspaceService.projectId(mockId);
       const saved = workspaceService.hostOfEntity(mockId).savedProject();
@@ -1262,6 +1268,7 @@ void app.whenReady().then(async () => {
   });
   // A sequence's steps go through the engine as a single send does, with the same dependencies.
   registerSequenceChannels(
+    handlerTable,
     new SequenceRunner(),
     {
       service: engineService,
@@ -1284,6 +1291,7 @@ void app.whenReady().then(async () => {
   );
   // The Runner sends as a sequence does; its settings and runs live under user data, not the project.
   registerRunnerChannels(
+    handlerTable,
     new RunnerService({
       service: engineService,
       requests: requestDeps,
@@ -1301,7 +1309,7 @@ void app.whenReady().then(async () => {
     }),
     dialogPicks,
   );
-  registerOAuth2Channels({
+  registerOAuth2Channels(handlerTable, {
     oauth2: oauth2Service,
     project: workspaceService,
     getSecret: secretsFor(undefined),
@@ -1312,19 +1320,19 @@ void app.whenReady().then(async () => {
     },
     showSecrets: showSecretsFlag,
   });
-  registerIssuedTokenChannels({ issuedTokens: issuedTokensService, showSecrets: showSecretsFlag });
-  registerAccountChannels({ accounts: accountService });
-  registerTeamChannels({
+  registerIssuedTokenChannels(handlerTable, { issuedTokens: issuedTokensService, showSecrets: showSecretsFlag });
+  registerAccountChannels(handlerTable, { accounts: accountService });
+  registerTeamChannels(handlerTable, {
     client: serverClient,
     accounts: accountService,
     requireFeature: (feature) => workspaceService.requireFeature(feature),
   });
-  registerCiTokenChannels({ client: serverClient, accounts: accountService });
-  registerLicenseChannels({ client: serverClient, accounts: accountService });
-  registerProvisioningChannels({ client: serverClient, accounts: accountService });
-  registerAuditChannels({ client: serverClient, accounts: accountService, picks: dialogPicks });
-  registerHooksChannels({ hooks: hooksService });
-  registerSchedulesChannels({
+  registerCiTokenChannels(handlerTable, { client: serverClient, accounts: accountService });
+  registerLicenseChannels(handlerTable, { client: serverClient, accounts: accountService });
+  registerProvisioningChannels(handlerTable, { client: serverClient, accounts: accountService });
+  registerAuditChannels(handlerTable, { client: serverClient, accounts: accountService, picks: dialogPicks });
+  registerHooksChannels(handlerTable, { hooks: hooksService });
+  registerSchedulesChannels(handlerTable, {
     schedules: schedulesService,
     modelOf: (entityId) => workspaceService.hostOfEntity(entityId).model(),
     registryOf: (entityId) => workspaceService.hostOfEntity(entityId).runContextFor(entityId)?.registry,
@@ -1364,8 +1372,8 @@ void app.whenReady().then(async () => {
           return id === undefined ? [] : [id];
         }),
   };
-  registerHistoryChannels(historyService, historyDeps);
-  registerProjectChannels({
+  registerHistoryChannels(handlerTable, historyService, historyDeps);
+  registerProjectChannels(handlerTable, {
     router: workspaceService,
     addProject: async (name) => await workspaceService.addProject(name),
     removeProject: async (projectId, options) => {
@@ -1475,8 +1483,8 @@ void app.whenReady().then(async () => {
       secrets: teamSecretStore,
     }),
   };
-  registerApiChannels(apiDeps);
-  registerWorkspaceChannels({
+  registerApiChannels(handlerTable, apiDeps);
+  registerWorkspaceChannels(handlerTable, {
     service: workspaceService,
     suggestions: async () => await readLeftoverProjectFolders(app.getPath('userData')),
     // The calling window's reopen of the last workspace (see `openWindow`).
@@ -1485,11 +1493,11 @@ void app.whenReady().then(async () => {
       shell.showItemInFolder(dir);
     },
   });
-  registerGlobalsChannels(globalProperties, onGlobalsChanged);
-  registerCurrentValuesChannels(currentValues);
-  registerCookiesChannels(cookieStore);
+  registerGlobalsChannels(handlerTable, globalProperties, onGlobalsChanged);
+  registerCurrentValuesChannels(handlerTable, currentValues);
+  registerCookiesChannels(handlerTable, cookieStore);
   let sshDefaultsSent = JSON.stringify(preferencesService.get().ssh);
-  registerPreferencesChannels(preferencesService, (preferences) => {
+  registerPreferencesChannels(handlerTable, preferencesService, (preferences) => {
     broadcast(events.preferences.changed, { preferences });
     // Preferences → SSH is the hosts' last level (#571): every window's resolved hosts change with it.
     const sshDefaults = JSON.stringify(preferences.ssh);
@@ -1507,7 +1515,7 @@ void app.whenReady().then(async () => {
       }
     }
   });
-  registerAppLockChannels({
+  registerAppLockChannels(handlerTable, {
     preferences: preferencesService,
     lock: appLock,
     // No reason: the renderer says what the app lock needs, and there is nothing to add to it.
@@ -1517,14 +1525,14 @@ void app.whenReady().then(async () => {
     },
   });
   // Settings picks are the app's: preferences apply to every window (design D4).
-  registerSslChannels({
+  registerSslChannels(handlerTable, {
     preferences: preferencesService,
     picks: appPicks,
     onChanged: (preferences) => {
       broadcast(events.preferences.changed, { preferences });
     },
   });
-  registerGitChannels({
+  registerGitChannels(handlerTable, {
     preferences: preferencesService,
     picks: appPicks,
     // `git.detect` uses exactly `gitLocator`'s precedence (e2e override, then a marked
@@ -1536,21 +1544,21 @@ void app.whenReady().then(async () => {
       broadcast(events.preferences.changed, { preferences });
     },
   });
-  registerSyncChannels({
+  registerSyncChannels(handlerTable, {
     service: workspaceService,
     reveal: (path) => {
       shell.showItemInFolder(path);
     },
   });
-  registerThemeChannels((payload) => {
+  registerThemeChannels(handlerTable, (payload) => {
     broadcast(events.theme.changed, payload);
   });
-  registerDialogsChannels(dialogPicks);
-  registerPluginChannels({ plugins: () => plugins, picks: dialogPicks });
-  registerFsChannels();
+  registerDialogsChannels(handlerTable, dialogPicks);
+  registerPluginChannels(handlerTable, { plugins: () => plugins, picks: dialogPicks });
+  registerFsChannels(handlerTable);
   // A kind that is off registers no channels: a call to one is refused as an unknown channel.
   for (const kind of MAIN_KINDS.filter((candidate) => features.enabledKinds.includes(candidate.kind))) {
-    kind.registerChannels({
+    kind.registerChannels(handlerTable, {
       engine: engineService,
       request: requestDeps,
       api: apiDeps,
@@ -1576,12 +1584,13 @@ void app.whenReady().then(async () => {
       },
     });
   }
-  registerSearchChannels(engineService, workspaceService);
-  registerSecretsChannels(teamSecretStore, showSecretsFlag);
-  registerSecretSourcesChannels(workspaceService, secretSources);
-  registerTeamSecretsChannels(teamSecrets, (feature) => workspaceService.requireFeature(feature));
-  registerSecretScanChannels(secretScans);
+  registerSearchChannels(handlerTable, engineService, workspaceService);
+  registerSecretsChannels(handlerTable, teamSecretStore, showSecretsFlag);
+  registerSecretSourcesChannels(handlerTable, workspaceService, secretSources);
+  registerTeamSecretsChannels(handlerTable, teamSecrets, (feature) => workspaceService.requireFeature(feature));
+  registerSecretScanChannels(handlerTable, secretScans);
   registerSnapshotChannels(
+    handlerTable,
     new SnapshotStore((requestId) => {
       const projectId = workspaceService.projectId(requestId);
       if (projectId === undefined) {
@@ -1595,17 +1604,17 @@ void app.whenReady().then(async () => {
       }
     }),
   );
-  registerExchangeChannels(engineService.exchanges, showSecretsFlag);
-  registerLogChannels({
+  registerExchangeChannels(handlerTable, engineService.exchanges, showSecretsFlag);
+  registerLogChannels(handlerTable, {
     showSecrets: showSecretsFlag,
     service: engineService,
     request: requestDeps,
     picks: dialogPicks,
     appVersion: appVersion(),
   });
-  registerKeystoreChannels({ project: workspaceService, picks: dialogPicks });
-  registerCertificateChannels({ project: workspaceService, preferences: preferencesService });
-  registerEnabledAreaChannels(areas.enabled, {
+  registerKeystoreChannels(handlerTable, { project: workspaceService, picks: dialogPicks });
+  registerCertificateChannels(handlerTable, { project: workspaceService, preferences: preferencesService });
+  registerEnabledAreaChannels(handlerTable, areas.enabled, {
     hosts: hostsService,
     secrets: sshSecrets,
     ssh: sshService,
@@ -1643,19 +1652,20 @@ void app.whenReady().then(async () => {
     terminalShares: { owner: terminalShareOwner, viewer: terminalShareViewer },
     keys: sshKeys,
     localTerminal: areas.localTerminal ? localTerminals : undefined,
-    importer: new SshImportService<WebContents>({
+    importer: new SshImportService<Caller>({
       home: () => homedir(),
       pick: (sender, options) => pickFile(sender, dialogPicks, options),
       hosts: hostsService,
       secrets: sshSecrets,
     }),
-    knownHostsImporter: new KnownHostsImportService<WebContents>({
+    knownHostsImporter: new KnownHostsImportService<Caller>({
       home: () => homedir(),
       pick: (sender) => pickFile(sender, dialogPicks, { title: 'Choose a known_hosts file' }),
       hosts: hostsService,
       store: sshService,
     }),
   });
+  bindIpc(handlerTable);
   // Last session's decrypted attachment copies are disposable; sweep them off the disk without
   // making the first window wait on it.
   void clearAttachmentsTmp(app.getPath('userData'));
@@ -1768,7 +1778,7 @@ function closeWindowScope(scope: WindowScope): Promise<void> {
   scope.closing ??= (async () => {
     if (!scope.window.isDestroyed()) {
       const stashed = scope.workspace.nextDraftsStash(QUIT_DRAFTS_TIMEOUT_MS);
-      emitEvent(scope.window.webContents, events.workspace.flushDrafts, {});
+      emitEvent(callerForWebContents(scope.window.webContents), events.workspace.flushDrafts, {});
       await stashed.catch(() => undefined);
     }
     // Its timers must not hold up the close; what is queued stays in the outbox for the next open.

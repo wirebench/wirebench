@@ -1,4 +1,4 @@
-import type { WebContents } from 'electron';
+import type { Caller } from './host/platform.js';
 import { WirebenchError } from '@wirebench/engine';
 import type { GetSecret } from '@wirebench/engine';
 import { workspaceSecretGetter } from './secret-resolver.js';
@@ -51,8 +51,8 @@ export function sshSecretsFor(store: SecretLookup, scope: SshWindowScope, record
  * another window's go on.
  */
 export function sshAreaEndsOnSwitch(
-  services: readonly { disposeFor(sender: WebContents): void }[],
-  sender: WebContents,
+  services: readonly { disposeFor(sender: Caller): void }[],
+  sender: Caller,
 ): (workspaceId: string | null | undefined) => void {
   return whenWorkspaceSwitches(() => {
     for (const service of services) service.disposeFor(sender);

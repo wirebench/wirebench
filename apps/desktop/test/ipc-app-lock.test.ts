@@ -12,8 +12,10 @@ import { PreferencesService } from '../src/main/preferences.js';
 import { registerAppLockChannels } from '../src/main/ipc/app-lock.js';
 import { registerPreferencesChannels } from '../src/main/ipc/preferences.js';
 import type { PreferencesWire } from '../src/shared/wire-base.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -42,8 +44,13 @@ function register(verify: () => Promise<void>) {
   const preferences = new PreferencesService(dir);
   const changed: PreferencesWire[] = [];
   const lock = { verify: vi.fn(verify), state: () => ({ active: false, locked: false }) };
-  registerAppLockChannels({ preferences, lock, support: { supported: true }, onChanged: (next) => changed.push(next) });
-  registerPreferencesChannels(preferences);
+  registerAppLockChannels(table, {
+    preferences,
+    lock,
+    support: { supported: true },
+    onChanged: (next) => changed.push(next),
+  });
+  registerPreferencesChannels(table, preferences);
   return { preferences, lock, changed };
 }
 

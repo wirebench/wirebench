@@ -10,8 +10,10 @@ import type {
   DefinitionSchemaIndexResponse,
 } from '../src/shared/kinds/soap/wire.js';
 import { readPublicFixture } from './helpers/fixtures.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -54,7 +56,7 @@ describe('definition.* viewer IPC', () => {
   beforeEach(async () => {
     handlers.clear();
     service = new EngineService();
-    registerDefinitionChannels(service);
+    registerDefinitionChannels(table, service);
     const summary = await service.importDefinition({
       source: { kind: 'text', text: readPublicFixture('calculator'), location: 'inline://calculator.wsdl' },
     });

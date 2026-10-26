@@ -5,7 +5,7 @@ import type { ProjectHost } from '../project-host.js';
 import { searchDocuments } from '../search.js';
 import type { SearchDocument } from '../search.js';
 import { MAIN_KINDS } from '../kinds/kind-main.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /** The `ProjectHost` surface `search.query` needs; a stub stands in for it in tests. */
 export type SearchChannelProject = Pick<ProjectHost, 'snapshot'>;
@@ -64,8 +64,12 @@ function collectFrom(
 }
 
 /** Registers `search.query`: workspace-wide find over requests, headers and cached definitions. */
-export function registerSearchChannels(engine: SearchChannelEngine, projects: SearchChannelProjects): void {
-  registerHandler(channels.search.query, (request) =>
+export function registerSearchChannels(
+  table: HandlerTable,
+  engine: SearchChannelEngine,
+  projects: SearchChannelProjects,
+): void {
+  registerHandler(table, channels.search.query, (request) =>
     Promise.resolve(searchDocuments(searchCorpus(projects, engine, request.scopes), request)),
   );
 }

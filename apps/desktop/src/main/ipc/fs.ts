@@ -1,7 +1,8 @@
+import { windowOf } from '../electron/electron-platform.js';
 import { readFile, stat } from 'node:fs/promises';
 import { BrowserWindow, dialog } from 'electron';
 import { channels } from '../../shared/ipc.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 import { nodeFs, writeFileAtomic } from '@wirebench/engine';
 
 /** Refuse to load a file bigger than this into the editor. */
@@ -20,14 +21,14 @@ function e2eOpenPathOverride(): string | undefined {
  * text. Distinct from `dialogs.*` (which only returns a chosen path) because these round-trip
  * file *content* through main, where Node's `fs` lives.
  */
-export function registerFsChannels(): void {
-  registerHandler(channels.fs.saveText, async (request, sender) => {
+export function registerFsChannels(table: HandlerTable): void {
+  registerHandler(table, channels.fs.saveText, async (request, sender) => {
     const override = e2eSavePathOverride();
     let targetPath: string | undefined;
     if (override !== undefined) {
       targetPath = override;
     } else {
-      const window = BrowserWindow.fromWebContents(sender) ?? undefined;
+      const window = windowOf(sender);
       const result = await dialog.showSaveDialog(window as BrowserWindow, {
         ...(request.defaultName !== undefined ? { defaultPath: request.defaultName } : {}),
       });
@@ -43,13 +44,13 @@ export function registerFsChannels(): void {
     return { path: targetPath };
   });
 
-  registerHandler(channels.fs.openText, async (request, sender) => {
+  registerHandler(table, channels.fs.openText, async (request, sender) => {
     const override = e2eOpenPathOverride();
     let targetPath: string | undefined;
     if (override !== undefined) {
       targetPath = override;
     } else {
-      const window = BrowserWindow.fromWebContents(sender) ?? undefined;
+      const window = windowOf(sender);
       const result = await dialog.showOpenDialog(window as BrowserWindow, {
         properties: ['openFile'],
         ...(request.filters !== undefined ? { filters: request.filters } : {}),

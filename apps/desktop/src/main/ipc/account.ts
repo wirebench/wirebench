@@ -6,7 +6,7 @@ import type { ServerAccount } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { AccountWire } from '../../shared/wire-base.js';
 import type { AccountService } from '../account-service.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 export interface AccountChannelDeps {
   readonly accounts: Pick<
@@ -37,12 +37,12 @@ export function toAccountWire(account: ServerAccount): AccountWire {
   };
 }
 
-export function registerAccountChannels(deps: AccountChannelDeps): void {
+export function registerAccountChannels(table: HandlerTable, deps: AccountChannelDeps): void {
   const servers = (): { servers: AccountWire[] } => ({ servers: deps.accounts.list().map(toAccountWire) });
 
-  registerHandler(channels.account.list, () => Promise.resolve(servers()));
-  registerHandler(channels.account.probe, (request) => deps.accounts.probe(request.url));
-  registerHandler(channels.account.signInLocal, async (request) => ({
+  registerHandler(table, channels.account.list, () => Promise.resolve(servers()));
+  registerHandler(table, channels.account.probe, (request) => deps.accounts.probe(request.url));
+  registerHandler(table, channels.account.signInLocal, async (request) => ({
     account: toAccountWire(
       await deps.accounts.signInLocal({
         url: request.url,
@@ -52,7 +52,7 @@ export function registerAccountChannels(deps: AccountChannelDeps): void {
       }),
     ),
   }));
-  registerHandler(channels.account.startOidc, async (request) => ({
+  registerHandler(table, channels.account.startOidc, async (request) => ({
     account: toAccountWire(
       await deps.accounts.startOidc({
         url: request.url,
@@ -60,7 +60,7 @@ export function registerAccountChannels(deps: AccountChannelDeps): void {
       }),
     ),
   }));
-  registerHandler(channels.account.startSaml, async (request) => ({
+  registerHandler(table, channels.account.startSaml, async (request) => ({
     account: toAccountWire(
       await deps.accounts.startSaml({
         url: request.url,
@@ -68,9 +68,9 @@ export function registerAccountChannels(deps: AccountChannelDeps): void {
       }),
     ),
   }));
-  registerHandler(channels.account.cancelSignIn, () => Promise.resolve(deps.accounts.cancelSignIn()));
-  registerHandler(channels.account.lookupInvitation, (request) => deps.accounts.lookupInvitation(request));
-  registerHandler(channels.account.acceptInvitation, async (request) => ({
+  registerHandler(table, channels.account.cancelSignIn, () => Promise.resolve(deps.accounts.cancelSignIn()));
+  registerHandler(table, channels.account.lookupInvitation, (request) => deps.accounts.lookupInvitation(request));
+  registerHandler(table, channels.account.acceptInvitation, async (request) => ({
     account: toAccountWire(
       await deps.accounts.acceptInvitation({
         url: request.url,
@@ -81,11 +81,11 @@ export function registerAccountChannels(deps: AccountChannelDeps): void {
       }),
     ),
   }));
-  registerHandler(channels.account.signOut, async (request) => {
+  registerHandler(table, channels.account.signOut, async (request) => {
     await deps.accounts.signOut(request.url);
     return servers();
   });
-  registerHandler(channels.account.remove, async (request) => {
+  registerHandler(table, channels.account.remove, async (request) => {
     await deps.accounts.remove(request.url);
     return servers();
   });

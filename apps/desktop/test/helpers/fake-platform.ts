@@ -2,22 +2,7 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Caller, Capability, HostPlatform } from '../../src/main/host/platform.js';
-
-const ALL: readonly Capability[] = [
-  'files',
-  'keychain',
-  'ssh',
-  'pty',
-  'kerberos',
-  'dialogs',
-  'send:private',
-  'send:public',
-  'secret-sources',
-  'team-secrets',
-  'updates',
-  'app-lock',
-];
+import { ALL_CAPABILITIES, type Caller, type HostPlatform } from '../../src/main/host/platform.js';
 
 /** Each call gets its own empty `userData` directory under the OS temp directory. */
 export function createFakePlatform(overrides: Partial<HostPlatform> & { userData?: string } = {}): HostPlatform {
@@ -38,15 +23,16 @@ export function createFakePlatform(overrides: Partial<HostPlatform> & { userData
       onOsThemeChanged: () => () => undefined,
     },
     proxy: { resolve: () => Promise.resolve('DIRECT') },
-    capabilities: new Set(ALL),
+    capabilities: new Set(ALL_CAPABILITIES),
     ...rest,
   };
 }
 
-/** A caller that records what it was sent; `close()` ends it. */
-export function fakeCaller(id = 1): Caller & { sent: Array<[string, unknown]>; close(): void } {
+/** A caller that records what it was sent; `close()` ends it and `reset()` makes it start over, as a reloaded renderer does. */
+export function fakeCaller(id = 1): Caller & { sent: Array<[string, unknown]>; close(): void; reset(): void } {
   const sent: Array<[string, unknown]> = [];
   const listeners = new Set<() => void>();
+  const resetListeners = new Set<() => void>();
   let closed = false;
   return {
     id,
@@ -55,7 +41,26 @@ export function fakeCaller(id = 1): Caller & { sent: Array<[string, unknown]>; c
       if (!closed) sent.push([channel, payload]);
     },
     isClosed: () => closed,
+    onReset(listener) {
+      resetListeners.add(listener);
+      return () => {
+        resetListeners.delete(listener);
+      };
+    },
+    reset() {
+      if (closed) return;
+      for (const listener of [...resetListeners]) listener();
+    },
     onClosed(listener) {
+      if (closed) {
+        let cancelled = false;
+        queueMicrotask(() => {
+          if (!cancelled) listener();
+        });
+        return () => {
+          cancelled = true;
+        };
+      }
       listeners.add(listener);
       return () => {
         listeners.delete(listener);
@@ -66,7 +71,13 @@ export function fakeCaller(id = 1): Caller & { sent: Array<[string, unknown]>; c
       closed = true;
       const pending = [...listeners];
       listeners.clear();
-      for (const listener of pending) listener();
+      for (const listener of pending) {
+        try {
+          listener();
+        } catch {
+          // One listener's failure must not keep the others from hearing the caller closed.
+        }
+      }
     },
   };
 }

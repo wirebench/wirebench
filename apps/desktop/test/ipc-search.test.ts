@@ -11,8 +11,10 @@ import {
   wsRequestWire,
 } from './helpers/wire-defaults.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -23,8 +25,8 @@ vi.mock('electron', () => ({
 }));
 
 const { registerSearchChannels, searchCorpus } = await import('../src/main/ipc/search.js');
-type SearchChannelEngine = Parameters<typeof registerSearchChannels>[0];
-type SearchChannelProjects = Parameters<typeof registerSearchChannels>[1];
+type SearchChannelEngine = Parameters<typeof registerSearchChannels>[1];
+type SearchChannelProjects = Parameters<typeof registerSearchChannels>[2];
 
 const ALL_SCOPES = { requestBodies: true, headers: true, definitions: true } as const;
 
@@ -213,7 +215,7 @@ describe('search.query', () => {
   });
 
   it('answers with matches across every scope', async () => {
-    registerSearchChannels(engineWith('<wsdl:operation name="Add"/>'), projectsWith(project()));
+    registerSearchChannels(table, engineWith('<wsdl:operation name="Add"/>'), projectsWith(project()));
 
     const result = (await invoke({ query: 'Add', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
       ok: true;
@@ -225,7 +227,7 @@ describe('search.query', () => {
   });
 
   it('finds a header value', async () => {
-    registerSearchChannels(engineWith(undefined), projectsWith(project()));
+    registerSearchChannels(table, engineWith(undefined), projectsWith(project()));
 
     const result = (await invoke({ query: 'abc-123', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
       ok: true;
@@ -236,7 +238,7 @@ describe('search.query', () => {
   });
 
   it('carries the project each match came from, for two open projects', async () => {
-    registerSearchChannels(engineWith(undefined), projectsWith(project(), project('p2', 'Billing')));
+    registerSearchChannels(table, engineWith(undefined), projectsWith(project(), project('p2', 'Billing')));
 
     const result = (await invoke({ query: 'Add', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
       ok: true;
@@ -251,7 +253,7 @@ describe('search.query', () => {
   });
 
   it('finds a REST request by a fragment of its URL', async () => {
-    registerSearchChannels(engineWith(undefined), projectsWith(projectWithRest()));
+    registerSearchChannels(table, engineWith(undefined), projectsWith(projectWithRest()));
 
     const result = (await invoke({ query: '/orders', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
       ok: true;
@@ -272,6 +274,7 @@ describe('search.query', () => {
   it('finds a REST request by its name, after the folders it sits in (N06)', async () => {
     const withFolder = projectWithRest();
     registerSearchChannels(
+      table,
       engineWith(undefined),
       projectsWith({
         ...withFolder,
@@ -297,7 +300,7 @@ describe('search.query', () => {
   });
 
   it('finds a WebSocket request by its name', async () => {
-    registerSearchChannels(engineWith(undefined), projectsWith(projectWithWs()));
+    registerSearchChannels(table, engineWith(undefined), projectsWith(projectWithWs()));
 
     const result = (await invoke({
       query: 'Lobby socket',
@@ -314,7 +317,7 @@ describe('search.query', () => {
   });
 
   it('finds a WebSocket request by a fragment of its URL', async () => {
-    registerSearchChannels(engineWith(undefined), projectsWith(projectWithWs()));
+    registerSearchChannels(table, engineWith(undefined), projectsWith(projectWithWs()));
 
     const result = (await invoke({ query: '/chat/lobby', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
       ok: true;
@@ -331,7 +334,7 @@ describe('search.query', () => {
   });
 
   it('finds a WebSocket request by a header value', async () => {
-    registerSearchChannels(engineWith(undefined), projectsWith(projectWithWs()));
+    registerSearchChannels(table, engineWith(undefined), projectsWith(projectWithWs()));
 
     const result = (await invoke({ query: 'general', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
       ok: true;
@@ -347,7 +350,7 @@ describe('search.query', () => {
   });
 
   it('finds a WebSocket request by a subprotocol', async () => {
-    registerSearchChannels(engineWith(undefined), projectsWith(projectWithWs()));
+    registerSearchChannels(table, engineWith(undefined), projectsWith(projectWithWs()));
 
     const result = (await invoke({ query: 'chat.v1', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
       ok: true;
@@ -359,7 +362,7 @@ describe('search.query', () => {
   });
 
   it("finds a WebSocket request by a text saved message's content", async () => {
-    registerSearchChannels(engineWith(undefined), projectsWith(projectWithWs()));
+    registerSearchChannels(table, engineWith(undefined), projectsWith(projectWithWs()));
 
     const result = (await invoke({ query: 'hello there', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
       ok: true;
@@ -371,7 +374,7 @@ describe('search.query', () => {
   });
 
   it("finds a WebSocket request by a saved message's name", async () => {
-    registerSearchChannels(engineWith(undefined), projectsWith(projectWithWs()));
+    registerSearchChannels(table, engineWith(undefined), projectsWith(projectWithWs()));
 
     const result = (await invoke({
       query: 'Handshake bytes',
@@ -388,7 +391,7 @@ describe('search.query', () => {
   });
 
   it("does not find a binary saved message's base64 content, only its name — the content is bytes, not text", async () => {
-    registerSearchChannels(engineWith(undefined), projectsWith(projectWithWs()));
+    registerSearchChannels(table, engineWith(undefined), projectsWith(projectWithWs()));
 
     // "AQID" is the base64 content of the binary message; it must never surface as a hit.
     const result = (await invoke({ query: 'AQID', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
@@ -400,7 +403,7 @@ describe('search.query', () => {
   });
 
   it('an existing REST search assertion still passes unchanged', async () => {
-    registerSearchChannels(engineWith(undefined), projectsWith(projectWithRest()));
+    registerSearchChannels(table, engineWith(undefined), projectsWith(projectWithRest()));
 
     const result = (await invoke({ query: '/orders', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
       ok: true;
@@ -419,7 +422,7 @@ describe('search.query', () => {
   });
 
   it('reports an invalid regex as an error envelope rather than throwing', async () => {
-    registerSearchChannels(engineWith(undefined), projectsWith(project()));
+    registerSearchChannels(table, engineWith(undefined), projectsWith(project()));
 
     const result = (await invoke({ query: '(', regex: true, caseSensitive: false, scopes: ALL_SCOPES })) as {
       ok: false;

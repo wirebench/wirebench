@@ -17,8 +17,10 @@ import { ProjectHost } from '../src/main/project-host.js';
 import { OpenApiImportService } from '../src/main/openapi-import.js';
 import { createDefaultFetchDocument } from '@wirebench/engine';
 import type { ProjectWire } from '../src/shared/wire-types.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -29,7 +31,7 @@ vi.mock('electron', () => ({
 }));
 
 const { registerApiChannelsWithKinds } = await import('./helpers/kind-channels.js');
-type ApiChannelDeps = Parameters<typeof registerApiChannelsWithKinds>[0];
+type ApiChannelDeps = Parameters<typeof registerApiChannelsWithKinds>[1];
 
 const sender = { isDestroyed: () => false, send: vi.fn() };
 
@@ -113,7 +115,7 @@ beforeEach(async () => {
     history: { open: unused, recordImportedRestBatch: unused },
     onHistoryChanged: unused,
   };
-  registerApiChannelsWithKinds(deps);
+  registerApiChannelsWithKinds(table, deps);
 });
 
 afterEach(() => {

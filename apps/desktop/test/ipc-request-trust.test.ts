@@ -26,8 +26,10 @@ import {
 import type { TestSoapServer } from '@wirebench/engine/test-helpers';
 import { createInterface, createProject, createRequest, type Project, type PropertyScopes } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -119,7 +121,7 @@ function seeded(endpoint = `${server.url}/soap`): Project {
 async function register(options: { readonly trustAnchorsFor?: () => Promise<readonly string[]> } = {}): Promise<void> {
   const { registerRequestChannelsWithKinds } = await import('./helpers/kind-channels.js');
   const model = seeded();
-  registerRequestChannelsWithKinds(new EngineService(), {
+  registerRequestChannelsWithKinds(table, new EngineService(), {
     project: {
       scopesFor: () => scopes,
       preflight: () => ({
@@ -282,7 +284,7 @@ describe('a SOAP resend trusts the anchors of its project', () => {
       request: { envelopeXml: '<a/>', headers: [] },
       sizeBytes: 1,
     };
-    registerHistoryChannelsWithKinds({ get: () => entry } as never, { project, send });
+    registerHistoryChannelsWithKinds(table, { get: () => entry } as never, { project, send });
 
     const result = await handlers.get('history.resend')!({ sender: {} }, { id: 'h-1' });
 
@@ -292,7 +294,7 @@ describe('a SOAP resend trusts the anchors of its project', () => {
   it('from the HTTP Log', async () => {
     const { registerLogChannels } = await import('../src/main/ipc/log.js');
     const { project } = await resendDeps();
-    registerLogChannels({
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service: new EngineService(),
       request: { project },
@@ -330,8 +332,8 @@ describe('a SOAP resend trusts the anchors of its project', () => {
       request: { envelopeXml: '<a/>', headers: [] },
       sizeBytes: 1,
     };
-    registerHistoryChannelsWithKinds({ get: () => entry } as never, { project, send });
-    registerLogChannels({
+    registerHistoryChannelsWithKinds(table, { get: () => entry } as never, { project, send });
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service: new EngineService(),
       request: { project },

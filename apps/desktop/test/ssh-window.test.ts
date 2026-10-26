@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { WirebenchError, secretPseudoRef } from '@wirebench/engine';
 import type { GetSecret } from '@wirebench/engine';
-import type { WebContents } from 'electron';
+import { asCaller } from './helpers/ipc-table.js';
 import { describe, expect, it, vi } from 'vitest';
 import { workspaceSecretLabel } from '../src/main/secret-resolver.js';
 import { sshAreaEndsOnSwitch, sshScopeOf, sshSecretsFor } from '../src/main/ssh-window.js';
@@ -91,7 +91,7 @@ describe('sshSecretsFor', () => {
 
 describe('sshAreaEndsOnSwitch', () => {
   it("a switch in one window ends that window's terminals and Files sessions; a rename does not", () => {
-    const window = { id: 1 } as WebContents;
+    const window = asCaller({ id: 1 });
     const ssh = { disposeFor: vi.fn() };
     const sftp = { disposeFor: vi.fn() };
     const onWorkspace = sshAreaEndsOnSwitch([ssh, sftp], window);

@@ -14,7 +14,7 @@ import { channels } from '../../shared/ipc.js';
 import type { ScriptTargetWire } from '../../shared/wire-base.js';
 import { conversionWire } from '../convert-scripts.js';
 import type { ScriptHost, ScriptTarget } from '../script-host.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /** The script a request names, without the rest of the request. */
 function targetOf(request: ScriptTargetWire): ScriptTarget {
@@ -29,36 +29,40 @@ export type ProposeConversions = (
   ownerId: string | undefined,
 ) => Promise<{ readonly project: Project; readonly levels: readonly LevelProposal[] }>;
 
-export function registerScriptChannels(host: ScriptHost, proposeConversions: ProposeConversions): void {
-  registerHandler(channels.script.diagnostics, async (request) => ({
+export function registerScriptChannels(
+  table: HandlerTable,
+  host: ScriptHost,
+  proposeConversions: ProposeConversions,
+): void {
+  registerHandler(table, channels.script.diagnostics, async (request) => ({
     diagnostics: [...(await host.diagnostics(targetOf(request), request.source))],
   }));
-  registerHandler(channels.script.completions, async (request) => ({
+  registerHandler(table, channels.script.completions, async (request) => ({
     items: (await host.completions(targetOf(request), request.source, request.line, request.column)).map((item) => ({
       name: item.name,
       kind: item.kind,
       ...(item.detail !== undefined ? { detail: item.detail } : {}),
     })),
   }));
-  registerHandler(channels.script.quickInfo, async (request) => {
+  registerHandler(table, channels.script.quickInfo, async (request) => {
     const info = await host.quickInfo(targetOf(request), request.source, request.line, request.column);
     return info === undefined ? {} : { info: { ...info } };
   });
-  registerHandler(channels.script.signatureHelp, async (request) => {
+  registerHandler(table, channels.script.signatureHelp, async (request) => {
     const help = await host.signatureHelp(targetOf(request), request.source, request.line, request.column);
     return help === undefined ? {} : { help: { ...help, parameters: [...help.parameters] } };
   });
-  registerHandler(channels.script.closeModel, async (request) => {
+  registerHandler(table, channels.script.closeModel, async (request) => {
     await host.closeModel(targetOf(request));
     return {};
   });
-  registerHandler(channels.script.listValues, ({ projectId }) =>
+  registerHandler(table, channels.script.listValues, ({ projectId }) =>
     Promise.resolve({ values: host.listValues(projectId) }),
   );
-  registerHandler(channels.script.clearValues, ({ projectId }) =>
+  registerHandler(table, channels.script.clearValues, ({ projectId }) =>
     Promise.resolve({ cleared: host.clearValues(projectId) }),
   );
-  registerHandler(channels.script.proposeConversions, async ({ projectId, ownerId }) => {
+  registerHandler(table, channels.script.proposeConversions, async ({ projectId, ownerId }) => {
     const { project, levels } = await proposeConversions(projectId, ownerId);
     const check = host.convertedDiagnostics.bind(host);
     const wire = [];

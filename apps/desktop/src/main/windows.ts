@@ -3,6 +3,7 @@ import { is } from '@electron-toolkit/utils';
 import { BrowserWindow, nativeTheme, session, shell } from 'electron';
 import { events } from '../shared/ipc.js';
 import { OS_THEME_ARGUMENT } from '../shared/os-theme-argument.js';
+import { callerForWebContents } from './electron/electron-platform.js';
 import { emitEvent } from './ipc/events.js';
 import {
   APP_SCHEME,
@@ -83,7 +84,7 @@ export function createMainWindow(): BrowserWindow {
   });
 
   win.webContents.once('did-finish-load', () => {
-    emitEvent(win.webContents, events.app.ready, { at: new Date().toISOString() });
+    emitEvent(callerForWebContents(win.webContents), events.app.ready, { at: new Date().toISOString() });
   });
 
   const devServerUrl = process.env['ELECTRON_RENDERER_URL'];

@@ -13,7 +13,7 @@ import { channels } from '../../shared/ipc.js';
 import type { OAuth2StatusWire } from '../../shared/wire-base.js';
 import type { OAuth2Service } from '../oauth2.js';
 import type { ProjectRouter } from '../project-router.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /** What the OAuth2 channels need: the model to read a configuration from, and the token service. */
 export interface OAuth2ChannelDeps {
@@ -79,8 +79,8 @@ function statusWire(deps: OAuth2ChannelDeps, config: OAuth2Auth): OAuth2StatusWi
 }
 
 /** Registers the four `oauth2.*` handlers. */
-export function registerOAuth2Channels(deps: OAuth2ChannelDeps): void {
-  registerHandler(channels.oauth2.fetchToken, async (request) => {
+export function registerOAuth2Channels(table: HandlerTable, deps: OAuth2ChannelDeps): void {
+  registerHandler(table, channels.oauth2.fetchToken, async (request) => {
     const config = configOf(deps, request.ownerId);
     const credentials = await credentialsOf(deps, config);
     const projectId = deps.project.projectId(request.ownerId);
@@ -106,15 +106,15 @@ export function registerOAuth2Channels(deps: OAuth2ChannelDeps): void {
     return statusWire(deps, config);
   });
 
-  registerHandler(channels.oauth2.status, (request) =>
+  registerHandler(table, channels.oauth2.status, (request) =>
     Promise.resolve(statusWire(deps, configOf(deps, request.ownerId))),
   );
 
-  registerHandler(channels.oauth2.clearToken, (request) => {
+  registerHandler(table, channels.oauth2.clearToken, (request) => {
     const config = configOf(deps, request.ownerId);
     deps.oauth2.clear(config);
     return Promise.resolve(statusWire(deps, config));
   });
 
-  registerHandler(channels.oauth2.cancel, () => Promise.resolve(deps.oauth2.cancel()));
+  registerHandler(table, channels.oauth2.cancel, () => Promise.resolve(deps.oauth2.cancel()));
 }

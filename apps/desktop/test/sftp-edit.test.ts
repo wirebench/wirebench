@@ -5,7 +5,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
-import type { WebContents } from 'electron';
+import type { Caller } from '../src/main/host/platform.js';
+import { asCaller } from './helpers/ipc-table.js';
 import { WirebenchError } from '@wirebench/engine';
 import { SftpError } from '@wirebench/ssh';
 import type { RemoteEntry, SftpSession } from '@wirebench/ssh';
@@ -120,7 +121,7 @@ function memHost(id: string) {
   };
 }
 
-const sender = (id: number) => ({ id, isDestroyed: () => false }) as unknown as WebContents;
+const sender = (id: number) => asCaller({ id, isDestroyed: () => false });
 
 /** A `fs.watch` stand-in: `fire()` tells every watcher of the folder that the file changed. */
 function fakeWatch() {
@@ -161,14 +162,14 @@ function setup() {
   const watcher = fakeWatch();
   const emitted: SftpEditEvent[] = [];
   const opened: string[] = [];
-  const closedListeners = new Set<(sender: WebContents, sessionId: string) => void>();
+  const closedListeners = new Set<(sender: Caller, sessionId: string) => void>();
   const sftp = {
-    session: (who: WebContents, sessionId: string) => {
+    session: (who: Caller, sessionId: string) => {
       if (who.id !== win.id || sessionId !== host.session.id)
         throw new WirebenchError('sftp-session-unknown', 'No such session');
       return host.session;
     },
-    onSessionClosed: (listener: (sender: WebContents, sessionId: string) => void) => {
+    onSessionClosed: (listener: (sender: Caller, sessionId: string) => void) => {
       closedListeners.add(listener);
       return () => closedListeners.delete(listener);
     },

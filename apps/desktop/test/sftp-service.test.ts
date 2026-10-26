@@ -2,7 +2,7 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { WebContents } from 'electron';
+import { asCaller } from './helpers/ipc-table.js';
 import { SftpError, SshConnectError, parseHostsFile } from '@wirebench/ssh';
 import type { DialOptions, KnownHostEntry, RemoteEntry, SftpSession } from '@wirebench/ssh';
 import { describe, expect, it, vi } from 'vitest';
@@ -33,7 +33,7 @@ function sender(id: number, destroyed = false) {
     on: vi.fn(add),
   };
 }
-const as = (s: ReturnType<typeof sender>) => s as unknown as WebContents;
+const as = (s: ReturnType<typeof sender>) => asCaller(s);
 
 let nextId = 0;
 function fakeSession(entries: RemoteEntry[] = []) {

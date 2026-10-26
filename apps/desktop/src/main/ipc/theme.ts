@@ -1,7 +1,7 @@
 import { nativeTheme } from 'electron';
 import { channels } from '../../shared/ipc.js';
 import type { ThemeOsWire } from '../../shared/wire-base.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /**
  * The slice of Electron's `nativeTheme` this module needs, so the channel can be asserted on
@@ -29,10 +29,11 @@ export function themeOf(theme: NativeThemeApi): ThemeOsWire {
  * @param theme - Injectable for tests; production uses Electron's `nativeTheme`.
  */
 export function registerThemeChannels(
+  table: HandlerTable,
   broadcast: (payload: ThemeOsWire) => void,
   theme: NativeThemeApi = nativeTheme,
 ): void {
-  registerHandler(channels.theme.get, () => Promise.resolve(themeOf(theme)));
+  registerHandler(table, channels.theme.get, () => Promise.resolve(themeOf(theme)));
   theme.on('updated', () => {
     broadcast(themeOf(theme));
   });

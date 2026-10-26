@@ -7,8 +7,10 @@ import { wrapHandler } from '../src/main/ipc/envelope.js';
 import { registerGlobalsChannels } from '../src/main/ipc/globals.js';
 import { channels } from '../src/shared/ipc.js';
 import type { GlobalsState } from '../src/shared/wire-base.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const registeredHandlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(registeredHandlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -71,7 +73,7 @@ describe('registerGlobalsChannels', () => {
     const globals = new GlobalProperties(dir);
     await globals.set('token', 'abc');
     const changes: GlobalsState[] = [];
-    registerGlobalsChannels(globals, (state) => changes.push(state));
+    registerGlobalsChannels(table, globals, (state) => changes.push(state));
 
     const disabled = await invoke(channels.globals.setEnabled.name, { name: 'token', enabled: false });
     expect(disabled).toEqual({ ok: true, value: { properties: { token: 'abc' }, disabled: ['token'] } });
@@ -90,7 +92,7 @@ describe('registerGlobalsChannels', () => {
     const globals = new GlobalProperties(dir);
     await globals.set('token', 'abc');
     await globals.setEnabled('token', false);
-    registerGlobalsChannels(globals);
+    registerGlobalsChannels(table, globals);
 
     const result = await invoke(channels.globals.get.name, undefined);
     expect(result).toEqual({ ok: true, value: { properties: { token: 'abc' }, disabled: ['token'] } });

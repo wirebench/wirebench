@@ -13,7 +13,7 @@ import { type HistoryService } from '../../history-service.js';
 import { type ApiChannelDeps } from '../../ipc/api.js';
 import { emitEvent } from '../../ipc/events.js';
 import { grpcResendDraft, sendDepsOf, type HistoryChannelDeps } from '../../ipc/history.js';
-import { registerHandler } from '../../ipc/register.js';
+import { registerHandler, type HandlerTable } from '../../ipc/register.js';
 import {
   NO_PREFLIGHT,
   nothingToWarnAbout,
@@ -64,11 +64,15 @@ async function preflightGrpc(
   };
 }
 /** Registers gRPC's `request.*` channels (spec §5.4). */
-export function registerGrpcRequestChannels(service: EngineService, deps: RequestChannelDeps): void {
+export function registerGrpcRequestChannels(
+  table: HandlerTable,
+  service: EngineService,
+  deps: RequestChannelDeps,
+): void {
   const sendDeps = toSendDeps(service, deps);
   // The call as it happens, its request side open for pushes when `interactive`; the `closed` event
   // of a half-close comes from the engine with the rest of the call's events.
-  registerHandler(channels.request.sendGrpc, (request, sender) =>
+  registerHandler(table, channels.request.sendGrpc, (request, sender) =>
     sendThroughEngine(sendDeps, request.sendId, request.requestId, {
       draft: { kind: 'grpc', ...(request.draft !== undefined ? { draft: request.draft } : {}) },
       checkAssertions: true,
@@ -78,17 +82,17 @@ export function registerGrpcRequestChannels(service: EngineService, deps: Reques
       },
     }),
   );
-  registerHandler(channels.request.grpcPush, async ({ sendId, messageText }) => {
+  registerHandler(table, channels.request.grpcPush, async ({ sendId, messageText }) => {
     const handle = sendDeps.registry.get(sendId);
     if (handle === undefined) {
       throw new WirebenchError('grpc-stream-unknown', GRPC_STREAM_UNKNOWN_MESSAGE, { details: { sendId } });
     }
     return { json: JSON.stringify(await handle.push({ text: messageText }), null, 2) };
   });
-  registerHandler(channels.request.grpcHalfClose, ({ sendId }) =>
+  registerHandler(table, channels.request.grpcHalfClose, ({ sendId }) =>
     Promise.resolve({ closed: sendDeps.registry.halfClose(sendId) }),
   );
-  registerHandler(channels.request.preflightGrpc, (request) =>
+  registerHandler(table, channels.request.preflightGrpc, (request) =>
     preflightGrpc(sendDeps, deps.secretSources?.(), request),
   );
 }
@@ -132,9 +136,9 @@ async function checkedProtoSource(
   return source;
 }
 /** Registers gRPC's `api.*` channels (spec §5.4). */
-export function registerGrpcApiChannels(deps: ApiChannelDeps): void {
+export function registerGrpcApiChannels(table: HandlerTable, deps: ApiChannelDeps): void {
   const { router } = deps;
-  registerHandler(channels.api.importProto, async (request, sender) => {
+  registerHandler(table, channels.api.importProto, async (request, sender) => {
     const protoImports = deps.protoImports;
     if (protoImports === undefined) {
       throw new WirebenchError('not-supported', 'This build cannot import .proto files');
@@ -194,7 +198,7 @@ export function registerGrpcApiChannels(deps: ApiChannelDeps): void {
       throw error;
     }
   });
-  registerHandler(channels.api.grpcDefinition, async (request) => {
+  registerHandler(table, channels.api.grpcDefinition, async (request) => {
     const definition = await router.grpcDefinition(request.apiId);
     return {
       services: definition.services.map((service) => ({
@@ -212,10 +216,10 @@ export function registerGrpcApiChannels(deps: ApiChannelDeps): void {
       ...(definition.reflectionVersion !== undefined ? { reflectionVersion: definition.reflectionVersion } : {}),
     };
   });
-  registerHandler(channels.api.grpcSample, async (request) => ({
+  registerHandler(table, channels.api.grpcSample, async (request) => ({
     text: await router.grpcSample(request.apiId, request.type),
   }));
-  registerHandler(channels.api.grpcFields, async (request) => {
+  registerHandler(table, channels.api.grpcFields, async (request) => {
     const descriptor = await router.grpcFields(request.apiId, request.type, request.path);
     if (descriptor === undefined) {
       return { fields: [] };
@@ -233,7 +237,7 @@ export function registerGrpcApiChannels(deps: ApiChannelDeps): void {
       })),
     };
   });
-  registerHandler(channels.api.grpcRefresh, async (request) => {
+  registerHandler(table, channels.api.grpcRefresh, async (request) => {
     const refreshed = await router.grpcRefresh(request.apiId, {
       ...(request.version !== undefined ? { version: request.version } : {}),
     });
@@ -255,8 +259,12 @@ export function registerGrpcApiChannels(deps: ApiChannelDeps): void {
 }
 
 /** Registers gRPC's `history.*` channels (spec §5.4). */
-export function registerGrpcHistoryChannels(history: HistoryService, deps: HistoryChannelDeps): void {
-  registerHandler(channels.history.resendGrpc, (request) => {
+export function registerGrpcHistoryChannels(
+  table: HandlerTable,
+  history: HistoryService,
+  deps: HistoryChannelDeps,
+): void {
+  registerHandler(table, channels.history.resendGrpc, (request) => {
     const entry = history.get(request.id);
     if (entry === undefined) {
       throw new WirebenchError('unknown-history-entry', 'This entry is no longer in History.', {
@@ -291,8 +299,8 @@ export function registerGrpcHistoryChannels(history: HistoryService, deps: Histo
 }
 
 /** Registers gRPC's channels (spec §5.4). */
-export function registerGrpcChannels(deps: KindChannelDeps): void {
-  registerGrpcRequestChannels(deps.engine, deps.request);
-  registerGrpcApiChannels(deps.api);
-  registerGrpcHistoryChannels(deps.history, deps.historyDeps);
+export function registerGrpcChannels(table: HandlerTable, deps: KindChannelDeps): void {
+  registerGrpcRequestChannels(table, deps.engine, deps.request);
+  registerGrpcApiChannels(table, deps.api);
+  registerGrpcHistoryChannels(table, deps.history, deps.historyDeps);
 }

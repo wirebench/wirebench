@@ -8,6 +8,7 @@ import { registerProjectChannels } from '../src/main/ipc/project.js';
 import type { ProjectChannelDeps } from '../src/main/ipc/project.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
 import { NO_REST, PROJECT_SETTINGS } from './helpers/wire-defaults.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 /** A valid reply body, so an accepted import's envelope passes the response schema. */
 const PROJECT: ProjectWire = {
@@ -29,6 +30,7 @@ const PROJECT: ProjectWire = {
 };
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -55,7 +57,7 @@ describe('project.addInterface', () => {
     // `useForRequests` is what persists `Interface.auth`; dropping it here silently produced an
     // interface whose requests then went out unauthenticated.
     const addInterface = vi.fn().mockResolvedValue({ project: null, interfaceId: 'iface-1' });
-    registerProjectChannels({
+    registerProjectChannels(table, {
       router: { addInterface } as unknown as ProjectChannelDeps['router'],
       addProject: vi.fn(),
       removeProject: vi.fn(),
@@ -88,7 +90,7 @@ describe('project.addInterface with a newProjectName whose import fails', () => 
     const addInterface = vi.fn().mockRejectedValue(failure);
     const addProject = vi.fn().mockResolvedValue({ projectId: 'p-new' });
     const removeProject = vi.fn().mockResolvedValue(undefined);
-    registerProjectChannels({
+    registerProjectChannels(table, {
       router: { addInterface } as unknown as ProjectChannelDeps['router'],
       addProject,
       removeProject,
@@ -106,7 +108,7 @@ describe('project.addInterface with a newProjectName whose import fails', () => 
   });
 
   it('still reports the import error when the rollback fails too', async () => {
-    registerProjectChannels({
+    registerProjectChannels(table, {
       router: {
         addInterface: vi.fn().mockRejectedValue(new Error('WSDL not found')),
       } as unknown as ProjectChannelDeps['router'],
@@ -126,7 +128,7 @@ describe('project.addInterface with a newProjectName whose import fails', () => 
 
   it('leaves an existing target project alone when its import fails', async () => {
     const removeProject = vi.fn();
-    registerProjectChannels({
+    registerProjectChannels(table, {
       router: {
         addInterface: vi.fn().mockRejectedValue(new Error('WSDL not found')),
       } as unknown as ProjectChannelDeps['router'],
@@ -166,7 +168,7 @@ describe('project.addInterface file-path access', () => {
       .fn<ProjectChannelDeps['router']['addInterface']>()
       .mockResolvedValue({ project: PROJECT, interfaceId: 'iface-1' });
     addProject = vi.fn<ProjectChannelDeps['addProject']>().mockResolvedValue({ projectId: 'p-new' });
-    registerProjectChannels({
+    registerProjectChannels(table, {
       router: { addInterface } as unknown as ProjectChannelDeps['router'],
       addProject,
       removeProject: vi.fn(),

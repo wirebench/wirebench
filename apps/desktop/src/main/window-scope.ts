@@ -6,23 +6,23 @@ import type { ProjectRouter } from './project-router.js';
 import type { WorkspaceService } from './workspace-service.js';
 
 /**
- * The `webContents` id of the window whose IPC call is running, for the handler and everything it
- * starts (its awaits, timers and the sends it puts through the engine). `registerHandler` sets it.
+ * The `Caller.id` of the window whose IPC call is running, for the handler and everything it
+ * starts (its awaits, timers and the sends it puts through the engine). The transport (`bindIpc`) sets it.
  */
 const caller = new AsyncLocalStorage<number>();
 
-/** Runs `fn` as a call from the window whose `webContents` has `id`. */
+/** Runs `fn` as a call from the window whose `Caller.id` is `id`. */
 export function runAsCaller<T>(id: number, fn: () => T): T {
   return caller.run(id, fn);
 }
 
-/** The calling window's `webContents` id, or `undefined` outside an IPC call (a timer, launch, quit). */
+/** The calling window's `Caller.id`, or `undefined` outside an IPC call (a timer, launch, quit). */
 export function callerId(): number | undefined {
   return caller.getStore();
 }
 
 /**
- * Every open window's per-window objects (multi-window design D1), keyed by `webContents.id`. What a
+ * Every open window's per-window objects (multi-window design D1), keyed by `Caller.id`. What a
  * channel reaches through {@link routeWorkspaces} and {@link scoped} is picked from here.
  */
 export class WindowScopes<S> {

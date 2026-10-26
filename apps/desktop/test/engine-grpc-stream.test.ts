@@ -13,8 +13,10 @@ import { EngineService } from '../src/main/engine-service.js';
 import { type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { ExchangeRegistry } from '../src/main/send/exchange.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -35,7 +37,7 @@ function invoke(channel: string, payload: unknown): Promise<unknown> {
 function register(): void {
   handlers.clear();
   const model = createProject('Demo', { id: 'p1' });
-  registerRequestChannelsWithKinds(new EngineService(), {
+  registerRequestChannelsWithKinds(table, new EngineService(), {
     project: {
       projectId: () => model.id,
       runContextFor: () => ({ project: model, projectDir: '/tmp/none' }),

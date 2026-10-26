@@ -2,7 +2,7 @@ import { WorkspaceError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { WorkspaceService } from '../workspace-service.js';
 import type { ServerShareTarget } from '../workspace-share.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /**
  * The `WorkspaceService` surface the `workspace.*` channels drive; a stub stands in for it in
@@ -73,13 +73,13 @@ export interface WorkspaceChannelDeps {
  * `workspace.changed` is raised through `WorkspaceHooks` in `main/index.ts` rather than from
  * here: it also fires outside any invocation (a project finishing its open, a save on quit).
  */
-export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
+export function registerWorkspaceChannels(table: HandlerTable, deps: WorkspaceChannelDeps): void {
   const { service } = deps;
   const ready = async (): Promise<void> => {
     await deps.ready?.().catch(() => undefined);
   };
 
-  registerHandler(channels.workspace.list, async () => {
+  registerHandler(table, channels.workspace.list, async () => {
     await ready();
     const workspaces = await service.list();
     const suggestions = (await deps.suggestions?.()) ?? [];
@@ -91,7 +91,7 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
     };
   });
 
-  registerHandler(channels.workspace.importSuggestion, async (request) => {
+  registerHandler(table, channels.workspace.importSuggestion, async (request) => {
     // Resolved against a fresh read of the same list the picker was shown, so the only folders
     // this can reach are ones the app itself recorded.
     const folder = ((await deps.suggestions?.()) ?? [])[request.index];
@@ -103,7 +103,7 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
     return { workspace: await service.importKnownProjectFolder(folder), dir: folder };
   });
 
-  registerHandler(channels.workspace.reveal, async (request) => {
+  registerHandler(table, channels.workspace.reveal, async (request) => {
     // Only a workspace the list knows about: the id is looked up, never turned into a path.
     const row = (await service.list()).find((candidate) => candidate.id === request.workspaceId);
     if (row === undefined) {
@@ -115,7 +115,7 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
     return {};
   });
 
-  registerHandler(channels.workspace.revealProject, (request) => {
+  registerHandler(table, channels.workspace.revealProject, (request) => {
     // Same rule as `reveal`: the id is looked up in the open workspace's own snapshot, so the
     // renderer names a project, never a folder.
     const project = service.snapshot()?.projects.find((candidate) => candidate.id === request.projectId);
@@ -128,13 +128,17 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
     return Promise.resolve({});
   });
 
-  registerHandler(channels.workspace.create, async (request) => ({ workspace: await service.create(request.name) }));
+  registerHandler(table, channels.workspace.create, async (request) => ({
+    workspace: await service.create(request.name),
+  }));
 
-  registerHandler(channels.workspace.open, async (request) => ({ workspace: await service.open(request.workspaceId) }));
+  registerHandler(table, channels.workspace.open, async (request) => ({
+    workspace: await service.open(request.workspaceId),
+  }));
 
-  registerHandler(channels.workspace.close, async () => ({ workspace: await service.close() }));
+  registerHandler(table, channels.workspace.close, async () => ({ workspace: await service.close() }));
 
-  registerHandler(channels.workspace.stashDrafts, async (request) => {
+  registerHandler(table, channels.workspace.stashDrafts, async (request) => {
     await service.stashDrafts(
       request.workspaceId,
       request.requests,
@@ -146,44 +150,44 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
     return {};
   });
 
-  registerHandler(channels.workspace.takeRestored, async () => {
+  registerHandler(table, channels.workspace.takeRestored, async () => {
     await ready();
     return service.takeRestored();
   });
 
-  registerHandler(channels.workspace.snapshot, async () => {
+  registerHandler(table, channels.workspace.snapshot, async () => {
     await ready();
     return { workspace: service.snapshot() };
   });
 
-  registerHandler(channels.workspace.rename, async (request) => ({
+  registerHandler(table, channels.workspace.rename, async (request) => ({
     workspaces: await service.rename(request.workspaceId, request.name),
   }));
 
-  registerHandler(channels.workspace.delete, async (request) => ({
+  registerHandler(table, channels.workspace.delete, async (request) => ({
     workspaces: await service.delete(request.workspaceId),
   }));
 
-  registerHandler(channels.workspace.addProject, async (request) => await service.addProject(request.name));
+  registerHandler(table, channels.workspace.addProject, async (request) => await service.addProject(request.name));
 
-  registerHandler(channels.workspace.removeProject, async (request) => ({
+  registerHandler(table, channels.workspace.removeProject, async (request) => ({
     workspace: await service.removeProject(request.projectId, { deleteFiles: request.deleteFiles }),
   }));
 
-  registerHandler(channels.workspace.linkProject, async (_request, sender) => ({
+  registerHandler(table, channels.workspace.linkProject, async (_request, sender) => ({
     workspace: await service.linkProject(sender),
   }));
 
-  registerHandler(channels.workspace.importProjectFolder, async (_request, sender) => ({
+  registerHandler(table, channels.workspace.importProjectFolder, async (_request, sender) => ({
     workspace: await service.importProjectFolder(sender),
   }));
 
-  registerHandler(channels.workspace.exportProject, async (request, sender) => {
+  registerHandler(table, channels.workspace.exportProject, async (request, sender) => {
     const exported = await service.exportProject(request.projectId, sender);
     return { dir: exported?.dir ?? null };
   });
 
-  registerHandler(channels.workspace.exportCollection, async (request, sender) => {
+  registerHandler(table, channels.workspace.exportCollection, async (request, sender) => {
     const exported = await service.exportCollection(request, sender);
     if (exported === null) {
       return { cancelled: true, files: [], requests: 0, warnings: [], notes: [] };
@@ -198,41 +202,41 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
     };
   });
 
-  registerHandler(channels.workspace.locateProject, async (request, sender) => ({
+  registerHandler(table, channels.workspace.locateProject, async (request, sender) => ({
     workspace: await service.locateProject(request.projectId, sender),
   }));
 
-  registerHandler(channels.workspace.setActiveEnvironment, async (request) => ({
+  registerHandler(table, channels.workspace.setActiveEnvironment, async (request) => ({
     workspace: await service.setActiveEnvironment(request),
   }));
 
-  registerHandler(channels.workspace.mutate, async (request) => await service.mutate(request.change));
+  registerHandler(table, channels.workspace.mutate, async (request) => await service.mutate(request.change));
 
-  registerHandler(channels.workspace.share, async (request) => ({
+  registerHandler(table, channels.workspace.share, async (request) => ({
     workspace: await service.share({
       ...(request.remote !== undefined ? { remote: request.remote } : {}),
       ...(request.branch !== undefined ? { branch: request.branch } : {}),
     }),
   }));
 
-  registerHandler(channels.workspace.shareToFolder, async (_request, sender) => ({
+  registerHandler(table, channels.workspace.shareToFolder, async (_request, sender) => ({
     workspace: await service.shareToFolder(sender),
   }));
 
-  registerHandler(channels.workspace.join, async (request) => ({
+  registerHandler(table, channels.workspace.join, async (request) => ({
     workspace: await service.join({
       remote: request.remote,
       ...(request.branch !== undefined ? { branch: request.branch } : {}),
     }),
   }));
 
-  registerHandler(channels.workspace.joinFromFolder, async (_request, sender) => ({
+  registerHandler(table, channels.workspace.joinFromFolder, async (_request, sender) => ({
     workspace: await service.joinFromFolder(sender),
   }));
 
-  registerHandler(channels.workspace.stopSharing, async () => ({ workspace: await service.stopSharing() }));
+  registerHandler(table, channels.workspace.stopSharing, async () => ({ workspace: await service.stopSharing() }));
 
-  registerHandler(channels.workspace.shareToServer, async (request) => {
+  registerHandler(table, channels.workspace.shareToServer, async (request) => {
     // Rebuilt, not forwarded: an absent default role must reach main absent (exactOptionalPropertyTypes).
     const { target } = request;
     const shaped: ServerShareTarget =
@@ -253,19 +257,19 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
     };
   });
 
-  registerHandler(channels.workspace.joinFromServer, async (request) => ({
+  registerHandler(table, channels.workspace.joinFromServer, async (request) => ({
     workspace: await service.joinFromServer({ url: request.url, workspaceId: request.workspaceId }),
   }));
 
-  registerHandler(channels.workspace.serverTargets, async (request) => ({
+  registerHandler(table, channels.workspace.serverTargets, async (request) => ({
     workspaces: await service.serverShareTargets({ url: request.url, teamId: request.teamId }),
   }));
 
-  registerHandler(channels.workspace.teamWorkspaces, async () => ({
+  registerHandler(table, channels.workspace.teamWorkspaces, async () => ({
     workspaces: await service.openableTeamWorkspaces(),
   }));
 
-  registerHandler(channels.project.moveToWorkspace, async (request) => ({
+  registerHandler(table, channels.project.moveToWorkspace, async (request) => ({
     workspace: await service.moveProjectToWorkspace(request.projectId, request.workspaceId),
   }));
 }

@@ -18,8 +18,10 @@ import { registerMcpChannels } from '../src/main/kinds/mcp/ipc.js';
 import { MCP_APPROVALS_FILE, McpApprovals, McpApprovalStore } from '../src/main/mcp-approvals.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import type { McpApprovalAnswerWire, McpApprovalPromptEvent } from '../src/shared/kinds/mcp/wire.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -74,7 +76,7 @@ beforeEach(async () => {
     } as unknown as RequestChannelDeps['project'],
     mcpApprovals: approvals,
   } satisfies RequestChannelDeps;
-  registerMcpChannels({
+  registerMcpChannels(table, {
     engine: new EngineService(),
     request,
     router: {

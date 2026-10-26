@@ -33,8 +33,10 @@ import {
 } from '../src/shared/kinds/ws/wire.js';
 import { wsApisOf } from '@wirebench/engine';
 import type { WsApi } from '@wirebench/engine';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -45,7 +47,7 @@ vi.mock('electron', () => ({
 }));
 
 const { registerApiChannelsWithKinds } = await import('./helpers/kind-channels.js');
-type ApiChannelDeps = Parameters<typeof registerApiChannelsWithKinds>[0];
+type ApiChannelDeps = Parameters<typeof registerApiChannelsWithKinds>[1];
 
 const fixtures = fileURLToPath(new URL('../../../packages/engine/test/fixtures/asyncapi/', import.meta.url));
 
@@ -194,7 +196,7 @@ beforeEach(async () => {
     history: { open: unused, recordImportedRestBatch: unused },
     onHistoryChanged: unused,
   };
-  registerApiChannelsWithKinds(deps);
+  registerApiChannelsWithKinds(table, deps);
 });
 
 afterEach(() => {

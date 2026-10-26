@@ -1,7 +1,7 @@
 import { channels } from '../../shared/ipc.js';
 import type { GlobalsState } from '../../shared/wire-base.js';
 import type { GlobalProperties } from '../global-properties.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /**
  * Registers the `globals.*` IPC channels against the shared {@link GlobalProperties} store.
@@ -17,27 +17,28 @@ import { registerHandler } from './register.js';
  * must see on-disk state rather than the empty default with no way to be corrected later.
  */
 export function registerGlobalsChannels(
+  table: HandlerTable,
   globals: GlobalProperties,
   onChanged: (state: GlobalsState) => void = () => undefined,
 ): void {
-  registerHandler(channels.globals.get, async () => {
+  registerHandler(table, channels.globals.get, async () => {
     await globals.ready();
     return globals.get();
   });
 
-  registerHandler(channels.globals.set, async (request) => {
+  registerHandler(table, channels.globals.set, async (request) => {
     const state = await globals.set(request.name, request.value);
     onChanged(state);
     return state;
   });
 
-  registerHandler(channels.globals.remove, async (request) => {
+  registerHandler(table, channels.globals.remove, async (request) => {
     const state = await globals.remove(request.name);
     onChanged(state);
     return state;
   });
 
-  registerHandler(channels.globals.setEnabled, async (request) => {
+  registerHandler(table, channels.globals.setEnabled, async (request) => {
     const state = await globals.setEnabled(request.name, request.enabled);
     onChanged(state);
     return state;

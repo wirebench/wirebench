@@ -17,7 +17,7 @@ import type { EngineService } from '../../engine-service.js';
 import { generateOptionsFrom } from '../../generate-options.js';
 import { type HistoryService } from '../../history-service.js';
 import { holdsUrlMarker, refuseRedacted, sendDepsOf, type HistoryChannelDeps } from '../../ipc/history.js';
-import { registerHandler } from '../../ipc/register.js';
+import { registerHandler, type HandlerTable } from '../../ipc/register.js';
 import {
   ownerOf,
   toSendDeps,
@@ -154,15 +154,19 @@ async function recreate(
   return { envelopeXml, kept: merged.kept, added: merged.added, removed: merged.removed };
 }
 /** Registers SOAP's `request.*` channels (spec §5.4). */
-export function registerSoapRequestChannels(service: EngineService, deps: RequestChannelDeps): void {
+export function registerSoapRequestChannels(
+  table: HandlerTable,
+  service: EngineService,
+  deps: RequestChannelDeps,
+): void {
   const sendDeps = toSendDeps(service, deps);
-  registerHandler(channels.request.generate, (request) => {
+  registerHandler(table, channels.request.generate, (request) => {
     const options = request.options ?? generateOptionsFrom(deps.preferences?.get());
     return Promise.resolve(service.generate({ ...request, ...(options !== undefined ? { options } : {}) }));
   });
   // The editor's envelope, endpoint and headers ride over the saved request as its override; a send
   // with no saved request behind it goes as the renderer built it, as a synthetic item.
-  registerHandler(channels.request.send, async (request) => {
+  registerHandler(table, channels.request.send, async (request) => {
     const summary = await sendThroughEngine(sendDeps, request.sendId, request.requestId ?? AD_HOC_ID, {
       draft: { kind: 'soap', override: soapOverrideOf(request.input) },
       checkAssertions: true,
@@ -172,8 +176,10 @@ export function registerSoapRequestChannels(service: EngineService, deps: Reques
       ? summary
       : writeDumpFile(deps.project, request.requestId, summary, deps.dialogPicks);
   });
-  registerHandler(channels.request.preflight, (request) => Promise.resolve(deps.project.preflight(request.requestId)));
-  registerHandler(channels.request.recreate, (request) => recreate(service, deps, request));
+  registerHandler(table, channels.request.preflight, (request) =>
+    Promise.resolve(deps.project.preflight(request.requestId)),
+  );
+  registerHandler(table, channels.request.recreate, (request) => recreate(service, deps, request));
 }
 
 /** Drops headers the history store redacted (`<redacted>`) before resending — never resent verbatim. */
@@ -195,8 +201,12 @@ function isRedacted(entry: HistoryEntryWire): boolean {
   );
 }
 /** Registers SOAP's `history.*` channels (spec §5.4). */
-export function registerSoapHistoryChannels(history: HistoryService, deps: HistoryChannelDeps): void {
-  registerHandler(channels.history.resend, (request) => {
+export function registerSoapHistoryChannels(
+  table: HandlerTable,
+  history: HistoryService,
+  deps: HistoryChannelDeps,
+): void {
+  registerHandler(table, channels.history.resend, (request) => {
     const entry = history.get(request.id);
     if (entry === undefined) {
       throw new WirebenchError('unknown-history-entry', 'This entry is no longer in History.', {
@@ -272,24 +282,28 @@ export function registerSoapHistoryChannels(history: HistoryService, deps: Histo
  * Registers SOAP's channels (spec §5.4): its requests and History resend, and its own modules —
  * definitions, WS-Addressing, WS-Security, WS-I, XML, XPath, validation and attachments.
  */
-export function registerSoapChannels(deps: KindChannelDeps): void {
-  registerSoapRequestChannels(deps.engine, deps.request);
-  registerSoapHistoryChannels(deps.history, deps.historyDeps);
-  registerDefinitionChannels(deps.engine, { project: deps.router, picks: deps.picks, projectDirs: deps.projectDirs });
-  registerXmlChannels(deps.engine);
-  registerXpathChannels();
-  registerValidateChannels(deps.engine, deps.router);
-  registerWsiChannels(deps.engine, {
+export function registerSoapChannels(table: HandlerTable, deps: KindChannelDeps): void {
+  registerSoapRequestChannels(table, deps.engine, deps.request);
+  registerSoapHistoryChannels(table, deps.history, deps.historyDeps);
+  registerDefinitionChannels(table, deps.engine, {
+    project: deps.router,
+    picks: deps.picks,
+    projectDirs: deps.projectDirs,
+  });
+  registerXmlChannels(table, deps.engine);
+  registerXpathChannels(table);
+  registerValidateChannels(table, deps.engine, deps.router);
+  registerWsiChannels(table, deps.engine, {
     project: deps.router,
     picks: deps.picks,
     dialog: { showSave: deps.showSaveHtml },
   });
-  registerAttachmentChannels({
+  registerAttachmentChannels(table, {
     exchanges: deps.engine.exchanges,
     project: deps.router,
     picks: deps.picks,
     userDataDir: deps.userDataDir,
   });
-  registerWsaChannels({ project: deps.router });
-  registerWssChannels({ project: deps.router });
+  registerWsaChannels(table, { project: deps.router });
+  registerWssChannels(table, { project: deps.router });
 }

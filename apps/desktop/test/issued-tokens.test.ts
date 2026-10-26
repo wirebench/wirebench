@@ -12,8 +12,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createIssuedTokenSource, createWssContext } from '@wirebench/engine';
 import type { IssuedToken, IssuedTokenTarget, Project, TrustDeps, WssIssuedTokenEntry } from '@wirebench/engine';
 import type { IssuedTokenStatusWire } from '../src/shared/kinds/soap/wire.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -133,7 +135,7 @@ describe('issuedTokens channels', () => {
 
   it('registers status, fetch and clear, reading show-secrets for every answer', async () => {
     let show = false;
-    registerIssuedTokenChannels({ issuedTokens: service(), showSecrets: { get: () => show } });
+    registerIssuedTokenChannels(table, { issuedTokens: service(), showSecrets: { get: () => show } });
     expect((await value('issuedTokens.status', locator)).state).toBe('none');
     expect(await value('issuedTokens.fetch', locator)).not.toHaveProperty('assertion');
     show = true;

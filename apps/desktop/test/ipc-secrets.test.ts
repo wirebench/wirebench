@@ -11,8 +11,10 @@ import {
   type CryptoBackend,
 } from '../src/main/secrets.js';
 import { registerSecretsChannels } from '../src/main/ipc/secrets.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -58,13 +60,13 @@ describe('secrets channels registry', () => {
 describe('registerSecretsChannels', () => {
   it('registers no ipc handler for secrets.get', () => {
     const store = new SecretStore(dir, fakeCrypto());
-    registerSecretsChannels(store, new ShowSecretsFlag());
+    registerSecretsChannels(table, store, new ShowSecretsFlag());
     expect(handlers.has('secrets.get')).toBe(false);
   });
 
   it('set returns a ref and never echoes the value', async () => {
     const store = new SecretStore(dir, fakeCrypto());
-    registerSecretsChannels(store, new ShowSecretsFlag());
+    registerSecretsChannels(table, store, new ShowSecretsFlag());
 
     const result = (await invoke('secrets.set', { value: 's3cret!' })) as { ok: true; value: { ref: string } };
     expect(result.ok).toBe(true);
@@ -74,7 +76,7 @@ describe('registerSecretsChannels', () => {
 
   it('replace/exists/delete/list round trip through IPC', async () => {
     const store = new SecretStore(dir, fakeCrypto());
-    registerSecretsChannels(store, new ShowSecretsFlag());
+    registerSecretsChannels(table, store, new ShowSecretsFlag());
 
     const setResult = (await invoke('secrets.set', { value: 'first', label: 'db' })) as {
       value: { ref: string };
@@ -93,7 +95,7 @@ describe('registerSecretsChannels', () => {
 
   it('leaves team secrets machine-only entries out of list, and refuses to replace or delete them', async () => {
     const store = new SecretStore(dir, fakeCrypto());
-    registerSecretsChannels(store, new ShowSecretsFlag());
+    registerSecretsChannels(table, store, new ShowSecretsFlag());
     const key = newSecretRef();
     await store.putMachineOnly(key, '{"private":"k"}', { label: `${TEAM_KEY_LABEL_PREFIX}ws-1` });
 
@@ -112,7 +114,7 @@ describe('registerSecretsChannels', () => {
 
   it('refuses to set a value under a machine-only label, so the renderer cannot plant a fake machine key', async () => {
     const store = new SecretStore(dir, fakeCrypto());
-    registerSecretsChannels(store, new ShowSecretsFlag());
+    registerSecretsChannels(table, store, new ShowSecretsFlag());
 
     expect(await invoke('secrets.set', { value: 'x', label: `${TEAM_KEY_LABEL_PREFIX}ws-1` })).toMatchObject({
       ok: false,
@@ -124,7 +126,7 @@ describe('registerSecretsChannels', () => {
   it('setShowSecrets toggles the injected flag', async () => {
     const store = new SecretStore(dir, fakeCrypto());
     const flag = new ShowSecretsFlag();
-    registerSecretsChannels(store, flag);
+    registerSecretsChannels(table, store, flag);
 
     expect(flag.get()).toBe(false);
     const result = await invoke('secrets.setShowSecrets', { show: true });
@@ -135,7 +137,7 @@ describe('registerSecretsChannels', () => {
   it('getShowSecrets reads the flag back', async () => {
     const store = new SecretStore(dir, fakeCrypto());
     const flag = new ShowSecretsFlag();
-    registerSecretsChannels(store, flag);
+    registerSecretsChannels(table, store, flag);
 
     expect(await invoke('secrets.getShowSecrets', undefined)).toMatchObject({ ok: true, value: { show: false } });
     flag.set(true);

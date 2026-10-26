@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerXmlChannels } from '../src/main/kinds/soap/channels/xml.js';
 import { readCraftedFixture, readPublicFixture } from './helpers/fixtures.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -30,7 +32,7 @@ describe('xml.* IPC', () => {
   beforeEach(async () => {
     handlers.clear();
     service = new EngineService();
-    registerXmlChannels(service);
+    registerXmlChannels(table, service);
     const summary = await service.importDefinition({
       source: { kind: 'text', text: readPublicFixture('calculator'), location: 'inline://calculator.wsdl' },
     });
@@ -128,7 +130,7 @@ describe('xml.* IPC', () => {
   it('xml.describeMany resolves an attribute type via a trailing @name segment', async () => {
     const SC = 'urn:wb:sc';
     const constructsService = new EngineService();
-    registerXmlChannels(constructsService);
+    registerXmlChannels(table, constructsService);
     // Re-register on the shared `handlers` map (same channel names), then invoke via that map.
     const summary = await constructsService.importDefinition({
       source: {

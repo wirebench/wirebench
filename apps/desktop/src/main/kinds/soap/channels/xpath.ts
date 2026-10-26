@@ -2,7 +2,7 @@ import { collectNamespaces, evaluateWithTimeout, suggestPrefixes } from '@wirebe
 import type { QueryResult } from '@wirebench/engine';
 import { channels } from '../../../../shared/ipc.js';
 import type { ChannelResponse } from '../../../../shared/ipc.js';
-import { registerHandler } from '../../../ipc/register.js';
+import { registerHandler, type HandlerTable } from '../../../ipc/register.js';
 
 /** Spreads the engine's `readonly`-everywhere `QueryResult` into the plain mutable shape the
  * `xpath.evaluate` wire schema (a `z.infer`) expects — the two are structurally identical, only
@@ -24,8 +24,8 @@ function toWire(result: QueryResult): ChannelResponse<typeof channels.xpath.eval
  * project/interface state), but `fontoxpath` and `jsonpath-plus` stay out of the renderer bundle by
  * running here instead.
  */
-export function registerXpathChannels(): void {
-  registerHandler(channels.xpath.evaluate, async (request) => {
+export function registerXpathChannels(table: HandlerTable): void {
+  registerHandler(table, channels.xpath.evaluate, async (request) => {
     const result = await evaluateWithTimeout(
       request.xml,
       request.expression,
@@ -38,7 +38,7 @@ export function registerXpathChannels(): void {
     return toWire(result);
   });
 
-  registerHandler(channels.xpath.namespaces, (request) => {
+  registerHandler(table, channels.xpath.namespaces, (request) => {
     const namespaces = collectNamespaces(request.xml);
     const suggestions = suggestPrefixes(request.xml);
     return Promise.resolve({ namespaces, suggestions });

@@ -10,22 +10,7 @@ import {
   shell,
   type WebContents,
 } from 'electron';
-import type { Caller, Capability, HostPlatform } from '../host/platform.js';
-
-const CAPABILITIES: readonly Capability[] = [
-  'files',
-  'keychain',
-  'ssh',
-  'pty',
-  'kerberos',
-  'dialogs',
-  'send:private',
-  'send:public',
-  'secret-sources',
-  'team-secrets',
-  'updates',
-  'app-lock',
-];
+import { ALL_CAPABILITIES, type Caller, type HostPlatform } from '../host/platform.js';
 
 interface Entry {
   readonly caller: Caller;
@@ -40,6 +25,7 @@ export function callerForWebContents(contents: WebContents): Caller {
   const known = callers.get(contents.id);
   if (known !== undefined && known.contents === contents) return known.caller;
   const listeners = new Set<() => void>();
+  const resetListeners = new Set<() => void>();
   let closed = contents.isDestroyed();
   const close = (): void => {
     if (closed && listeners.size === 0) return;
@@ -47,7 +33,13 @@ export function callerForWebContents(contents: WebContents): Caller {
     callers.delete(contents.id);
     const pending = [...listeners];
     listeners.clear();
-    for (const listener of pending) listener();
+    for (const listener of pending) {
+      try {
+        listener();
+      } catch {
+        // One listener's failure must not keep the others from hearing the caller closed.
+      }
+    }
   };
   const caller: Caller = {
     id: contents.id,
@@ -56,10 +48,21 @@ export function callerForWebContents(contents: WebContents): Caller {
       contents.send(channel, payload);
     },
     isClosed: () => closed || contents.isDestroyed(),
+    onReset(listener) {
+      resetListeners.add(listener);
+      return () => {
+        resetListeners.delete(listener);
+      };
+    },
     onClosed(listener) {
       if (caller.isClosed()) {
-        queueMicrotask(listener);
-        return () => undefined;
+        let cancelled = false;
+        queueMicrotask(() => {
+          if (!cancelled) listener();
+        });
+        return () => {
+          cancelled = true;
+        };
       }
       listeners.add(listener);
       return () => {
@@ -67,13 +70,31 @@ export function callerForWebContents(contents: WebContents): Caller {
       };
     },
   };
+  const reset = (): void => {
+    for (const listener of [...resetListeners]) {
+      try {
+        listener();
+      } catch {
+        // One listener's failure must not keep the others from hearing the reset.
+      }
+    }
+  };
   contents.once('destroyed', close);
+  // A reload or a crash starts a renderer that knows nothing of what the old page was given.
+  contents.on('render-process-gone', reset);
+  contents.on('did-start-navigation', (details: { isMainFrame: boolean; isSameDocument: boolean }) => {
+    if (details.isMainFrame && !details.isSameDocument) reset();
+  });
   callers.set(contents.id, { caller, contents });
   return caller;
 }
 
-/** The live window a caller's contents belongs to, if any. */
-function windowOf(owner: Caller | undefined): BrowserWindow | undefined {
+/**
+ * The live window a caller's contents belongs to, if any.
+ * Exported for the dialog call sites that still parent a native dialog themselves; they move onto
+ * `HostPlatform.dialogs` (host-seam Task 3), and this export goes with them.
+ */
+export function windowOf(owner: Caller | undefined): BrowserWindow | undefined {
   if (owner === undefined || owner.isClosed()) return undefined;
   const contents = callers.get(owner.id)?.contents;
   if (contents === undefined) return undefined;
@@ -148,7 +169,7 @@ export function createElectronPlatform(): HostPlatform {
         };
       },
     },
-    capabilities: new Set(CAPABILITIES),
+    capabilities: new Set(ALL_CAPABILITIES),
   };
 }
 

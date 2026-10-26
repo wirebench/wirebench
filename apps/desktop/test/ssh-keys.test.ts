@@ -2,14 +2,15 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import type { WebContents } from 'electron';
+import type { Caller } from '../src/main/host/platform.js';
+import { asCaller } from './helpers/ipc-table.js';
 import { secretPseudoRef } from '@wirebench/engine';
 import { ecdsaP256Blob, encodeDeviceKey, generateKey, publicKeyLine } from '@wirebench/ssh';
 import type { HopCredentials } from '@wirebench/ssh';
 import { SoftAuthenticator, softTransport } from '@wirebench/ssh/test-helpers';
 import { SshKeysService } from '../src/main/ssh-keys.js';
 
-const sender = { id: 7 } as unknown as WebContents;
+const sender = asCaller({ id: 7 });
 
 /** An in-memory keychain: the names listing and the window's getter read the same values. */
 function keychain(initial: Record<string, string> = {}) {
@@ -48,7 +49,7 @@ function service(
   const connector = {
     prepareHops: vi.fn(() => Promise.resolve(HOPS)),
     verifierFor: vi.fn(() => Promise.resolve(verifier)),
-    refusalError: vi.fn((_sender: WebContents, error: unknown) => error),
+    refusalError: vi.fn((_sender: Caller, error: unknown) => error),
   };
   const keys = new SshKeysService({
     secrets: chain.secrets,

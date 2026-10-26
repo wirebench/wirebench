@@ -19,7 +19,7 @@ import type { SyncStatusWire } from '../../shared/wire-base.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
 import type { SyncService } from '../sync/sync-service.js';
 import type { WorkspaceService } from '../workspace-service.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /** The `WorkspaceService` surface the `sync.*` channels drive. */
 export type SyncChannelService = Pick<
@@ -46,41 +46,48 @@ function requireSync(service: SyncChannelService): SyncService {
 }
 
 /** Registers the `sync.*` IPC channels. */
-export function registerSyncChannels(deps: SyncChannelDeps): void {
+export function registerSyncChannels(table: HandlerTable, deps: SyncChannelDeps): void {
   const { service } = deps;
 
-  registerHandler(channels.sync.status, (): Promise<SyncStatusWire> => Promise.resolve(service.syncStatus()));
+  registerHandler(table, channels.sync.status, (): Promise<SyncStatusWire> => Promise.resolve(service.syncStatus()));
 
-  registerHandler(channels.sync.fetch, async () => await requireSync(service).fetch());
+  registerHandler(table, channels.sync.fetch, async () => await requireSync(service).fetch());
 
-  registerHandler(channels.sync.pull, async () => await requireSync(service).pull());
+  registerHandler(table, channels.sync.pull, async () => await requireSync(service).pull());
 
-  registerHandler(channels.sync.push, async () => await requireSync(service).push());
+  registerHandler(table, channels.sync.push, async () => await requireSync(service).push());
 
-  registerHandler(channels.sync.commit, async (request) => await requireSync(service).commit(request.message));
+  registerHandler(table, channels.sync.commit, async (request) => await requireSync(service).commit(request.message));
 
-  registerHandler(channels.sync.conflicts, async () => ({ conflicts: await requireSync(service).conflicts() }));
+  registerHandler(table, channels.sync.conflicts, async () => ({ conflicts: await requireSync(service).conflicts() }));
 
   registerHandler(
+    table,
     channels.sync.resolve,
     async (request) => await requireSync(service).resolve(request.path, request.side),
   );
 
-  registerHandler(channels.sync.abortMerge, async () => await requireSync(service).abortMerge());
+  registerHandler(table, channels.sync.abortMerge, async () => await requireSync(service).abortMerge());
 
-  registerHandler(channels.sync.log, async (request) => ({ entries: await requireSync(service).log(request.limit) }));
+  registerHandler(table, channels.sync.log, async (request) => ({
+    entries: await requireSync(service).log(request.limit),
+  }));
 
   // A read, not a sync operation: a workspace that is not shared answers "no history" instead of refusing.
-  registerHandler(channels.sync.apiHistory, async (request) => await service.apiHistory(request.apiId, request.limit));
+  registerHandler(
+    table,
+    channels.sync.apiHistory,
+    async (request) => await service.apiHistory(request.apiId, request.limit),
+  );
 
-  registerHandler(channels.sync.updateSettings, async (request) => await service.updateSyncSettings(request));
+  registerHandler(table, channels.sync.updateSettings, async (request) => await service.updateSyncSettings(request));
 
-  registerHandler(channels.sync.setIdentity, async (request) => {
+  registerHandler(table, channels.sync.setIdentity, async (request) => {
     await requireSync(service).setIdentity(request.name, request.email);
     return {};
   });
 
-  registerHandler(channels.sync.revealTree, async (request) => {
+  registerHandler(table, channels.sync.revealTree, async (request) => {
     const tree = service.treeDir();
     const target = request.path === undefined || request.path.length === 0 ? tree : join(tree, request.path);
     const [treeReal, targetReal] = await Promise.all([realpathOfPrefix(tree), realpathOfPrefix(target)]);

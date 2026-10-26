@@ -6,8 +6,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { LayoutStore } from '../src/main/layout-store.js';
 import { registerLayoutChannels } from '../src/main/areas/layout-channels.js';
 import type { LayoutNodeWire } from '../src/shared/layout-wire.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = vi.hoisted(() => new Map<string, (event: unknown, request: unknown) => unknown>());
+const table = tableInto(handlers);
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (name: string, handler: (event: unknown, request: unknown) => unknown) => {
@@ -142,7 +144,7 @@ describe('layout channels', () => {
     const store = new LayoutStore(fileIn());
     await store.save('other', { name: 'Elsewhere', root: TWO });
     let open: string | undefined = 'mine';
-    registerLayoutChannels({ layouts: store, workspaceId: () => open });
+    registerLayoutChannels(table, { layouts: store, workspaceId: () => open });
     /** The handler's answer out of its `{ ok, value } | { ok, error }` envelope. */
     const call = async (name: string, request: unknown): Promise<unknown> => {
       const answer = (await handlers.get(name)?.({}, request)) as { ok: boolean; value?: unknown; error?: unknown };

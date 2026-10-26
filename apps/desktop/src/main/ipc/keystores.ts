@@ -7,12 +7,13 @@
  * exactly as the attachments picker does (see `dialog-picks.ts`).
  */
 
-import { BrowserWindow, dialog } from 'electron';
-import type { WebContents } from 'electron';
+import { windowOf } from '../electron/electron-platform.js';
+import type { Caller } from '../host/platform.js';
+import { dialog } from 'electron';
 import { channels } from '../../shared/ipc.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
 import type { ProjectRouter } from '../project-router.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /** What the `keystores.*` channels need; a stub stands in for each of these in tests. */
 export interface KeystoreChannelDeps {
@@ -33,8 +34,8 @@ function e2eOpenPathOverride(): string | undefined {
   return process.env['WIREBENCH_E2E_OPEN_PATH'];
 }
 
-async function pickThroughDialog(sender: WebContents): Promise<string | undefined> {
-  const window = BrowserWindow.fromWebContents(sender);
+async function pickThroughDialog(sender: Caller): Promise<string | undefined> {
+  const window = windowOf(sender);
   const options: Electron.OpenDialogOptions = {
     title: 'Choose a keystore',
     properties: ['openFile'],
@@ -43,15 +44,16 @@ async function pickThroughDialog(sender: WebContents): Promise<string | undefine
       { name: 'All files', extensions: ['*'] },
     ],
   };
-  const result = window === null ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(window, options);
+  const result =
+    window === undefined ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(window, options);
   return result.canceled ? undefined : result.filePaths[0];
 }
 
 /** Registers the `keystores.*` channels. */
-export function registerKeystoreChannels(deps: KeystoreChannelDeps): void {
-  registerHandler(channels.keystores.inspect, (request) => deps.project.inspectKeystore(request.keystoreId));
+export function registerKeystoreChannels(table: HandlerTable, deps: KeystoreChannelDeps): void {
+  registerHandler(table, channels.keystores.inspect, (request) => deps.project.inspectKeystore(request.keystoreId));
 
-  registerHandler(channels.keystores.pickFile, async (_request, sender) => {
+  registerHandler(table, channels.keystores.pickFile, async (_request, sender) => {
     // The override goes through `rememberRead` exactly as a real pick does, so e2e exercises
     // the same containment path a user does rather than a bypass of it. Comma-separated for
     // symmetry with `attachments.pickFiles`; only the first entry is used here.

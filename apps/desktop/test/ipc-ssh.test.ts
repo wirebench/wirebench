@@ -6,8 +6,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HostsService } from '../src/main/hosts-service.js';
 import { registerSshChannels } from '../src/main/areas/ssh.js';
 import { SnippetsService } from '../src/main/snippets-service.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -116,7 +118,7 @@ beforeEach(() => {
 describe('ssh channels', () => {
   it('a refused save answers its own code, not internal-error, and never echoes the bad name', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'wb-ipc-ssh-'));
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: new HostsService({ treeDir: () => dir }),
       secrets: NO_SECRETS,
       ssh: NO_SSH,
@@ -149,7 +151,7 @@ describe('ssh channels', () => {
     expect(JSON.stringify(answer)).not.toContain('hunter');
   });
   it('a stray key in the request is an invalid request', async () => {
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: { list: vi.fn(), save: vi.fn() },
       secrets: NO_SECRETS,
       ssh: NO_SSH,
@@ -172,7 +174,7 @@ describe('ssh channels', () => {
   it('ssh.listHosts answers the service; ssh.saveHosts passes the file through', async () => {
     const list = vi.fn().mockResolvedValue(EMPTY);
     const save = vi.fn().mockResolvedValue(EMPTY);
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: { list, save },
       secrets: NO_SECRETS,
       ssh: NO_SSH,
@@ -205,7 +207,7 @@ describe('ssh channels', () => {
       freePort: vi.fn(() => Promise.resolve(5433)),
       hostsChanged: vi.fn(() => Promise.resolve()),
     };
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh: NO_SSH,
@@ -235,7 +237,7 @@ describe('ssh channels', () => {
   });
   it('ssh.secretNames answers names and where they live, never a value', async () => {
     const names = vi.fn().mockResolvedValue([{ name: 'DEPLOY_KEY', local: true, external: false }]);
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: { list: vi.fn(), save: vi.fn() },
       secrets: { names, set: vi.fn(), delete: vi.fn() },
       ssh: NO_SSH,
@@ -259,7 +261,7 @@ describe('ssh channels', () => {
   });
   it('ssh.setSecret stores through the service and no response carries the value', async () => {
     const set = vi.fn().mockResolvedValue(undefined);
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: { list: vi.fn(), save: vi.fn() },
       secrets: { names: vi.fn(), set, delete: vi.fn() },
       ssh: NO_SSH,
@@ -288,7 +290,7 @@ describe('ssh channels', () => {
       workspaceId: () => 'ws',
       mappedNames: () => [],
     });
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: { list: vi.fn(), save: vi.fn() },
       secrets: service,
       ssh: NO_SSH,
@@ -311,7 +313,7 @@ describe('ssh channels', () => {
     expect(JSON.stringify(answer)).not.toContain('my password');
   });
   it('a stray key in ssh.setSecret is an invalid request', async () => {
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: { list: vi.fn(), save: vi.fn() },
       secrets: NO_SECRETS,
       ssh: NO_SSH,
@@ -349,7 +351,7 @@ describe('ssh channels', () => {
         runSnippet: vi.fn(),
         previewSnippet: vi.fn(),
       };
-      registerSshChannels({
+      registerSshChannels(table, {
         hosts: NO_HOSTS,
         secrets: NO_SECRETS,
         ssh,
@@ -427,7 +429,7 @@ describe('known hosts channels', () => {
   it('list the trusted keys and forget one by host and key type', async () => {
     const entry = { host: 'box:22', keyType: 'ssh-ed25519', fingerprint: 'SHA256:abc' };
     const ssh = { ...NO_SSH, knownHosts: vi.fn().mockResolvedValue([entry]), forgetHostKey: vi.fn() };
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh,
@@ -454,7 +456,7 @@ describe('known hosts channels', () => {
 
   it('refuse a forget request with anything beyond host and key type', async () => {
     const ssh = { ...NO_SSH, forgetHostKey: vi.fn() };
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh,
@@ -487,7 +489,7 @@ describe('host OS channels', () => {
       hostOs: vi.fn().mockResolvedValue(entries),
       setHostOs: vi.fn().mockResolvedValue(undefined),
     };
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh,
@@ -513,7 +515,7 @@ describe('host OS channels', () => {
 
   it('refuse an unknown OS id and extra fields', async () => {
     const ssh = { ...NO_SSH, setHostOs: vi.fn() };
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh,
@@ -540,7 +542,7 @@ describe('ssh snippet run channels', () => {
   it('run and preview for the calling window; a run can only turn Enter off', async () => {
     const runSnippet = vi.fn().mockResolvedValue(undefined);
     const previewSnippet = vi.fn().mockResolvedValue({ text: 'echo ••••', revision: 'r' });
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh: { ...NO_SSH, runSnippet, previewSnippet },
@@ -575,7 +577,7 @@ describe('ssh import channels', () => {
   it('pass the calling window as the owner of a preview and an apply', async () => {
     const preview = vi.fn().mockResolvedValue({ cancelled: true });
     const apply = vi.fn().mockResolvedValue({ ...EMPTY, groupId: 'ssh-config', stored: [] });
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh: NO_SSH,
@@ -605,7 +607,7 @@ describe('ssh import channels', () => {
 
   it('refuse a preview request that carries a path', async () => {
     const preview = vi.fn();
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh: NO_SSH,
@@ -629,7 +631,7 @@ describe('ssh import channels', () => {
   it('known_hosts channels pass the calling window and refuse a path', async () => {
     const preview = vi.fn().mockResolvedValue({ cancelled: true });
     const apply = vi.fn().mockResolvedValue({ added: 0, replaced: 0, kept: 0 });
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh: NO_SSH,
@@ -667,7 +669,7 @@ describe('ssh import channels', () => {
       list: vi.fn(() => Promise.resolve({ path: '/srv', entries: [] })),
       chmod: vi.fn(() => Promise.resolve()),
     };
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh: NO_SSH,
@@ -706,7 +708,7 @@ describe('ssh import channels', () => {
       cancel: vi.fn(),
       retry: vi.fn(),
     };
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh: NO_SSH,
@@ -748,7 +750,7 @@ describe('ssh import channels', () => {
       reply: vi.fn(() => Promise.resolve()),
       end: vi.fn(() => Promise.resolve()),
     };
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh: NO_SSH,
@@ -790,7 +792,7 @@ describe('ssh key channels', () => {
       deviceKeyStatus: vi.fn(() => Promise.resolve({ supported: false, reason: 'none here' })),
       defaultKeyComment: vi.fn(() => 'me@here'),
     };
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh: NO_SSH,
@@ -844,7 +846,7 @@ describe('snippet channels', () => {
       list: vi.fn().mockResolvedValue(EMPTY_SNIPPETS),
       save: vi.fn().mockResolvedValue(EMPTY_SNIPPETS),
     };
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh: NO_SSH,
@@ -868,7 +870,7 @@ describe('snippet channels', () => {
 
   it('a refused save answers its own code, not internal-error, and a stray key is an invalid request', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'wb-ipc-snippets-'));
-    registerSshChannels({
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh: NO_SSH,
@@ -901,8 +903,8 @@ describe('snippet channels', () => {
 
 describe('session log channels', () => {
   const window = { id: 9 };
-  function register(sessionLogs: Parameters<typeof registerSshChannels>[0]['sessionLogs']) {
-    registerSshChannels({
+  function register(sessionLogs: Parameters<typeof registerSshChannels>[1]['sessionLogs']) {
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh: NO_SSH,
@@ -1005,8 +1007,8 @@ describe('session log channels', () => {
 });
 
 describe('serial channels (#426)', () => {
-  const register = (serial: Parameters<typeof registerSshChannels>[0]['serial']): void => {
-    registerSshChannels({
+  const register = (serial: Parameters<typeof registerSshChannels>[1]['serial']): void => {
+    registerSshChannels(table, {
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh: NO_SSH,

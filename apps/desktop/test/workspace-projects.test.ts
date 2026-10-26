@@ -13,6 +13,8 @@ import { HistoryService } from '../src/main/history-service.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 import type { WorkspaceWire } from '../src/shared/wire-base.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { asCaller } from './helpers/ipc-table.js';
 
 /**
  * What the next folder picker answers. `undefined` is a cancelled dialog.
@@ -26,6 +28,7 @@ let folderPick: string | undefined;
 
 /** `project.*` handlers, registered for the one test that drives the channel end to end. */
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   // The e2e dialog overrides are honoured only in an unpackaged run.
@@ -49,8 +52,8 @@ let root: string;
 let picks: DialogPicks;
 let trashed: string[];
 
-/** A stand-in for a `WebContents`; the picker only ever uses it to find the parent window. */
-const SENDER = {} as Parameters<WorkspaceService['linkProject']>[0];
+/** A stand-in for a `Caller`; the picker only ever uses it to find the parent window. */
+const SENDER = asCaller({});
 
 function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceService {
   return new WorkspaceService({
@@ -190,7 +193,7 @@ describe('WorkspaceService.removeProject', () => {
     const created = await service.create('Payments');
     const { projectId: existing } = await service.addProject('Billing API');
     const before = service.snapshot()?.projects.map((project) => project.id);
-    registerProjectChannels({
+    registerProjectChannels(table, {
       router: service,
       addProject: async (name) => await service.addProject(name),
       removeProject: async (projectId, options) => await service.removeProject(projectId, options),

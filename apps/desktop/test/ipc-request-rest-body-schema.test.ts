@@ -9,8 +9,10 @@ import type { Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -42,7 +44,7 @@ function setup(
   located?: Project,
 ): void {
   handlers.clear();
-  registerRequestChannelsWithKinds(new EngineService(), {
+  registerRequestChannelsWithKinds(table, new EngineService(), {
     project: {
       projectId: () => 'p1',
       runContextFor: () => (located === undefined ? undefined : { project: located, projectDir: '/tmp/none' }),

@@ -1,5 +1,5 @@
+import type { Caller } from './host/platform.js';
 import { readFile } from 'node:fs/promises';
-import type { WebContents } from 'electron';
 import { WirebenchError, secretPseudoRef } from '@wirebench/engine';
 import type { GetSecret } from '@wirebench/engine';
 import {
@@ -65,13 +65,13 @@ export interface SshConnectDeps {
    * @throws WirebenchError when that window is gone
    */
   readonly hosts: (
-    sender: WebContents,
+    sender: Caller,
   ) => Pick<HostsService, 'current' | 'list'> & Partial<Pick<HostsService, 'sshDefaults'>>;
   /**
    * The secret getter for the connecting window's workspace, taken when a connect begins and bound to the
    * workspace open then, so a switch mid-connect never hands one workspace's secrets to another's host.
    */
-  readonly secretsFor: (sender: WebContents) => GetSecret;
+  readonly secretsFor: (sender: Caller) => GetSecret;
   /** `userData/ssh-known-hosts.json`: per machine, never in the workspace tree. */
   readonly knownHostsFile: string;
   /** `SSH_AUTH_SOCK` (or `'pageant'` on Windows); undefined when no agent runs. */
@@ -156,7 +156,7 @@ export interface SshConnector {
    * window's secret getter is taken first; `abandoned` is asked once the hosts are read, so a switch
    * meanwhile reads no secret (`ssh-session-closed`).
    */
-  prepareHops(sender: WebContents, hostId: string, abandoned?: () => boolean, user?: string): Promise<HopCredentials[]>;
+  prepareHops(sender: Caller, hostId: string, abandoned?: () => boolean, user?: string): Promise<HopCredentials[]>;
   /**
    * {@link prepareHops}, plus the target's environment variables with their secrets read (same getter, same
    * order: credentials first). `secrets` lists the values that came from secrets, for the terminal's masker.
@@ -168,7 +168,7 @@ export interface SshConnector {
    * with it for this connect, in place of its own sign-in, and nothing is read for it (#721, #722).
    */
   prepareShell(
-    sender: WebContents,
+    sender: Caller,
     hostId: string,
     abandoned?: () => boolean,
     user?: string,
@@ -209,11 +209,11 @@ export interface SshConnector {
    *
    * @throws WirebenchError `ssh-hosts-invalid` when the known-hosts file cannot be read
    */
-  verifierFor(sender: WebContents): Promise<DialOptions['verifyHostKey']>;
+  verifierFor(sender: Caller): Promise<DialOptions['verifyHostKey']>;
   /** Turns a refused connect into ssh-host-key-new / ssh-host-key-changed with the fingerprint. */
-  refusalError(sender: WebContents, error: unknown): unknown;
+  refusalError(sender: Caller, error: unknown): unknown;
   /** The window switched workspace or went away: its refusals go (see {@link RefusalStore.forget}). */
-  forget(sender: WebContents): void;
+  forget(sender: Caller): void;
 }
 
 /** The trusted host keys; a missing file is none, an unreadable one is `ssh-hosts-invalid` (never raw). */
@@ -253,7 +253,7 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
 
   /** The hops to the host, outermost first, each complete; nothing here touches the network. */
   const chainFor = async (
-    sender: WebContents,
+    sender: Caller,
     hostId: string,
     user?: string,
     quick?: SshQuickTarget,
@@ -424,7 +424,7 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
   };
 
   const prepare = async (
-    sender: WebContents,
+    sender: Caller,
     hostId: string,
     abandoned: () => boolean,
     user?: string,

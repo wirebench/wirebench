@@ -24,8 +24,10 @@ import { ExchangeRegistry } from '../src/main/send/exchange.js';
 import type { HistoryEntryWire, LogEntryWire } from '../src/shared/wire-types.js';
 import type { FailedExchangeWire } from '../src/shared/wire-base.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -55,7 +57,7 @@ function unwrap<T>(result: unknown): T {
   return envelope.value as T;
 }
 
-/** A fake `WebContents` that just collects every event sent to it, by channel name. */
+/** A fake `Caller` that just collects every event sent to it, by channel name. */
 function fakeSender(): {
   sender: { isDestroyed: () => boolean; send: (channel: string, payload: unknown) => void };
   events: unknown[];
@@ -160,7 +162,7 @@ function project(overrides: Record<string, unknown> = {}) {
 /** Registers the channels; answers the registry they keep their sessions in. */
 function register(overrides: Partial<RequestChannelDeps> = {}, projectOverrides: Record<string, unknown> = {}) {
   const registry = new ExchangeRegistry();
-  registerRequestChannelsWithKinds(new EngineService(), {
+  registerRequestChannelsWithKinds(table, new EngineService(), {
     project: project(projectOverrides),
     adHocScopes: () => ({ project: {}, global: {}, system: {} }),
     getSecret: () => Promise.resolve(undefined),

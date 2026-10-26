@@ -20,7 +20,7 @@ import {
   workspaceProjectDir,
 } from '@wirebench/engine';
 import type { GitCli } from '@wirebench/engine';
-import type { WebContents } from 'electron';
+import { asCaller } from './helpers/ipc-table.js';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
@@ -39,7 +39,7 @@ import {
 } from './sync/git-fixture.js';
 
 const WAIT = { timeout: 15_000, interval: 50 };
-const sender = {} as WebContents;
+const sender = asCaller({});
 
 let base: string;
 let git: GitCli;

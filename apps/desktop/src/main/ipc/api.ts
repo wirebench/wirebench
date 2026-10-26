@@ -66,7 +66,7 @@ import type { ProjectRouter } from '../project-router.js';
 import { applyImportedVariables } from '../import-variables-apply.js';
 import { placeMappedImport } from '../import-place.js';
 import type { VariablesApplyPorts } from '../import-variables-apply.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /** What the `api.*` channels need. A stub stands in for each part in tests. */
 export interface ApiChannelDeps {
@@ -281,7 +281,7 @@ function isPrivateHttpEnvName(name: string): boolean {
 }
 
 /** Registers the `api.*` IPC channels. */
-export function registerApiChannels(deps: ApiChannelDeps): void {
+export function registerApiChannels(table: HandlerTable, deps: ApiChannelDeps): void {
   const { router } = deps;
 
   /** A Postman source with its `file` path checked for containment or a dialog pick before it is read. */
@@ -349,7 +349,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     };
   };
 
-  registerHandler(channels.api.importPostman, async (request) => {
+  registerHandler(table, channels.api.importPostman, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
     const imported = await importPostmanCollection(checkedSource, {
       ...(request.name !== undefined ? { name: request.name } : {}),
@@ -397,7 +397,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
    * it was recorded, redacted as a live send's entry is. A project created for the import is taken
    * back when anything after it fails.
    */
-  registerHandler(channels.api.importHar, async (request) => {
+  registerHandler(table, channels.api.importHar, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
     const mapped = await importHar(checkedSource, {
       includeStaticAssets: request.includeStaticAssets,
@@ -487,7 +487,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
   };
 
   /** The environment names beside a `.http` file, so the import dialog can offer them. Never a value. */
-  registerHandler(channels.api.inspectHttpFile, async (request) => {
+  registerHandler(table, channels.api.inspectHttpFile, async (request) => {
     const checked = await checkedPostmanSource({ kind: 'file', path: request.path });
     if (checked.kind !== 'file') {
       throw new WirebenchError('invalid-argument', 'Expected a file source');
@@ -520,13 +520,15 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     return { kind: `plugin:${found.importer.id}`, label: found.importer.title, confidence: found.confidence };
   };
 
-  registerHandler(channels.api.detectPluginImport, async (request) => pluginDetected(request.text, request.filename));
+  registerHandler(table, channels.api.detectPluginImport, async (request) =>
+    pluginDetected(request.text, request.filename),
+  );
 
   /**
    * A file or text through a plugin's importer (ADR-0031): its result is checked in the engine, mapped
    * as a REST export is, and placed as another client's export; a secret value it names is not kept.
    */
-  registerHandler(channels.api.importPlugin, async (request) => {
+  registerHandler(table, channels.api.importPlugin, async (request) => {
     const importer = (deps.importers?.() ?? []).find((entry) => entry.id === request.importer);
     if (importer?.import === undefined) {
       throw new WirebenchError('plugin-missing', `No plugin importer "${request.importer}" is on`, {
@@ -553,7 +555,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     return await placeClientImport(request.target, mapped, { source, declaredVersion: `plugin:${importer.id}` });
   });
 
-  registerHandler(channels.api.detectImportSource, async (request) => {
+  registerHandler(table, channels.api.detectImportSource, async (request) => {
     const checked = await checkedPostmanSource({ kind: 'file', path: request.path });
     if (checked.kind !== 'file') throw new WirebenchError('invalid-argument', 'Expected a path');
     if (!request.folder) {
@@ -587,7 +589,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
    * workspace environments. Everything is read and parsed before a project is created; a project
    * created for the import is taken back when anything after it fails.
    */
-  registerHandler(channels.api.importHttpFile, async (request) => {
+  registerHandler(table, channels.api.importHttpFile, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
     // A dropped file names its API after the file, as a picked one does; pasted text has no name.
     const droppedName = droppedFileName(request.source)?.replace(/\.(?:http|rest)$/i, '');
@@ -761,7 +763,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
    * holding only project properties or scripts is refused too) — changes nothing. A project created
    * for the import is taken back when anything after it fails.
    */
-  registerHandler(channels.api.importOpenCollection, async (request) => {
+  registerHandler(table, channels.api.importOpenCollection, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
     const { mapped, tree } = await readOpenCollection(checkedSource);
     const proto =
@@ -864,7 +866,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
    * created, so a refusal changes nothing, and a project created for the import is taken back when
    * anything after it fails.
    */
-  registerHandler(channels.api.importPostmanFolder, async (request) => {
+  registerHandler(table, channels.api.importPostmanFolder, async (request) => {
     const checked = await checkedImportSource(deps.projectDirs(), deps.picks, { kind: 'file', path: request.path });
     if (checked.kind !== 'file') throw new WirebenchError('invalid-argument', 'Expected a path');
     const root = await collectionV3Root(checked.path);
@@ -912,7 +914,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
    * nothing; a project created for the import is taken back when anything after it fails. An export
    * holding only environments goes to `api.importClientEnvironments` instead.
    */
-  registerHandler(channels.api.importInsomnia, async (request) => {
+  registerHandler(table, channels.api.importInsomnia, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
     const mapped = await importInsomnia(checkedSource, {
       ...(request.name !== undefined && request.name.trim() !== '' ? { name: request.name } : {}),
@@ -933,7 +935,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
    * read as a JSON export. Its REST, gRPC and WebSocket APIs land in the chosen project as an
    * Insomnia export's do, its scripts as text, its environments in the workspace, never activated.
    */
-  registerHandler(channels.api.importBruno, async (request) => {
+  registerHandler(table, channels.api.importBruno, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
     const isFolder =
       checkedSource.kind === 'file' &&
@@ -954,7 +956,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
    * chosen project, its collection and folder variables as project properties, its scripts attached
    * switched off (a dropped collection's or folder's kept as text). An environments file is refused by the reader: it goes to `api.importClientEnvironments`.
    */
-  registerHandler(channels.api.importHoppscotch, async (request) => {
+  registerHandler(table, channels.api.importHoppscotch, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
     const mapped = await importHoppscotch(checkedSource, {
       ...(request.name !== undefined && request.name.trim() !== '' ? { name: request.name } : {}),
@@ -969,7 +971,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
    * they fit, its scripts attached switched off (a dropped collection's or folder's kept as text), and
    * a folder's environments in the workspace, never activated.
    */
-  registerHandler(channels.api.importThunderClient, async (request) => {
+  registerHandler(table, channels.api.importThunderClient, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
     const isFolder =
       checkedSource.kind === 'file' &&
@@ -990,7 +992,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
    * Globals, each sub-environment a workspace environment under a free name (never activated). An
    * export holding requests is refused rather than half imported.
    */
-  registerHandler(channels.api.importClientEnvironments, async (request) => {
+  registerHandler(table, channels.api.importClientEnvironments, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
     // A Hoppscotch environments file is its own format, refused by the reader when it holds collections.
     const mapped =
@@ -1021,7 +1023,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
    * store. A picked file brings its partner from beside it; pasted text is read as the public file,
    * and dropped text as the file it was dropped from.
    */
-  registerHandler(channels.api.importHttpEnv, async (request) => {
+  registerHandler(table, channels.api.importHttpEnv, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
     let publicText: string | undefined;
     let privateText: string | undefined;
@@ -1065,14 +1067,14 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     const summary = await applyImportedVariables(plan, deps.variablesPorts(undefined));
     return { summary, reportText: formatImportReport({ warnings: summary.warnings, notes: summary.notes }) };
   };
-  registerHandler(channels.api.importPostmanEnvironment, async (request) =>
+  registerHandler(table, channels.api.importPostmanEnvironment, async (request) =>
     importPostmanVariablesFrom(request.source, 'environment'),
   );
-  registerHandler(channels.api.importPostmanGlobals, async (request) =>
+  registerHandler(table, channels.api.importPostmanGlobals, async (request) =>
     importPostmanVariablesFrom(request.source, 'globals'),
   );
 
-  registerHandler(channels.api.cancelImport, (request) =>
+  registerHandler(table, channels.api.cancelImport, (request) =>
     Promise.resolve({
       cancelled:
         deps.imports.cancel(request.token).cancelled || (deps.protoImports?.cancel(request.token).cancelled ?? false),
@@ -1080,12 +1082,12 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
   );
 
   // Identity only — no text — so a large definition stays a bounded payload.
-  registerHandler(channels.api.definitionDocuments, async (request) => {
+  registerHandler(table, channels.api.definitionDocuments, async (request) => {
     const read = await router.apiDefinitionDocuments(request.apiId);
     return { ...read, documents: read.documents.map((document) => ({ ...document })) };
   });
 
-  registerHandler(channels.api.definitionText, async (request) => {
+  registerHandler(table, channels.api.definitionText, async (request) => {
     const text = await router.apiDefinitionText(request.apiId, request.location);
     const size = Buffer.byteLength(text, 'utf8');
     if (size > MAX_DOCUMENT_TEXT_BYTES) {
@@ -1098,7 +1100,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     return { text };
   });
 
-  registerHandler(channels.api.exportDefinition, async (request, sender) => {
+  registerHandler(table, channels.api.exportDefinition, async (request, sender) => {
     const dir = await pickFolder(sender, { title: 'Export definition to folder' });
     if (dir === undefined) {
       return { cancelled: true, files: [] };

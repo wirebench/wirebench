@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerAccount } from '@wirebench/engine';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
@@ -73,7 +75,7 @@ describe('account.* channels', () => {
 
   it('registers every channel and answers with wire shapes', async () => {
     const accounts = fakeService();
-    registerAccountChannels({ accounts });
+    registerAccountChannels(table, { accounts });
     expect(await invoke('account.list', undefined)).toEqual({ ok: true, value: { servers: [toAccountWire(ACCOUNT)] } });
     expect(await invoke('account.probe', { url: 'https://wb.test' })).toMatchObject({
       ok: true,
@@ -114,7 +116,7 @@ describe('account.* channels', () => {
     const { WirebenchError } = await import('@wirebench/engine');
     const accounts = fakeService();
     accounts.signInLocal.mockRejectedValue(new WirebenchError('identity-invalid-credentials', 'nope'));
-    registerAccountChannels({ accounts });
+    registerAccountChannels(table, { accounts });
     const result = await invoke('account.signInLocal', { url: 'https://wb.test', email: 'a', password: 'p' });
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error.code).toBe('identity-invalid-credentials');

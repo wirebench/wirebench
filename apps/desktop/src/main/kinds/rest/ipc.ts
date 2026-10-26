@@ -20,7 +20,7 @@ import { type HistoryService } from '../../history-service.js';
 import { fingerprintOf, sourceLabel, toDefinitionAuth, toEngineSource, type ApiChannelDeps } from '../../ipc/api.js';
 import { emitEvent } from '../../ipc/events.js';
 import { restResendDraft, sendDepsOf, type HistoryChannelDeps, type SavedRest } from '../../ipc/history.js';
-import { registerHandler } from '../../ipc/register.js';
+import { registerHandler, type HandlerTable } from '../../ipc/register.js';
 import {
   NO_PREFLIGHT,
   nothingToWarnAbout,
@@ -132,11 +132,15 @@ function trackRestSend<T>(requestId: string, call: Promise<T>): Promise<T> {
   return call;
 }
 /** Registers REST's `request.*` channels (spec §5.4). */
-export function registerRestRequestChannels(service: EngineService, deps: RequestChannelDeps): void {
+export function registerRestRequestChannels(
+  table: HandlerTable,
+  service: EngineService,
+  deps: RequestChannelDeps,
+): void {
   const sendDeps = toSendDeps(service, deps);
   // The stream as it happens, alongside the invoke that is still open and will resolve with the
   // whole exchange. A window that has gone away swallows its own events.
-  registerHandler(channels.request.sendRest, (request, sender) =>
+  registerHandler(table, channels.request.sendRest, (request, sender) =>
     trackRestSend(
       request.requestId,
       sendThroughEngine(sendDeps, request.sendId, request.requestId, {
@@ -148,11 +152,11 @@ export function registerRestRequestChannels(service: EngineService, deps: Reques
       }),
     ),
   );
-  registerHandler(channels.request.preflightRest, (request) =>
+  registerHandler(table, channels.request.preflightRest, (request) =>
     preflightRest(sendDeps, deps.secretSources?.(), request),
   );
-  registerHandler(channels.request.restHeaders, (request) => restHeaders(deps, sendDeps, request));
-  registerHandler(channels.request.restBodySchema, async (request) => {
+  registerHandler(table, channels.request.restHeaders, (request) => restHeaders(deps, sendDeps, request));
+  registerHandler(table, channels.request.restBodySchema, async (request) => {
     // The operation is found from what a send would call — the draft laid over the saved request and
     // its properties expanded — the same method and URL the contract check matches after a send, so
     // the form and the check never disagree about the operation.
@@ -163,7 +167,7 @@ export function registerRestRequestChannels(service: EngineService, deps: Reques
     // The wire keeps the schema as plain JSON data; the renderer reads it back as a `JsonSchema`.
     return found === undefined ? null : { mediaType: found.mediaType, schema: found.schema as Record<string, unknown> };
   });
-  registerGraphqlRequestChannels(sendDeps, deps);
+  registerGraphqlRequestChannels(table, sendDeps, deps);
 }
 
 /** A webhook/callback item onto the wire: the engine's ref, minus the fields the wire has no use for. */
@@ -195,7 +199,7 @@ function toRestUpdatePlanWire(plan: RestUpdatePlan, linked: boolean): RestUpdate
   };
 }
 /** Registers REST's `api.*` channels (spec §5.4). */
-export function registerRestApiChannels(deps: ApiChannelDeps): void {
+export function registerRestApiChannels(table: HandlerTable, deps: ApiChannelDeps): void {
   const { router } = deps;
   const readRestSource = async (apiId: string, chosen: RestUpdateSourceWire | undefined) => {
     let wire: OpenApiSourceWire;
@@ -225,8 +229,8 @@ export function registerRestApiChannels(deps: ApiChannelDeps): void {
     const parsed = await deps.imports.readOpenApi(toEngineSource(checked), auth);
     return { parsed, label: sourceLabel(checked), auth };
   };
-  registerGraphqlApiChannels(deps);
-  registerHandler(channels.api.importOpenApi, async (request, sender) => {
+  registerGraphqlApiChannels(table, deps);
+  registerHandler(table, channels.api.importOpenApi, async (request, sender) => {
     // A `file` source is a read at a renderer-named path, answered before any project is created,
     // so a refusal changes nothing — the same order `project.addInterface` uses.
     const checked = await checkedImportSource(deps.projectDirs(), deps.picks, request.source);
@@ -307,7 +311,7 @@ export function registerRestApiChannels(deps: ApiChannelDeps): void {
       throw error;
     }
   });
-  registerHandler(channels.api.restPlanUpdate, async (request) => {
+  registerHandler(table, channels.api.restPlanUpdate, async (request) => {
     const { parsed, label } = await readRestSource(request.apiId, request.source);
     const { plan, cached, linked } = await router.restPlanUpdate(request.apiId, parsed.document);
     // Both halves of the diff: a cache rewritten since (another update) changes the plan too.
@@ -319,7 +323,7 @@ export function registerRestApiChannels(deps: ApiChannelDeps): void {
       fingerprint: fingerprintOf([...cached, ...parsed.documents]),
     };
   });
-  registerHandler(channels.api.restApplyUpdate, async (request) => {
+  registerHandler(table, channels.api.restApplyUpdate, async (request) => {
     const { parsed, label, auth } = await readRestSource(request.apiId, request.source);
     const { project, plan, linked, applied, warning } = await router.restApplyUpdate(request.apiId, parsed, {
       // A chosen source brings its own credentials, or none: a file, or a URL given without any.
@@ -343,7 +347,7 @@ export function registerRestApiChannels(deps: ApiChannelDeps): void {
       ...(warning !== undefined ? { warning } : {}),
     };
   });
-  registerHandler(channels.api.restLint, async (request) => {
+  registerHandler(table, channels.api.restLint, async (request) => {
     try {
       const report = await router.restLint(request.apiId);
       return { findings: report.findings.map((finding) => ({ ...finding })) };
@@ -367,11 +371,11 @@ export function registerRestApiChannels(deps: ApiChannelDeps): void {
       throw error;
     }
   });
-  registerHandler(channels.api.webhookItems, async (request) => {
+  registerHandler(table, channels.api.webhookItems, async (request) => {
     const { items, imported } = await router.webhookItems(request.apiId);
     return { items: items.map(toWebhookItemWire), imported: [...imported] };
   });
-  registerHandler(channels.api.importWebhooks, async (request) => {
+  registerHandler(table, channels.api.importWebhooks, async (request) => {
     const { folderId, added } = await router.importWebhooks(request.apiId, request.keys);
     return { folderId, added };
   });
@@ -421,8 +425,12 @@ function savedOriginOf(saved: Pick<RestPreview, 'input'>): string | undefined {
   }
 }
 /** Registers REST's `history.*` channels (spec §5.4). */
-export function registerRestHistoryChannels(history: HistoryService, deps: HistoryChannelDeps): void {
-  registerHandler(channels.history.resendRest, async (request) => {
+export function registerRestHistoryChannels(
+  table: HandlerTable,
+  history: HistoryService,
+  deps: HistoryChannelDeps,
+): void {
+  registerHandler(table, channels.history.resendRest, async (request) => {
     const entry = history.get(request.id);
     if (entry === undefined) {
       throw new WirebenchError('unknown-history-entry', 'This entry is no longer in History.', {
@@ -461,9 +469,9 @@ export function registerRestHistoryChannels(history: HistoryService, deps: Histo
 }
 
 /** Registers REST's channels (spec §5.4). */
-export function registerRestChannels(deps: KindChannelDeps): void {
-  registerRestRequestChannels(deps.engine, deps.request);
-  registerRestApiChannels(deps.api);
-  registerRestDocsChannels({ router: deps.router, picks: deps.picks });
-  registerRestHistoryChannels(deps.history, deps.historyDeps);
+export function registerRestChannels(table: HandlerTable, deps: KindChannelDeps): void {
+  registerRestRequestChannels(table, deps.engine, deps.request);
+  registerRestApiChannels(table, deps.api);
+  registerRestDocsChannels(table, { router: deps.router, picks: deps.picks });
+  registerRestHistoryChannels(table, deps.history, deps.historyDeps);
 }

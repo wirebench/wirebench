@@ -20,8 +20,10 @@ import { toSendDeps, type RequestChannelDeps } from '../src/main/ipc/request.js'
 import { sendThroughEngine } from '../src/main/send/exchange.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import { registerHistoryChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -97,7 +99,7 @@ function harness(model: Project, secrets: GetSecret = () => Promise.resolve(unde
     secretsFor: () => keychain,
   };
   const sendDeps = toSendDeps(engine, requestDeps);
-  registerHistoryChannelsWithKinds(history as never, {
+  registerHistoryChannelsWithKinds(table, history as never, {
     project: { projectId: () => 'p1', endpointFor: () => undefined },
     send: sendDeps,
   });

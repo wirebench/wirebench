@@ -17,8 +17,10 @@ import { DialogPicks } from '../src/main/dialog-picks.js';
 import { PREFERENCES_FILE, PreferencesService, rememberPickedCaBundle } from '../src/main/preferences.js';
 import { registerSslChannels } from '../src/main/ipc/ssl.js';
 import type { PreferencesWire } from '../src/shared/wire-base.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 /** `showOpenDialog` is never reached in these tests — the e2e override stands in for the dialog. */
 const showOpenDialog = vi.fn();
@@ -62,7 +64,7 @@ describe('ssl.pickCaBundle', () => {
     process.env['WIREBENCH_E2E_OPEN_PATH'] = bundle;
     const picks = new DialogPicks();
     const changed: PreferencesWire[] = [];
-    registerSslChannels({
+    registerSslChannels(table, {
       preferences: new PreferencesService(dir),
       picks,
       onChanged: (next) => changed.push(next),
@@ -87,7 +89,7 @@ describe('ssl.pickCaBundle', () => {
     showOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] });
     const picks = new DialogPicks();
     const changed: PreferencesWire[] = [];
-    registerSslChannels({ preferences: new PreferencesService(dir), picks, onChanged: (n) => changed.push(n) });
+    registerSslChannels(table, { preferences: new PreferencesService(dir), picks, onChanged: (n) => changed.push(n) });
 
     const result = (await invoke('ssl.pickCaBundle', {})) as { value: { path?: string } };
 
@@ -103,7 +105,7 @@ describe('ssl.clearCaBundle', () => {
     writeFileSync(bundle, '-----BEGIN CERTIFICATE-----\n', 'utf8');
     process.env['WIREBENCH_E2E_OPEN_PATH'] = bundle;
     const changed: PreferencesWire[] = [];
-    registerSslChannels({
+    registerSslChannels(table, {
       preferences: new PreferencesService(dir),
       picks: new DialogPicks(),
       onChanged: (next) => changed.push(next),
@@ -159,7 +161,7 @@ describe('a CA bundle locked by policy', () => {
     const policyFile = join(dir, 'policy.yaml');
     writeFileSync(policyFile, 'ssl:\n  caBundlePath: /etc/ssl/corp.pem\n', 'utf8');
     showOpenDialog.mockClear();
-    registerSslChannels({ preferences: new PreferencesService(dir, { policyFile }), picks: new DialogPicks() });
+    registerSslChannels(table, { preferences: new PreferencesService(dir, { policyFile }), picks: new DialogPicks() });
 
     const result = await invoke(channel, {});
 

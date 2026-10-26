@@ -2,7 +2,7 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { WebContents } from 'electron';
+import { asCaller } from './helpers/ipc-table.js';
 import { SshConnectError, parseHostsFile } from '@wirebench/ssh';
 import type { KnownHostEntry } from '@wirebench/ssh';
 import { describe, expect, it, vi } from 'vitest';
@@ -22,7 +22,7 @@ const FILE = parseHostsFile(
 const KEY: KnownHostEntry = { host: '10.0.0.1:22', keyType: 'ssh-ed25519', fingerprint: 'SHA256:k' };
 const HOP = { address: '10.0.0.1', port: 22 };
 
-const sender = (id: number) => ({ id, isDestroyed: () => false, on: vi.fn(), once: vi.fn() }) as unknown as WebContents;
+const sender = (id: number) => asCaller({ id, isDestroyed: () => false, on: vi.fn(), once: vi.fn() });
 
 function make(
   opts: {

@@ -13,6 +13,7 @@ import { ProjectHost } from '../src/main/project-host.js';
 import { ExchangeRegistry, sendThroughEngine, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
+import { asCaller } from './helpers/ipc-table.js';
 
 /** What the next folder picker answers; `undefined` is a cancelled dialog. */
 let folderPick: string | undefined;
@@ -36,8 +37,8 @@ let root: string;
 let picks: DialogPicks;
 let engine: EngineService;
 
-/** A stand-in for a `WebContents`; the picker only ever uses it to find the parent window. */
-const SENDER = {} as Parameters<WorkspaceService['linkProject']>[0];
+/** A stand-in for a `Caller`; the picker only ever uses it to find the parent window. */
+const SENDER = asCaller({});
 
 function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceService {
   return new WorkspaceService({

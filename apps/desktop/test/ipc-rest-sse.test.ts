@@ -21,8 +21,10 @@ import { sendDepsFor } from './helpers/send-deps.js';
 import type { RestExchangeSummary, RestLiveEvent } from '../src/shared/kinds/rest/wire.js';
 import type { FailedExchangeWire } from '../src/shared/wire-base.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -52,7 +54,7 @@ function unwrap<T>(result: unknown): T {
   return envelope.value as T;
 }
 
-/** A fake `WebContents` that just collects every event sent to it, by channel name. */
+/** A fake `Caller` that just collects every event sent to it, by channel name. */
 function fakeSender(): {
   sender: { isDestroyed: () => boolean; send: (channel: string, payload: unknown) => void };
   events: RestLiveEvent[];
@@ -126,7 +128,7 @@ function project(restSend: (requestId: string) => Project | undefined) {
 /** Registers the channels; answers the registry the sends are kept in. */
 function register(overrides: Partial<RequestChannelDeps> = {}, restSend: (requestId: string) => Project | undefined) {
   const registry = new ExchangeRegistry();
-  registerRequestChannelsWithKinds(new EngineService(), {
+  registerRequestChannelsWithKinds(table, new EngineService(), {
     project: project(restSend),
     adHocScopes: () => ({ project: {}, global: {}, system: {} }),
     registry,
