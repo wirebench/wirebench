@@ -10,7 +10,7 @@ import {
   shell,
   type WebContents,
 } from 'electron';
-import { ALL_CAPABILITIES, type Caller, type HostPlatform } from '../host/platform.js';
+import { ALL_CAPABILITIES, type Caller, type DialogOwner, type HostPlatform } from '../host/platform.js';
 
 interface Entry {
   readonly caller: Caller;
@@ -106,12 +106,13 @@ function windowOf(owner: Caller): BrowserWindow | undefined {
 }
 
 /**
- * The window a native dialog opens over. No owner means "whichever window the user is in", the
- * focused one if there is one; an owner that was given but whose window is gone opens the dialog
- * unparented, not over some other window.
+ * The window a native dialog opens over. `undefined` is no parent; `'focused'` is whichever window
+ * the user is in, if there is one; a `Caller` whose window is gone opens the dialog unparented, not
+ * over some other window.
  */
-function parentOf(owner: Caller | undefined): BrowserWindow | undefined {
-  if (owner === undefined) return BrowserWindow.getFocusedWindow() ?? undefined;
+function parentOf(owner: DialogOwner): BrowserWindow | undefined {
+  if (owner === undefined) return undefined;
+  if (owner === 'focused') return BrowserWindow.getFocusedWindow() ?? undefined;
   return windowOf(owner);
 }
 

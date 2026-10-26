@@ -49,6 +49,12 @@ export interface Caller {
   onClosed(listener: () => void): () => void;
 }
 
+/**
+ * Who a native dialog opens over: a `Caller`'s window, `'focused'` for whichever window the user is
+ * in (unparented when none), or `undefined` for no parent at all.
+ */
+export type DialogOwner = Caller | 'focused' | undefined;
+
 export interface DialogFilter {
   readonly name: string;
   readonly extensions: readonly string[];
@@ -87,12 +93,9 @@ export interface HostPlatform {
   readonly paths: { userData(): string; temp(): string; logs(): string };
   readonly secrets: { available(): boolean; encrypt(plain: string): Buffer; decrypt(sealed: Buffer): string };
   readonly dialogs?: {
-    openFile(owner: Caller | undefined, opts: OpenDialogOptions): Promise<{ canceled: boolean; filePaths: string[] }>;
-    saveFile(owner: Caller | undefined, opts: SaveDialogOptions): Promise<{ canceled: boolean; filePath?: string }>;
-    message(
-      owner: Caller | undefined,
-      opts: MessageBoxOptions,
-    ): Promise<{ response: number; checkboxChecked: boolean }>;
+    openFile(owner: DialogOwner, opts: OpenDialogOptions): Promise<{ canceled: boolean; filePaths: string[] }>;
+    saveFile(owner: DialogOwner, opts: SaveDialogOptions): Promise<{ canceled: boolean; filePath?: string }>;
+    message(owner: DialogOwner, opts: MessageBoxOptions): Promise<{ response: number; checkboxChecked: boolean }>;
   };
   readonly shell?: {
     openExternal(url: string): Promise<void>;

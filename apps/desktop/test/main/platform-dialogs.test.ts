@@ -68,23 +68,34 @@ describe('platform.dialogs parenting', () => {
     expect(electron.dialog.showSaveDialog).toHaveBeenCalledWith({ title: 'Save' });
   });
 
-  it('parents to the focused window when there is no owner', async () => {
+  it('opens unparented when there is no owner, even with a window focused', async () => {
+    electron.BrowserWindow.getFocusedWindow.mockReturnValue({ id: 'focused' });
+    const platform = createElectronPlatform();
+    await platform.dialogs?.openFile(undefined, opts);
+    expect(electron.dialog.showOpenDialog).toHaveBeenCalledWith(opts);
+    await platform.dialogs?.saveFile(undefined, { title: 'Save' });
+    expect(electron.dialog.showSaveDialog).toHaveBeenCalledWith({ title: 'Save' });
+    await platform.dialogs?.message(undefined, { message: 'Sure?' });
+    expect(electron.dialog.showMessageBox).toHaveBeenCalledWith({ message: 'Sure?' });
+  });
+
+  it("parents to the focused window for 'focused'", async () => {
     const focused = { id: 'focused' };
     electron.BrowserWindow.getFocusedWindow.mockReturnValue(focused);
     const platform = createElectronPlatform();
-    await platform.dialogs?.openFile(undefined, opts);
+    await platform.dialogs?.openFile('focused', opts);
     expect(electron.dialog.showOpenDialog).toHaveBeenCalledWith(focused, opts);
-    await platform.dialogs?.saveFile(undefined, { title: 'Save' });
+    await platform.dialogs?.saveFile('focused', { title: 'Save' });
     expect(electron.dialog.showSaveDialog).toHaveBeenCalledWith(focused, { title: 'Save' });
-    await expect(platform.dialogs?.message(undefined, { message: 'Sure?' })).resolves.toEqual({
+    await expect(platform.dialogs?.message('focused', { message: 'Sure?' })).resolves.toEqual({
       response: 1,
       checkboxChecked: false,
     });
     expect(electron.dialog.showMessageBox).toHaveBeenCalledWith(focused, { message: 'Sure?' });
   });
 
-  it('opens unparented when there is no owner and no focused window', async () => {
-    await createElectronPlatform().dialogs?.message(undefined, { message: 'Sure?' });
+  it("opens unparented for 'focused' when no window is focused", async () => {
+    await createElectronPlatform().dialogs?.message('focused', { message: 'Sure?' });
     expect(electron.dialog.showMessageBox).toHaveBeenCalledWith({ message: 'Sure?' });
   });
 });

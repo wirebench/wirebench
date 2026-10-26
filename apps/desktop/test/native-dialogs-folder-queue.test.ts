@@ -139,11 +139,11 @@ describe('the pickers over the platform dialogs', () => {
     expect(picks.hasRead('/chosen/a.xml')).toBe(true);
   });
 
-  it('asks the protected-environment question over no owner, so the focused window takes it', async () => {
+  it('asks the protected-environment question over the focused window', async () => {
     showMessage.mockResolvedValue({ response: 0, checkboxChecked: false });
     await expect(subject().confirmProtected(['Prod'])).resolves.toBe(true);
     expect(showMessage).toHaveBeenCalledWith(
-      undefined,
+      'focused',
       expect.objectContaining({ buttons: ['Send', 'Cancel'], defaultId: 1, cancelId: 1, message: 'Send to Prod?' }),
     );
     showMessage.mockResolvedValue({ response: 1, checkboxChecked: false });

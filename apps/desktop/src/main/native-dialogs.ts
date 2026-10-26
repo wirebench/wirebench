@@ -192,13 +192,13 @@ export function createNativeDialogs(platform: Pick<HostPlatform, 'dialogs' | 'ap
     },
 
     /**
-     * Over the focused window (no owner). Cancel is the default and the answer to Escape, so a
+     * Over the focused window. Cancel is the default and the answer to Escape, so a
      * stray Enter never sends to production.
      */
     async confirmProtected(environmentNames) {
       const list = environmentNames.map((name) => `"${name}"`).join(', ');
       const one = environmentNames.length === 1;
-      const { response } = await dialogs().message(undefined, {
+      const { response } = await dialogs().message('focused', {
         type: 'warning',
         buttons: ['Send', 'Cancel'],
         defaultId: 1,
