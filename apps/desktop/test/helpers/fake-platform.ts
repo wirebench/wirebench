@@ -32,7 +32,7 @@ export function createFakePlatform(overrides: Partial<HostPlatform> & { userData
 export function fakeCaller(id = 1): Caller & { sent: Array<[string, unknown]>; close(): void; reset(): void } {
   const sent: Array<[string, unknown]> = [];
   const listeners = new Set<() => void>();
-  const resetListeners = new Set<() => void>();
+  const resetListeners = new Set<() => void>(); // of both kinds: `reset()` fires them all
   let closed = false;
   return {
     id,

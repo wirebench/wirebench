@@ -58,7 +58,7 @@ export function registerSecretScanChannels(
       };
       sender.onClosed(drop);
       // A crash, a reload (or any main-frame navigation) starts a renderer that knows nothing of the old holds.
-      sender.onReset(drop);
+      sender.onReset(drop, { on: 'commit' });
     }
     return Promise.resolve({ holdId: sessions.hold(request.projectIds, sender.id) });
   });

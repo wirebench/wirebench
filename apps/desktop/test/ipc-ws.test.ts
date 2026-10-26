@@ -27,7 +27,6 @@ import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -162,7 +161,7 @@ function project(overrides: Record<string, unknown> = {}) {
 /** Registers the channels; answers the registry they keep their sessions in. */
 function register(overrides: Partial<RequestChannelDeps> = {}, projectOverrides: Record<string, unknown> = {}) {
   const registry = new ExchangeRegistry();
-  registerRequestChannelsWithKinds(table, new EngineService(), {
+  registerRequestChannelsWithKinds(tableInto(handlers), new EngineService(), {
     project: project(projectOverrides),
     adHocScopes: () => ({ project: {}, global: {}, system: {} }),
     getSecret: () => Promise.resolve(undefined),

@@ -184,7 +184,7 @@ describe('secretScan channels', () => {
     expect(release).toHaveBeenCalledWith('hold-7');
   });
 
-  it.each(['destroyed', 'render-process-gone', 'did-start-navigation'])(
+  it.each(['destroyed', 'render-process-gone', 'did-navigate'])(
     "drops a renderer's holds when it goes away (%s), so autosave cannot stay off",
     async (event) => {
       const releaseOwner = vi.fn();
@@ -195,10 +195,21 @@ describe('secretScan channels', () => {
       await invoke('secretScan.hold', { projectIds: ['p1'] }, sender);
       expect(releaseOwner).not.toHaveBeenCalled();
 
-      sender.emit(event, { isMainFrame: true, isSameDocument: false });
+      sender.emit(event);
 
       expect(releaseOwner).toHaveBeenCalledTimes(1);
       expect(releaseOwner).toHaveBeenCalledWith(5);
     },
   );
+
+  it("keeps a renderer's holds through a navigation that starts but never commits", async () => {
+    const releaseOwner = vi.fn();
+    register({}, { releaseOwner });
+    const sender = fakeSender(6);
+    await invoke('secretScan.hold', { projectIds: ['p1'] }, sender);
+
+    sender.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false });
+
+    expect(releaseOwner).not.toHaveBeenCalled();
+  });
 });

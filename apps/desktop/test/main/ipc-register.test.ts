@@ -59,6 +59,14 @@ describe('registerHandler', () => {
     });
   });
 
+  it('refuses a second handler for the same channel', () => {
+    const table: HandlerTable = new Map();
+    registerHandler(table, echo, (request) => Promise.resolve(request));
+    expect(() => {
+      registerHandler(table, echo, (request) => Promise.resolve(request));
+    }).toThrow(/second handler for 'test\.echo'/);
+  });
+
   it('wraps a thrown error in the error envelope', async () => {
     const table: HandlerTable = new Map();
     registerHandler(table, echo, () => Promise.reject(new Error('nope')));

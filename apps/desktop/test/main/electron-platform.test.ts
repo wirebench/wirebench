@@ -170,4 +170,22 @@ describe('callerForWebContents', () => {
     contents.emit('render-process-gone', {}, {});
     expect(reset).toHaveBeenCalledTimes(2);
   });
+
+  it('tells commit-only reset listeners about a committed navigation or a crash, not one that only starts', () => {
+    const contents = new FakeContents(13);
+    const caller = callerForWebContents(contents as never);
+    const start = vi.fn();
+    const commit = vi.fn();
+    caller.onReset(start);
+    caller.onReset(commit, { on: 'commit' });
+    contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false });
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(commit).not.toHaveBeenCalled();
+    contents.emit('did-navigate', {}, 'https://x.test');
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(start).toHaveBeenCalledTimes(1);
+    contents.emit('render-process-gone', {}, {});
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(commit).toHaveBeenCalledTimes(2);
+  });
 });

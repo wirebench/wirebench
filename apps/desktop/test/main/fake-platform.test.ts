@@ -66,4 +66,15 @@ describe('fakeCaller', () => {
     expect(reset).toHaveBeenCalledTimes(1);
     expect(caller.isClosed()).toBe(false);
   });
+
+  it('fires reset listeners of both kinds on reset()', () => {
+    const caller = fakeCaller();
+    const start = vi.fn();
+    const commit = vi.fn();
+    caller.onReset(start);
+    caller.onReset(commit, { on: 'commit' });
+    caller.reset();
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(commit).toHaveBeenCalledTimes(1);
+  });
 });

@@ -23,7 +23,6 @@ import { registerHistoryChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -99,7 +98,7 @@ function harness(model: Project, secrets: GetSecret = () => Promise.resolve(unde
     secretsFor: () => keychain,
   };
   const sendDeps = toSendDeps(engine, requestDeps);
-  registerHistoryChannelsWithKinds(table, history as never, {
+  registerHistoryChannelsWithKinds(tableInto(handlers), history as never, {
     project: { projectId: () => 'p1', endpointFor: () => undefined },
     send: sendDeps,
   });

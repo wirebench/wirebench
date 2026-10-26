@@ -25,7 +25,7 @@ export function callerForWebContents(contents: WebContents): Caller {
   const known = callers.get(contents.id);
   if (known !== undefined && known.contents === contents) return known.caller;
   const listeners = new Set<() => void>();
-  const resetListeners = new Set<() => void>();
+  const resetListeners = { start: new Set<() => void>(), commit: new Set<() => void>() };
   let closed = contents.isDestroyed();
   const close = (): void => {
     if (closed && listeners.size === 0) return;
@@ -48,10 +48,11 @@ export function callerForWebContents(contents: WebContents): Caller {
       contents.send(channel, payload);
     },
     isClosed: () => closed || contents.isDestroyed(),
-    onReset(listener) {
-      resetListeners.add(listener);
+    onReset(listener, options) {
+      const set = resetListeners[options?.on ?? 'start'];
+      set.add(listener);
       return () => {
-        resetListeners.delete(listener);
+        set.delete(listener);
       };
     },
     onClosed(listener) {
@@ -70,8 +71,9 @@ export function callerForWebContents(contents: WebContents): Caller {
       };
     },
   };
-  const reset = (): void => {
-    for (const listener of [...resetListeners]) {
+  const reset = (kind: 'start' | 'commit' | 'crash'): void => {
+    const heard = kind === 'crash' ? [...resetListeners.start, ...resetListeners.commit] : [...resetListeners[kind]];
+    for (const listener of heard) {
       try {
         listener();
       } catch {
@@ -81,9 +83,15 @@ export function callerForWebContents(contents: WebContents): Caller {
   };
   contents.once('destroyed', close);
   // A reload or a crash starts a renderer that knows nothing of what the old page was given.
-  contents.on('render-process-gone', reset);
+  contents.on('render-process-gone', () => {
+    reset('crash');
+  });
   contents.on('did-start-navigation', (details: { isMainFrame: boolean; isSameDocument: boolean }) => {
-    if (details.isMainFrame && !details.isSameDocument) reset();
+    if (details.isMainFrame && !details.isSameDocument) reset('start');
+  });
+  // `did-navigate` fires for a main-frame navigation that committed, never for a cancelled one.
+  contents.on('did-navigate', () => {
+    reset('commit');
   });
   callers.set(contents.id, { caller, contents });
   return caller;

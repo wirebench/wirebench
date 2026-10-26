@@ -14,7 +14,7 @@ type Fake = Record<string, unknown>;
  * Makes a test's fake `WebContents`-shaped sender a `Caller`, in place, so a test that asserts on
  * the very object it passed still sees it handed back. Anything the fake already has is kept: its
  * `send`, its `id`, its `isDestroyed` (which `isClosed` follows) and its `once`/`on` (which `onClosed`
- * and `onReset` listen through, for the `destroyed`, `render-process-gone` and `did-start-navigation` events).
+ * and `onReset` listen through, for the `destroyed`, `render-process-gone` and `did-start-navigation` (`did-navigate` for a `commit` reset) events).
  */
 export function asCaller<T extends object>(sender: T): T & Caller {
   const fake = sender as Fake;
@@ -28,22 +28,30 @@ export function asCaller<T extends object>(sender: T): T & Caller {
       call('removeListener', 'destroyed', listener);
     };
   };
-  fake['onReset'] ??= (listener: () => void) => {
+  fake['onReset'] ??= (listener: () => void, options?: { on?: 'start' | 'commit' }) => {
     call('on', 'render-process-gone', listener);
-    call('on', 'did-start-navigation', (details: { isMainFrame: boolean; isSameDocument: boolean }) => {
-      if (details.isMainFrame && !details.isSameDocument) listener();
-    });
+    if (options?.on === 'commit') call('on', 'did-navigate', listener);
+    else
+      call('on', 'did-start-navigation', (details: { isMainFrame: boolean; isSameDocument: boolean }) => {
+        if (details.isMainFrame && !details.isSameDocument) listener();
+      });
     return () => undefined;
   };
   return sender as T & Caller;
 }
 
-/** A table whose entries are also installed in `handlers`, each run as `bindIpc` runs one. */
+/** A table whose entries are also installed in `handlers`, each run as `bindIpc` runs one; clearing `handlers` clears the table too. */
 export function tableInto(
   handlers: Map<string, (event: never, payload: never) => unknown> | Map<string, (...args: never[]) => unknown>,
 ): HandlerTable {
   const table: HandlerTable = new Map();
   const set = table.set.bind(table);
+  // A test that empties its `handlers` between cases starts a fresh registration, as a new app would.
+  const clear = (handlers as Map<string, unknown>).clear.bind(handlers);
+  (handlers as Map<string, unknown>).clear = () => {
+    clear();
+    table.clear();
+  };
   table.set = (name, run) => {
     set(name, run);
     (handlers as Map<string, unknown>).set(name, (event: { sender?: object } | undefined, raw: unknown) => {

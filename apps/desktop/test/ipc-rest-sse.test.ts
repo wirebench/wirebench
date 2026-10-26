@@ -24,7 +24,6 @@ import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -128,7 +127,7 @@ function project(restSend: (requestId: string) => Project | undefined) {
 /** Registers the channels; answers the registry the sends are kept in. */
 function register(overrides: Partial<RequestChannelDeps> = {}, restSend: (requestId: string) => Project | undefined) {
   const registry = new ExchangeRegistry();
-  registerRequestChannelsWithKinds(table, new EngineService(), {
+  registerRequestChannelsWithKinds(tableInto(handlers), new EngineService(), {
     project: project(restSend),
     adHocScopes: () => ({ project: {}, global: {}, system: {} }),
     registry,

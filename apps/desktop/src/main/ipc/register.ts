@@ -29,5 +29,7 @@ export function registerHandler<Req extends z.ZodType, Res extends z.ZodType>(
     caller: Caller,
   ) => Promise<ChannelResponse<IpcChannel<Req, Res>>>,
 ): void {
+  // A second handler for a channel is a bug, as a second `ipcMain.handle` was: refuse it at startup.
+  if (table.has(channel.name)) throw new Error(`Attempted to register a second handler for '${channel.name}'`);
   table.set(channel.name, (raw, caller) => wrapHandler(channel, (request) => handler(request, caller))(raw));
 }
