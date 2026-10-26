@@ -1,7 +1,7 @@
 # ADR-0032: the hosted server is multi-tenant by a tenant column
 
 Date: 2026-10-24 · Status: accepted (owner, 2026-10-24, popup; design
-`docs/specs/2026-10-24-wirebench-hosted-edition-design.md` §4, §5.3, §5.4) · Issue: none yet
+`docs/specs/2026-10-24-wirebench-hosted-edition-design.md` §4, §5.3, §5.4) · Issue: #776
 
 ## Context
 

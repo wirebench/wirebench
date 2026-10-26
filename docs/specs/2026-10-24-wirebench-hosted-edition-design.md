@@ -5,7 +5,7 @@ Date: 2026-10-24 · Status: **architecture only** — approved scope is the desi
 customers · Amended 2026-10-26 after an independent review: its four high findings are folded into §4.2
 (row-level security must be forced), §3.8 and §3.10 (the agent serves a browser a declared subset), §5.4
 guard 6 (background jobs have a tenant scope) and §5.1 (the host package is a factory with no module-level
-state); the rest are folded in where they apply · Issue: none yet · Module ids: `host-seam`,
+state); the rest are folded in where they apply · Issue: #776 (slice 1 is #777) · Module ids: `host-seam`,
 `browser-client`, `local-agent`, `tenancy`, `operations`, `domains`, `control-plane`, `custom-domains`
 
 - Intent: `docs/intent/wirebench-server-teams.md` (roles and sign-in for people without git hosting) extended

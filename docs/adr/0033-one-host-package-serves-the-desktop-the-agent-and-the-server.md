@@ -1,7 +1,7 @@
 # ADR-0033: one host package serves the desktop, the agent and the server
 
 Date: 2026-10-24 · Status: proposed (design
-`docs/specs/2026-10-24-wirebench-hosted-edition-design.md` §3.1, §5.1, §5.2) · Issue: none yet
+`docs/specs/2026-10-24-wirebench-hosted-edition-design.md` §3.1, §5.1, §5.2) · Issue: #776, slice 1 #777
 
 ## Context
 
