@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ImportDialog } from '../../src/renderer/features/explorer/import-dialog.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { NO_REST, PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
 

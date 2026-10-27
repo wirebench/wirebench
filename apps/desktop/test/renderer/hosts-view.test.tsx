@@ -42,7 +42,7 @@ import { useUiStore } from '../../src/renderer/state/ui.js';
 import { DEFAULT_UI_STATE, readUi, writeUi } from '../../src/renderer/state/ui-state.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { DEFAULT_HOSTS_PREFS, readHostsPrefs, writeHostsPrefs } from '../../src/renderer/features/ssh/hosts-prefs.js';
-import type { WorkspaceWire } from '../../src/shared/wire-base.js';
+import type { WorkspaceWire } from '@wirebench/wire/wire-base';
 import { readRecent, writeRecent } from '../../src/renderer/features/ssh/recent-connections.js';
 
 /** The host of the terminal tab in front (its one pane). */

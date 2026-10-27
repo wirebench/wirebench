@@ -6,7 +6,7 @@ import type {
   ResolvedHostWire,
   SshAuthWire,
   SshSettingsWire,
-} from '../../../shared/ssh-wire.js';
+} from '@shared/ssh-wire.js';
 
 /** The identities a file defines, in file order (#416). */
 export function identitiesOf(file: HostsFileWire): readonly IdentityWire[] {

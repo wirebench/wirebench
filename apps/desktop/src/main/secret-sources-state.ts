@@ -12,7 +12,7 @@ import {
   type SecretSourceIssue,
   type SharedSecretSources,
 } from '@wirebench/engine';
-import type { SecretSourceEntryWire, SecretSourcesState } from '../shared/wire-base.js';
+import type { SecretSourceEntryWire, SecretSourcesState } from '@wirebench/wire/wire-base';
 
 /** What `secretSourcesState` reads from the open workspace. */
 export interface SecretSourcesInputs {

@@ -1,5 +1,5 @@
 /** `ciTokens.*` (callback-assertion §5): the Devices & tokens section's calls, on the account's session. */
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { ServerClient } from '../server-client.js';
 import { withToken, type TokenSource } from '../server-token.js';
 import { registerHandler, type HandlerTable } from './register.js';

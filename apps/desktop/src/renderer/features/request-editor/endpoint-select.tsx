@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { ChevronDown } from 'lucide-react';
-import type { InterfaceSummary } from '../../../shared/kinds/soap/wire.js';
+import type { InterfaceSummary } from '@shared/kinds/soap/wire.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer flex-col items-start rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';

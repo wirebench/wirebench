@@ -8,8 +8,8 @@ import { pipeline } from 'node:stream/promises';
 import { WirebenchError } from '@wirebench/engine';
 import { joinRemote } from '@wirebench/ssh';
 import type { SftpSession } from '@wirebench/ssh';
-import { events } from '../shared/ipc.js';
-import { PART_SUFFIX, PROGRESS_EVENTS_PER_SECOND, TRANSFER_CONCURRENCY } from '../shared/sftp-defaults.js';
+import { events } from '@wirebench/wire/ipc';
+import { PART_SUFFIX, PROGRESS_EVENTS_PER_SECOND, TRANSFER_CONCURRENCY } from '@wirebench/wire/sftp-defaults';
 import type {
   ConflictDecisionWire,
   SftpCopyRequest,
@@ -17,7 +17,7 @@ import type {
   SftpPlaceWire,
   SftpResolveRequest,
   TransferStateWire,
-} from '../shared/sftp-wire.js';
+} from '@wirebench/wire/sftp-wire';
 import { asWirebenchError } from './hosts-service.js';
 import { localEntry, localFsError, localList, localMkdir, localReadStream, localWriteStream } from './local-fs.js';
 import { keepBothName, safeLocalName, safeRemoteName } from './safe-name.js';

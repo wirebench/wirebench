@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { startTestGrpcServer, type TestGrpcServer } from '@wirebench/engine/test-helpers';
 import { protoSetFromDescriptorSet } from '@wirebench/engine';
 import { ProtoImportService } from '../src/main/proto-import.js';
-import type { EngineProgressEvent } from '../src/shared/wire-base.js';
+import type { EngineProgressEvent } from '@wirebench/wire/wire-base';
 
 async function withServer<T>(
   options: Parameters<typeof startTestGrpcServer>[0],

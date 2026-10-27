@@ -8,7 +8,7 @@ import type { ComponentType, LazyExoticComponent } from 'react';
 import type { DraftsState } from '../state/drafts.js';
 import type { EditorTab } from '../state/editors.js';
 import type { ProjectSnapshot, ProjectStore } from '../state/project.js';
-import type { WorkspaceEnvironmentWire } from '../../shared/wire-base.js';
+import type { WorkspaceEnvironmentWire } from '@shared/wire-base.js';
 
 /** The `EditorTab` fields that hold a tab's entity id. */
 export type TabIdField =

@@ -7,7 +7,7 @@
 
 import { generateId, ProjectError, removeEnvironment, uniqueSlug, upsertEnvironment } from '@wirebench/engine';
 import type { Environment, Project } from '@wirebench/engine';
-import type { EnvironmentPatchWire } from '../shared/wire-base.js';
+import type { EnvironmentPatchWire } from '@wirebench/wire/wire-base';
 import { applyColorAndProtection } from './environment-flags.js';
 
 function notFound(environmentId: string): never {

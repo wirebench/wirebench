@@ -42,7 +42,7 @@ import type {
   SshProblemWire,
   SshProxyWire,
   SshSettingsWire,
-} from '../shared/ssh-wire.js';
+} from '@wirebench/wire/ssh-wire';
 
 export const HOSTS_FILE = 'hosts.yaml';
 

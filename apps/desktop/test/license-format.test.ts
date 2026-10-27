@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import type { LicenseStateWire } from '../src/shared/wire-base.js';
+import type { LicenseStateWire } from '@wirebench/wire/wire-base';
 import { bannerText, licenseLineProblem } from '../src/renderer/state/license-format.js';
 
 describe('licenseLineProblem (licensing spec §3.8)', () => {

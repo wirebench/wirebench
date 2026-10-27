@@ -32,7 +32,7 @@ import type {
   ScheduleRunStatusWire,
   ScheduleRunWire,
   ScheduleWire,
-} from '../../../shared/schedules-wire.js';
+} from '@shared/schedules-wire.js';
 
 /** Codes that mean "not reachable from here right now", not "something is wrong". */
 const OFFLINE_CODES: ReadonlySet<string> = new Set([

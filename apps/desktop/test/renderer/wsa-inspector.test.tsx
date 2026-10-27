@@ -5,7 +5,7 @@ import { WsaInspector } from '../../src/renderer/features/request-editor/inspect
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeDraft } from '../mocks/exchange-fixtures.js';
-import type { WsaConfigWire } from '../../src/shared/kinds/soap/wire.js';
+import type { WsaConfigWire } from '@wirebench/wire/kinds/soap/wire';
 
 const updateRequestWsa = vi.fn();
 

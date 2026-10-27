@@ -13,7 +13,7 @@
 import { expand, linkedEnvironment, propertyReferences } from '@wirebench/engine';
 import type { PropertyMap, PropertyScopes } from '@wirebench/engine';
 import type { ProjectRouter } from './project-router.js';
-import type { RequestVariablesResponse, RequestVariableWire, VariableEditTargetWire } from '../shared/wire-base.js';
+import type { RequestVariablesResponse, RequestVariableWire, VariableEditTargetWire } from '@wirebench/wire/wire-base';
 
 /** Where the request runs: what `runContextFor` reports, the part this module reads. */
 export type VariablesLocation = Pick<

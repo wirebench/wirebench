@@ -4,7 +4,7 @@
  * arrives masked from main.
  */
 import { CheckCircle2, MinusCircle, XCircle } from 'lucide-react';
-import type { RequestAssertionResultWire } from '../../../shared/wire-base.js';
+import type { RequestAssertionResultWire } from '@shared/wire-base.js';
 
 /** Passed of checked (`not-checked` counts in neither), failing when any failed or errored. */
 export function assertionResultsBadge(

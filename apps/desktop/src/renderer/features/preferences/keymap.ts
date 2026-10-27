@@ -6,8 +6,8 @@
  * can all be tested without rendering anything.
  */
 
-import type { CommandDefinition } from '../../../shared/commands.js';
-import { COMMAND_WHEN_SCOPES, whenScopesOverlap } from '../../../shared/commands.js';
+import type { CommandDefinition } from '@shared/commands.js';
+import { COMMAND_WHEN_SCOPES, whenScopesOverlap } from '@shared/commands.js';
 import type { CommandContext } from '../../lib/commands.js';
 import { listAllCommands } from '../../lib/commands.js';
 import { parseKeybinding } from '../../lib/keybindings.js';

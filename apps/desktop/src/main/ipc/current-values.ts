@@ -1,4 +1,4 @@
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { CurrentValuesStore } from '../current-values.js';
 import { registerHandler, type HandlerTable } from './register.js';
 

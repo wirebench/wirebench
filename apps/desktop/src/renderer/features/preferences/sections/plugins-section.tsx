@@ -11,7 +11,7 @@ import { ConfirmDialog } from '../../../components/confirm-dialog.js';
 import { SettingsGroup, SettingsItem } from '../../../components/settings-grid.js';
 import { showToast } from '../../../components/toast.js';
 import { ipc } from '../../../state/ipc-client.js';
-import type { PluginRowWire, PluginsListResponse, PluginsStageResponse } from '../../../../shared/plugins-wire.js';
+import type { PluginRowWire, PluginsListResponse, PluginsStageResponse } from '@shared/plugins-wire.js';
 
 function Contributions({ plugin }: { readonly plugin: PluginRowWire }) {
   const lines = [

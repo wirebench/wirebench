@@ -9,7 +9,7 @@
 
 import { isWirebenchError, startMock } from '@wirebench/engine';
 import type { MockDef, MockExchangeEvent, Project, RunningMock, StartMockInput } from '@wirebench/engine';
-import type { MockStateEvent } from '../shared/wire-base.js';
+import type { MockStateEvent } from '@wirebench/wire/wire-base';
 
 /** Where a started mock's events go: the window that started it. */
 export interface MockSink {

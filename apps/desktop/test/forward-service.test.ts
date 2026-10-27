@@ -27,9 +27,9 @@ import type { ForwardServiceDeps } from '../src/main/forward-service.js';
 import { RefusalStore, createSshConnector } from '../src/main/ssh-connect.js';
 import { RECONNECT_DELAYS_MS, RECONNECT_MAX_DELAY_MS } from '../src/renderer/features/ssh/reconnect.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../src/renderer/state/preferences-defaults.js';
-import { events } from '../src/shared/ipc.js';
-import type { ForwardStateWire } from '../src/shared/forward-wire.js';
-import type { SshListHostsResponse } from '../src/shared/ssh-wire.js';
+import { events } from '@wirebench/wire/ipc';
+import type { ForwardStateWire } from '@wirebench/wire/forward-wire';
+import type { SshListHostsResponse } from '@wirebench/wire/ssh-wire';
 
 const KEY: KnownHostEntry = { host: '10.0.0.1:22', keyType: 'ssh-ed25519', fingerprint: 'SHA256:k' };
 const AUTH = `ssh: { user: me, auth: { password: '\${secret:pw}' } }`;

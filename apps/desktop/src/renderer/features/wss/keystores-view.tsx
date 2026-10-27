@@ -19,7 +19,7 @@ import { useGridNavigation } from '../../lib/grid-navigation.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore, useTargetProjectId } from '../../state/project.js';
 import { KeystoreAddDialog } from './keystore-add-dialog.js';
-import type { KeystoreAliasWire, KeystoresInspectResponse, KeystoreWire } from '../../../shared/wire-base.js';
+import type { KeystoreAliasWire, KeystoresInspectResponse, KeystoreWire } from '@shared/wire-base.js';
 
 /** The status chip's copy and tone, keyed by what `keystores.inspect` reported. */
 const STATUS: Readonly<Record<KeystoresInspectResponse['status'], { label: string; tone: string }>> = {

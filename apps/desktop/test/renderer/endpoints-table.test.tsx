@@ -3,9 +3,9 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { EndpointsTable } from '../../src/renderer/features/environments/endpoints-table.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
-import type { InterfaceWire } from '../../src/shared/kinds/soap/wire.js';
-import type { EnvironmentWire, WorkspaceEnvironmentWire } from '../../src/shared/wire-base.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { InterfaceWire } from '@wirebench/wire/kinds/soap/wire';
+import type { EnvironmentWire, WorkspaceEnvironmentWire } from '@wirebench/wire/wire-base';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 import { grpcApiWire, restApiWire, wsApiWire } from '../helpers/wire-defaults.js';
 

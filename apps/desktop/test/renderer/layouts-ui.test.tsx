@@ -26,7 +26,7 @@ import { CommandPalette } from '../../src/renderer/shell/command-palette.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
-import type { LayoutWire } from '../../src/shared/layout-wire.js';
+import type { LayoutWire } from '@wirebench/wire/layout-wire';
 
 const context: CommandContext = {
   platform: 'mac',

@@ -5,7 +5,7 @@
  */
 import { Send, Square } from 'lucide-react';
 import { Button } from '../../components/button.js';
-import type { McpCatalogueWire, McpMethodWire, McpOperationWire } from '../../../shared/kinds/mcp/wire.js';
+import type { McpCatalogueWire, McpMethodWire, McpOperationWire } from '@shared/kinds/mcp/wire.js';
 
 /** Every method a request can run, in the order the picker lists them. */
 export const MCP_METHODS: readonly McpMethodWire[] = [

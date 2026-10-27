@@ -1,5 +1,5 @@
 import { Copy } from 'lucide-react';
-import type { ExchangeSummary } from '../../../../shared/kinds/soap/wire.js';
+import type { ExchangeSummary } from '@shared/kinds/soap/wire.js';
 import { InspectorIconButton } from './inspector-strip.js';
 
 export interface ResponseHeadersInspectorProps {

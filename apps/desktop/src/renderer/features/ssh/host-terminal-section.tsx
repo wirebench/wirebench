@@ -1,5 +1,5 @@
-import type { PreferencesWire } from '../../../shared/wire-base.js';
-import type { GroupEntryWire, TerminalEntryWire } from '../../../shared/ssh-wire.js';
+import type { PreferencesWire } from '@shared/wire-base.js';
+import type { GroupEntryWire, TerminalEntryWire } from '@shared/ssh-wire.js';
 import { PREFERENCE_LIMITS } from '../../state/preference-limits.js';
 import { INPUT_CLASS, InheritedField, sourceName, type Provenance } from './inherited-field.js';
 import { APP_SCHEME_ID, schemeLabel, TERMINAL_SCHEMES } from './terminal-schemes.js';

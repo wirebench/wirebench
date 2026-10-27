@@ -7,7 +7,7 @@
  */
 import { runSelectorOf, selectRequests } from '@wirebench/engine';
 import type { Project, ProtocolRegistry, SelectedRequest } from '@wirebench/engine';
-import type { ScheduleChoiceWire, ScheduleTargetWire } from '../../shared/schedules-wire.js';
+import type { ScheduleChoiceWire, ScheduleTargetWire } from '@wirebench/wire/schedules-wire';
 import { resolveTarget } from '../runner/targets.js';
 
 /** The API (or SOAP interface, or MCP server) a selected request belongs to. */

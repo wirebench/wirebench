@@ -8,9 +8,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BUILTIN_PROTOCOLS } from '@wirebench/engine';
 import { describe, expect, it } from 'vitest';
-import { KINDS, kindById, toKindId } from '../src/shared/kinds/kind-module.js';
+import { KINDS, kindById, toKindId } from '@wirebench/wire/kinds/kind-module';
 
-const kindsDir = join(dirname(fileURLToPath(import.meta.url)), '../src/shared/kinds');
+const kindsDir = join(dirname(fileURLToPath(import.meta.url)), '../../../packages/wire/src/kinds');
 
 describe('KINDS', () => {
   it('lists the engine’s built-in protocols, in their order, with their feature descriptors', () => {

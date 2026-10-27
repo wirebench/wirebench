@@ -14,7 +14,7 @@ vi.mock('electron', () => ({
 }));
 
 const { registerHooksChannels } = await import('../src/main/ipc/hooks.js');
-const { channels } = await import('../src/shared/ipc.js');
+const { channels } = await import('@wirebench/wire/ipc');
 
 type Envelope =
   | { readonly ok: true; readonly value: unknown }

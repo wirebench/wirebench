@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildWsHistoryEntry, HistoryService } from '../src/main/history-service.js';
 import { makeWsExchange } from './mocks/wire-fixtures.js';
-import type { WsFrameWire } from '../src/shared/kinds/ws/wire.js';
+import type { WsFrameWire } from '@wirebench/wire/kinds/ws/wire';
 import { createHostState } from '../src/main/host/host-state.js';
 
 const hostState = createHostState();

@@ -8,7 +8,7 @@
  * `preferences-defaults.test.ts` asserts this copy stays identical to `DEFAULT_PREFERENCES`.
  */
 
-import type { PreferencesWire } from '../../shared/wire-base.js';
+import type { PreferencesWire } from '@shared/wire-base.js';
 
 export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
   http: {

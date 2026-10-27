@@ -4,7 +4,7 @@
  * refused edit shows its reason and leaves the saved assertions as they were.
  */
 import { useState } from 'react';
-import type { RequestAssertionWire } from '../../../shared/wire-base.js';
+import type { RequestAssertionWire } from '@shared/wire-base.js';
 import { useProjectStore } from '../../state/project.js';
 import { AssertionTable, type AssertionKind } from './assertion-table.js';
 

@@ -24,7 +24,7 @@ import type {
 } from '@wirebench/ssh';
 import { asWirebenchError } from './hosts-service.js';
 import type { HostsService } from './hosts-service.js';
-import type { SshQuickTarget } from '../shared/ssh-wire.js';
+import type { SshQuickTarget } from '@wirebench/wire/ssh-wire';
 
 /**
  * A one-off server (#537) as a chain of one: a host of its own, alone in a file of its own, so no saved

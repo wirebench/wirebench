@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { AssertionTable } from '../../src/renderer/features/assertions/assertion-table.js';
 import { useWebhooksStore } from '../../src/renderer/state/webhooks.js';
-import type { CatchUrlWire, StepAssertionWire } from '../../src/shared/wire-base.js';
+import type { CatchUrlWire, StepAssertionWire } from '@wirebench/wire/wire-base';
 
 type Callback = Extract<StepAssertionWire, { type: 'callback' }>;
 const CALLBACK: Callback = {

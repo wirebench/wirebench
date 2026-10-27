@@ -15,7 +15,7 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { writeRecent } from '../../src/renderer/features/ssh/recent-connections.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { WorkspaceWire } from '../../src/shared/wire-base.js';
+import type { WorkspaceWire } from '@wirebench/wire/wire-base';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 
 const context: CommandContext = {

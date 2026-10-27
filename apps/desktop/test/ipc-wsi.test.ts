@@ -10,7 +10,7 @@ import { ExchangeCache } from '../src/main/exchange-cache.js';
 import { registerWsiChannels } from '../src/main/kinds/soap/channels/wsi.js';
 import type { WsiChannelProject } from '../src/main/kinds/soap/channels/wsi.js';
 import type { EngineService } from '../src/main/engine-service.js';
-import type { WsiReportWire } from '../src/shared/kinds/soap/wire.js';
+import type { WsiReportWire } from '@wirebench/wire/kinds/soap/wire';
 import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();

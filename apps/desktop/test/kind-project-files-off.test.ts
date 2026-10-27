@@ -14,8 +14,8 @@ import { ProjectError } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { startupFeatures } from '../src/main/features/startup.js';
 import { ProjectHost } from '../src/main/project-host.js';
-import type { KindId } from '../src/shared/kinds/kind-module.js';
-import type { ProjectChange, ProjectWire } from '../src/shared/wire-types.js';
+import type { KindId } from '@wirebench/wire/kinds/kind-module';
+import type { ProjectChange, ProjectWire } from '@wirebench/wire/wire-types';
 import { testHooks } from './helpers/project-hooks.js';
 
 /** Every file under `dir`, by path relative to it, with its bytes. */

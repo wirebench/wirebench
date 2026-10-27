@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { RequestVariablesResponse } from '../../shared/wire-base.js';
+import type { RequestVariablesResponse } from '@shared/wire-base.js';
 import { useCurrentValuesStore } from './current-values.js';
 import { useGlobalsStore } from './globals.js';
 import { ipc } from './ipc-client.js';

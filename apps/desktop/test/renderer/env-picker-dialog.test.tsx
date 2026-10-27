@@ -10,7 +10,7 @@ import {
 import { renderHook } from '@testing-library/react';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 const ENVS = [

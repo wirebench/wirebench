@@ -24,14 +24,14 @@ import {
   wsApiWire,
   wsRequestWire,
 } from '../helpers/wire-defaults.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import type {
   CatchUrlWire,
   SequenceRunResultWire,
   SequenceStepResultWire,
   SequenceStepWire,
   SequenceWire,
-} from '../../src/shared/wire-base.js';
+} from '@wirebench/wire/wire-base';
 
 const updateSequence = vi.fn();
 

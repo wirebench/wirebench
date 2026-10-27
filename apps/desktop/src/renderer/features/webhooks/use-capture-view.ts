@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ipc } from '../../state/ipc-client.js';
 import type { WebhooksServer } from '../../state/webhooks.js';
-import type { CaptureSummaryWire, HooksCapturesEventWire } from '../../../shared/wire-base.js';
+import type { CaptureSummaryWire, HooksCapturesEventWire } from '@shared/wire-base.js';
 
 export interface Problem {
   readonly code: string;

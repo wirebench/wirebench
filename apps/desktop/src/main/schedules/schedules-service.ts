@@ -21,7 +21,7 @@ import type {
   ScheduleSecrets,
   ScheduleUpdate,
 } from '@wirebench/engine';
-import type { ScheduleResultWire } from '../../shared/schedules-wire.js';
+import type { ScheduleResultWire } from '@wirebench/wire/schedules-wire';
 import type { LiveEvent, LiveState } from '../live/live-client.js';
 import type { LiveClients } from '../live/live-clients.js';
 import { normalizeServerUrl, type ScheduleCreateInput, type ServerClient } from '../server-client.js';

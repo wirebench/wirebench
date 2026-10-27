@@ -1,8 +1,8 @@
 import { join } from 'node:path';
 import { is } from '@electron-toolkit/utils';
 import { BrowserWindow, session } from 'electron';
-import { events } from '../../shared/ipc.js';
-import { OS_THEME_ARGUMENT } from '../../shared/os-theme-argument.js';
+import { events } from '@wirebench/wire/ipc';
+import { OS_THEME_ARGUMENT } from '@wirebench/wire/os-theme-argument';
 import { requireCapability } from '../host/capability.js';
 import type { HostPlatform } from '../host/platform.js';
 import { callerForWebContents } from './electron-platform.js';

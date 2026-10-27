@@ -35,8 +35,8 @@ import type {
   RequestPatchWire,
   RequestPropertiesPatchWire,
   WsaConfigWire,
-} from '../../../shared/kinds/soap/wire.js';
-import type { AuthConfigWire } from '../../../shared/wire-base.js';
+} from '@wirebench/wire/kinds/soap/wire';
+import type { AuthConfigWire } from '@wirebench/wire/wire-base';
 import { toEngineAuthConfig } from '../../project-api-mutations.js';
 import type { MutationDeps, MutationResult } from '../../project-mutations.js';
 import type { RequestLocation } from '../../project-wire.js';

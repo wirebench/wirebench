@@ -3,7 +3,7 @@
  * `SchedulesService`, which resolves the account's token; the token never crosses the bridge.
  */
 import type { Project, ProtocolRegistry } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { SchedulesService } from '../schedules/schedules-service.js';
 import { scheduleChoices, scheduleTargetFor } from '../schedules/targets.js';
 import { registerHandler, type HandlerTable } from './register.js';

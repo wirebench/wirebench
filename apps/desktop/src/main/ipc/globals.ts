@@ -1,5 +1,5 @@
-import { channels } from '../../shared/ipc.js';
-import type { GlobalsState } from '../../shared/wire-base.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { GlobalsState } from '@wirebench/wire/wire-base';
 import type { GlobalProperties } from '../global-properties.js';
 import { registerHandler, type HandlerTable } from './register.js';
 

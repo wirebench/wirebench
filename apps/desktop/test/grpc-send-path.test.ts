@@ -10,7 +10,7 @@ import { createGrpcApi, createGrpcFolder, createGrpcRequest, createProject, entr
 import type { Project } from '@wirebench/engine';
 import { buildGrpcHistoryEntry } from '../src/main/history-service.js';
 import { previewGrpc, sendThroughEngine } from '../src/main/send/exchange.js';
-import type { GrpcRequestPatchWire } from '../src/shared/kinds/grpc/wire.js';
+import type { GrpcRequestPatchWire } from '@wirebench/wire/kinds/grpc/wire';
 import { sendDepsFor } from './helpers/send-deps.js';
 import { createHostState } from '../src/main/host/host-state.js';
 

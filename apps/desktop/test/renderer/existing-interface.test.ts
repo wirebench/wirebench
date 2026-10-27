@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { findExistingInterface } from '../../src/renderer/features/explorer/existing-interface.js';
-import type { InterfaceWire } from '../../src/shared/kinds/soap/wire.js';
+import type { InterfaceWire } from '@wirebench/wire/kinds/soap/wire';
 
 function iface(id: string, definitionUrl: string): InterfaceWire {
   return { id, name: id, definitionUrl } as InterfaceWire;

@@ -8,7 +8,7 @@ import { createApi, createProject, createRestRequest, joinBase, WirebenchError }
 import type { AuthConfig, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { type RequestChannelDeps } from '../src/main/ipc/request.js';
-import type { FailedExchangeWire } from '../src/shared/wire-base.js';
+import type { FailedExchangeWire } from '@wirebench/wire/wire-base';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
 import { createHostState } from '../src/main/host/host-state.js';

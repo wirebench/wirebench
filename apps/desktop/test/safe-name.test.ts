@@ -8,8 +8,8 @@ import type { RemoteEntry, SftpSession } from '@wirebench/ssh';
 import { describe, expect, it, vi } from 'vitest';
 import { keepBothName, safeLocalName } from '../src/main/safe-name.js';
 import { TransferQueue } from '../src/main/transfers.js';
-import { events } from '../src/shared/ipc.js';
-import type { SftpTransferEvent } from '../src/shared/sftp-wire.js';
+import { events } from '@wirebench/wire/ipc';
+import type { SftpTransferEvent } from '@wirebench/wire/sftp-wire';
 
 const refused = (name: string): unknown => {
   try {

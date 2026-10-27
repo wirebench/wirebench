@@ -2,7 +2,7 @@
  * A step's transfers: what it lifts from its response for the steps after it, as `${#Sequence#name}`.
  * Marking one secret masks it everywhere from the moment it is lifted, and the run panel never shows it.
  */
-import type { SequenceTransferWire } from '../../../shared/wire-base.js';
+import type { SequenceTransferWire } from '@shared/wire-base.js';
 import { CheckField, CommitInput, FieldRow, SelectField } from './step-fields.js';
 
 type Source = SequenceTransferWire['from'];

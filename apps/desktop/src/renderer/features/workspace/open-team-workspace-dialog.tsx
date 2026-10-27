@@ -5,7 +5,7 @@ import { signedInServers, useAccountStore } from '../../state/account.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
-import type { TeamWorkspaceWire } from '../../../shared/wire-base.js';
+import type { TeamWorkspaceWire } from '@shared/wire-base.js';
 import { remoteHost } from '../sync/remote-host.js';
 import { ROLE_LABELS } from '../team/roles.js';
 import { workspaceActions, type AlreadyPresent } from './workspace-actions.js';

@@ -21,7 +21,7 @@ import {
 } from '../src/main/preferences.js';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { registerGitChannels } from '../src/main/ipc/git.js';
-import type { PreferencesWire } from '../src/shared/wire-base.js';
+import type { PreferencesWire } from '@wirebench/wire/wire-base';
 import { fakeNativeDialogs } from './helpers/fake-platform.js';
 import { tableInto } from './helpers/ipc-table.js';
 

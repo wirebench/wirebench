@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { keywordName, paletteFilter, paletteKeywords } from '../../src/renderer/shell/palette-filter.js';
-import { COMMAND_CATALOG } from '../../src/shared/command-catalog.js';
+import { COMMAND_CATALOG } from '@wirebench/wire/command-catalog';
 
 describe('paletteKeywords', () => {
   it('names the category and the label prefix', () => {

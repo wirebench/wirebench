@@ -11,7 +11,7 @@ import { WirebenchError } from '@wirebench/engine';
 import { PreferencesService } from '../src/main/preferences.js';
 import { registerAppLockChannels } from '../src/main/ipc/app-lock.js';
 import { registerPreferencesChannels } from '../src/main/ipc/preferences.js';
-import type { PreferencesWire } from '../src/shared/wire-base.js';
+import type { PreferencesWire } from '@wirebench/wire/wire-base';
 import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();

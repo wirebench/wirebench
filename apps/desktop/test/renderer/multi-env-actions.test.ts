@@ -9,7 +9,7 @@ import {
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const SELECTION = { ticked: ['dev', 'test'], baseline: 'dev' };

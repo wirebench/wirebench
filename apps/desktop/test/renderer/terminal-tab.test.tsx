@@ -171,12 +171,12 @@ vi.mock('@xterm/addon-search', () => ({ SearchAddon: xterm.FakeSearchAddon }));
 // ⌘W's command comes with the editor commands, which load Monaco.
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 
-import type { ResolvedHostWire } from '../../src/shared/ssh-wire.js';
+import type { ResolvedHostWire } from '@wirebench/wire/ssh-wire';
 import { registerEditorCommands } from '../../src/renderer/commands/register-editor-commands.js';
 import { registerSshCommands } from '../../src/renderer/commands/register-ssh-commands.js';
 import { openLayout } from '../../src/renderer/features/ssh/panes/open-layout.js';
 import { useLayoutsStore } from '../../src/renderer/features/ssh/panes/layouts-store.js';
-import type { LayoutWire } from '../../src/shared/layout-wire.js';
+import type { LayoutWire } from '@wirebench/wire/layout-wire';
 import { openTerminalFor } from '../../src/renderer/features/ssh/connect.js';
 import { usePanesStore } from '../../src/renderer/features/ssh/panes/pane-actions.js';
 import { leaves, type PaneNode } from '../../src/renderer/features/ssh/panes/pane-tree.js';
@@ -193,7 +193,7 @@ import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { useBroadcastStore } from '../../src/renderer/features/ssh/panes/broadcast.js';
 import { SnippetRunDialog } from '../../src/renderer/features/ssh/snippets/run-dialog.js';
 import { useSnippetsStore } from '../../src/renderer/features/ssh/snippets/snippets-store.js';
-import type { SnippetListItemWire } from '../../src/shared/snippets-wire.js';
+import type { SnippetListItemWire } from '@wirebench/wire/snippets-wire';
 
 const connect = vi.fn();
 const write = vi.fn();

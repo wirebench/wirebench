@@ -1,7 +1,7 @@
 /**
  * MCP's share of `search.query` (spec §5.4; #79): the documents its requests add to the corpus.
  */
-import type { McpRequestWire } from '../../../shared/kinds/mcp/wire.js';
+import type { McpRequestWire } from '@wirebench/wire/kinds/mcp/wire';
 import type { SearchDocument } from '../../search.js';
 import type { KindSearch } from '../kind-main.js';
 

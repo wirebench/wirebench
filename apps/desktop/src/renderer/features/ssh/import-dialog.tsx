@@ -7,13 +7,8 @@ import {
   SSH_IMPORT_FORMAT_INFO,
   SSH_SECRET_NAME_PATTERN,
   type SshImportFormat,
-} from '../../../shared/ssh-defaults.js';
-import type {
-  SshImportPreview,
-  SshKeyChoiceWire,
-  SshPlannedHostWire,
-  SshSecretNameWire,
-} from '../../../shared/ssh-wire.js';
+} from '@shared/ssh-defaults.js';
+import type { SshImportPreview, SshKeyChoiceWire, SshPlannedHostWire, SshSecretNameWire } from '@shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useHostsStore } from './hosts-store.js';
 import { INPUT_CLASS } from './inherited-field.js';

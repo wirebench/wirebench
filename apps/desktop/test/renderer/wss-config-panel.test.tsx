@@ -5,7 +5,7 @@ import { OutgoingConfigEditor } from '../../src/renderer/features/wss/outgoing-c
 import { WssConfigPanel } from '../../src/renderer/features/wss/wss-config-panel.js';
 import { useWssConfigPanelStore } from '../../src/renderer/features/wss/wss-config-panel-store.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { WssOutgoingWire } from '../../src/shared/kinds/soap/wire.js';
+import type { WssOutgoingWire } from '@wirebench/wire/kinds/soap/wire';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const CONFIG: WssOutgoingWire = { id: 'w1', name: 'Gateway', mustUnderstand: false, entries: [] };

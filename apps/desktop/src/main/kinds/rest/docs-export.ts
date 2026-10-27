@@ -15,8 +15,8 @@ import {
   writeFileAtomic,
 } from '@wirebench/engine';
 import type { Project } from '@wirebench/engine';
-import { authTypeLabel } from '../../../shared/auth-types.js';
-import { channels } from '../../../shared/ipc.js';
+import { authTypeLabel } from '@wirebench/wire/auth-types';
+import { channels } from '@wirebench/wire/ipc';
 import type { RecordsWritePicks } from '../../dialog-picks.js';
 import { registerHandler, type HandlerTable } from '../../ipc/register.js';
 import type { NativeDialogs } from '../../native-dialogs.js';

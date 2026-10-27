@@ -3,8 +3,8 @@
  * gets an account back; the token and its secret-store ref stay in main.
  */
 import type { ServerAccount } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
-import type { AccountWire } from '../../shared/wire-base.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { AccountWire } from '@wirebench/wire/wire-base';
 import type { AccountService } from '../account-service.js';
 import { registerHandler, type HandlerTable } from './register.js';
 

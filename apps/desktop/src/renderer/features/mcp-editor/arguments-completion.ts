@@ -9,7 +9,7 @@
  * `description`, and a `$ref` into the schema's own `$defs` or `definitions`.
  */
 import type { JsonCompletionSource } from '../../editor/json-completion.js';
-import type { GrpcMessageFieldWire } from '../../../shared/kinds/grpc/wire.js';
+import type { GrpcMessageFieldWire } from '@shared/kinds/grpc/wire.js';
 
 type Schema = Readonly<Record<string, unknown>>;
 

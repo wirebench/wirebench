@@ -17,7 +17,7 @@ import type {
   GraphqlCompletionItemWire,
   GraphqlDiagnosticWire,
   GraphqlRangeWire,
-} from '../../../shared/kinds/graphql/wire.js';
+} from '@wirebench/wire/kinds/graphql/wire';
 
 /** Above this, nothing is analysed: an editor holding a megabyte of query gets no help, and no lag. */
 const MAX_TEXT = 512 * 1024;

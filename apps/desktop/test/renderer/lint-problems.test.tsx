@@ -5,7 +5,7 @@ import { lintRestDefinition } from '../../src/renderer/features/rest-api/lint-ac
 import { lintGroupId, useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
-import type { LintFindingWire } from '../../src/shared/kinds/rest/wire.js';
+import type { LintFindingWire } from '@wirebench/wire/kinds/rest/wire';
 
 const restLint = vi.fn();
 const toasts = vi.hoisted(() => [] as string[]);

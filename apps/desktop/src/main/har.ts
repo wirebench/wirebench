@@ -6,9 +6,9 @@
 import type { Redactor } from './host/redactor.js';
 import { serializeEventStream } from '@wirebench/engine';
 import type { SseRow } from '@wirebench/engine';
-import type { LogEntryWire } from '../shared/wire-types.js';
-import type { RestExchangeSummary, SseRowWire } from '../shared/kinds/rest/wire.js';
-import type { WsHandshakeExchangeSummary } from '../shared/kinds/ws/wire.js';
+import type { LogEntryWire } from '@wirebench/wire/wire-types';
+import type { RestExchangeSummary, SseRowWire } from '@wirebench/wire/kinds/rest/wire';
+import type { WsHandshakeExchangeSummary } from '@wirebench/wire/kinds/ws/wire';
 import { keyNamesOf, loggedRequestOf } from './log-curl.js';
 import { isXmlBody } from './redact.js';
 

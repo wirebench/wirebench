@@ -4,8 +4,8 @@
  * Kept apart from `kind-main.ts` so `window-scope.ts` and `WorkspaceService` do not import the
  * kinds' IPC modules, which import them back.
  */
-import type { KindId } from '../../shared/kinds/kind-module.js';
-import type { ProjectWire } from '../../shared/wire-types.js';
+import type { KindId } from '@wirebench/wire/kinds/kind-module';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { grpcEntityIds, grpcRoutes } from './grpc/router.js';
 import type { KindRoute } from './kind-main.js';
 import { mcpEntityIds, mcpRoutes } from './mcp/router.js';

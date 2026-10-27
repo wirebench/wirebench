@@ -7,7 +7,7 @@ import type { HopCredentials } from '@wirebench/ssh';
 import { describe, expect, it } from 'vitest';
 import { SessionLogStore, SessionLogSwitches, sessionLogPlanner } from '../src/main/session-logs.js';
 import type { SessionLogStart } from '../src/main/session-logs.js';
-import { resolveLogSwitch } from '../src/shared/session-log-switch.js';
+import { resolveLogSwitch } from '@wirebench/wire/session-log-switch';
 
 const enc = (text: string): Uint8Array => Buffer.from(text, 'utf8');
 const WS = 'ws-1';

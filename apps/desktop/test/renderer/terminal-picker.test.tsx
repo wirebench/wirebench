@@ -18,7 +18,7 @@ import { useSnippetsStore } from '../../src/renderer/features/ssh/snippets/snipp
 import { TerminalPicker } from '../../src/renderer/features/ssh/snippets/terminal-picker.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { SnippetListItemWire } from '../../src/shared/snippets-wire.js';
+import type { SnippetListItemWire } from '@wirebench/wire/snippets-wire';
 
 const item = (over: Partial<SnippetListItemWire> = {}): SnippetListItemWire => ({
   id: 'tail',

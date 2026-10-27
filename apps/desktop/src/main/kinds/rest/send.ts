@@ -8,7 +8,7 @@ import { toSseRowWire } from '../../engine-wire.js';
 import { withRestDraft } from '../../send/draft.js';
 import { recordRest, summariseRest } from '../../send/record.js';
 import { withSentSigningHeaders } from '../../webhook-send.js';
-import type { RestExchangeSummary } from '../../../shared/kinds/rest/wire.js';
+import type { RestExchangeSummary } from '@wirebench/wire/kinds/rest/wire';
 import type { KindSend } from '../kind-main.js';
 import { apiKeyMasks } from '../key-masks.js';
 

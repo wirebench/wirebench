@@ -11,7 +11,7 @@ import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { IconButton } from '../../components/icon-button.js';
 import { KV_INPUT_CLASS } from '../../components/kv-table.js';
 import { subscribeToCookies, useCookiesStore } from '../../state/cookies.js';
-import type { StoredCookieWire } from '../../../shared/wire-base.js';
+import type { StoredCookieWire } from '@shared/wire-base.js';
 import { CookieDialog, cookieValueError } from './cookie-dialog.js';
 
 const VIRTUALISE_ABOVE = 500;

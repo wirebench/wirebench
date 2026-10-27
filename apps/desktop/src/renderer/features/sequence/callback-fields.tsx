@@ -3,7 +3,7 @@
  * the capture, and what is checked on it. Every edit replaces the assertion whole; main validates.
  */
 import { useId } from 'react';
-import type { StepAssertionWire } from '../../../shared/wire-base.js';
+import type { StepAssertionWire } from '@shared/wire-base.js';
 import { useWebhooksStore } from '../../state/webhooks.js';
 import { CALLBACK_BOUNDS, withinMsOf } from './callback-text.js';
 import { CheckEditor, type CheckFields } from './check-editor.js';

@@ -6,7 +6,7 @@ import {
   SettingsGroup,
   TextSetting,
 } from '../../../components/settings-grid.js';
-import type { PreferencesWire } from '../../../../shared/wire-base.js';
+import type { PreferencesWire } from '@shared/wire-base.js';
 import { PREFERENCE_LIMITS } from '../../../state/preference-limits.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../../state/preferences-defaults.js';
 import { headerValueProblem } from '../validators.js';

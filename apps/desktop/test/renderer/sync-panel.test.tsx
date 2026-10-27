@@ -8,7 +8,7 @@ import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
-import type { SyncStatusWire } from '../../src/shared/wire-base.js';
+import type { SyncStatusWire } from '@wirebench/wire/wire-base';
 
 const STATUS: SyncStatusWire = {
   kind: 'git',

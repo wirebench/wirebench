@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { createHostState } from '../../src/main/host/host-state.js';
 import { HandlerTable, registerHandler } from '../../src/main/ipc/register.js';
-import { defineChannel } from '../../src/shared/ipc-contract.js';
+import { defineChannel } from '@wirebench/wire/ipc-contract';
 import { fakeCaller } from '../helpers/fake-platform.js';
 
 describe('createHostState', () => {

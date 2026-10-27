@@ -1,4 +1,4 @@
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import { registerHandler, type HandlerTable } from '../ipc/register.js';
 import { localHome } from '../local-fs.js';
 import type { SftpEditService } from '../sftp-edit.js';

@@ -5,7 +5,7 @@
  * `signedOut` so the dialog can offer *Sign in again*.
  */
 import { create } from 'zustand';
-import type { IpcResult } from '../../shared/ipc.js';
+import type { IpcResult } from '@shared/ipc.js';
 import type {
   AccessEntryWire,
   DefaultRoleWire,
@@ -16,7 +16,7 @@ import type {
   TeamWire,
   TeamWorkspaceWire,
   WorkspaceRoleWire,
-} from '../../shared/wire-base.js';
+} from '@shared/wire-base.js';
 import { showToast } from '../components/toast.js';
 import { ipc } from './ipc-client.js';
 

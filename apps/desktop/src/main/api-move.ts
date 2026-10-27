@@ -25,7 +25,7 @@ import type { ContainerBase, Project, PropertyScopes } from '@wirebench/engine';
 import { copyTreeIfPresent } from './workspace-files.js';
 import { secretStoreLabel } from './secret-resolver.js';
 import type { SecretStore } from './secrets.js';
-import type { ProjectApiMovePlan } from '../shared/wire-types.js';
+import type { ProjectApiMovePlan } from '@wirebench/wire/wire-types';
 import { apiAfter, placeApi, takeApi } from './project-container-moves.js';
 
 /** The `ProjectHost` surface a move drives on each side. */

@@ -10,7 +10,7 @@ import type { RunRequestSender, RunSendOverrides, SelectedRequest, SentRequest, 
 import type { EngineService } from '../engine-service.js';
 import { toSendDeps, type RequestChannelDeps } from '../ipc/request.js';
 import { sendThroughEngine } from '../send/exchange.js';
-import type { McpExchangeSummary } from '../../shared/kinds/mcp/wire.js';
+import type { McpExchangeSummary } from '@wirebench/wire/kinds/mcp/wire';
 import { draftFor } from '../sequence-runner.js';
 
 export interface DesktopSendDeps {

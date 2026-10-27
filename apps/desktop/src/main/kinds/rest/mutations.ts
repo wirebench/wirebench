@@ -40,8 +40,8 @@ import type {
   RestBodyWire,
   RestFolderPatchWire,
   RestRequestPatchWire,
-} from '../../../shared/kinds/rest/wire.js';
-import type { WebhookSigningWire } from '../../../shared/wire-base.js';
+} from '@wirebench/wire/kinds/rest/wire';
+import type { WebhookSigningWire } from '@wirebench/wire/wire-base';
 import { notFound, takenApiSlugs, toEngineAuthConfig, toEngineRows } from '../../project-api-mutations.js';
 import type { KindMutations } from '../kind-main.js';
 

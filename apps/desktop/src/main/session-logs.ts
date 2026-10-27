@@ -20,8 +20,8 @@ import { createInterface } from 'node:readline';
 import { WirebenchError, nodeFs, writeFileAtomic } from '@wirebench/engine';
 import { createStreamMasker, createTextLog, resolveHost } from '@wirebench/ssh';
 import type { HopCredentials, HostsFile } from '@wirebench/ssh';
-import { logSwitchKey, resolveLogSwitch } from '../shared/session-log-switch.js';
-import type { LogSwitchTarget, LogSwitches } from '../shared/session-log-switch.js';
+import { logSwitchKey, resolveLogSwitch } from '@wirebench/wire/session-log-switch';
+import type { LogSwitchTarget, LogSwitches } from '@wirebench/wire/session-log-switch';
 import { UPLOAD_SUFFIX } from './session-log-uploader.js';
 import type { SessionLogUpload, SessionLogUploader, SessionLogUploadTarget } from './session-log-uploader.js';
 

@@ -11,7 +11,7 @@ import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
-import type { ProjectWire } from '../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { testHooks } from './helpers/project-hooks.js';
 
 /**

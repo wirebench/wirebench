@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AssertionResults, assertionResultsBadge } from '../../src/renderer/features/assertions/assertion-results.js';
-import type { RequestAssertionResultWire } from '../../src/shared/wire-base.js';
+import type { RequestAssertionResultWire } from '@wirebench/wire/wire-base';
 
 afterEach(cleanup);
 

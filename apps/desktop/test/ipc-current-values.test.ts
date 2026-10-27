@@ -2,8 +2,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CurrentValuesStore } from '../src/main/current-values.js';
 import { registerCurrentValuesChannels } from '../src/main/ipc/current-values.js';
-import { channels } from '../src/shared/ipc.js';
-import type { WorkspaceWire } from '../src/shared/wire-base.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { WorkspaceWire } from '@wirebench/wire/wire-base';
 import { tableInto } from './helpers/ipc-table.js';
 
 const registeredHandlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();

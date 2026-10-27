@@ -10,10 +10,10 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { ActivityBar } from '../../src/renderer/shell/activity-bar.js';
 import { DEFAULT_UI_STATE, writeUi } from '../../src/renderer/state/ui-state.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
-import { AREAS } from '../../src/shared/area-module.js';
+import { AREAS } from '@wirebench/wire/area-module';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { WorkspaceWire } from '../../src/shared/wire-base.js';
+import type { WorkspaceWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 

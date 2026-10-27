@@ -34,7 +34,7 @@ import type {
   CertificatesCheckResponse,
   CertificateUntrustedWire,
   CertificateSourceWire,
-} from '../shared/wire-base.js';
+} from '@wirebench/wire/wire-base';
 import { grpcApisOf, restApisOf, soapInterfacesOf, wsApisOf } from '@wirebench/engine';
 
 /** A URL scheme at the start of a target: when present it, not a `tls` flag, decides TLS. */

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Command, defaultFilter } from 'cmdk';
-import type { ResolvedHostWire } from '../../../../shared/ssh-wire.js';
+import type { ResolvedHostWire } from '@shared/ssh-wire.js';
 import { hostStatusOf, useHostsStore } from '../hosts-store.js';
 import { serialTargetText } from '../serial-section.js';
 import { sessionStatus } from '../session-status.js';

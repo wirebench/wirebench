@@ -15,9 +15,9 @@ import { DialogPicks } from '../src/main/dialog-picks.js';
 import { registerProjectChannels } from '../src/main/ipc/project.js';
 import { registerWorkspaceChannels } from '../src/main/ipc/workspace.js';
 import type { ServerShareRequest } from '../src/main/workspace-share.js';
-import { channels } from '../src/shared/ipc.js';
-import type { ProjectWire } from '../src/shared/wire-types.js';
-import type { TeamWorkspaceWire, WorkspaceSummaryWire, WorkspaceWire } from '../src/shared/wire-base.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { TeamWorkspaceWire, WorkspaceSummaryWire, WorkspaceWire } from '@wirebench/wire/wire-base';
 import { NO_REST, PROJECT_SETTINGS } from './helpers/wire-defaults.js';
 import { tableInto } from './helpers/ipc-table.js';
 

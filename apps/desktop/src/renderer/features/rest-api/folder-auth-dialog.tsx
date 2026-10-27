@@ -14,7 +14,7 @@ import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
 import { isWebhookApiId } from '../webhook-items/webhook-api-id.js';
-import type { AuthConfigWire } from '../../../shared/wire-base.js';
+import type { AuthConfigWire } from '@shared/wire-base.js';
 
 /** The dialog, mounted once by the shell and driven by the UI store's `folderAuthId`. */
 export function FolderAuthDialog() {

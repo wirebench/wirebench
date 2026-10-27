@@ -3,7 +3,7 @@
  * the wire enums: the dialog needs values, and a value import from `shared/wire-types.ts` pulls
  * zod into the renderer, which the CSP forbids. `team-roles.test.ts` keeps the copies honest.
  */
-import type { DefaultRoleWire, RoleSourceWire, TeamRoleWire, WorkspaceRoleWire } from '../../../shared/wire-base.js';
+import type { DefaultRoleWire, RoleSourceWire, TeamRoleWire, WorkspaceRoleWire } from '@shared/wire-base.js';
 
 export const TEAM_ROLES: readonly TeamRoleWire[] = ['member', 'admin'];
 export const WORKSPACE_ROLES: readonly WorkspaceRoleWire[] = ['viewer', 'editor', 'admin'];

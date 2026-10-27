@@ -9,8 +9,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { SftpService } from '../src/main/sftp-service.js';
 import type { SftpServiceDeps } from '../src/main/sftp-service.js';
 import { RefusalStore, createSshConnector } from '../src/main/ssh-connect.js';
-import { events } from '../src/shared/ipc.js';
-import type { SshListHostsResponse } from '../src/shared/ssh-wire.js';
+import { events } from '@wirebench/wire/ipc';
+import type { SshListHostsResponse } from '@wirebench/wire/ssh-wire';
 
 const FILE = parseHostsFile(
   `version: 1\nhosts:\n  - { id: a, name: a, address: 10.0.0.1, ssh: { user: me, auth: { password: '\${secret:a_pw}' } } }\n`,

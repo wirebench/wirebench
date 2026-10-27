@@ -18,7 +18,7 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { useSecretsVisibilityStore } from '../../src/renderer/state/secrets-visibility.js';
-import type { RestExchangeSummary } from '../../src/shared/kinds/rest/wire.js';
+import type { RestExchangeSummary } from '@wirebench/wire/kinds/rest/wire';
 import type { WirebenchApi } from '../../src/preload/build-api.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeRestExchange } from '../mocks/exchange-fixtures.js';

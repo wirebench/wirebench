@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { channels } from '../src/shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import {
   newSecretRef,
   SecretStore,

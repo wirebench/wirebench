@@ -1,6 +1,6 @@
 /** `license.*` (licensing spec §3.8, §5.3): the License tab's calls, on the account's session. */
 import { LICENSE_TEXT_PATTERN, licensePayloadSchema, WirebenchError } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { ServerClient } from '../server-client.js';
 import { withToken, type TokenSource } from '../server-token.js';
 import { registerHandler, type HandlerTable } from './register.js';

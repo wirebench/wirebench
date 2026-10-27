@@ -4,7 +4,7 @@
  * certificate metadata crosses the bridge — no key, no PEM.
  */
 
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { PreferencesService } from '../preferences.js';
 import type { WorkspaceService } from '../workspace-service.js';
 import { registerHandler, type HandlerTable } from './register.js';

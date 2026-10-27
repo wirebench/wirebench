@@ -19,7 +19,7 @@ import {
   type DynamicGeneratorInfo,
   type PropertyReference,
 } from '@wirebench/engine/rest';
-import type { RequestVariablesResponse, RequestVariableWire, VariableEditTargetWire } from '../../shared/wire-base.js';
+import type { RequestVariablesResponse, RequestVariableWire, VariableEditTargetWire } from '@shared/wire-base.js';
 
 /**
  * What `request.variables` answered for one request, plus the columns of a Runner data file that runs

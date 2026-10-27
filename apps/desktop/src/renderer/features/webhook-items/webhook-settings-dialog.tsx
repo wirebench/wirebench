@@ -27,7 +27,7 @@ import { useWebhooksStore } from '../../state/webhooks.js';
 import { SigningFields } from './signing-fields.js';
 import { inheritedSigningOf, signingSummary } from './signing.js';
 import { useWebhookItemsDialogs } from './webhook-items-state.js';
-import type { AuthConfigWire, RestFolderWire, WebhookSigningWire } from '../../../shared/wire-base.js';
+import type { AuthConfigWire, RestFolderWire, WebhookSigningWire } from '@shared/wire-base.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';

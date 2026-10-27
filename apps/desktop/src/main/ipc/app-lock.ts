@@ -5,11 +5,11 @@
  */
 
 import { WirebenchError } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { AppLock } from '../app-lock.js';
 import { toPreferencesWire } from '../preferences.js';
 import type { PreferencesService } from '../preferences.js';
-import type { PreferencesWire } from '../../shared/wire-base.js';
+import type { PreferencesWire } from '@wirebench/wire/wire-base';
 import { registerHandler, type HandlerTable } from './register.js';
 
 export interface AppLockChannelDeps {

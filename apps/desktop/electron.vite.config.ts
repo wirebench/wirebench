@@ -5,7 +5,11 @@ import tailwindcss from '@tailwindcss/vite';
 import type { Plugin } from 'vite';
 import { CONTENT_SECURITY_POLICY } from './src/main/security.js';
 
-const sharedAlias = { '@shared': resolve(import.meta.dirname, 'src/shared') };
+/**
+ * The renderer reaches the wire code (`@wirebench/wire`) through the `@shared` alias; main and preload import
+ * the package by name. The package exports its sources, so every process bundles the same files.
+ */
+const sharedAlias = { '@shared': resolve(import.meta.dirname, '../../packages/wire/src') };
 
 /**
  * Injects the production `Content-Security-Policy` meta tag into `index.html` — build only.
@@ -27,13 +31,14 @@ function cspMetaPlugin(): Plugin {
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    // `@wirebench/wire` ships TypeScript sources, so it is bundled, never left as a runtime `require`.
+    plugins: [externalizeDepsPlugin({ exclude: ['@wirebench/wire'] })],
     resolve: { alias: sharedAlias },
   },
   preload: {
     // `zod` must be bundled, not externalized: Electron's sandboxed preload environment can
     // only `require()` Node built-ins and `electron` itself, not arbitrary npm packages.
-    plugins: [externalizeDepsPlugin({ exclude: ['zod'] })],
+    plugins: [externalizeDepsPlugin({ exclude: ['zod', '@wirebench/wire'] })],
     resolve: { alias: sharedAlias },
     build: {
       // Electron's sandboxed preload loader only supports CommonJS, even though this

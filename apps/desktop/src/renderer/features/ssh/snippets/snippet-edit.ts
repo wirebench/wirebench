@@ -2,7 +2,7 @@
  * Pure edits of `snippets.yaml` as the view holds it: each returns a new file and leaves its input alone.
  * Every save sends the whole file; main validates it.
  */
-import type { SnippetPackageWire, SnippetWire, SnippetsFileWire } from '../../../../shared/snippets-wire.js';
+import type { SnippetPackageWire, SnippetWire, SnippetsFileWire } from '@shared/snippets-wire.js';
 
 /** A declared variable or a secret name; mirrors the model's grammar (`packages/ssh`, `SECRET_NAME`). */
 const NAME = '[A-Za-z_][A-Za-z0-9_]*';

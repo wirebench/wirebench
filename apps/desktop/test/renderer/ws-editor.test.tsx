@@ -24,7 +24,7 @@ import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
-import type { WsRequestWire } from '../../src/shared/kinds/ws/wire.js';
+import type { WsRequestWire } from '@wirebench/wire/kinds/ws/wire';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { wsApiWire, wsRequestWire } from '../helpers/wire-defaults.js';
 

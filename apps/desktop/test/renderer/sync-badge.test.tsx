@@ -7,7 +7,7 @@ import { TEAM_SECRETS_OFF_STATUS, useTeamSecretsStore } from '../../src/renderer
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
-import type { SyncStatusWire, WorkspaceShareWire } from '../../src/shared/wire-base.js';
+import type { SyncStatusWire, WorkspaceShareWire } from '@wirebench/wire/wire-base';
 
 const BASE: SyncStatusWire = { kind: 'git', gitAvailable: true, state: 'clean', ahead: 0, behind: 0, uncommitted: 0 };
 

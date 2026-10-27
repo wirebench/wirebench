@@ -6,7 +6,7 @@
  * As with the contract check, the body view turns a pointer into a range against the text it shows,
  * and a Problems row reveals it through the same reveal.
  */
-import type { GraphqlCheckWire } from '../../../shared/kinds/graphql/wire.js';
+import type { GraphqlCheckWire } from '@shared/kinds/graphql/wire.js';
 import { useProblemsStore } from '../../state/problems.js';
 
 /** How the chip reads: its tone picks the colour, and the text alone still says it all. */

@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { MAIN_KINDS } from '../src/main/kinds/kind-main.js';
 import { KIND_ENTITY_IDS } from '../src/main/kinds/kind-routes.js';
 import { kindEntityIds } from '../src/main/workspace-service.js';
-import type { ProjectWire } from '../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import {
   grpcApiWire,
   grpcRequestWire,

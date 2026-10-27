@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resendLastHistoryEntry } from '../../src/renderer/features/history/history-actions.js';
 import { useHistoryStore } from '../../src/renderer/state/history.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { HistoryEntryWire } from '../../src/shared/wire-types.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
 
 const { showToast } = vi.hoisted(() => ({ showToast: vi.fn() }));
 vi.mock('../../src/renderer/components/toast.js', () => ({ showToast, ToastViewport: () => null }));

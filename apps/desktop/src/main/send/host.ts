@@ -49,8 +49,8 @@ import type { Redactor } from '../host/redactor.js';
 import { restContractOf } from '../rest-contract.js';
 import { callbackUrlFor } from '../webhook-send.js';
 import { AD_HOC_ID } from './draft.js';
-import type { HistoryEntryWire, LogEntryWire } from '../../shared/wire-types.js';
-import type { FailedExchangeWire } from '../../shared/wire-base.js';
+import type { HistoryEntryWire, LogEntryWire } from '@wirebench/wire/wire-types';
+import type { FailedExchangeWire } from '@wirebench/wire/wire-base';
 
 export interface DesktopSendDeps {
   /** This host's secret redactor and its e2e trust anchors: what a send records into and reads. */

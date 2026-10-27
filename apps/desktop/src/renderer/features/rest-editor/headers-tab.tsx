@@ -9,8 +9,8 @@
  */
 import { KvTable } from '../../components/kv-table.js';
 import { GeneratedHeaders } from './generated-headers.js';
-import type { RestBodyWire, RestRequestPatchWire, RestRequestWire } from '../../../shared/kinds/rest/wire.js';
-import type { KeyValueWire } from '../../../shared/wire-base.js';
+import type { RestBodyWire, RestRequestPatchWire, RestRequestWire } from '@shared/kinds/rest/wire.js';
+import type { KeyValueWire } from '@shared/wire-base.js';
 
 export interface HeadersTabProps {
   readonly headers: readonly KeyValueWire[];

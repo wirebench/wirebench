@@ -104,7 +104,7 @@ nothing else.
 
 **Main.** Windows, menus, native dialogs, the workspace and its projects on disk, the keychain,
 history, preferences — and the engine. Every channel is declared once in
-`apps/desktop/src/shared/ipc.ts` with a zod schema for the request and for the response, so a
+`packages/wire/src/ipc.ts` with a zod schema for the request and for the response, so a
 malformed message from either direction fails at the boundary with a typed error instead of
 deeper in. Renderer-supplied paths are never trusted (ADR-0005); secrets never travel back out
 (ADR-0004).
@@ -325,13 +325,13 @@ introduced.
 | Schema + WS-I validation, XPath/XQuery/JSONPath | `packages/protocol-soap/src/validate`, `.../xpath` |
 | Project folder format, environments, properties | `packages/core/src/project` |
 | Workspace format, environments, properties (`${#Workspace#…}`) | `packages/core/src/workspace` |
-| IPC channel schemas (one file, both directions) | `apps/desktop/src/shared/ipc.ts` |
+| IPC channel schemas (one file, both directions) | `packages/wire/src/ipc.ts` |
 | IPC handlers | `apps/desktop/src/main/ipc/` |
 | WorkspaceService, ProjectHost, ProjectRouter, HistoryService | `apps/desktop/src/main/{workspace-service,project-host,project-router,history-service}.ts` |
 | Secrets, path safety, redaction | `apps/desktop/src/main/{secrets,path-*,redact}.ts` |
-| Desktop areas: the `AreaModule` contract and the static `AREAS` list; renderer and main halves; the SSH area (hosts, terminal) | `apps/desktop/src/shared/area-module.ts` and `shared/areas/`, `renderer/areas/index.ts`, `main/areas.ts`; `packages/ssh`, `main/{hosts-service,ssh-service}.ts` |
+| Desktop areas: the `AreaModule` contract and the static `AREAS` list; renderer and main halves; the SSH area (hosts, terminal) | `packages/wire/src/area-module.ts` and `packages/wire/src/areas/`, `renderer/areas/index.ts`, `main/areas.ts`; `packages/ssh`, `main/{hosts-service,ssh-service}.ts` |
 | OAuth2 flows and the loopback listener | `apps/desktop/src/main/oauth2.ts` |
-| Desktop kinds: the `KindModule` contract and `KINDS`; each kind's wire schemas, channels, mutations, host, send steps, editors and explorer rows | `apps/desktop/src/shared/kinds/`, `main/kinds/`, `renderer/kinds/` |
+| Desktop kinds: the `KindModule` contract and `KINDS`; each kind's wire schemas, channels, mutations, host, send steps, editors and explorer rows | `packages/wire/src/kinds/`, `main/kinds/`, `renderer/kinds/` |
 | OpenAPI import | `apps/desktop/src/main/openapi-import.ts` |
 | IDE shell, editors, feature panels | `apps/desktop/src/renderer/` |
 | Environments view (sidebar list + editor page) | `apps/desktop/src/renderer/features/environments/` |
@@ -343,7 +343,7 @@ introduced.
 ## Desktop areas
 
 The activity bar, the sidebar views, their `view.show*` commands and their IPC channels are not named by the shell. Each
-is an *area*: an `AreaModule` (`apps/desktop/src/shared/area-module.ts`) with an id, an engine feature descriptor, a rail
+is an *area*: an `AreaModule` (`packages/wire/src/area-module.ts`) with an id, an engine feature descriptor, a rail
 item and sidebar copy, composed in the static `AREAS` list, from which `AreaId` is derived. The renderer half
 (`renderer/areas/index.ts`) supplies the sidebar view, the area's extra commands and, optionally, a `StatusItem`
 component that the status bar (`shell/status-bar.tsx`) renders for each enabled area (the SSH area's counts running
@@ -359,7 +359,7 @@ sessions live in `packages/ssh`, which imports neither the engine nor Electron. 
 ## Desktop kinds
 
 The desktop's protocol code is split the same way, one *kind* per protocol. The shared half
-(`apps/desktop/src/shared/kinds/<kind>/`) holds the kind's id, feature descriptor, label and tab kinds (`kind.ts`, in the
+(`packages/wire/src/kinds/<kind>/`) holds the kind's id, feature descriptor, label and tab kinds (`kind.ts`, in the
 static `KINDS` list), its wire schemas (`wire.ts`) and its IPC channel fragments (`channels.ts`); `wire-types.ts` and
 `ipc.ts` compose them, and `wire-base.ts` holds what no kind owns. The main half (`main/kinds/<kind>/`, `MAIN_KINDS`)
 holds its mutations, project host, router, IPC channels, send steps and History, Log and Search facets; the renderer

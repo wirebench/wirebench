@@ -14,11 +14,11 @@
 import type { Caller, HostPlatform } from '../host/platform.js';
 import { requireCapability } from '../host/capability.js';
 import { WirebenchError } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { RecordsReadPicks } from '../dialog-picks.js';
 import { toPreferencesWire } from '../preferences.js';
 import type { PreferencesService } from '../preferences.js';
-import type { PreferencesWire } from '../../shared/wire-base.js';
+import type { PreferencesWire } from '@wirebench/wire/wire-base';
 import { registerHandler, type HandlerTable } from './register.js';
 
 /** What the `ssl.*` channels need; a stub stands in for each of these in tests. */

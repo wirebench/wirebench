@@ -28,8 +28,8 @@ import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-d
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeRestExchange } from '../mocks/exchange-fixtures.js';
 import { revealedRanges } from '../mocks/monaco-editor-react.js';
-import type { HistoryEntryWire } from '../../src/shared/wire-types.js';
-import type { RestContractResultWire } from '../../src/shared/kinds/rest/wire.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
+import type { RestContractResultWire } from '@wirebench/wire/kinds/rest/wire';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));

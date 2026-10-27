@@ -4,7 +4,7 @@
  * Kept apart from `kind-main.ts` so the send path does not import the kinds' IPC modules, which
  * import the send path: `send/exchange.ts` and `send/live.ts` look a kind up here.
  */
-import type { KindId } from '../../shared/kinds/kind-module.js';
+import type { KindId } from '@wirebench/wire/kinds/kind-module';
 import { grpcSend } from './grpc/send.js';
 import type { KindSend, SendKind } from './kind-main.js';
 import { mcpSend } from './mcp/send.js';

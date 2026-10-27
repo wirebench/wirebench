@@ -23,7 +23,7 @@ import {
 import { EngineService } from '../src/main/engine-service.js';
 import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import { ExchangeRegistry, sendThroughEngine } from '../src/main/send/exchange.js';
-import { wsLiveEventSchema, type WsLiveEvent } from '../src/shared/kinds/ws/wire.js';
+import { wsLiveEventSchema, type WsLiveEvent } from '@wirebench/wire/kinds/ws/wire';
 import { createHostState } from '../src/main/host/host-state.js';
 
 const hostState = createHostState();

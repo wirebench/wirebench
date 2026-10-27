@@ -5,14 +5,10 @@ import { nodeFs, prettyPrint, recreateRequest, WirebenchError, writeFileAtomic }
 import { randomUUID } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
-import { channels } from '../../../shared/ipc.js';
-import type { HistoryEntryWire } from '../../../shared/wire-types.js';
-import type {
-  ExchangeSummary,
-  RequestRecreateRequest,
-  RequestRecreateResponse,
-} from '../../../shared/kinds/soap/wire.js';
-import type { HeaderEntryWire } from '../../../shared/wire-base.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
+import type { ExchangeSummary, RequestRecreateRequest, RequestRecreateResponse } from '@wirebench/wire/kinds/soap/wire';
+import type { HeaderEntryWire } from '@wirebench/wire/wire-base';
 import type { EngineService } from '../../engine-service.js';
 import { generateOptionsFrom } from '../../generate-options.js';
 import { type HistoryService } from '../../history-service.js';

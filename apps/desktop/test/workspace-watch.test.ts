@@ -24,7 +24,7 @@ import { HistoryService } from '../src/main/history-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
-import type { WorkspaceWire } from '../src/shared/wire-base.js';
+import type { WorkspaceWire } from '@wirebench/wire/wire-base';
 import { createHostState } from '../src/main/host/host-state.js';
 
 const hostState = createHostState();

@@ -18,7 +18,7 @@ import {
 } from '../src/main/history-service.js';
 import { toSendDeps, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { sendThroughEngine } from '../src/main/send/exchange.js';
-import type { HistoryEntryWire } from '../src/shared/wire-types.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
 import { registerHistoryChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
 import { createHostState } from '../src/main/host/host-state.js';

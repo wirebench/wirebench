@@ -32,13 +32,13 @@ import { failedExchangeOf } from '../failed-exchange.js';
 import type { Redactor } from '../host/redactor.js';
 import type { SendThroughEngineDeps } from './exchange.js';
 import { reportSendFailed } from './host.js';
-import type { ResolvedSendInputWire } from '../../shared/wire-types.js';
-import type { GrpcExchangeSummary } from '../../shared/kinds/grpc/wire.js';
-import type { RestExchangeSummary } from '../../shared/kinds/rest/wire.js';
+import type { ResolvedSendInputWire } from '@wirebench/wire/wire-types';
+import type { GrpcExchangeSummary } from '@wirebench/wire/kinds/grpc/wire';
+import type { RestExchangeSummary } from '@wirebench/wire/kinds/rest/wire';
 import { toGraphqlCheckWire } from '../kinds/graphql/check-wire.js';
-import type { ExchangeSummary } from '../../shared/kinds/soap/wire.js';
-import type { WsExchangeSummary } from '../../shared/kinds/ws/wire.js';
-import type { FailedExchangeWire } from '../../shared/wire-base.js';
+import type { ExchangeSummary } from '@wirebench/wire/kinds/soap/wire';
+import type { WsExchangeSummary } from '@wirebench/wire/kinds/ws/wire';
+import type { FailedExchangeWire } from '@wirebench/wire/wire-base';
 
 export type RecordDeps = Pick<SendThroughEngineDeps, 'project' | 'history' | 'onHistoryAppended' | 'hostState'>;
 

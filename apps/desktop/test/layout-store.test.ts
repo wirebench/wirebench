@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { LayoutStore } from '../src/main/layout-store.js';
 import { registerLayoutChannels } from '../src/main/areas/layout-channels.js';
-import type { LayoutNodeWire } from '../src/shared/layout-wire.js';
+import type { LayoutNodeWire } from '@wirebench/wire/layout-wire';
 import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = vi.hoisted(() => new Map<string, (event: unknown, request: unknown) => unknown>());

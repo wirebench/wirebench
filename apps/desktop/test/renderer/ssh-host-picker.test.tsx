@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ResolvedHostWire } from '../../src/shared/ssh-wire.js';
+import type { ResolvedHostWire } from '@wirebench/wire/ssh-wire';
 import { HostPicker, rankHostGroups } from '../../src/renderer/features/ssh/panes/host-picker.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 

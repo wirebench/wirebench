@@ -5,7 +5,7 @@
  */
 import { callbackLabel, checkRequestAssertions } from '@wirebench/engine';
 import type { Assertion, AssertionSubject, CallbackAssertion } from '@wirebench/engine';
-import type { RequestAssertionResultWire } from '../../shared/wire-base.js';
+import type { RequestAssertionResultWire } from '@wirebench/wire/wire-base';
 import type { Redactor } from '../host/redactor.js';
 
 const isCallback = (assertion: Assertion): assertion is CallbackAssertion => assertion.type === 'callback';

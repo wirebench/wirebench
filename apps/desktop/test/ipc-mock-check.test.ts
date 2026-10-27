@@ -8,7 +8,7 @@ import { createProject } from '@wirebench/engine';
 import type { CheckMockStubsInput, MockStubCheck } from '@wirebench/engine';
 import { registerMockChannels } from '../src/main/ipc/mock.js';
 import { MockRunner } from '../src/main/mock-runner.js';
-import type { MockCheckResponse } from '../src/shared/wire-base.js';
+import type { MockCheckResponse } from '@wirebench/wire/wire-base';
 import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();

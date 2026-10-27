@@ -4,9 +4,9 @@
  * and a per-environment result that is either a SOAP or REST summary or an error.
  */
 import { describe, expect, it } from 'vitest';
-import { channels } from '../src/shared/ipc.js';
-import { envSendResultSchema, requestSendToEnvironmentsResponseSchema } from '../src/shared/wire-types.js';
-import { requestSendToEnvironmentsRequestSchema } from '../src/shared/kinds/rest/wire.js';
+import { channels } from '@wirebench/wire/ipc';
+import { envSendResultSchema, requestSendToEnvironmentsResponseSchema } from '@wirebench/wire/wire-types';
+import { requestSendToEnvironmentsRequestSchema } from '@wirebench/wire/kinds/rest/wire';
 
 const ids = (count: number): string[] => Array.from({ length: count }, (_, index) => `env-${index}`);
 

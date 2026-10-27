@@ -18,8 +18,8 @@ import {
   type ExchangeRegistry,
   type SendThroughEngineDeps,
 } from './send/exchange.js';
-import type { EnvSendResult, RequestSendToEnvironmentsResponse } from '../shared/wire-types.js';
-import type { RequestSendToEnvironmentsRequest } from '../shared/kinds/rest/wire.js';
+import type { EnvSendResult, RequestSendToEnvironmentsResponse } from '@wirebench/wire/wire-types';
+import type { RequestSendToEnvironmentsRequest } from '@wirebench/wire/kinds/rest/wire';
 
 /** The child send ids of every fan-out still running, keyed by its batch id (`HostState.multiEnvBatches`). */
 export type EnvironmentBatches = Map<string, readonly string[]>;

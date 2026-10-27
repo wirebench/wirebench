@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { duplicateEnvironment } from '../../src/renderer/features/environments/environment-actions.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { WorkspaceEnvironmentWire } from '../../src/shared/wire-base.js';
+import type { WorkspaceEnvironmentWire } from '@wirebench/wire/wire-base';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 const prod: WorkspaceEnvironmentWire = {

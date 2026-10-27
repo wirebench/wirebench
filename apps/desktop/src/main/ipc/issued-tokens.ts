@@ -4,7 +4,7 @@
  * (and the request it is fetched for) from the model: the renderer never hands main an STS URL or a
  * credential reference to use. The assertion crosses only when the session shows secrets.
  */
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { IssuedTokensService } from '../issued-tokens.js';
 import { registerHandler, type HandlerTable } from './register.js';
 

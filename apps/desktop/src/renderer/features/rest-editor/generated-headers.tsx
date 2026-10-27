@@ -19,7 +19,7 @@ import type {
   RestRequestPatchWire,
   RestRequestWire,
   RestSettingsWire,
-} from '../../../shared/kinds/rest/wire.js';
+} from '@shared/kinds/rest/wire.js';
 
 /** How long the section waits after the last edit before asking main again. */
 const PREVIEW_DEBOUNCE_MS = 250;

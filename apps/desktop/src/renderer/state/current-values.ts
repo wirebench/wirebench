@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { scopeKeyString } from '../../shared/current-value-keys.js';
-import type { CurrentValuesStateWire, PropertyMapWire, ScopeKeyWire } from '../../shared/wire-base.js';
+import { scopeKeyString } from '@shared/current-value-keys.js';
+import type { CurrentValuesStateWire, PropertyMapWire, ScopeKeyWire } from '@shared/wire-base.js';
 import { showToast } from '../components/toast.js';
 import { ipc } from './ipc-client.js';
 

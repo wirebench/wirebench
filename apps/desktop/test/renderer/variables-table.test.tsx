@@ -9,7 +9,7 @@ import {
 import { useSecretsVisibilityStore } from '../../src/renderer/state/secrets-visibility.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 
 function baseTarget(patch: Partial<VariablesTableTarget> = {}): VariablesTableTarget {
   return {

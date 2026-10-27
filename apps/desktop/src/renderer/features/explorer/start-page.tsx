@@ -10,7 +10,7 @@ import { kindTarget } from '../../commands/command-helpers.js';
 import { useProjectStore, type ProjectSnapshot } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
-import type { WorkspaceProjectWire } from '../../../shared/wire-base.js';
+import type { WorkspaceProjectWire } from '@shared/wire-base.js';
 import { explorerActions } from './explorer-actions.js';
 import { projectRowActions } from './project-actions.js';
 import { buildExplorerTree } from './tree-nodes.js';

@@ -13,8 +13,8 @@ import type {
   MappedClientEntry,
   MappedProtoSet,
 } from '@wirebench/engine';
-import type { ProjectWire } from '../shared/wire-types.js';
-import type { ImportVariablesSummaryWire } from '../shared/kinds/rest/wire.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { ImportVariablesSummaryWire } from '@wirebench/wire/kinds/rest/wire';
 import type { ApiChannelDeps } from './ipc/api.js';
 import { applyImportedVariables } from './import-variables-apply.js';
 

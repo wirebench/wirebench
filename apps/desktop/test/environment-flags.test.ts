@@ -5,7 +5,7 @@ import {
   environmentPatchSchema,
   workspaceChangeSchema,
   workspaceEnvironmentPatchSchema,
-} from '../src/shared/wire-base.js';
+} from '@wirebench/wire/wire-base';
 
 interface Env {
   readonly id: string;

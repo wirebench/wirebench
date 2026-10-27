@@ -12,7 +12,7 @@ import {
   denySubframeNavigation,
   isExternalUrlAllowed,
 } from '../src/main/security.js';
-import { HTML_PREVIEW_CSP } from '../src/shared/html-preview-csp.js';
+import { HTML_PREVIEW_CSP } from '@wirebench/wire/html-preview-csp';
 
 describe('security baseline', () => {
   it('locks down BrowserWindow webPreferences', () => {

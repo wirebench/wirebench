@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ENVIRONMENT_PALETTE, environmentColorCss, isEnvironmentColor } from '../../../shared/environment-colors.js';
+import { ENVIRONMENT_PALETTE, environmentColorCss, isEnvironmentColor } from '@shared/environment-colors.js';
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 

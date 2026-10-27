@@ -5,8 +5,8 @@
  */
 import { create } from 'zustand';
 import { showToast } from '../../../components/toast.js';
-import type { SnippetListItemWire } from '../../../../shared/snippets-wire.js';
-import type { ResolvedHostWire } from '../../../../shared/ssh-wire.js';
+import type { SnippetListItemWire } from '@shared/snippets-wire.js';
+import type { ResolvedHostWire } from '@shared/ssh-wire.js';
 import { useEditorsStore } from '../../../state/editors.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useProblemsStore } from '../../../state/problems.js';

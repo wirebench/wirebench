@@ -10,7 +10,7 @@ import {
   wsApiWire,
   wsRequestWire,
 } from './helpers/wire-defaults.js';
-import type { ProjectWire } from '../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();

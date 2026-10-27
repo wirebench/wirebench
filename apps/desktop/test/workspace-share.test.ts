@@ -27,7 +27,7 @@ import { HistoryService } from '../src/main/history-service.js';
 import { SyncService } from '../src/main/sync/sync-service.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
-import type { WorkspaceWire } from '../src/shared/wire-base.js';
+import type { WorkspaceWire } from '@wirebench/wire/wire-base';
 import { nodeFileOps } from '../src/main/workspace-share.js';
 import {
   createBareRemote,

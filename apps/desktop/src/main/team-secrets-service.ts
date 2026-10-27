@@ -59,7 +59,7 @@ import {
   type TeamSecretsFiles,
   type VaultEntryFile,
 } from '@wirebench/engine';
-import type { SyncConflictWire, TeamSecretsKeyWire, TeamSecretsStatusWire } from '../shared/wire-base.js';
+import type { SyncConflictWire, TeamSecretsKeyWire, TeamSecretsStatusWire } from '@wirebench/wire/wire-base';
 import { secretStoreLabel } from './secret-resolver.js';
 import {
   isMachineOnlyLabel,

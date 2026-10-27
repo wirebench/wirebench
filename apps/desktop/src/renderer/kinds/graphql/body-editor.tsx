@@ -22,8 +22,8 @@ import {
 import { SAVE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
 import { useDraftsStore } from '../../state/drafts.js';
 import { ipc } from '../../state/ipc-client.js';
-import type { GraphqlSchemaRefWire } from '../../../shared/kinds/graphql/wire.js';
-import type { RestBodyWire } from '../../../shared/kinds/rest/wire.js';
+import type { GraphqlSchemaRefWire } from '@shared/kinds/graphql/wire.js';
+import type { RestBodyWire } from '@shared/kinds/rest/wire.js';
 
 type GraphqlBodyWire = Extract<RestBodyWire, { kind: 'graphql' }>;
 

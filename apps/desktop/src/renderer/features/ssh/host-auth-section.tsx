@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { Button } from '../../components/button.js';
-import type { SshAuthWire } from '../../../shared/ssh-wire.js';
+import type { SshAuthWire } from '@shared/ssh-wire.js';
 import { INPUT_CLASS, sourceName, type Provenance } from './inherited-field.js';
 import { SecretSelect, useSecretNames } from './secret-fields.js';
 import { storeSshSecret } from './secret-writes.js';

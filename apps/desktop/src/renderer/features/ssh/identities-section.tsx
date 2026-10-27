@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Plus, UserRound } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
-import type { IdentityWire, SshAuthWire } from '../../../shared/ssh-wire.js';
+import type { IdentityWire, SshAuthWire } from '@shared/ssh-wire.js';
 import { HostAuthSection } from './host-auth-section.js';
 import { passwordSecretName, slug } from './host-form-model.js';
 import { useHostsStore } from './hosts-store.js';

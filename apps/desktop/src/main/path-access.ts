@@ -13,7 +13,7 @@ import { constants } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
-import type { ImportSourceWire } from '../shared/kinds/soap/wire.js';
+import type { ImportSourceWire } from '@wirebench/wire/kinds/soap/wire';
 import { isInsideAny, isInsideReal } from './path-containment.js';
 import type { ReadPicks } from './dialog-picks.js';
 

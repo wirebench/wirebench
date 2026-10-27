@@ -14,8 +14,8 @@ import type { Project } from '@wirebench/engine';
 import { HistoryService } from '../src/main/history-service.js';
 import { sendThroughEngine } from '../src/main/send/exchange.js';
 import { draftFor } from '../src/main/sequence-runner.js';
-import type { McpLiveEvent } from '../src/shared/kinds/mcp/wire.js';
-import type { HistoryEntryWire } from '../src/shared/wire-types.js';
+import type { McpLiveEvent } from '@wirebench/wire/kinds/mcp/wire';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
 import { sendDepsFor } from './helpers/send-deps.js';
 import { createHostState } from '../src/main/host/host-state.js';
 

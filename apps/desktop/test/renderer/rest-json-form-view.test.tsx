@@ -24,8 +24,8 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
-import type { RestBodyWire, RestRequestPatchWire } from '../../src/shared/kinds/rest/wire.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { RestBodyWire, RestRequestPatchWire } from '@wirebench/wire/kinds/rest/wire';
 
 const PET: JsonSchema = {
   type: 'object',

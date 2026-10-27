@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createProject, soapInterfacesOf, toWssOutgoingConfig, withWssConfigs, wssConfigsOf } from '@wirebench/engine';
-import { wssEntryWireSchema, type WssEntryWire } from '../src/shared/kinds/soap/wire.js';
+import { wssEntryWireSchema, type WssEntryWire } from '@wirebench/wire/kinds/soap/wire';
 import { EngineService } from '../src/main/engine-service.js';
 import {
   addWssIncoming,

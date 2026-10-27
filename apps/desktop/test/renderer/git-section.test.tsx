@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { GitSection } from '../../src/renderer/features/preferences/sections/git-section.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
-import type { PreferencesPatchWire, PreferencesWire } from '../../src/shared/wire-base.js';
+import type { PreferencesPatchWire, PreferencesWire } from '@wirebench/wire/wire-base';
 
 function renderSection(
   preferences: PreferencesWire = DEFAULT_PREFERENCES_WIRE,

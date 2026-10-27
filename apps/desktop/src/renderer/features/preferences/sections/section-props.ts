@@ -1,4 +1,4 @@
-import type { PreferencesPatchWire, PreferencesWire } from '../../../../shared/wire-base.js';
+import type { PreferencesPatchWire, PreferencesWire } from '@shared/wire-base.js';
 
 /** What every Preferences section receives: the current document and a patch applier. */
 export interface SectionProps {

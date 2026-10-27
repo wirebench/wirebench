@@ -5,7 +5,7 @@ import { switcherEnvironments, switcherGroups, type SwitcherGroups } from '../..
 import { selectActiveEnvironmentId, useWorkspaceStore } from '../../state/workspace.js';
 import { currentProjectId, useCurrentProjectId } from '../../state/workspace-tabs.js';
 import { useUiStore } from '../../state/ui.js';
-import type { WorkspaceEnvironmentWire } from '../../../shared/wire-base.js';
+import type { WorkspaceEnvironmentWire } from '@shared/wire-base.js';
 import { EnvBadge } from './env-badge.js';
 import { openEnvironmentTab, setProjectEnvironment } from './environment-actions.js';
 

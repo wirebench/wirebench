@@ -15,7 +15,7 @@ import { lastTargets, rememberRun } from '../../src/renderer/features/ssh/snippe
 import { useSnippetsStore } from '../../src/renderer/features/ssh/snippets/snippets-store.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { SnippetListItemWire } from '../../src/shared/snippets-wire.js';
+import type { SnippetListItemWire } from '@wirebench/wire/snippets-wire';
 
 const item = (over: Partial<SnippetListItemWire> & { id: string }): SnippetListItemWire => ({
   name: over.id,

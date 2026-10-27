@@ -7,7 +7,7 @@
 
 import { join } from 'node:path';
 import { configureKerberos, kerberosProvider, loadKerberosProvider, type KerberosProvider } from '@wirebench/engine';
-import { channels } from '../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import { registerHandler, type HandlerTable } from './ipc/register.js';
 
 export function kerberosBindingPath(input: {

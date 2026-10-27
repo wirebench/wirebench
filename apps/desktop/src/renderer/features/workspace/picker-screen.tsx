@@ -5,7 +5,7 @@ import { remoteHost } from '../sync/remote-host.js';
 import { useAccountStore } from '../../state/account.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
-import type { WorkspaceShareWire } from '../../../shared/wire-base.js';
+import type { WorkspaceShareWire } from '@shared/wire-base.js';
 import { workspaceActions } from './workspace-actions.js';
 
 /** The kind glyph plus the least a row may say about a share, never the full URL. */

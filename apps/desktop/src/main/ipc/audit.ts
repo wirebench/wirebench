@@ -5,7 +5,7 @@
  */
 import { once } from 'node:events';
 import { createWriteStream, type WriteStream } from 'node:fs';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { RecordsWritePicks } from '../dialog-picks.js';
 import type { NativeDialogs } from '../native-dialogs.js';
 import type { ServerClient } from '../server-client.js';

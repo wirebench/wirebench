@@ -19,7 +19,7 @@ import {
   toKeystoreRef,
 } from '@wirebench/engine';
 import type { KeystoreDef, Project, WssRef } from '@wirebench/engine';
-import type { KeystorePatchWire } from '../shared/wire-base.js';
+import type { KeystorePatchWire } from '@wirebench/wire/wire-base';
 
 function notFound(keystoreId: string): never {
   throw new ProjectError('not-found', `No keystore with id "${keystoreId}"`, { details: { id: keystoreId } });

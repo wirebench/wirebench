@@ -135,7 +135,7 @@ import {
   type AuditExportQueryWire,
   type AuditPageWire,
   type AuditQueryWire,
-} from '../shared/wire-base.js';
+} from '@wirebench/wire/wire-base';
 
 export interface ServerClientDeps {
   /** The engine's `sendHttp` by default; a stub in tests. */

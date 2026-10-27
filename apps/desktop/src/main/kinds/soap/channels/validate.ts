@@ -1,6 +1,6 @@
 import { bindingContextFor, ProjectError, unescapeExpansions, validateMessage } from '@wirebench/engine';
 import type { QName } from '@wirebench/engine';
-import { channels } from '../../../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { EngineService } from '../../../engine-service.js';
 import type { ProjectRouter } from '../../../project-router.js';
 import { registerHandler, type HandlerTable } from '../../../ipc/register.js';

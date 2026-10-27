@@ -7,7 +7,7 @@ import {
   switcherEnvironments,
   switcherGroups,
 } from '../../src/renderer/state/environment-scope.js';
-import type { WorkspaceEnvironmentWire } from '../../src/shared/wire-base.js';
+import type { WorkspaceEnvironmentWire } from '@wirebench/wire/wire-base';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 function environment(id: string, order: number, projects?: string[], name = id): WorkspaceEnvironmentWire {

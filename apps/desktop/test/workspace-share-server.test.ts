@@ -68,7 +68,7 @@ import type {
   ShareDeps,
 } from '../src/main/workspace-share.js';
 import { WorkspaceState } from '../src/main/workspace-state.js';
-import type { SyncConflictWire, WorkspaceWire } from '../src/shared/wire-base.js';
+import type { SyncConflictWire, WorkspaceWire } from '@wirebench/wire/wire-base';
 import { createHostState } from '../src/main/host/host-state.js';
 
 const hostState = createHostState();

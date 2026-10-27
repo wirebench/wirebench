@@ -11,7 +11,7 @@ import { createApi, createProject, createRestRequest } from '@wirebench/engine';
 import type { AuthConfig, KeyValueEntry, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { importedRequestName, type RequestChannelDeps } from '../src/main/ipc/request.js';
-import type { ProjectChange } from '../src/shared/wire-types.js';
+import type { ProjectChange } from '@wirebench/wire/wire-types';
 import { NO_REST, PROJECT_SETTINGS, restApiWire } from './helpers/wire-defaults.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';

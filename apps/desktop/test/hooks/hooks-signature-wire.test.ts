@@ -2,11 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { captureSummarySchema, catchUrlSchema, CATCH_URL_DEFAULT_RESPONSE } from '@wirebench/engine';
 import type { Capture } from '@wirebench/engine';
 import { toCaptureView } from '../../src/main/hooks/hooks-service.js';
-import {
-  captureSummaryWireSchema,
-  catchUrlWireSchema,
-  hooksUpdateRequestWireSchema,
-} from '../../src/shared/wire-base.js';
+import { captureSummaryWireSchema, catchUrlWireSchema, hooksUpdateRequestWireSchema } from '@wirebench/wire/wire-base';
 
 const HOOK = {
   id: '01J8ZC5Q0V7R3T9XK2M4N6P8QB',

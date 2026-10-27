@@ -1,5 +1,5 @@
 import type { Caller } from '../host/platform.js';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { SecretScanSessions } from '../secret-scan-session.js';
 import { registerHandler, type HandlerTable } from './register.js';
 

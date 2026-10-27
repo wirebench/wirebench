@@ -16,7 +16,7 @@ import { localPaneId, useFilesStore } from './files-store.js';
 import { openTerminal } from './open-files.js';
 import { TransfersStrip } from './transfers-strip.js';
 import { listenToTransfers, useTransfersStore } from './transfers-store.js';
-import type { SftpEditEvent } from '../../../../shared/sftp-wire.js';
+import type { SftpEditEvent } from '@shared/sftp-wire.js';
 
 const SEPARATOR = 'w-px bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
 

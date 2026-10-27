@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { WirebenchError, nodeFs, writeFileAtomic } from '@wirebench/engine';
-import { layoutNodeWireSchema, layoutsFileSchema } from '../shared/layout-wire.js';
-import type { LayoutNodeWire, LayoutWire } from '../shared/layout-wire.js';
+import { layoutNodeWireSchema, layoutsFileSchema } from '@wirebench/wire/layout-wire';
+import type { LayoutNodeWire, LayoutWire } from '@wirebench/wire/layout-wire';
 
 export const LAYOUTS_FILE = 'ssh-layouts.json';
 

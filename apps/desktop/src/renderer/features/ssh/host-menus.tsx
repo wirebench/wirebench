@@ -8,7 +8,7 @@ import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Check, MoreHorizontal } from 'lucide-react';
 import type { ComponentType, CSSProperties, ReactElement, ReactNode } from 'react';
-import type { GroupEntryWire, HostEntryWire } from '../../../shared/ssh-wire.js';
+import type { GroupEntryWire, HostEntryWire } from '@shared/ssh-wire.js';
 import { editHost, newHost, openInNewTab, openTerminalFor } from './connect.js';
 import { takeSecondPress } from './double-press.js';
 import { openFiles } from './files/open-files.js';

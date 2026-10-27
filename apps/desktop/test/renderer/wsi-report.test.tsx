@@ -8,7 +8,7 @@ import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { explorerActions } from '../../src/renderer/features/explorer/explorer-actions.js';
 import { checkWsiForRequest, lastSendId } from '../../src/renderer/features/request-editor/wsi-actions.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { WsiReportWire } from '../../src/shared/kinds/soap/wire.js';
+import type { WsiReportWire } from '@wirebench/wire/kinds/soap/wire';
 
 const REPORT: WsiReportWire = {
   target: 'http://example.invalid/calc',

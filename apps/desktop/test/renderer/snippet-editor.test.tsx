@@ -1,7 +1,7 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SnippetWire, SnippetsFileWire, SshListSnippetsResponse } from '../../src/shared/snippets-wire.js';
+import type { SnippetWire, SnippetsFileWire, SshListSnippetsResponse } from '@wirebench/wire/snippets-wire';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));

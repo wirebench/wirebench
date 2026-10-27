@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PREFERENCES } from '@wirebench/engine';
 import { PREFERENCES_FILE, PreferencesService } from '../src/main/preferences.js';
 import { registerPreferencesChannels } from '../src/main/ipc/preferences.js';
-import type { PreferencesWire } from '../src/shared/wire-base.js';
+import type { PreferencesWire } from '@wirebench/wire/wire-base';
 import { tableInto } from './helpers/ipc-table.js';
 
 // `registerPreferencesChannels` binds through `ipcMain.handle`; the stub captures the bound

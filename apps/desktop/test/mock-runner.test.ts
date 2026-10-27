@@ -9,7 +9,7 @@ import { createMock, createProject, WirebenchError } from '@wirebench/engine';
 import type { MockDef, Project, RunningMock, StartMockInput } from '@wirebench/engine';
 import { MockRunner } from '../src/main/mock-runner.js';
 import type { MockSink } from '../src/main/mock-runner.js';
-import type { MockStateEvent } from '../src/shared/wire-base.js';
+import type { MockStateEvent } from '@wirebench/wire/wire-base';
 
 function fakeServers() {
   const starts: StartMockInput[] = [];

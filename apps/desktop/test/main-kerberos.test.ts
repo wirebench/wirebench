@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { kerberosBindingPath, kerberosProviderFor, SNAP_KERBEROS_REASON } from '../src/main/kerberos.js';
-import { channels } from '../src/shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 
 describe('kerberosBindingPath', () => {
   it('points a packaged app at its vendored binding for this architecture', () => {

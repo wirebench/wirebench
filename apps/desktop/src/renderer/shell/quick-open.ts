@@ -10,12 +10,12 @@
 
 import { defaultFilter } from 'cmdk';
 
-import type { LayoutWire } from '../../shared/layout-wire.js';
-import type { SnippetListItemWire } from '../../shared/snippets-wire.js';
-import type { ResolvedHostWire } from '../../shared/ssh-wire.js';
+import type { LayoutWire } from '@shared/layout-wire.js';
+import type { SnippetListItemWire } from '@shared/snippets-wire.js';
+import type { ResolvedHostWire } from '@shared/ssh-wire.js';
 import { layoutHosts, layoutPaneCount } from '../features/ssh/panes/open-layout.js';
-import type { InterfaceSummary, RequestWire } from '../../shared/kinds/soap/wire.js';
-import type { KindId } from '../../shared/kinds/kind-module.js';
+import type { InterfaceSummary, RequestWire } from '@shared/kinds/soap/wire.js';
+import type { KindId } from '@shared/kinds/kind-module.js';
 
 /** One quick-open row. */
 export interface QuickOpenEntry {

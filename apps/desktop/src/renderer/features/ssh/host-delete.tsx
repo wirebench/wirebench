@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { showToast } from '../../components/toast.js';
-import type { HostsFileWire, SshAuthWire } from '../../../shared/ssh-wire.js';
+import type { HostsFileWire, SshAuthWire } from '@shared/ssh-wire.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useHostDelete } from './host-delete-store.js';
 import { findHost, flattenGroups, removeHost, useHostsStore } from './hosts-store.js';

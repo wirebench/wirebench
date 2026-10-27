@@ -12,8 +12,8 @@ import { useEffect, useState } from 'react';
 import { WsaFields } from '../../../components/wsa-fields.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useProjectStore } from '../../../state/project.js';
-import type { RequestPreflightResponse } from '../../../../shared/wire-types.js';
-import type { WsaConfigWire } from '../../../../shared/kinds/soap/wire.js';
+import type { RequestPreflightResponse } from '@shared/wire-types.js';
+import type { WsaConfigWire } from '@shared/kinds/soap/wire.js';
 
 export interface WsaInspectorProps {
   readonly requestId: string;

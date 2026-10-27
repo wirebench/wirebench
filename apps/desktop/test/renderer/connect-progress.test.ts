@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SshConnectProgressWire } from '../../src/shared/ssh-wire.js';
+import type { SshConnectProgressWire } from '@wirebench/wire/ssh-wire';
 import {
   connectedView,
   failedView,

@@ -12,9 +12,9 @@
  * WS-SecurityPolicy its WSDL attaches (#58).
  */
 
-import { channels } from '../../../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { ProjectRouter } from '../../../project-router.js';
-import type { WssEntryWire, WssPolicyStatusResponse } from '../../../../shared/kinds/soap/wire.js';
+import type { WssEntryWire, WssPolicyStatusResponse } from '@wirebench/wire/kinds/soap/wire';
 import {
   checkWssPolicy,
   describeSecurityHeader,

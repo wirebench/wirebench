@@ -5,7 +5,7 @@ import { ConflictResolver } from '../../src/renderer/features/sync/conflict-reso
 import { useSyncStore } from '../../src/renderer/state/sync.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { SyncConflictWire, SyncStatusWire } from '../../src/shared/wire-base.js';
+import type { SyncConflictWire, SyncStatusWire } from '@wirebench/wire/wire-base';
 
 const LOCAL_STATUS: SyncStatusWire = {
   kind: 'git',

@@ -12,9 +12,9 @@ import { SftpError } from '@wirebench/ssh';
 import type { RemoteEntry, SftpSession } from '@wirebench/ssh';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SftpEditService, sweepEditCopies } from '../src/main/sftp-edit.js';
-import { events } from '../src/shared/ipc.js';
-import { EDIT_ASK_ABOVE_BYTES } from '../src/shared/sftp-defaults.js';
-import type { SftpEditEvent } from '../src/shared/sftp-wire.js';
+import { events } from '@wirebench/wire/ipc';
+import { EDIT_ASK_ABOVE_BYTES } from '@wirebench/wire/sftp-defaults';
+import type { SftpEditEvent } from '@wirebench/wire/sftp-wire';
 
 interface MemFile {
   data: Buffer;

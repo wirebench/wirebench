@@ -3,7 +3,7 @@ import type { DragEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronDown, ChevronUp, File, FileSymlink, Folder } from 'lucide-react';
 import { selectionClass } from '../../../components/selection.js';
-import type { SftpEntryWire } from '../../../../shared/sftp-wire.js';
+import type { SftpEntryWire } from '@shared/sftp-wire.js';
 import type { PaneSort, SortColumn } from './files-store.js';
 import { formatModified, formatModifiedShort, formatSize, isFolderLike, modeString } from './format.js';
 

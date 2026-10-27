@@ -46,9 +46,9 @@ import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService, historyFilePath } from '../src/main/history-service.js';
 import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import { SequenceRunner } from '../src/main/sequence-runner.js';
-import type { HistoryEntryWire, LogEntryWire } from '../src/shared/wire-types.js';
-import type { RestExchangeSummary } from '../src/shared/kinds/rest/wire.js';
-import type { SequenceProgressEvent, SequenceWaitingEvent } from '../src/shared/wire-base.js';
+import type { HistoryEntryWire, LogEntryWire } from '@wirebench/wire/wire-types';
+import type { RestExchangeSummary } from '@wirebench/wire/kinds/rest/wire';
+import type { SequenceProgressEvent, SequenceWaitingEvent } from '@wirebench/wire/wire-base';
 import { createHostState } from '../src/main/host/host-state.js';
 
 const hostState = createHostState();

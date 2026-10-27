@@ -9,7 +9,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Copy, FolderOpen, Pencil, Plus, SquareTerminal, TriangleAlert } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
-import type { ResolvedHostWire, SshKnownHostWire, SshSecretNameWire } from '../../../shared/ssh-wire.js';
+import type { ResolvedHostWire, SshKnownHostWire, SshSecretNameWire } from '@shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
 import { editHost, openInNewTab, openTerminalFor } from './connect.js';
 import { openFiles } from './files/open-files.js';
@@ -28,7 +28,7 @@ import { useRecentConnections } from './recent-connections.js';
 import { HostSessionLogs } from './session-logs.js';
 import { sessionStatus } from './session-status.js';
 import { schemeLabel } from './terminal-schemes.js';
-import { charsetLabel, DEFAULT_TERMINAL_CHARSET, DEFAULT_TERMINAL_TYPE } from '../../../shared/terminal-charsets.js';
+import { charsetLabel, DEFAULT_TERMINAL_CHARSET, DEFAULT_TERMINAL_TYPE } from '@shared/terminal-charsets.js';
 import { serialLabel } from './serial-section.js';
 
 type Provenance = ResolvedHostWire['ssh']['port']['from'];

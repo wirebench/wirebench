@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { createMcpFolder, createMcpRequest, createMcpServer, createProject, mcpServersOf } from '@wirebench/engine';
 import type { McpServer, Project } from '@wirebench/engine';
 import { applyChange, type MutationDeps } from '../src/main/project-mutations.js';
-import type { ProjectChange } from '../src/shared/wire-types.js';
+import type { ProjectChange } from '@wirebench/wire/wire-types';
 
 const deps: MutationDeps = { generate: () => Promise.reject(new Error('not used')) };
 

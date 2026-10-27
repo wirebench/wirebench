@@ -6,8 +6,8 @@
  * that list the same headers in another order diff as the same. The body is pretty-printed for the
  * same reason. Redacted values are shown as they were recorded: nothing is filled or hidden.
  */
-import type { HistoryEntryWire } from '../../../shared/wire-types.js';
-import type { RestExchangeSummary } from '../../../shared/kinds/rest/wire.js';
+import type { HistoryEntryWire } from '@shared/wire-types.js';
+import type { RestExchangeSummary } from '@shared/kinds/rest/wire.js';
 import { decodeBase64Text } from '../../lib/format-size.js';
 import { prettyPrintBody } from './history-format.js';
 

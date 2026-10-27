@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AuditTab } from '../../src/renderer/features/team/audit-tab.js';
 import { useAuditStore } from '../../src/renderer/state/audit.js';
-import type { AuditEventWire } from '../../src/shared/wire-base.js';
+import type { AuditEventWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const showToast = vi.hoisted(() => vi.fn());

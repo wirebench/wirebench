@@ -1,7 +1,7 @@
 import { collectNamespaces, evaluateWithTimeout, suggestPrefixes } from '@wirebench/engine';
 import type { QueryResult } from '@wirebench/engine';
-import { channels } from '../../../../shared/ipc.js';
-import type { ChannelResponse } from '../../../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { ChannelResponse } from '@wirebench/wire/ipc';
 import { registerHandler, type HandlerTable } from '../../../ipc/register.js';
 
 /** Spreads the engine's `readonly`-everywhere `QueryResult` into the plain mutable shape the

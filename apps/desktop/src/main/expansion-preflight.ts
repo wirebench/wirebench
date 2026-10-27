@@ -34,9 +34,9 @@ import type {
   SoapOwnerAuth,
   UnresolvedRef,
 } from '@wirebench/engine';
-import type { RequestPreflightResponse } from '../shared/wire-types.js';
-import type { EndpointSourceWire } from '../shared/kinds/soap/wire.js';
-import type { ExpansionField, RequestAuthSourceWire, UnresolvedRefWire } from '../shared/wire-base.js';
+import type { RequestPreflightResponse } from '@wirebench/wire/wire-types';
+import type { EndpointSourceWire } from '@wirebench/wire/kinds/soap/wire';
+import type { ExpansionField, RequestAuthSourceWire, UnresolvedRefWire } from '@wirebench/wire/wire-base';
 import { findRequest } from './project-wire.js';
 import { isSecretTokenRef } from './secret-resolver.js';
 import type { SecretSourcesSnapshot } from './secret-sources-service.js';

@@ -16,7 +16,7 @@ import { SchemeFields } from '../webhooks/scheme-fields.js';
 import { defaultScheme, SCHEME_KINDS, SCHEME_LABELS, schemeProblemOf } from '../webhooks/signature-text.js';
 import type { SchemeKind } from '../webhooks/signature-text.js';
 import { ciNameOf, ciNameProblemOf } from './signing.js';
-import type { WebhookSigningWire } from '../../../shared/wire-base.js';
+import type { WebhookSigningWire } from '@shared/wire-base.js';
 
 type WebhookSigningScheme = Extract<WebhookSigningWire, { mode: 'sign' }>['scheme'];
 

@@ -6,8 +6,8 @@ import { reviewSecrets, useSecretReviewStore } from '../../src/renderer/state/se
 import type { SecretReviewOutcome } from '../../src/renderer/state/secret-review.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { wrapHandler } from '../../src/main/ipc/envelope.js';
-import { channels } from '../../src/shared/ipc.js';
-import type { SecretFindingWire } from '../../src/shared/wire-base.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { SecretFindingWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { Redactor } from '../../src/main/host/redactor.js';
 

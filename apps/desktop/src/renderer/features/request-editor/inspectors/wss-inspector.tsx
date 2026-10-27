@@ -20,7 +20,7 @@ import type {
   WssActionWire,
   WssSignatureCheckWire,
   WssTimelineStepWire,
-} from '../../../../shared/kinds/soap/wire.js';
+} from '@shared/kinds/soap/wire.js';
 
 /** The icon and column label each action kind carries. */
 const KIND = {

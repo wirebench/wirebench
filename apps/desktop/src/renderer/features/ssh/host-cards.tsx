@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, type KeyboardEvent } from 'react';
 import { ChevronRight, Plus, Server } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { SELECTED_CLASS } from '../../components/selection.js';
-import type { GroupEntryWire, HostEntryWire, HostsFileWire, ResolvedHostWire } from '../../../shared/ssh-wire.js';
+import type { GroupEntryWire, HostEntryWire, HostsFileWire, ResolvedHostWire } from '@shared/ssh-wire.js';
 import { newHost, openTerminalFor } from './connect.js';
 import { hintDetailsOnce } from './details-hint.js';
 import { noteFirstPress, swallowsClick, takeSecondPress } from './double-press.js';

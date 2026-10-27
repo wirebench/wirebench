@@ -8,11 +8,11 @@
  */
 
 import { signatureHeaderNames, splitQuery, WirebenchError } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
-import type { HistoryEntryWire } from '../../shared/wire-types.js';
-import type { GrpcRequestPatchWire } from '../../shared/kinds/grpc/wire.js';
-import type { RestBodyWire, RestRequestPatchWire } from '../../shared/kinds/rest/wire.js';
-import type { KeyValueWire } from '../../shared/wire-base.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
+import type { GrpcRequestPatchWire } from '@wirebench/wire/kinds/grpc/wire';
+import type { RestBodyWire, RestRequestPatchWire } from '@wirebench/wire/kinds/rest/wire';
+import type { KeyValueWire } from '@wirebench/wire/wire-base';
 import { isTruncatedBody, type HistoryService } from '../history-service.js';
 import { containsRedaction } from '../redact.js';
 import type { ProjectRouter } from '../project-router.js';

@@ -5,10 +5,10 @@
 import type { Redactor } from '../host/redactor.js';
 import type { LiveEvent } from '@wirebench/engine';
 import { kindSend } from '../kinds/kind-send.js';
-import type { GrpcLiveEvent } from '../../shared/kinds/grpc/wire.js';
-import type { McpLiveEvent } from '../../shared/kinds/mcp/wire.js';
-import type { RestLiveEvent } from '../../shared/kinds/rest/wire.js';
-import type { WsLiveEvent } from '../../shared/kinds/ws/wire.js';
+import type { GrpcLiveEvent } from '@wirebench/wire/kinds/grpc/wire';
+import type { McpLiveEvent } from '@wirebench/wire/kinds/mcp/wire';
+import type { RestLiveEvent } from '@wirebench/wire/kinds/rest/wire';
+import type { WsLiveEvent } from '@wirebench/wire/kinds/ws/wire';
 
 /** A live event as the renderer receives it, of any protocol. */
 export type LiveEventWire = RestLiveEvent | GrpcLiveEvent | WsLiveEvent | McpLiveEvent;

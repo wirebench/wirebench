@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { WorkspaceError } from '@wirebench/engine';
 import { describe, expect, it, vi } from 'vitest';
 import { SnippetsService, windowSnippets } from '../src/main/snippets-service.js';
-import { sshListSnippetsResponseSchema } from '../src/shared/snippets-wire.js';
-import type { SnippetsFileWire } from '../src/shared/snippets-wire.js';
+import { sshListSnippetsResponseSchema } from '@wirebench/wire/snippets-wire';
+import type { SnippetsFileWire } from '@wirebench/wire/snippets-wire';
 
 const dir = () => mkdtempSync(join(tmpdir(), 'wb-snippets-'));
 

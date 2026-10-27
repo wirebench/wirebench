@@ -5,7 +5,7 @@ import { SnapshotPanel } from '../../src/renderer/features/snapshot/snapshot-pan
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useSnapshotsStore } from '../../src/renderer/state/snapshots.js';
-import type { SnapshotReadResponse } from '../../src/shared/wire-base.js';
+import type { SnapshotReadResponse } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const ok = <T,>(value: T) => ({ ok: true, value });

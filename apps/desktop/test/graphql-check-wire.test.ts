@@ -1,7 +1,7 @@
 /** A GraphQL response's check on the REST exchange summary (#77). */
 import { describe, expect, it } from 'vitest';
 import { toGraphqlCheckWire } from '../src/main/kinds/graphql/check-wire.js';
-import { graphqlCheckWireSchema } from '../src/shared/kinds/graphql/wire.js';
+import { graphqlCheckWireSchema } from '@wirebench/wire/kinds/graphql/wire';
 import { Redactor } from '../src/main/host/redactor.js';
 
 const redactor = new Redactor();

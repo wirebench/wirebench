@@ -5,7 +5,7 @@ import { KV_CHECKBOX_CLASS, KV_INPUT_CLASS, useCommittedDraft } from '../../comp
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { useGridNavigation, type GridRowProps } from '../../lib/grid-navigation.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
-import type { PropertyMapWire } from '../../../shared/wire-base.js';
+import type { PropertyMapWire } from '@shared/wire-base.js';
 import type { CurrentColumn } from '../../state/current-values.js';
 import { makeSecret, offersMakeSecret, secretNameFor } from './make-secret.js';
 

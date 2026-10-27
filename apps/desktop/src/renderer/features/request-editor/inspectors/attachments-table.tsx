@@ -1,11 +1,6 @@
 import { AlertTriangle, ExternalLink } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type {
-  AttachmentPatchWire,
-  AttachmentTypeWire,
-  AttachmentWire,
-  MimePartWire,
-} from '../../../../shared/kinds/soap/wire.js';
+import type { AttachmentPatchWire, AttachmentTypeWire, AttachmentWire, MimePartWire } from '@shared/kinds/soap/wire.js';
 import { formatBytes } from '../../../lib/format-size.js';
 import { useGridNavigation } from '../../../lib/grid-navigation.js';
 import { InspectorIconButton } from './inspector-strip.js';

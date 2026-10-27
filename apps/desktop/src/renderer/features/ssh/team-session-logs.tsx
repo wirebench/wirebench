@@ -3,7 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { ipc } from '../../state/ipc-client.js';
-import type { TeamSessionLogWire } from '../../../shared/session-log-wire.js';
+import type { TeamSessionLogWire } from '@shared/session-log-wire.js';
 import { hideTeamSessionLogs, showTeamSessionLogs, useTeamSessionLogsDialogStore } from './session-logs-store.js';
 
 const SELECT_CLASS = 'h-7 rounded border border-hairline bg-surface-sunken px-1 text-sm text-fg-default';

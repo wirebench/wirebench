@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createIssuedTokenSource, createWssContext } from '@wirebench/engine';
 import type { IssuedToken, IssuedTokenTarget, Project, TrustDeps, WssIssuedTokenEntry } from '@wirebench/engine';
-import type { IssuedTokenStatusWire } from '../src/shared/kinds/soap/wire.js';
+import type { IssuedTokenStatusWire } from '@wirebench/wire/kinds/soap/wire';
 import { tableInto } from './helpers/ipc-table.js';
 import { createHostState } from '../src/main/host/host-state.js';
 import { testHooks } from './helpers/project-hooks.js';

@@ -10,11 +10,11 @@
 
 import { ProjectError, slugify } from '@wirebench/engine';
 import type { AttachmentSource, Project, ProjectSettings, PropertyMap } from '@wirebench/engine';
-import type { ProjectChange } from '../shared/wire-types.js';
-import type { ProjectSettingsPatchWire } from '../shared/wire-base.js';
+import type { ProjectChange } from '@wirebench/wire/wire-types';
+import type { ProjectSettingsPatchWire } from '@wirebench/wire/wire-base';
 import type { ChangeReducer, KindTree } from './kinds/kind-main.js';
 import { MAIN_KINDS, mutationOwner } from './kinds/kind-main.js';
-import { kindById, type KindId } from '../shared/kinds/kind-module.js';
+import { kindById, type KindId } from '@wirebench/wire/kinds/kind-module';
 import type { GeneratedEnvelope } from './kinds/soap/mutations.js';
 import { notFound } from './project-api-mutations.js';
 import { rekeyProjectEnvironments, renamedContainerSlugs } from './endpoint-renames.js';

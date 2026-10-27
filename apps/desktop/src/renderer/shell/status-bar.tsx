@@ -13,7 +13,7 @@ import { AccountStatusItem } from '../features/account/account-status-item.js';
 import { useEditorsStore } from '../state/editors.js';
 import { lastExchangeOf, lastSendOf, useExchangesStore } from '../state/exchanges.js';
 import { describeSendError } from '../features/request-editor/send-error.js';
-import type { FailedExchangeWire } from '../../shared/wire-base.js';
+import type { FailedExchangeWire } from '@shared/wire-base.js';
 import { selectRequestTrustsInvalid } from '../state/project-endpoint.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 import { countProblems, lintSummary, useProblemsStore } from '../state/problems.js';

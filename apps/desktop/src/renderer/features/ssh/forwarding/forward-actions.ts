@@ -1,4 +1,4 @@
-import type { IpcError, IpcResult } from '../../../../shared/ipc.js';
+import type { IpcError, IpcResult } from '@shared/ipc.js';
 import { useEditorsStore } from '../../../state/editors.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useUiStore } from '../../../state/ui.js';

@@ -75,7 +75,7 @@ import type {
   SoapRequestDef,
   Workspace,
 } from '@wirebench/engine';
-import type { HistoryEntryWire, ProjectChange, ProjectWire } from '../shared/wire-types.js';
+import type { HistoryEntryWire, ProjectChange, ProjectWire } from '@wirebench/wire/wire-types';
 import type {
   EngineProgressEvent,
   HydrationStatus,
@@ -85,7 +85,7 @@ import type {
   ProxyOptionsWire,
   ScriptConversionsResultWire,
   TlsOptionsWire,
-} from '../shared/wire-base.js';
+} from '@wirebench/wire/wire-base';
 import type { EngineService } from './engine-service.js';
 import { generateOptionsFrom } from './generate-options.js';
 import type { GlobalProperties } from './global-properties.js';
@@ -112,7 +112,7 @@ import type { OpenProject } from './project-host-core.js';
 import type { KindApiDefinitions, KindHostHooks, KindHosts } from './kinds/kind-main.js';
 import type { ApiDefinitionDocuments } from './kinds/kind-main.js';
 import { MAIN_KINDS } from './kinds/kind-main.js';
-import type { KindId } from '../shared/kinds/kind-module.js';
+import type { KindId } from '@wirebench/wire/kinds/kind-module';
 import { switchedOffProjectFiles } from './features/startup.js';
 
 /** How long an edit sits before autosave writes it out. */

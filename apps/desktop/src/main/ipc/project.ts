@@ -5,13 +5,13 @@ import {
   readLegacySoapProject,
   WirebenchError,
 } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { ReadPicks } from '../dialog-picks.js';
 import { checkedImportSource } from '../path-access.js';
 import type { ProjectRouter } from '../project-router.js';
 import { moveApi, planApiMove } from '../api-move.js';
 import type { ApiMoveHost, ApiMoveSecrets } from '../api-move.js';
-import type { ProjectWire } from '../../shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { registerHandler, type HandlerTable } from './register.js';
 
 /**

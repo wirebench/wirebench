@@ -8,12 +8,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { RunnerTab, resultMark, summaryText } from '../../src/renderer/features/runner/runner-tab.js';
 import { dataColumnsFor, subscribeToRunnerProgress, useRunnerStore } from '../../src/renderer/state/runner.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type {
-  RunnerRequestResult,
-  RunnerRunResult,
-  RunnerSettings,
-  RunnerState,
-} from '../../src/shared/runner-wire.js';
+import type { RunnerRequestResult, RunnerRunResult, RunnerSettings, RunnerState } from '@wirebench/wire/runner-wire';
 
 const SETTINGS: RunnerSettings = { delayMs: 0, overrun: 'stop', bail: false, order: [], excluded: [] };
 

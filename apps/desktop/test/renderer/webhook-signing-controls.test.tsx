@@ -16,7 +16,7 @@ import { layerRestEdits } from '../../src/renderer/state/project.js';
 import { flushScriptEdits, hasScriptEditors } from '../../src/renderer/state/script-edits.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { restFolderWire, restRequestWire } from '../helpers/wire-defaults.js';
-import type { WebhookSigningWire } from '../../src/shared/wire-base.js';
+import type { WebhookSigningWire } from '@wirebench/wire/wire-base';
 
 const HMAC: WebhookSigningWire = {
   mode: 'sign',

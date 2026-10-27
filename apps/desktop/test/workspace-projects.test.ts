@@ -12,7 +12,7 @@ import { registerProjectChannels } from '../src/main/ipc/project.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
-import type { WorkspaceWire } from '../src/shared/wire-base.js';
+import type { WorkspaceWire } from '@wirebench/wire/wire-base';
 import { tableInto } from './helpers/ipc-table.js';
 import { asCaller } from './helpers/ipc-table.js';
 import { fakeNativeDialogs } from './helpers/fake-platform.js';

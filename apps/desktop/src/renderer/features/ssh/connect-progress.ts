@@ -3,7 +3,7 @@
  * from the stages main reports (`ssh.connectProgress`) and the connect's own end. Pure, so the screen
  * and the tests drive the same thing.
  */
-import type { SshConnectPhase, SshConnectProgressWire } from '../../../shared/ssh-wire.js';
+import type { SshConnectPhase, SshConnectProgressWire } from '@shared/ssh-wire.js';
 import { connectErrorKind, connectFailureSentence } from './connect-errors.js';
 import type { ConnectError } from './connect-errors.js';
 

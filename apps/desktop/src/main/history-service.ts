@@ -89,12 +89,12 @@ import type {
   SseRow,
   WsExchange,
 } from '@wirebench/engine';
-import type { HistoryEntryWire, ResolvedSendInputWire } from '../shared/wire-types.js';
-import type { GrpcExchangeSummary } from '../shared/kinds/grpc/wire.js';
-import type { RestExchangeSummary } from '../shared/kinds/rest/wire.js';
-import type { ExchangeSummary } from '../shared/kinds/soap/wire.js';
-import type { WsExchangeSummary } from '../shared/kinds/ws/wire.js';
-import type { HeaderEntryWire } from '../shared/wire-base.js';
+import type { HistoryEntryWire, ResolvedSendInputWire } from '@wirebench/wire/wire-types';
+import type { GrpcExchangeSummary } from '@wirebench/wire/kinds/grpc/wire';
+import type { RestExchangeSummary } from '@wirebench/wire/kinds/rest/wire';
+import type { ExchangeSummary } from '@wirebench/wire/kinds/soap/wire';
+import type { WsExchangeSummary } from '@wirebench/wire/kinds/ws/wire';
+import type { HeaderEntryWire } from '@wirebench/wire/wire-base';
 
 /**
  * Converts the engine's `HistoryEntry` (all `readonly` fields/arrays) to the plain, mutable

@@ -20,7 +20,7 @@ import type {
   TerminalShareStartRequest,
   TerminalShareStartResponse,
   TerminalShareStateEvent,
-} from '../../shared/terminal-share-wire.js';
+} from '@wirebench/wire/terminal-share-wire';
 import type { ServerClient } from '../server-client.js';
 import { withToken, type TokenSource } from '../server-token.js';
 import type { SessionTap } from '../ssh-service.js';

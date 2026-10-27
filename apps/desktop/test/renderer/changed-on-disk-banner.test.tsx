@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ChangedOnDiskBanner } from '../../src/renderer/features/project/changed-on-disk-banner.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { NO_REST, PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
 

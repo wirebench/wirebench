@@ -1,5 +1,5 @@
 import { lazy } from 'react';
-import type { HistoryEntryWire } from '../../../shared/wire-types.js';
+import type { HistoryEntryWire } from '@shared/wire-types.js';
 import { isSseExchange } from '../../features/console/log-row-actions.js';
 import { MethodBadge } from '../../features/rest-api/method-badge.js';
 import { requestDisplayName } from '../../features/rest-api/request-display-name.js';

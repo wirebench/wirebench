@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { COMMAND_CATALOG } from '../../src/shared/command-catalog.js';
+import { COMMAND_CATALOG } from '@wirebench/wire/command-catalog';
 import { CommandPalette, quietGroupsLast } from '../../src/renderer/shell/command-palette.js';
 import { paletteFilter, paletteKeywords } from '../../src/renderer/shell/palette-filter.js';
 import { pushRecent, recentCommandIds, recordRecentCommand } from '../../src/renderer/shell/recent-commands.js';

@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import { Button } from '../../components/button.js';
 import { ReadOnlySetting } from '../../components/settings-grid.js';
-import type { WsApiWire } from '../../../shared/kinds/ws/wire.js';
+import type { WsApiWire } from '@shared/kinds/ws/wire.js';
 import { AsyncApiUpdateDialog } from './asyncapi-update-dialog.js';
 
 export interface AsyncApiDefinitionCardProps {

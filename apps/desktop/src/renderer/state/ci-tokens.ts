@@ -4,7 +4,7 @@
  * anywhere else — no other store, no `localStorage`.
  */
 import { create } from 'zustand';
-import type { CiTokenCreatedWire, CiTokenSummaryWire } from '../../shared/wire-base.js';
+import type { CiTokenCreatedWire, CiTokenSummaryWire } from '@shared/wire-base.js';
 import { ipc } from './ipc-client.js';
 
 export { CI_TOKEN_NAME_MAX } from './ci-token-bounds.js';

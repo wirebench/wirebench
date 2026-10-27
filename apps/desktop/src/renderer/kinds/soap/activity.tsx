@@ -1,4 +1,4 @@
-import type { HistoryEntryWire } from '../../../shared/wire-types.js';
+import type { HistoryEntryWire } from '@shared/wire-types.js';
 import { openRequestTab } from '../../features/request-editor/request-actions.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { ipc } from '../../state/ipc-client.js';

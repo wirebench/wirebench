@@ -16,7 +16,7 @@
 import type { PropertyMap, RequestScripting, ScriptTest, ScriptValue, SentScripts } from '@wirebench/engine';
 import type { ScriptLookup } from './script-host.js';
 import type { Redactor } from './host/redactor.js';
-import type { ScriptResultWire } from '../shared/wire-base.js';
+import type { ScriptResultWire } from '@wirebench/wire/wire-base';
 
 /** What a send needs of the app's script host. */
 export interface SendScripts {

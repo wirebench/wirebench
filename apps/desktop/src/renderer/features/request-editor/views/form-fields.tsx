@@ -9,7 +9,7 @@
  * Nothing here validates — Task 42 owns validation; a hint is only ever a hint.
  */
 
-import type { FormNodeWire, FormTypeWire } from '../../../../shared/kinds/soap/wire.js';
+import type { FormNodeWire, FormTypeWire } from '@shared/kinds/soap/wire.js';
 
 /** `?` is the sample generator's placeholder: it reads as "nothing here yet". */
 export const PLACEHOLDER = '?';

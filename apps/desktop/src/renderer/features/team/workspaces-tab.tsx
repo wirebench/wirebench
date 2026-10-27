@@ -3,7 +3,7 @@ import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { useTeamStore } from '../../state/team.js';
 import { ipc } from '../../state/ipc-client.js';
-import type { DefaultRoleWire, TeamWorkspaceWire } from '../../../shared/wire-base.js';
+import type { DefaultRoleWire, TeamWorkspaceWire } from '@shared/wire-base.js';
 import { AccessPanel } from './access-panel.js';
 import { DEFAULT_ROLES, INPUT_CLASS, ROLE_LABELS, SELECT_CLASS, roleWithSource } from './roles.js';
 

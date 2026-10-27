@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { GetDataDialog } from '../../src/renderer/features/request-editor/views/get-data-dialog.js';
 import { useGlobalsStore } from '../../src/renderer/state/globals.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { ProjectWire } from '../../src/renderer/../shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { NO_REST, PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';

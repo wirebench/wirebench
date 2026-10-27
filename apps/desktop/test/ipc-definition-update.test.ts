@@ -7,12 +7,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerDefinitionChannels } from '../src/main/kinds/soap/channels/definition.js';
 import type { DefinitionChannelProject } from '../src/main/kinds/soap/channels/definition.js';
-import type { ApplyUpdateWire, ProjectWire } from '../src/shared/wire-types.js';
+import type { ApplyUpdateWire, ProjectWire } from '@wirebench/wire/wire-types';
 import type {
   DefinitionExportResponse,
   DefinitionGenerateDocsResponse,
   UpdatePlanWire,
-} from '../src/shared/kinds/soap/wire.js';
+} from '@wirebench/wire/kinds/soap/wire';
 import { tableInto } from './helpers/ipc-table.js';
 import { fakeNativeDialogs } from './helpers/fake-platform.js';
 

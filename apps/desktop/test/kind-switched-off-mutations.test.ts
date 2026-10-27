@@ -7,8 +7,8 @@ import { describe, expect, it } from 'vitest';
 import { createProject, ProjectError, type Project } from '@wirebench/engine';
 import { MAIN_KINDS } from '../src/main/kinds/kind-main.js';
 import { applyChange, type MutationDeps } from '../src/main/project-mutations.js';
-import { KINDS, type KindId } from '../src/shared/kinds/kind-module.js';
-import type { ProjectChange } from '../src/shared/wire-types.js';
+import { KINDS, type KindId } from '@wirebench/wire/kinds/kind-module';
+import type { ProjectChange } from '@wirebench/wire/wire-types';
 
 const ALL: readonly KindId[] = KINDS.map((kind) => kind.kind);
 

@@ -1,6 +1,6 @@
 import { WirebenchError } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
-import type { LayoutNodeWire } from '../../shared/layout-wire.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { LayoutNodeWire } from '@wirebench/wire/layout-wire';
 import { registerHandler, type HandlerTable } from '../ipc/register.js';
 import type { LayoutStore } from '../layout-store.js';
 

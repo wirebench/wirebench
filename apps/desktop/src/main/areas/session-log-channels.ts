@@ -1,6 +1,6 @@
 import type { Caller } from '../host/platform.js';
 import { WirebenchError } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import { registerHandler, type HandlerTable } from '../ipc/register.js';
 import type { ServerClient } from '../server-client.js';
 import { withToken } from '../server-token.js';

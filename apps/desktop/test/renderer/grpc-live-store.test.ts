@@ -11,7 +11,7 @@ import { useDraftsStore } from '../../src/renderer/state/drafts.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { GrpcLiveEvent, GrpcResponseMessageWire } from '../../src/shared/kinds/grpc/wire.js';
+import type { GrpcLiveEvent, GrpcResponseMessageWire } from '@wirebench/wire/kinds/grpc/wire';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeGrpcExchange } from '../mocks/exchange-fixtures.js';
 import { grpcApiWire, grpcRequestWire } from '../helpers/wire-defaults.js';

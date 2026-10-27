@@ -24,8 +24,8 @@ import { HistoryService, type RecordSendInput } from '../src/main/history-servic
 import { soapOverrideOf } from '../src/main/send/draft.js';
 import { previewSoap, sendThroughEngine, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { AD_HOC_NAME } from '../src/main/send/record.js';
-import type { HistoryEntryWire, ResolvedSendInputWire } from '../src/shared/wire-types.js';
-import type { FailedExchangeWire } from '../src/shared/wire-base.js';
+import type { HistoryEntryWire, ResolvedSendInputWire } from '@wirebench/wire/wire-types';
+import type { FailedExchangeWire } from '@wirebench/wire/wire-base';
 import { sendDepsFor } from './helpers/send-deps.js';
 import { createHostState } from '../src/main/host/host-state.js';
 

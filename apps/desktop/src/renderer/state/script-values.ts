@@ -6,7 +6,7 @@
  * can reveal one. The mirror is refreshed when main says a project's values changed.
  */
 import { create } from 'zustand';
-import type { ScriptValueWire } from '../../shared/wire-base.js';
+import type { ScriptValueWire } from '@shared/wire-base.js';
 import { ipc } from './ipc-client.js';
 
 export interface ScriptValuesState {

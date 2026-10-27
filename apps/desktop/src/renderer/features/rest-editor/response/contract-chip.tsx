@@ -9,7 +9,7 @@
 import { useId } from 'react';
 import * as RadixTooltip from '@radix-ui/react-tooltip';
 import { AlertTriangle, CheckCircle2, CircleDashed } from 'lucide-react';
-import type { RestContractResultWire } from '../../../../shared/kinds/rest/wire.js';
+import type { RestContractResultWire } from '@shared/kinds/rest/wire.js';
 import { contractChip, contractTooltip, type ContractTone } from './contract.js';
 
 const TONE_CLASS: Record<ContractTone, string> = {

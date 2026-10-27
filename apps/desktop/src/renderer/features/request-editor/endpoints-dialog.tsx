@@ -14,7 +14,7 @@ import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { useProjectStore } from '../../state/project.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
-import type { EndpointWire } from '../../../shared/kinds/soap/wire.js';
+import type { EndpointWire } from '@shared/kinds/soap/wire.js';
 
 export interface EndpointsDialogProps {
   readonly open: boolean;

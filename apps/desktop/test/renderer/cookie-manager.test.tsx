@@ -5,7 +5,7 @@ import { CookieManager } from '../../src/renderer/features/cookies/cookie-manage
 import { useCookiesStore } from '../../src/renderer/state/cookies.js';
 import { showToast } from '../../src/renderer/components/toast.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { CookieJarStateWire, StoredCookieWire } from '../../src/shared/wire-base.js';
+import type { CookieJarStateWire, StoredCookieWire } from '@wirebench/wire/wire-base';
 
 vi.mock('../../src/renderer/components/toast.js', () => ({ showToast: vi.fn() }));
 

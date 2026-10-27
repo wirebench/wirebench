@@ -14,7 +14,7 @@ import {
   toSequenceWire,
   updateSequence,
 } from '../src/main/project-sequence-mutations.js';
-import type { SequenceStepWire } from '../src/shared/wire-base.js';
+import type { SequenceStepWire } from '@wirebench/wire/wire-base';
 
 const empty = (): Project => createProject('P', { id: 'P1' });
 

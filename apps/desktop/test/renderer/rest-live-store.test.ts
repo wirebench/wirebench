@@ -12,7 +12,7 @@ import { useDraftsStore } from '../../src/renderer/state/drafts.js';
 import { useExchangesStore, WS_LIVE_FRAME_LIMIT } from '../../src/renderer/state/exchanges.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { RestLiveEvent, SseRowWire } from '../../src/shared/kinds/rest/wire.js';
+import type { RestLiveEvent, SseRowWire } from '@wirebench/wire/kinds/rest/wire';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeRestExchange } from '../mocks/exchange-fixtures.js';
 import { restApiWire, restRequestWire } from '../helpers/wire-defaults.js';

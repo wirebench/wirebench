@@ -16,7 +16,7 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
-import type { SecretSourcesState, WorkspaceWire } from '../../src/shared/wire-base.js';
+import type { SecretSourcesState, WorkspaceWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const STATE: SecretSourcesState = {

@@ -59,8 +59,8 @@ import type {
   SequenceRunResultWire,
   SequenceStepResultWire,
   SequenceWaitingEvent,
-} from '../shared/wire-base.js';
-import type { McpExchangeSummary } from '../shared/kinds/mcp/wire.js';
+} from '@wirebench/wire/wire-base';
+import type { McpExchangeSummary } from '@wirebench/wire/kinds/mcp/wire';
 
 /** What a run needs from the app around it. */
 export interface SequenceRunDeps {

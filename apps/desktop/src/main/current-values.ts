@@ -12,9 +12,9 @@
  */
 import { WirebenchError } from '@wirebench/engine';
 import type { CurrentValues, PropertyMap } from '@wirebench/engine';
-import { scopeKeyString } from '../shared/current-value-keys.js';
-import type { ProjectWire } from '../shared/wire-types.js';
-import type { CurrentValuesStateWire, GlobalsState, ScopeKeyWire, WorkspaceWire } from '../shared/wire-base.js';
+import { scopeKeyString } from '@wirebench/wire/current-value-keys';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { CurrentValuesStateWire, GlobalsState, ScopeKeyWire, WorkspaceWire } from '@wirebench/wire/wire-base';
 
 interface Held {
   readonly committed: string;

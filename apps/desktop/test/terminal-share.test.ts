@@ -5,7 +5,7 @@ import { asCaller } from './helpers/ipc-table.js';
 import type { SessionTap } from '../src/main/ssh-service.js';
 import { framesOf, TerminalShareOwner } from '../src/main/terminal-share/owner.js';
 import { TerminalShareViewer } from '../src/main/terminal-share/viewer.js';
-import type { TerminalShareStateEvent, TerminalShareViewerStateEvent } from '../src/shared/terminal-share-wire.js';
+import type { TerminalShareStateEvent, TerminalShareViewerStateEvent } from '@wirebench/wire/terminal-share-wire';
 
 const SHARE = 'abcdefghijklmnopqrstuvwxyz';
 const WS = '01HZY3K8J9V7Q2W5N4M6P1R0WS';

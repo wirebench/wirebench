@@ -3,7 +3,7 @@
  * sequence goes through `project.mutate` like every other entity.
  */
 
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { SequenceRunDeps, SequenceRunner } from '../sequence-runner.js';
 import { registerHandler, type HandlerTable } from './register.js';
 

@@ -19,7 +19,7 @@ import {
   WirebenchError,
 } from '@wirebench/engine';
 import type { SecretFinding, SecretMove } from '@wirebench/engine';
-import type { SecretFindingWire } from '../shared/wire-base.js';
+import type { SecretFindingWire } from '@wirebench/wire/wire-base';
 import type { ProjectHost } from './project-host.js';
 import { secretStoreLabel } from './secret-resolver.js';
 import type { SecretStore } from './secrets.js';

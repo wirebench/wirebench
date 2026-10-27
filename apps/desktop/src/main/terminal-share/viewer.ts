@@ -18,7 +18,7 @@ import type {
   TerminalSharePresenceWire,
   TerminalSharePreviewResponse,
   TerminalShareViewerStateEvent,
-} from '../../shared/terminal-share-wire.js';
+} from '@wirebench/wire/terminal-share-wire';
 import type { ServerClient } from '../server-client.js';
 import { withToken, type TokenSource } from '../server-token.js';
 import { openShareConnection, shareSocketUrl, type ShareConnection } from './connection.js';

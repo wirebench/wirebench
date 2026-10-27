@@ -1,4 +1,4 @@
-import type { ResolvedForwardWire, ResolvedHostWire } from '../../../../shared/ssh-wire.js';
+import type { ResolvedForwardWire, ResolvedHostWire } from '@shared/ssh-wire.js';
 
 /**
  * Plain helpers for showing forwarding rules. The renderer does not import `@wirebench/ssh`, so

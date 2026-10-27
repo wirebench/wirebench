@@ -3,7 +3,7 @@
  * workspace's {@link TeamSecretsService} through these. Every answer is the status wire — ids,
  * names, fingerprints and labels — and no request carries a value.
  */
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { TeamSecretsService } from '../team-secrets-service.js';
 import { registerHandler, type HandlerTable } from './register.js';
 

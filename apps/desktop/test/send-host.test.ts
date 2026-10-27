@@ -28,8 +28,8 @@ import {
 import { desktopSendHost, type DesktopSend, type DesktopSendDeps } from '../src/main/send/host.js';
 import { failedExchangeOf } from '../src/main/failed-exchange.js';
 import { toWsHandshakeWire } from '../src/main/engine-wire.js';
-import type { HistoryEntryWire, LogEntryWire } from '../src/shared/wire-types.js';
-import type { FailedExchangeWire } from '../src/shared/wire-base.js';
+import type { HistoryEntryWire, LogEntryWire } from '@wirebench/wire/wire-types';
+import type { FailedExchangeWire } from '@wirebench/wire/wire-base';
 import { createHostState } from '../src/main/host/host-state.js';
 
 const hostState = createHostState();

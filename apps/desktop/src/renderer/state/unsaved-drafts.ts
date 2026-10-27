@@ -13,8 +13,8 @@
  */
 
 import { showToast } from '../components/toast.js';
-import type { WorkspaceRestoredResponse } from '../../shared/wire-types.js';
-import type { UnsavedRestoreNoticeWire } from '../../shared/wire-base.js';
+import type { WorkspaceRestoredResponse } from '@shared/wire-types.js';
+import type { UnsavedRestoreNoticeWire } from '@shared/wire-base.js';
 import { useDraftsStore } from './drafts.js';
 import { ipc } from './ipc-client.js';
 import { useProjectStore } from './project.js';

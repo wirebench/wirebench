@@ -9,9 +9,9 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeDraft } from '../mocks/exchange-fixtures.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
-import type { ExchangeSummary, WssIncomingWire } from '../../src/shared/kinds/soap/wire.js';
-import type { KeystoreWire } from '../../src/shared/wire-base.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { ExchangeSummary, WssIncomingWire } from '@wirebench/wire/kinds/soap/wire';
+import type { KeystoreWire } from '@wirebench/wire/wire-base';
 
 const project = { id: 'p1', name: 'Demo', dir: '/tmp/demo' } as unknown as ProjectWire;
 

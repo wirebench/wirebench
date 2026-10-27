@@ -3,7 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useUiStore } from '../../state/ui.js';
-import type { SecretSourcesState } from '../../../shared/wire-base.js';
+import type { SecretSourcesState } from '@shared/wire-base.js';
 import { EntryLocation, kindLabel } from './location.js';
 
 const STALE = 'secret-source-approval-stale';

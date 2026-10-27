@@ -15,12 +15,12 @@
 import type { Caller } from '../host/platform.js';
 import { findGit as defaultFindGit, WirebenchError } from '@wirebench/engine';
 import type { GitLocation } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { NativeDialogs } from '../native-dialogs.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
 import { toPreferencesWire } from '../preferences.js';
 import type { PreferencesService } from '../preferences.js';
-import type { PreferencesWire } from '../../shared/wire-base.js';
+import type { PreferencesWire } from '@wirebench/wire/wire-base';
 import { registerHandler, type HandlerTable } from './register.js';
 
 /** What the `git.*` channels need; a stub stands in for each of these in tests. */

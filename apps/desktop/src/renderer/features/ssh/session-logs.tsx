@@ -11,8 +11,8 @@ import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
-import type { SessionLogEntryWire, SessionLogMatchWire } from '../../../shared/session-log-wire.js';
-import { resolveLogSwitch } from '../../../shared/session-log-switch.js';
+import type { SessionLogEntryWire, SessionLogMatchWire } from '@shared/session-log-wire.js';
+import { resolveLogSwitch } from '@shared/session-log-switch.js';
 import {
   hideSessionLogs,
   showSessionLogs,

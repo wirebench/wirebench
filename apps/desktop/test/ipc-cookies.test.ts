@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CookieStore } from '../src/main/cookie-store.js';
 import { registerCookiesChannels } from '../src/main/ipc/cookies.js';
-import { channels } from '../src/shared/ipc.js';
-import type { CookieJarStateWire } from '../src/shared/wire-base.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { CookieJarStateWire } from '@wirebench/wire/wire-base';
 import { tableInto } from './helpers/ipc-table.js';
 
 const registeredHandlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();

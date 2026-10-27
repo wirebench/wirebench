@@ -7,7 +7,7 @@ import type { Redactor } from '../../host/redactor.js';
 import { commandDisplay, mcpEffectiveAuth, mcpItemFor, redactMcpExchange } from '@wirebench/engine';
 import type { McpExchange, McpMessage, SentRequest } from '@wirebench/engine';
 import { recordMcp } from '../../send/record.js';
-import type { McpExchangeSummary, McpMessageWire } from '../../../shared/kinds/mcp/wire.js';
+import type { McpExchangeSummary, McpMessageWire } from '@wirebench/wire/kinds/mcp/wire';
 import { apiKeyMasks } from '../key-masks.js';
 import type { KindSend } from '../kind-main.js';
 import { withMcpPatch } from './mutations.js';

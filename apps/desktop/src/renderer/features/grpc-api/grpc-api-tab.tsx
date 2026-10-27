@@ -19,7 +19,7 @@ import { effectiveBaseUrl } from '../rest-api/api-tab.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { useActiveEnvironment } from '../../state/workspace.js';
-import type { AuthConfigWire } from '../../../shared/wire-base.js';
+import type { AuthConfigWire } from '@shared/wire-base.js';
 
 export interface GrpcApiTabProps {
   readonly apiId: string;

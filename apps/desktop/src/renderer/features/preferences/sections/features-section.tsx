@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { BooleanSetting, SettingsGroup, SettingsItem } from '../../../components/settings-grid.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useWorkspaceStore } from '../../../state/workspace.js';
-import type { AppFeaturesWire, FeatureStateWire } from '../../../../shared/wire-base.js';
+import type { AppFeaturesWire, FeatureStateWire } from '@shared/wire-base.js';
 import type { SectionProps } from './section-props.js';
 
 /** The groups the rows sit in (phase 4 spec §4.3), by feature id; anything else lands in Other. */

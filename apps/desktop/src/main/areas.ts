@@ -1,13 +1,13 @@
 import type { HandlerTable } from './ipc/register.js';
 import { resolveFeatures, type FeatureState } from '@wirebench/engine';
-import { enabledAreaIds, toAreaIds } from '../shared/area-module.js';
-import type { AreaId } from '../shared/area-module.js';
+import { enabledAreaIds, toAreaIds } from '@wirebench/wire/area-module';
+import type { AreaId } from '@wirebench/wire/area-module';
 import {
   AREA_SWITCH_DESCRIPTORS,
   LOCAL_TERMINAL_SWITCH,
   SERIAL_SWITCH,
   TELNET_SWITCH,
-} from '../shared/area-switches.js';
+} from '@wirebench/wire/area-switches';
 import { registerLocalTerminalChannels } from './areas/local-terminal-channels.js';
 import { registerSshChannels } from './areas/ssh.js';
 

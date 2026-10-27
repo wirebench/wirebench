@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommandApprovalRequest } from '@wirebench/engine';
 import { MCP_APPROVALS_FILE, McpApprovals, McpApprovalStore, type McpPromptWindow } from '../src/main/mcp-approvals.js';
-import type { McpApprovalAnswerWire, McpApprovalPromptEvent } from '../src/shared/kinds/mcp/wire.js';
+import type { McpApprovalAnswerWire, McpApprovalPromptEvent } from '@wirebench/wire/kinds/mcp/wire';
 
 let dir: string;
 let file: string;

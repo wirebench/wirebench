@@ -1,6 +1,6 @@
 /** A capture row's verdict (webhook-signatures §4): ✓, ✗ with the reason on hover, and *401*. */
 import { REASON_TEXT } from './signature-text.js';
-import type { CaptureSignatureWire } from '../../../shared/wire-base.js';
+import type { CaptureSignatureWire } from '@shared/wire-base.js';
 
 export function SignatureBadge({
   signature,

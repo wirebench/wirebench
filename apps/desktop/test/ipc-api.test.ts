@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiRequests, WirebenchError } from '@wirebench/engine';
 import type { RestApi } from '@wirebench/engine';
 import { DialogPicks } from '../src/main/dialog-picks.js';
-import type { ProjectWire } from '../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { NO_REST, PROJECT_SETTINGS } from './helpers/wire-defaults.js';
 import { tableInto } from './helpers/ipc-table.js';
 

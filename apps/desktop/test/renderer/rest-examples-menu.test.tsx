@@ -11,7 +11,7 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import type { RestExchangeState } from '../../src/renderer/state/exchanges.js';
-import type { RestRequestWire } from '../../src/shared/kinds/rest/wire.js';
+import type { RestRequestWire } from '@wirebench/wire/kinds/rest/wire';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { restRequestWire } from '../helpers/wire-defaults.js';
 import { makeRestExchange } from '../mocks/exchange-fixtures.js';

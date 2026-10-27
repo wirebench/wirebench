@@ -1,16 +1,6 @@
-import type {
-  GroupEntryWire,
-  HostsFileWire,
-  IdentityWire,
-  SshAuthWire,
-  SshSettingsWire,
-} from '../../../shared/ssh-wire.js';
-import { SSH_DEFAULTS } from '../../../shared/ssh-defaults.js';
-import {
-  DEFAULT_TERMINAL_CHARSET,
-  DEFAULT_TERMINAL_TYPE,
-  TERMINAL_CHARSETS,
-} from '../../../shared/terminal-charsets.js';
+import type { GroupEntryWire, HostsFileWire, IdentityWire, SshAuthWire, SshSettingsWire } from '@shared/ssh-wire.js';
+import { SSH_DEFAULTS } from '@shared/ssh-defaults.js';
+import { DEFAULT_TERMINAL_CHARSET, DEFAULT_TERMINAL_TYPE, TERMINAL_CHARSETS } from '@shared/terminal-charsets.js';
 import { ancestorsOf, findGroup } from './hosts-store.js';
 import type { Provenance } from './inherited-field.js';
 

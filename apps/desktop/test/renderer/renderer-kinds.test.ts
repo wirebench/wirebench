@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { KINDS } from '../../src/shared/kinds/kind-module.js';
+import { KINDS } from '@wirebench/wire/kinds/kind-module';
 import { RENDERER_KINDS, TAB_KINDS } from '../../src/renderer/kinds/index.js';
 import { PERSISTED_TAB_KINDS } from '../../src/renderer/state/ui-state.js';
 import { environmentTabId } from '../../src/renderer/features/environments/environment-actions.js';

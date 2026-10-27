@@ -25,7 +25,7 @@ import { findGrpcRequest } from '../src/main/kinds/grpc/mutations.js';
 import { findRestRequest } from '../src/main/kinds/rest/mutations.js';
 import { findWsRequest } from '../src/main/kinds/ws/mutations.js';
 import { findRequest } from '../src/main/project-wire.js';
-import type { RequestAssertionWire } from '../src/shared/wire-base.js';
+import type { RequestAssertionWire } from '@wirebench/wire/wire-base';
 
 const deps: MutationDeps = {
   generate: () => Promise.resolve({ envelopeXml: '<Add/>', soapVersion: '1.1' }),

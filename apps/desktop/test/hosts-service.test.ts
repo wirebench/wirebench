@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { WorkspaceError } from '@wirebench/engine';
 import { describe, expect, it, vi } from 'vitest';
 import { HostsService, sshDefaultsOf, windowHosts } from '../src/main/hosts-service.js';
-import { sshListHostsResponseSchema } from '../src/shared/ssh-wire.js';
+import { sshListHostsResponseSchema } from '@wirebench/wire/ssh-wire';
 
 const dir = () => mkdtempSync(join(tmpdir(), 'wb-hosts-'));
 

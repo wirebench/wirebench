@@ -4,8 +4,8 @@ import { ProblemsView } from '../../src/renderer/features/problems/problems-view
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
-import type { InterfaceWire, RequestWire } from '../../src/shared/kinds/soap/wire.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { InterfaceWire, RequestWire } from '@wirebench/wire/kinds/soap/wire';
 
 const request = {
   id: 'req-1',

@@ -28,7 +28,7 @@ import type {
   ResolvedDocument,
   WsApi,
 } from '@wirebench/engine';
-import type { ProjectWire } from '../../../shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { takenApiSlugs } from '../../project-api-mutations.js';
 import { findWsRequest, locateWsRequest, wsApiOwning } from './mutations.js';
 import type { AsyncApiDefinitionInfo } from '../../project-wire.js';

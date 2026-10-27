@@ -8,8 +8,8 @@ import type { RemoteEntry, SftpSession } from '@wirebench/ssh';
 import { describe, expect, it, vi } from 'vitest';
 import { TransferQueue, remotePlace } from '../src/main/transfers.js';
 import type { PlaceFs } from '../src/main/transfers.js';
-import { events } from '../src/shared/ipc.js';
-import type { SftpConflictEvent, SftpTransferEvent } from '../src/shared/sftp-wire.js';
+import { events } from '@wirebench/wire/ipc';
+import type { SftpConflictEvent, SftpTransferEvent } from '@wirebench/wire/sftp-wire';
 
 const PART = '.wirebench-part';
 

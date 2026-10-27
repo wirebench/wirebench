@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bodyForMethodChange } from '../../src/renderer/features/rest-editor/method-body.js';
-import type { RestBodyWire } from '../../src/shared/kinds/rest/wire.js';
+import type { RestBodyWire } from '@wirebench/wire/kinds/rest/wire';
 
 describe('bodyForMethodChange (G11)', () => {
   const none = { kind: 'none' } as const;

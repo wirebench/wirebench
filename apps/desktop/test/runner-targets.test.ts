@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMcpFolder, createMcpRequest, createMcpServer, createProject, withMcpServers } from '@wirebench/engine';
 import { resolveTarget, runnerRequests } from '../src/main/runner/targets.js';
-import { defaultRunnerSettings } from '../src/shared/runner-defaults.js';
+import { defaultRunnerSettings } from '@wirebench/wire/runner-defaults';
 
 function project() {
   const nested = createMcpRequest('Read a file', {

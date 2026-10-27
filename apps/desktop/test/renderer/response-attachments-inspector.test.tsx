@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { ResponseAttachmentsInspector } from '../../src/renderer/features/request-editor/inspectors/response-attachments-inspector.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeExchange } from '../mocks/exchange-fixtures.js';
-import type { ExchangeSummary } from '../../src/shared/kinds/soap/wire.js';
+import type { ExchangeSummary } from '@wirebench/wire/kinds/soap/wire';
 
 /** An exchange whose response carries two parts, as an MTOM echo returns them. */
 function withAttachments(): ExchangeSummary {

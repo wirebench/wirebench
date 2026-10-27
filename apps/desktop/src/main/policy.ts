@@ -26,7 +26,7 @@ import { isAbsolute, posix, win32 } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { mergePreferences, preferencesSchema } from '@wirebench/engine';
 import type { Preferences, PreferencesPatch } from '@wirebench/engine';
-import { isAreaSwitchId } from '../shared/area-switches.js';
+import { isAreaSwitchId } from '@wirebench/wire/area-switches';
 
 /** File name of the policy inside its per-OS directory. */
 export const POLICY_FILE = 'policy.yaml';

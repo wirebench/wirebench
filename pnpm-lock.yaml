@@ -93,6 +93,9 @@ importers:
       '@wirebench/ssh':
         specifier: workspace:*
         version: link:../../packages/ssh
+      '@wirebench/wire':
+        specifier: workspace:*
+        version: link:../../packages/wire
       '@xterm/addon-search':
         specifier: 0.16.0
         version: 0.16.0
@@ -603,6 +606,15 @@ importers:
       '@types/ssh2':
         specifier: 1.15.6
         version: 1.15.6
+
+  packages/wire:
+    dependencies:
+      '@wirebench/engine':
+        specifier: workspace:*
+        version: link:../engine
+      zod:
+        specifier: ^4.6.1
+        version: 4.6.1
 
   site:
     dependencies:

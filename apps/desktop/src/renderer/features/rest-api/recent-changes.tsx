@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { ipc } from '../../state/ipc-client.js';
 import { useSyncStore } from '../../state/sync.js';
-import type { SyncApiHistoryWire, SyncLogEntryWire } from '../../../shared/wire-base.js';
+import type { SyncApiHistoryWire, SyncLogEntryWire } from '@shared/wire-base.js';
 
 const FIRST_PAGE = 20;
 const MAX_LIMIT = 100;

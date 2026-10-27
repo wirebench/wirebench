@@ -3,7 +3,7 @@
  * can import them, and free of zod values (the renderer CSP trap). `audit-format.test.ts` keeps the
  * group list honest against the engine's `AUDIT_ACTION_GROUPS`.
  */
-import type { AuditEventWire } from '../../shared/wire-base.js';
+import type { AuditEventWire } from '@shared/wire-base.js';
 
 export const RANGE_PRESETS = ['24h', '7d', '30d', 'all'] as const;
 export type RangePreset = (typeof RANGE_PRESETS)[number];

@@ -7,7 +7,7 @@ import { localPaneId, useFilesStore } from '../../src/renderer/features/ssh/file
 import { useTransfersStore } from '../../src/renderer/features/ssh/files/transfers-store.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
-import type { SftpConflictEvent, SftpEntryWire, SftpTransferEvent } from '../../src/shared/sftp-wire.js';
+import type { SftpConflictEvent, SftpEntryWire, SftpTransferEvent } from '@wirebench/wire/sftp-wire';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const TAB = 'ssh-files:a';

@@ -28,8 +28,8 @@ import type { PreferencesService } from '../src/main/preferences.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import { moveDir } from '../src/main/rename-dir.js';
 import { ExchangeRegistry, previewSoap, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
-import { MAX_DROPPED_ATTACHMENT_BYTES } from '../src/shared/kinds/soap/wire.js';
-import type { ProjectWire } from '../src/shared/wire-types.js';
+import { MAX_DROPPED_ATTACHMENT_BYTES } from '@wirebench/wire/kinds/soap/wire';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { createHostState } from '../src/main/host/host-state.js';
 import { testHooks } from './helpers/project-hooks.js';
 

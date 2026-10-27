@@ -3,7 +3,7 @@ import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { useAccountStore } from '../../state/account.js';
 import { selectedTeam, useTeamStore } from '../../state/team.js';
-import type { TeamMemberWire, TeamRoleWire } from '../../../shared/wire-base.js';
+import type { TeamMemberWire, TeamRoleWire } from '@shared/wire-base.js';
 import { InviteDialog } from './invite-dialog.js';
 import { INPUT_CLASS, ROLE_LABELS, SELECT_CLASS, TEAM_ROLES } from './roles.js';
 

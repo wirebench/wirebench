@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import type { InterfaceWire } from '../../src/shared/kinds/soap/wire.js';
+import type { InterfaceWire } from '@wirebench/wire/kinds/soap/wire';
 import { ConsolePanel } from '../../src/renderer/shell/console-panel.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';

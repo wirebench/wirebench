@@ -25,7 +25,7 @@ import {
   type PluginProblem,
   type StagedPlugin,
 } from '@wirebench/engine';
-import type { PluginRowWire, PluginsListResponse, PluginsStageResponse } from '../../shared/plugins-wire.js';
+import type { PluginRowWire, PluginsListResponse, PluginsStageResponse } from '@wirebench/wire/plugins-wire';
 
 export interface DesktopPlugins {
   /** The loaded plugins' contributions and switches; undefined when the `plugins` switch is off. */

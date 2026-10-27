@@ -8,7 +8,7 @@ import type { KnownHostEntry } from '@wirebench/ssh';
 import { describe, expect, it, vi } from 'vitest';
 import { REFUSAL_TTL_MS, RefusalStore, createSshConnector } from '../src/main/ssh-connect.js';
 import { SshService } from '../src/main/ssh-service.js';
-import type { SshListHostsResponse } from '../src/shared/ssh-wire.js';
+import type { SshListHostsResponse } from '@wirebench/wire/ssh-wire';
 import { createHostState } from '../src/main/host/host-state.js';
 
 const hostState = createHostState();

@@ -14,8 +14,8 @@
 
 import { join } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
-import type { SyncStatusWire } from '../../shared/wire-base.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { SyncStatusWire } from '@wirebench/wire/wire-base';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
 import type { SyncService } from '../sync/sync-service.js';
 import type { WorkspaceService } from '../workspace-service.js';

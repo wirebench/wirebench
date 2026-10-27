@@ -16,7 +16,7 @@ import {
 } from '@wirebench/engine';
 import type { RemoteEvent, SyncBackend } from '../../src/main/sync/backend.js';
 import { LIVE_SAFETY_NET_SECONDS, SyncService } from '../../src/main/sync/sync-service.js';
-import { syncStatusWireSchema } from '../../src/shared/wire-base.js';
+import { syncStatusWireSchema } from '@wirebench/wire/wire-base';
 import type { SyncServiceDeps } from '../../src/main/sync/sync-service.js';
 import type { SyncConflictWire, SyncLogEntryWire, SyncStatusWire } from '../../src/main/sync/types.js';
 

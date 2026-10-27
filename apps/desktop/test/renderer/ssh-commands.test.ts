@@ -10,7 +10,7 @@ import { openTerminalFor } from '../../src/renderer/features/ssh/connect.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { useRunDialogStore } from '../../src/renderer/features/ssh/snippets/run.js';
 import { useSnippetsStore } from '../../src/renderer/features/ssh/snippets/snippets-store.js';
-import type { SnippetListItemWire } from '../../src/shared/snippets-wire.js';
+import type { SnippetListItemWire } from '@wirebench/wire/snippets-wire';
 import { getCommand, resetCommands, runCommand } from '../../src/renderer/lib/commands.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';

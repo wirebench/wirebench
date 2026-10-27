@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { SshConnectProgressWire } from '../../../shared/ssh-wire.js';
+import type { SshConnectProgressWire } from '@shared/ssh-wire.js';
 import { connectedView, failedView, reduceProgress, startView, trustView } from './connect-progress.js';
 import type { ConnectPurpose, ConnectView } from './connect-progress.js';
 import type { ConnectError } from './connect-errors.js';

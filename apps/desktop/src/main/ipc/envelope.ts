@@ -1,7 +1,7 @@
 import type { Redactor } from '../host/redactor.js';
 import { isWirebenchError, WirebenchError } from '@wirebench/engine';
 import type { z } from 'zod';
-import type { ChannelRequest, ChannelResponse, IpcChannel, IpcError, IpcEvent, IpcResult } from '../../shared/ipc.js';
+import type { ChannelRequest, ChannelResponse, IpcChannel, IpcError, IpcEvent, IpcResult } from '@wirebench/wire/ipc';
 
 /**
  * Validates a raw IPC payload against a channel's request schema.

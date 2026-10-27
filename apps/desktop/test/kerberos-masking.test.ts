@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { redactExchangeSummary } from '../src/main/engine-wire.js';
 import { harOf } from '../src/main/har.js';
 import { buildHistoryEntry } from '../src/main/history-service.js';
-import type { LogEntryWire, ResolvedSendInputWire } from '../src/shared/wire-types.js';
+import type { LogEntryWire, ResolvedSendInputWire } from '@wirebench/wire/wire-types';
 import { b64, makeExchange } from './mocks/wire-fixtures.js';
 import { Redactor } from '../src/main/host/redactor.js';
 

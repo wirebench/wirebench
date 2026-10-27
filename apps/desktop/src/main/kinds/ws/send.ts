@@ -7,7 +7,7 @@ import { wsEffectiveAuth, wsItemFor } from '@wirebench/engine';
 import type { SentRequest, WsExchange } from '@wirebench/engine';
 import { toWsFrameWire, toWsHandshakeWire } from '../../engine-wire.js';
 import { recordWs, reportWsHandshakeFailure, summariseWs } from '../../send/record.js';
-import type { WsExchangeSummary } from '../../../shared/kinds/ws/wire.js';
+import type { WsExchangeSummary } from '@wirebench/wire/kinds/ws/wire';
 import type { KindSend } from '../kind-main.js';
 import { withWsPatch } from './mutations.js';
 import { namedCredential } from '../key-masks.js';

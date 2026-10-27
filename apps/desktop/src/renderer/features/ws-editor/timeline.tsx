@@ -15,7 +15,7 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { ArrowDown, ArrowUp, CircleSlash, Clock, TriangleAlert } from 'lucide-react';
 import { formatBytes } from '../../lib/format-size.js';
-import type { WsFrameWire } from '../../../shared/kinds/ws/wire.js';
+import type { WsFrameWire } from '@shared/kinds/ws/wire.js';
 import { contractMarkerLabel, formatFrameTime, framePreview, isControlFrame } from './ws-format.js';
 
 /** Past this many rows the timeline renders a window rather than every row. */

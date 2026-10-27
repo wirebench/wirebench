@@ -16,11 +16,11 @@
  * anything about drafts. This store answers one question: what has not been written yet.
  */
 import { create } from 'zustand';
-import type { GrpcRequestPatchWire } from '../../shared/kinds/grpc/wire.js';
-import type { RestRequestPatchWire } from '../../shared/kinds/rest/wire.js';
-import type { RequestPatchWire } from '../../shared/kinds/soap/wire.js';
-import type { McpRequestPatchWire } from '../../shared/kinds/mcp/wire.js';
-import type { WsRequestPatchWire } from '../../shared/kinds/ws/wire.js';
+import type { GrpcRequestPatchWire } from '@shared/kinds/grpc/wire.js';
+import type { RestRequestPatchWire } from '@shared/kinds/rest/wire.js';
+import type { RequestPatchWire } from '@shared/kinds/soap/wire.js';
+import type { McpRequestPatchWire } from '@shared/kinds/mcp/wire.js';
+import type { WsRequestPatchWire } from '@shared/kinds/ws/wire.js';
 
 export interface DraftsState {
   /** Pending patch per request id. A request with no entry has nothing unsaved. */

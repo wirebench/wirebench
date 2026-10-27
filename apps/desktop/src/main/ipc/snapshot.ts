@@ -3,7 +3,7 @@
  * response, kept beside its files as `<slug>.golden.yaml` (see {@link SnapshotStore}).
  */
 
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { SnapshotStore } from '../snapshot-store.js';
 import { registerHandler, type HandlerTable } from './register.js';
 

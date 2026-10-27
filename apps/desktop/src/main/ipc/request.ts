@@ -24,7 +24,7 @@ import {
   toWsSessionOptions,
   wsToCommand,
 } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { EngineService } from '../engine-service.js';
 import type {
   AuthConfig,
@@ -73,20 +73,20 @@ import type {
   RequestCodeRequest,
   RequestCurlRequest,
   LogEntryWire,
-} from '../../shared/wire-types.js';
+} from '@wirebench/wire/wire-types';
 import type {
   RestRequestPatchWire,
   RequestImportCurlRequest,
   RequestImportCurlTarget,
   RequestImportCurlResponse,
-} from '../../shared/kinds/rest/wire.js';
-import type { RequestPatchWire } from '../../shared/kinds/soap/wire.js';
+} from '@wirebench/wire/kinds/rest/wire';
+import type { RequestPatchWire } from '@wirebench/wire/kinds/soap/wire';
 import type {
   UnresolvedRefWire,
   FailedExchangeWire,
   RequestCurlResponse,
   RequestVariablesResponse,
-} from '../../shared/wire-base.js';
+} from '@wirebench/wire/wire-base';
 import type { HostState } from '../host/host-state.js';
 import { cancelEnvironmentBatch, sendToEnvironments } from '../multi-env-send.js';
 import { toRestSettingsWire } from '../project-wire.js';

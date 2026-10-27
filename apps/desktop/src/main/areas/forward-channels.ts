@@ -1,4 +1,4 @@
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { ForwardService } from '../forward-service.js';
 import { registerHandler, type HandlerTable } from '../ipc/register.js';
 

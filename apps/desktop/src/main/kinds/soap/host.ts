@@ -82,8 +82,8 @@ import type {
   WssIssuedTokenEntry,
   WssOutgoingConfig,
 } from '@wirebench/engine';
-import { MAX_DROPPED_ATTACHMENT_BYTES } from '../../../shared/kinds/soap/wire.js';
-import type { ApplyUpdateWire, ProjectChange, ProjectWire } from '../../../shared/wire-types.js';
+import { MAX_DROPPED_ATTACHMENT_BYTES } from '@wirebench/wire/kinds/soap/wire';
+import type { ApplyUpdateWire, ProjectChange, ProjectWire } from '@wirebench/wire/wire-types';
 import type {
   DefinitionUpdateOptions,
   DefinitionUpdateSource,
@@ -91,8 +91,8 @@ import type {
   InterfaceSummary,
   UpdatePlanWire,
   WssPolicyWire,
-} from '../../../shared/kinds/soap/wire.js';
-import type { ProjectSaveResult, ProxyOptionsWire } from '../../../shared/wire-base.js';
+} from '@wirebench/wire/kinds/soap/wire';
+import type { ProjectSaveResult, ProxyOptionsWire } from '@wirebench/wire/wire-base';
 import { generateOptionsFrom } from '../../generate-options.js';
 import { kerberosImportAuth, withoutPasswordRef } from '../../kerberos-import-auth.js';
 import { resolveAuthConfig, resolveEndpointAuth } from '../../secret-resolver.js';

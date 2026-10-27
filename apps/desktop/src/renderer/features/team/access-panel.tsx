@@ -1,6 +1,6 @@
 import { Button } from '../../components/button.js';
 import { useTeamStore } from '../../state/team.js';
-import type { AccessEntryWire, WorkspaceRoleWire } from '../../../shared/wire-base.js';
+import type { AccessEntryWire, WorkspaceRoleWire } from '@shared/wire-base.js';
 import { ROLE_LABELS, SELECT_CLASS, WORKSPACE_ROLES, roleWithSource } from './roles.js';
 
 /** A grant can neither lower nor raise these; the select says so by being disabled. */

@@ -2,7 +2,7 @@ import { useId, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import { KV_INPUT_CLASS } from '../../components/kv-table.js';
-import type { CookieKeyWire, StoredCookieWire } from '../../../shared/wire-base.js';
+import type { CookieKeyWire, StoredCookieWire } from '@shared/wire-base.js';
 
 /** An epoch-ms instant as a `datetime-local` value, in local time. */
 export function toLocalInput(ms: number): string {

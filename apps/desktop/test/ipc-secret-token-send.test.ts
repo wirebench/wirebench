@@ -45,10 +45,10 @@ import {
 import { toSendDeps, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { projectSecretGetter, secretStoreLabel } from '../src/main/secret-resolver.js';
 import { SecretStore, type CryptoBackend } from '../src/main/secrets.js';
-import type { HistoryEntryWire } from '../src/shared/wire-types.js';
-import type { GrpcExchangeSummary, GrpcResponseMessageWire } from '../src/shared/kinds/grpc/wire.js';
-import type { RestExchangeSummary, RestLiveEvent } from '../src/shared/kinds/rest/wire.js';
-import type { WsFrameWire } from '../src/shared/kinds/ws/wire.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
+import type { GrpcExchangeSummary, GrpcResponseMessageWire } from '@wirebench/wire/kinds/grpc/wire';
+import type { RestExchangeSummary, RestLiveEvent } from '@wirebench/wire/kinds/rest/wire';
+import type { WsFrameWire } from '@wirebench/wire/kinds/ws/wire';
 import { registerHistoryChannelsWithKinds, registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
 import { createHostState } from '../src/main/host/host-state.js';

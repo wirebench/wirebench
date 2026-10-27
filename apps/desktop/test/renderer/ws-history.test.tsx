@@ -9,7 +9,7 @@ import { HistoryView } from '../../src/renderer/features/history/history-view.js
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useHistoryStore } from '../../src/renderer/state/history.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { HistoryEntryWire } from '../../src/shared/wire-types.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { wsRequestWire } from '../helpers/wire-defaults.js';
 import { rowActions } from '../helpers/history-row-menu.js';

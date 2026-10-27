@@ -6,7 +6,7 @@ import { registerWssChannels } from '../src/main/kinds/soap/channels/wss.js';
 import { toInterfaceSummary } from '../src/main/engine-wire.js';
 import { fixturePath } from './helpers/fixtures.js';
 import type { WssEntry } from '@wirebench/engine';
-import type { WssPolicyWire } from '../src/shared/kinds/soap/wire.js';
+import type { WssPolicyWire } from '@wirebench/wire/kinds/soap/wire';
 import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();

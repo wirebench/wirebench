@@ -14,7 +14,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
-import type { AuthConfigWire, OAuth2StatusWire } from '../../../shared/wire-base.js';
+import type { AuthConfigWire, OAuth2StatusWire } from '@shared/wire-base.js';
 
 export interface OAuth2StatusPanelProps {
   /** The API, folder or request whose configuration main should use. */

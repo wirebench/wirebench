@@ -34,7 +34,7 @@ import { forgetGraphqlMethodChange, methodForBodySwitch } from '../../src/render
 import { dismissToast, showToast } from '../../src/renderer/components/toast.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
-import type { RestBodyWire, RestRequestPatchWire } from '../../src/shared/kinds/rest/wire.js';
+import type { RestBodyWire, RestRequestPatchWire } from '@wirebench/wire/kinds/rest/wire';
 
 const graphqlDiagnostics = vi.fn();
 const graphqlComplete = vi.fn();

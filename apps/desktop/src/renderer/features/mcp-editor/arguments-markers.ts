@@ -7,7 +7,7 @@
 import type * as Monaco from 'monaco-editor';
 import { contractRange } from '../../editor/markers.js';
 import { ipc } from '../../state/ipc-client.js';
-import type { McpArgumentsProblemWire } from '../../../shared/kinds/mcp/wire.js';
+import type { McpArgumentsProblemWire } from '@shared/kinds/mcp/wire.js';
 
 /** The owner Monaco files the Arguments editor's markers under. */
 export const MCP_ARGUMENTS_MARKER_OWNER = 'wirebench-mcp-arguments';

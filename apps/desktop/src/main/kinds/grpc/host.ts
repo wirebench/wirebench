@@ -42,7 +42,7 @@ import type {
   ProtoSources,
   TlsOptions,
 } from '@wirebench/engine';
-import type { ProjectChange, ProjectWire } from '../../../shared/wire-types.js';
+import type { ProjectChange, ProjectWire } from '@wirebench/wire/wire-types';
 import { takenApiSlugs } from '../../project-api-mutations.js';
 import { findGrpcFolder, findGrpcRequest, grpcApiOwning, locateGrpcRequest } from './mutations.js';
 import type { ProjectHostCore } from '../../project-host-core.js';

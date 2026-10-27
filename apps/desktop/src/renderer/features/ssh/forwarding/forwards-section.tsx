@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import type { ForwardEntryWire, GroupEntryWire } from '../../../../shared/ssh-wire.js';
+import type { ForwardEntryWire, GroupEntryWire } from '@shared/ssh-wire.js';
 import { defaultBind, ForwardForm, type ForwardFullEntry } from './forward-form.js';
 import { listenAddress, typeWord } from './forward-format.js';
 

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { describe, expect, it, vi } from 'vitest';
 import { toIpcError, validateEventPayload, wrapHandler } from '../src/main/ipc/envelope.js';
 import { emitEvent } from '../src/main/ipc/events.js';
-import { channels, defineEvent } from '../src/shared/ipc.js';
+import { channels, defineEvent } from '@wirebench/wire/ipc';
 import { Redactor } from '../src/main/host/redactor.js';
 
 describe('wrapHandler', () => {

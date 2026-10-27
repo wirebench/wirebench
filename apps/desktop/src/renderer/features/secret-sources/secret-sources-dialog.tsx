@@ -3,7 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useUiStore } from '../../state/ui.js';
-import type { SecretSourceEntryWire, SecretSourcesSetResponse, SecretSourcesState } from '../../../shared/wire-base.js';
+import type { SecretSourceEntryWire, SecretSourcesSetResponse, SecretSourcesState } from '@shared/wire-base.js';
 import { openSecretSourcesApproval } from './actions.js';
 import { KIND_FIELDS } from './kind-fields.js';
 import { EntryLocation, entryProblem, kindLabel } from './location.js';

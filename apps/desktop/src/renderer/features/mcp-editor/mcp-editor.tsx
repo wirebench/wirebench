@@ -21,7 +21,7 @@ import { assertionsBadge, AssertionsTab } from '../assertions/assertions-tab.js'
 import { REQUEST_KINDS } from '../assertions/assertion-table.js';
 import { groupOrientation, useEditorLayout } from '../request-editor/layout.js';
 import { hasScripts, ScriptsTab } from '../scripts/scripts-tab.js';
-import type { McpOperationWire, McpRequestPatchWire } from '../../../shared/kinds/mcp/wire.js';
+import type { McpOperationWire, McpRequestPatchWire } from '@shared/kinds/mcp/wire.js';
 import { ArgumentsTab } from './arguments-tab.js';
 import { McpBadge } from './badge.js';
 import { OperationBar } from './operation-bar.js';

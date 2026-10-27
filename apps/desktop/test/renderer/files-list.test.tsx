@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FileList } from '../../src/renderer/features/ssh/files/file-list.js';
 import type { PaneSort } from '../../src/renderer/features/ssh/files/files-store.js';
-import type { SftpEntryWire } from '../../src/shared/sftp-wire.js';
+import type { SftpEntryWire } from '@wirebench/wire/sftp-wire';
 
 // The shared setup stubs offsetHeight at 600px, so the virtualiser sees a viewport of about 23 rows.
 

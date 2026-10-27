@@ -15,7 +15,7 @@ import {
   validateMock,
 } from '@wirebench/engine';
 import type { MockDef, MockMatch, MockOperation, MockResponse, MockScenarioStep, Project } from '@wirebench/engine';
-import type { MockOperationPatch, MockPatch, MockResponsePatch, MockWire } from '../shared/wire-base.js';
+import type { MockOperationPatch, MockPatch, MockResponsePatch, MockWire } from '@wirebench/wire/wire-base';
 
 /** The outcome of one mock change. */
 export interface MockMutationResult {

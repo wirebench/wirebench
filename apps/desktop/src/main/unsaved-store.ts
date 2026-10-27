@@ -18,16 +18,16 @@ import { dirname, join, relative, sep } from 'node:path';
 import { z } from 'zod';
 import { mergeFiles, nodeFs } from '@wirebench/engine';
 import type { DirEntry, FileStat, FileMerge, FsLike, ProjectFiles } from '@wirebench/engine';
-import { grpcRequestPatchSchema } from '../shared/kinds/grpc/wire.js';
-import { restRequestPatchSchema } from '../shared/kinds/rest/wire.js';
-import { requestPatchSchema } from '../shared/kinds/soap/wire.js';
-import { wsRequestPatchSchema } from '../shared/kinds/ws/wire.js';
-import { mcpRequestPatchSchema } from '../shared/kinds/mcp/wire.js';
-import type { GrpcRequestPatchWire } from '../shared/kinds/grpc/wire.js';
-import type { RestRequestPatchWire } from '../shared/kinds/rest/wire.js';
-import type { RequestPatchWire } from '../shared/kinds/soap/wire.js';
-import type { WsRequestPatchWire } from '../shared/kinds/ws/wire.js';
-import type { McpRequestPatchWire } from '../shared/kinds/mcp/wire.js';
+import { grpcRequestPatchSchema } from '@wirebench/wire/kinds/grpc/wire';
+import { restRequestPatchSchema } from '@wirebench/wire/kinds/rest/wire';
+import { requestPatchSchema } from '@wirebench/wire/kinds/soap/wire';
+import { wsRequestPatchSchema } from '@wirebench/wire/kinds/ws/wire';
+import { mcpRequestPatchSchema } from '@wirebench/wire/kinds/mcp/wire';
+import type { GrpcRequestPatchWire } from '@wirebench/wire/kinds/grpc/wire';
+import type { RestRequestPatchWire } from '@wirebench/wire/kinds/rest/wire';
+import type { RequestPatchWire } from '@wirebench/wire/kinds/soap/wire';
+import type { WsRequestPatchWire } from '@wirebench/wire/kinds/ws/wire';
+import type { McpRequestPatchWire } from '@wirebench/wire/kinds/mcp/wire';
 
 /** Folder, inside a workspace's own folder, that holds its recovery records. */
 export const UNSAVED_DIR = 'unsaved';

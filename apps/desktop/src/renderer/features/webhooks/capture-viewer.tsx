@@ -11,7 +11,7 @@ import { base64ByteLength, formatBytes } from '../../lib/format-size.js';
 import { BodyView, type BodyViewExchange } from '../rest-editor/response/body-view.js';
 import { ResponseHeadersView } from '../rest-editor/response/headers-view.js';
 import { schemeSummary, signatureHeadersOf, verdictText } from './signature-text.js';
-import type { CaptureViewWire, SignatureSchemeWire } from '../../../shared/wire-base.js';
+import type { CaptureViewWire, SignatureSchemeWire } from '@shared/wire-base.js';
 
 type ViewerTab = 'headers' | 'body' | 'form' | 'details';
 

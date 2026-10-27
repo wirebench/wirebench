@@ -1,5 +1,5 @@
 import { WorkspaceError } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { WorkspaceService } from '../workspace-service.js';
 import type { ServerShareTarget } from '../workspace-share.js';
 import { registerHandler, type HandlerTable } from './register.js';

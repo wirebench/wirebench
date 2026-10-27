@@ -2,7 +2,7 @@
  * The `hooks.*` channels (webhook-capture spec §4.1). Each hands the request to `HooksService`, which
  * resolves the account's token and holds the open views; the token never crosses the bridge.
  */
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { HooksService } from '../hooks/hooks-service.js';
 import { registerHandler, type HandlerTable } from './register.js';
 

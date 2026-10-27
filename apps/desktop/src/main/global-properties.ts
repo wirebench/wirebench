@@ -24,7 +24,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { WirebenchError } from '@wirebench/engine';
-import type { GlobalsState } from '../shared/wire-base.js';
+import type { GlobalsState } from '@wirebench/wire/wire-base';
 
 /** File name (inside `userData`) the global properties are persisted to. */
 export const GLOBAL_PROPERTIES_FILE = 'global-properties.yaml';

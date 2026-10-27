@@ -11,7 +11,7 @@ import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
-import type { PreferencesPatchWire, PreferencesWire } from '../../src/shared/wire-base.js';
+import type { PreferencesPatchWire, PreferencesWire } from '@wirebench/wire/wire-base';
 
 const DEFAULTS = DEFAULT_PREFERENCES_WIRE;
 

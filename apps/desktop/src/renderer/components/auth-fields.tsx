@@ -23,9 +23,9 @@ import { useKerberosAvailability } from '../lib/use-kerberos-availability.js';
 import { ipc } from '../state/ipc-client.js';
 import { useProjectStore } from '../state/project.js';
 import { VariableInput } from './variable-field.js';
-import type { SoapOwnerAuthWire } from '../../shared/kinds/soap/wire.js';
-import type { AuthConfigWire } from '../../shared/wire-base.js';
-import { AUTH_TYPE_OPTIONS, authTypeLabel } from '../../shared/auth-types.js';
+import type { SoapOwnerAuthWire } from '@shared/kinds/soap/wire.js';
+import type { AuthConfigWire } from '@shared/wire-base.js';
+import { AUTH_TYPE_OPTIONS, authTypeLabel } from '@shared/auth-types.js';
 
 const INPUT_CLASS =
   'h-row w-full min-w-0 rounded-md border border-hairline bg-surface-base px-2 text-sm text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';

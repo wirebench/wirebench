@@ -1,6 +1,6 @@
 import { useId } from 'react';
 import { useUiStore } from '../../state/ui.js';
-import type { GroupEntryWire, MoshSettingsWire, SshProtocolWire } from '../../../shared/ssh-wire.js';
+import type { GroupEntryWire, MoshSettingsWire, SshProtocolWire } from '@shared/ssh-wire.js';
 import { INPUT_CLASS, sourceText, type Provenance } from './inherited-field.js';
 
 export const PROTOCOL_LABELS: Record<SshProtocolWire, string> = {

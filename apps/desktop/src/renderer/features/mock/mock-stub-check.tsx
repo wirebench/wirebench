@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { useProblemsStore } from '../../state/problems.js';
 import type { Problem } from '../../state/problems.js';
 import { ipc } from '../../state/ipc-client.js';
-import type { MockCheckResponse, MockProblemWire, MockWire } from '../../../shared/wire-base.js';
+import type { MockCheckResponse, MockProblemWire, MockWire } from '@shared/wire-base.js';
 
 type CheckState =
   | { readonly kind: 'checking' }

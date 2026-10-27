@@ -5,7 +5,7 @@ import { WssPolicyPanel } from '../../src/renderer/features/request-editor/inspe
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeDraft } from '../mocks/exchange-fixtures.js';
-import type { WssEntryWire, WssPolicyStatusResponse, WssPolicyWire } from '../../src/shared/kinds/soap/wire.js';
+import type { WssEntryWire, WssPolicyStatusResponse, WssPolicyWire } from '@wirebench/wire/kinds/soap/wire';
 
 const BINDING = '{http://tempuri.org/}CalculatorSoap';
 

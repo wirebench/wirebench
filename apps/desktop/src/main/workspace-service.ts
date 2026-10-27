@@ -125,7 +125,7 @@ import { checkCertificates } from './certificate-expiry.js';
 import type { KindRouters } from './kinds/kind-main.js';
 import { KIND_ENTITY_IDS, KIND_ROUTES, type KindEntityIds } from './kinds/kind-routes.js';
 import { requireFeatureEnabled, requireKindEnabled } from './project-mutations.js';
-import { KINDS, type KindId } from '../shared/kinds/kind-module.js';
+import { KINDS, type KindId } from '@wirebench/wire/kinds/kind-module';
 import type { ProjectRouter } from './project-router.js';
 import type { SecretScanSessions } from './secret-scan-session.js';
 import type { SecretUse, TeamSecretsService } from './team-secrets-service.js';
@@ -175,12 +175,12 @@ import type {
 } from './workspace-share.js';
 import { WorkspaceState } from './workspace-state.js';
 import { recordToFiles, UnsavedStore } from './unsaved-store.js';
-import type { ProjectWire, WorkspaceRestoredResponse } from '../shared/wire-types.js';
-import type { GrpcRequestPatchWire } from '../shared/kinds/grpc/wire.js';
-import type { RestRequestPatchWire } from '../shared/kinds/rest/wire.js';
-import type { RequestPatchWire } from '../shared/kinds/soap/wire.js';
-import type { WsRequestPatchWire } from '../shared/kinds/ws/wire.js';
-import type { McpRequestPatchWire } from '../shared/kinds/mcp/wire.js';
+import type { ProjectWire, WorkspaceRestoredResponse } from '@wirebench/wire/wire-types';
+import type { GrpcRequestPatchWire } from '@wirebench/wire/kinds/grpc/wire';
+import type { RestRequestPatchWire } from '@wirebench/wire/kinds/rest/wire';
+import type { RequestPatchWire } from '@wirebench/wire/kinds/soap/wire';
+import type { WsRequestPatchWire } from '@wirebench/wire/kinds/ws/wire';
+import type { McpRequestPatchWire } from '@wirebench/wire/kinds/mcp/wire';
 import type {
   CertificatesCheckResponse,
   EngineProgressEvent,
@@ -198,7 +198,7 @@ import type {
   AppFeaturesWire,
   FeatureStateWire,
   SyncApiHistoryWire,
-} from '../shared/wire-base.js';
+} from '@wirebench/wire/wire-base';
 
 /**
  * How long after a change a project's unsaved-changes record is rewritten. Short enough that a

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ipc } from '../../state/ipc-client.js';
-import type { SshSecretNameWire } from '../../../shared/ssh-wire.js';
+import type { SshSecretNameWire } from '@shared/ssh-wire.js';
 import { INPUT_CLASS } from './inherited-field.js';
 
 /** The secret names a host can reference; `reload` after storing a value. A failed read leaves the list as it was. */

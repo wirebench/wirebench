@@ -30,7 +30,7 @@ import {
 import type { Environment, Preferences, Project, RestApi } from '@wirebench/engine';
 import { resolveAuthConfig } from '../src/main/secret-resolver.js';
 import { previewRest, sendThroughEngine, type RestPreview } from '../src/main/send/exchange.js';
-import type { RestRequestPatchWire } from '../src/shared/kinds/rest/wire.js';
+import type { RestRequestPatchWire } from '@wirebench/wire/kinds/rest/wire';
 import { sendDepsFor } from './helpers/send-deps.js';
 import { createHostState } from '../src/main/host/host-state.js';
 

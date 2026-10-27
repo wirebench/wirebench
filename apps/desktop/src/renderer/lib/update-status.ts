@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { showToast } from '../components/toast.js';
 import { ipc } from '../state/ipc-client.js';
-import type { AppUpdateStatus, UpdateStatusWire } from '../../shared/wire-base.js';
+import type { AppUpdateStatus, UpdateStatusWire } from '@shared/wire-base.js';
 
 /**
  * How each update status reads to the user, or `undefined` where there is nothing worth

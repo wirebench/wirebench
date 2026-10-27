@@ -4,8 +4,8 @@
 import { grpcItemFor, WirebenchError } from '@wirebench/engine';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
-import { channels, events } from '../../../shared/ipc.js';
-import type { GrpcRequestPatchWire, ProtoSourceWire } from '../../../shared/kinds/grpc/wire.js';
+import { channels, events } from '@wirebench/wire/ipc';
+import type { GrpcRequestPatchWire, ProtoSourceWire } from '@wirebench/wire/kinds/grpc/wire';
 import type { ReadPicks } from '../../dialog-picks.js';
 import type { EngineService } from '../../engine-service.js';
 import type { PreflightResult } from '../../expansion-preflight.js';

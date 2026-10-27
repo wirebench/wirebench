@@ -65,7 +65,7 @@ describe('docs/success-criteria.md', () => {
 
 describe('isRepoPath', () => {
   it('accepts spans that start at a repo top-level folder', () => {
-    expect(isRepoPath('apps/desktop/src/shared/command-catalog.ts')).toBe(true);
+    expect(isRepoPath('packages/wire/src/command-catalog.ts')).toBe(true);
     expect(isRepoPath('docs/ws-i-assertions.md')).toBe(true);
     expect(isRepoPath('.github/workflows/docs.yml')).toBe(true);
   });
@@ -90,8 +90,8 @@ describe('extractDocPaths with fenced code blocks', () => {
       '   `not/a/citation`',
       '   ```',
       '',
-      'See `apps/desktop/src/shared/command-catalog.ts`.',
+      'See `packages/wire/src/command-catalog.ts`.',
     ].join('\n');
-    expect(extractDocPaths(markdown)).toEqual(['apps/desktop/src/shared/command-catalog.ts']);
+    expect(extractDocPaths(markdown)).toEqual(['packages/wire/src/command-catalog.ts']);
   });
 });

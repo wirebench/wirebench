@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { showToast } from '../components/toast.js';
-import type { IpcResult } from '../../shared/ipc.js';
-import type { SnapshotReadResponse } from '../../shared/wire-base.js';
+import type { IpcResult } from '@shared/ipc.js';
+import type { SnapshotReadResponse } from '@shared/wire-base.js';
 import { ipc } from './ipc-client.js';
 
 /**

@@ -26,7 +26,7 @@ import { useContractRevealStore } from './contract.js';
 import { useResponseWrapStore } from './wrap.js';
 import { HtmlPreview } from './html-preview.js';
 import type * as Monaco from 'monaco-editor';
-import type { RestExchangeSummary } from '../../../../shared/kinds/rest/wire.js';
+import type { RestExchangeSummary } from '@shared/kinds/rest/wire.js';
 import { useEditorVariableAssist } from '../../environments/variable-assist-provider.js';
 
 /** Which of the views is showing. */

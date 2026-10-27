@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { registerProjectChannels } from '../src/main/ipc/project.js';
 import type { ProjectChannelDeps } from '../src/main/ipc/project.js';
-import type { ProjectWire } from '../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { NO_REST, PROJECT_SETTINGS } from './helpers/wire-defaults.js';
 import { tableInto } from './helpers/ipc-table.js';
 

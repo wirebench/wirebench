@@ -8,9 +8,9 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
-import { defaultRunnerSettings, RUNNER_HISTORY_LIMIT } from '../../shared/runner-defaults.js';
-import { runnerRunResultSchema, runnerSettingsSchema } from '../../shared/runner-wire.js';
-import type { RunnerHistoryEntry, RunnerRunResult, RunnerSettings } from '../../shared/runner-wire.js';
+import { defaultRunnerSettings, RUNNER_HISTORY_LIMIT } from '@wirebench/wire/runner-defaults';
+import { runnerRunResultSchema, runnerSettingsSchema } from '@wirebench/wire/runner-wire';
+import type { RunnerHistoryEntry, RunnerRunResult, RunnerSettings } from '@wirebench/wire/runner-wire';
 
 export const RUNNER_SETTINGS_FILE = 'runner-settings.json';
 export const RUNNER_HISTORY_DIR = 'runner-history';

@@ -23,7 +23,7 @@ import {
   type McpApprovalAnswerWire,
   type McpApprovalPromptEvent,
   type McpApprovalWire,
-} from '../shared/kinds/mcp/wire.js';
+} from '@wirebench/wire/kinds/mcp/wire';
 
 export const MCP_APPROVALS_FILE = 'mcp-approvals.json';
 

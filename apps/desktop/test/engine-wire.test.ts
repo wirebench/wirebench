@@ -11,7 +11,7 @@ import {
   toRestExchangeSummary,
 } from '../src/main/engine-wire.js';
 import * as redact from '../src/main/redact.js';
-import type { ExchangeSummary } from '../src/shared/kinds/soap/wire.js';
+import type { ExchangeSummary } from '@wirebench/wire/kinds/soap/wire';
 import { fixturePath, readPublicFixture } from './helpers/fixtures.js';
 import { Redactor } from '../src/main/host/redactor.js';
 

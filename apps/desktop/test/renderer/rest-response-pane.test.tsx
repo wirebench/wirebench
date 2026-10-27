@@ -17,7 +17,7 @@ import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { b64, makeRestExchange } from '../mocks/exchange-fixtures.js';
-import type { RestEventStreamWire, RestExchangeSummary, SseRowWire } from '../../src/shared/kinds/rest/wire.js';
+import type { RestEventStreamWire, RestExchangeSummary, SseRowWire } from '@wirebench/wire/kinds/rest/wire';
 import { eventStreamDocument } from '@wirebench/engine/rest';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));

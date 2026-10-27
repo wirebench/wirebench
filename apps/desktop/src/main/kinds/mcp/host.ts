@@ -4,7 +4,7 @@
  */
 
 import type { McpCatalogue, McpCatalogueInfo } from '@wirebench/engine';
-import type { ProjectWire } from '../../../shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import type { ProjectHostCore } from '../../project-host-core.js';
 import { replaceMcpServer, requireMcpServer } from './mutations.js';
 

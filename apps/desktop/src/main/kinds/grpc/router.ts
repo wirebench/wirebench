@@ -4,7 +4,7 @@
  * one list, so a method is declared here once.
  */
 
-import type { ProjectWire } from '../../../shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import type { KindRoute, KindRouter } from '../kind-main.js';
 import type { GrpcHost } from './host.js';
 

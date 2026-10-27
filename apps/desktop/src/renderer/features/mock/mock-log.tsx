@@ -4,7 +4,7 @@
  * main already masked, and nothing is kept past the session.
  */
 import { useState } from 'react';
-import type { MockExchangeEventWire } from '../../../shared/wire-base.js';
+import type { MockExchangeEventWire } from '@shared/wire-base.js';
 import { useMockRunsStore } from '../../state/mock-runs.js';
 
 const EMPTY: readonly MockExchangeEventWire[] = [];

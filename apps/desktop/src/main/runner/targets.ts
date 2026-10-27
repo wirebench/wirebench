@@ -6,7 +6,7 @@
  */
 import { selectRequests } from '@wirebench/engine';
 import type { Project, ProtocolRegistry, SelectedRequest, SequenceDef } from '@wirebench/engine';
-import type { RunnerRequest, RunnerSettings, RunnerTargetKind } from '../../shared/runner-wire.js';
+import type { RunnerRequest, RunnerSettings, RunnerTargetKind } from '@wirebench/wire/runner-wire';
 
 export type RunnerTarget =
   | {

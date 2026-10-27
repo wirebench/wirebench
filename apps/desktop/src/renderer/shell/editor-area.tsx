@@ -33,8 +33,8 @@ import { useWebhooksStore } from '../state/webhooks.js';
 import { useSchedulesStore } from '../state/schedules.js';
 import { useActiveEnvironment, useWorkspaceStore } from '../state/workspace.js';
 import { useCurrentProjectId } from '../state/workspace-tabs.js';
-import type { WorkspaceEnvironmentWire } from '../../shared/wire-base.js';
-import { environmentColorCss } from '../../shared/environment-colors.js';
+import type { WorkspaceEnvironmentWire } from '@shared/wire-base.js';
+import { environmentColorCss } from '@shared/environment-colors.js';
 
 const DiffView = lazy(async () => {
   const module = await import('../features/history/diff-view.js');

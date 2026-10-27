@@ -10,7 +10,7 @@ import { lstat, rm } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { readGoldenFile, requestFileLocation, WirebenchError, writeGoldenFile } from '@wirebench/engine';
 import type { GoldenWrite, Project } from '@wirebench/engine';
-import type { SnapshotReadResponse } from '../shared/wire-base.js';
+import type { SnapshotReadResponse } from '@wirebench/wire/wire-base';
 import { isInsideReal, realpathOfPrefix } from './path-containment.js';
 
 /** The saved project that holds a request: its model and the folder it was saved to. */

@@ -3,9 +3,9 @@
  */
 import type { AsyncApiOpRef, AsyncApiUpdatePlan, WsFrame } from '@wirebench/engine';
 import { resolveWsUrl, WirebenchError } from '@wirebench/engine';
-import { channels, events } from '../../../shared/ipc.js';
-import type { AsyncApiUpdatePlanWire, WsExchangeSummary, WsRequestPatchWire } from '../../../shared/kinds/ws/wire.js';
-import type { OpenApiSourceWire } from '../../../shared/wire-base.js';
+import { channels, events } from '@wirebench/wire/ipc';
+import type { AsyncApiUpdatePlanWire, WsExchangeSummary, WsRequestPatchWire } from '@wirebench/wire/kinds/ws/wire';
+import type { OpenApiSourceWire } from '@wirebench/wire/wire-base';
 import type { EngineService } from '../../engine-service.js';
 import { toWsFrameWire } from '../../engine-wire.js';
 import type { PreflightResult } from '../../expansion-preflight.js';

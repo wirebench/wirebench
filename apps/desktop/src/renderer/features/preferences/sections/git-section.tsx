@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '../../../components/button.js';
 import { SettingsGroup, SettingsRow, TextSetting } from '../../../components/settings-grid.js';
 import { ipc } from '../../../state/ipc-client.js';
-import type { GitLocationWire } from '../../../../shared/wire-base.js';
+import type { GitLocationWire } from '@shared/wire-base.js';
 import type { SectionProps } from './section-props.js';
 
 export function GitSection({ preferences }: SectionProps) {

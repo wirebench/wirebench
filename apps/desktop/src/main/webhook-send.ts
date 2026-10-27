@@ -13,7 +13,7 @@ import {
   webhooksOf,
 } from '@wirebench/engine';
 import type { Project, RestRequestDef, RestSendInput, RuntimeExchange, SignatureScheme } from '@wirebench/engine';
-import type { HistoryEntryWire } from '../shared/wire-types.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
 
 /** Where a webhook item's URL came from: its target, its callback URL, or the target standing in. */
 export type WebhookUrlSource = 'target' | 'callback' | 'callback-fallback';

@@ -30,9 +30,9 @@ import { CommandPalette } from '../../src/renderer/shell/command-palette.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
-import { COMMAND_CATALOG } from '../../src/shared/command-catalog.js';
-import type { ForwardStateWire } from '../../src/shared/forward-wire.js';
-import type { HostsFileWire, ResolvedForwardWire, ResolvedHostWire } from '../../src/shared/ssh-wire.js';
+import { COMMAND_CATALOG } from '@wirebench/wire/command-catalog';
+import type { ForwardStateWire } from '@wirebench/wire/forward-wire';
+import type { HostsFileWire, ResolvedForwardWire, ResolvedHostWire } from '@wirebench/wire/ssh-wire';
 
 /** Forwarding groups (#583): the file edits, the group status, Start/Stop group and the view's sections. */
 

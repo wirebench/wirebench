@@ -7,7 +7,7 @@ import { McpWarnings } from '../../features/mcp-editor/response/response-pane.js
 import { McpMessagesView } from '../../features/mcp-editor/response/messages-view.js';
 import { McpResultView } from '../../features/mcp-editor/response/result-view.js';
 import { mcpRecordOutcome } from '../../features/mcp-editor/response/status-line.js';
-import type { HistoryEntryWire } from '../../../shared/wire-types.js';
+import type { HistoryEntryWire } from '@shared/wire-types.js';
 
 type HistoryMcp = NonNullable<HistoryEntryWire['mcp']>;
 

@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { RunnerHistoryStore, RunnerSettingsStore } from '../src/main/runner/stores.js';
-import { defaultRunnerSettings, RUNNER_HISTORY_LIMIT } from '../src/shared/runner-defaults.js';
-import type { RunnerRunResult } from '../src/shared/runner-wire.js';
+import { defaultRunnerSettings, RUNNER_HISTORY_LIMIT } from '@wirebench/wire/runner-defaults';
+import type { RunnerRunResult } from '@wirebench/wire/runner-wire';
 
 let root: string;
 

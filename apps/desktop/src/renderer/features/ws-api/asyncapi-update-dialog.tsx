@@ -12,7 +12,7 @@ import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
-import type { ApiAsyncApiPlanUpdateResponse } from '../../../shared/kinds/ws/wire.js';
+import type { ApiAsyncApiPlanUpdateResponse } from '@shared/kinds/ws/wire.js';
 
 export interface AsyncApiUpdateDialogProps {
   readonly apiId: string;

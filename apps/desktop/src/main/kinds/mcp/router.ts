@@ -3,7 +3,7 @@
  * is found. `ProjectRouter`, `WorkspaceService` and `window-scope.ts` all derive from this one list.
  */
 
-import type { ProjectWire } from '../../../shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import type { KindRoute, KindRouter } from '../kind-main.js';
 import type { McpHost } from './host.js';
 

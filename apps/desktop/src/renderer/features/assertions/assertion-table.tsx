@@ -1,7 +1,7 @@
 /**
  * Assertions in a table: a sequence step's own (every kind), or a request's own (the kinds its protocol can check).
  */
-import type { StepAssertionWire } from '../../../shared/wire-base.js';
+import type { StepAssertionWire } from '@shared/wire-base.js';
 import { useWebhooksStore } from '../../state/webhooks.js';
 import { CallbackFields } from '../sequence/callback-fields.js';
 import { CALLBACK_BOUNDS } from '../sequence/callback-text.js';

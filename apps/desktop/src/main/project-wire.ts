@@ -23,7 +23,7 @@ import {
   wssOutgoingFileSchema,
   unsupportedOf,
 } from '@wirebench/engine';
-import { KINDS } from '../shared/kinds/kind-module.js';
+import { KINDS } from '@wirebench/wire/kinds/kind-module';
 import { hasUnmirroredFields, KNOWN_WSS_ENTRY_KINDS, opaqueEntryFingerprint } from './wss-opaque.js';
 import type {
   Assertion,
@@ -54,9 +54,9 @@ import type {
   WssEntry,
   WssRef,
 } from '@wirebench/engine';
-import type { ProjectWire } from '../shared/wire-types.js';
-import type { GrpcApiWire, GrpcRequestWire } from '../shared/kinds/grpc/wire.js';
-import type { RestApiWire, RestBodyWire, RestRequestWire, RestSettingsWire } from '../shared/kinds/rest/wire.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { GrpcApiWire, GrpcRequestWire } from '@wirebench/wire/kinds/grpc/wire';
+import type { RestApiWire, RestBodyWire, RestRequestWire, RestSettingsWire } from '@wirebench/wire/kinds/rest/wire';
 import type {
   AttachmentWire,
   EndpointWire,
@@ -68,15 +68,15 @@ import type {
   WssOutgoingWire,
   OperationSummaryWire,
   RequestWire,
-} from '../shared/kinds/soap/wire.js';
-import type { WsApiWire, WsRequestWire } from '../shared/kinds/ws/wire.js';
+} from '@wirebench/wire/kinds/soap/wire';
+import type { WsApiWire, WsRequestWire } from '@wirebench/wire/kinds/ws/wire';
 import type {
   McpCatalogueWire,
   McpOperationWire,
   McpRequestWire,
   McpServerWire,
   McpTransportWire,
-} from '../shared/kinds/mcp/wire.js';
+} from '@wirebench/wire/kinds/mcp/wire';
 import type {
   UnsupportedContainerWire,
   RequestAssertionWire,
@@ -88,7 +88,7 @@ import type {
   KeystoreWire,
   ProjectProblemWire,
   RequestScriptsWire,
-} from '../shared/wire-base.js';
+} from '@wirebench/wire/wire-base';
 import { toMockWire } from './project-mock-mutations.js';
 import { toSequenceWire } from './project-sequence-mutations.js';
 import { webhookCollectionId } from './webhook-ids.js';

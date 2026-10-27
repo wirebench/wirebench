@@ -14,7 +14,7 @@ vi.mock('electron', () => ({
 }));
 
 const { registerTeamChannels } = await import('../src/main/ipc/team.js');
-const { channels } = await import('../src/shared/ipc.js');
+const { channels } = await import('@wirebench/wire/ipc');
 
 type Envelope =
   | { readonly ok: true; readonly value: unknown }

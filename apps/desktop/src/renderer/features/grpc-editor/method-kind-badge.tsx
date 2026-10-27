@@ -3,7 +3,7 @@
  * the gRPC counterpart of the REST method badge, in the same fixed column and the same typographic
  * weight, so a project mixing the two protocols reads as one tree.
  */
-import type { GrpcMethodKindWire } from '../../../shared/kinds/grpc/wire.js';
+import type { GrpcMethodKindWire } from '@shared/kinds/grpc/wire.js';
 
 /** The label each streaming shape shows in full. */
 const FULL_LABEL: Readonly<Record<GrpcMethodKindWire, string>> = {

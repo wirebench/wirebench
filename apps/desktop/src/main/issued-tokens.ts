@@ -7,7 +7,7 @@
 import { createIssuedTokenSource } from '@wirebench/engine';
 import type { IssuedTokenSource, IssuedTokenTarget, TrustDeps, WssIssuedTokenEntry } from '@wirebench/engine';
 import type { Redactor } from './host/redactor.js';
-import type { IssuedTokenStatusWire } from '../shared/kinds/soap/wire.js';
+import type { IssuedTokenStatusWire } from '@wirebench/wire/kinds/soap/wire';
 
 /** One issued-token entry of an outgoing configuration, and the request it is fetched for. */
 export interface IssuedTokenLocator {

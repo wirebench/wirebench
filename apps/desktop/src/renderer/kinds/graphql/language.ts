@@ -9,7 +9,7 @@
  */
 import type * as Monaco from 'monaco-editor';
 import { ipc } from '../../state/ipc-client.js';
-import type { GraphqlCompletionItemWire, GraphqlDiagnosticWire } from '../../../shared/kinds/graphql/wire.js';
+import type { GraphqlCompletionItemWire, GraphqlDiagnosticWire } from '@shared/kinds/graphql/wire.js';
 
 /** The Monaco language id of a GraphQL query. */
 export const GRAPHQL_LANGUAGE_ID = 'graphql';

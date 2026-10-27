@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { WsiReportWire } from '../../shared/kinds/soap/wire.js';
+import type { WsiReportWire } from '@shared/kinds/soap/wire.js';
 import { showToast } from '../components/toast.js';
 import { ipc } from './ipc-client.js';
 import { usePreferencesStore } from './preferences.js';

@@ -38,13 +38,13 @@ import type {
   WssSignatureCheck,
   WssTimelineStep,
 } from '@wirebench/engine';
-import type { GrpcExchangeSummary, GrpcResponseMessageWire } from '../shared/kinds/grpc/wire.js';
+import type { GrpcExchangeSummary, GrpcResponseMessageWire } from '@wirebench/wire/kinds/grpc/wire';
 import type {
   RestEventStreamWire,
   RestContractResultWire,
   RestExchangeSummary,
   SseRowWire,
-} from '../shared/kinds/rest/wire.js';
+} from '@wirebench/wire/kinds/rest/wire';
 import type {
   ExchangeSummary,
   FaultWire,
@@ -56,9 +56,14 @@ import type {
   ServiceSummary,
   WssSignatureCheckWire,
   WssTimelineStepWire,
-} from '../shared/kinds/soap/wire.js';
-import type { WsExchangeSummary, WsFrameContractWire, WsFrameWire, WsHandshakeWire } from '../shared/kinds/ws/wire.js';
-import type { AuthSummaryWire, HttpExchangeWire, SslInfoWire, UnresolvedRefWire } from '../shared/wire-base.js';
+} from '@wirebench/wire/kinds/soap/wire';
+import type {
+  WsExchangeSummary,
+  WsFrameContractWire,
+  WsFrameWire,
+  WsHandshakeWire,
+} from '@wirebench/wire/kinds/ws/wire';
+import type { AuthSummaryWire, HttpExchangeWire, SslInfoWire, UnresolvedRefWire } from '@wirebench/wire/wire-base';
 
 /** Base name of a URL or file path (its last `/`-separated, query/fragment-free segment). */
 function basenameOf(location: string): string {

@@ -1,7 +1,7 @@
 import type { HostPlatform } from '../host/platform.js';
 import { requireCapability } from '../host/capability.js';
 import { nodeFs, WirebenchError, writeFileAtomic } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import { extensionForContentType } from '../kinds/soap/channels/attachments.js';
 import { redactExchangeSummary } from '../engine-wire.js';
 import type { ExchangeCache } from '../exchange-cache.js';

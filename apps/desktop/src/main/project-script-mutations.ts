@@ -11,7 +11,7 @@
 
 import { applyConversions, ProjectError, SCRIPT_LIMITS } from '@wirebench/engine';
 import type { ConversionRefusal, LevelProposal, Project, RequestScripts, ScriptSource } from '@wirebench/engine';
-import type { RequestScriptsPatchWire } from '../shared/wire-base.js';
+import type { RequestScriptsPatchWire } from '@wirebench/wire/wire-base';
 import { mapRequests, mapScriptLevels } from './project-request-map.js';
 import type { Identified } from './project-request-map.js';
 

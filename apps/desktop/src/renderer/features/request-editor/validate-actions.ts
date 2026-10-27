@@ -6,7 +6,7 @@
  * menu and the auto-validate-on-send gate all take exactly the same path.
  */
 
-import type { ValidationProblemWire } from '../../../shared/kinds/soap/wire.js';
+import type { ValidationProblemWire } from '@shared/kinds/soap/wire.js';
 import { showToast } from '../../components/toast.js';
 import { getActiveRequestEditor } from '../../editor/active-request-editor.js';
 import { getActiveResponseEditor } from '../../editor/active-response-editor.js';

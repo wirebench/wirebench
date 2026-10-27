@@ -3,8 +3,8 @@ import { createProject, ProjectError } from '@wirebench/engine';
 import { MAIN_KINDS } from '../src/main/kinds/kind-main.js';
 import { applyChange, CORE_CHANGE_KINDS } from '../src/main/project-mutations.js';
 import type { MutationDeps } from '../src/main/project-mutations.js';
-import { projectChangeSchema } from '../src/shared/wire-types.js';
-import type { ProjectChange } from '../src/shared/wire-types.js';
+import { projectChangeSchema } from '@wirebench/wire/wire-types';
+import type { ProjectChange } from '@wirebench/wire/wire-types';
 
 const ALL_CHANGE_KINDS = projectChangeSchema.options.map((option) => option.shape.kind.value);
 

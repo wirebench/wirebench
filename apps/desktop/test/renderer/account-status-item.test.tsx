@@ -5,7 +5,7 @@ import { useAccountStore } from '../../src/renderer/state/account.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
-import type { AccountWire } from '../../src/shared/wire-base.js';
+import type { AccountWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const account = (url: string, signedOut = false): AccountWire => ({

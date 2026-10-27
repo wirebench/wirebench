@@ -1,12 +1,12 @@
 import type { Caller, HostPlatform } from '../host/platform.js';
-import { AREAS } from '../../shared/area-module.js';
-import type { AreaId } from '../../shared/area-module.js';
-import type { KindId } from '../../shared/kinds/kind-module.js';
+import { AREAS } from '@wirebench/wire/area-module';
+import type { AreaId } from '@wirebench/wire/area-module';
+import type { KindId } from '@wirebench/wire/kinds/kind-module';
 import { appVersion } from '../app-version.js';
-import { channels } from '../../shared/ipc.js';
-import type { AppFeaturesWire, FeatureStateWire, MenuCommandWire, UpdateStatusWire } from '../../shared/wire-base.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { AppFeaturesWire, FeatureStateWire, MenuCommandWire, UpdateStatusWire } from '@wirebench/wire/wire-base';
 import { registerHandler, type HandlerTable } from './register.js';
-import { KINDS } from '../../shared/kinds/kind-module.js';
+import { KINDS } from '@wirebench/wire/kinds/kind-module';
 
 /**
  * Installs the application menu from the renderer's command manifest and wires its clicks back to

@@ -3,7 +3,7 @@
  * schedule reads, which dot it shows, and the Explorer node.
  */
 import { describe, expect, it } from 'vitest';
-import type { ScheduleChoiceWire, ScheduleWire } from '../../src/shared/schedules-wire.js';
+import type { ScheduleChoiceWire, ScheduleWire } from '@wirebench/wire/schedules-wire';
 import {
   emptyAlertRow,
   formOf,

@@ -15,7 +15,7 @@ import { prettyFrameText } from '@wirebench/engine/ws';
 import { Button } from '../../../components/button.js';
 import { CodeEditor } from '../../../editor/code-editor.js';
 import { formatBytes } from '../../../lib/format-size.js';
-import type { SseRowWire } from '../../../../shared/kinds/rest/wire.js';
+import type { SseRowWire } from '@shared/kinds/rest/wire.js';
 import { useFollowBottom, WS_TIMELINE_WINDOW } from '../../ws-editor/timeline.js';
 import { formatFrameTime } from '../../ws-editor/ws-format.js';
 

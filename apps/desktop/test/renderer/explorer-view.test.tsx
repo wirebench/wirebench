@@ -11,8 +11,8 @@ import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWebhooksStore } from '../../src/renderer/state/webhooks.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
-import type { InterfaceWire } from '../../src/shared/kinds/soap/wire.js';
-import type { WorkspaceProjectWire, WorkspaceWire } from '../../src/shared/wire-base.js';
+import type { InterfaceWire } from '@wirebench/wire/kinds/soap/wire';
+import type { WorkspaceProjectWire, WorkspaceWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import {
   REQUEST_PROPERTIES,

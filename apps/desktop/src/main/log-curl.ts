@@ -4,9 +4,9 @@
  */
 import type { Redactor } from './host/redactor.js';
 import { toCurl, wsToCommand, type CurlHeader } from '@wirebench/engine';
-import type { LogEntryWire } from '../shared/wire-types.js';
-import type { WsHandshakeExchangeSummary } from '../shared/kinds/ws/wire.js';
-import type { RequestCurlResponse } from '../shared/wire-base.js';
+import type { LogEntryWire } from '@wirebench/wire/wire-types';
+import type { WsHandshakeExchangeSummary } from '@wirebench/wire/kinds/ws/wire';
+import type { RequestCurlResponse } from '@wirebench/wire/wire-base';
 import { isXmlBody } from './redact.js';
 
 const TRANSPORT_HEADERS: ReadonlySet<string> = new Set(['host', 'content-length', 'connection', 'transfer-encoding']);

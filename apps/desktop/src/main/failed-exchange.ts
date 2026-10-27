@@ -12,7 +12,7 @@
 
 import type { Redactor } from './host/redactor.js';
 import { isWirebenchError, type FailedRequest } from '@wirebench/engine';
-import type { FailedExchangeWire } from '../shared/wire-base.js';
+import type { FailedExchangeWire } from '@wirebench/wire/wire-base';
 
 /** What a catch block has at hand for one failed send. */
 export interface FailedExchangeInput {

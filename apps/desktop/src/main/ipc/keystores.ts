@@ -9,7 +9,7 @@
 
 import type { Caller, HostPlatform } from '../host/platform.js';
 import { requireCapability } from '../host/capability.js';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { RecordsReadPicks } from '../dialog-picks.js';
 import type { ProjectRouter } from '../project-router.js';
 import { registerHandler, type HandlerTable } from './register.js';

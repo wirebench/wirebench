@@ -4,8 +4,8 @@
  */
 import type { Caller } from '../../host/platform.js';
 import { mcpServersOf, refreshMcpCatalogue, WirebenchError } from '@wirebench/engine';
-import { channels, events } from '../../../shared/ipc.js';
-import type { McpApprovalPromptEvent } from '../../../shared/kinds/mcp/wire.js';
+import { channels, events } from '@wirebench/wire/ipc';
+import type { McpApprovalPromptEvent } from '@wirebench/wire/kinds/mcp/wire';
 import { emitEvent } from '../../ipc/events.js';
 import { registerHandler, type HandlerTable } from '../../ipc/register.js';
 import { toSendDeps } from '../../ipc/request.js';

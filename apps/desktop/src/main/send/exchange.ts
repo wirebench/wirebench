@@ -74,16 +74,16 @@ import { kindSend } from '../kinds/kind-send.js';
 import type { KeyMasks } from '../kinds/kind-main.js';
 import { wsSent } from '../kinds/ws/send.js';
 import { wsSessionOf, type WsSession } from '../kinds/ws/session.js';
-import { isInteractive, kindById } from '../../shared/kinds/kind-module.js';
+import { isInteractive, kindById } from '@wirebench/wire/kinds/kind-module';
 import { desktopSendHost, type DesktopSend, type DesktopSendDeps } from './host.js';
 import { toWireEvent } from './live.js';
 import { type HistoryLabel, type HistoryNameFallback } from './record.js';
-import type { HistoryEntryWire, ResolvedSendInputWire } from '../../shared/wire-types.js';
-import type { GrpcExchangeSummary, GrpcLiveEvent, GrpcRequestPatchWire } from '../../shared/kinds/grpc/wire.js';
-import type { RestExchangeSummary, RestLiveEvent, RestRequestPatchWire } from '../../shared/kinds/rest/wire.js';
-import type { McpExchangeSummary, McpLiveEvent } from '../../shared/kinds/mcp/wire.js';
-import type { ExchangeSummary } from '../../shared/kinds/soap/wire.js';
-import type { WsExchangeSummary, WsLiveEvent, WsRequestPatchWire } from '../../shared/kinds/ws/wire.js';
+import type { HistoryEntryWire, ResolvedSendInputWire } from '@wirebench/wire/wire-types';
+import type { GrpcExchangeSummary, GrpcLiveEvent, GrpcRequestPatchWire } from '@wirebench/wire/kinds/grpc/wire';
+import type { RestExchangeSummary, RestLiveEvent, RestRequestPatchWire } from '@wirebench/wire/kinds/rest/wire';
+import type { McpExchangeSummary, McpLiveEvent } from '@wirebench/wire/kinds/mcp/wire';
+import type { ExchangeSummary } from '@wirebench/wire/kinds/soap/wire';
+import type { WsExchangeSummary, WsLiveEvent, WsRequestPatchWire } from '@wirebench/wire/kinds/ws/wire';
 
 export interface SendOptions<D extends DraftOf = DraftOf> {
   readonly draft: D;

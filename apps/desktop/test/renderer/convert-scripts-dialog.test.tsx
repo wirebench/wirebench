@@ -12,7 +12,7 @@ import {
   useConvertScriptsDialog,
 } from '../../src/renderer/features/scripts/convert-scripts-dialog.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { ScriptConversionWire } from '../../src/shared/wire-base.js';
+import type { ScriptConversionWire } from '@wirebench/wire/wire-base';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));

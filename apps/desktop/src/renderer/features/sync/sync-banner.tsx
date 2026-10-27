@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSyncStore } from '../../state/sync.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
-import type { SyncPulledEvent } from '../../../shared/wire-base.js';
+import type { SyncPulledEvent } from '@shared/wire-base.js';
 import { remoteHost } from './remote-host.js';
 
 /** How long the pulled notice stays up before it dismisses itself. */

@@ -18,7 +18,7 @@ import type { AuthConfig, CreateRestRequestInput, Project, SoapRequestDef } from
 import { buildRestHistoryEntry, isTruncatedBody } from '../src/main/history-service.js';
 import { grpcResendDraft, restResendDraft } from '../src/main/ipc/history.js';
 import type { SendThroughEngineDeps } from '../src/main/send/exchange.js';
-import type { HistoryEntryWire } from '../src/shared/wire-types.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
 import { sendDepsFor, type SendDepsExtra } from './helpers/send-deps.js';
 import { registerHistoryChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';

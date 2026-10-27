@@ -14,7 +14,7 @@
  */
 import { MethodBadge } from '../../rest-api/method-badge.js';
 import { statusToneClass } from './status-line.js';
-import type { HttpExchangeWire } from '../../../../shared/wire-base.js';
+import type { HttpExchangeWire } from '@shared/wire-base.js';
 
 export interface RedirectsViewProps {
   readonly http: HttpExchangeWire;

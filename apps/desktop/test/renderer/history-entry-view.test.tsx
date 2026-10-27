@@ -7,7 +7,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HistoryEntryView } from '../../src/renderer/features/history/history-entry-view.js';
 import { useHistoryStore } from '../../src/renderer/state/history.js';
-import type { HistoryEntryWire } from '../../src/shared/wire-types.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const { showToast } = vi.hoisted(() => ({ showToast: vi.fn() }));

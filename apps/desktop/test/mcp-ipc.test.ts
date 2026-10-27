@@ -17,7 +17,7 @@ import type { McpHost } from '../src/main/kinds/mcp/host.js';
 import { registerMcpChannels } from '../src/main/kinds/mcp/ipc.js';
 import { MCP_APPROVALS_FILE, McpApprovals, McpApprovalStore } from '../src/main/mcp-approvals.js';
 import { ProjectHost } from '../src/main/project-host.js';
-import type { McpApprovalAnswerWire, McpApprovalPromptEvent } from '../src/shared/kinds/mcp/wire.js';
+import type { McpApprovalAnswerWire, McpApprovalPromptEvent } from '@wirebench/wire/kinds/mcp/wire';
 import { tableInto } from './helpers/ipc-table.js';
 import { createHostState } from '../src/main/host/host-state.js';
 import { testHooks } from './helpers/project-hooks.js';

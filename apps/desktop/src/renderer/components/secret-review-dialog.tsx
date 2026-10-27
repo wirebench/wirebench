@@ -1,6 +1,6 @@
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { useLayoutEffect, useRef } from 'react';
-import type { SecretFindingWire } from '../../shared/wire-base.js';
+import type { SecretFindingWire } from '@shared/wire-base.js';
 import { useProjectStore } from '../state/project.js';
 import { nameClashes, needsReplace, secretNameError, useSecretReviewStore } from '../state/secret-review.js';
 import type { SecretReview, SecretReviewRow } from '../state/secret-review.js';

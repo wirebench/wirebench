@@ -1,6 +1,6 @@
 import { nodeFs, WirebenchError, writeFileAtomic } from '@wirebench/engine';
-import { channels, events } from '../../../../shared/ipc.js';
-import { MAX_DOCUMENT_TEXT_BYTES } from '../../../../shared/kinds/soap/wire.js';
+import { channels, events } from '@wirebench/wire/ipc';
+import { MAX_DOCUMENT_TEXT_BYTES } from '@wirebench/wire/kinds/soap/wire';
 import type { ReadPicks, RecordsWritePicks } from '../../../dialog-picks.js';
 import { checkedImportSource } from '../../../path-access.js';
 import type { EngineService } from '../../../engine-service.js';

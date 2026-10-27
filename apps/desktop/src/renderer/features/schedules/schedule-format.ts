@@ -4,7 +4,7 @@ import type {
   ScheduleRunStatusWire,
   ScheduleRunWire,
   ScheduleTargetWire,
-} from '../../../shared/schedules-wire.js';
+} from '@shared/schedules-wire.js';
 import type { ScheduleState } from '../../state/schedules.js';
 
 export const STATE_LABEL: Readonly<Record<ScheduleState, string>> = {

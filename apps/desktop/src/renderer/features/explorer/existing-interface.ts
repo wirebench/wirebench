@@ -8,7 +8,7 @@
  * not matched either.
  */
 
-import type { ImportSourceWire, InterfaceWire } from '../../../shared/kinds/soap/wire.js';
+import type { ImportSourceWire, InterfaceWire } from '@shared/kinds/soap/wire.js';
 
 /** A file path as forward-slashed and without a leading slash before a drive letter, for comparing. */
 function normalPath(path: string): string {

@@ -59,7 +59,7 @@ import type {
   WebhookFolder,
   WebhookItemRef,
 } from '@wirebench/engine';
-import type { ProjectChange, ProjectWire } from '../../../shared/wire-types.js';
+import type { ProjectChange, ProjectWire } from '@wirebench/wire/wire-types';
 import { findRestFolder, findRestRequest, mapFolder, restApiOwning } from './mutations.js';
 import { takenApiSlugs } from '../../project-api-mutations.js';
 import { isWebhookCollectionId } from '../../webhook-ids.js';

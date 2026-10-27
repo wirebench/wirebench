@@ -3,7 +3,7 @@
  * means, whether a composed binary payload parses, and which subprotocol tokens and close codes are
  * legal. Kept apart from the components so each rule is tested on its own.
  */
-import type { WsFrameContractWire, WsFrameWire } from '../../../shared/kinds/ws/wire.js';
+import type { WsFrameContractWire, WsFrameWire } from '@shared/kinds/ws/wire.js';
 
 /** `mm:ss.mmm` for a frame's offset from the start of the session. */
 export function formatFrameTime(ms: number): string {

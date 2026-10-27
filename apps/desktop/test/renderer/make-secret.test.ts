@@ -11,7 +11,7 @@ import {
 } from '../../src/renderer/features/environments/make-secret.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 
 describe('isSecretLikeName', () => {
   it.each([

@@ -34,8 +34,8 @@ function sent(n = 0): { sendId: string; requestId: string; options: Record<strin
   const [, sendId, requestId, options] = engineSend.mock.calls[n] as [unknown, string, string, Record<string, unknown>];
   return { sendId, requestId, options };
 }
-import type { RestExchangeSummary } from '../src/shared/kinds/rest/wire.js';
-import type { ExchangeSummary } from '../src/shared/kinds/soap/wire.js';
+import type { RestExchangeSummary } from '@wirebench/wire/kinds/rest/wire';
+import type { ExchangeSummary } from '@wirebench/wire/kinds/soap/wire';
 import { tableInto } from './helpers/ipc-table.js';
 import { fakeNativeDialogs } from './helpers/fake-platform.js';
 import { createHostState } from '../src/main/host/host-state.js';

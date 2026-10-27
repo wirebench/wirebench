@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { compileQuery, searchDocuments } from '../src/main/search.js';
 import type { SearchDocument } from '../src/main/search.js';
-import type { SearchQueryRequest } from '../src/shared/wire-base.js';
+import type { SearchQueryRequest } from '@wirebench/wire/wire-base';
 
 const BODY = ['<Envelope>', '  <Add>', '    <intA>7</intA>', '    <intB>7</intB>', '  </Add>', '</Envelope>'].join(
   '\n',

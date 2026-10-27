@@ -8,7 +8,7 @@ import { gzipSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import { createIssuedTokenSource, createWssContext, soapHostOf } from '@wirebench/engine';
 import type { HttpExchange, IssuedToken, IssuedTokenTarget, WssIssuedTokenEntry } from '@wirebench/engine';
-import type { LogEntryWire } from '../src/shared/wire-types.js';
+import type { LogEntryWire } from '@wirebench/wire/wire-types';
 import { createHostState } from '../src/main/host/host-state.js';
 
 const hostState = createHostState();

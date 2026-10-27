@@ -7,7 +7,7 @@ import { BooleanSetting, SettingsGroup, TextSetting } from '../../components/set
 import { useSyncStore } from '../../state/sync.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
-import type { SyncLogEntryWire, WorkspaceShareWire } from '../../../shared/wire-base.js';
+import type { SyncLogEntryWire, WorkspaceShareWire } from '@shared/wire-base.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { formatRelative } from './relative-time.js';
 import { syncBadgeLabel } from './sync-badge.js';

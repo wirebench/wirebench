@@ -18,7 +18,7 @@ import type { HistoryService } from '../src/main/history-service.js';
 import type { Project } from '@wirebench/engine';
 import { previewRest } from '../src/main/send/exchange.js';
 import { callbackUrlFor } from '../src/main/webhook-send.js';
-import type { HistoryEntryWire } from '../src/shared/wire-types.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
 import { sendDepsFor } from './helpers/send-deps.js';
 
 function project(): Project {

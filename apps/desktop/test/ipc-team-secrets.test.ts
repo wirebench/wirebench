@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WirebenchError } from '@wirebench/engine';
-import { channels, events } from '../src/shared/ipc.js';
+import { channels, events } from '@wirebench/wire/ipc';
 import { registerTeamSecretsChannels } from '../src/main/ipc/team-secrets.js';
 import { TEAM_SECRETS_OFF } from '../src/main/team-secrets-service.js';
 import { tableInto } from './helpers/ipc-table.js';

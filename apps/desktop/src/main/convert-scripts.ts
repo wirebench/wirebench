@@ -9,7 +9,7 @@ import { readdir } from 'node:fs/promises';
 import { join, posix, relative, sep } from 'node:path';
 import { containersOf, IMPORTED_SCRIPTS_DIR } from '@wirebench/engine';
 import type { LevelProposal, Project, ScriptDiagnostic, ScriptPhase } from '@wirebench/engine';
-import type { ScriptConversionWire, ScriptConversionsResultWire } from '../shared/wire-base.js';
+import type { ScriptConversionWire, ScriptConversionsResultWire } from '@wirebench/wire/wire-base';
 import type { ScriptConversions } from './project-script-mutations.js';
 
 const PHASES = ['pre', 'post'] as const;

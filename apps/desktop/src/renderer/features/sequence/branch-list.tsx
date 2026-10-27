@@ -4,7 +4,7 @@
  * or the step's outcome. Every go-to and repeat has a maximum, so no loop runs unbounded; main holds an
  * edit to the file's limits and refuses one beyond them.
  */
-import type { BranchConditionWire, BranchRuleWire, SequenceStepWire } from '../../../shared/wire-base.js';
+import type { BranchConditionWire, BranchRuleWire, SequenceStepWire } from '@shared/wire-base.js';
 import { CheckEditor } from './check-editor.js';
 import { CheckField, CommitInput, FieldRow, SelectField } from './step-fields.js';
 

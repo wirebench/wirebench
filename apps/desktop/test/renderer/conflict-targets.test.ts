@@ -4,7 +4,7 @@ import {
   type ConflictTargetProject,
   type ConflictTargetRequest,
 } from '../../src/renderer/features/sync/conflict-targets.js';
-import type { SyncConflictWire } from '../../src/shared/wire-base.js';
+import type { SyncConflictWire } from '@wirebench/wire/wire-base';
 
 function conflict(patch: Partial<SyncConflictWire> = {}): SyncConflictWire {
   return { path: 'projects/Demo/interfaces/Calc/operations/Add/Request 1.request.yaml', ...patch };

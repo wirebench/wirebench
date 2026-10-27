@@ -1,7 +1,7 @@
 import type { Caller } from '../host/platform.js';
 import { userInfo } from 'node:os';
 import { WirebenchError } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { ForwardService } from '../forward-service.js';
 import { registerHandler, type HandlerTable } from '../ipc/register.js';
 import type { HostsService } from '../hosts-service.js';

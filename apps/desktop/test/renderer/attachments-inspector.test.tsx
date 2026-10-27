@@ -7,7 +7,7 @@ import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeDraft } from '../mocks/exchange-fixtures.js';
-import type { AttachmentWire, MimePartWire, RequestPropertiesWire } from '../../src/shared/kinds/soap/wire.js';
+import type { AttachmentWire, MimePartWire, RequestPropertiesWire } from '@wirebench/wire/kinds/soap/wire';
 
 const addAttachment = vi.fn().mockResolvedValue('att-new');
 const updateAttachment = vi.fn();

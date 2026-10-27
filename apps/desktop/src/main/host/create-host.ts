@@ -49,7 +49,7 @@ import { SshSecretsService } from '../ssh-secrets.js';
 import { SecretScanSessions } from '../secret-scan-session.js';
 import { TeamSecretsService } from '../team-secrets-service.js';
 import { TeamSecretStore, teamSecretGetter } from '../team-secret-store.js';
-import { events } from '../../shared/ipc.js';
+import { events } from '@wirebench/wire/ipc';
 import { emitEvent } from '../ipc/events.js';
 import { registerAppChannels, type AppMenu } from '../ipc/app.js';
 import type { Caller, HostPlatform } from './platform.js';
@@ -168,9 +168,9 @@ import { registerSyncChannels } from '../ipc/sync.js';
 import { registerThemeChannels } from '../ipc/theme.js';
 import { requireCapability } from './capability.js';
 import type { UpdateChannel, UpdateController, UpdateStatus } from '../updater.js';
-import type { IpcEvent } from '../../shared/ipc.js';
+import type { IpcEvent } from '@wirebench/wire/ipc';
 import type { z } from 'zod';
-import type { WorkspaceWire } from '../../shared/wire-base.js';
+import type { WorkspaceWire } from '@wirebench/wire/wire-base';
 
 /** A host: its channels, and the callers (windows, later connections) it serves. */
 export interface Host {

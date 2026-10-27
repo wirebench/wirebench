@@ -3,7 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { useTeamStore } from '../../state/team.js';
-import type { TeamRoleWire } from '../../../shared/wire-base.js';
+import type { TeamRoleWire } from '@shared/wire-base.js';
 import { INPUT_CLASS, ROLE_LABELS, SELECT_CLASS, TEAM_ROLES } from './roles.js';
 
 export interface InviteDialogProps {

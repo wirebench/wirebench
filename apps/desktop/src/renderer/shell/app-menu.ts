@@ -7,7 +7,7 @@
  * context does not allow it says so with a toast instead of running.
  */
 
-import type { CommandInvokeEvent, MenuCommandWire } from '../../shared/wire-base.js';
+import type { CommandInvokeEvent, MenuCommandWire } from '@shared/wire-base.js';
 import { showToast } from '../components/toast.js';
 import type { CommandContext } from '../lib/commands.js';
 import { getCommand, listAllCommands, runCommand } from '../lib/commands.js';

@@ -9,7 +9,7 @@ import type {
   ScimGroupSummaryWire,
   ScimTokenCreatedWire,
   ScimTokenSummaryWire,
-} from '../../shared/wire-base.js';
+} from '@shared/wire-base.js';
 import { ipc } from './ipc-client.js';
 
 interface ProvisioningSnapshot {

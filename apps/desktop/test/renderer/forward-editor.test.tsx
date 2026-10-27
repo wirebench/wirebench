@@ -1,7 +1,7 @@
 import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { HostsFileWire, ResolvedHostWire } from '../../src/shared/ssh-wire.js';
+import type { HostsFileWire, ResolvedHostWire } from '@wirebench/wire/ssh-wire';
 
 const listHosts = vi.fn();
 const saveHosts = vi.fn();
@@ -24,7 +24,7 @@ import type { PaletteMode } from '../../src/renderer/shell/command-palette.js';
 import { CommandPalette } from '../../src/renderer/shell/command-palette.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
-import { COMMAND_CATALOG } from '../../src/shared/command-catalog.js';
+import { COMMAND_CATALOG } from '@wirebench/wire/command-catalog';
 
 const GRAFANA = { id: 'grafana', type: 'local', port: 3000, target: 'localhost:3000' } as const;
 

@@ -4,7 +4,7 @@ import { createApi, createGrpcApi, createWsApi } from '@wirebench/engine';
 import type { MappedForPlacing } from '../src/main/import-place.js';
 import { placeMappedImport } from '../src/main/import-place.js';
 import type { ApiChannelDeps } from '../src/main/ipc/api.js';
-import type { ProjectWire } from '../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 
 const PROJECT = { id: 'p1' } as unknown as ProjectWire;
 

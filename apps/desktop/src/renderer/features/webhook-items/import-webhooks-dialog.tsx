@@ -15,7 +15,7 @@ import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useWebhookItemsDialogs } from './webhook-items-state.js';
-import type { WebhookItemWire } from '../../../shared/kinds/rest/wire.js';
+import type { WebhookItemWire } from '@shared/kinds/rest/wire.js';
 
 /** `1 webhook`, `2 webhooks` — the plural rule this dialog's toast and rows both use. */
 function plural(n: number, word: string): string {

@@ -8,7 +8,7 @@ import { useState } from 'react';
 import { ArrowDown, ArrowUp, Plus, X } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { IconButton } from '../../components/icon-button.js';
-import type { WsRequestPatchWire } from '../../../shared/kinds/ws/wire.js';
+import type { WsRequestPatchWire } from '@shared/kinds/ws/wire.js';
 import { subprotocolProblem } from './ws-format.js';
 
 export interface WsSubprotocolsTabProps {

@@ -4,7 +4,7 @@ import { Button } from '../../components/button.js';
 import { signedInServers, useAccountStore } from '../../state/account.js';
 import { ipc } from '../../state/ipc-client.js';
 import type { ShareToServerRequest } from '../../state/workspace.js';
-import type { DefaultRoleWire, TeamWire, TeamWorkspaceWire } from '../../../shared/wire-base.js';
+import type { DefaultRoleWire, TeamWire, TeamWorkspaceWire } from '@shared/wire-base.js';
 import { shareRefusalMessage } from '../sync/sync-codes.js';
 import { DEFAULT_ROLES, ROLE_LABELS } from '../team/roles.js';
 import { workspaceActions } from './workspace-actions.js';

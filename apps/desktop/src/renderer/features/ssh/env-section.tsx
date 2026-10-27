@@ -1,5 +1,5 @@
 import { Plus, X } from 'lucide-react';
-import type { EnvVarWire, GroupEntryWire } from '../../../shared/ssh-wire.js';
+import type { EnvVarWire, GroupEntryWire } from '@shared/ssh-wire.js';
 import { INPUT_CLASS } from './inherited-field.js';
 import { SecretSelect, useSecretNames } from './secret-fields.js';
 

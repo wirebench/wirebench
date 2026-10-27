@@ -16,7 +16,7 @@ import {
 } from '@wirebench/engine';
 import type { Environment, Project } from '@wirebench/engine';
 import { previewWs } from '../src/main/send/exchange.js';
-import type { WsRequestPatchWire } from '../src/shared/kinds/ws/wire.js';
+import type { WsRequestPatchWire } from '@wirebench/wire/kinds/ws/wire';
 import { sendDepsFor } from './helpers/send-deps.js';
 
 let server: TestWsServer;

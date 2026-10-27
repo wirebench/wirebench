@@ -24,7 +24,7 @@ import type {
   SequenceTransferWire,
   SequenceWire,
   StepAssertionWire,
-} from '../shared/wire-base.js';
+} from '@wirebench/wire/wire-base';
 
 /** The outcome of one sequence change. */
 export interface SequenceMutationResult {

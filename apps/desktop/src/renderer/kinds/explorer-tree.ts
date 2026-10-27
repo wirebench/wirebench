@@ -3,8 +3,8 @@
  * everything under them. Pure, with no React and no store, so `tree-nodes.ts` and its tests can use
  * it without loading the kinds' editors.
  */
-import type { KindId } from '../../shared/kinds/kind-module.js';
-import type { InterfaceSummary } from '../../shared/kinds/soap/wire.js';
+import type { KindId } from '@shared/kinds/kind-module.js';
+import type { InterfaceSummary } from '@shared/kinds/soap/wire.js';
 import type {
   ExplorerConflictTargets,
   ExplorerGrpcData,

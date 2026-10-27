@@ -7,7 +7,7 @@ import { NumberSetting, SettingsGroup, TextSetting } from '../../components/sett
 import { PagePath } from '../explorer/page-path.js';
 import { SettingsPageTabs } from '../../components/settings-page-tabs.js';
 import { useProjectStore } from '../../state/project.js';
-import type { McpServerPatchWire } from '../../../shared/kinds/mcp/wire.js';
+import type { McpServerPatchWire } from '@shared/kinds/mcp/wire.js';
 import { CatalogueSection } from './catalogue-section.js';
 import { ConnectionSection } from './connection-section.js';
 

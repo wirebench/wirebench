@@ -31,14 +31,14 @@ import type {
   SshSession,
   StreamMasker,
 } from '@wirebench/ssh';
-import { events } from '../shared/ipc.js';
+import { events } from '@wirebench/wire/ipc';
 import type {
   SshPreviewSnippetRequest,
   SshPreviewSnippetResponse,
   SshRunSnippetRequest,
-} from '../shared/snippets-wire.js';
-import type { IpcEvent } from '../shared/ipc.js';
-import { sshHostOsResponseSchema } from '../shared/ssh-wire.js';
+} from '@wirebench/wire/snippets-wire';
+import type { IpcEvent } from '@wirebench/wire/ipc';
+import { sshHostOsResponseSchema } from '@wirebench/wire/ssh-wire';
 import type {
   SshCloseRequest,
   SshConnectRequest,
@@ -51,7 +51,7 @@ import type {
   SshWriteManyRequest,
   SshWriteManyResponse,
   SshWriteRequest,
-} from '../shared/ssh-wire.js';
+} from '@wirebench/wire/ssh-wire';
 import { sshSessionEvent } from './audit/desktop-events.js';
 import { asWirebenchError } from './hosts-service.js';
 import type { OpenMoshOptions } from './mosh-session.js';

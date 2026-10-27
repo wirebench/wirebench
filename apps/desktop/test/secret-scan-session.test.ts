@@ -28,7 +28,7 @@ import {
   secretScanScanResponseSchema,
   secretScanSetValueResponseSchema,
   secretScanTokensResponseSchema,
-} from '../src/shared/wire-base.js';
+} from '@wirebench/wire/wire-base';
 import { testHooks } from './helpers/project-hooks.js';
 
 /** Obviously fake: three base64url segments decoding to `{"fake":1}`, `{"fake":1}` and `fake`. */

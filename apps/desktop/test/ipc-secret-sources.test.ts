@@ -1,7 +1,7 @@
 import { WirebenchError } from '@wirebench/engine';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerSecretSourcesChannels } from '../src/main/ipc/secret-sources.js';
-import type { SecretSourcesState } from '../src/shared/wire-base.js';
+import type { SecretSourcesState } from '@wirebench/wire/wire-base';
 import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();

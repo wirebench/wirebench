@@ -12,11 +12,7 @@ import { create } from 'zustand';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { useProjectStore } from '../../state/project.js';
-import type {
-  ConversionRefusalWire,
-  ScriptConversionWire,
-  ScriptConversionsResultWire,
-} from '../../../shared/wire-base.js';
+import type { ConversionRefusalWire, ScriptConversionWire, ScriptConversionsResultWire } from '@shared/wire-base.js';
 
 // Split out so Monaco loads with the review, never before the first paint.
 const ConvertScriptsDiff = lazy(async () => {

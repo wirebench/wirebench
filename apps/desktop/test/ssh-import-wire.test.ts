@@ -4,7 +4,7 @@ import {
   sshImportApplyRequestSchema,
   sshImportPreviewRequestSchema,
   sshImportPreviewResponseSchema,
-} from '../src/shared/ssh-wire.js';
+} from '@wirebench/wire/ssh-wire';
 
 const PREVIEW = {
   previewId: 'p1',

@@ -7,13 +7,8 @@ import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { create } from 'zustand';
 import { Button } from '../../components/button.js';
-import type {
-  SshCertificateWire,
-  SshDeviceKeyStatus,
-  SshKeyAlgorithmWire,
-  SshKeyWire,
-} from '../../../shared/ssh-keys-wire.js';
-import type { ResolvedHostWire } from '../../../shared/ssh-wire.js';
+import type { SshCertificateWire, SshDeviceKeyStatus, SshKeyAlgorithmWire, SshKeyWire } from '@shared/ssh-keys-wire.js';
+import type { ResolvedHostWire } from '@shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
 import { findHost, upsertHost, useHostsStore } from './hosts-store.js';
 import { attachSshCertificate, generateSshKey } from './secret-writes.js';

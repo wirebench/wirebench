@@ -3,7 +3,7 @@
  * answers with a length or an error. Writes are one entry each and validated in main (A6).
  */
 
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { SecretSourcesService } from '../secret-sources-service.js';
 import type { WorkspaceService } from '../workspace-service.js';
 import { registerHandler, type HandlerTable } from './register.js';

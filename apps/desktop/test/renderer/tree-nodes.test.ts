@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { InterfaceSummary } from '../../src/shared/kinds/soap/wire.js';
+import type { InterfaceSummary } from '@wirebench/wire/kinds/soap/wire';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 import type { ExplorerNode } from '../../src/renderer/features/explorer/tree-nodes.js';
 import { endpointCountText } from '../../src/renderer/kinds/soap/explorer-tree.js';

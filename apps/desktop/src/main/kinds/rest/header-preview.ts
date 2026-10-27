@@ -14,7 +14,7 @@ import type {
   RequestRestHeadersRequest,
   RequestRestHeadersResponse,
   RestHeaderRowWire,
-} from '../../../shared/kinds/rest/wire.js';
+} from '@wirebench/wire/kinds/rest/wire';
 import { cachedAccessToken, placeholderAuth, shownAuth, type RequestChannelDeps } from '../../ipc/request.js';
 import { previewRest, type RestPreview, type SendThroughEngineDeps } from '../../send/exchange.js';
 

@@ -6,7 +6,7 @@
  */
 import { useState } from 'react';
 import { INPUT_CLASS } from '../team/roles.js';
-import type { SignatureSchemeWire } from '../../../shared/wire-base.js';
+import type { SignatureSchemeWire } from '@shared/wire-base.js';
 
 const LABEL_CLASS = 'mt-2 block text-xs text-fg-subtle';
 

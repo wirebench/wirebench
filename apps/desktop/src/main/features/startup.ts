@@ -21,8 +21,8 @@ import {
   type Preferences,
   type ProtocolRegistry,
 } from '@wirebench/engine';
-import type { UnsupportedContainerWire } from '../../shared/wire-base.js';
-import { KINDS, type KindId } from '../../shared/kinds/kind-module.js';
+import type { UnsupportedContainerWire } from '@wirebench/wire/wire-base';
+import { KINDS, type KindId } from '@wirebench/wire/kinds/kind-module';
 import { parseAreaSwitches } from '../areas.js';
 
 /** The switches of one level resolved: what a workspace's project hosts and the renderer read. */

@@ -1,12 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { channels, events } from '../src/shared/ipc.js';
+import { channels, events } from '@wirebench/wire/ipc';
 import {
   sftpChmodRequestSchema,
   sftpCopyRequestSchema,
   sftpListRequestSchema,
   sftpRemoveRequestSchema,
-} from '../src/shared/sftp-wire.js';
+} from '@wirebench/wire/sftp-wire';
 
 const REMOTE = { kind: 'remote', sessionId: 's1' } as const;
 

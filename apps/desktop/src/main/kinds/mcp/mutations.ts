@@ -30,13 +30,13 @@ import type {
   McpTransport,
   Project,
 } from '@wirebench/engine';
-import type { RestFolderPatchWire } from '../../../shared/kinds/rest/wire.js';
+import type { RestFolderPatchWire } from '@wirebench/wire/kinds/rest/wire';
 import type {
   McpOperationWire,
   McpRequestPatchWire,
   McpServerPatchWire,
   McpTransportWire,
-} from '../../../shared/kinds/mcp/wire.js';
+} from '@wirebench/wire/kinds/mcp/wire';
 import { takenApiSlugs, toEngineAuthConfig, toEngineRows } from '../../project-api-mutations.js';
 import type { KindMutations } from '../kind-main.js';
 

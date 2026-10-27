@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { eventStreamDocument } from '@wirebench/engine/rest';
 import { EventsView } from '../../src/renderer/features/rest-editor/response/events-view.js';
-import type { SseRowWire } from '../../src/shared/kinds/rest/wire.js';
+import type { SseRowWire } from '@wirebench/wire/kinds/rest/wire';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));

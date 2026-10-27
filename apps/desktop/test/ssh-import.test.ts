@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { HostsService } from '../src/main/hosts-service.js';
 import { isEncryptedKey, SshImportService, type SshImportFs } from '../src/main/ssh-import.js';
-import { sshImportPreviewSchema } from '../src/shared/ssh-wire.js';
-import type { SshImportPreview } from '../src/shared/ssh-wire.js';
+import { sshImportPreviewSchema } from '@wirebench/wire/ssh-wire';
+import type { SshImportPreview } from '@wirebench/wire/ssh-wire';
 
 const HOME = '/home/u';
 const CONFIG = '/home/u/.ssh/config';

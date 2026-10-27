@@ -9,7 +9,7 @@ import { useProjectStore } from '../../state/project.js';
 import { IncomingConfigForm } from './incoming-config-editor.js';
 import { OutgoingConfigForm } from './outgoing-config-editor.js';
 import { currentConfig, isWssConfigDirty, useWssConfigPanelStore } from './wss-config-panel-store.js';
-import type { WssIncomingWire, WssOutgoingWire } from '../../../shared/kinds/soap/wire.js';
+import type { WssIncomingWire, WssOutgoingWire } from '@shared/kinds/soap/wire.js';
 
 export function WssConfigPanel() {
   const editing = useWssConfigPanelStore((state) => state.editing);

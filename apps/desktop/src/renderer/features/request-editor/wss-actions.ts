@@ -14,7 +14,7 @@ import { showToast } from '../../components/toast.js';
 import { getActiveRequestPaneHandle } from '../../editor/active-request-editor.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
-import type { WssEntryWire, WssPreviewResponse } from '../../../shared/kinds/soap/wire.js';
+import type { WssEntryWire, WssPreviewResponse } from '@shared/kinds/soap/wire.js';
 
 /** The envelope as it stands on screen: any debounced edit is committed first. */
 function currentEnvelope(requestId: string): string | undefined {

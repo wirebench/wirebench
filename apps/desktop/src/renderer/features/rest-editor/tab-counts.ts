@@ -3,8 +3,8 @@
  * response. Each reads like the Assertions count beside it — a number, and nothing when there is
  * nothing — so a glance at the strip says where the request's rows are.
  */
-import type { RestBodyWire } from '../../../shared/kinds/rest/wire.js';
-import type { KeyValueWire } from '../../../shared/wire-base.js';
+import type { RestBodyWire } from '@shared/kinds/rest/wire.js';
+import type { KeyValueWire } from '@shared/wire-base.js';
 
 /** The rows a table sends: switched on and named. The empty add row is never one of them. */
 export function rowsBadge(rows: readonly Pick<KeyValueWire, 'name' | 'enabled'>[]): string | undefined {

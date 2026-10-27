@@ -6,7 +6,7 @@ import { grpcItemFor } from '@wirebench/engine';
 import type { GrpcFailedInput, SentRequest } from '@wirebench/engine';
 import { toGrpcResponseMessageWire } from '../../engine-wire.js';
 import { recordGrpc, summariseGrpc } from '../../send/record.js';
-import type { GrpcExchangeSummary } from '../../../shared/kinds/grpc/wire.js';
+import type { GrpcExchangeSummary } from '@wirebench/wire/kinds/grpc/wire';
 import type { KindSend } from '../kind-main.js';
 import { withGrpcPatch } from './mutations.js';
 

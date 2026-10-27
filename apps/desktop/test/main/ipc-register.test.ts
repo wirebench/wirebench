@@ -2,7 +2,7 @@
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { defineChannel } from '../../src/shared/ipc-contract.js';
+import { defineChannel } from '@wirebench/wire/ipc-contract';
 import { HandlerTable } from '../../src/main/ipc/register.js';
 import { Redactor } from '../../src/main/host/redactor.js';
 import { callerId } from '../../src/main/window-scope.js';

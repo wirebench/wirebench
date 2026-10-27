@@ -2,15 +2,15 @@ import type { Caller } from './host/platform.js';
 import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
 import { WirebenchError } from '@wirebench/engine';
-import { events } from '../shared/ipc.js';
-import type { IpcEvent } from '../shared/ipc.js';
+import { events } from '@wirebench/wire/ipc';
+import type { IpcEvent } from '@wirebench/wire/ipc';
 import type {
   LocalTerminalCloseRequest,
   LocalTerminalOpenRequest,
   LocalTerminalOpenResponse,
   LocalTerminalResizeRequest,
   LocalTerminalWriteRequest,
-} from '../shared/local-terminal-wire.js';
+} from '@wirebench/wire/local-terminal-wire';
 import type { LocalShell } from './local-shell.js';
 
 /** The part of a pseudo-terminal this service uses; `@lydell/node-pty`'s `IPty` has it. */

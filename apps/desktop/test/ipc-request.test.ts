@@ -18,7 +18,7 @@ import { toSendDeps, type RequestChannelDeps } from '../src/main/ipc/request.js'
 import type { PreflightResult } from '../src/main/expansion-preflight.js';
 import { wrapHandler } from '../src/main/ipc/envelope.js';
 import { ExchangeRegistry } from '../src/main/send/exchange.js';
-import { channels } from '../src/shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
 import { createHostState } from '../src/main/host/host-state.js';

@@ -4,7 +4,7 @@
  * server that answers `identity-unauthenticated` marks the account signed out, the rule
  * `AccountService.refresh` applies at launch; the token never crosses the bridge.
  */
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { ServerClient } from '../server-client.js';
 import { withToken as withTokenUnguarded, type TokenSource } from '../server-token.js';
 import { registerHandler, type HandlerTable } from './register.js';

@@ -6,7 +6,7 @@ import { workspaceActions } from '../../src/renderer/features/workspace/workspac
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { WorkspaceProjectWire } from '../../src/shared/wire-base.js';
+import type { WorkspaceProjectWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { restApiWire } from '../helpers/wire-defaults.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';

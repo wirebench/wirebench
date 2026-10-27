@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { McpApprovalDialog } from '../../src/renderer/features/mcp-editor/approval-dialog.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { McpApprovalPromptEvent } from '../../src/shared/kinds/mcp/wire.js';
+import type { McpApprovalPromptEvent } from '@wirebench/wire/kinds/mcp/wire';
 
 const mcpApprove = vi.fn();
 const listeners = new Map<string, (payload: unknown) => void>();

@@ -8,8 +8,8 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useInterfaceEditorStore } from '../../src/renderer/features/interface-editor/interface-editor-state.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
-import type { SearchMatchWire } from '../../src/shared/wire-base.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { SearchMatchWire } from '@wirebench/wire/wire-base';
 
 const BODY_MATCH: SearchMatchWire = {
   kind: 'request-body',

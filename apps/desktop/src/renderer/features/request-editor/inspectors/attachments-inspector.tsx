@@ -6,8 +6,8 @@ import { ipc } from '../../../state/ipc-client.js';
 import { useEditorsStore } from '../../../state/editors.js';
 import { usePreferencesStore } from '../../../state/preferences.js';
 import { useProjectStore } from '../../../state/project.js';
-import { MAX_DROPPED_ATTACHMENT_BYTES, MAX_DROPPED_FILES } from '../../../../shared/kinds/soap/wire.js';
-import type { AttachmentPatchWire, MimePartWire } from '../../../../shared/kinds/soap/wire.js';
+import { MAX_DROPPED_ATTACHMENT_BYTES, MAX_DROPPED_FILES } from '@shared/kinds/soap/wire.js';
+import type { AttachmentPatchWire, MimePartWire } from '@shared/kinds/soap/wire.js';
 import { addAttachmentsThroughPicker, removeSelectedAttachment } from '../attachment-actions.js';
 import { AttachmentsTable } from './attachments-table.js';
 

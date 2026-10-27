@@ -8,7 +8,7 @@
 import type { Caller } from '../host/platform.js';
 import { checkMockStubs } from '@wirebench/engine';
 import type { CheckMockStubsInput, MockExchangeEvent, MockStubCheck, Project } from '@wirebench/engine';
-import { channels, events } from '../../shared/ipc.js';
+import { channels, events } from '@wirebench/wire/ipc';
 import type { MockRunner, MockSink } from '../mock-runner.js';
 import { emitEvent } from './events.js';
 import { registerHandler, type HandlerTable } from './register.js';

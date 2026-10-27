@@ -6,7 +6,7 @@
  * field can never disagree with what the send path actually builds.
  */
 import { joinQuery, parseUrlParams, splitQuery } from '@wirebench/engine/rest';
-import type { KeyValueWire } from '../../shared/wire-base.js';
+import type { KeyValueWire } from '@shared/wire-base.js';
 
 /** One run of a URL, tagged with what it is, for the highlighted mirror behind the field. */
 export interface UrlSegment {

@@ -8,7 +8,7 @@ import type { GraphQLSchema } from 'graphql';
 import { randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
-import { channels } from '../../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { ApiChannelDeps } from '../../ipc/api.js';
 import { registerHandler, type HandlerTable } from '../../ipc/register.js';
 import type { RequestChannelDeps } from '../../ipc/request.js';

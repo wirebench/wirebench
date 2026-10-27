@@ -4,7 +4,7 @@
  * closed dialog changes nothing. The filter lives here so reopening the tab keeps it within a session.
  */
 import { create } from 'zustand';
-import type { AuditEventWire, AuditQueryWire } from '../../shared/wire-base.js';
+import type { AuditEventWire, AuditQueryWire } from '@shared/wire-base.js';
 import { showToast } from '../components/toast.js';
 import { rangeOf, type ActionGroup, type RangePreset } from './audit-format.js';
 import { ipc } from './ipc-client.js';

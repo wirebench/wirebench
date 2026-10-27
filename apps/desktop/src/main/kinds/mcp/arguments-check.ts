@@ -6,7 +6,7 @@
  * an error.
  */
 import { validateJsonSchema } from '@wirebench/engine';
-import type { McpArgumentsProblemWire } from '../../../shared/kinds/mcp/wire.js';
+import type { McpArgumentsProblemWire } from '@wirebench/wire/kinds/mcp/wire';
 
 /** Above this, nothing is checked: an editor holding a megabyte of arguments gets no markers, and no lag. */
 const MAX_TEXT = 512 * 1024;

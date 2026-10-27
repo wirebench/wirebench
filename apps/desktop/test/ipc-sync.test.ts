@@ -9,8 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WirebenchError } from '@wirebench/engine';
 import { registerSyncChannels } from '../src/main/ipc/sync.js';
 import type { SyncService } from '../src/main/sync/sync-service.js';
-import { channels } from '../src/shared/ipc.js';
-import type { SyncApiHistoryWire, SyncStatusWire } from '../src/shared/wire-base.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { SyncApiHistoryWire, SyncStatusWire } from '@wirebench/wire/wire-base';
 import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();

@@ -25,8 +25,8 @@ import { selectApiOf, useProjectStore } from '../../state/project.js';
 import { GraphqlBody } from '../../kinds/graphql/body-editor.js';
 import { forgetGraphqlMethodChange, methodForBodySwitch } from '../../kinds/graphql/method.js';
 import { JsonFormView } from './json-form-view.js';
-import type { RestBodyWire, RestRequestPatchWire, RestSettingsWire } from '../../../shared/kinds/rest/wire.js';
-import type { KeyValueWire } from '../../../shared/wire-base.js';
+import type { RestBodyWire, RestRequestPatchWire, RestSettingsWire } from '@shared/kinds/rest/wire.js';
+import type { KeyValueWire } from '@shared/wire-base.js';
 import { useEditorVariableAssist } from '../environments/variable-assist-provider.js';
 
 /** The body kinds, in the order the switch offers them. */

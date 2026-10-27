@@ -21,13 +21,13 @@ import {
   type SshConfigIo,
   type SshKeyChoice,
 } from '@wirebench/ssh';
-import { SSH_IMPORT_FORMAT_INFO, type SshImportFormat } from '../shared/ssh-defaults.js';
+import { SSH_IMPORT_FORMAT_INFO, type SshImportFormat } from '@wirebench/wire/ssh-defaults';
 import type {
   SshImportApplyRequest,
   SshImportApplyResponse,
   SshImportPreviewRequest,
   SshImportPreviewResponse,
-} from '../shared/ssh-wire.js';
+} from '@wirebench/wire/ssh-wire';
 import { asWirebenchError, type HostsService } from './hosts-service.js';
 import type { SshSecretsService } from './ssh-secrets.js';
 

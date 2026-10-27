@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { SettingsTab, type InheritedRestSettings } from '../../src/renderer/features/rest-editor/settings-tab.js';
-import type { RestSettingsWire } from '../../src/shared/kinds/rest/wire.js';
+import type { RestSettingsWire } from '@wirebench/wire/kinds/rest/wire';
 
 const INHERITED: InheritedRestSettings = {
   timeoutMs: 45_000,

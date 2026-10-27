@@ -7,7 +7,7 @@
  * Shared by the editor (which also has the in-flight and IPC-failure lines) and History, whose
  * record has the same fields under a different type: both read through {@link McpOutcomeRecord}.
  */
-import type { McpExchangeSummary } from '../../../../shared/kinds/mcp/wire.js';
+import type { McpExchangeSummary } from '@shared/kinds/mcp/wire.js';
 import type { McpExchangeState } from '../../../state/exchanges.js';
 import { formatDuration } from '../../../lib/format-size.js';
 

@@ -21,14 +21,14 @@
     "../../apps/desktop/src/main/server-token.ts",
     "../../apps/desktop/src/main/account-service.ts",
     "../../apps/desktop/src/main/loopback-callback.ts",
-    "../../apps/desktop/src/shared/wire-types.ts",
-    "../../apps/desktop/src/shared/wire-base.ts",
-    "../../apps/desktop/src/shared/kinds/*/wire.ts",
-    "../../apps/desktop/src/shared/code-targets.ts",
-    "../../apps/desktop/src/shared/plugins-wire.ts",
-    "../../apps/desktop/src/shared/multi-env-limits.ts",
-    "../../apps/desktop/src/shared/environment-colors.ts",
-    "../../apps/desktop/src/shared/jwt-algorithms.ts"
+    "../wire/src/wire-types.ts",
+    "../wire/src/wire-base.ts",
+    "../wire/src/kinds/*/wire.ts",
+    "../wire/src/code-targets.ts",
+    "../wire/src/plugins-wire.ts",
+    "../wire/src/multi-env-limits.ts",
+    "../wire/src/environment-colors.ts",
+    "../wire/src/jwt-algorithms.ts"
   ],
   "references": [{ "path": "./tsconfig.json" }]
 }

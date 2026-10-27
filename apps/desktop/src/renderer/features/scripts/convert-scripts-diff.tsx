@@ -4,7 +4,7 @@
  * the review loads Monaco only once it opens.
  */
 import { DiffXmlEditor } from '../../editor/diff-xml-editor.js';
-import type { ScriptConversionWire } from '../../../shared/wire-base.js';
+import type { ScriptConversionWire } from '@shared/wire-base.js';
 
 const PHASES = [
   { id: 'pre', label: 'Pre-request' },

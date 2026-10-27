@@ -7,7 +7,7 @@ import type { KnownHostEntry } from '@wirebench/ssh';
 import { HostsService } from '../src/main/hosts-service.js';
 import { KnownHostsImportService } from '../src/main/known-hosts-import.js';
 import type { SshImportFs } from '../src/main/ssh-import.js';
-import type { SshKnownHostsImportPreview } from '../src/shared/ssh-wire.js';
+import type { SshKnownHostsImportPreview } from '@wirebench/wire/ssh-wire';
 
 const HOME = '/home/u';
 const KNOWN_HOSTS = '/home/u/.ssh/known_hosts';

@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import type { IpcEvent } from '../../shared/ipc.js';
+import type { IpcEvent } from '@wirebench/wire/ipc';
 import type { Caller } from '../host/platform.js';
 import { validateEventPayload } from './envelope.js';
 

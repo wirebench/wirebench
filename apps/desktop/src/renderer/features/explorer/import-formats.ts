@@ -6,7 +6,7 @@
  */
 
 import type { ImportFormatKind } from '@wirebench/engine/detect';
-import type { KindId } from '../../../shared/kinds/kind-module.js';
+import type { KindId } from '@shared/kinds/kind-module.js';
 
 export type ImportFormatTab = 'url' | 'file' | 'paste';
 

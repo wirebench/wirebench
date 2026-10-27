@@ -26,8 +26,8 @@ import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import { useWebhookItemsDialogs } from '../webhook-items/webhook-items-state.js';
 import { lintRestDefinition } from './lint-actions.js';
-import type { ApiRestPlanUpdateResponse, RestUpdateSourceWire } from '../../../shared/kinds/rest/wire.js';
-import type { AuthConfigWire } from '../../../shared/wire-base.js';
+import type { ApiRestPlanUpdateResponse, RestUpdateSourceWire } from '@shared/kinds/rest/wire.js';
+import type { AuthConfigWire } from '@shared/wire-base.js';
 
 export interface RestUpdateDialogProps {
   readonly apiId: string;

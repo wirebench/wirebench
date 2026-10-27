@@ -17,7 +17,7 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { mcpRequestWire, mcpServerWire } from '../helpers/wire-defaults.js';
-import type { McpServerWire, McpTransportWire } from '../../src/shared/kinds/mcp/wire.js';
+import type { McpServerWire, McpTransportWire } from '@wirebench/wire/kinds/mcp/wire';
 import { openSettingsTab, resetSettingsTabs } from '../helpers/settings-page-tabs.js';
 
 const updateMcpServer = vi.fn();

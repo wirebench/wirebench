@@ -10,8 +10,8 @@
  */
 
 import type { LevelProposal, Project } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
-import type { ScriptTargetWire } from '../../shared/wire-base.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { ScriptTargetWire } from '@wirebench/wire/wire-base';
 import { conversionWire } from '../convert-scripts.js';
 import type { ScriptHost, ScriptTarget } from '../script-host.js';
 import { registerHandler, type HandlerTable } from './register.js';

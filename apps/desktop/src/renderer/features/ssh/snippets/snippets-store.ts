@@ -1,11 +1,11 @@
 import { create } from 'zustand';
-import type { IpcError, IpcResult } from '../../../../shared/ipc.js';
+import type { IpcError, IpcResult } from '@shared/ipc.js';
 import type {
   SnippetListItemWire,
   SnippetProblemWire,
   SnippetsFileWire,
   SshListSnippetsResponse,
-} from '../../../../shared/snippets-wire.js';
+} from '@shared/snippets-wire.js';
 import { useEditorsStore } from '../../../state/editors.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useProblemsStore } from '../../../state/problems.js';

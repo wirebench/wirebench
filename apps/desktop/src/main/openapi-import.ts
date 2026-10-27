@@ -28,7 +28,7 @@ import type {
   ParsedAsyncApi,
   ParsedOpenApi,
 } from '@wirebench/engine';
-import type { EngineProgressEvent } from '../shared/wire-base.js';
+import type { EngineProgressEvent } from '@wirebench/wire/wire-base';
 
 /** What one import needs beyond where to read from. */
 export interface RunOpenApiImportInput {

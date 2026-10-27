@@ -1,7 +1,7 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useState } from 'react';
 import { ChevronDown, Laptop, Server } from 'lucide-react';
-import type { HostsFileWire } from '../../../../shared/ssh-wire.js';
+import type { HostsFileWire } from '@shared/ssh-wire.js';
 import { useHostsStore } from '../hosts-store.js';
 import type { PanePlace, PlaceChoice } from './files-store.js';
 import { hostName } from './open-files.js';

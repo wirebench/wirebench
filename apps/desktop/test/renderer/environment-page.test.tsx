@@ -10,8 +10,8 @@ import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { useGlobalsStore } from '../../src/renderer/state/globals.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
-import type { EnvironmentWire, WorkspaceEnvironmentWire } from '../../src/shared/wire-base.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { EnvironmentWire, WorkspaceEnvironmentWire } from '@wirebench/wire/wire-base';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 /** The page, and for a real environment the details panel the shell shows beside it (colour, Applies to). */

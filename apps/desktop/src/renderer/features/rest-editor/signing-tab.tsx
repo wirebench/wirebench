@@ -14,7 +14,7 @@ import { registerScriptEditFlush } from '../../state/script-edits.js';
 import { SigningFields } from '../webhook-items/signing-fields.js';
 import { signingSummary } from '../webhook-items/signing.js';
 import type { InheritedSigning } from '../webhook-items/signing.js';
-import type { RestRequestPatchWire, RestRequestWire } from '../../../shared/kinds/rest/wire.js';
+import type { RestRequestPatchWire, RestRequestWire } from '@shared/kinds/rest/wire.js';
 
 export function SigningTab({
   request,

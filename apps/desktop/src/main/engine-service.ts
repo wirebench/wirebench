@@ -38,8 +38,8 @@ import type {
   InterfaceSummary,
   RequestGenerateRequest,
   RequestGenerateResponse,
-} from '../shared/kinds/soap/wire.js';
-import type { EngineProgressEvent } from '../shared/wire-base.js';
+} from '@wirebench/wire/kinds/soap/wire';
+import type { EngineProgressEvent } from '@wirebench/wire/wire-base';
 import { toGenerateResponse, toInterfaceSummary } from './engine-wire.js';
 import { ExchangeCache } from './exchange-cache.js';
 

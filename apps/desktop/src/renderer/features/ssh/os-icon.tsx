@@ -20,7 +20,7 @@ import {
   siUbuntu,
   type SimpleIcon,
 } from 'simple-icons';
-import type { SshHostOsWire, SshOsId } from '../../../shared/ssh-wire.js';
+import type { SshHostOsWire, SshOsId } from '@shared/ssh-wire.js';
 
 /** How each OS is named where it is chosen or shown in words. */
 export const OS_LABELS: Readonly<Record<SshOsId, string>> = {

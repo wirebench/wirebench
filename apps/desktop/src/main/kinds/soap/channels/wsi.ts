@@ -19,8 +19,8 @@ import {
   wsiWsdlContext,
 } from '@wirebench/engine';
 import type { QName, WsiReport } from '@wirebench/engine';
-import { channels } from '../../../../shared/ipc.js';
-import type { WsiReportWire } from '../../../../shared/kinds/soap/wire.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { WsiReportWire } from '@wirebench/wire/kinds/soap/wire';
 import type { EngineService } from '../../../engine-service.js';
 import type { ProjectRouter } from '../../../project-router.js';
 import type { RecordsWritePicks } from '../../../dialog-picks.js';

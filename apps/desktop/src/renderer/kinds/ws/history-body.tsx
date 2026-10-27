@@ -1,4 +1,4 @@
-import type { HistoryEntryWire } from '../../../shared/wire-types.js';
+import type { HistoryEntryWire } from '@shared/wire-types.js';
 import { WsSummaryLine, WsTimelineWithDetail } from '../../features/ws-editor/response-pane.js';
 
 /**

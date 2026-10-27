@@ -24,8 +24,8 @@ import { HistoryService, historyFilePath } from '../src/main/history-service.js'
 import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import { RunnerService, withUnchecked } from '../src/main/runner/runner-service.js';
 import { RunnerHistoryStore, RunnerSettingsStore } from '../src/main/runner/stores.js';
-import { defaultRunnerSettings } from '../src/shared/runner-defaults.js';
-import type { RunnerProgressEvent, RunnerRequestResult } from '../src/shared/runner-wire.js';
+import { defaultRunnerSettings } from '@wirebench/wire/runner-defaults';
+import type { RunnerProgressEvent, RunnerRequestResult } from '@wirebench/wire/runner-wire';
 import { createHostState } from '../src/main/host/host-state.js';
 
 const hostState = createHostState();

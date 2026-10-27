@@ -8,7 +8,7 @@ import {
 import { ipc } from '../../../state/ipc-client.js';
 import { useProjectStore } from '../../../state/project.js';
 import { RequestFacts } from './details-inspector.js';
-import type { RequestPropertiesPatchWire } from '../../../../shared/kinds/soap/wire.js';
+import type { RequestPropertiesPatchWire } from '@shared/kinds/soap/wire.js';
 
 export interface PropertiesInspectorProps {
   readonly requestId: string;

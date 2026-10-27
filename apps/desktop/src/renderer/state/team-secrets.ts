@@ -4,7 +4,7 @@
  * value — the status carries ids, names, fingerprints and labels only.
  */
 import { create } from 'zustand';
-import type { TeamSecretsStatusWire, TeamSecretsChangedEvent, WorkspaceChangedEvent } from '../../shared/wire-base.js';
+import type { TeamSecretsStatusWire, TeamSecretsChangedEvent, WorkspaceChangedEvent } from '@shared/wire-base.js';
 import { showToast } from '../components/toast.js';
 import { ipc } from './ipc-client.js';
 import { useWorkspaceStore } from './workspace.js';

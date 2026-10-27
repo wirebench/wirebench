@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { MenuItemConstructorOptions } from 'electron';
 import { applyCommandMenu, buildCommandMenuTemplate } from '../src/main/electron/menu.js';
 import type { MenuApi, MenuContext } from '../src/main/electron/menu.js';
-import type { MenuCommandWire } from '../src/shared/wire-base.js';
+import type { MenuCommandWire } from '@wirebench/wire/wire-base';
 
 const COMMANDS: readonly MenuCommandWire[] = [
   { id: 'project.save', label: 'Save Project', category: 'Project', accelerator: 'CmdOrCtrl+S' },

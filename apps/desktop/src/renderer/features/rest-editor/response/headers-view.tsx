@@ -4,7 +4,7 @@
  */
 import { Copy } from 'lucide-react';
 import { InspectorIconButton } from '../../request-editor/inspectors/inspector-strip.js';
-import type { RestExchangeSummary } from '../../../../shared/kinds/rest/wire.js';
+import type { RestExchangeSummary } from '@shared/kinds/rest/wire.js';
 
 /**
  * A finished exchange; while an event stream is still arriving, the headers it opened with; or a

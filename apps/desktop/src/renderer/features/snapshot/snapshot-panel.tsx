@@ -13,7 +13,7 @@ import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useProjectStore } from '../../state/project.js';
 import { useSnapshotsStore } from '../../state/snapshots.js';
-import type { SnapshotWire } from '../../../shared/wire-base.js';
+import type { SnapshotWire } from '@shared/wire-base.js';
 
 /** Past this many UTF-8 bytes on either side, the tab does not attempt a semantic diff. */
 export const MAX_SNAPSHOT_COMPARE_BYTES = 2 * 1024 * 1024;

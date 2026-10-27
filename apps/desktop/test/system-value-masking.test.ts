@@ -13,7 +13,7 @@ import { createApi, createProject, createRestRequest, entry } from '@wirebench/e
 import type { Project } from '@wirebench/engine';
 import { HistoryService, historyFilePath } from '../src/main/history-service.js';
 import { sendThroughEngine } from '../src/main/send/exchange.js';
-import type { HistoryEntryWire } from '../src/shared/wire-types.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
 import { sendDepsFor } from './helpers/send-deps.js';
 import { createHostState } from '../src/main/host/host-state.js';
 

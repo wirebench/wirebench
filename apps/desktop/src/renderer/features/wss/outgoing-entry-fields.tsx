@@ -10,7 +10,7 @@ import { IconButton } from '../../components/icon-button.js';
 import { SecretField, type SecretFieldProps } from '../../components/secret-field.js';
 import { useKeystoreAliases } from '../../components/use-keystore-aliases.js';
 import { useProjectStore } from '../../state/project.js';
-import type { WssEntryWire } from '../../../shared/kinds/soap/wire.js';
+import type { WssEntryWire } from '@shared/kinds/soap/wire.js';
 
 type WssTimestampEntry = Extract<WssEntryWire, { kind: 'timestamp' }>;
 type WssUsernameTokenEntry = Extract<WssEntryWire, { kind: 'username-token' }>;

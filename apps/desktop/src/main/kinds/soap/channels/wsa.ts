@@ -7,7 +7,7 @@
  * so unlike `wss.*` the envelopes are returned unredacted.
  */
 
-import { channels } from '../../../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { ProjectRouter } from '../../../project-router.js';
 import { registerHandler, type HandlerTable } from '../../../ipc/register.js';
 

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineEvent } from '../../src/shared/ipc-contract.js';
+import { defineEvent } from '@wirebench/wire/ipc-contract';
 import { emitEvent } from '../../src/main/ipc/events.js';
 import { fakeCaller } from '../helpers/fake-platform.js';
 

@@ -9,7 +9,7 @@
  */
 
 import { WirebenchError } from '@wirebench/engine';
-import type { SearchMatchWire, SearchQueryRequest, SearchQueryResponse } from '../shared/wire-base.js';
+import type { SearchMatchWire, SearchQueryRequest, SearchQueryResponse } from '@wirebench/wire/wire-base';
 
 /** How much of a matching line is worth sending; longer lines are cut with an ellipsis. */
 const MAX_SNIPPET = 200;

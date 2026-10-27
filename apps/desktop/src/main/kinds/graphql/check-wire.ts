@@ -1,7 +1,7 @@
 /** A GraphQL response's check onto the wire (phase 6 spec §3.4). */
 import type { Redactor } from '../../host/redactor.js';
 import type { GraphqlCheckResult } from '@wirebench/engine';
-import type { GraphqlCheckWire } from '../../../shared/kinds/graphql/wire.js';
+import type { GraphqlCheckWire } from '@wirebench/wire/kinds/graphql/wire';
 
 /**
  * A GraphQL check onto the wire. An error's message is the server's text, so a recorded secret in it

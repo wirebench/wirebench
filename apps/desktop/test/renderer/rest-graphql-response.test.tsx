@@ -19,8 +19,8 @@ import { restExplorer } from '../../src/renderer/kinds/rest/explorer.js';
 import { restExplorerTree } from '../../src/renderer/kinds/rest/explorer-tree.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { GraphqlCheckWire } from '../../src/shared/kinds/graphql/wire.js';
-import type { RestRequestWire } from '../../src/shared/kinds/rest/wire.js';
+import type { GraphqlCheckWire } from '@wirebench/wire/kinds/graphql/wire';
+import type { RestRequestWire } from '@wirebench/wire/kinds/rest/wire';
 
 const ERRORS: GraphqlCheckWire = {
   schema: 'checked',

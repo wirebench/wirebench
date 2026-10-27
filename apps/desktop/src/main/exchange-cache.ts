@@ -10,8 +10,8 @@
  */
 
 import type { ResponseAttachment, SoapExchange } from '@wirebench/engine';
-import type { RestExchangeSummary } from '../shared/kinds/rest/wire.js';
-import type { ExchangeSummary } from '../shared/kinds/soap/wire.js';
+import type { RestExchangeSummary } from '@wirebench/wire/kinds/rest/wire';
+import type { ExchangeSummary } from '@wirebench/wire/kinds/soap/wire';
 
 /** How many exchanges are retained; mirrors the renderer HTTP log's own cap. */
 export const EXCHANGE_CACHE_CAP = 500;

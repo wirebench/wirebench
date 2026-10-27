@@ -81,7 +81,7 @@ import { TEAM_SECRETS_LOCAL_FILE } from './team-secrets-service.js';
 import type { TreeFile } from './sync/server-state.js';
 import { copyProjectPayload, isEmptyDir, requireWorkspaceId, resolveWorkspaceTree } from './workspace-files.js';
 import type { WorkspaceState } from './workspace-state.js';
-import type { WorkspaceWire } from '../shared/wire-base.js';
+import type { WorkspaceWire } from '@wirebench/wire/wire-base';
 
 /** The folder pickers these operations run (`native-dialogs.ts` in the app; injected in tests). */
 export interface WorkspaceDialogs {

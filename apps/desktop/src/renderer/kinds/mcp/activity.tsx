@@ -1,5 +1,5 @@
 import { lazy } from 'react';
-import type { HistoryEntryWire } from '../../../shared/wire-types.js';
+import type { HistoryEntryWire } from '@shared/wire-types.js';
 import { openMcpRequestTab } from '../../features/mcp-editor/mcp-actions.js';
 import { mcpMethodLabel } from '../../features/mcp-editor/method-label.js';
 import type { KindHistory, KindLog, KindRequests, KindSearch } from '../renderer-kind.js';

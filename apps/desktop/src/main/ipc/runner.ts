@@ -4,7 +4,7 @@
  * its past runs.
  */
 
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { RecordsReadPicks } from '../dialog-picks.js';
 import type { NativeDialogs } from '../native-dialogs.js';
 import type { RunnerService } from '../runner/runner-service.js';

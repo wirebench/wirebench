@@ -2,9 +2,9 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 
-import { COMMAND_IDS } from '../../src/shared/commands.js';
-import type { CommandId } from '../../src/shared/commands.js';
-import { COMMAND_CATALOG } from '../../src/shared/command-catalog.js';
+import { COMMAND_IDS } from '@wirebench/wire/commands';
+import type { CommandId } from '@wirebench/wire/commands';
+import { COMMAND_CATALOG } from '@wirebench/wire/command-catalog';
 import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
 import { getCommand } from '../../src/renderer/lib/commands.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';

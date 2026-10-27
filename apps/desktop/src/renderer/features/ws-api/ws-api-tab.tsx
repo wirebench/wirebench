@@ -15,7 +15,7 @@ import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
 import { effectiveBaseUrl } from '../rest-api/api-tab.js';
 import { useProjectStore } from '../../state/project.js';
 import { useActiveEnvironment } from '../../state/workspace.js';
-import type { AuthConfigWire } from '../../../shared/wire-base.js';
+import type { AuthConfigWire } from '@shared/wire-base.js';
 import { AsyncApiDefinitionCard } from './asyncapi-definition-card.js';
 
 export interface WsApiTabProps {

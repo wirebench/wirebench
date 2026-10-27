@@ -57,7 +57,7 @@ import type {
   RunnerSettings,
   RunnerState,
   RunnerSummary,
-} from '../../shared/runner-wire.js';
+} from '@wirebench/wire/runner-wire';
 import { asRunSender, createDesktopRunSend, type DesktopRunSend, type DesktopSendDeps } from './desktop-send.js';
 import type { RunnerHistoryStore, RunnerSettingsStore } from './stores.js';
 import { resolveTarget, runnable, runnerRequests, type RunnerTarget } from './targets.js';

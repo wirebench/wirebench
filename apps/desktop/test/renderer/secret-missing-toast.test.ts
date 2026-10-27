@@ -12,7 +12,7 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { makeDraft } from '../mocks/exchange-fixtures.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { grpcRequestWire, restRequestWire, wsRequestWire } from '../helpers/wire-defaults.js';

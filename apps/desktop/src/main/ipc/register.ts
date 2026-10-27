@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import type { ChannelRequest, ChannelResponse, IpcChannel, IpcResult } from '../../shared/ipc.js';
+import type { ChannelRequest, ChannelResponse, IpcChannel, IpcResult } from '@wirebench/wire/ipc';
 import type { Caller } from '../host/platform.js';
 import type { Redactor } from '../host/redactor.js';
 import { wrapHandler } from './envelope.js';

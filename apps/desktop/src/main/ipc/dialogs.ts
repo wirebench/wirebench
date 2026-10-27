@@ -1,4 +1,4 @@
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { RecordsReadPicks, RecordsWritePicks } from '../dialog-picks.js';
 import type { NativeDialogs } from '../native-dialogs.js';
 import { registerHandler, type HandlerTable } from './register.js';

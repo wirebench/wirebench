@@ -1,6 +1,6 @@
 import type { HostPlatform } from '../host/platform.js';
-import { channels } from '../../shared/ipc.js';
-import type { ThemeOsWire } from '../../shared/wire-base.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { ThemeOsWire } from '@wirebench/wire/wire-base';
 import { registerHandler, type HandlerTable } from './register.js';
 
 /** What this module needs of the platform: the OS appearance and word of it changing. */

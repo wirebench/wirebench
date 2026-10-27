@@ -4,7 +4,7 @@
  */
 
 import type { Project, ProjectFiles } from '@wirebench/engine';
-import type { ProjectProblemWire, UnsupportedContainerWire } from '../shared/wire-base.js';
+import type { ProjectProblemWire, UnsupportedContainerWire } from '@wirebench/wire/wire-base';
 import type { InterfaceRuntime } from './project-wire.js';
 import type { ProjectWatcher } from './project-watch.js';
 import type { ProjectHost } from './project-host.js';

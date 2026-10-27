@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { SecretSourcesApproveDialog } from '../../src/renderer/features/secret-sources/approve-dialog.js';
 import { openSecretSourcesApproval } from '../../src/renderer/features/secret-sources/actions.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
-import type { SecretSourcesState } from '../../src/shared/wire-base.js';
+import type { SecretSourcesState } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const HASH = 'a'.repeat(64);

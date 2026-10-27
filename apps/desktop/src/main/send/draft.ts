@@ -17,11 +17,11 @@ import type {
 import { toEngineBody, toEngineSigning } from '../kinds/rest/mutations.js';
 import { toEngineAuthConfig, toEngineRows } from '../project-api-mutations.js';
 import type { HistoryNameFallback } from './record.js';
-import type { ResolvedSendInputWire } from '../../shared/wire-types.js';
-import type { GrpcRequestPatchWire } from '../../shared/kinds/grpc/wire.js';
-import type { McpRequestPatchWire } from '../../shared/kinds/mcp/wire.js';
-import type { RestRequestPatchWire } from '../../shared/kinds/rest/wire.js';
-import type { WsRequestPatchWire } from '../../shared/kinds/ws/wire.js';
+import type { ResolvedSendInputWire } from '@wirebench/wire/wire-types';
+import type { GrpcRequestPatchWire } from '@wirebench/wire/kinds/grpc/wire';
+import type { McpRequestPatchWire } from '@wirebench/wire/kinds/mcp/wire';
+import type { RestRequestPatchWire } from '@wirebench/wire/kinds/rest/wire';
+import type { WsRequestPatchWire } from '@wirebench/wire/kinds/ws/wire';
 
 /** What the editor holds for one send, by protocol. */
 export type DraftOf =

@@ -21,8 +21,8 @@ import {
 import { EngineService } from '../src/main/engine-service.js';
 import { whenWsSessionsRecorded, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { ExchangeRegistry } from '../src/main/send/exchange.js';
-import type { HistoryEntryWire, LogEntryWire } from '../src/shared/wire-types.js';
-import type { FailedExchangeWire } from '../src/shared/wire-base.js';
+import type { HistoryEntryWire, LogEntryWire } from '@wirebench/wire/wire-types';
+import type { FailedExchangeWire } from '@wirebench/wire/wire-base';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
 import { createHostState } from '../src/main/host/host-state.js';

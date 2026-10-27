@@ -16,7 +16,7 @@ import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import { OpenApiImportService } from '../src/main/openapi-import.js';
 import { createDefaultFetchDocument } from '@wirebench/engine';
-import type { ProjectWire } from '../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { tableInto } from './helpers/ipc-table.js';
 import { fakeNativeDialogs } from './helpers/fake-platform.js';
 import { testHooks } from './helpers/project-hooks.js';

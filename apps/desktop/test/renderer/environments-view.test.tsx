@@ -5,7 +5,7 @@ import { EnvironmentsView } from '../../src/renderer/features/environments/envir
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { WorkspaceEnvironmentWire } from '../../src/shared/wire-base.js';
+import type { WorkspaceEnvironmentWire } from '@wirebench/wire/wire-base';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 const dev: WorkspaceEnvironmentWire = {

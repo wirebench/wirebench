@@ -15,8 +15,8 @@ import { createApi, createProject, createRestRequest, entry } from '@wirebench/e
 import type { AuthConfig, Project } from '@wirebench/engine';
 import { buildRestHistoryEntry, HistoryService, historyFilePath } from '../src/main/history-service.js';
 import { sendThroughEngine } from '../src/main/send/exchange.js';
-import type { HistoryEntryWire } from '../src/shared/wire-types.js';
-import type { RestExchangeSummary } from '../src/shared/kinds/rest/wire.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
+import type { RestExchangeSummary } from '@wirebench/wire/kinds/rest/wire';
 import { sendDepsFor } from './helpers/send-deps.js';
 import { createHostState } from '../src/main/host/host-state.js';
 

@@ -19,7 +19,7 @@ import {
 import type { AuthConfig, Project, SoapOwnerAuth } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { type RequestChannelDeps } from '../src/main/ipc/request.js';
-import { GENERATED_CODE_TARGETS } from '../src/shared/code-targets.js';
+import { GENERATED_CODE_TARGETS } from '@wirebench/wire/code-targets';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
 import { tableInto } from './helpers/ipc-table.js';
 import { createHostState } from '../src/main/host/host-state.js';

@@ -8,7 +8,7 @@
 
 import { entityIdOf, TAB_KINDS, tabOwner, type TabContribution } from '../kinds/index.js';
 import { kindLabel } from '../kinds/placeholders.js';
-import type { WorkspaceWire } from '../../shared/wire-base.js';
+import type { WorkspaceWire } from '@shared/wire-base.js';
 import type { PersistedTab, PersistedWorkspaceUi } from './ui-state.js';
 import { useEditorsStore, type EditorTab } from './editors.js';
 import { useProjectStore } from './project.js';

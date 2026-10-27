@@ -1,5 +1,5 @@
 import { WirebenchError } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import { isMachineOnlyLabel, type SecretStore } from '../secrets.js';
 import { registerHandler, type HandlerTable } from './register.js';
 

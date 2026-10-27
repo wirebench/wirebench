@@ -36,7 +36,7 @@ Preload publishes exactly one object, `window.wirebench.*`, through `contextBrid
 `ipcRenderer` itself is never exposed: the renderer can call the methods that exist and has no
 way to reach a channel that was not deliberately published.
 
-Every channel is declared once, in `apps/desktop/src/shared/ipc.ts`, with a zod schema for the
+Every channel is declared once, in `packages/wire/src/ipc.ts`, with a zod schema for the
 request *and* for the response. Both directions are validated: a malformed or hostile message
 fails at the boundary with a typed error instead of somewhere deeper where it would be a bug.
 Most request schemas are plain `z.object`, which strips unknown fields rather than rejecting
@@ -44,7 +44,7 @@ them — an extra field the renderer sends is silently dropped, not returned as 
 an acceptable relaxation at this boundary: the renderer is our own code, unknown fields carry no
 authority (only the fields the schema declares are ever read), and stripping keeps this trust
 boundary from becoming a place where every unrelated renderer change has to be coordinated with
-the schema. The one exception is `sendTlsOptionsSchema` (`apps/desktop/src/shared/wire-types.ts`),
+the schema. The one exception is `sendTlsOptionsSchema` (`packages/wire/src/wire-types.ts`),
 which is `z.strictObject`: TLS options control certificate verification, so a field the schema
 does not know about — for instance a typo'd `rejectUnauthorized` — is rejected outright rather
 than silently ignored, since silently ignoring it there could leave a user believing an option
@@ -503,7 +503,7 @@ The document also leads with its own policy, declared before anything the server
 default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'
 ```
 
-That is `HTML_PREVIEW_CSP` (`apps/desktop/src/shared/html-preview-csp.ts`). Inline styles and `data:`
+That is `HTML_PREVIEW_CSP` (`packages/wire/src/html-preview-csp.ts`). Inline styles and `data:`
 images render; fonts fall back to the system fonts, because the frame also inherits the app CSP
 (`font-src 'self'`) and both policies are enforced. Every other fetch is refused, and the referrer is
 `no-referrer`. In the main process a `will-frame-navigate` handler (`denySubframeNavigation`) denies

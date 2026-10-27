@@ -30,7 +30,7 @@ import type {
   HooksCapturesEventWire,
   HooksChangedEventWire,
   HooksMetaWire,
-} from '../../shared/wire-base.js';
+} from '@wirebench/wire/wire-base';
 import type { LiveEvent, LiveState } from '../live/live-client.js';
 import type { LiveClients } from '../live/live-clients.js';
 import { normalizeServerUrl, type ServerClient } from '../server-client.js';

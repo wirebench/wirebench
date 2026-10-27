@@ -9,7 +9,7 @@ import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { lastStsSendIdOf, useExchangesStore } from '../../state/exchanges.js';
 import { ipc } from '../../state/ipc-client.js';
-import type { IssuedTokenStatusWire } from '../../../shared/kinds/soap/wire.js';
+import type { IssuedTokenStatusWire } from '@shared/kinds/soap/wire.js';
 
 export interface IssuedTokenStatusProps {
   readonly projectId: string;

@@ -16,7 +16,7 @@ import { DEFAULT_PREFERENCES, mergePreferences } from '@wirebench/engine';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { PREFERENCES_FILE, PreferencesService, rememberPickedCaBundle } from '../src/main/preferences.js';
 import { registerSslChannels } from '../src/main/ipc/ssl.js';
-import type { PreferencesWire } from '../src/shared/wire-base.js';
+import type { PreferencesWire } from '@wirebench/wire/wire-base';
 import { tableInto } from './helpers/ipc-table.js';
 import { createFakePlatform } from './helpers/fake-platform.js';
 

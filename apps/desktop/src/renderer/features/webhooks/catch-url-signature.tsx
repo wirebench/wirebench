@@ -11,7 +11,7 @@ import { Button } from '../../components/button.js';
 import { SchemeFields } from './scheme-fields.js';
 import { defaultScheme, SCHEME_KINDS, SCHEME_LABELS, schemeProblemOf, SIGNATURE_LIMITS } from './signature-text.js';
 import type { SchemeKind } from './signature-text.js';
-import type { CatchUrlWire, HooksUpdateRequestWire, SignatureSchemeWire } from '../../../shared/wire-base.js';
+import type { CatchUrlWire, HooksUpdateRequestWire, SignatureSchemeWire } from '@shared/wire-base.js';
 
 export interface SignatureForm {
   /** `null` is *None*. */

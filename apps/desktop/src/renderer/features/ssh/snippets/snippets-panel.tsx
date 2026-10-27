@@ -21,7 +21,7 @@ import {
 import { Button, SPLIT_HEAD_CLASS, SPLIT_TAIL_CLASS } from '../../../components/button.js';
 import { SELECTED_CLASS } from '../../../components/selection.js';
 import { ConfirmDialog } from '../../../components/confirm-dialog.js';
-import type { SnippetListItemWire, SnippetsFileWire } from '../../../../shared/snippets-wire.js';
+import type { SnippetListItemWire, SnippetsFileWire } from '@shared/snippets-wire.js';
 import { INPUT_CLASS as FIELD_CLASS } from '../inherited-field.js';
 import {
   addPackage,

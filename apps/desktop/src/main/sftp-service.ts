@@ -2,7 +2,7 @@ import type { Caller } from './host/platform.js';
 import { WirebenchError } from '@wirebench/engine';
 import { openSftp } from '@wirebench/ssh';
 import type { RemoteEntry, SftpSession } from '@wirebench/ssh';
-import { events } from '../shared/ipc.js';
+import { events } from '@wirebench/wire/ipc';
 import type {
   SftpChmodRequest,
   SftpCloseRequest,
@@ -15,7 +15,7 @@ import type {
   SftpPlaceWire,
   SftpRemoveRequest,
   SftpRenameRequest,
-} from '../shared/sftp-wire.js';
+} from '@wirebench/wire/sftp-wire';
 import { asWirebenchError } from './hosts-service.js';
 import { localList, localMkdir, localRemove, localRename } from './local-fs.js';
 import type { SshConnector } from './ssh-connect.js';

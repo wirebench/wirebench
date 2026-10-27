@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { OverviewTab } from '../../src/renderer/features/rest-api/overview-tab.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { restApiWire } from '../helpers/wire-defaults.js';
-import type { RestApiWire } from '../../src/shared/kinds/rest/wire.js';
+import type { RestApiWire } from '@wirebench/wire/kinds/rest/wire';
 
 const updateApi = vi.fn();
 

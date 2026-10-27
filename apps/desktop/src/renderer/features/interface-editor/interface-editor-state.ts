@@ -11,7 +11,7 @@ import type {
   DefinitionDocumentWire,
   SchemaComponentKind,
   SchemaNamespaceWire,
-} from '../../../shared/kinds/soap/wire.js';
+} from '@shared/kinds/soap/wire.js';
 import { ipc } from '../../state/ipc-client.js';
 
 /** Which tab of the Interface editor is showing. */

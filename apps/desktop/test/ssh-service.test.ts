@@ -13,7 +13,7 @@ import {
   whenWorkspaceSwitches,
 } from '../src/main/ssh-service.js';
 import type { SshServiceDeps } from '../src/main/ssh-service.js';
-import type { SshListHostsResponse } from '../src/shared/ssh-wire.js';
+import type { SshListHostsResponse } from '@wirebench/wire/ssh-wire';
 import { asCaller } from './helpers/ipc-table.js';
 import { createHostState } from '../src/main/host/host-state.js';
 

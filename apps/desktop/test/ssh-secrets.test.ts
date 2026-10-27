@@ -4,13 +4,13 @@ import { CHARSETS, DEFAULT_CHARSET, DEFAULT_TERM, TERM_NAME, resolveHost } from 
 import { DEFAULT_PREFERENCES, parseSecretPseudoRef, secretPseudoRef } from '@wirebench/engine';
 import { workspaceSecretGetter, workspaceSecretLabel } from '../src/main/secret-resolver.js';
 import { SshSecretsService } from '../src/main/ssh-secrets.js';
-import { SSH_DEFAULTS } from '../src/shared/ssh-defaults.js';
+import { SSH_DEFAULTS } from '@wirebench/wire/ssh-defaults';
 import {
   DEFAULT_TERMINAL_CHARSET,
   DEFAULT_TERMINAL_TYPE,
   TERMINAL_CHARSETS,
   TERMINAL_TYPE_PATTERN,
-} from '../src/shared/terminal-charsets.js';
+} from '@wirebench/wire/terminal-charsets';
 
 /** A tiny in-memory stand-in for the parts of SecretStore the SSH secrets use. */
 function fakeStore() {

@@ -1,4 +1,4 @@
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import { registerHandler, type HandlerTable } from '../ipc/register.js';
 import type { TerminalShareOwner } from '../terminal-share/owner.js';
 import type { TerminalShareViewer } from '../terminal-share/viewer.js';

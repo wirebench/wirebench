@@ -22,7 +22,7 @@ import {
   updateFolder,
   updateRestRequest,
 } from '../src/main/kinds/rest/mutations.js';
-import { restRequestPatchSchema } from '../src/shared/kinds/rest/wire.js';
+import { restRequestPatchSchema } from '@wirebench/wire/kinds/rest/wire';
 
 /** A project with one API: a root request, a `Pets` folder with two, and `Pets/Admin` with one. */
 function seeded(): Project {

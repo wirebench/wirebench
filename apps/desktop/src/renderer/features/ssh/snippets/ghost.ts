@@ -9,7 +9,7 @@ import { startRun } from './run.js';
 import { recentSnippetIds } from './snippets-prefs.js';
 import { useSnippetsStore } from './snippets-store.js';
 import { createLineTracker, matchSnippet } from './suggest.js';
-import type { SnippetListItemWire } from '../../../../shared/snippets-wire.js';
+import type { SnippetListItemWire } from '@shared/snippets-wire.js';
 
 export interface SnippetSuggestions {
   /** What the user typed (xterm `onData`), before it goes to the session. */

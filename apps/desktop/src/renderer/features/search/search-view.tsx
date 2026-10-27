@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EmptyState } from '../../components/empty-state.js';
-import type { SearchMatchWire, SearchScopesWire } from '../../../shared/wire-base.js';
+import type { SearchMatchWire, SearchScopesWire } from '@shared/wire-base.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import { rendererKindOf } from '../../kinds/index.js';

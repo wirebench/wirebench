@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { nodeFs, WirebenchError, writeFileAtomic } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { RecordsWritePicks } from '../dialog-picks.js';
 import type { EngineService } from '../engine-service.js';
 import { harFileName, harOf } from '../har.js';

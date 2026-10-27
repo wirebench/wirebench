@@ -19,8 +19,8 @@ import {
   uniqueSlug,
 } from '@wirebench/engine';
 import type { AuthConfig, GrpcApi, GrpcFolder, GrpcRequestDef, GrpcRequestSettings, Project } from '@wirebench/engine';
-import type { GrpcApiPatchWire, GrpcRequestPatchWire } from '../../../shared/kinds/grpc/wire.js';
-import type { RestFolderPatchWire } from '../../../shared/kinds/rest/wire.js';
+import type { GrpcApiPatchWire, GrpcRequestPatchWire } from '@wirebench/wire/kinds/grpc/wire';
+import type { RestFolderPatchWire } from '@wirebench/wire/kinds/rest/wire';
 import { takenApiSlugs, toEngineAuthConfig, toEngineRows } from '../../project-api-mutations.js';
 import type { KindMutations } from '../kind-main.js';
 

@@ -9,7 +9,7 @@ import type { CommandContext } from '../../src/renderer/lib/commands.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { PreferencesWire } from '../../src/shared/wire-base.js';
+import type { PreferencesWire } from '@wirebench/wire/wire-base';
 
 const context: CommandContext = {
   platform: 'mac',

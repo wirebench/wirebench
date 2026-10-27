@@ -8,7 +8,7 @@ import {
   qnameToString,
 } from '@wirebench/engine';
 import type { WsdlImportResult, OperationRef, QName } from '@wirebench/engine';
-import { channels } from '../../../../shared/ipc.js';
+import { channels } from '@wirebench/wire/ipc';
 import type { EngineService } from '../../../engine-service.js';
 import { registerHandler, type HandlerTable } from '../../../ipc/register.js';
 

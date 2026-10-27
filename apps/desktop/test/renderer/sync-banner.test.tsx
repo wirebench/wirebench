@@ -7,7 +7,7 @@ import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
-import type { SyncConflictWire } from '../../src/shared/wire-base.js';
+import type { SyncConflictWire } from '@wirebench/wire/wire-base';
 
 /** Captures every `window.wirebench.on` listener by channel, like `sync-store.test.ts` does. */
 function stubApiWithListeners(): Map<string, (payload: unknown) => void> {

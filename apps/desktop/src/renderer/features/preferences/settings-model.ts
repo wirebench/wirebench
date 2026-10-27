@@ -14,7 +14,7 @@ import type {
   PreferencesSectionWire,
   PreferencesStoredSectionWire,
   PreferencesWire,
-} from '../../../shared/wire-base.js';
+} from '@shared/wire-base.js';
 
 /** A section of the Settings page. */
 export type SettingsSectionId =

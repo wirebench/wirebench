@@ -22,7 +22,7 @@ import type {
   SshInstallKeyRequest,
   SshInstallKeyResponse,
   SshKeyWire,
-} from '../shared/ssh-keys-wire.js';
+} from '@wirebench/wire/ssh-keys-wire';
 import { asWirebenchError } from './hosts-service.js';
 import type { DeviceKeys } from './device-keys.js';
 import type { SshConnector } from './ssh-connect.js';

@@ -44,7 +44,7 @@ import type {
   McpExchangeSummary,
   McpRequestWire,
   McpServerWire,
-} from '../../src/shared/kinds/mcp/wire.js';
+} from '@wirebench/wire/kinds/mcp/wire';
 
 const sendMcp = vi.fn();
 const cancelMcp = vi.fn();

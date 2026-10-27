@@ -1,9 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { curlForLogEntry, loggedRequestOf } from '../src/main/log-curl.js';
-import type { RestExchangeSummary } from '../src/shared/kinds/rest/wire.js';
-import type { WsHandshakeExchangeSummary } from '../src/shared/kinds/ws/wire.js';
-import type { FailedExchangeWire } from '../src/shared/wire-base.js';
+import type { RestExchangeSummary } from '@wirebench/wire/kinds/rest/wire';
+import type { WsHandshakeExchangeSummary } from '@wirebench/wire/kinds/ws/wire';
+import type { FailedExchangeWire } from '@wirebench/wire/wire-base';
 import { Redactor } from '../src/main/host/redactor.js';
 
 const redactor = new Redactor();

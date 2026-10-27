@@ -9,7 +9,7 @@
  * stands (`queueEnvironmentPatch`), so an id this machine does not know (a project a teammate has
  * and this machine has not pulled) is kept.
  */
-import type { WorkspaceEnvironmentWire, WorkspaceProjectWire } from '../../../shared/wire-base.js';
+import type { WorkspaceEnvironmentWire, WorkspaceProjectWire } from '@shared/wire-base.js';
 import { appliesToProject } from '../../state/environment-scope.js';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';

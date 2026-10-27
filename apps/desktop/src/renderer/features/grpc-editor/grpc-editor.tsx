@@ -29,8 +29,8 @@ import type {
   GrpcMethodDescriptorWire,
   GrpcRequestPatchWire,
   GrpcServiceDescriptorWire,
-} from '../../../shared/kinds/grpc/wire.js';
-import type { AuthConfigWire } from '../../../shared/wire-base.js';
+} from '@shared/kinds/grpc/wire.js';
+import type { AuthConfigWire } from '@shared/wire-base.js';
 import { CallBar } from './call-bar.js';
 import { GrpcBreadcrumb } from './grpc-breadcrumb.js';
 import { MessageTab } from './message-tab.js';

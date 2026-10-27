@@ -16,7 +16,7 @@ import type {
   SshKnownHostsImportApplyResponse,
   SshKnownHostsImportPreviewRequest,
   SshKnownHostsImportPreviewResponse,
-} from '../shared/ssh-wire.js';
+} from '@wirebench/wire/ssh-wire';
 import { asWirebenchError, type HostsService } from './hosts-service.js';
 import { errnoOf, nodeImportFs, readRegular, type SshImportFs } from './ssh-import.js';
 import type { SshService } from './ssh-service.js';

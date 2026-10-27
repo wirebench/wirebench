@@ -16,7 +16,7 @@ import type {
   SnippetWire,
   SnippetsFileWire,
   SshListSnippetsResponse,
-} from '../shared/snippets-wire.js';
+} from '@wirebench/wire/snippets-wire';
 import { asWirebenchError } from './hosts-service.js';
 
 export const SNIPPETS_FILE = SNIPPETS_FILE_NAME;

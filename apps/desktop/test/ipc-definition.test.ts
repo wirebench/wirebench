@@ -2,13 +2,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerDefinitionChannels } from '../src/main/kinds/soap/channels/definition.js';
-import { MAX_ENVELOPE_XML_CHARS } from '../src/shared/kinds/soap/wire.js';
+import { MAX_ENVELOPE_XML_CHARS } from '@wirebench/wire/kinds/soap/wire';
 import type {
   DefinitionDeclarationAtResponse,
   DefinitionDocumentsResponse,
   DefinitionDocumentTextResponse,
   DefinitionSchemaIndexResponse,
-} from '../src/shared/kinds/soap/wire.js';
+} from '@wirebench/wire/kinds/soap/wire';
 import { readPublicFixture } from './helpers/fixtures.js';
 import { tableInto } from './helpers/ipc-table.js';
 

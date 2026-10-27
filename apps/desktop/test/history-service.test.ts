@@ -8,7 +8,7 @@ import { HistoryService, historyFilePath } from '../src/main/history-service.js'
 import { AD_HOC_ID, soapOverrideOf } from '../src/main/send/draft.js';
 import { sendThroughEngine } from '../src/main/send/exchange.js';
 import { AD_HOC_NAME, type HistoryNameFallback } from '../src/main/send/record.js';
-import type { ResolvedSendInputWire } from '../src/shared/wire-types.js';
+import type { ResolvedSendInputWire } from '@wirebench/wire/wire-types';
 import { sendDepsFor } from './helpers/send-deps.js';
 import { createHostState } from '../src/main/host/host-state.js';
 

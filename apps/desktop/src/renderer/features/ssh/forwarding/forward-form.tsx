@@ -1,5 +1,5 @@
 import { useId, type ReactNode } from 'react';
-import type { ForwardEntryWire } from '../../../../shared/ssh-wire.js';
+import type { ForwardEntryWire } from '@shared/ssh-wire.js';
 import { INPUT_CLASS } from '../inherited-field.js';
 import { isNetworkBind, listenAddress } from './forward-format.js';
 

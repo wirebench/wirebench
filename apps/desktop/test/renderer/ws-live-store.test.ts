@@ -11,7 +11,7 @@ import { useDraftsStore } from '../../src/renderer/state/drafts.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { WsFrameWire, WsHandshakeWire, WsLiveEvent } from '../../src/shared/kinds/ws/wire.js';
+import type { WsFrameWire, WsHandshakeWire, WsLiveEvent } from '@wirebench/wire/kinds/ws/wire';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeWsExchange } from '../mocks/exchange-fixtures.js';
 import { wsApiWire, wsRequestWire } from '../helpers/wire-defaults.js';

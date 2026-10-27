@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GLOBAL_PROPERTIES_FILE, GlobalProperties } from '../src/main/global-properties.js';
 import { wrapHandler } from '../src/main/ipc/envelope.js';
 import { registerGlobalsChannels } from '../src/main/ipc/globals.js';
-import { channels } from '../src/shared/ipc.js';
-import type { GlobalsState } from '../src/shared/wire-base.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { GlobalsState } from '@wirebench/wire/wire-base';
 import { tableInto } from './helpers/ipc-table.js';
 import { Redactor } from '../src/main/host/redactor.js';
 

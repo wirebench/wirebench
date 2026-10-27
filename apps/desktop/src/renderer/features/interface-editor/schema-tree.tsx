@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { SchemaComponentKind, SchemaComponentWire, SchemaNamespaceWire } from '../../../shared/kinds/soap/wire.js';
+import type { SchemaComponentKind, SchemaComponentWire, SchemaNamespaceWire } from '@shared/kinds/soap/wire.js';
 import type { SchemaSelection } from './interface-editor-state.js';
 
 /** The five component groups a namespace is shown as, in display order. */

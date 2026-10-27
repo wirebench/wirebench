@@ -1,7 +1,7 @@
 /** A GraphQL response's markers on the response body (phase 6 spec §3.4). */
 import type * as Monaco from 'monaco-editor';
 import { contractRange, getMarkerApi, type MarkerApi } from '../../editor/markers.js';
-import type { GraphqlCheckWire } from '../../../shared/kinds/graphql/wire.js';
+import type { GraphqlCheckWire } from '@shared/kinds/graphql/wire.js';
 
 /** Monaco's `MarkerSeverity.Error`/`.Warning`, inlined so this module needs no Monaco at import time. */
 const ERROR = 8;

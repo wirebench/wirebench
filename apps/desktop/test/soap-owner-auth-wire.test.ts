@@ -4,8 +4,8 @@ import type { Interface, Project } from '@wirebench/engine';
 import { applyChange } from '../src/main/project-mutations.js';
 import type { MutationDeps } from '../src/main/project-mutations.js';
 import { findRequest } from '../src/main/project-wire.js';
-import { projectChangeSchema } from '../src/shared/wire-types.js';
-import type { AuthConfigWire } from '../src/shared/wire-base.js';
+import { projectChangeSchema } from '@wirebench/wire/wire-types';
+import type { AuthConfigWire } from '@wirebench/wire/wire-base';
 
 const deps: MutationDeps = {
   generate: () => Promise.resolve({ envelopeXml: '<Add/>', soapVersion: '1.1', soapAction: 'urn:Add' }),

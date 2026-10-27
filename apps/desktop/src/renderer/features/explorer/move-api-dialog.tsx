@@ -3,7 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { create } from 'zustand';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
-import type { ProjectApiMovePlan } from '../../../shared/wire-types.js';
+import type { ProjectApiMovePlan } from '@shared/wire-types.js';
 import { useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 

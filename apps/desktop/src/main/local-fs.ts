@@ -4,7 +4,7 @@ import { lstat, mkdir, readdir, rename, rm, rmdir, stat } from 'node:fs/promises
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
-import type { SftpEntryWire } from '../shared/sftp-wire.js';
+import type { SftpEntryWire } from '@wirebench/wire/sftp-wire';
 
 /**
  * This machine's side of the Files tab. Every path is used as the renderer gave it (spec R5): the `sftp.*`

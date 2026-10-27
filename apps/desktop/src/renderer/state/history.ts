@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { HistoryAppendedEvent, HistoryEntryWire } from '../../shared/wire-types.js';
+import type { HistoryAppendedEvent, HistoryEntryWire } from '@shared/wire-types.js';
 import { ipc } from './ipc-client.js';
 
 /** Debounce delay for `search`, so fast typing doesn't fire one IPC round trip per keystroke. */

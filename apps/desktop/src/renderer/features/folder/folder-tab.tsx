@@ -14,7 +14,7 @@ import { SettingsPageTabs, type SettingsPageTab } from '../../components/setting
 import { useProjectStore } from '../../state/project.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
 import { PagePath } from '../explorer/page-path.js';
-import type { AuthConfigWire } from '../../../shared/wire-base.js';
+import type { AuthConfigWire } from '@shared/wire-base.js';
 
 // The scripts editor is Monaco: loaded with the tab, not with the page.
 const ScriptsTab = lazy(async () => {

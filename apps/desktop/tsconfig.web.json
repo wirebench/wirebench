@@ -11,12 +11,12 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["src/shared/*"]
+      "@shared/*": ["../../packages/wire/src/*"]
     }
   },
   "include": [
     "src/renderer/**/*",
-    "src/shared/**/*",
+    "../../packages/wire/src/**/*",
     "src/preload/api.d.ts",
     "src/preload/build-api.ts",
     "test/renderer/**/*",

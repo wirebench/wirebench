@@ -20,7 +20,7 @@ import {
 } from '@wirebench/engine';
 import type { Project, WssEntry, WssIncomingConfig, WssOutgoingConfig, WssRef } from '@wirebench/engine';
 import { opaqueEntryFingerprint } from '../../wss-opaque.js';
-import type { WssIncomingPatchWire, WssOutgoingPatchWire } from '../../../shared/kinds/soap/wire.js';
+import type { WssIncomingPatchWire, WssOutgoingPatchWire } from '@wirebench/wire/kinds/soap/wire';
 
 function notFound(configId: string): never {
   throw new ProjectError('not-found', `No outgoing WS-Security configuration with id "${configId}"`, {

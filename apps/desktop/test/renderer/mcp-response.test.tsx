@@ -8,7 +8,7 @@ import { McpResponsePane } from '../../src/renderer/features/mcp-editor/response
 import { McpResultView, imageDataUrl } from '../../src/renderer/features/mcp-editor/response/result-view.js';
 import { McpMessagesView, messageOffset } from '../../src/renderer/features/mcp-editor/response/messages-view.js';
 import { stderrTail } from '../../src/renderer/features/mcp-editor/response/status-line.js';
-import type { McpExchangeSummary, McpMessageWire } from '../../src/shared/kinds/mcp/wire.js';
+import type { McpExchangeSummary, McpMessageWire } from '@wirebench/wire/kinds/mcp/wire';
 
 afterEach(() => {
   cleanup();

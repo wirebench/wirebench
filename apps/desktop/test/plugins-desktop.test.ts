@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startupFeatures } from '../src/main/features/startup.js';
 import { registerPluginChannels } from '../src/main/ipc/plugins.js';
 import { loadDesktopPlugins, type DesktopPlugins } from '../src/main/plugins/desktop-plugins.js';
-import { isCodeLanguage } from '../src/shared/code-targets.js';
+import { isCodeLanguage } from '@wirebench/wire/code-targets';
 import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
