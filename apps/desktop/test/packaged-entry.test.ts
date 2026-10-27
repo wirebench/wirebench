@@ -32,7 +32,7 @@ function preloadEntries(): string[] {
 }
 
 function expectBundled(source: string, name: string): void {
-  const escaped = name.replace(/[/.]/g, '\\$&');
+  const escaped = name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
   expect(source).not.toMatch(new RegExp(`require\\(\\s*["']${escaped}(?:/[^"']*)?["']\\s*\\)`));
   expect(source).not.toMatch(new RegExp(`from\\s*["']${escaped}(?:/[^"']*)?["']`));
   expect(source).not.toMatch(new RegExp(`import\\(\\s*["']${escaped}(?:/[^"']*)?["']\\s*\\)`));
