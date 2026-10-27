@@ -5,7 +5,8 @@ Date: 2026-10-24 · Status: **architecture only** — approved scope is the desi
 customers · Amended 2026-10-26 after an independent review: its four high findings are folded into §4.2
 (row-level security must be forced), §3.8 and §3.10 (the agent serves a browser a declared subset), §5.4
 guard 6 (background jobs have a tenant scope) and §5.1 (the host package is a factory with no module-level
-state); the rest are folded in where they apply · Issue: #776 (slice 1 is #777) · Module ids: `host-seam`,
+state); the rest are folded in where they apply · Amended 2026-10-27 for slice 2 (§17, decision 12,
+ADR-0034) · Issue: #776 (slice 1 is #777, slice 2 is #783) · Module ids: `host-seam`,
 `browser-client`, `local-agent`, `tenancy`, `operations`, `domains`, `control-plane`, `custom-domains`
 
 - Intent: `docs/intent/wirebench-server-teams.md` (roles and sign-in for people without git hosting) extended
@@ -57,6 +58,10 @@ state); the rest are folded in where they apply · Issue: #776 (slice 1 is #777)
       signature verifier; Paddle's checkout overlay is the only Paddle code on the signup page.
   11. **A server host instance is evicted 30 minutes after its last socket closes, and a tenant holds at
       most as many live instances as it has seats** (popup, 2026-10-26).
+  12. **Private ranges stay open on a self-hosted server** (popup, 2026-10-27). The egress rule of §6
+      always refuses loopback, link-local and cloud-metadata addresses, on every server; private ranges
+      are refused only when the operator sets `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE`, and always in
+      hosted mode. Scheduled runs against internal hosts keep working after the upgrade. ADR-0034.
 
 ## Assumptions I'm making
 
@@ -644,7 +649,7 @@ self-hosted teams on their own, which is why they would come first whenever the 
 | Slice | Module id | Delivers | Depends on | Serves self-hosted alone? |
 | --- | --- | --- | --- | --- |
 | 1 | `host-seam` | **Built** (#779 and #780, 2026-10-27; ADR-0033 accepted). `@wirebench/host` as `createHost(platform)` with `HostPlatform` and `Caller`, no module-level state and its gate; the Electron app embeds it; proven by the existing tests on a fake platform and a fake-socket test of `buildApi` (the loopback server moves to slice 3) | — | yes (no user-visible change) |
-| 2 | `browser-client` | The Vite browser build, `browser-bootstrap.ts`, capability discovery, the sign-in page and `browser_flows`, the cookie session, the server host with checkouts and per-user state via `inject`, live events over the host socket, user-scoped sealed secrets under one server-wide root, the §3.10 allowlist and path guard, the egress rule on every outbound connection | 1 | yes: a self-hosted team gets a browser tab |
+| 2 | `browser-client` | **Scheduled 2026-10-27** (#783; §17 records what changed from this row). The Vite browser build, `browser-bootstrap.ts`, capability discovery, the sign-in page and `browser_flows`, the cookie session, the server host with checkouts and per-user state via `inject`, live events over the host socket, user-scoped sealed secrets under one server-wide root, the §3.10 allowlist and path guard, the egress rule on every outbound connection | 1 | yes: a self-hosted team gets a browser tab |
 | 3 | `local-agent` | `packages/agent` as a library, the loopback socket transport, pairing with the browser subset, the send-route rule and the send bundle, `wirebench agent`, the agent's packaging | 1, 2 | yes |
 | 4 | `tenancy` | `tenants`, `tenant_id` on every table, forced row-level security, tenant resolution by `Host`, per-tenant directories and data keys with the one-time re-wrap, the six guards of §5.4 including the job scope, the host-instance lease, the self-hosted migration | 2 | yes, invisibly (one tenant) |
 | 5 | `operations` | `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
@@ -724,3 +729,125 @@ scheduled earlier on their own merits, each with its own spec amendment and issu
 None. The five questions this section held on 2026-10-24 (payment, eviction and the instance cap, region,
 auto-pairing, a free hosted tier) were put to the owner on 2026-10-26 and are decisions 7 to 11 above.
 The payment provider is Paddle, as merchant of record (decision 10).
+
+## 17. Slice 2 amendment: the browser client (2026-10-27)
+
+Slice 2 (#783) is scheduled on its merits, before the trigger, because a self-hosted team gets a browser
+tab from it. It builds §3.1–§3.5, §3.10, §5.2 (the server transport) and §6 with one tenant implied, so no
+`tenant_id` appears yet. Where the build differs from the sections above, this section wins until slice 4
+folds it back. Plan: `docs/plans/2026-10-27-browser-client.md`.
+
+### 17.1 Switching it on
+
+- The browser client is off unless `WIREBENCH_SERVER_BROWSER_CLIENT=true` (my call). An upgrade must not
+  open a new sign-in surface and a server-side send path on a server whose operator did not ask for them.
+  The switch requires `WIREBENCH_SERVER_SECRETS_KEY` (a 32-byte base64 key, the same form as the hooks and
+  schedules keys); `config check` refuses the one without the other.
+- With the switch off, `/` answers `404` as today, `/api/v1/host` is not registered, and nothing below runs.
+
+### 17.2 Sign-in and the cookie
+
+- `GET /` with a valid session serves the renderer's `index.html`; without one it redirects to
+  `/sign-in`. `/sign-in` is a server-rendered page (the invite page's style and its `default-src 'none'`
+  CSP plus `form-action 'self'`) listing the enabled methods. Local sign-in is a plain form `POST` to
+  `/sign-in/local`, with the desktop route's rate limits and decoy. OIDC and SAML start at
+  `/sign-in/oidc` and `/sign-in/saml`, keep their state in `browser_flows`, and their callbacks
+  (`/api/v1/auth/oidc/browser-callback`, `/api/v1/auth/saml/browser-acs`) set the cookie and redirect
+  to `/`. The desktop's loopback flows are untouched.
+- The cookie is `__Host-wb_session` (`HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, no `Domain`). On an
+  `http://` public URL, which the server accepts only with `WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL`,
+  it is `wb_session` without `Secure`, because browsers drop a `__Host-` cookie that is not `Secure`.
+  Its value is a device token; the row has `kind = 'browser'` and the same idle and maximum ages.
+- The identity guard reads `Authorization` first, then the cookie. A request authenticated by the cookie
+  whose method is not `GET` or `HEAD` must carry `Origin` equal to the public URL, or it is refused with
+  `identity-origin-refused` (`403`); the sign-in form is checked the same way, against login CSRF.
+- `POST /sign-out` revokes the row, clears the cookie, and announces `sessionEnded`, which closes the
+  user's host sockets that used that token with `4401`.
+
+### 17.3 The server host
+
+- One host instance per user, in the server process, created by `createHost(serverPlatform, options)` on
+  the user's first host socket and evicted `WIREBENCH_SERVER_HOST_IDLE_MINUTES` (default 30) after the
+  last one closes. On a self-hosted server a user has at most one instance and seats already bound users,
+  so decision 11's cap holds without a counter; slice 4 adds the per-tenant counter.
+- **Layout (amends §3.3 and §4.4).** The host's `userData` is `<dataDir>/checkouts/<userId>/`, so its
+  state files sit where the desktop's do inside `userData`, and the working copies are the host's own
+  `workspaces/<workspaceId>/` beneath it. Slice 4 prefixes `tenants/<tenantId>/`. Nothing else in the
+  data directory is reachable from a host.
+- **Embedding.** The server builds with `tsc -b` and `@wirebench/host` is source-only (ADR-0033), so the
+  server bundles the host with esbuild into `dist/host/` at build time, and loads that bundle only when the
+  switch is on. Native modules the host loads lazily (`node-pty`, serial, `node-hid`, Kerberos) stay
+  external and are never loaded, since their channels are not registered.
+- **Transport to the server's own routes.** `HostOptions.server` gives the host a `send` for its
+  `ServerClient` built on Fastify `inject` with the user's token as a bearer, and a `connectLive` that
+  opens an in-process socket on the live module's handler, so every call runs the full route pipeline and
+  live events reach the host's existing live client. The host's account for the server's public URL is
+  seeded at creation with the token of the socket that created it, and updated to the newest socket's.
+- **What it serves** is §3.10's table, as one allowlist of channel groups in `packages/server/src/host/`.
+  A channel outside it answers `host-capability-missing`. The server platform has no `dialogs`, `shell`
+  or `power`, and its capabilities are `send:public` only, so the SSH, terminal and Kerberos areas are
+  off through `app.areas`. Kinds whose transport cannot take the egress check (17.5) are left out of
+  `app.kinds` on the server host until it can; gRPC is the known one.
+- **Server-kind workspaces only.** A host without the `files` capability refuses to create or open a
+  git or local workspace (`host-capability-missing`), and the renderer offers only server workspaces.
+- **Path guard.** The server platform names a root, the checkout parent; every renderer-supplied path is
+  resolved and `realpath`ed against it before any file is touched, and one outside answers
+  `host-path-outside-workspace`.
+- **No machine values.** `${#System#…}` resolves to nothing on the server host, as in scheduled runs; the
+  host reads no `process.env` override (the platform says it is packaged, which switches the
+  e2e-only environment overrides off); there are no secret sources.
+
+### 17.4 Secrets (amends §3.5)
+
+- The server platform's `secrets.encrypt` and `decrypt` seal each value with the secret box
+  (AES-256-GCM) under a per-user key derived by HKDF from `WIREBENCH_SERVER_SECRETS_KEY` and the user id.
+  The host's own `SecretStore` keeps them in `secrets.json` in the user's directory, exactly as the
+  desktop keeps its `safeStorage` blobs, and the host's `secrets.*` channels already never read a value
+  back, so the renderer's Secrets page is unchanged.
+- The `tenant_secrets` table waits for slice 4 (my call). A second store beside the host's own would
+  be a second resolver for one name; slice 4 introduces per-tenant keys and re-wraps every user's
+  `secrets.json` once, which is the moment a table can replace the file if it still earns its place.
+- Every secret write and every server-side resolution is audited by name (`secret.written`,
+  `secret.resolved` with the request's target host), never by value, through a hook the server passes
+  in `HostOptions`.
+
+### 17.5 The egress rule (amends §6; ADR-0034)
+
+- One function, `checkEgress(address, family)`, in `@wirebench/core`, used as the DNS `lookup` of every
+  connector the server builds: the engine's undici dispatchers (so every redirect and the proxy hop are
+  checked, because they connect through the same lookup), the WebSocket connector, and the server's own
+  alert and webhook clients. The connection goes to the address the check passed; nothing resolves twice.
+- Always refused, on every server: loopback (`127.0.0.0/8`, `::1`), unspecified (`0.0.0.0/8`, `::`),
+  link-local (`169.254.0.0/16`, `fe80::/10`), which covers the IPv4 cloud-metadata address, the IPv6
+  metadata address `fd00:ec2::254`, multicast and broadcast. IPv4-mapped IPv6 is unwrapped first.
+- Refused only when `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true` (and always in hosted mode, slice 4):
+  `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `fc00::/7`.
+- Covered: server-host sends of every served kind, scheduled runs, schedule alerts, OAuth token calls,
+  URL imports and definition fetches made by a server host. Not covered: destinations only the operator
+  configures (the OIDC issuer, SMTP, audit forwarding), which are the operator's own network.
+- A refusal is `egress-refused` naming the host and the class of address, never the resolved address of
+  a private target, so the message is not a probe of the server's network.
+
+### 17.6 The browser build
+
+- `apps/desktop/vite.browser.config.ts` builds `src/renderer` with the desktop's aliases and plugins,
+  plus `src/browser/browser-bootstrap.ts` as the entry that runs first. The engine subpaths the renderer
+  imports resolve to their sources (the `development` condition), as in the desktop build.
+- The bootstrap opens `/api/v1/host`, reads a `hello` frame (`{ type: 'hello', host: 'browser',
+  capabilities, osTheme }`), builds `window.wirebench` with `buildApi` over the socket, then imports the
+  renderer. `env` gains `host` and `capabilities` on both builds; the renderer reads them through one
+  helper, `hasCapability`, and never compares `host`. `pathForFile` is `() => ''`.
+- A dropped socket shows a reconnect bar and reopens with backoff; a `4401` close sends the tab to
+  `/sign-in`.
+- The server serves the build from `dist/browser/` with `@fastify/static`, hashed assets cached as
+  immutable, and the CSP `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;
+  connect-src 'self'; frame-ancestors 'none'`. The container image builds it in its build stage.
+
+### 17.7 Testing
+
+- Unit and integration tests per task, two-host-instances-in-one-process tests on the server, and the
+  egress rule as a table test over every range above.
+- One Playwright suite (`e2e/browser/`) against the server image in Docker with PostgreSQL, run in CI:
+  sign in with a local password, open a server workspace, send a request to an echo service on the compose network (a private address, open by default), see
+  a request to `127.0.0.1` refused by the egress rule, and see
+  that the SSH area and the file dialogs are absent. No local Electron windows are involved.
