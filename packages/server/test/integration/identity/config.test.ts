@@ -94,6 +94,25 @@ describeDb('identity module boot', () => {
     expect(code).toBe(0);
     const text = stdout.write.mock.calls.map((c) => String(c[0])).join('');
     expect(text).toContain('https://wirebench.test/api/v1/auth/oidc/callback');
+    expect(text).not.toContain('browser-callback');
     expect(text).not.toContain('top-secret');
+  });
+
+  it('config check also prints the browser client’s redirect URI when it is on', async () => {
+    const stdout = { write: vi.fn() };
+    const code = await main(['config', 'check'], {
+      stdout,
+      stderr: { write: vi.fn() },
+      env: env({
+        WIREBENCH_SERVER_OIDC_ISSUER: 'https://idp.test',
+        WIREBENCH_SERVER_OIDC_CLIENT_ID: 'c',
+        WIREBENCH_SERVER_OIDC_CLIENT_SECRET: 'top-secret',
+        WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
+        WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
+      }),
+    });
+    expect(code).toBe(0);
+    const text = stdout.write.mock.calls.map((c) => String(c[0])).join('');
+    expect(text).toContain('https://wirebench.test/api/v1/auth/oidc/browser-callback');
   });
 });

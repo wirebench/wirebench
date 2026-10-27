@@ -94,8 +94,11 @@ however the team already talks — the server sends no email. `admin list-invita
 Two sign-in methods, both on by default once configured: local accounts (email and password,
 `WIREBENCH_SERVER_LOCAL_AUTH`) and OpenID Connect (`WIREBENCH_SERVER_OIDC_*`). With OIDC, register
 the redirect URI `wirebench-server config check` prints (`<public URL>/api/v1/auth/oidc/callback`)
-at the identity provider; a login is linked to an existing account, or to an open invitation, by
-the provider's **verified** email, and never creates an account on its own. Sign-in and invitation
+at the identity provider. With the browser client on (`WIREBENCH_SERVER_BROWSER_CLIENT`), also register
+a second redirect URI, `<public URL>/api/v1/auth/oidc/browser-callback` (`config check` prints it too):
+sign-ins started from the browser's `/sign-in` page come back there. A login is linked to an existing
+account, or to an open invitation, by the provider's **verified** email, and never creates an account
+on its own. Sign-in and invitation
 endpoints are rate-limited to ten attempts a minute per address and per email (one process, so
 the counters reset on restart). Device tokens expire after `WIREBENCH_SERVER_TOKEN_IDLE_DAYS`
 without use or `WIREBENCH_SERVER_TOKEN_MAX_DAYS` at most; a user sees and revokes their devices
@@ -106,7 +109,9 @@ in the app, and an admin who disables a user revokes them all.
 On an Enterprise server, `WIREBENCH_SERVER_SAML_IDP_METADATA` (an `https://` URL or an absolute file path)
 turns on SAML sign-in: the app offers _Continue with SSO_ and runs the same loopback flow as OIDC. The IdP
 needs the entity ID `<public URL>/api/v1/auth/saml/metadata` and the ACS URL
-`<public URL>/api/v1/auth/saml/acs`; `serve` logs both. The metadata is read at start-up, so an IdP
+`<public URL>/api/v1/auth/saml/acs`; `serve` logs both. With the browser client on, the IdP also needs a
+second ACS URL, `<public URL>/api/v1/auth/saml/browser-acs`, for sign-ins started from the browser; `serve`
+logs it too, but the SP metadata names only the first, so add it at the IdP by hand. The metadata is read at start-up, so an IdP
 certificate rotation needs a restart. SAML never creates an account: SCIM or an invitation does.
 
 SCIM 2.0 answers at `<public URL>/scim/v2` with a bearer token from the app's Provisioning tab or the

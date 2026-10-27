@@ -15,15 +15,25 @@ import {
   type SamlCompleteRequest,
   type SamlStartRequest,
 } from '@wirebench/engine';
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ANONYMOUS_SOURCE, auditSource, recordAudit } from '../../context.js';
+import {
+  FLOW_EXPIRED_MESSAGE,
+  finishBrowserSignIn,
+  refusalMessage,
+  safeRedirectPath,
+  startBrowserFlow,
+  takeBrowserFlow,
+} from '../../identity/browser-flows.js';
 import { flowInvalid, methodDisabled } from '../../identity/errors.js';
 import { requireServerAdmin } from '../../identity/guard.js';
 import { INVITE_PAGE_CSP, renderReturnPage } from '../../identity/invite-page.js';
 import { linkClaims, type IdentityLinks } from '../../identity/linking.js';
 import { ipKey, rateLimit } from '../../identity/rate-limit.js';
 import * as identityRepo from '../../identity/repo.js';
+import type { UserRow } from '../../identity/repo.js';
 import { signIn } from '../../identity/sessions.js';
+import { sendSignInPage } from '../../identity/sign-in-page.js';
 import { hashSecret, mintSecret, newId, pkceChallenge } from '../../identity/tokens.js';
 import { jsonSchema } from '../../schema.js';
 import type { SsoEnv } from '../env.js';
@@ -75,6 +85,73 @@ function redirectToLoopback(
 }
 
 const EXPIRED = 'This sign-in has expired or was already completed. Return to Wirebench and start again.';
+
+type Answer =
+  | { readonly ok: true; readonly user: UserRow }
+  | { readonly ok: false; readonly code: string; readonly email?: string };
+
+/**
+ * What both ACS routes do with a posted response once its flow is known: the license, the library's
+ * validation and ours, the claims mapping and the linking rules. Only the flow and the reply differ.
+ */
+async function answerResponse(
+  env: SsoEnv & { readonly saml: NonNullable<SsoEnv['saml']> },
+  request: FastifyRequest,
+  input: {
+    readonly samlResponse: string;
+    readonly requestId: string;
+    readonly acsUrl: string;
+    readonly flowId: string;
+  },
+): Promise<Answer> {
+  if (!(await env.ctx.license.state()).features.includes('sso-provisioning'))
+    return { ok: false, code: 'licensing-feature-required' };
+  let assertion: SamlAssertion;
+  try {
+    assertion = await env.saml.provider.validate({
+      samlResponse: input.samlResponse,
+      requestId: input.requestId,
+      acsUrl: input.acsUrl,
+    });
+  } catch (error) {
+    if (!(error instanceof SamlRejected)) throw error;
+    // The flow ID and the library's message only: never the XML or what it asserts (§6.1).
+    request.log.warn({ flowId: input.flowId, reason: error.reason, detail: error.message }, 'saml response refused');
+    return { ok: false, code: error.reason };
+  }
+  const mapped = claimsOf(assertion, env.saml.claims);
+  if (!mapped.ok) return { ok: false, code: mapped.code };
+  const { claims } = mapped;
+  const linked = await linkClaims(
+    env,
+    { ...claims, emailVerified: claims.email !== undefined },
+    auditSource(request),
+    SAML_LINKS,
+  );
+  if (!linked.ok)
+    return {
+      ok: false,
+      code: linked.code === 'identity-email-unverified' ? 'identity-saml-no-email' : linked.code,
+      ...(claims.email !== undefined ? { email: claims.email } : {}),
+    };
+  return { ok: true, user: linked.user };
+}
+
+/** The `auth.sign_in_failed` event of a refused SAML response. */
+const recordRefusal = (env: SsoEnv, request: FastifyRequest, reason: string, email?: string) =>
+  recordAudit(env.ctx.hooks, env.ctx.db, {
+    ...auditSource(request),
+    ...ANONYMOUS_SOURCE,
+    action: 'auth.sign_in_failed',
+    target: { kind: 'server' },
+    details: { method: 'saml', reason, emailLower: email?.toLowerCase() ?? null },
+  });
+
+const parseForm = (body: string): Record<string, string> => Object.fromEntries(new URLSearchParams(body));
+const formField = (body: unknown, name: string): string => {
+  const value = (body as Record<string, unknown> | undefined)?.[name];
+  return typeof value === 'string' ? value : '';
+};
 
 export const authSamlRoutes =
   (env: SsoEnv) =>
@@ -128,7 +205,7 @@ export const authSamlRoutes =
         'application/x-www-form-urlencoded',
         { parseAs: 'string', bodyLimit: ACS_BODY_LIMIT },
         (_request, body, done) => {
-          done(null, Object.fromEntries(new URLSearchParams(body as string)));
+          done(null, parseForm(body as string));
         },
       );
       acs.post(
@@ -137,57 +214,60 @@ export const authSamlRoutes =
         async (request, reply) => {
           const saml = env.saml;
           if (saml === undefined) throw methodDisabled();
-          const body = (request.body ?? {}) as Record<string, unknown>;
-          const relayState = typeof body['RelayState'] === 'string' ? body['RelayState'] : '';
-          const samlResponse = typeof body['SAMLResponse'] === 'string' ? body['SAMLResponse'] : '';
-          const refused = (reason: string, email?: string) =>
-            recordAudit(env.ctx.hooks, env.ctx.db, {
-              ...auditSource(request),
-              ...ANONYMOUS_SOURCE,
-              action: 'auth.sign_in_failed',
-              target: { kind: 'server' },
-              details: { method: 'saml', reason, emailLower: email?.toLowerCase() ?? null },
-            });
+          const relayState = formField(request.body, 'RelayState');
+          const samlResponse = formField(request.body, 'SAMLResponse');
           const flow = relayState === '' ? undefined : await repo.samlFlowByRelayState(env.ctx.db, relayState);
           if (flow === undefined || flow.grantHash !== null || Date.parse(flow.expiresAt) <= env.now().getTime())
             return htmlPage(reply, 400, EXPIRED);
-          const fail = async (code: string, email?: string) => {
+          const answer = await answerResponse({ ...env, saml }, request, {
+            samlResponse,
+            requestId: flow.requestId,
+            acsUrl: env.urls.acsUrl,
+            flowId: flow.id,
+          });
+          if (!answer.ok) {
             await repo.deleteSamlFlow(env.ctx.db, flow.id);
-            await refused(code, email);
-            return redirectToLoopback(reply, flow, { error: code });
-          };
-          if (!(await env.ctx.license.state()).features.includes('sso-provisioning'))
-            return fail('licensing-feature-required');
-          let assertion: SamlAssertion;
-          try {
-            assertion = await saml.provider.validate({ samlResponse, requestId: flow.requestId });
-          } catch (error) {
-            if (!(error instanceof SamlRejected)) throw error;
-            // The flow ID and the library's message only: never the XML or what it asserts (§6.1).
-            request.log.warn({ flowId: flow.id, reason: error.reason, detail: error.message }, 'saml response refused');
-            return fail(error.reason);
+            await recordRefusal(env, request, answer.code, answer.email);
+            return redirectToLoopback(reply, flow, { error: answer.code });
           }
-          const mapped = claimsOf(assertion, saml.claims);
-          if (!mapped.ok) return fail(mapped.code);
-          const { claims } = mapped;
-          const linked = await linkClaims(
-            env,
-            { ...claims, emailVerified: claims.email !== undefined },
-            auditSource(request),
-            SAML_LINKS,
-          );
-          if (!linked.ok)
-            return fail(
-              linked.code === 'identity-email-unverified' ? 'identity-saml-no-email' : linked.code,
-              claims.email,
-            );
           const grant = mintSecret();
           // Single grant, whatever happens next: the same response posted twice finds the flow granted.
-          if (!(await repo.grantSamlFlow(env.ctx.db, flow.id, grant.hash, linked.user.id)))
+          if (!(await repo.grantSamlFlow(env.ctx.db, flow.id, grant.hash, answer.user.id)))
             return htmlPage(reply, 400, EXPIRED);
           return redirectToLoopback(reply, flow, { grant: grant.secret });
         },
       );
+
+      // The browser client's ACS (hosted spec §17.2): the same checks, then the session cookie instead
+      // of a grant for the loopback. The IdP's page posts here, so there is no Origin to check; the
+      // flow cookie is what ties the response to the browser that started the flow.
+      if (env.ctx.config.browserClient)
+        acs.post(
+          '/auth/saml/browser-acs',
+          { bodyLimit: ACS_BODY_LIMIT, preHandler: [rateLimit(env, (request) => [ipKey(request)])] },
+          async (request, reply) => {
+            const saml = env.saml;
+            if (saml === undefined) throw methodDisabled();
+            const flow = await takeBrowserFlow(env, request, reply, 'saml', formField(request.body, 'RelayState'));
+            if (flow === undefined || flow.nonce === null)
+              return sendSignInPage(reply, env.ctx, { status: 400, message: FLOW_EXPIRED_MESSAGE });
+            const answer = await answerResponse({ ...env, saml }, request, {
+              samlResponse: formField(request.body, 'SAMLResponse'),
+              requestId: flow.nonce,
+              acsUrl: env.urls.browserAcsUrl,
+              flowId: flow.id,
+            });
+            if (!answer.ok) {
+              await recordRefusal(env, request, answer.code, answer.email);
+              return sendSignInPage(reply, env.ctx, {
+                status: 403,
+                message: refusalMessage(answer.code),
+                redirectTo: flow.redirectTo,
+              });
+            }
+            return finishBrowserSignIn(env, reply, answer.user, 'saml', auditSource(request), flow.redirectTo);
+          },
+        );
       registered();
     });
 
@@ -245,5 +325,47 @@ export const authSamlRoutes =
         acsUrl: env.urls.acsUrl,
         scimBaseUrl: env.urls.scimBaseUrl,
       }),
+    );
+  };
+
+/**
+ * `GET /sign-in/saml` at the root, for the browser client (hosted spec §17.2): a top-level navigation
+ * that starts a flow, so it needs no Origin check. The `AuthnRequest` names the browser ACS; its ID
+ * is kept as the flow's nonce, since the response must answer it.
+ */
+export const browserSamlStartRoutes =
+  (env: SsoEnv) =>
+  (app: FastifyInstance): void => {
+    app.get(
+      '/sign-in/saml',
+      {
+        preHandler: [
+          (_request, _reply, done) => {
+            done(env.saml === undefined ? methodDisabled() : undefined);
+          },
+          env.ctx.license.requireFeature('sso-provisioning'),
+        ],
+      },
+      async (request, reply) => {
+        const saml = env.saml!;
+        const requestId = `_${randomBytes(20).toString('hex')}`;
+        const relayState = await startBrowserFlow(env, reply, {
+          provider: 'saml',
+          redirectTo: safeRedirectPath(
+            (request.query as Record<string, unknown>)['redirect_to'],
+            env.ctx.config.publicUrl,
+          ),
+          nonce: requestId,
+        });
+        return reply
+          .code(302)
+          .header(
+            'location',
+            await saml.provider.authorizationUrl({ requestId, relayState, acsUrl: env.urls.browserAcsUrl }),
+          )
+          .header('cache-control', 'no-store')
+          .header('referrer-policy', 'no-referrer')
+          .send();
+      },
     );
   };

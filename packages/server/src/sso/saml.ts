@@ -88,10 +88,24 @@ export interface SamlProvider {
   readonly idpEntityId: string;
   readonly entityId: string;
   readonly acsUrl: string;
-  /** The IdP's SSO URL carrying a deflated `AuthnRequest` with `ID = requestId`, and the `RelayState`. */
-  authorizationUrl(input: { readonly requestId: string; readonly relayState: string }): Promise<string>;
-  /** The validated assertion, or a `SamlRejected`. `requestId` is the flow's own. */
-  validate(input: { readonly samlResponse: string; readonly requestId: string }): Promise<SamlAssertion>;
+  /**
+   * The IdP's SSO URL carrying a deflated `AuthnRequest` with `ID = requestId`, and the `RelayState`.
+   * `acsUrl` names another of this server's ACS URLs (the browser client's); the desktop's by default.
+   */
+  authorizationUrl(input: {
+    readonly requestId: string;
+    readonly relayState: string;
+    readonly acsUrl?: string;
+  }): Promise<string>;
+  /**
+   * The validated assertion, or a `SamlRejected`. `requestId` is the flow's own; `acsUrl` is the ACS the
+   * response was posted to, which its `Destination` and `Recipient` must name.
+   */
+  validate(input: {
+    readonly samlResponse: string;
+    readonly requestId: string;
+    readonly acsUrl?: string;
+  }): Promise<SamlAssertion>;
   /** This server's SP metadata, for the IdP to import. */
   metadata(): string;
 }
@@ -195,11 +209,15 @@ export function samlProvider(metadata: IdpMetadata, settings: SamlProviderSettin
     entityId: settings.entityId,
     acsUrl: settings.acsUrl,
 
-    authorizationUrl: ({ requestId, relayState }) =>
-      new SAML({ ...base, generateUniqueId: () => requestId }).getAuthorizeUrlAsync(relayState, undefined, {}),
+    authorizationUrl: ({ requestId, relayState, acsUrl = settings.acsUrl }) =>
+      new SAML({ ...base, callbackUrl: acsUrl, generateUniqueId: () => requestId }).getAuthorizeUrlAsync(
+        relayState,
+        undefined,
+        {},
+      ),
 
-    validate: async ({ samlResponse, requestId }) => {
-      const saml = new SAML({ ...base, cacheProvider: oneRequestCache(requestId) });
+    validate: async ({ samlResponse, requestId, acsUrl = settings.acsUrl }) => {
+      const saml = new SAML({ ...base, callbackUrl: acsUrl, cacheProvider: oneRequestCache(requestId) });
       let profile: Profile | null;
       try {
         ({ profile } = await saml.validatePostResponseAsync({ SAMLResponse: samlResponse }));
@@ -209,7 +227,7 @@ export function samlProvider(metadata: IdpMetadata, settings: SamlProviderSettin
       }
       if (profile === null || profile.getAssertionXml === undefined)
         throw new SamlRejected('saml-malformed', 'the response carried no assertion');
-      checkExtras(Buffer.from(samlResponse, 'base64').toString('utf8'), profile.getAssertionXml(), settings.acsUrl);
+      checkExtras(Buffer.from(samlResponse, 'base64').toString('utf8'), profile.getAssertionXml(), acsUrl);
       // A key the IdP holds may sign for another entity; only ours is accepted.
       if (profile.issuer !== metadata.entityId)
         throw new SamlRejected('saml-issuer', 'the assertion names another issuer');

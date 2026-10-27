@@ -3,7 +3,8 @@
  * discovery runs first (a failure is a start-up failure, exit 2 via serve.ts), then the
  * `onRequest` hook, then the routes that read `request.caller`. The module is mounted into the
  * shared /api/v1 scope, so the hook also reaches `teams-access` and `server-sync` registered
- * after it. The invitation page is served at the root through `registerPublic`.
+ * after it. The invitation page, and the browser's sign-in page when the browser client is on, are
+ * served at the root through `registerPublic`.
  */
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
@@ -14,6 +15,7 @@ import { discoverOidc, type OidcProvider } from './oidc.js';
 import { RateLimiter } from './rate-limit.js';
 import { authLocalRoutes } from './routes/auth-local.js';
 import { authOidcRoutes } from './routes/auth-oidc.js';
+import { browserSignInRoutes } from './routes/browser-sign-in.js';
 import { invitationRoutes } from './routes/invitations.js';
 import { invitePageRoutes } from './routes/invite-page.js';
 import { meRoutes } from './routes/me.js';
@@ -92,7 +94,10 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
     },
 
     async registerPublic(root: FastifyInstance, ctx: ServerContext): Promise<void> {
-      invitePageRoutes(envFor(ctx, options.provider))(root);
+      const identity = envFor(ctx, options.provider);
+      invitePageRoutes(identity)(root);
+      // Hosted spec §17.2: the browser's sign-in page and flows, only when the operator asked for them.
+      if (ctx.config.browserClient) browserSignInRoutes(identity)(root);
       await Promise.resolve();
     },
   };

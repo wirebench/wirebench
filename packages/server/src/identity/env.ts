@@ -11,6 +11,8 @@ export interface IdentitySettings {
   readonly tokenMaxMs: number;
   readonly invitationMs: number;
   readonly redirectUri: string;
+  /** The browser client's OIDC callback (hosted spec §17.2), a second redirect URI at the IdP. */
+  readonly browserRedirectUri: string;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -24,6 +26,7 @@ export function identitySettings(config: ServerConfig): IdentitySettings {
     tokenMaxMs: config.tokenMaxDays * DAY_MS,
     invitationMs: config.invitationDays * DAY_MS,
     redirectUri: `${config.publicUrl}/api/v1/auth/oidc/callback`,
+    browserRedirectUri: `${config.publicUrl}/api/v1/auth/oidc/browser-callback`,
   };
 }
 

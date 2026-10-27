@@ -68,18 +68,27 @@ export function rateLimit(
   problem: { readonly code: string; readonly message: string } = DEFAULT_PROBLEM,
 ): preHandlerHookHandler {
   return (request: FastifyRequest, reply: FastifyReply, done: (error?: Error) => void): void => {
-    let retryAfter = 0;
-    for (const key of keysOf(request)) {
-      if (key === undefined) continue;
-      const decision = env.limiter.take(key);
-      if (!decision.allowed) retryAfter = Math.max(retryAfter, decision.retryAfterSeconds);
-    }
+    const retryAfter = chargeKeys(env.limiter, keysOf(request));
     if (retryAfter > 0) {
       void reply.header('retry-after', String(retryAfter)).code(429).send(problem);
       return;
     }
     done();
   };
+}
+
+/**
+ * Charges every key and answers the seconds until the emptiest bucket has an attempt again, or `0`
+ * when all of them had one. For a route that answers a refusal its own way (the browser's form).
+ */
+export function chargeKeys(limiter: RateLimiter, keys: readonly (string | undefined)[]): number {
+  let retryAfter = 0;
+  for (const key of keys) {
+    if (key === undefined) continue;
+    const decision = limiter.take(key);
+    if (!decision.allowed) retryAfter = Math.max(retryAfter, decision.retryAfterSeconds);
+  }
+  return retryAfter;
 }
 
 /** The per-IP key; `request.ip` already honours `trustProxy`. */

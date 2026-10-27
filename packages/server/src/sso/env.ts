@@ -8,6 +8,8 @@ export interface SsoUrls {
   /** This server's SAML entity ID, which is also where its SP metadata is served. */
   readonly entityId: string;
   readonly acsUrl: string;
+  /** Where the IdP posts a sign-in the browser client started (hosted spec §17.2). */
+  readonly browserAcsUrl: string;
   readonly scimBaseUrl: string;
 }
 
@@ -15,6 +17,7 @@ export function ssoUrls(publicUrl: string): SsoUrls {
   return {
     entityId: `${publicUrl}/api/v1/auth/saml/metadata`,
     acsUrl: `${publicUrl}/api/v1/auth/saml/acs`,
+    browserAcsUrl: `${publicUrl}/api/v1/auth/saml/browser-acs`,
     scimBaseUrl: `${publicUrl}/scim/v2`,
   };
 }

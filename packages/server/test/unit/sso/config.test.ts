@@ -60,6 +60,7 @@ describe('samlSettings and ssoUrls (saml-scim spec §3.1)', () => {
     expect(ssoUrls('https://wirebench.example.com')).toEqual({
       entityId: 'https://wirebench.example.com/api/v1/auth/saml/metadata',
       acsUrl: 'https://wirebench.example.com/api/v1/auth/saml/acs',
+      browserAcsUrl: 'https://wirebench.example.com/api/v1/auth/saml/browser-acs',
       scimBaseUrl: 'https://wirebench.example.com/scim/v2',
     });
   });
