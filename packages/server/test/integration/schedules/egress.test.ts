@@ -4,6 +4,11 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { executeRun } from '../../../src/schedules/executor.js';
 import * as repo from '../../../src/schedules/repo.js';
+import type { AlertTestResponse, Schedule } from '@wirebench/engine';
+import { auditLogModule } from '../../../src/audit-log/module.js';
+import { schedulesModule } from '../../../src/schedules/module.js';
+import type { Scheduler } from '../../../src/schedules/scheduler.js';
+import { call } from '../../helpers/teams.js';
 import { postAlert } from '../../../src/schedules/alerts/https.js';
 import { describeDb } from '../../helpers/database.js';
 import {
@@ -95,5 +100,52 @@ describeDb('the egress rule on scheduled runs and alerts (hosted edition spec §
       (caught: unknown) => caught as Error,
     );
     expect(error?.message).toContain('refused');
+  });
+});
+
+describeDb('the schedules module hands the server context egress rule on (production wiring)', () => {
+  it('gives the scheduler and the alert delivery ctx.egress', async () => {
+    let made: Scheduler | undefined;
+    const wired = await schedulesHarness({
+      env: { WIREBENCH_SERVER_EGRESS_DENY_PRIVATE: 'true' },
+      // No `deliver` and no `execute`: the module builds its own, as in production.
+      modules: (clock, timers) => [
+        schedulesModule({
+          now: () => clock.now,
+          setTimer: timers.setTimer,
+          startScheduler: false,
+          onScheduler: (scheduler) => {
+            made = scheduler;
+          },
+        }),
+        auditLogModule({ now: () => clock.now, setTimer: timers.setTimer }),
+      ],
+    });
+    try {
+      // The executor's env is the scheduler's.
+      expect((made as unknown as { env: { egress: unknown } }).env.egress).toEqual({ denyPrivate: true });
+      // A private literal is reachable with the switch off, so only the wired policy refuses it here.
+      const url = `/workspaces/${wired.workspaceId}/schedules`;
+      const created = await call<Schedule>(wired.h, wired.admin, 'POST', url, {
+        name: 'Smoke',
+        schedule: 'every 5m',
+        timeZone: 'UTC',
+        target: { project: 'billing' },
+        alerts: { targets: [{ kind: 'slack', url: 'https://10.0.0.1/hook' }] },
+      });
+      expect(created.status).toBe(201);
+      const sent = await call<AlertTestResponse>(
+        wired.h,
+        wired.admin,
+        'POST',
+        `${url}/${created.body.id}/alerts/test`,
+        {},
+      );
+      expect(sent.body.results).toEqual([
+        { index: 0, kind: 'slack', ok: false, error: expect.stringContaining('refused') as unknown },
+      ]);
+    } finally {
+      await wired.close();
+    }
   });
 });

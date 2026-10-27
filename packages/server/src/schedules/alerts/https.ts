@@ -31,9 +31,11 @@ export interface HttpsDeliveryOptions {
   readonly timeoutMs?: number;
   /**
    * The egress rule (hosted edition spec §17.5): the connection resolves through the checked lookup, and
-   * a literal address in the URL is checked first, since it never reaches a lookup. Absent, unchecked.
+   * a literal address in the URL is checked first, since it never reaches a lookup. `'unchecked'` exists
+   * for tests whose fixture servers listen on loopback; production always passes `ctx.egress`. Required,
+   * so a new caller cannot forget it.
    */
-  readonly egress?: EgressPolicy;
+  readonly egress: EgressPolicy | 'unchecked';
 }
 
 /** The `X-Wirebench-Signature` value for `body` under `secret`. */
@@ -41,7 +43,7 @@ export function alertSignature(secret: string, body: string): string {
   return `sha256=${createHmac('sha256', secret).update(body, 'utf8').digest('hex')}`;
 }
 
-export function postAlert(alert: HttpsAlert, options: HttpsDeliveryOptions = {}): Promise<void> {
+export function postAlert(alert: HttpsAlert, options: HttpsDeliveryOptions): Promise<void> {
   const url = new URL(alert.url);
   const host = url.hostname.toLowerCase();
   if (url.protocol !== 'https:') return Promise.reject(new Error(`the alert URL for ${host} is not https://`));
@@ -51,9 +53,10 @@ export function postAlert(alert: HttpsAlert, options: HttpsDeliveryOptions = {})
   const timeoutMs = options.timeoutMs ?? ALERT_DEADLINE_MS;
   const ca = trustAnchors(options.ca);
   const literal = host.startsWith('[') ? host.slice(1, -1) : host;
-  if (options.egress !== undefined && isIP(literal) !== 0) {
+  const policy = options.egress === 'unchecked' ? undefined : options.egress;
+  if (policy !== undefined && isIP(literal) !== 0) {
     try {
-      checkEgress(host, literal, options.egress);
+      checkEgress(host, literal, policy);
     } catch (error) {
       return Promise.reject(new Error(`the alert to ${host} failed: ${reason(error)}`));
     }
@@ -72,8 +75,7 @@ export function postAlert(alert: HttpsAlert, options: HttpsDeliveryOptions = {})
       {
         method: 'POST',
         agent: false,
-        ...(options.egress !== undefined ? { lookup: checkedLookup(options.egress) } : {}),
-
+        ...(policy !== undefined ? { lookup: checkedLookup(policy) } : {}),
         ...(ca !== undefined ? { ca } : {}),
         headers: {
           'content-type': 'application/json',

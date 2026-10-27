@@ -62,11 +62,11 @@ export interface ExecutorEnv {
   readonly setTimer: SetTimer;
   readonly log: FastifyBaseLogger;
   /**
-   * The egress rule for every connection a run opens (hosted edition spec §17.5). The module always
-   * sets it from the server context; absent, nothing is checked, which only tests that send to a
-   * loopback fixture server rely on.
+   * The egress rule for every connection a run opens (hosted edition spec §17.5). `'unchecked'` exists
+   * for tests whose fixture servers listen on loopback; production always passes `ctx.egress`.
+   * Required, so a new caller cannot forget it.
    */
-  readonly egress?: EgressPolicy;
+  readonly egress: EgressPolicy | 'unchecked';
 }
 
 /** Why the scheduler aborted a run; the executor's own deadline is `timeout`. */
@@ -229,7 +229,7 @@ export async function executeRun(env: ExecutorEnv, runId: string, signal: AbortS
           onSecretValue: (value) => known.add(value),
           // One jar for the whole run: every request, sequence step and iteration shares it.
           cookies: jarCookieHost(new CookieJar()),
-          ...(env.egress !== undefined ? { egress: env.egress } : {}),
+          ...(env.egress !== 'unchecked' ? { egress: env.egress } : {}),
         },
         insecure: options.insecureTls,
         signal: runSignal,

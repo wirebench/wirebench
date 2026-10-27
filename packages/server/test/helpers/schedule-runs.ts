@@ -183,6 +183,7 @@ export function executorEnv(
     now: () => c.h.clock.now,
     setTimer: c.timers.setTimer,
     log: quietLog(),
+    egress: 'unchecked',
     ...overrides,
   };
 }
