@@ -222,6 +222,74 @@ describeDb('SAML sign-in from the browser (hosted spec §17.2)', () => {
       expect(failed.rows.map((r) => r.details.reason)).toEqual(['saml-recipient']);
     });
 
+    it('both ACS routes complete for a browser holding a session, though the IdP’s Origin is foreign', async () => {
+      await boot();
+      await invite('ada@example.com');
+      const held = await signedInUser(h, { email: 'held@example.com', kind: 'browser' });
+      const session = `${COOKIE}=${held.token}`;
+      const assertion = (requestId: string, acsUrl: string) =>
+        encode(
+          response(requestId, {
+            recipient: acsUrl,
+            destination: acsUrl,
+            nameId: 'ada-1',
+            attributes: { [EMAIL_CLAIM]: 'ada@example.com' },
+          }),
+        );
+
+      // The browser client's ACS.
+      const { request, flowCookie } = await start();
+      const browser = await h.app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/saml/browser-acs',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          origin: 'https://idp.example.test',
+          cookie: `${session}; ${FLOW_COOKIE}=${flowCookie}`,
+        },
+        payload: new URLSearchParams({
+          SAMLResponse: assertion(request.id, BROWSER_ACS),
+          RelayState: request.relayState,
+        }).toString(),
+      });
+      expect(browser.statusCode, browser.body).toBe(303);
+      expect(cookieValue(browser, COOKIE)).toMatch(/^wbs_/);
+
+      // The desktop's ACS, reached through a system browser that holds a web session.
+      const started = await h.app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/saml/start',
+        payload: { device: { name: 'Mac' }, codeChallenge: 'c'.repeat(43), loopbackPort: 49152 },
+      });
+      const desktopRequest = readAuthorizationUrl(started.json<{ authorizationUrl: string }>().authorizationUrl);
+      const desktop = await h.app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/saml/acs',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          origin: 'https://idp.example.test',
+          cookie: session,
+        },
+        payload: new URLSearchParams({
+          SAMLResponse: assertion(desktopRequest.id, DESKTOP_ACS),
+          RelayState: desktopRequest.relayState,
+        }).toString(),
+      });
+      expect(desktop.statusCode, desktop.body).toBe(302);
+      expect(new URL(String(desktop.headers['location'])).searchParams.get('grant')).toBeTruthy();
+    });
+
+    it('rate-limits starts per address', async () => {
+      await boot();
+      for (let i = 0; i < 10; i += 1)
+        expect(
+          (await h.app.inject({ method: 'GET', url: '/sign-in/saml', remoteAddress: '10.9.9.9' })).statusCode,
+        ).toBe(302);
+      expect((await h.app.inject({ method: 'GET', url: '/sign-in/saml', remoteAddress: '10.9.9.9' })).statusCode).toBe(
+        429,
+      );
+    });
+
     it('the desktop start still names the desktop ACS', async () => {
       await boot();
       const res = await h.app.inject({

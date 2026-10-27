@@ -115,6 +115,14 @@ declare module 'fastify' {
     /** Filled by modules registered after identity; read by `authenticate` at request time. */
     bearerFallbacks: BearerFallback[];
   }
+  interface FastifyContextConfig {
+    /**
+     * `false` on a route that takes no caller and is posted to by another site: an IdP's SAML ACS or
+     * an OIDC callback. The guard then ignores the session cookie entirely, so a browser that already
+     * holds a session is neither signed in by it nor refused for the IdP's `Origin`.
+     */
+    cookieAuth?: boolean;
+  }
 }
 
 /** Methods a cross-site page may trigger with the cookie under `SameSite=Lax`; every other one needs our `Origin`. */
@@ -150,7 +158,8 @@ export function authenticate(env: IdentityEnv, fallbacks: readonly BearerFallbac
     const token = bearerToken(request.headers.authorization);
     if (token === undefined) {
       // No header (or not a device token): the cookie when the browser client is on, else the preHandlers decide.
-      if (env.ctx.config.browserClient) await cookieCaller(env, tokens, request);
+      if (env.ctx.config.browserClient && request.routeOptions.config.cookieAuth !== false)
+        await cookieCaller(env, tokens, request);
       return;
     }
     try {

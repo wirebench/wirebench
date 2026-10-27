@@ -109,6 +109,7 @@ export const authOidcRoutes =
       '/auth/oidc/callback',
       {
         // The state is a secret an unauthenticated caller presents (§12).
+        config: { cookieAuth: false },
         preHandler: [rateLimit(env, (request) => [ipKey(request)])],
         schema: { querystring: jsonSchema(oidcCallbackQuerySchema, { io: 'input' }) },
       },
@@ -173,6 +174,7 @@ export const authOidcRoutes =
       app.get(
         '/auth/oidc/browser-callback',
         {
+          config: { cookieAuth: false },
           preHandler: [rateLimit(env, (request) => [ipKey(request)])],
           schema: { querystring: jsonSchema(oidcCallbackQuerySchema, { io: 'input' }) },
         },

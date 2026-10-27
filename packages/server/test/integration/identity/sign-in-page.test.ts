@@ -3,7 +3,13 @@ import type { OidcProvider } from '../../../src/identity/oidc.js';
 import * as repo from '../../../src/identity/repo.js';
 import { recordingAudit } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
-import { OIDC_ENV, identityHarness, signedInUser, type IdentityHarness } from '../../helpers/identity.js';
+import {
+  EVIL_REDIRECTS,
+  OIDC_ENV,
+  identityHarness,
+  signedInUser,
+  type IdentityHarness,
+} from '../../helpers/identity.js';
 
 const PUBLIC_URL = 'https://wirebench.test';
 const COOKIE = '__Host-wb_session';
@@ -129,13 +135,14 @@ describeDb('the sign-in page and local form sign-in (hosted spec §17.2)', () =>
     it('lands on a same-origin redirect_to, and on / for a foreign or protocol-relative one', async () => {
       h = await identityHarness({ env: BROWSER_ENV });
       await signedInUser(h, { email: 'alice@example.com', password: PASSWORD });
-      const to = async (redirectTo: string) =>
-        (await signInForm({ email: 'alice@example.com', password: PASSWORD, redirect_to: redirectTo })).headers[
-          'location'
-        ];
+      const to = async (redirectTo: string) => {
+        // A minute between attempts refills the per-address and per-email buckets.
+        h.clock.advance(60_000);
+        const res = await signInForm({ email: 'alice@example.com', password: PASSWORD, redirect_to: redirectTo });
+        return res.headers['location'];
+      };
       expect(await to('/w/1?tab=a')).toBe('/w/1?tab=a');
-      for (const evil of ['https://evil.test/', '//evil.test/x', '/\\evil.test', 'javascript:alert(1)', 'w/1', ''])
-        expect(await to(evil)).toBe('/');
+      for (const evil of EVIL_REDIRECTS) expect(await to(evil)).toBe('/');
     });
 
     it('answers a wrong password and an unknown email with the same page, status and no cookie', async () => {
@@ -177,14 +184,45 @@ describeDb('the sign-in page and local form sign-in (hosted spec §17.2)', () =>
       }
     });
 
-    it('shares the desktop route’s rate limit per address', async () => {
+    const desktopSignIn = (email: string, ip: string) =>
+      h.app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/local/sign-in',
+        payload: { email, password: 'nope nope nope', device: { name: 'Mac' } },
+        remoteAddress: ip,
+      });
+
+    it('shares the desktop route’s per-address bucket', async () => {
       h = await identityHarness({ env: BROWSER_ENV });
-      for (let i = 0; i < 10; i += 1)
-        expect((await signInForm({ email: `x${i}@example.com`, password: 'nope nope nope' })).statusCode).toBe(401);
+      for (let i = 0; i < 5; i += 1) {
+        expect((await desktopSignIn(`d${i}@example.com`, '10.0.0.1')).statusCode).toBe(401);
+        expect((await signInForm({ email: `f${i}@example.com`, password: 'nope nope nope' })).statusCode).toBe(401);
+      }
       const limited = await signInForm({ email: 'y@example.com', password: 'nope nope nope' });
       expect(limited.statusCode).toBe(429);
       expect(limited.headers['retry-after']).toBeDefined();
       expect(limited.body).toContain('Too many attempts');
+      // And the other way round: the form's attempts count against the desktop route.
+      expect((await desktopSignIn('z@example.com', '10.0.0.1')).statusCode).toBe(429);
+    });
+
+    it('shares the desktop route’s per-email bucket across addresses', async () => {
+      h = await identityHarness({ env: BROWSER_ENV });
+      for (let i = 0; i < 5; i += 1) {
+        expect((await desktopSignIn('target@example.com', `10.0.1.${i}`)).statusCode).toBe(401);
+        const form = await signInForm(
+          { email: 'target@example.com', password: 'nope nope nope' },
+          PUBLIC_URL,
+          `10.0.2.${i}`,
+        );
+        expect(form.statusCode).toBe(401);
+      }
+      const limited = await signInForm(
+        { email: 'TARGET@example.com', password: 'nope nope nope' },
+        PUBLIC_URL,
+        '10.0.3.1',
+      );
+      expect(limited.statusCode).toBe(429);
     });
 
     it('answers 400 with the page for a form missing a field', async () => {

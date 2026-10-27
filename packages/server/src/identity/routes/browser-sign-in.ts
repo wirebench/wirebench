@@ -11,7 +11,7 @@ import { toProblem } from '../../problem.js';
 import { finishBrowserSignIn, safeRedirectPath, startBrowserFlow } from '../browser-flows.js';
 import type { IdentityEnv } from '../env.js';
 import { methodDisabled, originRefused } from '../errors.js';
-import { chargeKeys, emailKey, ipKey } from '../rate-limit.js';
+import { chargeKeys, emailKey, ipKey, rateLimit } from '../rate-limit.js';
 import { sendSignInPage } from '../sign-in-page.js';
 import { mintSecret, pkceChallenge } from '../tokens.js';
 import { checkLocalCredentials } from './auth-local.js';
@@ -78,31 +78,36 @@ export const browserSignInRoutes =
     });
 
     // A top-level navigation that only starts a flow, so it needs no Origin check.
-    app.get('/sign-in/oidc', async (request, reply) => {
-      const provider = env.provider;
-      if (provider === undefined) throw methodDisabled();
-      const nonce = mintSecret().secret;
-      // 43 base64url characters: a valid RFC 7636 verifier.
-      const codeVerifier = mintSecret().secret;
-      const state = await startBrowserFlow(env, reply, {
-        provider: 'oidc',
-        redirectTo: safeRedirectPath((request.query as Record<string, unknown>)['redirect_to'], publicUrl),
-        nonce,
-        codeVerifier,
-      });
-      return reply
-        .code(302)
-        .header(
-          'location',
-          provider.authorizationUrl({
-            state,
-            nonce,
-            redirectUri: env.settings.browserRedirectUri,
-            codeChallenge: pkceChallenge(codeVerifier),
-          }),
-        )
-        .header('cache-control', 'no-store')
-        .header('referrer-policy', 'no-referrer')
-        .send();
-    });
+    // Rate-limited per address, since each start writes a row.
+    app.get(
+      '/sign-in/oidc',
+      { preHandler: [rateLimit(env, (request) => [ipKey(request)])] },
+      async (request, reply) => {
+        const provider = env.provider;
+        if (provider === undefined) throw methodDisabled();
+        const nonce = mintSecret().secret;
+        // 43 base64url characters: a valid RFC 7636 verifier.
+        const codeVerifier = mintSecret().secret;
+        const state = await startBrowserFlow(env, reply, {
+          provider: 'oidc',
+          redirectTo: safeRedirectPath((request.query as Record<string, unknown>)['redirect_to'], publicUrl),
+          nonce,
+          codeVerifier,
+        });
+        return reply
+          .code(302)
+          .header(
+            'location',
+            provider.authorizationUrl({
+              state,
+              nonce,
+              redirectUri: env.settings.browserRedirectUri,
+              codeChallenge: pkceChallenge(codeVerifier),
+            }),
+          )
+          .header('cache-control', 'no-store')
+          .header('referrer-policy', 'no-referrer')
+          .send();
+      },
+    );
   };

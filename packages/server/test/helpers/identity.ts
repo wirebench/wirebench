@@ -35,6 +35,21 @@ export interface IdentityHarness {
   close(): Promise<void>;
 }
 
+/** Every way a `redirect_to` could leave the origin, including dot-segments that collapse into `//host`. */
+export const EVIL_REDIRECTS = [
+  'https://evil.test/',
+  '//evil.test/x',
+  '/\\evil.test',
+  '/a\\..\\/evil.test',
+  '/..//evil.test/x',
+  '/%2e%2e//evil.test',
+  '/a/..//evil.test',
+  '/./../..//evil.test',
+  'javascript:alert(1)',
+  'w/1',
+  '',
+];
+
 export const OIDC_ENV = {
   WIREBENCH_SERVER_OIDC_ISSUER: 'https://idp.test',
   WIREBENCH_SERVER_OIDC_CLIENT_ID: 'wirebench',

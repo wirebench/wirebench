@@ -23,6 +23,8 @@ export interface FakeOidcIssuer {
   readonly clientSecret: string;
   /** Whose claims the next authorization code carries. */
   nextUser(user: FakeIdpUser): void;
+  /** Signs the next ID token with this nonce instead of the one the request carried (a replayed token). */
+  nextNonce(nonce: string): void;
   /** Plays the browser: opens the authorization URL and returns the URL the IdP redirects back to. */
   authorize(authorizationUrl: string): Promise<URL>;
   readonly tokenRequests: number;
@@ -51,6 +53,7 @@ export async function startFakeOidcIssuer(
     { user: FakeIdpUser; nonce: string; redirectUri: string; codeChallenge: string | undefined }
   >();
   let pending: FakeIdpUser = { sub: 'sub-alice', email: 'alice@example.com', email_verified: true, name: 'Alice' };
+  let nonceOverride: string | undefined;
   let tokenRequests = 0;
   let url = '';
 
@@ -80,10 +83,12 @@ export async function startFakeOidcIssuer(
     }
     if (target.pathname === '/authorize') {
       const code = randomBytes(16).toString('hex');
+      const overridden = nonceOverride;
+      nonceOverride = undefined;
       const redirectUri = target.searchParams.get('redirect_uri') ?? '';
       codes.set(code, {
         user: pending,
-        nonce: target.searchParams.get('nonce') ?? '',
+        nonce: overridden ?? target.searchParams.get('nonce') ?? '',
         redirectUri,
         codeChallenge: target.searchParams.get('code_challenge') ?? undefined,
       });
@@ -152,6 +157,9 @@ export async function startFakeOidcIssuer(
     clientSecret,
     nextUser: (user) => {
       pending = user;
+    },
+    nextNonce: (nonce) => {
+      nonceOverride = nonce;
     },
     authorize: async (authorizationUrl) => {
       const response = await fetch(authorizationUrl, { redirect: 'manual' });

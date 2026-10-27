@@ -210,7 +210,12 @@ export const authSamlRoutes =
       );
       acs.post(
         '/auth/saml/acs',
-        { bodyLimit: ACS_BODY_LIMIT, preHandler: [rateLimit(env, (request) => [ipKey(request)])] },
+        {
+          bodyLimit: ACS_BODY_LIMIT,
+          // The IdP's page posts this, with the IdP's Origin; a session cookie must not get in the way.
+          config: { cookieAuth: false },
+          preHandler: [rateLimit(env, (request) => [ipKey(request)])],
+        },
         async (request, reply) => {
           const saml = env.saml;
           if (saml === undefined) throw methodDisabled();
@@ -244,7 +249,12 @@ export const authSamlRoutes =
       if (env.ctx.config.browserClient)
         acs.post(
           '/auth/saml/browser-acs',
-          { bodyLimit: ACS_BODY_LIMIT, preHandler: [rateLimit(env, (request) => [ipKey(request)])] },
+          {
+            bodyLimit: ACS_BODY_LIMIT,
+            // The IdP's page posts this, with the IdP's Origin; a session cookie must not get in the way.
+            config: { cookieAuth: false },
+            preHandler: [rateLimit(env, (request) => [ipKey(request)])],
+          },
           async (request, reply) => {
             const saml = env.saml;
             if (saml === undefined) throw methodDisabled();
@@ -344,6 +354,8 @@ export const browserSamlStartRoutes =
             done(env.saml === undefined ? methodDisabled() : undefined);
           },
           env.ctx.license.requireFeature('sso-provisioning'),
+          // Per address, since each start writes a row.
+          rateLimit(env, (request) => [ipKey(request)]),
         ],
       },
       async (request, reply) => {

@@ -57,7 +57,11 @@ export function safeRedirectPath(value: unknown, publicUrl: string): string {
     return '/';
   }
   if (url.origin !== new URL(publicUrl).origin) return '/';
-  return `${url.pathname}${url.search}${url.hash}`;
+  const path = `${url.pathname}${url.search}${url.hash}`;
+  // Checked again after parsing: dot-segments can collapse into `//host` (`/..//evil.test` → `//evil.test`),
+  // which a browser reads as another origin. One application of this function must be enough.
+  if (path.startsWith('//') || path.includes('\\')) return '/';
+  return path;
 }
 
 /** Stores the flow and sets its cookie; returns the state to send to the IdP. */
@@ -124,7 +128,7 @@ async function claim(db: Querier, provider: BrowserFlowProvider, stateHash: stri
 /**
  * The flow a callback's `state` belongs to, used up: `undefined` when the browser's flow cookie does
  * not hold that state (another browser started it), when no such flow is left (replayed), or when it
- * has expired. The flow cookie is cleared whatever the answer.
+ * has expired. The flow cookie is cleared once it matched the state, whatever happens to the flow.
  */
 export async function takeBrowserFlow(
   env: FlowEnv,
@@ -135,8 +139,9 @@ export async function takeBrowserFlow(
 ): Promise<BrowserFlow | undefined> {
   const publicUrl = env.ctx.config.publicUrl;
   const cookie = flowCookie(request, publicUrl);
-  clearFlowCookie(reply, publicUrl);
+  // Left alone on a mismatch, so a cross-site request carrying some other state cannot end a flow in progress.
   if (state === '' || cookie === undefined || !sameText(cookie, state)) return undefined;
+  clearFlowCookie(reply, publicUrl);
   const flow = await claim(env.ctx.db, provider, hashSecret(state));
   if (flow === undefined || flow.expiresAt.getTime() <= env.now().getTime()) return undefined;
   return flow;

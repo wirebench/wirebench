@@ -4,7 +4,7 @@ import { hashSecret } from '../../../src/identity/tokens.js';
 import { recordingAudit } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
 import { startFakeOidcIssuer, type FakeOidcIssuer } from '../../helpers/fake-oidc-issuer.js';
-import { identityHarness, signedInUser, type IdentityHarness } from '../../helpers/identity.js';
+import { EVIL_REDIRECTS, identityHarness, signedInUser, type IdentityHarness } from '../../helpers/identity.js';
 
 const COOKIE = '__Host-wb_session';
 const FLOW_COOKIE = '__Host-wb_flow';
@@ -45,16 +45,17 @@ describeDb('OIDC sign-in from the browser (hosted spec §17.2)', () => {
   });
 
   /** `GET /sign-in/oidc`, answering the redirect, the IdP's URL and the flow cookie. */
-  const start = async (query = '') => {
-    const res = await h.app.inject({ method: 'GET', url: `/sign-in/oidc${query}` });
+  const start = async (query = '', remoteAddress = '127.0.0.1') => {
+    const res = await h.app.inject({ method: 'GET', url: `/sign-in/oidc${query}`, remoteAddress });
     expect(res.statusCode, res.body).toBe(302);
     return { res, authorizationUrl: String(res.headers['location']), flowCookie: cookieValue(res, FLOW_COOKIE)! };
   };
   /** The browser comes back from the IdP to the callback, carrying `cookie`. */
-  const callback = (back: URL, cookie: string | undefined) =>
+  const callback = (back: URL, cookie: string | undefined, remoteAddress = '127.0.0.1') =>
     h.app.inject({
       method: 'GET',
       url: `${back.pathname}${back.search}`,
+      remoteAddress,
       headers: cookie === undefined ? {} : { cookie: `${FLOW_COOKIE}=${cookie}` },
     });
 
@@ -104,15 +105,41 @@ describeDb('OIDC sign-in from the browser (hosted spec §17.2)', () => {
 
     it('lands on a same-origin redirect_to and on / for a foreign one', async () => {
       await signedInUser(h, { email: 'alice@example.com' });
+      let n = 0;
+      // A fresh address each time, so the loop stays under the per-address limits on start and callback.
       const through = async (redirectTo: string) => {
-        const { authorizationUrl, flowCookie } = await start(`?redirect_to=${encodeURIComponent(redirectTo)}`);
-        const done = await callback(await idp.authorize(authorizationUrl), flowCookie);
+        const address = `10.1.0.${(n += 1)}`;
+        const { authorizationUrl, flowCookie } = await start(`?redirect_to=${encodeURIComponent(redirectTo)}`, address);
+        // The start's single application is enough: the stored target is already safe.
+        const stored = await h.db.query<{ redirect_to: string }>('select redirect_to from browser_flows');
+        const done = await callback(await idp.authorize(authorizationUrl), flowCookie, address);
         expect(done.statusCode, done.body).toBe(303);
-        return done.headers['location'];
+        return { stored: stored.rows[0]!.redirect_to, location: done.headers['location'] };
       };
-      expect(await through('/w/1?tab=a')).toBe('/w/1?tab=a');
-      expect(await through('https://evil.test/')).toBe('/');
-      expect(await through('//evil.test/')).toBe('/');
+      expect(await through('/w/1?tab=a')).toEqual({ stored: '/w/1?tab=a', location: '/w/1?tab=a' });
+      for (const evil of EVIL_REDIRECTS) expect(await through(evil)).toEqual({ stored: '/', location: '/' });
+    });
+
+    it('refuses an ID token signed for another nonce', async () => {
+      await signedInUser(h, { email: 'alice@example.com' });
+      const { authorizationUrl, flowCookie } = await start();
+      idp.nextNonce('a-nonce-this-flow-never-sent');
+      const res = await callback(await idp.authorize(authorizationUrl), flowCookie);
+      expect(res.statusCode).toBe(502);
+      expect(cookieValue(res, COOKIE)).toBeUndefined();
+    });
+
+    it('still completes for a browser that already holds a session', async () => {
+      const alice = await signedInUser(h, { email: 'alice@example.com', kind: 'browser' });
+      const { authorizationUrl, flowCookie } = await start();
+      const back = await idp.authorize(authorizationUrl);
+      const done = await h.app.inject({
+        method: 'GET',
+        url: `${back.pathname}${back.search}`,
+        headers: { cookie: `${COOKIE}=${alice.token}; ${FLOW_COOKIE}=${flowCookie}`, origin: 'https://idp.test' },
+      });
+      expect(done.statusCode, done.body).toBe(303);
+      expect(cookieValue(done, COOKIE)).toMatch(/^wbs_/);
     });
 
     it('refuses a replayed callback', async () => {
@@ -148,8 +175,30 @@ describeDb('OIDC sign-in from the browser (hosted spec §17.2)', () => {
         const res = await callback(back, cookie);
         expect(res.statusCode).toBe(400);
         expect(cookieValue(res, COOKIE)).toBeUndefined();
+        // A mismatch leaves this browser's own flow cookie alone.
+        expect(setCookies(res).some((l) => l.startsWith(`${FLOW_COOKIE}=`))).toBe(false);
       }
       expect(idp.tokenRequests).toBe(0);
+    });
+
+    it('a cross-site callback with another state does not end the flow in progress', async () => {
+      await signedInUser(h, { email: 'alice@example.com' });
+      const { authorizationUrl, flowCookie } = await start();
+      const back = await idp.authorize(authorizationUrl);
+      const forged = new URL(back.href);
+      forged.searchParams.set('state', 'attacker-state');
+      expect((await callback(forged, flowCookie)).statusCode).toBe(400);
+      expect((await callback(back, flowCookie)).statusCode).toBe(303);
+    });
+
+    it('rate-limits starts per address', async () => {
+      for (let i = 0; i < 10; i += 1)
+        expect(
+          (await h.app.inject({ method: 'GET', url: '/sign-in/oidc', remoteAddress: '10.9.9.9' })).statusCode,
+        ).toBe(302);
+      expect((await h.app.inject({ method: 'GET', url: '/sign-in/oidc', remoteAddress: '10.9.9.9' })).statusCode).toBe(
+        429,
+      );
     });
 
     it('refuses an uninvited person with the page, records the failure and sets no session', async () => {
