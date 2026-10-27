@@ -405,12 +405,16 @@ export function BodyTab({
               editor.addCommand(SAVE_KEYBINDING, () => {
                 onSave?.();
               });
-              if (body.language === 'json') {
-                // Monaco's own toggle rounds the `//` down to a tab stop; this keeps it at the indent (G15).
-                editor.addCommand(TOGGLE_COMMENT_KEYBINDING, () => {
+              // Monaco's own toggle rounds the `//` down to a tab stop; for JSON this keeps it at the
+              // indent (G15). The language is read on each press, since the body can switch languages
+              // while the editor stays mounted; every other language keeps the built-in toggle.
+              editor.addCommand(TOGGLE_COMMENT_KEYBINDING, () => {
+                if (editor.getModel()?.getLanguageId() === 'json') {
                   toggleCommentInEditor(editor);
-                });
-              }
+                } else {
+                  void editor.getAction('editor.action.commentLine')?.run();
+                }
+              });
               attachVariables(editor, monacoNS);
             }}
           />
