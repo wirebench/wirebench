@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { GlobalsState, PropertyMapWire } from '../../shared/wire-base.js';
+import type { GlobalsState, PropertyMapWire } from '@shared/wire-base.js';
 import { ipc } from './ipc-client.js';
 
 /**

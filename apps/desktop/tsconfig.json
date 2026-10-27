@@ -11,7 +11,7 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["src/shared/*"]
+      "@shared/*": ["../../packages/wire/src/*"]
     }
   },
   "include": ["src/**/*", "test/**/*", "electron.vite.config.ts", "after-pack.ts"]

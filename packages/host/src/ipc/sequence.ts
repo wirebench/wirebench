@@ -1,0 +1,22 @@
+/**
+ * Registers the `sequence.*` IPC channels: run a sequence end to end, and cancel a run. Editing a
+ * sequence goes through `project.mutate` like every other entity.
+ */
+
+import { channels } from '@wirebench/wire/ipc';
+import type { SequenceRunDeps, SequenceRunner } from '../sequence-runner.js';
+import { registerHandler, type HandlerTable } from './register.js';
+
+export function registerSequenceChannels(
+  table: HandlerTable,
+  runner: SequenceRunner,
+  deps: SequenceRunDeps,
+  /** Refuses a run when `sequences` is off (phase 4 spec §7); editing is refused by `project.mutate`. */
+  requireFeature: (feature: string) => void = () => undefined,
+): void {
+  registerHandler(table, channels.sequence.run, (request) => {
+    requireFeature('sequences');
+    return runner.run(request, deps);
+  });
+  registerHandler(table, channels.sequence.cancel, (request) => Promise.resolve(runner.cancel(request.runId)));
+}

@@ -11,8 +11,8 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useHistoryStore } from '../../src/renderer/state/history.js';
 import { useWsiStore } from '../../src/renderer/state/wsi.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { HistoryEntryWire } from '../../src/shared/wire-types.js';
-import type { WsiReportWire } from '../../src/shared/kinds/soap/wire.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
+import type { WsiReportWire } from '@wirebench/wire/kinds/soap/wire';
 
 const context: CommandContext = {
   platform: 'mac',

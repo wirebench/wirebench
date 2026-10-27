@@ -5,11 +5,11 @@ import { SecretReviewDialog } from '../../src/renderer/components/secret-review-
 import { reviewSecrets, useSecretReviewStore } from '../../src/renderer/state/secret-review.js';
 import type { SecretReviewOutcome } from '../../src/renderer/state/secret-review.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import { wrapHandler } from '../../src/main/ipc/envelope.js';
-import { channels } from '../../src/shared/ipc.js';
-import type { SecretFindingWire } from '../../src/shared/wire-base.js';
+import { wrapHandler } from '../../../../packages/host/src/ipc/envelope.js';
+import { channels } from '@wirebench/wire/ipc';
+import type { SecretFindingWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import { Redactor } from '../../src/main/host/redactor.js';
+import { Redactor } from '../../../../packages/host/src/host/redactor.js';
 
 const showToast = vi.hoisted(() => vi.fn());
 vi.mock('../../src/renderer/components/toast.js', () => ({ showToast }));

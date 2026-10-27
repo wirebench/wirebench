@@ -12,8 +12,8 @@ import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import { activeEnvironmentFor, environmentsForProject } from '../../state/environment-scope.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
-import { MAX_SEND_ENVIRONMENTS } from '../../../shared/multi-env-limits.js';
-import type { WorkspaceWire } from '../../../shared/wire-base.js';
+import { MAX_SEND_ENVIRONMENTS } from '@shared/multi-env-limits.js';
+import type { WorkspaceWire } from '@shared/wire-base.js';
 import type { EnvSelection, PickerEnvironment } from './env-picker.js';
 
 export type MultiEnvKind = 'soap' | 'rest';

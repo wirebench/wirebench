@@ -21,7 +21,7 @@ edit the same shell files again.
 
 ## Decision
 
-**One contract, split by process.** An area is an `AreaModule` (`apps/desktop/src/shared/area-module.ts`): its `id`, the
+**One contract, split by process.** An area is an `AreaModule` (`packages/wire/src/area-module.ts`): its `id`, the
 engine `FeatureDescriptor` that switches it, its rail item (label, icon name, the command that shows the view, order)
 and the copy its sidebar header and empty state show. The contract is split in three, because the renderer must not
 import main-only code and main must not import React:

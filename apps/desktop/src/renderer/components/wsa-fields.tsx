@@ -6,7 +6,7 @@
  * Nothing here can carry a secret: a `wsa:*` header is addressing metadata.
  */
 
-import type { WsaConfigWire } from '../../shared/kinds/soap/wire.js';
+import type { WsaConfigWire } from '@shared/kinds/soap/wire.js';
 
 const INPUT_CLASS =
   'h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-xs text-fg-default focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50';

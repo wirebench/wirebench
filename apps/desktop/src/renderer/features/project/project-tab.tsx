@@ -13,7 +13,7 @@ import { workspaceActions } from '../workspace/workspace-actions.js';
 import { SaveIndicator } from './save-indicator.js';
 import { currentColumn, useCurrentValues } from '../../state/current-values.js';
 import { VariablesTable, type InheritedScope, type VariablesTableTarget } from '../environments/variables-table.js';
-import type { ProjectSettingsPatchWire } from '../../../shared/wire-base.js';
+import type { ProjectSettingsPatchWire } from '@shared/wire-base.js';
 
 export interface ProjectTabProps {
   readonly projectId: string;

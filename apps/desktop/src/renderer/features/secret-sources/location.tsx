@@ -1,4 +1,4 @@
-import type { SecretSourceEntryWire } from '../../../shared/wire-base.js';
+import type { SecretSourceEntryWire } from '@shared/wire-base.js';
 import { KIND_FIELDS } from './kind-fields.js';
 
 /** An entry's locator fields as `key: value`; never a secret's value. */

@@ -14,7 +14,7 @@ import {
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { RequestWire, ValidationProblemWire } from '../../src/shared/kinds/soap/wire.js';
+import type { RequestWire, ValidationProblemWire } from '@wirebench/wire/kinds/soap/wire';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 vi.mock('../../src/renderer/components/toast.js', () => ({ showToast: vi.fn() }));

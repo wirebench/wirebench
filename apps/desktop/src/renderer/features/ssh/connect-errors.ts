@@ -2,7 +2,7 @@
  * One plain sentence for a connect that failed (#528): what happened and what to do. Built from the
  * error's code and details only, never its message: a library's exception text is not for the screen.
  */
-import type { SshAuthWire } from '../../../shared/ssh-wire.js';
+import type { SshAuthWire } from '@shared/ssh-wire.js';
 import type { ConnectPurpose } from './connect-progress.js';
 
 /** A connect's refusal as the IPC result carries it. */

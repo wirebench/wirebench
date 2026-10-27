@@ -20,7 +20,7 @@ import {
   setJsonCompletionSource,
 } from '../../editor/json-completion.js';
 import { SAVE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
-import type { McpCatalogueWire, McpOperationWire } from '../../../shared/kinds/mcp/wire.js';
+import type { McpCatalogueWire, McpOperationWire } from '@shared/kinds/mcp/wire.js';
 import { useEditorVariableAssist } from '../environments/variable-assist-provider.js';
 import { toolArgumentsSource } from './arguments-completion.js';
 import { MCP_ARGUMENTS_CHECK_DEBOUNCE_MS, refreshMcpArgumentsMarkers } from './arguments-markers.js';

@@ -20,7 +20,7 @@ import {
 } from '../../src/renderer/features/ssh/snippets/snippets-store.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
-import type { SnippetListItemWire, SnippetsFileWire, SshListSnippetsResponse } from '../../src/shared/snippets-wire.js';
+import type { SnippetListItemWire, SnippetsFileWire, SshListSnippetsResponse } from '@wirebench/wire/snippets-wire';
 
 const item = (over: Partial<SnippetListItemWire> & { id: string }): SnippetListItemWire => ({
   name: over.id,

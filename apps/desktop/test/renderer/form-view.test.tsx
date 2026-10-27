@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { FormView } from '../../src/renderer/features/request-editor/views/form-view.js';
 import type { FormSource, FormViewType } from '../../src/renderer/features/request-editor/views/form-view.js';
-import type { FormNodeWire } from '../../src/renderer/../shared/kinds/soap/wire.js';
+import type { FormNodeWire } from '@wirebench/wire/kinds/soap/wire';
 import { showToast } from '../../src/renderer/components/toast.js';
 
 vi.mock('../../src/renderer/components/toast.js', () => ({ showToast: vi.fn() }));

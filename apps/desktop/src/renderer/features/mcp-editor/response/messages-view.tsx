@@ -9,7 +9,7 @@
 import { useState, type KeyboardEvent } from 'react';
 import { ArrowDown, ArrowUp, TriangleAlert } from 'lucide-react';
 import { formatBytes, formatDuration } from '../../../lib/format-size.js';
-import type { McpHttpCallWire, McpMessageWire } from '../../../../shared/kinds/mcp/wire.js';
+import type { McpHttpCallWire, McpMessageWire } from '@shared/kinds/mcp/wire.js';
 
 /** A message's time since the session started: `+12 ms`; `—` when either time does not parse. */
 export function messageOffset(startedAt: string, at: string): string {

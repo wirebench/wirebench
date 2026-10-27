@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import type { ThemeOsWire } from '../../shared/wire-base.js';
+import type { ThemeOsWire } from '@shared/wire-base.js';
 import { readUi, type ThemePreference } from '../state/ui-state.js';
 
 /** The two concrete schemes a preference can resolve to. */

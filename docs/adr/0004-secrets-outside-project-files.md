@@ -25,9 +25,9 @@ makes the secret travel with the project and reduces its safety to one shared pa
 - **There is no `secrets.get` IPC channel.** The renderer can create, replace, test existence
   of, delete and list secrets (labels and ids), and can never read a value back. Resolution
   from ref to value happens only in the main process, at the moment of use
-  (`apps/desktop/src/main/secret-resolver.ts`).
+  (`packages/host/src/secret-resolver.ts`).
 - Everything logged or shown is redacted at the boundary: `Authorization`, `Proxy-Authorization`,
-  WSS passwords and keystore passwords (`apps/desktop/src/main/redact.ts`).
+  WSS passwords and keystore passwords (`packages/host/src/redact.ts`).
 
 Where a keyring is genuinely unavailable — some headless Linux CI and dev setups —
 `safeStorage.isEncryptionAvailable()` is false; the store then writes base64 plaintext, marks
@@ -44,7 +44,7 @@ encryption flag is per entry, so a file written across a keyring change stays re
 - **The OS already solved key storage**, per platform, with hardware backing where available.
 - **This is testable, and tested.** SC7 is proven by a test that saves a project containing
   every kind of credential and greps the resulting folder for the plaintext
-  (`e2e/specs/secrets.spec.ts`, `apps/desktop/test/secrets.test.ts`).
+  (`e2e/specs/secrets.spec.ts`, `packages/host/test/secrets.test.ts`).
 
 ## Consequences
 

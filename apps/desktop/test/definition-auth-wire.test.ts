@@ -4,9 +4,9 @@
  * secret sent by mistake never reaches main, let alone a project file.
  */
 import { describe, expect, it } from 'vitest';
-import { apiImportOpenApiRequestSchema, apiRestPlanUpdateRequestSchema } from '../src/shared/kinds/rest/wire.js';
-import { apiAsyncApiServersRequestSchema, apiImportAsyncApiRequestSchema } from '../src/shared/kinds/ws/wire.js';
-import { authConfigWireSchema, definitionAuthWireSchema } from '../src/shared/wire-base.js';
+import { apiImportOpenApiRequestSchema, apiRestPlanUpdateRequestSchema } from '@wirebench/wire/kinds/rest/wire';
+import { apiAsyncApiServersRequestSchema, apiImportAsyncApiRequestSchema } from '@wirebench/wire/kinds/ws/wire';
+import { authConfigWireSchema, definitionAuthWireSchema } from '@wirebench/wire/wire-base';
 
 const URL_SOURCE = { kind: 'url', url: 'https://gateway.test/openapi.yaml' } as const;
 const BASIC = { type: 'basic', username: 'ada', passwordRef: 'ref-p' } as const;

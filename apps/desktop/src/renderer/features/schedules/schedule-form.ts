@@ -12,7 +12,7 @@ import type {
   ScheduleChoiceWire,
   ScheduleTargetWire,
   ScheduleWire,
-} from '../../../shared/schedules-wire.js';
+} from '@shared/schedules-wire.js';
 
 /** The server's bounds (scheduled-runs spec §3, `SCHEDULE_LIMITS`), restated: the engine is not a renderer import. */
 export const SCHEDULE_FORM_LIMITS = {

@@ -6,8 +6,8 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { NO_REST, PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
-import type { PostmanImportSummaryWire } from '../../src/shared/kinds/rest/wire.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { PostmanImportSummaryWire } from '@wirebench/wire/kinds/rest/wire';
 
 const project: ProjectWire = {
   ...NO_REST,

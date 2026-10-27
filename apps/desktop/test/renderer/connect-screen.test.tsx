@@ -8,7 +8,7 @@ import { beginAttempt, noteFailed, useConnectStore } from '../../src/renderer/fe
 import type { ConnectError } from '../../src/renderer/features/ssh/connect-errors.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { useQuickHostsStore } from '../../src/renderer/features/ssh/quick-hosts.js';
-import type { HostsFileWire, ResolvedHostWire } from '../../src/shared/ssh-wire.js';
+import type { HostsFileWire, ResolvedHostWire } from '@wirebench/wire/ssh-wire';
 
 const from = 'host' as const;
 function resolved(user: string | undefined): ResolvedHostWire {

@@ -4,7 +4,7 @@ import { cycleEnvironment, EnvSwitcher } from '../../src/renderer/features/envir
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
-import type { WorkspaceEnvironmentWire, WorkspaceProjectWire } from '../../src/shared/wire-base.js';
+import type { WorkspaceEnvironmentWire, WorkspaceProjectWire } from '@wirebench/wire/wire-base';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 const dev: WorkspaceEnvironmentWire = {

@@ -9,7 +9,7 @@
  * back.
  */
 import { BooleanSetting, NumberSetting, SettingsGroup, TextSetting } from '../../components/settings-grid.js';
-import type { RestRequestPatchWire, RestSettingsWire } from '../../../shared/kinds/rest/wire.js';
+import type { RestRequestPatchWire, RestSettingsWire } from '@shared/kinds/rest/wire.js';
 
 /** Where an inherited value is set, so the row can say so and open it. */
 export type InheritedSource = 'project' | 'preferences-rest' | 'default';

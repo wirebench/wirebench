@@ -3,7 +3,7 @@
  * *inherit*, so a row the request has not set is left empty and its fallback shown beside it.
  */
 import { BooleanSetting, NumberSetting, SettingsGroup, TextSetting } from '../../components/settings-grid.js';
-import type { GrpcRequestPatchWire, GrpcSettingsWire } from '../../../shared/kinds/grpc/wire.js';
+import type { GrpcRequestPatchWire, GrpcSettingsWire } from '@shared/kinds/grpc/wire.js';
 
 export interface InheritedGrpcSettings {
   readonly timeoutMs: number;

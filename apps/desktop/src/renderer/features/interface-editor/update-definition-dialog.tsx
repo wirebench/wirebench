@@ -14,11 +14,7 @@ import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
-import type {
-  DefinitionUpdateOptions,
-  DefinitionUpdateSource,
-  UpdatePlanWire,
-} from '../../../shared/kinds/soap/wire.js';
+import type { DefinitionUpdateOptions, DefinitionUpdateSource, UpdatePlanWire } from '@shared/kinds/soap/wire.js';
 
 export interface UpdateDefinitionDialogProps {
   readonly open: boolean;

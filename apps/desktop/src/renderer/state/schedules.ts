@@ -5,8 +5,8 @@
  * import pulls zod into the renderer, which the CSP refuses.
  */
 import { create } from 'zustand';
-import type { WorkspaceChangedEvent, WorkspaceWire } from '../../shared/wire-base.js';
-import type { SchedulesChangedEventWire, ScheduleWire } from '../../shared/schedules-wire.js';
+import type { WorkspaceChangedEvent, WorkspaceWire } from '@shared/wire-base.js';
+import type { SchedulesChangedEventWire, ScheduleWire } from '@shared/schedules-wire.js';
 import { ipc } from './ipc-client.js';
 import { useSyncStore } from './sync.js';
 import { sameServer, serverOf, type WebhooksServer } from './webhooks.js';

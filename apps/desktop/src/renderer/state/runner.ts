@@ -13,7 +13,7 @@ import type {
   RunnerRunResult,
   RunnerSettings,
   RunnerState,
-} from '../../shared/runner-wire.js';
+} from '@shared/runner-wire.js';
 import { ipc } from './ipc-client.js';
 
 /** One run of one target. */

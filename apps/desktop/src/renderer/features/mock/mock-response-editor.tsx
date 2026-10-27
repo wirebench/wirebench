@@ -13,7 +13,7 @@ import type {
   MockMatchWire,
   MockResponsePatch,
   MockResponseWire,
-} from '../../../shared/wire-base.js';
+} from '@shared/wire-base.js';
 import { CommitInput, FieldRow, SelectField } from '../sequence/step-fields.js';
 
 const BODY_LANGUAGES: readonly { value: MockBodyLanguageWire; label: string }[] = [

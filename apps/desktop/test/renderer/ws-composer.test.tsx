@@ -18,7 +18,7 @@ import {
   wsStatusText,
 } from '../../src/renderer/features/ws-editor/response-pane.js';
 import type { WsExchangeState } from '../../src/renderer/state/exchanges.js';
-import type { WsHandshakeWire } from '../../src/shared/kinds/ws/wire.js';
+import type { WsHandshakeWire } from '@wirebench/wire/kinds/ws/wire';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));

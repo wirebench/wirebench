@@ -11,7 +11,7 @@
  * `InterfaceWire.slug` carry the real on-disk names instead.
  */
 
-import type { SyncConflictWire } from '../../../shared/wire-base.js';
+import type { SyncConflictWire } from '@shared/wire-base.js';
 
 /** The slice of a project the matcher needs: its id and on-disk folder slug. */
 export interface ConflictTargetProject {

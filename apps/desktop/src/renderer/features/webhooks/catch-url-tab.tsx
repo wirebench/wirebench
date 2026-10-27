@@ -19,7 +19,7 @@ import { CaptureViewer } from './capture-viewer.js';
 import { SignatureBadge } from './signature-badge.js';
 import { useCaptureView, type Problem } from './use-capture-view.js';
 import { catchUrlTabId } from './webhooks-actions.js';
-import type { CaptureViewWire } from '../../../shared/wire-base.js';
+import type { CaptureViewWire } from '@shared/wire-base.js';
 
 /** Codes that mean "not reachable from here right now", not "something is wrong". */
 const OFFLINE_CODES: ReadonlySet<string> = new Set([

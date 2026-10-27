@@ -10,8 +10,8 @@ import {
   mcpOperationWireSchema,
   mcpRequestWireSchema,
   mcpServerWireSchema,
-} from '../src/shared/kinds/mcp/wire.js';
-import { historyEntrySchema, projectChangeSchema, projectWireSchema } from '../src/shared/wire-types.js';
+} from '@wirebench/wire/kinds/mcp/wire';
+import { historyEntrySchema, projectChangeSchema, projectWireSchema } from '@wirebench/wire/wire-types';
 import { NO_REST, PROJECT_SETTINGS } from './helpers/wire-defaults.js';
 
 const server = {

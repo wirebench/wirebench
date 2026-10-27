@@ -3,7 +3,7 @@
  * are POSIX strings the server resolves; this machine's are the same, except on Windows (`C:\…`), where
  * they use backslashes. Nothing here normalises a path beyond joining and cutting it.
  */
-import type { SftpEntryWire } from '../../../../shared/sftp-wire.js';
+import type { SftpEntryWire } from '@shared/sftp-wire.js';
 import type { PaneSort } from './files-store.js';
 
 /** A drive path (`C:\…`, `C:/…`) or a share (`\\server\share`): a Windows path of this machine. */

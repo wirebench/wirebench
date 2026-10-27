@@ -2,8 +2,8 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 
-import { COMMAND_IDS, COMMAND_WHEN_SCOPES, whenScopesOverlap } from '../../src/shared/commands.js';
-import type { CommandCategory, CommandId } from '../../src/shared/commands.js';
+import { COMMAND_IDS, COMMAND_WHEN_SCOPES, whenScopesOverlap } from '@wirebench/wire/commands';
+import type { CommandCategory, CommandId } from '@wirebench/wire/commands';
 import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
 import { getCommand } from '../../src/renderer/lib/commands.js';
 import { parseKeybinding } from '../../src/renderer/lib/keybindings.js';

@@ -9,7 +9,7 @@ import {
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { CertificateFindingWire, CertificatesCheckResponse } from '../../src/shared/wire-base.js';
+import type { CertificateFindingWire, CertificatesCheckResponse } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 function finding(overrides: Partial<CertificateFindingWire>): CertificateFindingWire {

@@ -1,4 +1,4 @@
-import type { LayoutNodeWire, LayoutWire } from '../../../../shared/layout-wire.js';
+import type { LayoutNodeWire, LayoutWire } from '@shared/layout-wire.js';
 import { useEditorsStore } from '../../../state/editors.js';
 import { useHostsStore } from '../hosts-store.js';
 import { useLayoutsStore } from './layouts-store.js';

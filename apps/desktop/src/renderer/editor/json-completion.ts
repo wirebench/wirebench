@@ -13,7 +13,7 @@
 import { jsonCompletionContextAt } from '@wirebench/engine/json';
 import type { JsonCompletionContext } from '@wirebench/engine/json';
 import type * as Monaco from 'monaco-editor';
-import type { GrpcMessageFieldWire } from '../../shared/kinds/grpc/wire.js';
+import type { GrpcMessageFieldWire } from '@shared/kinds/grpc/wire.js';
 import { JSON_LANGUAGE_ID } from './json-language.js';
 
 /** What an editor registers to get its fields completed: the schema lookup for one document. */

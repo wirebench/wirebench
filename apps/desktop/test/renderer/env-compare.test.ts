@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { summarise, toCompareColumns } from '../../src/renderer/features/multi-env/env-compare.js';
-import type { EnvSendResult } from '../../src/shared/wire-types.js';
+import type { EnvSendResult } from '@wirebench/wire/wire-types';
 import { makeExchange, makeRestExchange } from '../mocks/wire-fixtures.js';
 
 function rest(environmentId: string, text: string, status = 200): EnvSendResult {

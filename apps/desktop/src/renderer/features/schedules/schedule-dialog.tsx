@@ -23,7 +23,7 @@ import {
   type AlertRow,
   type ScheduleForm,
 } from './schedule-form.js';
-import type { ScheduleChoicesWire } from '../../../shared/schedules-wire.js';
+import type { ScheduleChoicesWire } from '@shared/schedules-wire.js';
 
 const LABEL_CLASS = 'mt-3 block text-sm text-fg-subtle';
 const CHECK_CLASS = 'flex items-center gap-2 text-sm text-fg-default';

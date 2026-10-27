@@ -10,7 +10,7 @@
 import type { ReactNode } from 'react';
 import { EnvironmentColour } from './environment-look.js';
 import { queueEnvironmentPatch } from './environment-queue.js';
-import type { WorkspaceEnvironmentWire, WorkspaceProjectWire } from '../../../shared/wire-base.js';
+import type { WorkspaceEnvironmentWire, WorkspaceProjectWire } from '@shared/wire-base.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { appliesToProject } from '../../state/environment-scope.js';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';

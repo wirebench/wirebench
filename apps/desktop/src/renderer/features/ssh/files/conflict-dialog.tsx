@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
-import type { ConflictDecisionWire, SftpConflictEvent } from '../../../../shared/sftp-wire.js';
+import type { ConflictDecisionWire, SftpConflictEvent } from '@shared/sftp-wire.js';
 import { Button } from '../../../components/button.js';
 import { formatModified, formatSize } from './format.js';
 

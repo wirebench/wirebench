@@ -6,7 +6,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { RequestScriptsWire, ScriptResultWire } from '../../src/shared/wire-base.js';
+import type { RequestScriptsWire, ScriptResultWire } from '@wirebench/wire/wire-base';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));

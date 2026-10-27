@@ -1,5 +1,5 @@
-import type { ForwardStateWire } from '../../../../shared/forward-wire.js';
-import type { ForwardGroupWire, HostsFileWire, ResolvedHostWire } from '../../../../shared/ssh-wire.js';
+import type { ForwardStateWire } from '@shared/forward-wire.js';
+import type { ForwardGroupWire, HostsFileWire, ResolvedHostWire } from '@shared/ssh-wire.js';
 import { useHostsStore } from '../hosts-store.js';
 import { forwardKey } from './forward-format.js';
 import { startForward, stopForward } from './forward-actions.js';

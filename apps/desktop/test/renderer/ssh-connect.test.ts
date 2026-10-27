@@ -8,8 +8,8 @@ import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { readRecent } from '../../src/renderer/features/ssh/recent-connections.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { WorkspaceWire } from '../../src/shared/wire-base.js';
-import type { ResolvedHostWire } from '../../src/shared/ssh-wire.js';
+import type { WorkspaceWire } from '@wirebench/wire/wire-base';
+import type { ResolvedHostWire } from '@wirebench/wire/ssh-wire';
 import { setSignInUser, useConnectStore } from '../../src/renderer/features/ssh/connect-store.js';
 import { useQuickHostsStore } from '../../src/renderer/features/ssh/quick-hosts.js';
 

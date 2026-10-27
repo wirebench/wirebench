@@ -11,15 +11,14 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app } from 'electron';
-import { appVersion } from '../app-version.js';
-import { requireCapability } from '../host/capability.js';
-import type { HostPlatform } from '../host/platform.js';
+import type { HostPlatform } from '@wirebench/host';
+import { requireCapability } from '@wirebench/host/desktop';
 // `electron-updater` is CommonJS: under this package's ESM output a named import of
 // `autoUpdater` throws at load ("Named export not found"), so the default export is
 // destructured instead. The main bundle externalises it, so this is what actually runs.
 import electronUpdater from 'electron-updater';
-import { githubFeedFrom, UpdateController } from '../updater.js';
-import type { UpdateChannel, UpdateStatus } from '../updater.js';
+import { githubFeedFrom, UpdateController } from '@wirebench/host/desktop';
+import type { UpdateChannel, UpdateStatus } from '@wirebench/host/desktop';
 
 const { autoUpdater } = electronUpdater;
 
@@ -91,13 +90,13 @@ export function createUpdateController(
           ? await confirm(
               platform,
               `Wirebench ${versionLabel(version)} is available.`,
-              `You are running ${appVersion(platform.app)}, the portable build. Open the release page to download the new zip? Unpack it and move this copy's data folder into it.`,
+              `You are running ${platform.app.version()}, the portable build. Open the release page to download the new zip? Unpack it and move this copy's data folder into it.`,
               'Open Release Page',
             )
           : await confirm(
               platform,
               `Wirebench ${versionLabel(version)} is available.`,
-              `You are running ${appVersion(platform.app)}. Download the update now? Nothing is installed until you say so.`,
+              `You are running ${platform.app.version()}. Download the update now? Nothing is installed until you say so.`,
               'Download',
             ),
       confirmInstall: async (version) =>

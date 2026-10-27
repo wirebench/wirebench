@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { PluginsSection } from '../../src/renderer/features/preferences/sections/plugins-section.js';
 import { FeaturesSection } from '../../src/renderer/features/preferences/sections/features-section.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
-import type { PluginRowWire } from '../../src/shared/plugins-wire.js';
+import type { PluginRowWire } from '@wirebench/wire/plugins-wire';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const ACME: PluginRowWire = {

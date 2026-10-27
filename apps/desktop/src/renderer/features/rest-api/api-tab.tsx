@@ -26,8 +26,8 @@ import { RestUpdateDialog } from './rest-update-dialog.js';
 import { useRestUpdateStore } from './rest-update-state.js';
 import { useProjectStore } from '../../state/project.js';
 import { useActiveEnvironment } from '../../state/workspace.js';
-import type { RestApiWire } from '../../../shared/kinds/rest/wire.js';
-import type { AuthConfigWire } from '../../../shared/wire-base.js';
+import type { RestApiWire } from '@shared/kinds/rest/wire.js';
+import type { AuthConfigWire } from '@shared/wire-base.js';
 
 /** Where the base URL a request actually uses comes from. Mirrors the engine's `BaseUrlSource`. */
 export type BaseUrlSource = 'api' | 'environment' | 'workspace-environment';

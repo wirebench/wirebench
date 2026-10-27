@@ -1,6 +1,6 @@
 import { JWT_ALGORITHMS } from '@wirebench/engine';
 import { describe, expect, it } from 'vitest';
-import { JWT_ALGORITHM_NAMES } from '../src/shared/jwt-algorithms.js';
+import { JWT_ALGORITHM_NAMES } from '@wirebench/wire/jwt-algorithms';
 
 describe('JWT_ALGORITHM_NAMES', () => {
   it("is the engine's list, which the renderer cannot import", () => {

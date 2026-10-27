@@ -20,7 +20,7 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
-import type { SnippetListItemWire } from '../../src/shared/snippets-wire.js';
+import type { SnippetListItemWire } from '@wirebench/wire/snippets-wire';
 
 const context: CommandContext = {
   platform: 'mac',

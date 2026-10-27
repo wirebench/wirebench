@@ -5,7 +5,7 @@
  */
 import { useEffect, useId, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import type { McpTransportWire } from '../../../shared/kinds/mcp/wire.js';
+import type { McpTransportWire } from '@shared/kinds/mcp/wire.js';
 import { Button } from '../../components/button.js';
 import { useProjectStore } from '../../state/project.js';
 import { openMcpApiTab } from './mcp-api-actions.js';

@@ -20,7 +20,7 @@ import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { grpcApiWire, grpcRequestWire, restFolderWire } from '../helpers/wire-defaults.js';
 import { makeGrpcExchange } from '../mocks/exchange-fixtures.js';
-import type { GrpcServiceDescriptorWire } from '../../src/shared/kinds/grpc/wire.js';
+import type { GrpcServiceDescriptorWire } from '@wirebench/wire/kinds/grpc/wire';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));

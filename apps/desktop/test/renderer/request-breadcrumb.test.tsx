@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { RequestBreadcrumb } from '../../src/renderer/features/request-editor/request-breadcrumb.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
-import type { InterfaceWire } from '../../src/shared/kinds/soap/wire.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { InterfaceWire } from '@wirebench/wire/kinds/soap/wire';
 import { makeDraft } from '../mocks/exchange-fixtures.js';
 
 /** The visible path segments, separators left out. */

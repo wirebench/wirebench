@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { tabSetOf, tabsInSet, type TabSet } from './tab-sets.js';
 import type { EditorLayout } from '../features/request-editor/layout.js';
 import type { PaneNode } from '../features/ssh/panes/pane-tree.js';
-import type { EnvSendResult } from '../../shared/wire-types.js';
+import type { EnvSendResult } from '@shared/wire-types.js';
 
 /** Which fields the Form view shows. Owned here, not by the request pane's component state, so
  * it survives a tab switch or a remount (e.g. the pane unmounting while its tab stays open in

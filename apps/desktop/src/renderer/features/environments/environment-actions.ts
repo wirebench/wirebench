@@ -2,7 +2,7 @@ import { showToast } from '../../components/toast.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
-import { isEnvironmentColor } from '../../../shared/environment-colors.js';
+import { isEnvironmentColor } from '@shared/environment-colors.js';
 
 /**
  * What the environment editor page shows: one of the workspace's own environments or a linked

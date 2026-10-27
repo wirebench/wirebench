@@ -2,7 +2,7 @@
  * What the desktop says of a placeholder (kind modules spec §7.2): a container of a kind this run
  * switched off, or of a kind this version does not know. Pure, so the tree builder can use it.
  */
-import { KINDS } from '../../shared/kinds/kind-module.js';
+import { KINDS } from '@shared/kinds/kind-module.js';
 
 /** How a kind is named to a person; an unknown kind by its own name. */
 export function kindLabel(kind: string): string {

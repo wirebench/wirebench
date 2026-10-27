@@ -12,7 +12,7 @@ import { selectActiveEnvironmentId, useWorkspaceStore } from '../../state/worksp
 import { useCurrentProjectId } from '../../state/workspace-tabs.js';
 import { useGridNavigation, type GridRowProps } from '../../lib/grid-navigation.js';
 import { activeBlocker, scopeChips } from '../../state/environment-scope.js';
-import type { WorkspaceEnvironmentWire, WorkspaceProjectWire } from '../../../shared/wire-base.js';
+import type { WorkspaceEnvironmentWire, WorkspaceProjectWire } from '@shared/wire-base.js';
 import {
   duplicateEnvironment,
   nextEnvironmentName,

@@ -6,7 +6,7 @@
  * not pull values from `wire-types` at start-up. Type-only imports, so it stays pure.
  */
 
-import type { WorkspaceEnvironmentWire, WorkspaceProjectWire, WorkspaceWire } from '../../shared/wire-base.js';
+import type { WorkspaceEnvironmentWire, WorkspaceProjectWire, WorkspaceWire } from '@shared/wire-base.js';
 
 /**
  * True when `environment` applies to `projectId`: its `projects` scope is absent (every project,

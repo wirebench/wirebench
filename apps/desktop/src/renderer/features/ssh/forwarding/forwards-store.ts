@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ForwardStateWire } from '../../../../shared/forward-wire.js';
+import type { ForwardStateWire } from '@shared/forward-wire.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { forwardKey } from './forward-format.js';
 

@@ -11,13 +11,13 @@
     "types": ["electron-vite/node"],
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["src/shared/*"]
+      "@shared/*": ["../../packages/wire/src/*"]
     }
   },
   "include": [
     "src/main/**/*",
     "src/preload/**/*",
-    "src/shared/**/*",
+    "../../packages/wire/src/**/*",
     "electron.vite.config.ts",
     "after-pack.ts",
     "test/*.ts"

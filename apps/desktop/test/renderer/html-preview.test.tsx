@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { BodyView, type BodyViewExchange } from '../../src/renderer/features/rest-editor/response/body-view.js';
 import { previewDocument } from '../../src/renderer/features/rest-editor/response/html-preview.js';
-import { HTML_PREVIEW_CSP } from '../../src/shared/html-preview-csp.js';
+import { HTML_PREVIEW_CSP } from '@wirebench/wire/html-preview-csp';
 import { useResponseWrapStore } from '../../src/renderer/features/rest-editor/response/wrap.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';

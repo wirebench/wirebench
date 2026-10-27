@@ -9,8 +9,8 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { DEFAULT_UI_STATE, readUi, writeUi } from '../../src/renderer/state/ui-state.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
-import type { EnvironmentWire, WorkspaceEnvironmentWire } from '../../src/shared/wire-base.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { EnvironmentWire, WorkspaceEnvironmentWire } from '@wirebench/wire/wire-base';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 const environment: WorkspaceEnvironmentWire = {

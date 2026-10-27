@@ -1,5 +1,5 @@
 import { Copy } from 'lucide-react';
-import type { HttpExchangeWire, PeerCertWire, SslInfoWire } from '../../../../shared/wire-base.js';
+import type { HttpExchangeWire, PeerCertWire, SslInfoWire } from '@shared/wire-base.js';
 import { usePreferencesStore } from '../../../state/preferences.js';
 import { InspectorIconButton } from './inspector-strip.js';
 

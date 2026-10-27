@@ -5,7 +5,7 @@
  * which is why each hint says what it applies to rather than what it forbids.
  */
 import { NumberSetting, SettingsGroup, TextSetting, BooleanSetting } from '../../../components/settings-grid.js';
-import type { PreferencesWire } from '../../../../shared/wire-base.js';
+import type { PreferencesWire } from '@shared/wire-base.js';
 import type { SectionProps } from './section-props.js';
 import { PREFERENCE_LIMITS } from '../../../state/preference-limits.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../../state/preferences-defaults.js';

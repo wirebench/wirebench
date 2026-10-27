@@ -7,8 +7,8 @@
  * panel under it says the rest.
  */
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
-import type { IpcError } from '../../../../shared/ipc.js';
-import type { RestExchangeSummary } from '../../../../shared/kinds/rest/wire.js';
+import type { IpcError } from '@shared/ipc.js';
+import type { RestExchangeSummary } from '@shared/kinds/rest/wire.js';
 import { base64ByteLength, formatBytes } from '../../../lib/format-size.js';
 import type { RestLiveState } from '../../../state/exchanges.js';
 import { describeSendError } from '../../request-editor/send-error.js';

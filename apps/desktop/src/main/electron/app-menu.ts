@@ -1,9 +1,8 @@
 /** The Electron end of `app.registerMenu`: builds the native application menu and routes clicks. */
 import { BrowserWindow, Menu } from 'electron';
-import { events } from '../../shared/ipc.js';
-import type { AppMenu } from '../ipc/app.js';
-import { emitEvent } from '../ipc/events.js';
-import type { HostPlatform } from '../host/platform.js';
+import { events } from '@wirebench/wire/ipc';
+import type { HostPlatform } from '@wirebench/host';
+import { emitEvent, type AppMenu } from '@wirebench/host/desktop';
 import { callerForWebContents } from './electron-platform.js';
 import { applyCommandMenu } from './menu.js';
 import type { MenuApi } from './menu.js';

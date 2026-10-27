@@ -2,11 +2,11 @@
  * Wire-shape fixtures with no renderer imports, so node-side (main) tests can use them too.
  * `exchange-fixtures.ts` re-exports everything here.
  */
-import type { GrpcExchangeSummary } from '../../src/shared/kinds/grpc/wire.js';
-import type { RestExchangeSummary } from '../../src/shared/kinds/rest/wire.js';
-import type { ExchangeSummary } from '../../src/shared/kinds/soap/wire.js';
-import type { WsExchangeSummary, WsHandshakeExchangeSummary } from '../../src/shared/kinds/ws/wire.js';
-import type { FailedExchangeWire } from '../../src/shared/wire-base.js';
+import type { GrpcExchangeSummary } from '@wirebench/wire/kinds/grpc/wire';
+import type { RestExchangeSummary } from '@wirebench/wire/kinds/rest/wire';
+import type { ExchangeSummary } from '@wirebench/wire/kinds/soap/wire';
+import type { WsExchangeSummary, WsHandshakeExchangeSummary } from '@wirebench/wire/kinds/ws/wire';
+import type { FailedExchangeWire } from '@wirebench/wire/wire-base';
 
 /** Base64 of a UTF-8 string, for the `*Base64` fields the wire types carry. */
 export function b64(text: string): string {

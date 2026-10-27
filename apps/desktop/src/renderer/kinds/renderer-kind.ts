@@ -5,9 +5,9 @@
  * @internal Composed statically in `RENDERER_KINDS`; not yet a plugin API (ADR-0017).
  */
 import type { ComponentType, LazyExoticComponent } from 'react';
-import type { HistoryEntryWire } from '../../shared/wire-types.js';
-import type { SearchMatchWire } from '../../shared/wire-base.js';
-import type { KindId } from '../../shared/kinds/kind-module.js';
+import type { HistoryEntryWire } from '@shared/wire-types.js';
+import type { SearchMatchWire } from '@shared/wire-base.js';
+import type { KindId } from '@shared/kinds/kind-module.js';
 import type { ExplorerMenuGroup } from '../features/explorer/menu-items.js';
 import type { ExplorerNode, ExplorerNodeKind } from '../features/explorer/tree-nodes.js';
 import type { CompareSide } from '../features/history/history-actions.js';

@@ -37,7 +37,7 @@ The design offered granted folders as the recommendation. The owner ruled agains
 - **Gone with the area switch.** The channels are registered only while the SSH area is on
   ([ADR-0021](0021-a-desktop-area-is-a-module-behind-one-interface.md)). With
   `WIREBENCH_AREAS=ssh=off` none of them exists in main, so neither does the exception
-  (`apps/desktop/test/areas-switch.test.ts`).
+  (`packages/host/test/areas-switch.test.ts`).
 - **Remote names never pick a local path.** A download writes to `join(targetDir, name)` only after
   `safeLocalName` refuses `''`, `.`, `..` and names holding `/`, `\` or NUL (`sftp-failed` with
   `details.reason: 'unsafe-name'`). The local folder comes from the user's browsing; a server cannot

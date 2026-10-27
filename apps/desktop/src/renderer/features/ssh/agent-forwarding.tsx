@@ -1,5 +1,5 @@
 import { KeyRound } from 'lucide-react';
-import type { GroupEntryWire, SshConnectResponse } from '../../../shared/ssh-wire.js';
+import type { GroupEntryWire, SshConnectResponse } from '@shared/ssh-wire.js';
 import type { PaneSession } from './hosts-store.js';
 import { InheritedSwitch, type Provenance } from './inherited-field.js';
 

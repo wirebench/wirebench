@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { CookieJarStateWire, CookieKeyWire, StoredCookieWire } from '../../shared/wire-base.js';
+import type { CookieJarStateWire, CookieKeyWire, StoredCookieWire } from '@shared/wire-base.js';
 import { showToast } from '../components/toast.js';
 import { ipc } from './ipc-client.js';
 

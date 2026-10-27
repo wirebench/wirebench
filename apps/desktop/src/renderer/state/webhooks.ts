@@ -12,7 +12,7 @@ import type {
   HooksMetaWire,
   WorkspaceChangedEvent,
   WorkspaceWire,
-} from '../../shared/wire-base.js';
+} from '@shared/wire-base.js';
 import { ipc } from './ipc-client.js';
 import { useSyncStore } from './sync.js';
 import { originOf, readSeen, writeSeen } from './webhooks-seen.js';

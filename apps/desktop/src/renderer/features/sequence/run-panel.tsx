@@ -13,7 +13,7 @@ import { useWebhooksStore } from '../../state/webhooks.js';
 import { openCatchUrlTab } from '../webhooks/webhooks-actions.js';
 import { branchText } from './branch-text.js';
 import { waitingText } from './callback-text.js';
-import type { SequenceStepResultWire, SequenceWire } from '../../../shared/wire-base.js';
+import type { SequenceStepResultWire, SequenceWire } from '@shared/wire-base.js';
 
 const OUTCOME_TONE: Record<SequenceStepResultWire['outcome'], string> = {
   passed: 'text-status-success',

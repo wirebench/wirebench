@@ -9,8 +9,8 @@ import type { LogEntry } from '../../state/exchanges.js';
 import { SslInspector } from '../request-editor/inspectors/ssl-inspector.js';
 import { RedirectsView } from '../rest-editor/response/redirects-view.js';
 import { TimingsBar } from './timings-bar.js';
-import type { WsHandshakeExchangeSummary } from '../../../shared/kinds/ws/wire.js';
-import type { FailedExchangeWire, HttpExchangeWire } from '../../../shared/wire-base.js';
+import type { WsHandshakeExchangeSummary } from '@shared/kinds/ws/wire.js';
+import type { FailedExchangeWire, HttpExchangeWire } from '@shared/wire-base.js';
 
 export type LogDetailTab = 'headers' | 'request' | 'response' | 'timing' | 'connection';
 

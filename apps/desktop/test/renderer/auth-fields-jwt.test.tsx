@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { AuthFields } from '../../src/renderer/components/auth-fields.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { AuthConfigWire } from '../../src/shared/wire-base.js';
+import type { AuthConfigWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const HS256: AuthConfigWire = {

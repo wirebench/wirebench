@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { EnvCompareView } from '../../src/renderer/features/multi-env/env-compare-view.js';
-import type { EnvSendResult } from '../../src/shared/wire-types.js';
+import type { EnvSendResult } from '@wirebench/wire/wire-types';
 import { makeRestExchange } from '../mocks/wire-fixtures.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));

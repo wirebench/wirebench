@@ -8,7 +8,7 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { NO_REST } from '../helpers/wire-defaults.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { openSettingsTab, resetSettingsTabs } from '../helpers/settings-page-tabs.js';
 
 function project(patch: Partial<ProjectWire> = {}): ProjectWire {

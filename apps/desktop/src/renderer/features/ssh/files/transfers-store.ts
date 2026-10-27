@@ -5,12 +5,7 @@
  * only shows it and sends the user's answers back.
  */
 import { create } from 'zustand';
-import type {
-  ConflictDecisionWire,
-  SftpConflictEvent,
-  SftpCopyRequest,
-  SftpTransferEvent,
-} from '../../../../shared/sftp-wire.js';
+import type { ConflictDecisionWire, SftpConflictEvent, SftpCopyRequest, SftpTransferEvent } from '@shared/sftp-wire.js';
 import { showToast } from '../../../components/toast.js';
 import { useEditorsStore } from '../../../state/editors.js';
 import { ipc } from '../../../state/ipc-client.js';

@@ -1,5 +1,5 @@
 import { Lock } from 'lucide-react';
-import { environmentColorCss } from '../../../shared/environment-colors.js';
+import { environmentColorCss } from '@shared/environment-colors.js';
 
 /**
  * An environment's colour dot and protected lock (#345), as the switcher shows them beside its

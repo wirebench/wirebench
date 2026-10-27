@@ -1,6 +1,6 @@
 import type { z } from 'zod';
-import type { EventPayload, IpcChannel, IpcResult } from '../shared/ipc.js';
-import { channels, events } from '../shared/ipc.js';
+import type { EventPayload, IpcChannel, IpcResult } from '@wirebench/wire/ipc';
+import { channels, events } from '@wirebench/wire/ipc';
 
 /** Injected transport for `invoke`-style channels: send `request`, get the raw reply back. */
 export type Invoke = (channelName: string, request: unknown) => Promise<unknown>;

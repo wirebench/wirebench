@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { projectChangeSchema } from '../src/shared/wire-types.js';
+import { projectChangeSchema } from '@wirebench/wire/wire-types';
 import {
   authConfigWireSchema,
   authSummaryWireSchema,
   definitionAuthWireSchema,
   importAuthSchema,
-} from '../src/shared/wire-base.js';
+} from '@wirebench/wire/wire-base';
 
 describe('Kerberos on the wire', () => {
   it('is an auth config with spn and principal, at every SOAP site', () => {

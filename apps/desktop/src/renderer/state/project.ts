@@ -2,7 +2,7 @@ import type { Draft } from 'immer';
 import { produce } from 'immer';
 import { create } from 'zustand';
 import { showToast } from '../components/toast.js';
-import type { IpcError } from '../../shared/ipc.js';
+import type { IpcError } from '@shared/ipc.js';
 import type {
   ApiImportOpenApiResponse,
   ApiGrpcRefreshResponse,
@@ -11,7 +11,7 @@ import type {
   ProjectApiMovePlan,
   ProjectMutateResponse,
   ProjectWire,
-} from '../../shared/wire-types.js';
+} from '@shared/wire-types.js';
 import type {
   ApiGrpcRefreshRequest,
   ApiImportProtoRequest,
@@ -20,7 +20,7 @@ import type {
   GrpcRequestPatchWire,
   GrpcRequestWire,
   ProtoImportSummaryWire,
-} from '../../shared/kinds/grpc/wire.js';
+} from '@shared/kinds/grpc/wire.js';
 import type {
   ApiImportOpenApiRequest,
   OpenApiImportSummaryWire,
@@ -30,7 +30,7 @@ import type {
   RestRequestPatchWire,
   RestRequestWire,
   WebhookCollectionWire,
-} from '../../shared/kinds/rest/wire.js';
+} from '@shared/kinds/rest/wire.js';
 import type {
   AttachmentPatchWire,
   SoapOwnerAuthWire,
@@ -44,7 +44,7 @@ import type {
   RequestPatchWire,
   RequestPropertiesPatchWire,
   RequestWire,
-} from '../../shared/kinds/soap/wire.js';
+} from '@shared/kinds/soap/wire.js';
 import type {
   ApiImportAsyncApiRequest,
   AsyncApiImportSummaryWire,
@@ -52,7 +52,7 @@ import type {
   WsApiWire,
   WsRequestPatchWire,
   WsRequestWire,
-} from '../../shared/kinds/ws/wire.js';
+} from '@shared/kinds/ws/wire.js';
 import type {
   ApiRefreshMcpCatalogueResponse,
   McpOperationWire,
@@ -61,7 +61,7 @@ import type {
   McpServerPatchWire,
   McpServerWire,
   McpTransportWire,
-} from '../../shared/kinds/mcp/wire.js';
+} from '@shared/kinds/mcp/wire.js';
 import type {
   SequencePatch,
   SequenceWire,
@@ -83,7 +83,7 @@ import type {
   ScriptConversionWire,
   ScriptConversionsResultWire,
   WebhookSigningWire,
-} from '../../shared/wire-base.js';
+} from '@shared/wire-base.js';
 import type {
   ExplorerGrpcData,
   ExplorerMcpData,

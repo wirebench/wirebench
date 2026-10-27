@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { CommandCatalogEntry } from '../apps/desktop/src/shared/command-catalog.ts';
+import type { CommandCatalogEntry } from '../packages/wire/src/command-catalog.ts';
 import { renderCommandReference } from './docs-commands.ts';
 
 const entries: readonly CommandCatalogEntry[] = [

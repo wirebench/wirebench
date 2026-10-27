@@ -10,8 +10,8 @@
  * last showed; if that capture is gone (the tab closed, or moved on to another one), it has
  * nothing to read and says so.
  */
-import type { RestBodyWire, RestRequestPatchWire } from '../../../shared/kinds/rest/wire.js';
-import type { CaptureViewWire, KeyValueWire } from '../../../shared/wire-base.js';
+import type { RestBodyWire, RestRequestPatchWire } from '@shared/kinds/rest/wire.js';
+import type { CaptureViewWire, KeyValueWire } from '@shared/wire-base.js';
 
 let lastCapture: CaptureViewWire | undefined;
 

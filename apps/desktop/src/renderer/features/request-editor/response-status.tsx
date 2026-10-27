@@ -1,8 +1,8 @@
-import type { GrpcExchangeSummary } from '../../../shared/kinds/grpc/wire.js';
-import type { RestExchangeSummary } from '../../../shared/kinds/rest/wire.js';
-import type { ExchangeSummary } from '../../../shared/kinds/soap/wire.js';
-import type { WsHandshakeExchangeSummary } from '../../../shared/kinds/ws/wire.js';
-import type { IpcError } from '../../../shared/ipc.js';
+import type { GrpcExchangeSummary } from '@shared/kinds/grpc/wire.js';
+import type { RestExchangeSummary } from '@shared/kinds/rest/wire.js';
+import type { ExchangeSummary } from '@shared/kinds/soap/wire.js';
+import type { WsHandshakeExchangeSummary } from '@shared/kinds/ws/wire.js';
+import type { IpcError } from '@shared/ipc.js';
 import { base64ByteLength, formatBytes, formatDuration } from '../../lib/format-size.js';
 
 /** How a finished exchange should read: fine, or something went wrong. */

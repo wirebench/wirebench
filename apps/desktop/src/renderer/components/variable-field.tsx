@@ -19,7 +19,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { propertyReferences } from '@wirebench/engine/rest';
-import type { VariableEditTargetWire } from '../../shared/wire-base.js';
+import type { VariableEditTargetWire } from '@shared/wire-base.js';
 import {
   classifyReference,
   completionContext,

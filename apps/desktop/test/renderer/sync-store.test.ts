@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { subscribeToSync, useSyncStore } from '../../src/renderer/state/sync.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { WorkspaceWire } from '../../src/shared/wire-base.js';
+import type { WorkspaceWire } from '@wirebench/wire/wire-base';
 
 const showToast = vi.hoisted(() => vi.fn());
 vi.mock('../../src/renderer/components/toast.js', () => ({ showToast }));

@@ -1,0 +1,275 @@
+import { WorkspaceError } from '@wirebench/engine';
+import { channels } from '@wirebench/wire/ipc';
+import type { WorkspaceService } from '../workspace-service.js';
+import type { ServerShareTarget } from '../workspace-share.js';
+import { registerHandler, type HandlerTable } from './register.js';
+
+/**
+ * The `WorkspaceService` surface the `workspace.*` channels drive; a stub stands in for it in
+ * tests, exactly as `request.*` and `definition.*` do.
+ */
+export type WorkspaceChannelService = Pick<
+  WorkspaceService,
+  | 'list'
+  | 'create'
+  | 'open'
+  | 'close'
+  | 'snapshot'
+  | 'rename'
+  | 'delete'
+  | 'addProject'
+  | 'removeProject'
+  | 'linkProject'
+  | 'importProjectFolder'
+  | 'importKnownProjectFolder'
+  | 'exportProject'
+  | 'exportCollection'
+  | 'locateProject'
+  | 'setActiveEnvironment'
+  | 'mutate'
+  | 'lastError'
+  | 'stashDrafts'
+  | 'takeRestored'
+  | 'share'
+  | 'shareToFolder'
+  | 'join'
+  | 'joinFromFolder'
+  | 'stopSharing'
+  | 'shareToServer'
+  | 'joinFromServer'
+  | 'serverShareTargets'
+  | 'openableTeamWorkspaces'
+  | 'moveProjectToWorkspace'
+>;
+
+/** What `workspace.*` needs beyond the service itself. */
+export interface WorkspaceChannelDeps {
+  readonly service: WorkspaceChannelService;
+  /**
+   * Folders named by a pre-workspace `recent-projects.json`, offered on the picker so an
+   * upgrading user's existing project folders are not silently stranded. Reading the file is
+   * the caller's business, so the picker never learns a path the app did not already hold.
+   */
+  readonly suggestions?: () => Promise<readonly string[]>;
+  /**
+   * Settles once the launch-time reopen of the last workspace has finished (either way).
+   * `workspace.snapshot` and `workspace.list` wait for it, so the renderer's first answer is the
+   * final one: no picker flashing up before the reopened workspace replaces it, and no error
+   * banner missing because the list was read before the reopen failed.
+   */
+  readonly ready?: () => Promise<unknown>;
+  /** Shows a folder in the OS file manager (`shell.showItemInFolder` in production). */
+  readonly reveal?: (dir: string) => void;
+}
+
+/**
+ * Registers the `workspace.*` IPC channels.
+ *
+ * None of these takes a filesystem path. `linkProject`, `importProjectFolder`, `exportProject`
+ * and `locateProject` run their own native dialog inside `WorkspaceService` and record the
+ * pick, so the only folders the app touches outside the workspace are ones the user chose in
+ * person — a renderer-supplied path would be a hole in exactly that rule.
+ *
+ * `workspace.changed` is raised through `WorkspaceHooks` in `main/host/create-host.ts` rather than from
+ * here: it also fires outside any invocation (a project finishing its open, a save on quit).
+ */
+export function registerWorkspaceChannels(table: HandlerTable, deps: WorkspaceChannelDeps): void {
+  const { service } = deps;
+  const ready = async (): Promise<void> => {
+    await deps.ready?.().catch(() => undefined);
+  };
+
+  registerHandler(table, channels.workspace.list, async () => {
+    await ready();
+    const workspaces = await service.list();
+    const suggestions = (await deps.suggestions?.()) ?? [];
+    const lastError = service.lastError();
+    return {
+      workspaces,
+      ...(suggestions.length > 0 ? { suggestions: [...suggestions] } : {}),
+      ...(lastError !== undefined ? { lastError } : {}),
+    };
+  });
+
+  registerHandler(table, channels.workspace.importSuggestion, async (request) => {
+    // Resolved against a fresh read of the same list the picker was shown, so the only folders
+    // this can reach are ones the app itself recorded.
+    const folder = ((await deps.suggestions?.()) ?? [])[request.index];
+    if (folder === undefined) {
+      throw new WorkspaceError('project-folder-missing', 'That project folder is no longer suggested.', {
+        details: { index: request.index },
+      });
+    }
+    return { workspace: await service.importKnownProjectFolder(folder), dir: folder };
+  });
+
+  registerHandler(table, channels.workspace.reveal, async (request) => {
+    // Only a workspace the list knows about: the id is looked up, never turned into a path.
+    const row = (await service.list()).find((candidate) => candidate.id === request.workspaceId);
+    if (row === undefined) {
+      throw new WorkspaceError('workspace-not-found', `No workspace "${request.workspaceId}".`, {
+        details: { workspaceId: request.workspaceId },
+      });
+    }
+    deps.reveal?.(row.dir);
+    return {};
+  });
+
+  registerHandler(table, channels.workspace.revealProject, (request) => {
+    // Same rule as `reveal`: the id is looked up in the open workspace's own snapshot, so the
+    // renderer names a project, never a folder.
+    const project = service.snapshot()?.projects.find((candidate) => candidate.id === request.projectId);
+    if (project === undefined) {
+      throw new WorkspaceError('project-not-in-workspace', `No project "${request.projectId}" in this workspace.`, {
+        details: { projectId: request.projectId },
+      });
+    }
+    deps.reveal?.(project.dir);
+    return Promise.resolve({});
+  });
+
+  registerHandler(table, channels.workspace.create, async (request) => ({
+    workspace: await service.create(request.name),
+  }));
+
+  registerHandler(table, channels.workspace.open, async (request) => ({
+    workspace: await service.open(request.workspaceId),
+  }));
+
+  registerHandler(table, channels.workspace.close, async () => ({ workspace: await service.close() }));
+
+  registerHandler(table, channels.workspace.stashDrafts, async (request) => {
+    await service.stashDrafts(
+      request.workspaceId,
+      request.requests,
+      request.restRequests ?? {},
+      request.grpcRequests ?? {},
+      request.wsRequests ?? {},
+      request.mcpRequests ?? {},
+    );
+    return {};
+  });
+
+  registerHandler(table, channels.workspace.takeRestored, async () => {
+    await ready();
+    return service.takeRestored();
+  });
+
+  registerHandler(table, channels.workspace.snapshot, async () => {
+    await ready();
+    return { workspace: service.snapshot() };
+  });
+
+  registerHandler(table, channels.workspace.rename, async (request) => ({
+    workspaces: await service.rename(request.workspaceId, request.name),
+  }));
+
+  registerHandler(table, channels.workspace.delete, async (request) => ({
+    workspaces: await service.delete(request.workspaceId),
+  }));
+
+  registerHandler(table, channels.workspace.addProject, async (request) => await service.addProject(request.name));
+
+  registerHandler(table, channels.workspace.removeProject, async (request) => ({
+    workspace: await service.removeProject(request.projectId, { deleteFiles: request.deleteFiles }),
+  }));
+
+  registerHandler(table, channels.workspace.linkProject, async (_request, sender) => ({
+    workspace: await service.linkProject(sender),
+  }));
+
+  registerHandler(table, channels.workspace.importProjectFolder, async (_request, sender) => ({
+    workspace: await service.importProjectFolder(sender),
+  }));
+
+  registerHandler(table, channels.workspace.exportProject, async (request, sender) => {
+    const exported = await service.exportProject(request.projectId, sender);
+    return { dir: exported?.dir ?? null };
+  });
+
+  registerHandler(table, channels.workspace.exportCollection, async (request, sender) => {
+    const exported = await service.exportCollection(request, sender);
+    if (exported === null) {
+      return { cancelled: true, files: [], requests: 0, warnings: [], notes: [] };
+    }
+    return {
+      cancelled: false,
+      dir: exported.dir,
+      files: [...exported.files],
+      requests: exported.result.counts.requests,
+      warnings: [...exported.result.report.warnings],
+      notes: [...exported.result.report.notes],
+    };
+  });
+
+  registerHandler(table, channels.workspace.locateProject, async (request, sender) => ({
+    workspace: await service.locateProject(request.projectId, sender),
+  }));
+
+  registerHandler(table, channels.workspace.setActiveEnvironment, async (request) => ({
+    workspace: await service.setActiveEnvironment(request),
+  }));
+
+  registerHandler(table, channels.workspace.mutate, async (request) => await service.mutate(request.change));
+
+  registerHandler(table, channels.workspace.share, async (request) => ({
+    workspace: await service.share({
+      ...(request.remote !== undefined ? { remote: request.remote } : {}),
+      ...(request.branch !== undefined ? { branch: request.branch } : {}),
+    }),
+  }));
+
+  registerHandler(table, channels.workspace.shareToFolder, async (_request, sender) => ({
+    workspace: await service.shareToFolder(sender),
+  }));
+
+  registerHandler(table, channels.workspace.join, async (request) => ({
+    workspace: await service.join({
+      remote: request.remote,
+      ...(request.branch !== undefined ? { branch: request.branch } : {}),
+    }),
+  }));
+
+  registerHandler(table, channels.workspace.joinFromFolder, async (_request, sender) => ({
+    workspace: await service.joinFromFolder(sender),
+  }));
+
+  registerHandler(table, channels.workspace.stopSharing, async () => ({ workspace: await service.stopSharing() }));
+
+  registerHandler(table, channels.workspace.shareToServer, async (request) => {
+    // Rebuilt, not forwarded: an absent default role must reach main absent (exactOptionalPropertyTypes).
+    const { target } = request;
+    const shaped: ServerShareTarget =
+      target.kind === 'new'
+        ? {
+            kind: 'new',
+            name: target.name,
+            ...(target.defaultRole !== undefined ? { defaultRole: target.defaultRole } : {}),
+          }
+        : { kind: 'existing', workspaceId: target.workspaceId };
+    return {
+      workspace: await service.shareToServer({
+        url: request.url,
+        teamId: request.teamId,
+        teamName: request.teamName,
+        target: shaped,
+      }),
+    };
+  });
+
+  registerHandler(table, channels.workspace.joinFromServer, async (request) => ({
+    workspace: await service.joinFromServer({ url: request.url, workspaceId: request.workspaceId }),
+  }));
+
+  registerHandler(table, channels.workspace.serverTargets, async (request) => ({
+    workspaces: await service.serverShareTargets({ url: request.url, teamId: request.teamId }),
+  }));
+
+  registerHandler(table, channels.workspace.teamWorkspaces, async () => ({
+    workspaces: await service.openableTeamWorkspaces(),
+  }));
+
+  registerHandler(table, channels.project.moveToWorkspace, async (request) => ({
+    workspace: await service.moveProjectToWorkspace(request.projectId, request.workspaceId),
+  }));
+}

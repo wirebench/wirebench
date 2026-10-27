@@ -11,7 +11,7 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWebhooksStore } from '../../src/renderer/state/webhooks.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { restFolderWire } from '../helpers/wire-defaults.js';
-import type { AuthConfigWire, CatchUrlWire, WebhookSigningWire } from '../../src/shared/wire-base.js';
+import type { AuthConfigWire, CatchUrlWire, WebhookSigningWire } from '@wirebench/wire/wire-base';
 
 const SERVER = { url: 'https://srv.test', workspaceId: '01J8ZC5Q0V7R3T9XK2M4N6P8QA' };
 const HOOK: CatchUrlWire = {

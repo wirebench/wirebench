@@ -11,7 +11,7 @@ import { useFilesStore } from '../../src/renderer/features/ssh/files/files-store
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { getCommand, listCommands, resetCommands, runCommand } from '../../src/renderer/lib/commands.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
-import type { SftpEntryWire } from '../../src/shared/sftp-wire.js';
+import type { SftpEntryWire } from '@wirebench/wire/sftp-wire';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const TAB = 'ssh-files:a';

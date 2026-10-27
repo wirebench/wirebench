@@ -18,9 +18,9 @@ vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 import { workspaceWire } from '../helpers/workspace-wire.js';
 import { NO_REST, PROJECT_SETTINGS, wsApiWire } from '../helpers/wire-defaults.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
-import type { WsApiWire } from '../../src/shared/kinds/ws/wire.js';
-import type { EnvironmentWire } from '../../src/shared/wire-base.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { WsApiWire } from '@wirebench/wire/kinds/ws/wire';
+import type { EnvironmentWire } from '@wirebench/wire/wire-base';
 import { openSettingsTab, resetSettingsTabs } from '../helpers/settings-page-tabs.js';
 
 const updateWsApi = vi.fn();

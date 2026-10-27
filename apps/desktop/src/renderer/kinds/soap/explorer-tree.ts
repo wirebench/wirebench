@@ -1,4 +1,4 @@
-import type { InterfaceSummary, OperationSummaryWire } from '../../../shared/kinds/soap/wire.js';
+import type { InterfaceSummary, OperationSummaryWire } from '@shared/kinds/soap/wire.js';
 import type { ExplorerConflictTargets, ExplorerNode } from '../../features/explorer/tree-nodes.js';
 import type { RequestDraft } from '../../state/project.js';
 import type { KindExplorerTree } from '../explorer-tree.js';

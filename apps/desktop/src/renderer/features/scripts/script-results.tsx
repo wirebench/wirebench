@@ -7,7 +7,7 @@
  * that ran, in order, each under a heading such as `API "Shop" · pre-request`.
  */
 import { CheckCircle2, XCircle } from 'lucide-react';
-import type { ScriptResultWire } from '../../../shared/wire-base.js';
+import type { ScriptResultWire } from '@shared/wire-base.js';
 
 type ScriptTestWire = ScriptResultWire['tests'][number];
 type ScriptLevelResultWire = NonNullable<ScriptResultWire['levels']>[number];

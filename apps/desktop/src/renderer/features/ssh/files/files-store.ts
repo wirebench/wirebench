@@ -7,8 +7,8 @@
  * hidden-entries toggle are remembered on this machine (`files-prefs.ts`).
  */
 import { create } from 'zustand';
-import type { IpcResult } from '../../../../shared/ipc.js';
-import type { SftpEntryWire, SftpPlaceWire } from '../../../../shared/sftp-wire.js';
+import type { IpcResult } from '@shared/ipc.js';
+import type { SftpEntryWire, SftpPlaceWire } from '@shared/sftp-wire.js';
 import { useEditorsStore } from '../../../state/editors.js';
 import { showToast } from '../../../components/toast.js';
 import { ipc } from '../../../state/ipc-client.js';

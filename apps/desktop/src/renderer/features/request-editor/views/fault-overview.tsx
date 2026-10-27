@@ -2,7 +2,7 @@ import { Fragment } from 'react';
 import type { ReactNode } from 'react';
 import { XmlEditor } from '../../../editor/xml-editor.js';
 import { prettyPrintXml } from '../../../editor/xml-language.js';
-import type { FaultWire } from '../../../../shared/kinds/soap/wire.js';
+import type { FaultWire } from '@shared/kinds/soap/wire.js';
 
 /** Matches an http(s) URL inside free text, for turning fault reason text into clickable links. */
 const URL_PATTERN = /https?:\/\/[^\s<>"')]+/g;

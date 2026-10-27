@@ -14,8 +14,8 @@ import { endpointParts, historyCountLabel, historyStatusChip, historyTabTitle, h
 import { compareBannerText, compareStep } from './history-compare.js';
 import { requestDisplayName } from '../rest-api/request-display-name.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
-import type { HistoryEntryWire } from '../../../shared/wire-types.js';
-import type { WorkspaceProjectWire } from '../../../shared/wire-base.js';
+import type { HistoryEntryWire } from '@shared/wire-types.js';
+import type { WorkspaceProjectWire } from '@shared/wire-base.js';
 
 // Two lines of `text-xs` plus the row's padding.
 const ROW_HEIGHT = 44;

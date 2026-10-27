@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { Button } from '../../components/button.js';
 import { ipc } from '../../state/ipc-client.js';
-import type { McpApprovalAnswerWire, McpApprovalPromptEvent } from '../../../shared/kinds/mcp/wire.js';
+import type { McpApprovalAnswerWire, McpApprovalPromptEvent } from '@shared/kinds/mcp/wire.js';
 
 /** The approval dialog: shows the oldest prompt waiting, one at a time. */
 export function McpApprovalDialog() {

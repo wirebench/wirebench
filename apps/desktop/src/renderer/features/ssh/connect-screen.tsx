@@ -4,7 +4,7 @@ import { Check, ChevronDown, ChevronRight, Circle, CircleDot, KeyRound, Laptop, 
 import { Button } from '../../components/button.js';
 import { findHost, osKeyOf, upsertHost, useHostsStore } from './hosts-store.js';
 import { findIdentity, upsertIdentity } from './identities.js';
-import type { IdentityWire } from '../../../shared/ssh-wire.js';
+import type { IdentityWire } from '@shared/ssh-wire.js';
 import { INPUT_CLASS } from './inherited-field.js';
 import { connectFix } from './connect-errors.js';
 import { setSignInUser, useConnectStore } from './connect-store.js';

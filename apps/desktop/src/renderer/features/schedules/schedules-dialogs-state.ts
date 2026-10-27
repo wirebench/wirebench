@@ -1,6 +1,6 @@
 /** Which schedules dialog is open: the schedule dialog (create or edit), its secrets, or a confirmation. */
 import { create } from 'zustand';
-import type { ScheduleTargetWire } from '../../../shared/schedules-wire.js';
+import type { ScheduleTargetWire } from '@shared/schedules-wire.js';
 
 /** `scheduleId` `undefined` creates a schedule, with `target` filled in by **Schedule…** on a row. */
 export interface ScheduleEdit {

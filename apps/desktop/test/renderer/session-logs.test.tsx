@@ -10,8 +10,8 @@ import {
   useTeamSessionLogsDialogStore,
 } from '../../src/renderer/features/ssh/session-logs-store.js';
 import { TeamSessionLogsDialog } from '../../src/renderer/features/ssh/team-session-logs.js';
-import type { SessionLogEntryWire } from '../../src/shared/session-log-wire.js';
-import type { HostsFileWire } from '../../src/shared/ssh-wire.js';
+import type { SessionLogEntryWire } from '@wirebench/wire/session-log-wire';
+import type { HostsFileWire } from '@wirebench/wire/ssh-wire';
 
 const sessionLog = {
   switches: vi.fn(),

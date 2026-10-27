@@ -12,7 +12,7 @@ import { workspaceWire } from '../helpers/workspace-wire.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeRestExchange } from '../mocks/wire-fixtures.js';
 import { chooseRowAction, rowActions } from '../helpers/history-row-menu.js';
-import type { HistoryEntryWire } from '../../src/shared/wire-types.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
 
 const { showToast } = vi.hoisted(() => ({ showToast: vi.fn() }));
 vi.mock('../../src/renderer/components/toast.js', () => ({ showToast, ToastViewport: () => null }));

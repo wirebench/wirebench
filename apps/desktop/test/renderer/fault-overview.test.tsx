@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { FaultOverview } from '../../src/renderer/features/request-editor/views/fault-overview.js';
-import type { FaultWire } from '../../src/shared/kinds/soap/wire.js';
+import type { FaultWire } from '@wirebench/wire/kinds/soap/wire';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));

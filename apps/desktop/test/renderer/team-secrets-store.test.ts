@@ -7,7 +7,7 @@ import {
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
-import type { TeamSecretsStatusWire } from '../../src/shared/wire-base.js';
+import type { TeamSecretsStatusWire } from '@wirebench/wire/wire-base';
 
 const showToast = vi.hoisted(() => vi.fn());
 vi.mock('../../src/renderer/components/toast.js', () => ({ showToast }));

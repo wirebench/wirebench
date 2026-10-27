@@ -12,7 +12,7 @@ import { ChevronDown, Code, Layers, Square, Terminal } from 'lucide-react';
 import { Button, SPLIT_TAIL_CLASS } from '../../components/button.js';
 import { useUiStore } from '../../state/ui.js';
 import { copyAsCurl } from '../request-editor/request-actions.js';
-import type { RequestCurlRequest } from '../../../shared/wire-types.js';
+import type { RequestCurlRequest } from '@shared/wire-types.js';
 import { EnvPickerDialog } from './env-picker-dialog.js';
 import {
   cancelSendToEnvironments,

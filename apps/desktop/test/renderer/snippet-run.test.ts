@@ -29,7 +29,7 @@ import {
 import { trackPaneModes } from '../../src/renderer/features/ssh/terminal-modes.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { SnippetListItemWire } from '../../src/shared/snippets-wire.js';
+import type { SnippetListItemWire } from '@wirebench/wire/snippets-wire';
 
 const item = (over: Partial<SnippetListItemWire> = {}): SnippetListItemWire => ({
   id: 'tail',

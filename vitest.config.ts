@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   resolve: {
     alias: {
-      '@shared': resolve(import.meta.dirname, 'apps/desktop/src/shared'),
+      '@shared': resolve(import.meta.dirname, 'packages/wire/src'),
     },
   },
   test: {
@@ -125,6 +125,16 @@ export default defineConfig({
         // `graphql` sends a bare import to its development build but a deep one (`graphql/language`,
         // as the language service uses) to the plain build: two copies, and a schema built by one
         // fails the other's realm check. Without the `development` condition both get the plain one.
+        resolve: { conditions: ['module', 'browser'] },
+      },
+      {
+        // The main-process code moved here from the desktop app with its tests, which still run as they
+        // did there: under jsdom, with the same resolve conditions (and the same `graphql` reason).
+        test: {
+          name: 'host',
+          include: ['packages/host/test/**/*.test.{ts,tsx}'],
+          environment: 'jsdom',
+        },
         resolve: { conditions: ['module', 'browser'] },
       },
       {

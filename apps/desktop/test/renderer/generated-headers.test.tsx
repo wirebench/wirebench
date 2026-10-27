@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { GeneratedHeaders } from '../../src/renderer/features/rest-editor/generated-headers.js';
-import type { RestHeaderRowWire, RestRequestPatchWire } from '../../src/shared/kinds/rest/wire.js';
+import type { RestHeaderRowWire, RestRequestPatchWire } from '@wirebench/wire/kinds/rest/wire';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { restRequestWire } from '../helpers/wire-defaults.js';
 

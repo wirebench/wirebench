@@ -3,7 +3,7 @@
  * so the node-side test can import it, and free of zod values (the renderer CSP trap). Main checks the
  * payload against the shared schema before sending (plan ruling 14); this only gives instant feedback.
  */
-import type { LicenseStateWire } from '../../shared/wire-base.js';
+import type { LicenseStateWire } from '@shared/wire-base.js';
 
 /** The engine's `LICENSE_TEXT_PATTERN`, restated; `test/license-format.test.ts` pins its behaviour. */
 const LICENSE_LINE = /^wbl1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;

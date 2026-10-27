@@ -2,7 +2,7 @@ import { ReadOnlySetting, SettingsGroup } from '../../../components/settings-gri
 import { useProjectStore } from '../../../state/project.js';
 import { selectRequestEndpointSource, selectRequestEndpointUrl } from '../../../state/project-endpoint.js';
 import { useWorkspaceStore } from '../../../state/workspace.js';
-import type { EndpointSourceWire } from '../../../../shared/kinds/soap/wire.js';
+import type { EndpointSourceWire } from '@shared/kinds/soap/wire.js';
 
 export interface DetailsInspectorProps {
   readonly requestId: string;

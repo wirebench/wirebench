@@ -5,7 +5,7 @@
  */
 import { BooleanSetting, NumberSetting, SettingsGroup, TextSetting } from '../../components/settings-grid.js';
 import { TrustInvalidBadge } from '../../components/trust-invalid-badge.js';
-import type { WsRequestPatchWire, WsSettingsWire } from '../../../shared/kinds/ws/wire.js';
+import type { WsRequestPatchWire, WsSettingsWire } from '@shared/kinds/ws/wire.js';
 
 export interface WsSettingsTabProps {
   readonly settings: WsSettingsWire;

@@ -1,6 +1,6 @@
 /** The License tab's state (licensing spec §3.8): read from the server when the tab opens, never stored. */
 import { create } from 'zustand';
-import type { LicenseStateWire } from '../../shared/wire-base.js';
+import type { LicenseStateWire } from '@shared/wire-base.js';
 import { ipc } from './ipc-client.js';
 
 interface LicenseSnapshot {

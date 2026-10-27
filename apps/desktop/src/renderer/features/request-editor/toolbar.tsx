@@ -3,7 +3,7 @@ import { Check, Columns2, PanelTop, Rows2, Send, Square, SquareSplitHorizontal }
 import { Button, SPLIT_HEAD_CLASS } from '../../components/button.js';
 import { TrustInvalidBadge } from '../../components/trust-invalid-badge.js';
 import type { RequestDraft } from '../../state/project.js';
-import type { EndpointSourceWire, InterfaceSummary } from '../../../shared/kinds/soap/wire.js';
+import type { EndpointSourceWire, InterfaceSummary } from '@shared/kinds/soap/wire.js';
 import { SendMenu } from '../multi-env/send-menu.js';
 import { EndpointSelect } from './endpoint-select.js';
 import { EndpointsDialog } from './endpoints-dialog.js';

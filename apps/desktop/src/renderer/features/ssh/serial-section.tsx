@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useId, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import type {
-  GroupEntryWire,
-  ResolvedHostWire,
-  SerialSettingsWire,
-  SshSerialPortWire,
-} from '../../../shared/ssh-wire.js';
+import type { GroupEntryWire, ResolvedHostWire, SerialSettingsWire, SshSerialPortWire } from '@shared/ssh-wire.js';
 import { detectPlatform } from '../../lib/platform.js';
 import { ipc } from '../../state/ipc-client.js';
 import { INPUT_CLASS, sourceText, type Provenance } from './inherited-field.js';

@@ -19,7 +19,7 @@ import type {
   SequenceWire,
   SequenceTransferWire,
   StepAssertionWire,
-} from '../../../shared/wire-base.js';
+} from '@shared/wire-base.js';
 import { AddStepDialog } from './add-step-dialog.js';
 import { BranchList } from './branch-list.js';
 import { AssertionTable } from '../assertions/assertion-table.js';

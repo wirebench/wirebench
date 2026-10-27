@@ -1,4 +1,4 @@
-import type { HistoryEntryWire } from '../../../shared/wire-types.js';
+import type { HistoryEntryWire } from '@shared/wire-types.js';
 import { EventsView } from '../../features/rest-editor/response/events-view.js';
 import { streamCountsText } from '../../features/rest-editor/response/status-line.js';
 

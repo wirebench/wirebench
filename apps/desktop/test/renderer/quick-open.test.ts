@@ -7,8 +7,8 @@ import {
   quickOpenScore,
   quickOpenSnippetEntries,
 } from '../../src/renderer/shell/quick-open.js';
-import type { SnippetListItemWire } from '../../src/shared/snippets-wire.js';
-import type { InterfaceSummary, RequestWire } from '../../src/shared/kinds/soap/wire.js';
+import type { SnippetListItemWire } from '@wirebench/wire/snippets-wire';
+import type { InterfaceSummary, RequestWire } from '@wirebench/wire/kinds/soap/wire';
 
 const BINDING = '{http://tempuri.org/}CalculatorSoap';
 

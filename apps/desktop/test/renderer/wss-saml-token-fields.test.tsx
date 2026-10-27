@@ -4,7 +4,7 @@ import type { ReactElement } from 'react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { SamlTokenFields } from '../../src/renderer/features/wss/saml-token-fields.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { WssEntryWire } from '../../src/shared/kinds/soap/wire.js';
+import type { WssEntryWire } from '@wirebench/wire/kinds/soap/wire';
 
 type SamlEntry = Extract<WssEntryWire, { kind: 'saml-token' }>;
 

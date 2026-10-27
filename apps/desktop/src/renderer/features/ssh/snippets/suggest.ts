@@ -4,7 +4,7 @@
  * line out of its sight (cursor and editing keys, history, completion, a paste) makes the line unknown, and no
  * suggestion is offered until the next Enter.
  */
-import type { SnippetListItemWire } from '../../../../shared/snippets-wire.js';
+import type { SnippetListItemWire } from '@shared/snippets-wire.js';
 
 export interface LineTracker {
   /** Feed what the user typed (xterm `onData`); a paste is fed with `paste: true`. */

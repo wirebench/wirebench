@@ -8,7 +8,7 @@ import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { SettingsGroup } from '../../components/settings-grid.js';
 import { rotateMessage, useTeamSecretsStore } from '../../state/team-secrets.js';
-import type { TeamSecretsKeyWire, TeamSecretsUntrustedWire } from '../../../shared/wire-base.js';
+import type { TeamSecretsKeyWire, TeamSecretsUntrustedWire } from '@shared/wire-base.js';
 
 const ME_WORDS = {
   unavailable: 'Not available on this machine',

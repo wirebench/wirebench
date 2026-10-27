@@ -3,7 +3,7 @@ import { LayoutPanelLeft, Server } from 'lucide-react';
 import { Button } from '../../../components/button.js';
 import { ConfirmDialog } from '../../../components/confirm-dialog.js';
 import { showToast } from '../../../components/toast.js';
-import type { LayoutWire } from '../../../../shared/layout-wire.js';
+import type { LayoutWire } from '@shared/layout-wire.js';
 import { useHostsStore } from '../hosts-store.js';
 import { useLayoutsStore } from './layouts-store.js';
 import { layoutHosts, layoutPaneCount, openLayout } from './open-layout.js';

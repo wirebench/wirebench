@@ -5,7 +5,7 @@
  * which is how `preload/build-api.ts` and the renderer address it.
  */
 import { describe, expect, it } from 'vitest';
-import { channels, events } from '../src/shared/ipc.js';
+import { channels, events } from '@wirebench/wire/ipc';
 import pinned from './fixtures/ipc-names.json' with { type: 'json' };
 
 /** `path → name` for every channel or event under `node`. */

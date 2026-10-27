@@ -4,8 +4,8 @@
  * sign-in steps itself so a password never enters a store.
  */
 import { create } from 'zustand';
-import type { IpcError } from '../../shared/ipc.js';
-import type { AccountChangedEvent, AccountWire } from '../../shared/wire-base.js';
+import type { IpcError } from '@shared/ipc.js';
+import type { AccountChangedEvent, AccountWire } from '@shared/wire-base.js';
 import { showToast } from '../components/toast.js';
 import { ipc } from './ipc-client.js';
 import { useUiStore } from './ui.js';

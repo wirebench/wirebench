@@ -11,7 +11,7 @@ import { readSeen } from '../../src/renderer/state/webhooks-seen.js';
 import { useWebhooksStore } from '../../src/renderer/state/webhooks.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import type { WirebenchApi } from '../../src/preload/build-api.js';
-import type { CaptureSummaryWire, CaptureViewWire, CatchUrlWire } from '../../src/shared/wire-base.js';
+import type { CaptureSummaryWire, CaptureViewWire, CatchUrlWire } from '@wirebench/wire/wire-base';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));

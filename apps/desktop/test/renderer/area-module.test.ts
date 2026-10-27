@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AREAS, areaById, enabledAreaIds, toAreaIds } from '../../src/shared/area-module.js';
+import { AREAS, areaById, enabledAreaIds, toAreaIds } from '@wirebench/wire/area-module';
 
 describe('area modules', () => {
   it('lists the six areas in rail order', () => {

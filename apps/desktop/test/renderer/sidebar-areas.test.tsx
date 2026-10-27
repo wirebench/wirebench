@@ -1,7 +1,7 @@
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AREAS } from '../../src/shared/area-module.js';
+import { AREAS } from '@wirebench/wire/area-module';
 import { RENDERER_AREAS } from '../../src/renderer/areas/index.js';
 
 vi.mock('../../src/renderer/features/explorer/explorer-view.js', () => ({ ExplorerView: () => <p>explorer-view</p> }));

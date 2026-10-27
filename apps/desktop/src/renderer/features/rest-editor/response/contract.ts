@@ -8,7 +8,7 @@
  * differently pretty-printed and raw, so a range fixed here would be wrong in one of them.
  */
 import { create } from 'zustand';
-import type { RestContractResultWire } from '../../../../shared/kinds/rest/wire.js';
+import type { RestContractResultWire } from '@shared/kinds/rest/wire.js';
 import { useProblemsStore } from '../../../state/problems.js';
 import { openRestRequestTab } from '../rest-actions.js';
 

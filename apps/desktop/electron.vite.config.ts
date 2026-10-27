@@ -3,9 +3,13 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import type { Plugin } from 'vite';
-import { CONTENT_SECURITY_POLICY } from './src/main/security.js';
+import { CONTENT_SECURITY_POLICY } from '../../packages/host/src/security.js';
 
-const sharedAlias = { '@shared': resolve(import.meta.dirname, 'src/shared') };
+/**
+ * The renderer reaches the wire code (`@wirebench/wire`) through the `@shared` alias; main and preload import
+ * the package by name. The package exports its sources, so every process bundles the same files.
+ */
+const sharedAlias = { '@shared': resolve(import.meta.dirname, '../../packages/wire/src') };
 
 /**
  * Injects the production `Content-Security-Policy` meta tag into `index.html` — build only.
@@ -27,6 +31,8 @@ function cspMetaPlugin(): Plugin {
 
 export default defineConfig({
   main: {
+    // `@wirebench/host` and `@wirebench/wire` are devDependencies, so this plugin bundles them: they ship
+    // TypeScript sources and must never be left as a runtime `require`.
     plugins: [externalizeDepsPlugin()],
     resolve: { alias: sharedAlias },
   },

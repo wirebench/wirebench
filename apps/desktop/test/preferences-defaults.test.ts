@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PREFERENCES } from '@wirebench/engine';
 import { DEFAULT_PREFERENCES_WIRE } from '../src/renderer/state/preferences-defaults.js';
-import { preferencesWireSchema } from '../src/shared/wire-base.js';
+import { preferencesWireSchema } from '@wirebench/wire/wire-base';
 
 /**
  * The renderer can import neither the engine's Node-only main entry nor a runtime value out of

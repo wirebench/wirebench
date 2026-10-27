@@ -2,7 +2,7 @@
  * The path a step's branches took (#347), in the words the CLI report uses: `→ repeat (2 of 10)`,
  * `→ 4. Fallback (1 of 1)`, `→ skip next`, or `limit reached: repeat 10 of 10`.
  */
-import type { SequenceStepResultWire } from '../../../shared/wire-base.js';
+import type { SequenceStepResultWire } from '@shared/wire-base.js';
 
 /** One line for the step's branch, or `undefined` when its branches did nothing. */
 export function branchText(step: SequenceStepResultWire): string | undefined {

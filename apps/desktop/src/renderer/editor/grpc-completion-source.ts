@@ -1,4 +1,4 @@
-import type { GrpcMessageFieldWire } from '../../shared/kinds/grpc/wire.js';
+import type { GrpcMessageFieldWire } from '@shared/kinds/grpc/wire.js';
 import { ipc } from '../state/ipc-client.js';
 import type { JsonCompletionSource } from './json-completion.js';
 

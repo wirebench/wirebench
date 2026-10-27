@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { buildApi } from './build-api.js';
-import { OS_THEME_ARGUMENT } from '../shared/os-theme-argument.js';
+import { OS_THEME_ARGUMENT } from '@wirebench/wire/os-theme-argument';
 
 /**
  * The real `window.wirebench` implementation, backed by `ipcRenderer`. Built via the pure,

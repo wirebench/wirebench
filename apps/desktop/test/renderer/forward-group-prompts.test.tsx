@@ -8,8 +8,8 @@ import { useForwardsStore } from '../../src/renderer/features/ssh/forwarding/for
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { TrustDialog } from '../../src/renderer/features/ssh/trust-dialog.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
-import type { ForwardStateWire } from '../../src/shared/forward-wire.js';
-import type { HostsFileWire, ResolvedForwardWire, ResolvedHostWire } from '../../src/shared/ssh-wire.js';
+import type { ForwardStateWire } from '@wirebench/wire/forward-wire';
+import type { HostsFileWire, ResolvedForwardWire, ResolvedHostWire } from '@wirebench/wire/ssh-wire';
 
 /**
  * #589: Start group on rules that each need a prompt asks every prompt in turn (none replaces another), a

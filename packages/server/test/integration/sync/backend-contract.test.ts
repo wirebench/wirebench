@@ -11,22 +11,22 @@
  */
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ServerClient } from '../../../../../apps/desktop/src/main/server-client.js';
-import type { TokenSource } from '../../../../../apps/desktop/src/main/server-token.js';
-import { ServerBackend } from '../../../../../apps/desktop/src/main/sync/server-backend.js';
+import { ServerClient } from '../../../../host/src/server-client.js';
+import type { TokenSource } from '../../../../host/src/server-token.js';
+import { ServerBackend } from '../../../../host/src/sync/server-backend.js';
 import {
   SERVER_STATE_DIR,
   ServerState,
   writeTreeFiles,
   type TreeFile,
-} from '../../../../../apps/desktop/src/main/sync/server-state.js';
+} from '../../../../host/src/sync/server-state.js';
 import {
   defineContract,
   ensureWrite,
   readIfExists,
   removeIfExists,
   type Fixture,
-} from '../../../../../apps/desktop/test/sync/backend-contract.js';
+} from '../../../../host/test/sync/backend-contract.js';
 import { describeDb } from '../../helpers/database.js';
 import { describeGit, mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { signedInUser, type SignedInUser } from '../../helpers/identity.js';

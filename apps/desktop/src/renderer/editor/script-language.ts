@@ -11,7 +11,7 @@
  */
 import type * as Monaco from 'monaco-editor';
 import { ipc } from '../state/ipc-client.js';
-import type { ScriptApiWire, ScriptDiagnosticWire } from '../../shared/wire-base.js';
+import type { ScriptApiWire, ScriptDiagnosticWire } from '@shared/wire-base.js';
 
 export type ScriptPhase = 'pre' | 'post';
 

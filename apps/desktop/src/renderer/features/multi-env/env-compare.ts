@@ -5,7 +5,7 @@
  */
 import { base64ByteLength, decodeBase64Text } from '../../lib/format-size.js';
 import { comparableBodies } from '../console/log-compare.js';
-import type { EnvSendResult } from '../../../shared/wire-types.js';
+import type { EnvSendResult } from '@shared/wire-types.js';
 
 export interface CompareColumn {
   readonly environmentId: string;

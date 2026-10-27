@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { WorkspaceSwitcher } from '../../src/renderer/features/workspace/switcher.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { WorkspaceSummaryWire } from '../../src/shared/wire-base.js';
+import type { WorkspaceSummaryWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 

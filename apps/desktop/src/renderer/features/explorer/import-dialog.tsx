@@ -33,27 +33,23 @@ import type {
   ApiImportOpenApiResponse,
   ApiImportOpenCollectionResponse,
   ApiImportPostmanFolderResponse,
-} from '../../../shared/wire-types.js';
-import type {
-  GrpcReflectionVersionWire,
-  ProtoImportSummaryWire,
-  ProtoSourceWire,
-} from '../../../shared/kinds/grpc/wire.js';
+} from '@shared/wire-types.js';
+import type { GrpcReflectionVersionWire, ProtoImportSummaryWire, ProtoSourceWire } from '@shared/kinds/grpc/wire.js';
 import type {
   ApiImportHarRequest,
   ImportVariablesSummaryWire,
   OpenApiImportSummaryWire,
   PostmanImportSummaryWire,
   PostmanSourceWire,
-} from '../../../shared/kinds/rest/wire.js';
-import type { ImportProblemWire, ImportSourceWire, LegacyImportReportWire } from '../../../shared/kinds/soap/wire.js';
-import type { ApiAsyncApiServersRequest, AsyncApiImportSummaryWire } from '../../../shared/kinds/ws/wire.js';
+} from '@shared/kinds/rest/wire.js';
+import type { ImportProblemWire, ImportSourceWire, LegacyImportReportWire } from '@shared/kinds/soap/wire.js';
+import type { ApiAsyncApiServersRequest, AsyncApiImportSummaryWire } from '@shared/kinds/ws/wire.js';
 import type {
   AuthConfigWire,
   EngineProgressEvent,
   OpenApiSourceWire,
   ProjectAddInterfaceTarget,
-} from '../../../shared/wire-base.js';
+} from '@shared/wire-base.js';
 import { Button } from '../../components/button.js';
 import { DefinitionAuthFields, NO_DEFINITION_AUTH, toDefinitionAuthWire } from '../../components/definition-auth.js';
 import { SecretField } from '../../components/secret-field.js';

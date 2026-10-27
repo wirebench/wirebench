@@ -7,7 +7,7 @@ import { droppedHeader } from '../../src/renderer/features/webhook-items/save-as
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { CaptureViewWire } from '../../src/shared/wire-base.js';
+import type { CaptureViewWire } from '@wirebench/wire/wire-base';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));

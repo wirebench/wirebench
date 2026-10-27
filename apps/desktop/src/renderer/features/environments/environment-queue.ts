@@ -10,7 +10,7 @@
  * `useWorkspaceStore.mutate` applies the fresh snapshot before it resolves.
  */
 
-import type { WorkspaceEnvironmentPatchWire, WorkspaceEnvironmentWire } from '../../../shared/wire-base.js';
+import type { WorkspaceEnvironmentPatchWire, WorkspaceEnvironmentWire } from '@shared/wire-base.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 
 /** The tail of each environment's chain, keyed by environment id. */

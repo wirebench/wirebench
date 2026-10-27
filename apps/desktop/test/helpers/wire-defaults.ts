@@ -5,13 +5,13 @@
  */
 
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES } from '@wirebench/engine';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
-import type { GrpcApiWire, GrpcRequestWire } from '../../src/shared/kinds/grpc/wire.js';
-import type { RestApiWire, RestRequestWire } from '../../src/shared/kinds/rest/wire.js';
-import type { RequestPropertiesWire } from '../../src/shared/kinds/soap/wire.js';
-import type { WsApiWire, WsRequestWire } from '../../src/shared/kinds/ws/wire.js';
-import type { McpRequestWire, McpServerWire } from '../../src/shared/kinds/mcp/wire.js';
-import type { ProjectSettingsWire, RestFolderWire, SequenceWire } from '../../src/shared/wire-base.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { GrpcApiWire, GrpcRequestWire } from '@wirebench/wire/kinds/grpc/wire';
+import type { RestApiWire, RestRequestWire } from '@wirebench/wire/kinds/rest/wire';
+import type { RequestPropertiesWire } from '@wirebench/wire/kinds/soap/wire';
+import type { WsApiWire, WsRequestWire } from '@wirebench/wire/kinds/ws/wire';
+import type { McpRequestWire, McpServerWire } from '@wirebench/wire/kinds/mcp/wire';
+import type { ProjectSettingsWire, RestFolderWire, SequenceWire } from '@wirebench/wire/wire-base';
 
 /** The default §6.3 request properties, as the renderer mirrors them. */
 export const REQUEST_PROPERTIES: RequestPropertiesWire = {

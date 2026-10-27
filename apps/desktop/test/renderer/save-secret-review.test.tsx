@@ -13,7 +13,7 @@ import { stashDrafts, subscribeToDraftStash } from '../../src/renderer/state/uns
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { SecretFindingWire } from '../../src/shared/wire-base.js';
+import type { SecretFindingWire } from '@wirebench/wire/wire-base';
 import { makeDraft, makeInterface } from '../mocks/exchange-fixtures.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import {

@@ -8,7 +8,7 @@ import { resetCommands } from '../../src/renderer/lib/commands.js';
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
 import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { CommandCategory } from '../../src/shared/commands.js';
+import type { CommandCategory } from '@wirebench/wire/commands';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 
 const context: CommandContext = {

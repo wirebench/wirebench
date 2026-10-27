@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { teamWorkspaces, useTeamStore } from '../../src/renderer/state/team.js';
-import type { TeamMemberWire, TeamWire, TeamWorkspaceWire } from '../../src/shared/wire-base.js';
+import type { TeamMemberWire, TeamWire, TeamWorkspaceWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const URL_ = 'https://wb.test';

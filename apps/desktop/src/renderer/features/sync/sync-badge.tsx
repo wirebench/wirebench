@@ -1,6 +1,6 @@
 import { Folder, GitBranch, Server } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { SyncStatusWire } from '../../../shared/wire-base.js';
+import type { SyncStatusWire } from '@shared/wire-base.js';
 import { useSyncStore } from '../../state/sync.js';
 import { useTeamSecretsStore } from '../../state/team-secrets.js';
 import { useUiStore } from '../../state/ui.js';

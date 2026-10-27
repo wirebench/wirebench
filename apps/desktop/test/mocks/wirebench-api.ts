@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
-import type { PreferencesWire } from '../../src/shared/wire-base.js';
+import type { PreferencesWire } from '@wirebench/wire/wire-base';
 import type { WirebenchApi } from '../../src/preload/build-api.js';
 
 /** A deep-partial of the preload API: every channel may be replaced with a mock. */

@@ -1,0 +1,69 @@
+import { WirebenchError } from '@wirebench/engine';
+import { channels } from '@wirebench/wire/ipc';
+import { isMachineOnlyLabel, type SecretStore } from '../secrets.js';
+import { registerHandler, type HandlerTable } from './register.js';
+
+/**
+ * `secrets` is the team-aware store in production ({@link TeamSecretStore}, which wraps the raw
+ * keychain-backed store to also seal saves into the vault) and a plain {@link SecretStore} in
+ * `ipc-secrets.test.ts`. Either way, these guards — refusing a machine-only ref, omitting
+ * machine-only entries from `list` — run here, in front of whichever store is passed in.
+ */
+type SecretsFor = Pick<SecretStore, 'set' | 'replace' | 'exists' | 'delete' | 'list' | 'isMachineOnly'>;
+
+/**
+ * Registers the `secrets.*` IPC channels against the shared {@link SecretStore}.
+ *
+ * Deliberately NO `secrets.get` handler: the renderer can create (`set`), rotate (`replace`),
+ * check (`exists`) and remove (`delete`) refs, and list metadata (`list`), but can never read a
+ * value back over IPC — resolution happens only in main, at import/send time
+ * (`secret-resolver.ts`). `setShowSecrets` toggles the session-only (never persisted) flag that
+ * `redact.ts` consults; `getShowSecrets` reads it back. Team secrets' machine-only entries (a machine's
+ * private keys, a replaced value) are not secret values: `list` leaves them out, and `replace` and
+ * `delete` refuse them.
+ */
+export function registerSecretsChannels(
+  table: HandlerTable,
+  secrets: SecretsFor,
+  showSecrets: { get(): boolean; set(show: boolean): void },
+): void {
+  registerHandler(table, channels.secrets.set, async (request) => {
+    if (isMachineOnlyLabel(request.label)) {
+      throw new WirebenchError('secret-machine-only', 'That entry belongs to team secrets and cannot be changed here.');
+    }
+    const ref = await secrets.set(request.value, request.label !== undefined ? { label: request.label } : undefined);
+    return { ref };
+  });
+
+  const refuseMachineOnly = async (ref: string): Promise<void> => {
+    if (await secrets.isMachineOnly(ref)) {
+      throw new WirebenchError('secret-machine-only', 'That entry belongs to team secrets and cannot be changed here.');
+    }
+  };
+
+  registerHandler(table, channels.secrets.replace, async (request) => {
+    await refuseMachineOnly(request.ref);
+    const ref = await secrets.replace(request.ref, request.value);
+    return { ref };
+  });
+
+  registerHandler(table, channels.secrets.exists, async (request) => {
+    return { exists: await secrets.exists(request.ref) };
+  });
+
+  registerHandler(table, channels.secrets.delete, async (request) => {
+    await refuseMachineOnly(request.ref);
+    return { deleted: await secrets.delete(request.ref) };
+  });
+
+  registerHandler(table, channels.secrets.list, async () => {
+    return { entries: (await secrets.list()).filter((entry) => !isMachineOnlyLabel(entry.label)) };
+  });
+
+  registerHandler(table, channels.secrets.setShowSecrets, (request) => {
+    showSecrets.set(request.show);
+    return Promise.resolve({ show: showSecrets.get() });
+  });
+
+  registerHandler(table, channels.secrets.getShowSecrets, () => Promise.resolve({ show: showSecrets.get() }));
+}

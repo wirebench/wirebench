@@ -12,8 +12,8 @@ import { MarkdownView } from '../../components/markdown-view.js';
 import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
-import type { RestApiWire, RestRequestWire } from '../../../shared/kinds/rest/wire.js';
-import type { RestFolderWire } from '../../../shared/wire-base.js';
+import type { RestApiWire, RestRequestWire } from '@shared/kinds/rest/wire.js';
+import type { RestFolderWire } from '@shared/wire-base.js';
 
 /** How many lines of an example's body show before Show all. */
 export const EXAMPLE_PREVIEW_LINES = 12;

@@ -5,7 +5,7 @@ import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
-import type { WorkspaceSummaryWire } from '../../../shared/wire-base.js';
+import type { WorkspaceSummaryWire } from '@shared/wire-base.js';
 import { workspaceActions } from './workspace-actions.js';
 
 function plural(count: number, noun: string): string {

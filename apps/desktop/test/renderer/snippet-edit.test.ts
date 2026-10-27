@@ -13,7 +13,7 @@ import {
   undeclaredTokens,
   upsertSnippet,
 } from '../../src/renderer/features/ssh/snippets/snippet-edit.js';
-import type { SnippetWire, SnippetsFileWire } from '../../src/shared/snippets-wire.js';
+import type { SnippetWire, SnippetsFileWire } from '@wirebench/wire/snippets-wire';
 
 const s = (id: string, over: Partial<SnippetWire> = {}): SnippetWire => ({
   id,

@@ -5,7 +5,7 @@ import { useSettingsPageTabStore } from '../../src/renderer/components/settings-
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { restApiWire } from '../helpers/wire-defaults.js';
 import { resetSettingsTabs } from '../helpers/settings-page-tabs.js';
-import type { RestApiWire } from '../../src/shared/kinds/rest/wire.js';
+import type { RestApiWire } from '@wirebench/wire/kinds/rest/wire';
 
 const FOLDERS = {
   f1: { id: 'f1', apiId: 'api-1' },

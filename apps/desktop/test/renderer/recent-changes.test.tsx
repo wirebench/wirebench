@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { RecentChanges, byDay } from '../../src/renderer/features/rest-api/recent-changes.js';
 import { useSyncStore } from '../../src/renderer/state/sync.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { SyncApiHistoryWire, SyncLogEntryWire, SyncStatusWire } from '../../src/shared/wire-base.js';
+import type { SyncApiHistoryWire, SyncLogEntryWire, SyncStatusWire } from '@wirebench/wire/wire-base';
 import type { WirebenchApi } from '../../src/preload/build-api.js';
 
 function entry(id: string, at: string, subject = `Commit ${id}`): SyncLogEntryWire {

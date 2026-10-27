@@ -1,6 +1,6 @@
 /** The words a History row, its tab and its footer are made of. */
 import { formatClockTime } from '../../lib/format-size.js';
-import type { HistoryEntryWire } from '../../../shared/wire-types.js';
+import type { HistoryEntryWire } from '@shared/wire-types.js';
 
 /** The host part of a URL, or the raw string when it doesn't parse (a `${...}` placeholder, say). */
 export function hostOf(url: string): string {

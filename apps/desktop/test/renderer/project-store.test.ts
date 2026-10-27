@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { selectRequestEndpoint, selectRequestEndpointUrl } from '../../src/renderer/state/project-endpoint.js';
 import {
   selectApiOf,
@@ -14,7 +14,7 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
-import type { McpMessageWire, McpTransportWire } from '../../src/shared/kinds/mcp/wire.js';
+import type { McpMessageWire, McpTransportWire } from '@wirebench/wire/kinds/mcp/wire';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import {
   NO_REST,

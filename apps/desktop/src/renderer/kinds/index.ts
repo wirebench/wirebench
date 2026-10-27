@@ -10,7 +10,7 @@ import { soapRenderer } from './soap/index.js';
 import type { TabContribution } from './tab-contribution.js';
 import { wsRenderer } from './ws/index.js';
 import { mcpRenderer } from './mcp/index.js';
-import type { KindId } from '../../shared/kinds/kind-module.js';
+import type { KindId } from '@shared/kinds/kind-module.js';
 import type { ExplorerNodeKind } from '../features/explorer/tree-nodes.js';
 import type { EditorTab } from '../state/editors.js';
 import type { PendingNodeDeletion } from '../state/ui.js';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { droppedHeader, saveAsWebhookDraft } from '../../src/renderer/features/webhook-items/save-as-webhook.js';
-import type { CaptureViewWire } from '../../src/shared/wire-base.js';
+import type { CaptureViewWire } from '@wirebench/wire/wire-base';
 
 function capture(patch: Partial<CaptureViewWire> = {}): CaptureViewWire {
   return {

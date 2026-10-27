@@ -4,7 +4,7 @@
  * asked (main refuses it too).
  */
 import { useId } from 'react';
-import type { SnippetVariableWire } from '../../../../shared/snippets-wire.js';
+import type { SnippetVariableWire } from '@shared/snippets-wire.js';
 import { INPUT_CLASS } from '../inherited-field.js';
 import { invalidValue } from './run.js';
 

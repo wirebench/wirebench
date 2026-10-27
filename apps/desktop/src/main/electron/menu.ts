@@ -12,7 +12,7 @@
  */
 
 import type { MenuItemConstructorOptions } from 'electron';
-import type { MenuCommandWire } from '../../shared/wire-base.js';
+import type { MenuCommandWire } from '@wirebench/wire/wire-base';
 
 /**
  * The one thing this module needs from Electron's `Menu`, as a single call so a test can pass a

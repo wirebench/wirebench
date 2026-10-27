@@ -10,7 +10,7 @@
  */
 import type * as Monaco from 'monaco-editor';
 import { propertyReferences } from '@wirebench/engine/rest';
-import type { VariableEditTargetWire } from '../../shared/wire-base.js';
+import type { VariableEditTargetWire } from '@shared/wire-base.js';
 import { openVariableEditTarget } from '../features/environments/variable-edit-target.js';
 import {
   classifyReference,

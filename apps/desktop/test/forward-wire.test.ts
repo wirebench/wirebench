@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { channels, events } from '../src/shared/ipc.js';
-import { FORWARD_EVENTS_PER_SECOND } from '../src/shared/ssh-defaults.js';
+import { channels, events } from '@wirebench/wire/ipc';
+import { FORWARD_EVENTS_PER_SECOND } from '@wirebench/wire/ssh-defaults';
 
 describe('forward wire', () => {
   it('each request schema refuses an unknown key', () => {

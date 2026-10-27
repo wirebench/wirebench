@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { LicenseStateWire } from '../../../shared/wire-base.js';
+import type { LicenseStateWire } from '@shared/wire-base.js';
 import { bannerText } from '../../state/license-format.js';
 import { ipc } from '../../state/ipc-client.js';
 

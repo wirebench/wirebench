@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { FeaturesSection } from '../../src/renderer/features/preferences/sections/features-section.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
-import type { AppFeaturesWire, PreferencesPatchWire, PreferencesWire } from '../../src/shared/wire-base.js';
+import type { AppFeaturesWire, PreferencesPatchWire, PreferencesWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 /** The rows main resolved: gRPC off by preference, webhooks off through REST, MCP experimental. */

@@ -4,7 +4,7 @@
  * before the server's markup. See docs/specs/2026-10-03-wirebench-html-response-preview-design.md §4.
  */
 
-import { HTML_PREVIEW_CSP } from '../../../../shared/html-preview-csp.js';
+import { HTML_PREVIEW_CSP } from '@shared/html-preview-csp.js';
 
 /** `html` with the preview policy declared before anything the server sent. */
 export function previewDocument(html: string): string {

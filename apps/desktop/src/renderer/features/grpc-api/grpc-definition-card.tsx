@@ -16,7 +16,7 @@ import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import { ApiDefinitionCard } from '../rest-api/api-definition-card.js';
-import type { GrpcApiWire, GrpcReflectionVersionWire } from '../../../shared/kinds/grpc/wire.js';
+import type { GrpcApiWire, GrpcReflectionVersionWire } from '@shared/kinds/grpc/wire.js';
 
 export interface GrpcDefinitionCardProps {
   readonly apiId: string;

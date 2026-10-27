@@ -109,7 +109,10 @@ That is expected; only CI builds with the signing secrets produce distributable 
 - Only the packages the *main process* loads at runtime are `dependencies` of
   `apps/desktop`. Everything Vite bundles into the renderer is a `devDependency` and is
   deliberately not in the asar. Adding a main-process dependency means adding it to
-  `dependencies`, or the packaged app will fail to resolve it at runtime.
+  `dependencies`, or the packaged app will fail to resolve it at runtime. `@wirebench/host` and
+  `@wirebench/wire` are the exception the other way: Vite bundles them into main and preload, so
+  they are `devDependencies`, and every third-party package the host imports must still be a
+  desktop `dependency` (it is declared in `packages/host/package.json` too, for resolution).
 
 ### What is unpacked from the asar
 

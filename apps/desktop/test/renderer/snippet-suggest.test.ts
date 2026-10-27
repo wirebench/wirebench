@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createLineTracker, matchSnippet } from '../../src/renderer/features/ssh/snippets/suggest.js';
-import type { SnippetListItemWire } from '../../src/shared/snippets-wire.js';
+import type { SnippetListItemWire } from '@wirebench/wire/snippets-wire';
 
 const typed = (...chunks: string[]): string | undefined => {
   const tracker = createLineTracker();

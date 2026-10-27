@@ -1,20 +1,20 @@
 import { join } from 'node:path';
 import { is } from '@electron-toolkit/utils';
 import { BrowserWindow, session } from 'electron';
-import { events } from '../../shared/ipc.js';
-import { OS_THEME_ARGUMENT } from '../../shared/os-theme-argument.js';
-import { requireCapability } from '../host/capability.js';
-import type { HostPlatform } from '../host/platform.js';
+import { events } from '@wirebench/wire/ipc';
+import { OS_THEME_ARGUMENT } from '@wirebench/wire/os-theme-argument';
+import type { HostPlatform } from '@wirebench/host';
 import { callerForWebContents } from './electron-platform.js';
-import { emitEvent } from '../ipc/events.js';
 import {
   APP_SCHEME,
   APP_SCHEME_HOST,
   CONTENT_SECURITY_POLICY,
   MAIN_WINDOW_WEB_PREFERENCES,
   denySubframeNavigation,
+  emitEvent,
   isExternalUrlAllowed,
-} from '../security.js';
+  requireCapability,
+} from '@wirebench/host/desktop';
 
 // `import.meta.dirname` is the bundled main's directory (one file), not this source folder.
 // Electron's sandboxed preload loader only supports CommonJS (see electron.vite.config.ts),

@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TerminalShareStateEvent, TerminalShareViewerStateEvent } from '../../src/shared/terminal-share-wire.js';
+import type { TerminalShareStateEvent, TerminalShareViewerStateEvent } from '@wirebench/wire/terminal-share-wire';
 
 const terminalShare = {
   available: vi.fn(),

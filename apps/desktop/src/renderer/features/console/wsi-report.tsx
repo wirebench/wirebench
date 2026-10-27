@@ -7,7 +7,7 @@
  * started from either place shows up in both.
  */
 
-import type { WsiAssertionReportWire, WsiReportWire } from '../../../shared/kinds/soap/wire.js';
+import type { WsiAssertionReportWire, WsiReportWire } from '@shared/kinds/soap/wire.js';
 import { useWsiStore } from '../../state/wsi.js';
 
 /** How each result is labelled and coloured. */

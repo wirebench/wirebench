@@ -8,8 +8,8 @@
  */
 
 import type { ReactNode } from 'react';
-import { JWT_ALGORITHM_NAMES, type JwtAlgorithmName } from '../../shared/jwt-algorithms.js';
-import type { AuthConfigWire } from '../../shared/wire-base.js';
+import { JWT_ALGORITHM_NAMES, type JwtAlgorithmName } from '@shared/jwt-algorithms.js';
+import type { AuthConfigWire } from '@shared/wire-base.js';
 import { useProjectStore } from '../state/project.js';
 import { useKeystoreAliases } from './use-keystore-aliases.js';
 

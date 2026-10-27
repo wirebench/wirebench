@@ -8,8 +8,8 @@
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { COMMAND_CATALOG, type CommandCatalogEntry } from '../apps/desktop/src/shared/command-catalog.ts';
-import { formatKeybinding } from '../apps/desktop/src/shared/keybinding-format.ts';
+import { COMMAND_CATALOG, type CommandCatalogEntry } from '../packages/wire/src/command-catalog.ts';
+import { formatKeybinding } from '../packages/wire/src/keybinding-format.ts';
 
 const target = fileURLToPath(new URL('../docs-site/src/content/docs/reference/commands.md', import.meta.url));
 

@@ -6,7 +6,7 @@ import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 import type { WirebenchApi } from '../../src/preload/build-api.js';
-import type { CatchUrlWire, WorkspaceWire } from '../../src/shared/wire-base.js';
+import type { CatchUrlWire, WorkspaceWire } from '@wirebench/wire/wire-base';
 
 const SERVER = 'https://wb.test';
 const WS = '01J8ZC5Q0V7R3T9XK2M4N6P8QA';

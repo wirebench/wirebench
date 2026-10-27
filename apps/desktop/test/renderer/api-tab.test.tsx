@@ -20,9 +20,9 @@ import { workspaceWire } from '../helpers/workspace-wire.js';
 import { openSettingsTab, resetSettingsTabs } from '../helpers/settings-page-tabs.js';
 import { useSettingsPageTabStore } from '../../src/renderer/components/settings-page-tabs.js';
 import { NO_REST, PROJECT_SETTINGS, restApiWire } from '../helpers/wire-defaults.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
-import type { RestApiWire } from '../../src/shared/kinds/rest/wire.js';
-import type { EnvironmentWire } from '../../src/shared/wire-base.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { RestApiWire } from '@wirebench/wire/kinds/rest/wire';
+import type { EnvironmentWire } from '@wirebench/wire/wire-base';
 
 const updateApi = vi.fn();
 

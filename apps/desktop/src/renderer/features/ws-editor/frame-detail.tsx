@@ -13,7 +13,7 @@ import { prettyFrameText } from '@wirebench/engine/ws';
 import { Button } from '../../components/button.js';
 import { CodeEditor } from '../../editor/code-editor.js';
 import { formatBytes } from '../../lib/format-size.js';
-import type { WsFrameContractWire, WsFrameWire } from '../../../shared/kinds/ws/wire.js';
+import type { WsFrameContractWire, WsFrameWire } from '@shared/kinds/ws/wire.js';
 import { closeCodeMeaning, contractProblemText, formatFrameTime, hexDump } from './ws-format.js';
 
 export interface WsFrameDetailProps {

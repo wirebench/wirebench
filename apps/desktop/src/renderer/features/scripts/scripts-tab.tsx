@@ -33,7 +33,7 @@ import {
 import { useProjectStore } from '../../state/project.js';
 import { useConvertScriptsDialog } from './convert-scripts-dialog.js';
 import { flushScriptEdits, registerScriptEditFlush } from '../../state/script-edits.js';
-import type { RequestScriptsPatchWire, RequestScriptsWire, ScriptApiWire } from '../../../shared/wire-base.js';
+import type { RequestScriptsPatchWire, RequestScriptsWire, ScriptApiWire } from '@shared/wire-base.js';
 
 /** Long enough that a burst of keystrokes is one write, short enough that a send right after sees it. */
 const COMMIT_DEBOUNCE_MS = 300;

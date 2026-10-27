@@ -14,7 +14,7 @@ import type {
   ThemePreference,
   UiSnapshot,
 } from './ui-state.js';
-import type { RequestImportCurlTarget } from '../../shared/kinds/rest/wire.js';
+import type { RequestImportCurlTarget } from '@shared/kinds/rest/wire.js';
 import type { SettingsSectionRequest } from '../features/preferences/settings-model.js';
 import { DEFAULT_UI_STATE, defaultSidebarSize, readUi, writeUi } from './ui-state.js';
 

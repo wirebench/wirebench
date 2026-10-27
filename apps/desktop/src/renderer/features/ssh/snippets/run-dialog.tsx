@@ -10,7 +10,7 @@ import { Command } from 'cmdk';
 import { Plus, ShieldAlert, X } from 'lucide-react';
 import { Button } from '../../../components/button.js';
 import { showToast } from '../../../components/toast.js';
-import type { ResolvedHostWire } from '../../../../shared/ssh-wire.js';
+import type { ResolvedHostWire } from '@shared/ssh-wire.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { flattenGroups, useHostsStore } from '../hosts-store.js';
 import type { HostTarget, OpenTerminal, RunRequest } from './run.js';

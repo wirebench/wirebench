@@ -16,7 +16,7 @@ import { useProjectStore } from '../../../state/project.js';
 import { selectRequestEndpointUrl } from '../../../state/project-endpoint.js';
 import { useWorkspaceStore } from '../../../state/workspace.js';
 import { applyWssPolicy } from '../wss-policy.js';
-import type { WssEntryWire, WssPolicyStatusResponse } from '../../../../shared/kinds/soap/wire.js';
+import type { WssEntryWire, WssPolicyStatusResponse } from '@shared/kinds/soap/wire.js';
 
 const NO_ENTRIES: readonly WssEntryWire[] = [];
 

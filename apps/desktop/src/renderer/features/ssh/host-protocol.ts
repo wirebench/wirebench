@@ -1,4 +1,4 @@
-import type { ResolvedHostWire, SshProtocolWire } from '../../../shared/ssh-wire.js';
+import type { ResolvedHostWire, SshProtocolWire } from '@shared/ssh-wire.js';
 import { useHostsStore } from './hosts-store.js';
 
 /** Telnet's port when a host sets none (#425), as main resolves it. */

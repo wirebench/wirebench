@@ -1,4 +1,4 @@
-import type { SshProxyWire, SshSecretNameWire } from '../../../shared/ssh-wire.js';
+import type { SshProxyWire, SshSecretNameWire } from '@shared/ssh-wire.js';
 import { INPUT_CLASS, sourceName, type Provenance } from './inherited-field.js';
 import { SecretSelect } from './secret-fields.js';
 

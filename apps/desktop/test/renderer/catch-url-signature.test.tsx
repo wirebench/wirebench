@@ -12,7 +12,7 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useSyncStore } from '../../src/renderer/state/sync.js';
 import { useWebhooksStore } from '../../src/renderer/state/webhooks.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { CatchUrlWire } from '../../src/shared/wire-base.js';
+import type { CatchUrlWire } from '@wirebench/wire/wire-base';
 
 const SERVER = { url: 'https://wb.test', workspaceId: '01J8ZC5Q0V7R3T9XK2M4N6P8QA' };
 const HMAC = { kind: 'hmac' as const, algorithm: 'sha256' as const, encoding: 'hex' as const, header: 'X-Signature' };

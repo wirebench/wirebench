@@ -9,7 +9,7 @@ import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { WorkspaceEnvironmentWire, WorkspaceWire } from '../../src/shared/wire-base.js';
+import type { WorkspaceEnvironmentWire, WorkspaceWire } from '@wirebench/wire/wire-base';
 
 /** The smallest open workspace carrying exactly these environments. */
 function workspace(environments: readonly WorkspaceEnvironmentWire[]): WorkspaceWire {

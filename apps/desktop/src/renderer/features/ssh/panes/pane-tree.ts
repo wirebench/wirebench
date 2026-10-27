@@ -1,4 +1,4 @@
-import { SSH_MAX_PANES } from '../../../../shared/ssh-defaults.js';
+import { SSH_MAX_PANES } from '@shared/ssh-defaults.js';
 
 /**
  * The split tree an `ssh-terminal` tab holds: each leaf is a pane with its own session to a host, each

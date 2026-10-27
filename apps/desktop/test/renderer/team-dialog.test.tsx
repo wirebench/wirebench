@@ -4,7 +4,7 @@ import { TeamDialog } from '../../src/renderer/features/team/team-dialog.js';
 import { useAccountStore } from '../../src/renderer/state/account.js';
 import { useTeamStore } from '../../src/renderer/state/team.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
-import type { AccountWire, TeamMemberWire, TeamWire } from '../../src/shared/wire-base.js';
+import type { AccountWire, TeamMemberWire, TeamWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const URL_ = 'https://wb.test';

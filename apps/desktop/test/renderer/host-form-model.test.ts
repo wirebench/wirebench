@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { HostsFileWire } from '../../src/shared/ssh-wire.js';
+import type { HostsFileWire } from '@wirebench/wire/ssh-wire';
 import {
   chainOf,
   initialGroup,

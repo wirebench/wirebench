@@ -12,7 +12,7 @@ import type {
   SequenceRunResultWire,
   SequenceStepResultWire,
   SequenceWaitingEvent,
-} from '../../shared/wire-base.js';
+} from '@shared/wire-base.js';
 import { ipc } from './ipc-client.js';
 
 /** One run of one sequence. */

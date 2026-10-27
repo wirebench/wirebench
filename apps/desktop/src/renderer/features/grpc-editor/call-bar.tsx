@@ -14,7 +14,7 @@
  */
 import { Radio, Send, Square } from 'lucide-react';
 import { Button } from '../../components/button.js';
-import type { GrpcMethodDescriptorWire, GrpcServiceDescriptorWire } from '../../../shared/kinds/grpc/wire.js';
+import type { GrpcMethodDescriptorWire, GrpcServiceDescriptorWire } from '@shared/kinds/grpc/wire.js';
 import { methodKindLabel } from './method-kind-badge.js';
 
 /** The value the select carries for one method: `service/method`, the path's own spelling. */

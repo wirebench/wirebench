@@ -9,7 +9,7 @@ import type {
   SshOsId,
   SshSettingsWire,
   TerminalEntryWire,
-} from '../../../shared/ssh-wire.js';
+} from '@shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { forwardProblem } from './forwarding/forward-form.js';
@@ -30,8 +30,8 @@ import { cleanProxy, proxyProblem, ProxySection } from './proxy-section.js';
 import { OS_LABELS } from './os-icon.js';
 import { HostAuthSection } from './host-auth-section.js';
 import { cleanTerminal, HostTerminalSection, inheritedTerminal, terminalProblem } from './host-terminal-section.js';
-import { SSH_DEFAULTS, SSH_OS_IDS } from '../../../shared/ssh-defaults.js';
-import { COMMON_TERMINAL_TYPES, TERMINAL_CHARSETS, terminalTypeProblem } from '../../../shared/terminal-charsets.js';
+import { SSH_DEFAULTS, SSH_OS_IDS } from '@shared/ssh-defaults.js';
+import { COMMON_TERMINAL_TYPES, TERMINAL_CHARSETS, terminalTypeProblem } from '@shared/terminal-charsets.js';
 import {
   ancestorsOf,
   findGroup,

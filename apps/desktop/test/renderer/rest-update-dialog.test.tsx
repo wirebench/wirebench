@@ -25,7 +25,7 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWebhookItemsDialogs } from '../../src/renderer/features/webhook-items/webhook-items-state.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { restApiWire } from '../helpers/wire-defaults.js';
-import type { RestApiWire } from '../../src/shared/kinds/rest/wire.js';
+import type { RestApiWire } from '@wirebench/wire/kinds/rest/wire';
 
 const FP1 = 'a'.repeat(64);
 const FP2 = 'b'.repeat(64);

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { STOP_POLLING_CODES } from '../src/main/sync/server-backend.js';
+import { STOP_POLLING_CODES } from '../../../packages/host/src/sync/server-backend.js';
 import {
   shareRefusalMessage,
   STOP_POLLING_SYNC_CODES,

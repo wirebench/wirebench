@@ -1,0 +1,104 @@
+/**
+ * The `ssl.*` IPC channels: the CA bundle preference, set and cleared by main alone.
+ *
+ * `ssl.caBundlePath` names a file main reads on every send, so it is held to the same rule as
+ * a keystore or an attachment: a path becomes readable only by being *picked*. The renderer
+ * therefore cannot write it — `preferences.update` refuses a patch carrying it — and instead
+ * asks main to run the picker. Main records the result through `DialogPicks.rememberRead`
+ * (exactly as `keystores.pickFile` does) and persists the path itself, alongside
+ * `caBundlePickedByMain: true`; `main/host/create-host.ts` re-records a pick at startup only for a path
+ * carrying that marker, so a `preferences.yaml` edited by hand adds no trust until the bundle
+ * is picked again.
+ */
+
+import type { Caller, HostPlatform } from '../host/platform.js';
+import { requireCapability } from '../host/capability.js';
+import { WirebenchError } from '@wirebench/engine';
+import { channels } from '@wirebench/wire/ipc';
+import type { RecordsReadPicks } from '../dialog-picks.js';
+import { toPreferencesWire } from '../preferences.js';
+import type { PreferencesService } from '../preferences.js';
+import type { PreferencesWire } from '@wirebench/wire/wire-base';
+import { registerHandler, type HandlerTable } from './register.js';
+
+/** What the `ssl.*` channels need; a stub stands in for each of these in tests. */
+export interface SslChannelDeps {
+  /** The preferences document; main writes `ssl.caBundlePath` through it and nothing else does. */
+  readonly preferences: Pick<PreferencesService, 'update' | 'ready' | 'isLocked'>;
+  /** The session's picked-path memory, the only evidence `ProjectHost.trustAnchors` accepts. */
+  readonly picks: RecordsReadPicks;
+  /** The native Open-file dialog `pickCaBundle` runs. */
+  readonly platform: Pick<HostPlatform, 'dialogs'>;
+  /** Called after each change so main can broadcast `preferences.changed` to every window. */
+  readonly onChanged?: (preferences: PreferencesWire) => void;
+}
+
+/** The extensions the Open dialog offers for a PEM trust bundle. */
+const CA_BUNDLE_EXTENSIONS = ['pem', 'crt', 'cer'];
+
+/** e2e cannot drive a native dialog, so this env var short-circuits it, as `keystores.*` does. */
+function e2eOpenPathOverride(): string | undefined {
+  return process.env['WIREBENCH_E2E_OPEN_PATH'];
+}
+
+async function pickThroughDialog(platform: Pick<HostPlatform, 'dialogs'>, sender: Caller): Promise<string | undefined> {
+  const result = await requireCapability(platform, 'dialogs').openFile(sender, {
+    title: 'Choose a CA bundle',
+    properties: ['openFile'],
+    filters: [
+      { name: 'PEM certificates', extensions: CA_BUNDLE_EXTENSIONS },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  return result.canceled ? undefined : result.filePaths[0];
+}
+
+/**
+ * Refuses before anything else happens — in particular before a dialog opens — when a
+ * managed-preferences policy locks the CA bundle. The service would refuse the write anyway;
+ * this spares the user picking a file only to be told it cannot be used.
+ */
+async function assertCaBundleUnlocked(preferences: SslChannelDeps['preferences']): Promise<void> {
+  await preferences.ready();
+  if (preferences.isLocked('ssl.caBundlePath')) {
+    throw new WirebenchError('preference-locked', 'The CA bundle is locked by the managed-preferences policy', {
+      details: { keys: ['ssl.caBundlePath'] },
+    });
+  }
+}
+
+/** Registers the `ssl.*` channels. */
+export function registerSslChannels(table: HandlerTable, deps: SslChannelDeps): void {
+  registerHandler(table, channels.ssl.pickCaBundle, async (_request, sender) => {
+    await assertCaBundleUnlocked(deps.preferences);
+    // The override goes through `rememberRead` exactly as a real pick does, so e2e exercises
+    // the containment path a user does rather than a bypass of it. Comma-separated for symmetry
+    // with `attachments.pickFiles`; only the first entry is used here.
+    const override = e2eOpenPathOverride();
+    const path =
+      override !== undefined
+        ? override.split(',').filter((entry) => entry.length > 0)[0]
+        : await pickThroughDialog(deps.platform, sender);
+    if (path === undefined) {
+      // A cancelled dialog changes nothing, including the bundle already configured.
+      return { preferences: toPreferencesWire(await deps.preferences.update({})) };
+    }
+    deps.picks.rememberRead(path);
+    const next = toPreferencesWire(
+      await deps.preferences.update({ ssl: { caBundlePath: path, caBundlePickedByMain: true } }),
+    );
+    deps.onChanged?.(next);
+    return { path, preferences: next };
+  });
+
+  registerHandler(table, channels.ssl.clearCaBundle, async () => {
+    await assertCaBundleUnlocked(deps.preferences);
+    // The marker goes with the path: what is cleared must not be re-recorded as a pick at the
+    // next startup either.
+    const next = toPreferencesWire(
+      await deps.preferences.update({ ssl: { caBundlePath: '', caBundlePickedByMain: false } }),
+    );
+    deps.onChanged?.(next);
+    return { preferences: next };
+  });
+}

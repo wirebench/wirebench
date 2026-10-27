@@ -7,7 +7,7 @@ import { useMemo, useState } from 'react';
 import { formatBytes, formatDuration } from '../../lib/format-size.js';
 import { DiffView } from '../history/diff-view.js';
 import { diffHeaders, type HeaderChange } from '../console/log-compare.js';
-import type { EnvSendResult } from '../../../shared/wire-types.js';
+import type { EnvSendResult } from '@shared/wire-types.js';
 import { summarise, toCompareColumns, type CompareColumn, type CompareVerdict } from './env-compare.js';
 
 export interface EnvCompareViewProps {

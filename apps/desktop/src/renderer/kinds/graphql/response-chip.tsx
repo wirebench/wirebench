@@ -4,7 +4,7 @@
  * are in the Problems view and marked on the body.
  */
 import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
-import type { GraphqlCheckWire } from '../../../shared/kinds/graphql/wire.js';
+import type { GraphqlCheckWire } from '@shared/kinds/graphql/wire.js';
 import { graphqlChip, type GraphqlTone } from './response-problems.js';
 
 const TONE_CLASS: Record<GraphqlTone, string> = {

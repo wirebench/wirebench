@@ -10,7 +10,9 @@ import {
   shell,
   type WebContents,
 } from 'electron';
-import { ALL_CAPABILITIES, type Caller, type DialogOwner, type HostPlatform } from '../host/platform.js';
+import { version as manifestVersion } from '../../../package.json' with { type: 'json' };
+import type { Caller, HostPlatform } from '@wirebench/host';
+import { ALL_CAPABILITIES, type DialogOwner } from '@wirebench/host/desktop';
 
 interface Entry {
   readonly caller: Caller;
@@ -162,7 +164,11 @@ export function createElectronPlatform(): HostPlatform {
       trash: (path) => shell.trashItem(path),
     },
     app: {
-      version: () => app.getVersion(),
+      // A packaged bundle carries its own `package.json`, so Electron's version is authoritative there. An
+      // unpackaged run is launched as `out/main/index.js`, whose directory holds no manifest, and Electron then
+      // reports `0.0`; the manifest this file is compiled against is the one electron-builder stamps into the
+      // bundle, so it shows the real version in development and e2e without changing a shipped build.
+      version: () => (app.isPackaged ? app.getVersion() : manifestVersion),
       runtimeVersion: () => process.versions.electron,
       packaged: () => app.isPackaged,
       quit: () => {

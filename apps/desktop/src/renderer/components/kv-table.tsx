@@ -19,7 +19,7 @@ import { ClampedValueField } from './clamped-value-field.js';
 import { useVariableField } from './variable-field.js';
 import { IconButton } from './icon-button.js';
 import { useGridNavigation } from '../lib/grid-navigation.js';
-import type { KeyValueWire } from '../../shared/wire-base.js';
+import type { KeyValueWire } from '@shared/wire-base.js';
 
 /**
  * A transparent border by default so a row reads as data rather than a form field; hover swaps the

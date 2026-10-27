@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Button } from '../../../components/button.js';
 import { Tabs } from '../../../components/tabs.js';
-import type { RestResponseExampleWire } from '../../../../shared/kinds/rest/wire.js';
+import type { RestResponseExampleWire } from '@shared/kinds/rest/wire.js';
 import { BodyView, type BodyViewExchange } from './body-view.js';
 import { ResponseHeadersView } from './headers-view.js';
 import { statusToneClass } from './status-line.js';

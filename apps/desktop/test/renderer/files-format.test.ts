@@ -11,7 +11,7 @@ import {
   sortEntries,
   visibleEntries,
 } from '../../src/renderer/features/ssh/files/format.js';
-import type { SftpEntryWire } from '../../src/shared/sftp-wire.js';
+import type { SftpEntryWire } from '@wirebench/wire/sftp-wire';
 
 const entry = (name: string, type: SftpEntryWire['type'], extra: Partial<SftpEntryWire> = {}): SftpEntryWire => ({
   name,

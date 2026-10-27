@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { events } from '../src/shared/ipc.js';
-import { failedExchangeWireSchema } from '../src/shared/wire-base.js';
+import { events } from '@wirebench/wire/ipc';
+import { failedExchangeWireSchema } from '@wirebench/wire/wire-base';
 
 const failure = {
   sendId: 'send-1',

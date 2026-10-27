@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { IpcResult } from '../../../shared/ipc.js';
+import type { IpcResult } from '@shared/ipc.js';
 import type {
   GroupEntryWire,
   HostEntryWire,
@@ -8,7 +8,7 @@ import type {
   SshHostOsWire,
   SshListHostsResponse,
   SshProblemWire,
-} from '../../../shared/ssh-wire.js';
+} from '@shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
 import { failWaitingAttempt } from './connect-store.js';
 import { useProblemsStore } from '../../state/problems.js';

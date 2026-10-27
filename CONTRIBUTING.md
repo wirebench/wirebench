@@ -76,7 +76,7 @@ pull request.
   every I/O entry point takes an `AbortSignal`.
 - Errors are `WirebenchError` subclasses with a stable `code`.
 - The renderer never touches the network, the filesystem or secrets; everything goes through a
-  typed IPC channel with a zod schema pair (`apps/desktop/src/shared/ipc.ts`).
+  typed IPC channel with a zod schema pair (`packages/wire/src/ipc.ts`).
 - Secrets live in `safeStorage` and are referenced by `secretRef` — never in project files or logs.
 
 ## Testing

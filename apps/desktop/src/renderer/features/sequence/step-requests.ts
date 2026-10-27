@@ -5,7 +5,7 @@
  * streaming gRPC call and an MCP request included), and an id that is gone is a missing request.
  */
 import type { useProjectStore } from '../../state/project.js';
-import type { McpOperationWire } from '../../../shared/kinds/mcp/wire.js';
+import type { McpOperationWire } from '@shared/kinds/mcp/wire.js';
 
 type ProjectState = ReturnType<typeof useProjectStore.getState>;
 

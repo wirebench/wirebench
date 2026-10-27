@@ -11,7 +11,7 @@
  */
 import { AuthFields } from '../../components/auth-fields.js';
 import { OAuth2StatusPanel } from './oauth2-status.js';
-import type { AuthConfigWire } from '../../../shared/wire-base.js';
+import type { AuthConfigWire } from '@shared/wire-base.js';
 
 /** How each scheme reads in the source line. */
 const TYPE_LABEL: Readonly<Record<string, string>> = {

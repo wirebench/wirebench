@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ResolvedHostWire, SshQuickTarget } from '../../../shared/ssh-wire.js';
+import type { ResolvedHostWire, SshQuickTarget } from '@shared/ssh-wire.js';
 
 /**
  * One-off servers (#537): typed as `[user@]host[:port]` in Connect to host and connected to with the SSH

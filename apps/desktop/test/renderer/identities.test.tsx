@@ -12,7 +12,7 @@ const localUser = vi.fn(() => Promise.resolve({ ok: true, value: { name: 'me' } 
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({
   ipc: () => ({ ssh: { listHosts, saveHosts, secretNames, setSecret, setHostOs, keys: sshKeys, localUser } }),
 }));
-import type { HostsFileWire, ResolvedHostWire } from '../../src/shared/ssh-wire.js';
+import type { HostsFileWire, ResolvedHostWire } from '@wirebench/wire/ssh-wire';
 import { HostForm } from '../../src/renderer/features/ssh/host-dialog.js';
 import {
   inheritedFrom,

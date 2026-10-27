@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { environmentColorCss, isEnvironmentColor } from '../../src/shared/environment-colors.js';
+import { environmentColorCss, isEnvironmentColor } from '@wirebench/wire/environment-colors';
 
 describe('environment colours', () => {
   it('draws a palette name with its theme token and a #rrggbb as written', () => {

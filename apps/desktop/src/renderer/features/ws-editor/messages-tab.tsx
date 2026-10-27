@@ -15,7 +15,7 @@ import { Button } from '../../components/button.js';
 import { IconButton } from '../../components/icon-button.js';
 import { CodeEditor } from '../../editor/code-editor.js';
 import { SAVE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
-import type { WsSavedMessageWire } from '../../../shared/kinds/ws/wire.js';
+import type { WsSavedMessageWire } from '@shared/kinds/ws/wire.js';
 import { base64Problem } from './ws-format.js';
 import { useEditorVariableAssist } from '../environments/variable-assist-provider.js';
 

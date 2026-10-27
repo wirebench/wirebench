@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ipc } from '../state/ipc-client.js';
-import type { KeystoreAliasWire } from '../../shared/wire-base.js';
+import type { KeystoreAliasWire } from '@shared/wire-base.js';
 
 /**
  * The alias names of one keystore, loaded through `keystores.inspect` — main reads the

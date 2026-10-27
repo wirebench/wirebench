@@ -13,8 +13,8 @@ import { ReadOnlySetting } from '../../components/settings-grid.js';
 import { formatBytes } from '../../lib/format-size.js';
 import { ipc } from '../../state/ipc-client.js';
 import { showToast } from '../../components/toast.js';
-import type { RestApiWire } from '../../../shared/kinds/rest/wire.js';
-import type { ApiDefinitionDocumentsResponse } from '../../../shared/wire-base.js';
+import type { RestApiWire } from '@shared/kinds/rest/wire.js';
+import type { ApiDefinitionDocumentsResponse } from '@shared/wire-base.js';
 
 const CodeEditor = lazy(async () => ({ default: (await import('../../editor/code-editor.js')).CodeEditor }));
 

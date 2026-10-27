@@ -10,7 +10,7 @@
 
 import { useEffect } from 'react';
 import { Button } from '../../components/button.js';
-import type { SchemaComponentWire, SchemaNamespaceWire } from '../../../shared/kinds/soap/wire.js';
+import type { SchemaComponentWire, SchemaNamespaceWire } from '@shared/kinds/soap/wire.js';
 import { useInterfaceEditorStore, type SchemaSelection } from './interface-editor-state.js';
 import { componentsOf, SchemaTree } from './schema-tree.js';
 import { sourceSnippet } from './source-snippet.js';

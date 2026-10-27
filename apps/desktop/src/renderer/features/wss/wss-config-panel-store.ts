@@ -9,7 +9,7 @@
  */
 
 import { create } from 'zustand';
-import type { WssIncomingWire, WssOutgoingWire } from '../../../shared/kinds/soap/wire.js';
+import type { WssIncomingWire, WssOutgoingWire } from '@shared/kinds/soap/wire.js';
 import { useProjectStore } from '../../state/project.js';
 
 export type WssDirection = 'outgoing' | 'incoming';

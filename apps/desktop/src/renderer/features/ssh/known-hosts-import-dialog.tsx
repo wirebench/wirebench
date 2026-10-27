@@ -2,7 +2,7 @@ import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
-import type { SshKnownHostsImportPreview } from '../../../shared/ssh-wire.js';
+import type { SshKnownHostsImportPreview } from '@shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
 import { flattenGroups, useHostsStore } from './hosts-store.js';
 

@@ -3,7 +3,7 @@
  * renderer imports no engine values (Global Constraints). `signature-text.test.ts` pins them to
  * the engine's.
  */
-import type { CaptureSignatureWire, SignatureFailureWire, SignatureSchemeWire } from '../../../shared/wire-base.js';
+import type { CaptureSignatureWire, SignatureFailureWire, SignatureSchemeWire } from '@shared/wire-base.js';
 
 export type SchemeKind = SignatureSchemeWire['kind'];
 

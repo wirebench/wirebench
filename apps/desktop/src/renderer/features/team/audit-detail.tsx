@@ -6,7 +6,7 @@ import {
   targetLabel,
   type ActionGroup,
 } from '../../state/audit-format.js';
-import type { AuditEventWire } from '../../../shared/wire-base.js';
+import type { AuditEventWire } from '@shared/wire-base.js';
 
 /** One audit event in full (audit-log spec §3.6): the same `<dl>` grid as the License tab, then the details object. */
 export function AuditDetail({ event, onClose }: { readonly event: AuditEventWire; readonly onClose: () => void }) {

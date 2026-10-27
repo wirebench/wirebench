@@ -9,7 +9,7 @@
 
 import { showToast } from '../../components/toast.js';
 import { useProjectStore } from '../../state/project.js';
-import type { WssEntryWire } from '../../../shared/kinds/soap/wire.js';
+import type { WssEntryWire } from '@shared/kinds/soap/wire.js';
 
 /** The name an applied policy's configuration gets. */
 export function policyConfigName(operationName: string): string {

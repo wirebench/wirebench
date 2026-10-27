@@ -10,7 +10,7 @@ import {
   matchesEvent,
   parseKeybinding,
 } from '../../src/renderer/lib/keybindings.js';
-import { COMMAND_IDS, whenScopesOverlap } from '../../src/shared/commands.js';
+import { COMMAND_IDS, whenScopesOverlap } from '@wirebench/wire/commands';
 import { getCommand } from '../../src/renderer/lib/commands.js';
 import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
 

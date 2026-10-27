@@ -2,7 +2,7 @@ import { ExternalLink, Save } from 'lucide-react';
 import { showToast } from '../../../components/toast.js';
 import { formatBytes } from '../../../lib/format-size.js';
 import { ipc } from '../../../state/ipc-client.js';
-import type { ExchangeSummary } from '../../../../shared/kinds/soap/wire.js';
+import type { ExchangeSummary } from '@shared/kinds/soap/wire.js';
 import { InspectorIconButton } from './inspector-strip.js';
 
 export interface ResponseAttachmentsInspectorProps {

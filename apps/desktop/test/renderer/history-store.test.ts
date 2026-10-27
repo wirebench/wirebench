@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { subscribeToHistory, useHistoryStore } from '../../src/renderer/state/history.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { HistoryEntryWire } from '../../src/shared/wire-types.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
 
 function makeEntry(overrides: Partial<HistoryEntryWire> = {}): HistoryEntryWire {
   return {

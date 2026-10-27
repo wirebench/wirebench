@@ -37,7 +37,7 @@ import type {
   MockResponsePatch,
   MockValidationWire,
   MockWire,
-} from '../../../shared/wire-base.js';
+} from '@shared/wire-base.js';
 import { SelectField } from '../sequence/step-fields.js';
 import { MockLog } from './mock-log.js';
 import { MockResponseEditor } from './mock-response-editor.js';

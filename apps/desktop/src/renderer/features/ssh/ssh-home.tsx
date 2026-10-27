@@ -28,7 +28,7 @@ import type {
   SshAuthWire,
   SshKnownHostWire,
   SshSecretNameWire,
-} from '../../../shared/ssh-wire.js';
+} from '@shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
 import { HostCards } from './host-cards.js';
 import { ForwardingPanel } from './forwarding/forwarding-view.js';

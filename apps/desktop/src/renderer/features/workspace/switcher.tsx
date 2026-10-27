@@ -3,7 +3,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronDown, Folder, GitBranch, Server } from 'lucide-react';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
-import type { WorkspaceSummaryWire } from '../../../shared/wire-base.js';
+import type { WorkspaceSummaryWire } from '@shared/wire-base.js';
 import { workspaceActions } from './workspace-actions.js';
 
 const ITEM_CLASS =

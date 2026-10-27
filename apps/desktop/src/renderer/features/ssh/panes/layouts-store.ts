@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { IpcError } from '../../../../shared/ipc.js';
-import type { LayoutNodeWire, LayoutWire } from '../../../../shared/layout-wire.js';
+import type { IpcError } from '@shared/ipc.js';
+import type { LayoutNodeWire, LayoutWire } from '@shared/layout-wire.js';
 import { ipc } from '../../../state/ipc-client.js';
 
 type Answer<T> = { ok: true; value: T } | { ok: false; error: IpcError };

@@ -8,7 +8,7 @@
  */
 
 import { create } from 'zustand';
-import type { IpcError } from '../../shared/ipc.js';
+import type { IpcError } from '@shared/ipc.js';
 import type { WirebenchApi } from '../../preload/build-api.js';
 import type {
   WorkspaceChange,
@@ -17,7 +17,7 @@ import type {
   WorkspaceEnvironmentWire,
   WorkspaceSummaryWire,
   WorkspaceWire,
-} from '../../shared/wire-base.js';
+} from '@shared/wire-base.js';
 import { queueEnvironmentPatch } from '../features/environments/environment-queue.js';
 import { useInterfaceEditorStore } from '../features/interface-editor/interface-editor-state.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';

@@ -16,7 +16,7 @@ import {
   type VariableAssist,
 } from '../../src/renderer/components/variable-field.js';
 import type { RequestVariables } from '../../src/renderer/editor/variable-assist.js';
-import type { KeyValueWire } from '../../src/shared/wire-base.js';
+import type { KeyValueWire } from '@wirebench/wire/wire-base';
 
 afterEach(() => {
   cleanup();

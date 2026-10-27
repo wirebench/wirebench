@@ -12,8 +12,8 @@ import { useMockRunsStore } from '../../src/renderer/state/mock-runs.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { NO_REST, PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
-import type { MockCheckResponse, MockExchangeEventWire, MockWire } from '../../src/shared/wire-base.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { MockCheckResponse, MockExchangeEventWire, MockWire } from '@wirebench/wire/wire-base';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));

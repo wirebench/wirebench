@@ -8,8 +8,8 @@ import { placeOptions } from '../../src/renderer/features/ssh/files/place-picker
 import { useTransfersStore } from '../../src/renderer/features/ssh/files/transfers-store.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
-import type { HostsFileWire } from '../../src/shared/ssh-wire.js';
-import type { SftpEntryWire } from '../../src/shared/sftp-wire.js';
+import type { HostsFileWire } from '@wirebench/wire/ssh-wire';
+import type { SftpEntryWire } from '@wirebench/wire/sftp-wire';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const TAB = 'ssh-files:a';

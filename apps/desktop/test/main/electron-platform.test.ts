@@ -2,7 +2,7 @@
 /** The Electron implementation of `HostPlatform`: thin delegation plus the per-contents `Caller`. */
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ALL_CAPABILITIES } from '../../src/main/host/platform.js';
+import { ALL_CAPABILITIES } from '../../../../packages/host/src/host/platform.js';
 
 const electron = vi.hoisted(() => ({
   app: { getPath: vi.fn(), getVersion: vi.fn(), isPackaged: true, quit: vi.fn() },
@@ -17,6 +17,7 @@ const electron = vi.hoisted(() => ({
 vi.mock('electron', () => electron);
 
 const { createElectronPlatform, callerForWebContents } = await import('../../src/main/electron/electron-platform.js');
+const { version: manifestVersion } = await import('../../package.json', { with: { type: 'json' } });
 
 class FakeContents extends EventEmitter {
   destroyed = false;
@@ -91,6 +92,24 @@ describe('createElectronPlatform', () => {
     expect(electron.nativeTheme.on).toHaveBeenCalledWith('updated', expect.any(Function));
     off();
     expect(electron.nativeTheme.off).toHaveBeenCalledWith('updated', expect.any(Function));
+  });
+
+  it('reports the version the packaged bundle carries', () => {
+    electron.app.getVersion.mockReturnValue('9.9.9');
+    electron.app.isPackaged = true;
+    expect(createElectronPlatform().app.version()).toBe('9.9.9');
+  });
+
+  it('falls back to the manifest when unpackaged, where Electron only knows `0.0`', () => {
+    electron.app.getVersion.mockReturnValue('0.0');
+    electron.app.isPackaged = false;
+    try {
+      const version = createElectronPlatform().app.version();
+      expect(version).toBe(manifestVersion);
+      expect(version).not.toBe('0.0');
+    } finally {
+      electron.app.isPackaged = true;
+    }
   });
 
   it('parents a dialog with the owner window when it is live, and opens it unparented otherwise', async () => {

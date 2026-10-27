@@ -1,7 +1,7 @@
 import type * as Monaco from 'monaco-editor';
 import { pointerRange } from '@wirebench/engine/json';
-import type { RestContractResultWire } from '../../shared/kinds/rest/wire.js';
-import type { ValidationProblemWire } from '../../shared/kinds/soap/wire.js';
+import type { RestContractResultWire } from '@shared/kinds/rest/wire.js';
+import type { ValidationProblemWire } from '@shared/kinds/soap/wire.js';
 
 /**
  * The `setModelMarkers` owner every validation marker is filed under. Owning a namespace of

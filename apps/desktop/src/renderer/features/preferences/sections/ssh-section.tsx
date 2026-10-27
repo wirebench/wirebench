@@ -1,5 +1,5 @@
 import { EnumSetting, NumberSetting, SettingsGroup, TextSetting } from '../../../components/settings-grid.js';
-import { TERMINAL_CHARSETS, terminalTypeProblem } from '../../../../shared/terminal-charsets.js';
+import { TERMINAL_CHARSETS, terminalTypeProblem } from '@shared/terminal-charsets.js';
 import { PREFERENCE_LIMITS } from '../../../state/preference-limits.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../../state/preferences-defaults.js';
 import type { SectionProps } from './section-props.js';

@@ -6,7 +6,7 @@ import type {
   PreferencesResponse,
   PreferencesStoredSectionWire,
   PreferencesWire,
-} from '../../shared/wire-base.js';
+} from '@shared/wire-base.js';
 import { showToast } from '../components/toast.js';
 import { setKeybindingOverrides } from '../lib/keybindings.js';
 import { ipc } from './ipc-client.js';

@@ -9,12 +9,12 @@ const violationsOf = (root: string) => findHostBoundaryViolations(root).violatio
 
 const roots: string[] = [];
 
-/** A fixture repo with `files` (paths relative to `apps/desktop/src/main`). */
+/** A fixture repo with `files` (paths relative to `packages/host/src`). */
 function fixture(files: Record<string, string>): string {
   const root = mkdtempSync(join(tmpdir(), 'host-boundary-'));
   roots.push(root);
   for (const [file, text] of Object.entries(files)) {
-    const path = join(root, 'apps/desktop/src/main', file);
+    const path = join(root, 'packages/host/src', file);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, text, 'utf8');
   }
@@ -33,18 +33,21 @@ describe('findHostBoundaryViolations', () => {
       'c.ts': "const e = require('electron');\n",
     });
     expect(violationsOf(root).map((v) => [v.file, v.line, v.rule])).toEqual([
-      ['apps/desktop/src/main/a.ts', 1, 'electron-import'],
-      ['apps/desktop/src/main/b.ts', 1, 'electron-import'],
-      ['apps/desktop/src/main/c.ts', 1, 'electron-import'],
+      ['packages/host/src/a.ts', 1, 'electron-import'],
+      ['packages/host/src/b.ts', 1, 'electron-import'],
+      ['packages/host/src/c.ts', 1, 'electron-import'],
     ]);
   });
 
-  it('leaves electron/ and index.ts alone', () => {
+  it('checks index.ts and every subfolder too: the Electron shell is not in the package', () => {
     const root = fixture({
       'electron/x.ts': "import { app } from 'electron';\n",
       'index.ts': "import { app } from 'electron';\n",
     });
-    expect(violationsOf(root)).toEqual([]);
+    expect(violationsOf(root).map((v) => v.file)).toEqual([
+      'packages/host/src/electron/x.ts',
+      'packages/host/src/index.ts',
+    ]);
   });
 
   it('reports top-level mutable state', () => {
@@ -82,8 +85,13 @@ describe('findHostBoundaryViolations', () => {
       'script-host.ts': 'const typeCache = new WeakMap();\n',
       'window-scope.ts': 'const caller = new AsyncLocalStorage<number>();\n',
       'other.ts': 'let loading = 1;\n',
+      'sub/serial-session.ts': 'let loading: Promise<void> | undefined;\n',
     });
-    expect(violationsOf(root).map((v) => v.file)).toEqual(['apps/desktop/src/main/other.ts']);
+    // The allowlist is keyed by the full path: the same base name elsewhere is not allowed.
+    expect(violationsOf(root).map((v) => v.file)).toEqual([
+      'packages/host/src/other.ts',
+      'packages/host/src/sub/serial-session.ts',
+    ]);
   });
 
   it('finds nothing in the real tree', () => {
@@ -99,9 +107,9 @@ describe('findHostBoundaryViolations', () => {
     expect(() => findHostBoundaryViolations(root)).toThrow(/no host directory/);
   });
 
-  it('counts the files it scanned, leaving electron/ and index.ts out', () => {
-    const root = fixture({ 'a.ts': '', 'sub/b.ts': '', 'electron/x.ts': '', 'index.ts': '' });
-    expect(findHostBoundaryViolations(root).scanned).toBe(2);
+  it('counts the files it scanned', () => {
+    const root = fixture({ 'a.ts': '', 'sub/b.ts': '', 'index.ts': '', 'c.d.ts': '', 'notes.md': '' });
+    expect(findHostBoundaryViolations(root).scanned).toBe(3);
   });
 
   it('reads an arrow type in a const annotation as part of the annotation', () => {
@@ -117,23 +125,28 @@ describe('findHostBoundaryViolations', () => {
       'd.ts': "const e = require('electron/common');\n",
     });
     expect(violationsOf(root).map((v) => [v.file, v.rule])).toEqual([
-      ['apps/desktop/src/main/a.ts', 'electron-import'],
-      ['apps/desktop/src/main/b.ts', 'electron-import'],
-      ['apps/desktop/src/main/c.ts', 'electron-import'],
-      ['apps/desktop/src/main/d.ts', 'electron-import'],
+      ['packages/host/src/a.ts', 'electron-import'],
+      ['packages/host/src/b.ts', 'electron-import'],
+      ['packages/host/src/c.ts', 'electron-import'],
+      ['packages/host/src/d.ts', 'electron-import'],
     ]);
   });
 
-  it('reports a relative import of the electron/ directory from host code, not from inside it', () => {
+  it('reports a relative import that leaves the package, static, dynamic or JSON', () => {
     const root = fixture({
-      'host/a.ts': "import { createElectronPlatform } from '../electron/electron-platform.js';\n",
-      'b.ts': "import { x } from './electron/menu.js';\n",
-      'c.ts': "import { y } from './electronic.js';\n",
-      'electron/inner.ts': "import { z } from './menu.js';\n",
+      'a.ts':
+        "import { createElectronPlatform } from '../../../apps/desktop/src/main/electron/electron-platform.js';\n",
+      'host/b.ts': "import { version } from '../../../../apps/desktop/package.json' with { type: 'json' };\n",
+      'c.ts': "import { y } from '../../wire/src/ipc.js';\n",
+      'd.ts': "const m = await import('../../engine/src/index.js');\n",
+      'e.ts': "import { name } from '../package.json' with { type: 'json' };\n",
+      'f.ts': "import { z } from './sub/inner.js';\n",
     });
     expect(violationsOf(root).map((v) => [v.file, v.rule])).toEqual([
-      ['apps/desktop/src/main/b.ts', 'electron-import'],
-      ['apps/desktop/src/main/host/a.ts', 'electron-import'],
+      ['packages/host/src/a.ts', 'outside-package'],
+      ['packages/host/src/c.ts', 'outside-package'],
+      ['packages/host/src/d.ts', 'outside-package'],
+      ['packages/host/src/host/b.ts', 'outside-package'],
     ]);
   });
 });

@@ -6,8 +6,8 @@ import { WssConfigPanel } from '../../src/renderer/features/wss/wss-config-panel
 import { useWssConfigPanelStore } from '../../src/renderer/features/wss/wss-config-panel-store.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { ProjectWire } from '../../src/shared/wire-types.js';
-import type { WssEntryWire, WssOutgoingWire } from '../../src/shared/kinds/soap/wire.js';
+import type { ProjectWire } from '@wirebench/wire/wire-types';
+import type { WssEntryWire, WssOutgoingWire } from '@wirebench/wire/kinds/soap/wire';
 
 const project = { id: 'p1', name: 'Demo', dir: '/tmp/demo' } as unknown as ProjectWire;
 

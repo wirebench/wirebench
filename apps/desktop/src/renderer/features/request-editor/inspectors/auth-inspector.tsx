@@ -19,7 +19,7 @@ import { useProjectStore } from '../../../state/project.js';
 import { OAuth2StatusPanel } from '../../rest-editor/oauth2-status.js';
 import { WssPolicyPanel } from './wss-policy-panel.js';
 import { WssDefaultsGroup } from './request-flag-groups.js';
-import type { RequestAuthSourceWire } from '../../../../shared/wire-base.js';
+import type { RequestAuthSourceWire } from '@shared/wire-base.js';
 
 const INPUT_CLASS =
   'h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-xs text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';

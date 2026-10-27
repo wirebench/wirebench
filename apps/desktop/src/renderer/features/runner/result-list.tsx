@@ -3,7 +3,7 @@
  * and a scheduled run's (#517). Everything shown arrived from main masked.
  */
 import type { ReactNode } from 'react';
-import type { RunnerRequestResult } from '../../../shared/runner-wire.js';
+import type { RunnerRequestResult } from '@shared/runner-wire.js';
 import { sendProblemText } from '../request-editor/send-error.js';
 
 export const OUTCOME_TONE: Record<RunnerRequestResult['outcome'], string> = {

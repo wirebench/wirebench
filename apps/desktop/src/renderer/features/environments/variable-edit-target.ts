@@ -1,4 +1,4 @@
-import type { VariableEditTargetWire } from '../../../shared/wire-base.js';
+import type { VariableEditTargetWire } from '@shared/wire-base.js';
 import { openProjectTab } from '../explorer/project-actions.js';
 import { openEnvironmentTab } from './environment-actions.js';
 

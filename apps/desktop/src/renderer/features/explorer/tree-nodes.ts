@@ -1,10 +1,10 @@
-import type { GrpcApiWire, GrpcMethodKindWire, GrpcRequestWire } from '../../../shared/kinds/grpc/wire.js';
-import type { RestApiWire, RestRequestWire, WebhookCollectionWire } from '../../../shared/kinds/rest/wire.js';
-import type { InterfaceSummary } from '../../../shared/kinds/soap/wire.js';
-import type { WsApiWire, WsRequestWire } from '../../../shared/kinds/ws/wire.js';
-import type { McpRequestWire, McpServerWire } from '../../../shared/kinds/mcp/wire.js';
-import type { RestFolderWire, ScriptValueWire, UnsupportedContainerWire } from '../../../shared/wire-base.js';
-import type { KindId } from '../../../shared/kinds/kind-module.js';
+import type { GrpcApiWire, GrpcMethodKindWire, GrpcRequestWire } from '@shared/kinds/grpc/wire.js';
+import type { RestApiWire, RestRequestWire, WebhookCollectionWire } from '@shared/kinds/rest/wire.js';
+import type { InterfaceSummary } from '@shared/kinds/soap/wire.js';
+import type { WsApiWire, WsRequestWire } from '@shared/kinds/ws/wire.js';
+import type { McpRequestWire, McpServerWire } from '@shared/kinds/mcp/wire.js';
+import type { RestFolderWire, ScriptValueWire, UnsupportedContainerWire } from '@shared/wire-base.js';
+import type { KindId } from '@shared/kinds/kind-module.js';
 import { EXPLORER_TREES } from '../../kinds/explorer-trees.js';
 import { placeholderMessage } from '../../kinds/placeholders.js';
 import type { ProjectTreeData } from '../../kinds/explorer-tree.js';

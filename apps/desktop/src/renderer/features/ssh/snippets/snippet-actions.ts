@@ -3,7 +3,7 @@
  * saved list, read once when nothing has read it yet in this workspace.
  */
 import { create } from 'zustand';
-import type { SnippetListItemWire } from '../../../../shared/snippets-wire.js';
+import type { SnippetListItemWire } from '@shared/snippets-wire.js';
 import { useEditorsStore } from '../../../state/editors.js';
 import { useUiStore } from '../../../state/ui.js';
 import { useHostsStore } from '../hosts-store.js';

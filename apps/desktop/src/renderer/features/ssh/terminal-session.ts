@@ -1,4 +1,4 @@
-import type { SshConnectProgressEvent } from '../../../shared/ssh-wire.js';
+import type { SshConnectProgressEvent } from '@shared/ssh-wire.js';
 import { noteProgress } from './connect-store.js';
 import { useHostsStore } from './hosts-store.js';
 import { reconnectNow } from './reconnect.js';

@@ -13,7 +13,7 @@ import { SettingsGroup } from '../../components/settings-grid.js';
 import { useProjectStore } from '../../state/project.js';
 import { refreshSummary } from '../explorer/explorer-actions.js';
 import { newMcpRequestFromTool } from './mcp-api-actions.js';
-import type { McpCatalogueInfoWire, McpCatalogueWire } from '../../../shared/kinds/mcp/wire.js';
+import type { McpCatalogueInfoWire, McpCatalogueWire } from '@shared/kinds/mcp/wire.js';
 
 export interface CatalogueSectionProps {
   readonly apiId: string;

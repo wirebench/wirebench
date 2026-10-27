@@ -1,5 +1,5 @@
 import type { ITheme, Terminal } from '@xterm/xterm';
-import type { PreferencesWire } from '../../../shared/wire-base.js';
+import type { PreferencesWire } from '@shared/wire-base.js';
 import type { Platform } from '../../lib/platform.js';
 import { PREFERENCE_LIMITS } from '../../state/preference-limits.js';
 import { APP_SCHEME_ID, schemeById, type TerminalScheme } from './terminal-schemes.js';

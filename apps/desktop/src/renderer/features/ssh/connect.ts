@@ -14,7 +14,7 @@ import {
 } from './connect-store.js';
 import type { ConnectError } from './connect-errors.js';
 import { isQuickHostId, quickHostName, quickTargetOf, useQuickHostsStore } from './quick-hosts.js';
-import type { SshQuickTarget } from '../../../shared/ssh-wire.js';
+import type { SshQuickTarget } from '@shared/ssh-wire.js';
 import { useRecentStore } from './recent-connections.js';
 import { isRetryableConnectError } from './reconnect.js';
 import type { AttemptOutcome } from './reconnect.js';

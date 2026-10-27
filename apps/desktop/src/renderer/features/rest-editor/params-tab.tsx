@@ -11,8 +11,8 @@
  */
 import { useId } from 'react';
 import { KvTable } from '../../components/kv-table.js';
-import type { RestRequestPatchWire } from '../../../shared/kinds/rest/wire.js';
-import type { KeyValueWire } from '../../../shared/wire-base.js';
+import type { RestRequestPatchWire } from '@shared/kinds/rest/wire.js';
+import type { KeyValueWire } from '@shared/wire-base.js';
 import { urlWithQuery } from '../../state/rest-url.js';
 import { useVariableAssist } from '../../components/variable-field.js';
 import { urlVariableRows } from './url-variables.js';

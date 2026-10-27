@@ -4,11 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { TeamSecretsSection } from '../../src/renderer/features/sync/team-secrets-section.js';
 import { TEAM_SECRETS_OFF_STATUS, useTeamSecretsStore } from '../../src/renderer/state/team-secrets.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type {
-  TeamSecretsKeyWire,
-  TeamSecretsStatusWire,
-  TeamSecretsUntrustedWire,
-} from '../../src/shared/wire-base.js';
+import type { TeamSecretsKeyWire, TeamSecretsStatusWire, TeamSecretsUntrustedWire } from '@wirebench/wire/wire-base';
 
 const ADA: TeamSecretsKeyWire = {
   keyId: 'AAAAAAAAAAAAAAAAAAAAAAAAAA',

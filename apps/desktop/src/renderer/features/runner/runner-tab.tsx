@@ -20,7 +20,7 @@ import { useProjectStore } from '../../state/project.js';
 import { useActiveEnvironment } from '../../state/workspace.js';
 import { MethodBadge } from '../rest-api/method-badge.js';
 import { pathDisplayName } from '../rest-api/request-display-name.js';
-import type { RunnerSettings, RunnerState, RunnerSummary } from '../../../shared/runner-wire.js';
+import type { RunnerSettings, RunnerState, RunnerSummary } from '@shared/runner-wire.js';
 import { Results } from './result-list.js';
 
 export { resultMark, type ResultMark } from './result-list.js';

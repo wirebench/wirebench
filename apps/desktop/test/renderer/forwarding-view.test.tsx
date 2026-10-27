@@ -12,8 +12,8 @@ import { TrustDialog } from '../../src/renderer/features/ssh/trust-dialog.js';
 import { StatusBar } from '../../src/renderer/shell/status-bar.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
-import type { ForwardStateWire } from '../../src/shared/forward-wire.js';
-import type { HostsFileWire, ResolvedForwardWire, ResolvedHostWire } from '../../src/shared/ssh-wire.js';
+import type { ForwardStateWire } from '@wirebench/wire/forward-wire';
+import type { HostsFileWire, ResolvedForwardWire, ResolvedHostWire } from '@wirebench/wire/ssh-wire';
 
 const forward = {
   list: vi.fn(),

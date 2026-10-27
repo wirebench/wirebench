@@ -26,7 +26,7 @@ import {
 } from './outgoing-entry-fields.js';
 import { IssuedTokenFields } from './issued-token-fields.js';
 import { newSamlFormEntry, SamlTokenFields } from './saml-token-fields.js';
-import type { WssEntryWire, WssOutgoingWire } from '../../../shared/kinds/soap/wire.js';
+import type { WssEntryWire, WssOutgoingWire } from '@shared/kinds/soap/wire.js';
 
 /** The label each entry kind carries in the list and in the Add menu. */
 const ENTRY_LABEL: Readonly<Record<Exclude<WssEntryWire['kind'], 'unknown'>, string>> = {

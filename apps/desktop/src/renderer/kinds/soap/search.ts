@@ -7,7 +7,7 @@
  */
 
 import type * as Monaco from 'monaco-editor';
-import type { SearchMatchWire } from '../../../shared/wire-base.js';
+import type { SearchMatchWire } from '@shared/wire-base.js';
 import { getActiveRequestEditor } from '../../editor/active-request-editor.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { openInterfaceTab } from '../../features/interface-editor/interface-actions.js';

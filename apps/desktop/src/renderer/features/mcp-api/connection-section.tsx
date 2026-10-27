@@ -13,8 +13,8 @@ import { IconButton } from '../../components/icon-button.js';
 import { KV_INPUT_CLASS, KvTable, useCommittedDraft } from '../../components/kv-table.js';
 import { EnumSetting, SettingsGroup, SettingsRow, TextSetting } from '../../components/settings-grid.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
-import type { AuthConfigWire } from '../../../shared/wire-base.js';
-import type { McpTransportWire } from '../../../shared/kinds/mcp/wire.js';
+import type { AuthConfigWire } from '@shared/wire-base.js';
+import type { McpTransportWire } from '@shared/kinds/mcp/wire.js';
 
 type TransportType = McpTransportWire['type'];
 type HttpTransport = Extract<McpTransportWire, { readonly type: 'http' | 'sse' }>;

@@ -11,7 +11,7 @@ const rendererDir = fileURLToPath(new URL('../apps/desktop/src/renderer', import
 /**
  * Import specifiers that name no npm package: relative paths, this repo's own workspace
  * packages, Node built-ins, and the `@shared` path alias the desktop tsconfig and
- * `electron.vite.config.ts` both map to `apps/desktop/src/shared`.
+ * `electron.vite.config.ts` both map to `packages/wire/src` (`@wirebench/wire`).
  */
 const NOT_A_PACKAGE = [/^\./, /^@wirebench\//, /^node:/, /^@shared\//];
 

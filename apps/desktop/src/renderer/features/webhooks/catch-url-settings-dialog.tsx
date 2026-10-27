@@ -15,7 +15,7 @@ import type { SignatureForm } from './catch-url-signature.js';
 import { CATCH_URL_LIMITS, PRINTABLE_ASCII } from './limits.js';
 import { openCatchUrlTab } from './webhooks-actions.js';
 import { useWebhooksDialogs } from './webhooks-dialogs-state.js';
-import type { CatchUrlResponseWire, CatchUrlWire } from '../../../shared/wire-base.js';
+import type { CatchUrlResponseWire, CatchUrlWire } from '@shared/wire-base.js';
 
 export interface CatchUrlForm {
   readonly name: string;

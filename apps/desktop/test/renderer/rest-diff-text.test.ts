@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { prettyPrintBody } from '../../src/renderer/features/history/history-format.js';
 import { headerLines, restEntryTexts, restExchangeTexts } from '../../src/renderer/features/history/rest-diff-text.js';
-import type { HistoryEntryWire } from '../../src/shared/wire-types.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
 import { b64, makeRestExchange } from '../mocks/wire-fixtures.js';
 
 const XML = '<pet><name>Rex</name></pet>';

@@ -4,8 +4,8 @@
  * downloads, watches and uploads; this store only shows it and sends the user's answers back.
  */
 import { create } from 'zustand';
-import { EDIT_ASK_ABOVE_BYTES } from '../../../../shared/sftp-defaults.js';
-import type { SftpEditEvent } from '../../../../shared/sftp-wire.js';
+import { EDIT_ASK_ABOVE_BYTES } from '@shared/sftp-defaults.js';
+import type { SftpEditEvent } from '@shared/sftp-wire.js';
 import { showToast } from '../../../components/toast.js';
 import { useEditorsStore } from '../../../state/editors.js';
 import { ipc } from '../../../state/ipc-client.js';

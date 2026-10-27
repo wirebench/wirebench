@@ -15,7 +15,7 @@ import {
 import { leaves, type PaneNode } from '../../src/renderer/features/ssh/panes/pane-tree.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { quickOpenLayoutEntries } from '../../src/renderer/shell/quick-open.js';
-import type { LayoutNodeWire, LayoutWire } from '../../src/shared/layout-wire.js';
+import type { LayoutNodeWire, LayoutWire } from '@wirebench/wire/layout-wire';
 
 const pane = (paneId: string, hostId: string): PaneNode => ({ kind: 'pane', paneId, hostId });
 /** db-1 | (db-2 over db-3), the first split at 0.3. */

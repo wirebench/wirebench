@@ -18,7 +18,7 @@ import { useProjectStore, useTargetProjectId } from '../../state/project.js';
 import { useKeystoreAliases } from '../../components/use-keystore-aliases.js';
 import { WSS_FIELD_CLASS, WssSecretField } from './outgoing-entry-fields.js';
 import { useWssConfigPanelStore } from './wss-config-panel-store.js';
-import type { WssIncomingPatchWire, WssIncomingWire } from '../../../shared/kinds/soap/wire.js';
+import type { WssIncomingPatchWire, WssIncomingWire } from '@shared/kinds/soap/wire.js';
 
 const FIELD = WSS_FIELD_CLASS;
 

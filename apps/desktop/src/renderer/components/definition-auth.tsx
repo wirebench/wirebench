@@ -8,7 +8,7 @@
  * channels take, and decide when a stored credential may be offered for a URL.
  */
 import { AuthFields } from './auth-fields.js';
-import type { AuthConfigWire, DefinitionAuthWire } from '../../shared/wire-base.js';
+import type { AuthConfigWire, DefinitionAuthWire } from '@shared/wire-base.js';
 
 /** The schemes a definition fetch can send, in the form's order. */
 export const DEFINITION_AUTH_TYPES: readonly AuthConfigWire['type'][] = [

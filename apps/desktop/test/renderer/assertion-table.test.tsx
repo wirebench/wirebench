@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { AssertionTable, REQUEST_KINDS } from '../../src/renderer/features/assertions/assertion-table.js';
-import type { RequestAssertionWire } from '../../src/shared/wire-base.js';
+import type { RequestAssertionWire } from '@wirebench/wire/wire-base';
 
 afterEach(cleanup);
 

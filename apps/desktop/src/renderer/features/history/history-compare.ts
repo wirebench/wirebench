@@ -4,7 +4,7 @@
  */
 import { formatClockTime } from '../../lib/format-size.js';
 import { requestDisplayName } from '../rest-api/request-display-name.js';
-import type { HistoryEntryWire } from '../../../shared/wire-types.js';
+import type { HistoryEntryWire } from '@shared/wire-types.js';
 
 /** What picking `entryId` does, given the entry picked first (if any). */
 export type CompareStep =

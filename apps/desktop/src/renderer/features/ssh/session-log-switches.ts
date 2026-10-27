@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { LogSwitchTarget, LogSwitches } from '../../../shared/session-log-switch.js';
-import type { HostsFileWire } from '../../../shared/ssh-wire.js';
+import type { LogSwitchTarget, LogSwitches } from '@shared/session-log-switch.js';
+import type { HostsFileWire } from '@shared/ssh-wire.js';
 import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
 import { ancestorsOf } from './hosts-store.js';

@@ -1,0 +1,31 @@
+{
+  "name": "@wirebench/host",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Wirebench host: the main-process code behind the IPC channels, run behind an injected HostPlatform. Embedded by the desktop app's Electron shell; not published on its own.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./desktop": "./src/desktop.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ../.. --project host",
+    "typecheck": "tsc -p tsconfig.check.json"
+  },
+  "dependencies": {
+    "@lydell/node-pty": "1.1.0",
+    "@serialport/bindings-cpp": "13.0.1",
+    "@serialport/stream": "13.0.0",
+    "@wirebench/engine": "workspace:*",
+    "@wirebench/ssh": "workspace:*",
+    "@wirebench/wire": "workspace:*",
+    "graphql": "^17.0.2",
+    "graphql-language-service": "^5.7.0",
+    "yaml": "^2.9",
+    "zod": "^4.6.1"
+  }
+}

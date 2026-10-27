@@ -4,8 +4,8 @@
  * goes on the wire and nothing that does not.
  */
 import { KvTable } from '../../components/kv-table.js';
-import type { GrpcRequestPatchWire } from '../../../shared/kinds/grpc/wire.js';
-import type { KeyValueWire } from '../../../shared/wire-base.js';
+import type { GrpcRequestPatchWire } from '@shared/kinds/grpc/wire.js';
+import type { KeyValueWire } from '@shared/wire-base.js';
 
 export interface MetadataTabProps {
   readonly metadata: readonly KeyValueWire[];

@@ -4,8 +4,8 @@
  */
 import { folderChainOf } from '../../state/project.js';
 import { schemeSummary } from '../webhooks/signature-text.js';
-import type { WebhookCollectionWire } from '../../../shared/kinds/rest/wire.js';
-import type { RestFolderWire, WebhookSigningWire } from '../../../shared/wire-base.js';
+import type { WebhookCollectionWire } from '@shared/kinds/rest/wire.js';
+import type { RestFolderWire, WebhookSigningWire } from '@shared/wire-base.js';
 
 export interface InheritedSigning {
   readonly signing: WebhookSigningWire;

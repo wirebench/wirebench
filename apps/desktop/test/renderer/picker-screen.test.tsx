@@ -5,7 +5,7 @@ import { WorkspacePicker } from '../../src/renderer/features/workspace/picker-sc
 import { useAccountStore } from '../../src/renderer/state/account.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { AccountWire, WorkspaceSummaryWire } from '../../src/shared/wire-base.js';
+import type { AccountWire, WorkspaceSummaryWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 

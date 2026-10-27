@@ -1,4 +1,4 @@
-import type { KindId } from '../../shared/kinds/kind-module.js';
+import type { KindId } from '@shared/kinds/kind-module.js';
 import { entityIdOf, explorerRole, kindExplorer, TAB_KINDS, tabOwner } from '../kinds/index.js';
 import type { TabContainer } from '../kinds/tab-contribution.js';
 import { useEditorsStore } from '../state/editors.js';

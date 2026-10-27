@@ -3,7 +3,7 @@
  * server's, and the server's absent value the default, so an empty field shows what it falls to.
  */
 import { NumberSetting, SettingsGroup } from '../../components/settings-grid.js';
-import type { McpRequestPatchWire, McpRequestSettingsWire } from '../../../shared/kinds/mcp/wire.js';
+import type { McpRequestPatchWire, McpRequestSettingsWire } from '@shared/kinds/mcp/wire.js';
 
 export interface McpSettingsTabProps {
   readonly settings: McpRequestSettingsWire;

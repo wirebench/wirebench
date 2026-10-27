@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COMMAND_CATALOG } from '../src/shared/command-catalog.js';
+import { COMMAND_CATALOG } from '@wirebench/wire/command-catalog';
 
 /** The SSH area's commands as the palette lists them: hidden twins left out. */
 const sshEntries = Object.values(COMMAND_CATALOG).filter(

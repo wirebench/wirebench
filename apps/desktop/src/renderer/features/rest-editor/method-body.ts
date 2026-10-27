@@ -5,7 +5,7 @@
  * Only a change *into* those methods from one that carries no body does it. A POST whose body the
  * user set to None, then changed to PUT, keeps None: that was a choice, not a default.
  */
-import type { RestBodyWire } from '../../../shared/kinds/rest/wire.js';
+import type { RestBodyWire } from '@shared/kinds/rest/wire.js';
 
 const BODY_METHODS: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH']);
 

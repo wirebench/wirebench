@@ -4,7 +4,7 @@
  */
 import { create } from 'zustand';
 import { showToast } from '../components/toast.js';
-import type { MockExchangeEventWire, MockStateEvent } from '../../shared/wire-base.js';
+import type { MockExchangeEventWire, MockStateEvent } from '@shared/wire-base.js';
 import { ipc } from './ipc-client.js';
 
 /** How many requests a mock's log keeps; older ones fall off the end. */

@@ -5,7 +5,7 @@ import { CreateWorkspaceDialog } from '../../src/renderer/features/workspace/cre
 import { WorkspaceManageDialog } from '../../src/renderer/features/workspace/manage-dialog.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { WorkspaceSummaryWire } from '../../src/shared/wire-base.js';
+import type { WorkspaceSummaryWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 

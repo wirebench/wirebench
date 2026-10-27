@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SERVER_API_VERSION } from '@wirebench/engine';
-import { ServerClient } from '../../../../apps/desktop/src/main/server-client.js';
+import { ServerClient } from '../../../host/src/server-client.js';
 import type { ServerModule } from '../../src/context.js';
 import { buildServer } from '../../src/server.js';
 import { testContext } from '../helpers/context.js';

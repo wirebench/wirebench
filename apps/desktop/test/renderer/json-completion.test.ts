@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import type { JsonCompletionContext } from '@wirebench/engine/json';
 import { buildFieldCompletionItems } from '../../src/renderer/editor/json-completion.js';
-import type { GrpcMessageFieldWire } from '../../src/shared/kinds/grpc/wire.js';
+import type { GrpcMessageFieldWire } from '@wirebench/wire/kinds/grpc/wire';
 
 function field(overrides: Partial<GrpcMessageFieldWire> & { name: string }): GrpcMessageFieldWire {
   return { type: 'string', valueKind: 'scalar', repeated: false, ...overrides };

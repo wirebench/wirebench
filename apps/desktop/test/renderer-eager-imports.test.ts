@@ -21,19 +21,21 @@ import { describe, expect, it } from 'vitest';
 /** A path relative to `from`, with `/` separators on every platform so reports compare equal. */
 const posixRelative = (from: string, to: string): string => relative(from, to).split(sep).join('/');
 
-const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+/** Where `@shared/` (and `@wirebench/wire/`) resolve: the wire package's sources. */
+const wireSrcDir = join(repoRoot, 'packages/wire/src');
 
-/** Module files (relative to the alias root) that build zod schemas at load time. */
+/** Module files (relative to the wire sources) that build zod schemas at load time. */
 const FORBIDDEN_FILES = [
-  'shared/ipc.ts',
-  'shared/wire-types.ts',
-  'shared/wire-base.ts',
-  'shared/ssh-wire.ts',
-  'shared/sftp-wire.ts',
-  'shared/runner-wire.ts',
+  'ipc.ts',
+  'wire-types.ts',
+  'wire-base.ts',
+  'ssh-wire.ts',
+  'sftp-wire.ts',
+  'runner-wire.ts',
   ...['soap', 'rest', 'graphql', 'grpc', 'ws', 'mcp'].flatMap((kind) => [
-    `shared/kinds/${kind}/wire.ts`,
-    `shared/kinds/${kind}/channels.ts`,
+    `kinds/${kind}/wire.ts`,
+    `kinds/${kind}/channels.ts`,
   ]),
 ];
 /** Bare specifiers whose value import must not reach the renderer's eager chain. */
@@ -80,10 +82,14 @@ function valueImports(fileName: string, text: string): string[] {
   return specifiers;
 }
 
-/** Resolves a relative or `@shared/` specifier to a source file; `undefined` for a package or an asset. */
+/**
+ * Resolves a relative, `@shared/` or `@wirebench/wire/` specifier to a source file; `undefined` for any
+ * other package or an asset.
+ */
 function resolveLocal(from: string, specifier: string, sharedDir: string): string | undefined {
   let base: string;
   if (specifier.startsWith('@shared/')) base = join(sharedDir, specifier.slice('@shared/'.length));
+  else if (specifier.startsWith('@wirebench/wire/')) base = join(sharedDir, specifier.slice('@wirebench/wire/'.length));
   else if (specifier.startsWith('.')) base = resolve(dirname(from), specifier);
   else return undefined;
   const stem = base.replace(/\.(js|jsx|ts|tsx)$/, '');
@@ -93,10 +99,12 @@ function resolveLocal(from: string, specifier: string, sharedDir: string): strin
   return undefined; // CSS, `?worker` and other assets
 }
 
-/** Every eager value import of a forbidden module reachable from `entry`. */
-function eagerViolations(entry: string, srcDir: string): Violation[] {
-  const sharedDir = join(srcDir, 'shared');
-  const forbidden = new Set(FORBIDDEN_FILES.map((file) => join(srcDir, file)));
+/**
+ * Every eager value import of a forbidden module reachable from `entry`, with paths reported relative to
+ * `root`. `sharedDir` is where the wire modules (and so {@link FORBIDDEN_FILES}) live.
+ */
+function eagerViolations(entry: string, root: string, sharedDir: string): Violation[] {
+  const forbidden = new Set(FORBIDDEN_FILES.map((file) => join(sharedDir, file)));
   const seen = new Set<string>();
   const queue = [entry];
   const violations: Violation[] = [];
@@ -106,13 +114,13 @@ function eagerViolations(entry: string, srcDir: string): Violation[] {
     seen.add(file);
     for (const specifier of valueImports(file, readFileSync(file, 'utf-8'))) {
       if (FORBIDDEN_PACKAGES.includes(specifier)) {
-        violations.push({ from: posixRelative(srcDir, file), to: specifier });
+        violations.push({ from: posixRelative(root, file), to: specifier });
         continue;
       }
       const target = resolveLocal(file, specifier, sharedDir);
       if (target === undefined) continue;
       if (forbidden.has(target)) {
-        violations.push({ from: posixRelative(srcDir, file), to: posixRelative(srcDir, target) });
+        violations.push({ from: posixRelative(root, file), to: posixRelative(root, target) });
         continue;
       }
       queue.push(target);
@@ -121,24 +129,26 @@ function eagerViolations(entry: string, srcDir: string): Violation[] {
   return violations;
 }
 
-/** Every `.ts` file under `dir`, relative to `srcDir`, `/`-separated. */
-function filesUnder(dir: string, srcDir: string): string[] {
+/** Every `.ts` file under `dir`, relative to `root`, `/`-separated. */
+function filesUnder(dir: string, root: string): string[] {
   return readdirSync(dir, { recursive: true, encoding: 'utf8' })
     .filter((file) => file.endsWith('.ts'))
-    .map((file) => posixRelative(srcDir, join(dir, file)));
+    .map((file) => posixRelative(root, join(dir, file)));
 }
 
 describe('renderer eager imports', () => {
-  it('lists every file under shared/kinds/ that imports zod or a listed module as forbidden', () => {
-    const srcDir = join(desktopRoot, 'src');
-    const sharedDir = join(srcDir, 'shared');
+  it('names only wire modules that exist, so a moved file fails here instead of going unchecked', () => {
+    expect(FORBIDDEN_FILES.filter((file) => !existsSync(join(wireSrcDir, file)))).toEqual([]);
+  });
+
+  it('lists every file under the wire kinds/ that imports zod or a listed module as forbidden', () => {
     const forbidden = new Set(FORBIDDEN_FILES);
-    const unlisted = filesUnder(join(sharedDir, 'kinds'), srcDir).filter((file) => {
-      const path = join(srcDir, file);
+    const unlisted = filesUnder(join(wireSrcDir, 'kinds'), wireSrcDir).filter((file) => {
+      const path = join(wireSrcDir, file);
       const builds = valueImports(path, readFileSync(path, 'utf-8')).some((specifier) => {
         if (specifier === 'zod') return true;
-        const target = resolveLocal(path, specifier, sharedDir);
-        return target !== undefined && forbidden.has(posixRelative(srcDir, target));
+        const target = resolveLocal(path, specifier, wireSrcDir);
+        return target !== undefined && forbidden.has(posixRelative(wireSrcDir, target));
       });
       return builds && !forbidden.has(file);
     });
@@ -146,8 +156,7 @@ describe('renderer eager imports', () => {
   });
 
   it('reach no zod-schema module and no bare @wirebench/engine as a value from main.tsx', () => {
-    const srcDir = join(desktopRoot, 'src');
-    expect(eagerViolations(join(srcDir, 'renderer/main.tsx'), srcDir)).toEqual([]);
+    expect(eagerViolations(join(repoRoot, 'apps/desktop/src/renderer/main.tsx'), repoRoot, wireSrcDir)).toEqual([]);
   });
 
   it('tells value imports from type-only ones and stops at dynamic import()', () => {
@@ -171,7 +180,7 @@ describe('renderer eager imports', () => {
         mkdirSync(dirname(join(root, file)), { recursive: true });
         writeFileSync(join(root, file), text);
       }
-      expect(eagerViolations(join(root, 'renderer/main.tsx'), root)).toEqual([
+      expect(eagerViolations(join(root, 'renderer/main.tsx'), root, join(root, 'shared'))).toEqual([
         { from: 'renderer/bad.ts', to: 'shared/ssh-wire.ts' },
         { from: 'renderer/bad.ts', to: 'shared/wire-types.ts' },
         { from: 'renderer/bad.ts', to: '@wirebench/engine' },
