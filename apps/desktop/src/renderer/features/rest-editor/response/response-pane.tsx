@@ -60,6 +60,8 @@ export interface RestResponsePaneProps {
   readonly state: RestExchangeState | undefined;
   /** The request this response belongs to, which keys the Query view's own expression history. */
   readonly requestId: string;
+  /** Cancels the send in flight; absent hides the Cancel beside "Sending…". */
+  readonly onCancel?: (() => void) | undefined;
   /** Sends the request again from a failed send's panel; absent hides Retry. */
   readonly onRetry?: (() => void) | undefined;
   /** Why Retry cannot run now (the same reason Send is disabled). */
@@ -76,6 +78,7 @@ export interface RestResponsePaneProps {
 export function RestResponsePane({
   state,
   requestId,
+  onCancel,
   onRetry,
   retryDisabledReason,
   onOpenTimeoutSetting,
@@ -84,12 +87,11 @@ export function RestResponsePane({
 }: RestResponsePaneProps) {
   const [tab, setTab] = useState<TabId>('body');
   const sending = state?.status === 'sending';
-  // While a plain send is out, the last response stays on screen, dimmed under the Sending bar,
-  // rather than the pane going blank until the new one lands.
-  const stale = sending && state?.exchange === undefined && state?.live === undefined ? state?.previous : undefined;
+  // While a send is out the pane shows "Sending…" with a Cancel, not the last response dimmed: an
+  // old answer under a new request reads as if it were the new one (G12).
   // A cancel keeps that response on screen, under a slim "Cancelled" bar instead of the error panel.
   const kept = state?.status === 'error' && state.error?.code === 'aborted' ? state.previous : undefined;
-  const exchange = state?.exchange ?? stale ?? kept;
+  const exchange = state?.exchange ?? kept;
   // While an event stream is open there is no exchange yet, only the live half; once the send
   // resolves the exchange's `stream` replaces it with the same rows.
   const live = exchange === undefined ? state?.live : undefined;
@@ -185,7 +187,7 @@ export function RestResponsePane({
             setShown({ exampleId, sendId: state?.sendId });
           }}
         />
-        {exchange !== undefined && stale === undefined && kept === undefined && shownExample === undefined && (
+        {exchange !== undefined && kept === undefined && shownExample === undefined && (
           <InspectorIconButton
             label="Save response…"
             data-testid="rest-response-save"
@@ -247,15 +249,28 @@ export function RestResponsePane({
           describeReferenceField={describeReferenceField}
         />
       ) : exchange === undefined ? (
-        // The bar above already says "Sending…"; the pane says it only once.
-        sending ? null : (
+        // The bar above already says "Sending…" and counts the seconds; the pane offers the Cancel.
+        sending ? (
+          <div data-testid="rest-response-sending" className="flex items-center gap-3 p-3 text-sm text-fg-subtle">
+            <span>Waiting for the response.</span>
+            {onCancel !== undefined && (
+              <button
+                type="button"
+                data-testid="rest-response-cancel"
+                className="rounded-sm border border-hairline px-2 py-0.5 text-fg-default hover:bg-surface-hover"
+                onClick={onCancel}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        ) : (
           <p className="p-3 text-sm text-fg-subtle">Send the request to see its response.</p>
         )
       ) : (
         <div
           data-testid="rest-response-view"
-          className={`flex min-h-0 flex-1 flex-col transition-opacity ${stale !== undefined ? 'opacity-50' : ''}`}
-          {...(stale !== undefined ? { 'aria-busy': true, 'data-stale': '' } : {})}
+          className="flex min-h-0 flex-1 flex-col"
         >
           {kept !== undefined && (
             <CancelledBar

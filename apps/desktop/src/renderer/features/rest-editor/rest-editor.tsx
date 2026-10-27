@@ -396,6 +396,9 @@ export function RestEditor({ requestId }: RestEditorProps) {
     <RestResponsePane
       state={exchange}
       requestId={requestId}
+      onCancel={() => {
+        void cancelRest(requestId);
+      }}
       onRetry={onSend}
       retryDisabledReason={sendDisabledReason}
       onOpenTimeoutSetting={() => {
