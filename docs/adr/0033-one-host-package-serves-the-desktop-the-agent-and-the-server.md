@@ -1,6 +1,6 @@
 # ADR-0033: one host package serves the desktop, the agent and the server
 
-Date: 2026-10-24 · Status: proposed (design
+Date: 2026-10-24 · Status: accepted 2026-10-27, built in #779 and the slice 1 Part B pull request (design
 `docs/specs/2026-10-24-wirebench-hosted-edition-design.md` §3.1, §5.1, §5.2) · Issue: #776, slice 1 #777
 
 ## Context
@@ -54,3 +54,33 @@ programs.** Precisely:
 - A main-process feature that needs a new Electron API now adds it to `HostPlatform` first, with a
   statement of what the agent and the server do without it; that is a small cost paid on every such
   feature, and it is what keeps the three hosts honest.
+
+## What the move taught
+
+Built in two pull requests: #779 put main behind `HostPlatform` as `createHost(platform)` inside the
+app, and Part B moved it into `packages/host`, with the shared wire code in `packages/wire`. Where the
+build differs from the decision above:
+
+- **Two exports, not one.** The package root exports `createHost`, `Host`, `HostPlatform`, `Caller`,
+  `Capability`, `HandlerTable`, and the `HostOptions`, `HostWindows` and `AttachOptions` that
+  `createHost` takes (Electron-only hooks: windows, menu, updater, device keys). The Electron shell also
+  needs a handful of internals (registration helpers, the event emitter, `runAsCaller`, security and
+  Kerberos setup), which `@wirebench/host/desktop` exports by name. Only the desktop shell may import
+  it. Nothing enforces that yet; the gate belongs to the agent slice, where a second embedder first
+  exists.
+- **`createHost` is async** and must be called after Electron is ready, because preferences are read
+  before channels register.
+- **Optional capabilities are gated per registration function**, by whether the platform provides the
+  member (dialogs, shell, power), not per channel.
+- **Callers carry a reset signal** (`onReset`, on navigation start or commit), because per-window
+  services reset at different moments today and each keeps its own.
+- **Both packages are source-only and bundled.** `@wirebench/wire` and `@wirebench/host` are
+  `devDependencies` of the desktop app, so electron-vite bundles them into main and preload. `ipc.ts`'s
+  channel registry is too large an inferred type for a `.d.ts` (TS7056), so neither package emits.
+  Third-party packages the host imports stay desktop `dependencies`, so the asar still carries them.
+- **The gate is a script, not the import-graph gate.** `scripts/check-host-boundary.ts` refuses
+  Electron imports, relative imports that leave `packages/host`, and top-level mutable state (with a
+  short named allowlist). The platform supplies the app version, so the host reads no desktop file.
+- **Left for later:** host tests still run on jsdom and some still carry dead `electron` mocks. A few
+  test helpers are shared across the two packages by relative path. The host's dependency list is kept
+  in step with the desktop's by hand.

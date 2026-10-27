@@ -3,6 +3,9 @@
 Wirebench is an Electron app in three parts: a sandboxed React renderer that draws the IDE
 shell, a main process that owns every side effect, and `@wirebench/engine` — a plain Node
 library that knows SOAP, WSDL, XSD, REST, OpenAPI and HTTP, and knows nothing about Electron.
+The main process is `@wirebench/host` (`packages/host`), which imports no Electron either: the
+desktop app embeds it as `createHost(platform)` with an Electron `HostPlatform`, and keeps only
+the shell (windows, menus, the updater, the entry point) in `apps/desktop/src/main` (ADR-0033).
 
 The rule that shapes everything else: **the renderer has no network, no filesystem and no
 secrets.** It asks; main decides and acts.
@@ -326,12 +329,14 @@ introduced.
 | Project folder format, environments, properties | `packages/core/src/project` |
 | Workspace format, environments, properties (`${#Workspace#…}`) | `packages/core/src/workspace` |
 | IPC channel schemas (one file, both directions) | `packages/wire/src/ipc.ts` |
-| IPC handlers | `apps/desktop/src/main/ipc/` |
+| IPC handlers | `packages/host/src/ipc/` |
+| The host seam: `createHost(platform)`, `HostPlatform`, `Caller`, per-host state (ADR-0033) | `packages/host/src/host/` |
+| The Electron shell: the platform, windows, menus, the updater, the entry point | `apps/desktop/src/main/{index.ts,electron/}` |
 | WorkspaceService, ProjectHost, ProjectRouter, HistoryService | `packages/host/src/{workspace-service,project-host,project-router,history-service}.ts` |
 | Secrets, path safety, redaction | `packages/host/src/{secrets,path-*,redact}.ts` |
-| Desktop areas: the `AreaModule` contract and the static `AREAS` list; renderer and main halves; the SSH area (hosts, terminal) | `packages/wire/src/area-module.ts` and `packages/wire/src/areas/`, `renderer/areas/index.ts`, `main/areas.ts`; `packages/ssh`, `main/{hosts-service,ssh-service}.ts` |
+| Desktop areas: the `AreaModule` contract and the static `AREAS` list; renderer and main halves; the SSH area (hosts, terminal) | `packages/wire/src/area-module.ts` and `packages/wire/src/areas/`, `renderer/areas/index.ts`, `packages/host/src/areas.ts`; `packages/ssh`, `packages/host/src/{hosts-service,ssh-service}.ts` |
 | OAuth2 flows and the loopback listener | `packages/host/src/oauth2.ts` |
-| Desktop kinds: the `KindModule` contract and `KINDS`; each kind's wire schemas, channels, mutations, host, send steps, editors and explorer rows | `packages/wire/src/kinds/`, `main/kinds/`, `renderer/kinds/` |
+| Desktop kinds: the `KindModule` contract and `KINDS`; each kind's wire schemas, channels, mutations, host, send steps, editors and explorer rows | `packages/wire/src/kinds/`, `packages/host/src/kinds/`, `renderer/kinds/` |
 | OpenAPI import | `packages/host/src/openapi-import.ts` |
 | IDE shell, editors, feature panels | `apps/desktop/src/renderer/` |
 | Environments view (sidebar list + editor page) | `apps/desktop/src/renderer/features/environments/` |
@@ -347,10 +352,10 @@ is an *area*: an `AreaModule` (`packages/wire/src/area-module.ts`) with an id, a
 item and sidebar copy, composed in the static `AREAS` list, from which `AreaId` is derived. The renderer half
 (`renderer/areas/index.ts`) supplies the sidebar view, the area's extra commands and, optionally, a `StatusItem`
 component that the status bar (`shell/status-bar.tsx`) renders for each enabled area (the SSH area's counts running
-port forwards); the main half (`main/areas.ts`)
+port forwards); the main half (`packages/host/src/areas.ts`)
 registers its channels. The managed policy file's `areas` section (`ssh: false`, #360) or `WIREBENCH_AREAS="ssh=off"`
 switches an area off, resolved through the engine's `resolveFeatures` with the policy as its restrict-only level
-(`main/areas.ts`, `resolveAreas`): main registers none of its channels, the renderer none of its commands, and the
+(`packages/host/src/areas.ts`, `resolveAreas`): main registers none of its channels, the renderer none of its commands, and the
 rail leaves it out (`app.areas` carries the enabled ids; `app.features` the rows Settings shows). The contract is
 `@internal`, not a plugin API. The SSH area is the first area to bring its own tab kind and channels; its model and
 sessions live in `packages/ssh`, which imports neither the engine nor Electron. See
@@ -361,7 +366,7 @@ sessions live in `packages/ssh`, which imports neither the engine nor Electron. 
 The desktop's protocol code is split the same way, one *kind* per protocol. The shared half
 (`packages/wire/src/kinds/<kind>/`) holds the kind's id, feature descriptor, label and tab kinds (`kind.ts`, in the
 static `KINDS` list), its wire schemas (`wire.ts`) and its IPC channel fragments (`channels.ts`); `wire-types.ts` and
-`ipc.ts` compose them, and `wire-base.ts` holds what no kind owns. The main half (`main/kinds/<kind>/`, `MAIN_KINDS`)
+`ipc.ts` compose them, and `wire-base.ts` holds what no kind owns. The host half (`kinds/<kind>/` in `packages/host/src`, `MAIN_KINDS`)
 holds its mutations, project host, router, IPC channels, send steps and History, Log and Search facets; the renderer
 half (`renderer/kinds/<kind>/`, `RENDERER_KINDS`) its tabs, explorer tree and row roles, History, Search and Log facets
 and commands. The shell reads the lists and names no kind. A feature switch (Settings → Features, the `features`

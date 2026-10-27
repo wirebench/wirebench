@@ -341,7 +341,7 @@ runs the system `git`, never a bundled one, and only from the main process:
   `cwd` pinned to the workspace's tree. There is no code path that concatenates git arguments into
   a command string.
 - **A subcommand allow-list.** Only the git subcommands the sync engine actually needs
-  (`GIT_SUBCOMMANDS` in `apps/desktop/src/main/sync/git-cli.ts`) can be invoked; anything else is
+  (`GIT_SUBCOMMANDS` in `packages/core/src/sync/git-cli.ts`) can be invoked; anything else is
   refused with `git-failed` before a process is spawned.
 - **No prompts, ever.** `GIT_TERMINAL_PROMPT=0` and an empty `GIT_ASKPASS` mean git can never block
   waiting for a password typed at a terminal the user cannot see. `GIT_SSH_COMMAND=ssh -o
