@@ -5,10 +5,10 @@
  * no Electron and no network in between.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { createHost, type Host } from '../../src/main/host/create-host.js';
+import { createHost, type Host } from '../../../../packages/host/src/host/create-host.js';
 import { buildApi } from '../../src/preload/build-api.js';
-import { runAsCaller } from '../../src/main/window-scope.js';
-import { createFakePlatform, fakeCaller } from '../helpers/fake-platform.js';
+import { runAsCaller } from '../../../../packages/host/src/window-scope.js';
+import { createFakePlatform, fakeCaller } from '../../../../packages/host/test/helpers/fake-platform.js';
 
 let host: Host | undefined;
 

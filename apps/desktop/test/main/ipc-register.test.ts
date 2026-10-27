@@ -3,17 +3,17 @@ import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { defineChannel } from '@wirebench/wire/ipc-contract';
-import { HandlerTable } from '../../src/main/ipc/register.js';
-import { Redactor } from '../../src/main/host/redactor.js';
-import { callerId } from '../../src/main/window-scope.js';
-import { fakeCaller } from '../helpers/fake-platform.js';
+import { HandlerTable } from '../../../../packages/host/src/ipc/register.js';
+import { Redactor } from '../../../../packages/host/src/host/redactor.js';
+import { callerId } from '../../../../packages/host/src/window-scope.js';
+import { fakeCaller } from '../../../../packages/host/test/helpers/fake-platform.js';
 
 const electron = vi.hoisted(() => ({
   ipcMain: { handle: vi.fn() },
 }));
 vi.mock('electron', () => electron);
 
-const { registerHandler } = await import('../../src/main/ipc/register.js');
+const { registerHandler } = await import('../../../../packages/host/src/ipc/register.js');
 const { bindIpc } = await import('../../src/main/electron/ipc-binding.js');
 const { callerForWebContents } = await import('../../src/main/electron/electron-platform.js');
 

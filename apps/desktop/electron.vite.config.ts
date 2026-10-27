@@ -3,7 +3,7 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import type { Plugin } from 'vite';
-import { CONTENT_SECURITY_POLICY } from './src/main/security.js';
+import { CONTENT_SECURITY_POLICY } from '../../packages/host/src/security.js';
 
 /**
  * The renderer reaches the wire code (`@wirebench/wire`) through the `@shared` alias; main and preload import
@@ -31,8 +31,8 @@ function cspMetaPlugin(): Plugin {
 
 export default defineConfig({
   main: {
-    // `@wirebench/wire` is a devDependency, so this plugin bundles it: it ships TypeScript sources and
-    // must never be left as a runtime `require`.
+    // `@wirebench/host` and `@wirebench/wire` are devDependencies, so this plugin bundles them: they ship
+    // TypeScript sources and must never be left as a runtime `require`.
     plugins: [externalizeDepsPlugin()],
     resolve: { alias: sharedAlias },
   },

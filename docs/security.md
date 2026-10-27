@@ -12,8 +12,8 @@ thing with authority, and it verifies everything it is asked to do.**
 Every window runs with the same hardened `webPreferences` — `contextIsolation: true`,
 `sandbox: true`, `nodeIntegration: false`, `webSecurity: true`,
 `allowRunningInsecureContent: false` — pinned as one object
-(`apps/desktop/src/main/security.ts`) and snapshot-tested
-(`apps/desktop/test/security-baseline.test.ts`), so a window created with weaker settings
+(`packages/host/src/security.ts`) and snapshot-tested
+(`packages/host/test/security-baseline.test.ts`), so a window created with weaker settings
 fails the build rather than shipping.
 
 A strict CSP (`default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:`) is
@@ -67,7 +67,7 @@ Request and response bodies are masked by key too. In JSON bodies (`application/
 `+json` type) and urlencoded form bodies, the values of `password`, `passwd`, `secret`, `token`,
 `access_token`, `refresh_token`, `id_token`, `client_secret`, `api_key`, `apikey` and
 `authorization` — compared case-insensitively, at any depth — become `<redacted>` wherever
-show-secrets is off (`SECRET_BODY_KEYS` in `apps/desktop/src/main/redact.ts`). A value that is an
+show-secrets is off (`SECRET_BODY_KEYS` in `packages/host/src/redact.ts`). A value that is an
 object or array under such a key is masked whole; a body that is not valid JSON, or is compressed,
 is left as it is.
 
@@ -546,7 +546,7 @@ specific way for a server to reach further than its own response:
   an observer the engine service *awaits* before it builds the step's own summary, so even the
   step that produced the secret has it masked in its HTTP Log raw response and its History entry. A
   secret transfer never carries its value to the renderer or into a report. Tests:
-  `apps/desktop/test/sequence-runner.test.ts`, `packages/cli/test/integration/sequence.test.ts`.
+  `packages/host/test/sequence-runner.test.ts`, `packages/cli/test/integration/sequence.test.ts`.
 
 A sequence file may come from a teammate, so it is untrusted input too. It is parsed with the
 project's YAML parser after a size check, validated field by field, and names requests only by id,
@@ -587,7 +587,7 @@ project, so it may come from a teammate, a pull or an import. The decision is
   value lands exactly where it would have. A `${secret:…}` the script writes itself is never resolved
   (`script-secret-denied`), so neither a script nor a server value passed through one can name a secret
   to be read. Tests: `packages/engine/test/integration/run/scripts.test.ts`,
-  `apps/desktop/test/script-send.test.ts`.
+  `packages/host/test/script-send.test.ts`.
 - **What a script produces is data.** A value it sets with `vars.set` is held to every rule of
   ADR-0015 above, and one marked secret (or holding a known secret) is masked from the moment it is
   set. In the desktop, the post-response script runs inside the same awaited observer as a sequence's
@@ -745,7 +745,7 @@ Responses' cookies are kept in a jar per workspace (#44,
   `Cookies` database; a jar still there is moved over when its workspace opens), encrypted with the
   OS keychain (`safeStorage`); without it nothing is written. Session cookies never reach disk. The jar never reaches the project folder, a shared workspace's git tree or the server.
   A file from a newer version is left untouched and the jar runs in memory; a corrupt file is set aside
-  as `.corrupt`. Tests: `apps/desktop/test/cookie-store.test.ts`.
+  as `.corrupt`. Tests: `packages/host/test/cookie-store.test.ts`.
 - **Opt-in sending.** Jar cookies go out only from REST requests with *Send cookies* on (off by
   default), only to a matching domain and path, and `Secure` cookies only over https. An http response
   cannot set or overwrite a `Secure` cookie. Tests: `packages/engine/test/unit/rest/cookie-jar.test.ts`.
@@ -770,7 +770,7 @@ A variable's current value (#44) is a session-only override of its committed val
 
 - **The store is memory only.** The current-value store lives in the main process. It is never written
   to the project, the workspace, the keychain or the server, is never shared, and is gone on quit. Tests:
-  `apps/desktop/test/current-values.test.ts`.
+  `packages/host/test/current-values.test.ts`.
 - **A send records what was sent.** A request that uses a current value expands it like a committed
   value, so History, the HTTP Log and HAR export record the expanded value just as they would a
   committed one. Keep credentials in `${secret:…}` references, which those records redact, not in a current value.
@@ -792,7 +792,7 @@ is the whole credential.
 - **No held connection.** A configured response delay never holds a database connection.
 - **Untrusted content.** A capture is shown only through the viewers that already show untrusted
   response bodies, so nothing in it is rendered as HTML or run. The app keeps captures in memory
-  while their tab is open (`apps/desktop/src/main/hooks/hooks-service.ts`) and never writes them to
+  while their tab is open (`packages/host/src/hooks/hooks-service.ts`) and never writes them to
   disk.
 
 ### CI tokens
@@ -839,7 +839,7 @@ key the passphrase cannot open is listed as locked rather than read. **Install p
 in with the host's existing auth and runs a fixed `sh -c` script that receives the public key as a quoted
 argument (never spliced into the script); it only appends to `~/.ssh/authorized_keys`, never removes a line,
 and takes group and other write off `~/.ssh` and the file. Tests: `packages/ssh/test/unit/keygen.test.ts`,
-`packages/ssh/test/unit/install.test.ts`, `apps/desktop/test/ssh-keys.test.ts`.
+`packages/ssh/test/unit/install.test.ts`, `packages/host/test/ssh-keys.test.ts`.
 
 ## FIDO2 security keys
 
@@ -904,7 +904,7 @@ is checked on a Windows machine). Linux has none.
   keeping another way into the same hosts.
 
 Tests: `packages/ssh/test/unit/device-key.test.ts`, `packages/ssh/test/integration/device-key-auth.test.ts`
-(a real `sshd`, with a software signer for both key types), `apps/desktop/test/device-keys.test.ts`, and
+(a real `sshd`, with a software signer for both key types), `packages/host/test/device-keys.test.ts`, and
 `scripts/build-device-helper.test.ts`, which builds the macOS helper and checks its answers.
 
 ## App lock
@@ -919,7 +919,7 @@ open. The keychain's key list reads only public halves and is not gated. Nothing
 Only main turns the lock on (`appLock.set`), after one prompt the person passes, so it is never on where it
 cannot ask. `preferences.update` refuses `secrets.appLock`, as it does the CA bundle path. Turning it off asks
 for nothing. The lock guards against someone else at an unlocked, unattended machine, not against code
-running as the user. Tests: `apps/desktop/test/app-lock.test.ts`, `apps/desktop/test/ipc-app-lock.test.ts`.
+running as the user. Tests: `packages/host/test/app-lock.test.ts`, `packages/host/test/ipc-app-lock.test.ts`.
 
 ## The packaged binary
 

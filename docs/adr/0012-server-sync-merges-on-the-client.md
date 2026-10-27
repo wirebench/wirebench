@@ -14,7 +14,7 @@ client posts its changed files and the server answers with either a new head or 
 means the server runs the three-way merge.
 
 Two things settled against that. First, the backend contract suite
-(`apps/desktop/test/sync/backend-contract.test.ts`) fixes `merge()` as an operation that leaves the client
+(`packages/host/test/sync/backend-contract.test.ts`) fixes `merge()` as an operation that leaves the client
 *ahead* until `push()`: a pull must never publish local commits. A merge on the server either publishes
 them as it merges, which breaks that contract, or needs a dry-run endpoint that returns what a client
 computes from a diff anyway. Second, the engine's `mergeFiles` is the same code wherever it runs, so

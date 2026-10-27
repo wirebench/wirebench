@@ -24,11 +24,11 @@ things is true:
 
 1. **Containment.** The path, with `realpath` resolved through whatever prefix of it already
    exists, lies inside a folder the app owns — the project folder or its caches
-   (`apps/desktop/src/main/path-containment.ts`). Resolving the existing prefix is what makes a
+   (`packages/host/src/path-containment.ts`). Resolving the existing prefix is what makes a
    symlink planted mid-path unable to escape the check, and it works for files that do not
    exist yet (a Dump File target) without creating anything.
 2. **Dialog evidence.** The user drove a native OS dialog to that exact path during this
-   session, and main remembers it (`apps/desktop/src/main/dialog-picks.ts`). The renderer can
+   session, and main remembers it (`packages/host/src/dialog-picks.ts`). The renderer can
    *ask* for a dialog; it cannot fabricate the answer.
 
 The two halves are joined in one predicate (`path-access.ts`), so every feature asks the same

@@ -268,7 +268,7 @@ rpm:
 # format's trade-off, not a packaging mistake. Kerberos is not supported here either (#268): it
 # needs `/etc/krb5.conf` and the ticket cache, and the `kerberos-tickets` interface only reaches a
 # file cache in `/tmp`, never the keyring or KCM caches, and is never connected automatically. The
-# app reports Kerberos unavailable in the snap without loading the binding (`src/main/kerberos.ts`).
+# app reports Kerberos unavailable in the snap without loading the binding (`packages/host/src/kerberos.ts`).
 snap:
   artifactName: wirebench_${version}_${arch}.${ext}
   confinement: strict

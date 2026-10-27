@@ -128,6 +128,16 @@ export default defineConfig({
         resolve: { conditions: ['module', 'browser'] },
       },
       {
+        // The main-process code moved here from the desktop app with its tests, which still run as they
+        // did there: under jsdom, with the same resolve conditions (and the same `graphql` reason).
+        test: {
+          name: 'host',
+          include: ['packages/host/test/**/*.test.{ts,tsx}'],
+          environment: 'jsdom',
+        },
+        resolve: { conditions: ['module', 'browser'] },
+      },
+      {
         test: {
           name: 'scripts',
           include: ['scripts/**/*.test.ts'],

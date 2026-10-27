@@ -4,20 +4,25 @@
  * `createHost(platform)`, whose channels it serves over `ipcMain`.
  */
 import { electronApp, optimizer } from '@electron-toolkit/utils';
+import { createHost, type Host } from '@wirebench/host';
+import {
+  APP_SCHEME,
+  APP_SCHEME_PRIVILEGES,
+  appVersion,
+  DeviceHelper,
+  DeviceKeys,
+  deviceHelperDir,
+  setUpKerberos,
+} from '@wirebench/host/desktop';
 import { setDeviceKeySigner } from '@wirebench/ssh';
 import { app, BrowserWindow, protocol } from 'electron';
-import { appVersion } from './app-version.js';
-import { DeviceHelper, DeviceKeys, deviceHelperDir } from './device-keys.js';
 import { registerAppProtocol } from './electron/app-protocol-handler.js';
 import { createElectronAppMenu } from './electron/app-menu.js';
 import { callerForWebContents, createElectronPlatform } from './electron/electron-platform.js';
 import { bindIpc } from './electron/ipc-binding.js';
 import { createUpdateController } from './electron/update-service.js';
 import { createMainWindow } from './electron/windows.js';
-import { createHost, type Host } from './host/create-host.js';
-import { setUpKerberos } from './kerberos.js';
 import { portableDataDir } from './portable.js';
-import { APP_SCHEME, APP_SCHEME_PRIVILEGES } from './security.js';
 
 // Must run before `app.ready` — Electron only honours scheme privileges registered this
 // early. This is what lets the packaged renderer be served from a real (non-`file://`)

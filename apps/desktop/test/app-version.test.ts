@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { version as manifestVersion } from '../package.json' with { type: 'json' };
 
-const { appVersion } = await import('../src/main/app-version.js');
+const { appVersion } = await import('../../../packages/host/src/app-version.js');
 
 const app = (packaged: boolean) => ({ packaged: () => packaged, version: () => '9.9.9' });
 

@@ -1,13 +1,13 @@
 /**
- * Keeps the desktop host portable (host seam, ADR-0033): host code under `apps/desktop/src/main` reaches
+ * Keeps the host portable (host seam, ADR-0033): host code in `@wirebench/host` (`packages/host/src`) reaches
  * Electron only through `HostPlatform`, and keeps its state in the host it belongs to.
  *
- * Two rules, applied to every file under the host except `electron/` (the one place that adapts Electron)
- * and `index.ts` (the entry that wires it up):
+ * Two rules, applied to every file under the host (the Electron shell that adapts it stays in the desktop app,
+ * under `apps/desktop/src/main`):
  *  - `electron-import`: no import of `electron` or any `electron/*` subpath, in any spelling (`from`,
  *    `import(...)`, a bare `import`, `require(...)`; type imports too: they still tie host code to
- *    Electron's types), and no relative import of anything under `electron/`, which pulls Electron in
- *    transitively.
+ *    Electron's types), and no relative import of anything under the desktop app's `src`, which pulls the
+ *    Electron shell in transitively.
  *  - `module-state`: no top-level `let`/`var`, and no top-level `new Map`/`Set`/`WeakMap`/`WeakSet`/
  *    `AsyncLocalStorage` held in a `const` that is not annotated `ReadonlyMap`/`ReadonlySet`. A second host
  *    in the same process would share such state. The few legitimate cases are in {@link ALLOWED_MODULE_STATE}.
@@ -20,7 +20,10 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /** Where the host lives, relative to the repo root. */
-const HOST_DIR = 'apps/desktop/src/main';
+const HOST_DIR = 'packages/host/src';
+
+/** Where the Electron shell lives, relative to the repo root: host code never imports from here. */
+const SHELL_DIR = 'apps/desktop/src';
 
 export interface HostBoundaryViolation {
   /** Repo-root-relative, forward slashes. */
@@ -31,7 +34,7 @@ export interface HostBoundaryViolation {
 }
 
 export interface AllowedModuleState {
-  /** The file's base name, e.g. `serial-session.ts`. */
+  /** The file's repo-relative path with forward slashes, e.g. `packages/host/src/serial-session.ts`. */
   file: string;
   /** The top-level binding. */
   name: string;
@@ -41,17 +44,17 @@ export interface AllowedModuleState {
 /** Top-level bindings that may stay, each with why. */
 export const ALLOWED_MODULE_STATE: readonly AllowedModuleState[] = [
   {
-    file: 'serial-session.ts',
+    file: 'packages/host/src/serial-session.ts',
     name: 'loading',
     reason: 'a module cache of an immutable dynamic import',
   },
   {
-    file: 'script-host.ts',
+    file: 'packages/host/src/script-host.ts',
     name: 'typeCache',
     reason: 'a WeakMap keyed by objects; holds no host data past its keys',
   },
   {
-    file: 'window-scope.ts',
+    file: 'packages/host/src/window-scope.ts',
     name: 'caller',
     reason: 'per-call context carrier; holds no host data outside a call',
   },
@@ -66,18 +69,17 @@ const TOP_LEVEL_CONST = /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::\s*(.+?
 const MUTABLE_HOLDER = /^new\s+(?:Map|Set|WeakMap|WeakSet|AsyncLocalStorage)\b/;
 const READONLY_ANNOTATION = /^Readonly(?:Map|Set)\b/;
 
-/** The `.ts`/`.tsx` files under `dir` (recursively), as paths relative to `hostDir`. */
+/** The `.ts`/`.tsx` files under `hostDir` (recursively), as paths relative to it. */
 function sourceFiles(hostDir: string): string[] {
   return readdirSync(hostDir, { recursive: true, encoding: 'utf8' })
     .map((file) => file.split('\\').join('/'))
     .filter((file) => /\.tsx?$/.test(file) && !file.endsWith('.d.ts'))
-    .filter((file) => file !== 'index.ts' && !file.startsWith('electron/'))
     .sort();
 }
 
-function isAllowed(file: string, name: string): boolean {
-  const base = file.slice(file.lastIndexOf('/') + 1);
-  return ALLOWED_MODULE_STATE.some((entry) => entry.file === base && entry.name === name);
+/** Whether `name` at the top level of `repoPath` (repo-relative) is in {@link ALLOWED_MODULE_STATE}. */
+function isAllowed(repoPath: string, name: string): boolean {
+  return ALLOWED_MODULE_STATE.some((entry) => entry.file === repoPath && entry.name === name);
 }
 
 export interface HostBoundaryResult {
@@ -86,11 +88,11 @@ export interface HostBoundaryResult {
   scanned: number;
 }
 
-/** Whether `specifier` (relative, from `file`) lands inside the host's `electron/` directory. */
-function importsElectronDir(hostDir: string, file: string, specifier: string): boolean {
+/** Whether `specifier` (relative, from `file` under `hostDir`) lands inside the Electron shell's sources. */
+function importsShell(root: string, hostDir: string, file: string, specifier: string): boolean {
   const target = resolve(hostDir, dirname(file), specifier);
-  const electronDir = join(hostDir, 'electron');
-  return target === electronDir || target.startsWith(electronDir + sep);
+  const shellDir = join(root, SHELL_DIR);
+  return target === shellDir || target.startsWith(shellDir + sep);
 }
 
 /**
@@ -113,10 +115,8 @@ export function findHostBoundaryViolations(root: string): HostBoundaryResult {
         violations.push({ file: repoPath, line, rule, text: text.trim() });
       };
       if (!/^\s*(?:\/\/|\*|\/\*)/.test(text)) {
-        const intoElectronDir = [...text.matchAll(RELATIVE_IMPORT)].some((m) =>
-          importsElectronDir(hostDir, file, m[1]!),
-        );
-        if (ELECTRON_IMPORT.test(text) || intoElectronDir) {
+        const intoShell = [...text.matchAll(RELATIVE_IMPORT)].some((m) => importsShell(root, hostDir, file, m[1]!));
+        if (ELECTRON_IMPORT.test(text) || intoShell) {
           report('electron-import');
           return;
         }

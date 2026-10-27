@@ -11,15 +11,14 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app } from 'electron';
-import { appVersion } from '../app-version.js';
-import { requireCapability } from '../host/capability.js';
-import type { HostPlatform } from '../host/platform.js';
+import type { HostPlatform } from '@wirebench/host';
+import { appVersion, requireCapability } from '@wirebench/host/desktop';
 // `electron-updater` is CommonJS: under this package's ESM output a named import of
 // `autoUpdater` throws at load ("Named export not found"), so the default export is
 // destructured instead. The main bundle externalises it, so this is what actually runs.
 import electronUpdater from 'electron-updater';
-import { githubFeedFrom, UpdateController } from '../updater.js';
-import type { UpdateChannel, UpdateStatus } from '../updater.js';
+import { githubFeedFrom, UpdateController } from '@wirebench/host/desktop';
+import type { UpdateChannel, UpdateStatus } from '@wirebench/host/desktop';
 
 const { autoUpdater } = electronUpdater;
 

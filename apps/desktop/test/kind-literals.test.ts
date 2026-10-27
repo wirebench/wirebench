@@ -7,15 +7,16 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const DESKTOP = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+/** The repo root: the renderer's shell files are in the desktop app, main's in `@wirebench/host`. */
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 
 const SHELL_FILES = [
-  'src/renderer/shell/editor-area.tsx',
-  'src/renderer/state/workspace-tabs.ts',
-  'src/renderer/features/explorer/explorer-view.tsx',
-  'src/renderer/features/explorer/tree-nodes.ts',
-  'src/main/send/exchange.ts',
-  'src/main/project-mutations.ts',
+  'apps/desktop/src/renderer/shell/editor-area.tsx',
+  'apps/desktop/src/renderer/state/workspace-tabs.ts',
+  'apps/desktop/src/renderer/features/explorer/explorer-view.tsx',
+  'apps/desktop/src/renderer/features/explorer/tree-nodes.ts',
+  'packages/host/src/send/exchange.ts',
+  'packages/host/src/project-mutations.ts',
 ];
 
 /** A kind's id, or one of its tab or explorer row kinds (`rest-request`, `grpc-api`, …). */
@@ -29,7 +30,7 @@ const KIND_LITERAL =
 const ALLOWED = [/^\s*\|\s*'/, /^\s*(?:const preview = await previewOf\(deps, requestId, )?\{ kind: '\w+', \.\.\./];
 
 function literalsIn(path: string): string[] {
-  const text = readFileSync(resolve(DESKTOP, path), 'utf8');
+  const text = readFileSync(resolve(ROOT, path), 'utf8');
   return text
     .split('\n')
     .map((line, index) => ({ line, number: index + 1 }))

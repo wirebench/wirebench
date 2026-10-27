@@ -1,7 +1,7 @@
 // @vitest-environment node
 /** The Electron end of `app.registerMenu`: where a menu click goes when several windows are open. */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { asCaller } from './helpers/ipc-table.js';
+import { asCaller } from '../../../packages/host/test/helpers/ipc-table.js';
 
 let focusedWindow: { isDestroyed: () => boolean; webContents: unknown } | null = null;
 

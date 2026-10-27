@@ -10,7 +10,8 @@ import {
   shell,
   type WebContents,
 } from 'electron';
-import { ALL_CAPABILITIES, type Caller, type DialogOwner, type HostPlatform } from '../host/platform.js';
+import type { Caller, HostPlatform } from '@wirebench/host';
+import { ALL_CAPABILITIES, type DialogOwner } from '@wirebench/host/desktop';
 
 interface Entry {
   readonly caller: Caller;

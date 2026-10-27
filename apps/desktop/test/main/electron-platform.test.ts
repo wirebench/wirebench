@@ -2,7 +2,7 @@
 /** The Electron implementation of `HostPlatform`: thin delegation plus the per-contents `Caller`. */
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ALL_CAPABILITIES } from '../../src/main/host/platform.js';
+import { ALL_CAPABILITIES } from '../../../../packages/host/src/host/platform.js';
 
 const electron = vi.hoisted(() => ({
   app: { getPath: vi.fn(), getVersion: vi.fn(), isPackaged: true, quit: vi.fn() },

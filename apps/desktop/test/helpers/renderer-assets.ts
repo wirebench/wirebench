@@ -14,7 +14,7 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { REPO_ROOT } from './fixtures.js';
+import { REPO_ROOT } from '../../../../packages/host/test/helpers/fixtures.js';
 
 /**
  * The renderer's build output directory, resolved from the repository root rather than from

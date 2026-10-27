@@ -16,7 +16,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, realpathSync }
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-/** Not followed: the app loads the vendored binding instead (`apps/desktop/src/main/kerberos.ts`). */
+/** Not followed: the app loads the vendored binding instead (`packages/host/src/kerberos.ts`). */
 const NOT_LOADED = new Set(['kerberos']);
 
 interface AsarEntry {

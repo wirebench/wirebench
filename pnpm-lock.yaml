@@ -163,6 +163,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^5.2.0
         version: 5.2.0(vite@7.3.7(@types/node@24.13.4)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.0))
+      '@wirebench/host':
+        specifier: workspace:*
+        version: link:../../packages/host
       '@wirebench/wire':
         specifier: workspace:*
         version: link:../../packages/wire
@@ -429,6 +432,39 @@ importers:
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
+
+  packages/host:
+    dependencies:
+      '@lydell/node-pty':
+        specifier: 1.1.0
+        version: 1.1.0
+      '@serialport/bindings-cpp':
+        specifier: 13.0.1
+        version: 13.0.1
+      '@serialport/stream':
+        specifier: 13.0.0
+        version: 13.0.0
+      '@wirebench/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@wirebench/ssh':
+        specifier: workspace:*
+        version: link:../ssh
+      '@wirebench/wire':
+        specifier: workspace:*
+        version: link:../wire
+      graphql:
+        specifier: ^17.0.2
+        version: 17.0.2
+      graphql-language-service:
+        specifier: ^5.7.0
+        version: 5.7.0(graphql@17.0.2)
+      yaml:
+        specifier: ^2.9
+        version: 2.9.0
+      zod:
+        specifier: ^4.6.1
+        version: 4.6.1
 
   packages/protocol-graphql:
     dependencies:

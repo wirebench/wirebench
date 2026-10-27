@@ -109,9 +109,9 @@ malformed message from either direction fails at the boundary with a typed error
 deeper in. Renderer-supplied paths are never trusted (ADR-0005); secrets never travel back out
 (ADR-0004).
 
-**The workspace layer (ADR-0006).** `WorkspaceService` (`apps/desktop/src/main/workspace-service.ts`)
+**The workspace layer (ADR-0006).** `WorkspaceService` (`packages/host/src/workspace-service.ts`)
 owns the one open workspace: its manifest, its environments, and one `ProjectHost` per project
-in it (`apps/desktop/src/main/project-host.ts` — the renamed, otherwise-unchanged v1 project
+in it (`packages/host/src/project-host.ts` — the renamed, otherwise-unchanged v1 project
 engine, now instantiated per project instead of once globally). It implements
 `ProjectRouter`, the union of every `ProjectHost` method an `ipc/*.ts` module needs, re-expressed
 so each call resolves its host from the entity id already on the request (`hostFor(projectId)` /
@@ -194,7 +194,7 @@ preferences, cookies, a contract check, gRPC schemas, and hooks that report a se
 member is absent the send behaves as the command line's does. One member gates rather than lends:
 `approveCommand` says whether an MCP server's local command may start, and a host without it refuses
 every stdio send (`mcp-command-unapproved`). The desktop builds its host from its own
-services (`apps/desktop/src/main/send/host.ts`); the command line builds one from the environment.
+services (`packages/host/src/send/host.ts`); the command line builds one from the environment.
 
 `open` returns an `ExchangeHandle` with the live events, `push`, `halfClose`, `close` and `cancel`, and
 a `result` that rejects with the send's error: a send's own failure never throws from `open`. It throws
@@ -243,7 +243,7 @@ The walk-through of the desktop's side, for a SOAP request:
 
 The authorization-code grant needs a redirect URI the authorization server can reach, and the only
 one that does not involve running a server somewhere is `http://127.0.0.1:<port>/callback`. So main
-(`apps/desktop/src/main/oauth2.ts`) opens the authorization URL in the user's **own browser** — via
+(`packages/host/src/oauth2.ts`) opens the authorization URL in the user's **own browser** — via
 `shell.openExternal`, never in a `BrowserWindow`, so the user is typing their password into their own
 browser with its own password manager and its own address bar, not into a window Wirebench drew — and
 listens on loopback for the redirect.
@@ -282,7 +282,7 @@ filter is applied. This is an additive format change: project and workspace mani
 `formatVersion: 2` and the global properties file to `version: 2` (ADR-0003, ADR-0006). A
 version-1 file still loads (a missing list defaults to empty); a file from a newer build than
 this one is refused with the same clear error a too-new file has always produced — except the
-global properties loader (`apps/desktop/src/main/global-properties.ts`), which does not check its
+global properties loader (`packages/host/src/global-properties.ts`), which does not check its
 `version` field at all yet (tracked in `docs/roadmap.md`'s "Known limitations carried from 1.0").
 A 1.0.0 build cannot open a file this build has saved: it refuses `formatVersion: 2` with its
 existing "created by a newer version of Wirebench" error.
@@ -327,18 +327,18 @@ introduced.
 | Workspace format, environments, properties (`${#Workspace#…}`) | `packages/core/src/workspace` |
 | IPC channel schemas (one file, both directions) | `packages/wire/src/ipc.ts` |
 | IPC handlers | `apps/desktop/src/main/ipc/` |
-| WorkspaceService, ProjectHost, ProjectRouter, HistoryService | `apps/desktop/src/main/{workspace-service,project-host,project-router,history-service}.ts` |
-| Secrets, path safety, redaction | `apps/desktop/src/main/{secrets,path-*,redact}.ts` |
+| WorkspaceService, ProjectHost, ProjectRouter, HistoryService | `packages/host/src/{workspace-service,project-host,project-router,history-service}.ts` |
+| Secrets, path safety, redaction | `packages/host/src/{secrets,path-*,redact}.ts` |
 | Desktop areas: the `AreaModule` contract and the static `AREAS` list; renderer and main halves; the SSH area (hosts, terminal) | `packages/wire/src/area-module.ts` and `packages/wire/src/areas/`, `renderer/areas/index.ts`, `main/areas.ts`; `packages/ssh`, `main/{hosts-service,ssh-service}.ts` |
-| OAuth2 flows and the loopback listener | `apps/desktop/src/main/oauth2.ts` |
+| OAuth2 flows and the loopback listener | `packages/host/src/oauth2.ts` |
 | Desktop kinds: the `KindModule` contract and `KINDS`; each kind's wire schemas, channels, mutations, host, send steps, editors and explorer rows | `packages/wire/src/kinds/`, `main/kinds/`, `renderer/kinds/` |
-| OpenAPI import | `apps/desktop/src/main/openapi-import.ts` |
+| OpenAPI import | `packages/host/src/openapi-import.ts` |
 | IDE shell, editors, feature panels | `apps/desktop/src/renderer/` |
 | Environments view (sidebar list + editor page) | `apps/desktop/src/renderer/features/environments/` |
 | REST editor, API tab, import dialog | `apps/desktop/src/renderer/features/{rest-editor,rest-api}/`, `.../features/explorer/import-openapi-dialog.tsx` |
 | Right rail, Code slide-over, resizable/collapsible panel handles | `apps/desktop/src/renderer/shell/{right-rail,code-panel,panel-handle}.tsx` |
 | Request details inspector, project tab | `apps/desktop/src/renderer/features/request-editor/inspectors/details-inspector.tsx`, `apps/desktop/src/renderer/features/project/project-tab.tsx` |
-| Global properties file (`disabled` list, `version: 2`) | `apps/desktop/src/main/global-properties.ts` |
+| Global properties file (`disabled` list, `version: 2`) | `packages/host/src/global-properties.ts` |
 
 ## Desktop areas
 

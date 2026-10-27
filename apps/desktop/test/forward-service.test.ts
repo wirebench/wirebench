@@ -2,8 +2,8 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Caller } from '../src/main/host/platform.js';
-import { asCaller } from './helpers/ipc-table.js';
+import type { Caller } from '../../../packages/host/src/host/platform.js';
+import { asCaller } from '../../../packages/host/test/helpers/ipc-table.js';
 import {
   FORWARD_RECONNECT_ATTEMPTS,
   FORWARD_RECONNECT_DELAYS_MS,
@@ -21,10 +21,10 @@ import type {
   KnownHostEntry,
 } from '@wirebench/ssh';
 import { describe, expect, it, vi } from 'vitest';
-import { createForwardBinds } from '../src/main/forward-binds.js';
-import { ForwardService } from '../src/main/forward-service.js';
-import type { ForwardServiceDeps } from '../src/main/forward-service.js';
-import { RefusalStore, createSshConnector } from '../src/main/ssh-connect.js';
+import { createForwardBinds } from '../../../packages/host/src/forward-binds.js';
+import { ForwardService } from '../../../packages/host/src/forward-service.js';
+import type { ForwardServiceDeps } from '../../../packages/host/src/forward-service.js';
+import { RefusalStore, createSshConnector } from '../../../packages/host/src/ssh-connect.js';
 import { RECONNECT_DELAYS_MS, RECONNECT_MAX_DELAY_MS } from '../src/renderer/features/ssh/reconnect.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../src/renderer/state/preferences-defaults.js';
 import { events } from '@wirebench/wire/ipc';

@@ -1,0 +1,102 @@
+// @vitest-environment node
+/**
+ * `ProjectHost` sending a webhook item: its send (`previewRest`) routes an id the APIs do not hold
+ * to the webhook collection, `restMeta` names it for History, `restAuthOf` answers for the collection, and the
+ * contract checker never runs for it.
+ */
+import { mkdtempSync, rmSync } from 'node:fs';
+import { webhooksOf } from '@wirebench/engine';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { DialogPicks } from '../src/dialog-picks.js';
+import { EngineService } from '../src/engine-service.js';
+import { ProjectHost } from '../src/project-host.js';
+import { ExchangeRegistry, previewRest, type SendThroughEngineDeps } from '../src/send/exchange.js';
+import { webhookCollectionId } from '../src/webhook-ids.js';
+import { createHostState } from '../src/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
+
+const hostState = createHostState();
+
+let dir: string;
+let host: ProjectHost;
+
+beforeEach(async () => {
+  dir = mkdtempSync(join(tmpdir(), 'wirebench-host-webhook-'));
+  host = new ProjectHost(
+    new EngineService(),
+    testHooks({ newestRest: () => undefined }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    new DialogPicks(),
+  );
+  await host.create({ dir: join(dir, 'project'), name: 'Hooks' });
+});
+
+afterEach(async () => {
+  await host.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+/** A collection with one folder holding one item, and the target set through its property. */
+async function webhookItem(): Promise<{ projectId: string; requestId: string }> {
+  await host.mutate({ kind: 'ensure-webhooks' });
+  await host.mutate({ kind: 'set-project-property', name: 'webhookTarget', value: 'https://receiver.test/in' });
+  await host.mutate({ kind: 'update-webhooks', patch: { auth: { type: 'bearer', tokenRef: 'abc123def456ghi789' } } });
+  await host.mutate({ kind: 'add-webhook-folder', name: 'Orders' });
+  const folderId = webhooksOf(host.model()!)?.folders[0]?.id as string;
+  await host.mutate({
+    kind: 'add-webhook-request',
+    parentId: folderId,
+    name: 'Paid',
+    draft: { method: 'POST', url: '/paid' },
+  });
+  const project = host.model();
+  return { projectId: project?.id as string, requestId: webhooksOf(project!)?.folders[0]?.requests[0]?.id as string };
+}
+
+/** `requestId` resolved as the host's send would resolve it. */
+const resolve = (requestId: string) =>
+  previewRest(
+    {
+      hostState,
+      service: new EngineService(),
+      registry: new ExchangeRegistry(),
+      project: host as unknown as SendThroughEngineDeps['project'],
+    },
+    requestId,
+    undefined,
+  );
+
+describe('ProjectHost sending a webhook item', () => {
+  it('resolves the send against the collection target, with the collection credentials', async () => {
+    const { requestId } = await webhookItem();
+    const resolution = await resolve(requestId);
+    expect(resolution?.input.baseUrl).toBe('https://receiver.test/in');
+    expect(resolution?.input.request.url).toBe('/paid');
+    expect(resolution?.baseUrlSource).toBe('target');
+    expect(resolution?.auth).toMatchObject({ type: 'bearer', tokenRef: 'abc123def456ghi789' });
+  });
+
+  it('refuses a target left empty', async () => {
+    const { requestId } = await webhookItem();
+    await host.mutate({ kind: 'set-project-property', name: 'webhookTarget', value: '' });
+    await expect(resolve(requestId)).rejects.toMatchObject({ code: 'webhook-target-missing' });
+  });
+
+  it('names the item for History and never checks it against a contract', async () => {
+    const { projectId, requestId } = await webhookItem();
+    expect(host.kind('rest').restMeta(requestId)).toEqual({
+      requestName: 'Paid',
+      apiName: 'Webhooks',
+      folderPath: 'Orders',
+    });
+    expect(
+      host.kind('rest').restContractFor(requestId, { method: 'POST', url: 'https://receiver.test/in/paid' }),
+    ).toBeUndefined();
+    expect(host.kind('rest').restAuthOf(webhookCollectionId(projectId))).toMatchObject({ type: 'bearer' });
+  });
+});

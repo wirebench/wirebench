@@ -8,7 +8,7 @@ import {
   serialOpenErrorCode,
   type SerialBinding,
   type SerialModules,
-} from '../../src/main/serial-session.js';
+} from '../../../../packages/host/src/serial-session.js';
 import * as form from '../../src/renderer/features/ssh/serial-section.js';
 
 // The packages' typings do not resolve through their `exports`: what the tests use of them, typed.

@@ -196,7 +196,7 @@ export async function launchApp(options: LaunchOptions = {}): Promise<LaunchedAp
         WIREBENCH_E2E: '1',
         WIREBENCH_USER_DATA_DIR: userDataDir,
         // Playwright cannot drive a native folder picker, so specs that link, import or export
-        // a project folder pin what the pickers return (see `main/native-dialogs.ts`).
+        // a project folder pin what the pickers return (see `packages/host/src/native-dialogs.ts`).
         ...e2eEnv(options),
       },
     });

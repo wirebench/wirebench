@@ -9,9 +9,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import { ExchangeCache } from '../../src/main/exchange-cache.js';
-import { registerExchangeChannels } from '../../src/main/ipc/exchanges.js';
-import { ShowSecretsFlag } from '../../src/main/secrets.js';
+import { ExchangeCache } from '../../../../packages/host/src/exchange-cache.js';
+import { registerExchangeChannels } from '../../../../packages/host/src/ipc/exchanges.js';
+import { ShowSecretsFlag } from '../../../../packages/host/src/secrets.js';
 import { RestResponsePane } from '../../src/renderer/features/rest-editor/response/response-pane.js';
 import { subscribeToSecretsVisibility, useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
@@ -22,8 +22,8 @@ import type { RestExchangeSummary } from '@wirebench/wire/kinds/rest/wire';
 import type { WirebenchApi } from '../../src/preload/build-api.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeRestExchange } from '../mocks/exchange-fixtures.js';
-import { createFakePlatform } from '../helpers/fake-platform.js';
-import { tableInto } from '../helpers/ipc-table.js';
+import { createFakePlatform } from '../../../../packages/host/test/helpers/fake-platform.js';
+import { tableInto } from '../../../../packages/host/test/helpers/ipc-table.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));

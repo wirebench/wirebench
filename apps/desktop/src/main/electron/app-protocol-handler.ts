@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { protocol } from 'electron';
 import { resolveRendererFile } from '../app-protocol.js';
-import { APP_SCHEME } from '../security.js';
+import { APP_SCHEME } from '@wirebench/host/desktop';
 
 /**
  * Where the built renderer lives relative to the main process's own output directory. The main
