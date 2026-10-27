@@ -2,12 +2,15 @@
  * Keeps the host portable (host seam, ADR-0033): host code in `@wirebench/host` (`packages/host/src`) reaches
  * Electron only through `HostPlatform`, and keeps its state in the host it belongs to.
  *
- * Two rules, applied to every file under the host (the Electron shell that adapts it stays in the desktop app,
- * under `apps/desktop/src/main`):
+ * Three rules, applied to every file under the host (the Electron shell that adapts it stays in the desktop
+ * app, under `apps/desktop/src/main`):
  *  - `electron-import`: no import of `electron` or any `electron/*` subpath, in any spelling (`from`,
  *    `import(...)`, a bare `import`, `require(...)`; type imports too: they still tie host code to
- *    Electron's types), and no relative import of anything under the desktop app's `src`, which pulls the
- *    Electron shell in transitively.
+ *    Electron's types).
+ *  - `outside-package`: no relative import, static or dynamic, JSON included, that resolves outside
+ *    `packages/host`. Host code reaches other code only by package name, so an embedding gets everything the
+ *    host needs from its declared dependencies (the Electron shell, the desktop manifest and other packages'
+ *    sources are all out of reach).
  *  - `module-state`: no top-level `let`/`var`, and no top-level `new Map`/`Set`/`WeakMap`/`WeakSet`/
  *    `AsyncLocalStorage` held in a `const` that is not annotated `ReadonlyMap`/`ReadonlySet`. A second host
  *    in the same process would share such state. The few legitimate cases are in {@link ALLOWED_MODULE_STATE}.
@@ -22,14 +25,21 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 /** Where the host lives, relative to the repo root. */
 const HOST_DIR = 'packages/host/src';
 
-/** Where the Electron shell lives, relative to the repo root: host code never imports from here. */
-const SHELL_DIR = 'apps/desktop/src';
+/** The host package, relative to the repo root: no relative import may leave it. */
+const PACKAGE_DIR = 'packages/host';
+
+/** Why each rule exists, printed beside a violation. */
+export const RULE_REASONS: Readonly<Record<HostBoundaryViolation['rule'], string>> = {
+  'electron-import': 'host code reaches Electron only through HostPlatform',
+  'outside-package': 'host code reaches outside its package',
+  'module-state': 'a second host in the process would share this state',
+};
 
 export interface HostBoundaryViolation {
   /** Repo-root-relative, forward slashes. */
   file: string;
   line: number;
-  rule: 'electron-import' | 'module-state';
+  rule: 'electron-import' | 'outside-package' | 'module-state';
   text: string;
 }
 
@@ -88,11 +98,11 @@ export interface HostBoundaryResult {
   scanned: number;
 }
 
-/** Whether `specifier` (relative, from `file` under `hostDir`) lands inside the Electron shell's sources. */
-function importsShell(root: string, hostDir: string, file: string, specifier: string): boolean {
+/** Whether `specifier` (relative, from `file` under `hostDir`) lands outside the host package. */
+function leavesPackage(root: string, hostDir: string, file: string, specifier: string): boolean {
   const target = resolve(hostDir, dirname(file), specifier);
-  const shellDir = join(root, SHELL_DIR);
-  return target === shellDir || target.startsWith(shellDir + sep);
+  const packageDir = join(root, PACKAGE_DIR);
+  return target !== packageDir && !target.startsWith(packageDir + sep);
 }
 
 /**
@@ -115,9 +125,12 @@ export function findHostBoundaryViolations(root: string): HostBoundaryResult {
         violations.push({ file: repoPath, line, rule, text: text.trim() });
       };
       if (!/^\s*(?:\/\/|\*|\/\*)/.test(text)) {
-        const intoShell = [...text.matchAll(RELATIVE_IMPORT)].some((m) => importsShell(root, hostDir, file, m[1]!));
-        if (ELECTRON_IMPORT.test(text) || intoShell) {
+        if (ELECTRON_IMPORT.test(text)) {
           report('electron-import');
+          return;
+        }
+        if ([...text.matchAll(RELATIVE_IMPORT)].some((m) => leavesPackage(root, hostDir, file, m[1]!))) {
+          report('outside-package');
           return;
         }
       }
@@ -144,12 +157,12 @@ function main(): void {
   const { violations, scanned } = findHostBoundaryViolations(root);
   if (violations.length === 0) {
     process.stdout.write(
-      `host boundary: no electron imports or module state in host code (${String(scanned)} files scanned)\n`,
+      `host boundary: no electron imports, imports outside the package or module state in host code (${String(scanned)} files scanned)\n`,
     );
     return;
   }
   for (const v of violations) {
-    process.stderr.write(`${v.file}:${String(v.line)}: ${v.rule}: ${v.text}\n`);
+    process.stderr.write(`${v.file}:${String(v.line)}: ${v.rule} (${RULE_REASONS[v.rule]}): ${v.text}\n`);
   }
   process.exitCode = 1;
 }

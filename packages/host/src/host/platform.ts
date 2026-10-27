@@ -104,6 +104,7 @@ export interface HostPlatform {
     trash(path: string): Promise<void>;
   };
   readonly app: {
+    /** The version to show the user (status bar, About panel, update prompt); a platform derives it however it must. */
     version(): string;
     /** The version of the runtime the host runs in (Electron's, on the desktop); shown by `app.version`. */
     runtimeVersion(): string;

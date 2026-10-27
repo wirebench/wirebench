@@ -8,7 +8,6 @@ import { createHost, type Host } from '@wirebench/host';
 import {
   APP_SCHEME,
   APP_SCHEME_PRIVILEGES,
-  appVersion,
   DeviceHelper,
   DeviceKeys,
   deviceHelperDir,
@@ -70,7 +69,7 @@ setDeviceKeySigner(deviceKeys);
 // the About panel read "Wirebench" in development too. A packaged bundle already carries it as
 // `productName` (CFBundleName); without this, a `pnpm dev` run shows Electron's own name.
 app.setName('Wirebench');
-app.setAboutPanelOptions({ applicationName: 'Wirebench', applicationVersion: appVersion(platform.app) });
+app.setAboutPanelOptions({ applicationName: 'Wirebench', applicationVersion: platform.app.version() });
 
 /** The one host, built once the app is ready; the quit path asks it to shut down. */
 let host: Host | undefined;

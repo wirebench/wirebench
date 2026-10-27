@@ -10,7 +10,6 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { mkdir, rename } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { basename, join } from 'node:path';
-import { appVersion } from '../app-version.js';
 import {
   connectWebSocket,
   findGit,
@@ -317,7 +316,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     // Managed machines: an administrator's policy file locks the settings it names (see `policy.ts`).
     policyFile: policyFilePath({ platform: process.platform, env: process.env, isPackaged: platform.app.packaged() }),
     // A default User-Agent names the release that sends it.
-    appVersion: appVersion(platform.app),
+    appVersion: platform.app.version(),
   });
 
   /**
@@ -1673,7 +1672,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     request: requestDeps,
     picks: dialogPicks,
     dialogs: nativeDialogs,
-    appVersion: appVersion(platform.app),
+    appVersion: platform.app.version(),
   });
   registerKeystoreChannels(handlerTable, { project: workspaceService, picks: dialogPicks, platform });
   registerCertificateChannels(handlerTable, { project: workspaceService, preferences: preferencesService });

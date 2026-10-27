@@ -2,7 +2,6 @@ import type { Caller, HostPlatform } from '../host/platform.js';
 import { AREAS } from '@wirebench/wire/area-module';
 import type { AreaId } from '@wirebench/wire/area-module';
 import type { KindId } from '@wirebench/wire/kinds/kind-module';
-import { appVersion } from '../app-version.js';
 import { channels } from '@wirebench/wire/ipc';
 import type { AppFeaturesWire, FeatureStateWire, MenuCommandWire, UpdateStatusWire } from '@wirebench/wire/wire-base';
 import { registerHandler, type HandlerTable } from './register.js';
@@ -51,7 +50,7 @@ export function registerAppChannels(
 ): void {
   registerHandler(table, channels.app.version, () =>
     Promise.resolve({
-      version: appVersion(host.app),
+      version: host.app.version(),
       electron: host.app.runtimeVersion(),
       node: process.versions.node,
     }),

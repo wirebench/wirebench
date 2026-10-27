@@ -5,7 +5,6 @@
  * `createHost`: process set-up done before the host exists, and the pieces its Electron adapters
  * (windows, menu, updater, IPC binding) share with the host.
  */
-export { appVersion } from './app-version.js';
 export { DeviceHelper, DeviceKeys, deviceHelperDir } from './device-keys.js';
 export { requireCapability } from './host/capability.js';
 export { ALL_CAPABILITIES } from './host/platform.js';

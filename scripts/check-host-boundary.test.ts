@@ -132,17 +132,21 @@ describe('findHostBoundaryViolations', () => {
     ]);
   });
 
-  it("reports a relative import of the desktop app's sources, where the Electron shell lives", () => {
+  it('reports a relative import that leaves the package, static, dynamic or JSON', () => {
     const root = fixture({
       'a.ts':
         "import { createElectronPlatform } from '../../../apps/desktop/src/main/electron/electron-platform.js';\n",
-      'host/b.ts': "import { x } from '../../../../apps/desktop/src/main/index.js';\n",
+      'host/b.ts': "import { version } from '../../../../apps/desktop/package.json' with { type: 'json' };\n",
       'c.ts': "import { y } from '../../wire/src/ipc.js';\n",
-      'd.ts': "import { z } from './electron/menu.js';\n",
+      'd.ts': "const m = await import('../../engine/src/index.js');\n",
+      'e.ts': "import { name } from '../package.json' with { type: 'json' };\n",
+      'f.ts': "import { z } from './sub/inner.js';\n",
     });
     expect(violationsOf(root).map((v) => [v.file, v.rule])).toEqual([
-      ['packages/host/src/a.ts', 'electron-import'],
-      ['packages/host/src/host/b.ts', 'electron-import'],
+      ['packages/host/src/a.ts', 'outside-package'],
+      ['packages/host/src/c.ts', 'outside-package'],
+      ['packages/host/src/d.ts', 'outside-package'],
+      ['packages/host/src/host/b.ts', 'outside-package'],
     ]);
   });
 });
