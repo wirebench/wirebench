@@ -163,6 +163,7 @@ export function createElectronPlatform(): HostPlatform {
     },
     app: {
       version: () => app.getVersion(),
+      runtimeVersion: () => process.versions.electron,
       packaged: () => app.isPackaged,
       quit: () => {
         app.quit();

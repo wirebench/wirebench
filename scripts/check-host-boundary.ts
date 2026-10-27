@@ -4,8 +4,10 @@
  *
  * Two rules, applied to every file under the host except `electron/` (the one place that adapts Electron)
  * and `index.ts` (the entry that wires it up):
- *  - `electron-import`: no `from 'electron'` (type imports too: they still tie host code to Electron's
- *    types) and no `require('electron')`.
+ *  - `electron-import`: no import of `electron` or any `electron/*` subpath, in any spelling (`from`,
+ *    `import(...)`, a bare `import`, `require(...)`; type imports too: they still tie host code to
+ *    Electron's types), and no relative import of anything under `electron/`, which pulls Electron in
+ *    transitively.
  *  - `module-state`: no top-level `let`/`var`, and no top-level `new Map`/`Set`/`WeakMap`/`WeakSet`/
  *    `AsyncLocalStorage` held in a `const` that is not annotated `ReadonlyMap`/`ReadonlySet`. A second host
  *    in the same process would share such state. The few legitimate cases are in {@link ALLOWED_MODULE_STATE}.
@@ -14,8 +16,8 @@
  * Wired into `pnpm check` as `pnpm check:host-boundary`.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /** Where the host lives, relative to the repo root. */
 const HOST_DIR = 'apps/desktop/src/main';
@@ -55,9 +57,12 @@ export const ALLOWED_MODULE_STATE: readonly AllowedModuleState[] = [
   },
 ];
 
-const ELECTRON_IMPORT = /(?:\bfrom\s+['"]electron['"]|\brequire\(\s*['"]electron['"]\s*\))/;
+const ELECTRON_IMPORT = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s*|\brequire\(\s*)['"]electron(?:\/[^'"]*)?['"]/;
+const RELATIVE_IMPORT = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s*|\brequire\(\s*)['"](\.[^'"]*)['"]/g;
 const TOP_LEVEL_LET = /^(?:export\s+)?(?:let|var)\s+([A-Za-z_$][\w$]*)/;
-const TOP_LEVEL_CONST = /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::\s*([^=]+?))?\s*=\s*(.*)$/;
+// The annotation may hold an arrow type (`() => void`), so the initialiser starts at the first `=` that is
+// not the `=` of an `=>`.
+const TOP_LEVEL_CONST = /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::\s*(.+?))?\s*=(?!>)\s*(.*)$/;
 const MUTABLE_HOLDER = /^new\s+(?:Map|Set|WeakMap|WeakSet|AsyncLocalStorage)\b/;
 const READONLY_ANNOTATION = /^Readonly(?:Map|Set)\b/;
 
@@ -75,12 +80,31 @@ function isAllowed(file: string, name: string): boolean {
   return ALLOWED_MODULE_STATE.some((entry) => entry.file === base && entry.name === name);
 }
 
-/** The violations in the host under `root` (the repo root); empty when the host is clean. */
-export function findHostBoundaryViolations(root: string): HostBoundaryViolation[] {
+export interface HostBoundaryResult {
+  violations: HostBoundaryViolation[];
+  /** How many files were checked; a gate that scanned none has checked nothing. */
+  scanned: number;
+}
+
+/** Whether `specifier` (relative, from `file`) lands inside the host's `electron/` directory. */
+function importsElectronDir(hostDir: string, file: string, specifier: string): boolean {
+  const target = resolve(hostDir, dirname(file), specifier);
+  const electronDir = join(hostDir, 'electron');
+  return target === electronDir || target.startsWith(electronDir + sep);
+}
+
+/**
+ * The violations in the host under `root` (the repo root), and how many files were scanned. Throws when the
+ * host directory is missing: a wrong root must fail the gate, not pass it.
+ */
+export function findHostBoundaryViolations(root: string): HostBoundaryResult {
   const hostDir = join(root, HOST_DIR);
-  if (!existsSync(hostDir)) return [];
+  if (!existsSync(hostDir)) {
+    throw new Error(`host boundary: no host directory at ${hostDir}`);
+  }
   const violations: HostBoundaryViolation[] = [];
-  for (const file of sourceFiles(hostDir)) {
+  const files = sourceFiles(hostDir);
+  for (const file of files) {
     const repoPath = relative(root, join(hostDir, file)).split('\\').join('/');
     const lines = readFileSync(join(hostDir, file), 'utf8').split('\n');
     lines.forEach((text, index) => {
@@ -88,9 +112,14 @@ export function findHostBoundaryViolations(root: string): HostBoundaryViolation[
       const report = (rule: HostBoundaryViolation['rule']): void => {
         violations.push({ file: repoPath, line, rule, text: text.trim() });
       };
-      if (ELECTRON_IMPORT.test(text) && !/^\s*(?:\/\/|\*|\/\*)/.test(text)) {
-        report('electron-import');
-        return;
+      if (!/^\s*(?:\/\/|\*|\/\*)/.test(text)) {
+        const intoElectronDir = [...text.matchAll(RELATIVE_IMPORT)].some((m) =>
+          importsElectronDir(hostDir, file, m[1]!),
+        );
+        if (ELECTRON_IMPORT.test(text) || intoElectronDir) {
+          report('electron-import');
+          return;
+        }
       }
       // Top level means no indentation: the repo's formatter indents everything nested.
       const let_ = TOP_LEVEL_LET.exec(text);
@@ -107,14 +136,16 @@ export function findHostBoundaryViolations(root: string): HostBoundaryViolation[
       }
     });
   }
-  return violations;
+  return { violations, scanned: files.length };
 }
 
 function main(): void {
   const root = fileURLToPath(new URL('..', import.meta.url));
-  const violations = findHostBoundaryViolations(root);
+  const { violations, scanned } = findHostBoundaryViolations(root);
   if (violations.length === 0) {
-    process.stdout.write('host boundary: no electron imports or module state in host code\n');
+    process.stdout.write(
+      `host boundary: no electron imports or module state in host code (${String(scanned)} files scanned)\n`,
+    );
     return;
   }
   for (const v of violations) {
@@ -124,6 +155,6 @@ function main(): void {
 }
 
 // Only run when executed directly, not when the test file imports the function above.
-if (process.argv[1] !== undefined && import.meta.url === new URL(process.argv[1], 'file:').href) {
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main();
 }

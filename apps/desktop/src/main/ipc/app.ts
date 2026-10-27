@@ -17,7 +17,7 @@ export type AppMenu = (items: readonly MenuCommandWire[], sender: Caller) => num
 
 /** What `registerAppChannels` needs of the host: the app's version facts, and a menu where there is one. */
 export interface AppHost {
-  readonly app: Pick<HostPlatform['app'], 'packaged' | 'version'>;
+  readonly app: Pick<HostPlatform['app'], 'packaged' | 'version' | 'runtimeVersion'>;
   /** Absent on a host with no native menu; `app.registerMenu` then answers no items. */
   readonly menu?: AppMenu;
 }
@@ -52,7 +52,7 @@ export function registerAppChannels(
   registerHandler(table, channels.app.version, () =>
     Promise.resolve({
       version: appVersion(host.app),
-      electron: process.versions.electron,
+      electron: host.app.runtimeVersion(),
       node: process.versions.node,
     }),
   );

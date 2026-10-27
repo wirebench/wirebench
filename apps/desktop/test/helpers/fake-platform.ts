@@ -24,6 +24,7 @@ export function createFakePlatform(
     },
     app: {
       version: () => '0.0.0-test',
+      runtimeVersion: () => '0.0.0-test',
       packaged: () => false,
       quit: () => undefined,
       osTheme: () => 'light',

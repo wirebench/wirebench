@@ -174,7 +174,10 @@ import type { WorkspaceWire } from '../../shared/wire-base.js';
 
 /** A host: its channels, and the callers (windows, later connections) it serves. */
 export interface Host {
-  /** Every channel the platform's capabilities allow, for a transport to serve (`bindIpc`). */
+  /**
+   * Every channel the platform supports, for a transport to serve (`bindIpc`): the channels that need an
+   * optional platform member (`dialogs`, `shell`, `power`) are left out when the platform has none.
+   */
   readonly handlers: HandlerTable;
   /** A window (or connection) opened: creates its scope (`createWindowScope`). */
   attach(caller: Caller, options?: AttachOptions): void;
@@ -252,6 +255,8 @@ interface WindowScope {
   auditSignedIn: boolean;
   /** The window's own quit path, once started (`closeWindowScope`). */
   closing: Promise<void> | undefined;
+  /** Unsubscribes the `caller.onClosed` listener `attach` made; run when the scope is closed. */
+  releaseClosed: () => void;
 }
 
 /**
@@ -1133,6 +1138,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
       ready: Promise.resolve(),
       auditSignedIn: false,
       closing: undefined,
+      releaseClosed: () => undefined,
     };
   }
 
@@ -1788,7 +1794,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
       });
     }
     applyWindowTitle(caller, null);
-    caller.onClosed(() => {
+    scope.releaseClosed = caller.onClosed(() => {
       if (scopes.get(scope.id) === scope) {
         scopes.remove(scope.id);
       }
@@ -1820,6 +1826,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
    * state, and its cookie jar and audit reporter wind down. Runs once per window.
    */
   function closeWindowScope(scope: WindowScope): Promise<void> {
+    scope.releaseClosed();
     scope.closing ??= (async () => {
       if (!scope.caller.isClosed()) {
         const stashed = scope.workspace.nextDraftsStash(QUIT_DRAFTS_TIMEOUT_MS);

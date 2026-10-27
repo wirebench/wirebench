@@ -68,6 +68,18 @@ describe('createElectronPlatform', () => {
     expect([...createElectronPlatform().capabilities].sort()).toEqual([...ALL_CAPABILITIES].sort());
   });
 
+  it('reports the Electron runtime version as the runtime version', () => {
+    const had = Object.getOwnPropertyDescriptor(process.versions, 'electron');
+    Object.defineProperty(process.versions, 'electron', { value: '99.1.2', configurable: true });
+    try {
+      expect(createElectronPlatform().app.runtimeVersion()).toBe(process.versions.electron);
+      expect(createElectronPlatform().app.runtimeVersion()).toBe('99.1.2');
+    } finally {
+      if (had !== undefined) Object.defineProperty(process.versions, 'electron', had);
+      else Reflect.deleteProperty(process.versions, 'electron');
+    }
+  });
+
   it('reports the app facts and the OS theme', () => {
     electron.app.getVersion.mockReturnValue('9.9.9');
     electron.nativeTheme.shouldUseDarkColors = true;

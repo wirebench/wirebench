@@ -103,6 +103,31 @@ describe('createHost', () => {
     });
   });
 
+  it('releases its close listener on the caller when the caller is detached', async () => {
+    const host = await started();
+    const base = fakeCaller(9);
+    const released = vi.fn();
+    const caller: typeof base = {
+      ...base,
+      onClosed(listener) {
+        const off = base.onClosed(listener);
+        return () => {
+          released();
+          off();
+        };
+      },
+    };
+    host.attach(caller);
+    expect(released).not.toHaveBeenCalled();
+    await host.detach(caller.id);
+    expect(released).toHaveBeenCalledTimes(1);
+    base.close();
+    await expect(invoke(host, 'workspace.snapshot', undefined, caller)).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'no-window' },
+    });
+  });
+
   it('broadcasts to its own callers only', async () => {
     const first = await started();
     const second = await started();

@@ -105,6 +105,8 @@ export interface HostPlatform {
   };
   readonly app: {
     version(): string;
+    /** The version of the runtime the host runs in (Electron's, on the desktop); shown by `app.version`. */
+    runtimeVersion(): string;
     packaged(): boolean;
     quit(): void;
     osTheme(): 'dark' | 'light';

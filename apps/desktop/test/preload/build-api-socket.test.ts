@@ -4,24 +4,13 @@
  * `invoke` that routes to a host's handler table and an `on` fed by what the host sends its caller, with
  * no Electron and no network in between.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { createHost, type Host } from '../../src/main/host/create-host.js';
 import { buildApi } from '../../src/preload/build-api.js';
 import { runAsCaller } from '../../src/main/window-scope.js';
 import { createFakePlatform, fakeCaller } from '../helpers/fake-platform.js';
 
 let host: Host | undefined;
-
-// `app.version` reports the Electron runtime's version, which a plain Node process does not have; a
-// host that is not inside Electron has none to report, so the test stands one in (host seam Part B
-// owns what the handler says then).
-const hadElectron = 'electron' in process.versions;
-beforeAll(() => {
-  if (!hadElectron) Object.defineProperty(process.versions, 'electron', { value: '0.0.0-test', configurable: true });
-});
-afterAll(() => {
-  if (!hadElectron) Reflect.deleteProperty(process.versions, 'electron');
-});
 
 afterEach(async () => {
   await host?.shutdown();

@@ -1,8 +1,11 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { findHostBoundaryViolations } from './check-host-boundary.ts';
+
+const violationsOf = (root: string) => findHostBoundaryViolations(root).violations;
 
 const roots: string[] = [];
 
@@ -29,7 +32,7 @@ describe('findHostBoundaryViolations', () => {
       'b.ts': "import type { App } from 'electron';\n",
       'c.ts': "const e = require('electron');\n",
     });
-    expect(findHostBoundaryViolations(root).map((v) => [v.file, v.line, v.rule])).toEqual([
+    expect(violationsOf(root).map((v) => [v.file, v.line, v.rule])).toEqual([
       ['apps/desktop/src/main/a.ts', 1, 'electron-import'],
       ['apps/desktop/src/main/b.ts', 1, 'electron-import'],
       ['apps/desktop/src/main/c.ts', 1, 'electron-import'],
@@ -41,7 +44,7 @@ describe('findHostBoundaryViolations', () => {
       'electron/x.ts': "import { app } from 'electron';\n",
       'index.ts': "import { app } from 'electron';\n",
     });
-    expect(findHostBoundaryViolations(root)).toEqual([]);
+    expect(violationsOf(root)).toEqual([]);
   });
 
   it('reports top-level mutable state', () => {
@@ -49,7 +52,7 @@ describe('findHostBoundaryViolations', () => {
       'a.ts':
         'let x = 0;\nconst m = new Map();\nconst s = new Set<string>();\nconst l = new AsyncLocalStorage<number>();\n',
     });
-    expect(findHostBoundaryViolations(root).map((v) => [v.line, v.rule])).toEqual([
+    expect(violationsOf(root).map((v) => [v.line, v.rule])).toEqual([
       [1, 'module-state'],
       [2, 'module-state'],
       [3, 'module-state'],
@@ -70,7 +73,7 @@ describe('findHostBoundaryViolations', () => {
         '',
       ].join('\n'),
     });
-    expect(findHostBoundaryViolations(root)).toEqual([]);
+    expect(violationsOf(root)).toEqual([]);
   });
 
   it('accepts the allowlisted names', () => {
@@ -80,11 +83,57 @@ describe('findHostBoundaryViolations', () => {
       'window-scope.ts': 'const caller = new AsyncLocalStorage<number>();\n',
       'other.ts': 'let loading = 1;\n',
     });
-    expect(findHostBoundaryViolations(root).map((v) => v.file)).toEqual(['apps/desktop/src/main/other.ts']);
+    expect(violationsOf(root).map((v) => v.file)).toEqual(['apps/desktop/src/main/other.ts']);
   });
 
   it('finds nothing in the real tree', () => {
-    const root = new URL('..', import.meta.url).pathname;
-    expect(findHostBoundaryViolations(root)).toEqual([]);
+    const root = fileURLToPath(new URL('..', import.meta.url));
+    const { violations, scanned } = findHostBoundaryViolations(root);
+    expect(scanned).toBeGreaterThan(0);
+    expect(violations).toEqual([]);
+  });
+
+  it('throws on a root with no host directory instead of passing', () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-boundary-empty-'));
+    roots.push(root);
+    expect(() => findHostBoundaryViolations(root)).toThrow(/no host directory/);
+  });
+
+  it('counts the files it scanned, leaving electron/ and index.ts out', () => {
+    const root = fixture({ 'a.ts': '', 'sub/b.ts': '', 'electron/x.ts': '', 'index.ts': '' });
+    expect(findHostBoundaryViolations(root).scanned).toBe(2);
+  });
+
+  it('reads an arrow type in a const annotation as part of the annotation', () => {
+    const root = fixture({ 'a.ts': 'const m: Map<string, () => void> = new Map();\n' });
+    expect(violationsOf(root).map((v) => [v.line, v.rule])).toEqual([[1, 'module-state']]);
+  });
+
+  it('reports dynamic, bare and subpath electron imports', () => {
+    const root = fixture({
+      'a.ts': "const e = await import('electron');\n",
+      'b.ts': "import 'electron';\n",
+      'c.ts': "import { app } from 'electron/main';\n",
+      'd.ts': "const e = require('electron/common');\n",
+    });
+    expect(violationsOf(root).map((v) => [v.file, v.rule])).toEqual([
+      ['apps/desktop/src/main/a.ts', 'electron-import'],
+      ['apps/desktop/src/main/b.ts', 'electron-import'],
+      ['apps/desktop/src/main/c.ts', 'electron-import'],
+      ['apps/desktop/src/main/d.ts', 'electron-import'],
+    ]);
+  });
+
+  it('reports a relative import of the electron/ directory from host code, not from inside it', () => {
+    const root = fixture({
+      'host/a.ts': "import { createElectronPlatform } from '../electron/electron-platform.js';\n",
+      'b.ts': "import { x } from './electron/menu.js';\n",
+      'c.ts': "import { y } from './electronic.js';\n",
+      'electron/inner.ts': "import { z } from './menu.js';\n",
+    });
+    expect(violationsOf(root).map((v) => [v.file, v.rule])).toEqual([
+      ['apps/desktop/src/main/b.ts', 'electron-import'],
+      ['apps/desktop/src/main/host/a.ts', 'electron-import'],
+    ]);
   });
 });

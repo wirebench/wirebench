@@ -30,6 +30,14 @@ describe('app.* IPC', () => {
     handlers.clear();
   });
 
+  it("app.version reports the platform's runtime version, not the process's", async () => {
+    registerAppChannels(table, host);
+    expect(await invoke('app.version', undefined, webContents())).toMatchObject({
+      ok: true,
+      value: { electron: '0.0.0-test' },
+    });
+  });
+
   it('app.registerMenu hands the manifest and the registering window to the host menu', async () => {
     const menu = vi.fn().mockReturnValue(1);
     registerAppChannels(table, { ...host, menu });
