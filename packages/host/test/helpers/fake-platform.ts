@@ -53,6 +53,28 @@ export function createFakePlatform(
   ) as unknown as HostPlatform;
 }
 
+/**
+ * A platform shaped like the server's (hosted edition spec §17.3): no dialogs, shell or power, the
+ * `send:public` capability alone, no machine values, packaged, and its `userData` as the root every
+ * caller-named path must stay inside. `overrides` win, as with {@link createFakePlatform}.
+ */
+export function createHeadlessPlatform(overrides: Partial<HostPlatform> & { userData?: string } = {}): HostPlatform {
+  const { userData, ...rest } = overrides;
+  const base = createFakePlatform({
+    without: ['dialogs', 'shell', 'power'],
+    ...(userData !== undefined ? { userData } : {}),
+  });
+  const dir = base.paths.userData();
+  return {
+    ...base,
+    paths: { ...base.paths, root: () => dir },
+    app: { ...base.app, packaged: () => true },
+    capabilities: new Set(['send:public']),
+    machineValues: false,
+    ...rest,
+  };
+}
+
 /** A caller that records what it was sent; `close()` ends it and `reset()` makes it start over, as a reloaded renderer does. */
 export function fakeCaller(id = 1): Caller & { sent: Array<[string, unknown]>; close(): void; reset(): void } {
   const sent: Array<[string, unknown]> = [];

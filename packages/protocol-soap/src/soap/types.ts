@@ -65,11 +65,13 @@ export interface WsdlImportOptions {
    */
   readonly auth?: { readonly username: string; readonly password: string } | KerberosSendAuth;
   /**
-   * The TLS and proxy for one URL, as the host resolves them for a send (its CA bundle and proxy).
-   * Given, every http(s) document is read through them: anonymously, with Basic or with Kerberos.
-   * Ignored for anonymous reads when `fetchDocument` is given, which then reads every document.
+   * The TLS, proxy and egress rule for one URL, as the host resolves them for a send (its CA bundle
+   * and proxy). Given, every http(s) document is read through them: anonymously, with Basic or with
+   * Kerberos. Ignored for anonymous reads when `fetchDocument` is given, which then reads every document.
    */
-  readonly network?: (url: string) => Promise<{ readonly tls?: TlsOptions; readonly proxy?: ProxyOptions }>;
+  readonly network?: (
+    url: string,
+  ) => Promise<{ readonly tls?: TlsOptions; readonly proxy?: ProxyOptions; readonly egress?: EgressPolicy }>;
   readonly signal?: AbortSignal;
   readonly onProgress?: (event: WsdlImportProgress) => void;
   /** Definition-cache behaviour; see {@link WsdlImportCacheOptions}. Omitted/absent means no caching. */

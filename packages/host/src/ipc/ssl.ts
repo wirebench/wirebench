@@ -11,6 +11,7 @@
  * is picked again.
  */
 
+import { machineEnv } from '../host/machine-env.js';
 import type { Caller, HostPlatform } from '../host/platform.js';
 import { requireCapability } from '../host/capability.js';
 import { WirebenchError } from '@wirebench/engine';
@@ -28,7 +29,7 @@ export interface SslChannelDeps {
   /** The session's picked-path memory, the only evidence `ProjectHost.trustAnchors` accepts. */
   readonly picks: RecordsReadPicks;
   /** The native Open-file dialog `pickCaBundle` runs. */
-  readonly platform: Pick<HostPlatform, 'dialogs'>;
+  readonly platform: Pick<HostPlatform, 'dialogs' | 'machineValues'>;
   /** Called after each change so main can broadcast `preferences.changed` to every window. */
   readonly onChanged?: (preferences: PreferencesWire) => void;
 }
@@ -37,8 +38,8 @@ export interface SslChannelDeps {
 const CA_BUNDLE_EXTENSIONS = ['pem', 'crt', 'cer'];
 
 /** e2e cannot drive a native dialog, so this env var short-circuits it, as `keystores.*` does. */
-function e2eOpenPathOverride(): string | undefined {
-  return process.env['WIREBENCH_E2E_OPEN_PATH'];
+function e2eOpenPathOverride(platform: Pick<HostPlatform, 'machineValues'>): string | undefined {
+  return machineEnv(platform)['WIREBENCH_E2E_OPEN_PATH'];
 }
 
 async function pickThroughDialog(platform: Pick<HostPlatform, 'dialogs'>, sender: Caller): Promise<string | undefined> {
@@ -74,7 +75,7 @@ export function registerSslChannels(table: HandlerTable, deps: SslChannelDeps): 
     // The override goes through `rememberRead` exactly as a real pick does, so e2e exercises
     // the containment path a user does rather than a bypass of it. Comma-separated for symmetry
     // with `attachments.pickFiles`; only the first entry is used here.
-    const override = e2eOpenPathOverride();
+    const override = e2eOpenPathOverride(deps.platform);
     const path =
       override !== undefined
         ? override.split(',').filter((entry) => entry.length > 0)[0]

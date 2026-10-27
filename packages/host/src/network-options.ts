@@ -11,6 +11,7 @@ import {
   isExcluded,
   resolveProxyFor,
   splitPemBundle,
+  type EgressPolicy,
   type Preferences,
   type ProxyConfig,
   type ProxyOptions,
@@ -36,7 +37,10 @@ export async function resolveTrustAnchors(input: {
   if (path === undefined || path.length === 0) return undefined;
   const root = input.roots[0];
   const resolved = root !== undefined ? resolvePath(root, path) : isAbsolute(path) ? path : undefined;
-  if (resolved === undefined || !(await allowsReadPath(input.roots, input.picks, resolved))) return undefined;
+  // A bundle outside a host's root is refused like any unreadable one: quietly, and stricter.
+  const allowed =
+    resolved !== undefined && (await allowsReadPath(input.roots, input.picks, resolved).catch(() => false));
+  if (resolved === undefined || !allowed) return undefined;
   try {
     const anchors = splitPemBundle(await readFile(resolved, 'utf-8'));
     return anchors.length > 0 ? [...rootCertificates, ...anchors] : undefined;
@@ -90,13 +94,15 @@ export interface MainHttpDeps {
   readonly picks?: ReadPicks;
   readonly getSecret: (ref: string) => Promise<string | undefined>;
   readonly resolveSystemProxy?: (url: string) => Promise<string | undefined>;
+  /** The host's egress rule (`HostPlatform.network`): every send from main is held to it. Absent, none. */
+  readonly egress?: EgressPolicy;
 }
 
 /** What a project-free send from main passes to `sendHttp` beyond the request itself. */
 export async function mainHttpOptions(
   url: string,
   deps: MainHttpDeps,
-): Promise<{ readonly tls?: TlsOptions; readonly proxy?: ProxyOptions }> {
+): Promise<{ readonly tls?: TlsOptions; readonly proxy?: ProxyOptions; readonly egress?: EgressPolicy }> {
   const preferences = deps.preferences();
   const ca = await resolveTrustAnchors({ caBundlePath: preferences.ssl.caBundlePath, roots: [], picks: deps.picks });
   const proxy = await resolveProxy({
@@ -108,5 +114,6 @@ export async function mainHttpOptions(
   return {
     ...(ca !== undefined ? { tls: { ca: [...ca], minVersion: preferences.ssl.minVersion } } : {}),
     ...(proxy !== undefined ? { proxy } : {}),
+    ...(deps.egress !== undefined ? { egress: deps.egress } : {}),
   };
 }

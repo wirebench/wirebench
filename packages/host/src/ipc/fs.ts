@@ -1,3 +1,4 @@
+import { machineEnv } from '../host/machine-env.js';
 import type { HostPlatform } from '../host/platform.js';
 import { requireCapability } from '../host/capability.js';
 import { readFile, stat } from 'node:fs/promises';
@@ -9,11 +10,11 @@ import { nodeFs, writeFileAtomic } from '@wirebench/engine';
 const MAX_LOAD_BYTES = 20 * 1024 * 1024;
 
 /** e2e cannot drive native save/open dialogs, so these env vars short-circuit them to a fixed path. */
-function e2eSavePathOverride(): string | undefined {
-  return process.env['WIREBENCH_E2E_SAVE_PATH'];
+function e2eSavePathOverride(platform: Pick<HostPlatform, 'machineValues'>): string | undefined {
+  return machineEnv(platform)['WIREBENCH_E2E_SAVE_PATH'];
 }
-function e2eOpenPathOverride(): string | undefined {
-  return process.env['WIREBENCH_E2E_OPEN_PATH'];
+function e2eOpenPathOverride(platform: Pick<HostPlatform, 'machineValues'>): string | undefined {
+  return machineEnv(platform)['WIREBENCH_E2E_OPEN_PATH'];
 }
 
 /**
@@ -21,9 +22,12 @@ function e2eOpenPathOverride(): string | undefined {
  * text. Distinct from `dialogs.*` (which only returns a chosen path) because these round-trip
  * file *content* through main, where Node's `fs` lives.
  */
-export function registerFsChannels(table: HandlerTable, platform: Pick<HostPlatform, 'dialogs'>): void {
+export function registerFsChannels(
+  table: HandlerTable,
+  platform: Pick<HostPlatform, 'dialogs' | 'machineValues'>,
+): void {
   registerHandler(table, channels.fs.saveText, async (request, sender) => {
-    const override = e2eSavePathOverride();
+    const override = e2eSavePathOverride(platform);
     let targetPath: string | undefined;
     if (override !== undefined) {
       targetPath = override;
@@ -44,7 +48,7 @@ export function registerFsChannels(table: HandlerTable, platform: Pick<HostPlatf
   });
 
   registerHandler(table, channels.fs.openText, async (request, sender) => {
-    const override = e2eOpenPathOverride();
+    const override = e2eOpenPathOverride(platform);
     let targetPath: string | undefined;
     if (override !== undefined) {
       targetPath = override;

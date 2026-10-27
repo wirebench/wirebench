@@ -125,3 +125,17 @@ export function isSecretTokenRef(ref: Pick<UnresolvedRef, 'scope' | 'name' | 'co
     ref.scope === 'Secret' && ref.code === 'missing' && ref.name !== undefined && SECRET_NAME_PATTERN.test(ref.name)
   );
 }
+
+/**
+ * `get`, telling `report` the name of each `${secret:name}` token it resolves to a value: by name,
+ * never by value, for an embedder's audit (`HostOptions.onSecret`). A plain ref (an OAuth refresh
+ * token, a proxy password) is the app's own bookkeeping and is not reported, nor is a token with no value.
+ */
+export function reportedSecretGetter(get: GetSecret, report: (name: string) => void): GetSecret {
+  return async (ref) => {
+    const value = await get(ref);
+    const name = parseSecretPseudoRef(ref);
+    if (value !== undefined && name !== undefined) report(name);
+    return value;
+  };
+}

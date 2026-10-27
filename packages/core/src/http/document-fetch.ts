@@ -18,6 +18,7 @@ import type { FetchDocument, FetchedDocument } from './fetch-document.js';
 import { basicAuthorization } from './auth/basic.js';
 import { negotiateBearer } from './auth/kerberos-token.js';
 import { sendHttp } from './client.js';
+import type { EgressPolicy } from '../net/egress.js';
 import type { ProxyOptions, TlsOptions } from './types.js';
 
 const TIMEOUT_MS = 20_000;
@@ -37,8 +38,10 @@ export interface DocumentFetchOptions {
    * origin (a trailing slash, the host's case and a default port do not matter); it must be `http(s)`.
    */
   readonly authOrigin?: string;
-  /** TLS and proxy for one URL, as the host resolves them. */
-  readonly network?: (url: string) => Promise<{ readonly tls?: TlsOptions; readonly proxy?: ProxyOptions }>;
+  /** TLS, proxy and egress rule for one URL, as the host resolves them. */
+  readonly network?: (
+    url: string,
+  ) => Promise<{ readonly tls?: TlsOptions; readonly proxy?: ProxyOptions; readonly egress?: EgressPolicy }>;
 }
 
 /** `url` without the query parameter `name`; `url` itself, unparsed and unchanged, when it has none. */
@@ -204,6 +207,7 @@ async function fetchHttp(
         ...(signal !== undefined ? { signal } : {}),
         ...(network.tls !== undefined ? { tls: network.tls } : {}),
         ...(network.proxy !== undefined ? { proxy: network.proxy } : {}),
+        ...(network.egress !== undefined ? { egress: network.egress } : {}),
       });
     } catch (error) {
       // A cancel stays a cancel: the resolver tells an `AbortError` from a document that failed.

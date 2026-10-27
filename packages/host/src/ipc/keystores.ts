@@ -7,6 +7,7 @@
  * exactly as the attachments picker does (see `dialog-picks.ts`).
  */
 
+import { machineEnv } from '../host/machine-env.js';
 import type { Caller, HostPlatform } from '../host/platform.js';
 import { requireCapability } from '../host/capability.js';
 import { channels } from '@wirebench/wire/ipc';
@@ -24,15 +25,15 @@ export interface KeystoreChannelDeps {
    */
   readonly picks: RecordsReadPicks;
   /** The native Open-file dialog `pickFile` runs. */
-  readonly platform: Pick<HostPlatform, 'dialogs'>;
+  readonly platform: Pick<HostPlatform, 'dialogs' | 'machineValues'>;
 }
 
 /** The extensions the Open dialog offers; the same set `keystoreTypeForPath` recognises. */
 const KEYSTORE_EXTENSIONS = ['p12', 'pfx', 'pem', 'crt', 'cer', 'key'];
 
 /** e2e cannot drive a native dialog, so this env var short-circuits it, as `attachments.*` does. */
-function e2eOpenPathOverride(): string | undefined {
-  return process.env['WIREBENCH_E2E_OPEN_PATH'];
+function e2eOpenPathOverride(platform: Pick<HostPlatform, 'machineValues'>): string | undefined {
+  return machineEnv(platform)['WIREBENCH_E2E_OPEN_PATH'];
 }
 
 async function pickThroughDialog(platform: Pick<HostPlatform, 'dialogs'>, sender: Caller): Promise<string | undefined> {
@@ -55,7 +56,7 @@ export function registerKeystoreChannels(table: HandlerTable, deps: KeystoreChan
     // The override goes through `rememberRead` exactly as a real pick does, so e2e exercises
     // the same containment path a user does rather than a bypass of it. Comma-separated for
     // symmetry with `attachments.pickFiles`; only the first entry is used here.
-    const override = e2eOpenPathOverride();
+    const override = e2eOpenPathOverride(deps.platform);
     const path =
       override !== undefined
         ? override.split(',').filter((entry) => entry.length > 0)[0]

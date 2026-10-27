@@ -33,6 +33,7 @@ import type {
   CodeOptions,
   CodeRequest,
   DesktopAuditEvent,
+  EgressPolicy,
   OAuth2Auth,
   RestBody,
   SendAuth,
@@ -248,9 +249,12 @@ export interface RequestChannelDeps {
   /**
    * The getter a send of one project resolves its `${secret:name}` tokens through
    * (`projectSecretGetter`, which also records each value for the log's masking). Omitted in tests
-   * that send no tokens, where a token then refuses the send as `secret-missing`.
+   * that send no tokens, where a token then refuses the send as `secret-missing`. `target` is the host
+   * name the send goes to, when known.
    */
-  readonly secretsFor?: (projectId: string | undefined) => GetSecret;
+  readonly secretsFor?: (projectId: string | undefined, target?: string) => GetSecret;
+  /** The host's egress rule (`HostPlatform.network`), which every send is held to; absent, none. */
+  readonly egress?: EgressPolicy;
   /**
    * The `${secret:name}` names stored on this machine for one project — names only, never a value —
    * for the editor's completion and unresolved marks (#340). Omitted in tests, which then list none.
@@ -320,6 +324,7 @@ export function toSendDeps(
     ...(deps.auditWorkspace !== undefined ? { auditWorkspace: deps.auditWorkspace } : {}),
     ...(deps.confirmProtected !== undefined ? { confirmProtected: deps.confirmProtected } : {}),
     ...(deps.mcpApprovals !== undefined ? { approveCommand: deps.mcpApprovals.approver() } : {}),
+    ...(deps.egress !== undefined ? { egress: deps.egress } : {}),
   };
 }
 

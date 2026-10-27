@@ -8,6 +8,7 @@ import {
   SERIAL_SWITCH,
   TELNET_SWITCH,
 } from '@wirebench/wire/area-switches';
+import type { Capability } from './host/platform.js';
 import { registerLocalTerminalChannels } from './areas/local-terminal-channels.js';
 import { registerSshChannels } from './areas/ssh.js';
 
@@ -44,14 +45,25 @@ export interface AreasRun {
  * when it names it; else the default (on). Then `requires` applies, so `ssh=off` takes the local
  * terminal, Telnet and serial with it. The policy can only switch off: `ssh=on` in the environment
  * under a policy that locks `ssh` off changes nothing.
+ *
+ * A platform's `capabilities`, when given, are a policy of their own: without `ssh` the SSH area is off,
+ * and without `pty` the local terminal, whatever the policy file or the environment say.
  */
 export function resolveAreas(input: {
   /** The ids the managed policy switches off (`Policy.areasOff`). */
   readonly policy?: readonly string[];
   readonly env?: NodeJS.ProcessEnv;
+  /** What the platform can do; absent, everything (as the desktop's does). */
+  readonly capabilities?: ReadonlySet<Capability>;
 }): AreasRun {
+  const lacks = (capability: Capability): boolean =>
+    input.capabilities !== undefined && !input.capabilities.has(capability);
   const { states } = resolveFeatures(AREA_SWITCH_DESCRIPTORS, {
-    policy: input.policy ?? [],
+    policy: [
+      ...(input.policy ?? []),
+      ...(lacks('ssh') ? ['ssh'] : []),
+      ...(lacks('pty') ? [LOCAL_TERMINAL_SWITCH] : []),
+    ],
     preference: parseAreaSwitches((input.env ?? process.env)['WIREBENCH_AREAS']),
   });
   const on = (id: string): boolean => states.find((state) => state.id === id)?.enabled === true;

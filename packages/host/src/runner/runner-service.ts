@@ -295,6 +295,7 @@ export class RunnerService {
       ...(located?.globals !== undefined ? { globals: located.globals } : {}),
       ...(located?.current !== undefined ? { current: located.current } : {}),
       ...(located?.registry !== undefined ? { registry: located.registry } : {}),
+      ...(located?.system !== undefined ? { system: located.system } : {}),
       overrides: {},
       // The run's own sender sends; this host only hears of a value to mask.
       host: {

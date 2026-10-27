@@ -79,7 +79,7 @@ import {
   createBuiltinRegistry,
   apiDir,
 } from '@wirebench/engine';
-import type { ExtensionRegistry, ProtocolRegistry } from '@wirebench/engine';
+import type { EgressPolicy, ExtensionRegistry, ProtocolRegistry } from '@wirebench/engine';
 import type {
   FeatureState,
   CollectionExportFormat,
@@ -264,7 +264,7 @@ export interface WorkspaceServiceDeps {
   /** The single in-process engine every host shares. */
   readonly engine: EngineService;
   /** This host's state, handed on to every project host it opens. */
-  readonly hostState: Pick<HostState, 'redactor' | 'e2eTrustAnchors'>;
+  readonly hostState: Pick<HostState, 'redactor' | 'e2eTrustAnchors' | 'systemValues'>;
   /** The `${#Global#name}` scope. Omitted in tests that never expand properties. */
   readonly globals?: Pick<GlobalProperties, 'get'>;
   /** Resolves `passwordRef`s at import time. Omitted in tests that never import with auth. */
@@ -302,6 +302,14 @@ export interface WorkspaceServiceDeps {
    * team policy restricts further (§6.2). Each workspace's project hosts get the registry resolved for it.
    */
   readonly features?: FeaturesRun;
+  /**
+   * Whether this host keeps workspaces of its own on the machine: local ones and git or folder shares.
+   * `false` on a platform without the `files` capability (the server's), where only a server workspace
+   * opens; the rest answer `host-capability-missing`. Default true.
+   */
+  readonly machineFiles?: boolean;
+  /** The egress rule a certificate probe is held to (`HostPlatform.network`); absent, none. */
+  readonly egress?: EgressPolicy;
   /**
    * Whether another window holds `workspaceId` open. Opening, renaming or deleting it from this one is
    * refused (`workspace-open-elsewhere`), so one workspace's files have one writer. Omitted, never.
@@ -944,8 +952,24 @@ export class WorkspaceService implements ProjectRouter {
 
   // ——— lifecycle ——————————————————————————————————————————————————————————————————————————
 
+  /**
+   * Refuses what needs the machine's own files (a local workspace, a git or folder share) on a host
+   * without them (`machineFiles: false`).
+   *
+   * @throws WirebenchError `host-capability-missing` naming `files`
+   */
+  private requireFiles(what: string): void {
+    if (this.deps.machineFiles === false) {
+      throw new WirebenchError('host-capability-missing', `This host cannot ${what}: it opens server workspaces only`, {
+        details: { capability: 'files' },
+      });
+    }
+  }
+
   /** Creates a workspace folder (named by its ULID, never by the display name) and opens it. */
   async create(name: string): Promise<WorkspaceWire> {
+    // A new workspace is a local one.
+    this.requireFiles('create a local workspace');
     const workspace = createWorkspace(name, { now: this.now });
     const dir = workspaceDir(this.deps.userDataDir, workspace.id);
     await mkdir(dir, { recursive: true });
@@ -978,6 +1002,11 @@ export class WorkspaceService implements ProjectRouter {
     options: { readonly initialCommitMessage?: string; readonly teamSecrets?: boolean },
   ): Promise<WorkspaceWire> {
     this.refuseHeldElsewhere(id);
+    if (this.deps.machineFiles === false) {
+      // Read before the open workspace closes, so a refusal leaves it open.
+      const kind = (await this.resolveTree(workspaceDir(this.deps.userDataDir, requireWorkspaceId(id)))).share?.kind;
+      if (kind !== 'server') this.requireFiles(kind === undefined ? 'open a local workspace' : `open a ${kind} share`);
+    }
     await this.close();
     const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
     const { share, tree } = await this.resolveTree(dir);
@@ -2152,6 +2181,7 @@ export class WorkspaceService implements ProjectRouter {
    * with a remote, the first push — has been attempted; their failures are in the sync status.
    */
   async share(options: { remote?: string; branch?: string }): Promise<WorkspaceWire> {
+    this.requireFiles('share a workspace over git');
     const open = this.requireOpen();
     const sharedId = open.workspace.id;
     const wire = await this.enqueueWorkspaceOp(async () => {
@@ -2177,6 +2207,7 @@ export class WorkspaceService implements ProjectRouter {
 
   /** Shares the open local workspace to an empty folder the user picks; `null` on cancel. */
   async shareToFolder(sender: Caller): Promise<WorkspaceWire | null> {
+    this.requireFiles('share a workspace to a folder');
     const open = this.requireOpen();
     const picks = this.requirePicks();
     return await this.enqueueWorkspaceOp(async () => {
@@ -2189,11 +2220,13 @@ export class WorkspaceService implements ProjectRouter {
 
   /** Clones a shared workspace from `remote` and opens it. */
   async join(options: { remote: string; branch?: string }): Promise<WorkspaceWire> {
+    this.requireFiles('join a git share');
     return await this.enqueueWorkspaceOp(() => joinRemote(this.shareDeps(), options));
   }
 
   /** Joins a shared workspace from an existing clone or synced folder the user picks; `null` on cancel. */
   async joinFromFolder(sender: Caller): Promise<WorkspaceWire | null> {
+    this.requireFiles('join a folder share');
     const picks = this.requirePicks();
     return await this.enqueueWorkspaceOp(() =>
       joinFromFolder(this.shareDeps(), () =>
@@ -2204,6 +2237,8 @@ export class WorkspaceService implements ProjectRouter {
 
   /** Makes the open shared workspace local again (see `workspace-share.ts` `stopSharing`). */
   async stopSharing(): Promise<WorkspaceWire> {
+    // What is left is a local workspace.
+    this.requireFiles('make a workspace local');
     const open = this.requireOpen();
     return await this.enqueueWorkspaceOp(async () => {
       this.requireStillOpen(open);
@@ -3603,6 +3638,7 @@ export class WorkspaceService implements ProjectRouter {
             ? { proxy: { url: proxy.url, ...(proxy.auth !== undefined ? { auth: proxy.auth } : {}) } }
             : {}),
           ...(ca !== undefined ? { ca } : {}),
+          ...(this.deps.egress !== undefined ? { egress: this.deps.egress } : {}),
         });
       },
     });

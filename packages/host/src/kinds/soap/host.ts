@@ -260,10 +260,7 @@ export class SoapHost implements KindHostHooks {
    * reaches `add-attachment`, rather than widening this check.
    */
   private async allowsAttachmentPath(dir: string, resolved: string): Promise<boolean> {
-    if (this.core.picks?.hasRead(resolved) === true) {
-      return true;
-    }
-    return isInsideAny([dir, attachmentsDir(dir)], resolved);
+    return await allowsReadPath([dir, attachmentsDir(dir)], this.core.picks, resolved);
   }
 
   /**

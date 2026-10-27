@@ -32,6 +32,7 @@ import { sendHttp } from '@wirebench/engine';
 import type {
   ClientIdentity,
   DeviceAuthorization,
+  EgressPolicy,
   HttpExchange,
   HttpRequest,
   OAuth2Auth,
@@ -95,6 +96,8 @@ export interface OAuth2Deps {
   readonly now?: () => Date;
   /** Waits between device-code polls; the engine's timer by default, instant in tests. */
   readonly sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** The host's egress rule (`HostPlatform.network`): every request to a provider is held to it. Absent, none. */
+  readonly egress?: EgressPolicy;
 }
 
 /** The key a token is cached under: the configuration that produced it, and nothing else. */
@@ -297,6 +300,7 @@ export class OAuth2Service {
           ...request,
           ...(tls !== undefined ? { tls } : {}),
           ...(options.proxy !== undefined ? { proxy: options.proxy } : {}),
+          ...(this.deps.egress !== undefined ? { egress: this.deps.egress } : {}),
         }),
     };
   }
