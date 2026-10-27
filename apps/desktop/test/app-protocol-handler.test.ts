@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { handleAppProtocol } from '../src/main/app-protocol-handler.js';
+import { handleAppProtocol } from '../src/main/electron/app-protocol-handler.js';
 
 // Mock the app-protocol module
 let tempDir: string;

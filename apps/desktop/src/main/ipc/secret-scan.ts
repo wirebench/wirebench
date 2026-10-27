@@ -1,7 +1,7 @@
-import type { WebContents } from 'electron';
+import type { Caller } from '../host/platform.js';
 import { channels } from '../../shared/ipc.js';
 import type { SecretScanSessions } from '../secret-scan-session.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /**
  * Registers the `secretScan.*` IPC channels against the open projects' scan sessions.
@@ -18,46 +18,52 @@ import { registerHandler } from './register.js';
  * that `release`, so its holds are dropped then instead: autosave cannot stay off for good.
  */
 export function registerSecretScanChannels(
+  table: HandlerTable,
   sessions: Pick<SecretScanSessions, 'session' | 'hold' | 'release' | 'releaseOwner'>,
 ): void {
-  registerHandler(channels.secretScan.scan, async (request) => await sessions.session(request.projectId).review());
+  registerHandler(
+    table,
+    channels.secretScan.scan,
+    async (request) => await sessions.session(request.projectId).review(),
+  );
 
-  registerHandler(channels.secretScan.keep, (request) => {
+  registerHandler(table, channels.secretScan.keep, (request) => {
     sessions.session(request.projectId).keep(request.ids);
     return Promise.resolve({});
   });
 
   registerHandler(
+    table,
     channels.secretScan.move,
     async (request) => await sessions.session(request.projectId).move(request.items),
   );
 
-  registerHandler(channels.secretScan.tokens, async (request) => ({
+  registerHandler(table, channels.secretScan.tokens, async (request) => ({
     tokens: await sessions.session(request.projectId).tokens(),
   }));
 
   registerHandler(
+    table,
     channels.secretScan.setValue,
     async (request) => await sessions.session(request.projectId).setValue(request.name, request.value),
   );
 
   /** The renderers already watched for going away, so each gets its listeners once. */
-  const watched = new WeakSet<WebContents>();
-  registerHandler(channels.secretScan.hold, (request, sender) => {
+  const watched = new WeakSet<Caller>();
+  registerHandler(table, channels.secretScan.hold, (request, sender) => {
     if (!watched.has(sender)) {
       watched.add(sender);
       const drop = (): void => {
         sessions.releaseOwner(sender.id);
       };
-      sender.once('destroyed', drop);
-      sender.on('render-process-gone', drop);
-      // A reload (or any main-frame navigation) starts a renderer that knows nothing of the old holds.
-      sender.on('did-navigate', drop);
+      sender.onClosed(drop);
+      // A crash, a reload (or any main-frame navigation) starts a renderer that knows nothing of the old holds.
+      sender.onReset(drop, { on: 'commit' });
     }
     return Promise.resolve({ holdId: sessions.hold(request.projectIds, sender.id) });
   });
 
-  registerHandler(channels.secretScan.release, (request) => {
+  registerHandler(table, channels.secretScan.release, (request) => {
     sessions.release(request.holdId);
     return Promise.resolve({});
   });

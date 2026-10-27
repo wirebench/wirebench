@@ -36,10 +36,20 @@ function sent(n = 0): { sendId: string; requestId: string; options: Record<strin
 }
 import type { RestExchangeSummary } from '../src/shared/kinds/rest/wire.js';
 import type { ExchangeSummary } from '../src/shared/kinds/soap/wire.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
+import { createHostState } from '../src/main/host/host-state.js';
 
-const LOG_EXTRA = { picks: { rememberWrite: () => undefined }, appVersion: '0.0.0-test' };
+const hostState = createHostState();
+
+const LOG_EXTRA = {
+  picks: { rememberWrite: () => undefined },
+  dialogs: fakeNativeDialogs(),
+  appVersion: '0.0.0-test',
+};
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -127,6 +137,7 @@ function model(options: { accept?: string; grpcKind?: GrpcMethodKind } = {}): Pr
 
 function requestDeps(overrides: Record<string, unknown>): RequestChannelDeps {
   return {
+    hostState,
     project: {
       scopesFor: () => ({ project: {}, global: {}, system: {} }),
       preflight: () => undefined as never,
@@ -151,7 +162,7 @@ describe('log.resend', () => {
   it('SOAP: sends the live request of the row through the engine and returns the exchange', async () => {
     engineSend.mockResolvedValue(soapExchange());
     const endpointFor = vi.fn(() => 'http://h/s');
-    registerLogChannels({
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service: new EngineService(),
       request: requestDeps({ endpointFor }),
@@ -169,7 +180,7 @@ describe('log.resend', () => {
   });
 
   it('SOAP: a request that no longer exists is refused with unknown-entity', async () => {
-    registerLogChannels({
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service: new EngineService(),
       request: requestDeps({}),
@@ -185,7 +196,7 @@ describe('log.resend', () => {
 
   it('REST: goes through the REST send path with a fresh sendId and no draft', async () => {
     engineSend.mockResolvedValue(restExchange());
-    registerLogChannels({
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service: new EngineService(),
       request: requestDeps({}),
@@ -201,7 +212,7 @@ describe('log.resend', () => {
 
   it('REST: a resend is buffered, never streamed — no live hook the renderer could not stop', async () => {
     engineSend.mockResolvedValue(restExchange());
-    registerLogChannels({
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service: new EngineService(),
       request: requestDeps({}),
@@ -220,7 +231,7 @@ describe('log.resend', () => {
       projectDir: '/tmp/none',
       globals: {},
     });
-    registerLogChannels({
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service: new EngineService(),
       request: requestDeps({ runContextFor }),
@@ -257,7 +268,7 @@ describe('log.resend', () => {
       },
       new Uint8Array(),
     );
-    registerLogChannels({
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service,
       request: requestDeps({ runContextFor }),
@@ -282,7 +293,7 @@ describe('log.resend', () => {
     });
     const service = new EngineService();
     service.exchanges.putRest('send-buffered', restExchange(), new Uint8Array());
-    registerLogChannels({
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service,
       request: requestDeps({ runContextFor }),
@@ -304,7 +315,7 @@ describe('log.resend', () => {
     const sendRest = vi.spyOn(ExchangeRegistry.prototype, 'attach');
     const service = new EngineService();
     service.exchanges.putRest('send-gone', restExchange(), new Uint8Array());
-    registerLogChannels({
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service,
       request: requestDeps({
@@ -329,7 +340,7 @@ describe('log.resend', () => {
       projectDir: '/tmp/none',
       globals: {},
     });
-    registerLogChannels({
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service: new EngineService(),
       request: requestDeps({ runContextFor }),
@@ -346,7 +357,7 @@ describe('log.resend', () => {
 
   it('gRPC: a unary call goes through the engine with a fresh sendId, no draft and no live hook', async () => {
     engineSend.mockResolvedValue({ sendId: 'x' });
-    registerLogChannels({
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service: new EngineService(),
       request: requestDeps({}),
@@ -362,7 +373,7 @@ describe('log.resend', () => {
   it('WebSocket: a row is refused before anything is dialled — it is a session, not one request/response pair', async () => {
     // Every session the app opens is kept in the exchange registry; a refused resend keeps none.
     const openWs = vi.spyOn(ExchangeRegistry.prototype, 'keep');
-    registerLogChannels({
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service: new EngineService(),
       request: requestDeps({}),

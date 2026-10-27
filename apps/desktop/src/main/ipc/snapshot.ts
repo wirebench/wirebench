@@ -5,11 +5,11 @@
 
 import { channels } from '../../shared/ipc.js';
 import type { SnapshotStore } from '../snapshot-store.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
-export function registerSnapshotChannels(store: SnapshotStore): void {
-  registerHandler(channels.snapshot.read, (request) => store.read(request));
-  registerHandler(channels.snapshot.write, (request) => store.write(request));
-  registerHandler(channels.snapshot.setIgnore, (request) => store.setIgnore(request));
-  registerHandler(channels.snapshot.remove, (request) => store.remove(request));
+export function registerSnapshotChannels(table: HandlerTable, store: SnapshotStore): void {
+  registerHandler(table, channels.snapshot.read, (request) => store.read(request));
+  registerHandler(table, channels.snapshot.write, (request) => store.write(request));
+  registerHandler(table, channels.snapshot.setIgnore, (request) => store.setIgnore(request));
+  registerHandler(table, channels.snapshot.remove, (request) => store.remove(request));
 }

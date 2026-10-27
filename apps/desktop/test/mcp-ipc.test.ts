@@ -18,8 +18,14 @@ import { registerMcpChannels } from '../src/main/kinds/mcp/ipc.js';
 import { MCP_APPROVALS_FILE, McpApprovals, McpApprovalStore } from '../src/main/mcp-approvals.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import type { McpApprovalAnswerWire, McpApprovalPromptEvent } from '../src/shared/kinds/mcp/wire.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -64,17 +70,18 @@ let approvals: McpApprovals;
 beforeEach(async () => {
   handlers.clear();
   root = mkdtempSync(join(tmpdir(), 'wirebench-mcp-ipc-'));
-  host = new ProjectHost(new EngineService(), {});
+  host = new ProjectHost(new EngineService(), testHooks());
   await host.create({ dir: join(root, 'Demo'), name: 'Demo' });
   approvals = new McpApprovals({ store: new McpApprovalStore(join(root, 'userData', MCP_APPROVALS_FILE)) });
   const request = {
+    hostState,
     project: {
       projectId: () => host.snapshot()?.id,
       runContextFor: (id: string, envId?: string) => host.runContextFor(id, envId),
     } as unknown as RequestChannelDeps['project'],
     mcpApprovals: approvals,
   } satisfies RequestChannelDeps;
-  registerMcpChannels({
+  registerMcpChannels(table, {
     engine: new EngineService(),
     request,
     router: {
@@ -112,7 +119,7 @@ describe('an MCP server in a project', () => {
     const { apiId, requestId } = await seedServer();
     const dir = join(root, 'Demo');
     await host.close();
-    host = new ProjectHost(new EngineService(), {});
+    host = new ProjectHost(new EngineService(), testHooks());
     const opened = await host.openProject(dir);
     expect(opened.mcpServers).toEqual([
       expect.objectContaining({

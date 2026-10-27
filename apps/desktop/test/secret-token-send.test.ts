@@ -27,19 +27,14 @@ import {
 } from '@wirebench/engine';
 import type { GetSecret, Project, SelectedRequest } from '@wirebench/engine';
 import { buildRestHistoryEntry } from '../src/main/history-service.js';
-import {
-  recordSecretValue,
-  redactHeaders,
-  redactRawHttp,
-  redactSecretBytes,
-  redactUrl,
-  redactXml,
-} from '../src/main/redact.js';
 import { projectSecretGetter, secretStoreLabel } from '../src/main/secret-resolver.js';
 import { newSecretRef, SecretStore, type CryptoBackend } from '../src/main/secrets.js';
 import { sendThroughEngine, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { sendDepsFor } from './helpers/send-deps.js';
 import { desktopSendHost } from '../src/main/send/host.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 let dir: string;
 let store: SecretStore;
@@ -63,7 +58,7 @@ afterEach(() => {
 
 /** The getter main wires for project `p1`, recording what it hands out into the log masking. */
 function getterFor(projectId: string | undefined): GetSecret {
-  return projectSecretGetter(store, projectId, recordSecretValue);
+  return projectSecretGetter(store, projectId, hostState.redactor.recordSecretValue);
 }
 
 interface CaptureServer {
@@ -130,15 +125,17 @@ describe('projectSecretGetter', () => {
     await getterFor('p1')('secret:recorded_2');
 
     for (const value of ['fake-recorded-not-real-1', 'fake-recorded-not-real-2']) {
-      expect(redactHeaders({ 'X-Plain': `k ${value}` })).toEqual({ 'X-Plain': 'k <redacted>' });
-      expect(redactUrl(`https://h.test/p?k=${value}`)).not.toContain(value);
-      expect(redactXml(`<a>${value}</a>`)).toBe('<a>&lt;redacted&gt;</a>');
+      expect(hostState.redactor.redactHeaders({ 'X-Plain': `k ${value}` })).toEqual({ 'X-Plain': 'k <redacted>' });
+      expect(hostState.redactor.redactUrl(`https://h.test/p?k=${value}`)).not.toContain(value);
+      expect(hostState.redactor.redactXml(`<a>${value}</a>`)).toBe('<a>&lt;redacted&gt;</a>');
       const raw = Buffer.from(`GET / HTTP/1.1\r\nX-Plain: ${value}\r\n\r\n`).toString('base64');
-      expect(Buffer.from(redactRawHttp(raw, { encoding: 'base64' }), 'base64').toString('utf8')).not.toContain(value);
+      expect(
+        Buffer.from(hostState.redactor.redactRawHttp(raw, { encoding: 'base64' }), 'base64').toString('utf8'),
+      ).not.toContain(value);
       // Shown as-is while the session's show-secrets toggle is on.
-      expect(redactHeaders({ 'X-Plain': value }, { show: true })).toEqual({ 'X-Plain': value });
+      expect(hostState.redactor.redactHeaders({ 'X-Plain': value }, { show: true })).toEqual({ 'X-Plain': value });
     }
-    const history = buildRestHistoryEntry('p1', {
+    const history = buildRestHistoryEntry(hostState.redactor, 'p1', {
       requestId: 'r1',
       requestName: 'R',
       apiName: 'A',
@@ -154,25 +151,27 @@ describe('projectSecretGetter', () => {
   });
 
   it('masks recorded values in raw bytes whether or not they are UTF-8', () => {
-    recordSecretValue('fake-bytes-not-real-001');
+    hostState.redactor.recordSecretValue('fake-bytes-not-real-001');
     const raw = Buffer.concat([
       Buffer.from([0x0a, 0x97, 0xff]),
       Buffer.from('fake-bytes-not-real-001', 'utf8'),
       Buffer.from([0x80]),
     ]);
 
-    const masked = Buffer.from(redactSecretBytes(raw.toString('base64')), 'base64');
+    const masked = Buffer.from(hostState.redactor.redactSecretBytes(raw.toString('base64')), 'base64');
     expect(masked).toEqual(
       Buffer.concat([Buffer.from([0x0a, 0x97, 0xff]), Buffer.from('<redacted>'), Buffer.from([0x80])]),
     );
-    expect(redactSecretBytes(raw.toString('base64'), { show: true })).toBe(raw.toString('base64'));
+    expect(hostState.redactor.redactSecretBytes(raw.toString('base64'), { show: true })).toBe(raw.toString('base64'));
     const other = Buffer.from([0x00, 0xff, 0x10]).toString('base64');
-    expect(redactSecretBytes(other)).toBe(other);
-    expect(redactSecretBytes('')).toBe('');
+    expect(hostState.redactor.redactSecretBytes(other)).toBe(other);
+    expect(hostState.redactor.redactSecretBytes('')).toBe('');
 
     // UTF-8 text is bytes too: the characters around the value come back as they were.
     const text = Buffer.from('{"k":"fake-bytes-not-real-001","é":"ü"}', 'utf8').toString('base64');
-    expect(Buffer.from(redactSecretBytes(text), 'base64').toString('utf8')).toBe('{"k":"<redacted>","é":"ü"}');
+    expect(Buffer.from(hostState.redactor.redactSecretBytes(text), 'base64').toString('utf8')).toBe(
+      '{"k":"<redacted>","é":"ü"}',
+    );
   });
 
   it('does not record a password the getter hands out, which is often ordinary text', async () => {
@@ -183,7 +182,7 @@ describe('projectSecretGetter', () => {
     expect(await getterFor('p1')(ref)).toBe('admin');
     await getterFor('p1')('secret:x');
 
-    const history = buildRestHistoryEntry('p1', {
+    const history = buildRestHistoryEntry(hostState.redactor, 'p1', {
       requestId: 'r1',
       requestName: 'R',
       apiName: 'A',
@@ -195,7 +194,7 @@ describe('projectSecretGetter', () => {
       durationMs: 1,
     });
     expect(history.request.envelopeXml).toBe('{"role":"admin","note":"<redacted>"}');
-    expect(redactUrl('https://h.test/admin/users')).toBe('https://h.test/admin/users');
+    expect(hostState.redactor.redactUrl('https://h.test/admin/users')).toBe('https://h.test/admin/users');
   });
 });
 
@@ -222,7 +221,7 @@ function restProject(header: string): Project {
 }
 
 function restDeps(project: Project): SendThroughEngineDeps {
-  return sendDepsFor(project, { secretsFor: getterFor });
+  return sendDepsFor(project, { hostState, secretsFor: getterFor });
 }
 
 describe('a desktop REST send', () => {
@@ -273,9 +272,14 @@ describe('a desktop SOAP send', () => {
     });
     const project: Project = { ...createProject('Billing', { id: 'p1' }), containers: { soap: [iface] } };
 
-    const summary = await sendThroughEngine(sendDepsFor(project, { secretsFor: getterFor }), 'soap-1', 'req-1', {
-      draft: { kind: 'soap' },
-    });
+    const summary = await sendThroughEngine(
+      sendDepsFor(project, { hostState, secretsFor: getterFor }),
+      'soap-1',
+      'req-1',
+      {
+        draft: { kind: 'soap' },
+      },
+    );
 
     expect(server.requests.slice(before)[0]?.body).toContain('<Pw>fake-soap-password-01</Pw>');
     expect(Buffer.from(summary.http.rawRequestBase64, 'base64').toString('utf8')).not.toContain(
@@ -287,7 +291,7 @@ describe('a desktop SOAP send', () => {
 /** `item` of `project` resolved as its send resolves it, its tokens read through the project's getter. */
 async function resolvedThroughEngine(project: Project, item: SelectedRequest | undefined): Promise<unknown> {
   if (item === undefined) throw new Error('no such request');
-  const host = await desktopSendHost(sendDepsFor(project, { secretsFor: getterFor }), {
+  const host = await desktopSendHost(sendDepsFor(project, { hostState, secretsFor: getterFor }), {
     sendId: '',
     requestId: item.request.id,
     projectId: project.id,

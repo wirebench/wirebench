@@ -39,7 +39,7 @@ export const OC_TREE_LIMITS: OcTreeLimits = {
 
 const YAML_FILE = /\.ya?ml$/i;
 /** Folders no collection keeps its items in, and that can hold more entries than the whole cap. */
-const SKIPPED_FOLDERS = new Set(['node_modules', '.git']);
+const SKIPPED_FOLDERS: ReadonlySet<string> = new Set(['node_modules', '.git']);
 
 function tooLarge(bytes: number): OpenCollectionError {
   return new OpenCollectionError('oc-too-large', `The collection is larger than ${formatBytes(bytes)}`);

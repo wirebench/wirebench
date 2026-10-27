@@ -4,7 +4,7 @@
  * uses, renders it (Markdown, or one self-contained HTML page), runs the native Save dialog and
  * writes the file; no path crosses the bridge. Nothing is resolved, so no secret reaches the file.
  */
-import type { WebContents } from 'electron';
+import type { Caller } from '../../host/platform.js';
 import {
   apiDocumentToHtml,
   apiDocumentToMarkdown,
@@ -18,8 +18,8 @@ import type { Project } from '@wirebench/engine';
 import { authTypeLabel } from '../../../shared/auth-types.js';
 import { channels } from '../../../shared/ipc.js';
 import type { RecordsWritePicks } from '../../dialog-picks.js';
-import { registerHandler } from '../../ipc/register.js';
-import { pickSaveFile } from '../../native-dialogs.js';
+import { registerHandler, type HandlerTable } from '../../ipc/register.js';
+import type { NativeDialogs } from '../../native-dialogs.js';
 
 export type DocsFormat = 'html' | 'markdown';
 
@@ -50,16 +50,15 @@ export interface RestDocsChannelDeps {
   };
   readonly picks: RecordsWritePicks;
   /** The Save dialog; the native one in production. */
-  readonly pickSave?: typeof pickSaveFile;
+  readonly dialogs: Pick<NativeDialogs, 'pickSaveFile'>;
   /** Writes the file; atomic in production. */
   readonly write?: (path: string, text: string) => Promise<void>;
 }
 
-export function registerRestDocsChannels(deps: RestDocsChannelDeps): void {
-  const pickSave = deps.pickSave ?? pickSaveFile;
+export function registerRestDocsChannels(table: HandlerTable, deps: RestDocsChannelDeps): void {
   const write = deps.write ?? ((path: string, text: string) => writeFileAtomic(nodeFs, path, text));
 
-  registerHandler(channels.api.exportDocs, async (request, sender: WebContents) => {
+  registerHandler(table, channels.api.exportDocs, async (request, sender: Caller) => {
     const projectId = deps.router.projectId(request.apiId);
     const project = projectId === undefined ? undefined : deps.router.hostFor(projectId).open?.project;
     if (project === undefined) {
@@ -69,7 +68,7 @@ export function registerRestDocsChannels(deps: RestDocsChannelDeps): void {
     }
     // Built before the dialog: an API that cannot be documented says so instead of asking for a path.
     const file = apiDocsFile(project, request.apiId, request.format);
-    const path = await pickSave(sender, deps.picks, {
+    const path = await deps.dialogs.pickSaveFile(sender, deps.picks, {
       title: 'Save documentation',
       defaultPath: file.fileName,
       filters:

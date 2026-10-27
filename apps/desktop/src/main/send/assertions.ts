@@ -6,17 +6,17 @@
 import { callbackLabel, checkRequestAssertions } from '@wirebench/engine';
 import type { Assertion, AssertionSubject, CallbackAssertion } from '@wirebench/engine';
 import type { RequestAssertionResultWire } from '../../shared/wire-base.js';
-import { redactSecretText } from '../redact.js';
-
-const mask = (text: string): string => redactSecretText(text, { show: false });
+import type { Redactor } from '../host/redactor.js';
 
 const isCallback = (assertion: Assertion): assertion is CallbackAssertion => assertion.type === 'callback';
 
 /** The results to show, or `undefined` when the request has no assertions of its own. */
 export async function editorAssertionResults(
+  redactor: Redactor,
   assertions: readonly Assertion[],
   subject: AssertionSubject,
 ): Promise<RequestAssertionResultWire[] | undefined> {
+  const mask = (text: string): string => redactor.redactSecretText(text, { show: false });
   if (assertions.length === 0) {
     return undefined;
   }

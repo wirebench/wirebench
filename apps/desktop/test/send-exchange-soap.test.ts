@@ -27,6 +27,9 @@ import { AD_HOC_NAME } from '../src/main/send/record.js';
 import type { HistoryEntryWire, ResolvedSendInputWire } from '../src/shared/wire-types.js';
 import type { FailedExchangeWire } from '../src/shared/wire-base.js';
 import { sendDepsFor } from './helpers/send-deps.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const { cacheReads } = vi.hoisted(() => ({ cacheReads: [] as string[] }));
 
@@ -131,13 +134,14 @@ afterEach(async () => {
 });
 
 async function openHistory(): Promise<HistoryService> {
-  const history = new HistoryService(userDataDir);
+  const history = new HistoryService(userDataDir, hostState.redactor);
   await history.open('p1');
   return history;
 }
 
 function depsFor(model: Project, extra: Parameters<typeof sendDepsFor>[1] = {}): SendThroughEngineDeps {
   return sendDepsFor(model, {
+    hostState,
     preferences: () => DEFAULT_PREFERENCES,
     ...extra,
     project: { requestMeta: () => META, ...extra.project },

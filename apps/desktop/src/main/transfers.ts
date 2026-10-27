@@ -1,10 +1,10 @@
+import type { Caller } from './host/platform.js';
 import { randomUUID } from 'node:crypto';
 import { lstat, rename, rm } from 'node:fs/promises';
 import { isAbsolute, join, posix, relative, sep } from 'node:path';
 import { Transform } from 'node:stream';
 import type { Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { WebContents } from 'electron';
 import { WirebenchError } from '@wirebench/engine';
 import { joinRemote } from '@wirebench/ssh';
 import type { SftpSession } from '@wirebench/ssh';
@@ -205,7 +205,7 @@ interface Batch {
 }
 
 interface Window {
-  readonly sender: WebContents;
+  readonly sender: Caller;
   readonly transfers: Map<string, Transfer>;
   readonly batches: Map<string, Batch>;
   /** Waiting to run, oldest first. */
@@ -263,7 +263,7 @@ export class TransferQueue {
    * @throws WirebenchError `sftp-session-unknown` | `sftp-failed` `{ reason: 'into-itself' }` | a source
    *   that cannot be read (`sftp-not-found`, `local-fs-failed`, …)
    */
-  async copy(sender: WebContents, request: SftpCopyRequest): Promise<{ transferIds: string[] }> {
+  async copy(sender: Caller, request: SftpCopyRequest): Promise<{ transferIds: string[] }> {
     const from = this.place(sender, request.from.place);
     const to = this.place(sender, request.to.place);
     const sources: { path: string; entry: SftpEntryWire }[] = [];
@@ -322,7 +322,7 @@ export class TransferQueue {
   }
 
   /** Answers the batch's open question; `applyToRest` answers its later clashes too. A stale answer is ignored. */
-  resolve(sender: WebContents, request: SftpResolveRequest): void {
+  resolve(sender: Caller, request: SftpResolveRequest): void {
     const batch = this.windows.get(sender.id)?.batches.get(request.batchId);
     const current = batch?.current;
     if (!batch || !current) return;
@@ -331,7 +331,7 @@ export class TransferQueue {
   }
 
   /** Idempotent; a finished transfer is left as it is. */
-  cancel(sender: WebContents, request: { transferId: string }): void {
+  cancel(sender: Caller, request: { transferId: string }): void {
     const win = this.windows.get(sender.id);
     const transfer = win?.transfers.get(request.transferId);
     if (!win || !transfer || FINAL.has(transfer.state)) return;
@@ -344,7 +344,7 @@ export class TransferQueue {
   }
 
   /** A failed or cancelled transfer starts over (its clash is checked again); anything else is left. */
-  retry(sender: WebContents, request: { transferId: string }): void {
+  retry(sender: Caller, request: { transferId: string }): void {
     const win = this.windows.get(sender.id);
     const transfer = win?.transfers.get(request.transferId);
     if (!win || !transfer || (transfer.state !== 'failed' && transfer.state !== 'cancelled')) return;
@@ -362,7 +362,7 @@ export class TransferQueue {
    * The window went away, reloaded or switched workspace: every transfer stops, each part file is removed,
    * and nothing more is sent to it.
    */
-  disposeFor(sender: WebContents): void {
+  disposeFor(sender: Caller): void {
     const win = this.windows.get(sender.id);
     if (!win) return;
     win.disposed = true;
@@ -378,7 +378,7 @@ export class TransferQueue {
     for (const win of [...this.windows.values()]) this.disposeFor(win.sender);
   }
 
-  private sessionClosed(sender: WebContents, sessionId: string): void {
+  private sessionClosed(sender: Caller, sessionId: string): void {
     const win = this.windows.get(sender.id);
     if (!win) return;
     const error = new WirebenchError('ssh-session-closed', 'The session closed');
@@ -402,7 +402,7 @@ export class TransferQueue {
   }
 
   /** @throws WirebenchError `sftp-session-unknown` */
-  private place(sender: WebContents, place: SftpPlaceWire): PlaceFs {
+  private place(sender: Caller, place: SftpPlaceWire): PlaceFs {
     if (place.kind === 'local') return this.local;
     try {
       return remotePlace(this.deps.sftp.session(sender, place.sessionId));
@@ -462,7 +462,7 @@ export class TransferQueue {
     });
   }
 
-  private windowOf(sender: WebContents): Window {
+  private windowOf(sender: Caller): Window {
     const existing = this.windows.get(sender.id);
     if (existing) return existing;
     const win: Window = {
@@ -475,7 +475,7 @@ export class TransferQueue {
       disposed: false,
     };
     this.windows.set(sender.id, win);
-    sender.once('destroyed', () => {
+    sender.onClosed(() => {
       if (this.windows.get(sender.id) === win) this.disposeFor(sender);
     });
     return win;
@@ -657,7 +657,7 @@ export class TransferQueue {
       batch.current = transfer;
       batch.expected.delete(transfer);
       this.setState(win, transfer, 'waiting');
-      if (!win.disposed && !win.sender.isDestroyed()) {
+      if (!win.disposed && !win.sender.isClosed()) {
         this.deps.emit(win.sender, events.sftp.conflict, {
           batchId: batch.id,
           transferId: transfer.id,
@@ -705,7 +705,7 @@ export class TransferQueue {
   }
 
   private send(win: Window, transfer: Transfer): void {
-    if (win.disposed || win.sender.isDestroyed()) return;
+    if (win.disposed || win.sender.isClosed()) return;
     this.deps.emit(win.sender, events.sftp.transfer, {
       transferId: transfer.id,
       batchId: transfer.batch.id,

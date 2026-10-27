@@ -2,12 +2,12 @@
  * MCP's IPC channels (spec §5.4; #79), registered through its `registerChannels`: the send and its
  * cancel, the catalogue refresh, and this machine's stdio approvals with the prompt's answer.
  */
-import type { WebContents } from 'electron';
+import type { Caller } from '../../host/platform.js';
 import { mcpServersOf, refreshMcpCatalogue, WirebenchError } from '@wirebench/engine';
 import { channels, events } from '../../../shared/ipc.js';
 import type { McpApprovalPromptEvent } from '../../../shared/kinds/mcp/wire.js';
 import { emitEvent } from '../../ipc/events.js';
-import { registerHandler } from '../../ipc/register.js';
+import { registerHandler, type HandlerTable } from '../../ipc/register.js';
 import { toSendDeps } from '../../ipc/request.js';
 import type { McpApprovals, McpPromptWindow } from '../../mcp-approvals.js';
 import { appSendScope, sendThroughEngine } from '../../send/exchange.js';
@@ -16,19 +16,14 @@ import { mcpArgumentsCheck } from './arguments-check.js';
 import { toMcpMessageWire } from './send.js';
 
 /** A window as the approval prompt reaches it: `mcp.approval` sent to it, and told when it goes away. */
-export function promptWindowOf(contents: WebContents): McpPromptWindow {
+export function promptWindowOf(contents: Caller): McpPromptWindow {
   return {
     prompt: (event: McpApprovalPromptEvent) => {
-      if (contents.isDestroyed()) return false;
+      if (contents.isClosed()) return false;
       emitEvent(contents, events.mcp.approval, event);
       return true;
     },
-    onGone: (gone) => {
-      contents.once('destroyed', gone);
-      return () => {
-        contents.removeListener('destroyed', gone);
-      };
-    },
+    onGone: (gone) => contents.onClosed(gone),
   };
 }
 
@@ -39,13 +34,13 @@ function requireApprovals(approvals: McpApprovals | undefined): McpApprovals {
 }
 
 /** Registers MCP's channels (spec §5.4). */
-export function registerMcpChannels(deps: KindChannelDeps): void {
+export function registerMcpChannels(table: HandlerTable, deps: KindChannelDeps): void {
   const sendDeps = toSendDeps(deps.engine, deps.request);
   const approvals = deps.request.mcpApprovals;
 
   // One session per send: the invoke stays pending until it closes, while `mcp.live` reports each
   // message. A stdio command line not approved yet is asked about in the window that sent it.
-  registerHandler(channels.request.sendMcp, (request, sender) =>
+  registerHandler(table, channels.request.sendMcp, (request, sender) =>
     sendThroughEngine(sendDeps, request.sendId, request.requestId, {
       draft: { kind: 'mcp', ...(request.draft !== undefined ? { draft: request.draft } : {}) },
       checkAssertions: true,
@@ -55,12 +50,14 @@ export function registerMcpChannels(deps: KindChannelDeps): void {
       },
     }),
   );
-  registerHandler(channels.request.cancelMcp, (request) => Promise.resolve(sendDeps.registry.cancel(request.sendId)));
-  registerHandler(channels.request.mcpArgumentsCheck, (request) =>
+  registerHandler(table, channels.request.cancelMcp, (request) =>
+    Promise.resolve(sendDeps.registry.cancel(request.sendId)),
+  );
+  registerHandler(table, channels.request.mcpArgumentsCheck, (request) =>
     Promise.resolve({ problems: mcpArgumentsCheck(request.text, request.schema) }),
   );
 
-  registerHandler(channels.api.refreshMcpCatalogue, async (request, sender) => {
+  registerHandler(table, channels.api.refreshMcpCatalogue, async (request, sender) => {
     const sendId = request.sendId ?? `refresh:${request.apiId}`;
     const located = await appSendScope(sendDeps, request.apiId, {
       sendId,
@@ -79,7 +76,11 @@ export function registerMcpChannels(deps: KindChannelDeps): void {
       ...(request.sendId !== undefined
         ? {
             onMessage: (message) => {
-              emitEvent(sender, events.mcp.live, { kind: 'message', sendId, message: toMcpMessageWire(message, show) });
+              emitEvent(sender, events.mcp.live, {
+                kind: 'message',
+                sendId,
+                message: toMcpMessageWire(deps.request.hostState.redactor, message, show),
+              });
             },
           }
         : {}),
@@ -99,11 +100,13 @@ export function registerMcpChannels(deps: KindChannelDeps): void {
     };
   });
 
-  registerHandler(channels.app.mcpApprovals, async () => ({ approvals: await requireApprovals(approvals).list() }));
-  registerHandler(channels.app.mcpRevokeApproval, async (request) => ({
+  registerHandler(table, channels.app.mcpApprovals, async () => ({
+    approvals: await requireApprovals(approvals).list(),
+  }));
+  registerHandler(table, channels.app.mcpRevokeApproval, async (request) => ({
     approvals: await requireApprovals(approvals).revoke(request.fingerprint),
   }));
-  registerHandler(channels.app.mcpApprove, (request) => {
+  registerHandler(table, channels.app.mcpApprove, (request) => {
     requireApprovals(approvals).answer(request.promptId, request.answer);
     return Promise.resolve({});
   });

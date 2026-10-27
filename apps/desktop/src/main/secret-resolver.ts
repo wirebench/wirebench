@@ -10,7 +10,7 @@ import {
   SECRET_NAME_PATTERN,
 } from '@wirebench/engine';
 import type { GetSecret, UnresolvedRef } from '@wirebench/engine';
-import { recordAuthValues } from './redact.js';
+import type { Redactor } from './host/redactor.js';
 import type { SecretStore } from './secrets.js';
 
 export { resolveEndpointAuth, secretMissingMessage } from '@wirebench/engine';
@@ -18,22 +18,24 @@ export type { ResolvedAuth } from '@wirebench/engine';
 
 /**
  * The engine's `resolveAuthConfig`, recording the credential it resolves for the log's masking
- * (`recordAuthValues`): every send and export in main resolves its auth through here.
+ * (`Redactor.recordAuthValues`): every send and export in main resolves its auth through here.
  */
 export async function resolveAuthConfig(
+  redactor: Redactor,
   ...args: Parameters<typeof resolveAuthConfigValues>
 ): ReturnType<typeof resolveAuthConfigValues> {
   const auth = await resolveAuthConfigValues(...args);
-  recordAuthValues(auth);
+  redactor.recordAuthValues(auth);
   return auth;
 }
 
 /** The engine's `resolveSoapAuth`, recording what it resolves as {@link resolveAuthConfig} does. */
 export async function resolveSoapAuth(
+  redactor: Redactor,
   ...args: Parameters<typeof resolveSoapAuthValues>
 ): ReturnType<typeof resolveSoapAuthValues> {
   const auth = await resolveSoapAuthValues(...args);
-  recordAuthValues(auth);
+  redactor.recordAuthValues(auth);
   return auth;
 }
 
@@ -52,7 +54,7 @@ export type SecretLookup = Pick<SecretStore, 'get' | 'findByLabel'>;
  * The `GetSecret` for sends of one project: a `secret:<name>` pseudo-ref reads the entry labelled
  * {@link secretStoreLabel} for `projectId` (nothing, with no project), any other ref reads the store
  * directly. Every token value it returns is passed to `record` first — the engine's masking
- * contract, which main keeps by recording into `redact.ts`, since a token can sit anywhere. An auth
+ * contract, which main keeps by recording into the host's `Redactor`, since a token can sit anywhere. An auth
  * value is not recorded here: the getter cannot tell a key from a password, so {@link
  * resolveAuthConfig} records the credential in the form it goes out (see `recordAuthValues`),
  * which is never a bare password.

@@ -12,8 +12,10 @@ import { startupFeatures } from '../src/main/features/startup.js';
 import { registerPluginChannels } from '../src/main/ipc/plugins.js';
 import { loadDesktopPlugins, type DesktopPlugins } from '../src/main/plugins/desktop-plugins.js';
 import { isCodeLanguage } from '../src/shared/code-targets.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
@@ -116,7 +118,7 @@ describe('the desktop’s plugins', () => {
     const userData = await temp();
     const plugins = load(userData);
     const picked = new Set<string>();
-    registerPluginChannels({ plugins: () => plugins, picks: { hasRead: (path) => picked.has(path) } });
+    registerPluginChannels(table, { plugins: () => plugins, picks: { hasRead: (path) => picked.has(path) } });
     const stage = handlers.get('plugins.stage');
     const path = await source();
     expect(await stage?.({}, { path })).toMatchObject({ ok: false, error: { code: 'path-not-picked' } });

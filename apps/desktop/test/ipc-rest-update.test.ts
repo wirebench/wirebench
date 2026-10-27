@@ -19,8 +19,12 @@ import { createDefaultFetchDocument, parseOpenApi, writeApiDefinitionCache } fro
 import type { DocumentFetchOptions, FetchDocument } from '@wirebench/engine';
 import { apiRestApplyUpdateResponseSchema, type ProjectWire } from '../src/shared/wire-types.js';
 import { apiRestLintResponseSchema, apiRestPlanUpdateResponseSchema } from '../src/shared/kinds/rest/wire.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 /** Lets one test make the definition-cache rewrite fail *after* the project has been saved. */
 const cacheState = vi.hoisted(() => ({ fails: false }));
@@ -43,7 +47,7 @@ vi.mock('electron', () => ({
 }));
 
 const { registerApiChannelsWithKinds } = await import('./helpers/kind-channels.js');
-type ApiChannelDeps = Parameters<typeof registerApiChannelsWithKinds>[0];
+type ApiChannelDeps = Parameters<typeof registerApiChannelsWithKinds>[1];
 
 const sender = { isDestroyed: () => false, send: vi.fn() };
 
@@ -152,7 +156,15 @@ beforeEach(async () => {
   docPath = join(projectDir, 'openapi.yaml');
   await writeFile(docPath, V1);
 
-  host = new ProjectHost(new EngineService(), {}, undefined, undefined, undefined, undefined, new DialogPicks());
+  host = new ProjectHost(
+    new EngineService(),
+    testHooks(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    new DialogPicks(),
+  );
   await host.create({ dir: join(projectDir, 'project'), name: 'Pets' });
 
   secrets = { 'ref-p': 'hunter2', 'ref-t': 'tok-123' };
@@ -207,11 +219,12 @@ beforeEach(async () => {
     removeProject: unused,
     projectDirs: () => [projectDir],
     picks: new DialogPicks(),
+    dialogs: fakeNativeDialogs(),
     variablesPorts: unused,
     history: { open: unused, recordImportedRestBatch: unused },
     onHistoryChanged: unused,
   };
-  registerApiChannelsWithKinds(deps);
+  registerApiChannelsWithKinds(table, deps);
 });
 
 afterEach(() => {

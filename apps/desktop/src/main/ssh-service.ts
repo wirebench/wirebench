@@ -1,5 +1,6 @@
+import type { Caller, HostPlatform } from './host/platform.js';
+import type { Redactor } from './host/redactor.js';
 import { readFile } from 'node:fs/promises';
-import type { WebContents } from 'electron';
 import type { z } from 'zod';
 import { WirebenchError, nodeFs, secretPseudoRef, writeFileAtomic } from '@wirebench/engine';
 import type { DesktopAuditEvent } from '@wirebench/engine';
@@ -61,11 +62,13 @@ import { RefusalStore, createSshConnector, readKnownHosts } from './ssh-connect.
 import type { SshConnectDeps, SshConnector } from './ssh-connect.js';
 
 export interface SshServiceDeps extends SshConnectDeps {
+  /** The host's: a session's address and login are masked by it in the audit event. */
+  readonly redactor: Redactor;
   /** `userData/ssh-host-os.json`: per machine, the OS each server was found or chosen to run. */
   readonly hostOsFile: string;
-  readonly emit: (target: WebContents, event: IpcEvent<z.ZodType>, payload: unknown) => void;
+  readonly emit: (target: Caller, event: IpcEvent<z.ZodType>, payload: unknown) => void;
   /** The window's `snippets.yaml`: a run types only a snippet saved there. */
-  readonly snippets: (sender: WebContents) => Pick<SnippetsService, 'current' | 'list'>;
+  readonly snippets: (sender: Caller) => Pick<SnippetsService, 'current' | 'list'>;
   /** Tests inject a fake. */
   readonly open?: typeof openSession;
   /** Opens a host whose protocol is `mosh` (#419); without it such a host is refused. */
@@ -82,7 +85,7 @@ export interface SshServiceDeps extends SshConnectDeps {
   /** `false` when this run switched serial consoles off (`WIREBENCH_AREAS=serial=off`, or the managed policy). */
   readonly serial?: boolean | (() => boolean);
   /** The device this machine opens for the serial host, or `undefined` when none was picked yet. */
-  readonly serialDevice?: (sender: WebContents, hostId: string) => Promise<string | undefined>;
+  readonly serialDevice?: (sender: Caller, hostId: string) => Promise<string | undefined>;
   /** Milliseconds; tests inject a clock. */
   readonly now?: () => number;
   /**
@@ -96,14 +99,14 @@ export interface SshServiceDeps extends SshConnectDeps {
    * Told after a session opens or closes, with how many of that window's sessions to the host are open now;
    * port forwards start with a host's first terminal and stop with its last (spec R2).
    */
-  readonly onSessionsChange?: (sender: WebContents, hostId: string, open: number) => void;
+  readonly onSessionsChange?: (sender: Caller, hostId: string, open: number) => void;
   /**
    * Session logs (#414): asked once per connect, before the session opens, with the hops and their
    * credentials; answers how to start the log, or `undefined` when the host is not logged. A failure here
    * opens the session unlogged.
    */
   readonly sessionLog?: (
-    sender: WebContents,
+    sender: Caller,
     request: {
       readonly hostId: string;
       readonly hops: readonly HopCredentials[];
@@ -116,7 +119,7 @@ export interface SshServiceDeps extends SshConnectDeps {
    * The workspace the window's sessions are audited under (#355), read when a connect starts so a session
    * that ends after a switch is credited to the workspace it ran in; `undefined` when none is open.
    */
-  readonly auditWorkspace?: (sender: WebContents) => string | undefined;
+  readonly auditWorkspace?: (sender: Caller) => string | undefined;
   /** Takes a `desktop.ssh_session` event for that workspace's audit reporter; it decides whether it records. */
   readonly audit?: (event: DesktopAuditEvent, workspaceId: string) => void;
 }
@@ -127,13 +130,13 @@ export interface SshServiceDeps extends SshConnectDeps {
  */
 export function progressTo(
   emit: SshServiceDeps['emit'],
-  sender: WebContents,
+  sender: Caller,
   attemptId: string | undefined,
 ): { onProgress?: (event: ConnectProgress) => void } {
   if (attemptId === undefined) return {};
   return {
     onProgress: (event) => {
-      if (!sender.isDestroyed()) emit(sender, events.ssh.connectProgress, { attemptId, event });
+      if (!sender.isClosed()) emit(sender, events.ssh.connectProgress, { attemptId, event });
     },
   };
 }
@@ -188,19 +191,19 @@ export function whenWorkspaceSwitches(onSwitch: () => void): (workspaceId: strin
  */
 export function sshSessionsEndOnSwitch(
   ssh: Pick<SshService, 'disposeFor'>,
-  sender: WebContents,
+  sender: Caller,
 ): (workspaceId: string | null | undefined) => void {
   return whenWorkspaceSwitches(() => {
     ssh.disposeFor(sender);
   });
 }
 
-/** Tells every window when the machine wakes from sleep, so a dropped terminal reconnects at once. */
+/** Tells every window when the machine wakes from sleep, so a dropped terminal reconnects at once; returns a function that stops. */
 export function forwardResume(
-  powerMonitor: { on(event: 'resume', listener: () => void): unknown },
+  power: Pick<NonNullable<HostPlatform['power']>, 'onResume'>,
   broadcast: () => void,
-): void {
-  powerMonitor.on('resume', broadcast);
+): () => void {
+  return power.onResume(broadcast);
 }
 
 /** A listener on one session's output as its window sees it, after the masker (a shared terminal, #429). */
@@ -219,7 +222,7 @@ interface Live {
   readonly taps: Set<SessionTap>;
   /** The last {@link RECENT_OUTPUT_BYTES} the window was shown, oldest first. */
   readonly recent: { chunks: Uint8Array[]; size: number };
-  readonly sender: WebContents;
+  readonly sender: Caller;
   readonly hostId: string;
   /** Masks the secret values a snippet typed into this session, for the session's life. */
   readonly masker: StreamMasker;
@@ -240,7 +243,7 @@ function hopSecrets(hops: readonly HopCredentials[]): string[] {
 }
 
 /**
- * The SSH sessions, each owned by the WebContents that opened it: only that window can write to, resize or
+ * The SSH sessions, each owned by the Caller that opened it: only that window can write to, resize or
  * close it, and only it receives its events. Credentials are resolved at connect and handed to the session;
  * none is ever in an answer, an event or an error. A host key is trusted only through {@link trust}.
  */
@@ -278,7 +281,7 @@ export class SshService {
    *   `ssh-host-key-changed` | `ssh-connect-failed` | `ssh-sk-pin` (the security key needs its PIN: the screen asks
    *   for it and connects again with `skPin`) | `ssh-sk-no-device` | `ssh-sk-not-touched` | `ssh-sk-unavailable`
    */
-  async connect(sender: WebContents, request: SshConnectRequest): Promise<SshConnectResponse> {
+  async connect(sender: Caller, request: SshConnectRequest): Promise<SshConnectResponse> {
     let flight = this.inFlight.get(sender.id);
     if (!flight) {
       flight = { count: 0, generation: 0 };
@@ -294,14 +297,14 @@ export class SshService {
   }
 
   private async connectNow(
-    sender: WebContents,
+    sender: Caller,
     request: SshConnectRequest,
     flight: { readonly generation: number },
   ): Promise<SshConnectResponse> {
     const epoch = this.epoch;
     const generation = flight.generation;
     // A quit, or this window's workspace switching (or the window going), since the connect began.
-    const stale = (): boolean => epoch !== this.epoch || generation !== flight.generation || sender.isDestroyed();
+    const stale = (): boolean => epoch !== this.epoch || generation !== flight.generation || sender.isClosed();
     const closed = (): WirebenchError =>
       new WirebenchError('ssh-session-closed', 'The session closed before it opened');
     const prepared = await this.connector.prepareShell(
@@ -504,7 +507,7 @@ export class SshService {
         if (audited === undefined) return;
         try {
           this.deps.audit?.(
-            sshSessionEvent({
+            sshSessionEvent(this.deps.redactor, {
               ...audited.input,
               endedAt: new Date(this.now()),
               exit: exit === undefined ? undefined : { code: exit.code, reason: exit.reason },
@@ -540,7 +543,7 @@ export class SshService {
    * The device this machine opens for a serial host.
    * @throws WirebenchError `serial-device-unset` when none was picked yet: the connection screen asks for one
    */
-  private async serialDeviceOf(sender: WebContents, hostId: string): Promise<string> {
+  private async serialDeviceOf(sender: Caller, hostId: string): Promise<string> {
     const device = await this.deps.serialDevice?.(sender, hostId);
     if (device === undefined) {
       throw new WirebenchError('serial-device-unset', 'Pick the serial port this computer opens for the console', {
@@ -550,12 +553,12 @@ export class SshService {
     return device;
   }
 
-  private async probeOs(sender: WebContents, session: SshSession, host: string): Promise<void> {
+  private async probeOs(sender: Caller, session: SshSession, host: string): Promise<void> {
     try {
       const detected = detectOs(await session.exec(OS_PROBE, OS_PROBE_TIMEOUT_MS));
       if (!detected) return;
       await this.updateHostOs(host, (entry) => ({ ...entry, detected: detected satisfies SshDetectedOsWire }));
-      if (!sender.isDestroyed()) this.deps.emit(sender, events.ssh.hostOsChanged, {});
+      if (!sender.isClosed()) this.deps.emit(sender, events.ssh.hostOsChanged, {});
     } catch {
       // Only a label: a probe that failed (or a store that cannot be written) is not worth a message.
     }
@@ -570,12 +573,12 @@ export class SshService {
    * Sets (`os`) or clears (`null`) the OS the user chose for `host`; a cleared choice falls back to what
    * was detected. Tells the calling window.
    */
-  async setHostOs(sender: WebContents, request: { readonly host: string; readonly os: SshOsId | null }): Promise<void> {
+  async setHostOs(sender: Caller, request: { readonly host: string; readonly os: SshOsId | null }): Promise<void> {
     await this.updateHostOs(request.host, (entry) => {
       const rest: SshHostOsWire = entry.detected ? { detected: entry.detected } : {};
       return request.os === null ? rest : { ...rest, chosen: request.os };
     });
-    if (!sender.isDestroyed()) this.deps.emit(sender, events.ssh.hostOsChanged, {});
+    if (!sender.isClosed()) this.deps.emit(sender, events.ssh.hostOsChanged, {});
   }
 
   /** Serialised, so concurrent probes and choices all land. An entry left empty is dropped. */
@@ -604,7 +607,7 @@ export class SshService {
   }
 
   /** @throws WirebenchError `ssh-session-unknown` for a foreign or dead session. */
-  write(sender: WebContents, request: SshWriteRequest): void {
+  write(sender: Caller, request: SshWriteRequest): void {
     this.owned(sender, request.sessionId).session.write(Buffer.from(request.data, 'base64'));
   }
 
@@ -612,7 +615,7 @@ export class SshService {
    * Writes `data` to each session this window owns and has live; the rest come back in `skipped` and are
    * written nothing, so a broadcast never reaches another window's session.
    */
-  writeMany(sender: WebContents, request: SshWriteManyRequest): SshWriteManyResponse {
+  writeMany(sender: Caller, request: SshWriteManyRequest): SshWriteManyResponse {
     const bytes = Buffer.from(request.data, 'base64');
     const skipped: string[] = [];
     for (const sessionId of request.sessionIds) {
@@ -631,7 +634,7 @@ export class SshService {
    * @throws WirebenchError `ssh-session-unknown` | `workspace-not-open` | `snippet-unknown` | `snippet-changed` |
    *   `secret-missing` | `snippet-variable-missing` | `snippet-value-invalid` | `snippet-prefix-mismatch`
    */
-  async runSnippet(sender: WebContents, request: SshRunSnippetRequest): Promise<void> {
+  async runSnippet(sender: Caller, request: SshRunSnippetRequest): Promise<void> {
     this.owned(sender, request.sessionId);
     // Taken now, so the secrets are those of the workspace the run began in.
     const getSecret = this.deps.secretsFor(sender);
@@ -677,7 +680,7 @@ export class SshService {
    *
    * @throws WirebenchError `workspace-not-open` | `snippet-unknown` | `snippet-variable-missing` | `snippet-value-invalid`
    */
-  async previewSnippet(sender: WebContents, request: SshPreviewSnippetRequest): Promise<SshPreviewSnippetResponse> {
+  async previewSnippet(sender: Caller, request: SshPreviewSnippetRequest): Promise<SshPreviewSnippetResponse> {
     const { snippet } = await this.savedSnippet(sender, request.snippetId);
     try {
       return { text: previewSnippet(snippet, request.values), revision: snippetRevision(snippet) };
@@ -687,7 +690,7 @@ export class SshService {
   }
 
   /** @throws WirebenchError `workspace-not-open` | `snippet-unknown` */
-  private async savedSnippet(sender: WebContents, id: string): Promise<{ snippet: Snippet; item: SnippetListItem }> {
+  private async savedSnippet(sender: Caller, id: string): Promise<{ snippet: Snippet; item: SnippetListItem }> {
     const service = this.deps.snippets(sender);
     await service.list(); // reads the file when nothing is cached for the open workspace
     const file = service.current();
@@ -700,7 +703,7 @@ export class SshService {
   }
 
   /** @throws WirebenchError `ssh-session-unknown` for a foreign or dead session. */
-  resize(sender: WebContents, request: SshResizeRequest): void {
+  resize(sender: Caller, request: SshResizeRequest): void {
     const live = this.owned(sender, request.sessionId);
     live.session.resize(request.cols, request.rows);
     for (const tap of live.taps) tap.resize(request.cols, request.rows);
@@ -712,7 +715,7 @@ export class SshService {
    *
    * @throws WirebenchError `ssh-session-unknown` for a foreign or dead session.
    */
-  tap(sender: WebContents, sessionId: string, tap: SessionTap): () => void {
+  tap(sender: Caller, sessionId: string, tap: SessionTap): () => void {
     const { taps, recent } = this.owned(sender, sessionId);
     // The screen as it stands first, so a viewer sees what was printed before the share began.
     if (recent.size > 0) tap.data(Buffer.concat(recent.chunks));
@@ -723,7 +726,7 @@ export class SshService {
   }
 
   /** Idempotent: a session already gone, or another window's, is left as it is. */
-  close(sender: WebContents, request: SshCloseRequest): void {
+  close(sender: Caller, request: SshCloseRequest): void {
     const live = this.live.get(request.sessionId);
     if (!live || live.sender.id !== sender.id) return;
     live.session.close();
@@ -736,13 +739,13 @@ export class SshService {
    *
    * @throws WirebenchError `ssh-host-key-unexpected` | `ssh-host-key-changed`
    */
-  trust(sender: WebContents, request: SshTrustRequest): Promise<void> {
+  trust(sender: Caller, request: SshTrustRequest): Promise<void> {
     const run = this.trustQueue.then(() => this.trustNow(sender, request));
     this.trustQueue = run.catch(() => undefined);
     return run;
   }
 
-  private async trustNow(sender: WebContents, request: SshTrustRequest): Promise<void> {
+  private async trustNow(sender: Caller, request: SshTrustRequest): Promise<void> {
     const refusal = this.refusals
       .of(sender.id)
       .find((r) => r.host === request.host && r.keyType === request.keyType && r.fingerprint === request.fingerprint);
@@ -785,7 +788,7 @@ export class SshService {
    * Closes the sessions one window owns (the window went away, reloaded, or switched workspace), and a
    * connect it has in flight; other windows' sessions and refusals are left alone.
    */
-  disposeFor(sender: WebContents): void {
+  disposeFor(sender: Caller): void {
     const flight = this.inFlight.get(sender.id);
     if (flight) flight.generation += 1;
     this.connector.forget(sender);
@@ -796,15 +799,14 @@ export class SshService {
     }
   }
 
-  private watch(sender: WebContents): void {
+  private watch(sender: Caller): void {
     if (this.watched.has(sender.id)) return;
     this.watched.add(sender.id);
     // A reload or a crash starts a renderer that knows nothing of the old sessions; they go too.
-    sender.on('render-process-gone', () => this.disposeFor(sender));
-    sender.on('did-start-navigation', (details) => {
-      if (details.isMainFrame && !details.isSameDocument) this.disposeFor(sender);
+    sender.onReset(() => {
+      this.disposeFor(sender);
     });
-    sender.once('destroyed', () => {
+    sender.onClosed(() => {
       this.watched.delete(sender.id);
       this.disposeFor(sender);
     });
@@ -814,7 +816,7 @@ export class SshService {
     return (this.deps.now ?? Date.now)();
   }
 
-  private owned(sender: WebContents, sessionId: string): Live {
+  private owned(sender: Caller, sessionId: string): Live {
     const live = this.live.get(sessionId);
     if (!live || live.sender.id !== sender.id) throw new WirebenchError('ssh-session-unknown', 'No such session');
     return live;
@@ -829,12 +831,12 @@ export class SshService {
     live.ended(exit);
     for (const tap of [...live.taps]) tap.end();
     live.taps.clear();
-    if (!live.sender.isDestroyed()) this.deps.emit(live.sender, events.ssh.state, { sessionId, state: 'closed' });
+    if (!live.sender.isClosed()) this.deps.emit(live.sender, events.ssh.state, { sessionId, state: 'closed' });
     this.sessionsChanged(live.sender, live.hostId);
   }
 
   /** Tells the hook how many of that window's sessions to the host are open now. */
-  private sessionsChanged(sender: WebContents, hostId: string): void {
+  private sessionsChanged(sender: Caller, hostId: string): void {
     const hook = this.deps.onSessionsChange;
     if (!hook) return;
     let open = 0;

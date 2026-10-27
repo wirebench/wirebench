@@ -2,10 +2,13 @@
 import { describe, expect, it } from 'vitest';
 import { WirebenchError } from '@wirebench/engine';
 import { failedExchangeOf } from '../src/main/failed-exchange.js';
+import { Redactor } from '../src/main/host/redactor.js';
+
+const redactor = new Redactor();
 
 const STARTED_AT = Date.parse('2026-09-16T08:30:05.000Z');
 
-function input(overrides: Partial<Parameters<typeof failedExchangeOf>[0]> = {}) {
+function input(overrides: Partial<Parameters<typeof failedExchangeOf>[1]> = {}) {
   return {
     sendId: 'send-1',
     protocol: 'soap' as const,
@@ -22,13 +25,13 @@ function input(overrides: Partial<Parameters<typeof failedExchangeOf>[0]> = {}) 
 
 describe('failedExchangeOf', () => {
   it('masks the password in a URL userinfo so it never reaches the wire payload', () => {
-    const failure = failedExchangeOf(input({ url: 'http://user:s3cret@host/x' }));
+    const failure = failedExchangeOf(redactor, input({ url: 'http://user:s3cret@host/x' }));
 
     expect(JSON.stringify(failure)).not.toContain('s3cret');
   });
 
   it('copies the identity, the timing and the request as sent', () => {
-    const failure = failedExchangeOf(input());
+    const failure = failedExchangeOf(redactor, input());
 
     expect(failure).toMatchObject({
       sendId: 'send-1',
@@ -42,6 +45,7 @@ describe('failedExchangeOf', () => {
 
   it('redacts sensitive headers unconditionally and keeps the others', () => {
     const failure = failedExchangeOf(
+      redactor,
       input({
         headers: {
           'Content-Type': 'text/xml',
@@ -63,6 +67,7 @@ describe('failedExchangeOf', () => {
 
   it('masks a sensitive query parameter in the URL, including the API key parameter it is told about', () => {
     const failure = failedExchangeOf(
+      redactor,
       input({ url: 'https://api.test/pets?token=abc&secretish=xyz&page=2', keyParams: ['secretish'] }),
     );
 
@@ -70,24 +75,24 @@ describe('failedExchangeOf', () => {
   });
 
   it('maps a WirebenchError to its code and message', () => {
-    const failure = failedExchangeOf(input({ error: new WirebenchError('dns', 'DNS lookup failed.') }));
+    const failure = failedExchangeOf(redactor, input({ error: new WirebenchError('dns', 'DNS lookup failed.') }));
 
     expect(failure.error).toEqual({ code: 'dns', message: 'DNS lookup failed.' });
   });
 
   it('maps anything else to internal-error with the message it has', () => {
-    expect(failedExchangeOf(input({ error: new Error('boom') })).error).toEqual({
+    expect(failedExchangeOf(redactor, input({ error: new Error('boom') })).error).toEqual({
       code: 'internal-error',
       message: 'boom',
     });
-    expect(failedExchangeOf(input({ error: 'plain string' })).error).toEqual({
+    expect(failedExchangeOf(redactor, input({ error: 'plain string' })).error).toEqual({
       code: 'internal-error',
       message: 'plain string',
     });
   });
 
   it('omits requestId for an ad-hoc send rather than writing undefined', () => {
-    const failure = failedExchangeOf(input({ requestId: undefined }));
+    const failure = failedExchangeOf(redactor, input({ requestId: undefined }));
 
     expect(failure).not.toHaveProperty('requestId');
   });
@@ -103,7 +108,7 @@ describe('failedExchangeOf', () => {
     };
 
     it('overrides url, method and headers, redacted', () => {
-      const failure = failedExchangeOf(input({ captured }));
+      const failure = failedExchangeOf(redactor, input({ captured }));
 
       expect(failure.request).toEqual({
         url: 'https://api.test/pets/7?page=2&token=%3Credacted%3E',
@@ -113,7 +118,7 @@ describe('failedExchangeOf', () => {
     });
 
     it('carries a raw request whose request line, headers and XML body are redacted', () => {
-      const failure = failedExchangeOf(input({ captured }));
+      const failure = failedExchangeOf(redactor, input({ captured }));
       const raw = Buffer.from(failure.rawRequestBase64 ?? '', 'base64').toString('utf8');
 
       expect(raw.startsWith('PUT /pets/7?page=2&token=%3Credacted%3E HTTP/1.1\r\n')).toBe(true);
@@ -125,7 +130,7 @@ describe('failedExchangeOf', () => {
     });
 
     it('omits a truncated body rather than risk a half-masked secret', () => {
-      const failure = failedExchangeOf(input({ captured: { ...captured, bodyTruncated: true } }));
+      const failure = failedExchangeOf(redactor, input({ captured: { ...captured, bodyTruncated: true } }));
       const raw = Buffer.from(failure.rawRequestBase64 ?? '', 'base64').toString('utf8');
 
       expect(raw.endsWith('\r\n\r\n')).toBe(true);
@@ -134,33 +139,36 @@ describe('failedExchangeOf', () => {
 
     it('masks a header API key under the name it is told about, in the headers and the raw request', () => {
       const keyed = { ...captured, headers: { ...captured.headers, 'X-Gravitee-Api-Key': 'gk-secret' } };
-      const failure = failedExchangeOf(input({ captured: keyed, keyHeaders: ['x-gravitee-api-key'] }));
+      const failure = failedExchangeOf(redactor, input({ captured: keyed, keyHeaders: ['x-gravitee-api-key'] }));
       const raw = Buffer.from(failure.rawRequestBase64 ?? '', 'base64').toString('utf8');
 
       expect(failure.request.headers['X-Gravitee-Api-Key']).toBe('<redacted>');
       expect(raw).toContain('X-Gravitee-Api-Key: <redacted>');
       expect(JSON.stringify(failure) + raw).not.toContain('gk-secret');
       // Without the name it is an ordinary header, as it always was.
-      expect(failedExchangeOf(input({ captured: keyed })).request.headers['X-Gravitee-Api-Key']).toBe('gk-secret');
+      expect(failedExchangeOf(redactor, input({ captured: keyed })).request.headers['X-Gravitee-Api-Key']).toBe(
+        'gk-secret',
+      );
     });
 
     it('carries no raw request without a captured one', () => {
-      expect(failedExchangeOf(input())).not.toHaveProperty('rawRequestBase64');
+      expect(failedExchangeOf(redactor, input())).not.toHaveProperty('rawRequestBase64');
     });
   });
 });
 
 describe('failedExchangeOf stage', () => {
   it('marks a prepare-stage failure and leaves a send failure unmarked', () => {
-    expect(failedExchangeOf(input({ stage: 'prepare' })).stage).toBe('prepare');
-    expect('stage' in failedExchangeOf(input())).toBe(false);
-    expect('stage' in failedExchangeOf(input({ stage: 'send' }))).toBe(false);
+    expect(failedExchangeOf(redactor, input({ stage: 'prepare' })).stage).toBe('prepare');
+    expect('stage' in failedExchangeOf(redactor, input())).toBe(false);
+    expect('stage' in failedExchangeOf(redactor, input({ stage: 'send' }))).toBe(false);
   });
 });
 
 describe('failedExchangeOf structured body', () => {
   it('masks a JSON client_secret in the raw request', () => {
     const failure = failedExchangeOf(
+      redactor,
       input({
         captured: {
           url: 'https://example.test/token',
@@ -177,15 +185,22 @@ describe('failedExchangeOf structured body', () => {
 
 describe('failedExchangeOf — an unparseable URL from the transport', () => {
   it('is a prepare-stage failure: nothing was built, so nothing went on the wire', () => {
-    const failure = failedExchangeOf(input({ error: new WirebenchError('invalid-url', 'Invalid URL: ht!tp:/x') }));
+    const failure = failedExchangeOf(
+      redactor,
+      input({ error: new WirebenchError('invalid-url', 'Invalid URL: ht!tp:/x') }),
+    );
     expect(failure.stage).toBe('prepare');
     expect(failure.error.code).toBe('invalid-url');
-    const incomplete = failedExchangeOf(input({ error: new WirebenchError('rest-url-incomplete', 'Not a URL') }));
+    const incomplete = failedExchangeOf(
+      redactor,
+      input({ error: new WirebenchError('rest-url-incomplete', 'Not a URL') }),
+    );
     expect(incomplete.stage).toBe('prepare');
   });
 
   it('stays a send failure when the transport had built the request', () => {
     const failure = failedExchangeOf(
+      redactor,
       input({
         error: new WirebenchError('invalid-url', 'Invalid URL'),
         captured: { url: 'https://example.test/', method: 'GET', headers: {}, bodyTruncated: false },

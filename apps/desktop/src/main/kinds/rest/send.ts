@@ -5,7 +5,6 @@
 import { applyAuth, composeUrl, restEffectiveAuth, restItemFor } from '@wirebench/engine';
 import type { RestContractResult, RestSendInput, SentRequest } from '@wirebench/engine';
 import { toSseRowWire } from '../../engine-wire.js';
-import { redactHeaders } from '../../redact.js';
 import { withRestDraft } from '../../send/draft.js';
 import { recordRest, summariseRest } from '../../send/record.js';
 import { withSentSigningHeaders } from '../../webhook-send.js';
@@ -20,21 +19,28 @@ export const restSend: KindSend<'rest'> = {
     return found === undefined ? undefined : withRestDraft(project, found, draft.draft);
   },
 
-  liveEvent(sendId, event, show) {
+  liveEvent(redactor, sendId, event, show) {
     return event.kind === 'open'
-      ? { kind: 'open', sendId, status: event.status, headers: redactHeaders(event.headers, { show }) }
-      : { kind: 'row', sendId, row: toSseRowWire(event.row, { show }) };
+      ? { kind: 'open', sendId, status: event.status, headers: redactor.redactHeaders(event.headers, { show }) }
+      : { kind: 'row', sendId, row: toSseRowWire(redactor, event.row, { show }) };
   },
 
   summarise({ deps, sendId, sent, masks, show }) {
     const exchange = restSent(sent);
     return {
-      summary: summariseRest(deps.service, sendId, exchange.rest, exchange.contract as RestContractResult | undefined, {
-        ...(exchange.graphql !== undefined ? { graphql: exchange.graphql } : {}),
-        method: exchange.input.request.method,
-        ...masks,
-        show,
-      }),
+      summary: summariseRest(
+        deps.hostState.redactor,
+        deps.service,
+        sendId,
+        exchange.rest,
+        exchange.contract as RestContractResult | undefined,
+        {
+          ...(exchange.graphql !== undefined ? { graphql: exchange.graphql } : {}),
+          method: exchange.input.request.method,
+          ...masks,
+          show,
+        },
+      ),
     };
   },
 

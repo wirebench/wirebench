@@ -7,8 +7,10 @@ import { toInterfaceSummary } from '../src/main/engine-wire.js';
 import { fixturePath } from './helpers/fixtures.js';
 import type { WssEntry } from '@wirebench/engine';
 import type { WssPolicyWire } from '../src/shared/kinds/soap/wire.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -52,7 +54,7 @@ describe('wss.policyStatus', () => {
   beforeEach(() => {
     handlers.clear();
     wssPolicyInputs.mockReset();
-    registerWssChannels({ project });
+    registerWssChannels(table, { project });
   });
 
   it('answers with no status when the operation carries no policy', async () => {

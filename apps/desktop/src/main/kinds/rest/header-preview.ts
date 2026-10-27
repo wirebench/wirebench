@@ -16,7 +16,6 @@ import type {
   RestHeaderRowWire,
 } from '../../../shared/kinds/rest/wire.js';
 import { cachedAccessToken, placeholderAuth, shownAuth, type RequestChannelDeps } from '../../ipc/request.js';
-import { redactHeaders } from '../../redact.js';
 import { previewRest, type RestPreview, type SendThroughEngineDeps } from '../../send/exchange.js';
 
 /** The credentials the preview applies, and a note when the header they make is not known yet. */
@@ -72,7 +71,8 @@ export async function restHeaders(
   const headers: RestHeaderRowWire[] = rows.map((row) => {
     const value = show
       ? row.value
-      : (redactHeaders({ [row.name]: row.value }, { show, extraHeaders })[row.name] ?? row.value);
+      : (deps.hostState.redactor.redactHeaders({ [row.name]: row.value }, { show, extraHeaders })[row.name] ??
+        row.value);
     const masked = value !== row.value || value.includes(CURL_REDACTED);
     return { name: row.name, value, source: row.source, state: row.state, ...(masked ? { masked: true } : {}) };
   });

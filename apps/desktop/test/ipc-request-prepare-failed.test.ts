@@ -10,8 +10,13 @@ import { EngineService } from '../src/main/engine-service.js';
 import { type RequestChannelDeps } from '../src/main/ipc/request.js';
 import type { FailedExchangeWire } from '../src/shared/wire-base.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -80,7 +85,8 @@ describe('request.sendRest → prepare-stage failures', () => {
 
   function register(overrides: Partial<RequestChannelDeps>, projectOverrides: Record<string, unknown> = {}) {
     const onSendFailed = vi.fn<(failure: FailedExchangeWire) => void>();
-    registerRequestChannelsWithKinds(new EngineService(), {
+    registerRequestChannelsWithKinds(table, new EngineService(), {
+      hostState,
       project: { ...project(), ...projectOverrides },
       adHocScopes: () => ({ project: {}, global: {}, system: {} }),
       onSendFailed,

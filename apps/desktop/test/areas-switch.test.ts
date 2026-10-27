@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
+import { HandlerTable } from '../src/main/ipc/register.js';
 import {
   enabledAreasFromEnv,
   hostsOnFileChange,
@@ -11,24 +12,19 @@ import {
   serialFromEnv,
   telnetFromEnv,
 } from '../src/main/areas.js';
+import { Redactor } from '../src/main/host/redactor.js';
 
-const registered = vi.hoisted(() => new Set<string>());
-vi.mock('electron', () => ({
-  ipcMain: {
-    handle: (name: string) => {
-      registered.add(name);
-    },
-  },
-}));
+/** Registering only fills this table; nothing is bound, so no handler is called. */
+const table = new HandlerTable(new Redactor());
 
 /** The channel names registering the enabled areas leaves behind; no handler is called. */
 function channelsFor(env: string): string[] {
-  registered.clear();
+  table.clear();
   const environment = { WIREBENCH_AREAS: env };
-  registerEnabledAreaChannels(enabledAreasFromEnv(environment), {
+  registerEnabledAreaChannels(table, enabledAreasFromEnv(environment), {
     localTerminal: localTerminalFromEnv(environment) ? {} : undefined,
   } as never);
-  return [...registered];
+  return [...table.keys()];
 }
 
 describe('WIREBENCH_AREAS', () => {
@@ -118,10 +114,10 @@ describe('resolveAreas (#360)', () => {
   });
 
   it('registers no ssh.* channel when the policy switches the area off, whatever the variable says', () => {
-    registered.clear();
+    table.clear();
     const run = resolveAreas({ policy: ['ssh'], env: { WIREBENCH_AREAS: 'ssh=on' } });
-    registerEnabledAreaChannels(run.enabled, { localTerminal: run.localTerminal ? {} : undefined } as never);
-    expect([...registered].filter((n) => n.startsWith('ssh.') || n.startsWith('localTerminal.'))).toEqual([]);
+    registerEnabledAreaChannels(table, run.enabled, { localTerminal: run.localTerminal ? {} : undefined } as never);
+    expect([...table.keys()].filter((n) => n.startsWith('ssh.') || n.startsWith('localTerminal.'))).toEqual([]);
   });
 });
 

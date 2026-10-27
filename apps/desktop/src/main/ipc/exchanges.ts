@@ -1,10 +1,11 @@
-import { BrowserWindow, dialog } from 'electron';
+import type { HostPlatform } from '../host/platform.js';
+import { requireCapability } from '../host/capability.js';
 import { nodeFs, WirebenchError, writeFileAtomic } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import { extensionForContentType } from '../kinds/soap/channels/attachments.js';
 import { redactExchangeSummary } from '../engine-wire.js';
 import type { ExchangeCache } from '../exchange-cache.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /**
  * Registers `exchanges.get`: re-reads one cached exchange and redacts it against the
@@ -13,8 +14,13 @@ import { registerHandler } from './register.js';
  *
  * @throws WirebenchError `unknown-send` when the exchange has been evicted (or never existed).
  */
-export function registerExchangeChannels(cache: ExchangeCache, showSecrets: { get(): boolean }): void {
-  registerHandler(channels.exchanges.saveRestBody, async (request, sender) => {
+export function registerExchangeChannels(
+  table: HandlerTable,
+  cache: ExchangeCache,
+  showSecrets: { get(): boolean },
+  platform: Pick<HostPlatform, 'dialogs'>,
+): void {
+  registerHandler(table, channels.exchanges.saveRestBody, async (request, sender) => {
     const summary = cache.getRest(request.sendId);
     const bytes = cache.getRestBody(request.sendId);
     if (summary === undefined || bytes === undefined) {
@@ -28,8 +34,7 @@ export function registerExchangeChannels(cache: ExchangeCache, showSecrets: { ge
     const contentType = summary.http.headers['content-type'] ?? 'application/octet-stream';
     let targetPath = process.env['WIREBENCH_E2E_SAVE_PATH'];
     if (targetPath === undefined) {
-      const window = BrowserWindow.fromWebContents(sender) ?? undefined;
-      const result = await dialog.showSaveDialog(window as BrowserWindow, {
+      const result = await requireCapability(platform, 'dialogs').saveFile(sender, {
         title: 'Save response as…',
         defaultPath: `response${extensionForContentType(contentType)}`,
       });
@@ -44,7 +49,7 @@ export function registerExchangeChannels(cache: ExchangeCache, showSecrets: { ge
     return { path: targetPath };
   });
 
-  registerHandler(channels.exchanges.get, (request) => {
+  registerHandler(table, channels.exchanges.get, (request) => {
     const summary = cache.get(request.sendId);
     if (summary === undefined) {
       const rest = cache.getRestView(request.sendId, showSecrets.get());
@@ -57,7 +62,7 @@ export function registerExchangeChannels(cache: ExchangeCache, showSecrets: { ge
     }
     const cached = cache.getExchange(request.sendId);
     return Promise.resolve(
-      redactExchangeSummary(summary, {
+      redactExchangeSummary(table.redactor, summary, {
         show: showSecrets.get(),
         ...(cached?.keyParams !== undefined ? { keyParams: cached.keyParams } : {}),
         ...(cached?.keyHeaders !== undefined ? { keyHeaders: cached.keyHeaders } : {}),

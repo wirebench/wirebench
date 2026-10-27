@@ -3,9 +3,9 @@
  * messages, its summary, History and audit row. An MCP send writes no HTTP Log row: History is its
  * record (spec, "Desktop").
  */
+import type { Redactor } from '../../host/redactor.js';
 import { commandDisplay, mcpEffectiveAuth, mcpItemFor, redactMcpExchange } from '@wirebench/engine';
 import type { McpExchange, McpMessage, SentRequest } from '@wirebench/engine';
-import { redactSecretValues } from '../../redact.js';
 import { recordMcp } from '../../send/record.js';
 import type { McpExchangeSummary, McpMessageWire } from '../../../shared/kinds/mcp/wire.js';
 import { apiKeyMasks } from '../key-masks.js';
@@ -18,20 +18,25 @@ function plain<T>(value: unknown): T {
 }
 
 /** The exchange as a person may be shown it: as it is when the session shows secrets, else redacted. */
-function shown(exchange: McpExchange, show: boolean): McpExchange {
-  return show ? exchange : redactMcpExchange(exchange, { text: (text) => redactSecretValues(text) });
+function shown(redactor: Redactor, exchange: McpExchange, show: boolean): McpExchange {
+  return show ? exchange : redactMcpExchange(exchange, { text: (text) => redactor.redactSecretValues(text) });
 }
 
 /** One message as the renderer receives it, its text masked unless the session shows secrets. */
-export function toMcpMessageWire(message: McpMessage, show: boolean): McpMessageWire {
-  const mask = (text: string): string => (show ? text : redactSecretValues(text));
+export function toMcpMessageWire(redactor: Redactor, message: McpMessage, show: boolean): McpMessageWire {
+  const mask = (text: string): string => (show ? text : redactor.redactSecretValues(text));
   return plain<McpMessageWire>({ ...message, text: mask(message.text), warnings: message.warnings.map(mask) });
 }
 
 /** The exchange as `request.sendMcp` answers it. */
-export function toMcpExchangeSummary(exchange: McpExchange, sendId: string, show: boolean): McpExchangeSummary {
+export function toMcpExchangeSummary(
+  redactor: Redactor,
+  exchange: McpExchange,
+  sendId: string,
+  show: boolean,
+): McpExchangeSummary {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it
-  const { kind, ...rest } = shown(exchange, show);
+  const { kind, ...rest } = shown(redactor, exchange, show);
   return plain<McpExchangeSummary>({ ...rest, sendId });
 }
 
@@ -49,12 +54,12 @@ export const mcpSend: KindSend<'mcp'> = {
       : { ...found, request: withMcpPatch(found.request, draft.draft) };
   },
 
-  liveEvent(sendId, event, show) {
-    return { kind: 'message', sendId, message: toMcpMessageWire(event.message, show) };
+  liveEvent(redactor, sendId, event, show) {
+    return { kind: 'message', sendId, message: toMcpMessageWire(redactor, event.message, show) };
   },
 
-  summarise({ sendId, sent, show }) {
-    return { summary: toMcpExchangeSummary(mcpSent(sent).mcp, sendId, show) };
+  summarise({ deps, sendId, sent, show }) {
+    return { summary: toMcpExchangeSummary(deps.hostState.redactor, mcpSent(sent).mcp, sendId, show) };
   },
 
   async record(deps, recorded, sent) {

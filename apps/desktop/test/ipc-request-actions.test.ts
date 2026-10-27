@@ -9,8 +9,13 @@ import type { ProjectChange } from '../src/shared/wire-types.js';
 import type { SoapSendInputWire } from '../src/shared/kinds/soap/wire.js';
 import { readPublicFixture } from './helpers/fixtures.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -179,7 +184,8 @@ describe('request.recreate / curl / importCurl', () => {
       operationName: 'Add',
     });
     project.envelopeXml = generated.envelopeXml.replace(/<tem:intA>[^<]*<\/tem:intA>/, '<tem:intA>5</tem:intA>');
-    registerRequestChannelsWithKinds(engine, {
+    registerRequestChannelsWithKinds(table, engine, {
+      hostState,
       project: project as unknown as RequestChannelDeps['project'],
       showSecrets: { get: () => showSecrets },
     });

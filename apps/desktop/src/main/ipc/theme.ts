@@ -1,20 +1,14 @@
-import { nativeTheme } from 'electron';
+import type { HostPlatform } from '../host/platform.js';
 import { channels } from '../../shared/ipc.js';
 import type { ThemeOsWire } from '../../shared/wire-base.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
-/**
- * The slice of Electron's `nativeTheme` this module needs, so the channel can be asserted on
- * with a fake in a plain Node test (the real one only exists inside a running Electron app).
- */
-export interface NativeThemeApi {
-  readonly shouldUseDarkColors: boolean;
-  on(event: 'updated', listener: () => void): unknown;
-}
+/** What this module needs of the platform: the OS appearance and word of it changing. */
+export type ThemeSource = Pick<HostPlatform['app'], 'osTheme' | 'onOsThemeChanged'>;
 
-/** `nativeTheme`'s current answer as the wire shape both `theme.get` and `theme.changed` use. */
-export function themeOf(theme: NativeThemeApi): ThemeOsWire {
-  return { os: theme.shouldUseDarkColors ? 'dark' : 'light' };
+/** The OS appearance's current answer as the wire shape both `theme.get` and `theme.changed` use. */
+export function themeOf(theme: Pick<ThemeSource, 'osTheme'>): ThemeOsWire {
+  return { os: theme.osTheme() };
 }
 
 /**
@@ -26,14 +20,15 @@ export function themeOf(theme: NativeThemeApi): ThemeOsWire {
  * authority, so `system` resolves against this channel and this event.
  *
  * @param broadcast - Sends the event to every open window; injected so main owns window fan-out.
- * @param theme - Injectable for tests; production uses Electron's `nativeTheme`.
+ * @param theme - The platform's `app`, which knows the OS appearance.
  */
 export function registerThemeChannels(
+  table: HandlerTable,
   broadcast: (payload: ThemeOsWire) => void,
-  theme: NativeThemeApi = nativeTheme,
+  theme: ThemeSource,
 ): void {
-  registerHandler(channels.theme.get, () => Promise.resolve(themeOf(theme)));
-  theme.on('updated', () => {
+  registerHandler(table, channels.theme.get, () => Promise.resolve(themeOf(theme)));
+  theme.onOsThemeChanged(() => {
     broadcast(themeOf(theme));
   });
 }

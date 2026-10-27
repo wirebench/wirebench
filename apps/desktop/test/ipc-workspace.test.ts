@@ -19,8 +19,10 @@ import { channels } from '../src/shared/ipc.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
 import type { TeamWorkspaceWire, WorkspaceSummaryWire, WorkspaceWire } from '../src/shared/wire-base.js';
 import { NO_REST, PROJECT_SETTINGS } from './helpers/wire-defaults.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -162,7 +164,7 @@ beforeEach(() => {
   service = fakeService();
   suggestions = vi.fn<() => Promise<readonly string[]>>().mockResolvedValue([]);
   reveal = vi.fn<(dir: string) => void>();
-  registerWorkspaceChannels({ service, suggestions, reveal });
+  registerWorkspaceChannels(table, { service, suggestions, reveal });
 });
 
 describe('workspace.* channels', () => {
@@ -352,7 +354,7 @@ describe('workspace.* channels', () => {
     const startup = new Promise<void>((resolve) => {
       settle = resolve;
     });
-    registerWorkspaceChannels({ service, ready: () => startup });
+    registerWorkspaceChannels(table, { service, ready: () => startup });
 
     let answered = false;
     const pending = invoke('workspace.snapshot').then((result) => {
@@ -366,7 +368,7 @@ describe('workspace.* channels', () => {
 
     // A reopen that failed still ends the wait.
     handlers.clear();
-    registerWorkspaceChannels({ service, ready: () => Promise.reject(new Error('broken')) });
+    registerWorkspaceChannels(table, { service, ready: () => Promise.reject(new Error('broken')) });
     await expect(invoke('workspace.list')).resolves.toMatchObject({ ok: true });
   });
 
@@ -575,7 +577,7 @@ describe('project.* channels', () => {
     const addProject = vi.fn().mockResolvedValue({ projectId: 'p-new' });
     const removeProject = vi.fn().mockResolvedValue(undefined);
     const ensureWorkspaceEnvironments = vi.fn().mockResolvedValue([]);
-    registerProjectChannels({
+    registerProjectChannels(table, {
       router,
       addProject,
       removeProject,

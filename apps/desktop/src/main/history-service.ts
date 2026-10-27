@@ -30,7 +30,7 @@ export interface RecordWsSessionInput {
  * the same way `buildGrpcHistoryEntry` re-redacts its metadata regardless of what was shown live,
  * and masks every secret value main recorded this session.
  */
-export function buildWsHistoryEntry(projectId: string, record: RecordWsSessionInput): HistoryEntry {
+export function buildWsHistoryEntry(redactor: Redactor, projectId: string, record: RecordWsSessionInput): HistoryEntry {
   // The wire shape (`WsExchangeSummary`, zod-inferred, every optional field typed `T | undefined`)
   // read as the engine's stricter `WsExchange` (plain `?:`, no explicit `undefined` under
   // `exactOptionalPropertyTypes`) — the same widen/narrow gap `toHistoryEntryWire`'s own JSON round
@@ -48,7 +48,7 @@ export function buildWsHistoryEntry(projectId: string, record: RecordWsSessionIn
       ...(record.keyParams !== undefined ? { keyParams: record.keyParams } : {}),
       ...(record.tags !== undefined ? { tags: record.tags } : {}),
     },
-    { text: redactSecretValues, base64: (base64) => redactSecretBytes(base64) },
+    { text: redactor.redactSecretValues, base64: (base64) => redactor.redactSecretBytes(base64) },
   );
 }
 
@@ -63,6 +63,7 @@ export function buildWsHistoryEntry(projectId: string, record: RecordWsSessionIn
  * (`buildHistoryEntry`), which reuses the same `redact.ts` helpers as the HTTP log.
  */
 
+import type { Redactor } from './host/redactor.js';
 import { mkdirSync, watch } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import {
@@ -88,15 +89,6 @@ import type {
   SseRow,
   WsExchange,
 } from '@wirebench/engine';
-import {
-  redactHeaderPairs,
-  redactHeaders,
-  redactSecretBytes,
-  redactSecretValues,
-  redactStructuredBody,
-  redactUrl,
-  redactXml,
-} from './redact.js';
 import type { HistoryEntryWire, ResolvedSendInputWire } from '../shared/wire-types.js';
 import type { GrpcExchangeSummary } from '../shared/kinds/grpc/wire.js';
 import type { RestExchangeSummary } from '../shared/kinds/rest/wire.js';
@@ -202,10 +194,10 @@ function sizeOf(exchange: ExchangeSummary | undefined, input: ResolvedSendInputW
  * unconditional here — history on disk is always redacted, regardless of the session's
  * show-secrets toggle (which only affects what the *live* HTTP log renders).
  */
-export function buildHistoryEntry(projectId: string, record: RecordSendInput): HistoryEntry {
-  const headers: HeaderEntryWire[] = Object.entries(redactHeaders(record.input.headers ?? {}, { show: false })).map(
-    ([name, value]) => ({ name, value }),
-  );
+export function buildHistoryEntry(redactor: Redactor, projectId: string, record: RecordSendInput): HistoryEntry {
+  const headers: HeaderEntryWire[] = Object.entries(
+    redactor.redactHeaders(record.input.headers ?? {}, { show: false }),
+  ).map(([name, value]) => ({ name, value }));
   const exchange = record.exchange;
   const fault = exchange?.response?.fault;
   return {
@@ -224,14 +216,14 @@ export function buildHistoryEntry(projectId: string, record: RecordSendInput): H
     durationMs: record.durationMs,
     ok: isOk(exchange),
     ...(fault !== undefined ? { fault: { code: fault.code, reason: fault.reason } } : {}),
-    request: { envelopeXml: redactXml(record.input.envelopeXml, { show: false }), headers },
+    request: { envelopeXml: redactor.redactXml(record.input.envelopeXml, { show: false }), headers },
     ...(exchange !== undefined
       ? {
           response: {
             ...(exchange.response?.envelopeXml !== undefined
-              ? { envelopeXml: redactXml(exchange.response.envelopeXml, { show: false }) }
+              ? { envelopeXml: redactor.redactXml(exchange.response.envelopeXml, { show: false }) }
               : {}),
-            rawHeaders: redactHeaderPairs(exchange.http.rawHeaders, { show: false }),
+            rawHeaders: redactor.redactHeaderPairs(exchange.http.rawHeaders, { show: false }),
             status: exchange.http.status,
             statusText: exchange.http.statusText,
           },
@@ -276,10 +268,10 @@ const MAX_HISTORY_BODY_CHARS = 256 * 1024;
 /**
  * A body as stored: itself when small, or its first characters with a marker naming what was cut —
  * either way with every secret value a send was handed masked, since History is written to disk.
- * An XML body (by `contentType`) gets the escaped marker, as `redactXml` writes it.
+ * An XML body (by `contentType`) gets the escaped marker, as `redactor.redactXml` writes it.
  */
-function storedBody(body: string, contentType?: string): string {
-  const text = redactSecretValues(body, { xml: isXmlType(contentType) });
+function storedBody(redactor: Redactor, body: string, contentType?: string): string {
+  const text = redactor.redactSecretValues(body, { xml: isXmlType(contentType) });
   if (text.length <= MAX_HISTORY_BODY_CHARS) {
     return text;
   }
@@ -299,20 +291,20 @@ export function isTruncatedBody(text: string): boolean {
 }
 
 /** An event-stream row as stored: its data or text masked, whatever the summary showed. */
-function storedSseRow(row: SseRow): SseRow {
+function storedSseRow(redactor: Redactor, row: SseRow): SseRow {
   if (row.kind === 'event') {
-    return { ...row, data: redactSecretValues(row.data) };
+    return { ...row, data: redactor.redactSecretValues(row.data) };
   }
-  return row.kind === 'comment' ? { ...row, text: redactSecretValues(row.text) } : row;
+  return row.kind === 'comment' ? { ...row, text: redactor.redactSecretValues(row.text) } : row;
 }
 
 /**
  * The event stream as stored, capped by `historySseOf` and then masked, so only the rows kept are
  * scanned.
  */
-function storedSse(stream: RestEventStreamLike): HistorySse {
+function storedSse(redactor: Redactor, stream: RestEventStreamLike): HistorySse {
   const sse = historySseOf(stream);
-  return { ...sse, rows: sse.rows.map(storedSseRow) };
+  return { ...sse, rows: sse.rows.map((row) => storedSseRow(redactor, row)) };
 }
 
 /**
@@ -323,8 +315,12 @@ function storedSse(stream: RestEventStreamLike): HistorySse {
  * branching beyond the badge. `kind` says which protocol it was, and `method` the verb a SOAP entry
  * has no need of.
  */
-export function buildRestHistoryEntry(projectId: string, record: RecordRestSendInput): HistoryEntry {
-  const headers: HeaderEntryWire[] = Object.entries(redactHeaders(record.requestHeaders, { show: false })).map(
+export function buildRestHistoryEntry(
+  redactor: Redactor,
+  projectId: string,
+  record: RecordRestSendInput,
+): HistoryEntry {
+  const headers: HeaderEntryWire[] = Object.entries(redactor.redactHeaders(record.requestHeaders, { show: false })).map(
     ([name, value]) => ({ name, value }),
   );
   const exchange = record.exchange;
@@ -339,7 +335,7 @@ export function buildRestHistoryEntry(projectId: string, record: RecordRestSendI
     interfaceName: record.apiName,
     operationName: record.folderPath,
     // Redacted again whatever the session showed: History is written to disk.
-    endpoint: redactUrl(record.url, { show: false, extraParams: record.keyParams ?? [] }),
+    endpoint: redactor.redactUrl(record.url, { show: false, extraParams: record.keyParams ?? [] }),
     method: record.method,
     // A REST send speaks no SOAP version; the field is the shared entry's, so it says so.
     soapVersion: 'none',
@@ -348,14 +344,18 @@ export function buildRestHistoryEntry(projectId: string, record: RecordRestSendI
     // A 3xx that was not followed is a perfectly good answer, so "ok" is anything but 4xx/5xx.
     ok: status !== undefined && status >= 200 && status < 400,
     request: {
-      envelopeXml: storedBody(record.requestBody, headerValueOf(Object.entries(record.requestHeaders), 'content-type')),
+      envelopeXml: storedBody(
+        redactor,
+        record.requestBody,
+        headerValueOf(Object.entries(record.requestHeaders), 'content-type'),
+      ),
       headers,
     },
     ...(exchange !== undefined
       ? {
           response: {
-            envelopeXml: storedBody(exchange.text, headerValueOf(exchange.http.rawHeaders, 'content-type')),
-            rawHeaders: redactHeaderPairs(exchange.http.rawHeaders, { show: false }),
+            envelopeXml: storedBody(redactor, exchange.text, headerValueOf(exchange.http.rawHeaders, 'content-type')),
+            rawHeaders: redactor.redactHeaderPairs(exchange.http.rawHeaders, { show: false }),
             status: exchange.http.status,
             statusText: exchange.http.statusText,
           },
@@ -365,7 +365,9 @@ export function buildRestHistoryEntry(projectId: string, record: RecordRestSendI
     // Cast for the same `exactOptionalPropertyTypes` gap `buildWsHistoryEntry` papers over above: the
     // wire's zod-inferred `id?: string | undefined` vs. the engine's plain `id?: string`. The shapes
     // agree field for field; only that strictness setting disagrees.
-    ...(exchange?.stream !== undefined ? { sse: storedSse(exchange.stream as unknown as RestEventStreamLike) } : {}),
+    ...(exchange?.stream !== undefined
+      ? { sse: storedSse(redactor, exchange.stream as unknown as RestEventStreamLike) }
+      : {}),
     // Cast for the same `exactOptionalPropertyTypes` gap as `sse` above; the shapes agree field for field.
     ...(exchange?.contract !== undefined
       ? { contract: historyContractOf(exchange.contract as RestContractResult) }
@@ -410,7 +412,7 @@ export interface ImportedHistoryOutcome {
 }
 
 /** Headers a recorded exchange keeps out of History altogether: the cookie jar's, not the request's. */
-const IMPORT_DROPPED_HEADERS = new Set(['cookie', 'set-cookie']);
+const IMPORT_DROPPED_HEADERS: ReadonlySet<string> = new Set(['cookie', 'set-cookie']);
 
 function withoutCookies(
   pairs: readonly { readonly name: string; readonly value: string }[],
@@ -437,10 +439,10 @@ function isXmlType(contentType: string | undefined): boolean {
  * A captured body with its credentials masked: an XML body as a live SOAP entry's is, a JSON or form
  * body by its secret keys. Either way every secret value recorded this session is masked too.
  */
-function redactedCapturedBody(text: string, contentType: string | undefined): string {
+function redactedCapturedBody(redactor: Redactor, text: string, contentType: string | undefined): string {
   return isXmlType(contentType)
-    ? redactXml(text, { show: false })
-    : redactStructuredBody(text, contentType, { show: false });
+    ? redactor.redactXml(text, { show: false })
+    : redactor.redactStructuredBody(text, contentType, { show: false });
 }
 
 /** A recorded time as UTC ISO 8601, or `undefined` when it is not a time at all. */
@@ -460,6 +462,7 @@ function recordedInstant(at: string): string | undefined {
  * the response body, which sizes the entry.
  */
 export function buildImportedRestHistoryEntry(
+  redactor: Redactor,
   projectId: string,
   record: RecordImportedRestInput,
 ): HistoryEntry | undefined {
@@ -470,8 +473,8 @@ export function buildImportedRestHistoryEntry(
   const requestHeaders = withoutCookies(record.requestHeaders);
   const responseHeaders = withoutCookies(record.responseHeaders);
   const responseType = contentTypeOf(responseHeaders);
-  const requestBody = redactedCapturedBody(record.requestBody, contentTypeOf(requestHeaders));
-  const responseText = redactedCapturedBody(record.responseBody ?? '', responseType);
+  const requestBody = redactedCapturedBody(redactor, record.requestBody, contentTypeOf(requestHeaders));
+  const responseText = redactedCapturedBody(redactor, record.responseBody ?? '', responseType);
   const responseBase64 = Buffer.from(responseText, 'utf8').toString('base64');
   const exchange: RestExchangeSummary = {
     sendId: `imported:${record.requestId}:${at}`,
@@ -503,7 +506,7 @@ export function buildImportedRestHistoryEntry(
       },
     },
   };
-  return buildRestHistoryEntry(projectId, {
+  return buildRestHistoryEntry(redactor, projectId, {
     requestId: record.requestId,
     requestName: record.requestName,
     apiName: record.apiName,
@@ -550,10 +553,14 @@ export interface RecordGrpcSendInput {
  * status. The call itself — method, gRPC status, every message on both sides — is in `grpc`, the
  * multi-message record ADR-0007 left room for; `ok` means the gRPC status was `OK`.
  */
-export function buildGrpcHistoryEntry(projectId: string, record: RecordGrpcSendInput): HistoryEntry {
-  const headers: HeaderEntryWire[] = Object.entries(redactHeaders(record.requestMetadata, { show: false })).map(
-    ([name, value]) => ({ name, value }),
-  );
+export function buildGrpcHistoryEntry(
+  redactor: Redactor,
+  projectId: string,
+  record: RecordGrpcSendInput,
+): HistoryEntry {
+  const headers: HeaderEntryWire[] = Object.entries(
+    redactor.redactHeaders(record.requestMetadata, { show: false }),
+  ).map(([name, value]) => ({ name, value }));
   const exchange = record.exchange;
   return {
     id: generateHistoryId(),
@@ -569,14 +576,17 @@ export function buildGrpcHistoryEntry(projectId: string, record: RecordGrpcSendI
     ...(exchange !== undefined ? { status: exchange.http.status } : {}),
     durationMs: record.durationMs,
     ok: exchange !== undefined && exchange.status === 0,
-    request: { envelopeXml: storedBody(record.requestMessage), headers },
+    request: { envelopeXml: storedBody(redactor, record.requestMessage), headers },
     ...(exchange !== undefined
       ? {
           response: {
             envelopeXml: storedBody(
-              exchange.responseMessages.map((message) => message.json ?? redactSecretBytes(message.base64)).join('\n'),
+              redactor,
+              exchange.responseMessages
+                .map((message) => message.json ?? redactor.redactSecretBytes(message.base64))
+                .join('\n'),
             ),
-            rawHeaders: redactHeaderPairs(exchange.http.rawHeaders, { show: false }),
+            rawHeaders: redactor.redactHeaderPairs(exchange.http.rawHeaders, { show: false }),
             status: exchange.http.status,
             statusText: exchange.statusName,
           },
@@ -592,21 +602,24 @@ export function buildGrpcHistoryEntry(projectId: string, record: RecordGrpcSendI
             status: exchange.status,
             statusName: exchange.statusName,
             ...(exchange.statusMessage !== undefined
-              ? { statusMessage: redactSecretValues(exchange.statusMessage) }
+              ? { statusMessage: redactor.redactSecretValues(exchange.statusMessage) }
               : {}),
           }
         : {}),
-      requestMessages: exchange?.requestMessages.map((message) => storedBody(message)) ?? [
-        storedBody(record.requestMessage),
+      requestMessages: exchange?.requestMessages.map((message) => storedBody(redactor, message)) ?? [
+        storedBody(redactor, record.requestMessage),
       ],
       // `storedBody` masks text; a message that did not decode is base64, masked as bytes first.
       responseMessages:
-        exchange?.responseMessages.map((message) => storedBody(message.json ?? redactSecretBytes(message.base64))) ??
-        [],
-      trailers: Object.entries(redactHeaders(exchange?.trailers ?? {}, { show: false })).map(([name, value]) => ({
-        name,
-        value,
-      })),
+        exchange?.responseMessages.map((message) =>
+          storedBody(redactor, message.json ?? redactor.redactSecretBytes(message.base64)),
+        ) ?? [],
+      trailers: Object.entries(redactor.redactHeaders(exchange?.trailers ?? {}, { show: false })).map(
+        ([name, value]) => ({
+          name,
+          value,
+        }),
+      ),
     },
     sizeBytes:
       exchange === undefined
@@ -643,6 +656,8 @@ export class HistoryService {
 
   constructor(
     private readonly userDataDir: string,
+    /** The host's: every entry is masked by it as it is written. */
+    private readonly redactor: Redactor,
     /**
      * How many entries to keep per project. A function rather than a number so a change to
      * `preferences.ui.historyCap` takes effect on the next append instead of at next launch.
@@ -794,7 +809,7 @@ export class HistoryService {
     if (file === undefined) {
       return undefined;
     }
-    const entry = buildHistoryEntry(projectId, record);
+    const entry = buildHistoryEntry(this.redactor, projectId, record);
     return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
   }
 
@@ -804,7 +819,7 @@ export class HistoryService {
     if (file === undefined) {
       return undefined;
     }
-    const entry = buildGrpcHistoryEntry(projectId, record);
+    const entry = buildGrpcHistoryEntry(this.redactor, projectId, record);
     return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
   }
 
@@ -814,7 +829,7 @@ export class HistoryService {
     if (file === undefined) {
       return undefined;
     }
-    const entry = buildWsHistoryEntry(projectId, record);
+    const entry = buildWsHistoryEntry(this.redactor, projectId, record);
     return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
   }
 
@@ -828,7 +843,7 @@ export class HistoryService {
     if (file === undefined) {
       return undefined;
     }
-    const entry = buildMcpHistoryEntry(projectId, record, { text: (text) => redactSecretValues(text) });
+    const entry = buildMcpHistoryEntry(projectId, record, { text: (text) => this.redactor.redactSecretValues(text) });
     return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
   }
 
@@ -838,7 +853,7 @@ export class HistoryService {
     if (file === undefined) {
       return undefined;
     }
-    const entry = buildRestHistoryEntry(projectId, record);
+    const entry = buildRestHistoryEntry(this.redactor, projectId, record);
     return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
   }
 
@@ -849,7 +864,7 @@ export class HistoryService {
    */
   async recordImportedRest(projectId: string, record: RecordImportedRestInput): Promise<HistoryEntryWire | undefined> {
     const file = this.files.get(projectId);
-    const entry = buildImportedRestHistoryEntry(projectId, record);
+    const entry = buildImportedRestHistoryEntry(this.redactor, projectId, record);
     if (file === undefined || entry === undefined) {
       return undefined;
     }
@@ -868,7 +883,7 @@ export class HistoryService {
     const entries: HistoryEntry[] = [];
     let invalidTime = 0;
     for (const record of records) {
-      const entry = buildImportedRestHistoryEntry(projectId, record);
+      const entry = buildImportedRestHistoryEntry(this.redactor, projectId, record);
       if (entry === undefined) {
         invalidTime += 1;
       } else {

@@ -7,8 +7,10 @@ import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerSecretScanChannels } from '../src/main/ipc/secret-scan.js';
 import type { SecretScanSession, SecretScanSessions, SecretTokenStatus } from '../src/main/secret-scan-session.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -48,7 +50,7 @@ function register(
     release: holds.release ?? (() => undefined),
     releaseOwner: holds.releaseOwner ?? (() => undefined),
   };
-  registerSecretScanChannels(sessions);
+  registerSecretScanChannels(table, sessions);
   return { projects };
 }
 
@@ -199,4 +201,15 @@ describe('secretScan channels', () => {
       expect(releaseOwner).toHaveBeenCalledWith(5);
     },
   );
+
+  it("keeps a renderer's holds through a navigation that starts but never commits", async () => {
+    const releaseOwner = vi.fn();
+    register({}, { releaseOwner });
+    const sender = fakeSender(6);
+    await invoke('secretScan.hold', { projectIds: ['p1'] }, sender);
+
+    sender.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false });
+
+    expect(releaseOwner).not.toHaveBeenCalled();
+  });
 });

@@ -17,6 +17,9 @@ import { draftFor } from '../src/main/sequence-runner.js';
 import type { McpLiveEvent } from '../src/shared/kinds/mcp/wire.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import { sendDepsFor } from './helpers/send-deps.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
 
@@ -51,13 +54,14 @@ function project(): Project {
 }
 
 async function setUp(approve: boolean | undefined) {
-  const history = new HistoryService(userDataDir);
+  const history = new HistoryService(userDataDir, hostState.redactor);
   await history.open('p1');
   const appended: HistoryEntryWire[] = [];
   const onExchange = vi.fn();
   const onSendFailed = vi.fn();
   const approveCommand = vi.fn(() => Promise.resolve(approve === true));
   const deps = sendDepsFor(project(), {
+    hostState,
     projectDir: userDataDir,
     history,
     onHistoryAppended: (entry) => appended.push(entry),

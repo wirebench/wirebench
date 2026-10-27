@@ -30,6 +30,10 @@ import { moveDir } from '../src/main/rename-dir.js';
 import { ExchangeRegistry, previewSoap, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { MAX_DROPPED_ATTACHMENT_BYTES } from '../src/shared/kinds/soap/wire.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
+import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
+
+const hostState = createHostState();
 
 // The real `moveDir`, wrapped so one test can make the move of an import's definition cache fail.
 vi.mock('../src/main/rename-dir.js', async (importOriginal) => {
@@ -59,7 +63,7 @@ function tempDir(prefix: string): string {
 
 /** A service wired to its own engine. */
 function newService(fs?: FsLike, picks?: DialogPicks): ProjectHost {
-  return new ProjectHost(new EngineService(), {}, fs, undefined, undefined, undefined, picks);
+  return new ProjectHost(new EngineService(), testHooks(), fs, undefined, undefined, undefined, picks);
 }
 
 /**
@@ -112,7 +116,13 @@ describe('ProjectHost', () => {
   it('re-sends the interface auth when hydrating a reopened project', async () => {
     const dir = join(tempDir('project'), 'Auth Project');
     const secrets = { get: (ref: string) => Promise.resolve(ref === 'sec_pw' ? 's3cret!' : undefined) };
-    const service = new ProjectHost(new EngineService((ref) => secrets.get(ref)), {}, undefined, undefined, secrets);
+    const service = new ProjectHost(
+      new EngineService((ref) => secrets.get(ref)),
+      testHooks(),
+      undefined,
+      undefined,
+      secrets,
+    );
 
     await service.create({ dir, name: 'Auth Project' });
     await service.kind('soap').addInterface({
@@ -126,7 +136,7 @@ describe('ProjectHost', () => {
     // reaches the engine (a cache miss is what would put them back on the wire).
     const engine = new EngineService((ref) => secrets.get(ref));
     const importSpy = vi.spyOn(engine, 'importForProject');
-    const reopened = new ProjectHost(engine, {}, undefined, undefined, secrets);
+    const reopened = new ProjectHost(engine, testHooks(), undefined, undefined, secrets);
     await reopened.openProject(dir);
     await reopened.whenHydrated();
 
@@ -150,7 +160,7 @@ describe('ProjectHost', () => {
       seen.push(input.auth);
       return original(withoutAuth(input), hooks);
     });
-    const service = new ProjectHost(addEngine, {}, undefined, undefined, secrets);
+    const service = new ProjectHost(addEngine, testHooks(), undefined, undefined, secrets);
 
     await service.create({ dir, name: 'Kerberos Project' });
     const { project, interfaceId } = await service.kind('soap').addInterface({
@@ -172,7 +182,7 @@ describe('ProjectHost', () => {
       hydrated.push(input.auth);
       return hydrateOriginal(withoutAuth(input), hooks);
     });
-    const reopened = new ProjectHost(engine, {}, undefined, undefined, secrets);
+    const reopened = new ProjectHost(engine, testHooks(), undefined, undefined, secrets);
     await reopened.openProject(dir);
     await reopened.whenHydrated();
 
@@ -191,7 +201,7 @@ describe('ProjectHost', () => {
       seen.push(input.auth);
       return original(withoutAuth(input), hooks);
     });
-    const service = new ProjectHost(engine, {});
+    const service = new ProjectHost(engine, testHooks());
 
     await service.create({ dir, name: 'Blank SPN Project' });
     const { project, interfaceId } = await service.kind('soap').addInterface({
@@ -212,7 +222,7 @@ describe('ProjectHost', () => {
       const dir = join(tempDir('project'), 'Windows Account Project');
       const getSecret = vi.fn<(ref: string) => Promise<string | undefined>>(() => Promise.resolve(undefined));
       const secrets = { get: getSecret };
-      const service = new ProjectHost(new EngineService(getSecret), {}, undefined, undefined, secrets);
+      const service = new ProjectHost(new EngineService(getSecret), testHooks(), undefined, undefined, secrets);
       await service.create({ dir, name: 'Windows Account Project' });
       const { interfaceId } = await service
         .kind('soap')
@@ -233,7 +243,7 @@ describe('ProjectHost', () => {
         return original(input, hooks);
       });
       getSecret.mockClear();
-      const reopened = new ProjectHost(engine, {}, undefined, undefined, secrets);
+      const reopened = new ProjectHost(engine, testHooks(), undefined, undefined, secrets);
       await reopened.openProject(dir);
       await reopened.whenHydrated();
 
@@ -464,7 +474,7 @@ paths:
     const dir = join(tempDir('project'), 'Staged');
     const engine = new EngineService();
     const importSpy = vi.spyOn(engine, 'importForProject');
-    const service = new ProjectHost(engine, {});
+    const service = new ProjectHost(engine, testHooks());
     await service.create({ dir, name: 'Staged' });
 
     const { project } = await service.kind('soap').addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
@@ -492,7 +502,7 @@ paths:
       await writeFile(join(stagedCache, 'partial.wsdl'), '<definitions/>', 'utf8');
       throw new Error('the WSDL could not be parsed');
     });
-    const service = new ProjectHost(engine, {});
+    const service = new ProjectHost(engine, testHooks());
     await service.create({ dir, name: 'Failed Import' });
 
     await expect(service.kind('soap').addInterface({ source: { kind: 'url', url: server!.wsdlUrl } })).rejects.toThrow(
@@ -509,7 +519,7 @@ paths:
 
   it('removes the interface folder it created when moving the definition cache into it fails', async () => {
     const dir = join(tempDir('project'), 'Failed Move');
-    const service = new ProjectHost(new EngineService(), {});
+    const service = new ProjectHost(new EngineService(), testHooks());
     await service.create({ dir, name: 'Failed Move' });
     vi.mocked(moveDir).mockRejectedValueOnce(
       Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }),
@@ -650,7 +660,11 @@ paths:
         }
       },
     };
-    const service = new ProjectHost(new EngineService(), { onChangedOnDisk: (paths) => changed.push([...paths]) }, fs);
+    const service = new ProjectHost(
+      new EngineService(),
+      testHooks({ onChangedOnDisk: (paths) => changed.push([...paths]) }),
+      fs,
+    );
     await service.create({ dir, name: 'One' });
     await service.mutate({ kind: 'rename-project', name: 'Two' });
     await service.save({ reason: 'one' });
@@ -689,7 +703,11 @@ paths:
         await nodeFs.rm(path, options);
       },
     };
-    const reopened = new ProjectHost(new EngineService(), { onChangedOnDisk: (paths) => changed.push([...paths]) }, fs);
+    const reopened = new ProjectHost(
+      new EngineService(),
+      testHooks({ onChangedOnDisk: (paths) => changed.push([...paths]) }),
+      fs,
+    );
     await reopened.openProject(dir);
     await reopened.whenHydrated();
     await reopened.mutate({ kind: 'remove-interface', interfaceId: project.interfaces[0]!.id });
@@ -728,7 +746,11 @@ paths:
         await nodeFs.rename(from, to);
       },
     };
-    const reopened = new ProjectHost(new EngineService(), { onChangedOnDisk: (paths) => changed.push([...paths]) }, fs);
+    const reopened = new ProjectHost(
+      new EngineService(),
+      testHooks({ onChangedOnDisk: (paths) => changed.push([...paths]) }),
+      fs,
+    );
     const opened = await reopened.openProject(dir);
     await reopened.whenHydrated();
     const request = reopened.snapshot()!.requests[0]!;
@@ -753,7 +775,7 @@ describe('ProjectHost: environments and property scopes', () => {
     const dir = join(tempDir('project'), 'Env Project');
     const globals = new GlobalProperties(userData);
     await globals.set('token', 'from-globals');
-    const service = new ProjectHost(new EngineService(), {}, undefined, globals);
+    const service = new ProjectHost(new EngineService(), testHooks(), undefined, globals);
 
     await service.create({ dir, name: 'Env Project' });
     await service.mutate({ kind: 'set-project-property', name: 'stage', value: 'proj' });
@@ -779,7 +801,7 @@ describe('ProjectHost: environments and property scopes', () => {
     await service.save({ reason: 'test' });
     await service.close();
 
-    const reopened = new ProjectHost(new EngineService(), {}, undefined, globals);
+    const reopened = new ProjectHost(new EngineService(), testHooks(), undefined, globals);
     const snapshot = await reopened.openProject(dir);
     expect(snapshot.activeEnvironmentId).toBe(environmentId);
     expect(snapshot.environments[0]).toMatchObject({
@@ -794,7 +816,7 @@ describe('ProjectHost: environments and property scopes', () => {
 
   it('falls back to global and system scopes with no project open', () => {
     const globals = new GlobalProperties(root!);
-    const service = new ProjectHost(new EngineService(), {}, undefined, globals);
+    const service = new ProjectHost(new EngineService(), testHooks(), undefined, globals);
 
     const scopes = service.scopesFor();
 
@@ -841,7 +863,7 @@ describe('ProjectHost: environments and property scopes', () => {
     /** A project with one imported interface, and the id of its first `Request 1`. */
     async function withRequest(preferences?: Pick<PreferencesService, 'get'>) {
       const dir = join(tempDir('project'), 'Send Options Project');
-      const service = new ProjectHost(new EngineService(), {}, undefined, undefined, undefined, preferences);
+      const service = new ProjectHost(new EngineService(), testHooks(), undefined, undefined, undefined, preferences);
       await service.create({ dir, name: 'Send Options Project' });
       const imported = await service.kind('soap').addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
       await service.whenHydrated();
@@ -850,6 +872,7 @@ describe('ProjectHost: environments and property scopes', () => {
         (
           await previewSoap(
             {
+              hostState,
               service: new EngineService(),
               registry: new ExchangeRegistry(),
               project: service as unknown as SendThroughEngineDeps['project'],
@@ -949,7 +972,7 @@ describe('ProjectHost: WSDL generation preferences reach every generation path',
 
   it('fills a freshly imported "Request 1" with sample values when the preference asks for it', async () => {
     const preferences = { get: () => mergePreferences({ wsdl: { sampleValues: true } }) };
-    const service = new ProjectHost(new EngineService(), {}, undefined, undefined, undefined, preferences);
+    const service = new ProjectHost(new EngineService(), testHooks(), undefined, undefined, undefined, preferences);
     const dir = join(tempDir('project'), 'Sample Values Project');
     await service.create({ dir, name: 'Sample Values Project' });
 
@@ -967,7 +990,7 @@ describe('ProjectHost: WSDL generation preferences reach every generation path',
 
   it('honours the same preference on add-request, not just on import', async () => {
     const preferences = { get: () => mergePreferences({ wsdl: { sampleValues: true } }) };
-    const service = new ProjectHost(new EngineService(), {}, undefined, undefined, undefined, preferences);
+    const service = new ProjectHost(new EngineService(), testHooks(), undefined, undefined, undefined, preferences);
     const dir = join(tempDir('project'), 'Add Request Sample Values Project');
     await service.create({ dir, name: 'Add Request Sample Values Project' });
 

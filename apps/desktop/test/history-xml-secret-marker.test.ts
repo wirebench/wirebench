@@ -1,18 +1,20 @@
 // @vitest-environment node
 /**
  * A secret value main recorded, found inside an XML body, is masked with the escaped marker that
- * `redactXml` writes, so XML in History shows one marker and stays well formed; any other body keeps
+ * `redactor.redactXml` writes, so XML in History shows one marker and stays well formed; any other body keeps
  * the raw marker.
  */
 import { describe, expect, it } from 'vitest';
 import { buildRestHistoryEntry } from '../src/main/history-service.js';
-import { recordSecretValue, redactSecretValues, redactXml } from '../src/main/redact.js';
+import { Redactor } from '../src/main/host/redactor.js';
+
+const redactor = new Redactor();
 
 const SECRET = 'tok-s3cret-value';
-recordSecretValue(SECRET);
+redactor.recordSecretValue(SECRET);
 
 function entryFor(contentType: string, body: string) {
-  return buildRestHistoryEntry('p1', {
+  return buildRestHistoryEntry(redactor, 'p1', {
     requestId: 'r1',
     requestName: 'Send',
     apiName: 'Api',
@@ -36,10 +38,10 @@ describe('a recorded secret value in an XML body', () => {
     expect(entry.request.envelopeXml).toBe('{"note":"<redacted>"}');
   });
 
-  it('is escaped by redactXml too, beside a masked password', () => {
-    expect(redactXml(`<a><Password>pw</Password><Note>${SECRET}</Note></a>`, { show: false })).toBe(
+  it('is escaped by redactor.redactXml too, beside a masked password', () => {
+    expect(redactor.redactXml(`<a><Password>pw</Password><Note>${SECRET}</Note></a>`, { show: false })).toBe(
       '<a><Password>&lt;redacted&gt;</Password><Note>&lt;redacted&gt;</Note></a>',
     );
-    expect(redactSecretValues(`x ${SECRET}`)).toBe('x <redacted>');
+    expect(redactor.redactSecretValues(`x ${SECRET}`)).toBe('x <redacted>');
   });
 });

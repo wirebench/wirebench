@@ -10,7 +10,7 @@ import {
 import type { WsdlImportResult, OperationRef, QName } from '@wirebench/engine';
 import { channels } from '../../../../shared/ipc.js';
 import type { EngineService } from '../../../engine-service.js';
-import { registerHandler } from '../../../ipc/register.js';
+import { registerHandler, type HandlerTable } from '../../../ipc/register.js';
 
 /** Parses a Clark-notation QName string (`{namespaceUri}localName`) back into a `QName`. */
 function parseClarkQName(clark: string): QName {
@@ -39,8 +39,8 @@ function formInputs(
  * request editor. Runs in main because the `SchemaSet` for an imported interface lives here
  * (`EngineService`), not in the browser-safe renderer.
  */
-export function registerXmlChannels(service: EngineService): void {
-  registerHandler(channels.xml.completions, (request) => {
+export function registerXmlChannels(table: HandlerTable, service: EngineService): void {
+  registerHandler(table, channels.xml.completions, (request) => {
     const schemaSet = service.schemaSetFor(request.interfaceId);
     const path = request.path.map(parseClarkQName);
     const partialLocal = (request.partial ?? '').includes(':')
@@ -56,7 +56,7 @@ export function registerXmlChannels(service: EngineService): void {
     return Promise.resolve({ items });
   });
 
-  registerHandler(channels.xml.declaration, (request) => {
+  registerHandler(table, channels.xml.declaration, (request) => {
     const schemaSet = service.schemaSetFor(request.interfaceId);
     const path = request.path.map(parseClarkQName);
     const found = declarationOf(schemaSet, path);
@@ -70,7 +70,7 @@ export function registerXmlChannels(service: EngineService): void {
     });
   });
 
-  registerHandler(channels.xml.describeMany, (request) => {
+  registerHandler(table, channels.xml.describeMany, (request) => {
     const schemaSet = service.schemaSetFor(request.interfaceId);
     const results = request.paths.map((clarkPath) => {
       // An attribute segment is encoded as a trailing `@name` entry after the owning element's
@@ -107,13 +107,13 @@ export function registerXmlChannels(service: EngineService): void {
     return Promise.resolve({ results });
   });
 
-  registerHandler(channels.xml.form, (request) => {
+  registerHandler(table, channels.xml.form, (request) => {
     const { result, op } = formInputs(service, request);
     const form = buildRequestForm(result, op, request.envelopeXml);
     return Promise.resolve({ root: form.root, bodyRange: form.bodyRange, problems: [...form.problems] });
   });
 
-  registerHandler(channels.xml.applyFormEdit, (request) => {
+  registerHandler(table, channels.xml.applyFormEdit, (request) => {
     const { result, op } = formInputs(service, request);
     const form = buildRequestForm(result, op, request.envelopeXml);
     // The edit is applied to a tree rebuilt from the envelope right now, so a

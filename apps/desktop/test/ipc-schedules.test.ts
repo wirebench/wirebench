@@ -2,8 +2,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApi, createProject, createRestRequest, WirebenchError } from '@wirebench/engine';
 import type { Project } from '@wirebench/engine';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
@@ -117,7 +119,7 @@ describe('schedules.* channels (#517)', () => {
   });
 
   it('registers every channel the contract declares', () => {
-    registerSchedulesChannels(deps());
+    registerSchedulesChannels(table, deps());
     expect([...handlers.keys()].sort()).toEqual(
       Object.values(channels.schedules)
         .map((c) => c.name)
@@ -127,7 +129,7 @@ describe('schedules.* channels (#517)', () => {
 
   it('passes each request to the service and answers in wire shapes', async () => {
     const schedules = fakeService();
-    registerSchedulesChannels(deps(schedules));
+    registerSchedulesChannels(table, deps(schedules));
     expect(await invoke('schedules.available', { url: SERVER })).toEqual({ ok: true, value: { available: true } });
     expect(await invoke('schedules.list', { url: SERVER, workspaceId: WS })).toEqual({
       ok: true,
@@ -170,7 +172,7 @@ describe('schedules.* channels (#517)', () => {
   });
 
   it('answers a service refusal with its code', async () => {
-    registerSchedulesChannels(deps());
+    registerSchedulesChannels(table, deps());
     expect(await invoke('schedules.cancelRun', { ...REF, runId: RUN_ID })).toMatchObject({
       ok: false,
       error: { code: 'schedules-run-finished' },
@@ -178,7 +180,7 @@ describe('schedules.* channels (#517)', () => {
   });
 
   it('lists what a project can schedule, with its environments', async () => {
-    registerSchedulesChannels(deps());
+    registerSchedulesChannels(table, deps());
     expect(await invoke('schedules.choices', { projectId: 'P1' })).toEqual({
       ok: true,
       value: {
@@ -196,7 +198,7 @@ describe('schedules.* channels (#517)', () => {
   });
 
   it('lists nothing for a project that is not open', async () => {
-    registerSchedulesChannels(deps(fakeService(), null));
+    registerSchedulesChannels(table, deps(fakeService(), null));
     expect(await invoke('schedules.choices', { projectId: 'P9' })).toEqual({
       ok: true,
       value: { items: [], sequences: [], environments: [] },
@@ -204,7 +206,7 @@ describe('schedules.* channels (#517)', () => {
   });
 
   it('fills in the target of an explorer row, or none', async () => {
-    registerSchedulesChannels(deps());
+    registerSchedulesChannels(table, deps());
     expect(await invoke('schedules.targetFor', { entityId: 'top' })).toEqual({
       ok: true,
       value: { target: { project: 'P1', select: ['Shop/top'] } },

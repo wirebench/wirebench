@@ -22,11 +22,14 @@ import type { RestExchangeSummary } from '../../src/shared/kinds/rest/wire.js';
 import type { WirebenchApi } from '../../src/preload/build-api.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeRestExchange } from '../mocks/exchange-fixtures.js';
+import { createFakePlatform } from '../helpers/fake-platform.js';
+import { tableInto } from '../helpers/ipc-table.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -67,7 +70,7 @@ beforeEach(() => {
     cache.putRest(sendId, view(true), new Uint8Array(), view);
   }
   flag = new ShowSecretsFlag();
-  registerExchangeChannels(cache, flag);
+  registerExchangeChannels(table, cache, flag, createFakePlatform());
   installWirebenchApi({
     exchanges: { get: vi.fn(realExchangesGet) },
     secrets: {

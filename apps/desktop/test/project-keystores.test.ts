@@ -23,6 +23,10 @@ import {
 import { ProjectHost } from '../src/main/project-host.js';
 import { ExchangeRegistry, previewSoap, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { toProjectWire } from '../src/main/project-wire.js';
+import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
+
+const hostState = createHostState();
 
 const PASSWORD = 'p12-password';
 
@@ -59,7 +63,7 @@ function newService(
   picks?: DialogPicks,
   secrets?: { get(ref: string): Promise<string | undefined> },
 ) {
-  return new ProjectHost(new EngineService(), {}, undefined, undefined, secrets, undefined, picks);
+  return new ProjectHost(new EngineService(), testHooks(), undefined, undefined, secrets, undefined, picks);
 }
 
 describe('keystore mutations', () => {
@@ -278,6 +282,7 @@ describe('ProjectHost keystores', () => {
     // The input the cURL export resolves carries no key material.
     const preview = await previewSoap(
       {
+        hostState,
         service: new EngineService(),
         registry: new ExchangeRegistry(),
         project: service as unknown as SendThroughEngineDeps['project'],

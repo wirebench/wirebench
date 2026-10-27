@@ -11,8 +11,10 @@ import { registerWsiChannels } from '../src/main/kinds/soap/channels/wsi.js';
 import type { WsiChannelProject } from '../src/main/kinds/soap/channels/wsi.js';
 import type { EngineService } from '../src/main/engine-service.js';
 import type { WsiReportWire } from '../src/shared/kinds/soap/wire.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -100,7 +102,7 @@ describe('wsi.* IPC', () => {
     }) as unknown as WsiChannelProject;
 
   function register(projectStub: WsiChannelProject = project()): void {
-    registerWsiChannels({ resultFor: () => calculator, exchanges: cache } as unknown as EngineService, {
+    registerWsiChannels(table, { resultFor: () => calculator, exchanges: cache } as unknown as EngineService, {
       project: projectStub,
       picks: { rememberWrite: (path: string) => picked.push(path) },
       dialog: { showSave: () => Promise.resolve(saveTo) },

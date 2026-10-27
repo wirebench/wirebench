@@ -1,5 +1,5 @@
+import type { Caller } from './host/platform.js';
 import { hostname, userInfo } from 'node:os';
-import type { WebContents } from 'electron';
 import { WirebenchError, secretPseudoRef } from '@wirebench/engine';
 import type { GetSecret } from '@wirebench/engine';
 import {
@@ -32,7 +32,7 @@ export interface SshKeysDeps {
   readonly secrets: Pick<SshSecretsService, 'names' | 'set'>;
   readonly connector: Pick<SshConnector, 'prepareHops' | 'verifierFor' | 'refusalError'>;
   /** The window's secret getter: local, team and secret-source values alike. */
-  readonly secretsFor: (sender: WebContents) => GetSecret;
+  readonly secretsFor: (sender: Caller) => GetSecret;
   /** This machine's device keys (#428); none where the app has no helper (tests, unless they inject one). */
   readonly deviceKeys?: Pick<DeviceKeys, 'status' | 'create' | 'isHere'>;
   /** Tests inject fakes. */
@@ -132,7 +132,7 @@ export class SshKeysService {
    * Every secret the window can read whose value is a private key or a device key; a key its `_passphrase`
    * cannot open is `locked`.
    */
-  async keys(sender: WebContents): Promise<SshKeyWire[]> {
+  async keys(sender: Caller): Promise<SshKeyWire[]> {
     const getSecret = this.deps.secretsFor(sender);
     const keys: SshKeyWire[] = [];
     for (const { name } of await this.deps.secrets.names()) {
@@ -164,7 +164,7 @@ export class SshKeysService {
    * @throws WirebenchError the `ssh.connect` refusals (`ssh-host-key-new`, `ssh-auth-failed`, `secret-missing`, …) |
    *   `ssh-key-invalid` | `ssh-key-locked` | `ssh-install-failed`
    */
-  async install(sender: WebContents, request: SshInstallKeyRequest): Promise<SshInstallKeyResponse> {
+  async install(sender: Caller, request: SshInstallKeyRequest): Promise<SshInstallKeyResponse> {
     const getSecret = this.deps.secretsFor(sender);
     const value = await getSecret(secretPseudoRef(request.secret));
     if (value === undefined) {
@@ -190,7 +190,7 @@ export class SshKeysService {
    * @throws WirebenchError `secret-missing` | `ssh-key-invalid` | `ssh-key-locked` | `ssh-cert-invalid` (not a
    *   certificate, or a host certificate) | `ssh-cert-mismatch` (issued for another key)
    */
-  async attachCertificate(sender: WebContents, request: SshAttachCertificateRequest): Promise<SshKeyWire> {
+  async attachCertificate(sender: Caller, request: SshAttachCertificateRequest): Promise<SshKeyWire> {
     const getSecret = this.deps.secretsFor(sender);
     const value = await getSecret(secretPseudoRef(request.secret));
     if (value === undefined) {

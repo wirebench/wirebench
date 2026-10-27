@@ -5,7 +5,6 @@
 import { grpcItemFor } from '@wirebench/engine';
 import type { GrpcFailedInput, SentRequest } from '@wirebench/engine';
 import { toGrpcResponseMessageWire } from '../../engine-wire.js';
-import { redactHeaders } from '../../redact.js';
 import { recordGrpc, summariseGrpc } from '../../send/record.js';
 import type { GrpcExchangeSummary } from '../../../shared/kinds/grpc/wire.js';
 import type { KindSend } from '../kind-main.js';
@@ -20,7 +19,7 @@ export const grpcSend: KindSend<'grpc'> = {
       : { ...found, request: withGrpcPatch(found.request, draft.draft) };
   },
 
-  liveEvent(sendId, event, show) {
+  liveEvent(redactor, sendId, event, show) {
     switch (event.kind) {
       case 'open':
         return { kind: 'open', sendId };
@@ -30,22 +29,22 @@ export const grpcSend: KindSend<'grpc'> = {
           kind: 'headers',
           sendId,
           httpStatus: event.httpStatus,
-          headers: redactHeaders(event.headers, { show }),
+          headers: redactor.redactHeaders(event.headers, { show }),
         };
       case 'message':
         return {
           kind: 'message',
           sendId,
           index: event.index,
-          message: toGrpcResponseMessageWire(event.message, { show }),
+          message: toGrpcResponseMessageWire(redactor, event.message, { show }),
         };
       case 'closed':
         return { kind: 'closed', sendId };
     }
   },
 
-  summarise({ sendId, sent, show }) {
-    return { summary: summariseGrpc(grpcSent(sent).grpc, sendId, show) };
+  summarise({ deps, sendId, sent, show }) {
+    return { summary: summariseGrpc(deps.hostState.redactor, grpcSent(sent).grpc, sendId, show) };
   },
 
   async record(deps, recorded, sent, summary) {

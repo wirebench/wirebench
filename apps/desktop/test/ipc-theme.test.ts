@@ -1,30 +1,24 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
-
-vi.mock('electron', () => ({
-  nativeTheme: { shouldUseDarkColors: true, on: () => undefined },
-  ipcMain: {
-    handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
-      handlers.set(name, handler);
-    },
-  },
-}));
+const table = tableInto(handlers);
 
 const { registerThemeChannels, themeOf } = await import('../src/main/ipc/theme.js');
 
-/** A fake `nativeTheme` whose `updated` listener the test can fire by hand. */
+/** A fake platform `app` whose OS-theme listener the test can fire by hand. */
 function fakeNativeTheme(dark: boolean) {
   const listeners: (() => void)[] = [];
+  let current = dark;
   return {
-    shouldUseDarkColors: dark,
-    on(_event: 'updated', listener: () => void) {
+    osTheme: () => (current ? ('dark' as const) : ('light' as const)),
+    onOsThemeChanged(listener: () => void) {
       listeners.push(listener);
-      return this;
+      return () => undefined;
     },
     flip(next: boolean) {
-      this.shouldUseDarkColors = next;
+      current = next;
       for (const listener of listeners) listener();
     },
   };
@@ -49,14 +43,14 @@ describe('theme ipc', () => {
   });
 
   it('answers theme.get with the current OS scheme', async () => {
-    registerThemeChannels(vi.fn(), fakeNativeTheme(false));
+    registerThemeChannels(table, vi.fn(), fakeNativeTheme(false));
     await expect(invoke('theme.get', undefined)).resolves.toEqual({ ok: true, value: { os: 'light' } });
   });
 
   it('broadcasts theme.changed when the OS flips', () => {
     const broadcast = vi.fn();
     const theme = fakeNativeTheme(true);
-    registerThemeChannels(broadcast, theme);
+    registerThemeChannels(table, broadcast, theme);
     theme.flip(false);
     expect(broadcast).toHaveBeenCalledWith({ os: 'light' });
     theme.flip(true);

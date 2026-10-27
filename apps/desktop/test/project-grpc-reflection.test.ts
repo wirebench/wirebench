@@ -14,6 +14,7 @@ import { startTestGrpcServer, type TestGrpcServer } from '@wirebench/engine/test
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import { ProtoImportService } from '../src/main/proto-import.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 let server: TestGrpcServer;
 let dirs: string[] = [];
@@ -60,7 +61,7 @@ async function discoverInto(host: ProjectHost): Promise<string> {
 describe('a gRPC API discovered from a running server', () => {
   it('caches the descriptor set, and records how it was obtained', async () => {
     const dir = join(tempDir(), 'Discovered');
-    const host = new ProjectHost(new EngineService(), {});
+    const host = new ProjectHost(new EngineService(), testHooks());
     await host.create({ dir, name: 'Discovered' });
     const apiId = await discoverInto(host);
 
@@ -82,12 +83,12 @@ describe('a gRPC API discovered from a running server', () => {
 
   it('loads its schema back from the cache when the project is reopened', async () => {
     const dir = join(tempDir(), 'Reopened');
-    const host = new ProjectHost(new EngineService(), {});
+    const host = new ProjectHost(new EngineService(), testHooks());
     await host.create({ dir, name: 'Reopened' });
     const apiId = await discoverInto(host);
     await host.close();
 
-    const reopened = new ProjectHost(new EngineService(), {});
+    const reopened = new ProjectHost(new EngineService(), testHooks());
     await reopened.openProject(dir);
     const definition = await reopened.kind('grpc').grpcDefinition(apiId);
     expect(definition.kind).toBe('reflection');
@@ -100,7 +101,7 @@ describe('a gRPC API discovered from a running server', () => {
 
   it('exports its definition as the descriptor set, since there is no .proto text to show', async () => {
     const dir = join(tempDir(), 'Exported');
-    const host = new ProjectHost(new EngineService(), {});
+    const host = new ProjectHost(new EngineService(), testHooks());
     await host.create({ dir, name: 'Exported' });
     const apiId = await discoverInto(host);
 
@@ -117,7 +118,7 @@ describe('a gRPC API discovered from a running server', () => {
 
   it('refreshes from the server, rewrites the cache and reconciles the tree', async () => {
     const dir = join(tempDir(), 'Refreshed');
-    const host = new ProjectHost(new EngineService(), {});
+    const host = new ProjectHost(new EngineService(), testHooks());
     await host.create({ dir, name: 'Refreshed' });
     const apiId = await discoverInto(host);
     const api = host.snapshot()!.grpcApis.find((candidate) => candidate.id === apiId)!;
@@ -139,7 +140,7 @@ describe('a gRPC API discovered from a running server', () => {
 
   it('refuses to refresh an API that was imported from files', async () => {
     const dir = join(tempDir(), 'Imported');
-    const host = new ProjectHost(new EngineService(), {});
+    const host = new ProjectHost(new EngineService(), testHooks());
     await host.create({ dir, name: 'Imported' });
     const run = await new ProtoImportService().run({
       source: {
@@ -166,7 +167,7 @@ describe('a gRPC API discovered from a running server', () => {
 
   it('keeps the cached descriptors byte-identical to what the server sent', async () => {
     const dir = join(tempDir(), 'ByteExact');
-    const host = new ProjectHost(new EngineService(), {});
+    const host = new ProjectHost(new EngineService(), testHooks());
     await host.create({ dir, name: 'ByteExact' });
     const apiId = await discoverInto(host);
     const api = host.snapshot()!.grpcApis.find((candidate) => candidate.id === apiId)!;

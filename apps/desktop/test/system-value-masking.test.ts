@@ -15,6 +15,9 @@ import { HistoryService, historyFilePath } from '../src/main/history-service.js'
 import { sendThroughEngine } from '../src/main/send/exchange.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import { sendDepsFor } from './helpers/send-deps.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
 
@@ -67,10 +70,11 @@ function seeded(): Project {
 
 describe('a ${#System#…} value a desktop send expands', () => {
   it('is masked in the response view and in History, while a short one is not', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('p1');
     const appended: HistoryEntryWire[] = [];
     const deps = sendDepsFor(seeded(), {
+      hostState,
       history,
       showSecrets: { get: () => false },
       onHistoryAppended: (wire) => appended.push(wire),

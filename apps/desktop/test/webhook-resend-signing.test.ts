@@ -28,8 +28,14 @@ import { toSendDeps, type RequestChannelDeps } from '../src/main/ipc/request.js'
 import { sendThroughEngine } from '../src/main/send/exchange.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import { registerHistoryChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -104,13 +110,14 @@ function harness(model: Project, keychain: Record<string, string>) {
   const entries: HistoryEntryWire[] = [];
   const history = {
     recordRestSend: (projectId: string, record: RecordRestSendInput) => {
-      const wire = toHistoryEntryWire(buildRestHistoryEntry(projectId, record));
+      const wire = toHistoryEntryWire(buildRestHistoryEntry(hostState.redactor, projectId, record));
       entries.unshift(wire);
       return Promise.resolve(wire);
     },
     get: (id: string) => entries.find((candidate) => candidate.id === id),
   };
   const requestDeps: RequestChannelDeps = {
+    hostState,
     project: {
       projectId: () => 'p1',
       restMeta: () => undefined,
@@ -121,15 +128,16 @@ function harness(model: Project, keychain: Record<string, string>) {
     secretsFor: () => secrets,
   };
   const sendDeps = toSendDeps(engine, requestDeps);
-  registerHistoryChannelsWithKinds(history as never, {
+  registerHistoryChannelsWithKinds(table, history as never, {
     project: { projectId: () => 'p1', endpointFor: () => undefined },
     send: sendDeps,
   });
-  registerLogChannels({
+  registerLogChannels(table, {
     showSecrets: { get: () => false },
     service: engine,
     request: requestDeps,
     picks: { rememberWrite: () => undefined },
+    dialogs: fakeNativeDialogs(),
     appVersion: '0.0.0-test',
   });
   /** A fresh send of `requestId`, as the editor sends it. */

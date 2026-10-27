@@ -12,7 +12,7 @@ import type { ProjectRouter } from '../project-router.js';
 import { moveApi, planApiMove } from '../api-move.js';
 import type { ApiMoveHost, ApiMoveSecrets } from '../api-move.js';
 import type { ProjectWire } from '../../shared/wire-types.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /**
  * The `WorkspaceService` surface the `project.*` channels drive. `addInterface` with a
@@ -96,27 +96,27 @@ async function refuseLegacyProjectAsWsdl(source: { kind: string; path?: string }
  * names. Every request carries a `projectId` because a workspace has no single "open project".
  *
  * Only the request/response half lives here: `project.changed`, `project.changedOnDisk` and
- * `project.hydration` are raised through `WorkspaceHooks` wired up in `main/index.ts`, because
+ * `project.hydration` are raised through `WorkspaceHooks` wired up in `main/host/create-host.ts`, because
  * those fire outside any single invocation (autosave, the folder watcher, background
  * hydration) and so have no `sender` to reply to.
  */
-export function registerProjectChannels(deps: ProjectChannelDeps): void {
+export function registerProjectChannels(table: HandlerTable, deps: ProjectChannelDeps): void {
   const { router } = deps;
 
-  registerHandler(channels.project.snapshot, (request) =>
+  registerHandler(table, channels.project.snapshot, (request) =>
     Promise.resolve({ project: router.projectSnapshot(request.projectId) }),
   );
 
-  registerHandler(channels.project.mutate, (request) => router.projectMutate(request.projectId, request.change));
+  registerHandler(table, channels.project.mutate, (request) => router.projectMutate(request.projectId, request.change));
 
   const { apiMove } = deps;
   if (apiMove !== undefined) {
-    registerHandler(channels.project.planApiMove, async (request) => {
+    registerHandler(table, channels.project.planApiMove, async (request) => {
       const { source, target } = apiMove.hosts(request.apiId, request.targetProjectId);
       return await planApiMove(source, target, request.apiId, apiMove.secrets);
     });
 
-    registerHandler(channels.project.moveApi, async (request) => {
+    registerHandler(table, channels.project.moveApi, async (request) => {
       const { sourceProjectId, source, target } = apiMove.hosts(request.apiId, request.targetProjectId);
       const { sourceBeforeApiId } = await moveApi(
         source,
@@ -138,9 +138,9 @@ export function registerProjectChannels(deps: ProjectChannelDeps): void {
     });
   }
 
-  registerHandler(channels.project.save, (request) => router.save(request.projectId, { reason: 'manual' }));
+  registerHandler(table, channels.project.save, (request) => router.save(request.projectId, { reason: 'manual' }));
 
-  registerHandler(channels.project.addInterface, async (request) => {
+  registerHandler(table, channels.project.addInterface, async (request) => {
     // A `file` source is a read at a renderer-named path; it answers the containment/dialog-pick
     // question (`checkedImportSource`, as `definition.import` does) before any project is
     // created, so a refusal changes nothing.
@@ -170,7 +170,7 @@ export function registerProjectChannels(deps: ProjectChannelDeps): void {
     }
   });
 
-  registerHandler(channels.project.importLegacy, async (request) => {
+  registerHandler(table, channels.project.importLegacy, async (request) => {
     // The file is read and parsed before any project is created, so a path that is refused or a
     // file that is not a legacy project changes nothing.
     const source = await checkedImportSource(deps.projectDirs(), deps.picks, request.source);
@@ -211,5 +211,7 @@ export function registerProjectChannels(deps: ProjectChannelDeps): void {
     return { projectId, project: imported.project, report, reportText: formatLegacyImportReport(report) };
   });
 
-  registerHandler(channels.project.reload, async (request) => ({ project: await router.reload(request.projectId) }));
+  registerHandler(table, channels.project.reload, async (request) => ({
+    project: await router.reload(request.projectId),
+  }));
 }

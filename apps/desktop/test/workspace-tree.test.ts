@@ -17,14 +17,18 @@ import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 let root: string;
 
 function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceService {
   return new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine: new EngineService(),
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     ...overrides,
   });
 }

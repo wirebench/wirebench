@@ -17,23 +17,22 @@ import { DialogPicks } from '../src/main/dialog-picks.js';
 import { PREFERENCES_FILE, PreferencesService, rememberPickedCaBundle } from '../src/main/preferences.js';
 import { registerSslChannels } from '../src/main/ipc/ssl.js';
 import type { PreferencesWire } from '../src/shared/wire-base.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { createFakePlatform } from './helpers/fake-platform.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 /** `showOpenDialog` is never reached in these tests — the e2e override stands in for the dialog. */
 const showOpenDialog = vi.fn();
 
-vi.mock('electron', () => ({
-  ipcMain: {
-    handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
-      handlers.set(name, handler);
-    },
+const platform = createFakePlatform({
+  dialogs: {
+    openFile: (owner, opts) => showOpenDialog(owner, opts) as Promise<{ canceled: boolean; filePaths: string[] }>,
+    saveFile: () => Promise.resolve({ canceled: true }),
+    message: () => Promise.resolve({ response: 0, checkboxChecked: false }),
   },
-  BrowserWindow: { fromWebContents: () => null },
-  dialog: {
-    showOpenDialog: (...args: unknown[]) => showOpenDialog(...args) as unknown,
-  },
-}));
+});
 
 function invoke(channel: string, payload: unknown): Promise<unknown> {
   const handler = handlers.get(channel);
@@ -62,9 +61,10 @@ describe('ssl.pickCaBundle', () => {
     process.env['WIREBENCH_E2E_OPEN_PATH'] = bundle;
     const picks = new DialogPicks();
     const changed: PreferencesWire[] = [];
-    registerSslChannels({
+    registerSslChannels(table, {
       preferences: new PreferencesService(dir),
       picks,
+      platform,
       onChanged: (next) => changed.push(next),
     });
 
@@ -87,7 +87,12 @@ describe('ssl.pickCaBundle', () => {
     showOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] });
     const picks = new DialogPicks();
     const changed: PreferencesWire[] = [];
-    registerSslChannels({ preferences: new PreferencesService(dir), picks, onChanged: (n) => changed.push(n) });
+    registerSslChannels(table, {
+      preferences: new PreferencesService(dir),
+      picks,
+      platform,
+      onChanged: (n) => changed.push(n),
+    });
 
     const result = (await invoke('ssl.pickCaBundle', {})) as { value: { path?: string } };
 
@@ -103,9 +108,10 @@ describe('ssl.clearCaBundle', () => {
     writeFileSync(bundle, '-----BEGIN CERTIFICATE-----\n', 'utf8');
     process.env['WIREBENCH_E2E_OPEN_PATH'] = bundle;
     const changed: PreferencesWire[] = [];
-    registerSslChannels({
+    registerSslChannels(table, {
       preferences: new PreferencesService(dir),
       picks: new DialogPicks(),
+      platform,
       onChanged: (next) => changed.push(next),
     });
     await invoke('ssl.pickCaBundle', {});
@@ -159,7 +165,11 @@ describe('a CA bundle locked by policy', () => {
     const policyFile = join(dir, 'policy.yaml');
     writeFileSync(policyFile, 'ssl:\n  caBundlePath: /etc/ssl/corp.pem\n', 'utf8');
     showOpenDialog.mockClear();
-    registerSslChannels({ preferences: new PreferencesService(dir, { policyFile }), picks: new DialogPicks() });
+    registerSslChannels(table, {
+      preferences: new PreferencesService(dir, { policyFile }),
+      picks: new DialogPicks(),
+      platform,
+    });
 
     const result = await invoke(channel, {});
 

@@ -4,8 +4,10 @@ import { CurrentValuesStore } from '../src/main/current-values.js';
 import { registerCurrentValuesChannels } from '../src/main/ipc/current-values.js';
 import { channels } from '../src/shared/ipc.js';
 import type { WorkspaceWire } from '../src/shared/wire-base.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const registeredHandlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(registeredHandlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -40,7 +42,7 @@ describe('registerCurrentValuesChannels', () => {
       properties: { host: 'a.test', port: '80' },
       environments: [],
     } as unknown as WorkspaceWire);
-    registerCurrentValuesChannels(store);
+    registerCurrentValuesChannels(table, store);
 
     expect(await invoke(channels.currentValues.get.name, undefined)).toEqual({ ok: true, value: { scopes: [] } });
     await invoke(channels.currentValues.set.name, { key: WORKSPACE, name: 'host', value: 'mine.test' });
@@ -61,7 +63,7 @@ describe('registerCurrentValuesChannels', () => {
   it('refuses a current value for a variable with no committed value', async () => {
     const store = new CurrentValuesStore();
     store.syncWorkspace({ id: 'w1', properties: {}, environments: [] } as unknown as WorkspaceWire);
-    registerCurrentValuesChannels(store);
+    registerCurrentValuesChannels(table, store);
     const result = await invoke(channels.currentValues.set.name, { key: WORKSPACE, name: 'ghost', value: 'x' });
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe('current-value-unknown');
@@ -70,7 +72,7 @@ describe('registerCurrentValuesChannels', () => {
   it('refuses a current value for a project the workspace does not have', async () => {
     const store = new CurrentValuesStore();
     store.syncWorkspace({ id: 'w1', properties: {}, environments: [] } as unknown as WorkspaceWire);
-    registerCurrentValuesChannels(store);
+    registerCurrentValuesChannels(table, store);
     const result = await invoke(channels.currentValues.set.name, {
       key: { scope: 'project', projectId: 'ghost' },
       name: 'x',

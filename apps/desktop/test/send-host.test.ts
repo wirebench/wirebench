@@ -28,9 +28,11 @@ import {
 import { desktopSendHost, type DesktopSend, type DesktopSendDeps } from '../src/main/send/host.js';
 import { failedExchangeOf } from '../src/main/failed-exchange.js';
 import { toWsHandshakeWire } from '../src/main/engine-wire.js';
-import { containsRecordedSecret, redactSecretText } from '../src/main/redact.js';
 import type { HistoryEntryWire, LogEntryWire } from '../src/shared/wire-types.js';
 import type { FailedExchangeWire } from '../src/shared/wire-base.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
 
@@ -46,7 +48,12 @@ const config = {
 const scopes = { project: {}, global: {}, system: {} };
 
 function deps(extra: Partial<DesktopSendDeps> = {}): DesktopSendDeps {
-  return { project: {} as DesktopSendDeps['project'], service: {} as DesktopSendDeps['service'], ...extra };
+  return {
+    hostState,
+    project: {} as DesktopSendDeps['project'],
+    service: {} as DesktopSendDeps['service'],
+    ...extra,
+  };
 }
 
 function project(members: Record<string, unknown>): DesktopSendDeps['project'] {
@@ -186,13 +193,14 @@ describe('desktopSendHost', () => {
       vi.stubEnv('WIREBENCH_E2E_EXTRA_CA_FILE', file);
       vi.resetModules();
       const fresh = await import('../src/main/send/host.js');
-      expect(fresh.extraTrustAnchors()).toEqual(['E2E-PEM']);
+      const state = createHostState();
+      expect(fresh.extraTrustAnchors(state)).toEqual(['E2E-PEM']);
       const host = await fresh.desktopSendHost(
-        deps({ project: project({ trustAnchorsFor: () => Promise.resolve(['BUNDLE']) }) }),
+        deps({ hostState: state, project: project({ trustAnchorsFor: () => Promise.resolve(['BUNDLE']) }) }),
         send,
       );
       expect(host.tls?.anchors).toEqual(['BUNDLE', 'E2E-PEM']);
-      const adHoc = await fresh.desktopSendHost(deps(), { ...send, projectId: undefined });
+      const adHoc = await fresh.desktopSendHost(deps({ hostState: state }), { ...send, projectId: undefined });
       expect(adHoc.tls?.anchors).toEqual(['E2E-PEM']);
     } finally {
       vi.unstubAllEnvs();
@@ -350,10 +358,10 @@ describe('desktopSendHost', () => {
       deps({ oauth2: { accessToken: () => Promise.resolve('tok-7d1e5b2a'), clear: () => undefined } }),
       send,
     );
-    expect(containsRecordedSecret('tok-7d1e5b2a')).toBe(false);
+    expect(hostState.redactor.containsRecordedSecret('tok-7d1e5b2a')).toBe(false);
     await host.tokens!.accessTokenFor(config, { scopes });
-    expect(containsRecordedSecret('tok-7d1e5b2a')).toBe(true);
-    expect(redactSecretText('echo tok-7d1e5b2a')).not.toContain('tok-7d1e5b2a');
+    expect(hostState.redactor.containsRecordedSecret('tok-7d1e5b2a')).toBe(true);
+    expect(hostState.redactor.redactSecretText('echo tok-7d1e5b2a')).not.toContain('tok-7d1e5b2a');
   });
 
   it('keeps the target of an item that is not a webhook', async () => {
@@ -378,7 +386,7 @@ describe('desktopSendHost', () => {
       },
     });
     expect(rows).toEqual([
-      failedExchangeOf({
+      failedExchangeOf(hostState.redactor, {
         sendId: 's1',
         protocol: 'rest',
         requestId: 'r1',
@@ -425,7 +433,7 @@ describe('desktopSendHost', () => {
       },
     });
     expect(rows).toEqual([
-      failedExchangeOf({
+      failedExchangeOf(hostState.redactor, {
         sendId: 's1',
         protocol: 'rest',
         requestId: 'r1',
@@ -488,7 +496,7 @@ describe('desktopSendHost', () => {
     };
     const ws = { ...restItem(), kind: 'websocket' } as SelectedBase;
     host.events!.onExchange!(ws, handshake);
-    const wire = toWsHandshakeWire(handshake, { show: false, keyParams: ['token'] });
+    const wire = toWsHandshakeWire(hostState.redactor, handshake, { show: false, keyParams: ['token'] });
     expect(entries).toEqual([
       {
         kind: 'exchange',

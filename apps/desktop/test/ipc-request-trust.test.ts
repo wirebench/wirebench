@@ -26,8 +26,15 @@ import {
 import type { TestSoapServer } from '@wirebench/engine/test-helpers';
 import { createInterface, createProject, createRequest, type Project, type PropertyScopes } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+/** Fresh per case: the e2e trust file is read once per host state, as the module cache once did. */
+let hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -86,6 +93,7 @@ afterEach(() => {
 
 beforeEach(() => {
   handlers.clear();
+  hostState = createHostState();
   vi.resetModules();
 });
 
@@ -119,7 +127,8 @@ function seeded(endpoint = `${server.url}/soap`): Project {
 async function register(options: { readonly trustAnchorsFor?: () => Promise<readonly string[]> } = {}): Promise<void> {
   const { registerRequestChannelsWithKinds } = await import('./helpers/kind-channels.js');
   const model = seeded();
-  registerRequestChannelsWithKinds(new EngineService(), {
+  registerRequestChannelsWithKinds(table, new EngineService(), {
+    hostState,
     project: {
       scopesFor: () => scopes,
       preflight: () => ({
@@ -261,7 +270,7 @@ describe('a SOAP resend trusts the anchors of its project', () => {
       // The project's client certificate, which the mutual-TLS server asks for.
       clientIdentityFor: () => Promise.resolve({ cert: CLIENT.certPem, key: CLIENT.keyPem }),
     } as never;
-    return { project, send: toSendDeps(new EngineService(), { project }) };
+    return { project, send: toSendDeps(new EngineService(), { hostState, project }) };
   }
 
   it('from History', async () => {
@@ -282,7 +291,7 @@ describe('a SOAP resend trusts the anchors of its project', () => {
       request: { envelopeXml: '<a/>', headers: [] },
       sizeBytes: 1,
     };
-    registerHistoryChannelsWithKinds({ get: () => entry } as never, { project, send });
+    registerHistoryChannelsWithKinds(table, { get: () => entry } as never, { project, send });
 
     const result = await handlers.get('history.resend')!({ sender: {} }, { id: 'h-1' });
 
@@ -292,11 +301,12 @@ describe('a SOAP resend trusts the anchors of its project', () => {
   it('from the HTTP Log', async () => {
     const { registerLogChannels } = await import('../src/main/ipc/log.js');
     const { project } = await resendDeps();
-    registerLogChannels({
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service: new EngineService(),
-      request: { project },
+      request: { hostState, project },
       picks: { rememberWrite: () => undefined },
+      dialogs: fakeNativeDialogs(),
       appVersion: '0.0.0-test',
     });
 
@@ -330,12 +340,13 @@ describe('a SOAP resend trusts the anchors of its project', () => {
       request: { envelopeXml: '<a/>', headers: [] },
       sizeBytes: 1,
     };
-    registerHistoryChannelsWithKinds({ get: () => entry } as never, { project, send });
-    registerLogChannels({
+    registerHistoryChannelsWithKinds(table, { get: () => entry } as never, { project, send });
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service: new EngineService(),
-      request: { project },
+      request: { hostState, project },
       picks: { rememberWrite: () => undefined },
+      dialogs: fakeNativeDialogs(),
       appVersion: '0.0.0-test',
     });
 

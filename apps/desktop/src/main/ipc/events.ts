@@ -1,19 +1,20 @@
-import type { WebContents } from 'electron';
 import type { z } from 'zod';
 import type { IpcEvent } from '../../shared/ipc.js';
+import type { Caller } from '../host/platform.js';
 import { validateEventPayload } from './envelope.js';
 
 /**
  * Validates `payload` against `event`'s schema (see {@link validateEventPayload}) and sends
- * it to `target`. Throws if the payload doesn't match the schema — a mismatch here is a
- * programming error in main-process code, not untrusted input, so it is not caught.
+ * it to `target`; a closed `target` is sent nothing. Throws if the payload doesn't match the
+ * schema — a mismatch here is a programming error in main-process code, not untrusted input,
+ * so it is not caught.
  */
 export function emitEvent<Payload extends z.ZodType>(
-  target: WebContents,
+  target: Caller,
   event: IpcEvent<Payload>,
   payload: z.infer<Payload>,
 ): void {
   const parsed = validateEventPayload(event, payload);
-  if (target.isDestroyed()) return;
+  if (target.isClosed()) return;
   target.send(event.name, parsed);
 }

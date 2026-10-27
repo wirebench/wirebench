@@ -26,15 +26,19 @@ import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { ScriptHost } from '../src/main/script-host.js';
-import { recordSecretValue, redactSecretText } from '../src/main/redact.js';
 import { sendThroughEngine } from '../src/main/send/exchange.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import type { RestExchangeSummary, RestLiveEvent } from '../src/shared/kinds/rest/wire.js';
 import type { FailedExchangeWire } from '../src/shared/wire-base.js';
 import { sendDepsFor } from './helpers/send-deps.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -64,7 +68,8 @@ function unwrap<T>(result: unknown): T {
 /** Registers the `request.*` channels over `model`, with `extra` laid over the dependencies. */
 function registerOver(model: Project, extra: Partial<RequestChannelDeps> = {}): void {
   handlers.clear();
-  registerRequestChannelsWithKinds(new EngineService(), {
+  registerRequestChannelsWithKinds(table, new EngineService(), {
+    hostState,
     project: {
       projectId: () => model.id,
       runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),
@@ -110,7 +115,7 @@ function seeded(requests?: readonly RestRequestDef[]): Project {
 }
 
 async function openHistory(): Promise<HistoryService> {
-  const history = new HistoryService(userDataDir);
+  const history = new HistoryService(userDataDir, hostState.redactor);
   await history.open('p1');
   return history;
 }
@@ -137,6 +142,7 @@ const normalise = (value: unknown): unknown =>
 async function sendNew(model: Project): Promise<{ entry: HistoryEntryWire; summary: RestExchangeSummary }> {
   const appended: HistoryEntryWire[] = [];
   const deps = sendDepsFor(model, {
+    hostState,
     history: await openHistory(),
     onHistoryAppended: (wire) => appended.push(wire),
     getSecret: secrets,
@@ -243,7 +249,7 @@ describe('sendThroughEngine for a REST request', () => {
     const model = seeded([createRestRequest('Ticks', { id: 'req-1', url: '/sse/ticks?n=3&every=5' })]);
     const live: RestLiveEvent[] = [];
     let rowsAtResolve = -1;
-    const summary = await sendThroughEngine(sendDepsFor(model, { getSecret: secrets }), 's1', 'req-1', {
+    const summary = await sendThroughEngine(sendDepsFor(model, { hostState, getSecret: secrets }), 's1', 'req-1', {
       draft: { kind: 'rest' },
       onLive: (event) => live.push(event),
     }).then((sent) => {
@@ -259,7 +265,7 @@ describe('sendThroughEngine for a REST request', () => {
 
   it('ends a stream with endedBy client when the registry cancels it', async () => {
     const model = seeded([createRestRequest('Forever', { id: 'req-1', url: '/sse/forever' })]);
-    const deps = sendDepsFor(model, { getSecret: secrets });
+    const deps = sendDepsFor(model, { hostState, getSecret: secrets });
     const live: RestLiveEvent[] = [];
     const sending = sendThroughEngine(deps, 's1', 'req-1', {
       draft: { kind: 'rest' },
@@ -279,6 +285,7 @@ describe('sendThroughEngine for a REST request', () => {
     const failures: FailedExchangeWire[] = [];
     const appended: HistoryEntryWire[] = [];
     const deps = sendDepsFor(seeded(), {
+      hostState,
       getSecret: secrets,
       history: await openHistory(),
       onHistoryAppended: (wire) => appended.push(wire),
@@ -298,6 +305,7 @@ describe('sendThroughEngine for a REST request', () => {
     try {
       const appended: HistoryEntryWire[] = [];
       const deps = sendDepsFor(seeded(), {
+        hostState,
         getSecret: secrets,
         history: await openHistory(),
         onHistoryAppended: (wire) => appended.push(wire),
@@ -331,6 +339,7 @@ describe('sendThroughEngine for a REST request', () => {
         },
       };
       const deps = sendDepsFor(refused, {
+        hostState,
         getSecret: secrets,
         history: await openHistory(),
         onHistoryAppended: (wire) => appended.push(wire),
@@ -358,6 +367,7 @@ describe('sendThroughEngine for a REST request', () => {
     const failures: FailedExchangeWire[] = [];
     const appended: HistoryEntryWire[] = [];
     const deps = sendDepsFor(model, {
+      hostState,
       getSecret: secrets,
       history: await openHistory(),
       onHistoryAppended: (wire) => appended.push(wire),
@@ -383,6 +393,7 @@ describe('sendThroughEngine for a REST request', () => {
     const failures: FailedExchangeWire[] = [];
     const appended: HistoryEntryWire[] = [];
     const deps = sendDepsFor(seeded(), {
+      hostState,
       getSecret: () => Promise.resolve(undefined),
       history: await openHistory(),
       onHistoryAppended: (wire) => appended.push(wire),
@@ -404,7 +415,7 @@ describe('sendThroughEngine for a REST request', () => {
 
   it('refuses a request no project holds as unknown-entity', async () => {
     await expect(
-      sendThroughEngine(sendDepsFor(seeded()), 's1', 'nope', { draft: { kind: 'rest' } }),
+      sendThroughEngine(sendDepsFor(seeded(), { hostState }), 's1', 'nope', { draft: { kind: 'rest' } }),
     ).rejects.toMatchObject({ code: 'unknown-entity', message: 'No REST request with id "nope"' });
   });
 
@@ -413,6 +424,7 @@ describe('sendThroughEngine for a REST request', () => {
       createRestRequest('Echo', { id: 'req-1', url: '/echo', headers: [entry('x-region', '${#Global#region}')] }),
     ]);
     const deps = sendDepsFor(model, {
+      hostState,
       getSecret: secrets,
       project: { runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: { region: 'eu-2' } }) },
     });
@@ -423,7 +435,7 @@ describe('sendThroughEngine for a REST request', () => {
   });
 
   it("lets a draft's credentials replace the request's own", async () => {
-    const summary = await sendThroughEngine(sendDepsFor(seeded(), { getSecret: secrets }), 's1', 'req-1', {
+    const summary = await sendThroughEngine(sendDepsFor(seeded(), { hostState, getSecret: secrets }), 's1', 'req-1', {
       draft: { kind: 'rest', draft: { auth: { type: 'api-key', name: 'k2', in: 'header', valueRef: 'sec_other' } } },
     });
 
@@ -461,15 +473,21 @@ describe('sendThroughEngine for a REST request with scripts', () => {
     };
     const model = seeded([request]);
     host = new ScriptHost({
+      redactor: hostState.redactor,
       modelOf: () => model,
       openApiDocumentFor: () => Promise.reject(new Error('no definition')),
       grpcProtoSetFor: () => Promise.reject(new Error('no definition')),
       soapDefinitionFor: () => undefined,
     });
 
-    const summary = await sendThroughEngine(sendDepsFor(model, { getSecret: secrets, scripts: host }), 's1', 'req-1', {
-      draft: { kind: 'rest' },
-    });
+    const summary = await sendThroughEngine(
+      sendDepsFor(model, { hostState, getSecret: secrets, scripts: host }),
+      's1',
+      'req-1',
+      {
+        draft: { kind: 'rest' },
+      },
+    );
 
     expect((JSON.parse(summary.text) as { headers: Record<string, string> }).headers['x-ran']).toBe('yes');
     expect(summary.script?.tests).toEqual([{ name: 'ok', passed: true }]);
@@ -484,7 +502,7 @@ describe('sendThroughEngine for an orphaned REST request', () => {
   }
 
   it('sends it from the editor', async () => {
-    const summary = await sendThroughEngine(sendDepsFor(orphaned(), { getSecret: secrets }), 's1', 'req-1', {
+    const summary = await sendThroughEngine(sendDepsFor(orphaned(), { hostState, getSecret: secrets }), 's1', 'req-1', {
       draft: { kind: 'rest' },
     });
     expect(summary.http.status).toBe(200);
@@ -539,7 +557,7 @@ describe('sendThroughEngine for a webhook item', () => {
       entries,
       service: {
         recordRestSend: (projectId: string, record: RecordRestSendInput) => {
-          const wire = toHistoryEntryWire(buildRestHistoryEntry(projectId, record));
+          const wire = toHistoryEntryWire(buildRestHistoryEntry(hostState.redactor, projectId, record));
           entries.unshift(wire);
           return Promise.resolve(wire);
         },
@@ -566,7 +584,7 @@ describe('sendThroughEngine for a webhook item', () => {
     const kept = history();
     const keys = keychain({ 'ref-orders': SECRET });
     await sendThroughEngine(
-      sendDepsFor(hooks(server.url), { history: kept.service, secretsFor: keys.secretsFor }),
+      sendDepsFor(hooks(server.url), { hostState, history: kept.service, secretsFor: keys.secretsFor }),
       's1',
       'w1',
       { draft: { kind: 'rest' } },
@@ -585,7 +603,7 @@ describe('sendThroughEngine for a webhook item', () => {
   it('sends an orphaned webhook item too', async () => {
     const keys = keychain({ 'ref-orders': SECRET });
     const summary = await sendThroughEngine(
-      sendDepsFor(hooks(server.url, SIGNING, true), { secretsFor: keys.secretsFor }),
+      sendDepsFor(hooks(server.url, SIGNING, true), { hostState, secretsFor: keys.secretsFor }),
       's1',
       'w1',
       { draft: { kind: 'rest' } },
@@ -596,9 +614,14 @@ describe('sendThroughEngine for a webhook item', () => {
   it('refuses the send when the keychain has no secret, and nothing goes out', async () => {
     const before = server.requests.length;
     await expect(
-      sendThroughEngine(sendDepsFor(hooks(server.url), { secretsFor: keychain({}).secretsFor }), 's2', 'w1', {
-        draft: { kind: 'rest' },
-      }),
+      sendThroughEngine(
+        sendDepsFor(hooks(server.url), { hostState, secretsFor: keychain({}).secretsFor }),
+        's2',
+        'w1',
+        {
+          draft: { kind: 'rest' },
+        },
+      ),
     ).rejects.toMatchObject({
       code: 'webhook-signing-secret',
       message: 'Signing is set on the folder “Orders” but its secret is not set',
@@ -616,9 +639,14 @@ describe('sendThroughEngine for a webhook item', () => {
     const before = server.requests.length;
 
     await expect(
-      sendThroughEngine(sendDepsFor(hooks(server.url, ciOnly), { secretsFor: keys.secretsFor }), 's3', 'w1', {
-        draft: { kind: 'rest' },
-      }),
+      sendThroughEngine(
+        sendDepsFor(hooks(server.url, ciOnly), { hostState, secretsFor: keys.secretsFor }),
+        's3',
+        'w1',
+        {
+          draft: { kind: 'rest' },
+        },
+      ),
     ).rejects.toMatchObject({ code: 'webhook-signing-secret' });
     expect(keys.asked).not.toContain('webhook-signing:ORDERS');
     expect(server.requests.length).toBe(before);
@@ -632,6 +660,7 @@ describe('sendThroughEngine for a webhook item', () => {
     await expect(
       sendThroughEngine(
         sendDepsFor(hooks('', { mode: 'none' }), {
+          hostState,
           history: kept.service,
           onSendFailed: (failure) => failures.push(failure),
         }),
@@ -725,6 +754,7 @@ describe('closing a project over a plain REST send in flight', () => {
   it('cancels it, and History records it as aborted', async () => {
     const appended: HistoryEntryWire[] = [];
     const deps = sendDepsFor(seeded([createRestRequest('Slow', { id: 'req-1', url: '/slow?ms=2000' })]), {
+      hostState,
       getSecret: secrets,
       history: await openHistory(),
       onHistoryAppended: (wire) => appended.push(wire),
@@ -751,6 +781,7 @@ describe('closing a project over a plain REST send in flight', () => {
       return await record(...args);
     });
     const deps = sendDepsFor(seeded([createRestRequest('Slow', { id: 'req-1', url: '/slow?ms=2000' })]), {
+      hostState,
       getSecret: secrets,
       history,
     });
@@ -765,7 +796,7 @@ describe('closing a project over a plain REST send in flight', () => {
   });
 
   it('waits for nothing when no send of a matching request is in flight', async () => {
-    const deps = sendDepsFor(seeded([]));
+    const deps = sendDepsFor(seeded([]), { hostState });
     const started = performance.now();
     await deps.registry.whenRecorded(5_000, () => true);
     expect(performance.now() - started).toBeLessThan(50);
@@ -801,7 +832,7 @@ describe("request.sendRest — the request's own assertions", () => {
 
   it('masks every string of a result, so a recorded secret never reaches the pane', async () => {
     const secret = 'assert-secret-7e3f9a';
-    recordSecretValue(secret);
+    hostState.redactor.recordSecretValue(secret);
     registerOver(
       seeded([
         {
@@ -818,7 +849,7 @@ describe("request.sendRest — the request's own assertions", () => {
 
     const results = summary.assertions ?? [];
     expect(results).toHaveLength(1);
-    const masked = redactSecretText(secret, { show: false });
+    const masked = hostState.redactor.redactSecretText(secret, { show: false });
     expect(masked).not.toContain(secret);
     for (const result of results) {
       for (const text of [result.label, result.expected, result.actual, result.message]) {

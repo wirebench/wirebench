@@ -10,7 +10,7 @@ import type { AppLock } from '../app-lock.js';
 import { toPreferencesWire } from '../preferences.js';
 import type { PreferencesService } from '../preferences.js';
 import type { PreferencesWire } from '../../shared/wire-base.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 export interface AppLockChannelDeps {
   readonly preferences: Pick<PreferencesService, 'update' | 'ready' | 'isLocked'>;
@@ -20,10 +20,10 @@ export interface AppLockChannelDeps {
   readonly onChanged?: (preferences: PreferencesWire) => void;
 }
 
-export function registerAppLockChannels(deps: AppLockChannelDeps): void {
-  registerHandler(channels.appLock.status, () => Promise.resolve({ ...deps.support, ...deps.lock.state() }));
+export function registerAppLockChannels(table: HandlerTable, deps: AppLockChannelDeps): void {
+  registerHandler(table, channels.appLock.status, () => Promise.resolve({ ...deps.support, ...deps.lock.state() }));
 
-  registerHandler(channels.appLock.set, async (request) => {
+  registerHandler(table, channels.appLock.set, async (request) => {
     await deps.preferences.ready();
     if (deps.preferences.isLocked('secrets.appLock')) {
       throw new WirebenchError('preference-locked', 'The app lock is set by the managed-preferences policy', {

@@ -10,10 +10,8 @@ import { DESKTOP_AUDIT_LIMITS, desktopAuditEventSchema, nodeFs, writeFileAtomic 
 import type { DesktopAuditEvent } from '@wirebench/engine';
 import { join } from 'node:path';
 
-const outboxes = new Map<string, AuditOutbox>();
-
-/** One outbox per folder for the process: two instances could pick the same sequence number. */
-export function outboxFor(dir: string): AuditOutbox {
+/** One outbox per folder for the host (`outboxes` is its `auditOutboxes`): two instances could pick the same sequence number. */
+export function outboxFor(outboxes: Map<string, AuditOutbox>, dir: string): AuditOutbox {
   let outbox = outboxes.get(dir);
   if (outbox === undefined) {
     outbox = new AuditOutbox(dir);

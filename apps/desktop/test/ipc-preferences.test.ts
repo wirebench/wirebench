@@ -6,10 +6,12 @@ import { DEFAULT_PREFERENCES } from '@wirebench/engine';
 import { PREFERENCES_FILE, PreferencesService } from '../src/main/preferences.js';
 import { registerPreferencesChannels } from '../src/main/ipc/preferences.js';
 import type { PreferencesWire } from '../src/shared/wire-base.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 // `registerPreferencesChannels` binds through `ipcMain.handle`; the stub captures the bound
 // handlers so the registration itself is what these tests drive.
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -39,7 +41,7 @@ afterEach(() => {
 
 describe('preferences.* IPC', () => {
   it('answers preferences.get with the whole document', async () => {
-    registerPreferencesChannels(new PreferencesService(dir));
+    registerPreferencesChannels(table, new PreferencesService(dir));
     expect(await invoke('preferences.get', undefined)).toEqual({
       ok: true,
       value: { preferences: DEFAULT_PREFERENCES },
@@ -52,7 +54,7 @@ describe('preferences.* IPC', () => {
    */
   it('waits for the initial load before answering', async () => {
     writeFileSync(join(dir, PREFERENCES_FILE), 'version: 1\nui:\n  theme: light\n', 'utf8');
-    registerPreferencesChannels(new PreferencesService(dir));
+    registerPreferencesChannels(table, new PreferencesService(dir));
 
     const result = (await invoke('preferences.get', undefined)) as { value: { preferences: PreferencesWire } };
     expect(result.value.preferences.ui.theme).toBe('light');
@@ -60,7 +62,7 @@ describe('preferences.* IPC', () => {
 
   it('merges an update, persists it and notifies the broadcaster', async () => {
     const changed: PreferencesWire[] = [];
-    registerPreferencesChannels(new PreferencesService(dir), (next) => changed.push(next));
+    registerPreferencesChannels(table, new PreferencesService(dir), (next) => changed.push(next));
 
     const result = (await invoke('preferences.update', { patch: { editor: { tabSize: 2 } } })) as {
       value: { preferences: PreferencesWire };
@@ -74,7 +76,7 @@ describe('preferences.* IPC', () => {
   });
 
   it('resets one section', async () => {
-    registerPreferencesChannels(new PreferencesService(dir));
+    registerPreferencesChannels(table, new PreferencesService(dir));
     await invoke('preferences.update', { patch: { editor: { tabSize: 8 }, http: { userAgent: 'Keep/1' } } });
 
     const result = (await invoke('preferences.reset', { section: 'editor' })) as {
@@ -86,7 +88,7 @@ describe('preferences.* IPC', () => {
 
   it('resets the git section', async () => {
     const preferences = new PreferencesService(dir);
-    registerPreferencesChannels(preferences);
+    registerPreferencesChannels(table, preferences);
     // `git.path`/`pathPickedByMain` are main-only keys `preferences.update` refuses from the
     // renderer (see `MAIN_ONLY_KEYS` below) — set directly through the service, exactly as
     // `git.locate` would.
@@ -102,7 +104,7 @@ describe('preferences.* IPC', () => {
   });
 
   it('rejects an unknown section rather than resetting everything', async () => {
-    registerPreferencesChannels(new PreferencesService(dir));
+    registerPreferencesChannels(table, new PreferencesService(dir));
     expect(await invoke('preferences.reset', { section: 'nonsense' })).toMatchObject({
       ok: false,
       error: { code: 'ipc-invalid-request' },
@@ -123,7 +125,7 @@ describe('preferences.* IPC', () => {
   ])('rejects a patch carrying ssl.%s, and writes nothing', async (_name, ssl) => {
     const changed: PreferencesWire[] = [];
     const service = new PreferencesService(dir);
-    registerPreferencesChannels(service, (next) => changed.push(next));
+    registerPreferencesChannels(table, service, (next) => changed.push(next));
 
     const result = (await invoke('preferences.update', { patch: { ssl } })) as {
       ok: boolean;
@@ -147,7 +149,7 @@ describe('preferences.* IPC', () => {
   ])('refuses git.%s from the renderer, and writes nothing', async (_name, git) => {
     const changed: PreferencesWire[] = [];
     const service = new PreferencesService(dir);
-    registerPreferencesChannels(service, (next) => changed.push(next));
+    registerPreferencesChannels(table, service, (next) => changed.push(next));
 
     const result = (await invoke('preferences.update', { patch: { git } })) as {
       ok: boolean;
@@ -160,7 +162,7 @@ describe('preferences.* IPC', () => {
   });
 
   it('still accepts the ssl fields the renderer does own', async () => {
-    registerPreferencesChannels(new PreferencesService(dir));
+    registerPreferencesChannels(table, new PreferencesService(dir));
     const result = (await invoke('preferences.update', { patch: { ssl: { minVersion: 'TLSv1.3' } } })) as {
       value: { preferences: PreferencesWire };
     };
@@ -168,7 +170,7 @@ describe('preferences.* IPC', () => {
   });
 
   it('ignores unknown keys inside a patch', async () => {
-    registerPreferencesChannels(new PreferencesService(dir));
+    registerPreferencesChannels(table, new PreferencesService(dir));
     const result = (await invoke('preferences.update', { patch: { editor: { tabSize: 2, nonsense: 9 } } })) as {
       value: { preferences: PreferencesWire };
     };
@@ -186,7 +188,7 @@ describe('managed-preferences policy over IPC', () => {
 
   it('answers preferences.policy with the locked and ignored keys', async () => {
     const policyFile = writePolicy();
-    registerPreferencesChannels(new PreferencesService(dir, { policyFile }));
+    registerPreferencesChannels(table, new PreferencesService(dir, { policyFile }));
     expect(await invoke('preferences.policy', undefined)).toEqual({
       ok: true,
       value: { path: policyFile, locked: ['proxy.mode'], ignored: ['editor'] },
@@ -195,7 +197,7 @@ describe('managed-preferences policy over IPC', () => {
 
   it('refuses an update to a locked key and broadcasts nothing', async () => {
     const changed: PreferencesWire[] = [];
-    registerPreferencesChannels(new PreferencesService(dir, { policyFile: writePolicy() }), (next) =>
+    registerPreferencesChannels(table, new PreferencesService(dir, { policyFile: writePolicy() }), (next) =>
       changed.push(next),
     );
     const result = await invoke('preferences.update', { patch: { proxy: { mode: 'none' } } });

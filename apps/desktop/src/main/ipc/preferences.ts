@@ -3,13 +3,13 @@ import { channels } from '../../shared/ipc.js';
 import { toPreferencesWire } from '../preferences.js';
 import type { PreferencesService } from '../preferences.js';
 import type { PreferencesWire } from '../../shared/wire-base.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /**
  * Registers the `preferences.*` IPC channels against the shared {@link PreferencesService}.
  *
  * Preferences are user-scoped, not project-scoped, so a change made in one window has to reach
- * every other one: `onChanged` is invoked after each write and `main/index.ts` broadcasts it as
+ * every other one: `onChanged` is invoked after each write and `main/host/create-host.ts` broadcasts it as
  * the `preferences.changed` event. Every channel answers with the whole document, so the
  * renderer never merges a patch into a mirror that might have drifted.
  *
@@ -48,14 +48,15 @@ const MAIN_ONLY_MESSAGE: Record<keyof typeof MAIN_ONLY_KEYS, string> = {
 };
 
 export function registerPreferencesChannels(
+  table: HandlerTable,
   preferences: PreferencesService,
   onChanged: (preferences: PreferencesWire) => void = () => undefined,
 ): void {
-  registerHandler(channels.preferences.get, async () => {
+  registerHandler(table, channels.preferences.get, async () => {
     return { preferences: toPreferencesWire(await preferences.ready()) };
   });
 
-  registerHandler(channels.preferences.update, async (request) => {
+  registerHandler(table, channels.preferences.update, async (request) => {
     for (const section of Object.keys(MAIN_ONLY_KEYS) as (keyof typeof MAIN_ONLY_KEYS)[]) {
       const value = request.patch[section];
       const refused = value === undefined ? [] : MAIN_ONLY_KEYS[section].filter((key) => key in value);
@@ -70,13 +71,13 @@ export function registerPreferencesChannels(
     return { preferences: next };
   });
 
-  registerHandler(channels.preferences.policy, async () => {
+  registerHandler(table, channels.preferences.policy, async () => {
     await preferences.ready();
     const { path, locked, ignored, error } = preferences.policy();
     return { path, locked: [...locked], ignored: [...ignored], ...(error !== undefined ? { error } : {}) };
   });
 
-  registerHandler(channels.preferences.reset, async (request) => {
+  registerHandler(table, channels.preferences.reset, async (request) => {
     const next = toPreferencesWire(await preferences.reset(request.section));
     onChanged(next);
     return { preferences: next };

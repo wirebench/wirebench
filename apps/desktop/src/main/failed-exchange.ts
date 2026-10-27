@@ -10,9 +10,9 @@
  * what is emitted is what the log will ever show.
  */
 
+import type { Redactor } from './host/redactor.js';
 import { isWirebenchError, type FailedRequest } from '@wirebench/engine';
 import type { FailedExchangeWire } from '../shared/wire-base.js';
-import { redactHeaders, redactRawHttp, redactSecretValues, redactUrl } from './redact.js';
 
 /** What a catch block has at hand for one failed send. */
 export interface FailedExchangeInput {
@@ -43,13 +43,13 @@ export interface FailedExchangeInput {
 }
 
 /** The `{ code, message }` History records for the same error; `internal-error` for a non-engine one. */
-function errorOf(error: unknown): { code: string; message: string } {
+function errorOf(redactor: Redactor, error: unknown): { code: string; message: string } {
   if (isWirebenchError(error)) {
-    return { code: error.code, message: redactSecretValues(error.message) };
+    return { code: error.code, message: redactor.redactSecretValues(error.message) };
   }
   return {
     code: 'internal-error',
-    message: redactSecretValues(error instanceof Error ? error.message : String(error)),
+    message: redactor.redactSecretValues(error instanceof Error ? error.message : String(error)),
   };
 }
 
@@ -64,10 +64,15 @@ export function prepareFailureCode(error: unknown): string {
 /**
  * The raw request for a captured one, redacted with the same helper a finished exchange's raw
  * request goes through (sensitive header lines, `wsse:Password` in an XML body). The request line
- * is written from the already-redacted URL, since `redactRawHttp` does not look at it. A truncated
+ * is written from the already-redacted URL, since `redactor.redactRawHttp` does not look at it. A truncated
  * body is left out: masking a cut-off XML body could miss a password whose closing tag was cut.
  */
-function rawRequestOf(captured: FailedRequest, redactedUrl: string, keyHeaders: readonly string[]): string {
+function rawRequestOf(
+  redactor: Redactor,
+  captured: FailedRequest,
+  redactedUrl: string,
+  keyHeaders: readonly string[],
+): string {
   let target: string;
   try {
     const parsed = new URL(redactedUrl);
@@ -84,7 +89,7 @@ function rawRequestOf(captured: FailedRequest, redactedUrl: string, keyHeaders: 
     captured.bodyBase64 !== undefined && !captured.bodyTruncated
       ? Buffer.from(captured.bodyBase64, 'base64')
       : Buffer.alloc(0);
-  return redactRawHttp(Buffer.concat([head, body]).toString('base64'), {
+  return redactor.redactRawHttp(Buffer.concat([head, body]).toString('base64'), {
     show: false,
     extraHeaders: keyHeaders,
     encoding: 'base64',
@@ -95,7 +100,7 @@ function rawRequestOf(captured: FailedRequest, redactedUrl: string, keyHeaders: 
 const UNBUILT_URL_CODES: ReadonlySet<string> = new Set(['invalid-url', 'rest-url-incomplete']);
 
 /** The failure row for one send, redacted for good. */
-export function failedExchangeOf(input: FailedExchangeInput): FailedExchangeWire {
+export function failedExchangeOf(redactor: Redactor, input: FailedExchangeInput): FailedExchangeWire {
   const captured = input.captured;
   // A URL the engine cannot complete or parse is refused before anything is built, so such a
   // failure never went on the wire either, whichever catch block reports it.
@@ -104,7 +109,7 @@ export function failedExchangeOf(input: FailedExchangeInput): FailedExchangeWire
     (captured === undefined && isWirebenchError(input.error) && UNBUILT_URL_CODES.has(input.error.code)
       ? 'prepare'
       : undefined);
-  const url = redactUrl(captured?.url ?? input.url, { show: false, extraParams: input.keyParams ?? [] });
+  const url = redactor.redactUrl(captured?.url ?? input.url, { show: false, extraParams: input.keyParams ?? [] });
   const keyHeaders = input.keyHeaders ?? [];
   return {
     sendId: input.sendId,
@@ -113,15 +118,15 @@ export function failedExchangeOf(input: FailedExchangeInput): FailedExchangeWire
     request: {
       url,
       method: captured?.method ?? input.method,
-      headers: redactHeaders(captured?.headers ?? input.headers, { show: false, extraHeaders: keyHeaders }),
+      headers: redactor.redactHeaders(captured?.headers ?? input.headers, { show: false, extraHeaders: keyHeaders }),
     },
-    ...(captured !== undefined ? { rawRequestBase64: rawRequestOf(captured, url, keyHeaders) } : {}),
+    ...(captured !== undefined ? { rawRequestBase64: rawRequestOf(redactor, captured, url, keyHeaders) } : {}),
     startedAt: new Date(input.startedAt).toISOString(),
     durationMs: input.durationMs,
     error:
       stage === 'prepare'
-        ? { code: prepareFailureCode(input.error), message: errorOf(input.error).message }
-        : errorOf(input.error),
+        ? { code: prepareFailureCode(input.error), message: errorOf(redactor, input.error).message }
+        : errorOf(redactor, input.error),
     ...(stage === 'prepare' ? { stage: 'prepare' as const } : {}),
   };
 }

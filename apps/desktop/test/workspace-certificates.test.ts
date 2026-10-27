@@ -24,8 +24,13 @@ import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { registerCertificateChannels } from '../src/main/ipc/certificates.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   app: { isPackaged: false },
@@ -57,9 +62,10 @@ afterEach(async () => {
 
 async function workspaceWithEndpointAndKeystore(): Promise<{ service: WorkspaceService; projectId: string }> {
   const service = new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine: new EngineService(),
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     picks: new DialogPicks(),
     trash: () => Promise.resolve(),
   });
@@ -93,7 +99,7 @@ describe('certificates.check', () => {
   function channel(
     project: Pick<WorkspaceService, 'checkCertificates'>,
   ): (probeEndpoints: boolean) => Promise<Response> {
-    registerCertificateChannels({
+    registerCertificateChannels(table, {
       project,
       preferences: { get: () => ({ ssl: { expiryWarningDays: 30 } }) as never },
     });

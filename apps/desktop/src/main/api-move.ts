@@ -66,7 +66,7 @@ function* objectsIn(value: unknown): Iterable<Record<string, unknown>> {
 }
 
 /** The explicit scopes a variable reference may name: `${#Project#name}`, `${#Env#name}`, …. */
-const VARIABLE_SCOPES = new Set(['Project', 'Env', 'Workspace', 'Global']);
+const VARIABLE_SCOPES: ReadonlySet<string> = new Set(['Project', 'Env', 'Workspace', 'Global']);
 
 /** What an API refers to that lives at the project level, collected from its whole container. */
 export interface ApiReferences {

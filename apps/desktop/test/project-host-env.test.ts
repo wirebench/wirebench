@@ -22,6 +22,10 @@ import {
   type RestPreview,
   type SendThroughEngineDeps,
 } from '../src/main/send/exchange.js';
+import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
+
+const hostState = createHostState();
 
 let dir: string;
 let host: ProjectHost;
@@ -34,6 +38,7 @@ function target(resolution: RestPreview | undefined): string | undefined {
 
 /** The host as a send's dependencies see it. */
 const deps = (): SendThroughEngineDeps => ({
+  hostState,
   service: new EngineService(),
   registry: new ExchangeRegistry(),
   project: host as unknown as SendThroughEngineDeps['project'],
@@ -79,7 +84,15 @@ async function restProject(): Promise<{ requestId: string; dev: string; test: st
 beforeEach(async () => {
   server = await startTestSoapServer({ fixture: 'calculator' });
   dir = mkdtempSync(join(tmpdir(), 'wirebench-host-env-'));
-  host = new ProjectHost(new EngineService(), {}, undefined, undefined, undefined, undefined, new DialogPicks());
+  host = new ProjectHost(
+    new EngineService(),
+    testHooks(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    new DialogPicks(),
+  );
   await host.create({ dir: join(dir, 'project'), name: 'Envs' });
 });
 
@@ -352,7 +365,7 @@ describe('ProjectHost.runContextFor with global properties', () => {
     const globals = { get: () => ({ properties: { x: 'g', off: 'o' }, disabled: ['off'] }) };
     const withGlobals = new ProjectHost(
       new EngineService(),
-      {},
+      testHooks(),
       undefined,
       globals,
       undefined,

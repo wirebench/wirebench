@@ -12,8 +12,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createIssuedTokenSource, createWssContext } from '@wirebench/engine';
 import type { IssuedToken, IssuedTokenTarget, Project, TrustDeps, WssIssuedTokenEntry } from '@wirebench/engine';
 import type { IssuedTokenStatusWire } from '../src/shared/kinds/soap/wire.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -29,7 +35,6 @@ const { EngineService } = await import('../src/main/engine-service.js');
 const { ProjectHost } = await import('../src/main/project-host.js');
 const { addWssOutgoing } = await import('../src/main/kinds/soap/wss-mutations.js');
 const { desktopSecrets } = await import('../src/main/send/host.js');
-const { recordSecretValue } = await import('../src/main/redact.js');
 
 const ASSERTION =
   '<saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion" ID="_issued" Version="2.0"' +
@@ -62,7 +67,11 @@ function issued(): IssuedToken {
 }
 
 function service(request: () => Promise<IssuedToken> = () => Promise.resolve(issued())) {
-  return new IssuedTokensService(() => Promise.resolve({ entry, target, deps }), createIssuedTokenSource({ request }));
+  return new IssuedTokensService(
+    () => Promise.resolve({ entry, target, deps }),
+    hostState.redactor,
+    createIssuedTokenSource({ request }),
+  );
 }
 
 describe('IssuedTokensService', () => {
@@ -93,7 +102,7 @@ describe('IssuedTokensService', () => {
   });
 
   it('masks recorded secret values in lastError unless secrets show', async () => {
-    recordSecretValue('pw-quoted-by-the-fault');
+    hostState.redactor.recordSecretValue('pw-quoted-by-the-fault');
     const tokens = service(() => Promise.reject(new Error('denied for pw-quoted-by-the-fault')));
     const hidden = await tokens.fetch(locator, false);
     expect(hidden.lastError).toContain('denied for');
@@ -133,7 +142,7 @@ describe('issuedTokens channels', () => {
 
   it('registers status, fetch and clear, reading show-secrets for every answer', async () => {
     let show = false;
-    registerIssuedTokenChannels({ issuedTokens: service(), showSecrets: { get: () => show } });
+    registerIssuedTokenChannels(table, { issuedTokens: service(), showSecrets: { get: () => show } });
     expect((await value('issuedTokens.status', locator)).state).toBe('none');
     expect(await value('issuedTokens.fetch', locator)).not.toHaveProperty('assertion');
     show = true;
@@ -201,7 +210,7 @@ describe('ProjectHost.issuedTokenTarget', () => {
   async function open(refs: (configId: string) => readonly (string | undefined)[]) {
     const dir = mkdtempSync(join(tmpdir(), 'wirebench-issued-'));
     dirs.push(dir);
-    const host = new ProjectHost(new EngineService(), {}, undefined, undefined, {
+    const host = new ProjectHost(new EngineService(), testHooks(), undefined, undefined, {
       get: (ref) => Promise.resolve(ref === 'sec' ? 'hunter2' : undefined),
     });
     await host.create({ dir, name: 'Demo' });

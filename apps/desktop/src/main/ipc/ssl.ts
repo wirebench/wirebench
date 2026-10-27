@@ -6,20 +6,20 @@
  * therefore cannot write it — `preferences.update` refuses a patch carrying it — and instead
  * asks main to run the picker. Main records the result through `DialogPicks.rememberRead`
  * (exactly as `keystores.pickFile` does) and persists the path itself, alongside
- * `caBundlePickedByMain: true`; `main/index.ts` re-records a pick at startup only for a path
+ * `caBundlePickedByMain: true`; `main/host/create-host.ts` re-records a pick at startup only for a path
  * carrying that marker, so a `preferences.yaml` edited by hand adds no trust until the bundle
  * is picked again.
  */
 
-import { BrowserWindow, dialog } from 'electron';
-import type { WebContents } from 'electron';
+import type { Caller, HostPlatform } from '../host/platform.js';
+import { requireCapability } from '../host/capability.js';
 import { WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
 import { toPreferencesWire } from '../preferences.js';
 import type { PreferencesService } from '../preferences.js';
 import type { PreferencesWire } from '../../shared/wire-base.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /** What the `ssl.*` channels need; a stub stands in for each of these in tests. */
 export interface SslChannelDeps {
@@ -27,6 +27,8 @@ export interface SslChannelDeps {
   readonly preferences: Pick<PreferencesService, 'update' | 'ready' | 'isLocked'>;
   /** The session's picked-path memory, the only evidence `ProjectHost.trustAnchors` accepts. */
   readonly picks: RecordsReadPicks;
+  /** The native Open-file dialog `pickCaBundle` runs. */
+  readonly platform: Pick<HostPlatform, 'dialogs'>;
   /** Called after each change so main can broadcast `preferences.changed` to every window. */
   readonly onChanged?: (preferences: PreferencesWire) => void;
 }
@@ -39,17 +41,15 @@ function e2eOpenPathOverride(): string | undefined {
   return process.env['WIREBENCH_E2E_OPEN_PATH'];
 }
 
-async function pickThroughDialog(sender: WebContents): Promise<string | undefined> {
-  const window = BrowserWindow.fromWebContents(sender);
-  const options: Electron.OpenDialogOptions = {
+async function pickThroughDialog(platform: Pick<HostPlatform, 'dialogs'>, sender: Caller): Promise<string | undefined> {
+  const result = await requireCapability(platform, 'dialogs').openFile(sender, {
     title: 'Choose a CA bundle',
     properties: ['openFile'],
     filters: [
       { name: 'PEM certificates', extensions: CA_BUNDLE_EXTENSIONS },
       { name: 'All files', extensions: ['*'] },
     ],
-  };
-  const result = window === null ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(window, options);
+  });
   return result.canceled ? undefined : result.filePaths[0];
 }
 
@@ -68,8 +68,8 @@ async function assertCaBundleUnlocked(preferences: SslChannelDeps['preferences']
 }
 
 /** Registers the `ssl.*` channels. */
-export function registerSslChannels(deps: SslChannelDeps): void {
-  registerHandler(channels.ssl.pickCaBundle, async (_request, sender) => {
+export function registerSslChannels(table: HandlerTable, deps: SslChannelDeps): void {
+  registerHandler(table, channels.ssl.pickCaBundle, async (_request, sender) => {
     await assertCaBundleUnlocked(deps.preferences);
     // The override goes through `rememberRead` exactly as a real pick does, so e2e exercises
     // the containment path a user does rather than a bypass of it. Comma-separated for symmetry
@@ -78,7 +78,7 @@ export function registerSslChannels(deps: SslChannelDeps): void {
     const path =
       override !== undefined
         ? override.split(',').filter((entry) => entry.length > 0)[0]
-        : await pickThroughDialog(sender);
+        : await pickThroughDialog(deps.platform, sender);
     if (path === undefined) {
       // A cancelled dialog changes nothing, including the bundle already configured.
       return { preferences: toPreferencesWire(await deps.preferences.update({})) };
@@ -91,7 +91,7 @@ export function registerSslChannels(deps: SslChannelDeps): void {
     return { path, preferences: next };
   });
 
-  registerHandler(channels.ssl.clearCaBundle, async () => {
+  registerHandler(table, channels.ssl.clearCaBundle, async () => {
     await assertCaBundleUnlocked(deps.preferences);
     // The marker goes with the path: what is cleared must not be re-recorded as a pick at the
     // next startup either.

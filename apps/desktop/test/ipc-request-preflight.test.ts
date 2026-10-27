@@ -32,8 +32,13 @@ import type { SecretSourcesSnapshot } from '../src/main/secret-sources-service.j
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import type { RestExchangeSummary } from '../src/shared/kinds/rest/wire.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -229,7 +234,8 @@ function registerOver(
   secretSources?: RequestChannelDeps['secretSources'],
 ): void {
   handlers.clear();
-  registerRequestChannelsWithKinds(new EngineService(), {
+  registerRequestChannelsWithKinds(table, new EngineService(), {
+    hostState,
     ...(secretSources !== undefined ? { secretSources } : {}),
     project: {
       projectId: () => model.id,

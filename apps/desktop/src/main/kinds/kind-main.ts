@@ -5,6 +5,7 @@
  */
 
 import type { LiveEvent, Project, SelectedRequest, SentRequest, WsExchange } from '@wirebench/engine';
+import type { Redactor } from '../host/redactor.js';
 import type { DraftOf } from '../send/draft.js';
 import type { AuditedSend, HeldFailure, Recorded, SendSummary, SendThroughEngineDeps } from '../send/exchange.js';
 import type { LiveEventWire } from '../send/live.js';
@@ -18,6 +19,8 @@ import type { ApiChannelDeps } from '../ipc/api.js';
 import type { HistoryChannelDeps } from '../ipc/history.js';
 import type { RequestChannelDeps } from '../ipc/request.js';
 import type { DialogPicks } from '../dialog-picks.js';
+import type { HostPlatform } from '../host/platform.js';
+import type { NativeDialogs } from '../native-dialogs.js';
 import type { EngineService } from '../engine-service.js';
 import type { HistoryService } from '../history-service.js';
 import type { WorkspaceService } from '../workspace-service.js';
@@ -29,6 +32,7 @@ import type { RestFolderPatchWire } from '../../shared/kinds/rest/wire.js';
 import type { ProjectHostCore } from '../project-host-core.js';
 import type { ProjectWireContext } from '../project-wire.js';
 import type { MutationDeps, MutationResult } from '../project-mutations.js';
+import type { HandlerTable } from '../ipc/register.js';
 import type { GrpcHost } from './grpc/host.js';
 import type { McpHost } from './mcp/host.js';
 import type { RestHost } from './rest/host.js';
@@ -174,7 +178,13 @@ export interface KindSend<K extends SendKind> {
   /** The saved request as a send item with the editor's draft applied; undefined: no such request of this kind. */
   selected(project: Project, requestId: string, draft: Extract<DraftOf, { kind: K }>): ItemOf<K> | undefined;
   /** One live event as the renderer receives it; absent for a kind that reports none. */
-  liveEvent?(sendId: string, event: LiveOf<K>, show: boolean, keyParams?: readonly string[]): LiveEventWire;
+  liveEvent?(
+    redactor: Redactor,
+    sendId: string,
+    event: LiveOf<K>,
+    show: boolean,
+    keyParams?: readonly string[],
+  ): LiveEventWire;
   /** The summary the renderer is handed and, where History records more, the unredacted one. */
   summarise(input: SummariseInput<K>): { readonly summary: SendSummary; readonly unredacted?: ExchangeSummary };
   /** Writes History for a send that got its answer. */
@@ -251,6 +261,10 @@ export interface KindChannelDeps {
   /** The folders of every project open in the calling window's workspace. */
   readonly projectDirs: () => readonly string[];
   readonly userDataDir: string;
+  /** The native pickers a kind's file channels run (Export Definition, docs, HAR). */
+  readonly dialogs: NativeDialogs;
+  /** The dialogs and shell a kind's channels reach the machine through. */
+  readonly platform: Pick<HostPlatform, 'dialogs' | 'shell'>;
   /** The native Save-as panel for an HTML export (with the e2e override), the chosen path or undefined. */
   readonly showSaveHtml: (options: { defaultPath: string; title: string }) => Promise<string | undefined>;
 }
@@ -271,7 +285,7 @@ export interface MainKind<K extends KindId = KindId> {
   /** The entity ids its channels address in a project snapshot, for the routing index. */
   readonly entityIds: KindEntityIds;
   /** Registers its channels against the routed workspace. */
-  registerChannels(deps: KindChannelDeps): void;
+  registerChannels(table: HandlerTable, deps: KindChannelDeps): void;
 }
 
 /** Any one kind's main half. */

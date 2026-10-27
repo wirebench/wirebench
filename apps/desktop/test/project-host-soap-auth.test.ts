@@ -11,6 +11,7 @@ import { soapEffectiveAuth, soapItemFor } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 let server: TestSoapServer;
 let root: string;
@@ -23,7 +24,7 @@ const API_KEY = { type: 'api-key', name: 'key', valueRef: 'sec_request', in: 'qu
 beforeEach(async () => {
   server = await startTestSoapServer({ fixture: 'calculator' });
   root = mkdtempSync(join(tmpdir(), 'wirebench-soap-auth-'));
-  host = new ProjectHost(new EngineService());
+  host = new ProjectHost(new EngineService(), testHooks());
   await host.create({ dir: join(root, 'p'), name: 'P' });
   await host.kind('soap').addInterface({ source: { kind: 'url', url: server.wsdlUrl } });
   const project = host.snapshot()!;

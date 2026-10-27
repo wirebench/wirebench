@@ -9,6 +9,7 @@ import { parseLegacyProject, readLegacySoapProject } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const fixtures = fileURLToPath(new URL('../../../fixtures/legacy-soap-project/', import.meta.url));
 
@@ -19,7 +20,7 @@ let host: ProjectHost;
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'wirebench-legacy-'));
   projectDir = join(root, 'Imported');
-  host = new ProjectHost(new EngineService());
+  host = new ProjectHost(new EngineService(), testHooks());
   await host.create({ dir: projectDir, name: 'Imported' });
 });
 
@@ -104,7 +105,7 @@ describe('ProjectHost.importLegacyProject', () => {
     await host.kind('soap').importLegacyProject({ project: legacy });
     await host.close();
 
-    host = new ProjectHost(new EngineService());
+    host = new ProjectHost(new EngineService(), testHooks());
     await host.openProject(projectDir);
     await host.whenHydrated();
     const reopened = host.snapshot() as ProjectWire;
@@ -136,7 +137,7 @@ describe('ProjectHost.importProperties', () => {
     expect(project.disabledProperties).toEqual(['off']);
 
     await host.close();
-    host = new ProjectHost(new EngineService());
+    host = new ProjectHost(new EngineService(), testHooks());
     const reopened = await host.openProject(projectDir);
     expect(reopened.properties).toMatchObject({ keep: 'mine', fresh: 'f', off: 'o' });
     expect(reopened.disabledProperties).toEqual(['off']);

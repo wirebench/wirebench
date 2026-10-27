@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { PassThrough, Readable, Writable } from 'node:stream';
-import type { WebContents } from 'electron';
+import type { Caller } from '../src/main/host/platform.js';
+import { asCaller } from './helpers/ipc-table.js';
 import { WirebenchError } from '@wirebench/engine';
 import { SftpError } from '@wirebench/ssh';
 import type { RemoteEntry, SftpSession } from '@wirebench/ssh';
@@ -164,7 +165,7 @@ function sender(id = 1) {
     },
   };
 }
-const as = (s: ReturnType<typeof sender>) => s as unknown as WebContents;
+const as = (s: ReturnType<typeof sender>) => asCaller(s);
 
 function make(options: { concurrency?: number; now?: () => number } = {}) {
   const local = memFs('local-fs');
@@ -174,14 +175,14 @@ function make(options: { concurrency?: number; now?: () => number } = {}) {
     [remote.session.id, remote.session],
     [other.session.id, other.session],
   ]);
-  const closed = new Set<(sender: WebContents, sessionId: string) => void>();
+  const closed = new Set<(sender: Caller, sessionId: string) => void>();
   const sftp = {
-    session: (_sender: WebContents, sessionId: string) => {
+    session: (_sender: Caller, sessionId: string) => {
       const session = sessions.get(sessionId);
       if (!session) throw new WirebenchError('sftp-session-unknown', 'No such session');
       return session;
     },
-    onSessionClosed: (listener: (sender: WebContents, sessionId: string) => void) => {
+    onSessionClosed: (listener: (sender: Caller, sessionId: string) => void) => {
       closed.add(listener);
       return () => closed.delete(listener);
     },
@@ -197,7 +198,7 @@ function make(options: { concurrency?: number; now?: () => number } = {}) {
   const stateOf = (id: string) => transfers(id).at(-1)?.state;
   const conflicts = () =>
     emit.mock.calls.filter(([, event]) => event === events.sftp.conflict).map(([, , p]) => p as SftpConflictEvent);
-  const endSession = (sessionId: string, s: WebContents) => {
+  const endSession = (sessionId: string, s: Caller) => {
     sessions.delete(sessionId);
     for (const listener of closed) listener(s, sessionId);
   };

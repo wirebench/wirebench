@@ -39,6 +39,8 @@ export interface AuditReporterDeps {
   readonly client: Pick<ServerClient, 'reportDesktopEvents'>;
   /** The token, and who each server's account is (`list`) to stamp and match queued events. */
   readonly accounts: TokenSource & Pick<AccountService, 'list' | 'ready'>;
+  /** This host's outboxes by folder (`HostState.auditOutboxes`). */
+  readonly outboxes: Map<string, AuditOutbox>;
   readonly now: () => Date;
   readonly setTimeout: (fn: () => void, ms: number) => unknown;
   readonly clearTimeout: (handle: unknown) => void;
@@ -103,7 +105,7 @@ export class AuditReporter {
     this.backoffMs = 0;
     const kept = keepForbidden ? this.outbox : undefined;
     this.target = target;
-    this.outbox = target === undefined ? undefined : (kept ?? outboxFor(target.dir));
+    this.outbox = target === undefined ? undefined : (kept ?? outboxFor(this.deps.outboxes, target.dir));
   }
 
   /** The workspace events are queued for now; a caller takes it when its send or run starts. */

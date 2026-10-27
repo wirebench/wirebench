@@ -11,6 +11,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { createIssuedTokenSource, DEFAULT_PREFERENCES } from '@wirebench/engine';
 import type { IssuedToken, requestIssuedToken } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
+import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
+
+const hostState = createHostState();
 
 vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
 
@@ -53,7 +57,7 @@ describe('an issued token fetched by a desktop send', () => {
   it("is the token the panel's status reports for that request", async () => {
     const dir = mkdtempSync(join(tmpdir(), 'wirebench-issued-send-'));
     dirs.push(dir);
-    const host = new ProjectHost(new EngineService(), {}, undefined, undefined, {
+    const host = new ProjectHost(new EngineService(), testHooks(), undefined, undefined, {
       get: (ref) => Promise.resolve(ref === 'sec' ? 'hunter2' : undefined),
     });
     await host.create({ dir, name: 'Demo' });
@@ -86,11 +90,13 @@ describe('an issued token fetched by a desktop send', () => {
     const issuedTokens = new IssuedTokensService(
       (locator) =>
         host.kind('soap').issuedTokenTarget(locator.projectId, locator.configId, locator.entryIndex, locator.requestId),
+      hostState.redactor,
       createIssuedTokenSource({ request }),
     );
     const located = host.runContextFor(requestId);
     if (located === undefined) throw new Error('no project is open');
     const deps = sendDepsFor(located.project, {
+      hostState,
       preferences: () => DEFAULT_PREFERENCES,
       issuedTokens,
       project: { runContextFor: (id, envId) => host.runContextFor(id, envId) },

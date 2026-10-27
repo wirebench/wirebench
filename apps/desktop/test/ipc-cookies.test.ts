@@ -7,8 +7,10 @@ import { CookieStore } from '../src/main/cookie-store.js';
 import { registerCookiesChannels } from '../src/main/ipc/cookies.js';
 import { channels } from '../src/shared/ipc.js';
 import type { CookieJarStateWire } from '../src/shared/wire-base.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const registeredHandlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(registeredHandlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -55,7 +57,7 @@ function newStore(): CookieStore {
 describe('registerCookiesChannels', () => {
   it('answers every channel with the whole jar', async () => {
     const store = newStore();
-    registerCookiesChannels(store);
+    registerCookiesChannels(table, store);
     store.host().remember('https://api.test/', [
       { name: 'a', value: '1', path: '/' },
       { name: 'b', value: '2', path: '/' },
@@ -81,13 +83,13 @@ describe('registerCookiesChannels', () => {
   });
 
   it('refuses something that is not a cookie', async () => {
-    registerCookiesChannels(newStore());
+    registerCookiesChannels(table, newStore());
     expect((await invoke(channels.cookies.set.name, { cookie: { name: 'x' } })).ok).toBe(false);
   });
 
   it('announces the jar once per mutating channel', async () => {
     const store = newStore();
-    registerCookiesChannels(store);
+    registerCookiesChannels(table, store);
     store.host().remember('https://api.test/', [{ name: 'a', value: '1', path: '/' }]);
     onChanged.mockClear();
     const a = (await invoke(channels.cookies.list.name, undefined)).value!.cookies[0]!;
@@ -115,7 +117,7 @@ describe('registerCookiesChannels', () => {
     };
     async function setting(extra: Record<string, unknown>): Promise<{ result: Result; store: CookieStore }> {
       const store = newStore();
-      registerCookiesChannels(store);
+      registerCookiesChannels(table, store);
       const result = await invoke(channels.cookies.set.name, { cookie: { ...base, ...extra } });
       return { result, store };
     }

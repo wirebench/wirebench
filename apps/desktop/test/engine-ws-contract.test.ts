@@ -24,6 +24,9 @@ import { EngineService } from '../src/main/engine-service.js';
 import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import { ExchangeRegistry, sendThroughEngine } from '../src/main/send/exchange.js';
 import { wsLiveEventSchema, type WsLiveEvent } from '../src/shared/kinds/ws/wire.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 let server: TestWsServer;
 let messages: ChannelMessages;
@@ -84,6 +87,7 @@ function session(
   const events: WsLiveEvent[] = [];
   const done = sendThroughEngine(
     {
+      hostState,
       project: {
         projectId: () => project.id,
         runContextFor: () => ({ project, projectDir: '/tmp/none' }),

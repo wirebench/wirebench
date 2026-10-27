@@ -22,6 +22,10 @@ import { ProjectHost } from '../src/main/project-host.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 import type { WorkspaceWire } from '../src/shared/wire-base.js';
+import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
+
+const hostState = createHostState();
 
 let server: TestSoapServer | undefined;
 let root: string;
@@ -29,9 +33,10 @@ let root: string;
 /** A service over the temp `userData`, with a real engine and its own history files. */
 function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceService {
   return new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine: new EngineService(),
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     ...overrides,
   });
 }
@@ -41,7 +46,7 @@ function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceSer
  * reference for it — the id is the project's own, as the spec requires.
  */
 async function seedProject(wsDir: string, slug: string, name: string): Promise<WorkspaceProjectRef> {
-  const host = new ProjectHost(new EngineService());
+  const host = new ProjectHost(new EngineService(), testHooks());
   const project = await host.create({ dir: workspaceProjectDir(wsDir, slug), name });
   await host.close();
   return { id: project.id, slug, source: 'internal' };
@@ -120,7 +125,7 @@ describe('WorkspaceService lifecycle', () => {
     const payments = await seedProject(dir, 'payments', 'Payments');
     await registerProjects(dir, [countries, payments]);
 
-    const history = new HistoryService(root);
+    const history = new HistoryService(root, hostState.redactor);
     const service = newService({ history });
     const workspace = await service.open(created.id);
 
@@ -170,7 +175,7 @@ describe('WorkspaceService lifecycle', () => {
     const countries = await seedProject(dir, 'countries', 'Countries');
     await registerProjects(dir, [countries]);
 
-    const history = new HistoryService(root);
+    const history = new HistoryService(root, hostState.redactor);
     const seen: { projectId: string; historyOpen: boolean }[] = [];
     const service = newService({
       history,
@@ -294,7 +299,7 @@ describe('WorkspaceService lifecycle', () => {
     const project = await seedProject(dir, 'present', 'Present');
     await registerProjects(dir, [project]);
 
-    const history = new HistoryService(root);
+    const history = new HistoryService(root, hostState.redactor);
     const service = newService({
       history,
       // Throws only on the open, so `close()`'s own `onChanged(null)` still runs.
@@ -363,7 +368,7 @@ describe('WorkspaceService across windows', () => {
       },
     ]);
 
-    const history = new HistoryService(root);
+    const history = new HistoryService(root, hostState.redactor);
     const one = newService({ history, sweepJoining: false });
     const two = newService({ history, sweepJoining: false });
     await one.open(first.id);
@@ -520,7 +525,7 @@ describe('WorkspaceService current values', () => {
     const created = await bootstrap.create('Values');
     await bootstrap.close();
     const dir = workspaceDir(root, created.id);
-    const seeded = new ProjectHost(new EngineService());
+    const seeded = new ProjectHost(new EngineService(), testHooks());
     const project = await seeded.create({ dir: workspaceProjectDir(dir, 'pets'), name: 'Pets' });
     await seeded.mutate({ kind: 'set-project-property', name: 'tenant', value: 'alpha' });
     await seeded.save();
@@ -799,9 +804,10 @@ describe('WorkspaceService saving', () => {
 
     const secrets = { get: (ref: string) => Promise.resolve(ref === 'secret:pw' ? password : undefined) };
     const service = new WorkspaceService({
+      hostState,
       userDataDir: root,
       engine: new EngineService((ref) => secrets.get(ref)),
-      history: new HistoryService(root),
+      history: new HistoryService(root, hostState.redactor),
       secrets,
     });
     await service.open(created.id);

@@ -11,10 +11,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildWsHistoryEntry, HistoryService } from '../src/main/history-service.js';
 import { makeWsExchange } from './mocks/wire-fixtures.js';
 import type { WsFrameWire } from '../src/shared/kinds/ws/wire.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 describe('buildWsHistoryEntry', () => {
   it('carries the SOAP-shaped fields, the ws block, and redacts the handshake headers and URL', () => {
-    const entry = buildWsHistoryEntry('p1', {
+    const entry = buildWsHistoryEntry(hostState.redactor, 'p1', {
       requestId: 'ws-1',
       requestName: 'Echo',
       apiName: 'Chat',
@@ -38,7 +41,7 @@ describe('buildWsHistoryEntry', () => {
   });
 
   it('a refused handshake (non-101) is not ok, and closedBy reflects how the session actually closed', () => {
-    const entry = buildWsHistoryEntry('p1', {
+    const entry = buildWsHistoryEntry(hostState.redactor, 'p1', {
       requestId: 'ws-1',
       requestName: 'Echo',
       apiName: 'Chat',
@@ -69,7 +72,7 @@ describe('buildWsHistoryEntry', () => {
     // `handshake.status` is optional on the engine's handshake and can be absent even for a
     // session that opened fine — `ok` must follow `handshakeOpened`, not `ws.status === 101`,
     // or such a session would read as a failure it never was.
-    const entry = buildWsHistoryEntry('p1', {
+    const entry = buildWsHistoryEntry(hostState.redactor, 'p1', {
       requestId: 'ws-1',
       requestName: 'Echo',
       apiName: 'Chat',
@@ -93,7 +96,7 @@ describe('buildWsHistoryEntry', () => {
   });
 
   it('masks an API key travelling in the URL query, whatever it is called', () => {
-    const entry = buildWsHistoryEntry('p1', {
+    const entry = buildWsHistoryEntry(hostState.redactor, 'p1', {
       requestId: 'ws-1',
       requestName: 'Echo',
       apiName: 'Chat',
@@ -117,7 +120,7 @@ describe('buildWsHistoryEntry', () => {
       size: 2,
       text: 'hi',
     }));
-    const entry = buildWsHistoryEntry('p1', {
+    const entry = buildWsHistoryEntry(hostState.redactor, 'p1', {
       requestId: 'ws-1',
       requestName: 'Echo',
       apiName: 'Chat',
@@ -143,7 +146,7 @@ describe('HistoryService.recordWsSession', () => {
   });
 
   it('appends one entry, returned and persisted, for the project whose file is open', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('p1');
     const wire = await history.recordWsSession('p1', {
       requestId: 'ws-1',
@@ -160,7 +163,7 @@ describe('HistoryService.recordWsSession', () => {
   });
 
   it('is a no-op — returns undefined — for a project whose history file is not open', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     const wire = await history.recordWsSession('never-opened', {
       requestId: 'ws-1',
       requestName: 'Echo',

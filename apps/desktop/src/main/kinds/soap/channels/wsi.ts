@@ -24,7 +24,7 @@ import type { WsiReportWire } from '../../../../shared/kinds/soap/wire.js';
 import type { EngineService } from '../../../engine-service.js';
 import type { ProjectRouter } from '../../../project-router.js';
 import type { RecordsWritePicks } from '../../../dialog-picks.js';
-import { registerHandler } from '../../../ipc/register.js';
+import { registerHandler, type HandlerTable } from '../../../ipc/register.js';
 
 /** The `ProjectRouter` surface the `wsi.*` channels need; a stub stands in for it in tests. */
 export type WsiChannelProject = Pick<ProjectRouter, 'validationTargetFor' | 'projectSnapshot' | 'projectId'>;
@@ -118,8 +118,8 @@ export interface WsiChannelDeps {
  * passing rows, and re-running the catalogue just to reveal them would be wasteful and, for a
  * message report, would need an exchange that may since have been evicted.
  */
-export function registerWsiChannels(service: EngineService, deps: WsiChannelDeps): void {
-  registerHandler(channels.wsi.checkWsdl, (request) => {
+export function registerWsiChannels(table: HandlerTable, service: EngineService, deps: WsiChannelDeps): void {
+  registerHandler(table, channels.wsi.checkWsdl, (request) => {
     const result = service.resultFor(request.interfaceId);
     const report = runWsdlAssertions(wsiWsdlContext(result), { verbose: true });
     const projectId = deps.project.projectId(request.interfaceId);
@@ -130,7 +130,7 @@ export function registerWsiChannels(service: EngineService, deps: WsiChannelDeps
     return Promise.resolve(toWire(report, name ?? request.interfaceId, 'wsdl'));
   });
 
-  registerHandler(channels.wsi.checkExchange, (request) => {
+  registerHandler(table, channels.wsi.checkExchange, (request) => {
     const cached = service.exchanges.getExchange(request.sendId);
     if (cached === undefined) {
       throw new WirebenchError(
@@ -168,7 +168,7 @@ export function registerWsiChannels(service: EngineService, deps: WsiChannelDeps
     return Promise.resolve(toWire(report, `${target.operationName} — last exchange`, 'message'));
   });
 
-  registerHandler(channels.wsi.exportHtml, async (request) => {
+  registerHandler(table, channels.wsi.exportHtml, async (request) => {
     const path = await deps.dialog.showSave({
       defaultPath: request.suggestedName,
       title: 'Export WS-I report',

@@ -3,6 +3,7 @@
  * project: what a test that sends a saved request needs, and nothing it does not ask for.
  */
 import type { Project } from '@wirebench/engine';
+import { createHostState } from '../../src/main/host/host-state.js';
 import { EngineService } from '../../src/main/engine-service.js';
 import { ExchangeRegistry, type SendThroughEngineDeps } from '../../src/main/send/exchange.js';
 
@@ -18,6 +19,7 @@ export interface SendDepsExtra extends Partial<Omit<SendThroughEngineDeps, 'proj
 export function sendDepsFor(model: Project, extra: SendDepsExtra = {}): SendThroughEngineDeps {
   const { projectDir, project, ...rest } = extra;
   return {
+    hostState: createHostState(),
     service: new EngineService(),
     registry: new ExchangeRegistry(),
     project: {

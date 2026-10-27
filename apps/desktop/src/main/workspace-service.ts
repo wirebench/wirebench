@@ -11,10 +11,12 @@
  * deletion is trash-only through the injected {@link WorkspaceServiceDeps.trash} (never an
  * `rm` of anything under `userData`, and never anything at all under a linked root).
  *
- * The one `electron` dependency is `./native-dialogs.js` — the folder picker itself, which is
- * the whole point of these methods taking a `WebContents`.
+ * The folder picker is injected ({@link WorkspaceServiceDeps.dialogs}), which is the whole point
+ * of these methods taking a `Caller`.
  */
 
+import type { HostState } from './host/host-state.js';
+import type { Caller } from './host/platform.js';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, realpath } from 'node:fs/promises';
@@ -102,10 +104,8 @@ import type {
   WorkspaceProjectRef,
   WorkspaceShare,
 } from '@wirebench/engine';
-import type { WebContents } from 'electron';
 import type { RecordsReadPicks, RecordsWritePicks, ReadPicks } from './dialog-picks.js';
 import { applyColorAndProtection } from './environment-flags.js';
-import { pickFolder, pickFolderToWrite } from './native-dialogs.js';
 import type { EngineService } from './engine-service.js';
 import type { CurrentValuesStore } from './current-values.js';
 import type { SecretSourcesSnapshot } from './secret-sources-service.js';
@@ -263,6 +263,8 @@ export interface WorkspaceServiceDeps {
   readonly userDataDir: string;
   /** The single in-process engine every host shares. */
   readonly engine: EngineService;
+  /** This host's state, handed on to every project host it opens. */
+  readonly hostState: Pick<HostState, 'redactor' | 'e2eTrustAnchors'>;
   /** The `${#Global#name}` scope. Omitted in tests that never expand properties. */
   readonly globals?: Pick<GlobalProperties, 'get'>;
   /** Resolves `passwordRef`s at import time. Omitted in tests that never import with auth. */
@@ -337,7 +339,7 @@ export interface WorkspaceServiceDeps {
   readonly git?: () => Promise<GitCli | undefined>;
   /** The empty `core.hooksPath` directory every `GitCli` is built with (clones and inits need it). */
   readonly hooksDir?: string;
-  /** The folder pickers share and join run; the native ones unless a test injects its own. */
+  /** The folder pickers share and join run; the native ones in the app, a test's own otherwise. */
   readonly dialogs?: WorkspaceDialogs;
   /** rename/cp/rm for moving a tree between folders; `node:fs` unless a test injects its own. */
   readonly files?: WorkspaceFileOps;
@@ -1207,6 +1209,7 @@ export class WorkspaceService implements ProjectRouter {
     const host = new ProjectHost(
       this.deps.engine,
       {
+        hostState: this.deps.hostState,
         onChanged: (project) => {
           if (project !== null) {
             entry.projectId = project.id;
@@ -2173,7 +2176,7 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** Shares the open local workspace to an empty folder the user picks; `null` on cancel. */
-  async shareToFolder(sender: WebContents): Promise<WorkspaceWire | null> {
+  async shareToFolder(sender: Caller): Promise<WorkspaceWire | null> {
     const open = this.requireOpen();
     const picks = this.requirePicks();
     return await this.enqueueWorkspaceOp(async () => {
@@ -2190,7 +2193,7 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** Joins a shared workspace from an existing clone or synced folder the user picks; `null` on cancel. */
-  async joinFromFolder(sender: WebContents): Promise<WorkspaceWire | null> {
+  async joinFromFolder(sender: Caller): Promise<WorkspaceWire | null> {
     const picks = this.requirePicks();
     return await this.enqueueWorkspaceOp(() =>
       joinFromFolder(this.shareDeps(), () =>
@@ -2309,7 +2312,12 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   private dialogs(): WorkspaceDialogs {
-    return this.deps.dialogs ?? { pickFolder, pickFolderToWrite };
+    if (this.deps.dialogs === undefined) {
+      throw new WirebenchError('host-capability-missing', 'This host has no dialogs', {
+        details: { capability: 'dialogs' },
+      });
+    }
+    return this.deps.dialogs;
   }
 
   // ——— projects ———————————————————————————————————————————————————————————————————————————
@@ -2317,7 +2325,7 @@ export class WorkspaceService implements ProjectRouter {
   // Not one of these takes a path. `addProject` and `removeProject` are named by id alone;
   // link, import, export and locate run the native folder picker in main and record what came
   // back. A renderer that could name a folder here would be a way out of every containment rule
-  // the app has, which is why the `WebContents` — and nothing else — crosses the boundary.
+  // the app has, which is why the `Caller` — and nothing else — crosses the boundary.
 
   /**
    * Creates an empty project inside the workspace at `projects/<uniqueSlug(name)>` and opens it.
@@ -2400,7 +2408,7 @@ export class WorkspaceService implements ProjectRouter {
    * @throws WorkspaceError `project-folder-missing` when the folder holds no project,
    * `project-already-in-workspace` (with `details.projectId`) when it is already here.
    */
-  async linkProject(sender: WebContents): Promise<WorkspaceWire | null> {
+  async linkProject(sender: Caller): Promise<WorkspaceWire | null> {
     return await this.enqueueWorkspaceOp(async () => {
       const open = this.requireOpen();
       if (open.share !== undefined) {
@@ -2444,7 +2452,7 @@ export class WorkspaceService implements ProjectRouter {
    *
    * @returns the workspace, or `null` when the user cancelled the dialog.
    */
-  async importProjectFolder(sender: WebContents): Promise<WorkspaceWire | null> {
+  async importProjectFolder(sender: Caller): Promise<WorkspaceWire | null> {
     return await this.enqueueWorkspaceOp(async () => {
       const picked = await this.dialogs().pickFolder(sender, { title: 'Add project folder' }, this.requirePicks());
       if (picked === undefined) {
@@ -2489,7 +2497,7 @@ export class WorkspaceService implements ProjectRouter {
    * @returns the folder written to, or `null` when the user cancelled the dialog.
    * @throws WorkspaceError `export-target-not-empty` when the chosen folder holds anything.
    */
-  async exportProject(projectId: string, sender: WebContents): Promise<{ dir: string } | null> {
+  async exportProject(projectId: string, sender: Caller): Promise<{ dir: string } | null> {
     const entry = this.requireEntry(projectId);
     const model = entry.host?.model();
     if (model === undefined) {
@@ -2528,7 +2536,7 @@ export class WorkspaceService implements ProjectRouter {
       readonly containerId?: string | undefined;
       readonly format: CollectionExportFormat;
     },
-    sender: WebContents,
+    sender: Caller,
   ): Promise<{
     readonly dir: string;
     readonly files: readonly string[];
@@ -2584,7 +2592,7 @@ export class WorkspaceService implements ProjectRouter {
    * @returns the workspace, or `null` when the user cancelled the dialog.
    * @throws WorkspaceError `project-folder-mismatch` when the folder holds a different project.
    */
-  async locateProject(projectId: string, sender: WebContents): Promise<WorkspaceWire | null> {
+  async locateProject(projectId: string, sender: Caller): Promise<WorkspaceWire | null> {
     return await this.enqueueWorkspaceOp(async () => {
       const open = this.requireOpen();
       const entry = this.requireEntry(projectId);

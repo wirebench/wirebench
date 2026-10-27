@@ -1,7 +1,7 @@
 import { WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import { isMachineOnlyLabel, type SecretStore } from '../secrets.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /**
  * `secrets` is the team-aware store in production ({@link TeamSecretStore}, which wraps the raw
@@ -23,10 +23,11 @@ type SecretsFor = Pick<SecretStore, 'set' | 'replace' | 'exists' | 'delete' | 'l
  * `delete` refuse them.
  */
 export function registerSecretsChannels(
+  table: HandlerTable,
   secrets: SecretsFor,
   showSecrets: { get(): boolean; set(show: boolean): void },
 ): void {
-  registerHandler(channels.secrets.set, async (request) => {
+  registerHandler(table, channels.secrets.set, async (request) => {
     if (isMachineOnlyLabel(request.label)) {
       throw new WirebenchError('secret-machine-only', 'That entry belongs to team secrets and cannot be changed here.');
     }
@@ -40,29 +41,29 @@ export function registerSecretsChannels(
     }
   };
 
-  registerHandler(channels.secrets.replace, async (request) => {
+  registerHandler(table, channels.secrets.replace, async (request) => {
     await refuseMachineOnly(request.ref);
     const ref = await secrets.replace(request.ref, request.value);
     return { ref };
   });
 
-  registerHandler(channels.secrets.exists, async (request) => {
+  registerHandler(table, channels.secrets.exists, async (request) => {
     return { exists: await secrets.exists(request.ref) };
   });
 
-  registerHandler(channels.secrets.delete, async (request) => {
+  registerHandler(table, channels.secrets.delete, async (request) => {
     await refuseMachineOnly(request.ref);
     return { deleted: await secrets.delete(request.ref) };
   });
 
-  registerHandler(channels.secrets.list, async () => {
+  registerHandler(table, channels.secrets.list, async () => {
     return { entries: (await secrets.list()).filter((entry) => !isMachineOnlyLabel(entry.label)) };
   });
 
-  registerHandler(channels.secrets.setShowSecrets, (request) => {
+  registerHandler(table, channels.secrets.setShowSecrets, (request) => {
     showSecrets.set(request.show);
     return Promise.resolve({ show: showSecrets.get() });
   });
 
-  registerHandler(channels.secrets.getShowSecrets, () => Promise.resolve({ show: showSecrets.get() }));
+  registerHandler(table, channels.secrets.getShowSecrets, () => Promise.resolve({ show: showSecrets.get() }));
 }

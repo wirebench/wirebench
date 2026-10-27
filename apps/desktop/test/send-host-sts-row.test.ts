@@ -9,6 +9,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { createIssuedTokenSource, createWssContext, soapHostOf } from '@wirebench/engine';
 import type { HttpExchange, IssuedToken, IssuedTokenTarget, WssIssuedTokenEntry } from '@wirebench/engine';
 import type { LogEntryWire } from '../src/shared/wire-types.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
 
@@ -87,9 +90,11 @@ async function hostWith(show = false, exchange: HttpExchange = fakeExchange, onR
   );
   const issuedTokens = new IssuedTokensService(
     () => Promise.reject(new Error('not used')),
+    hostState.redactor,
     createIssuedTokenSource({ request }),
   );
   const deps: DesktopSendDeps = {
+    hostState,
     project: {} as DesktopSendDeps['project'],
     service: {} as DesktopSendDeps['service'],
     issuedTokens,
@@ -222,8 +227,8 @@ describe('the STS log row', () => {
   it('gives two STS rows in the same millisecond different send ids', () => {
     const now = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
     try {
-      const first = stsLogEntry(fakeExchange, { show: false, causedBy: 'send-7' });
-      const second = stsLogEntry(fakeExchange, { show: false, causedBy: 'send-7' });
+      const first = stsLogEntry(hostState.redactor, fakeExchange, { show: false, causedBy: 'send-7' });
+      const second = stsLogEntry(hostState.redactor, fakeExchange, { show: false, causedBy: 'send-7' });
       if (first.kind !== 'exchange' || second.kind !== 'exchange') throw new Error('not exchange rows');
       expect(first.exchange.sendId).not.toBe(second.exchange.sendId);
       expect(first.exchange.sendId.startsWith('send-7:sts:')).toBe(true);
@@ -243,7 +248,7 @@ describe('the STS log row', () => {
 
   it('lends no issued-token source without the service', async () => {
     const host = await desktopSendHost(
-      { project: {} as DesktopSendDeps['project'], service: {} as DesktopSendDeps['service'] },
+      { hostState, project: {} as DesktopSendDeps['project'], service: {} as DesktopSendDeps['service'] },
       send,
     );
     expect(soapHostOf(host)?.issuedTokens).toBeUndefined();

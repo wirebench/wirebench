@@ -2,13 +2,16 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { WebContents } from 'electron';
+import { asCaller } from './helpers/ipc-table.js';
 import { SshConnectError, parseHostsFile } from '@wirebench/ssh';
 import type { KnownHostEntry } from '@wirebench/ssh';
 import { describe, expect, it, vi } from 'vitest';
 import { REFUSAL_TTL_MS, RefusalStore, createSshConnector } from '../src/main/ssh-connect.js';
 import { SshService } from '../src/main/ssh-service.js';
 import type { SshListHostsResponse } from '../src/shared/ssh-wire.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const FILE = parseHostsFile(
   [
@@ -22,7 +25,7 @@ const FILE = parseHostsFile(
 const KEY: KnownHostEntry = { host: '10.0.0.1:22', keyType: 'ssh-ed25519', fingerprint: 'SHA256:k' };
 const HOP = { address: '10.0.0.1', port: 22 };
 
-const sender = (id: number) => ({ id, isDestroyed: () => false, on: vi.fn(), once: vi.fn() }) as unknown as WebContents;
+const sender = (id: number) => asCaller({ id, isDestroyed: () => false, on: vi.fn(), once: vi.fn() });
 
 function make(
   opts: {
@@ -283,6 +286,7 @@ describe('createSshConnector', () => {
   it('one store serves both services: ssh.trust records a key another connector refused, for that window only', async () => {
     const { connector, refusals, deps } = make();
     const ssh = new SshService({
+      redactor: hostState.redactor,
       ...deps,
       hostOsFile: join(mkdtempSync(join(tmpdir(), 'wb-connect-os-')), 'ssh-host-os.json'),
       emit: vi.fn(),

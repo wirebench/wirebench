@@ -7,7 +7,7 @@
 import { channels } from '../../shared/ipc.js';
 import type { ServerClient } from '../server-client.js';
 import { withToken as withTokenUnguarded, type TokenSource } from '../server-token.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 export interface TeamChannelDeps {
   /** Refuses every call when `server-sync` is off (phase 4 spec §7); absent, nothing is refused. */
@@ -53,10 +53,10 @@ const withToken: typeof withTokenUnguarded = (deps, url, fn) => {
   return withTokenUnguarded(deps, url, fn);
 };
 
-export function registerTeamChannels(deps: TeamChannelDeps): void {
+export function registerTeamChannels(table: HandlerTable, deps: TeamChannelDeps): void {
   const c = deps.client;
 
-  registerHandler(channels.team.list, (r) =>
+  registerHandler(table, channels.team.list, (r) =>
     withToken(deps, r.url, async (url, token) => {
       const [teams, me, meta] = await Promise.all([
         c.listTeams(url, token),
@@ -72,55 +72,55 @@ export function registerTeamChannels(deps: TeamChannelDeps): void {
       };
     }),
   );
-  registerHandler(channels.team.create, (r) =>
+  registerHandler(table, channels.team.create, (r) =>
     withToken(deps, r.url, async (url, token) => ({ team: await c.createTeam(url, token, r.name) })),
   );
-  registerHandler(channels.team.rename, (r) =>
+  registerHandler(table, channels.team.rename, (r) =>
     withToken(deps, r.url, async (url, token) => ({ team: await c.renameTeam(url, token, r.teamId, r.name) })),
   );
-  registerHandler(channels.team.delete, (r) =>
+  registerHandler(table, channels.team.delete, (r) =>
     withToken(deps, r.url, async (url, token) => {
       await c.deleteTeam(url, token, r.teamId);
       return DONE;
     }),
   );
-  registerHandler(channels.team.members, (r) =>
+  registerHandler(table, channels.team.members, (r) =>
     withToken(deps, r.url, async (url, token) => ({ members: await c.listMembers(url, token, r.teamId) })),
   );
-  registerHandler(channels.team.addMember, (r) =>
+  registerHandler(table, channels.team.addMember, (r) =>
     withToken(deps, r.url, async (url, token) => ({
       member: await c.addMember(url, token, r.teamId, { email: r.email, role: r.role }),
     })),
   );
-  registerHandler(channels.team.setMemberRole, (r) =>
+  registerHandler(table, channels.team.setMemberRole, (r) =>
     withToken(deps, r.url, async (url, token) => ({
       member: await c.setMemberRole(url, token, r.teamId, r.userId, r.role),
     })),
   );
-  registerHandler(channels.team.removeMember, (r) =>
+  registerHandler(table, channels.team.removeMember, (r) =>
     withToken(deps, r.url, async (url, token) => {
       await c.removeMember(url, token, r.teamId, r.userId);
       return DONE;
     }),
   );
-  registerHandler(channels.team.invitations, (r) =>
+  registerHandler(table, channels.team.invitations, (r) =>
     withToken(deps, r.url, async (url, token) => ({ invitations: await c.listTeamInvitations(url, token, r.teamId) })),
   );
-  registerHandler(channels.team.invite, (r) =>
+  registerHandler(table, channels.team.invite, (r) =>
     withToken(deps, r.url, async (url, token) => ({
       invitation: await c.inviteToTeam(url, token, r.teamId, { email: r.email, role: r.role }),
     })),
   );
-  registerHandler(channels.team.revokeInvitation, (r) =>
+  registerHandler(table, channels.team.revokeInvitation, (r) =>
     withToken(deps, r.url, async (url, token) => {
       await c.revokeTeamInvitation(url, token, r.teamId, r.invitationId);
       return DONE;
     }),
   );
-  registerHandler(channels.team.listWorkspaces, (r) =>
+  registerHandler(table, channels.team.listWorkspaces, (r) =>
     withToken(deps, r.url, async (url, token) => ({ workspaces: await c.listWorkspaces(url, token) })),
   );
-  registerHandler(channels.team.createWorkspace, (r) =>
+  registerHandler(table, channels.team.createWorkspace, (r) =>
     withToken(deps, r.url, async (url, token) => ({
       workspace: await c.createWorkspace(url, token, r.teamId, {
         name: r.name,
@@ -128,7 +128,7 @@ export function registerTeamChannels(deps: TeamChannelDeps): void {
       }),
     })),
   );
-  registerHandler(channels.team.updateWorkspace, (r) =>
+  registerHandler(table, channels.team.updateWorkspace, (r) =>
     withToken(deps, r.url, async (url, token) => ({
       workspace: await c.updateWorkspace(url, token, r.workspaceId, {
         ...(r.name !== undefined ? { name: r.name } : {}),
@@ -139,22 +139,22 @@ export function registerTeamChannels(deps: TeamChannelDeps): void {
       }),
     })),
   );
-  registerHandler(channels.team.deleteWorkspace, (r) =>
+  registerHandler(table, channels.team.deleteWorkspace, (r) =>
     withToken(deps, r.url, async (url, token) => {
       await c.deleteWorkspace(url, token, r.workspaceId);
       return DONE;
     }),
   );
-  registerHandler(channels.team.access, (r) =>
+  registerHandler(table, channels.team.access, (r) =>
     withToken(deps, r.url, async (url, token) => ({ entries: await c.workspaceAccess(url, token, r.workspaceId) })),
   );
-  registerHandler(channels.team.setAccess, (r) =>
+  registerHandler(table, channels.team.setAccess, (r) =>
     withToken(deps, r.url, async (url, token) => {
       await c.setAccess(url, token, r.workspaceId, r.userId, r.role);
       return DONE;
     }),
   );
-  registerHandler(channels.team.clearAccess, (r) =>
+  registerHandler(table, channels.team.clearAccess, (r) =>
     withToken(deps, r.url, async (url, token) => {
       await c.clearAccess(url, token, r.workspaceId, r.userId);
       return DONE;

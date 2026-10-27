@@ -14,6 +14,9 @@ import { sendThroughEngine } from '../src/main/send/exchange.js';
 import { historyEntrySchema } from '../src/shared/wire-types.js';
 import { restExchangeSummarySchema } from '../src/shared/kinds/rest/wire.js';
 import { sendDepsFor } from './helpers/send-deps.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const responses = {
   '200': { content: { 'application/json': { schema: { type: 'object', required: ['name'] } } } },
@@ -223,7 +226,7 @@ describe('the contract on the wire and in History', () => {
         notes: [],
       },
     };
-    const entry = buildRestHistoryEntry('p', {
+    const entry = buildRestHistoryEntry(hostState.redactor, 'p', {
       requestId: 'r',
       requestName: 'n',
       apiName: 'a',

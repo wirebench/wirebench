@@ -5,13 +5,13 @@
  * the window that started it.
  */
 
-import type { WebContents } from 'electron';
+import type { Caller } from '../host/platform.js';
 import { checkMockStubs } from '@wirebench/engine';
 import type { CheckMockStubsInput, MockExchangeEvent, MockStubCheck, Project } from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
 import type { MockRunner, MockSink } from '../mock-runner.js';
 import { emitEvent } from './events.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 export interface MockChannelDeps {
   /** The project holding `mockId`, its model as it is now and its folder; throws when no open project has it. */
@@ -24,7 +24,7 @@ export interface MockChannelDeps {
   readonly checkStubs?: (input: CheckMockStubsInput) => Promise<MockStubCheck>;
 }
 
-function sinkFor(sender: WebContents): MockSink {
+function sinkFor(sender: Caller): MockSink {
   return {
     state: (event) => {
       emitEvent(sender, events.mock.state, event);
@@ -56,8 +56,8 @@ function sinkFor(sender: WebContents): MockSink {
   };
 }
 
-export function registerMockChannels(runner: MockRunner, deps: MockChannelDeps): void {
-  registerHandler(channels.mock.start, (request, sender) =>
+export function registerMockChannels(table: HandlerTable, runner: MockRunner, deps: MockChannelDeps): void {
+  registerHandler(table, channels.mock.start, (request, sender) =>
     runner.startMock(request.mockId, {
       ...deps.locate(request.mockId),
       owner: sender.id,
@@ -65,9 +65,9 @@ export function registerMockChannels(runner: MockRunner, deps: MockChannelDeps):
       sink: sinkFor(sender),
     }),
   );
-  registerHandler(channels.mock.stop, async (request) => ({ stopped: await runner.stopMock(request.mockId) }));
-  registerHandler(channels.mock.reset, (request) => Promise.resolve({ reset: runner.reset(request.mockId) }));
-  registerHandler(channels.mock.check, async (request) => {
+  registerHandler(table, channels.mock.stop, async (request) => ({ stopped: await runner.stopMock(request.mockId) }));
+  registerHandler(table, channels.mock.reset, (request) => Promise.resolve({ reset: runner.reset(request.mockId) }));
+  registerHandler(table, channels.mock.check, async (request) => {
     const { project, dir } = deps.locate(request.mockId);
     const result = await (deps.checkStubs ?? checkMockStubs)({ project, root: dir, mockId: request.mockId });
     return {
@@ -78,7 +78,7 @@ export function registerMockChannels(runner: MockRunner, deps: MockChannelDeps):
       })),
     };
   });
-  registerHandler(channels.mock.states, () =>
+  registerHandler(table, channels.mock.states, () =>
     Promise.resolve({
       states: runner
         .runningIds()

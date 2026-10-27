@@ -10,10 +10,9 @@ import { readFile, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { channels } from '../../../shared/ipc.js';
 import type { ApiChannelDeps } from '../../ipc/api.js';
-import { registerHandler } from '../../ipc/register.js';
+import { registerHandler, type HandlerTable } from '../../ipc/register.js';
 import type { RequestChannelDeps } from '../../ipc/request.js';
 import { checkedImportSource } from '../../path-access.js';
-import { redactUrl } from '../../redact.js';
 import { sendThroughEngine, type SendThroughEngineDeps } from '../../send/exchange.js';
 import { graphqlDiagnostics, graphqlHover, graphqlQueryCompletion, graphqlVariableCompletion } from './assist.js';
 
@@ -24,8 +23,12 @@ async function editorSchema(deps: RequestChannelDeps, apiId: string | undefined)
 }
 
 /** The GraphQL editor's `request.*` channels (#77): fetching the schema, and its language features. */
-export function registerGraphqlRequestChannels(sendDeps: SendThroughEngineDeps, deps: RequestChannelDeps): void {
-  registerHandler(channels.request.graphqlIntrospect, async (request) => {
+export function registerGraphqlRequestChannels(
+  table: HandlerTable,
+  sendDeps: SendThroughEngineDeps,
+  deps: RequestChannelDeps,
+): void {
+  registerHandler(table, channels.request.graphqlIntrospect, async (request) => {
     const store = deps.project.setGraphqlSchema;
     if (store === undefined) {
       throw new WirebenchError('invalid-argument', 'No project can store a GraphQL schema here');
@@ -65,18 +68,18 @@ export function registerGraphqlRequestChannels(sendDeps: SendThroughEngineDeps, 
     }
     // The server's own error, when it sent one, is the message: introspection switched off, say.
     const sdl = sdlFromIntrospection(document);
-    return await store(request.apiId, sdl, redactUrl(answer.url, { show: false }));
+    return await store(request.apiId, sdl, deps.hostState.redactor.redactUrl(answer.url, { show: false }));
   });
-  registerHandler(channels.request.graphqlDiagnostics, async (request) =>
+  registerHandler(table, channels.request.graphqlDiagnostics, async (request) =>
     graphqlDiagnostics(await editorSchema(deps, request.apiId), request),
   );
-  registerHandler(channels.request.graphqlComplete, async (request) => ({
+  registerHandler(table, channels.request.graphqlComplete, async (request) => ({
     items:
       request.target === 'query'
         ? graphqlQueryCompletion(await editorSchema(deps, request.apiId), request.query, request.line, request.column)
         : graphqlVariableCompletion(request),
   }));
-  registerHandler(channels.request.graphqlHover, async (request) => ({
+  registerHandler(table, channels.request.graphqlHover, async (request) => ({
     markdown: graphqlHover(await editorSchema(deps, request.apiId), request.query, request.line, request.column),
   }));
 }
@@ -85,8 +88,8 @@ export function registerGraphqlRequestChannels(sendDeps: SendThroughEngineDeps, 
 const MAX_GRAPHQL_SCHEMA_BYTES = 20 * 1024 * 1024;
 
 /** The API schema's `api.*` channels (#77): importing a schema file, and removing the schema. */
-export function registerGraphqlApiChannels(deps: ApiChannelDeps): void {
-  registerHandler(channels.api.importGraphqlSchema, async (request) => {
+export function registerGraphqlApiChannels(table: HandlerTable, deps: ApiChannelDeps): void {
+  registerHandler(table, channels.api.importGraphqlSchema, async (request) => {
     const checked = await checkedImportSource(deps.projectDirs(), deps.picks, { kind: 'file', path: request.path });
     if (checked.kind !== 'file') throw new WirebenchError('invalid-argument', 'Expected a file');
     const { size } = await stat(checked.path);
@@ -100,7 +103,7 @@ export function registerGraphqlApiChannels(deps: ApiChannelDeps): void {
     if (deps.router.setGraphqlSchema === undefined) throw new WirebenchError('invalid-argument', 'No project is open');
     return await deps.router.setGraphqlSchema(request.apiId, sdl, name);
   });
-  registerHandler(channels.api.clearGraphqlSchema, async (request) => {
+  registerHandler(table, channels.api.clearGraphqlSchema, async (request) => {
     await deps.router.clearGraphqlSchema?.(request.apiId);
     return {};
   });

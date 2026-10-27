@@ -18,14 +18,18 @@ import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import { sendToEnvironments } from '../src/main/multi-env-send.js';
 import { ExchangeRegistry, previewRest, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { WorkspaceService, type WorkspaceServiceDeps } from '../src/main/workspace-service.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 let root: string;
 
 function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceService {
   return new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine: new EngineService(),
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     trash: () => Promise.resolve(),
     ...overrides,
   });
@@ -33,11 +37,7 @@ function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceSer
 
 /** The service as a send's dependencies see it: the router over every open project. */
 function sendDeps(service: WorkspaceService): SendThroughEngineDeps {
-  return {
-    service: new EngineService(),
-    registry: new ExchangeRegistry(),
-    project: service,
-  };
+  return { hostState, service: new EngineService(), registry: new ExchangeRegistry(), project: service };
 }
 
 /** Where a send of `requestId` would go, resolved as the send resolves it. */
@@ -198,7 +198,7 @@ describe('an environment out of the project’s scope', () => {
     );
 
     const deps = { project: service } as unknown as Pick<RequestChannelDeps, 'project'>;
-    const response = await sendToEnvironments(sendDeps(service), deps, {
+    const response = await sendToEnvironments(sendDeps(service), deps, new Map(), {
       batchId: 'scoped',
       requestId: billing.requestId,
       environmentIds: [crmOnly, 'no-such-env'],

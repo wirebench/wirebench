@@ -19,8 +19,10 @@ import type { RestApi } from '@wirebench/engine';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
 import { NO_REST, PROJECT_SETTINGS } from './helpers/wire-defaults.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -31,14 +33,10 @@ vi.mock('electron', () => ({
 }));
 
 const pickFolder = vi.fn<() => Promise<string | undefined>>();
-vi.mock('../src/main/native-dialogs.js', () => ({
-  pickFolder: () => pickFolder(),
-  pickSaveFile: () => Promise.resolve(undefined),
-  pickOpenFile: () => Promise.resolve(undefined),
-}));
+const dialogs = { pickFolder: () => pickFolder() };
 
 const { registerApiChannelsWithKinds } = await import('./helpers/kind-channels.js');
-type ApiChannelDeps = Parameters<typeof registerApiChannelsWithKinds>[0];
+type ApiChannelDeps = Parameters<typeof registerApiChannelsWithKinds>[1];
 
 /** A valid reply body, so an accepted import's envelope passes the response schema. */
 const PROJECT: ProjectWire = {
@@ -237,6 +235,7 @@ function setup(overrides: Partial<ApiChannelDeps> = {}): {
     removeProject: vi.fn().mockResolvedValue(undefined),
     projectDirs: () => [],
     picks: new DialogPicks(),
+    dialogs,
     variablesPorts: () => fakeVariablesPorts().ports,
     history: {
       open: vi.fn().mockResolvedValue(undefined),
@@ -245,7 +244,7 @@ function setup(overrides: Partial<ApiChannelDeps> = {}): {
     onHistoryChanged: vi.fn(),
     ...overrides,
   };
-  registerApiChannelsWithKinds(deps);
+  registerApiChannelsWithKinds(table, deps);
   return { deps, addApi, run };
 }
 

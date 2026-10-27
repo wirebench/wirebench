@@ -12,7 +12,7 @@ import { randomBytes } from 'node:crypto';
 import { link, open, rm, writeFile } from 'node:fs/promises';
 
 /** Link errors that mean the file system has no hard links (FAT, some network shares), not a clash. */
-const NO_HARD_LINKS = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
+const NO_HARD_LINKS: ReadonlySet<string> = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
 
 function codeOf(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException).code;

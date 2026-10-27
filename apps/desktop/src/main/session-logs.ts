@@ -11,13 +11,13 @@
  * a snippet typed; every secret used at connect (password, key, passphrase) is masked here as well.
  * Electron-free (the window is only a key).
  */
+import type { Caller } from './host/platform.js';
 import { createReadStream } from 'node:fs';
 import { mkdir, open, readFile, readdir, rm, stat } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { WirebenchError, nodeFs, writeFileAtomic } from '@wirebench/engine';
-import type { WebContents } from 'electron';
 import { createStreamMasker, createTextLog, resolveHost } from '@wirebench/ssh';
 import type { HopCredentials, HostsFile } from '@wirebench/ssh';
 import { logSwitchKey, resolveLogSwitch } from '../shared/session-log-switch.js';
@@ -493,7 +493,7 @@ export interface SessionLogPlannerDeps {
   readonly store: Pick<SessionLogStore, 'start'>;
   readonly switches: Pick<SessionLogSwitches, 'all'>;
   /** The window's open workspace, and the server it is bound to; `undefined` when none is open. */
-  readonly workspaceOf: (sender: WebContents) =>
+  readonly workspaceOf: (sender: Caller) =>
     | {
         readonly id: string;
         readonly server?: SessionLogStart['server'];
@@ -501,7 +501,7 @@ export interface SessionLogPlannerDeps {
         readonly upload?: SessionLogUploadTarget;
       }
     | undefined;
-  readonly hosts: (sender: WebContents) => { current(): HostsFile | undefined };
+  readonly hosts: (sender: Caller) => { current(): HostsFile | undefined };
 }
 
 /** Starts the log of a session that just opened, told its id. */
@@ -513,7 +513,7 @@ export type StartSessionLog = (sessionId: string) => SessionLogWriter;
  * log's masker; the target hop gives the address, port and user.
  */
 export function sessionLogPlanner(deps: SessionLogPlannerDeps): (
-  sender: WebContents,
+  sender: Caller,
   request: {
     hostId: string;
     hops: readonly HopCredentials[];

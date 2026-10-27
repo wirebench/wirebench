@@ -2,8 +2,10 @@
 // @vitest-environment node
 import type { HttpExchange, HttpRequest } from '@wirebench/engine';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
@@ -54,7 +56,7 @@ let sent: HttpRequest[];
 
 function register(answer: (request: HttpRequest, path: string) => HttpExchange): void {
   sent = [];
-  registerProvisioningChannels({
+  registerProvisioningChannels(table, {
     client: new ServerClient({
       send: (request: HttpRequest) => {
         sent.push(request);

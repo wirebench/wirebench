@@ -3,7 +3,7 @@ import { LICENSE_TEXT_PATTERN, licensePayloadSchema, WirebenchError } from '@wir
 import { channels } from '../../shared/ipc.js';
 import type { ServerClient } from '../server-client.js';
 import { withToken, type TokenSource } from '../server-token.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /**
  * The shared-schema parse before anything is sent (§3.8, plan ruling 14). Only the shape and the
@@ -32,15 +32,15 @@ export interface LicenseChannelDeps {
   readonly accounts: TokenSource;
 }
 
-export function registerLicenseChannels(deps: LicenseChannelDeps): void {
+export function registerLicenseChannels(table: HandlerTable, deps: LicenseChannelDeps): void {
   const c = deps.client;
-  registerHandler(channels.license.get, (r) => withToken(deps, r.url, (url, token) => c.getLicense(url, token)));
+  registerHandler(table, channels.license.get, (r) => withToken(deps, r.url, (url, token) => c.getLicense(url, token)));
   // Async, so a refusal from checkLicenseText becomes the envelope's error rather than a sync throw.
-  registerHandler(channels.license.install, async (r) => {
+  registerHandler(table, channels.license.install, async (r) => {
     const license = checkLicenseText(r.license);
     return withToken(deps, r.url, (url, token) => c.installLicense(url, token, license));
   });
-  registerHandler(channels.license.remove, (r) =>
+  registerHandler(table, channels.license.remove, (r) =>
     withToken(deps, r.url, async (url, token) => {
       await c.removeLicense(url, token);
       return { removed: true as const };

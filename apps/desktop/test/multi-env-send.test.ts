@@ -16,6 +16,12 @@ import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import { cancelEnvironmentBatch, sendToEnvironments } from '../src/main/multi-env-send.js';
 import type { SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { sendDepsFor } from './helpers/send-deps.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+/** The fan-outs still running, as the host's state holds them. */
+const batches = new Map<string, readonly string[]>();
+
+const hostState = createHostState();
 
 const ENVS = [
   { id: 'dev', name: 'Dev' },
@@ -135,12 +141,13 @@ function depsOf(
 ): { sendDeps: SendThroughEngineDeps; deps: RequestChannelDeps } {
   const surface = project as unknown as RequestChannelDeps['project'];
   const sendDeps = sendDepsFor(createProject('unused'), {
+    hostState,
     project: surface,
     history: history as unknown as HistoryService,
     secretsFor: () => (ref) => Promise.resolve(ref === 'ref' ? 'pw' : undefined),
     ...(confirmProtected !== undefined ? { confirmProtected } : {}),
   });
-  return { sendDeps, deps: { project: surface } };
+  return { sendDeps, deps: { hostState, project: surface } };
 }
 
 const basic = (user: string): string => `Basic ${Buffer.from(`${user}:pw`).toString('base64')}`;
@@ -150,7 +157,7 @@ describe('sendToEnvironments', () => {
     const confirm = vi.fn(() => Promise.resolve(false));
     const { sendDeps, deps } = depsOf(fakeProject(model({ protectedIn: 'prod' })), undefined, confirm);
     const before = received.length;
-    const response = await sendToEnvironments(sendDeps, deps, {
+    const response = await sendToEnvironments(sendDeps, deps, batches, {
       batchId: 'b-guard',
       requestId: 'rest-1',
       environmentIds: ['dev', 'prod'],
@@ -170,7 +177,7 @@ describe('sendToEnvironments', () => {
   it('sends every environment of a batch once its protected ones are confirmed, asking once', async () => {
     const confirm = vi.fn(() => Promise.resolve(true));
     const { sendDeps, deps } = depsOf(fakeProject(model({ protectedIn: 'prod' })), undefined, confirm);
-    const response = await sendToEnvironments(sendDeps, deps, {
+    const response = await sendToEnvironments(sendDeps, deps, batches, {
       batchId: 'b-guard-2',
       requestId: 'rest-1',
       environmentIds: ['dev', 'prod'],
@@ -184,7 +191,7 @@ describe('sendToEnvironments', () => {
     const project = fakeProject(model());
     const { sendDeps, deps } = depsOf(project);
     const before = received.length;
-    const response = await sendToEnvironments(sendDeps, deps, {
+    const response = await sendToEnvironments(sendDeps, deps, batches, {
       batchId: 'b1',
       requestId: 'r1',
       environmentIds: ['test', 'dev'],
@@ -216,7 +223,7 @@ describe('sendToEnvironments', () => {
     const project = fakeProject(model());
     const { sendDeps, deps } = depsOf(project);
     const before = received.length;
-    const response = await sendToEnvironments(sendDeps, deps, {
+    const response = await sendToEnvironments(sendDeps, deps, batches, {
       batchId: 'b2',
       requestId: 'rest-1',
       environmentIds: ['dev', 'prod'],
@@ -240,7 +247,7 @@ describe('sendToEnvironments', () => {
 
   it('fails only the environment with unresolved properties', async () => {
     const { sendDeps, deps } = depsOf(fakeProject(model({ unresolvedIn: 'test' })));
-    const response = await sendToEnvironments(sendDeps, deps, {
+    const response = await sendToEnvironments(sendDeps, deps, batches, {
       batchId: 'b3',
       requestId: 'rest-1',
       environmentIds: ['dev', 'test', 'prod'],
@@ -252,7 +259,7 @@ describe('sendToEnvironments', () => {
 
   it('fails only an environment the project does not have', async () => {
     const { sendDeps, deps } = depsOf(fakeProject(model()));
-    const response = await sendToEnvironments(sendDeps, deps, {
+    const response = await sendToEnvironments(sendDeps, deps, batches, {
       batchId: 'b4',
       requestId: 'r1',
       environmentIds: ['dev', 'gone'],
@@ -274,7 +281,7 @@ describe('sendToEnvironments', () => {
       sendEnvironments: () => ({ environments: [{ id: 'dev', name: 'WS Dev' }], activeId: 'dev' }),
     };
     const { sendDeps, deps } = depsOf(project);
-    const response = await sendToEnvironments(sendDeps, deps, {
+    const response = await sendToEnvironments(sendDeps, deps, batches, {
       batchId: 'b5',
       requestId: 'r1',
       environmentIds: ['dev', 'prod'],
@@ -289,7 +296,7 @@ describe('sendToEnvironments', () => {
     const { sendDeps, deps } = depsOf(fakeProject(model({ hang: true })));
     const cancel = vi.spyOn(sendDeps.registry, 'cancel');
     const before = hanging.length;
-    const pending = sendToEnvironments(sendDeps, deps, {
+    const pending = sendToEnvironments(sendDeps, deps, batches, {
       batchId: 'b5',
       requestId: 'r1',
       environmentIds: ['dev', 'test'],
@@ -297,25 +304,25 @@ describe('sendToEnvironments', () => {
     });
     await vi.waitFor(() => expect(hanging.length - before).toBe(2));
 
-    expect(cancelEnvironmentBatch(sendDeps.registry, 'b5')).toEqual({ cancelled: true });
+    expect(cancelEnvironmentBatch(batches, sendDeps.registry, 'b5')).toEqual({ cancelled: true });
     const response = await pending;
     expect(cancel.mock.calls.map(([id]) => id)).toEqual(['b5:dev', 'b5:test']);
     expect(response.results.map((result) => result.outcome)).toEqual(['error', 'error']);
     // Once settled the batch is forgotten, and an ordinary send id is not a batch.
-    expect(cancelEnvironmentBatch(sendDeps.registry, 'b5')).toBeUndefined();
+    expect(cancelEnvironmentBatch(batches, sendDeps.registry, 'b5')).toBeUndefined();
   });
 
   it('records each child in History under its environment’s name', async () => {
     const history = fakeHistory();
     const soap = depsOf(fakeProject(model()), history);
-    await sendToEnvironments(soap.sendDeps, soap.deps, {
+    await sendToEnvironments(soap.sendDeps, soap.deps, batches, {
       batchId: 'b6',
       requestId: 'r1',
       environmentIds: ['dev', 'test'],
       soap: { envelopeXml: '<Envelope/>' },
     });
     const rest = depsOf(fakeProject(model()), history);
-    await sendToEnvironments(rest.sendDeps, rest.deps, {
+    await sendToEnvironments(rest.sendDeps, rest.deps, batches, {
       batchId: 'b7',
       requestId: 'rest-1',
       environmentIds: ['dev', 'prod'],

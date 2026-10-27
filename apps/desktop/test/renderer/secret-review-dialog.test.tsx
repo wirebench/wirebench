@@ -9,6 +9,7 @@ import { wrapHandler } from '../../src/main/ipc/envelope.js';
 import { channels } from '../../src/shared/ipc.js';
 import type { SecretFindingWire } from '../../src/shared/wire-base.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { Redactor } from '../../src/main/host/redactor.js';
 
 const showToast = vi.hoisted(() => vi.fn());
 vi.mock('../../src/renderer/components/toast.js', () => ({ showToast }));
@@ -153,12 +154,15 @@ describe('reviewSecrets', () => {
     // The scan answer goes through main's real envelope for the real channel, as `ipcMain.handle`
     // runs it. A session that leaked the value would be refused there, and the review cancels the
     // save rather than open on something it cannot trust.
-    const leaky = wrapHandler(channels.secretScan.scan, () =>
-      Promise.resolve({
-        findings: [{ ...finding('a', 'header Authorization'), value: FAKE_VALUE }],
-        proposedNames: { a: 'a_token' },
-        storedNames: [],
-      }),
+    const leaky = wrapHandler(
+      channels.secretScan.scan,
+      () =>
+        Promise.resolve({
+          findings: [{ ...finding('a', 'header Authorization'), value: FAKE_VALUE }],
+          proposedNames: { a: 'a_token' },
+          storedNames: [],
+        }),
+      new Redactor(),
     );
     installWirebenchApi({
       secretScan: {
@@ -175,12 +179,15 @@ describe('reviewSecrets', () => {
   });
 
   it('opens on the same answer once it carries only the preview', async () => {
-    const honest = wrapHandler(channels.secretScan.scan, () =>
-      Promise.resolve({
-        findings: [finding('a', 'header Authorization')],
-        proposedNames: { a: 'a_token' },
-        storedNames: [],
-      }),
+    const honest = wrapHandler(
+      channels.secretScan.scan,
+      () =>
+        Promise.resolve({
+          findings: [finding('a', 'header Authorization')],
+          proposedNames: { a: 'a_token' },
+          storedNames: [],
+        }),
+      new Redactor(),
     );
     installWirebenchApi({
       secretScan: {

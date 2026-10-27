@@ -14,9 +14,10 @@ import { EngineService } from '../src/main/engine-service.js';
 import { defaultFeatures, startupFeatures } from '../src/main/features/startup.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import { toProjectWire } from '../src/main/project-wire.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 function newHost(): ProjectHost {
-  return new ProjectHost(new EngineService(), {});
+  return new ProjectHost(new EngineService(), testHooks());
 }
 
 /** Every file under `dir`, by path relative to it, with its bytes. */
@@ -92,7 +93,7 @@ describe('a project with a kind switched off', () => {
 
     // No global: the host is handed the run's registry, as the app's workspace hands it.
     const { enabledKinds, registry } = defaultFeatures({ WIREBENCH_FEATURES: 'grpc=off,mcp=off' });
-    const host = new ProjectHost(new EngineService(), { enabledKinds, registry });
+    const host = new ProjectHost(new EngineService(), testHooks({ enabledKinds, registry }));
     const opened = await host.openProject(dir);
     expect(opened.grpcApis).toEqual([]);
     expect(opened.unsupported).toEqual([

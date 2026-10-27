@@ -7,12 +7,12 @@
  * exactly as the attachments picker does (see `dialog-picks.ts`).
  */
 
-import { BrowserWindow, dialog } from 'electron';
-import type { WebContents } from 'electron';
+import type { Caller, HostPlatform } from '../host/platform.js';
+import { requireCapability } from '../host/capability.js';
 import { channels } from '../../shared/ipc.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
 import type { ProjectRouter } from '../project-router.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /** What the `keystores.*` channels need; a stub stands in for each of these in tests. */
 export interface KeystoreChannelDeps {
@@ -23,6 +23,8 @@ export interface KeystoreChannelDeps {
    * only evidence `add-keystore` accepts for a file outside the project folder.
    */
   readonly picks: RecordsReadPicks;
+  /** The native Open-file dialog `pickFile` runs. */
+  readonly platform: Pick<HostPlatform, 'dialogs'>;
 }
 
 /** The extensions the Open dialog offers; the same set `keystoreTypeForPath` recognises. */
@@ -33,25 +35,23 @@ function e2eOpenPathOverride(): string | undefined {
   return process.env['WIREBENCH_E2E_OPEN_PATH'];
 }
 
-async function pickThroughDialog(sender: WebContents): Promise<string | undefined> {
-  const window = BrowserWindow.fromWebContents(sender);
-  const options: Electron.OpenDialogOptions = {
+async function pickThroughDialog(platform: Pick<HostPlatform, 'dialogs'>, sender: Caller): Promise<string | undefined> {
+  const result = await requireCapability(platform, 'dialogs').openFile(sender, {
     title: 'Choose a keystore',
     properties: ['openFile'],
     filters: [
       { name: 'Keystores', extensions: KEYSTORE_EXTENSIONS },
       { name: 'All files', extensions: ['*'] },
     ],
-  };
-  const result = window === null ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(window, options);
+  });
   return result.canceled ? undefined : result.filePaths[0];
 }
 
 /** Registers the `keystores.*` channels. */
-export function registerKeystoreChannels(deps: KeystoreChannelDeps): void {
-  registerHandler(channels.keystores.inspect, (request) => deps.project.inspectKeystore(request.keystoreId));
+export function registerKeystoreChannels(table: HandlerTable, deps: KeystoreChannelDeps): void {
+  registerHandler(table, channels.keystores.inspect, (request) => deps.project.inspectKeystore(request.keystoreId));
 
-  registerHandler(channels.keystores.pickFile, async (_request, sender) => {
+  registerHandler(table, channels.keystores.pickFile, async (_request, sender) => {
     // The override goes through `rememberRead` exactly as a real pick does, so e2e exercises
     // the same containment path a user does rather than a bypass of it. Comma-separated for
     // symmetry with `attachments.pickFiles`; only the first entry is used here.
@@ -59,7 +59,7 @@ export function registerKeystoreChannels(deps: KeystoreChannelDeps): void {
     const path =
       override !== undefined
         ? override.split(',').filter((entry) => entry.length > 0)[0]
-        : await pickThroughDialog(sender);
+        : await pickThroughDialog(deps.platform, sender);
     if (path === undefined) {
       return {};
     }

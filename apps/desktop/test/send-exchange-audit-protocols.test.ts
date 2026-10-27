@@ -42,8 +42,14 @@ import { sendThroughEngine } from '../src/main/send/exchange.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import { sendDepsFor } from './helpers/send-deps.js';
 import { registerHistoryChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -175,6 +181,7 @@ function restModel(baseUrl: string): Project {
 function audited(model: Project, environmentId?: string, extraProject: Record<string, unknown> = {}) {
   const events: DesktopAuditEvent[] = [];
   const deps = sendDepsFor(model, {
+    hostState,
     getSecret: secrets,
     audit: (event) => events.push(event),
     project: {
@@ -325,6 +332,7 @@ describe('a send under one environment, then another', () => {
     const events: DesktopAuditEvent[] = [];
     let active = 'env-qa';
     const deps = sendDepsFor(model, {
+      hostState,
       getSecret: secrets,
       audit: (event) => events.push(event),
       project: {
@@ -347,7 +355,7 @@ describe('a resend', () => {
     const entries: HistoryEntryWire[] = [];
     const history = {
       recordRestSend: (projectId: string, record: RecordRestSendInput) => {
-        const wire = toHistoryEntryWire(buildRestHistoryEntry(projectId, record));
+        const wire = toHistoryEntryWire(buildRestHistoryEntry(hostState.redactor, projectId, record));
         entries.unshift(wire);
         return Promise.resolve(wire);
       },
@@ -356,6 +364,7 @@ describe('a resend', () => {
     const events: DesktopAuditEvent[] = [];
     const workspaces: (string | undefined)[] = [];
     const requestDeps: RequestChannelDeps = {
+      hostState,
       project: {
         projectId: () => 'p1',
         restMeta: () => undefined,
@@ -372,15 +381,16 @@ describe('a resend', () => {
     };
     const engine = new EngineService();
     const sendDeps = toSendDeps(engine, requestDeps);
-    registerHistoryChannelsWithKinds(history as never, {
+    registerHistoryChannelsWithKinds(table, history as never, {
       project: { projectId: () => 'p1', endpointFor: () => undefined },
       send: sendDeps,
     });
-    registerLogChannels({
+    registerLogChannels(table, {
       showSecrets: { get: () => false },
       service: engine,
       request: requestDeps,
       picks: { rememberWrite: () => undefined },
+      dialogs: fakeNativeDialogs(),
       appVersion: '0.0.0-test',
     });
     return { sendDeps, entries, events, workspaces };

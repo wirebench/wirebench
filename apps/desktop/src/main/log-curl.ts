@@ -2,13 +2,14 @@
  * cURL for one HTTP Log row: what was sent, not what the editor holds now. Shares `toCurl` with
  * `request.curl`; only the input differs — the logged request (raw request when the row has one).
  */
+import type { Redactor } from './host/redactor.js';
 import { toCurl, wsToCommand, type CurlHeader } from '@wirebench/engine';
 import type { LogEntryWire } from '../shared/wire-types.js';
 import type { WsHandshakeExchangeSummary } from '../shared/kinds/ws/wire.js';
 import type { RequestCurlResponse } from '../shared/wire-base.js';
-import { isXmlBody, redactHeaders, redactStructuredBody, redactUrl, redactXml } from './redact.js';
+import { isXmlBody } from './redact.js';
 
-const TRANSPORT_HEADERS = new Set(['host', 'content-length', 'connection', 'transfer-encoding']);
+const TRANSPORT_HEADERS: ReadonlySet<string> = new Set(['host', 'content-length', 'connection', 'transfer-encoding']);
 const TRUNCATED_NOTE = 'The request body was truncated in the log and is not included.';
 const GRPC_NOTE =
   'gRPC message bodies are binary-framed and are not included; use Copy as grpcurl from the request’s code panel.';
@@ -127,6 +128,7 @@ function contentTypeOf(headers: Readonly<Record<string, string>>): string | unde
  * redacted at emit — URL, headers and body are masked here, whatever the renderer handed over.
  */
 export function curlForLogEntry(
+  redactor: Redactor,
   entry: LogEntryWire,
   options: { shell: 'posix' | 'powershell'; show: boolean },
 ): RequestCurlResponse {
@@ -144,9 +146,9 @@ export function curlForLogEntry(
       wsExchange !== undefined
         ? wsExchange.requestHeaders
         : (entry as Extract<LogEntryWire, { kind: 'failure' }>).failure.request.headers;
-    const headers = show ? requestHeaders : redactHeaders(withoutTransport(requestHeaders), { show: false });
+    const headers = show ? requestHeaders : redactor.redactHeaders(withoutTransport(requestHeaders), { show: false });
     const command = wsToCommand(
-      { url: show ? wsUrl : redactUrl(wsUrl, { show: false }), headers },
+      { url: show ? wsUrl : redactor.redactUrl(wsUrl, { show: false }), headers },
       { shell: options.shell },
     );
     return { command };
@@ -156,14 +158,17 @@ export function curlForLogEntry(
   const isGrpc = entry.kind === 'exchange' ? 'statusName' in entry.exchange : entry.failure.protocol === 'grpc';
   const headers = show
     ? logged.headers
-    : redactHeaders(logged.headers, { show: false, extraHeaders: keyNames.headers });
+    : redactor.redactHeaders(logged.headers, { show: false, extraHeaders: keyNames.headers });
   const contentType = contentTypeOf(logged.headers);
   const body =
     logged.body === undefined || isGrpc
       ? undefined
       : show
         ? logged.body
-        : redactStructuredBody(redactXml(logged.body, { xml: isXmlBody(logged.body, contentType) }), contentType);
+        : redactor.redactStructuredBody(
+            redactor.redactXml(logged.body, { xml: isXmlBody(logged.body, contentType) }),
+            contentType,
+          );
   const curlHeaders: CurlHeader[] = Object.entries(headers).map(([name, value]) => ({ name, value }));
   const acceptsEventStream = Object.entries(logged.headers).some(
     ([name, value]) => name.toLowerCase() === 'accept' && value.toLowerCase().includes('text/event-stream'),
@@ -171,7 +176,7 @@ export function curlForLogEntry(
   const command = toCurl(
     {
       method: logged.method,
-      url: show ? logged.url : redactUrl(logged.url, { show: false, extraParams: keyNames.params }),
+      url: show ? logged.url : redactor.redactUrl(logged.url, { show: false, extraParams: keyNames.params }),
       headers: curlHeaders,
       ...(body !== undefined ? { body: { kind: 'raw' as const, text: body } } : {}),
       ...(acceptsEventStream ? { noBuffer: true } : {}),

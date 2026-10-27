@@ -17,8 +17,12 @@ import { ProjectHost } from '../src/main/project-host.js';
 import { OpenApiImportService } from '../src/main/openapi-import.js';
 import { createDefaultFetchDocument } from '@wirebench/engine';
 import type { ProjectWire } from '../src/shared/wire-types.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -29,7 +33,7 @@ vi.mock('electron', () => ({
 }));
 
 const { registerApiChannelsWithKinds } = await import('./helpers/kind-channels.js');
-type ApiChannelDeps = Parameters<typeof registerApiChannelsWithKinds>[0];
+type ApiChannelDeps = Parameters<typeof registerApiChannelsWithKinds>[1];
 
 const sender = { isDestroyed: () => false, send: vi.fn() };
 
@@ -74,7 +78,15 @@ beforeEach(async () => {
   docPath = join(projectDir, 'openapi.yaml');
   await writeFile(docPath, await readFile(fixture, 'utf8'));
 
-  host = new ProjectHost(new EngineService(), {}, undefined, undefined, undefined, undefined, new DialogPicks());
+  host = new ProjectHost(
+    new EngineService(),
+    testHooks(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    new DialogPicks(),
+  );
   await host.create({ dir: join(projectDir, 'project'), name: 'Pets' });
 
   const imports = new OpenApiImportService({ createFetchDocument: () => createDefaultFetchDocument() });
@@ -109,11 +121,12 @@ beforeEach(async () => {
     removeProject: unused,
     projectDirs: () => [projectDir],
     picks: new DialogPicks(),
+    dialogs: fakeNativeDialogs(),
     variablesPorts: unused,
     history: { open: unused, recordImportedRestBatch: unused },
     onHistoryChanged: unused,
   };
-  registerApiChannelsWithKinds(deps);
+  registerApiChannelsWithKinds(table, deps);
 });
 
 afterEach(() => {

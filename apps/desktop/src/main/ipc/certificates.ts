@@ -7,7 +7,7 @@
 import { channels } from '../../shared/ipc.js';
 import type { PreferencesService } from '../preferences.js';
 import type { WorkspaceService } from '../workspace-service.js';
-import { registerHandler } from './register.js';
+import { registerHandler, type HandlerTable } from './register.js';
 
 /** What the `certificates.*` channel needs; a stub stands in for each in tests. */
 export interface CertificateChannelDeps {
@@ -17,8 +17,9 @@ export interface CertificateChannelDeps {
 }
 
 /** Registers the `certificates.*` channel. */
-export function registerCertificateChannels(deps: CertificateChannelDeps): void {
+export function registerCertificateChannels(table: HandlerTable, deps: CertificateChannelDeps): void {
   registerHandler(
+    table,
     channels.certificates.check,
     async (request) =>
       await deps.project.checkCertificates({

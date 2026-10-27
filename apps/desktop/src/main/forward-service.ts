@@ -1,5 +1,5 @@
+import type { Caller } from './host/platform.js';
 import net from 'node:net';
-import type { WebContents } from 'electron';
 import type { z } from 'zod';
 import { WirebenchError } from '@wirebench/engine';
 import { isNetworkBind, openForwardConnection, resolveHost } from '@wirebench/ssh';
@@ -16,12 +16,12 @@ import type { SshConnector } from './ssh-connect.js';
 export interface ForwardServiceDeps {
   /** The `hosts.yaml` of that window's workspace (multi-window: each window holds its own). */
   readonly hosts: (
-    sender: WebContents,
+    sender: Caller,
   ) => Pick<HostsService, 'current' | 'list'> & Partial<Pick<HostsService, 'sshDefaults'>>;
   readonly connector: SshConnector;
   readonly binds: ForwardBinds;
-  readonly workspaceIdOf: (sender: WebContents) => string | undefined;
-  readonly emit: (target: WebContents, event: IpcEvent<z.ZodType>, payload: unknown) => void;
+  readonly workspaceIdOf: (sender: Caller) => string | undefined;
+  readonly emit: (target: Caller, event: IpcEvent<z.ZodType>, payload: unknown) => void;
   /** Tests inject a fake. */
   readonly open?: typeof openForwardConnection;
   /** Whether nothing on this machine listens on `port`; tests inject a fake. */
@@ -30,7 +30,7 @@ export interface ForwardServiceDeps {
 
 /** One rule started in one window. */
 interface Instance {
-  readonly sender: WebContents;
+  readonly sender: Caller;
   readonly hostId: string;
   readonly hostName: string;
   /** The rule as it started; a later edit of `hosts.yaml` marks it, never changes it. */
@@ -54,7 +54,7 @@ interface Link {
   readonly off: () => void;
 }
 
-const WILDCARDS = new Set(['0.0.0.0', '::']);
+const WILDCARDS: ReadonlySet<string> = new Set(['0.0.0.0', '::']);
 const EMIT_GAP_MS = 1000 / FORWARD_EVENTS_PER_SECOND;
 
 const keyOf = (senderId: number, hostId: string, ruleId?: string): string =>
@@ -104,7 +104,7 @@ function errorWire(error: unknown): { code: string; message: string; details?: R
 }
 
 /**
- * The SSH area's port forwards (spec D3). Each is owned by the WebContents that started it: only that window
+ * The SSH area's port forwards (spec D3). Each is owned by the Caller that started it: only that window
  * sees, stops or hears of it. A window has one {@link ForwardConnection} per host, dialled through the shared
  * {@link SshConnector}, so a forward refuses an untrusted key exactly as a terminal does. One clash table
  * spans every window: a port is never bound twice, nor moved without being asked (spec R4).
@@ -119,7 +119,7 @@ export class ForwardService {
   constructor(private readonly deps: ForwardServiceDeps) {}
 
   /** That window's forwards that are not stopped (a failed one stays until started or stopped again). */
-  list(sender: WebContents): ForwardStateWire[] {
+  list(sender: Caller): ForwardStateWire[] {
     return [...this.instances.values()].filter((i) => i.sender.id === sender.id).map((i) => this.wire(i));
   }
 
@@ -131,7 +131,7 @@ export class ForwardService {
    *   `ssh-forward-bind-unconfirmed` `{ address }` | `ssh-forward-port-in-use` `{ address, port, holder }` |
    *   the connect refusals (`ssh-host-key-new`, `secret-missing`, …) | the runner's (`ssh-forward-bind-failed`, …)
    */
-  async start(sender: WebContents, request: ForwardStartRequest, origin: ForwardOriginWire = 'manual'): Promise<void> {
+  async start(sender: Caller, request: ForwardStartRequest, origin: ForwardOriginWire = 'manual'): Promise<void> {
     const host = await this.resolve(sender, request.hostId);
     const found = host.forwards.find((f) => f.rule.id === request.ruleId);
     if (!found) {
@@ -191,7 +191,7 @@ export class ForwardService {
    *
    * @throws WirebenchError `ssh-forward-unknown` when that window has no such forward
    */
-  async stop(sender: WebContents, hostId: string, ruleId: string): Promise<void> {
+  async stop(sender: Caller, hostId: string, ruleId: string): Promise<void> {
     const instance = this.instances.get(keyOf(sender.id, hostId, ruleId));
     if (!instance) {
       throw new WirebenchError('ssh-forward-unknown', `No forward ${ruleId} of ${hostId} runs in this window`, {
@@ -202,7 +202,7 @@ export class ForwardService {
   }
 
   /** Every forward of that window; idempotent. */
-  async stopAll(sender: WebContents): Promise<void> {
+  async stopAll(sender: Caller): Promise<void> {
     await Promise.all([...this.instances.values()].filter((i) => i.sender.id === sender.id).map((i) => this.end(i)));
   }
 
@@ -226,7 +226,7 @@ export class ForwardService {
    * host's first starts its on `autoStart` rules as `auto`; its last stops every `auto` one, leaving those
    * started by hand (spec R2). Nothing here ever reaches the terminal: a refusal shows on the rule.
    */
-  sessionsChanged(sender: WebContents, hostId: string, open: number): void {
+  sessionsChanged(sender: Caller, hostId: string, open: number): void {
     const key = keyOf(sender.id, hostId);
     const before = this.sessions.get(key) ?? 0;
     if (open > 0) this.sessions.set(key, open);
@@ -243,7 +243,7 @@ export class ForwardService {
   }
 
   /** Re-reads that window's rules (after `ssh.saveHosts` or an edit on disk): marks `changed` / `removed`. */
-  async hostsChanged(sender: WebContents): Promise<void> {
+  async hostsChanged(sender: Caller): Promise<void> {
     const mine = [...this.instances.values()].filter((i) => i.sender.id === sender.id && isLive(i));
     if (mine.length === 0) return;
     let file;
@@ -276,7 +276,7 @@ export class ForwardService {
   }
 
   /** That window switched workspace, reloaded or closed: its forwards stop; other windows' run on. */
-  async disposeFor(sender: WebContents): Promise<void> {
+  async disposeFor(sender: Caller): Promise<void> {
     for (const key of [...this.sessions.keys()]) {
       if (key.startsWith(`${sender.id}\n`)) this.sessions.delete(key);
     }
@@ -290,13 +290,13 @@ export class ForwardService {
   }
 
   /** The S5 seam (spec D3): where a running local rule of that window listens. Nothing calls it yet. */
-  endpointOf(sender: WebContents, hostId: string, ruleId: string): { address: string; port: number } | undefined {
+  endpointOf(sender: Caller, hostId: string, ruleId: string): { address: string; port: number } | undefined {
     const instance = this.instances.get(keyOf(sender.id, hostId, ruleId));
     if (instance?.rule.type !== 'local' || instance.status.state !== 'running') return undefined;
     return { ...instance.status.listening };
   }
 
-  private async autoStart(sender: WebContents, hostId: string): Promise<void> {
+  private async autoStart(sender: Caller, hostId: string): Promise<void> {
     let host: ResolvedHost;
     try {
       host = await this.resolve(sender, hostId);
@@ -316,9 +316,9 @@ export class ForwardService {
   }
 
   /** A refusal before the table entry (a clash, an unconfirmed bind) still shows on the rule, as failed. */
-  private autoFailed(sender: WebContents, host: ResolvedHost, rule: ForwardRule, error: unknown): void {
+  private autoFailed(sender: Caller, host: ResolvedHost, rule: ForwardRule, error: unknown): void {
     const key = keyOf(sender.id, host.id, rule.id);
-    if (this.instances.has(key) || sender.isDestroyed()) return;
+    if (this.instances.has(key) || sender.isClosed()) return;
     const instance: Instance = {
       sender,
       hostId: host.id,
@@ -356,7 +356,7 @@ export class ForwardService {
 
   /** @throws WirebenchError `ssh-forward-bind-unconfirmed` until this machine has confirmed this bind */
   private async requireConfirmedBind(
-    sender: WebContents,
+    sender: Caller,
     hostId: string,
     rule: ForwardRule,
     confirmBind: true | undefined,
@@ -373,7 +373,7 @@ export class ForwardService {
     await this.deps.binds.confirm(key);
   }
 
-  private async resolve(sender: WebContents, hostId: string): Promise<ResolvedHost> {
+  private async resolve(sender: Caller, hostId: string): Promise<ResolvedHost> {
     const hosts = this.deps.hosts(sender);
     const listing = await hosts.list(); // cached; reads hosts.yaml once per workspace
     const problem = listing.problems[0];
@@ -411,7 +411,7 @@ export class ForwardService {
     );
   }
 
-  private async linkFor(sender: WebContents, hostId: string): Promise<Link> {
+  private async linkFor(sender: Caller, hostId: string): Promise<Link> {
     const key = keyOf(sender.id, hostId);
     const existing = this.links.get(key);
     if (existing) return existing;
@@ -489,7 +489,7 @@ export class ForwardService {
     }
     instance.lastEmitAt = Date.now();
     instance.lastEmitted = instance.status;
-    if (!instance.sender.isDestroyed()) this.deps.emit(instance.sender, events.forward.state, this.wire(instance));
+    if (!instance.sender.isClosed()) this.deps.emit(instance.sender, events.forward.state, this.wire(instance));
   }
 
   private wire(instance: Instance): ForwardStateWire {
@@ -505,15 +505,14 @@ export class ForwardService {
     };
   }
 
-  private watch(sender: WebContents): void {
+  private watch(sender: Caller): void {
     if (this.watched.has(sender.id)) return;
     this.watched.add(sender.id);
     // A reload or a crash starts a renderer that knows nothing of the old forwards; they stop too.
-    sender.on('render-process-gone', () => void this.disposeFor(sender));
-    sender.on('did-start-navigation', (details) => {
-      if (details.isMainFrame && !details.isSameDocument) void this.disposeFor(sender);
+    sender.onReset(() => {
+      void this.disposeFor(sender);
     });
-    sender.once('destroyed', () => {
+    sender.onClosed(() => {
       this.watched.delete(sender.id);
       void this.disposeFor(sender);
     });

@@ -16,6 +16,7 @@ import { startupFeatures } from '../src/main/features/startup.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import type { KindId } from '../src/shared/kinds/kind-module.js';
 import type { ProjectChange, ProjectWire } from '../src/shared/wire-types.js';
+import { testHooks } from './helpers/project-hooks.js';
 
 /** Every file under `dir`, by path relative to it, with its bytes. */
 async function filesUnder(dir: string): Promise<Record<string, string>> {
@@ -42,7 +43,7 @@ async function changeEverythingElse(
     preferences: { features: { [kindById[off]]: false, mcp: false } },
     isPackaged: true,
   });
-  const host = new ProjectHost(new EngineService(), { enabledKinds, registry });
+  const host = new ProjectHost(new EngineService(), testHooks({ enabledKinds, registry }));
   const opened = await host.openProject(dir);
   const error = await host.mutate(refused).then(
     () => undefined,
@@ -70,7 +71,7 @@ async function changeEverythingElse(
 describe('a kind switched off keeps its project-level files', () => {
   it('rest=off: the webhook collection is a placeholder, refused, and never rewritten', async () => {
     const dir = join(mkdtempSync(join(tmpdir(), 'wirebench-rest-off-')), 'Hooks');
-    const seed = new ProjectHost(new EngineService(), {});
+    const seed = new ProjectHost(new EngineService(), testHooks());
     await seed.create({ dir, name: 'Hooks' });
     await seed.mutate({ kind: 'ensure-webhooks' });
     await seed.mutate({ kind: 'add-webhook-folder', name: 'Orders' });
@@ -93,7 +94,7 @@ describe('a kind switched off keeps its project-level files', () => {
 
   it('soap=off: the WS-Security configurations are a placeholder, refused, and never rewritten', async () => {
     const dir = join(mkdtempSync(join(tmpdir(), 'wirebench-soap-off-')), 'Secure');
-    const seed = new ProjectHost(new EngineService(), {});
+    const seed = new ProjectHost(new EngineService(), testHooks());
     await seed.create({ dir, name: 'Secure' });
     await seed.mutate({ kind: 'add-wss-outgoing', name: 'Sign' });
     await seed.mutate({ kind: 'add-wss-incoming', name: 'Verify' });

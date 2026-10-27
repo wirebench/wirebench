@@ -25,6 +25,9 @@ import { ProjectHost } from '../src/main/project-host.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 import type { WorkspaceWire } from '../src/shared/wire-base.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 /**
  * `fs.watch`'s coalescing on real disks is not instant; a short debounce keeps every test here
@@ -57,9 +60,10 @@ interface Recorded {
 function newService(overrides: Partial<WorkspaceServiceDeps> = {}): { service: WorkspaceService; recorded: Recorded } {
   const recorded: Recorded = { changed: [], onDisk: [], projectOnDisk: [], hosts: [], snippets: [] };
   const service = new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine: new EngineService(),
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     watchDebounceMs: WATCH_DEBOUNCE_MS,
     hooks: {
       onChanged: (workspace) => recorded.changed.push(workspace),

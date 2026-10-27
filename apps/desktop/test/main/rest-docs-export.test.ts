@@ -5,9 +5,11 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApi, createProject, createRestRequest, entry, withRestApis, type Project } from '@wirebench/engine';
+import { tableInto } from '../helpers/ipc-table.js';
 import { apiDocsFile, registerRestDocsChannels } from '../../src/main/kinds/rest/docs-export.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -47,13 +49,13 @@ beforeEach(() => {
   handlers.clear();
   written = [];
   pickSave = vi.fn().mockResolvedValue('/tmp/out/docs.html');
-  registerRestDocsChannels({
+  registerRestDocsChannels(table, {
     router: {
       projectId: (id) => (id === 'A1' ? 'P1' : undefined),
       hostFor: () => ({ open: { project: PROJECT } }),
     },
     picks: { rememberWrite: vi.fn() },
-    pickSave: pickSave as never,
+    dialogs: { pickSaveFile: pickSave as never },
     write: (path, text) => {
       written.push({ path, text });
       return Promise.resolve();
@@ -86,7 +88,7 @@ describe('api.exportDocs', () => {
       value: { cancelled: false, path: '/tmp/out/docs.html' },
     });
     expect(pickSave).toHaveBeenCalledWith(
-      { id: 1 },
+      expect.objectContaining({ id: 1 }),
       expect.anything(),
       expect.objectContaining({ defaultPath: 'Cards - v1.html' }),
     );

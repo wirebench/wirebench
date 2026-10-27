@@ -1,10 +1,13 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { protocol } from 'electron';
-import { resolveRendererFile } from './app-protocol.js';
-import { APP_SCHEME } from './security.js';
+import { resolveRendererFile } from '../app-protocol.js';
+import { APP_SCHEME } from '../security.js';
 
-/** Where the built renderer lives relative to the main process's own output directory. */
+/**
+ * Where the built renderer lives relative to the main process's own output directory. The main
+ * bundle is one file, so `import.meta.dirname` is that directory whatever folder this source is in.
+ */
 const RENDERER_OUT_DIR = join(import.meta.dirname, '../renderer');
 
 /**

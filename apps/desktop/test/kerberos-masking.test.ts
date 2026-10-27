@@ -9,6 +9,9 @@ import { harOf } from '../src/main/har.js';
 import { buildHistoryEntry } from '../src/main/history-service.js';
 import type { LogEntryWire, ResolvedSendInputWire } from '../src/shared/wire-types.js';
 import { b64, makeExchange } from './mocks/wire-fixtures.js';
+import { Redactor } from '../src/main/host/redactor.js';
+
+const redactor = new Redactor();
 
 const SENT = 'abc123';
 const RECEIVED = 'def456';
@@ -46,7 +49,7 @@ describe('Negotiate tokens on the desktop side (SC-K9)', () => {
       envelopeXml: '<request/>',
       headers: { Authorization: `Negotiate ${SENT}` },
     } as unknown as ResolvedSendInputWire;
-    const entry = buildHistoryEntry('p1', {
+    const entry = buildHistoryEntry(redactor, 'p1', {
       requestName: 'Request 1',
       interfaceName: 'Calc',
       operationName: 'Add',
@@ -62,7 +65,7 @@ describe('Negotiate tokens on the desktop side (SC-K9)', () => {
 
   it('are masked in a HAR export', () => {
     const row = { kind: 'exchange', protocol: 'soap', exchange: negotiateExchange() } as unknown as LogEntryWire;
-    const text = JSON.stringify(harOf([row], { name: 'Wirebench', version: '0' }));
+    const text = JSON.stringify(harOf(redactor, [row], { name: 'Wirebench', version: '0' }));
 
     expect(text).not.toContain(SENT);
     expect(text).not.toContain(RECEIVED);
@@ -70,7 +73,7 @@ describe('Negotiate tokens on the desktop side (SC-K9)', () => {
 
   it('are masked in the exchange summary with show-secrets off, and shown with it on', () => {
     const exchange = negotiateExchange();
-    const masked = redactExchangeSummary(exchange, { show: false });
+    const masked = redactExchangeSummary(redactor, exchange, { show: false });
     const text = JSON.stringify(masked);
     const raw = [masked.http.rawRequestBase64, masked.http.rawResponseBase64]
       .map((value) => Buffer.from(value, 'base64').toString('latin1'))
@@ -80,6 +83,6 @@ describe('Negotiate tokens on the desktop side (SC-K9)', () => {
     expect(text).not.toContain(RECEIVED);
     expect(raw).not.toContain(SENT);
     expect(raw).not.toContain(RECEIVED);
-    expect(JSON.stringify(redactExchangeSummary(exchange, { show: true }))).toContain(RECEIVED);
+    expect(JSON.stringify(redactExchangeSummary(redactor, exchange, { show: true }))).toContain(RECEIVED);
   });
 });

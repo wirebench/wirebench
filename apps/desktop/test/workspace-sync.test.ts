@@ -39,6 +39,9 @@ import {
   removeTempDir,
   setTestIdentity,
 } from './sync/git-fixture.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const WATCH_DEBOUNCE_MS = 30;
 const WAIT = { timeout: 15_000, interval: 50 };
@@ -153,9 +156,10 @@ async function openMachine(root: string, options: { withScans?: boolean } = {}):
     statuses: [],
   };
   const service = new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine: new EngineService(),
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     watchDebounceMs: WATCH_DEBOUNCE_MS,
     git: () => Promise.resolve(git),
     ...(scans !== undefined ? { secretScans: scans } : {}),

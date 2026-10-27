@@ -33,8 +33,13 @@ import { sendDepsFor } from './helpers/send-deps.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import type { RestExchangeSummary } from '../src/shared/kinds/rest/wire.js';
 import { registerHistoryChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -100,18 +105,20 @@ interface Harness {
 
 async function harness(model: Project): Promise<Harness> {
   host = new ScriptHost({
+    redactor: hostState.redactor,
     modelOf: () => model,
     openApiDocumentFor: () => Promise.reject(new Error('no definition')),
     grpcProtoSetFor: () => Promise.reject(new Error('no definition')),
     soapDefinitionFor: () => undefined,
   });
   const engine = new EngineService((ref) => Promise.resolve(ref === 'sec_token' ? TOKEN : undefined));
-  const history = new HistoryService(userDataDir);
+  const history = new HistoryService(userDataDir, hostState.redactor);
   await history.open('p1');
   const appended: HistoryEntryWire[] = [];
   // The project's own `region` property, which every send here expands against.
   const located = { ...model, properties: { ...model.properties, region: 'eu' } };
   const deps: RequestChannelDeps = {
+    hostState,
     project: {
       projectId: () => 'p1',
       runContextFor: () => ({ project: located, projectDir: '/tmp/none' }),
@@ -125,6 +132,7 @@ async function harness(model: Project): Promise<Harness> {
     scripts: host,
   };
   const restDeps = sendDepsFor(located, {
+    hostState,
     history,
     onHistoryAppended: (wire) => appended.push(wire),
     // The send's project's secrets: its token, and the credentials its auth names.
@@ -316,6 +324,7 @@ describe('a SOAP send with scripts', () => {
         };
         await harness(model);
         const deps = sendDepsFor(model, {
+          hostState,
           // The project's token, and the password its Basic auth names.
           secretsFor: () => (ref) =>
             Promise.resolve(ref === 'secret:api_key' ? API_KEY : ref === 'sec_pw' ? 'pw-9d2' : undefined),
@@ -444,13 +453,14 @@ describe('a SOAP resend from History', () => {
       } satisfies HistoryEntryWire;
       handlers.clear();
       registerHistoryChannelsWithKinds(
+        table,
         { get: (id: string) => (id === 'h-1' ? entry : undefined) } as unknown as HistoryService,
         {
           project: {
             projectId: () => 'p1',
             endpointFor: () => 'http://h/s',
           },
-          send: sendDepsFor(model, { scripts: host }),
+          send: sendDepsFor(model, { hostState, scripts: host }),
         },
       );
       const reply = await handlers.get('history.resend')!({ sender: {} }, { id: 'h-1' });

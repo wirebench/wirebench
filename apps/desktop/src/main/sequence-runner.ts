@@ -18,6 +18,7 @@
  *   never carries a value at all.
  */
 
+import type { Redactor } from './host/redactor.js';
 import {
   extractTransfer,
   grpcSubject,
@@ -44,7 +45,6 @@ import { runFinishedEvent } from './audit/desktop-events.js';
 import type { EngineService } from './engine-service.js';
 import { UNLINKED_WORKSPACE_MESSAGE } from './hooks/capture-source.js';
 import { toSendDeps, type RequestChannelDeps } from './ipc/request.js';
-import { containsRecordedSecret, recordSecretValue, redactSecretText } from './redact.js';
 import type { DraftOf } from './send/draft.js';
 import {
   confirmProtectedSend,
@@ -124,10 +124,10 @@ function errorOf(error: unknown): { code: string; message: string } {
   };
 }
 
-const mask = (text: string): string => redactSecretText(text, { show: false });
+const mask = (redactor: Redactor, text: string): string => redactor.redactSecretText(text, { show: false });
 
 /** A step result as it may cross to the renderer: every string masked, a secret transfer valueless. */
-function toWire(step: SequenceStepResult, sendId: string | undefined): SequenceStepResultWire {
+function toWire(redactor: Redactor, step: SequenceStepResult, sendId: string | undefined): SequenceStepResultWire {
   return {
     index: step.index,
     stepId: step.stepId,
@@ -143,27 +143,29 @@ function toWire(step: SequenceStepResult, sendId: string | undefined): SequenceS
     ...(step.origin !== undefined ? { origin: step.origin } : {}),
     assertions: step.assertions.map((assertion) => ({
       type: assertion.type,
-      label: mask(assertion.label),
+      label: mask(redactor, assertion.label),
       outcome: assertion.outcome,
-      ...(assertion.expected !== undefined ? { expected: mask(assertion.expected) } : {}),
-      ...(assertion.actual !== undefined ? { actual: mask(assertion.actual) } : {}),
-      ...(assertion.message !== undefined ? { message: mask(assertion.message) } : {}),
+      ...(assertion.expected !== undefined ? { expected: mask(redactor, assertion.expected) } : {}),
+      ...(assertion.actual !== undefined ? { actual: mask(redactor, assertion.actual) } : {}),
+      ...(assertion.message !== undefined ? { message: mask(redactor, assertion.message) } : {}),
       ...(assertion.capture !== undefined ? { capture: assertion.capture } : {}),
     })),
     transfers: step.transfers.map((transfer) => ({
       name: transfer.name,
       outcome: transfer.outcome,
       secret: transfer.secret,
-      ...(transfer.value !== undefined && !transfer.secret ? { value: mask(transfer.value) } : {}),
-      ...(transfer.message !== undefined ? { message: mask(transfer.message) } : {}),
+      ...(transfer.value !== undefined && !transfer.secret ? { value: mask(redactor, transfer.value) } : {}),
+      ...(transfer.message !== undefined ? { message: mask(redactor, transfer.message) } : {}),
     })),
-    ...(step.error !== undefined ? { error: { code: step.error.code, message: mask(step.error.message) } } : {}),
+    ...(step.error !== undefined
+      ? { error: { code: step.error.code, message: mask(redactor, step.error.message) } }
+      : {}),
     ...(step.skipped !== undefined ? { skipped: step.skipped } : {}),
     ...(step.attempt !== undefined ? { attempt: step.attempt } : {}),
     ...(step.retried === true ? { retried: true as const } : {}),
     // Step and request names, never a response value: nothing in it to mask.
     ...(step.branch !== undefined ? { branch: { ...step.branch } } : {}),
-    ...(step.scriptLog !== undefined ? { scriptLog: step.scriptLog.map(mask) } : {}),
+    ...(step.scriptLog !== undefined ? { scriptLog: step.scriptLog.map((line) => mask(redactor, line)) } : {}),
     ...(step.scriptsOff === true ? { scriptsOff: true } : {}),
     ...(sendId !== undefined ? { sendId } : {}),
   };
@@ -196,7 +198,10 @@ function runAuditOf(requests: RequestChannelDeps, sequenceId: string): RunAudit 
 function reportRun(requests: RequestChannelDeps, result: SequenceRunResult, cancelled: boolean, at: RunAudit): void {
   if (requests.audit === undefined) return;
   try {
-    requests.audit(runFinishedEvent(result, result.startedAt, new Date(), at.environment, cancelled), at.workspaceId);
+    requests.audit(
+      runFinishedEvent(requests.hostState.redactor, result, result.startedAt, new Date(), at.environment, cancelled),
+      at.workspaceId,
+    );
   } catch (error) {
     console.warn(`[audit] a run could not be reported: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -233,6 +238,7 @@ export class SequenceRunner {
       sendIds.get(`${step.stepId}#${step.attempt ?? 1}`);
     // The request channels' own send through the engine, and the registry they cancel through.
     const sendDeps = toSendDeps(deps.service, deps.requests);
+    const { redactor } = deps.requests.hostState;
     // Asked once for the whole run (#345), before its first step; its steps then never ask.
     const located = deps.requests.project.runContextFor?.(sequence.id);
     const guarded = located === undefined ? undefined : protectedEnvironmentOf(located);
@@ -278,8 +284,11 @@ export class SequenceRunner {
             // Before the step's own log row and History entry exist: record what must be masked in them.
             for (const transfer of resolved.step.transfers) {
               const found = await extractTransfer(described.subject, transfer);
-              if (found.kind === 'value' && (transfer.secret === true || containsRecordedSecret(found.value))) {
-                recordSecretValue(found.value);
+              if (
+                found.kind === 'value' &&
+                (transfer.secret === true || redactor.containsRecordedSecret(found.value))
+              ) {
+                redactor.recordSecretValue(found.value);
               }
             }
           },
@@ -323,10 +332,10 @@ export class SequenceRunner {
           signal: active.controller.signal,
           onStepDone: (step) => {
             done.push(step);
-            deps.emit({ runId: request.runId, sequenceId: sequence.id, step: toWire(step, sendIdOf(step)) });
+            deps.emit({ runId: request.runId, sequenceId: sequence.id, step: toWire(redactor, step, sendIdOf(step)) });
           },
-          onSecretValue: recordSecretValue,
-          containsKnownSecret: containsRecordedSecret,
+          onSecretValue: redactor.recordSecretValue,
+          containsKnownSecret: redactor.containsRecordedSecret,
           captures: deps.captures?.() ?? unavailableCaptureSource(UNLINKED_WORKSPACE_MESSAGE),
           // The scopes the step's own send expands against, plus the run's Sequence values; asked
           // only for a step with callback assertions.
@@ -341,7 +350,7 @@ export class SequenceRunner {
               index: step.index,
               stepId: step.stepId,
               waiting: waiting.map((one) => ({
-                label: mask(one.label),
+                label: mask(redactor, one.label),
                 catchUrl: one.catchUrl,
                 withinMs: one.withinMs,
               })),
@@ -365,7 +374,7 @@ export class SequenceRunner {
         name: result.name,
         startedAt: result.startedAt,
         outcome: result.outcome,
-        steps: result.steps.map((step) => toWire(step, sendIdOf(step))),
+        steps: result.steps.map((step) => toWire(redactor, step, sendIdOf(step))),
       };
     } finally {
       this.runs.delete(request.runId);

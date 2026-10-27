@@ -3,13 +3,14 @@
  * URL parameters, WS-Security passwords and JSON/form secrets — whatever the show-secrets toggle
  * says: a HAR file is made to be shared.
  */
+import type { Redactor } from './host/redactor.js';
 import { serializeEventStream } from '@wirebench/engine';
 import type { SseRow } from '@wirebench/engine';
 import type { LogEntryWire } from '../shared/wire-types.js';
 import type { RestExchangeSummary, SseRowWire } from '../shared/kinds/rest/wire.js';
 import type { WsHandshakeExchangeSummary } from '../shared/kinds/ws/wire.js';
 import { keyNamesOf, loggedRequestOf } from './log-curl.js';
-import { isXmlBody, redactHeaderPairs, redactStructuredBody, redactUrl, redactXml } from './redact.js';
+import { isXmlBody } from './redact.js';
 
 export interface HarCreator {
   readonly name: 'Wirebench';
@@ -84,20 +85,21 @@ export interface Har {
 }
 
 /** Headers whose value is a URL, so a secret query parameter can ride in them. */
-const URL_HEADERS = new Set(['location', 'content-location', 'referer']);
+const URL_HEADERS: ReadonlySet<string> = new Set(['location', 'content-location', 'referer']);
 
 /**
  * Sensitive headers masked, and a URL-valued header's secret parameters masked too. `keyNames` are
  * the names the row's API key travelled under, masked in a header and in a URL-valued header alike.
  */
 function harHeaders(
+  redactor: Redactor,
   pairs: readonly (readonly [string, string])[],
   keyNames: { readonly params: readonly string[]; readonly headers: readonly string[] } = { params: [], headers: [] },
 ): HarNameValue[] {
-  return redactHeaderPairs(pairs, { show: false, extraHeaders: keyNames.headers }).map(([name, value]) => ({
+  return redactor.redactHeaderPairs(pairs, { show: false, extraHeaders: keyNames.headers }).map(([name, value]) => ({
     name,
     value: URL_HEADERS.has(name.toLowerCase())
-      ? redactUrl(value, { show: false, extraParams: keyNames.params })
+      ? redactor.redactUrl(value, { show: false, extraParams: keyNames.params })
       : value,
   }));
 }
@@ -112,9 +114,9 @@ function headerValue(headers: Readonly<Record<string, string>>, name: string): s
  * Both body passes, always masked: WS-Security elements, then JSON/form secret keys. A recorded
  * secret value gets the escaped marker in an XML body and the raw one in any other.
  */
-function redactBody(text: string, contentType: string | undefined): string {
-  const xml = redactXml(text, { show: false, xml: isXmlBody(text, contentType) });
-  return redactStructuredBody(xml, contentType, { show: false });
+function redactBody(redactor: Redactor, text: string, contentType: string | undefined): string {
+  const xml = redactor.redactXml(text, { show: false, xml: isXmlBody(text, contentType) });
+  return redactor.redactStructuredBody(xml, contentType, { show: false });
 }
 
 /**
@@ -123,9 +125,10 @@ function redactBody(text: string, contentType: string | undefined): string {
  * `exactOptionalPropertyTypes` gap `historySseOf`'s own cast papers over: the wire's
  * `id?: string | undefined` vs. the engine's plain `id?: string`.
  */
-function redactedSseRows(rows: readonly SseRowWire[]): readonly SseRow[] {
+function redactedSseRows(redactor: Redactor, rows: readonly SseRowWire[]): readonly SseRow[] {
   return rows.map(
-    (row) => (row.kind === 'event' ? { ...row, data: redactBody(row.data, 'application/json') } : row) as SseRow,
+    (row) =>
+      (row.kind === 'event' ? { ...row, data: redactBody(redactor, row.data, 'application/json') } : row) as SseRow,
   );
 }
 
@@ -141,12 +144,12 @@ function harVersion(version: '1.1' | '2'): string {
   return version === '2' ? 'HTTP/2' : 'HTTP/1.1';
 }
 
-function requestOf(entry: LogEntryWire, httpVersion: string, isGrpc: boolean): HarRequest {
+function requestOf(redactor: Redactor, entry: LogEntryWire, httpVersion: string, isGrpc: boolean): HarRequest {
   const logged = loggedRequestOf(entry);
   const keyNames = keyNamesOf(entry);
-  const url = redactUrl(logged.url, { show: false, extraParams: keyNames.params });
+  const url = redactor.redactUrl(logged.url, { show: false, extraParams: keyNames.params });
   const contentType = headerValue(logged.headers, 'content-type');
-  const headers = harHeaders(Object.entries(logged.headers), keyNames);
+  const headers = harHeaders(redactor, Object.entries(logged.headers), keyNames);
   // gRPC bodies are binary-framed: no text to give, as with the cURL export.
   const body = isGrpc ? undefined : logged.body;
   return {
@@ -157,7 +160,12 @@ function requestOf(entry: LogEntryWire, httpVersion: string, isGrpc: boolean): H
     headers,
     queryString: queryStringOf(url),
     ...(body !== undefined
-      ? { postData: { mimeType: contentType ?? 'application/octet-stream', text: redactBody(body, contentType) } }
+      ? {
+          postData: {
+            mimeType: contentType ?? 'application/octet-stream',
+            text: redactBody(redactor, body, contentType),
+          },
+        }
       : {}),
     headersSize: -1,
     bodySize: logged.bodyTruncated ? -1 : Buffer.byteLength(logged.body ?? '', 'utf8'),
@@ -169,19 +177,19 @@ function requestOf(entry: LogEntryWire, httpVersion: string, isGrpc: boolean): H
  * 'websocket'` so a reader knows it opened a session — never `_webSocketMessages`; the log holds
  * only the handshake, History the frames.
  */
-function wsExchangeEntry(entry: Extract<LogEntryWire, { kind: 'exchange' }>): HarEntry {
+function wsExchangeEntry(redactor: Redactor, entry: Extract<LogEntryWire, { kind: 'exchange' }>): HarEntry {
   const exchange = entry.exchange as WsHandshakeExchangeSummary;
   const httpVersion = 'HTTP/1.1';
   return {
     startedDateTime: exchange.startedAt,
     time: exchange.durationMs,
-    request: requestOf(entry, httpVersion, false),
+    request: requestOf(redactor, entry, httpVersion, false),
     response: {
       status: exchange.status,
       statusText: '',
       httpVersion,
       cookies: [],
-      headers: harHeaders(Object.entries(exchange.responseHeaders)),
+      headers: harHeaders(redactor, Object.entries(exchange.responseHeaders)),
       content: { size: 0, mimeType: 'x-unknown' },
       redirectURL: '',
       headersSize: -1,
@@ -201,9 +209,9 @@ function wsExchangeEntry(entry: Extract<LogEntryWire, { kind: 'exchange' }>): Ha
   };
 }
 
-function exchangeEntry(entry: Extract<LogEntryWire, { kind: 'exchange' }>): HarEntry {
+function exchangeEntry(redactor: Redactor, entry: Extract<LogEntryWire, { kind: 'exchange' }>): HarEntry {
   if ('protocol' in entry.exchange && entry.exchange.protocol === 'websocket') {
-    return wsExchangeEntry(entry);
+    return wsExchangeEntry(redactor, entry);
   }
   const exchange = entry.exchange as Exclude<typeof entry.exchange, WsHandshakeExchangeSummary>;
   const { http } = exchange;
@@ -218,12 +226,12 @@ function exchangeEntry(entry: Extract<LogEntryWire, { kind: 'exchange' }>): HarE
       ? {
           size: bytes.length,
           mimeType: 'text/event-stream',
-          text: serializeEventStream(redactedSseRows(stream.rows)),
+          text: serializeEventStream(redactedSseRows(redactor, stream.rows)),
         }
       : http.truncated
         ? { size: bytes.length, mimeType }
         : textual
-          ? { size: bytes.length, mimeType, text: redactBody(bytes.toString('utf8'), mimeType) }
+          ? { size: bytes.length, mimeType, text: redactBody(redactor, bytes.toString('utf8'), mimeType) }
           : bytes.length === 0
             ? { size: 0, mimeType }
             : { size: bytes.length, mimeType, text: http.bodyBase64, encoding: 'base64' };
@@ -232,15 +240,15 @@ function exchangeEntry(entry: Extract<LogEntryWire, { kind: 'exchange' }>): HarE
   return {
     startedDateTime: timings.startedAt,
     time: exchange.durationMs,
-    request: requestOf(entry, httpVersion, isGrpc),
+    request: requestOf(redactor, entry, httpVersion, isGrpc),
     response: {
       status: http.status,
       statusText: http.statusText,
       httpVersion,
       cookies: [],
-      headers: harHeaders(http.rawHeaders),
+      headers: harHeaders(redactor, http.rawHeaders),
       content,
-      redirectURL: location === undefined ? '' : redactUrl(location, { show: false }),
+      redirectURL: location === undefined ? '' : redactor.redactUrl(location, { show: false }),
       headersSize: -1,
       bodySize: http.truncated ? -1 : Buffer.from(http.rawBodyBase64, 'base64').length,
     },
@@ -278,12 +286,12 @@ function sseTruncationOf(stream: RestExchangeSummary['stream']): Pick<HarEntry, 
   return { _sseTruncated: true, ...(omittedRows > 0 ? { _sseOmittedRows: omittedRows } : {}) };
 }
 
-function failureEntry(entry: Extract<LogEntryWire, { kind: 'failure' }>): HarEntry {
+function failureEntry(redactor: Redactor, entry: Extract<LogEntryWire, { kind: 'failure' }>): HarEntry {
   const { failure } = entry;
   return {
     startedDateTime: failure.startedAt,
     time: failure.durationMs,
-    request: requestOf(entry, 'HTTP/1.1', failure.protocol === 'grpc'),
+    request: requestOf(redactor, entry, 'HTTP/1.1', failure.protocol === 'grpc'),
     response: {
       status: 0,
       statusText: '',
@@ -302,12 +310,14 @@ function failureEntry(entry: Extract<LogEntryWire, { kind: 'failure' }>): HarEnt
 }
 
 /** The HAR 1.2 document for `entries`, in the order given. */
-export function harOf(entries: readonly LogEntryWire[], creator: HarCreator): Har {
+export function harOf(redactor: Redactor, entries: readonly LogEntryWire[], creator: HarCreator): Har {
   return {
     log: {
       version: '1.2',
       creator: { name: creator.name, version: creator.version },
-      entries: entries.map((entry) => (entry.kind === 'exchange' ? exchangeEntry(entry) : failureEntry(entry))),
+      entries: entries.map((entry) =>
+        entry.kind === 'exchange' ? exchangeEntry(redactor, entry) : failureEntry(redactor, entry),
+      ),
     },
   };
 }

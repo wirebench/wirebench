@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import { TERMINAL_SHARE_CLOSE, type ConnectedWebSocket } from '@wirebench/engine';
-import type { WebContents } from 'electron';
+import { asCaller } from './helpers/ipc-table.js';
 import type { SessionTap } from '../src/main/ssh-service.js';
 import { framesOf, TerminalShareOwner } from '../src/main/terminal-share/owner.js';
 import { TerminalShareViewer } from '../src/main/terminal-share/viewer.js';
@@ -69,7 +69,7 @@ function sockets() {
   return { made, connect };
 }
 
-const sender = { id: 1, isDestroyed: () => false } as unknown as WebContents;
+const sender = asCaller({ id: 1, isDestroyed: () => false });
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 function owner() {

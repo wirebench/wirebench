@@ -4,8 +4,10 @@ import { WirebenchError } from '@wirebench/engine';
 import { channels, events } from '../src/shared/ipc.js';
 import { registerTeamSecretsChannels } from '../src/main/ipc/team-secrets.js';
 import { TEAM_SECRETS_OFF } from '../src/main/team-secrets-service.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -47,7 +49,7 @@ beforeEach(() => {
 
 describe('teamSecrets channels', () => {
   it('registers one handler per channel', () => {
-    registerTeamSecretsChannels(service());
+    registerTeamSecretsChannels(table, service());
     expect([...handlers.keys()].filter((name) => name.startsWith('teamSecrets.')).sort()).toEqual(
       Object.values(channels.teamSecrets)
         .map((channel) => channel.name)
@@ -83,7 +85,7 @@ describe('teamSecrets channels', () => {
 
   it.each(ROUTES)('routes %s to the service', async (channel, payload, method, args) => {
     const team = service();
-    registerTeamSecretsChannels(team);
+    registerTeamSecretsChannels(table, team);
     expect(await invoke(channel, payload)).toEqual({ ok: true, value: TEAM_SECRETS_OFF });
     expect(team[method]).toHaveBeenCalledWith(...args);
     for (const [name, other] of Object.entries(team)) {
@@ -95,7 +97,7 @@ describe('teamSecrets channels', () => {
 
   it('refuses a malformed entry id before it reaches the service', async () => {
     const team = service();
-    registerTeamSecretsChannels(team);
+    registerTeamSecretsChannels(table, team);
     for (const channel of ['teamSecrets.restoreMine', 'teamSecrets.dismissReplaced']) {
       const result = (await invoke(channel, { entryId: '../values/x' })) as { ok: boolean };
       expect(result.ok).toBe(false);
@@ -112,7 +114,7 @@ describe('teamSecrets channels', () => {
         'Too many requests for team secrets access. Try again in a few minutes.',
       ),
     );
-    registerTeamSecretsChannels(team);
+    registerTeamSecretsChannels(table, team);
     expect(await invoke('teamSecrets.requestAccess')).toMatchObject({
       ok: false,
       error: {
@@ -124,7 +126,7 @@ describe('teamSecrets channels', () => {
 
   it('refuses a malformed key id before it reaches the service', async () => {
     const team = service();
-    registerTeamSecretsChannels(team);
+    registerTeamSecretsChannels(table, team);
     const result = (await invoke('teamSecrets.approve', { keyId: '../../etc' })) as { ok: boolean };
     expect(result.ok).toBe(false);
     expect(team.approve).not.toHaveBeenCalled();

@@ -33,8 +33,15 @@ import {
 } from '../src/shared/kinds/ws/wire.js';
 import { wsApisOf } from '@wirebench/engine';
 import type { WsApi } from '@wirebench/engine';
+import { tableInto } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
+import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -45,7 +52,7 @@ vi.mock('electron', () => ({
 }));
 
 const { registerApiChannelsWithKinds } = await import('./helpers/kind-channels.js');
-type ApiChannelDeps = Parameters<typeof registerApiChannelsWithKinds>[0];
+type ApiChannelDeps = Parameters<typeof registerApiChannelsWithKinds>[1];
 
 const fixtures = fileURLToPath(new URL('../../../packages/engine/test/fixtures/asyncapi/', import.meta.url));
 
@@ -116,7 +123,15 @@ beforeEach(async () => {
   );
   await copyFile(join(fixtures, 'schemas.yaml'), join(projectDir, 'schemas.yaml'));
 
-  const host = new ProjectHost(new EngineService(), {}, undefined, undefined, undefined, undefined, new DialogPicks());
+  const host = new ProjectHost(
+    new EngineService(),
+    testHooks(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    new DialogPicks(),
+  );
   await host.create({ dir: join(projectDir, 'project'), name: 'Chat' });
   hosts.set('p1', host);
 
@@ -173,7 +188,7 @@ beforeEach(async () => {
     addProject: async (name) => {
       const created = new ProjectHost(
         new EngineService(),
-        {},
+        testHooks(),
         undefined,
         undefined,
         undefined,
@@ -190,11 +205,12 @@ beforeEach(async () => {
     },
     projectDirs: () => [projectDir],
     picks: new DialogPicks(),
+    dialogs: fakeNativeDialogs(),
     variablesPorts: unused,
     history: { open: unused, recordImportedRestBatch: unused },
     onHistoryChanged: unused,
   };
-  registerApiChannelsWithKinds(deps);
+  registerApiChannelsWithKinds(table, deps);
 });
 
 afterEach(() => {
@@ -401,9 +417,11 @@ describe('contract on the wire', () => {
         problems: [{ path: '/text', keyword: 'required', message: 'is required' }],
       },
     };
-    expect(wsFrameWireSchema.parse(toWsFrameWire(frame)).contract).toEqual(frame.contract);
+    expect(wsFrameWireSchema.parse(toWsFrameWire(hostState.redactor, frame)).contract).toEqual(frame.contract);
     const notChecked = { ...frame, contract: { status: 'not-checked' as const, reason: 'out of time' } };
-    expect(wsFrameWireSchema.parse(toWsFrameWire(notChecked)).contract).toEqual(notChecked.contract);
+    expect(wsFrameWireSchema.parse(toWsFrameWire(hostState.redactor, notChecked)).contract).toEqual(
+      notChecked.contract,
+    );
   });
 
   it("keeps a request's contract and orphaned flag, and a saved message's contract", () => {

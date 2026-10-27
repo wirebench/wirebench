@@ -17,14 +17,18 @@ import { EngineService } from '../src/main/engine-service.js';
 import { harOf } from '../src/main/har.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { type RequestChannelDeps } from '../src/main/ipc/request.js';
-import { recordSecretValue } from '../src/main/redact.js';
 import { ExchangeRegistry } from '../src/main/send/exchange.js';
 import type { HistoryEntryWire, LogEntryWire } from '../src/shared/wire-types.js';
 import type { WsExchangeSummary, WsFrameWire } from '../src/shared/kinds/ws/wire.js';
 import type { FailedExchangeWire, RequestCurlResponse } from '../src/shared/wire-base.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers, hostState.redactor);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -134,7 +138,8 @@ function registerOver(
 ): ExchangeRegistry {
   handlers.clear();
   const registry = new ExchangeRegistry();
-  registerRequestChannelsWithKinds(new EngineService(), {
+  registerRequestChannelsWithKinds(table, new EngineService(), {
+    hostState,
     project: {
       scopesFor: () => ({ project: { ...model.properties }, global: {}, system: {} }),
       ...projectExtra,
@@ -161,7 +166,7 @@ function push(sendId: string, content: string, format: 'text' | 'binary' = 'text
 }
 
 async function openHistory(): Promise<HistoryService> {
-  const history = new HistoryService(userDataDir);
+  const history = new HistoryService(userDataDir, hostState.redactor);
   await history.open('p1');
   return history;
 }
@@ -784,7 +789,7 @@ describe('the History and Log rows a session leaves', () => {
     return () => (ref: string) => {
       const name = parseSecretPseudoRef(ref);
       const found = name === undefined ? undefined : values[name];
-      if (found !== undefined) recordSecretValue(found);
+      if (found !== undefined) hostState.redactor.recordSecretValue(found);
       return Promise.resolve(found);
     };
   }
@@ -931,7 +936,7 @@ describe('the History and Log rows a session leaves', () => {
     // The message names the URL it could not dial: masked in the row, its HAR and the refusal alike.
     expect(failures[0]!.error.message).toContain('?k=<redacted>');
     const har = JSON.stringify(
-      harOf([{ kind: 'failure', failure: failures[0]! }], { name: 'Wirebench', version: '0' }),
+      harOf(hostState.redactor, [{ kind: 'failure', failure: failures[0]! }], { name: 'Wirebench', version: '0' }),
     );
     for (const value of [header, query]) {
       expect(JSON.stringify(failures)).not.toContain(value);

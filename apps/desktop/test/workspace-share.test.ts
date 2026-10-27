@@ -20,7 +20,7 @@ import {
   workspaceProjectDir,
 } from '@wirebench/engine';
 import type { GitCli } from '@wirebench/engine';
-import type { WebContents } from 'electron';
+import { asCaller } from './helpers/ipc-table.js';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
@@ -37,9 +37,12 @@ import {
   mkTempDir,
   removeTempDir,
 } from './sync/git-fixture.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const WAIT = { timeout: 15_000, interval: 50 };
-const sender = {} as WebContents;
+const sender = asCaller({});
 
 let base: string;
 let git: GitCli;
@@ -55,9 +58,10 @@ async function newService(
   await mkdir(root, { recursive: true });
   const trashed: string[] = [];
   const service = new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine: new EngineService(),
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     git: () => Promise.resolve(git),
     picks: new DialogPicks(),
     trash: (path) => {

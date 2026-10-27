@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerXpathChannels } from '../src/main/kinds/soap/channels/xpath.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -28,7 +30,7 @@ const ADD_RESPONSE =
 describe('xpath.* IPC', () => {
   beforeEach(() => {
     handlers.clear();
-    registerXpathChannels();
+    registerXpathChannels(table);
   });
 
   it('xpath.evaluate resolves an XPath 3.1 expression against the given xml', async () => {
@@ -150,7 +152,8 @@ describe('xpath.evaluate wiring (mocked engine)', () => {
     }));
 
     const { registerXpathChannels: register } = await import('../src/main/kinds/soap/channels/xpath.js');
-    register();
+    const { tableInto } = await import('./helpers/ipc-table.js');
+    register(tableInto(localHandlers));
     const handler = localHandlers.get('xpath.evaluate');
     expect(handler).toBeDefined();
     await handler?.({ sender: {} }, { xml: ADD_RESPONSE, expression: '//*', language: 'xpath' });

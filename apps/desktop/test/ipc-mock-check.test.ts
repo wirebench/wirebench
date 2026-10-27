@@ -9,8 +9,10 @@ import type { CheckMockStubsInput, MockStubCheck } from '@wirebench/engine';
 import { registerMockChannels } from '../src/main/ipc/mock.js';
 import { MockRunner } from '../src/main/mock-runner.js';
 import type { MockCheckResponse } from '../src/shared/wire-base.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -46,7 +48,7 @@ describe('mock.check', () => {
       ],
     };
     const checkStubs = vi.fn<(input: CheckMockStubsInput) => Promise<MockStubCheck>>().mockResolvedValue(found);
-    registerMockChannels(new MockRunner(), {
+    registerMockChannels(table, new MockRunner(), {
       locate: () => ({ projectId: 'p1', project, dir: '/tmp/shop' }),
       host: () => '127.0.0.1',
       owns: () => true,

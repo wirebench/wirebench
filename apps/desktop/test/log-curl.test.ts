@@ -4,6 +4,9 @@ import { curlForLogEntry, loggedRequestOf } from '../src/main/log-curl.js';
 import type { RestExchangeSummary } from '../src/shared/kinds/rest/wire.js';
 import type { WsHandshakeExchangeSummary } from '../src/shared/kinds/ws/wire.js';
 import type { FailedExchangeWire } from '../src/shared/wire-base.js';
+import { Redactor } from '../src/main/host/redactor.js';
+
+const redactor = new Redactor();
 
 function makeWsHandshakeExchange(overrides: Partial<WsHandshakeExchangeSummary> = {}): WsHandshakeExchangeSummary {
   return {
@@ -114,7 +117,7 @@ describe('loggedRequestOf', () => {
 describe('curlForLogEntry', () => {
   it('posix: method, URL, headers and body', () => {
     const entry = restEntry('POST /pets HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{"name":"a"}');
-    const { command, notes } = curlForLogEntry(entry, { shell: 'posix', show: false });
+    const { command, notes } = curlForLogEntry(redactor, entry, { shell: 'posix', show: false });
     expect(command).toContain("--request POST 'https://api.test/pets?page=2'");
     expect(command).toContain("--header 'Content-Type: application/json'");
     expect(command).toContain('{"name":"a"}');
@@ -123,12 +126,12 @@ describe('curlForLogEntry', () => {
 
   it('powershell uses its own program name', () => {
     const entry = restEntry('POST /pets HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{}');
-    expect(curlForLogEntry(entry, { shell: 'powershell', show: false }).command).toMatch(/^curl\.exe /);
+    expect(curlForLogEntry(redactor, entry, { shell: 'powershell', show: false }).command).toMatch(/^curl\.exe /);
   });
 
   it('a truncated body is omitted with a note', () => {
     const entry = restEntry('POST /pets HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{"na', true);
-    const result = curlForLogEntry(entry, { shell: 'posix', show: false });
+    const result = curlForLogEntry(redactor, entry, { shell: 'posix', show: false });
     expect(result.command).not.toContain('{"na');
     expect(result.notes).toEqual(['The request body was truncated in the log and is not included.']);
   });
@@ -137,10 +140,10 @@ describe('curlForLogEntry', () => {
     const secret = restEntry(
       'POST /t HTTP/1.1\r\nAuthorization: Bearer plain-token\r\nContent-Type: application/json\r\n\r\n{"password":"s3cr3t-placeholder"}',
     );
-    const masked = curlForLogEntry(secret, { shell: 'posix', show: false }).command;
+    const masked = curlForLogEntry(redactor, secret, { shell: 'posix', show: false }).command;
     expect(masked).not.toContain('plain-token');
     expect(masked).not.toContain('s3cr3t-placeholder');
-    expect(curlForLogEntry(secret, { shell: 'posix', show: true }).command).toContain('plain-token');
+    expect(curlForLogEntry(redactor, secret, { shell: 'posix', show: true }).command).toContain('plain-token');
 
     const failure = {
       kind: 'failure' as const,
@@ -148,27 +151,27 @@ describe('curlForLogEntry', () => {
         request: { url: 'http://h/x?api_key=k-placeholder', method: 'GET', headers: { Authorization: '<redacted>' } },
       }),
     };
-    const fromFailure = curlForLogEntry(failure, { shell: 'posix', show: true }).command;
+    const fromFailure = curlForLogEntry(redactor, failure, { shell: 'posix', show: true }).command;
     expect(fromFailure).not.toContain('k-placeholder');
     expect(fromFailure).toContain('<redacted>');
   });
 
   it('adds -N when the request asked for an event stream, and not otherwise', () => {
     const streaming = restEntry('GET /pets HTTP/1.1\r\nAccept: text/event-stream\r\n\r\n');
-    expect(curlForLogEntry(streaming, { shell: 'posix', show: false }).command).toContain('-N');
+    expect(curlForLogEntry(redactor, streaming, { shell: 'posix', show: false }).command).toContain('-N');
 
     const plain = restEntry('GET /pets HTTP/1.1\r\nAccept: application/json\r\n\r\n');
-    expect(curlForLogEntry(plain, { shell: 'posix', show: false }).command).not.toContain('-N');
+    expect(curlForLogEntry(redactor, plain, { shell: 'posix', show: false }).command).not.toContain('-N');
   });
 
   it('a WebSocket row uses wsToCommand with the original ws(s):// URL, masked unless shown', () => {
     const entry = { kind: 'exchange' as const, exchange: makeWsHandshakeExchange() };
-    const masked = curlForLogEntry(entry, { shell: 'posix', show: false });
+    const masked = curlForLogEntry(redactor, entry, { shell: 'posix', show: false });
     expect(masked.command).toContain('websocat');
     expect(masked.command).toContain("'wss://api.test/chat'");
     expect(masked.command).not.toContain('plain-token');
 
-    const shown = curlForLogEntry(entry, { shell: 'posix', show: true });
+    const shown = curlForLogEntry(redactor, entry, { shell: 'posix', show: true });
     expect(shown.command).toContain('plain-token');
   });
 });

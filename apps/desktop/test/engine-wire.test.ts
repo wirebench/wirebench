@@ -13,6 +13,9 @@ import {
 import * as redact from '../src/main/redact.js';
 import type { ExchangeSummary } from '../src/shared/kinds/soap/wire.js';
 import { fixturePath, readPublicFixture } from './helpers/fixtures.js';
+import { Redactor } from '../src/main/host/redactor.js';
+
+const redactor = new Redactor();
 
 const CALCULATOR_URL = 'http://example.test/calculator/service.wsdl';
 
@@ -145,7 +148,7 @@ function attachmentExchange(): SoapExchange {
 
 describe('toExchangeSummary attachments', () => {
   it('lists response attachments by index, with no bytes on the wire', () => {
-    const summary = toExchangeSummary(attachmentExchange(), 'send-1', { show: true });
+    const summary = toExchangeSummary(redactor, attachmentExchange(), 'send-1', { show: true });
 
     expect(summary.response?.attachments).toEqual([
       { index: 0, contentId: 'part1@wirebench', contentType: 'image/png', size: 3, name: 'logo.png' },
@@ -161,10 +164,10 @@ describe('toExchangeSummary attachments', () => {
     const exchange = attachmentExchange();
     const spy = vi.spyOn(redact, 'redactResponseAttachments');
 
-    toExchangeSummary(exchange, 'send-1', { show: true });
+    toExchangeSummary(redactor, exchange, 'send-1', { show: true });
     expect(spy).not.toHaveBeenCalled();
 
-    toExchangeSummary(exchange, 'send-1');
+    toExchangeSummary(redactor, exchange, 'send-1');
     expect(spy).toHaveBeenCalledTimes(1);
 
     spy.mockRestore();
@@ -172,6 +175,7 @@ describe('toExchangeSummary attachments', () => {
 
   it('lists no attachments for a response that carried none', () => {
     const summary = toExchangeSummary(
+      redactor,
       {
         durationMs: 1,
         http: {
@@ -289,7 +293,7 @@ describe('toExchangeSummary', () => {
       problems: [{ code: 'not-soap', message: 'not soap' }],
     };
 
-    const wire = toExchangeSummary(exchange, 'send-1');
+    const wire = toExchangeSummary(redactor, exchange, 'send-1');
 
     expect(wire.sendId).toBe('send-1');
     expect(Buffer.from(wire.http.bodyBase64, 'base64')).toEqual(Buffer.from(http.body));
@@ -309,14 +313,14 @@ describe('toExchangeSummary', () => {
     };
     const exchange: SoapExchange = { http: withCookie, durationMs: 1, problems: [] };
 
-    const wire = toExchangeSummary(exchange, 'send-3');
+    const wire = toExchangeSummary(redactor, exchange, 'send-3');
     expect(wire.http.rawHeaders.filter(([name]) => name === 'Set-Cookie').map(([, value]) => value)).toEqual([
       '<redacted>',
       '<redacted>',
     ]);
     expect(JSON.stringify(wire)).not.toContain('sid=abc');
 
-    const shown = toExchangeSummary(exchange, 'send-4', { show: true });
+    const shown = toExchangeSummary(redactor, exchange, 'send-4', { show: true });
     expect(shown.http.rawHeaders).toContainEqual(['Set-Cookie', 'sid=abc; HttpOnly']);
   });
 
@@ -353,7 +357,7 @@ describe('toExchangeSummary', () => {
         },
       },
     };
-    const incoming = toExchangeSummary(exchange, 'send-wss').wss?.incoming;
+    const incoming = toExchangeSummary(redactor, exchange, 'send-wss').wss?.incoming;
     expect(incoming?.actions[0]?.check).toEqual(check);
     expect(incoming?.actions[1]).toMatchObject({ skewSeconds: 3, toleranceSeconds: 300 });
     expect(incoming?.timeline).toEqual([
@@ -362,7 +366,7 @@ describe('toExchangeSummary', () => {
   });
 
   it('omits `response` when the exchange had none', () => {
-    const wire = toExchangeSummary({ http: fakeHttpExchange(), durationMs: 5, problems: [] }, 'send-2');
+    const wire = toExchangeSummary(redactor, { http: fakeHttpExchange(), durationMs: 5, problems: [] }, 'send-2');
     expect(wire.response).toBeUndefined();
   });
 
@@ -391,7 +395,7 @@ describe('toExchangeSummary', () => {
       },
     };
 
-    const wire = toExchangeSummary({ http, durationMs: 1, problems: [] }, 'send-tls');
+    const wire = toExchangeSummary(redactor, { http, durationMs: 1, problems: [] }, 'send-tls');
 
     expect(wire.http.tls).toEqual(http.tls);
     // Deep-copied, not aliased: the wire object must not share arrays with the engine's.
@@ -402,7 +406,7 @@ describe('toExchangeSummary', () => {
 
   it('leaves `tls` absent for a plain-HTTP exchange', () => {
     expect(
-      toExchangeSummary({ http: fakeHttpExchange(), durationMs: 1, problems: [] }, 'send-plain').http.tls,
+      toExchangeSummary(redactor, { http: fakeHttpExchange(), durationMs: 1, problems: [] }, 'send-plain').http.tls,
     ).toBeUndefined();
   });
 });
@@ -444,11 +448,11 @@ describe('redactExchangeSummary', () => {
       problems: [],
     };
 
-    const redacted = redactExchangeSummary(summary);
+    const redacted = redactExchangeSummary(redactor, summary);
     expect(redacted.response?.envelopeXml).toContain('&lt;redacted&gt;');
     expect(redacted.response?.envelopeXml).not.toContain('s3cret');
 
-    const shown = redactExchangeSummary(summary, { show: true });
+    const shown = redactExchangeSummary(redactor, summary, { show: true });
     expect(shown.response?.envelopeXml).toContain('s3cret');
   });
 
@@ -498,11 +502,11 @@ describe('redactExchangeSummary', () => {
       problems: [],
     };
 
-    const redacted = redactExchangeSummary(summary);
+    const redacted = redactExchangeSummary(redactor, summary);
     expect(redacted.response?.fault?.detailXml).toContain('&lt;redacted&gt;');
     expect(redacted.response?.fault?.detailXml).not.toContain('s3cret');
 
-    const shown = redactExchangeSummary(summary, { show: true });
+    const shown = redactExchangeSummary(redactor, summary, { show: true });
     expect(shown.response?.fault?.detailXml).toContain('s3cret');
   });
 });
@@ -536,7 +540,7 @@ describe('toRestExchangeSummary — an API key in the query', () => {
   }
 
   it('masks a recorded secret an echoing server put in the body, the raw body and the decoded text', () => {
-    redact.recordSecretValue('echoed-secret-value-284');
+    redactor.recordSecretValue('echoed-secret-value-284');
     const echoed = new TextEncoder().encode('{"echo":"echoed-secret-value-284"}');
     const binary = Buffer.concat([
       Buffer.from([0x00, 0xff, 0x0a]),
@@ -550,7 +554,7 @@ describe('toRestExchangeSummary — an API key in the query', () => {
       text: '{"echo":"echoed-secret-value-284"}',
     };
 
-    const hidden = toRestExchangeSummary(exchange, 's1', { method: 'GET' });
+    const hidden = toRestExchangeSummary(redactor, exchange, 's1', { method: 'GET' });
     expect(Buffer.from(hidden.http.bodyBase64, 'base64').toString('utf8')).not.toContain('echoed-secret-value-284');
     const raw = Buffer.from(hidden.http.rawBodyBase64, 'base64');
     expect(raw.includes(Buffer.from('echoed-secret-value-284'))).toBe(false);
@@ -560,28 +564,30 @@ describe('toRestExchangeSummary — an API key in the query', () => {
     // The decoded text the pane renders and copies is masked at this one source.
     expect(hidden.text).not.toContain('echoed-secret-value-284');
 
-    const shown = toRestExchangeSummary(exchange, 's2', { method: 'GET', show: true });
+    const shown = toRestExchangeSummary(redactor, exchange, 's2', { method: 'GET', show: true });
     expect(Buffer.from(shown.http.bodyBase64, 'base64').toString('utf8')).toContain('echoed-secret-value-284');
     expect(Buffer.from(shown.http.rawBodyBase64, 'base64')).toEqual(binary);
     expect(shown.text).toContain('echoed-secret-value-284');
   });
 
   it('writes the escaped marker into decoded XML and HTML text, the raw one into JSON', () => {
-    redact.recordSecretValue('echoed-markup-secret-284');
+    redactor.recordSecretValue('echoed-markup-secret-284');
     const cases = [
       { language: 'xml', text: '<echo>echoed-markup-secret-284</echo>', marker: '&lt;redacted&gt;' },
       { language: 'html', text: '<p>echoed-markup-secret-284</p>', marker: '&lt;redacted&gt;' },
       { language: 'json', text: '{"echo":"echoed-markup-secret-284"}', marker: '<redacted>' },
     ] as const;
     for (const { language, text, marker } of cases) {
-      const summary = toRestExchangeSummary({ ...restExchange('/x'), text, language }, 's1', { method: 'GET' });
+      const summary = toRestExchangeSummary(redactor, { ...restExchange('/x'), text, language }, 's1', {
+        method: 'GET',
+      });
       expect(summary.text).not.toContain('echoed-markup-secret-284');
       expect(summary.text).toContain(marker);
     }
   });
 
   it('masks the keyParams parameter on the raw request line', () => {
-    const summary = toRestExchangeSummary(restExchange('/calc?key=secret123&a=1'), 's1', {
+    const summary = toRestExchangeSummary(redactor, restExchange('/calc?key=secret123&a=1'), 's1', {
       method: 'GET',
       keyParams: ['key'],
     });
@@ -595,13 +601,16 @@ describe('toRestExchangeSummary — an API key in the query', () => {
 
   it('matches a URL-encoded name with either space encoding', () => {
     for (const target of ['/calc?api+key=secret123', '/calc?api%20key=secret123', '/calc?%61pi%20key=secret123']) {
-      const summary = toRestExchangeSummary(restExchange(target), 's1', { method: 'GET', keyParams: ['api key'] });
+      const summary = toRestExchangeSummary(redactor, restExchange(target), 's1', {
+        method: 'GET',
+        keyParams: ['api key'],
+      });
       expect(rawRequestLine(summary)).not.toContain('secret123');
     }
   });
 
   it('leaves the request line alone when show is set', () => {
-    const summary = toRestExchangeSummary(restExchange('/calc?key=secret123'), 's1', {
+    const summary = toRestExchangeSummary(redactor, restExchange('/calc?key=secret123'), 's1', {
       method: 'GET',
       show: true,
       keyParams: ['key'],
@@ -639,6 +648,7 @@ describe('toRestExchangeSummary — the cookie jar verdicts', () => {
 
   it("marks each cookie with the jar's verdict", () => {
     const summary = toRestExchangeSummary(
+      redactor,
       withCookies({ cookieVerdicts: [{ stored: true }, { stored: false, reason: 'domain-mismatch' }] }),
       's1',
       { method: 'GET' },
@@ -650,7 +660,7 @@ describe('toRestExchangeSummary — the cookie jar verdicts', () => {
   });
 
   it('marks nothing when the send had no jar', () => {
-    const summary = toRestExchangeSummary(withCookies({}), 's1', { method: 'GET' });
+    const summary = toRestExchangeSummary(redactor, withCookies({}), 's1', { method: 'GET' });
     expect(summary.cookies.map((cookie) => cookie.jar)).toEqual([undefined, undefined]);
   });
 });

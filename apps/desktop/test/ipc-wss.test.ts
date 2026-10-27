@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerWssChannels } from '../src/main/kinds/soap/channels/wss.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -37,7 +39,7 @@ describe('wss.* IPC', () => {
   beforeEach(() => {
     handlers.clear();
     vi.clearAllMocks();
-    registerWssChannels({ project });
+    registerWssChannels(table, { project });
   });
 
   it('masks the password in a preview', async () => {

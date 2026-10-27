@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { b64, makeRestExchange } from './mocks/wire-fixtures.js';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 const pickSaveFile = vi.fn<() => Promise<string | undefined>>();
 vi.mock('electron', () => ({ ipcMain: { handle: (n: string, h: never) => handlers.set(n, h) } }));
-vi.mock('../src/main/native-dialogs.js', () => ({
-  pickSaveFile: (...args: unknown[]) => pickSaveFile(...(args as [])),
-}));
+const dialogs = { pickSaveFile: (...args: unknown[]) => pickSaveFile(...(args as [])) };
 
 const { registerLogChannels } = await import('../src/main/ipc/log.js');
 const invoke = (channel: string, payload: unknown) => handlers.get(channel)!({ sender: {} }, payload);
@@ -40,11 +40,12 @@ describe('log.exportHar', () => {
   beforeEach(() => {
     handlers.clear();
     pickSaveFile.mockReset();
-    registerLogChannels({
+    registerLogChannels(table, {
       showSecrets: { get: () => true },
       service: {} as never,
       request: {} as never,
       picks: { rememberWrite: vi.fn() },
+      dialogs,
       appVersion: '1.2.3',
     });
   });
@@ -64,7 +65,7 @@ describe('log.exportHar', () => {
       version: '1.2.3',
     });
     const [call] = pickSaveFile.mock.calls as unknown as [unknown, unknown, { defaultPath: string }][];
-    expect(call?.[0]).toEqual({});
+    expect(call?.[0]).toBeDefined();
     expect(call?.[2].defaultPath).toMatch(/^wirebench-\d{8}-\d{6}\.har$/);
   });
 

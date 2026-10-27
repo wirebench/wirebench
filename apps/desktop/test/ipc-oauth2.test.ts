@@ -8,8 +8,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
 import type { AuthConfig, OAuth2Auth } from '@wirebench/engine';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -95,7 +97,7 @@ function harness(
       await fetch(url, { redirect: 'follow' });
     },
   });
-  registerOAuth2Channels({
+  registerOAuth2Channels(table, {
     oauth2,
     project: {
       restAuthOf: (id: string) => owners[id],

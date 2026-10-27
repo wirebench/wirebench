@@ -4,6 +4,7 @@
  * `ipcMain` imports so they can be unit-tested directly against real engine output.
  */
 
+import type { Redactor } from './host/redactor.js';
 import {
   capSseRows,
   endpointUrlFromContract,
@@ -12,17 +13,7 @@ import {
   SSE_SUMMARY_LIMITS,
   wsaActionKey,
 } from '@wirebench/engine';
-import {
-  redactHeaderPairs,
-  redactHeaders,
-  redactUrl,
-  redactRawHttp,
-  redactResponseAttachments,
-  redactSecretBytes,
-  redactSecretText,
-  redactXml,
-  REDACTED_MARKER,
-} from './redact.js';
+import { redactResponseAttachments, REDACTED_MARKER } from './redact.js';
 import type {
   AuthSummary,
   RestContractResult,
@@ -227,6 +218,7 @@ function toTlsWire(tls: SslInfo): SslInfoWire {
  * default: the engine's own in-memory state is never touched by this.
  */
 export function toHttpExchangeWire(
+  redactor: Redactor,
   http: HttpExchange,
   opts?: { show?: boolean; keyParams?: readonly string[]; keyHeaders?: readonly string[] },
 ): HttpExchangeWire {
@@ -238,26 +230,30 @@ export function toHttpExchangeWire(
   return {
     status: http.status,
     statusText: http.statusText,
-    headers: redactHeaders(http.headers, { show }),
-    rawHeaders: redactHeaderPairs(http.rawHeaders, { show }),
+    headers: redactor.redactHeaders(http.headers, { show }),
+    rawHeaders: redactor.redactHeaderPairs(http.rawHeaders, { show }),
     // A server may echo a request field back: every recorded value is masked in the bytes, whatever
     // they are (a binary body keeps its other bytes). Masking can change the length, so these are
     // for display; `truncated` and the exchange's sizes describe what the server sent.
-    bodyBase64: redactSecretBytes(toBase64(http.body), { show }),
-    rawBodyBase64: redactSecretBytes(toBase64(http.rawBody), { show }),
-    rawRequestBase64: redactRawHttp(toBase64(http.rawRequest), { ...urlOpts, ...headerOpts, encoding: 'base64' }),
-    rawResponseBase64: redactRawHttp(toBase64(http.rawResponse), { show, encoding: 'base64' }),
+    bodyBase64: redactor.redactSecretBytes(toBase64(http.body), { show }),
+    rawBodyBase64: redactor.redactSecretBytes(toBase64(http.rawBody), { show }),
+    rawRequestBase64: redactor.redactRawHttp(toBase64(http.rawRequest), {
+      ...urlOpts,
+      ...headerOpts,
+      encoding: 'base64',
+    }),
+    rawResponseBase64: redactor.redactRawHttp(toBase64(http.rawResponse), { show, encoding: 'base64' }),
     truncated: http.truncated,
     httpVersion: http.httpVersion,
     ...(http.decodeError !== undefined ? { decodeError: http.decodeError } : {}),
     timings: { ...http.timings },
     // The first hop is the URL that went on the wire, so it carries a query API key too.
-    redirects: http.redirects.map((redirect) => ({ ...redirect, url: redactUrl(redirect.url, urlOpts) })),
+    redirects: http.redirects.map((redirect) => ({ ...redirect, url: redactor.redactUrl(redirect.url, urlOpts) })),
     ...(http.tls !== undefined ? { tls: toTlsWire(http.tls) } : {}),
     request: {
-      url: redactUrl(http.request.url, urlOpts),
+      url: redactor.redactUrl(http.request.url, urlOpts),
       method: http.request.method,
-      headers: redactHeaders(http.request.headers, headerOpts),
+      headers: redactor.redactHeaders(http.request.headers, headerOpts),
     },
     ...keyNamesOf(opts),
   };
@@ -281,7 +277,7 @@ function keyNamesOf(opts?: {
  * field. A server may echo a request field back, as over a WebSocket, so an event's data and a
  * comment's text have every secret value main handed out masked unless `show`.
  */
-export function toSseRowWire(row: SseRow, opts?: { readonly show?: boolean }): SseRowWire {
+export function toSseRowWire(redactor: Redactor, row: SseRow, opts?: { readonly show?: boolean }): SseRowWire {
   const show = opts?.show ?? false;
   if (row.kind === 'event') {
     return {
@@ -290,7 +286,7 @@ export function toSseRowWire(row: SseRow, opts?: { readonly show?: boolean }): S
       at: row.at,
       size: row.size,
       event: row.event,
-      data: redactSecretText(row.data, { show }),
+      data: redactor.redactSecretText(row.data, { show }),
       ...(row.id !== undefined ? { id: row.id } : {}),
       lastEventId: row.lastEventId,
       ...(row.payloadTruncated !== undefined ? { payloadTruncated: row.payloadTruncated } : {}),
@@ -302,7 +298,7 @@ export function toSseRowWire(row: SseRow, opts?: { readonly show?: boolean }): S
       index: row.index,
       at: row.at,
       size: row.size,
-      text: redactSecretText(row.text, { show }),
+      text: redactor.redactSecretText(row.text, { show }),
     };
   }
   return { kind: 'retry', index: row.index, at: row.at, size: row.size, ms: row.ms };
@@ -315,12 +311,13 @@ export function toSseRowWire(row: SseRow, opts?: { readonly show?: boolean }): S
  * already reported live, one `rest.live` `row` event each, as they arrived.
  */
 export function toRestEventStreamWire(
+  redactor: Redactor,
   stream: RestEventStream,
   opts?: { readonly show?: boolean },
 ): RestEventStreamWire {
   const capped = capSseRows(stream.rows, SSE_SUMMARY_LIMITS);
   return {
-    rows: capped.rows.map((row) => toSseRowWire(row, opts)),
+    rows: capped.rows.map((row) => toSseRowWire(redactor, row, opts)),
     counts: { ...stream.counts },
     lastEventId: stream.lastEventId,
     ...(stream.retryMs !== undefined ? { retryMs: stream.retryMs } : {}),
@@ -359,6 +356,7 @@ export function toRestContractWire(result: RestContractResult): RestContractResu
  * key called something this build has never heard of is masked too.
  */
 export function toRestExchangeSummary(
+  redactor: Redactor,
   exchange: RestExchange,
   sendId: string,
   context: {
@@ -374,17 +372,20 @@ export function toRestExchangeSummary(
     durationMs: exchange.durationMs,
     // A `RestExchange` *is* an `HttpExchange` with the decoded body added, so the same projection
     // the SOAP path uses applies to it directly.
-    http: toHttpExchangeWire(exchange, {
+    http: toHttpExchangeWire(redactor, exchange, {
       show,
       ...(context.keyParams !== undefined ? { keyParams: context.keyParams } : {}),
       ...(context.keyHeaders !== undefined ? { keyHeaders: context.keyHeaders } : {}),
     }),
-    url: redactUrl(exchange.request.url, {
+    url: redactor.redactUrl(exchange.request.url, {
       show,
       ...(context.keyParams !== undefined ? { extraParams: context.keyParams } : {}),
     }),
     method: context.method,
-    text: redactSecretText(exchange.text, { show, xml: exchange.language === 'xml' || exchange.language === 'html' }),
+    text: redactor.redactSecretText(exchange.text, {
+      show,
+      xml: exchange.language === 'xml' || exchange.language === 'html',
+    }),
     language: exchange.language,
     ...(exchange.decodeNote !== undefined ? { decodeNote: exchange.decodeNote } : {}),
     cookies: exchange.cookies.map((cookie, index) => {
@@ -393,8 +394,8 @@ export function toRestExchangeSummary(
     }),
     methodChanged: exchange.methodChanged,
     problems: [],
-    ...(exchange.auth !== undefined ? { auth: toAuthSummaryWire(exchange.auth, show) } : {}),
-    ...(exchange.stream !== undefined ? { stream: toRestEventStreamWire(exchange.stream, { show }) } : {}),
+    ...(exchange.auth !== undefined ? { auth: toAuthSummaryWire(redactor, exchange.auth, show) } : {}),
+    ...(exchange.stream !== undefined ? { stream: toRestEventStreamWire(redactor, exchange.stream, { show }) } : {}),
   };
 }
 
@@ -403,11 +404,12 @@ export function toRestExchangeSummary(
  * (an `x-amz-security-token` header line, or the presign parameter) and a presign's access key id;
  * both are masked unless the session shows secrets, by name as well as by recorded value.
  */
-export function toAuthSummaryWire(auth: AuthSummary, show: boolean): AuthSummaryWire {
+export function toAuthSummaryWire(redactor: Redactor, auth: AuthSummary, show: boolean): AuthSummaryWire {
   const mask = (text: string): string =>
     show
       ? text
-      : redactSecretText(text, { show })
+      : redactor
+          .redactSecretText(text, { show })
           .replace(/^(x-amz-security-token:).*$/gim, `$1${REDACTED_MARKER}`)
           .replace(/(X-Amz-(?:Security-Token|Credential)=)[^&\n]*/g, `$1${REDACTED_MARKER}`);
   return {
@@ -444,44 +446,48 @@ export function toAuthSummaryWire(auth: AuthSummary, show: boolean): AuthSummary
  * for nothing. `bytes` stays the size the server sent, as a WebSocket frame's `size` does.
  */
 export function toGrpcResponseMessageWire(
+  redactor: Redactor,
   message: GrpcResponseMessage,
   opts?: { readonly show?: boolean },
 ): GrpcResponseMessageWire {
   const show = opts?.show ?? false;
   const json =
-    message.json !== undefined ? redactSecretText(JSON.stringify(message.json, null, 2), { show }) : undefined;
+    message.json !== undefined ? redactor.redactSecretText(JSON.stringify(message.json, null, 2), { show }) : undefined;
   return {
     ...(json !== undefined ? { json } : {}),
     // Masking can change the length: `bytes` stays the size the server sent, these are for display.
-    base64: redactSecretBytes(message.base64, { show }),
+    base64: redactor.redactSecretBytes(message.base64, { show }),
     bytes: message.bytes,
     ...(message.problem !== undefined ? { problem: message.problem } : {}),
   };
 }
 
 export function toGrpcExchangeSummary(
+  redactor: Redactor,
   result: GrpcCallResult,
   sendId: string,
   context: { readonly show?: boolean },
 ): GrpcExchangeSummary {
   const show = context.show ?? false;
   const exchange = result.exchange;
-  const responseMessages = result.responseMessages.map((message) => toGrpcResponseMessageWire(message, { show }));
+  const responseMessages = result.responseMessages.map((message) =>
+    toGrpcResponseMessageWire(redactor, message, { show }),
+  );
   const bodyText = responseMessages.map((message) => message.json ?? message.base64).join('\n');
   const http: HttpExchangeWire = {
     status: exchange.httpStatus,
     statusText: exchange.statusName,
-    headers: redactHeaders(exchange.headers, { show }),
-    rawHeaders: redactHeaderPairs(Object.entries(exchange.headers), { show }),
+    headers: redactor.redactHeaders(exchange.headers, { show }),
+    rawHeaders: redactor.redactHeaderPairs(Object.entries(exchange.headers), { show }),
     bodyBase64: toBase64(Buffer.from(bodyText, 'utf8')),
     // Masked for display, so its length can differ from the sum of the messages' `bytes`, which stay
     // the sizes the server sent.
-    rawBodyBase64: redactSecretBytes(
+    rawBodyBase64: redactor.redactSecretBytes(
       toBase64(exchange.messages.reduce<Uint8Array>((all, one) => Buffer.concat([all, one]), new Uint8Array())),
       { show },
     ),
-    rawRequestBase64: redactRawHttp(toBase64(exchange.rawRequest), { show, encoding: 'base64' }),
-    rawResponseBase64: redactRawHttp(toBase64(exchange.rawResponse), { show, encoding: 'base64' }),
+    rawRequestBase64: redactor.redactRawHttp(toBase64(exchange.rawRequest), { show, encoding: 'base64' }),
+    rawResponseBase64: redactor.redactRawHttp(toBase64(exchange.rawResponse), { show, encoding: 'base64' }),
     truncated: exchange.truncated,
     httpVersion: '2',
     timings: { ...exchange.timings },
@@ -490,7 +496,7 @@ export function toGrpcExchangeSummary(
     request: {
       url: `${exchange.request.headers[':scheme'] ?? 'http'}://${exchange.request.authority}${exchange.request.path}`,
       method: 'POST',
-      headers: redactHeaders(
+      headers: redactor.redactHeaders(
         Object.fromEntries(Object.entries(exchange.request.headers).filter(([name]) => !name.startsWith(':'))),
         { show },
       ),
@@ -508,14 +514,14 @@ export function toGrpcExchangeSummary(
     statusName: exchange.statusName,
     // The server's own text, which may echo a request field as a message can.
     ...(exchange.statusMessage !== undefined
-      ? { statusMessage: redactSecretText(exchange.statusMessage, { show }) }
+      ? { statusMessage: redactor.redactSecretText(exchange.statusMessage, { show }) }
       : {}),
     statusSource: exchange.statusSource,
-    headers: redactHeaders(exchange.headers, { show }),
-    trailers: redactHeaders(exchange.trailers, { show }),
+    headers: redactor.redactHeaders(exchange.headers, { show }),
+    trailers: redactor.redactHeaders(exchange.trailers, { show }),
     // A request message may carry a `${secret:name}` value the send resolved into it.
     requestMessages: result.requestMessages.map((message) =>
-      redactSecretText(JSON.stringify(message, null, 2), { show }),
+      redactor.redactSecretText(JSON.stringify(message, null, 2), { show }),
     ),
     responseMessages,
     ...(exchange.encoding !== undefined ? { encoding: exchange.encoding } : {}),
@@ -540,7 +546,7 @@ export function toWsFrameContractWire(contract: WsFrameContract): WsFrameContrac
  * `${secret:name}` token, and the same value echoed back. So do a binary payload's bytes, whatever
  * encoding surrounds the value, and a close frame's reason.
  */
-export function toWsFrameWire(frame: WsFrame, opts?: { readonly show?: boolean }): WsFrameWire {
+export function toWsFrameWire(redactor: Redactor, frame: WsFrame, opts?: { readonly show?: boolean }): WsFrameWire {
   const show = opts?.show ?? false;
   return {
     index: frame.index,
@@ -548,11 +554,11 @@ export function toWsFrameWire(frame: WsFrame, opts?: { readonly show?: boolean }
     opcode: frame.opcode,
     at: frame.at,
     size: frame.size,
-    ...(frame.text !== undefined ? { text: redactSecretText(frame.text, { show }) } : {}),
+    ...(frame.text !== undefined ? { text: redactor.redactSecretText(frame.text, { show }) } : {}),
     // Masking can change a payload's length; `size` stays its size on the wire.
-    ...(frame.base64 !== undefined ? { base64: redactSecretBytes(frame.base64, { show }) } : {}),
+    ...(frame.base64 !== undefined ? { base64: redactor.redactSecretBytes(frame.base64, { show }) } : {}),
     ...(frame.close !== undefined
-      ? { close: { code: frame.close.code, reason: redactSecretText(frame.close.reason, { show }) } }
+      ? { close: { code: frame.close.code, reason: redactor.redactSecretText(frame.close.reason, { show }) } }
       : {}),
     ...(frame.payloadTruncated !== undefined ? { payloadTruncated: frame.payloadTruncated } : {}),
     ...(frame.contract !== undefined ? { contract: toWsFrameContractWire(frame.contract) } : {}),
@@ -562,7 +568,7 @@ export function toWsFrameWire(frame: WsFrame, opts?: { readonly show?: boolean }
 /**
  * Converts one engine `WsHandshake` to its wire form, header values redacted unless `show` — the
  * same redactor and the same switch `toGrpcExchangeSummary` uses. `rawRequestHead` carries the
- * same header lines as `requestHeaders`, so it is redacted line-by-line with `redactRawHttp`'s
+ * same header lines as `requestHeaders`, so it is redacted line-by-line with `redactor.redactRawHttp`'s
  * `encoding: 'text'` mode rather than dropped.
  *
  * `url` is redacted too, the same way a REST exchange's `url` is (`toRestExchangeSummary`): an
@@ -571,21 +577,25 @@ export function toWsFrameWire(frame: WsFrame, opts?: { readonly show?: boolean }
  * `opts.keyParams` names the query parameter(s) to mask regardless of what they are called.
  */
 export function toWsHandshakeWire(
+  redactor: Redactor,
   handshake: WsHandshake,
   opts?: { readonly show?: boolean; readonly keyParams?: readonly string[] },
 ): WsHandshakeWire {
   const show = opts?.show ?? false;
   return {
-    url: redactUrl(handshake.url, { show, ...(opts?.keyParams !== undefined ? { extraParams: opts.keyParams } : {}) }),
-    requestHeaders: redactHeaders(handshake.requestHeaders, { show }),
+    url: redactor.redactUrl(handshake.url, {
+      show,
+      ...(opts?.keyParams !== undefined ? { extraParams: opts.keyParams } : {}),
+    }),
+    requestHeaders: redactor.redactHeaders(handshake.requestHeaders, { show }),
     requestedSubprotocols: [...handshake.requestedSubprotocols],
     ...(handshake.rawRequestHead !== undefined
-      ? { rawRequestHead: redactRawHttp(handshake.rawRequestHead, { show, encoding: 'text' }) }
+      ? { rawRequestHead: redactor.redactRawHttp(handshake.rawRequestHead, { show, encoding: 'text' }) }
       : {}),
     ...(handshake.status !== undefined ? { status: handshake.status } : {}),
     ...(handshake.statusText !== undefined ? { statusText: handshake.statusText } : {}),
     ...(handshake.responseHeaders !== undefined
-      ? { responseHeaders: redactHeaders(handshake.responseHeaders, { show }) }
+      ? { responseHeaders: redactor.redactHeaders(handshake.responseHeaders, { show }) }
       : {}),
     ...(handshake.protocol !== undefined ? { protocol: handshake.protocol } : {}),
     ...(handshake.extensions !== undefined ? { extensions: handshake.extensions } : {}),
@@ -603,20 +613,24 @@ export function toWsHandshakeWire(
  * handshake's own `url` — see {@link toWsHandshakeWire}.
  */
 export function toWsExchangeSummary(
+  redactor: Redactor,
   exchange: WsExchange,
   sendId: string,
   opts?: { readonly show?: boolean; readonly keyParams?: readonly string[] },
 ): WsExchangeSummary {
   return {
     sendId,
-    url: redactUrl(exchange.url, {
+    url: redactor.redactUrl(exchange.url, {
       show: opts?.show ?? false,
       ...(opts?.keyParams !== undefined ? { extraParams: opts.keyParams } : {}),
     }),
-    handshake: toWsHandshakeWire(exchange.handshake, opts),
-    frames: exchange.frames.map((frame) => toWsFrameWire(frame, opts)),
+    handshake: toWsHandshakeWire(redactor, exchange.handshake, opts),
+    frames: exchange.frames.map((frame) => toWsFrameWire(redactor, frame, opts)),
     // The server's close reason may echo a request field, as a frame's payload may.
-    closed: { ...exchange.closed, reason: redactSecretText(exchange.closed.reason, { show: opts?.show ?? false }) },
+    closed: {
+      ...exchange.closed,
+      reason: redactor.redactSecretText(exchange.closed.reason, { show: opts?.show ?? false }),
+    },
     counts: { ...exchange.counts },
     durationMs: exchange.durationMs,
   };
@@ -646,7 +660,7 @@ export function toUnresolvedRefWire(ref: UnresolvedRef): UnresolvedRefWire {
  * `Content-Disposition` carrying a token has one place to be masked.
  *
  * `opts.show` is honoured like every other field's: this same builder fills the unredacted
- * master copy the `ExchangeCache` keeps (`toExchangeSummary(..., { show: true })`), and masking
+ * master copy the `ExchangeCache` keeps (`toExchangeSummary(redactor, ..., { show: true })`), and masking
  * that copy would make the masking irreversible — `exchanges.get` could never un-hide it again.
  */
 export function toResponseAttachmentWires(
@@ -701,11 +715,16 @@ export function toTimelineStepWire(step: WssTimelineStep): WssTimelineStepWire {
   };
 }
 
-export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?: { show?: boolean }): ExchangeSummary {
+export function toExchangeSummary(
+  redactor: Redactor,
+  exchange: SoapExchange,
+  sendId: string,
+  opts?: { show?: boolean },
+): ExchangeSummary {
   return {
     sendId,
     durationMs: exchange.durationMs,
-    http: toHttpExchangeWire(exchange.http, opts),
+    http: toHttpExchangeWire(redactor, exchange.http, opts),
     ...(exchange.response !== undefined
       ? {
           response: {
@@ -718,7 +737,7 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?:
         }
       : {}),
     problems: exchange.problems.map((problem) => ({ code: problem.code, message: problem.message })),
-    ...(exchange.auth !== undefined ? { auth: toAuthSummaryWire(exchange.auth, opts?.show ?? false) } : {}),
+    ...(exchange.auth !== undefined ? { auth: toAuthSummaryWire(redactor, exchange.auth, opts?.show ?? false) } : {}),
     ...(exchange.unresolved !== undefined ? { unresolved: exchange.unresolved.map(toUnresolvedRefWire) } : {}),
     ...(exchange.wsa !== undefined
       ? {
@@ -766,10 +785,10 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?:
 
 /**
  * Masks `keyParams` in the request line of raw request bytes (`POST /calc?key=… HTTP/1.1`), which
- * `redactRawHttp` leaves alone because it reads headers, not the target. A no-op without
+ * `redactor.redactRawHttp` leaves alone because it reads headers, not the target. A no-op without
  * `keyParams`, so an exchange with no query API key keeps its bytes exactly as sent.
  */
-function redactRequestTarget(rawBase64: string, keyParams: readonly string[]): string {
+function redactRequestTarget(redactor: Redactor, rawBase64: string, keyParams: readonly string[]): string {
   if (keyParams.length === 0) {
     return rawBase64;
   }
@@ -783,7 +802,7 @@ function redactRequestTarget(rawBase64: string, keyParams: readonly string[]): s
   if (match === null || !match[2]!.includes('?')) {
     return rawBase64;
   }
-  const target = maskTarget(match[2]!, keyParams);
+  const target = maskTarget(redactor, match[2]!, keyParams);
   return Buffer.concat([Buffer.from(`${match[1]!} ${target} ${match[3]!}`, 'latin1'), raw.subarray(end)]).toString(
     'base64',
   );
@@ -794,14 +813,14 @@ function redactRequestTarget(rawBase64: string, keyParams: readonly string[]): s
  * under a placeholder origin and rebuilt from the parsed path and query, never by trimming a
  * string prefix; an absolute-form one is a URL already. Returned as sent when nothing is masked.
  */
-function maskTarget(target: string, keyParams: readonly string[]): string {
+function maskTarget(redactor: Redactor, target: string, keyParams: readonly string[]): string {
   const options = { show: false, extraParams: keyParams };
   if (!target.startsWith('/')) {
-    return redactUrl(target, options);
+    return redactor.redactUrl(target, options);
   }
   // Prefixed rather than resolved, so a path that starts `//` stays a path, not a host.
   const placed = `http://request.invalid${target}`;
-  const redacted = redactUrl(placed, options);
+  const redacted = redactor.redactUrl(placed, options);
   if (redacted === placed) {
     return target;
   }
@@ -815,6 +834,7 @@ function maskTarget(target: string, keyParams: readonly string[]): string {
  * *now* rather than what it said at send time.
  */
 export function redactExchangeSummary(
+  redactor: Redactor,
   summary: ExchangeSummary,
   opts?: { show?: boolean; readonly keyParams?: readonly string[]; readonly keyHeaders?: readonly string[] },
 ): ExchangeSummary {
@@ -830,24 +850,25 @@ export function redactExchangeSummary(
     http: {
       ...summary.http,
       ...keyNames,
-      headers: redactHeaders(summary.http.headers, { show }),
-      rawHeaders: redactHeaderPairs(summary.http.rawHeaders, { show }),
+      headers: redactor.redactHeaders(summary.http.headers, { show }),
+      rawHeaders: redactor.redactHeaderPairs(summary.http.rawHeaders, { show }),
       rawRequestBase64: redactRequestTarget(
-        redactRawHttp(summary.http.rawRequestBase64, { show, extraHeaders, encoding: 'base64' }),
+        redactor,
+        redactor.redactRawHttp(summary.http.rawRequestBase64, { show, extraHeaders, encoding: 'base64' }),
         opts?.keyParams ?? [],
       ),
-      rawResponseBase64: redactRawHttp(summary.http.rawResponseBase64, { show, encoding: 'base64' }),
+      rawResponseBase64: redactor.redactRawHttp(summary.http.rawResponseBase64, { show, encoding: 'base64' }),
       // The first hop is the wire URL, which carries a query API key as the request URL does.
       redirects: summary.http.redirects.map((redirect) => ({
         ...redirect,
-        url: redactUrl(redirect.url, { show, extraParams: opts?.keyParams ?? [] }),
+        url: redactor.redactUrl(redirect.url, { show, extraParams: opts?.keyParams ?? [] }),
       })),
       request: {
         ...summary.http.request,
         // A SOAP owner's API key may travel in the query string; `keyParams` names it whatever it is
         // called, as on a REST send.
-        url: redactUrl(summary.http.request.url, { show, extraParams: opts?.keyParams ?? [] }),
-        headers: redactHeaders(summary.http.request.headers, { show, extraHeaders }),
+        url: redactor.redactUrl(summary.http.request.url, { show, extraParams: opts?.keyParams ?? [] }),
+        headers: redactor.redactHeaders(summary.http.request.headers, { show, extraHeaders }),
       },
     },
     ...(summary.response !== undefined
@@ -855,13 +876,13 @@ export function redactExchangeSummary(
           response: {
             ...summary.response,
             attachments: redactResponseAttachments(summary.response.attachments),
-            envelopeXml: redactXml(summary.response.envelopeXml, { show }),
+            envelopeXml: redactor.redactXml(summary.response.envelopeXml, { show }),
             ...(summary.response.fault !== undefined
               ? {
                   fault: {
                     ...summary.response.fault,
                     ...(summary.response.fault.detailXml !== undefined
-                      ? { detailXml: redactXml(summary.response.fault.detailXml, { show }) }
+                      ? { detailXml: redactor.redactXml(summary.response.fault.detailXml, { show }) }
                       : {}),
                   },
                 }

@@ -3,7 +3,7 @@ import type { QName } from '@wirebench/engine';
 import { channels } from '../../../../shared/ipc.js';
 import type { EngineService } from '../../../engine-service.js';
 import type { ProjectRouter } from '../../../project-router.js';
-import { registerHandler } from '../../../ipc/register.js';
+import { registerHandler, type HandlerTable } from '../../../ipc/register.js';
 
 /** The `ProjectRouter` surface `validate.message` needs; a stub stands in for it in tests. */
 export type ValidateChannelProject = Pick<ProjectRouter, 'validationTargetFor'>;
@@ -26,8 +26,12 @@ function parseClarkQName(clark: string): QName {
  * the renderer never sees either. `xml` on the request overrides the saved envelope, so the
  * editor can validate text the user has not saved yet.
  */
-export function registerValidateChannels(service: EngineService, project: ValidateChannelProject): void {
-  registerHandler(channels.validate.message, async (request) => {
+export function registerValidateChannels(
+  table: HandlerTable,
+  service: EngineService,
+  project: ValidateChannelProject,
+): void {
+  registerHandler(table, channels.validate.message, async (request) => {
     const target = project.validationTargetFor(request.requestId);
     if (target === undefined) {
       throw new ProjectError('unknown-request', `No saved request with id "${request.requestId}"`, {

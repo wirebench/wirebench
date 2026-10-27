@@ -132,7 +132,7 @@ export class EngineService {
 
   /**
    * `getSecret` resolves a `secretRef` for {@link importDefinition}'s Basic-auth fetch credentials;
-   * omitted in tests that never import with auth, `main/index.ts` wires it to `SecretStore.get`.
+   * omitted in tests that never import with auth, `main/host/create-host.ts` wires it to `SecretStore.get`.
    * `network` is the TLS and proxy for one URL, as a project-free send resolves them
    * (`mainHttpOptions`): every WSDL read goes through the configured CA bundle and proxy.
    */

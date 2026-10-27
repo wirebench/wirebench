@@ -1,7 +1,9 @@
 import { parseLocalSecretSources, parseSecretSources, secretSourcesHash } from '@wirebench/engine';
 import { describe, expect, it, vi } from 'vitest';
-import { containsRecordedSecret, recordSecretValue, redactSecretText, redactSecretValues } from '../src/main/redact.js';
 import { SecretSourcesService, type SecretSourcesSnapshot } from '../src/main/secret-sources-service.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 const shared = parseSecretSources({ db: { kind: 'vault', path: 'kv/app', field: 'password' } }).sources;
 const hash = secretSourcesHash(shared);
@@ -122,15 +124,15 @@ describe('SecretSourcesService', () => {
     const service = new SecretSourcesService({
       snapshot: approved,
       cacheSeconds: () => 300,
-      onValue: recordSecretValue,
-      mask: redactSecretText,
+      onValue: hostState.redactor.recordSecretValue,
+      mask: hostState.redactor.redactSecretText,
       platform: 'linux',
       env: {},
       find: (tool) => Promise.resolve(`/bin/${tool}`),
       run: () => Promise.resolve({ stdout: value, stderr: '', exitCode: 0 }),
     });
     expect(await service.wrap(() => Promise.resolve(undefined))('secret:db')).toBe(value);
-    expect(containsRecordedSecret(value)).toBe(true);
-    expect(redactSecretValues(`Authorization: ${value}`)).not.toContain(value);
+    expect(hostState.redactor.containsRecordedSecret(value)).toBe(true);
+    expect(hostState.redactor.redactSecretValues(`Authorization: ${value}`)).not.toContain(value);
   });
 });

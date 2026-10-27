@@ -6,11 +6,13 @@
 import { describe, expect, it } from 'vitest';
 import { harOf } from '../src/main/har.js';
 import { curlForLogEntry } from '../src/main/log-curl.js';
-import { recordSecretValue } from '../src/main/redact.js';
 import { b64, makeRestExchange } from './mocks/wire-fixtures.js';
+import { Redactor } from '../src/main/host/redactor.js';
+
+const redactor = new Redactor();
 
 const SECRET = 'tok-export-s3cret';
-recordSecretValue(SECRET);
+redactor.recordSecretValue(SECRET);
 
 const CREATOR = { name: 'Wirebench', version: '0.0.0-test' } as const;
 
@@ -35,20 +37,20 @@ function entryWith(contentType: string, body: string) {
 describe('a recorded secret value in an exported body', () => {
   it('keeps the raw marker in a JSON body, in HAR and in cURL', () => {
     const entry = entryWith('application/json', `{"note":"${SECRET}"}`);
-    const har = harOf([entry], CREATOR).log.entries[0]!;
+    const har = harOf(redactor, [entry], CREATOR).log.entries[0]!;
     expect(har.request.postData?.text).toBe('{"note":"<redacted>"}');
     expect(har.response.content.text).toBe('{"note":"<redacted>"}');
-    const { command } = curlForLogEntry(entry, { shell: 'posix', show: false });
+    const { command } = curlForLogEntry(redactor, entry, { shell: 'posix', show: false });
     expect(command).toContain('{"note":"<redacted>"}');
     expect(command).not.toContain('&lt;redacted&gt;');
   });
 
   it('gets the escaped marker in an XML body, in HAR and in cURL', () => {
     const entry = entryWith('application/xml', `<pet><note>${SECRET}</note></pet>`);
-    const har = harOf([entry], CREATOR).log.entries[0]!;
+    const har = harOf(redactor, [entry], CREATOR).log.entries[0]!;
     expect(har.request.postData?.text).toBe('<pet><note>&lt;redacted&gt;</note></pet>');
     expect(har.response.content.text).toBe('<pet><note>&lt;redacted&gt;</note></pet>');
-    const { command } = curlForLogEntry(entry, { shell: 'posix', show: false });
+    const { command } = curlForLogEntry(redactor, entry, { shell: 'posix', show: false });
     expect(command).toContain('<pet><note>&lt;redacted&gt;</note></pet>');
   });
 });

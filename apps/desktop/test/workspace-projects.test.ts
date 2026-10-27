@@ -13,11 +13,17 @@ import { HistoryService } from '../src/main/history-service.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 import type { WorkspaceWire } from '../src/shared/wire-base.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { asCaller } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 /**
  * What the next folder picker answers. `undefined` is a cancelled dialog.
  *
- * The real {@link pickFolder} runs in every one of these tests — only Electron's `dialog` is
+ * The real `pickFolder` runs in every one of these tests — only the platform's dialog is
  * stubbed — so each test exercises the actual pick-recording path into {@link DialogPicks}
  * rather than a stub that skips it. That is the whole point: "the renderer never names a path"
  * is only true if the main-side picker really is the only way a path gets in.
@@ -26,38 +32,36 @@ let folderPick: string | undefined;
 
 /** `project.*` handlers, registered for the one test that drives the channel end to end. */
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers, hostState.redactor);
 
-vi.mock('electron', () => ({
-  // The e2e dialog overrides are honoured only in an unpackaged run.
-  app: { isPackaged: false },
-  ipcMain: {
-    handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
-      handlers.set(name, handler);
-    },
-  },
-  BrowserWindow: { fromWebContents: () => undefined },
-  dialog: {
-    showOpenDialog: () =>
+/** The native pickers over a fake platform whose folder dialog answers `folderPick`. */
+const dialogs = fakeNativeDialogs({
+  dialogs: {
+    openFile: () =>
       Promise.resolve(
         folderPick === undefined ? { canceled: true, filePaths: [] } : { canceled: false, filePaths: [folderPick] },
       ),
+    saveFile: () => Promise.resolve({ canceled: true }),
+    message: () => Promise.resolve({ response: 0, checkboxChecked: false }),
   },
-}));
+});
 
 let server: TestSoapServer | undefined;
 let root: string;
 let picks: DialogPicks;
 let trashed: string[];
 
-/** A stand-in for a `WebContents`; the picker only ever uses it to find the parent window. */
-const SENDER = {} as Parameters<WorkspaceService['linkProject']>[0];
+/** A stand-in for a `Caller`; the picker only ever uses it to find the parent window. */
+const SENDER = asCaller({});
 
 function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceService {
   return new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine: new EngineService(),
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     picks,
+    dialogs,
     trash: (path: string) => {
       trashed.push(path);
       return Promise.resolve();
@@ -190,7 +194,7 @@ describe('WorkspaceService.removeProject', () => {
     const created = await service.create('Payments');
     const { projectId: existing } = await service.addProject('Billing API');
     const before = service.snapshot()?.projects.map((project) => project.id);
-    registerProjectChannels({
+    registerProjectChannels(table, {
       router: service,
       addProject: async (name) => await service.addProject(name),
       removeProject: async (projectId, options) => await service.removeProject(projectId, options),
@@ -270,7 +274,7 @@ describe('WorkspaceService.removeProject', () => {
     // A session records its History entry when it closes, and the entry has nowhere to go once
     // `history.close` has run — so the sessions must be closed, and awaited, first.
     const order: string[] = [];
-    const history = new HistoryService(root);
+    const history = new HistoryService(root, hostState.redactor);
     const close = history.close.bind(history);
     vi.spyOn(history, 'close').mockImplementation((projectId: string) => {
       order.push(`history.close:${projectId}`);

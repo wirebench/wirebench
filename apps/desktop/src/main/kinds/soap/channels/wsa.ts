@@ -9,7 +9,7 @@
 
 import { channels } from '../../../../shared/ipc.js';
 import type { ProjectRouter } from '../../../project-router.js';
-import { registerHandler } from '../../../ipc/register.js';
+import { registerHandler, type HandlerTable } from '../../../ipc/register.js';
 
 /** What the `wsa.*` channels need; a stub stands in for it in tests. */
 export interface WsaChannelDeps {
@@ -17,12 +17,12 @@ export interface WsaChannelDeps {
 }
 
 /** Registers the `wsa.*` channels. */
-export function registerWsaChannels(deps: WsaChannelDeps): void {
-  registerHandler(channels.wsa.insertHeaders, (request) =>
+export function registerWsaChannels(table: HandlerTable, deps: WsaChannelDeps): void {
+  registerHandler(table, channels.wsa.insertHeaders, (request) =>
     Promise.resolve({ envelopeXml: deps.project.insertWsaHeaders(request.requestId, request.envelopeXml) }),
   );
 
-  registerHandler(channels.wsa.removeHeaders, (request) =>
+  registerHandler(table, channels.wsa.removeHeaders, (request) =>
     Promise.resolve({ envelopeXml: deps.project.removeWsaHeadersFrom(request.requestId, request.envelopeXml) }),
   );
 }

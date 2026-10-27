@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerDefinitionChannels } from '../src/main/kinds/soap/channels/definition.js';
 import type { DefinitionChannelProject } from '../src/main/kinds/soap/channels/definition.js';
@@ -13,23 +13,18 @@ import type {
   DefinitionGenerateDocsResponse,
   UpdatePlanWire,
 } from '../src/shared/kinds/soap/wire.js';
+import { tableInto } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 
-vi.mock('electron', () => ({
-  // The e2e dialog overrides are honoured only in an unpackaged run.
-  app: { isPackaged: false },
-  ipcMain: {
-    handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
-      handlers.set(name, handler);
-    },
-  },
-  BrowserWindow: { fromWebContents: () => null },
-  dialog: {
-    showOpenDialog: () => Promise.resolve({ canceled: true, filePaths: [] }),
-    showSaveDialog: () => Promise.resolve({ canceled: true, filePath: undefined }),
-  },
-}));
+/** Every native dialog is cancelled; a test that wants an answer sets an e2e override instead. */
+const cancelling = {
+  openFile: () => Promise.resolve({ canceled: true, filePaths: [] }),
+  saveFile: () => Promise.resolve({ canceled: true }),
+  message: () => Promise.resolve({ response: 0, checkboxChecked: false }),
+};
 
 function invoke(channel: string, payload: unknown): Promise<unknown> {
   const handler = handlers.get(channel);
@@ -140,9 +135,10 @@ afterEach(() => {
 describe('definition.* update, export and docs IPC', () => {
   it('passes the source through to planDefinitionUpdate and returns its plan', async () => {
     const project = stubProject();
-    registerDefinitionChannels(new EngineService(), {
+    registerDefinitionChannels(table, new EngineService(), {
       project,
       picks: { rememberWrite: () => undefined, hasRead: () => false },
+      dialogs: fakeNativeDialogs({ dialogs: cancelling }),
     });
     const plan = await ok<UpdatePlanWire>('definition.planUpdate', {
       interfaceId: 'if-1',
@@ -155,9 +151,10 @@ describe('definition.* update, export and docs IPC', () => {
   });
 
   it('rejects a source that is neither a URL nor a file path', async () => {
-    registerDefinitionChannels(new EngineService(), {
+    registerDefinitionChannels(table, new EngineService(), {
       project: stubProject(),
       picks: { rememberWrite: () => undefined, hasRead: () => false },
+      dialogs: fakeNativeDialogs({ dialogs: cancelling }),
     });
     expect(
       await failure('definition.planUpdate', { interfaceId: 'if-1', source: { kind: 'text', text: '<wsdl/>' } }),
@@ -165,9 +162,10 @@ describe('definition.* update, export and docs IPC', () => {
   });
 
   it('returns the fresh project snapshot alongside what applying the update did', async () => {
-    registerDefinitionChannels(new EngineService(), {
+    registerDefinitionChannels(table, new EngineService(), {
       project: stubProject(),
       picks: { rememberWrite: () => undefined, hasRead: () => false },
+      dialogs: fakeNativeDialogs({ dialogs: cancelling }),
     });
     const applied = await ok<ApplyUpdateWire>('definition.applyUpdate', {
       interfaceId: 'if-1',
@@ -188,9 +186,10 @@ describe('definition.* update, export and docs IPC', () => {
 
   it('reports a cancelled folder picker instead of exporting', async () => {
     const project = stubProject();
-    registerDefinitionChannels(new EngineService(), {
+    registerDefinitionChannels(table, new EngineService(), {
       project,
       picks: { rememberWrite: () => undefined, hasRead: () => false },
+      dialogs: fakeNativeDialogs({ dialogs: cancelling }),
     });
     const result = await ok<DefinitionExportResponse>('definition.export', { interfaceId: 'if-1' });
     expect(result).toEqual({ cancelled: true, files: [] });
@@ -200,9 +199,10 @@ describe('definition.* update, export and docs IPC', () => {
   it('exports into the folder the picker answers with', async () => {
     process.env['WIREBENCH_E2E_DIALOG_FOLDER'] = tmp;
     const project = stubProject();
-    registerDefinitionChannels(new EngineService(), {
+    registerDefinitionChannels(table, new EngineService(), {
       project,
       picks: { rememberWrite: () => undefined, hasRead: () => false },
+      dialogs: fakeNativeDialogs({ dialogs: cancelling }),
     });
     const result = await ok<DefinitionExportResponse>('definition.export', { interfaceId: 'if-1' });
     expect(result).toEqual({ cancelled: false, dir: tmp, files: ['service.wsdl'] });
@@ -213,9 +213,10 @@ describe('definition.* update, export and docs IPC', () => {
     const target = join(tmp, 'docs.html');
     process.env['WIREBENCH_E2E_DIALOG_SAVE'] = target;
     const picked: string[] = [];
-    registerDefinitionChannels(new EngineService(), {
+    registerDefinitionChannels(table, new EngineService(), {
       project: stubProject(),
       picks: { rememberWrite: (path) => picked.push(path), hasRead: () => false },
+      dialogs: fakeNativeDialogs({ dialogs: cancelling }),
     });
     const result = await ok<DefinitionGenerateDocsResponse>('definition.generateDocs', {
       interfaceId: 'if-1',
@@ -227,9 +228,10 @@ describe('definition.* update, export and docs IPC', () => {
   });
 
   it('writes nothing when the save dialog is cancelled', async () => {
-    registerDefinitionChannels(new EngineService(), {
+    registerDefinitionChannels(table, new EngineService(), {
       project: stubProject(),
       picks: { rememberWrite: () => undefined, hasRead: () => false },
+      dialogs: fakeNativeDialogs({ dialogs: cancelling }),
     });
     const result = await ok<DefinitionGenerateDocsResponse>('definition.generateDocs', {
       interfaceId: 'if-1',
@@ -239,7 +241,7 @@ describe('definition.* update, export and docs IPC', () => {
   });
 
   it('registers only the read-only channels when no project deps are given', () => {
-    registerDefinitionChannels(new EngineService());
+    registerDefinitionChannels(table, new EngineService());
     expect(handlers.has('definition.documents')).toBe(true);
     expect(handlers.has('definition.planUpdate')).toBe(false);
   });

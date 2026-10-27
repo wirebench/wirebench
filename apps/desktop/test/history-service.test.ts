@@ -10,6 +10,9 @@ import { sendThroughEngine } from '../src/main/send/exchange.js';
 import { AD_HOC_NAME, type HistoryNameFallback } from '../src/main/send/record.js';
 import type { ResolvedSendInputWire } from '../src/shared/wire-types.js';
 import { sendDepsFor } from './helpers/send-deps.js';
+import { createHostState } from '../src/main/host/host-state.js';
+
+const hostState = createHostState();
 
 interface EchoServer {
   readonly url: string;
@@ -55,10 +58,15 @@ function holding(endpointUrl: string): Project {
 
 /** Sends `input` ad hoc through the engine, recorded under `names`, as `request.send` does with no request. */
 function sendAdHoc(history: HistoryService, sendId: string, input: ResolvedSendInputWire, names: HistoryNameFallback) {
-  return sendThroughEngine(sendDepsFor(createProject('None', { id: 'none' }), { history }), sendId, AD_HOC_ID, {
-    draft: { kind: 'soap', override: soapOverrideOf(input) },
-    adHoc: { input, names },
-  });
+  return sendThroughEngine(
+    sendDepsFor(createProject('None', { id: 'none' }), { hostState, history }),
+    sendId,
+    AD_HOC_ID,
+    {
+      draft: { kind: 'soap', override: soapOverrideOf(input) },
+      adHoc: { input, names },
+    },
+  );
 }
 
 describe('HistoryService', () => {
@@ -76,7 +84,7 @@ describe('HistoryService', () => {
   });
 
   it('opens per project, at <userData>/history/<projectId>.jsonl', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-1');
     expect(history.openProjectIds()).toEqual(['proj-1']);
 
@@ -97,7 +105,7 @@ describe('HistoryService', () => {
   });
 
   it('keeps a file open until every owner closed it (one linked project in two windows)', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-1', 'window-1');
     await history.open('proj-1', 'window-2');
 
@@ -108,7 +116,7 @@ describe('HistoryService', () => {
   });
 
   it('an owner-less open reuses an owned file without holding it', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-1', 'window-1');
     await history.open('proj-1');
 
@@ -117,7 +125,7 @@ describe('HistoryService', () => {
   });
 
   it("lists and clears only one window's projects when given their ids", async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-a', 'window-1');
     await history.open('proj-b', 'window-2');
     const input = {
@@ -147,7 +155,7 @@ describe('HistoryService', () => {
   });
 
   it('records an entry after a real send, redacting the Authorization header (no plaintext on disk)', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-2');
 
     const result = await sendAdHoc(
@@ -179,7 +187,7 @@ describe('HistoryService', () => {
   });
 
   it('records a transport-error entry when the send fails', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-3');
 
     await expect(
@@ -199,13 +207,14 @@ describe('HistoryService', () => {
   });
 
   it('keys a send to the project owning its request, and records nothing for one no project owns', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-a');
     await history.open('proj-b');
     const owners: Record<string, string> = { 'req-b': 'proj-b' };
     const input = { endpoint: `${server.url}/soap`, envelopeXml: '<Envelope/>', soapVersion: '1.1' as const };
 
     const deps = sendDepsFor(holding(`${server.url}/soap`), {
+      hostState,
       history,
       project: { projectId: (entityId: string) => owners[entityId] },
     });
@@ -219,7 +228,7 @@ describe('HistoryService', () => {
   });
 
   it('list search filters and clear empties the file', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-4');
     await history.recordSend('proj-4', {
       requestName: 'GetWeather',
@@ -245,7 +254,7 @@ describe('HistoryService', () => {
   });
 
   it('remove drops one entry from whichever open file holds it', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-r1');
     await history.open('proj-r2');
     const send = (projectId: string, requestName: string) =>
@@ -267,7 +276,7 @@ describe('HistoryService', () => {
   it("finds a request's newest REST entry in its own project", async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     try {
-      const history = new HistoryService(userDataDir);
+      const history = new HistoryService(userDataDir, hostState.redactor);
       await history.open('p1');
       const append = async (requestId: string, url: string, at: string) => {
         vi.setSystemTime(new Date(at));
@@ -301,7 +310,7 @@ describe('HistoryService', () => {
     // entry a distinct, deterministic timestamp to be merged on.
     vi.useFakeTimers({ toFake: ['Date'] });
     try {
-      const history = new HistoryService(userDataDir);
+      const history = new HistoryService(userDataDir, hostState.redactor);
       await history.open('proj-a');
       await history.open('proj-b');
       await history.open('proj-a');
@@ -381,7 +390,7 @@ describe('HistoryService when another writer holds the History lock', () => {
 
   it('skips the entry and warns, instead of failing the send', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-1');
     const file = historyFilePath(userDataDir, 'proj-1');
     // A lock file with a fresh mtime is a live writer's: the append waits the engine's default 2 s.
@@ -409,7 +418,7 @@ describe('HistoryService when another writer holds the History lock', () => {
 
   it('rethrows any other append error, without a busy warning', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-1');
     // A directory where the file should be makes the append's reread fail with something other than a busy lock.
     await mkdir(historyFilePath(userDataDir, 'proj-1'), { recursive: true });
@@ -470,7 +479,7 @@ describe('HistoryService.recordImportedRest', () => {
   } as const;
 
   it('records an imported exchange at its recorded time, tagged', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-1');
 
     const entry = await history.recordImportedRest('proj-1', RECORDED);
@@ -493,7 +502,7 @@ describe('HistoryService.recordImportedRest', () => {
   });
 
   it('writes no recorded credential to the History file', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-1');
 
     const entry = await history.recordImportedRest('proj-1', RECORDED);
@@ -511,13 +520,13 @@ describe('HistoryService.recordImportedRest', () => {
   });
 
   it('answers undefined when the project History is not open', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
 
     expect(await history.recordImportedRest('proj-1', RECORDED)).toBeUndefined();
   });
 
   it('masks an XML body the way a live SOAP entry is masked', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-1');
     const xml = {
       ...RECORDED,
@@ -538,7 +547,7 @@ describe('HistoryService.recordImportedRest', () => {
   });
 
   it('stores the recorded time in UTC, whatever offset the capture wrote it in', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-1');
 
     const entry = await history.recordImportedRest('proj-1', { ...RECORDED, at: '2026-10-01T12:00:00.000+02:00' });
@@ -547,7 +556,7 @@ describe('HistoryService.recordImportedRest', () => {
   });
 
   it('writes a batch, skipping and counting exchanges with no valid time', async () => {
-    const history = new HistoryService(userDataDir);
+    const history = new HistoryService(userDataDir, hostState.redactor);
     await history.open('proj-1');
 
     const outcome = await history.recordImportedRestBatch('proj-1', [
@@ -562,7 +571,7 @@ describe('HistoryService.recordImportedRest', () => {
   });
 
   it('says how many older entries the cap dropped to make room for a batch', async () => {
-    const history = new HistoryService(userDataDir, () => 3);
+    const history = new HistoryService(userDataDir, hostState.redactor, () => 3);
     await history.open('proj-1');
     await history.recordImportedRest('proj-1', { ...RECORDED, requestId: 'old-1' });
     await history.recordImportedRest('proj-1', { ...RECORDED, requestId: 'old-2' });

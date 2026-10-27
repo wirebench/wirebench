@@ -6,7 +6,7 @@
  */
 import { createIssuedTokenSource } from '@wirebench/engine';
 import type { IssuedTokenSource, IssuedTokenTarget, TrustDeps, WssIssuedTokenEntry } from '@wirebench/engine';
-import { recordSecretValue, redactSecretText } from './redact.js';
+import type { Redactor } from './host/redactor.js';
 import type { IssuedTokenStatusWire } from '../shared/kinds/soap/wire.js';
 
 /** One issued-token entry of an outgoing configuration, and the request it is fetched for. */
@@ -28,8 +28,10 @@ export interface ResolvedIssuedToken {
 export class IssuedTokensService {
   constructor(
     private readonly resolve: (locator: IssuedTokenLocator) => Promise<ResolvedIssuedToken>,
+    /** The host's: a token fetched here is recorded in it, and a fault quoting one is masked by it. */
+    private readonly redactor: Redactor,
     /** The session's source. A test passes one whose `request` answers without a token service. */
-    readonly source: IssuedTokenSource = createIssuedTokenSource({ onSecretValue: recordSecretValue }),
+    readonly source: IssuedTokenSource = createIssuedTokenSource({ onSecretValue: redactor.recordSecretValue }),
   ) {}
 
   async status(locator: IssuedTokenLocator, showSecrets: boolean): Promise<IssuedTokenStatusWire> {
@@ -61,7 +63,9 @@ export class IssuedTokensService {
     const token = showSecrets ? this.source.peek(entry, target) : undefined;
     // A fault may quote what was sent: every recorded secret value is masked unless secrets show.
     const lastError =
-      status.lastError === undefined ? {} : { lastError: redactSecretText(status.lastError, { show: showSecrets }) };
+      status.lastError === undefined
+        ? {}
+        : { lastError: this.redactor.redactSecretText(status.lastError, { show: showSecrets }) };
     return { ...status, ...lastError, ...(token !== undefined ? { assertion: token.assertionXml } : {}) };
   }
 }

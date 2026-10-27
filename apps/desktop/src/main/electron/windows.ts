@@ -1,9 +1,12 @@
 import { join } from 'node:path';
 import { is } from '@electron-toolkit/utils';
-import { BrowserWindow, nativeTheme, session, shell } from 'electron';
-import { events } from '../shared/ipc.js';
-import { OS_THEME_ARGUMENT } from '../shared/os-theme-argument.js';
-import { emitEvent } from './ipc/events.js';
+import { BrowserWindow, session } from 'electron';
+import { events } from '../../shared/ipc.js';
+import { OS_THEME_ARGUMENT } from '../../shared/os-theme-argument.js';
+import { requireCapability } from '../host/capability.js';
+import type { HostPlatform } from '../host/platform.js';
+import { callerForWebContents } from './electron-platform.js';
+import { emitEvent } from '../ipc/events.js';
 import {
   APP_SCHEME,
   APP_SCHEME_HOST,
@@ -11,8 +14,9 @@ import {
   MAIN_WINDOW_WEB_PREFERENCES,
   denySubframeNavigation,
   isExternalUrlAllowed,
-} from './security.js';
+} from '../security.js';
 
+// `import.meta.dirname` is the bundled main's directory (one file), not this source folder.
 // Electron's sandboxed preload loader only supports CommonJS (see electron.vite.config.ts),
 // so the preload bundle is forced to `.cjs` even though this package is `"type": "module"`.
 const PRELOAD_PATH = join(import.meta.dirname, '../preload/index.cjs');
@@ -45,7 +49,7 @@ function applyContentSecurityPolicy(): void {
  * isolated, no Node integration, in-app navigation only, and external links handed off to
  * the OS browser instead of opened in a new Electron window.
  */
-export function createMainWindow(): BrowserWindow {
+export function createMainWindow(platform: Pick<HostPlatform, 'app' | 'shell'>): BrowserWindow {
   applyContentSecurityPolicy();
 
   const win = new BrowserWindow({
@@ -65,7 +69,7 @@ export function createMainWindow(): BrowserWindow {
       // The OS colour scheme, baked into the preload's argv so the renderer can resolve a
       // `system` theme preference before its first paint instead of after a `theme.get` round
       // trip. `theme.changed` keeps it current from here on.
-      additionalArguments: [`${OS_THEME_ARGUMENT}${nativeTheme.shouldUseDarkColors ? 'dark' : 'light'}`],
+      additionalArguments: [`${OS_THEME_ARGUMENT}${platform.app.osTheme()}`],
     },
   });
 
@@ -77,13 +81,13 @@ export function createMainWindow(): BrowserWindow {
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isExternalUrlAllowed(url)) {
-      void shell.openExternal(url);
+      void requireCapability(platform, 'shell').openExternal(url);
     }
     return { action: 'deny' };
   });
 
   win.webContents.once('did-finish-load', () => {
-    emitEvent(win.webContents, events.app.ready, { at: new Date().toISOString() });
+    emitEvent(callerForWebContents(win.webContents), events.app.ready, { at: new Date().toISOString() });
   });
 
   const devServerUrl = process.env['ELECTRON_RENDERER_URL'];

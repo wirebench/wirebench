@@ -952,7 +952,7 @@ export class SoapHost implements KindHostHooks {
         details: { configId, requestId },
       });
     }
-    const anchors = [...((await this.core.trustAnchors()) ?? []), ...extraTrustAnchors()];
+    const anchors = [...((await this.core.trustAnchors()) ?? []), ...extraTrustAnchors(this.core.hostState)];
     const located = this.issuedTokenContext(chosen, {
       getSecret: getSecret ?? (async (ref) => await this.core.secrets?.get(ref)),
       proxyFor: async (url) => {
@@ -1424,7 +1424,7 @@ export class SoapHost implements KindHostHooks {
   ): Promise<{ username: string; password: string } | KerberosSendAuth | undefined> {
     if (iface.auth?.type === 'kerberos') {
       const auth = process.platform === 'win32' ? iface.auth : withoutPasswordRef(iface.auth);
-      const resolved = await resolveAuthConfig(auth, (ref) => this.core.getSecret(ref));
+      const resolved = await resolveAuthConfig(this.core.hostState.redactor, auth, (ref) => this.core.getSecret(ref));
       return resolved?.type === 'kerberos' ? resolved : undefined;
     }
     return this.basicImportAuth(iface.auth !== undefined && isEndpointAuth(iface.auth) ? iface.auth : undefined);

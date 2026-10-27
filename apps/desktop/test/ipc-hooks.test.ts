@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WirebenchError } from '@wirebench/engine';
+import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+const table = tableInto(handlers);
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
@@ -61,7 +63,7 @@ describe('hooks.* channels (webhook-capture §4.1)', () => {
   });
 
   it('registers every channel the contract declares', () => {
-    registerHooksChannels({ hooks: fakeService() });
+    registerHooksChannels(table, { hooks: fakeService() });
     expect([...handlers.keys()].sort()).toEqual(
       Object.values(channels.hooks)
         .map((c) => c.name)
@@ -71,7 +73,7 @@ describe('hooks.* channels (webhook-capture §4.1)', () => {
 
   it('passes each request to the service and answers in wire shapes', async () => {
     const hooks = fakeService();
-    registerHooksChannels({ hooks });
+    registerHooksChannels(table, { hooks });
     expect(await invoke('hooks.status', { url: SERVER })).toEqual({
       ok: true,
       value: { hooks: { enabled: true, bodyLimitBytes: 1_048_576, keep: 500, maxAgeDays: 7 } },
@@ -111,7 +113,7 @@ describe('hooks.* channels (webhook-capture §4.1)', () => {
   });
 
   it('passes a service error through as the envelope error', async () => {
-    registerHooksChannels({ hooks: fakeService() });
+    registerHooksChannels(table, { hooks: fakeService() });
     expect(await invoke('hooks.capture', { viewId: 'view-1', captureId: '01J8ZE00000000000000000001' })).toEqual({
       ok: false,
       error: expect.objectContaining({ code: 'hooks-view-closed' }) as unknown,

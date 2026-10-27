@@ -10,14 +10,16 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { app, dialog, shell } from 'electron';
-import { appVersion } from './app-version.js';
+import { app } from 'electron';
+import { appVersion } from '../app-version.js';
+import { requireCapability } from '../host/capability.js';
+import type { HostPlatform } from '../host/platform.js';
 // `electron-updater` is CommonJS: under this package's ESM output a named import of
 // `autoUpdater` throws at load ("Named export not found"), so the default export is
 // destructured instead. The main bundle externalises it, so this is what actually runs.
 import electronUpdater from 'electron-updater';
-import { githubFeedFrom, UpdateController } from './updater.js';
-import type { UpdateChannel, UpdateStatus } from './updater.js';
+import { githubFeedFrom, UpdateController } from '../updater.js';
+import type { UpdateChannel, UpdateStatus } from '../updater.js';
 
 const { autoUpdater } = electronUpdater;
 
@@ -37,8 +39,13 @@ export function repositoryUrl(appPath: string): string | undefined {
 }
 
 /** Yes/no dialog with the "no" button as the default, so Escape never starts a download. */
-async function confirm(message: string, detail: string, confirmLabel: string): Promise<boolean> {
-  const { response } = await dialog.showMessageBox({
+async function confirm(
+  platform: Pick<HostPlatform, 'dialogs'>,
+  message: string,
+  detail: string,
+  confirmLabel: string,
+): Promise<boolean> {
+  const { response } = await requireCapability(platform, 'dialogs').message(undefined, {
     type: 'question',
     buttons: [confirmLabel, 'Not Now'],
     defaultId: 1,
@@ -63,6 +70,7 @@ export function versionLabel(version: string): string {
  * @param options.channel - the `updates.channel` preference, read at every check
  */
 export function createUpdateController(
+  platform: Pick<HostPlatform, 'app' | 'dialogs' | 'shell'>,
   report: (status: UpdateStatus) => void,
   options: { readonly portable?: boolean; readonly channel?: () => UpdateChannel } = {},
 ): UpdateController {
@@ -81,30 +89,35 @@ export function createUpdateController(
       confirmDownload: async (version) =>
         portable
           ? await confirm(
+              platform,
               `Wirebench ${versionLabel(version)} is available.`,
-              `You are running ${appVersion()}, the portable build. Open the release page to download the new zip? Unpack it and move this copy's data folder into it.`,
+              `You are running ${appVersion(platform.app)}, the portable build. Open the release page to download the new zip? Unpack it and move this copy's data folder into it.`,
               'Open Release Page',
             )
           : await confirm(
+              platform,
               `Wirebench ${versionLabel(version)} is available.`,
-              `You are running ${appVersion()}. Download the update now? Nothing is installed until you say so.`,
+              `You are running ${appVersion(platform.app)}. Download the update now? Nothing is installed until you say so.`,
               'Download',
             ),
       confirmInstall: async (version) =>
         await confirm(
+          platform,
           `Wirebench ${versionLabel(version)} is ready to install.`,
           'Wirebench will restart to finish installing.',
           'Restart and Install',
         ),
       openReleasePage: async (version) => {
         if (feed !== undefined) {
-          await shell.openExternal(`https://github.com/${feed.owner}/${feed.repo}/releases/tag/v${version}`);
+          await requireCapability(platform, 'shell').openExternal(
+            `https://github.com/${feed.owner}/${feed.repo}/releases/tag/v${version}`,
+          );
         }
       },
       report,
     },
     {
-      feedConfigured: feed !== undefined && app.isPackaged,
+      feedConfigured: feed !== undefined && platform.app.packaged(),
       selfInstall: !portable,
       ...(options.channel !== undefined ? { channel: options.channel } : {}),
     },

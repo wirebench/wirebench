@@ -2,7 +2,7 @@
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadLocalState, loadWorkspace, parseSecretSources, secretSourcesHash } from '@wirebench/engine';
 import { readFileSync } from 'node:fs';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
@@ -13,21 +13,27 @@ import { ProjectHost } from '../src/main/project-host.js';
 import { ExchangeRegistry, sendThroughEngine, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
+import { asCaller } from './helpers/ipc-table.js';
+import { fakeNativeDialogs } from './helpers/fake-platform.js';
+import { createHostState } from '../src/main/host/host-state.js';
+import { testHooks } from './helpers/project-hooks.js';
+
+const hostState = createHostState();
 
 /** What the next folder picker answers; `undefined` is a cancelled dialog. */
 let folderPick: string | undefined;
 
-vi.mock('electron', () => ({
-  // The e2e dialog overrides are honoured only in an unpackaged run.
-  app: { isPackaged: false },
-  BrowserWindow: { fromWebContents: () => undefined },
-  dialog: {
-    showOpenDialog: () =>
+/** The native pickers over a fake platform whose folder dialog answers `folderPick`. */
+const dialogs = fakeNativeDialogs({
+  dialogs: {
+    openFile: () =>
       Promise.resolve(
         folderPick === undefined ? { canceled: true, filePaths: [] } : { canceled: false, filePaths: [folderPick] },
       ),
+    saveFile: () => Promise.resolve({ canceled: true }),
+    message: () => Promise.resolve({ response: 0, checkboxChecked: false }),
   },
-}));
+});
 
 /** The interface's WSDL is served by `primary`; `secondary` is what an environment redirects to. */
 let primary: TestSoapServer;
@@ -36,15 +42,17 @@ let root: string;
 let picks: DialogPicks;
 let engine: EngineService;
 
-/** A stand-in for a `WebContents`; the picker only ever uses it to find the parent window. */
-const SENDER = {} as Parameters<WorkspaceService['linkProject']>[0];
+/** A stand-in for a `Caller`; the picker only ever uses it to find the parent window. */
+const SENDER = asCaller({});
 
 function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceService {
   return new WorkspaceService({
+    hostState,
     userDataDir: root,
     engine,
-    history: new HistoryService(root),
+    history: new HistoryService(root, hostState.redactor),
     picks,
+    dialogs,
     trash: () => Promise.resolve(),
     ...overrides,
   });
@@ -83,6 +91,7 @@ async function workspaceWithCalculator(): Promise<{
 /** Sends `requestId` exactly as `request.send` would: through the engine, over the workspace's projects. */
 async function sendThroughHost(service: WorkspaceService, _projectId: string, requestId: string): Promise<void> {
   const deps = {
+    hostState,
     service: engine,
     registry: new ExchangeRegistry(),
     project: service as unknown as SendThroughEngineDeps['project'],
@@ -93,7 +102,7 @@ async function sendThroughHost(service: WorkspaceService, _projectId: string, re
 /** A standalone project folder with its own `dev` environment, ready to be linked. */
 async function seedLinkedProject(name: string, properties: Record<string, string>): Promise<string> {
   const dir = join(realpathSync(mkdtempSync(join(tmpdir(), 'wirebench-linked-'))), name);
-  const host = new ProjectHost(engine);
+  const host = new ProjectHost(engine, testHooks());
   await host.create({ dir, name });
   await host.kind('soap').addInterface({ source: { kind: 'url', url: primary.wsdlUrl } });
   await host.whenHydrated();
@@ -460,7 +469,7 @@ describe('secret source warnings in the SOAP preflight', () => {
   }, 60_000);
 
   it('hands the REST, gRPC and WebSocket preflights the same snapshot, in the app wiring', () => {
-    const index = readFileSync(join(__dirname, '../src/main/index.ts'), 'utf8');
+    const index = readFileSync(join(__dirname, '../src/main/host/create-host.ts'), 'utf8');
     expect(index).toContain('secretSources: () => workspaceService.secretSourcesSnapshot()');
   });
 });
