@@ -1,6 +1,6 @@
 # ADR-0033: one host package serves the desktop, the agent and the server
 
-Date: 2026-10-24 · Status: accepted 2026-10-27, built in #779 and the slice 1 Part B pull request (design
+Date: 2026-10-24 · Status: accepted 2026-10-27, built in #779 and #780 (design
 `docs/specs/2026-10-24-wirebench-hosted-edition-design.md` §3.1, §5.1, §5.2) · Issue: #776, slice 1 #777
 
 ## Context
@@ -58,7 +58,7 @@ programs.** Precisely:
 ## What the move taught
 
 Built in two pull requests: #779 put main behind `HostPlatform` as `createHost(platform)` inside the
-app, and Part B moved it into `packages/host`, with the shared wire code in `packages/wire`. Where the
+app, and #780 moved it into `packages/host`, with the shared wire code in `packages/wire`. Where the
 build differs from the decision above:
 
 - **Two exports, not one.** The package root exports `createHost`, `Host`, `HostPlatform`, `Caller`,
