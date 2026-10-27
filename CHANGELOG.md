@@ -32,6 +32,12 @@ All notable changes to this project are documented here. The format follows
 - **Project and API pages use tabs.** The project page (General, Settings, Properties) and every API
   page — REST, WebSocket, gRPC and MCP — show one section at a time behind a tab instead of one long
   page, and the Scripts tab's editor fills the page. Each page remembers the tab it was on.
+- **A send in flight replaces the old response.** While a REST request is out, the response pane shows
+  Sending… with the elapsed time and a Cancel button instead of the previous response dimmed.
+- **Runner and shortcut tables.** The Runner's delay field reads "Delay (ms)" with a tooltip, and the
+  Keyboard shortcuts table keeps a minimum width (it scrolls sideways in a narrow window) with Reset all on one line.
+- **Comment toggle in a JSON body keeps the indent.** Ctrl+/ puts `//` at the indent of the selected
+  lines instead of at column 1, and toggling again restores the text exactly.
 
 ## [6.1.0] - 2026-10-23
 

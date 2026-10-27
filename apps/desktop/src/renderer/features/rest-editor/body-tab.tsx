@@ -16,7 +16,8 @@ import { Button } from '../../components/button.js';
 import { KvTable } from '../../components/kv-table.js';
 import { dismissToast, showToast } from '../../components/toast.js';
 import { CodeEditor } from '../../editor/code-editor.js';
-import { SAVE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
+import { toggleCommentInEditor } from '../../editor/line-comment.js';
+import { SAVE_KEYBINDING, SEND_KEYBINDING, TOGGLE_COMMENT_KEYBINDING } from '../../editor/monaco.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
@@ -404,6 +405,12 @@ export function BodyTab({
               editor.addCommand(SAVE_KEYBINDING, () => {
                 onSave?.();
               });
+              if (body.language === 'json') {
+                // Monaco's own toggle rounds the `//` down to a tab stop; this keeps it at the indent (G15).
+                editor.addCommand(TOGGLE_COMMENT_KEYBINDING, () => {
+                  toggleCommentInEditor(editor);
+                });
+              }
               attachVariables(editor, monacoNS);
             }}
           />

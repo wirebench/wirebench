@@ -25,6 +25,9 @@ export const SAVE_KEYBINDING = 2048 | 49;
 /** `monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF`. */
 export const FORMAT_KEYBINDING = 2048 | 1024 | 36;
 
+/** `monaco.KeyMod.CtrlCmd | monaco.KeyCode.Slash`. */
+export const TOGGLE_COMMENT_KEYBINDING = 2048 | 90;
+
 /** `monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG`. */
 export const GOTO_LINE_KEYBINDING = 2048 | 37;
 

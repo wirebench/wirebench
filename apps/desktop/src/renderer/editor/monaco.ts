@@ -67,6 +67,9 @@ export const SAVE_KEYBINDING = monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS;
 /** Monaco's numeric encoding of ⌘⇧F / Ctrl+Shift+F: `editor.formatXml`. */
 export const FORMAT_KEYBINDING = monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF;
 
+/** Monaco's numeric encoding of ⌘/ / Ctrl+/: toggle line comment. */
+export const TOGGLE_COMMENT_KEYBINDING = monaco.KeyMod.CtrlCmd | monaco.KeyCode.Slash;
+
 /** Monaco's numeric encoding of ⌘G / Ctrl+G: `editor.gotoLine`. */
 export const GOTO_LINE_KEYBINDING = monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG;
 
