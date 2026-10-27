@@ -42,6 +42,14 @@ describe('ShortcutsEditor', () => {
     vi.restoreAllMocks();
   });
 
+  it('keeps a floor width on the table and Reset all on one line (G13)', () => {
+    render(<ShortcutsEditor context={context} />);
+    expect(screen.getByTestId('shortcuts-table').className).toContain('min-w-[44rem]');
+    const reset = screen.getByTestId('shortcuts-reset-all').className;
+    expect(reset).toContain('whitespace-nowrap');
+    expect(reset).toContain('shrink-0');
+  });
+
   it('renders one row per command, with its default and current chord', () => {
     render(<ShortcutsEditor context={context} />);
     const row = within(rowFor('request.send'));
