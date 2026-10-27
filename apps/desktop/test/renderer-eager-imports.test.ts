@@ -137,6 +137,10 @@ function filesUnder(dir: string, root: string): string[] {
 }
 
 describe('renderer eager imports', () => {
+  it('names only wire modules that exist, so a moved file fails here instead of going unchecked', () => {
+    expect(FORBIDDEN_FILES.filter((file) => !existsSync(join(wireSrcDir, file)))).toEqual([]);
+  });
+
   it('lists every file under the wire kinds/ that imports zod or a listed module as forbidden', () => {
     const forbidden = new Set(FORBIDDEN_FILES);
     const unlisted = filesUnder(join(wireSrcDir, 'kinds'), wireSrcDir).filter((file) => {

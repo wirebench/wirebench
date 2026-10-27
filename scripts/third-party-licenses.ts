@@ -90,7 +90,6 @@ const OWN_PACKAGES = new Set([
   '@wirebench/protocol-ws',
   '@wirebench/protocol-mcp',
   '@wirebench/protocol-graphql',
-  '@wirebench/wire',
 ]);
 
 /**

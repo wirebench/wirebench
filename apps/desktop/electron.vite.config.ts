@@ -31,14 +31,15 @@ function cspMetaPlugin(): Plugin {
 
 export default defineConfig({
   main: {
-    // `@wirebench/wire` ships TypeScript sources, so it is bundled, never left as a runtime `require`.
-    plugins: [externalizeDepsPlugin({ exclude: ['@wirebench/wire'] })],
+    // `@wirebench/wire` is a devDependency, so this plugin bundles it: it ships TypeScript sources and
+    // must never be left as a runtime `require`.
+    plugins: [externalizeDepsPlugin()],
     resolve: { alias: sharedAlias },
   },
   preload: {
     // `zod` must be bundled, not externalized: Electron's sandboxed preload environment can
     // only `require()` Node built-ins and `electron` itself, not arbitrary npm packages.
-    plugins: [externalizeDepsPlugin({ exclude: ['zod', '@wirebench/wire'] })],
+    plugins: [externalizeDepsPlugin({ exclude: ['zod'] })],
     resolve: { alias: sharedAlias },
     build: {
       // Electron's sandboxed preload loader only supports CommonJS, even though this

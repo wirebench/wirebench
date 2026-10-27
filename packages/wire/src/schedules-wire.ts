@@ -5,7 +5,7 @@ import { runnerRequestResultSchema } from './runner-wire.js';
 /**
  * Wire shapes of a shared workspace's schedules (scheduled-runs spec §3.7, issue #517). Main parses the
  * server's answers with the engine's schemas; these restate what crosses the bridge, plain zod as the
- * rest of `shared/` is. A secret value or an alert URL goes in and only its hint comes back. Renderer
+ * rest of `@wirebench/wire` is. A secret value or an alert URL goes in and only its hint comes back. Renderer
  * code imports these as types only.
  */
 

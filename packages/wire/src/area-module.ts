@@ -27,7 +27,7 @@ export interface AreaModule<Id extends string = string> {
   readonly feature: FeatureDescriptor;
   readonly rail: {
     readonly label: string;
-    /** Lucide icon name; the renderer maps it to the component so `shared/` stays free of React. */
+    /** Lucide icon name; the renderer maps it to the component so `@wirebench/wire` stays free of React. */
     readonly icon: 'FolderTree' | 'Braces' | 'Search' | 'History' | 'ShieldCheck' | 'TerminalSquare';
     /** The command that shows the view; its shortcut labels the rail item. */
     readonly command: CommandId;
@@ -55,7 +55,7 @@ export function areaById(id: AreaId): AreaModule<AreaId> {
 /**
  * The ids left on after `switches` (`{ ssh: false }`) are applied, in rail order. Mirrors the engine's
  * `createFeatureSet` rules (switch beats default; a feature is off when anything it requires is off) with
- * a local filter, because `shared/` takes type-only imports from the engine (renderer CSP).
+ * a local filter, because `@wirebench/wire` takes type-only imports from the engine (renderer CSP).
  */
 export function enabledAreaIds(switches: Readonly<Record<string, boolean>>): readonly AreaId[] {
   const byId = new Map<string, FeatureDescriptor>(AREAS.map((area) => [area.id, area.feature]));

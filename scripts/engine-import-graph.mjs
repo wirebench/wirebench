@@ -43,8 +43,14 @@ export const PACKAGE_GROUPS = Object.freeze({
   engine: 'compose',
 });
 
-/** Bare imports no engine file may make: the engine stays free of Electron and React. */
-export const BANNED_PACKAGES = Object.freeze(['electron', 'react', 'react-dom', '@wirebench/desktop']);
+/** Bare imports no engine file may make: the engine stays free of Electron, React and the desktop wire code. */
+export const BANNED_PACKAGES = Object.freeze([
+  'electron',
+  'react',
+  'react-dom',
+  '@wirebench/desktop',
+  '@wirebench/wire',
+]);
 
 /**
  * One import of a package no engine file may import.

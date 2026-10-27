@@ -16,7 +16,7 @@ import { wsKind } from './ws/kind.js';
 export interface KindModule<K extends string = string> {
   /** The engine's protocol kind: `soap`, `rest`, `grpc`, `websocket`, `mcp`. */
   readonly kind: K;
-  /** The engine module's feature descriptor, repeated here because `shared/` imports the engine type-only. */
+  /** The engine module's feature descriptor, repeated here because `@wirebench/wire` imports the engine type-only. */
   readonly feature: FeatureDescriptor;
   /** How the kind is named to a person: `SOAP`, `REST`, `gRPC`, `WebSocket`, `MCP`. */
   readonly label: string;
