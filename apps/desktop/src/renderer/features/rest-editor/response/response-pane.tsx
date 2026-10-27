@@ -268,10 +268,7 @@ export function RestResponsePane({
           <p className="p-3 text-sm text-fg-subtle">Send the request to see its response.</p>
         )
       ) : (
-        <div
-          data-testid="rest-response-view"
-          className="flex min-h-0 flex-1 flex-col"
-        >
+        <div data-testid="rest-response-view" className="flex min-h-0 flex-1 flex-col">
           {kept !== undefined && (
             <CancelledBar
               afterMs={state?.cancelledAfterMs}
