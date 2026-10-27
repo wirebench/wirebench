@@ -55,13 +55,13 @@ export function ShortcutsEditor({ context }: ShortcutsEditorProps) {
   return (
     <>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="text-sm text-fg-subtle">
+        <p className="min-w-0 text-sm text-fg-subtle">
           Click a shortcut to record a new one. Escape cancels; Backspace leaves the command unbound.
         </p>
         <button
           type="button"
           data-testid="shortcuts-reset-all"
-          className={BUTTON}
+          className={`${BUTTON} shrink-0 whitespace-nowrap`}
           onClick={() => {
             setRecording(undefined);
             void reset('shortcuts');
@@ -71,102 +71,105 @@ export function ShortcutsEditor({ context }: ShortcutsEditorProps) {
         </button>
       </div>
 
-      <table data-testid="shortcuts-table" className="w-full table-fixed border-collapse">
-        <thead>
-          <tr className="border-b border-hairline text-left text-xs tracking-wider text-fg-faint uppercase">
-            <th scope="col" className={`${CELL} w-2/5`}>
-              Command
-            </th>
-            <th scope="col" className={`${CELL} w-1/6`}>
-              Category
-            </th>
-            <th scope="col" className={`${CELL} w-1/6`}>
-              Default
-            </th>
-            <th scope="col" className={`${CELL} w-1/4`}>
-              Shortcut
-            </th>
-            <th scope="col" className={`${CELL} w-16`}>
-              <span className="sr-only">Reset</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.id} data-testid="shortcut-row" data-command={row.id} className="border-b border-hairline/50">
-              <td className={`${CELL} truncate text-fg-default`} title={row.label}>
-                {row.label}
-                {row.conflictNote !== undefined && (
-                  <span data-testid="shortcut-conflict" className="ml-2 text-xs text-status-danger">
-                    {row.conflictNote}
-                  </span>
-                )}
-                {refused?.id === row.id && (
-                  <span data-testid="shortcut-refused" role="alert" className="ml-2 text-xs text-status-danger">
-                    {refused.message}
-                  </span>
-                )}
-              </td>
-              <td className={`${CELL} truncate text-fg-subtle`}>{row.category}</td>
-              <td className={`${CELL} truncate font-mono text-xs text-fg-subtle`}>
-                {row.defaultChord === undefined ? '—' : formatKeybinding(row.defaultChord, context.platform)}
-              </td>
-              <td className={CELL}>
-                <button
-                  type="button"
-                  data-testid="shortcut-chord"
-                  aria-label={`Shortcut for ${row.label}`}
-                  className={`${BUTTON} w-full text-left font-mono ${
-                    recording === row.id ? 'ring-1 ring-accent' : ''
-                  } ${row.customized ? 'text-accent' : ''}`}
-                  onClick={() => {
-                    setRecording(row.id);
-                  }}
-                  onBlur={() => {
-                    setRecording((current) => (current === row.id ? undefined : current));
-                  }}
-                  onKeyDown={(event) => {
-                    if (recording !== row.id) {
-                      return;
-                    }
-                    event.preventDefault();
-                    event.stopPropagation();
-                    if (event.key === 'Escape') {
-                      setRecording(undefined);
-                      setRefused(undefined);
-                      return;
-                    }
-                    if (event.key === 'Backspace' || event.key === 'Delete') {
-                      bind(row.id, '');
-                      return;
-                    }
-                    const chord = chordFromEvent(event.nativeEvent, context.platform);
-                    if (chord !== undefined) {
-                      bind(row.id, chord);
-                    }
-                  }}
-                >
-                  {recording === row.id ? 'Press a key…' : chordLabel(row, context)}
-                </button>
-              </td>
-              <td className={CELL}>
-                <button
-                  type="button"
-                  data-testid="shortcut-reset"
-                  aria-label={`Reset shortcut for ${row.label}`}
-                  disabled={!row.customized}
-                  className={`${BUTTON} disabled:opacity-40`}
-                  onClick={() => {
-                    bind(row.id, resetValueFor(row));
-                  }}
-                >
-                  Reset
-                </button>
-              </td>
+      {/* The table keeps a floor width, so a narrow window scrolls it sideways rather than crushing the columns. */}
+      <div className="overflow-x-auto">
+        <table data-testid="shortcuts-table" className="w-full min-w-[44rem] table-fixed border-collapse">
+          <thead>
+            <tr className="border-b border-hairline text-left text-xs tracking-wider text-fg-faint uppercase">
+              <th scope="col" className={`${CELL} w-2/5`}>
+                Command
+              </th>
+              <th scope="col" className={`${CELL} w-1/6`}>
+                Category
+              </th>
+              <th scope="col" className={`${CELL} w-1/6`}>
+                Default
+              </th>
+              <th scope="col" className={`${CELL} w-1/4`}>
+                Shortcut
+              </th>
+              <th scope="col" className={`${CELL} w-16`}>
+                <span className="sr-only">Reset</span>
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} data-testid="shortcut-row" data-command={row.id} className="border-b border-hairline/50">
+                <td className={`${CELL} truncate text-fg-default`} title={row.label}>
+                  {row.label}
+                  {row.conflictNote !== undefined && (
+                    <span data-testid="shortcut-conflict" className="ml-2 text-xs text-status-danger">
+                      {row.conflictNote}
+                    </span>
+                  )}
+                  {refused?.id === row.id && (
+                    <span data-testid="shortcut-refused" role="alert" className="ml-2 text-xs text-status-danger">
+                      {refused.message}
+                    </span>
+                  )}
+                </td>
+                <td className={`${CELL} truncate text-fg-subtle`}>{row.category}</td>
+                <td className={`${CELL} truncate font-mono text-xs text-fg-subtle`}>
+                  {row.defaultChord === undefined ? '—' : formatKeybinding(row.defaultChord, context.platform)}
+                </td>
+                <td className={CELL}>
+                  <button
+                    type="button"
+                    data-testid="shortcut-chord"
+                    aria-label={`Shortcut for ${row.label}`}
+                    className={`${BUTTON} w-full text-left font-mono ${
+                      recording === row.id ? 'ring-1 ring-accent' : ''
+                    } ${row.customized ? 'text-accent' : ''}`}
+                    onClick={() => {
+                      setRecording(row.id);
+                    }}
+                    onBlur={() => {
+                      setRecording((current) => (current === row.id ? undefined : current));
+                    }}
+                    onKeyDown={(event) => {
+                      if (recording !== row.id) {
+                        return;
+                      }
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (event.key === 'Escape') {
+                        setRecording(undefined);
+                        setRefused(undefined);
+                        return;
+                      }
+                      if (event.key === 'Backspace' || event.key === 'Delete') {
+                        bind(row.id, '');
+                        return;
+                      }
+                      const chord = chordFromEvent(event.nativeEvent, context.platform);
+                      if (chord !== undefined) {
+                        bind(row.id, chord);
+                      }
+                    }}
+                  >
+                    {recording === row.id ? 'Press a key…' : chordLabel(row, context)}
+                  </button>
+                </td>
+                <td className={CELL}>
+                  <button
+                    type="button"
+                    data-testid="shortcut-reset"
+                    aria-label={`Reset shortcut for ${row.label}`}
+                    disabled={!row.customized}
+                    className={`${BUTTON} disabled:opacity-40`}
+                    onClick={() => {
+                      bind(row.id, resetValueFor(row));
+                    }}
+                  >
+                    Reset
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </>
   );
 }

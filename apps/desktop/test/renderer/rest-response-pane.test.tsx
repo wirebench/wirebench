@@ -709,23 +709,23 @@ describe('RestResponsePane with an event stream', () => {
     expect(status).not.toContain('events');
   });
 
-  it('keeps the last response, dimmed, under one Sending bar with a running timer', () => {
+  it('replaces the last response with one Sending bar, a running timer and a Cancel', () => {
     vi.useFakeTimers();
     try {
       const startedAt = new Date().toISOString();
+      const onCancel = vi.fn();
       render(
         <TooltipPrimitive.Provider>
           <RestResponsePane
             requestId="rest-1"
+            onCancel={onCancel}
             state={{ status: 'sending', sendId: 'send-2', startedAt, previous: makeRestExchange() }}
           />
         </TooltipPrimitive.Provider>,
       );
-      const view = screen.getByTestId('rest-response-view');
-      expect(view.className).toContain('opacity-50');
-      expect(view.getAttribute('aria-busy')).toBe('true');
-      expect(screen.getByRole('tab', { name: /^Body/ })).toBeTruthy();
-      // The old answer cannot be saved as if it were the new one.
+      // The old answer is gone, not dimmed under the new request (G12).
+      expect(screen.queryByTestId('rest-response-view')).toBeNull();
+      expect(screen.queryByRole('tab', { name: /^Body/ })).toBeNull();
       expect(screen.queryByTestId('rest-response-save')).toBeNull();
       expect(screen.getAllByText('Sending…')).toHaveLength(1);
       expect(screen.getByTestId('rest-response-elapsed').textContent).toBe(' 0.0 s');
@@ -733,9 +733,21 @@ describe('RestResponsePane with an event stream', () => {
         vi.advanceTimersByTime(2400);
       });
       expect(screen.getByTestId('rest-response-elapsed').textContent).toBe(' 2.4 s');
+      fireEvent.click(screen.getByTestId('rest-response-cancel'));
+      expect(onCancel).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('shows no Cancel in the pane when it is given no way to cancel', () => {
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane requestId="rest-1" state={{ status: 'sending', sendId: 'send-1' }} />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByTestId('rest-response-sending')).toBeTruthy();
+    expect(screen.queryByTestId('rest-response-cancel')).toBeNull();
   });
 
   it('says Sending once, in the bar, when there is no earlier response', () => {

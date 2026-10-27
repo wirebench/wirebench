@@ -306,6 +306,13 @@ describe('resultMark (#560)', () => {
     expect(dataColumnsFor(targets, undefined)).toEqual([]);
   });
 
+  it('labels the delay field "Delay (ms)" with a tooltip saying what it is (G13)', async () => {
+    await mount();
+    const label = screen.getByText('Delay (ms)');
+    expect(label.getAttribute('title')).toBe('How long to wait between one request and the next.');
+    expect(screen.getByTestId('runner-delay').getAttribute('aria-label')).toBe('Delay (ms)');
+  });
+
   it('teaches the ${#Data#column} form in the hint (D1, #569)', async () => {
     await mount();
     expect(screen.getByTestId('runner-tab').textContent).toContain('${#Data#column}');

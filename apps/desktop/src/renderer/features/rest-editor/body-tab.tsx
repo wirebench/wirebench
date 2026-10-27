@@ -16,7 +16,8 @@ import { Button } from '../../components/button.js';
 import { KvTable } from '../../components/kv-table.js';
 import { dismissToast, showToast } from '../../components/toast.js';
 import { CodeEditor } from '../../editor/code-editor.js';
-import { SAVE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
+import { toggleCommentInEditor } from '../../editor/line-comment.js';
+import { SAVE_KEYBINDING, SEND_KEYBINDING, TOGGLE_COMMENT_KEYBINDING } from '../../editor/monaco.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
@@ -403,6 +404,16 @@ export function BodyTab({
               });
               editor.addCommand(SAVE_KEYBINDING, () => {
                 onSave?.();
+              });
+              // Monaco's own toggle rounds the `//` down to a tab stop; for JSON this keeps it at the
+              // indent (G15). The language is read on each press, since the body can switch languages
+              // while the editor stays mounted; every other language keeps the built-in toggle.
+              editor.addCommand(TOGGLE_COMMENT_KEYBINDING, () => {
+                if (editor.getModel()?.getLanguageId() === 'json') {
+                  toggleCommentInEditor(editor);
+                } else {
+                  void editor.getAction('editor.action.commentLine')?.run();
+                }
               });
               attachVariables(editor, monacoNS);
             }}
