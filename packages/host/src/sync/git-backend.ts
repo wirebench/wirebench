@@ -2,7 +2,7 @@
  * The `SyncBackend` for a workspace shared as a git repository. Every operation runs through the
  * `GitCli` it is constructed with (which itself never imports Electron), so this file stays plain
  * Node too — the server backend of spec 2 shares no code with it, but is held to the same
- * contract by `apps/desktop/test/sync/backend-contract.test.ts`.
+ * contract by `packages/host/test/sync/backend-contract.test.ts`.
  */
 
 import { access, writeFile } from 'node:fs/promises';
