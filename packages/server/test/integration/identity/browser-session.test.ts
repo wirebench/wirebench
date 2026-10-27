@@ -121,6 +121,27 @@ describeDb('cookie sessions on the identity guard (hosted spec §17.2)', () => {
     expect(after.statusCode).toBe(401);
   });
 
+  it('still clears a stale cookie on sign-out, answering 401', async () => {
+    const revoked = await signedInUser(h, { email: 'revoked@example.com', kind: 'browser' });
+    await repo.revokeToken(h.db, revoked.tokenId, h.clock.now);
+    for (const token of [revoked.token, mintToken().token]) {
+      const res = await h.app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/sign-out',
+        headers: { ...withCookie(token), origin: PUBLIC_URL },
+      });
+      expect(res.statusCode).toBe(401);
+      expect(res.json<{ code: string }>().code).toBe('identity-unauthenticated');
+      expect([res.headers['set-cookie']].flat()).toEqual([
+        `${COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`,
+      ]);
+    }
+    // No cookie at all: nothing to clear.
+    const bare = await h.app.inject({ method: 'POST', url: '/api/v1/auth/sign-out' });
+    expect(bare.statusCode).toBe(401);
+    expect(bare.headers['set-cookie']).toBeUndefined();
+  });
+
   it('signs a bearer caller out without touching cookies', async () => {
     const alice = await signedInUser(h, { email: 'alice@example.com' });
     const res = await h.app.inject({ method: 'POST', url: '/api/v1/auth/sign-out', headers: alice.headers });

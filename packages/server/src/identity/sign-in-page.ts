@@ -75,10 +75,12 @@ export async function sendSignInPage(
     redirectTo: options.redirectTo ?? '/',
     ...(options.message !== undefined ? { message: options.message } : {}),
   });
+  // Not `no-referrer`: under it a browser sends `Origin: null` on the form's own POST, which the
+  // login-CSRF check must refuse. `same-origin` still keeps the URL from every other site.
   return reply
     .code(options.status ?? 200)
     .header('content-security-policy', SIGN_IN_PAGE_CSP)
-    .header('referrer-policy', 'no-referrer')
+    .header('referrer-policy', 'same-origin')
     .header('cache-control', 'no-store')
     .type('text/html; charset=utf-8')
     .send(html);

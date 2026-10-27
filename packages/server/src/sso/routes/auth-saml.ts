@@ -275,7 +275,7 @@ export const authSamlRoutes =
                 redirectTo: flow.redirectTo,
               });
             }
-            return finishBrowserSignIn(env, reply, answer.user, 'saml', auditSource(request), flow.redirectTo);
+            return finishBrowserSignIn(env, request, reply, answer.user, 'saml', auditSource(request), flow.redirectTo);
           },
         );
       registered();

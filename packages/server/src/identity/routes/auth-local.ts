@@ -7,10 +7,9 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { ANONYMOUS_SOURCE, announce, auditSource, recordAudit, type AuditSource } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
-import { clearSessionCookie } from '../cookies.js';
+import { clearSessionCookie, sessionToken } from '../cookies.js';
 import type { IdentityEnv } from '../env.js';
-import { invalidCredentials, methodDisabled, userDisabled } from '../errors.js';
-import { requireUser } from '../guard.js';
+import { invalidCredentials, methodDisabled, unauthenticated, userDisabled } from '../errors.js';
 import { hashPassword, verifyPassword } from '../passwords.js';
 import { emailKey, ipKey, rateLimit } from '../rate-limit.js';
 import * as repo from '../repo.js';
@@ -83,19 +82,27 @@ export const authLocalRoutes =
       },
     );
 
-    app.post('/auth/sign-out', { preHandler: requireUser }, async (request, reply) => {
+    app.post('/auth/sign-out', async (request, reply) => {
+      if (request.caller === undefined) {
+        // A cookie the guard found stale (revoked, expired, unknown) is still dropped, so the browser
+        // stops presenting it; the answer stays 401 since no session was ended.
+        if (env.ctx.config.browserClient && sessionToken(request, env.ctx.config.publicUrl) !== undefined)
+          clearSessionCookie(reply, env.ctx.config.publicUrl);
+        throw unauthenticated();
+      }
+      const caller = request.caller;
       await env.ctx.db.transaction(async (tx) => {
-        await repo.revokeToken(tx, request.caller!.tokenId, env.now());
+        await repo.revokeToken(tx, caller.tokenId, env.now());
         await recordAudit(env.ctx.hooks, tx, {
           ...auditSource(request),
           action: 'auth.signed_out',
-          target: { kind: 'user', id: request.caller!.id },
-          details: { tokenId: request.caller!.tokenId },
+          target: { kind: 'user', id: caller.id },
+          details: { tokenId: caller.tokenId },
         });
       });
-      announce(env.ctx.hooks.sessionEnded, { tokenId: request.caller!.tokenId }, request.log);
+      announce(env.ctx.hooks.sessionEnded, { tokenId: caller.tokenId }, request.log);
       // A browser session also loses its cookie (hosted spec §17.2); a desktop's reply carries none.
-      if (request.caller!.via === 'cookie') clearSessionCookie(reply, env.ctx.config.publicUrl);
+      if (caller.via === 'cookie') clearSessionCookie(reply, env.ctx.config.publicUrl);
       return reply.code(204).send();
     });
   };

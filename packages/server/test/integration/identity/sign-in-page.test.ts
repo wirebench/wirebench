@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import type { SessionEnded } from '../../../src/context.js';
 import type { OidcProvider } from '../../../src/identity/oidc.js';
 import * as repo from '../../../src/identity/repo.js';
 import { recordingAudit } from '../../helpers/context.js';
@@ -72,6 +73,9 @@ describeDb('the sign-in page and local form sign-in (hosted spec §17.2)', () =>
       expect(res.headers['content-type']).toMatch(/^text\/html/);
       expect(res.headers['content-security-policy']).toBe(CSP);
       expect(res.headers['cache-control']).toBe('no-store');
+      // Not no-referrer: under that policy a browser posts the form with `Origin: null`, which the
+      // form's login-CSRF check refuses, so no one could sign in.
+      expect(res.headers['referrer-policy']).toBe('same-origin');
       expect(res.body).toContain('action="/sign-in/local"');
       expect(res.body).toContain('name="email"');
       expect(res.body).toContain('name="password"');
@@ -132,6 +136,47 @@ describeDb('the sign-in page and local form sign-in (hosted spec §17.2)', () =>
       expect(events.filter((e) => e.action === 'auth.signed_in').map((e) => e.details?.['method'])).toEqual(['local']);
     });
 
+    it('ends the session the browser already held, its own or another person’s, before setting the new one', async () => {
+      h = await identityHarness({ env: BROWSER_ENV });
+      const alice = await signedInUser(h, { email: 'alice@example.com', password: PASSWORD });
+      const bob = await signedInUser(h, { email: 'bob@example.com', kind: 'browser' });
+      const aliceBrowser = await signedInUser(h, { email: 'alice2@example.com', kind: 'browser' });
+      const ended: SessionEnded[] = [];
+      h.hooks.sessionEnded.push((event) => {
+        ended.push(event);
+      });
+      const events = recordingAudit(h.hooks);
+      const formWithCookie = (token: string) =>
+        h.app.inject({
+          method: 'POST',
+          url: '/sign-in/local',
+          headers: {
+            'content-type': 'application/x-www-form-urlencoded',
+            origin: PUBLIC_URL,
+            cookie: `${COOKIE}=${token}`,
+          },
+          payload: new URLSearchParams({ email: 'alice@example.com', password: PASSWORD }).toString(),
+          remoteAddress: '10.0.0.1',
+        });
+      // Another person's session in this browser.
+      const first = await formWithCookie(bob.token);
+      expect(first.statusCode, first.body).toBe(303);
+      expect(await repo.tokensOfUser(h.db, bob.user.id)).toHaveLength(0);
+      // The same person signing in again: the session the cookie held ends too.
+      const second = await formWithCookie(sessionFrom(first)!);
+      expect(second.statusCode, second.body).toBe(303);
+      const live = await repo.tokensOfUser(h.db, alice.user.id);
+      expect(live.filter((t) => t.kind === 'browser')).toHaveLength(1);
+      expect(ended).toHaveLength(2);
+      expect(ended[0]).toEqual({ tokenId: bob.tokenId });
+      expect(events.filter((e) => e.action === 'auth.signed_out').map((e) => e.target?.id)).toEqual([
+        bob.user.id,
+        alice.user.id,
+      ]);
+      // An unrelated user's session is left alone.
+      expect(await repo.tokensOfUser(h.db, aliceBrowser.user.id)).toHaveLength(1);
+    });
+
     it('lands on a same-origin redirect_to, and on / for a foreign or protocol-relative one', async () => {
       h = await identityHarness({ env: BROWSER_ENV });
       await signedInUser(h, { email: 'alice@example.com', password: PASSWORD });
@@ -156,6 +201,7 @@ describeDb('the sign-in page and local form sign-in (hosted spec §17.2)', () =>
       expect(wrong.body).toBe(unknown.body);
       expect(wrong.body).toContain('The email or password is not right.');
       expect(wrong.headers['content-security-policy']).toBe(CSP);
+      expect(wrong.headers['referrer-policy']).toBe('same-origin');
       expect(sessionFrom(wrong)).toBeUndefined();
       expect(sessionFrom(unknown)).toBeUndefined();
       expect(events.filter((e) => e.action === 'auth.sign_in_failed').map((e) => e.details?.['reason'])).toEqual([
@@ -173,7 +219,7 @@ describeDb('the sign-in page and local form sign-in (hosted spec §17.2)', () =>
       expect(sessionFrom(res)).toBeUndefined();
     });
 
-    it('refuses a form posted from another origin or with no Origin (login CSRF)', async () => {
+    it('refuses a form posted from another origin or with no Origin (login CSRF), and takes its own', async () => {
       h = await identityHarness({ env: BROWSER_ENV });
       await signedInUser(h, { email: 'alice@example.com', password: PASSWORD });
       for (const origin of ['https://evil.test', 'null', null]) {
@@ -182,6 +228,10 @@ describeDb('the sign-in page and local form sign-in (hosted spec §17.2)', () =>
         expect(res.json<{ code: string }>().code).toBe('identity-origin-refused');
         expect(sessionFrom(res)).toBeUndefined();
       }
+      // What a browser sends from the page under `Referrer-Policy: same-origin`.
+      const own = await signInForm({ email: 'alice@example.com', password: PASSWORD }, PUBLIC_URL);
+      expect(own.statusCode, own.body).toBe(303);
+      expect(sessionFrom(own)).toMatch(/^wbs_/);
     });
 
     const desktopSignIn = (email: string, ip: string) =>

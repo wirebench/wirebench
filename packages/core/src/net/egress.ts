@@ -37,6 +37,8 @@ const CLASSES: readonly (readonly [AddressClass, BlockList])[] = [
     blockList([
       ['ipv4', '169.254.169.254', 32],
       ['ipv6', 'fd00:ec2::254', 128],
+      // Alibaba Cloud's, inside 100.64/10 (shared address space), which is only private.
+      ['ipv4', '100.100.100.200', 32],
     ]),
   ],
   [

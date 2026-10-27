@@ -4,15 +4,17 @@
  * redirect or opens a WebSocket. Without `egress` the same sends still reach loopback servers.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createSecureServer, type Http2SecureServer } from 'node:http2';
 import type { LookupAddress } from 'node:dns';
 import { networkInterfaces } from 'node:os';
 import type { AddressInfo, LookupFunction } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { createDispatcher, createSingleConnectionDispatcher, sendHttp } from '#core/http/client';
+import { createDispatcher, createSingleConnectionDispatcher, scopedEgress, sendHttp } from '#core/http/client';
 import type { HttpRequest } from '#core/http/types';
 import { request as undiciRequest } from 'undici';
 import { wsDispatcher } from '#protocol-ws/ws/connect';
 import { connectWebSocket, type ConnectedWebSocket } from '../../../src/index.js';
+import { generateServerCert, generateTestCa } from '../../helpers/test-certs.js';
 import { startTestProxy, type TestProxy } from '../../helpers/test-proxy.js';
 import { startTestWsServer, type TestWsServer } from '../../helpers/test-ws-server.js';
 
@@ -186,6 +188,99 @@ describe('sendHttp with egress', () => {
         await dispatcher.close();
       }
     });
+  });
+});
+
+describe('HTTP/2 over TLS under egress', () => {
+  const lan = localInterfaceAddress();
+  let h2: Http2SecureServer | undefined;
+  let port = 0;
+  let ca: ReturnType<typeof generateTestCa>;
+
+  beforeAll(async () => {
+    if (lan === undefined) return;
+    ca = generateTestCa();
+    const cert = generateServerCert(ca, { commonName: 'h2.test', sans: ['h2.test'] });
+    h2 = createSecureServer({ cert: cert.certPem, key: cert.keyPem, allowHTTP1: true }, (req, res) => {
+      res.end(`over ${req.httpVersion}`);
+    });
+    // A non-loopback interface, since the rule refuses a loopback answer.
+    await new Promise<void>((resolve) => h2!.listen(0, lan, resolve));
+    port = (h2.address() as AddressInfo).port;
+  });
+  afterAll(async () => {
+    if (h2 !== undefined) await new Promise<void>((resolve) => h2!.close(() => resolve()));
+  });
+
+  // The dispatcher carries the CA as `sendHttp` builds it from a request's own `tls.ca`; it is built
+  // here only to add the base lookup, which a request cannot carry, mapping the name to this machine.
+  it.skipIf(lan === undefined)('negotiates h2 through the egress connector', async () => {
+    const dispatcher = createDispatcher({
+      egress: OPEN,
+      tls: { ca: [ca.certPem] },
+      lookup: mapName('h2.test', lan!, 4),
+    });
+    try {
+      const exchange = await sendHttp(get(`https://h2.test:${port}/`), { dispatcher });
+      expect(exchange.status).toBe(200);
+      expect(exchange.httpVersion).toBe('2');
+      expect(new TextDecoder().decode(exchange.body)).toBe('over 2.0');
+      expect(exchange.tls?.authorized).toBe(true);
+    } finally {
+      await dispatcher.close();
+    }
+  });
+});
+
+describe('a scoped egress policy', () => {
+  const lan = localInterfaceAddress();
+  let target: Awaited<ReturnType<typeof listen>> | undefined;
+  let connections = 0;
+
+  beforeAll(async () => {
+    if (lan === undefined) return;
+    target = await listen((_req, res) => res.end('ok'), lan);
+    target.server.on('connection', () => {
+      connections += 1;
+    });
+  });
+  afterAll(async () => {
+    if (target !== undefined) await close(target.server);
+  });
+
+  it.skipIf(lan === undefined)('shares one connection across sends, until it is closed', async () => {
+    const url = `http://${lan!}:${target!.port}/x`;
+    // Unscoped, each send builds and closes its own agent: a connection apiece.
+    const start = connections;
+    for (let i = 0; i < 5; i += 1) await sendHttp(get(url, { egress: OPEN }));
+    expect(connections - start).toBe(5);
+
+    const scope = scopedEgress(OPEN);
+    const scoped = connections;
+    try {
+      for (let i = 0; i < 5; i += 1) expect((await sendHttp(get(url, { egress: scope.policy }))).status).toBe(200);
+      // As with the default agent: undici takes back the first socket a moment after the first answer,
+      // so the second send may open one more; every send after that reuses a pooled one.
+      expect(connections - scoped).toBeLessThanOrEqual(2);
+      // Sends with the same TLS options (a REST send always states its minimum version) share theirs,
+      // while different options get an agent, and so a connection, of their own.
+      const minTls = connections;
+      for (let i = 0; i < 5; i += 1) await sendHttp(get(url, { egress: scope.policy, tls: { minVersion: 'TLSv1.2' } }));
+      expect(connections - minTls).toBeLessThanOrEqual(2);
+      const other = connections;
+      await sendHttp(get(url, { egress: scope.policy, tls: { minVersion: 'TLSv1.3' } }));
+      expect(connections - other).toBe(1);
+      // Still the rule: a loopback target is refused through the shared agent.
+      await expect(sendHttp(get(`http://127.0.0.1:${origin.port}/x`, { egress: scope.policy }))).rejects.toMatchObject({
+        code: 'egress-refused',
+      });
+    } finally {
+      await scope.close();
+    }
+    // Closed: a later send with the policy builds its own agent again, and still works.
+    const after = connections;
+    expect((await sendHttp(get(url, { egress: scope.policy }))).status).toBe(200);
+    expect(connections - after).toBe(1);
   });
 });
 

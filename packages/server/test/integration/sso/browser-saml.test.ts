@@ -183,6 +183,7 @@ describeDb('SAML sign-in from the browser (hosted spec §17.2)', () => {
         flowCookie,
       );
       expect(res.statusCode).toBe(400);
+      expect(res.headers['referrer-policy']).toBe('same-origin');
       expect(cookieValue(res, COOKIE)).toBeUndefined();
     });
 

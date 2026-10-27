@@ -72,7 +72,7 @@ export const browserSignInRoutes =
             message: checked.error.message,
             redirectTo,
           });
-        return finishBrowserSignIn(env, reply, checked.user, 'local', source, redirectTo);
+        return finishBrowserSignIn(env, request, reply, checked.user, 'local', source, redirectTo);
       });
       registered();
     });

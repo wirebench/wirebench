@@ -215,7 +215,7 @@ export const authOidcRoutes =
           if (claims.issuer !== provider.issuer) return refuse(502, 'identity-oidc-failed', claims.email);
           const linked = await linkClaims(env, claims, auditSource(request));
           if (!linked.ok) return refuse(403, linked.code, claims.email);
-          return finishBrowserSignIn(env, reply, linked.user, 'oidc', auditSource(request), flow.redirectTo);
+          return finishBrowserSignIn(env, request, reply, linked.user, 'oidc', auditSource(request), flow.redirectTo);
         },
       );
 

@@ -1,7 +1,9 @@
 import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { networkInterfaces, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { executeRun } from '../../../src/schedules/executor.js';
 import * as repo from '../../../src/schedules/repo.js';
 import type { AlertTestResponse, Schedule } from '@wirebench/engine';
@@ -56,6 +58,40 @@ describeDb('the egress rule on scheduled runs and alerts (hosted edition spec §
       }),
     ]);
     expect(server.seen).toEqual([]);
+  });
+
+  // A non-loopback interface of this machine: a target the rule lets through with private open.
+  const lan = Object.values(networkInterfaces())
+    .flat()
+    .find((entry) => entry?.family === 'IPv4' && !entry.internal)?.address;
+
+  it.skipIf(lan === undefined)('shares one agent across a run’s requests and closes it when the run ends', async () => {
+    let opened = 0;
+    let closed = 0;
+    const target = createServer((_request, response) => response.end('{}'));
+    target.on('connection', (socket) => {
+      opened += 1;
+      socket.on('close', () => {
+        closed += 1;
+      });
+    });
+    await new Promise<void>((done) => target.listen(0, lan, done));
+    const base = `http://${lan!}:${(target.address() as AddressInfo).port}`;
+    try {
+      const { runId } = await seedRun(c);
+      const files = await workspaceSnapshot(['A', 'B', 'C', 'D', 'E'].map((name) => probe(name, `${base}/ok`)));
+      await executeRun(executorEnv(c, files, tmpRoot, { egress: { denyPrivate: false } }), runId, never);
+      const found = await repo.runWithSchedule(c.h.db, runId);
+      expect(found!.run.status).toBe('passed');
+      // Five requests, kept alive: undici may open a second socket before it takes the first back.
+      expect(opened).toBeGreaterThan(0);
+      expect(opened).toBeLessThanOrEqual(2);
+      // The run's end closed the agent, so no socket is left open on the target.
+      await vi.waitFor(() => expect(closed).toBe(opened));
+    } finally {
+      target.closeAllConnections();
+      await new Promise<void>((done) => target.close(() => done()));
+    }
   });
 
   it('refuses a private address with denyPrivate on, as a private network address', async () => {

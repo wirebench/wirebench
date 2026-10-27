@@ -8,13 +8,15 @@
  */
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { AuditSource, Querier, ServerContext } from '../context.js';
-import { clearFlowCookie, flowCookie, setFlowCookie, setSessionCookie } from './cookies.js';
+import { DEVICE_TOKEN_PATTERN } from '@wirebench/engine';
+import { announce, recordAudit, type AuditSource, type Querier, type ServerContext } from '../context.js';
+import { clearFlowCookie, flowCookie, sessionToken, setFlowCookie, setSessionCookie } from './cookies.js';
 import { identitySettings } from './env.js';
 import { emailUnverified, notInvited, userDisabled } from './errors.js';
+import * as repo from './repo.js';
 import type { UserRow } from './repo.js';
 import { signIn } from './sessions.js';
-import { hashSecret, mintSecret, newId } from './tokens.js';
+import { hashSecret, hashToken, mintSecret, newId } from './tokens.js';
 
 /** §2 of the identity spec: a pending flow lives ten minutes. */
 export const BROWSER_FLOW_TTL_MS = 10 * 60 * 1000;
@@ -147,9 +149,36 @@ export async function takeBrowserFlow(
   return flow;
 }
 
-/** Mints a browser token with its `auth.signed_in` event, sets the session cookie and sends the browser on. */
+/**
+ * Revokes the live browser token the request's session cookie holds, if any, as a sign-out of that
+ * session. A new sign-in overwrites the cookie, so without this the old token would live on, unseen by
+ * the browser, until it expired. Read straight from the cookie: the callbacks do not take a caller from it.
+ */
+async function endPresentedSession(env: FlowEnv, request: FastifyRequest, source: AuditSource): Promise<void> {
+  const token = sessionToken(request, env.ctx.config.publicUrl);
+  if (token === undefined || !DEVICE_TOKEN_PATTERN.test(token)) return;
+  const found = await repo.tokenByHash(env.ctx.db, hashToken(token));
+  if (found === undefined || found.token.kind !== 'browser' || found.token.revokedAt !== null) return;
+  const tokenId = found.token.id;
+  await env.ctx.db.transaction(async (tx) => {
+    await repo.revokeToken(tx, tokenId, env.now());
+    await recordAudit(env.ctx.hooks, tx, {
+      ...source,
+      action: 'auth.signed_out',
+      target: { kind: 'user', id: found.user.id },
+      details: { tokenId },
+    });
+  });
+  announce(env.ctx.hooks.sessionEnded, { tokenId }, request.log);
+}
+
+/**
+ * Mints a browser token with its `auth.signed_in` event, sets the session cookie and sends the browser
+ * on. A session the browser already held, for this person or another, is ended first.
+ */
 export async function finishBrowserSignIn(
   env: FlowEnv,
+  request: FastifyRequest,
   reply: FastifyReply,
   user: UserRow,
   method: 'local' | 'oidc' | 'saml',
@@ -157,6 +186,7 @@ export async function finishBrowserSignIn(
   redirectTo: string,
 ): Promise<FastifyReply> {
   const config = env.ctx.config;
+  await endPresentedSession(env, request, source);
   const { token } = await signIn(env, user, method, BROWSER_DEVICE_NAME, source, 'browser');
   setSessionCookie(reply, config.publicUrl, token, Math.floor(identitySettings(config).tokenMaxMs / 1000));
   return reply

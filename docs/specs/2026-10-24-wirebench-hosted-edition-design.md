@@ -819,7 +819,8 @@ folds it back. Plan: `docs/plans/2026-10-27-browser-client.md`.
   alert and webhook clients. The connection goes to the address the check passed; nothing resolves twice.
 - Always refused, on every server: loopback (`127.0.0.0/8`, `::1`), unspecified (`0.0.0.0/8`, `::`),
   link-local (`169.254.0.0/16`, `fe80::/10`), which covers the IPv4 cloud-metadata address, the IPv6
-  metadata address `fd00:ec2::254`, multicast and broadcast. IPv4-mapped IPv6 is unwrapped first.
+  metadata address `fd00:ec2::254`, the metadata address `100.100.100.200` (inside `100.64.0.0/10`),
+  multicast and broadcast. IPv4-mapped IPv6 is unwrapped first.
 - Refused only when `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true` (and always in hosted mode, slice 4):
   `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `fc00::/7`.
 - Covered: server-host sends of every served kind, scheduled runs, schedule alerts, OAuth token calls,

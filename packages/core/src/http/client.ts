@@ -1,4 +1,5 @@
 import { Agent, ProxyAgent, buildConnector, request as undiciRequest, type Dispatcher } from 'undici';
+import { createHash } from 'node:crypto';
 import { isIP, type LookupFunction } from 'node:net';
 import { pipeline, type Readable } from 'node:stream';
 import { createDecompressStream, decompressBody } from './decompress.js';
@@ -62,6 +63,73 @@ let defaultAgent: Agent | undefined;
 function getDefaultAgent(): Agent {
   defaultAgent ??= new Agent({ keepAliveTimeout: 4000, keepAliveMaxTimeout: 10000, allowH2: true });
   return defaultAgent;
+}
+
+/** The egress agents of each policy {@link scopedEgress} handed out, one per set of connection options. */
+const egressPools = new WeakMap<EgressPolicy, Map<string, Dispatcher>>();
+
+/** A copy of an egress policy whose sends share their agents, until {@link EgressScope.close}. */
+export interface EgressScope {
+  /** Pass this as the send's `egress` (a host's `SendHost.egress`); it checks as the original does. */
+  readonly policy: EgressPolicy;
+  /** Closes the shared agents; a send made with `policy` afterwards builds its own again. */
+  close(): Promise<void>;
+}
+
+/**
+ * Connection reuse under the egress rule, for one scope such as a scheduled run. A send with `egress`
+ * would otherwise build and close an agent of its own, so no connection outlived its request. With
+ * the scope's policy, sends with the same TLS options, bind address and HTTP/2 setting share one agent
+ * (a client certificate or a trust setting of its own gets an agent of its own); a send through a proxy
+ * still builds its own. The scope's owner closes it when the scope ends, since nothing else knows when.
+ */
+export function scopedEgress(policy: EgressPolicy): EgressScope {
+  const scoped: EgressPolicy = { ...policy };
+  const agents = new Map<string, Dispatcher>();
+  egressPools.set(scoped, agents);
+  return {
+    policy: scoped,
+    close: async () => {
+      egressPools.delete(scoped);
+      const open = [...agents.values()];
+      agents.clear();
+      await Promise.all(open.map((agent) => agent.close().catch(() => undefined)));
+    },
+  };
+}
+
+/** The shared agent for `req`, when its policy came from a scope and it needs no proxy. */
+function scopedEgressAgent(req: HttpRequest, egress: EgressPolicy): Dispatcher | undefined {
+  const agents = egressPools.get(egress);
+  if (agents === undefined || req.proxy !== undefined) return undefined;
+  const { tls, localAddress, allowH2 } = req;
+  // A digest, so the map holds no key material of its own; the fields in a fixed order.
+  const key = createHash('sha256')
+    .update(
+      JSON.stringify([
+        tls?.rejectUnauthorized,
+        tls?.ca,
+        tls?.cert,
+        tls?.key,
+        tls?.passphrase,
+        tls?.minVersion,
+        tls?.servername,
+        localAddress,
+        allowH2,
+      ]),
+    )
+    .digest('hex');
+  let agent = agents.get(key);
+  if (agent === undefined) {
+    agent = createDispatcher({
+      ...(tls !== undefined ? { tls } : {}),
+      ...(localAddress !== undefined ? { localAddress } : {}),
+      ...(allowH2 !== undefined ? { allowH2 } : {}),
+      egress,
+    });
+    agents.set(key, agent);
+  }
+  return agent;
 }
 
 /**
@@ -553,8 +621,11 @@ export async function sendHttp(
     throw invalidUrlError(req.url, err);
   }
 
+  const scoped =
+    options?.dispatcher === undefined && req.egress !== undefined ? scopedEgressAgent(req, req.egress) : undefined;
   const ownDispatcher =
     options?.dispatcher === undefined &&
+    scoped === undefined &&
     (req.tls !== undefined ||
       req.proxy !== undefined ||
       req.localAddress !== undefined ||
@@ -568,7 +639,7 @@ export async function sendHttp(
           ...(req.egress !== undefined ? { egress: req.egress } : {}),
         })
       : undefined;
-  const dispatcher = options?.dispatcher ?? ownDispatcher ?? getDefaultAgent();
+  const dispatcher = options?.dispatcher ?? scoped ?? ownDispatcher ?? getDefaultAgent();
 
   const maxRedirects = req.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
   const redirects: { url: string; status: number; upgrade?: true }[] = [];

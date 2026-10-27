@@ -24,6 +24,8 @@ const TABLE: readonly (readonly [string, AddressClass])[] = [
   ['febf:ffff::1', 'link-local'],
   ['169.254.169.254', 'metadata'],
   ['fd00:ec2::254', 'metadata'],
+  ['100.100.100.200', 'metadata'],
+  ['100.100.100.201', 'private'],
   // multicast, and the limited broadcast address with it
   ['224.0.0.1', 'multicast'],
   ['239.255.255.255', 'multicast'],

@@ -21,6 +21,7 @@ import {
   parseDataFile,
   planIterations,
   runSuite,
+  scopedEgress,
   SECRET_ENV_PREFIX,
   secretNeedsOf,
   selectSuite,
@@ -29,6 +30,7 @@ import {
   workspaceProjectDir,
   type DataTable,
   type EgressPolicy,
+  type EgressScope,
   type GetSecret,
   type Iteration,
   type RunResult,
@@ -163,6 +165,8 @@ export async function executeRun(env: ExecutorEnv, runId: string, signal: AbortS
   let commit: string | null = null;
   let environment: string | null = null;
   let snapshot: Materialised | undefined;
+  // One egress agent for the whole run, so its requests keep their connections as the CLI's do.
+  const egress: EgressScope | undefined = env.egress === 'unchecked' ? undefined : scopedEgress(env.egress);
   let outcome: Outcome;
   try {
     if (Object.keys(schedule.secrets).length > 0 && env.settings.secretKey === undefined) {
@@ -229,7 +233,7 @@ export async function executeRun(env: ExecutorEnv, runId: string, signal: AbortS
           onSecretValue: (value) => known.add(value),
           // One jar for the whole run: every request, sequence step and iteration shares it.
           cookies: jarCookieHost(new CookieJar()),
-          ...(env.egress !== 'unchecked' ? { egress: env.egress } : {}),
+          ...(egress !== undefined ? { egress: egress.policy } : {}),
         },
         insecure: options.insecureTls,
         signal: runSignal,
@@ -269,6 +273,7 @@ export async function executeRun(env: ExecutorEnv, runId: string, signal: AbortS
     }
   } finally {
     timer.cancel();
+    await egress?.close();
     await snapshot?.dispose();
   }
 
