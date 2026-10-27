@@ -91,8 +91,8 @@ export function wsDispatcher(options: WsTransportOptions): WsDispatcher {
 /**
  * The status in `message` (an `undici:request:headers` payload) when it answers this socket's own
  * upgrade request: the request asked for `websocket`, and its origin, path and query are the socket's.
- * undici hands a `101` to `onUpgrade` and never publishes it here, so any status seen here is a
- * refusal.
+ * A `101` is the accepted upgrade, never a refusal: undici up to 8.10 never published it here, and
+ * 8.12 publishes it before `open` fires.
  */
 function refusalStatusFor(message: unknown, httpOrigin: string, pathAndSearch: string): number | undefined {
   const m = message as {
@@ -107,7 +107,8 @@ function refusalStatusFor(message: unknown, httpOrigin: string, pathAndSearch: s
         ? m.request.origin.origin
         : undefined;
   if (origin !== httpOrigin) return undefined;
-  return typeof m.response?.statusCode === 'number' ? m.response.statusCode : undefined;
+  const status = m.response?.statusCode;
+  return typeof status === 'number' && status !== 101 ? status : undefined;
 }
 
 /**
