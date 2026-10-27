@@ -196,6 +196,15 @@ describe('REST through openExchange', () => {
     }
   });
 
+  it("refuses a loopback target under the host's egress rule, and sends it without one", async () => {
+    await expect(open(restItem('/echo'), {}, { egress: { denyPrivate: false } }).result).rejects.toMatchObject({
+      code: 'egress-refused',
+      details: { addressClass: 'loopback' },
+    });
+    const sent = await open(restItem('/echo')).result;
+    expect(sent.subject.status).toBe(200);
+  });
+
   it('a webhook item goes to the host callback URL', async () => {
     const sent = await open(
       webhookItem('http://127.0.0.1:1/never'),

@@ -181,6 +181,7 @@ async function issuedTargetFor(
     expand: expandText,
     ...(tls !== undefined ? { tls } : {}),
     ...(context.host.proxyFor !== undefined ? { proxy: context.host.proxyFor } : {}),
+    ...(context.host.egress !== undefined ? { egress: context.host.egress } : {}),
     ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   };
@@ -446,6 +447,7 @@ export async function connectSoap(
     ...(sendAuth !== undefined ? { auth: sendAuth } : {}),
     ...(tls !== undefined ? { tls: { ...input.tls, ...tls } } : {}),
     ...(proxy !== undefined ? { proxy } : {}),
+    ...(context.host.egress !== undefined ? { egress: context.host.egress } : {}),
   };
 }
 

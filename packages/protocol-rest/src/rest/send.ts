@@ -19,6 +19,7 @@ import type {
   ProxyOptions,
   TlsOptions,
 } from '#core/http/types';
+import type { EgressPolicy } from '#core/net/egress';
 import type { AuthSummary, SendAuth } from '#core/http/auth/send-auth';
 import type { SignatureScheme } from '#core/http/webhook-signature';
 import { signWebhook } from '#core/http/webhook-signature';
@@ -93,6 +94,8 @@ export interface RestSendInput {
   readonly jar?: { readonly host: CookieJarHost; readonly send: boolean };
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
+  /** The egress rule a server applies (hosted edition spec §17.5); absent, no check. */
+  readonly egress?: EgressPolicy;
   /** How a multipart file part or a binary body is read. */
   readonly resolveFile?: FileResolver;
   /** Fixed multipart boundary; tests inject it. */
@@ -274,6 +277,7 @@ export async function sendRest(input: RestSendInput): Promise<RestExchange> {
     ...(settings.decompress !== undefined ? { decompress: settings.decompress } : {}),
     ...(input.tls !== undefined ? { tls: input.tls } : {}),
     ...(input.proxy !== undefined ? { proxy: input.proxy } : {}),
+    ...(input.egress !== undefined ? { egress: input.egress } : {}),
     ...(input.signal !== undefined ? { signal: input.signal } : {}),
     ...(sseState !== undefined && onStream !== undefined ? { stream: sseState.hook(onStream) } : {}),
     ...(cookieHook !== undefined ? { cookies: cookieHook } : {}),

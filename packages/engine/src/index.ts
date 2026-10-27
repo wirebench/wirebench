@@ -565,6 +565,9 @@ export { md4 } from '#core/http/auth/md4';
 export { ntlmHandshake } from '#core/http/auth/ntlm-transport';
 export type { NtlmCredentials, NtlmHandshakeOptions, NtlmHandshakeResult } from '#core/http/auth/ntlm-transport';
 export { createDispatcher, createSingleConnectionDispatcher, sendHttp } from '#core/http/client';
+// The egress rule (hosted edition spec §17.5): the server checks every connection it opens with these.
+export { checkEgress, checkedLookup, classifyAddress } from '#core/net/egress';
+export type { AddressClass, EgressPolicy } from '#core/net/egress';
 export { FAILED_REQUEST_BODY_CAP_BYTES, failedRequestOf } from '#core/http/failed-request';
 export type { FailedRequest } from '#core/http/failed-request';
 export { buildRawRequest, buildRawResponse } from '#core/http/raw-capture';

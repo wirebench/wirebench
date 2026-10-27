@@ -8,6 +8,7 @@ import { selectAlias } from '#core/keystore/index';
 import { buildRst } from './rst.js';
 import { parseRstr } from './rstr.js';
 import type { HttpExchange, HttpRequest, ProxyOptions, TlsOptions } from '#core/http/types';
+import type { EgressPolicy } from '#core/net/egress';
 import type { IssuedToken, WssContext, WssIssuedTokenEntry } from '../model.js';
 
 export interface IssuedTokenTarget {
@@ -17,6 +18,8 @@ export interface IssuedTokenTarget {
   /** Mutual TLS to the STS: the caller builds it from `entry.tlsKeystoreRef`, never from the endpoint's own TLS. */
   readonly tls?: TlsOptions;
   readonly proxy?: (url: string) => Promise<ProxyOptions | undefined>;
+  /** The egress rule a server applies (hosted edition spec §17.5); absent, no check. */
+  readonly egress?: EgressPolicy;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
   /**
@@ -133,6 +136,7 @@ export async function requestIssuedToken(
     followRedirects: false,
     ...(connected.tls !== undefined ? { tls: connected.tls } : {}),
     ...(proxy !== undefined ? { proxy } : {}),
+    ...(connected.egress !== undefined ? { egress: connected.egress } : {}),
     ...(connected.signal !== undefined ? { signal: connected.signal } : {}),
   });
   deps.onExchange?.(exchange);

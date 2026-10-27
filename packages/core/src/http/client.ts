@@ -1,10 +1,11 @@
-import { Agent, ProxyAgent, request as undiciRequest, type buildConnector, type Dispatcher } from 'undici';
-import type { LookupFunction } from 'node:net';
+import { Agent, ProxyAgent, buildConnector, request as undiciRequest, type Dispatcher } from 'undici';
+import { isIP, type LookupFunction } from 'node:net';
 import { pipeline, type Readable } from 'node:stream';
 import { createDecompressStream, decompressBody } from './decompress.js';
 import { failedRequestFor, withFailedRequest, type FailedRequest } from './failed-request.js';
 import { invalidUrlError, toHttpError, tooManyRedirectsError } from './errors.js';
 import { isHttpsUpgrade } from './https-upgrade.js';
+import { checkEgress, checkedLookup, type EgressPolicy } from '../net/egress.js';
 import { buildRawRequest, buildRawResponse } from './raw-capture.js';
 import { TimingTracker } from './timings.js';
 import type {
@@ -82,11 +83,19 @@ export function createDispatcher(opts: {
    * answer that changes between the check and the connect cannot move the request (phase 7 §8).
    */
   readonly lookup?: LookupFunction;
+  /**
+   * The egress rule (spec §17.5): every connection, the proxy hop and each redirect's included, goes
+   * through the checked lookup, and a literal address is checked before it connects. Absent: no check.
+   */
+  readonly egress?: EgressPolicy;
 }): Dispatcher {
   const connect = connectOptions(opts);
   const allowH2 = opts.allowH2 !== false;
   if (opts.proxy !== undefined) {
     return new ProxyAgent(proxyAgentOptionsFor(opts.proxy, opts, allowH2));
+  }
+  if (opts.egress !== undefined) {
+    return new Agent({ connect: egressConnector(opts.egress, { ...connect, allowH2 }), allowH2 });
   }
   if (connect !== undefined || !allowH2) {
     return new Agent({ ...(connect !== undefined ? { connect } : {}), allowH2 });
@@ -110,29 +119,39 @@ export function createDispatcher(opts: {
  * handshake. Exported for the unit test that pins exactly that; not part of the package's
  * public API (`index.ts` does not re-export it).
  *
+ * With an egress policy the hop to the proxy resolves through the checked lookup (`proxyTls` is the
+ * options undici builds that connector from), and a proxy named by a literal address is checked here,
+ * before anything connects. The origin behind the proxy is the proxy's to resolve.
+ *
  * @param proxy the resolved proxy to dial
- * @param opts the send's TLS options and bind address
+ * @param opts the send's TLS options, bind address and egress policy
  * @param allowH2 whether HTTP/2 may be negotiated, on the tunnelled handshake and the agent
  * @param extra agent-level options merged on top (connection pooling, keep-alive)
+ * @throws WirebenchError `egress-refused` for a proxy at a literal address the policy refuses
  */
 export function proxyAgentOptionsFor(
   proxy: ProxyOptions,
-  opts: { readonly tls?: TlsOptions; readonly localAddress?: string },
+  opts: {
+    readonly tls?: TlsOptions;
+    readonly localAddress?: string;
+    readonly lookup?: LookupFunction;
+    readonly egress?: EgressPolicy;
+  },
   allowH2: boolean,
   extra: Record<string, unknown> = {},
 ): ProxyAgent.Options {
+  if (opts.egress !== undefined) checkLiteralProxy(proxy.url, opts.egress);
+  const proxyHop = {
+    ...(opts.localAddress !== undefined ? { localAddress: opts.localAddress } : {}),
+    ...(opts.egress !== undefined ? { lookup: checkedLookup(opts.egress, opts.lookup) } : {}),
+  };
   return {
     uri: proxy.url,
     ...(proxy.auth !== undefined
       ? { token: `Basic ${Buffer.from(`${proxy.auth.username}:${proxy.auth.password}`).toString('base64')}` }
       : {}),
     requestTls: { ...(opts.tls !== undefined ? tlsConnectOptions(opts.tls) : {}), allowH2 },
-    // undici types `proxyTls` as `TcpNetConnectOpts & …`, which insists on a `port` a connector
-    // option set never carries; the narrow cast here replaces the one that used to swallow the
-    // whole options object (and with it every typo in it).
-    ...(opts.localAddress !== undefined
-      ? { proxyTls: { localAddress: opts.localAddress } as buildConnector.BuildOptions }
-      : {}),
+    ...(Object.keys(proxyHop).length > 0 ? { proxyTls: proxyHop } : {}),
     allowH2,
     ...extra,
   };
@@ -149,6 +168,8 @@ export function createSingleConnectionDispatcher(opts: {
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
   readonly localAddress?: string;
+  /** The egress rule, as {@link createDispatcher} applies it. */
+  readonly egress?: EgressPolicy;
 }): Dispatcher {
   const connect = connectOptions(opts);
   const base = { connections: 1, pipelining: 1, keepAliveTimeout: 30_000, keepAliveMaxTimeout: 60_000 };
@@ -161,7 +182,49 @@ export function createSingleConnectionDispatcher(opts: {
     // inside the tunnel, which is exactly the connection NTLM authenticates.
     return new ProxyAgent(proxyAgentOptionsFor(opts.proxy, opts, false, base));
   }
+  if (opts.egress !== undefined) {
+    return new Agent({ ...shared, connect: egressConnector(opts.egress, { ...connect, allowH2: false }) });
+  }
   return new Agent(shared);
+}
+
+/**
+ * undici's connector for `build`, under the egress rule: a name resolves through the checked lookup
+ * (on top of any lookup `build` already carries), and a literal address, which never reaches a lookup,
+ * is checked before the socket opens. A function connector takes its HTTP/2 offer from `build`, so the
+ * callers state `allowH2` there.
+ */
+function egressConnector(policy: EgressPolicy, build: buildConnector.BuildOptions): buildConnector.connector {
+  const base = (build as { lookup?: LookupFunction }).lookup;
+  const connect = buildConnector({ ...build, lookup: checkedLookup(policy, base) });
+  return (options, callback) => {
+    const host = unbracketed(options.hostname);
+    if (isIP(host) !== 0) {
+      try {
+        checkEgress(host, host, policy);
+      } catch (err) {
+        callback(err as Error, null);
+        return;
+      }
+    }
+    connect(options, callback);
+  };
+}
+
+/** Refuses a proxy URL whose host is a literal address the policy refuses; a name is left to the lookup. */
+function checkLiteralProxy(url: string, policy: EgressPolicy): void {
+  let host: string;
+  try {
+    host = unbracketed(new URL(url).hostname);
+  } catch {
+    return; // undici reports the malformed URL itself, as it does without a policy
+  }
+  if (isIP(host) !== 0) checkEgress(host, host, policy);
+}
+
+/** `[::1]` as `::1`; anything else unchanged. */
+function unbracketed(host: string): string {
+  return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
 }
 
 /** The connector options for the given TLS/bind-address settings, or `undefined` when neither is set. */
@@ -442,12 +505,17 @@ export async function sendHttp(
 
   const ownDispatcher =
     options?.dispatcher === undefined &&
-    (req.tls !== undefined || req.proxy !== undefined || req.localAddress !== undefined || req.allowH2 === false)
+    (req.tls !== undefined ||
+      req.proxy !== undefined ||
+      req.localAddress !== undefined ||
+      req.allowH2 === false ||
+      req.egress !== undefined)
       ? createDispatcher({
           ...(req.tls !== undefined ? { tls: req.tls } : {}),
           ...(req.proxy !== undefined ? { proxy: req.proxy } : {}),
           ...(req.localAddress !== undefined ? { localAddress: req.localAddress } : {}),
           ...(req.allowH2 !== undefined ? { allowH2: req.allowH2 } : {}),
+          ...(req.egress !== undefined ? { egress: req.egress } : {}),
         })
       : undefined;
   const dispatcher = options?.dispatcher ?? ownDispatcher ?? getDefaultAgent();

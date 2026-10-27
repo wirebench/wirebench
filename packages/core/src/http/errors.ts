@@ -1,4 +1,4 @@
-import { HttpError } from '../errors.js';
+import { HttpError, WirebenchError } from '../errors.js';
 import type { HttpErrorCode } from './types.js';
 
 /**
@@ -149,6 +149,16 @@ export function toHttpError(
 ): HttpError {
   const code = nodeErrorCode(err);
 
+  // The egress rule refused the address in the connector, before any byte went out: that is the
+  // answer whatever else is true, a proxy included (the refused hop may be the proxy itself).
+  const refusal = egressRefusalOf(err);
+  if (refusal !== undefined) {
+    return new HttpError('egress-refused' satisfies HttpErrorCode, refusal.message, {
+      cause: refusal,
+      ...(refusal.details !== undefined ? { details: refusal.details } : {}),
+    });
+  }
+
   if (options.deadlineHit) {
     const base = optionsFor(err, code);
     return new HttpError(
@@ -214,6 +224,16 @@ export function toHttpError(
     err instanceof Error ? err.message : 'Network error.',
     optionsFor(err, code),
   );
+}
+
+/** The egress refusal in `err` or its cause chain (undici may wrap a connector error), if any. */
+function egressRefusalOf(err: unknown): WirebenchError | undefined {
+  let current: unknown = err;
+  for (let depth = 0; depth < 5 && current !== undefined && current !== null; depth++) {
+    if (current instanceof WirebenchError && current.code === 'egress-refused') return current;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
 }
 
 /** Builds the `HttpError('invalid-url')` thrown when `req.url` cannot be parsed. */

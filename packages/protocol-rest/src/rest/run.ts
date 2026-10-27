@@ -193,6 +193,7 @@ export async function connectRest(
     ...(auth !== undefined ? { auth } : {}),
     ...(tls !== undefined ? { tls: { ...input.tls, ...tls } } : {}),
     ...(proxy !== undefined ? { proxy } : {}),
+    ...(context.host.egress !== undefined ? { egress: context.host.egress } : {}),
     ...(sign !== undefined ? { sign } : {}),
   };
 }

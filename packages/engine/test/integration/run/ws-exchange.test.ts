@@ -491,6 +491,27 @@ describe('WebSocket through openExchange', () => {
     expect(failures).toMatchObject([{ stage: 'send' }]);
   });
 
+  it("a run under the host's egress rule never reaches a loopback server", async () => {
+    const before = server.handshakes.length;
+    const named = open(
+      build('', { serverUrl: server.url.replace('127.0.0.1', 'localhost') }),
+      { interactive: false },
+      {
+        egress: { denyPrivate: false },
+      },
+    );
+    await expect(named.result).rejects.toMatchObject({
+      code: 'egress-refused',
+      details: { host: 'localhost', addressClass: 'loopback' },
+    });
+    const literal = open(build(''), { interactive: false }, { egress: { denyPrivate: false } });
+    await expect(literal.result).rejects.toMatchObject({
+      code: 'egress-refused',
+      details: { addressClass: 'loopback' },
+    });
+    expect(server.handshakes.length).toBe(before);
+  });
+
   it('a run whose handshake the server refuses fails with ws-handshake-refused', async () => {
     const handle = open(build('/refuse'), { interactive: false });
     await expect(handle.result).rejects.toMatchObject({ code: 'ws-handshake-refused' });

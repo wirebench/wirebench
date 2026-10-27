@@ -196,6 +196,7 @@ async function connectWs(
     ...(sendAuth !== undefined ? { auth: sendAuth } : {}),
     ...(tls !== undefined ? { tls } : {}),
     ...(proxy !== undefined ? { proxy } : {}),
+    ...(context.host.egress !== undefined ? { egress: context.host.egress } : {}),
     signal,
   });
   if (sendAuth === auth || handshakeTimeoutMs === undefined) return { session, auth: sendAuth };
@@ -543,7 +544,7 @@ async function sendWsItem(
       // or a timeout keeps it (#193). A cancel says nothing either.
       dropRefusedToken(context, auth, refusedStatus === 401 && !controller.signal.aborted);
       // A host shows a refused handshake from the transcript; a run has nothing to assert on, so it fails.
-      if (!opened && !interactive) throw handshakeFailure(exchange.handshake);
+      if (!opened && !interactive) throw session.egressRefusal() ?? handshakeFailure(exchange.handshake);
       if (timedOut && watch?.hasReplied === false) {
         throw new HttpError('timeout', 'The request timed out.', { details: { url: exchange.url } });
       }

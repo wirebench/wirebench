@@ -4,6 +4,7 @@
  * layer on top by producing headers/body before `sendHttp` is called.
  */
 
+import type { EgressPolicy } from '../net/egress.js';
 import type { SslInfo } from './tls.js';
 
 /** An HTTP request as fully resolved bytes/headers, ready to send. */
@@ -46,6 +47,12 @@ export interface HttpRequest {
   readonly localAddress?: string;
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
+  /**
+   * The egress rule (hosted edition spec §17.5): set by a server, so every hop of the send connects
+   * only to an address the policy allows. Applies to the dispatcher `sendHttp` builds; a caller that
+   * passes its own dispatcher builds it with the same policy. Absent: no check.
+   */
+  readonly egress?: EgressPolicy;
   /** Whether to transparently decompress a gzip/deflate/br response body. Default true. */
   readonly decompress?: boolean;
   /**
@@ -197,4 +204,6 @@ export type HttpErrorCode =
   | 'too-many-redirects'
   | 'invalid-url'
   | 'proxy'
+  /** The egress rule refused the address (`details.host`, `details.addressClass`); see `net/egress.ts`. */
+  | 'egress-refused'
   | 'network';

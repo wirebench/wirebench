@@ -13,10 +13,11 @@
  */
 import diagnosticsChannel from 'node:diagnostics_channel';
 import { WebSocket, type Dispatcher } from 'undici';
-import { WsError } from '#core/errors';
+import { WsError, type WirebenchError } from '#core/errors';
 import type { ProxyOptions, TlsOptions } from '#core/http/types';
+import type { EgressPolicy } from '#core/net/egress';
 import { sslInfoForSocket, type SslInfo, type TlsSocketLike } from '#core/http/tls';
-import { wsDispatcher } from './connect.js';
+import { isEgressRefusal, wsDispatcher } from './connect.js';
 import type { WsExchange, WsFrame, WsHandshake, WsOpcode } from './model.js';
 
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 30_000;
@@ -36,6 +37,8 @@ export interface WsSessionOptions {
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
   readonly localAddress?: string;
+  /** The egress rule a server applies (spec §17.5); absent, no check. */
+  readonly egress?: EgressPolicy;
   /** Default 30 000. */
   readonly handshakeTimeoutMs?: number;
   /** Default unlimited. A larger received message ends the session from this side. */
@@ -70,6 +73,11 @@ export interface WsSessionHandle {
   readonly isOpen: boolean;
   /** Never rejects. */
   readonly done: Promise<WsExchange>;
+  /**
+   * The egress rule's refusal when it is why the handshake never connected, so a run can fail with
+   * `egress-refused` rather than as a server's refusal. `undefined` otherwise.
+   */
+  egressRefusal(): WirebenchError | undefined;
 }
 
 /**
@@ -159,6 +167,7 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
   let failure: string | undefined;
   let settled = false;
   let refusedStatus: number | undefined;
+  let egressRefusal: WirebenchError | undefined;
   /** The upgrade's socket, which a close the server never answers tears down after `closeGraceMs`. */
   let connection: { destroy?: () => void } | undefined;
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -281,7 +290,22 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
     const m = message as { websocket?: unknown; payload?: Uint8Array };
     if (m.websocket === socket) record('received', 'pong', m.payload ?? new Uint8Array());
   };
+  // The WHATWG `error` event carries no cause, so an egress refusal is read where undici reports the
+  // failed connect: the target's host or the proxy's, which are the only connects this handshake makes.
+  const ownHosts = new Set([unbracketed(target.hostname)]);
+  if (options.proxy !== undefined) {
+    try {
+      ownHosts.add(unbracketed(new URL(options.proxy.url).hostname));
+    } catch {
+      // A malformed proxy URL fails the dispatcher below, as ws-bad-options.
+    }
+  }
+  const onConnectError = (message: unknown): void => {
+    const error = (message as { error?: unknown }).error;
+    if (isEgressRefusal(error) && ownHosts.has(String(error.details?.['host']))) egressRefusal ??= error;
+  };
   const unsubscribeAll = (): void => {
+    diagnosticsChannel.unsubscribe('undici:client:connectError', onConnectError);
     diagnosticsChannel.unsubscribe('undici:client:sendHeaders', onSendHeaders);
     diagnosticsChannel.unsubscribe('undici:request:headers', onResponseHeaders);
     diagnosticsChannel.unsubscribe('undici:websocket:open', onOpenChannel);
@@ -296,6 +320,7 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
   let dispatcher: Dispatcher | undefined;
   try {
     ({ dispatcher, owned: ownsDispatcher } = wsDispatcher(options));
+    if (options.egress !== undefined) diagnosticsChannel.subscribe('undici:client:connectError', onConnectError);
     diagnosticsChannel.subscribe('undici:client:sendHeaders', onSendHeaders);
     diagnosticsChannel.subscribe('undici:request:headers', onResponseHeaders);
     diagnosticsChannel.subscribe('undici:websocket:open', onOpenChannel);
@@ -311,6 +336,7 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
   } catch (err) {
     unsubscribeAll();
     if (ownsDispatcher) void dispatcher?.close().catch(() => undefined);
+    if (isEgressRefusal(err)) throw err;
     throw new WsError('ws-bad-options', describeBadOptions(options, err), {
       cause: err,
       details: {
@@ -413,7 +439,7 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
       // origin's connection is pooled, so `error` alone is authoritative for it. Settle on the next
       // macrotask so a `close` that does arrive (as it does when this is the first connection to
       // the origin) wins and carries its own code.
-      failure ??= message || defaultHandshakeError(options.subprotocols);
+      failure ??= egressRefusal?.message ?? (message || defaultHandshakeError(options.subprotocols));
       setTimeout(() => settle(1006, '', false), 0);
     } else {
       // The handshake already succeeded; this describes the connection breaking afterward (e.g.
@@ -431,6 +457,7 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
       return ws.readyState === WebSocket.OPEN;
     },
     done,
+    egressRefusal: () => egressRefusal,
     send(data) {
       if (ws.readyState !== WebSocket.OPEN) throw new WsError('ws-session-closed', 'The connection is closed');
       ws.send(data);
@@ -445,4 +472,9 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
       boundClose();
     },
   };
+}
+
+/** `[::1]` as `::1`, which is how undici and the egress check name an IPv6 host. */
+function unbracketed(host: string): string {
+  return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
 }

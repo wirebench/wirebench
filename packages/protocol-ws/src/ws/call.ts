@@ -14,6 +14,7 @@ import type { SendAuth } from '#core/http/auth/send-auth';
 import { applyAuth } from '#core/http/auth/apply-auth';
 import type { KeyValueEntry } from '#core/http/entries';
 import type { ProxyOptions, TlsOptions } from '#core/http/types';
+import type { EgressPolicy } from '#core/net/egress';
 import { WsError } from '#core/errors';
 import { resolveWsUrl } from './url.js';
 import type { WsSessionOptions } from './session.js';
@@ -72,6 +73,8 @@ export interface WsSessionMaterial {
   readonly auth?: SendAuth;
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
+  /** The egress rule a server applies (hosted edition spec §17.5); absent, no check. */
+  readonly egress?: EgressPolicy;
   readonly signal?: AbortSignal;
 }
 
@@ -146,6 +149,7 @@ export function toWsSessionOptions(input: WsCallInput, material: WsSessionMateri
     ...(input.request.subprotocols.length > 0 ? { subprotocols: input.request.subprotocols } : {}),
     ...(tls !== undefined ? { tls } : {}),
     ...(material.proxy !== undefined ? { proxy: material.proxy } : {}),
+    ...(material.egress !== undefined ? { egress: material.egress } : {}),
     ...(settings.bindAddress !== undefined ? { localAddress: settings.bindAddress } : {}),
     ...(settings.handshakeTimeoutMs !== undefined ? { handshakeTimeoutMs: settings.handshakeTimeoutMs } : {}),
     ...(settings.maxMessageBytes !== undefined ? { maxMessageBytes: settings.maxMessageBytes } : {}),

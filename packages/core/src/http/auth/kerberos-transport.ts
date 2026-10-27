@@ -68,6 +68,7 @@ export async function kerberosHandshake(
       ...(request.tls !== undefined ? { tls: request.tls } : {}),
       ...(request.proxy !== undefined ? { proxy: request.proxy } : {}),
       ...(request.localAddress !== undefined ? { localAddress: request.localAddress } : {}),
+      ...(request.egress !== undefined ? { egress: request.egress } : {}),
     });
     dispatcher = ownDispatcher;
   }
