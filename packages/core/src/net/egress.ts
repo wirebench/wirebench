@@ -77,30 +77,61 @@ const CLASSES: readonly (readonly [AddressClass, BlockList])[] = [
       ['ipv4', '192.168.0.0', 16],
       ['ipv4', '100.64.0.0', 10],
       ['ipv6', 'fc00::', 7],
+      // Local-use NAT64 (RFC 8215): an operator's own translator, so whatever it reaches is theirs.
+      ['ipv6', '64:ff9b:1::', 48],
     ]),
   ],
 ];
 
-/** `::ffff:a.b.c.d` (or its hex spelling `::ffff:7f00:1`) as the IPv4 address it carries; anything else unchanged. */
-function unwrapMapped(address: string): string {
-  const lower = address.toLowerCase();
-  if (!lower.startsWith('::ffff:')) return address;
-  const rest = lower.slice('::ffff:'.length);
-  if (isIP(rest) === 4) return rest;
-  const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(rest);
-  if (hex === null) return address;
-  const high = Number.parseInt(hex[1]!, 16);
-  const low = Number.parseInt(hex[2]!, 16);
+/** The eight 16-bit groups of an IPv6 address (`isIP(address) === 6`), a trailing dotted quad included. */
+function hextets(address: string): number[] {
+  let text = address.toLowerCase();
+  const dotted = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text);
+  if (dotted !== null) {
+    const [a, b, c, d] = dotted.slice(1).map(Number) as [number, number, number, number];
+    text = `${text.slice(0, dotted.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const [head = '', tail] = text.split('::') as [string, string | undefined];
+  const parse = (part: string): number[] => (part === '' ? [] : part.split(':').map((h) => Number.parseInt(h, 16)));
+  const front = parse(head);
+  if (tail === undefined) return front;
+  const back = parse(tail);
+  return [...front, ...new Array<number>(8 - front.length - back.length).fill(0), ...back];
+}
+
+function ipv4Of(high: number, low: number): string {
   return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
 }
 
 /**
- * The class of `address`, after unwrapping an IPv4-mapped IPv6 address and dropping a zone (`%en0`).
+ * The IPv4 address an IPv6 one carries, where the IPv6 form only reaches that IPv4 host; anything else
+ * unchanged. A check of the IPv6 form alone would let an AAAA answer reach a refused IPv4 address:
+ * - `::ffff:0:0/96`, IPv4-mapped;
+ * - `64:ff9b::/96`, the well-known NAT64 prefix (DNS64 on an IPv6-only subnet answers with it);
+ * - `::/96`, the deprecated IPv4-compatible form, which is what URL parsing makes of `[::127.0.0.1]`
+ *   (`::` and `::1` keep their own classes);
+ * - `2002::/16`, 6to4, whose second and third groups are the IPv4 address.
+ */
+function unwrapEmbedded(address: string): string {
+  if (isIP(address) !== 6) return address;
+  const h = hextets(address);
+  if (h.length !== 8 || h.some((group) => Number.isNaN(group))) return address;
+  const zeros = (from: number, to: number): boolean => h.slice(from, to).every((group) => group === 0);
+  if (zeros(0, 5) && h[5] === 0xffff) return ipv4Of(h[6]!, h[7]!);
+  if (h[0] === 0x64 && h[1] === 0xff9b && zeros(2, 6)) return ipv4Of(h[6]!, h[7]!);
+  if (zeros(0, 6) && !(h[6] === 0 && (h[7] === 0 || h[7] === 1))) return ipv4Of(h[6]!, h[7]!);
+  if (h[0] === 0x2002) return ipv4Of(h[1]!, h[2]!);
+  return address;
+}
+
+/**
+ * The class of `address`, after unwrapping the IPv4 address an IPv6 one carries (see
+ * {@link unwrapEmbedded}) and dropping a zone (`%en0`).
  * Something that is not an address at all reads as `unspecified`, so it can never pass the check.
  */
 export function classifyAddress(address: string): AddressClass {
   const zoneless = address.includes('%') ? address.slice(0, address.indexOf('%')) : address;
-  const unwrapped = unwrapMapped(zoneless);
+  const unwrapped = unwrapEmbedded(zoneless);
   const version = isIP(unwrapped);
   if (version === 0) return 'unspecified';
   const family: Family = version === 4 ? 'ipv4' : 'ipv6';

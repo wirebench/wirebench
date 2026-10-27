@@ -14,9 +14,9 @@
  *   travels in its first message (§6).
  */
 import diagnosticsChannel from 'node:diagnostics_channel';
-import { ProxyAgent, WebSocket, type Dispatcher } from 'undici';
+import { WebSocket, type Dispatcher } from 'undici';
 import { WirebenchError, WsError } from '#core/errors';
-import { createDispatcher, proxyAgentOptionsFor } from '#core/http/client';
+import { createDispatcher, createProxyAgent, proxyAgentOptionsFor } from '#core/http/client';
 import type { ProxyOptions, TlsOptions } from '#core/http/types';
 import type { EgressPolicy } from '#core/net/egress';
 
@@ -87,7 +87,10 @@ export function wsDispatcher(options: WsTransportOptions): WsDispatcher {
     ...(options.egress !== undefined ? { egress: options.egress } : {}),
   };
   if (options.proxy !== undefined) {
-    const agent = new ProxyAgent(proxyAgentOptionsFor(options.proxy, connect, false, { proxyTunnel: true }));
+    const agent = createProxyAgent(
+      proxyAgentOptionsFor(options.proxy, connect, false, { proxyTunnel: true }),
+      options.egress,
+    );
     return { dispatcher: agent, owned: true };
   }
   return {

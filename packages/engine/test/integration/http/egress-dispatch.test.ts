@@ -10,6 +10,8 @@ import type { AddressInfo, LookupFunction } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createDispatcher, createSingleConnectionDispatcher, sendHttp } from '#core/http/client';
 import type { HttpRequest } from '#core/http/types';
+import { request as undiciRequest } from 'undici';
+import { wsDispatcher } from '#protocol-ws/ws/connect';
 import { connectWebSocket, type ConnectedWebSocket } from '../../../src/index.js';
 import { startTestProxy, type TestProxy } from '../../helpers/test-proxy.js';
 import { startTestWsServer, type TestWsServer } from '../../helpers/test-ws-server.js';
@@ -184,6 +186,98 @@ describe('sendHttp with egress', () => {
         await dispatcher.close();
       }
     });
+  });
+});
+
+describe('a target behind a proxy, under egress', () => {
+  const lan = localInterfaceAddress();
+  let closed: Awaited<ReturnType<typeof listen>> | undefined;
+  let lookups: string[] = [];
+
+  beforeAll(async () => {
+    if (lan === undefined) return;
+    // A port nothing answers on once closed: a request the rule lets through fails there, not here.
+    closed = await listen(() => undefined, lan);
+    await close(closed.server);
+  });
+
+  /** A proxy at `proxy.test`, mapped to this machine's interface address, counting every lookup. */
+  function proxied(): { url: string; lookup: LookupFunction } {
+    lookups = [];
+    const base = mapName('proxy.test', lan!, 4);
+    return {
+      url: `http://proxy.test:${closed!.port}`,
+      lookup: (hostname, options, callback) => {
+        lookups.push(hostname);
+        base(hostname, options, callback);
+      },
+    };
+  }
+
+  it.skipIf(lan === undefined).each([
+    ['http://127.0.0.1:1/x', 'loopback'],
+    ['https://[::1]/x', 'loopback'],
+    ['http://169.254.169.254/latest', 'metadata'],
+    ['http://localhost/x', 'loopback'],
+    ['http://api.LOCALHOST:8080/x', 'loopback'],
+  ] as const)('refuses %s before the proxy is dialled', async (url, addressClass) => {
+    const { url: proxyUrl, lookup } = proxied();
+    const dispatcher = createDispatcher({ egress: OPEN, proxy: { url: proxyUrl }, lookup });
+    try {
+      await expect(sendHttp(get(url), { dispatcher })).rejects.toMatchObject({
+        code: 'egress-refused',
+        details: { addressClass },
+      });
+      expect(lookups).toEqual([]);
+    } finally {
+      await dispatcher.close();
+    }
+  });
+
+  it.skipIf(lan === undefined)('refuses a private literal target only with denyPrivate', async () => {
+    const { url: proxyUrl, lookup } = proxied();
+    const strict = createDispatcher({ egress: { denyPrivate: true }, proxy: { url: proxyUrl }, lookup });
+    try {
+      await expect(sendHttp(get('http://10.1.2.3/x'), { dispatcher: strict })).rejects.toMatchObject({
+        code: 'egress-refused',
+        details: { addressClass: 'private' },
+      });
+      expect(lookups).toEqual([]);
+    } finally {
+      await strict.close();
+    }
+  });
+
+  it.skipIf(lan === undefined)('leaves any other name to the proxy', async () => {
+    const { url: proxyUrl, lookup } = proxied();
+    const dispatcher = createDispatcher({ egress: OPEN, proxy: { url: proxyUrl }, lookup });
+    try {
+      const err: unknown = await sendHttp(get('http://internal.test/x'), { dispatcher }).catch((e: unknown) => e);
+      // It went as far as dialling the proxy, which nothing answers.
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toMatchObject({ code: 'egress-refused' });
+      expect(lookups).toContain('proxy.test');
+    } finally {
+      await dispatcher.close();
+    }
+  });
+
+  it('refuses a single-connection and a WebSocket proxy target too', async () => {
+    // Refused before the proxy's name is ever resolved, so it need not exist.
+    const proxyUrl = 'http://proxy.test:9';
+    const single = createSingleConnectionDispatcher({ egress: OPEN, proxy: { url: proxyUrl } });
+    const ws = wsDispatcher({ egress: OPEN, proxy: { url: proxyUrl } });
+    try {
+      await expect(sendHttp(get('http://localhost/x'), { dispatcher: single })).rejects.toMatchObject({
+        code: 'egress-refused',
+      });
+      await expect(undiciRequest('http://127.0.0.1/x', { dispatcher: ws.dispatcher })).rejects.toMatchObject({
+        code: 'egress-refused',
+      });
+    } finally {
+      await single.close();
+      await ws.dispatcher.close();
+    }
   });
 });
 

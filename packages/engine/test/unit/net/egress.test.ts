@@ -77,6 +77,59 @@ describe('classifyAddress', () => {
     expect(classifyAddress(address)).toBe(expected);
   });
 
+  it.each([
+    ['64:ff9b::a00:1', 'private'],
+    ['64:ff9b::a9fe:a9fe', 'metadata'],
+    ['64:ff9b::7f00:1', 'loopback'],
+    ['64:ff9b::127.0.0.1', 'loopback'],
+    ['64:ff9b::a9fe:101', 'link-local'],
+    ['64:ff9b::808:808', 'public'],
+  ] as const)('unwraps the well-known NAT64 %s to %s', (address, expected) => {
+    expect(classifyAddress(address)).toBe(expected);
+  });
+
+  it.each(['64:ff9b:1::1', '64:ff9b:1:ffff::a00:1', '64:ff9b:1::808:808'])(
+    'treats local-use NAT64 %s as private',
+    (address) => {
+      expect(classifyAddress(address)).toBe('private');
+    },
+  );
+
+  it.each([
+    ['::7f00:1', 'loopback'],
+    ['::127.0.0.1', 'loopback'],
+    ['::a9fe:a9fe', 'metadata'],
+    ['::a00:1', 'private'],
+    ['::808:808', 'public'],
+  ] as const)('unwraps the IPv4-compatible %s to %s', (address, expected) => {
+    expect(classifyAddress(address)).toBe(expected);
+  });
+
+  it('keeps :: and ::1 in their own classes', () => {
+    expect(classifyAddress('::')).toBe('unspecified');
+    expect(classifyAddress('::1')).toBe('loopback');
+    expect(classifyAddress('0:0:0:0:0:0:0:1')).toBe('loopback');
+  });
+
+  it.each([
+    ['2002:7f00:1::1', 'loopback'],
+    ['2002:a9fe:a9fe::', 'metadata'],
+    ['2002:c0a8:101::1', 'private'],
+    ['2002:808:808::1', 'public'],
+  ] as const)('unwraps the 6to4 %s to %s', (address, expected) => {
+    expect(classifyAddress(address)).toBe(expected);
+  });
+
+  it('refuses a NAT64 answer for a private address only with denyPrivate', () => {
+    expect(() => checkEgress('nat64.test', '64:ff9b::a00:1', { denyPrivate: false })).not.toThrow();
+    expect(() => checkEgress('nat64.test', '64:ff9b::a00:1', { denyPrivate: true })).toThrow(
+      expect.objectContaining({ code: 'egress-refused' }),
+    );
+    expect(() => checkEgress('nat64.test', '64:ff9b::a9fe:a9fe', { denyPrivate: false })).toThrow(
+      expect.objectContaining({ code: 'egress-refused' }),
+    );
+  });
+
   it('reads a scoped link-local address by its address', () => {
     expect(classifyAddress('fe80::1%en0')).toBe('link-local');
   });

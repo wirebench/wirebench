@@ -92,7 +92,7 @@ export function createDispatcher(opts: {
   const connect = connectOptions(opts);
   const allowH2 = opts.allowH2 !== false;
   if (opts.proxy !== undefined) {
-    return new ProxyAgent(proxyAgentOptionsFor(opts.proxy, opts, allowH2));
+    return createProxyAgent(proxyAgentOptionsFor(opts.proxy, opts, allowH2), opts.egress);
   }
   if (opts.egress !== undefined) {
     return new Agent({ connect: egressConnector(opts.egress, { ...connect, allowH2 }), allowH2 });
@@ -180,7 +180,7 @@ export function createSingleConnectionDispatcher(opts: {
   if (opts.proxy !== undefined) {
     // `base` (connections: 1, keep-alive) still applies: it reaches the per-origin client
     // inside the tunnel, which is exactly the connection NTLM authenticates.
-    return new ProxyAgent(proxyAgentOptionsFor(opts.proxy, opts, false, base));
+    return createProxyAgent(proxyAgentOptionsFor(opts.proxy, opts, false, base), opts.egress);
   }
   if (opts.egress !== undefined) {
     return new Agent({ ...shared, connect: egressConnector(opts.egress, { ...connect, allowH2: false }) });
@@ -209,6 +209,56 @@ function egressConnector(policy: EgressPolicy, build: buildConnector.BuildOption
     }
     connect(options, callback);
   };
+}
+
+/**
+ * A `ProxyAgent` for `options`, which under an egress policy also refuses a target that is plainly
+ * this side's own, before the request is handed to the proxy: a literal address the policy refuses,
+ * or `localhost` and its subdomains. An operator's proxy can otherwise reach its own loopback or
+ * metadata address on a user's behalf. Any other name is the proxy's to resolve.
+ *
+ * Exported for the WebSocket connector, which builds its own tunnelling `ProxyAgent`.
+ */
+export function createProxyAgent(options: ProxyAgent.Options, egress: EgressPolicy | undefined): ProxyAgent {
+  return egress === undefined ? new ProxyAgent(options) : new EgressProxyAgent(options, egress);
+}
+
+class EgressProxyAgent extends ProxyAgent {
+  readonly #egress: EgressPolicy;
+
+  constructor(options: ProxyAgent.Options, egress: EgressPolicy) {
+    super(options);
+    this.#egress = egress;
+  }
+
+  override dispatch(options: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler): boolean {
+    try {
+      checkProxiedTarget(options.origin, this.#egress);
+    } catch (err) {
+      // As undici's own dispatch reports a refusal it raises before anything is sent.
+      if (typeof handler.onResponseError !== 'function') throw err;
+      handler.onResponseError(null as never, err as Error);
+      return false;
+    }
+    return super.dispatch(options, handler);
+  }
+}
+
+/** Refuses a proxied request's origin when it is a refused literal address or a `localhost` name. */
+function checkProxiedTarget(origin: string | URL | undefined, policy: EgressPolicy): void {
+  if (origin === undefined) return;
+  let host: string;
+  try {
+    host = unbracketed(new URL(origin).hostname).toLowerCase();
+  } catch {
+    return;
+  }
+  if (isIP(host) !== 0) {
+    checkEgress(host, host, policy);
+  } else if (host === 'localhost' || host.endsWith('.localhost')) {
+    // A name that always means this machine, wherever it is resolved (RFC 6761 §6.3).
+    checkEgress(host, '127.0.0.1', policy);
+  }
 }
 
 /** Refuses a proxy URL whose host is a literal address the policy refuses; a name is left to the lookup. */
