@@ -2,6 +2,7 @@ import { localSignInRequestSchema, signInResponseSchema, type LocalSignInRequest
 import type { FastifyInstance } from 'fastify';
 import { ANONYMOUS_SOURCE, announce, auditSource, recordAudit } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
+import { clearSessionCookie } from '../cookies.js';
 import type { IdentityEnv } from '../env.js';
 import { invalidCredentials, methodDisabled, userDisabled } from '../errors.js';
 import { requireUser } from '../guard.js';
@@ -70,6 +71,8 @@ export const authLocalRoutes =
         });
       });
       announce(env.ctx.hooks.sessionEnded, { tokenId: request.caller!.tokenId }, request.log);
+      // A browser session also loses its cookie (hosted spec §17.2); a desktop's reply carries none.
+      if (request.caller!.via === 'cookie') clearSessionCookie(reply, env.ctx.config.publicUrl);
       return reply.code(204).send();
     });
   };

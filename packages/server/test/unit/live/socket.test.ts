@@ -19,7 +19,7 @@ const NOW = Date.parse('2026-09-26T12:00:00.000Z');
 const LOG = Fastify({ logger: false }).log;
 const AUTH = { type: 'auth', token: TOKEN };
 const CALLER: TokenCaller = {
-  caller: { id: USER_ID, email: 'ana@example.com', serverAdmin: false, tokenId: TOKEN_ID },
+  caller: { id: USER_ID, email: 'ana@example.com', serverAdmin: false, tokenId: TOKEN_ID, via: 'bearer' },
   displayName: 'Ana',
   tokenCreatedAt: CREATED_AT,
 };

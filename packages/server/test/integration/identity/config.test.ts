@@ -1,11 +1,26 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import type { ServerModule } from '../../../src/context.js';
 import { identityModule } from '../../../src/identity/module.js';
 import { main } from '../../../src/main.js';
+import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { allMigrations, startServer } from '../../../src/serve.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { freePort } from '../../helpers/net.js';
+
+/**
+ * The other built-in modules' migrations without their routes. Identity owns 0002 and 0018
+ * (browser sessions), and versions must be contiguous across modules, so identity alone no longer
+ * migrates: the versions between come from the modules registered after it.
+ */
+const otherMigrations: ServerModule = {
+  name: 'teams-access', // any known name; it registers nothing
+  migrationsDir: BUILTIN_MODULES.filter((m) => m.name !== 'identity').flatMap((m) =>
+    m.migrationsDir === undefined ? [] : typeof m.migrationsDir === 'string' ? [m.migrationsDir] : [...m.migrationsDir],
+  ),
+  register: () => Promise.resolve(),
+};
 
 describeDb('identity module boot', () => {
   let dataDir: string;
@@ -28,11 +43,11 @@ describeDb('identity module boot', () => {
     await removeTempDir(dataDir);
   });
 
-  it('brings 0002_identity into the migration list right after the host', async () => {
-    expect((await allMigrations([identityModule()])).map((m) => `${m.version}_${m.name}`)).toEqual([
-      '1_init',
-      '2_identity',
-    ]);
+  it('brings 0002_identity into the migration list right after the host, and 0018_browser-sessions later', async () => {
+    const names = (await allMigrations([identityModule(), otherMigrations])).map((m) => `${m.version}_${m.name}`);
+    expect(names.slice(0, 2)).toEqual(['1_init', '2_identity']);
+    expect(names).toContain('18_browser-sessions');
+    await expect(allMigrations([identityModule()])).rejects.toThrow(/not contiguous at 18/);
   });
 
   it('applies the identity tables and reports local auth in meta by default', async () => {
@@ -40,16 +55,15 @@ describeDb('identity module boot', () => {
     const server = await startServer(e, io(e), {
       signals: new EventEmitter(),
       exit: vi.fn(),
-      modules: [identityModule({ sweepIntervalMs: 0 })],
+      modules: [identityModule({ sweepIntervalMs: 0 }), otherMigrations],
     });
     try {
       const meta: unknown = await (await fetch(`http://127.0.0.1:${server.port}/api/v1/meta`)).json();
       expect(meta).toMatchObject({ auth: { local: true, oidc: false }, capabilities: ['identity'] });
       expect((await db.query("select to_regclass('users') is not null as ok")).rows[0]).toEqual({ ok: true });
-      expect((await db.query('select version from schema_migrations order by version')).rows).toEqual([
-        { version: 1 },
-        { version: 2 },
-      ]);
+      const versions = (await db.query('select version from schema_migrations order by version')).rows;
+      expect(versions.slice(0, 2)).toEqual([{ version: 1 }, { version: 2 }]);
+      expect(versions).toContainEqual({ version: 18 });
     } finally {
       await server.close();
     }

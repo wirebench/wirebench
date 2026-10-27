@@ -134,6 +134,8 @@ export async function signedInUser(
     readonly serverAdmin?: boolean;
     readonly disabled?: boolean;
     readonly deviceName?: string;
+    /** `browser` for a cookie session (hosted spec §17.2); a desktop device token by default. */
+    readonly kind?: repo.TokenKind;
   },
 ): Promise<SignedInUser> {
   const at = harness.clock.now;
@@ -154,6 +156,7 @@ export async function signedInUser(
     userId: user.id,
     tokenHash: hash,
     deviceName: input.deviceName ?? 'test device',
+    ...(input.kind !== undefined ? { kind: input.kind } : {}),
     at,
   });
   return { user, token, tokenId, headers: { authorization: `Bearer ${token}` } };
