@@ -169,7 +169,7 @@ export type DeliverAlert = (target: StoredAlertTarget, payload: AlertPayload) =>
 /** Delivery over SMTP and HTTPS under the server's settings. `options` are for tests: a CA, a deadline. */
 export function alertDelivery(
   settings: Pick<SchedulesSettings, 'secretKey' | 'alertHosts' | 'smtp'>,
-  options: Pick<HttpsDeliveryOptions, 'ca' | 'timeoutMs'> = {},
+  options: Pick<HttpsDeliveryOptions, 'ca' | 'timeoutMs' | 'egress'> = {},
 ): DeliverAlert {
   return async (target, payload) => {
     if (target.kind === 'email') {

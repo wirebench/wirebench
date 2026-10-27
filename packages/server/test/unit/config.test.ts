@@ -191,8 +191,10 @@ describe('describeConfig', () => {
         'WIREBENCH_SERVER_AUDIT_FORWARD_URL',
         'WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS',
         'WIREBENCH_SERVER_BODY_LIMIT_MB',
+        'WIREBENCH_SERVER_BROWSER_CLIENT',
         'WIREBENCH_SERVER_DATABASE_URL',
         'WIREBENCH_SERVER_DATA_DIR',
+        'WIREBENCH_SERVER_EGRESS_DENY_PRIVATE',
         'WIREBENCH_SERVER_GIT_PATH',
         'WIREBENCH_SERVER_HOOKS_BODY_LIMIT_MB',
         'WIREBENCH_SERVER_HOOKS_BURST',
@@ -203,6 +205,7 @@ describe('describeConfig', () => {
         'WIREBENCH_SERVER_HOOKS_RATE_PER_SECOND',
         'WIREBENCH_SERVER_HOOKS_SECRET_KEY',
         'WIREBENCH_SERVER_HOST',
+        'WIREBENCH_SERVER_HOST_IDLE_MINUTES',
         'WIREBENCH_SERVER_INVITATION_DAYS',
         'WIREBENCH_SERVER_LOCAL_AUTH',
         'WIREBENCH_SERVER_LOG_LEVEL',
@@ -224,6 +227,7 @@ describe('describeConfig', () => {
         'WIREBENCH_SERVER_SCHEDULES_MAX_AGE_DAYS',
         'WIREBENCH_SERVER_SCHEDULES_MAX_SNAPSHOT_MB',
         'WIREBENCH_SERVER_SCHEDULES_SECRET_KEY',
+        'WIREBENCH_SERVER_SECRETS_KEY',
         'WIREBENCH_SERVER_SESSION_LOG_MAX_MB',
         'WIREBENCH_SERVER_SMTP_FROM',
         'WIREBENCH_SERVER_SMTP_URL',
@@ -558,5 +562,58 @@ describe('scheduled-runs configuration (scheduled-runs §7)', () => {
       'WIREBENCH_SERVER_SMTP_FROM',
     ]);
     expect(problemsOf({ ...base, WIREBENCH_SERVER_SMTP_FROM: 'a@b.test' })).toEqual(['WIREBENCH_SERVER_SMTP_URL']);
+  });
+});
+
+describe('browser client and egress configuration (hosted edition spec §17.1, §17.5)', () => {
+  const KEY = Buffer.alloc(32, 7).toString('base64');
+
+  it('defaults to off, no key, private networks allowed and a 30 minute idle time', () => {
+    const config = loadConfig(required, '1');
+    expect(config).toMatchObject({ browserClient: false, egressDenyPrivate: false, hostIdleMinutes: 30 });
+    expect(config.secretsKey).toBeUndefined();
+  });
+
+  it('reads every variable, the key as bytes', () => {
+    const config = loadConfig(
+      {
+        ...required,
+        WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
+        WIREBENCH_SERVER_SECRETS_KEY: KEY,
+        WIREBENCH_SERVER_EGRESS_DENY_PRIVATE: '1',
+        WIREBENCH_SERVER_HOST_IDLE_MINUTES: '1440',
+      },
+      '1',
+    );
+    expect(config).toMatchObject({ browserClient: true, egressDenyPrivate: true, hostIdleMinutes: 1440 });
+    expect(config.secretsKey).toEqual(Buffer.alloc(32, 7));
+  });
+
+  it('refuses the browser client without its key, and names only the key', () => {
+    let caught: unknown;
+    try {
+      loadConfig({ ...required, WIREBENCH_SERVER_BROWSER_CLIENT: 'true' }, '1');
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as ConfigError).problems.map((p) => p.variable)).toEqual(['WIREBENCH_SERVER_SECRETS_KEY']);
+  });
+
+  it('accepts a key with the client off, and refuses a bad key or an idle time out of range', () => {
+    expect(() => loadConfig({ ...required, WIREBENCH_SERVER_SECRETS_KEY: KEY }, '1')).not.toThrow();
+    for (const [variable, value] of [
+      ['WIREBENCH_SERVER_SECRETS_KEY', 'c2hvcnQ='],
+      ['WIREBENCH_SERVER_HOST_IDLE_MINUTES', '0'],
+      ['WIREBENCH_SERVER_HOST_IDLE_MINUTES', '1441'],
+      ['WIREBENCH_SERVER_BROWSER_CLIENT', 'yes'],
+    ] as const) {
+      let caught: unknown;
+      try {
+        loadConfig({ ...required, [variable]: value }, '1');
+      } catch (error) {
+        caught = error;
+      }
+      expect((caught as ConfigError).problems.map((p) => p.variable)).toEqual([variable]);
+    }
   });
 });

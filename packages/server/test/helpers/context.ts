@@ -49,6 +49,7 @@ export async function testContext(
     git: new GitCli(location, { hooksDir: dataDir }),
     log: undefined as unknown as ServerContext['log'], // buildServer replaces it with the app's logger
     meta: new MetaRegistry(),
+    egress: { denyPrivate: false },
     hooks: serverHooks(),
     license: permissiveLicense(),
     ...rest,

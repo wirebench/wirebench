@@ -160,6 +160,10 @@ const inputSchema = z.object({
   schedulesAlertHosts: alertHostsText.optional(),
   smtpUrl: smtpUrlText.optional(),
   smtpFrom: z.email().optional(),
+  browserClient: booleanText('false'),
+  secretsKey: keyText.transform((value) => Buffer.from(value, 'base64')).optional(),
+  egressDenyPrivate: booleanText('false'),
+  hostIdleMinutes: integerText(1, 1440, '30'),
 });
 
 type ConfigKey = keyof z.input<typeof inputSchema>;
@@ -543,6 +547,41 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     secret: false,
     description: 'The sender address of email alerts; required with WIREBENCH_SERVER_SMTP_URL.',
   },
+  {
+    env: 'WIREBENCH_SERVER_BROWSER_CLIENT',
+    key: 'browserClient',
+    required: false,
+    defaultText: 'false',
+    secret: false,
+    description:
+      'Serve the app in a browser, with its own sign-in and a server-side send path. Needs WIREBENCH_SERVER_SECRETS_KEY. False, `/` answers 404 and nothing of it runs.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SECRETS_KEY',
+    key: 'secretsKey',
+    required: false,
+    secret: true,
+    description:
+      'Encrypts the browser client’s stored secrets at rest: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_EGRESS_DENY_PRIVATE',
+    key: 'egressDenyPrivate',
+    required: false,
+    defaultText: 'false',
+    secret: false,
+    description:
+      'Also refuse private network addresses (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7) for connections the server opens for users: scheduled runs, alerts and the browser client. Loopback, link-local and cloud metadata addresses are always refused.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_HOST_IDLE_MINUTES',
+    key: 'hostIdleMinutes',
+    required: false,
+    defaultText: '30',
+    secret: false,
+    description:
+      'Minutes after a user’s last browser connection closes before the server frees that user’s session (1–1440).',
+  },
 ];
 
 /** One thing wrong with the environment, phrased without the offending value. */
@@ -674,6 +713,12 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
         ? { variable: 'WIREBENCH_SERVER_SMTP_URL', message: 'is required when WIREBENCH_SERVER_SMTP_FROM is set' }
         : { variable: 'WIREBENCH_SERVER_SMTP_FROM', message: 'is required when WIREBENCH_SERVER_SMTP_URL is set' },
     );
+  }
+  if (config.browserClient && config.secretsKey === undefined) {
+    problems.push({
+      variable: 'WIREBENCH_SERVER_SECRETS_KEY',
+      message: 'is required when WIREBENCH_SERVER_BROWSER_CLIENT is on; set the key or turn the browser client off',
+    });
   }
   if (!config.localAuth && config.oidcIssuer === undefined && config.samlIdpMetadata === undefined) {
     problems.push({
