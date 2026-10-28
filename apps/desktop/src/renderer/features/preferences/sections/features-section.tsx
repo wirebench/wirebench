@@ -3,6 +3,8 @@ import { BooleanSetting, SettingsGroup, SettingsItem } from '../../../components
 import { ipc } from '../../../state/ipc-client.js';
 import { useWorkspaceStore } from '../../../state/workspace.js';
 import type { AppFeaturesWire, FeatureStateWire } from '@shared/wire-base.js';
+import { AREA_CAPABILITIES } from '@shared/capabilities.js';
+import { hasCapability } from '../../../lib/capabilities.js';
 import type { SectionProps } from './section-props.js';
 
 /** The groups the rows sit in (phase 4 spec §4.3), by feature id; anything else lands in Other. */
@@ -13,6 +15,15 @@ const GROUPS: readonly { readonly title: string; readonly ids: readonly string[]
   // Each installed plugin's `plugin:<id>` joins this group after the switch that covers them all.
   { title: 'Plugins', ids: ['plugins'] },
 ];
+
+/**
+ * Why an area is off when the connected machine lacks what it needs (`AREA_CAPABILITIES`): said as what
+ * cannot happen, not as a policy, which it is not.
+ */
+const UNAVAILABLE_AREA_NOTES: Readonly<Record<string, string>> = {
+  ssh: 'Not available in the browser: SSH connections are opened from the desktop app',
+  'local-terminal': 'Not available in the browser: a local terminal runs a shell on your own computer',
+};
 
 /** The rows as main resolved them for the open workspace; `undefined` until it answered. */
 function useFeatureStates(): AppFeaturesWire | undefined {
@@ -137,7 +148,13 @@ export function FeaturesSection({ preferences, update }: SectionProps) {
             // An area has no preference (#360): the row reports what this run resolved and cannot be changed
             // here. The managed policy is the "policy" level of that resolution, WIREBENCH_AREAS the "preference".
             const notes: string[] = [];
-            if (state.policy) {
+            // Off because the connected machine cannot do it: the host reports that as policy, but no
+            // organisation set it, and nothing here could turn it on.
+            const missing = AREA_CAPABILITIES[state.id];
+            const unavailable = missing !== undefined && !hasCapability(missing);
+            if (unavailable) {
+              notes.push(UNAVAILABLE_AREA_NOTES[state.id] ?? 'Not available in the browser');
+            } else if (state.policy) {
               notes.push('Set by your organisation');
             } else if (state.reason?.by === 'preference') {
               notes.push('Off by WIREBENCH_AREAS for this run');
@@ -152,7 +169,7 @@ export function FeaturesSection({ preferences, update }: SectionProps) {
                 testId={`area-switch-${state.id}`}
                 value={state.enabled}
                 disabled
-                locked={state.policy}
+                locked={state.policy && !unavailable}
                 onChange={() => undefined}
                 {...(notes.length > 0
                   ? { note: <span data-testid={`area-note-${state.id}`}>{notes.join(' · ')}</span> }

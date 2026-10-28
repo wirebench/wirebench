@@ -5,6 +5,7 @@ import { remoteHost } from '../sync/remote-host.js';
 import { useAccountStore } from '../../state/account.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
+import { hasCapability } from '../../lib/capabilities.js';
 import type { WorkspaceShareWire } from '@shared/wire-base.js';
 import { workspaceActions } from './workspace-actions.js';
 
@@ -56,6 +57,9 @@ function folderName(dir: string): string {
  * last opened), a name field to create another, *Add project folder…*, the folders of a
  * pre-workspace recent list as one-click imports, and — when the workspace reopened at launch
  * would not open — why.
+ *
+ * On a host without `files` (the browser) only server workspaces open: the local and git ways in, the
+ * folder imports and *Reveal* are not offered, and *Open a team workspace…* is the way to add one.
  */
 export function WorkspacePicker() {
   const workspaces = useWorkspaceStore((state) => state.workspaces);
@@ -69,6 +73,7 @@ export function WorkspacePicker() {
   // Shown only once a server is known: without one the app shows no account UI at all.
   const knowsServer = useAccountStore((state) => state.servers.length > 0);
   const [name, setName] = useState('');
+  const localFiles = hasCapability('files');
 
   useEffect(() => {
     void list();
@@ -91,8 +96,8 @@ export function WorkspacePicker() {
       <div className="w-full max-w-xl">
         <h1 className="text-lg font-medium text-fg-default">Wirebench</h1>
         <p className="mt-1 text-sm text-fg-subtle">
-          A workspace holds your projects and the environments they share. Everything lives in plain files you can read,
-          diff and commit.
+          A workspace holds your projects and the environments they share.
+          {localFiles && ' Everything lives in plain files you can read, diff and commit.'}
         </p>
 
         {banner !== undefined && (
@@ -102,45 +107,54 @@ export function WorkspacePicker() {
         )}
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
-          <input
-            data-testid="workspace-create-name"
-            autoFocus
-            aria-label="New workspace name"
-            placeholder="Workspace name"
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                submit();
-              }
-            }}
-            className="h-row min-w-64 rounded-md border border-hairline-strong bg-surface-raised px-2 text-md text-fg-default"
-          />
-          <Button data-testid="workspace-create" variant="primary" disabled={name.trim().length === 0} onClick={submit}>
-            <FolderPlus size={14} aria-hidden="true" />
-            Create workspace
-          </Button>
-          <Button
-            data-testid="workspace-import-folder"
-            onClick={() => {
-              void workspaceActions.importProjectFolder();
-            }}
-          >
-            <FolderInput size={14} aria-hidden="true" />
-            Add project folder…
-          </Button>
-          <Button
-            data-testid="workspace-join"
-            onClick={() => {
-              setJoinDialogOpen(true);
-            }}
-          >
-            <GitBranch size={14} aria-hidden="true" />
-            Join shared workspace…
-          </Button>
+          {localFiles && (
+            <>
+              <input
+                data-testid="workspace-create-name"
+                autoFocus
+                aria-label="New workspace name"
+                placeholder="Workspace name"
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    submit();
+                  }
+                }}
+                className="h-row min-w-64 rounded-md border border-hairline-strong bg-surface-raised px-2 text-md text-fg-default"
+              />
+              <Button
+                data-testid="workspace-create"
+                variant="primary"
+                disabled={name.trim().length === 0}
+                onClick={submit}
+              >
+                <FolderPlus size={14} aria-hidden="true" />
+                Create workspace
+              </Button>
+              <Button
+                data-testid="workspace-import-folder"
+                onClick={() => {
+                  void workspaceActions.importProjectFolder();
+                }}
+              >
+                <FolderInput size={14} aria-hidden="true" />
+                Add project folder…
+              </Button>
+              <Button
+                data-testid="workspace-join"
+                onClick={() => {
+                  setJoinDialogOpen(true);
+                }}
+              >
+                <GitBranch size={14} aria-hidden="true" />
+                Join shared workspace…
+              </Button>
+            </>
+          )}
           {knowsServer && (
             <Button
               data-testid="workspace-open-team"
@@ -183,7 +197,7 @@ export function WorkspacePicker() {
                         : `${String(workspace.projectCount)} project${workspace.projectCount === 1 ? '' : 's'} · ${formatOpenedAt(workspace.lastOpenedAt)}`}
                     </span>
                   </button>
-                  {unreadable && (
+                  {unreadable && localFiles && (
                     <Button
                       aria-label={`Reveal the folder of ${workspace.name}`}
                       onClick={() => {
@@ -200,7 +214,7 @@ export function WorkspacePicker() {
           </ul>
         )}
 
-        {suggestions.length > 0 && (
+        {localFiles && suggestions.length > 0 && (
           <>
             <h2 className="mt-8 text-sm font-medium text-fg-muted">Project folders you opened before</h2>
             <p className="mt-1 text-sm text-fg-subtle">Import one to copy it into a workspace.</p>

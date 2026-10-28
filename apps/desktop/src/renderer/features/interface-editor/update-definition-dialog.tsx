@@ -15,6 +15,7 @@ import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import type { DefinitionUpdateOptions, DefinitionUpdateSource, UpdatePlanWire } from '@shared/kinds/soap/wire.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 export interface UpdateDefinitionDialogProps {
   readonly open: boolean;
@@ -218,9 +219,11 @@ export function UpdateDefinitionDialog({ open, onOpenChange, interfaceId }: Upda
               }}
               className={INPUT_CLASS}
             />
-            <Button data-testid="update-definition-browse" onClick={() => void browse()}>
-              Browse…
-            </Button>
+            {hasCapability('dialogs') && (
+              <Button data-testid="update-definition-browse" onClick={() => void browse()}>
+                Browse…
+              </Button>
+            )}
           </div>
           {filePath.length > 0 && (
             <p data-testid="update-definition-file" className="mt-1 truncate text-xs text-fg-muted">

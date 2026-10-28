@@ -8,6 +8,7 @@ import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { SettingsGroup } from '../../components/settings-grid.js';
 import { rotateMessage, useTeamSecretsStore } from '../../state/team-secrets.js';
+import { hasCapability } from '../../lib/capabilities.js';
 import type { TeamSecretsKeyWire, TeamSecretsUntrustedWire } from '@shared/wire-base.js';
 
 const ME_WORDS = {
@@ -31,6 +32,19 @@ export function TeamSecretsSection() {
   const busy = useTeamSecretsStore((state) => state.busy);
   const run = useTeamSecretsStore((state) => state.run);
   const [removing, setRemoving] = useState<TeamSecretsKeyWire | undefined>(undefined);
+
+  // A host that may not hold a team-secrets key (decision 5) answers "off" whatever the workspace's vault
+  // says, so "off" here would mislead. What is true is where such a value is used (spec §3.5).
+  if (!hasCapability('team-secrets')) {
+    return (
+      <SettingsGroup title="Team secrets">
+        <p role="status" data-testid="team-secrets-elsewhere" className="text-sm text-fg-subtle">
+          Team secret values are resolved on the agent, never here. A request that uses one is sent from a paired
+          machine an admin approved for this workspace; turning team secrets on and approving machines happen there too.
+        </p>
+      </SettingsGroup>
+    );
+  }
 
   if (!status.on) {
     if (!status.canTurnOn && status.message === undefined) {

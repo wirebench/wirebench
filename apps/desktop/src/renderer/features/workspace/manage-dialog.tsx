@@ -4,6 +4,7 @@ import { Share2, Trash2 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { useUiStore } from '../../state/ui.js';
+import { hasCapability } from '../../lib/capabilities.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { WorkspaceSummaryWire } from '@shared/wire-base.js';
 import { workspaceActions } from './workspace-actions.js';
@@ -85,6 +86,8 @@ export function WorkspaceManageDialog() {
                     </span>
                     <span className="shrink-0 text-xs text-fg-faint">{plural(row.projectCount, 'project')}</span>
                     {row.id === workspace?.id &&
+                      // Sharing through git or a folder, and turning a workspace local again, need the machine's files.
+                      hasCapability('files') &&
                       (row.share === undefined ? (
                         <button
                           type="button"

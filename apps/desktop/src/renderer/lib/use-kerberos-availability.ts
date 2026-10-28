@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { hasCapability } from './capabilities.js';
 
 export interface KerberosAvailabilityView {
   readonly available: boolean;
@@ -14,9 +15,17 @@ const UNCHECKED: KerberosAvailabilityView = {
 
 let inFlight: Promise<KerberosAvailabilityView | undefined> | undefined;
 
+/** What a host without `kerberos` answers, without asking: there is no ticket cache to read. */
+const NO_KERBEROS: KerberosAvailabilityView = {
+  available: false,
+  reason: 'Kerberos is not available here: it signs in with the ticket cache of the machine that sends.',
+  platform: 'linux',
+};
+
 /** One IPC call shared by every picker on screen. Settles to unavailable when the call fails. */
 function ask(): Promise<KerberosAvailabilityView | undefined> {
   inFlight ??= (async () => {
+    if (!hasCapability('kerberos')) return NO_KERBEROS;
     try {
       const call = window.wirebench?.auth?.kerberosAvailability;
       if (call === undefined) return undefined;

@@ -10,6 +10,7 @@ import { MAX_DROPPED_ATTACHMENT_BYTES, MAX_DROPPED_FILES } from '@shared/kinds/s
 import type { AttachmentPatchWire, MimePartWire } from '@shared/kinds/soap/wire.js';
 import { addAttachmentsThroughPicker, removeSelectedAttachment } from '../attachment-actions.js';
 import { AttachmentsTable } from './attachments-table.js';
+import { hasCapability } from '../../../lib/capabilities.js';
 
 /** Base64 for a dropped file's bytes, chunked so a multi-MB file cannot blow the argument list. */
 function toBase64(bytes: Uint8Array): string {
@@ -149,16 +150,19 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
       }}
     >
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          data-testid="attachments-add"
-          onClick={() => {
-            void addAttachmentsThroughPicker(requestId, copyToCache);
-          }}
-          className="h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-3 text-xs text-fg-default hover:bg-surface-hover"
-        >
-          Add…
-        </button>
+        {/* The native picker; a host without one still takes a drop. */}
+        {hasCapability('dialogs') && (
+          <button
+            type="button"
+            data-testid="attachments-add"
+            onClick={() => {
+              void addAttachmentsThroughPicker(requestId, copyToCache);
+            }}
+            className="h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-3 text-xs text-fg-default hover:bg-surface-hover"
+          >
+            Add…
+          </button>
+        )}
         <button
           type="button"
           data-testid="attachments-remove"
@@ -205,9 +209,13 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
             setSelectedAttachment(requestId, attachmentId);
           }}
           onPatch={patch}
-          onOpen={(attachmentId) => {
-            void open(attachmentId);
-          }}
+          {...(hasCapability('files')
+            ? {
+                onOpen: (attachmentId: string) => {
+                  void open(attachmentId);
+                },
+              }
+            : {})}
           onRemoveSelected={requestRemove}
         />
       )}

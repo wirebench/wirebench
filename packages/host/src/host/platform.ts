@@ -1,30 +1,16 @@
 /**
  * The seam between the host (everything the app does) and the machine it runs on. The desktop
  * implements it with Electron; the agent and the server implement it with plain Node. This file
- * is types only, so importing it never pulls in `electron`.
+ * is types plus the capability list, so importing it never pulls in `electron`.
  */
 import type { EgressPolicy } from '@wirebench/engine';
 
-/** Every capability there is, in one place; a platform declares the subset it has. */
-export const ALL_CAPABILITIES = [
-  'files',
-  'keychain',
-  'ssh',
-  'pty',
-  'kerberos',
-  'dialogs',
-  'send:private',
-  'send:public',
-  'secret-sources',
-  'team-secrets',
-  'updates',
-  'app-lock',
-  /** Start processes on the machine: MCP servers over stdio. */
-  'processes',
-] as const;
-
-/** What a platform can do; a host switches features off when the platform lacks one. */
-export type Capability = (typeof ALL_CAPABILITIES)[number];
+/**
+ * Every capability there is, and what a platform can do. The list lives in `@wirebench/wire` so the
+ * renderer, which cannot import the host, reads the same one (`hasCapability`).
+ */
+export { ALL_CAPABILITIES, type Capability } from '@wirebench/wire/capabilities';
+import type { Capability } from '@wirebench/wire/capabilities';
 
 /** Whoever asked: a renderer window on the desktop, a connection elsewhere. */
 export interface Caller {

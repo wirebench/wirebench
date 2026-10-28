@@ -24,6 +24,7 @@ import { useDraftsStore } from '../../state/drafts.js';
 import { ipc } from '../../state/ipc-client.js';
 import type { GraphqlSchemaRefWire } from '@shared/kinds/graphql/wire.js';
 import type { RestBodyWire } from '@shared/kinds/rest/wire.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 type GraphqlBodyWire = Extract<RestBodyWire, { kind: 'graphql' }>;
 
@@ -173,16 +174,19 @@ export function GraphqlBody({
             <Button variant="secondary" data-testid="rest-graphql-fetch" disabled={busy} onClick={fetchSchema}>
               Fetch schema
             </Button>
-            <Button
-              variant="secondary"
-              data-testid="rest-graphql-import"
-              disabled={busy}
-              onClick={() => {
-                void importSchema();
-              }}
-            >
-              Import schema…
-            </Button>
+            {/* Reads a file picked in a native dialog. */}
+            {hasCapability('dialogs') && (
+              <Button
+                variant="secondary"
+                data-testid="rest-graphql-import"
+                disabled={busy}
+                onClick={() => {
+                  void importSchema();
+                }}
+              >
+                Import schema…
+              </Button>
+            )}
             {schema !== undefined && (
               <Button variant="secondary" data-testid="rest-graphql-clear" disabled={busy} onClick={clearSchema}>
                 Clear

@@ -92,7 +92,8 @@ export interface AttachmentsTableProps {
   readonly outsideProjectIds: ReadonlySet<string>;
   readonly onSelect: (attachmentId: string) => void;
   readonly onPatch: (attachmentId: string, patch: AttachmentPatchWire) => void;
-  readonly onOpen: (attachmentId: string) => void;
+  /** Opens the file in the machine's default app; absent on a host without `files`, and no Open is offered. */
+  readonly onOpen?: (attachmentId: string) => void;
   readonly onRemoveSelected: () => void;
 }
 
@@ -228,7 +229,7 @@ export function AttachmentsTable({
                       <span
                         className="min-w-0 flex-1 cursor-default truncate font-mono text-xs text-fg-default"
                         onDoubleClick={() => {
-                          onOpen(attachment.id);
+                          onOpen?.(attachment.id);
                         }}
                       >
                         {attachment.name}
@@ -306,14 +307,16 @@ export function AttachmentsTable({
                   {attachment.cached ? '✓' : '–'}
                 </td>
                 <td role="gridcell" className="py-0.5 align-middle">
-                  <InspectorIconButton
-                    label="Open attachment"
-                    onClick={() => {
-                      onOpen(attachment.id);
-                    }}
-                  >
-                    <ExternalLink size={13} aria-hidden="true" />
-                  </InspectorIconButton>
+                  {onOpen !== undefined && (
+                    <InspectorIconButton
+                      label="Open attachment"
+                      onClick={() => {
+                        onOpen(attachment.id);
+                      }}
+                    >
+                      <ExternalLink size={13} aria-hidden="true" />
+                    </InspectorIconButton>
+                  )}
                 </td>
               </tr>
             );

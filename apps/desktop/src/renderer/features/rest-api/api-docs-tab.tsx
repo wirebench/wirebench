@@ -14,6 +14,7 @@ import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import type { RestApiWire, RestRequestWire } from '@shared/kinds/rest/wire.js';
 import type { RestFolderWire } from '@shared/wire-base.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 /** How many lines of an example's body show before Show all. */
 export const EXAMPLE_PREVIEW_LINES = 12;
@@ -173,21 +174,23 @@ export function ApiDocsTab({ apiId }: ApiDocsTabProps) {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <h2 className="min-w-0 text-2xl font-semibold break-words text-fg-default">{doc.name}</h2>
             <div className="flex shrink-0 gap-2">
-              {(['html', 'markdown'] as const).map((format) => (
-                <Button
-                  key={format}
-                  data-testid={`api-docs-export-${format}`}
-                  disabled={exporting}
-                  onClick={() => {
-                    setExporting(true);
-                    void exportDocs(apiId, format).finally(() => {
-                      setExporting(false);
-                    });
-                  }}
-                >
-                  {format === 'html' ? 'Export HTML…' : 'Export Markdown…'}
-                </Button>
-              ))}
+              {/* Each writes to a file picked in a native dialog. */}
+              {hasCapability('dialogs') &&
+                (['html', 'markdown'] as const).map((format) => (
+                  <Button
+                    key={format}
+                    data-testid={`api-docs-export-${format}`}
+                    disabled={exporting}
+                    onClick={() => {
+                      setExporting(true);
+                      void exportDocs(apiId, format).finally(() => {
+                        setExporting(false);
+                      });
+                    }}
+                  >
+                    {format === 'html' ? 'Export HTML…' : 'Export Markdown…'}
+                  </Button>
+                ))}
             </div>
           </div>
           <ul className="mt-1 flex flex-wrap gap-x-4 text-xs text-fg-subtle">

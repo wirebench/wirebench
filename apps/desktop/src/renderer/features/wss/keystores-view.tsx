@@ -20,6 +20,7 @@ import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore, useTargetProjectId } from '../../state/project.js';
 import { KeystoreAddDialog } from './keystore-add-dialog.js';
 import type { KeystoreAliasWire, KeystoresInspectResponse, KeystoreWire } from '@shared/wire-base.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 /** The status chip's copy and tone, keyed by what `keystores.inspect` reported. */
 const STATUS: Readonly<Record<KeystoresInspectResponse['status'], { label: string; tone: string }>> = {
@@ -215,16 +216,19 @@ export function KeystoresView() {
     <div data-testid="keystores-view" className="flex min-h-0 flex-col">
       <div className="flex h-8 items-center gap-1 pr-2 pl-2">
         <span className="min-w-0 flex-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">Keystores</span>
-        <IconButton
-          label="Add keystore"
-          data-testid="keystore-add"
-          disabled={projectId === undefined}
-          onClick={() => {
-            setAdding(true);
-          }}
-        >
-          <Plus size={14} aria-hidden="true" />
-        </IconButton>
+        {/* A keystore is a file picked in a native dialog. */}
+        {hasCapability('dialogs') && (
+          <IconButton
+            label="Add keystore"
+            data-testid="keystore-add"
+            disabled={projectId === undefined}
+            onClick={() => {
+              setAdding(true);
+            }}
+          >
+            <Plus size={14} aria-hidden="true" />
+          </IconButton>
+        )}
       </div>
 
       {/* A grid, not a list: every row is the same record (name, type, load status) with the

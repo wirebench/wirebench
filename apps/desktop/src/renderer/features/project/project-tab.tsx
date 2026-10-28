@@ -10,6 +10,7 @@ import { useGlobalsStore } from '../../state/globals.js';
 import { useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
+import { hasCapability } from '../../lib/capabilities.js';
 import { SaveIndicator } from './save-indicator.js';
 import { currentColumn, useCurrentValues } from '../../state/current-values.js';
 import { VariablesTable, type InheritedScope, type VariablesTableTarget } from '../environments/variables-table.js';
@@ -98,15 +99,17 @@ export function ProjectTab({ projectId }: ProjectTabProps) {
                   <div className="min-w-0 flex-1">
                     <TextSetting label="Folder" value={project.dir} readOnly monospace onCommit={() => undefined} />
                   </div>
-                  <button
-                    type="button"
-                    className="mb-0.5 h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default hover:bg-surface-hover"
-                    onClick={() => {
-                      void workspaceActions.revealProject(projectId);
-                    }}
-                  >
-                    Reveal
-                  </button>
+                  {hasCapability('files') && (
+                    <button
+                      type="button"
+                      className="mb-0.5 h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default hover:bg-surface-hover"
+                      onClick={() => {
+                        void workspaceActions.revealProject(projectId);
+                      }}
+                    >
+                      Reveal
+                    </button>
+                  )}
                 </div>
                 <ReadOnlySetting label="Source" value={source === 'linked' ? 'Linked' : 'Internal'} />
               </SettingsGroup>

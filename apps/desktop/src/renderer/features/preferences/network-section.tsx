@@ -30,6 +30,7 @@ import type { SectionProps } from './sections/section-props.js';
 import { PREFERENCE_LIMITS } from '../../state/preference-limits.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../state/preferences-defaults.js';
 import { proxyHostProblem } from './validators.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 /** Proxy preferences, applied to every send. */
 export function ProxySection({ preferences, update, locked = () => false }: SectionProps) {
@@ -156,42 +157,47 @@ export function SslSection({ preferences, update, locked = () => false }: Sectio
         ]}
         onChange={(minVersion) => update({ ssl: { minVersion } })}
       />
-      <TextSetting
-        label="CA bundle"
-        setting="ssl.caBundlePath"
-        value={ssl.caBundlePath ?? ''}
-        monospace
-        readOnly
-        testId="ssl-ca-bundle"
-        locked={bundleLocked}
-        hint="A PEM file of extra trust anchors, chosen with Browse…. Added to the system store; nothing is replaced."
-        onCommit={() => undefined}
-      />
-      <SettingsRow label="Choose a CA bundle" locked={bundleLocked}>
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            disabled={picking || bundleLocked}
-            data-testid="ssl-ca-bundle-browse"
-            onClick={() => {
-              void pickBundle();
-            }}
-          >
-            Browse…
-          </Button>
-          {!bundleLocked && ssl.caBundlePath !== undefined && ssl.caBundlePath.length > 0 && (
-            <Button
-              variant="secondary"
-              data-testid="ssl-ca-bundle-clear"
-              onClick={() => {
-                void ipc().ssl.clearCaBundle({});
-              }}
-            >
-              Clear
-            </Button>
-          )}
-        </div>
-      </SettingsRow>
+      {/* A PEM file on the machine, picked in a native dialog: nothing to choose on a host without either. */}
+      {hasCapability('files') && hasCapability('dialogs') && (
+        <>
+          <TextSetting
+            label="CA bundle"
+            setting="ssl.caBundlePath"
+            value={ssl.caBundlePath ?? ''}
+            monospace
+            readOnly
+            testId="ssl-ca-bundle"
+            locked={bundleLocked}
+            hint="A PEM file of extra trust anchors, chosen with Browse…. Added to the system store; nothing is replaced."
+            onCommit={() => undefined}
+          />
+          <SettingsRow label="Choose a CA bundle" locked={bundleLocked}>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                disabled={picking || bundleLocked}
+                data-testid="ssl-ca-bundle-browse"
+                onClick={() => {
+                  void pickBundle();
+                }}
+              >
+                Browse…
+              </Button>
+              {!bundleLocked && ssl.caBundlePath !== undefined && ssl.caBundlePath.length > 0 && (
+                <Button
+                  variant="secondary"
+                  data-testid="ssl-ca-bundle-clear"
+                  onClick={() => {
+                    void ipc().ssl.clearCaBundle({});
+                  }}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+          </SettingsRow>
+        </>
+      )}
       <EnumSetting
         display="select"
         label="Client keystore"

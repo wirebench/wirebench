@@ -15,6 +15,7 @@ import { ipc } from '../../state/ipc-client.js';
 import { showToast } from '../../components/toast.js';
 import type { RestApiWire } from '@shared/kinds/rest/wire.js';
 import type { ApiDefinitionDocumentsResponse } from '@shared/wire-base.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 const CodeEditor = lazy(async () => ({ default: (await import('../../editor/code-editor.js')).CodeEditor }));
 
@@ -131,9 +132,12 @@ export function ApiDefinitionCard({ apiId, definition, noun = 'document' }: ApiD
             <Button variant="secondary" data-testid="api-definition-view" onClick={() => void onView()}>
               {viewing ? `Hide ${noun}` : `View ${noun}`}
             </Button>
-            <Button variant="secondary" data-testid="api-definition-export" onClick={() => void onExport()}>
-              Export…
-            </Button>
+            {/* Writes to a folder picked in a native dialog. */}
+            {hasCapability('dialogs') && (
+              <Button variant="secondary" data-testid="api-definition-export" onClick={() => void onExport()}>
+                Export…
+              </Button>
+            )}
           </div>
           {error !== undefined && (
             <p data-testid="api-definition-error" className="text-sm text-status-danger">

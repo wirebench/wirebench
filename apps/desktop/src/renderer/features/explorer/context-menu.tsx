@@ -5,6 +5,7 @@ import { explorerActions } from './explorer-actions.js';
 import { exportItems, groups, type ExplorerMenuGroup, type ExplorerMenuItem } from './menu-items.js';
 import { explorerRole, kindExplorer } from '../../kinds/index.js';
 import { projectRowActions } from './project-actions.js';
+import { hasCapability } from '../../lib/capabilities.js';
 import { levelIdOf, type ExplorerNode } from './tree-nodes.js';
 import {
   deleteExplorerNodes,
@@ -157,8 +158,13 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
           : []),
       ],
       [
-        { key: 'reveal', label: REVEAL_LABEL, run: () => projectRowActions.reveal(projectId) },
-        { key: 'export', label: 'Export project…', run: () => projectRowActions.export(projectId) },
+        // The folder in the machine's file manager, and a copy written to a folder picked in a dialog.
+        ...(hasCapability('files')
+          ? [{ key: 'reveal', label: REVEAL_LABEL, run: () => projectRowActions.reveal(projectId) }]
+          : []),
+        ...(hasCapability('dialogs')
+          ? [{ key: 'export', label: 'Export project…', run: () => projectRowActions.export(projectId) }]
+          : []),
         ...exportItems({ projectId }),
       ],
       [
@@ -183,7 +189,9 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
   if (node.kind === 'project-missing' && node.projectId !== undefined) {
     const projectId = node.projectId;
     return groups(
-      [{ key: 'locate', label: 'Locate…', run: () => projectRowActions.locate(projectId) }],
+      hasCapability('files')
+        ? [{ key: 'locate', label: 'Locate…', run: () => projectRowActions.locate(projectId) }]
+        : [],
       [{ key: 'remove', label: 'Remove from workspace', run: () => projectRowActions.remove(projectId) }],
     );
   }

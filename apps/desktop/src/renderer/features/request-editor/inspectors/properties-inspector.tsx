@@ -9,6 +9,7 @@ import { ipc } from '../../../state/ipc-client.js';
 import { useProjectStore } from '../../../state/project.js';
 import { RequestFacts } from './details-inspector.js';
 import type { RequestPropertiesPatchWire } from '@shared/kinds/soap/wire.js';
+import { hasCapability } from '../../../lib/capabilities.js';
 
 export interface PropertiesInspectorProps {
   readonly requestId: string;
@@ -129,27 +130,32 @@ export function PropertiesInspector({ requestId }: PropertiesInspectorProps) {
           placeholder="unlimited"
           onCommit={(maxSizeBytes) => patch({ maxSizeBytes: maxSizeBytes ?? null })}
         />
-        <div className="flex items-end gap-2">
-          <div className="min-w-0 flex-1">
-            <TextSetting
-              label="Dump file"
-              hint="Write every response of this request to this file as well."
-              value={properties.dumpFile ?? ''}
-              monospace
-              placeholder="no dump"
-              onCommit={(dumpFile) => patch({ dumpFile: dumpFile.length > 0 ? dumpFile : null })}
-            />
+        {/* A file on the machine that sends; a host without one has nowhere to write it. */}
+        {hasCapability('files') && (
+          <div className="flex items-end gap-2">
+            <div className="min-w-0 flex-1">
+              <TextSetting
+                label="Dump file"
+                hint="Write every response of this request to this file as well."
+                value={properties.dumpFile ?? ''}
+                monospace
+                placeholder="no dump"
+                onCommit={(dumpFile) => patch({ dumpFile: dumpFile.length > 0 ? dumpFile : null })}
+              />
+            </div>
+            {hasCapability('dialogs') && (
+              <button
+                type="button"
+                className="mb-0.5 h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default hover:bg-surface-hover"
+                onClick={() => {
+                  void pickDumpFile();
+                }}
+              >
+                Browse…
+              </button>
+            )}
           </div>
-          <button
-            type="button"
-            className="mb-0.5 h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default hover:bg-surface-hover"
-            onClick={() => {
-              void pickDumpFile();
-            }}
-          >
-            Browse…
-          </button>
-        </div>
+        )}
         <BooleanSetting
           label="Pretty print"
           hint="Indent the envelope before sending it."

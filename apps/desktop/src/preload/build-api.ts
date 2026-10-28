@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import type { EventPayload, IpcChannel, IpcResult } from '@wirebench/wire/ipc';
 import { channels, events } from '@wirebench/wire/ipc';
+import { ALL_CAPABILITIES, type Capability } from '@wirebench/wire/capabilities';
 
 /** Injected transport for `invoke`-style channels: send `request`, get the raw reply back. */
 export type Invoke = (channelName: string, request: unknown) => Promise<unknown>;
@@ -63,10 +64,17 @@ export type WirebenchApi = ApiFromChannels<typeof channels> & {
    * `sendTemplatesUnasked` mirrors `WIREBENCH_E2E_SEND_TEMPLATES`: e2e specs send freshly generated
    * requests, template "?" values and all, so the question a send asks about them (#728) is skipped
    * there, except in the spec that tests it.
+   *
+   * `host` says which program built this API: the Electron preload, or the browser bootstrap over the
+   * server's host socket (hosted edition spec §3.1). `capabilities` are what the connected host can do;
+   * the desktop has every one, the browser what the socket's hello frame lists. The renderer reads them
+   * through `hasCapability` only and never compares `host`.
    */
   env: {
     readonly e2e: boolean;
     readonly osTheme: 'dark' | 'light';
+    readonly host: 'electron' | 'browser';
+    readonly capabilities: readonly Capability[];
     readonly fixedLayout?: boolean;
     readonly sendTemplatesUnasked?: boolean;
   };
@@ -105,7 +113,7 @@ function buildChannelApi(tree: ChannelTree, invoke: Invoke): Record<string, unkn
 export function buildApi(
   invoke: Invoke,
   on: On,
-  env: WirebenchApi['env'] = { e2e: false, osTheme: 'dark' },
+  env: WirebenchApi['env'] = { e2e: false, osTheme: 'dark', host: 'electron', capabilities: ALL_CAPABILITIES },
   pathForFile: (file: File) => string = () => '',
 ): WirebenchApi {
   const channelApi = buildChannelApi(channels, invoke);

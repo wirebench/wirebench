@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { buildApi } from '../src/preload/build-api.js';
+import { ALL_CAPABILITIES } from '@wirebench/wire/capabilities';
 
 describe('buildApi', () => {
   it('wires app.version to invoke with the channel name', async () => {
@@ -113,12 +114,16 @@ describe('buildApi', () => {
     expect(buildApi(vi.fn(), vi.fn(), undefined, (f) => `/drop/${f.name}`).pathForFile(file)).toBe('/drop/a.txt');
   });
 
-  it('defaults env to a non-e2e dark build, and carries whatever the caller passes', () => {
-    expect(buildApi(vi.fn(), vi.fn()).env).toEqual({ e2e: false, osTheme: 'dark' });
-    expect(buildApi(vi.fn(), vi.fn(), { e2e: true, osTheme: 'light' }).env).toEqual({
-      e2e: true,
-      osTheme: 'light',
+  it('defaults env to a non-e2e dark Electron build with every capability, and carries whatever the caller passes', () => {
+    expect(buildApi(vi.fn(), vi.fn()).env).toEqual({
+      e2e: false,
+      osTheme: 'dark',
+      host: 'electron',
+      capabilities: ALL_CAPABILITIES,
     });
+    expect(
+      buildApi(vi.fn(), vi.fn(), { e2e: true, osTheme: 'light', host: 'browser', capabilities: ['send:public'] }).env,
+    ).toEqual({ e2e: true, osTheme: 'light', host: 'browser', capabilities: ['send:public'] });
   });
 
   it('exposes secrets.set/replace/exists/delete/list but never secrets.get', () => {

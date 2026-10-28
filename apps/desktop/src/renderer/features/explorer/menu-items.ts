@@ -5,6 +5,7 @@
  */
 import { showToast } from '../../components/toast.js';
 import { exportCollection, type CollectionExportTarget } from './export-collection.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 /** One right-click menu entry: what it says, and what it does. */
 export interface ExplorerMenuItem {
@@ -27,8 +28,12 @@ export function groups(...candidates: readonly ExplorerMenuGroup[]): readonly Ex
   return candidates.filter((group) => group.length > 0);
 }
 
-/** **Export as Postman Collection…** and **Export as OpenCollection…** for a project, API or interface. */
+/**
+ * **Export as Postman Collection…** and **Export as OpenCollection…** for a project, API or interface;
+ * none without `dialogs`, since each writes to a folder picked in a native dialog.
+ */
 export function exportItems(target: CollectionExportTarget): ExplorerMenuItem[] {
+  if (!hasCapability('dialogs')) return [];
   return [
     {
       key: 'export-postman',

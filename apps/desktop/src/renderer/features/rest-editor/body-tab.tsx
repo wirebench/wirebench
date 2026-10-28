@@ -29,6 +29,7 @@ import { JsonFormView } from './json-form-view.js';
 import type { RestBodyWire, RestRequestPatchWire, RestSettingsWire } from '@shared/kinds/rest/wire.js';
 import type { KeyValueWire } from '@shared/wire-base.js';
 import { useEditorVariableAssist } from '../environments/variable-assist-provider.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 /** The body kinds, in the order the switch offers them. */
 const KINDS = [
@@ -524,25 +525,31 @@ function MultipartParts({
             </li>
           ))}
         </ul>
-        <div>
-          <Button
-            variant="secondary"
-            data-testid="rest-multipart-add-file"
-            onClick={() => {
-              void pickFile().then((path) => {
-                if (path === undefined) {
-                  return;
-                }
-                onSet({
-                  kind: 'multipart',
-                  parts: [...body.parts, { kind: 'file', name: 'file', source: { kind: 'path', path }, enabled: true }],
+        {/* A file part is a path picked in a native dialog. */}
+        {hasCapability('dialogs') && (
+          <div>
+            <Button
+              variant="secondary"
+              data-testid="rest-multipart-add-file"
+              onClick={() => {
+                void pickFile().then((path) => {
+                  if (path === undefined) {
+                    return;
+                  }
+                  onSet({
+                    kind: 'multipart',
+                    parts: [
+                      ...body.parts,
+                      { kind: 'file', name: 'file', source: { kind: 'path', path }, enabled: true },
+                    ],
+                  });
                 });
-              });
-            }}
-          >
-            Add file…
-          </Button>
-        </div>
+              }}
+            >
+              Add file…
+            </Button>
+          </div>
+        )}
       </section>
     </div>
   );
@@ -562,19 +569,21 @@ function BinaryBody({ body, onSet }: { readonly body: BinaryBody; readonly onSet
               : body.source.path
             : `cached ${body.source.sha256.slice(0, 12)}`}
         </span>
-        <Button
-          variant="secondary"
-          data-testid="rest-binary-choose"
-          onClick={() => {
-            void pickFile().then((path) => {
-              if (path !== undefined) {
-                onSet({ ...body, source: { kind: 'path', path } });
-              }
-            });
-          }}
-        >
-          Choose file…
-        </Button>
+        {hasCapability('dialogs') && (
+          <Button
+            variant="secondary"
+            data-testid="rest-binary-choose"
+            onClick={() => {
+              void pickFile().then((path) => {
+                if (path !== undefined) {
+                  onSet({ ...body, source: { kind: 'path', path } });
+                }
+              });
+            }}
+          >
+            Choose file…
+          </Button>
+        )}
       </div>
       <label className="flex items-center gap-2 text-sm">
         <span className="w-28 shrink-0 text-xs text-fg-subtle">Content type</span>

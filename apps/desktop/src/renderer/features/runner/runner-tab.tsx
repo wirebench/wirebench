@@ -22,6 +22,7 @@ import { MethodBadge } from '../rest-api/method-badge.js';
 import { pathDisplayName } from '../rest-api/request-display-name.js';
 import type { RunnerSettings, RunnerState, RunnerSummary } from '@shared/runner-wire.js';
 import { Results } from './result-list.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 export { resultMark, type ResultMark } from './result-list.js';
 
@@ -222,14 +223,17 @@ export function RunnerTab({ targetId }: RunnerTabProps) {
               None
             </span>
           )}
-          <button
-            type="button"
-            data-testid="runner-data-choose"
-            className={BUTTON}
-            onClick={() => void store.chooseData(targetId)}
-          >
-            Choose…
-          </button>
+          {/* A data file picked in a native dialog. */}
+          {hasCapability('dialogs') && (
+            <button
+              type="button"
+              data-testid="runner-data-choose"
+              className={BUTTON}
+              onClick={() => void store.chooseData(targetId)}
+            >
+              Choose…
+            </button>
+          )}
           {data !== undefined && (
             <button
               type="button"

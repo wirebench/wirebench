@@ -8,6 +8,7 @@ import {
   SERIAL_SWITCH,
   TELNET_SWITCH,
 } from '@wirebench/wire/area-switches';
+import { AREA_CAPABILITIES } from '@wirebench/wire/capabilities';
 import type { Capability } from './host/platform.js';
 import { registerLocalTerminalChannels } from './areas/local-terminal-channels.js';
 import { registerSshChannels } from './areas/ssh.js';
@@ -61,8 +62,7 @@ export function resolveAreas(input: {
   const { states } = resolveFeatures(AREA_SWITCH_DESCRIPTORS, {
     policy: [
       ...(input.policy ?? []),
-      ...(lacks('ssh') ? ['ssh'] : []),
-      ...(lacks('pty') ? [LOCAL_TERMINAL_SWITCH] : []),
+      ...Object.entries(AREA_CAPABILITIES).flatMap(([id, capability]) => (lacks(capability) ? [id] : [])),
     ],
     preference: parseAreaSwitches((input.env ?? process.env)['WIREBENCH_AREAS']),
   });

@@ -15,6 +15,7 @@ import type {
   PreferencesStoredSectionWire,
   PreferencesWire,
 } from '@shared/wire-base.js';
+import { hasCapability, type Capability } from '../../lib/capabilities.js';
 
 /** A section of the Settings page. */
 export type SettingsSectionId =
@@ -64,6 +65,12 @@ export interface SettingsSection {
   readonly searchable: boolean;
   /** More words every row of the section matches on, beside its name: what people search for it by. */
   readonly keywords?: readonly string[];
+  /**
+   * What the connected host's machine must be able to do for the section to mean anything (hosted
+   * edition spec §3.1), or a list of which any one will do; without it the section is neither listed
+   * nor searched.
+   */
+  readonly capability?: Capability | readonly Capability[];
 }
 
 export interface SettingsNavGroup {
@@ -130,6 +137,8 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         keys: { kind: 'none' },
         searchable: true,
         keywords: ['plugin', 'extension', 'importer', 'reporter', 'code generator', 'install'],
+        // Installed from a folder or archive on the machine, into a folder of its own.
+        capability: 'files',
       },
       {
         id: 'shortcuts',
@@ -138,7 +147,14 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         keys: stored('shortcuts'),
         searchable: false,
       },
-      { id: 'updates', label: 'Updates', subtitle: 'Release checks.', keys: stored('updates'), searchable: true },
+      {
+        id: 'updates',
+        label: 'Updates',
+        subtitle: 'Release checks.',
+        keys: stored('updates'),
+        searchable: true,
+        capability: 'updates',
+      },
     ],
   },
   {
@@ -190,6 +206,8 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         subtitle: 'The git executable shared workspaces sync with.',
         keys: stored('git'),
         searchable: true,
+        // A program on the machine, for git-kind workspaces.
+        capability: 'files',
       },
       { id: 'mocks', label: 'Mock services', subtitle: 'Local mock servers.', keys: stored('mocks'), searchable: true },
       {
@@ -199,6 +217,7 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         keys: stored('terminal'),
         searchable: true,
         keywords: ['ssh', 'shell', 'console'],
+        capability: 'ssh',
       },
       {
         id: 'ssh',
@@ -206,6 +225,7 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         subtitle: 'Connection defaults for hosts that do not set their own.',
         keys: stored('ssh'),
         searchable: true,
+        capability: 'ssh',
       },
       {
         id: 'secrets',
@@ -213,6 +233,8 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         subtitle: 'Secret sources and the app lock for SSH secrets.',
         keys: stored('secrets'),
         searchable: true,
+        // Each group shows only with its own capability; with neither there is nothing here.
+        capability: ['secret-sources', 'app-lock'],
       },
     ],
   },
@@ -237,6 +259,20 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
   },
 ];
 
+/** Whether the connected host can do what `section` needs; see {@link SettingsSection.capability}. */
+export function sectionAvailable(section: SettingsSection): boolean {
+  const needs = section.capability;
+  if (needs === undefined) return true;
+  return typeof needs === 'string' ? hasCapability(needs) : needs.some((capability) => hasCapability(capability));
+}
+
+/** {@link SETTINGS_NAV} without the sections the connected host cannot use, and without a group left empty. */
+export function availableNav(): readonly SettingsNavGroup[] {
+  return SETTINGS_NAV.map((group) => ({ ...group, sections: group.sections.filter(sectionAvailable) })).filter(
+    (group) => group.sections.length > 0,
+  );
+}
+
 /** Every section, in nav order, with the title of the group it sits in. */
 export const SETTINGS_SECTIONS: readonly (SettingsSection & { readonly group: string })[] = SETTINGS_NAV.flatMap(
   (group) => group.sections.map((section) => ({ ...section, group: group.title })),
@@ -254,7 +290,7 @@ export function sectionsForSearch(query: string): readonly (SettingsSection & { 
     return label.startsWith(query) ? 1 : 2;
   };
   // Array.prototype.sort is stable, so equal ranks keep nav order.
-  return [...SETTINGS_SECTIONS].sort((a, b) => rank(a) - rank(b));
+  return SETTINGS_SECTIONS.filter(sectionAvailable).sort((a, b) => rank(a) - rank(b));
 }
 
 /** The section Settings opens on when the caller names none. */
@@ -265,7 +301,9 @@ export function resolveSection(request: SettingsSectionRequest | undefined): Set
   if (request === undefined || request === 'editor' || request === 'ui') {
     return DEFAULT_SECTION;
   }
-  return request;
+  // A section the host cannot use is not shown, so a caller asking for one lands on the default.
+  const section = SETTINGS_SECTIONS.find((candidate) => candidate.id === request);
+  return section === undefined || sectionAvailable(section) ? request : DEFAULT_SECTION;
 }
 
 export function sectionById(id: SettingsSectionId): SettingsSection & { readonly group: string } {

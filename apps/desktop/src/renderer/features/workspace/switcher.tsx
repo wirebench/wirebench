@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronDown, Folder, GitBranch, Server } from 'lucide-react';
 import { useUiStore } from '../../state/ui.js';
+import { hasCapability } from '../../lib/capabilities.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { WorkspaceSummaryWire } from '@shared/wire-base.js';
 import { workspaceActions } from './workspace-actions.js';
@@ -102,15 +103,18 @@ export function WorkspaceSwitcher() {
             </DropdownMenu.Item>
           ))}
           <DropdownMenu.Separator className="my-1 h-px bg-hairline" />
-          <DropdownMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
-              setCreateOpen(true);
-            }}
-          >
-            <span className="w-3" aria-hidden="true" />
-            Create workspace…
-          </DropdownMenu.Item>
+          {/* A new workspace is a local folder; without the machine's files only server workspaces open. */}
+          {hasCapability('files') && (
+            <DropdownMenu.Item
+              className={ITEM_CLASS}
+              onSelect={() => {
+                setCreateOpen(true);
+              }}
+            >
+              <span className="w-3" aria-hidden="true" />
+              Create workspace…
+            </DropdownMenu.Item>
+          )}
           <DropdownMenu.Item
             className={ITEM_CLASS}
             onSelect={() => {

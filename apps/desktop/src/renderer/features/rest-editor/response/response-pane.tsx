@@ -36,6 +36,7 @@ import { ExampleResponse, ExamplesMenu } from './examples-menu.js';
 import { SnapshotPanel } from '../../snapshot/snapshot-panel.js';
 import { AssertionResults, assertionResultsBadge } from '../../assertions/assertion-results.js';
 import { hasScriptResults, ScriptResults, scriptResultsBadge } from '../../scripts/script-results.js';
+import { hasCapability } from '../../../lib/capabilities.js';
 
 /** The response tabs, in order. An event stream swaps Body for Events, first. */
 const TABS = [
@@ -187,7 +188,7 @@ export function RestResponsePane({
             setShown({ exampleId, sendId: state?.sendId });
           }}
         />
-        {exchange !== undefined && kept === undefined && shownExample === undefined && (
+        {exchange !== undefined && kept === undefined && shownExample === undefined && hasCapability('dialogs') && (
           <InspectorIconButton
             label="Save response…"
             data-testid="rest-response-save"

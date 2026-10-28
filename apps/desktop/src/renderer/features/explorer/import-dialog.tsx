@@ -56,6 +56,7 @@ import { SecretField } from '../../components/secret-field.js';
 import { Tabs } from '../../components/tabs.js';
 import { useKerberosAvailability } from '../../lib/use-kerberos-availability.js';
 import { ipc } from '../../state/ipc-client.js';
+import { hasCapability } from '../../lib/capabilities.js';
 import { lintGroupId, lintSummary, useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore, type ImportDialogFormat } from '../../state/ui.js';
@@ -1697,49 +1698,53 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
                 {tab === 'file' && (
                   <>
-                    <div className="flex gap-2">
-                      <input
-                        aria-label={format === 'postman' ? 'Postman collection file path' : 'File path'}
-                        data-testid={
-                          format === 'postman'
-                            ? 'import-postman-file-input'
-                            : format === 'openapi'
-                              ? 'import-openapi-path'
-                              : 'import-file-input'
-                        }
-                        value={filePath}
-                        onChange={(e) => {
-                          setDropped(undefined);
-                          setFolderPicked(false);
-                          setFilePath(e.target.value);
-                        }}
-                        placeholder={
-                          format === 'postman'
-                            ? 'Path to collection.json'
-                            : format === 'proto'
-                              ? '/path/to/service.proto'
-                              : '/path/to/spec.json, .yaml, .wsdl, or .proto'
-                        }
-                        className="flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm outline-none"
-                      />
-                      <Button
-                        data-testid={
-                          format === 'postman'
-                            ? 'import-postman-browse'
-                            : format === 'openapi'
-                              ? 'import-openapi-browse'
-                              : 'import-browse'
-                        }
-                        onClick={() => void browseForFile()}
-                      >
-                        Browse…
-                      </Button>
-                      {(format === 'auto' || pickedRow(format)?.folder === true) && (
-                        <Button data-testid="import-browse-folder" onClick={() => void browseForFolder()}>
-                          Folder…
+                    {/* A path and the Browse… / Folder… pickers name files on the host's machine; without one
+                        (no `files`, no `dialogs`) a file comes in by drop alone, read here as text. */}
+                    {hasCapability('files') && hasCapability('dialogs') && (
+                      <div className="flex gap-2">
+                        <input
+                          aria-label={format === 'postman' ? 'Postman collection file path' : 'File path'}
+                          data-testid={
+                            format === 'postman'
+                              ? 'import-postman-file-input'
+                              : format === 'openapi'
+                                ? 'import-openapi-path'
+                                : 'import-file-input'
+                          }
+                          value={filePath}
+                          onChange={(e) => {
+                            setDropped(undefined);
+                            setFolderPicked(false);
+                            setFilePath(e.target.value);
+                          }}
+                          placeholder={
+                            format === 'postman'
+                              ? 'Path to collection.json'
+                              : format === 'proto'
+                                ? '/path/to/service.proto'
+                                : '/path/to/spec.json, .yaml, .wsdl, or .proto'
+                          }
+                          className="flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm outline-none"
+                        />
+                        <Button
+                          data-testid={
+                            format === 'postman'
+                              ? 'import-postman-browse'
+                              : format === 'openapi'
+                                ? 'import-openapi-browse'
+                                : 'import-browse'
+                          }
+                          onClick={() => void browseForFile()}
+                        >
+                          Browse…
                         </Button>
-                      )}
-                    </div>
+                        {(format === 'auto' || pickedRow(format)?.folder === true) && (
+                          <Button data-testid="import-browse-folder" onClick={() => void browseForFolder()}>
+                            Folder…
+                          </Button>
+                        )}
+                      </div>
+                    )}
                     <div
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={(e) => void onDrop(e)}
