@@ -174,9 +174,23 @@ export function httpStatusError(exchange: HttpExchange, what: string): McpError 
   });
 }
 
-/** A call that got no answer: the network, TLS, a proxy, the call's own timeout. */
+/**
+ * A call that got no answer: the network, TLS, a proxy, the call's own timeout. An egress refusal
+ * (spec §17.5) keeps its code `egress-refused`.
+ */
 export function httpFailedError(err: unknown, method: string, url: string): McpError {
   if (err instanceof McpError) return err;
+  // The egress rule's refusal keeps its code, message and details, as a send's does: it says why,
+  // without the address.
+  for (let cause: unknown = err, depth = 0; depth < 5 && cause instanceof Error; depth++) {
+    if (cause instanceof WirebenchError && cause.code === 'egress-refused') {
+      return new McpError('egress-refused', cause.message, {
+        ...(cause.details !== undefined ? { details: cause.details } : {}),
+        cause,
+      });
+    }
+    cause = cause.cause;
+  }
   const reason = err instanceof Error ? err.message : String(err);
   return new McpError('mcp-http-failed', `The MCP ${method} to ${url} failed: ${reason}`, {
     details: {

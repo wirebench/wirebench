@@ -45,7 +45,7 @@ import { registerXpathChannels } from './channels/xpath.js';
  * relative path (or an absolute one merely typed into the property) must stay inside the
  * project.
  */
-async function resolveDumpPath(
+export async function resolveDumpPath(
   target: { path: string; projectDir: string },
   picks: DumpFilePicks | undefined,
 ): Promise<{ path: string } | { problem: ExchangeSummary['problems'][number] }> {
@@ -58,7 +58,7 @@ async function resolveDumpPath(
     } catch {
       return {
         problem: {
-          code: 'dump-outside-project',
+          code: 'host-path-outside-workspace',
           message: `The dump file "${target.path}" resolves outside the workspace`,
         },
       };

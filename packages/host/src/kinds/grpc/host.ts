@@ -342,6 +342,7 @@ export class GrpcHost implements KindHostHooks {
       version,
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
       ...(tlsOptions !== undefined ? { tlsOptions } : {}),
+      ...(this.core.hooks.egress !== undefined ? { egress: this.core.hooks.egress } : {}),
     });
     const reconciled = reconcileGrpcApi(api, discovered.set);
     const next: GrpcApi = {

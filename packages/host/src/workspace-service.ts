@@ -308,7 +308,7 @@ export interface WorkspaceServiceDeps {
    * opens; the rest answer `host-capability-missing`. Default true.
    */
   readonly machineFiles?: boolean;
-  /** The egress rule a certificate probe is held to (`HostPlatform.network`); absent, none. */
+  /** The egress rule a certificate probe and a gRPC rediscovery are held to (`HostPlatform.network`); absent, none. */
   readonly egress?: EgressPolicy;
   /**
    * Whether another window holds `workspaceId` open. Opening, renaming or deleting it from this one is
@@ -1239,6 +1239,7 @@ export class WorkspaceService implements ProjectRouter {
       this.deps.engine,
       {
         hostState: this.deps.hostState,
+        ...(this.deps.egress !== undefined ? { egress: this.deps.egress } : {}),
         onChanged: (project) => {
           if (project !== null) {
             entry.projectId = project.id;

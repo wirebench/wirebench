@@ -54,7 +54,7 @@ import {
   withSystemValuesReported,
   workspaceForProject,
 } from '@wirebench/engine';
-import type { ProtocolRegistry } from '@wirebench/engine';
+import type { EgressPolicy, ProtocolRegistry } from '@wirebench/engine';
 import type {
   CurrentValues,
   Endpoint,
@@ -127,6 +127,8 @@ const PROJECT_WRITER = 'wirebench';
 
 /** Events the service raises; the IPC layer forwards them to the renderer. */
 export interface ProjectHostHooks {
+  /** The host's egress rule (`HostPlatform.network`): a gRPC rediscovery is held to it. Absent, none. */
+  readonly egress?: EgressPolicy;
   /** After any mutation, save, open, close or reload. `null` means no project is open. */
   readonly onChanged?: (project: ProjectWire | null) => void;
   /** Files under the project folder changed outside the app. */

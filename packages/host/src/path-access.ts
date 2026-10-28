@@ -55,6 +55,17 @@ export async function resolveInside(root: string, path: string): Promise<string>
   return real;
 }
 
+/**
+ * A path a caller named, made absolute: from the running call's root, held inside it, on a host with
+ * one ({@link resolveInside}); from the working directory, as before, on one without.
+ *
+ * @throws WirebenchError `host-path-outside-workspace` on a host with a root, for a path outside it
+ */
+export async function resolveCallerPath(path: string): Promise<string> {
+  const root = currentPathRoot();
+  return root === undefined ? resolve(path) : await resolveInside(root, path);
+}
+
 /** {@link resolveInside} under the running call's root; `path` unchanged where there is none. */
 async function insideCurrentRoot(path: string): Promise<string> {
   const root = currentPathRoot();
@@ -117,7 +128,7 @@ export async function checkedImportSource(
     return source;
   }
   // A host with a root takes a relative path from it, not from the process's working directory.
-  const resolved = currentPathRoot() === undefined ? resolve(source.path) : await insideCurrentRoot(source.path);
+  const resolved = await resolveCallerPath(source.path);
   if (!(await allowsReadPath(roots, picks, resolved))) {
     throw new WirebenchError(
       'import-path-refused',

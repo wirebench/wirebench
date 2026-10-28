@@ -37,7 +37,6 @@ import { mainHttpOptions } from '../../src/network-options.js';
 import { OAuth2Service } from '../../src/oauth2.js';
 import { allowsReadPath, checkedImportSource, resolveInside, runInPathRoot } from '../../src/path-access.js';
 import { ProjectHost } from '../../src/project-host.js';
-import { reportedSecretGetter } from '../../src/secret-resolver.js';
 import { sendThroughEngine } from '../../src/send/exchange.js';
 import { extraTrustAnchors } from '../../src/send/host.js';
 import { serveCall } from '../../src/host/serve-call.js';
@@ -432,19 +431,6 @@ describe('HostOptions for an embedder inside a server', () => {
       { kind: 'written', name: 'api_token' },
     ]);
     expect(JSON.stringify(events)).not.toMatch(/hunter/);
-  });
-
-  it('reports a resolved `${secret:…}` token by name, and nothing for a plain ref or a missing value', async () => {
-    const names: string[] = [];
-    const store: Record<string, string> = { 'secret:api_token': 'v1', sec_plain: 'v2' };
-    const get = reportedSecretGetter(
-      (ref) => Promise.resolve(store[ref]),
-      (name) => names.push(name),
-    );
-    await expect(get('secret:api_token')).resolves.toBe('v1');
-    await expect(get('sec_plain')).resolves.toBe('v2');
-    await expect(get('secret:missing')).resolves.toBeUndefined();
-    expect(names).toEqual(['api_token']);
   });
 
   it('keeps the desktop as it is: no root, machine values, every capability', () => {

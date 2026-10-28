@@ -17,6 +17,7 @@ import {
   WirebenchError,
   enabledProperties,
   overlayCurrent,
+  parseSecretPseudoRef,
   type ConnectOptions,
   type ConnectedWebSocket,
   type GetSecret,
@@ -44,7 +45,7 @@ import { WorkspaceState } from '../workspace-state.js';
 import { routeWorkspaces, scoped, WindowScopes } from '../window-scope.js';
 import { platformSecretsBackend, SecretStore, ShowSecretsFlag } from '../secrets.js';
 import { SecretSourcesService } from '../secret-sources-service.js';
-import { projectSecretGetter, reportedSecretGetter, secretStoreLabel } from '../secret-resolver.js';
+import { projectSecretGetter, reportedSecretGetter, secretNameOf, secretStoreLabel } from '../secret-resolver.js';
 import { AppLock, lockedGetter } from '../app-lock.js';
 import type { DeviceKeys } from '../device-keys.js';
 import { SshKeysService } from '../ssh-keys.js';
@@ -233,9 +234,11 @@ export interface HostOptions {
     readonly connectLive: (wsUrl: string) => ConnectedWebSocket;
   };
   /**
-   * Told of every value the `secrets.*` channels store (`written`) and every `${secret:…}` a send
-   * resolves (`resolved`, with the request's host name when known), by name and never by value, for
-   * the embedder's audit (spec §17.4). A listener that throws changes nothing.
+   * Told of every value the host stores (`written`: the Secrets page, a cURL import, a refresh token,
+   * team secrets, a sign-in) and every ref a send, an import or a call from main resolves (`resolved`,
+   * with the request's host name when known), by name and never by value, for the embedder's audit
+   * (spec §17.4). The host's own reads of its sign-in tokens are not resolutions. A listener that throws
+   * changes nothing.
    */
   readonly onSecret?: (event: SecretEvent) => void;
 }
@@ -373,8 +376,36 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
   /** The platform's shell, asked for at use: a host without one refuses only what needs it. */
   const hostShell = (): NonNullable<HostPlatform['shell']> => requireCapability(platform, 'shell');
 
-  /** The keychain-backed secret store; never exposes values to the renderer (no `secrets.get`). */
-  const secretStore = new SecretStore(platform.paths.userData(), platformSecretsBackend(platform.secrets));
+  /**
+   * The keychain-backed secret store; never exposes values to the renderer (no `secrets.get`). Every value
+   * stored in it, by whichever path (the Secrets page, a cURL import, a refresh token, team secrets, a
+   * sign-in), is reported to the embedder by name.
+   */
+  const secretStore = new SecretStore(
+    platform.paths.userData(),
+    platformSecretsBackend(platform.secrets),
+    console.warn,
+    embedder.onSecret === undefined
+      ? undefined
+      : ({ ref, label }) => {
+          reportSecret({ kind: 'written', name: secretNameOf(label, ref) });
+        },
+  );
+  /** The name a resolved ref is reported by: its `${secret:name}` name, else its store label, else the ref. */
+  const resolvedName = async (ref: string): Promise<string> =>
+    parseSecretPseudoRef(ref) ??
+    secretNameOf((await secretStore.list()).find((entry) => entry.ref === ref)?.label, ref);
+  /** `get`, reporting what it resolves (`HostOptions.onSecret`); `get` itself without a listener. */
+  const reporting = (get: GetSecret, target?: string): GetSecret =>
+    embedder.onSecret === undefined
+      ? get
+      : reportedSecretGetter(get, async (ref) => {
+          reportSecret({
+            kind: 'resolved',
+            name: await resolvedName(ref),
+            ...(target !== undefined ? { target } : {}),
+          });
+        });
   /** Session-only "show secrets" toggle, consulted by `redact.ts` via `request.send`. */
   const showSecretsFlag = new ShowSecretsFlag();
 
@@ -417,10 +448,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
       // A source runs a command or reads a file on the machine: a host without them never consults one.
       return await (hasSecretSources ? scope.secretSources.wrap(team) : team)(ref);
     };
-    if (embedder.onSecret === undefined) return resolve;
-    return reportedSecretGetter(resolve, (name) => {
-      reportSecret({ kind: 'resolved', name, ...(target !== undefined ? { target } : {}) });
-    });
+    return reporting(resolve, target);
   };
 
   /** The calling window's workspace secrets for the SSH area (`ssh.secretNames`, `ssh.setSecret`). */
@@ -605,6 +633,9 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     network: (url) => mainHttpOptions(url, mainHttpDeps),
   });
   const protoImports = new ProtoImportService({
+    ...egressOption,
+    // Under a rule, a URL read goes through main's own client: the rule, the CA bundle and the proxy.
+    network: (url) => mainHttpOptions(url, mainHttpDeps),
     // A discovery from the Import dialog trusts what a send would: the configured CA bundle, plus the
     // user's own "trust this certificate anyway" for a development server.
     grpcTls: ({ trustInvalid }) => workspaceService.grpcDiscoveryTls(trustInvalid),
@@ -1073,7 +1104,8 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
       server: { client: serverClient, accounts: accountService, live: liveClients },
       engine: engineService,
       globals: globalProperties,
-      secrets: secretStore,
+      // A project's import-time credentials (a definition's password or token ref) are resolutions too.
+      secrets: { get: reporting(async (ref) => await secretStore.get(ref)) },
       teamSecrets,
       preferences: preferencesService,
       picks,
@@ -1748,12 +1780,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     });
   }
   registerSearchChannels(handlerTable, engineService, workspaceService);
-  registerSecretsChannels(
-    handlerTable,
-    teamSecretStore,
-    showSecretsFlag,
-    embedder.onSecret === undefined ? undefined : (name) => reportSecret({ kind: 'written', name }),
-  );
+  registerSecretsChannels(handlerTable, teamSecretStore, showSecretsFlag);
   // A secret source is a command or a file on the machine (spec D6): only a host with both has them.
   if (hasSecretSources) {
     registerSecretSourcesChannels(handlerTable, workspaceService, secretSources);

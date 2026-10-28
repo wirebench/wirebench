@@ -17,6 +17,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import {
   apiFromProtoSet,
+  createHttpFetchDocument,
   defaultTlsFor,
   descriptorSetBytes,
   importProto,
@@ -24,7 +25,14 @@ import {
   reflectProtoSet,
   WirebenchError,
 } from '@wirebench/engine';
-import type { ImportedProto, ProtoSet, ProtoSources, TlsOptions } from '@wirebench/engine';
+import type {
+  DocumentFetchOptions,
+  EgressPolicy,
+  ImportedProto,
+  ProtoSet,
+  ProtoSources,
+  TlsOptions,
+} from '@wirebench/engine';
 import type { ProtoSourceWire } from '@wirebench/wire/kinds/grpc/wire';
 import type { EngineProgressEvent } from '@wirebench/wire/wire-base';
 import { protoImportsOf as importsOf } from './proto-imports-of.js';
@@ -97,6 +105,23 @@ const defaultFetchText: FetchText = async (url, signal) => {
   }
   return await response.text();
 };
+
+/**
+ * A URL read under the egress rule: through the engine's HTTP client, so every hop and the proxy are
+ * checked, with the host's TLS and proxy. Only http(s): a `file:` URL is a file read, which a host with
+ * a rule has no business making from a URL.
+ */
+function egressFetchText(egress: EgressPolicy, network: DocumentFetchOptions['network']): FetchText {
+  const fetchDocument = createHttpFetchDocument({
+    network: async (url) => ({ ...(await network?.(url)), egress }),
+  });
+  return async (url, signal) => {
+    if (!/^https?:\/\//i.test(url)) {
+      throw new WirebenchError('proto-fetch-failed', `${url} is not an http(s) address`, { details: { url } });
+    }
+    return (await fetchDocument(url, signal)).text;
+  };
+}
 
 /** How many files a folder import will read before giving up: a vendored tree is not a definition. */
 const MAX_PROTO_FILES = 2000;
@@ -236,8 +261,23 @@ export class ProtoImportService {
   private readonly fetchText: FetchText;
   private readonly grpcTls: GrpcDiscoveryTls;
 
-  constructor(options?: { readonly fetchText?: FetchText; readonly grpcTls?: GrpcDiscoveryTls }) {
-    this.fetchText = options?.fetchText ?? defaultFetchText;
+  private readonly egress: EgressPolicy | undefined;
+
+  /**
+   * @param options.egress the host's egress rule (`HostPlatform.network`): a reflection call and, unless
+   *   `fetchText` is given, every URL read are held to it. Absent, as on the desktop, neither is.
+   * @param options.network TLS and proxy for a URL read under `egress` (`mainHttpOptions`); absent, none.
+   */
+  constructor(options?: {
+    readonly fetchText?: FetchText;
+    readonly grpcTls?: GrpcDiscoveryTls;
+    readonly egress?: EgressPolicy;
+    readonly network?: DocumentFetchOptions['network'];
+  }) {
+    this.egress = options?.egress;
+    this.fetchText =
+      options?.fetchText ??
+      (this.egress === undefined ? defaultFetchText : egressFetchText(this.egress, options?.network));
     this.grpcTls = options?.grpcTls ?? (() => Promise.resolve(undefined));
   }
 
@@ -353,6 +393,7 @@ export class ProtoImportService {
           signal,
           ...(source.version !== undefined ? { version: source.version } : {}),
           ...(tlsOptions !== undefined ? { tlsOptions } : {}),
+          ...(this.egress !== undefined ? { egress: this.egress } : {}),
         });
         return {
           kind: 'reflection',

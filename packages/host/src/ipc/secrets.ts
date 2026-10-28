@@ -11,12 +11,6 @@ import { registerHandler, type HandlerTable } from './register.js';
  */
 type SecretsFor = Pick<SecretStore, 'set' | 'replace' | 'exists' | 'delete' | 'list' | 'isMachineOnly'>;
 
-/** The name a stored value is reported by: a `${secret:name}` token's name, else its label, else its ref. */
-export function secretNameOf(label: string | undefined, ref: string): string {
-  const token = label === undefined ? undefined : /^wirebench-secret:[^:]*:(.+)$/.exec(label)?.[1];
-  return token ?? label ?? ref;
-}
-
 /**
  * Registers the `secrets.*` IPC channels against the shared {@link SecretStore}.
  *
@@ -32,15 +26,12 @@ export function registerSecretsChannels(
   table: HandlerTable,
   secrets: SecretsFor,
   showSecrets: { get(): boolean; set(show: boolean): void },
-  /** Told the name of each value `set` or `replace` stored, never the value (`HostOptions.onSecret`). */
-  onWritten?: (name: string) => void,
 ): void {
   registerHandler(table, channels.secrets.set, async (request) => {
     if (isMachineOnlyLabel(request.label)) {
       throw new WirebenchError('secret-machine-only', 'That entry belongs to team secrets and cannot be changed here.');
     }
     const ref = await secrets.set(request.value, request.label !== undefined ? { label: request.label } : undefined);
-    onWritten?.(secretNameOf(request.label, ref));
     return { ref };
   });
 
@@ -53,10 +44,6 @@ export function registerSecretsChannels(
   registerHandler(table, channels.secrets.replace, async (request) => {
     await refuseMachineOnly(request.ref);
     const ref = await secrets.replace(request.ref, request.value);
-    if (onWritten !== undefined) {
-      const label = (await secrets.list()).find((entry) => entry.ref === ref)?.label;
-      onWritten(secretNameOf(label, ref));
-    }
     return { ref };
   });
 

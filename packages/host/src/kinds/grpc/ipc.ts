@@ -3,7 +3,6 @@
  */
 import { grpcItemFor, WirebenchError } from '@wirebench/engine';
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
 import { channels, events } from '@wirebench/wire/ipc';
 import type { GrpcRequestPatchWire, ProtoSourceWire } from '@wirebench/wire/kinds/grpc/wire';
 import type { ReadPicks } from '../../dialog-picks.js';
@@ -23,7 +22,7 @@ import {
   toSendDeps,
   type RequestChannelDeps,
 } from '../../ipc/request.js';
-import { allowsReadPath } from '../../path-access.js';
+import { allowsReadPath, resolveCallerPath } from '../../path-access.js';
 import type { SecretSourcesSnapshot } from '../../secret-sources-service.js';
 import { previewGrpc, sendThroughEngine, type SendThroughEngineDeps } from '../../send/exchange.js';
 import type { KindChannelDeps } from '../kind-main.js';
@@ -103,7 +102,7 @@ export function registerGrpcRequestChannels(
  *
  * @throws WirebenchError `import-path-refused`
  */
-async function checkedProtoSource(
+export async function checkedProtoSource(
   roots: readonly string[],
   picks: ReadPicks | undefined,
   source: ProtoSourceWire,
@@ -116,7 +115,8 @@ async function checkedProtoSource(
     );
   };
   if (source.kind === 'folder') {
-    const resolved = resolve(source.path);
+    // A host with a root takes a relative path from it, not from the process's working directory.
+    const resolved = await resolveCallerPath(source.path);
     if (!(await allowsReadPath(roots, picks, resolved))) {
       refuse(source.path);
     }
@@ -125,7 +125,7 @@ async function checkedProtoSource(
   if (source.kind === 'files') {
     const paths: string[] = [];
     for (const path of source.paths) {
-      const resolved = resolve(path);
+      const resolved = await resolveCallerPath(path);
       if (!(await allowsReadPath(roots, picks, resolved))) {
         refuse(path);
       }

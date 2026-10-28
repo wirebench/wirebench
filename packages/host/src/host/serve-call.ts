@@ -37,23 +37,24 @@ export async function serveCall(
   frame: CallFrame,
   allowed?: (channel: string) => boolean,
 ): Promise<ReplyFrame> {
-  const run = allowed === undefined || allowed(frame.channel) ? host.handlers.get(frame.channel) : undefined;
-  if (run === undefined) {
-    const capability = channelGroup(frame.channel);
-    return {
-      id: frame.id,
-      ok: false,
-      error: {
-        code: 'host-capability-missing',
-        message: `This host does not serve ${capability} calls`,
-        details: { capability },
-      },
-    };
-  }
   try {
+    const run = allowed === undefined || allowed(frame.channel) ? host.handlers.get(frame.channel) : undefined;
+    if (run === undefined) {
+      const capability = channelGroup(frame.channel);
+      return {
+        id: frame.id,
+        ok: false,
+        error: {
+          code: 'host-capability-missing',
+          message: `This host does not serve ${capability} calls`,
+          details: { capability },
+        },
+      };
+    }
     return { id: frame.id, ...(await runAsCaller(caller.id, () => run(frame.request, caller))) };
   } catch {
-    // The table's handlers never throw (`wrapHandler`); this only keeps a transport's loop alive if one did.
+    // The table's handlers never throw (`wrapHandler`); an allowlist might. Either way the transport's
+    // loop gets an answer, not a rejection.
     return { id: frame.id, ok: false, error: { code: 'internal-error', message: 'The call failed' } };
   }
 }
