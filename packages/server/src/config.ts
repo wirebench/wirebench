@@ -554,7 +554,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     defaultText: 'false',
     secret: false,
     description:
-      'Preview: the app in a browser tab arrives in a later release; for now this turns on the browser sign-in page (`/sign-in`) and cookie sessions. Needs WIREBENCH_SERVER_SECRETS_KEY. False, none of it runs.',
+      'Preview: the app in a browser tab arrives in a later release; for now this turns on the browser sign-in page (`/sign-in`), cookie sessions and the socket a tab will use (`/api/v1/host`), which runs a host per signed-in user. Needs WIREBENCH_SERVER_SECRETS_KEY. False, none of it runs.',
   },
   {
     env: 'WIREBENCH_SERVER_SECRETS_KEY',
@@ -562,7 +562,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     required: false,
     secret: true,
     description:
-      'Preview: the browser client that stores secrets arrives in a later release. Will encrypt them at rest: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on.',
+      'Preview: encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on.',
   },
   {
     env: 'WIREBENCH_SERVER_EGRESS_DENY_PRIVATE',
@@ -580,7 +580,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     defaultText: '30',
     secret: false,
     description:
-      'Preview: used by the browser tab, which arrives in a later release. Minutes after a user’s last browser connection closes before the server frees that user’s session (1–1440).',
+      'Preview: minutes after a user’s last browser connection closes before the server stops that user’s host and frees its memory (1–1440). The user’s files stay.',
   },
 ];
 

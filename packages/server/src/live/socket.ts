@@ -14,7 +14,7 @@ import {
   type LiveServerMessage,
 } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
-import type { RawData, WebSocket } from 'ws';
+import type { RawData } from 'ws';
 import type { TokenCaller } from '../identity/guard.js';
 import type { LiveHub, LiveHubDeps, LiveSocket } from './hub.js';
 
@@ -26,6 +26,21 @@ export interface SocketLoopDeps {
   readonly tokenMaxMs: number;
   readonly setTimer: LiveHubDeps['setTimer'];
   readonly log: FastifyBaseLogger;
+}
+
+/**
+ * The slice of a `ws` socket this loop uses. A real socket is one; the server host's in-process live
+ * client (`host/live-bridge.ts`) is the other, so it runs exactly this loop (hosted edition spec §17.3).
+ */
+export interface LiveConnection {
+  readonly readyState: number;
+  readonly OPEN: number;
+  send(text: string): void;
+  close(code?: number, reason?: string): void;
+  terminate(): void;
+  ping(): void;
+  on(event: 'message', listener: (data: RawData, isBinary: boolean) => void): unknown;
+  on(event: 'pong' | 'close', listener: () => void): unknown;
 }
 
 /** What identity throws for a token that cannot open a session: answered `4401`, as HTTP answers 401 (§3.1). */
@@ -51,7 +66,7 @@ function parse(text: string): LiveClientMessage | undefined {
 }
 
 /** The hub's view of one connection. Made once per connection: the hub keys its indexes on this object. */
-function liveSocketOf(ws: WebSocket): LiveSocket {
+function liveSocketOf(ws: LiveConnection): LiveSocket {
   return {
     send: (text) => {
       ws.send(text);
@@ -71,7 +86,7 @@ function liveSocketOf(ws: WebSocket): LiveSocket {
   };
 }
 
-export function runLiveSocket(ws: WebSocket, deps: SocketLoopDeps): void {
+export function runLiveSocket(ws: LiveConnection, deps: SocketLoopDeps): void {
   const socket = liveSocketOf(ws);
   /** `pending` until `auth` arrives, `authenticating` while identity looks the token up, then `ready`. */
   let phase: 'pending' | 'authenticating' | 'ready' = 'pending';

@@ -1,7 +1,6 @@
 import { EventEmitter } from 'node:events';
 import Fastify from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { WebSocket } from 'ws';
 import { LIVE_CLOSE, LIVE_LIMITS, WirebenchError } from '@wirebench/engine';
 import type { TokenCaller } from '../../../src/identity/guard.js';
 import { LiveHub } from '../../../src/live/hub.js';
@@ -79,7 +78,7 @@ function hubSetup(
   const connect = (authenticate: Authenticate = () => Promise.resolve(CALLER)) => {
     const ws = new FakeWs();
     const auth = vi.fn(authenticate);
-    runLiveSocket(ws as unknown as WebSocket, {
+    runLiveSocket(ws, {
       hub,
       authenticate: auth,
       tokenMaxMs: TOKEN_MAX_MS,

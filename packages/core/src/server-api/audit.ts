@@ -38,6 +38,9 @@ export const AUDIT_ACTIONS = [
   'secret.shared',
   'secret.rotated',
   'secret.access_changed',
+  /** A user's server host stored a secret, or resolved one for a send (hosted edition spec §17.4); by name only. */
+  'secret.written',
+  'secret.resolved',
   'hook.created',
   'hook.changed',
   'hook.rotated',
