@@ -128,6 +128,23 @@ describe('a manual save reviews the project for secrets first', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
+  it('saves in the browser too, where the server host serves the scan (only send:public as a capability)', async () => {
+    ipcStubs = stubIpc([]);
+    Object.defineProperty(ipcStubs.api, 'env', {
+      configurable: true,
+      value: { e2e: false, osTheme: 'dark', host: 'browser', capabilities: ['send:public'] },
+    });
+
+    await runCommand('item.save', context);
+
+    await waitFor(() => {
+      expect(ipcStubs.save).toHaveBeenCalledWith({ projectId: 'p1' });
+    });
+    expect(ipcStubs.hold).toHaveBeenCalledWith({ projectIds: ['p1'] });
+    expect(ipcStubs.scan).toHaveBeenCalledWith({ projectId: 'p1' });
+    expect(ipcStubs.release).toHaveBeenCalledWith({ holdId: 'hold-1' });
+  });
+
   it('scans after committing the staged edit, so the edit is what gets reviewed', async () => {
     ipcStubs = stubIpc([]);
     useDraftsStore.getState().stageRequest('req-1', { envelopeXml: '<typed/>' });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { ALL_CAPABILITIES, type Capability } from '@wirebench/wire/capabilities';
 import type { AccountWire, AppFeaturesWire, WorkspaceSummaryWire } from '@wirebench/wire/wire-base';
 import type { WirebenchApi } from '../../src/preload/build-api.js';
@@ -11,7 +11,17 @@ import type { ExplorerNode } from '../../src/renderer/features/explorer/tree-nod
 import { FeaturesSection } from '../../src/renderer/features/preferences/sections/features-section.js';
 import { availableNav, resolveSection } from '../../src/renderer/features/preferences/settings-model.js';
 import { TeamSecretsSection } from '../../src/renderer/features/sync/team-secrets-section.js';
-import { listCommands, listPaletteCommands, registerCommand, resetCommands } from '../../src/renderer/lib/commands.js';
+import {
+  listAllCommands,
+  listCommands,
+  listPaletteCommands,
+  registerCommand,
+  resetCommands,
+} from '../../src/renderer/lib/commands.js';
+import { secretKeptHint } from '../../src/renderer/lib/capabilities.js';
+import { useKeystoreAliases } from '../../src/renderer/components/use-keystore-aliases.js';
+import { offeredImportFormats } from '../../src/renderer/features/explorer/import-formats.js';
+import { useKerberosAvailability } from '../../src/renderer/lib/use-kerberos-availability.js';
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
 import { resetKerberosAvailability } from '../../src/renderer/lib/use-kerberos-availability.js';
 import { useAccountStore } from '../../src/renderer/state/account.js';
@@ -152,6 +162,20 @@ describe('the import dialog by capability', () => {
     expect(screen.getByText('Drop an OpenAPI, Postman, WSDL or .proto file here')).toBeTruthy();
   });
 
+  it('says nothing of Folder… for a folder format without dialogs', () => {
+    install(BROWSER, stubs);
+    render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="postman-v3" />);
+    fireEvent.click(screen.getByRole('tab', { name: 'File' }));
+    expect(screen.queryByTestId('import-postman-v3-help')).toBeNull();
+  });
+
+  it('says how to pick a folder format with every capability', () => {
+    install(ALL_CAPABILITIES, stubs);
+    render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="postman-v3" />);
+    fireEvent.click(screen.getByRole('tab', { name: 'File' }));
+    expect(screen.getByTestId('import-postman-v3-help')).toBeTruthy();
+  });
+
   it('offers Browse… and the path with every capability', () => {
     install(ALL_CAPABILITIES, stubs);
     render(<ImportDialog open onOpenChange={vi.fn()} />);
@@ -182,12 +206,95 @@ describe('the explorer project menu by capability', () => {
   });
 });
 
+describe('the explorer mock entries by capability', () => {
+  const mock: ExplorerNode = { id: 'mock:m1', label: 'Orders mock', kind: 'mock', mockId: 'm1' };
+
+  it('offers no Start for a mock where the host cannot listen', () => {
+    install(BROWSER);
+    const labels = explorerMenuItems(mock).map((item) => item.label);
+    expect(labels).toContain('Open');
+    expect(labels).not.toContain('Start');
+  });
+
+  it('offers Start with every capability', () => {
+    install(ALL_CAPABILITIES);
+    expect(explorerMenuItems(mock).map((item) => item.label)).toContain('Start');
+  });
+});
+
+describe('keystores and import formats by capability', () => {
+  it('asks the host about no keystore without files', async () => {
+    const inspect = vi.fn().mockResolvedValue({ ok: true, value: { aliases: [{ alias: 'k' }] } });
+    install(BROWSER, { keystores: { inspect } });
+    const { result } = renderHook(() => useKeystoreAliases('ks-1'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(inspect).not.toHaveBeenCalled();
+    expect(result.current).toEqual([]);
+  });
+
+  it('asks with every capability', async () => {
+    const inspect = vi.fn().mockResolvedValue({ ok: true, value: { aliases: [{ alias: 'k' }] } });
+    install(ALL_CAPABILITIES, { keystores: { inspect } });
+    const { result } = renderHook(() => useKeystoreAliases('ks-1'));
+    await waitFor(() => {
+      expect(result.current).toHaveLength(1);
+    });
+  });
+
+  it('offers no format that is read only from a picked file without files', () => {
+    install(BROWSER);
+    expect(offeredImportFormats(['soap', 'rest']).map((row) => row.kind)).not.toContain('legacy-soap-project');
+    install(ALL_CAPABILITIES);
+    expect(offeredImportFormats(['soap', 'rest']).map((row) => row.kind)).toContain('legacy-soap-project');
+  });
+});
+
+describe('secret hints and Kerberos by capability', () => {
+  beforeEach(() => {
+    resetKerberosAvailability();
+  });
+
+  it('says the OS keychain only where there is one', () => {
+    install(ALL_CAPABILITIES);
+    expect(secretKeptHint('Kept in the OS keychain.')).toBe('Kept in the OS keychain.');
+    install(BROWSER);
+    expect(secretKeptHint('Kept in the OS keychain.')).toBe('Sealed on the server and never shown again.');
+  });
+
+  it('answers Kerberos unavailable without asking where the host has none', async () => {
+    const kerberosAvailability = vi.fn().mockResolvedValue({ ok: true, value: { available: true, platform: 'linux' } });
+    install(BROWSER, { auth: { kerberosAvailability } });
+    const { result } = renderHook(() => useKerberosAvailability());
+    await waitFor(() => {
+      expect(result.current?.available).toBe(false);
+    });
+    expect(result.current?.reason).toMatch(/^Kerberos is not available here/);
+    expect(kerberosAvailability).not.toHaveBeenCalled();
+  });
+
+  it('asks the host with every capability', async () => {
+    const kerberosAvailability = vi.fn().mockResolvedValue({ ok: true, value: { available: true, platform: 'linux' } });
+    install(ALL_CAPABILITIES, { auth: { kerberosAvailability } });
+    const { result } = renderHook(() => useKerberosAvailability());
+    await waitFor(() => {
+      expect(result.current?.available).toBe(true);
+    });
+    expect(kerberosAvailability).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('commands by capability', () => {
   const context = {} as CommandContext;
 
   beforeEach(() => {
     resetCommands();
-    for (const id of ['workspace.create', 'app.checkForUpdates', 'workspace.manage'] as const) {
+    for (const id of [
+      'workspace.create',
+      'app.checkForUpdates',
+      'workspace.manage',
+      'mock.start',
+      'workspace.newWindow',
+    ] as const) {
       registerCommand({
         id,
         label: id,
@@ -205,11 +312,20 @@ describe('commands by capability', () => {
     install(BROWSER);
     expect(listCommands(context).map((command) => command.id)).toEqual(['workspace.manage']);
     expect(listPaletteCommands(context).map((row) => row.command.id)).toEqual(['workspace.manage']);
+    // Nor in the menu and shortcuts table: no click could run them.
+    expect(listAllCommands().map((command) => command.id)).toEqual(['workspace.manage']);
   });
 
   it('lists them all with every capability', () => {
     install(ALL_CAPABILITIES);
-    expect(listCommands(context)).toHaveLength(3);
+    expect(listCommands(context)).toHaveLength(5);
+    expect(listAllCommands()).toHaveLength(5);
+  });
+
+  it('declares listen and windows, which the desktop has and the browser does not', () => {
+    expect(ALL_CAPABILITIES).toEqual(expect.arrayContaining(['listen', 'windows']));
+    expect(BROWSER).not.toContain('listen');
+    expect(BROWSER).not.toContain('windows');
   });
 });
 
@@ -219,7 +335,7 @@ describe('Settings by capability', () => {
   it('leaves out the sections the browser cannot use, and opens on the default instead of one', () => {
     install(BROWSER);
     const ids = sectionIds();
-    for (const id of ['updates', 'git', 'plugins', 'terminal', 'ssh', 'secrets']) {
+    for (const id of ['updates', 'git', 'plugins', 'terminal', 'ssh', 'secrets', 'mocks']) {
       expect(ids).not.toContain(id);
     }
     expect(ids).toContain('appearance');
@@ -228,7 +344,9 @@ describe('Settings by capability', () => {
 
   it('lists every section with every capability', () => {
     install(ALL_CAPABILITIES);
-    expect(sectionIds()).toEqual(expect.arrayContaining(['updates', 'git', 'plugins', 'terminal', 'ssh', 'secrets']));
+    expect(sectionIds()).toEqual(
+      expect.arrayContaining(['updates', 'git', 'plugins', 'terminal', 'ssh', 'secrets', 'mocks']),
+    );
     expect(resolveSection('updates')).toBe('updates');
   });
 
@@ -253,7 +371,7 @@ describe('Settings by capability', () => {
     render(<FeaturesSection preferences={DEFAULT_PREFERENCES_WIRE} update={vi.fn()} />);
 
     const note = await screen.findByTestId('area-note-ssh');
-    expect(note.textContent).toMatch(/^Not available in the browser/);
+    expect(note.textContent).toMatch(/^Not available here: /);
     expect(note.textContent).not.toMatch(/organisation|host/i);
   });
 

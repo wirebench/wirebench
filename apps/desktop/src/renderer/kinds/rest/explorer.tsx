@@ -15,6 +15,7 @@ import { requestDisplayName } from '../../features/rest-api/request-display-name
 import { useProjectStore } from '../../state/project.js';
 import type { KindExplorer } from '../renderer-kind.js';
 import { useMoveApiStore } from '../../features/explorer/move-api-dialog.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 function RestGutter({ node }: { readonly node: ExplorerNode }) {
   if (node.method === undefined) {
@@ -106,7 +107,10 @@ export const restExplorer: KindExplorer = {
                   run: () => explorerActions.updateRestDefinition(apiId),
                 },
                 { key: 'import-webhooks', label: 'Import webhooks…', run: () => explorerActions.importWebhooks(apiId) },
-                { key: 'new-mock', label: 'New Mock', run: () => explorerActions.newMock(apiId) },
+                // A mock is a listener on the machine's network.
+                ...(hasCapability('listen')
+                  ? [{ key: 'new-mock', label: 'New Mock', run: () => explorerActions.newMock(apiId) }]
+                  : []),
                 {
                   key: 'lint-definition',
                   label: 'Lint Definition',

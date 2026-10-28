@@ -58,13 +58,16 @@ function interfaceMenu(node: ExplorerNode): readonly ExplorerMenuGroup[] {
       },
       { key: 'import-another', label: 'Import another WSDL…', run: () => explorerActions.importAnother() },
     ],
-    [
-      {
-        key: 'new-mock',
-        label: 'New Mock',
-        run: () => explorerActions.newMock(node.interfaceId),
-      },
-    ],
+    // A mock is a listener on the machine's network.
+    hasCapability('listen')
+      ? [
+          {
+            key: 'new-mock',
+            label: 'New Mock',
+            run: () => explorerActions.newMock(node.interfaceId),
+          },
+        ]
+      : [],
     [{ key: 'remove', label: 'Remove interface', run: () => explorerActions.removeInterface(node.interfaceId) }],
   );
 }
@@ -146,7 +149,7 @@ export const soapExplorer: KindExplorer = {
     binding: {
       icon: Network,
       menu: (node) =>
-        node.interfaceId === undefined
+        node.interfaceId === undefined || !hasCapability('listen')
           ? []
           : groups([
               {

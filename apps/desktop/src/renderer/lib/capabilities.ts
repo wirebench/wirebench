@@ -16,3 +16,11 @@ export function hasCapability(capability: Capability): boolean {
     ?.capabilities;
   return capabilities === undefined || capabilities.includes(capability);
 }
+
+/**
+ * The hint under a secret field: where the value is kept. The OS keychain where the host has one, else
+ * sealed on the server (hosted edition spec §3.5), where a value is never read back.
+ */
+export function secretKeptHint(desktop: string): string {
+  return hasCapability('keychain') ? desktop : 'Sealed on the server and never shown again.';
+}

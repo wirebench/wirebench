@@ -20,6 +20,10 @@ export const ALL_CAPABILITIES = [
   'app-lock',
   /** Start processes on the machine: MCP servers over stdio. */
   'processes',
+  /** Listen on the machine's network: mock services and their recording proxy. */
+  'listen',
+  /** Open more than one window of the app. */
+  'windows',
 ] as const;
 
 /** What a platform can do; a host switches features off when the platform lacks one. */

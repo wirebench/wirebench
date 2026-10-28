@@ -11,6 +11,7 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useMockRunsStore } from '../../src/renderer/state/mock-runs.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { useBrowserEnv } from '../helpers/browser-env.js';
 import { NO_REST, PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
 import type { ProjectWire } from '@wirebench/wire/wire-types';
 import type { MockCheckResponse, MockExchangeEventWire, MockWire } from '@wirebench/wire/wire-base';
@@ -134,6 +135,14 @@ function commit(input: HTMLElement, value: string): void {
 }
 
 describe('MockTab', () => {
+  it('offers no Start where the host cannot listen, and says why', () => {
+    useBrowserEnv(window.wirebench);
+    mount();
+    expect(screen.queryByTestId('mock-start')).toBeNull();
+    expect(screen.getByTestId('mock-unavailable').textContent).toMatch(/^Not available here/);
+    expect(start).not.toHaveBeenCalled();
+  });
+
   it('commits a settings edit as one update-mock', () => {
     mount();
     commit(screen.getByTestId('mock-path'), '/v2');

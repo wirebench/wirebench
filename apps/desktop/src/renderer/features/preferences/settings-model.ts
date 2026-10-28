@@ -209,7 +209,14 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         // A program on the machine, for git-kind workspaces.
         capability: 'files',
       },
-      { id: 'mocks', label: 'Mock services', subtitle: 'Local mock servers.', keys: stored('mocks'), searchable: true },
+      {
+        id: 'mocks',
+        label: 'Mock services',
+        subtitle: 'Local mock servers.',
+        keys: stored('mocks'),
+        searchable: true,
+        capability: 'listen',
+      },
       {
         id: 'terminal',
         label: 'Terminal',

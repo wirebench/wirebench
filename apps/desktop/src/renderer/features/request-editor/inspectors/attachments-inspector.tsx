@@ -129,11 +129,16 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
 
   const mtomOff = !request.properties.enableMtom && !request.properties.enableInlineFiles;
 
+  // A dropped file is copied into the project's folder on the machine; a host without `files` takes none.
+  const canDrop = hasCapability('files');
+  const canPick = hasCapability('dialogs');
+
   return (
     <div
       className={`flex flex-col gap-2 p-3 ${dragging ? 'bg-accent-muted ring-1 ring-accent ring-inset' : ''}`}
       data-testid="attachments-dropzone"
       onDragOver={(event) => {
+        if (!canDrop) return;
         event.preventDefault();
         setDragging(true);
       }}
@@ -144,6 +149,7 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
         setDragging(false);
       }}
       onDrop={(event) => {
+        if (!canDrop) return;
         event.preventDefault();
         setDragging(false);
         void drop([...event.dataTransfer.files]);
@@ -151,7 +157,7 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
     >
       <div className="flex items-center gap-2">
         {/* The native picker; a host without one still takes a drop. */}
-        {hasCapability('dialogs') && (
+        {canPick && (
           <button
             type="button"
             data-testid="attachments-add"
@@ -196,8 +202,15 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
 
       {attachments.length === 0 ? (
         <p className="text-sm text-fg-subtle">
-          No attachments. Add files or drop them here. Reference one from the envelope as{' '}
-          <code className="font-mono">cid:&lt;Content-ID&gt;</code>.
+          No attachments.{' '}
+          {canPick && canDrop
+            ? 'Add files or drop them here. '
+            : canPick
+              ? 'Add files. '
+              : canDrop
+                ? 'Drop files here. '
+                : 'Attachments are added in the desktop app. '}
+          Reference one from the envelope as <code className="font-mono">cid:&lt;Content-ID&gt;</code>.
         </p>
       ) : (
         <AttachmentsTable

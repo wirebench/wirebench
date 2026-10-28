@@ -406,8 +406,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
    * main, shortly after it settles; a picked file's answer already says. Only the plugin's title and
    * id come back: no plugin code reaches this window (ADR-0031).
    */
+  // Plugins are installed in a folder of the host's machine; a host without `files` has none to ask.
   const pluginTextKey =
-    open && format === 'auto' && pickedKey === '' && detected.kind === 'unknown'
+    open && hasCapability('files') && format === 'auto' && pickedKey === '' && detected.kind === 'unknown'
       ? tab === 'paste' && pasted.trim().length > 0
         ? JSON.stringify(['paste', pasted])
         : tab === 'file' && dropped !== undefined
@@ -1754,25 +1755,26 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                         ? `Loaded: ${dropped.name}`
                         : 'Drop an OpenAPI, Postman, WSDL or .proto file here'}
                     </div>
-                    {effectiveFormat === 'postman-v3' && (
+                    {/* These say how to pick with Browse… and Folder…, which only a host with dialogs offers. */}
+                    {hasCapability('dialogs') && effectiveFormat === 'postman-v3' && (
                       <p data-testid="import-postman-v3-help" className="text-xs text-fg-subtle">
                         Pick the collection's folder with Folder…, or its .resources/definition.yaml. A workspace folder
                         holding collections/ imports every collection, with its environments and globals.
                       </p>
                     )}
-                    {effectiveFormat === 'bruno' && (
+                    {hasCapability('dialogs') && effectiveFormat === 'bruno' && (
                       <p data-testid="import-bruno-help" className="text-xs text-fg-subtle">
                         Pick the collection's folder with Folder…, or its bruno.json. An exported collection .json is
                         read on its own. .env files are never read.
                       </p>
                     )}
-                    {effectiveFormat === 'thunder-client' && (
+                    {hasCapability('dialogs') && effectiveFormat === 'thunder-client' && (
                       <p data-testid="import-thunder-client-help" className="text-xs text-fg-subtle">
                         Pick the workspace's thunder-tests folder with Folder…, or an exported collection .json. A
                         folder that keeps one file per request cannot be read: export the collection instead.
                       </p>
                     )}
-                    {effectiveFormat === 'opencollection' && (
+                    {hasCapability('dialogs') && effectiveFormat === 'opencollection' && (
                       <p data-testid="import-opencollection-help" className="text-xs text-fg-subtle">
                         For a collection saved as a folder, pick its opencollection.yml: the files beside it are read
                         too.

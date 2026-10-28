@@ -30,7 +30,7 @@ import type { SectionProps } from './sections/section-props.js';
 import { PREFERENCE_LIMITS } from '../../state/preference-limits.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../state/preferences-defaults.js';
 import { proxyHostProblem } from './validators.js';
-import { hasCapability } from '../../lib/capabilities.js';
+import { hasCapability, secretKeptHint } from '../../lib/capabilities.js';
 
 /** Proxy preferences, applied to every send. */
 export function ProxySection({ preferences, update, locked = () => false }: SectionProps) {
@@ -86,7 +86,7 @@ export function ProxySection({ preferences, update, locked = () => false }: Sect
         locked={locked('proxy.username')}
         onCommit={(username) => update({ proxy: { username } })}
       />
-      <SettingsRow label="Password" hint="Kept in the OS keychain, never in the preferences file.">
+      <SettingsRow label="Password" hint={secretKeptHint('Kept in the OS keychain, never in the preferences file.')}>
         <div className="w-64">
           <SecretField
             label="Proxy password"

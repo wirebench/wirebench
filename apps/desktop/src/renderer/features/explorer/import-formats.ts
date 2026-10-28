@@ -7,6 +7,7 @@
 
 import type { ImportFormatKind } from '@wirebench/engine/detect';
 import type { KindId } from '@shared/kinds/kind-module.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 export type ImportFormatTab = 'url' | 'file' | 'paste';
 
@@ -278,7 +279,17 @@ export function importFormatRow(kind: ImportFormatKind): ImportFormatRow {
   return BY_KIND.get(kind) ?? UNKNOWN_ROW;
 }
 
-/** The formats a workspace with `enabledKinds` on is offered: every one whose protocol is on, or that has none. */
+/** Formats read only from a file picked on the host's machine: a legacy project names files beside it. */
+const PICKED_FILE_ONLY: ReadonlySet<ImportFormatKind> = new Set(['legacy-soap-project']);
+
+/**
+ * The formats a workspace with `enabledKinds` on is offered: every one whose protocol is on, or that has
+ * none, less the ones read only from a picked file when the host has no `files`.
+ */
 export function offeredImportFormats(enabledKinds: readonly KindId[]): readonly ImportFormatRow[] {
-  return IMPORT_FORMATS.filter((row) => row.protocol === undefined || enabledKinds.includes(row.protocol));
+  const files = hasCapability('files');
+  return IMPORT_FORMATS.filter(
+    (row) =>
+      (row.protocol === undefined || enabledKinds.includes(row.protocol)) && (files || !PICKED_FILE_ONLY.has(row.kind)),
+  );
 }

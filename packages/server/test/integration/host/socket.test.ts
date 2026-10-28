@@ -365,6 +365,49 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
     },
   );
 
+  it('answers the save-time secret scan over an open server workspace, and only for an open project', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const editor = await signedInUser(h, { email: 'editor@example.com' });
+    const team = await seedTeam(h, { name: 'Payments QA', admins: [alice], members: [editor] });
+    const workspaceId = await seedSyncWorkspace(h, { team, name: 'Staging' });
+    await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+    const requests = [
+      {
+        ...createRestRequest('Leaky', { id: 'req-leaky', url: 'https://api.example.test/' }),
+        headers: [entry('Authorization', 'Bearer ghp_0123456789abcdefghijklmnopqrstuvwxyzAB')],
+      },
+    ];
+    const first = await call<SyncPushResponse>(h, editor, 'POST', `/workspaces/${workspaceId}/sync/commits`, {
+      parent: null,
+      commits: [{ subject: 'Start', at: AT, changes: await snapshotOf(workspaceId, requests) }],
+    });
+    expect(first.status).toBe(201);
+
+    const client = await openHost(h, alice);
+    await client.waitFor((frame) => frame.type === 'hello');
+    expect(await client.call('workspace.joinFromServer', { url: PUBLIC_URL, workspaceId })).toMatchObject({
+      ok: true,
+    });
+
+    // What a manual save does first: hold autosave, scan, release.
+    const hold = await client.call('secretScan.hold', { projectIds: ['project-billing'] });
+    expect(hold).toMatchObject({ ok: true });
+    expect(typeof (hold.value as { holdId?: unknown }).holdId).toBe('string');
+    const scan = await client.call('secretScan.scan', { projectId: 'project-billing' });
+    expect(scan, JSON.stringify(scan)).toMatchObject({ ok: true, value: { findings: [expect.anything()] } });
+    // Masked previews only: the value never rides a frame.
+    expect(JSON.stringify(scan)).not.toContain('ghp_0123456789abcdefghijklmnopqrstuvwxyzAB');
+    expect(await client.call('secretScan.tokens', { projectId: 'project-billing' })).toMatchObject({
+      ok: true,
+      value: { tokens: [] },
+    });
+    expect(
+      await client.call('secretScan.release', { holdId: (hold.value as { holdId: string }).holdId }),
+    ).toMatchObject({ ok: true });
+    // A project that is not open is no way into the checkout: the call fails and opens nothing.
+    expect(await client.call('secretScan.scan', { projectId: '../../other-user' })).toMatchObject({ ok: false });
+  });
+
   it('closes 1009 for a frame just over 32 MiB', async () => {
     const alice = await browserUser(h, 'alice@example.com');
     const client = await openHost(h, alice);

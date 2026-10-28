@@ -96,6 +96,10 @@ export const COMMAND_CAPABILITIES: Readonly<Partial<Record<CommandId, Capability
   'editor.saveAs': 'dialogs',
   'editor.loadFrom': 'dialogs',
   'request.addAttachment': 'dialogs',
+  // A listener on the machine's network.
+  'mock.start': 'listen',
+  'mock.stop': 'listen',
+  'workspace.newWindow': 'windows',
   'workspace.secretSources': 'secret-sources',
   'secrets.clearSourceCache': 'secret-sources',
 };
@@ -129,12 +133,15 @@ export async function runCommand(id: CommandId, context: CommandContext, arg?: u
 }
 
 /**
- * Every registered command, ungated, sorted by category then label. What the application menu
- * is built from: main cannot evaluate a `when` guard, so menu items are all generated and the
- * registry decides at click time (see `shell/app-menu.ts`).
+ * Every registered command the connected host can run, ungated by `when`, sorted by category then
+ * label. What the application menu and the shortcuts table are built from: main cannot evaluate a
+ * `when` guard, so menu items are all generated and the registry decides at click time (see
+ * `shell/app-menu.ts`). A command whose capability is missing ({@link COMMAND_CAPABILITIES}) is left
+ * out: no click could ever run it.
  */
 export function listAllCommands(): readonly CommandDefinition<CommandContext>[] {
   return [...registry.values()]
+    .filter(hostCanRun)
     .map((command) => stripHandler(command))
     .sort((a, b) => a.category.localeCompare(b.category) || a.label.localeCompare(b.label));
 }

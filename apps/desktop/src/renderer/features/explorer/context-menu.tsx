@@ -285,7 +285,9 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
     return groups(
       [
         { key: 'open', label: 'Open', run: () => explorerActions.openMock(mockId) },
-        { key: 'toggle', label: running ? 'Stop' : 'Start', run: () => explorerActions.toggleMock(mockId) },
+        ...(hasCapability('listen')
+          ? [{ key: 'toggle', label: running ? 'Stop' : 'Start', run: () => explorerActions.toggleMock(mockId) }]
+          : []),
         { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateMock(mockId) },
       ],
       [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('mock', mockId) }],

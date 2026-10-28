@@ -21,8 +21,8 @@ const GROUPS: readonly { readonly title: string; readonly ids: readonly string[]
  * cannot happen, not as a policy, which it is not.
  */
 const UNAVAILABLE_AREA_NOTES: Readonly<Record<string, string>> = {
-  ssh: 'Not available in the browser: SSH connections are opened from the desktop app',
-  'local-terminal': 'Not available in the browser: a local terminal runs a shell on your own computer',
+  ssh: 'Not available here: SSH connections are opened from your own computer',
+  'local-terminal': 'Not available here: a local terminal runs a shell on your own computer',
 };
 
 /** The rows as main resolved them for the open workspace; `undefined` until it answered. */
@@ -153,7 +153,7 @@ export function FeaturesSection({ preferences, update }: SectionProps) {
             const missing = AREA_CAPABILITIES[state.id];
             const unavailable = missing !== undefined && !hasCapability(missing);
             if (unavailable) {
-              notes.push(UNAVAILABLE_AREA_NOTES[state.id] ?? 'Not available in the browser');
+              notes.push(UNAVAILABLE_AREA_NOTES[state.id] ?? 'Not available here');
             } else if (state.policy) {
               notes.push('Set by your organisation');
             } else if (state.reason?.by === 'preference') {
