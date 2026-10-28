@@ -1,5 +1,4 @@
 import { Agent, ProxyAgent, buildConnector, request as undiciRequest, type Dispatcher } from 'undici';
-import { createHash } from 'node:crypto';
 import { isIP, type LookupFunction } from 'node:net';
 import { pipeline, type Readable } from 'node:stream';
 import { createDecompressStream, decompressBody } from './decompress.js';
@@ -66,7 +65,17 @@ function getDefaultAgent(): Agent {
 }
 
 /** The egress agents of each policy {@link scopedEgress} handed out, one per set of connection options. */
-const egressPools = new WeakMap<EgressPolicy, Map<string, Dispatcher>>();
+const egressPools = new WeakMap<EgressPolicy, EgressPool>();
+
+/**
+ * One scope's agents. `credentials` numbers each distinct set of TLS key material (CA, certificate,
+ * key, passphrase) the scope has seen, so an agent's key names that material by number and never
+ * carries it, hashed or not.
+ */
+interface EgressPool {
+  readonly agents: Map<string, Dispatcher>;
+  readonly credentials: Map<string, number>;
+}
 
 /** A copy of an egress policy whose sends share their agents, until {@link EgressScope.close}. */
 export interface EgressScope {
@@ -86,7 +95,7 @@ export interface EgressScope {
 export function scopedEgress(policy: EgressPolicy): EgressScope {
   const scoped: EgressPolicy = { ...policy };
   const agents = new Map<string, Dispatcher>();
-  egressPools.set(scoped, agents);
+  egressPools.set(scoped, { agents, credentials: new Map() });
   return {
     policy: scoped,
     close: async () => {
@@ -100,25 +109,25 @@ export function scopedEgress(policy: EgressPolicy): EgressScope {
 
 /** The shared agent for `req`, when its policy came from a scope and it needs no proxy. */
 function scopedEgressAgent(req: HttpRequest, egress: EgressPolicy): Dispatcher | undefined {
-  const agents = egressPools.get(egress);
-  if (agents === undefined || req.proxy !== undefined) return undefined;
+  const pool = egressPools.get(egress);
+  if (pool === undefined || req.proxy !== undefined) return undefined;
+  const { agents, credentials } = pool;
   const { tls, localAddress, allowH2 } = req;
-  // A digest, so the map holds no key material of its own; the fields in a fixed order.
-  const key = createHash('sha256')
-    .update(
-      JSON.stringify([
-        tls?.rejectUnauthorized,
-        tls?.ca,
-        tls?.cert,
-        tls?.key,
-        tls?.passphrase,
-        tls?.minVersion,
-        tls?.servername,
-        localAddress,
-        allowH2,
-      ]),
-    )
-    .digest('hex');
+  const material = JSON.stringify([tls?.ca, tls?.cert, tls?.key, tls?.passphrase]);
+  let credential = credentials.get(material);
+  if (credential === undefined) {
+    credential = credentials.size;
+    credentials.set(material, credential);
+  }
+  // The fields in a fixed order; the key material only by its number in this scope.
+  const key = JSON.stringify([
+    tls?.rejectUnauthorized,
+    credential,
+    tls?.minVersion,
+    tls?.servername,
+    localAddress,
+    allowH2,
+  ]);
   let agent = agents.get(key);
   if (agent === undefined) {
     agent = createDispatcher({
