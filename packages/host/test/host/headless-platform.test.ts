@@ -158,8 +158,8 @@ describe('the path root', () => {
   let outside: string;
 
   beforeAll(() => {
-    root = realpathSync(mkdtempSync(join(tmpdir(), 'wirebench-root-')));
-    outside = realpathSync(mkdtempSync(join(tmpdir(), 'wirebench-outside-')));
+    root = realpathSync.native(mkdtempSync(join(tmpdir(), 'wirebench-root-')));
+    outside = realpathSync.native(mkdtempSync(join(tmpdir(), 'wirebench-outside-')));
     mkdirSync(join(root, 'inner'));
     writeFileSync(join(root, 'inner', 'schema.graphql'), 'type Query { a: Int }\n');
     writeFileSync(join(outside, 'secret.txt'), 'not yours\n');

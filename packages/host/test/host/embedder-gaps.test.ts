@@ -55,7 +55,7 @@ afterEach(async () => {
 });
 
 function tempDir(prefix: string): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
   dirs.push(dir);
   return dir;
 }

@@ -325,7 +325,9 @@ describe('RunnerService', () => {
     // The desktop's host reads the machine's own values, as before.
     const { runner } = await harness('P-sys-desktop', {}, undefined, { model });
     await runner.run({ targetId: 'A-sys', runId: 'R-sys-desktop' });
-    expect(seen).toEqual([`/sys?p=${encodeURIComponent(PATH_VALUE!)}`]);
+    // Compared decoded: the query encoding escapes characters (such as Windows' `(x86)`) that
+    // encodeURIComponent leaves alone.
+    expect(seen.map((one) => decodeURIComponent(one.replace(/^\/sys\?p=/, '')))).toEqual([PATH_VALUE]);
   });
 
   it('refuses a run whose data file does not read, before anything is sent', async () => {
