@@ -25,8 +25,11 @@ const callFrameSchema = z
   .strict();
 
 export interface HostSocketDeps {
-  /** The user's host, once built; a rejection closes the socket `1011`. */
-  readonly host: Promise<ServerHost>;
+  /**
+   * The user's host, once built; a rejection closes the socket `1011`. `undefined` when no host was
+   * built for this socket (it closed, its session ended or the server is stopping while it waited).
+   */
+  readonly host: Promise<ServerHost | undefined>;
   /** This socket's caller id on that host, unique within it. */
   readonly callerId: number;
   /** The allowlist (`allowlist.ts`). */
@@ -115,6 +118,10 @@ export function runHostSocket(ws: WebSocket, deps: HostSocketDeps): void {
   deps.host.then(
     (ready) => {
       if (closed) return;
+      if (ready === undefined) {
+        if (ws.readyState === ws.OPEN) ws.close(HOST_CLOSE.goingAway, 'no host');
+        return;
+      }
       host = ready;
       ready.attach(caller);
       sendJson({ type: 'hello', host: 'browser', capabilities: ready.capabilities, osTheme: ready.osTheme });

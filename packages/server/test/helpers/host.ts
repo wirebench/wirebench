@@ -23,6 +23,8 @@ const WAIT_MS = 20_000;
 export interface HostHarness extends IdentityHarness {
   readonly port: number;
   readonly timers: ManualTimers;
+  /** The host module's own timers: the idle eviction and each socket's maximum-age deadline. */
+  readonly hostTimers: ManualTimers;
   /** Every audit event recorded, in order. */
   readonly audit: AuditInput[];
   instances(): HostInstances;
@@ -32,6 +34,7 @@ export interface HostHarness extends IdentityHarness {
 
 export async function hostHarness(options: { readonly env?: Record<string, string> } = {}): Promise<HostHarness> {
   const timers = manualTimers();
+  const hostTimers = manualTimers();
   let instances: HostInstances | undefined;
   const h = await identityHarness({
     env: {
@@ -45,7 +48,8 @@ export async function hostHarness(options: { readonly env?: Record<string, strin
       syncModule(),
       liveModule({ now: () => clock.now, setTimer: timers.setTimer }),
       hostModule({
-        setTimer: timers.setTimer,
+        now: () => clock.now,
+        setTimer: hostTimers.setTimer,
         onInstances: (made) => {
           instances = made;
         },
@@ -60,6 +64,7 @@ export async function hostHarness(options: { readonly env?: Record<string, strin
     ...h,
     port: address.port,
     timers,
+    hostTimers,
     audit,
     idleMs: 30 * 60_000,
     instances: () => {

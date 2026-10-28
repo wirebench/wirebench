@@ -1,7 +1,7 @@
 /**
  * The server host's `HostOptions.server.send` (hosted edition spec §17.3): a call the host makes to this
  * server runs through `app.inject`, the whole route pipeline and no socket, as the user whose device token
- * `credential()` returns. Only `publicUrl`'s origin is reachable; the host holds its transport to it
+ * the instance holds now. Only `publicUrl`'s origin is reachable; the host holds its transport to it
  * already, and this side refuses any other on its own.
  *
  * The answer comes back in the shape `sendHttp` gives. Only what the host's `ServerClient` reads carries
@@ -22,10 +22,25 @@ function originOf(url: string): string | undefined {
   }
 }
 
+/**
+ * @param session the instance's current token and its id
+ * @param onRefused told the token's id when the server answered `identity-unauthenticated` for it: the
+ *   session expired or was revoked without an announcement reaching this side first
+ */
+/** A `401` body that says the token itself is no longer a session. */
+function refusedSession(body: string): boolean {
+  try {
+    return (JSON.parse(body) as { code?: unknown }).code === 'identity-unauthenticated';
+  } catch {
+    return false;
+  }
+}
+
 export function injectSend(
   app: Pick<FastifyInstance, 'inject'>,
   publicUrl: string,
-  credential: () => string | undefined,
+  session: () => { readonly token: string; readonly tokenId: string } | undefined,
+  onRefused: (tokenId: string) => void,
 ): (request: HttpRequest) => Promise<HttpExchange> {
   return async (request) => {
     if (originOf(request.url) !== publicUrl) {
@@ -38,8 +53,8 @@ export function injectSend(
     }
     // What the exchange reports as sent: never the token.
     const sent = { ...headers };
-    const token = credential();
-    if (token !== undefined) headers.authorization = `Bearer ${token}`;
+    const current = session();
+    if (current !== undefined) headers.authorization = `Bearer ${current.token}`;
     const startedAt = new Date();
     const started = performance.now();
     const response = await app.inject({
@@ -48,6 +63,9 @@ export function injectSend(
       headers,
       ...(request.body !== undefined ? { payload: Buffer.from(request.body) } : {}),
     });
+    if (current !== undefined && response.statusCode === 401 && refusedSession(response.body)) {
+      onRefused(current.tokenId);
+    }
     const answered: Record<string, string> = {};
     const rawHeaders: (readonly [string, string])[] = [];
     for (const [name, value] of Object.entries(response.headers)) {

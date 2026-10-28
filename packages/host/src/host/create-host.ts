@@ -1369,8 +1369,10 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     workspaceService.hostFor(projectId).proposeConversions(ownerId),
   );
   // This machine's MCP stdio approvals (#79); a send with no window of its own asks in the focused one.
+  // A host that may not start processes refuses every stdio command before anything is asked (§3.10).
   const mcpApprovals = new McpApprovals({
     store: new McpApprovalStore(join(platform.paths.userData(), MCP_APPROVALS_FILE)),
+    ...(platform.capabilities.has('processes') ? {} : { processes: false as const }),
     defaultWindow: () => {
       const focused = embedder.windows?.focused();
       const window =

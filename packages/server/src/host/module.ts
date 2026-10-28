@@ -18,6 +18,9 @@ import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { recordAudit, type AuditInput, type ServerContext, type ServerModule } from '../context.js';
 import { sessionToken } from '../identity/cookies.js';
+import { identitySettings } from '../identity/env.js';
+import { tokenByHash } from '../identity/repo.js';
+import { hashToken } from '../identity/tokens.js';
 import { realTimer } from '../live/module.js';
 import { isServedChannel } from './allowlist.js';
 import { HOST_CLOSE, HOST_LIMITS } from './errors.js';
@@ -28,7 +31,9 @@ import { liveBridge } from './live-bridge.js';
 import { runHostSocket } from './socket.js';
 
 export interface HostModuleOptions {
-  /** Injected timers for the idle eviction. Tests fire them by hand. */
+  /** Injected clock, shared with identity's in tests: each socket's maximum-age deadline. */
+  readonly now?: () => Date;
+  /** Injected timers for the idle eviction and the maximum-age deadlines. Tests fire them by hand. */
   readonly setTimer?: (fn: () => void, ms: number) => { cancel(): void };
   /** Another host bundle than the built one, for tests. */
   readonly bundle?: URL;
@@ -37,6 +42,8 @@ export interface HostModuleOptions {
 }
 
 const ROUTE = '/host';
+/** `setTimeout`'s cap; a longer deadline (the default maximum token age is 180 days) is armed in steps. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
 
 /**
  * Raises `ws`'s per-message limit on this one socket to {@link HOST_LIMITS.maxFrameBytes}. The plugin has
@@ -64,6 +71,33 @@ function secretAudit(user: HostUser, tokenId: string | undefined, event: HostSec
 
 export function hostModule(options: HostModuleOptions = {}): ServerModule {
   const setTimer = options.setTimer ?? realTimer;
+  const now = options.now ?? (() => new Date());
+  /** Runs `fn` at `at` (milliseconds since the epoch), in steps no timer refuses; `cancel` stops it. */
+  const at = (when: number, fn: () => void): { cancel(): void } => {
+    let current: { cancel(): void } | undefined;
+    let cancelled = false;
+    const arm = (): void => {
+      const remaining = when - now().getTime();
+      current =
+        remaining > MAX_TIMER_MS
+          ? setTimer(() => {
+              if (!cancelled) arm();
+            }, MAX_TIMER_MS)
+          : setTimer(
+              () => {
+                if (!cancelled) fn();
+              },
+              Math.max(0, remaining),
+            );
+    };
+    arm();
+    return {
+      cancel: () => {
+        cancelled = true;
+        current?.cancel();
+      },
+    };
+  };
   return {
     name: 'host',
 
@@ -90,6 +124,12 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         log,
         create: (user, session) => {
           const credential = (): string | undefined => session()?.token;
+          // A token the server refused is over even if no announcement said so (idle or lazy expiry).
+          const refused = (tokenId: string): void => {
+            queueMicrotask(() => {
+              instances.sessionEnded({ tokenId });
+            });
+          };
           return createServerHost({
             userId: user.id,
             dataDir: config.dataDir,
@@ -98,7 +138,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
             appVersion: config.version,
             server: {
               url: config.publicUrl,
-              send: injectSend(app, config.publicUrl, credential),
+              send: injectSend(app, config.publicUrl, session, refused),
               connectLive: () => liveBridge(runLive),
               credential,
             },
@@ -113,6 +153,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         },
       });
       options.onInstances?.(instances);
+      const { tokenMaxMs } = identitySettings(config);
       let nextCallerId = 1;
 
       app.get(ROUTE, { websocket: true }, (socket, request) => {
@@ -150,12 +191,27 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           },
         };
         const host = instances.open(user, handle);
+        // The session ends at its token's creation plus the maximum age, as a live socket's does.
+        let deadline: { cancel(): void } | undefined;
+        let closed = false;
+        tokenByHash(ctx.db, hashToken(token))
+          .then((found) => {
+            if (closed || found === undefined) return;
+            deadline = at(Date.parse(found.token.createdAt) + tokenMaxMs, () => {
+              instances.sessionEnded({ tokenId: caller.tokenId });
+            });
+          })
+          .catch((error: unknown) => {
+            log("a host socket's session age could not be read", error);
+          });
         runHostSocket(socket, {
           host,
           callerId: nextCallerId++,
           allowed: isServedChannel,
           log,
           onClosed: () => {
+            closed = true;
+            deadline?.cancel();
             instances.release(user.id, handle);
           },
         });

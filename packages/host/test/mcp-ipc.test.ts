@@ -213,3 +213,44 @@ describe('the MCP channels', () => {
     expect(sender.sent).toEqual([]);
   });
 });
+
+describe('on a host that runs no local processes (hosted edition spec §3.10)', () => {
+  beforeEach(() => {
+    // The outer setup registered the channels with a desktop's approvals; these replace them.
+    table.clear();
+    handlers.clear();
+    const request = {
+      hostState,
+      project: {
+        projectId: () => host.snapshot()?.id,
+        runContextFor: (id: string, envId?: string) => host.runContextFor(id, envId),
+      } as unknown as RequestChannelDeps['project'],
+      mcpApprovals: new McpApprovals({
+        store: new McpApprovalStore(join(root, 'userData', MCP_APPROVALS_FILE)),
+        processes: false,
+      }),
+    } satisfies RequestChannelDeps;
+    registerMcpChannels(table, {
+      engine: new EngineService(),
+      request,
+      router: {
+        setMcpCatalogue: (apiId: string, refreshed: Parameters<McpHost['setMcpCatalogue']>[1]) =>
+          host.kind('mcp').setMcpCatalogue(apiId, refreshed),
+      },
+    } as unknown as KindChannelDeps);
+  });
+
+  it('refuses a stdio send and a stdio catalogue refresh at once, asking nothing', async () => {
+    const { apiId, requestId } = await seedServer();
+    const renderer = mockRenderer('always');
+    const refused = (promise: Promise<unknown>) => promise.catch((caught: unknown) => caught);
+    expect(await refused(invoke('request.sendMcp', { sendId: 's-1', requestId }, renderer.sender))).toMatchObject({
+      code: 'host-capability-missing',
+    });
+    expect(await refused(invoke('api.refreshMcpCatalogue', { apiId, sendId: 'r-1' }, renderer.sender))).toMatchObject(
+      { code: 'host-capability-missing' },
+    );
+    expect(renderer.prompts()).toEqual([]);
+    expect(await invoke('app.mcpApprovals', undefined, renderer.sender)).toEqual({ approvals: [] });
+  });
+});

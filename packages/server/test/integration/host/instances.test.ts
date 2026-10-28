@@ -203,4 +203,106 @@ describe('HostInstances', () => {
     expect(made).toHaveLength(2);
     expect(slow.disposed).toBe(1);
   });
+
+  /** Instances whose first host disposes only when the test says so. */
+  function slowEviction(): { finish: () => void } {
+    const gate = { finish: (): void => undefined };
+    let first = true;
+    instances = new HostInstances({
+      dataDir,
+      idleMs: IDLE_MS,
+      setTimer: realTimer,
+      log: () => undefined,
+      create: (user, session) => {
+        const host = fakeHost();
+        if (first) {
+          first = false;
+          host.dispose = () =>
+            new Promise<void>((resolve) => {
+              gate.finish = () => {
+                host.disposed += 1;
+                resolve();
+              };
+            });
+        }
+        made.push({ userId: user.id, host, session });
+        return Promise.resolve(host);
+      },
+    });
+    return gate;
+  }
+
+  it('a socket that closes while it waits for an eviction leaves no instance behind', async () => {
+    const gate = slowEviction();
+    await instances.open(ALICE, socket('token-1', 't1'));
+    instances.sessionEnded({ tokenId: 't1' });
+    const waiting = socket('token-2', 't2');
+    const opened = instances.open(ALICE, waiting);
+    await vi.advanceTimersByTimeAsync(0);
+    instances.release(ALICE.id, waiting);
+    gate.finish();
+    await expect(opened).resolves.toBeUndefined();
+    expect(instances.size).toBe(0);
+    expect(made).toHaveLength(1);
+  });
+
+  it('a session that ends while its socket waits for an eviction closes it 4401 and builds nothing', async () => {
+    const gate = slowEviction();
+    await instances.open(ALICE, socket('token-1', 't1'));
+    instances.sessionEnded({ tokenId: 't1' });
+    const waiting = socket('token-2', 't2');
+    const opened = instances.open(ALICE, waiting);
+    await vi.advanceTimersByTimeAsync(0);
+    instances.sessionEnded({ userId: ALICE.id });
+    expect(waiting.closedWith).toEqual([4401]);
+    gate.finish();
+    await expect(opened).resolves.toBeUndefined();
+    expect(instances.size).toBe(0);
+  });
+
+  it('builds no instance once closeAll has started, even for a socket that was waiting', async () => {
+    const gate = slowEviction();
+    await instances.open(ALICE, socket('token-1', 't1'));
+    instances.sessionEnded({ tokenId: 't1' });
+    const opened = instances.open(ALICE, socket('token-2', 't2'));
+    await vi.advanceTimersByTimeAsync(0);
+    const closing = instances.closeAll();
+    gate.finish();
+    await closing;
+    await expect(opened).resolves.toBeUndefined();
+    expect(instances.size).toBe(0);
+    expect(made).toHaveLength(1);
+  });
+
+  it('the credential never moves back to an ended token while its sockets are still closing', async () => {
+    const a1 = socket('token-a', 'ta');
+    const a2 = socket('token-a', 'ta');
+    const b = socket('token-b', 'tb');
+    await instances.open(ALICE, b);
+    await instances.open(ALICE, a1);
+    await instances.open(ALICE, a2);
+    instances.sessionEnded({ tokenId: 'ta' });
+    expect(credentialOf(ALICE.id)).toBe('token-b');
+    instances.release(ALICE.id, a2);
+    expect(credentialOf(ALICE.id)).toBe('token-b');
+    instances.release(ALICE.id, a1);
+    expect(credentialOf(ALICE.id)).toBe('token-b');
+    // The last socket with a live token goes: the idle timer starts, with B still the credential.
+    instances.release(ALICE.id, b);
+    expect(credentialOf(ALICE.id)).toBe('token-b');
+    await vi.advanceTimersByTimeAsync(IDLE_MS);
+    expect(instances.size).toBe(0);
+  });
+
+  it('ending every token but one, after the last open socket closed, keeps the idle timer', async () => {
+    const a = socket('token-a', 'ta');
+    const b = socket('token-b', 'tb');
+    await instances.open(ALICE, a);
+    await instances.open(ALICE, b);
+    // B closes; A is the credential, and its session then ends: nothing live is left.
+    instances.release(ALICE.id, b);
+    instances.sessionEnded({ tokenId: 'ta' });
+    expect(instances.size).toBe(0);
+  });
 });
+

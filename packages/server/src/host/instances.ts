@@ -66,17 +66,34 @@ export class HostInstances {
   private readonly instances = new Map<string, Instance>();
   /** Evictions still running, by user id: a new instance for that user waits for its one. */
   private readonly evicting = new Map<string, Promise<void>>();
+  /**
+   * Sockets still waiting for their user's eviction to finish. A close or a session's end in that wait
+   * marks one `gone`, and it then builds and joins nothing.
+   */
+  private readonly waiting = new Map<HostSocketHandle, { readonly userId: string; gone: boolean }>();
   private closed = false;
 
   constructor(private readonly deps: HostInstancesDeps) {}
 
   /**
    * The user's host, created on first use, with `socket` counted as open and its token as the
-   * instance's credential. Rejects when the host cannot be built (the socket is then not counted).
+   * instance's credential. `undefined` when the socket closed or its session ended while it waited for
+   * an eviction, or the server began shutting down: nothing was built or counted for it. Rejects when
+   * the host cannot be built (the socket is then not counted).
    */
-  async open(user: HostUser, socket: HostSocketHandle): Promise<ServerHost> {
-    if (this.closed) throw new Error('the server is shutting down');
-    await this.evicting.get(user.id);
+  async open(user: HostUser, socket: HostSocketHandle): Promise<ServerHost | undefined> {
+    if (this.closed) return undefined;
+    const eviction = this.evicting.get(user.id);
+    if (eviction !== undefined) {
+      const wait = { userId: user.id, gone: false };
+      this.waiting.set(socket, wait);
+      try {
+        await eviction;
+      } finally {
+        this.waiting.delete(socket);
+      }
+      if (wait.gone || this.closed) return undefined;
+    }
     let instance = this.instances.get(user.id);
     if (instance === undefined) {
       const signedIn: Pick<Instance, 'credential'> = { credential: undefined };
@@ -109,43 +126,46 @@ export class HostInstances {
    * the idle timer.
    */
   release(userId: string, socket: HostSocketHandle): void {
+    const wait = this.waiting.get(socket);
+    if (wait !== undefined) {
+      wait.gone = true;
+      return;
+    }
     const instance = this.instances.get(userId);
     if (instance === undefined) return;
     this.forget(instance, socket);
-    const newest = instance.sockets.at(-1);
-    if (newest !== undefined) {
-      instance.credential = { token: newest.token, tokenId: newest.tokenId };
-      return;
-    }
-    // The last socket's token stays the credential while the host idles: its session has not ended.
-    if (instance.idle !== undefined) return;
-    instance.idle = this.deps.setTimer(() => {
-      instance.idle = undefined;
-      if (this.instances.get(userId) === instance && instance.sockets.length === 0) this.evict(instance);
-    }, this.deps.idleMs);
+    this.settle(instance);
   }
 
   /**
-   * A session ended (identity's `sessionEnded`): the sockets that used it close `4401`. An instance
-   * whose credential ended moves to the newest socket with a live token, or is evicted.
+   * A session ended (identity's `sessionEnded`, or a socket's token found expired): the sockets that
+   * used it close `4401` and stop counting at once, so the credential can never move back to them while
+   * their close is under way. An instance whose credential ended moves to the newest socket left, or
+   * is evicted.
    */
   sessionEnded(event: SessionEnded): void {
+    const endedFor = (userId: string, tokenId: string): boolean =>
+      'tokenId' in event ? tokenId === event.tokenId : userId === event.userId && tokenId !== event.exceptTokenId;
+    for (const [socket, wait] of this.waiting) {
+      if (wait.gone || !endedFor(wait.userId, socket.tokenId)) continue;
+      wait.gone = true;
+      socket.close(4401, 'session ended');
+    }
     for (const instance of [...this.instances.values()]) {
-      const ended = (tokenId: string): boolean =>
-        'tokenId' in event
-          ? tokenId === event.tokenId
-          : instance.user.id === event.userId && tokenId !== event.exceptTokenId;
-      for (const socket of instance.sockets.filter((one) => ended(one.tokenId))) {
+      const ended = (tokenId: string): boolean => endedFor(instance.user.id, tokenId);
+      const closing = instance.sockets.filter((one) => ended(one.tokenId));
+      for (const socket of closing) {
+        this.forget(instance, socket);
         socket.close(4401, 'session ended');
       }
-      if (instance.credential === undefined || !ended(instance.credential.tokenId)) continue;
-      const next = instance.sockets.findLast((one) => !ended(one.tokenId));
-      if (next === undefined) {
+      if (instance.credential !== undefined && ended(instance.credential.tokenId)) {
         instance.credential = undefined;
-        this.evict(instance);
-      } else {
-        instance.credential = { token: next.token, tokenId: next.tokenId };
+        if (instance.sockets.length === 0) {
+          this.evict(instance);
+          continue;
+        }
       }
+      if (closing.length > 0 || instance.credential === undefined) this.settle(instance);
     }
   }
 
@@ -159,6 +179,24 @@ export class HostInstances {
   /** How many instances exist, for tests and logs. */
   get size(): number {
     return this.instances.size;
+  }
+
+  /**
+   * After a socket left: the credential is the newest socket still open, or, with none, the last
+   * credential stays while the idle timer runs (its session has not ended).
+   */
+  private settle(instance: Instance): void {
+    const newest = instance.sockets.at(-1);
+    if (newest !== undefined) {
+      instance.credential = { token: newest.token, tokenId: newest.tokenId };
+      return;
+    }
+    if (instance.idle !== undefined) return;
+    const userId = instance.user.id;
+    instance.idle = this.deps.setTimer(() => {
+      instance.idle = undefined;
+      if (this.instances.get(userId) === instance && instance.sockets.length === 0) this.evict(instance);
+    }, this.deps.idleMs);
   }
 
   private forget(instance: Instance, socket: HostSocketHandle): void {

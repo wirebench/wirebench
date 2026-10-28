@@ -75,6 +75,7 @@ describe('the server host allowlist (§3.10)', () => {
       'app.mcpApprove',
       'workspace.create',
       'workspace.join',
+      'wsi.exportHtml',
     ]) {
       expect(isServedChannel(channel), channel).toBe(false);
     }

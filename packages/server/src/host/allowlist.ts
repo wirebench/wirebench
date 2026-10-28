@@ -123,6 +123,7 @@ export const REFUSED_CHANNELS: Readonly<Record<string, string>> = {
   'runner.data.choose': 'reads a file picked on the machine',
   'workspace.exportCollection': 'writes to a folder picked on the machine',
   'workspace.exportProject': 'writes to a folder picked on the machine',
+  'wsi.exportHtml': 'writes to a file picked on the machine',
   // Local and git workspaces: the server host opens server workspaces only.
   'workspace.create': 'creates a local workspace',
   'workspace.share': 'shares through git',

@@ -11,6 +11,7 @@ import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createRestRequest, entry, type SyncPushResponse } from '@wirebench/engine';
+import { HOST_LIMITS } from '../../../src/host/errors.js';
 import { hostDirectories } from '../../../src/host/server-platform.js';
 import { sessionCookieName } from '../../../src/identity/cookies.js';
 import * as teamsRepo from '../../../src/teams/repo.js';
@@ -208,9 +209,9 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
     await client.call('secrets.set', { value: 'kept-0123456789', label: 'kept' });
     client.close();
     await client.closed;
-    await vi.waitFor(() => expect(h.timers.pending(h.idleMs)).toBe(1));
+    await vi.waitFor(() => expect(h.hostTimers.pending(h.idleMs)).toBe(1));
     expect(h.instances().size).toBe(1);
-    expect(h.timers.fire(h.idleMs)).toBe(1);
+    expect(h.hostTimers.fire(h.idleMs)).toBe(1);
     expect(h.instances().size).toBe(0);
     await vi.waitFor(() => expect(existsSync(dirs.temp)).toBe(false));
     // The checkout stays, and a new socket gets a new instance over it.
@@ -314,4 +315,98 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
       }
     },
   );
+
+  it('closes 1009 for a frame just over 32 MiB', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const client = await openHost(h, alice);
+    await client.waitFor((frame) => frame.type === 'hello');
+    const request = 'x'.repeat(HOST_LIMITS.maxFrameBytes - 40);
+    const frame = JSON.stringify({ id: 1, channel: 'app.version', request });
+    expect(Buffer.byteLength(frame)).toBeGreaterThan(HOST_LIMITS.maxFrameBytes);
+    expect(Buffer.byteLength(frame)).toBeLessThan(HOST_LIMITS.maxFrameBytes + 64);
+    client.sendRaw(frame);
+    expect(await client.closed).toEqual({ code: 1009 });
+  });
+
+  it('refuses a stdio MCP send and catalogue refresh at once with host-capability-missing', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const { client } = await joinedWorkspace(h, alice);
+    const server = await client.call('project.mutate', {
+      projectId: 'project-billing',
+      change: {
+        kind: 'add-mcp-server',
+        name: 'Local',
+        transport: { type: 'stdio', command: process.execPath, args: ['-e', ''], env: [] },
+      },
+    });
+    expect(server).toMatchObject({ ok: true });
+    const apiId = (server.value as { createdId: string }).createdId;
+    const request = await client.call('project.mutate', {
+      projectId: 'project-billing',
+      change: { kind: 'add-mcp-request', apiId, name: 'List', operation: { method: 'tools/list' } },
+    });
+    const requestId = (request.value as { createdId: string }).createdId;
+    const refusal = { ok: false, error: { code: 'host-capability-missing', details: { capability: 'processes' } } };
+    expect(await client.call('request.sendMcp', { sendId: 'm1', requestId })).toMatchObject(refusal);
+    expect(await client.call('api.refreshMcpCatalogue', { apiId, sendId: 'm2' })).toMatchObject(refusal);
+    expect(client.frames.filter((frame) => frame.event === 'mcp.approval')).toEqual([]);
+  });
 });
+
+describeDb('the host socket and its token’s age (hosted edition spec §17.3)', () => {
+  let h: HostHarness;
+  beforeEach(async () => {
+    h = await hostHarness({ env: { WIREBENCH_SERVER_TOKEN_MAX_DAYS: '1', WIREBENCH_SERVER_TOKEN_IDLE_DAYS: '1' } });
+  });
+  afterEach(() => h.close());
+  const DAY_MS = 86_400_000;
+
+  it('closes 4401 when the session reaches its maximum age, and not before', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const client = await openHost(h, alice);
+    await client.waitFor((frame) => frame.type === 'hello');
+    await vi.waitFor(() => expect(h.hostTimers.pending(DAY_MS)).toBe(1));
+    h.hostTimers.fire(DAY_MS);
+    expect(await client.closed).toEqual({ code: 4401 });
+    await vi.waitFor(() => expect(h.instances().size).toBe(0));
+  });
+
+  it('cancels the deadline when the socket closes', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const client = await openHost(h, alice);
+    await client.waitFor((frame) => frame.type === 'hello');
+    await vi.waitFor(() => expect(h.hostTimers.pending(DAY_MS)).toBe(1));
+    client.close();
+    await client.closed;
+    await vi.waitFor(() => expect(h.hostTimers.pending(DAY_MS)).toBe(0));
+  });
+
+  it('closes 4401 when a call to the server finds the token expired', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const client = await openHost(h, alice);
+    await client.waitFor((frame) => frame.type === 'hello');
+    // Idle past its limit: the next request with it is refused and the token deleted.
+    h.clock.advance(DAY_MS + 1);
+    void client.call('team.list');
+    expect(await client.closed).toEqual({ code: 4401 });
+    await vi.waitFor(() => expect(h.instances().size).toBe(0));
+  });
+});
+
+/** Alice's team workspace on the server, pushed by an editor, opened over a host socket. */
+async function joinedWorkspace(h: HostHarness, alice: Awaited<ReturnType<typeof browserUser>>) {
+  const editor = await signedInUser(h, { email: 'editor@example.com' });
+  const team = await seedTeam(h, { name: 'Payments QA', admins: [alice], members: [editor] });
+  const workspaceId = await seedSyncWorkspace(h, { team, name: 'Staging' });
+  await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+  const pushed = await call<SyncPushResponse>(h, editor, 'POST', `/workspaces/${workspaceId}/sync/commits`, {
+    parent: null,
+    commits: [{ subject: 'Start', at: AT, changes: await snapshotOf(workspaceId, []) }],
+  });
+  expect(pushed.status).toBe(201);
+  const client = await openHost(h, alice);
+  await client.waitFor((frame) => frame.type === 'hello');
+  expect(await client.call('workspace.joinFromServer', { url: PUBLIC_URL, workspaceId })).toMatchObject({ ok: true });
+  return { client, workspaceId };
+}
+

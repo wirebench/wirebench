@@ -19,6 +19,8 @@ export const ALL_CAPABILITIES = [
   'team-secrets',
   'updates',
   'app-lock',
+  /** Start processes on the machine: MCP servers over stdio. */
+  'processes',
 ] as const;
 
 /** What a platform can do; a host switches features off when the platform lacks one. */
