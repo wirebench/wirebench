@@ -294,7 +294,7 @@ describe('HostInstances', () => {
     expect(instances.size).toBe(0);
   });
 
-  it('ending every token but one, after the last open socket closed, keeps the idle timer', async () => {
+  it('ending every token but one, after the last open socket closed, evicts at once', async () => {
     const a = socket('token-a', 'ta');
     const b = socket('token-b', 'tb');
     await instances.open(ALICE, a);
@@ -305,4 +305,3 @@ describe('HostInstances', () => {
     expect(instances.size).toBe(0);
   });
 });
-

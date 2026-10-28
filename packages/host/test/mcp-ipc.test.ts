@@ -247,9 +247,9 @@ describe('on a host that runs no local processes (hosted edition spec §3.10)', 
     expect(await refused(invoke('request.sendMcp', { sendId: 's-1', requestId }, renderer.sender))).toMatchObject({
       code: 'host-capability-missing',
     });
-    expect(await refused(invoke('api.refreshMcpCatalogue', { apiId, sendId: 'r-1' }, renderer.sender))).toMatchObject(
-      { code: 'host-capability-missing' },
-    );
+    expect(await refused(invoke('api.refreshMcpCatalogue', { apiId, sendId: 'r-1' }, renderer.sender))).toMatchObject({
+      code: 'host-capability-missing',
+    });
     expect(renderer.prompts()).toEqual([]);
     expect(await invoke('app.mcpApprovals', undefined, renderer.sender)).toEqual({ approvals: [] });
   });

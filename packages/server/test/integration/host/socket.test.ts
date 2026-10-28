@@ -409,4 +409,3 @@ async function joinedWorkspace(h: HostHarness, alice: Awaited<ReturnType<typeof 
   expect(await client.call('workspace.joinFromServer', { url: PUBLIC_URL, workspaceId })).toMatchObject({ ok: true });
   return { client, workspaceId };
 }
-

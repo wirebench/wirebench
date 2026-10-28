@@ -22,11 +22,6 @@ function originOf(url: string): string | undefined {
   }
 }
 
-/**
- * @param session the instance's current token and its id
- * @param onRefused told the token's id when the server answered `identity-unauthenticated` for it: the
- *   session expired or was revoked without an announcement reaching this side first
- */
 /** A `401` body that says the token itself is no longer a session. */
 function refusedSession(body: string): boolean {
   try {
@@ -36,6 +31,11 @@ function refusedSession(body: string): boolean {
   }
 }
 
+/**
+ * @param session the instance's current token and its id
+ * @param onRefused told the token's id when the server answered `identity-unauthenticated` for it: the
+ *   session expired or was revoked without an announcement reaching this side first
+ */
 export function injectSend(
   app: Pick<FastifyInstance, 'inject'>,
   publicUrl: string,
