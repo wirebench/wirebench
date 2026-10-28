@@ -15,6 +15,10 @@
  *    `AsyncLocalStorage` held in a `const` that is not annotated `ReadonlyMap`/`ReadonlySet`. A second host
  *    in the same process would share such state. The few legitimate cases are in {@link ALLOWED_MODULE_STATE}.
  *
+ * And one rule over the rest of the repo (`apps/`, `packages/`, `scripts/`):
+ *  - `desktop-export`: only files under `apps/desktop/` import `@wirebench/host/desktop`, the Electron shell's
+ *    internals. Every other embedder (the server, the agent) uses the package root alone, `serveCall` included.
+ *
  * `node scripts/check-host-boundary.ts` prints one line per violation and exits non-zero if there is any.
  * Wired into `pnpm check` as `pnpm check:host-boundary`.
  */
@@ -33,13 +37,14 @@ export const RULE_REASONS: Readonly<Record<HostBoundaryViolation['rule'], string
   'electron-import': 'host code reaches Electron only through HostPlatform',
   'outside-package': 'host code reaches outside its package',
   'module-state': 'a second host in the process would share this state',
+  'desktop-export': 'only the desktop shell may import @wirebench/host/desktop',
 };
 
 export interface HostBoundaryViolation {
   /** Repo-root-relative, forward slashes. */
   file: string;
   line: number;
-  rule: 'electron-import' | 'outside-package' | 'module-state';
+  rule: 'electron-import' | 'outside-package' | 'module-state' | 'desktop-export';
   text: string;
 }
 
@@ -68,7 +73,24 @@ export const ALLOWED_MODULE_STATE: readonly AllowedModuleState[] = [
     name: 'caller',
     reason: 'per-call context carrier; holds no host data outside a call',
   },
+  {
+    file: 'packages/host/src/path-access.ts',
+    name: 'pathRoot',
+    reason: "per-call context carrier of the calling host's root; holds no host data outside a call",
+  },
 ];
+
+/** The trees `desktop-export` checks, relative to the repo root. */
+const EMBEDDER_DIRS: readonly string[] = ['apps', 'packages', 'scripts'];
+
+/** The one tree that may import the desktop subpath. */
+const DESKTOP_DIR = 'apps/desktop/';
+
+/** Folders `desktop-export` never descends into: installed, built or hidden. */
+const SKIPPED_DIRS: ReadonlySet<string> = new Set(['node_modules', 'dist', 'out', 'build', 'coverage']);
+
+const DESKTOP_IMPORT =
+  /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s*|\brequire\(\s*)['"]@wirebench\/host\/desktop(?:\/[^'"]*)?['"]/;
 
 const ELECTRON_IMPORT = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s*|\brequire\(\s*)['"]electron(?:\/[^'"]*)?['"]/;
 const RELATIVE_IMPORT = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s*|\brequire\(\s*)['"](\.[^'"]*)['"]/g;
@@ -87,6 +109,38 @@ function sourceFiles(hostDir: string): string[] {
     .sort();
 }
 
+/** The script files under `dir` (repo-relative, forward slashes), skipping {@link SKIPPED_DIRS} and dot folders. */
+function scriptFiles(root: string, dir: string): string[] {
+  const absolute = join(root, dir);
+  if (!existsSync(absolute)) return [];
+  const found: string[] = [];
+  for (const entry of readdirSync(absolute, { withFileTypes: true })) {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (!entry.name.startsWith('.') && !SKIPPED_DIRS.has(entry.name)) found.push(...scriptFiles(root, path));
+    } else if (/\.[cm]?[jt]sx?$/.test(entry.name) && !entry.name.endsWith('.d.ts')) {
+      found.push(path);
+    }
+  }
+  return found;
+}
+
+/** Every import of `@wirebench/host/desktop` outside {@link DESKTOP_DIR}. */
+function desktopExportViolations(root: string): HostBoundaryViolation[] {
+  const violations: HostBoundaryViolation[] = [];
+  for (const file of EMBEDDER_DIRS.flatMap((dir) => scriptFiles(root, dir)).sort()) {
+    if (file.startsWith(DESKTOP_DIR)) continue;
+    readFileSync(join(root, file), 'utf8')
+      .split('\n')
+      .forEach((text, index) => {
+        if (!/^\s*(?:\/\/|\*|\/\*)/.test(text) && DESKTOP_IMPORT.test(text)) {
+          violations.push({ file, line: index + 1, rule: 'desktop-export', text: text.trim() });
+        }
+      });
+  }
+  return violations;
+}
+
 /** Whether `name` at the top level of `repoPath` (repo-relative) is in {@link ALLOWED_MODULE_STATE}. */
 function isAllowed(repoPath: string, name: string): boolean {
   return ALLOWED_MODULE_STATE.some((entry) => entry.file === repoPath && entry.name === name);
@@ -94,7 +148,7 @@ function isAllowed(repoPath: string, name: string): boolean {
 
 export interface HostBoundaryResult {
   violations: HostBoundaryViolation[];
-  /** How many files were checked; a gate that scanned none has checked nothing. */
+  /** How many host files were checked; a gate that scanned none has checked nothing. */
   scanned: number;
 }
 
@@ -149,6 +203,7 @@ export function findHostBoundaryViolations(root: string): HostBoundaryResult {
       }
     });
   }
+  violations.push(...desktopExportViolations(root));
   return { violations, scanned: files.length };
 }
 
@@ -157,7 +212,7 @@ function main(): void {
   const { violations, scanned } = findHostBoundaryViolations(root);
   if (violations.length === 0) {
     process.stdout.write(
-      `host boundary: no electron imports, imports outside the package or module state in host code (${String(scanned)} files scanned)\n`,
+      `host boundary: no electron imports, imports outside the package or module state in host code (${String(scanned)} files scanned), and no import of @wirebench/host/desktop outside the desktop\n`,
     );
     return;
   }

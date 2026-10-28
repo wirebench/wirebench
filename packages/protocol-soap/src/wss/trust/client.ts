@@ -79,6 +79,8 @@ async function connectionOf(target: IssuedTokenTarget): Promise<IssuedTokenTarge
     ...(built.proxy !== undefined ? { proxy: built.proxy } : {}),
     ...(built.timeoutMs !== undefined ? { timeoutMs: built.timeoutMs } : {}),
     ...(built.signal !== undefined ? { signal: built.signal } : {}),
+    // The rule is the host's, not the connection's: a target that builds its connection keeps it.
+    ...((built.egress ?? target.egress) !== undefined ? { egress: built.egress ?? target.egress } : {}),
   };
 }
 

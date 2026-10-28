@@ -499,10 +499,12 @@ async function sendReserved(
   const masks = keyMasks(item);
   // What the rows name: the saved request, or the one a resent entry came from.
   const namedId = adHoc === undefined ? requestId : adHoc.requestId;
+  const target = targetHostOf(item);
   const send: DesktopSend = {
     sendId,
     requestId: namedId ?? AD_HOC_ID,
     projectId,
+    ...(target !== undefined ? { target } : {}),
     ...masks,
     ...(options.envId !== undefined ? { envId: options.envId } : {}),
     ...(options.approveCommand !== undefined ? { approveCommand: options.approveCommand } : {}),
@@ -584,6 +586,28 @@ async function sendReserved(
   }
 }
 
+/**
+ * The host name a request goes to when its own URL (or endpoint) names one outright; `undefined` when
+ * it is built from variables or the kind keeps its address elsewhere. Only reported with a secret
+ * resolution (`HostOptions.onSecret`), so a miss costs nothing but the name.
+ */
+function targetHostOf(item: unknown): string | undefined {
+  const selected = item as
+    | { readonly request?: Readonly<Record<string, unknown>>; readonly api?: Readonly<Record<string, unknown>> }
+    | undefined;
+  // The request's own address first; a REST request's path is taken from its API's base URL.
+  for (const value of [selected?.request?.['url'], selected?.request?.['endpoint'], selected?.api?.['baseUrl']]) {
+    if (typeof value !== 'string' || value.includes('${')) continue;
+    try {
+      const host = new URL(value).hostname;
+      if (host.length > 0) return host;
+    } catch {
+      // Not a URL on its own: no target to name.
+    }
+  }
+  return undefined;
+}
+
 type Located = NonNullable<ReturnType<NonNullable<SendThroughEngineDeps['project']['runContextFor']>>> & {
   /** The `${…}` shorthand's values laid over the environment's (`RunContext.overrides`). */
   readonly overrides?: PropertyMap;
@@ -609,6 +633,9 @@ function runContextOf(located: Located, host: SendHost): RunContext {
     ...(located.loadedDefinitionFor !== undefined ? { loadedDefinitionFor: located.loadedDefinitionFor } : {}),
     // The run's registry: a send selects and runs through the kinds this run has on.
     ...(located.registry !== undefined ? { registry: located.registry } : {}),
+    // The host's `${#System#…}` scope (`savedContext` and `adHocContext` always set one), so the engine
+    // never falls back to the process environment.
+    ...(located.system !== undefined ? { system: located.system } : {}),
     host,
   };
 }
@@ -647,6 +674,8 @@ function savedContext(deps: SendThroughEngineDeps, requestId: string, envId: str
   const { service } = deps;
   return {
     ...located,
+    // The host's own `${#System#…}` scope when the project gives none: never the process fallback.
+    system: located.system ?? deps.hostState.systemValues,
     ...(defaultAction !== undefined
       ? { defaultWsaActionFor: (selected) => defaultAction.call(deps.project, selected.request.id) }
       : {}),
@@ -670,6 +699,7 @@ function adHocContext(deps: SendThroughEngineDeps, input: ResolvedSendInputWire)
     projectDir: tmpdir(),
     globals: { ...scopes?.global },
     overrides: { ...scopes?.env },
+    system: scopes?.system ?? deps.hostState.systemValues,
   };
 }
 

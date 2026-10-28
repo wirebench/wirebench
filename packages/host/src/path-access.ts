@@ -9,13 +9,68 @@
  * here means a fix to either reaches every caller at once.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { constants } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { WirebenchError } from '@wirebench/engine';
 import type { ImportSourceWire } from '@wirebench/wire/kinds/soap/wire';
-import { isInsideAny, isInsideReal } from './path-containment.js';
+import { isInsideAny, isInsideReal, realpathOfPrefix } from './path-containment.js';
 import type { ReadPicks } from './dialog-picks.js';
+
+/**
+ * The root of the host whose call is running (`HostPlatform.paths.root`), for the handler and
+ * everything it awaits. The handler table sets it around each call of a host that names one.
+ */
+const pathRoot = new AsyncLocalStorage<string>();
+
+/** Runs `fn` with `root` as the directory every caller-named path must stay inside; just `fn()` without one. */
+export function runInPathRoot<T>(root: string | undefined, fn: () => T): T {
+  return root === undefined ? fn() : pathRoot.run(root, fn);
+}
+
+/** The running call's host root, or `undefined` for a host without one (the desktop) and outside a call. */
+export function currentPathRoot(): string | undefined {
+  return pathRoot.getStore();
+}
+
+/**
+ * `path` as the file system will reach it, provided that is inside `root`: a relative path is taken
+ * from `root`, and the real path (every symbolic link in the part that exists followed) must be
+ * `root` or below it. So `..`, an absolute path elsewhere and a link out are all refused, before
+ * anything is touched.
+ *
+ * @returns the real path inside `root` (its missing tail, if any, appended as given)
+ * @throws WirebenchError `host-path-outside-workspace`, naming the path as given, never where a link led
+ */
+export async function resolveInside(root: string, path: string): Promise<string> {
+  const rootReal = await realpath(root);
+  const real = await realpathOfPrefix(resolve(rootReal, path));
+  if (!isInsideReal(rootReal, real)) {
+    throw new WirebenchError('host-path-outside-workspace', `"${path}" is outside this host's workspace`, {
+      details: { path },
+    });
+  }
+  return real;
+}
+
+/**
+ * A path a caller named, made absolute: from the running call's root, held inside it, on a host with
+ * one ({@link resolveInside}); from the working directory, as before, on one without.
+ *
+ * @throws WirebenchError `host-path-outside-workspace` on a host with a root, for a path outside it
+ */
+export async function resolveCallerPath(path: string): Promise<string> {
+  const root = currentPathRoot();
+  return root === undefined ? resolve(path) : await resolveInside(root, path);
+}
+
+/** {@link resolveInside} under the running call's root; `path` unchanged where there is none. */
+async function insideCurrentRoot(path: string): Promise<string> {
+  const root = currentPathRoot();
+  return root === undefined ? path : await resolveInside(root, path);
+}
 
 /**
  * Whether `resolved` may be read.
@@ -24,12 +79,15 @@ import type { ReadPicks } from './dialog-picks.js';
  * @param picks the session's dialog memory, or `undefined` when nothing was ever picked
  * @param resolved the absolute path to check; symlinks are resolved before comparing
  * @returns `true` when the path is contained in one of `roots` or was picked this session
+ * @throws WirebenchError `host-path-outside-workspace` on a host with a root, for a path outside it
  */
 export async function allowsReadPath(
   roots: readonly string[],
   picks: ReadPicks | undefined,
   resolved: string,
 ): Promise<boolean> {
+  // A host with a root refuses a path outside it before any other evidence is weighed.
+  await insideCurrentRoot(resolved);
   if (picks?.hasRead(resolved) === true) {
     return true;
   }
@@ -53,10 +111,24 @@ export async function checkedImportSource(
   picks: ReadPicks | undefined,
   source: ImportSourceWire,
 ): Promise<ImportSourceWire> {
+  if (source.kind === 'url' && currentPathRoot() !== undefined && /^file:/i.test(source.url.trim())) {
+    // A `file:` URL is a file read by another name; on a host with a root it passes the same check.
+    let path: string;
+    try {
+      path = fileURLToPath(source.url.trim());
+    } catch {
+      throw new WirebenchError('import-path-refused', `Wirebench will not read "${source.url}"`, {
+        details: { path: source.url },
+      });
+    }
+    await checkedImportSource(roots, picks, { kind: 'file', path });
+    return source;
+  }
   if (source.kind !== 'file') {
     return source;
   }
-  const resolved = resolve(source.path);
+  // A host with a root takes a relative path from it, not from the process's working directory.
+  const resolved = await resolveCallerPath(source.path);
   if (!(await allowsReadPath(roots, picks, resolved))) {
     throw new WirebenchError(
       'import-path-refused',

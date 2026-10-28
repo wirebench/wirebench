@@ -14,6 +14,7 @@ import type { Socket } from 'node:net';
 import { connect as tlsConnect } from 'node:tls';
 import { captureSslInfo, splitPemBundle } from './tls.js';
 import type { SslInfo, TlsSocketLike } from './tls.js';
+import { checkEgress, checkedLookup, type EgressPolicy } from '../net/egress.js';
 import type { ProxyOptions } from './types.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -135,6 +136,18 @@ export interface ProbeTlsChainOptions {
   readonly ca?: readonly string[];
   /** Gives up after this long. Default 10 s. */
   readonly timeoutMs?: number;
+  /**
+   * The egress rule (hosted edition spec §17.5): the endpoint, or the proxy and the endpoint it is
+   * asked to reach, must be addresses the rule allows. Absent, no check.
+   */
+  readonly egress?: EgressPolicy;
+}
+
+/** Refuses `host` up front when it is a literal address, or a name that always means this machine, the rule refuses. */
+function checkLiteralHost(host: string, egress: EgressPolicy): void {
+  const name = host.toLowerCase();
+  if (isIP(name) !== 0) checkEgress(name, name, egress);
+  else if (name === 'localhost' || name.endsWith('.localhost')) checkEgress(name, '127.0.0.1', egress);
 }
 
 const DEFAULT_PROBE_TIMEOUT_MS = 10_000;
@@ -144,13 +157,28 @@ function authority(target: TlsProbeTarget): string {
   return `${isIP(target.host) === 6 ? `[${target.host}]` : target.host}:${String(target.port)}`;
 }
 
-/** Opens a `CONNECT` tunnel to `target` through `proxy`. */
-function tunnel(proxy: ProxyOptions, target: TlsProbeTarget, signal: AbortSignal): Promise<Socket> {
+/** Opens a `CONNECT` tunnel to `target` through `proxy`; under `egress` the proxy's address is checked. */
+function tunnel(
+  proxy: ProxyOptions,
+  target: TlsProbeTarget,
+  signal: AbortSignal,
+  egress: EgressPolicy | undefined,
+): Promise<Socket> {
   return new Promise((resolve, reject) => {
     const proxyUrl = new URL(proxy.url);
     const secure = proxyUrl.protocol === 'https:';
+    const proxyHost = proxyUrl.hostname.startsWith('[') ? proxyUrl.hostname.slice(1, -1) : proxyUrl.hostname;
+    if (egress !== undefined) {
+      try {
+        checkLiteralHost(proxyHost, egress);
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
+    }
     const request = (secure ? httpsRequest : httpRequest)({
-      host: proxyUrl.hostname.startsWith('[') ? proxyUrl.hostname.slice(1, -1) : proxyUrl.hostname,
+      host: proxyHost,
+      ...(egress !== undefined ? { lookup: checkedLookup(egress) } : {}),
       port: proxyUrl.port.length > 0 ? Number(proxyUrl.port) : secure ? 443 : 80,
       method: 'CONNECT',
       path: authority(target),
@@ -206,10 +234,10 @@ export function isCertificateVerifyError(error: unknown): error is Error & { rea
  * insists on one may refuse the handshake; that surfaces as an ordinary error.
  *
  * @param target the host and port to reach
- * @param options the proxy to tunnel through, trust anchors, and a timeout
+ * @param options the proxy to tunnel through, trust anchors, a timeout and the egress rule
  * @returns the connection snapshot, `peerChain` leaf first
  * @throws Error when the endpoint (or the proxy) cannot be reached, the chain does not verify, or
- * the handshake fails
+ * the handshake fails; WirebenchError `egress-refused` for an address the egress rule refuses
  */
 export async function probeTlsChain(target: TlsProbeTarget, options: ProbeTlsChainOptions = {}): Promise<SslInfo> {
   const controller = new AbortController();
@@ -219,10 +247,20 @@ export async function probeTlsChain(target: TlsProbeTarget, options: ProbeTlsCha
     controller.abort(timeout);
   }, timeoutMs);
   try {
-    const socket = options.proxy !== undefined ? await tunnel(options.proxy, target, controller.signal) : undefined;
+    const { egress } = options;
+    // A literal endpoint is checked here whether or not a proxy carries it, since nothing resolves it here.
+    if (egress !== undefined) checkLiteralHost(target.host, egress);
+    const socket =
+      options.proxy !== undefined ? await tunnel(options.proxy, target, controller.signal, egress) : undefined;
     return await new Promise<SslInfo>((resolve, reject) => {
       const tls = tlsConnect({
-        ...(socket !== undefined ? { socket } : { host: target.host, port: target.port }),
+        ...(socket !== undefined
+          ? { socket }
+          : {
+              host: target.host,
+              port: target.port,
+              ...(egress !== undefined ? { lookup: checkedLookup(egress) } : {}),
+            }),
         // An IP literal is not a valid SNI name; Node warns about one and OpenSSL drops it anyway.
         ...(isIP(target.host) === 0 ? { servername: target.host } : {}),
         ...(options.ca !== undefined ? { ca: [...options.ca] } : {}),

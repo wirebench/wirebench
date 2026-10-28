@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import type { ChannelRequest, ChannelResponse, IpcChannel, IpcResult } from '@wirebench/wire/ipc';
 import type { Caller } from '../host/platform.js';
 import type { Redactor } from '../host/redactor.js';
+import { runInPathRoot } from '../path-access.js';
 import { wrapHandler } from './envelope.js';
 
 /**
@@ -10,8 +11,15 @@ import { wrapHandler } from './envelope.js';
  * Electron's `ipcMain`) then serves it. There is no shared table: nothing here holds state.
  */
 export class HandlerTable extends Map<string, (raw: unknown, caller: Caller) => Promise<IpcResult<unknown>>> {
-  /** @param redactor The host's: every error a handler throws is masked by it before it crosses. */
-  constructor(readonly redactor: Redactor) {
+  /**
+   * @param redactor The host's: every error a handler throws is masked by it before it crosses.
+   * @param options.root The host's root (`HostPlatform.paths.root`): every call runs with it, so a path the
+   *   caller names is held inside it (`path-access.ts`). Absent, as on the desktop, paths are not.
+   */
+  constructor(
+    readonly redactor: Redactor,
+    readonly options: { readonly root?: string } = {},
+  ) {
     super();
   }
 }
@@ -38,6 +46,8 @@ export function registerHandler<Req extends z.ZodType, Res extends z.ZodType>(
   // A second handler for a channel is a bug, as a second `ipcMain.handle` was: refuse it at startup.
   if (table.has(channel.name)) throw new Error(`Attempted to register a second handler for '${channel.name}'`);
   table.set(channel.name, (raw, caller) =>
-    wrapHandler(channel, (request) => handler(request, caller), table.redactor)(raw),
+    runInPathRoot(table.options.root, () =>
+      wrapHandler(channel, (request) => handler(request, caller), table.redactor)(raw),
+    ),
   );
 }

@@ -33,6 +33,7 @@ describeDb('0003_teams (§4.1)', () => {
       'sso',
       'session-logs',
       'terminal-shares',
+      'host',
     ]);
   });
 

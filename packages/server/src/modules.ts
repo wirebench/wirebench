@@ -2,6 +2,7 @@ import type { ServerModule } from './context.js';
 import { auditLogModule } from './audit-log/module.js';
 import { ciTokensModule } from './ci-tokens/module.js';
 import { hooksModule } from './hooks/module.js';
+import { hostModule } from './host/module.js';
 import { identityModule } from './identity/module.js';
 import { licensingModule } from './licensing/module.js';
 import { liveModule } from './live/module.js';
@@ -32,6 +33,9 @@ import { terminalSharesModule } from './terminal-shares/module.js';
  * role guard and `ctx.license`, and it records audit events (team session logs spec A1).
  * terminal-shares comes after live-updates: its socket route needs the `@fastify/websocket` live registers
  * (team session logs and sharing spec B1).
+ * host comes last: its socket route needs the same plugin, its hosts' live clients run live's socket loop,
+ * and it closes the sockets of a session that `sessionEnded` reports (hosted edition spec §17.3). It
+ * registers nothing while the browser client is off.
  */
 export const BUILTIN_MODULES: readonly ServerModule[] = [
   identityModule(),
@@ -46,4 +50,5 @@ export const BUILTIN_MODULES: readonly ServerModule[] = [
   ssoModule(),
   sessionLogsModule(),
   terminalSharesModule(),
+  hostModule(),
 ];

@@ -16,11 +16,18 @@ COPY packages/protocol-grpc/package.json packages/protocol-grpc/package.json
 COPY packages/protocol-ws/package.json packages/protocol-ws/package.json
 COPY packages/protocol-mcp/package.json packages/protocol-mcp/package.json
 COPY packages/protocol-graphql/package.json packages/protocol-graphql/package.json
+# The host and the wire code are bundled into dist/host/bundle.js at build time (hosted edition spec
+# §17.3); as the server's dev dependencies they, and their own dependencies, are installed here only.
+COPY packages/host/package.json packages/host/package.json
+COPY packages/wire/package.json packages/wire/package.json
+COPY packages/ssh/package.json packages/ssh/package.json
 RUN pnpm install --frozen-lockfile --filter @wirebench/server...
 
 COPY . .
 RUN pnpm --filter @wirebench/server... build
 RUN pnpm deploy --filter @wirebench/server --prod /out
+# The deploy carries the bundle but none of the sources it was built from.
+RUN test -f /out/dist/host/bundle.js && test ! -e /out/node_modules/@wirebench/host && test -z "$(find /out/dist -name '*.ts' ! -name '*.d.ts')"
 # The engine's core and protocol packages are private dev dependencies of the engine: its deployed copy
 # carries its own, as the npm package does.
 RUN node packages/engine/scripts/vendor-packages.mjs /out/node_modules/@wirebench/engine

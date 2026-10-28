@@ -167,11 +167,11 @@ describe('an MCP API run', () => {
         selectRequests(p, []).selected,
         context(p, testHost({}, { egress: { denyPrivate: false } })),
       );
-      // MCP wraps every transport failure as `mcp-http-failed`; the refusal is its reason.
+      // The refusal keeps its own code, as a send's does (spec §17.5), not MCP's `mcp-http-failed`.
       expect(result.requests[0]).toMatchObject({
         protocol: 'mcp',
         outcome: 'errored',
-        error: { code: 'mcp-http-failed', details: { reason: 'egress-refused', addressClass: 'loopback' } },
+        error: { code: 'egress-refused', details: { addressClass: 'loopback' } },
       });
     }
     expect(http.requests.length).toBe(before);

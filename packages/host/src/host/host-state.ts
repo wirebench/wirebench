@@ -24,16 +24,24 @@ export interface HostState {
     readonly ws: Map<Promise<unknown>, string>;
     readonly rest: Map<Promise<unknown>, string>;
   };
-  /** The end-to-end test's trust anchors, read once from the environment; `undefined` until read. */
+  /**
+   * The end-to-end test's trust anchors, read once from the environment; `undefined` until read. A host
+   * without machine values starts with none, so the variable is never read.
+   */
   e2eTrustAnchors: readonly string[] | undefined;
+  /** The `${#System#…}` scope: the process environment, or nothing on a host without machine values. */
+  readonly systemValues: NodeJS.ProcessEnv;
 }
 
-export function createHostState(): HostState {
+/** `machineValues: false` (a server host): no `${#System#…}` value and no e2e trust anchors from the environment. */
+export function createHostState(options: { readonly machineValues?: false } = {}): HostState {
+  const machine = options.machineValues !== false;
   return {
     redactor: new Redactor(),
     multiEnvBatches: new Map(),
     auditOutboxes: new Map(),
     openCalls: { ws: new Map(), rest: new Map() },
-    e2eTrustAnchors: undefined,
+    e2eTrustAnchors: machine ? undefined : [],
+    systemValues: machine ? process.env : {},
   };
 }

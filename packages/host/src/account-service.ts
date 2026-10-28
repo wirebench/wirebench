@@ -43,6 +43,36 @@ export interface AccountServiceDeps {
   readonly openExternal: (url: string) => Promise<void>;
   readonly defaultDeviceName?: () => string;
   readonly now?: () => Date;
+  /**
+   * A host inside a Wirebench Server (hosted edition spec §17.3): `url` is an account the embedder signs
+   * in, whose token is whatever `credential()` returns now. Nothing about it is written to
+   * `accounts.yaml` or the secret store, and it cannot be signed in to, signed out of or removed here.
+   */
+  readonly embedded?: { readonly url: string; readonly credential: () => string | undefined };
+}
+
+/** What a host inside a server answers for an account that only the embedder may change. */
+export const ACCOUNT_MANAGED_BY_SERVER = 'account-managed-by-server';
+
+/** The embedder's account between `me` calls: who the token belongs to, and the ref its token is known by. */
+interface EmbeddedAccount {
+  readonly origin: string;
+  readonly credential: () => string | undefined;
+  readonly addedAt: string;
+  userId: string;
+  email: string;
+  displayName: string;
+  /**
+   * A `sec_` ref no store holds, renewed whenever the credential changes: `LiveClients` reconnects on a
+   * new ref, as it does after a desktop sign-in.
+   */
+  tokenRef: string;
+  /** The credential the ref was made for; kept in memory only. */
+  token: string | undefined;
+}
+
+function freshTokenRef(): string {
+  return `sec_${randomBytes(13).toString('hex')}`;
 }
 
 async function writeAtomic(path: string, data: string): Promise<void> {
@@ -91,12 +121,26 @@ export class AccountService {
    * does not read "signed out" just because `accounts.yaml` had not been read yet.
    */
   readonly ready: Promise<void>;
+  /** The embedder's account (`deps.embedded`), never in {@link accounts}; `undefined` on the desktop. */
+  private readonly embedded: EmbeddedAccount | undefined;
 
   constructor(private readonly deps: AccountServiceDeps) {
     this.file = join(deps.userDataDir, ACCOUNTS_FILE);
     this.ready = new Promise<void>((resolve) => {
       this.markReady = resolve;
     });
+    if (deps.embedded !== undefined) {
+      this.embedded = {
+        origin: normalizeServerUrl(deps.embedded.url),
+        credential: deps.embedded.credential,
+        addedAt: (deps.now ?? (() => new Date()))().toISOString(),
+        userId: '',
+        email: '',
+        displayName: '',
+        tokenRef: freshTokenRef(),
+        token: deps.embedded.credential(),
+      };
+    }
   }
 
   async load(): Promise<void> {
@@ -107,14 +151,19 @@ export class AccountService {
       } catch {
         document = undefined;
       }
-      this.accounts = parseAccountsFile(document);
+      const parsed = parseAccountsFile(document);
+      // The embedder's account is never read from the file, even if one was left there.
+      const embedded = this.embedded?.origin;
+      this.accounts =
+        embedded === undefined ? parsed : { ...parsed, servers: parsed.servers.filter((s) => s.url !== embedded) };
     } finally {
       this.markReady();
     }
   }
 
   list(): readonly ServerAccount[] {
-    return this.accounts.servers;
+    if (this.embedded === undefined) return this.accounts.servers;
+    return [...this.accounts.servers, this.embeddedAccount(this.embedded)].sort((a, b) => a.url.localeCompare(b.url));
   }
 
   onChange(listener: (servers: readonly ServerAccount[]) => void): () => void {
@@ -135,7 +184,7 @@ export class AccountService {
     readonly password: string;
     readonly deviceName?: string;
   }): Promise<ServerAccount> {
-    const origin = normalizeServerUrl(input.url);
+    const origin = this.notEmbedded(normalizeServerUrl(input.url));
     const deviceName = this.deviceName(input.deviceName);
     const response = await this.deps.client.signInLocal(origin, {
       email: input.email,
@@ -156,7 +205,7 @@ export class AccountService {
     readonly password: string;
     readonly deviceName?: string;
   }): Promise<ServerAccount> {
-    const origin = normalizeServerUrl(input.url);
+    const origin = this.notEmbedded(normalizeServerUrl(input.url));
     const deviceName = this.deviceName(input.deviceName);
     const response = await this.deps.client.acceptInvitation(origin, {
       secret: input.secret,
@@ -186,6 +235,7 @@ export class AccountService {
     kind: 'oidc' | 'saml',
     input: { readonly url: string; readonly deviceName?: string },
   ): Promise<ServerAccount> {
+    this.notEmbedded(normalizeServerUrl(input.url));
     if (this.pending !== undefined || this.starting)
       throw new WirebenchError('account-sign-in-pending', 'A sign-in is already waiting for the browser');
     // Guards the window between this check and the loopback binding below, which is async: two
@@ -269,7 +319,7 @@ export class AccountService {
 
   /** Best effort on the server; the token is gone locally either way (§3.8). */
   async signOut(url: string): Promise<void> {
-    const origin = normalizeServerUrl(url);
+    const origin = this.notEmbedded(normalizeServerUrl(url));
     const account = this.find(origin);
     if (account === undefined) throw new WirebenchError('account-unknown-server', `No account for ${origin}`);
     const token = await this.deps.secrets.get(account.tokenRef);
@@ -281,7 +331,7 @@ export class AccountService {
   }
 
   async remove(url: string): Promise<void> {
-    const origin = normalizeServerUrl(url);
+    const origin = this.notEmbedded(normalizeServerUrl(url));
     const account = this.find(origin);
     if (account === undefined) return;
     if (account.signedOut !== true) await this.signOut(origin);
@@ -291,7 +341,9 @@ export class AccountService {
 
   /** The device token for a server, for the modules that call it; `undefined` when signed out. */
   async tokenFor(url: string): Promise<string | undefined> {
-    const account = this.find(normalizeServerUrl(url));
+    const origin = normalizeServerUrl(url);
+    if (origin === this.embedded?.origin) return this.embedded.credential();
+    const account = this.find(origin);
     if (account === undefined || account.signedOut === true) return undefined;
     return this.deps.secrets.get(account.tokenRef);
   }
@@ -303,6 +355,7 @@ export class AccountService {
    * it (see {@link persist}), so this never becomes an unhandled rejection.
    */
   markSignedOut(url: string): void {
+    // The embedder ends the sessions it signed in; a refused call changes nothing here.
     const account = this.find(normalizeServerUrl(url));
     if (account === undefined || account.signedOut === true) return;
     this.replace(account.url, { ...account, signedOut: true }).catch(() => undefined);
@@ -315,7 +368,12 @@ export class AccountService {
    * train does not lose its session. Never retried: one call, one answer.
    */
   async refresh(url: string): Promise<void> {
-    const account = this.find(normalizeServerUrl(url));
+    const origin = normalizeServerUrl(url);
+    if (origin === this.embedded?.origin) {
+      await this.refreshEmbedded(this.embedded);
+      return;
+    }
+    const account = this.find(origin);
     if (account === undefined || account.signedOut === true) return;
     try {
       const token = await this.deps.secrets.get(account.tokenRef);
@@ -340,9 +398,75 @@ export class AccountService {
 
   /** {@link refresh} for every signed-in account, in parallel; called once after {@link load}. */
   async refreshAll(): Promise<void> {
-    await Promise.all(
-      this.accounts.servers.filter((server) => server.signedOut !== true).map((server) => this.refresh(server.url)),
-    );
+    await Promise.all([
+      ...this.accounts.servers.filter((server) => server.signedOut !== true).map((server) => this.refresh(server.url)),
+      ...(this.embedded !== undefined ? [this.refreshEmbedded(this.embedded)] : []),
+    ]);
+  }
+
+  /**
+   * The embedder's account as the rest of the host sees it: signed out while there is no credential. Its
+   * device is the browser the embedder's session belongs to.
+   */
+  private embeddedAccount(embedded: EmbeddedAccount): ServerAccount {
+    return {
+      url: embedded.origin,
+      userId: embedded.userId,
+      email: embedded.email,
+      displayName: embedded.displayName,
+      deviceName: 'Web browser',
+      tokenRef: embedded.tokenRef,
+      ...(embedded.credential() === undefined ? { signedOut: true as const } : {}),
+      addedAt: embedded.addedAt,
+    };
+  }
+
+  /**
+   * Takes in the embedder's current credential: a new one gets a new ref, so the live client reconnects
+   * with it, and `me` names whose it is. A refusal changes nothing: the embedder ends its sessions itself.
+   */
+  private async refreshEmbedded(embedded: EmbeddedAccount): Promise<void> {
+    const token = embedded.credential();
+    let changed = false;
+    if (token !== embedded.token) {
+      embedded.token = token;
+      embedded.tokenRef = freshTokenRef();
+      changed = true;
+    }
+    if (token !== undefined) {
+      try {
+        const me = await this.deps.client.me(embedded.origin, token);
+        if (
+          me.user.id !== embedded.userId ||
+          me.user.email !== embedded.email ||
+          me.user.displayName !== embedded.displayName
+        ) {
+          embedded.userId = me.user.id;
+          embedded.email = me.user.email;
+          embedded.displayName = me.user.displayName;
+          changed = true;
+        }
+      } catch {
+        // Offline or refused: what the embedder says about its session is what counts.
+      }
+    }
+    if (changed) this.notify();
+  }
+
+  /** `origin`, unless it is the embedder's account, which only the embedder may sign in or out. */
+  private notEmbedded(origin: string): string {
+    if (origin === this.embedded?.origin) {
+      throw new WirebenchError(
+        ACCOUNT_MANAGED_BY_SERVER,
+        'This server signs you in itself; sign in or out from its own page, not from here',
+      );
+    }
+    return origin;
+  }
+
+  private notify(): void {
+    const servers = this.list();
+    for (const listener of this.listeners) listener(servers);
   }
 
   private deviceName(given: string | undefined): string {
@@ -383,7 +507,7 @@ export class AccountService {
     // awaited this call sees the rejection, and the next successful write persists the state
     // memory already holds — nothing here is ever logged, this snapshot carries no token.
     this.accounts = next;
-    for (const listener of this.listeners) listener(next.servers);
+    this.notify();
     // Chained on the previous write (not raced against it): two persist() calls in flight — an
     // un-awaited markSignedOut followed by remove/signOut, or refreshAll's parallel refreshes —
     // must land on disk in call order, or an older snapshot's rename could finish last and

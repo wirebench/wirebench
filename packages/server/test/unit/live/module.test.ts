@@ -22,6 +22,7 @@ describe('live-updates module wiring (§5.1)', () => {
       'sso',
       'session-logs',
       'terminal-shares',
+      'host',
     ]);
   });
 

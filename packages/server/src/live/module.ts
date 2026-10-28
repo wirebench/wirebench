@@ -19,7 +19,18 @@ import { workspaceIdsOfTeam } from '../teams/repo.js';
 import { effectiveRole } from '../teams/roles.js';
 import { liveOriginRefused } from './errors.js';
 import { LiveHub, type LiveHubDeps } from './hub.js';
-import { runLiveSocket, type SocketLoopDeps } from './socket.js';
+import { runLiveSocket, type LiveConnection, type SocketLoopDeps } from './socket.js';
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    /**
+     * Runs the live socket loop on a connection that did not come through `/live`: the server host's
+     * in-process live client (hosted edition spec §17.3). Auth, subscriptions and the hub's fan-out are
+     * the same as for any socket. Decorated by the live module, so only modules after it see it.
+     */
+    liveConnection?: (connection: LiveConnection) => void;
+  }
+}
 
 export interface LiveOptions {
   /** Injected clock, shared with identity's in tests: token expiry and each session's max-age deadline. */
@@ -136,6 +147,9 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
         setTimer,
         log: ctx.log,
       };
+      app.decorate('liveConnection', (connection: LiveConnection) => {
+        runLiveSocket(connection, loop);
+      });
       // A plain GET (a proxy that strips `Upgrade`) is answered 404 by the plugin (§3.5).
       app.get(ROUTE, { websocket: true, onRequest: originCheck(ctx.config.publicUrl) }, (socket) => {
         runLiveSocket(socket, loop);

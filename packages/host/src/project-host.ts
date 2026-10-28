@@ -54,7 +54,7 @@ import {
   withSystemValuesReported,
   workspaceForProject,
 } from '@wirebench/engine';
-import type { ProtocolRegistry } from '@wirebench/engine';
+import type { EgressPolicy, ProtocolRegistry } from '@wirebench/engine';
 import type {
   CurrentValues,
   Endpoint,
@@ -127,6 +127,8 @@ const PROJECT_WRITER = 'wirebench';
 
 /** Events the service raises; the IPC layer forwards them to the renderer. */
 export interface ProjectHostHooks {
+  /** The host's egress rule (`HostPlatform.network`): a gRPC rediscovery is held to it. Absent, none. */
+  readonly egress?: EgressPolicy;
   /** After any mutation, save, open, close or reload. `null` means no project is open. */
   readonly onChanged?: (project: ProjectWire | null) => void;
   /** Files under the project folder changed outside the app. */
@@ -158,7 +160,7 @@ export interface ProjectHostHooks {
    * anchors a token fetch reads. Required: a host without it would record into a redactor that
    * History, the IPC error envelope and the HTTP log never see.
    */
-  readonly hostState: Pick<HostState, 'redactor' | 'e2eTrustAnchors'>;
+  readonly hostState: Pick<HostState, 'redactor' | 'e2eTrustAnchors' | 'systemValues'>;
 }
 
 /** What {@link ProjectHost.openProject} did with an unsaved-changes record it was handed. */
@@ -233,7 +235,7 @@ export class ProjectHost {
   private secretSources: (() => SecretSourcesSnapshot | undefined) | undefined;
 
   /** What this host records secrets into and reads the e2e trust anchors from. */
-  readonly hostState: Pick<HostState, 'redactor' | 'e2eTrustAnchors'>;
+  readonly hostState: Pick<HostState, 'redactor' | 'e2eTrustAnchors' | 'systemValues'>;
 
   constructor(
     readonly engine: EngineService,
@@ -390,6 +392,8 @@ export class ProjectHost {
         readonly globals: PropertyMap;
         readonly current?: CurrentValues;
         readonly registry?: ProtocolRegistry;
+        /** The `${#System#…}` scope: the process environment, or nothing on a host without machine values. */
+        readonly system?: Readonly<Record<string, string | undefined>>;
       }
     | undefined {
     if (this.open === undefined || !this.knowsEnvironment(this.open.project, envId)) {
@@ -408,6 +412,7 @@ export class ProjectHost {
       globals: this.enabledGlobals(),
       ...(current !== undefined ? { current } : {}),
       ...this.registryOption(),
+      system: this.hostState.systemValues,
     };
   }
 
@@ -460,7 +465,7 @@ export class ProjectHost {
   /**
    * The property scopes a send (or a preflight) expands against: the open project's own
    * properties, the active environment's (or `envId`'s) overrides, the user's globals and the
-   * process environment. With no project open only the global and system scopes are populated,
+   * process environment (none on a host without machine values). With no project open only the global and system scopes are populated,
    * so an ad-hoc send still expands `${#Global#…}`.
    */
   scopesFor(envId?: string): PropertyScopes {
@@ -477,7 +482,7 @@ export class ProjectHost {
     const globals = this.enabledGlobals();
     const current = this.currentValues?.();
     if (this.open === undefined) {
-      return { project: {}, global: overlayCurrent(globals, current?.global), system: process.env };
+      return { project: {}, global: overlayCurrent(globals, current?.global), system: this.hostState.systemValues };
     }
     const context = this.workspaceContextFor(envId);
     const laid = withCurrentValues(
@@ -496,10 +501,15 @@ export class ProjectHost {
         workspace: laid.workspace ?? context.workspace,
         project: laid.project,
         globals: laid.globals,
-        system: process.env,
+        system: this.hostState.systemValues,
       });
     }
-    return resolveScopes(laid.project, envId ?? this.open.project.activeEnvironmentId, laid.globals, process.env);
+    return resolveScopes(
+      laid.project,
+      envId ?? this.open.project.activeEnvironmentId,
+      laid.globals,
+      this.hostState.systemValues,
+    );
   }
 
   /** The enabled global properties, the `${#Global#…}` scope every send of this project reads. */

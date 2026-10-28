@@ -15,7 +15,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { nodeFs, writeFileAtomic } from '@wirebench/engine';
+import { nodeFs, WirebenchError, writeFileAtomic } from '@wirebench/engine';
 import type { CommandApprovalRequest } from '@wirebench/engine';
 import { z } from 'zod';
 import {
@@ -130,6 +130,19 @@ export interface McpApprovalsOptions {
   readonly timeoutMs?: number;
   readonly newId?: () => string;
   readonly now?: () => Date;
+  /**
+   * `false` on a host that may not start processes on its machine (a server host, hosted edition spec
+   * §3.10): every stdio command is refused with `host-capability-missing` before anything is asked or
+   * run, and nothing is approved. Absent, commands are approved as usual.
+   */
+  readonly processes?: false;
+}
+
+/** What a host without processes answers for every stdio command. */
+function processesMissing(): WirebenchError {
+  return new WirebenchError('host-capability-missing', 'This host does not run MCP servers as local processes', {
+    details: { capability: 'processes' },
+  });
 }
 
 /** The approval gate: the store, the prompts waiting on their answer, and the approvers sends are lent. */
@@ -139,10 +152,12 @@ export class McpApprovals {
   constructor(private readonly options: McpApprovalsOptions) {}
 
   list(): Promise<McpApprovalWire[]> {
+    if (this.options.processes === false) return Promise.resolve([]);
     return this.options.store.list();
   }
 
   revoke(fingerprint: string): Promise<McpApprovalWire[]> {
+    if (this.options.processes === false) return Promise.resolve([]);
     return this.options.store.revoke(fingerprint);
   }
 
@@ -157,6 +172,7 @@ export class McpApprovals {
    * whole run and its answer kept in the memo.
    */
   approver(window?: McpPromptWindow, run?: McpRunApprovals): CommandApprover {
+    if (this.options.processes === false) return () => Promise.reject(processesMissing());
     return async (request) => {
       if (await this.options.store.has(request.fingerprint)) return true;
       if (run === undefined) return this.ask(window, request);

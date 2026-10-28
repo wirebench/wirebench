@@ -22,6 +22,7 @@ import {
   type RequestChannelDeps,
   type RequestChannelProject,
 } from '../../ipc/request.js';
+import { currentPathRoot, resolveInside } from '../../path-access.js';
 import { isInsideReal, realpathOfPrefix } from '../../path-containment.js';
 import { containsRedaction } from '../../redact.js';
 import { AD_HOC_ID, soapOverrideOf } from '../../send/draft.js';
@@ -44,11 +45,25 @@ import { registerXpathChannels } from './channels/xpath.js';
  * relative path (or an absolute one merely typed into the property) must stay inside the
  * project.
  */
-async function resolveDumpPath(
+export async function resolveDumpPath(
   target: { path: string; projectDir: string },
   picks: DumpFilePicks | undefined,
 ): Promise<{ path: string } | { problem: ExchangeSummary['problems'][number] }> {
   const resolved = isAbsolute(target.path) ? target.path : resolvePath(target.projectDir, target.path);
+  // A host with a root writes nowhere outside it, whatever was picked.
+  const root = currentPathRoot();
+  if (root !== undefined) {
+    try {
+      await resolveInside(root, resolved);
+    } catch {
+      return {
+        problem: {
+          code: 'host-path-outside-workspace',
+          message: `The dump file "${target.path}" resolves outside the workspace`,
+        },
+      };
+    }
+  }
   if (picks?.hasWrite(resolved) === true) {
     return { path: resolved };
   }

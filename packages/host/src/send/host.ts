@@ -23,6 +23,7 @@ import type {
   ClientIdentity,
   CommandApprovalRequest,
   CookieJarHost,
+  EgressPolicy,
   GetSecret,
   HttpExchange,
   IssuedTokenSource,
@@ -53,8 +54,11 @@ import type { HistoryEntryWire, LogEntryWire } from '@wirebench/wire/wire-types'
 import type { FailedExchangeWire } from '@wirebench/wire/wire-base';
 
 export interface DesktopSendDeps {
-  /** This host's secret redactor and its e2e trust anchors: what a send records into and reads. */
-  readonly hostState: Pick<HostState, 'redactor' | 'e2eTrustAnchors'>;
+  /**
+   * This host's secret redactor, its e2e trust anchors and its `${#System#…}` values: what a send records
+   * into and reads.
+   */
+  readonly hostState: Pick<HostState, 'redactor' | 'e2eTrustAnchors' | 'systemValues'>;
   readonly project: RequestChannelProject;
   /** The exchange cache and the contract checker. */
   readonly service: EngineService;
@@ -63,8 +67,11 @@ export interface DesktopSendDeps {
   readonly issuedTokens?: Pick<IssuedTokensService, 'source'>;
   /** Resolves one keychain reference: an OAuth2 client secret or remembered refresh token. */
   readonly getSecret?: (ref: string) => Promise<string | undefined>;
-  /** The getter one project's `${secret:name}` tokens resolve through (`projectSecretGetter`). */
-  readonly secretsFor?: (projectId: string | undefined) => GetSecret;
+  /**
+   * The getter one project's `${secret:name}` tokens resolve through (`projectSecretGetter`). `target`
+   * is the host name the send goes to, when known, which a resolution is reported with.
+   */
+  readonly secretsFor?: (projectId: string | undefined, target?: string) => GetSecret;
   readonly preferences?: () => Preferences;
   /** The newest History entry of a request, which a callback's URL expression reads. */
   readonly newestHistory?: (projectId: string, requestId: string) => HistoryEntryWire | undefined;
@@ -79,6 +86,8 @@ export interface DesktopSendDeps {
    * send names no approver of its own. Absent, every stdio send is refused: the engine's gate holds.
    */
   readonly approveCommand?: (request: CommandApprovalRequest) => Promise<boolean>;
+  /** The host's egress rule (`HostPlatform.network`): every connection a send opens is held to it. Absent, none. */
+  readonly egress?: EgressPolicy;
 }
 
 export interface DesktopSend {
@@ -95,6 +104,8 @@ export interface DesktopSend {
   handshakeLogged?: boolean;
   /** This send's own MCP approver: the window that sent it, or a run's memo. Wins over the deps'. */
   readonly approveCommand?: (request: CommandApprovalRequest) => Promise<boolean>;
+  /** The host name the request goes to, when it is known before the send resolves; a secret resolved for it names it. */
+  readonly target?: string;
 }
 
 /**
@@ -113,8 +124,9 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
   const issued = issuedTokensFor(deps, send);
   const approveCommand = send.approveCommand ?? deps.approveCommand;
   return {
-    getSecret: desktopSecrets(deps, projectId),
+    getSecret: desktopSecrets(deps, projectId, send.target),
     onSecretValue: deps.hostState.redactor.recordSecretValue,
+    ...(deps.egress !== undefined ? { egress: deps.egress } : {}),
     proxyFor: async (url) => {
       const proxy = projectId === undefined ? undefined : await project.proxyFor?.(projectId, url);
       return proxy === undefined ? undefined : withoutUndefined<ProxyOptions>(proxy);
@@ -174,8 +186,10 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
 export function desktopSecrets(
   deps: Pick<DesktopSendDeps, 'secretsFor' | 'getSecret'>,
   projectId: string | undefined,
+  target?: string,
 ): GetSecret {
-  const getSecret = deps.secretsFor?.(projectId) ?? ((ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined));
+  const getSecret =
+    deps.secretsFor?.(projectId, target) ?? ((ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined));
   return (ref) => (ref.startsWith(SIGNING_PSEUDO_REF_PREFIX) ? Promise.resolve(undefined) : getSecret(ref));
 }
 

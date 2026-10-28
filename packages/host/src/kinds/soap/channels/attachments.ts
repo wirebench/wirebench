@@ -8,6 +8,7 @@
  * double-click-to-open and an Add-attachments picker.
  */
 
+import { machineEnv } from '../../../host/machine-env.js';
 import type { Caller, HostPlatform } from '../../../host/platform.js';
 import { requireCapability } from '../../../host/capability.js';
 import { mkdir, rm } from 'node:fs/promises';
@@ -38,7 +39,7 @@ export interface AttachmentChannelDeps {
   /** Where "open" writes its temporary copies; `app.getPath('userData')` in the app. */
   readonly userDataDir: string;
   /** The native Save-as and Open-file dialogs, and the shell "open" hands a file to. */
-  readonly platform: Pick<HostPlatform, 'dialogs' | 'shell'>;
+  readonly platform: Pick<HostPlatform, 'dialogs' | 'shell' | 'machineValues'>;
 }
 
 /**
@@ -88,11 +89,11 @@ export function extensionForContentType(contentType: string): string {
 }
 
 /** e2e cannot drive native dialogs, so these env vars short-circuit them, as `fs.*` does. */
-function e2eSavePathOverride(): string | undefined {
-  return process.env['WIREBENCH_E2E_SAVE_PATH'];
+function e2eSavePathOverride(platform: Pick<HostPlatform, 'machineValues'>): string | undefined {
+  return machineEnv(platform)['WIREBENCH_E2E_SAVE_PATH'];
 }
-function e2eOpenPathOverride(): string | undefined {
-  return process.env['WIREBENCH_E2E_OPEN_PATH'];
+function e2eOpenPathOverride(platform: Pick<HostPlatform, 'machineValues'>): string | undefined {
+  return machineEnv(platform)['WIREBENCH_E2E_OPEN_PATH'];
 }
 
 /**
@@ -130,7 +131,7 @@ export function registerAttachmentChannels(table: HandlerTable, deps: Attachment
     // The target is never the renderer's to choose (see the channel's request schema): these
     // are bytes a remote server sent, and letting the page name the file would let it write
     // them anywhere the user can write. It comes from the native dialog, or the e2e override.
-    let targetPath = e2eSavePathOverride();
+    let targetPath = e2eSavePathOverride(deps.platform);
     if (targetPath === undefined) {
       const result = await requireCapability(deps.platform, 'dialogs').saveFile(sender, {
         title: 'Save attachment as…',
@@ -174,7 +175,7 @@ export function registerAttachmentChannels(table: HandlerTable, deps: Attachment
   });
 
   registerHandler(table, channels.attachments.pickFiles, async (_request, sender) => {
-    const override = e2eOpenPathOverride();
+    const override = e2eOpenPathOverride(deps.platform);
     // Comma-separated so an e2e spec can exercise a multi-file add. The override goes through
     // `rememberRead` like a real pick does, so e2e exercises the same containment path as a user.
     const paths =

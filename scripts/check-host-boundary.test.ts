@@ -7,6 +7,9 @@ import { findHostBoundaryViolations } from './check-host-boundary.ts';
 
 const violationsOf = (root: string) => findHostBoundaryViolations(root).violations;
 
+/** The desktop subpath, spelt in two halves so this file is no import of it to the gate it tests. */
+const DESKTOP = ['@wirebench/host', 'desktop'].join('/');
+
 const roots: string[] = [];
 
 /** A fixture repo with `files` (paths relative to `packages/host/src`). */
@@ -15,6 +18,17 @@ function fixture(files: Record<string, string>): string {
   roots.push(root);
   for (const [file, text] of Object.entries(files)) {
     const path = join(root, 'packages/host/src', file);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, text, 'utf8');
+  }
+  return root;
+}
+
+/** A fixture repo with `files` at repo-relative paths, beside an (empty) host directory. */
+function repoFixture(files: Record<string, string>): string {
+  const root = fixture({ 'index.ts': '' });
+  for (const [file, text] of Object.entries(files)) {
+    const path = join(root, file);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, text, 'utf8');
   }
@@ -130,6 +144,41 @@ describe('findHostBoundaryViolations', () => {
       ['packages/host/src/c.ts', 'electron-import'],
       ['packages/host/src/d.ts', 'electron-import'],
     ]);
+  });
+
+  it('reports an import of @wirebench/host/desktop outside the desktop, in every spelling', () => {
+    const root = repoFixture({
+      'packages/server/src/host/a.ts': `import { runAsCaller } from '${DESKTOP}';\n`,
+      'packages/server/src/host/b.ts': `export { emitEvent } from '${DESKTOP}';\n`,
+      'packages/agent/src/c.mts': `const desktop = await import('${DESKTOP}');\n`,
+      'scripts/d.cjs': `const desktop = require('${DESKTOP}');\n`,
+      'packages/host/src/e.ts': `import type { AppMenu } from '${DESKTOP}';\n`,
+    });
+    expect(violationsOf(root).map((v) => [v.file, v.line, v.rule])).toEqual([
+      ['packages/agent/src/c.mts', 1, 'desktop-export'],
+      ['packages/host/src/e.ts', 1, 'desktop-export'],
+      ['packages/server/src/host/a.ts', 1, 'desktop-export'],
+      ['packages/server/src/host/b.ts', 1, 'desktop-export'],
+      ['scripts/d.cjs', 1, 'desktop-export'],
+    ]);
+  });
+
+  it('lets the desktop import it, and skips comments, the package root and installed or built copies', () => {
+    const root = repoFixture({
+      'apps/desktop/src/main/x.ts': `import { runAsCaller } from '${DESKTOP}';\n`,
+      'apps/desktop/test/y.ts': `import { emitEvent } from '${DESKTOP}';\n`,
+      'packages/server/src/a.ts': [
+        "import { createHost, serveCall } from '@wirebench/host';",
+        ` * Never import { runAsCaller } from '${DESKTOP}' here.`,
+        `// import { runAsCaller } from '${DESKTOP}';`,
+        '',
+      ].join('\n'),
+      'packages/server/node_modules/x/index.js': `require('${DESKTOP}');\n`,
+      'packages/server/dist/host/bundle.js': `import '${DESKTOP}';\n`,
+      'apps/web/.astro/z.ts': `import '${DESKTOP}';\n`,
+      'apps/desktopish/src/q.ts': `import '${DESKTOP}';\n`,
+    });
+    expect(violationsOf(root).map((v) => v.file)).toEqual(['apps/desktopish/src/q.ts']);
   });
 
   it('reports a relative import that leaves the package, static, dynamic or JSON', () => {

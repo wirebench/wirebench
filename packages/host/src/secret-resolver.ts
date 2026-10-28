@@ -125,3 +125,23 @@ export function isSecretTokenRef(ref: Pick<UnresolvedRef, 'scope' | 'name' | 'co
     ref.scope === 'Secret' && ref.code === 'missing' && ref.name !== undefined && SECRET_NAME_PATTERN.test(ref.name)
   );
 }
+
+/** The name a stored value is reported by: a `${secret:name}` token's name, else its label, else its ref. */
+export function secretNameOf(label: string | undefined, ref: string): string {
+  const token = label === undefined ? undefined : /^wirebench-secret:[^:]*:(.+)$/.exec(label)?.[1];
+  return token ?? label ?? ref;
+}
+
+/**
+ * `get`, telling `report` each ref it resolves to a value, before handing the value on: a
+ * `${secret:name}` token or a plain ref (an OAuth client secret, a proxy password, a definition's
+ * credentials). `report` names it for the embedder's audit (`HostOptions.onSecret`); a ref with no
+ * value is not reported, and the value never is.
+ */
+export function reportedSecretGetter(get: GetSecret, report: (ref: string) => void | Promise<void>): GetSecret {
+  return async (ref) => {
+    const value = await get(ref);
+    if (value !== undefined) await report(ref);
+    return value;
+  };
+}

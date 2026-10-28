@@ -17,13 +17,17 @@ import {
   WirebenchError,
   enabledProperties,
   overlayCurrent,
+  parseSecretPseudoRef,
   type ConnectOptions,
   type ConnectedWebSocket,
   type GetSecret,
+  type HttpExchange,
+  type HttpRequest,
 } from '@wirebench/engine';
 import { isExternalUrlAllowed } from '../security.js';
 import { createNativeDialogs } from '../native-dialogs.js';
 import { createHostState } from './host-state.js';
+import { machineEnv } from './machine-env.js';
 import { DialogPicks } from '../dialog-picks.js';
 import { EngineService } from '../engine-service.js';
 import { GlobalProperties } from '../global-properties.js';
@@ -41,7 +45,7 @@ import { WorkspaceState } from '../workspace-state.js';
 import { routeWorkspaces, scoped, WindowScopes } from '../window-scope.js';
 import { platformSecretsBackend, SecretStore, ShowSecretsFlag } from '../secrets.js';
 import { SecretSourcesService } from '../secret-sources-service.js';
-import { projectSecretGetter, secretStoreLabel } from '../secret-resolver.js';
+import { projectSecretGetter, reportedSecretGetter, secretNameOf, secretStoreLabel } from '../secret-resolver.js';
 import { AppLock, lockedGetter } from '../app-lock.js';
 import type { DeviceKeys } from '../device-keys.js';
 import { SshKeysService } from '../ssh-keys.js';
@@ -218,6 +222,37 @@ export interface HostOptions {
   }) => Pick<UpdateController, 'check' | 'checkOnLaunch'>;
   /** The process's device keys (#428), and whether the app lock can ask through their helper here. */
   readonly deviceKeys?: { readonly keys: DeviceKeys; readonly appLockSupported: boolean };
+  /**
+   * A host that runs inside a Wirebench Server (hosted edition spec §17.3): its calls to that server go
+   * through `send` and its live socket through `connectLive`, in process, rather than over the network.
+   * The account for `url` is the embedder's: signed in with whatever `credential()` returns, never stored,
+   * and not one the host can sign in to, sign out of or remove. Absent, the host reaches servers over the
+   * network.
+   */
+  readonly server?: {
+    /** The server's public URL: the host's one account. */
+    readonly url: string;
+    readonly send: (request: HttpRequest) => Promise<HttpExchange>;
+    readonly connectLive: (wsUrl: string) => ConnectedWebSocket;
+    /** The account's device token now, or `undefined` while the embedder has none; read on every use. */
+    readonly credential: () => string | undefined;
+  };
+  /**
+   * Told of every value the host stores (`written`: the Secrets page, a cURL import, a refresh token,
+   * team secrets, a sign-in) and every ref a send, an import or a call from main resolves (`resolved`,
+   * with the request's host name when known), by name and never by value, for the embedder's audit
+   * (spec §17.4). The host's own reads of its sign-in tokens are not resolutions. A listener that throws
+   * changes nothing.
+   */
+  readonly onSecret?: (event: SecretEvent) => void;
+}
+
+/** What {@link HostOptions.onSecret} hears: a secret's name, never its value. */
+export interface SecretEvent {
+  readonly kind: 'written' | 'resolved';
+  readonly name: string;
+  /** The host name the send that resolved it goes to; only on `resolved`, and only when known. */
+  readonly target?: string;
 }
 
 /**
@@ -292,6 +327,30 @@ function auditSignedInFor(
   );
 }
 
+/** `server`'s transport, refusing any URL whose origin is not `server.url`'s. */
+function ownServerOnly(
+  server: NonNullable<HostOptions['server']>,
+): Pick<NonNullable<HostOptions['server']>, 'send' | 'connectLive'> {
+  const origin = normalizeServerUrl(server.url);
+  const refuse = (url: string): never => {
+    // The origin alone: a path or query is no business of the message.
+    throw new WirebenchError(
+      'server-url-invalid',
+      `This host reaches ${origin} only, not ${sameOrigin(url) ?? 'that address'}`,
+    );
+  };
+  return {
+    send: async (request) => {
+      if (sameOrigin(request.url) !== origin) refuse(request.url);
+      return await server.send(request);
+    },
+    connectLive: (wsUrl) => {
+      if (sameOrigin(wsUrl.replace(/^ws/, 'http')) !== origin) refuse(wsUrl);
+      return server.connectLive(wsUrl);
+    },
+  };
+}
+
 /**
  * Builds a host over `platform`, with what `embedder` gives it (see {@link HostOptions}). It reads the
  * preferences before registering (the feature and area switches decide which channels exist), so it
@@ -299,13 +358,64 @@ function auditSignedInFor(
  */
 export async function createHost(platform: HostPlatform, embedder: HostOptions = {}): Promise<Host> {
   /** What this host holds in memory: the one `createHostState()` result, handed to the pieces below. */
-  const hostState = createHostState();
+  const hostState = createHostState(platform.machineValues === false ? { machineValues: false } : {});
+  /** The environment overrides are read from: none on a host without machine values. */
+  const env = machineEnv(platform);
+  /** The platform's egress rule, as an option every connector below spreads in; nothing without one. */
+  const egress = platform.network?.egress;
+  const egressOption = egress !== undefined ? { egress } : {};
+  /** Whether this host keeps workspaces and other files of the machine's own (`files`). */
+  const hasFiles = platform.capabilities.has('files');
+  /** Whether secret sources (spec D6: commands and files on the machine) resolve here. */
+  const hasSecretSources = hasFiles && platform.capabilities.has('secret-sources');
+  /**
+   * Whether this host may hold a team-secrets machine key (decision 5: the server's never does). Without
+   * it no workspace is handed to team secrets, so nothing makes, requests or uses a key, and only the
+   * status channel is served.
+   */
+  const hasTeamSecrets = platform.capabilities.has('team-secrets');
+  /** Tells the embedder of a secret by name; its failure is never the caller's. */
+  const reportSecret = (event: SecretEvent): void => {
+    try {
+      embedder.onSecret?.(event);
+    } catch (error) {
+      console.warn('[secrets] the secret listener failed', error instanceof Error ? error.message : String(error));
+    }
+  };
   const nativeDialogs = createNativeDialogs(platform);
   /** The platform's shell, asked for at use: a host without one refuses only what needs it. */
   const hostShell = (): NonNullable<HostPlatform['shell']> => requireCapability(platform, 'shell');
 
-  /** The keychain-backed secret store; never exposes values to the renderer (no `secrets.get`). */
-  const secretStore = new SecretStore(platform.paths.userData(), platformSecretsBackend(platform.secrets));
+  /**
+   * The keychain-backed secret store; never exposes values to the renderer (no `secrets.get`). Every value
+   * stored in it, by whichever path (the Secrets page, a cURL import, a refresh token, team secrets, a
+   * sign-in), is reported to the embedder by name.
+   */
+  const secretStore = new SecretStore(
+    platform.paths.userData(),
+    platformSecretsBackend(platform.secrets),
+    console.warn,
+    embedder.onSecret === undefined
+      ? undefined
+      : ({ ref, label }) => {
+          reportSecret({ kind: 'written', name: secretNameOf(label, ref) });
+        },
+  );
+  /** The name a resolved ref is reported by: its `${secret:name}` name, else its store label, else the ref. */
+  const resolvedName = async (ref: string): Promise<string> =>
+    parseSecretPseudoRef(ref) ??
+    secretNameOf((await secretStore.list()).find((entry) => entry.ref === ref)?.label, ref);
+  /** `get`, reporting what it resolves (`HostOptions.onSecret`); `get` itself without a listener. */
+  const reporting = (get: GetSecret, target?: string): GetSecret =>
+    embedder.onSecret === undefined
+      ? get
+      : reportedSecretGetter(get, async (ref) => {
+          reportSecret({
+            kind: 'resolved',
+            name: await resolvedName(ref),
+            ...(target !== undefined ? { target } : {}),
+          });
+        });
   /** Session-only "show secrets" toggle, consulted by `redact.ts` via `request.send`. */
   const showSecretsFlag = new ShowSecretsFlag();
 
@@ -314,7 +424,10 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
   /** The user's application preferences, shared by every project and every window. */
   const preferencesService = new PreferencesService(platform.paths.userData(), {
     // Managed machines: an administrator's policy file locks the settings it names (see `policy.ts`).
-    policyFile: policyFilePath({ platform: process.platform, env: process.env, isPackaged: platform.app.packaged() }),
+    // A host without machine values looks for no policy file: the process's machine is not the user's.
+    ...(platform.machineValues === false
+      ? {}
+      : { policyFile: policyFilePath({ platform: process.platform, env, isPackaged: platform.app.packaged() }) }),
     // A default User-Agent names the release that sends it.
     appVersion: platform.app.version(),
   });
@@ -331,9 +444,9 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
    * whose workspace holds `projectId` (the caller's, for no project). With no such window, only the
    * plain store answers.
    */
-  const secretsFor = (projectId: string | undefined): GetSecret => {
+  const secretsFor = (projectId: string | undefined, target?: string): GetSecret => {
     const plain = projectSecretGetter(secretStore, projectId, hostState.redactor.recordSecretValue);
-    return async (ref) => {
+    const resolve = async (ref: string): Promise<string | undefined> => {
       const scope =
         projectId === undefined
           ? scopes.callerOrOnly()
@@ -341,8 +454,11 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
       if (scope === undefined) {
         return await plain(ref);
       }
-      return await scope.secretSources.wrap(teamSecretGetter(plain, scope.teamSecrets, projectId))(ref);
+      const team = teamSecretGetter(plain, scope.teamSecrets, projectId);
+      // A source runs a command or reads a file on the machine: a host without them never consults one.
+      return await (hasSecretSources ? scope.secretSources.wrap(team) : team)(ref);
     };
+    return reporting(resolve, target);
   };
 
   /** The calling window's workspace secrets for the SSH area (`ssh.secretNames`, `ssh.setSecret`). */
@@ -386,7 +502,10 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
    */
   const oauth2Service = new OAuth2Service({
     openExternal: openExternalChecked,
+    // Without a shell there is no browser to send the user to: those grants are refused up front.
+    browserFlows: platform.shell !== undefined,
     callbackPort: () => preferencesService.get().rest.oauth2CallbackPort,
+    ...egressOption,
   });
 
   /**
@@ -406,6 +525,8 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
       );
       return {
         ...resolved,
+        // A Fetch now reaches the token service under the host's egress rule, as a send's fetch does.
+        target: { ...resolved.target, ...egressOption },
         deps: {
           ...resolved.deps,
           onExchange: (http) => {
@@ -446,15 +567,26 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     picks: appPicks,
     getSecret: secretsFor(undefined),
     resolveSystemProxy: async (target) => await platform.proxy.resolve(target).catch(() => undefined),
+    ...egressOption,
   };
 
-  /** The Wirebench Server HTTP client, shared by every account and every server it signs into. */
+  /**
+   * The embedder's in-process transport (`HostOptions.server`), held to its one server: a call or a socket
+   * for any other origin is refused here rather than handed to a transport that would answer it as its own.
+   */
+  const inServer = embedder.server === undefined ? undefined : ownServerOnly(embedder.server);
+
+  /**
+   * The Wirebench Server HTTP client, shared by every account and every server it signs into. A host
+   * inside a server sends through the embedder's in-process `send` instead (`HostOptions.server`).
+   */
   const serverClient = new ServerClient({
     options: async (origin) => {
       const options = await mainHttpOptions(origin, mainHttpDeps);
       serverConnectOptions.set(origin, options);
       return options;
     },
+    ...(inServer !== undefined ? { send: inServer.send } : {}),
   });
 
   /** Who this installation is signed in as, per Wirebench Server (identity spec §3.8, §4.3). */
@@ -464,6 +596,9 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     secrets: secretStore,
     openExternal: openExternalChecked,
     defaultDeviceName: hostname,
+    ...(embedder.server !== undefined
+      ? { embedded: { url: embedder.server.url, credential: embedder.server.credential } }
+      : {}),
   });
 
   /**
@@ -474,10 +609,12 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
   const liveClients = new LiveClients({
     accounts: accountService,
     client: serverClient,
-    connect: (wsUrl) => {
-      const options: ConnectOptions = serverConnectOptions.get(new URL(wsUrl.replace(/^ws/, 'http')).origin) ?? {};
-      return connectWebSocket(wsUrl, options);
-    },
+    connect:
+      inServer?.connectLive ??
+      ((wsUrl) => {
+        const options: ConnectOptions = serverConnectOptions.get(new URL(wsUrl.replace(/^ws/, 'http')).origin) ?? {};
+        return connectWebSocket(wsUrl, { ...egressOption, ...options });
+      }),
   });
 
   /**
@@ -511,6 +648,9 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     network: (url) => mainHttpOptions(url, mainHttpDeps),
   });
   const protoImports = new ProtoImportService({
+    ...egressOption,
+    // Under a rule, a URL read goes through main's own client: the rule, the CA bundle and the proxy.
+    network: (url) => mainHttpOptions(url, mainHttpDeps),
     // A discovery from the Import dialog trusts what a send would: the configured CA bundle, plus the
     // user's own "trust this certificate anyway" for a development server.
     grpcTls: ({ trustInvalid }) => workspaceService.grpcDiscoveryTls(trustInvalid),
@@ -573,7 +713,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
    * choosing, so a packaged app always uses the real trash.
    */
   async function trashFolder(target: string): Promise<void> {
-    const e2eTrashDir = platform.app.packaged() ? undefined : process.env['WIREBENCH_E2E_TRASH_DIR'];
+    const e2eTrashDir = platform.app.packaged() ? undefined : env['WIREBENCH_E2E_TRASH_DIR'];
     if (e2eTrashDir === undefined) {
       await hostShell().trash(target);
       return;
@@ -598,7 +738,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
   const gitLocator = (): ReturnType<typeof findGit> =>
     findGit(
       gitLocatorOptions({
-        env: process.env,
+        env,
         isPackaged: platform.app.packaged(),
         preferences: preferencesService.get(),
       }),
@@ -615,7 +755,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
    * Resolved again below once the policy is read, before any channel registers or window opens; what is
    * built before that (the SSH service) reads the flags through a getter at connect.
    */
-  let areas: AreasRun = resolveAreas({ env: process.env });
+  let areas: AreasRun = resolveAreas({ env, capabilities: platform.capabilities });
   /** The device each serial host (#426) opens on this machine, per workspace. */
   const serialDevices = new SerialDeviceStore(join(platform.paths.userData(), SERIAL_DEVICES_FILE));
 
@@ -631,7 +771,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
 
   let features: FeaturesRun = startupFeatures({
     preferences: { features: {} },
-    env: process.env,
+    env,
     isPackaged: platform.app.packaged(),
   });
 
@@ -775,7 +915,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
    */
   const shareConnect = (wsUrl: string): ConnectedWebSocket => {
     const options: ConnectOptions = serverConnectOptions.get(new URL(wsUrl.replace(/^ws/, 'http')).origin) ?? {};
-    return connectWebSocket(wsUrl, options);
+    return connectWebSocket(wsUrl, { ...egressOption, ...options });
   };
   const terminalShareOwner = new TerminalShareOwner({
     client: serverClient,
@@ -951,6 +1091,8 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
       state: workspaceState,
       sweepJoining,
       features,
+      machineFiles: hasFiles,
+      ...egressOption,
       // One workspace, one window (design D5): the window holding it is brought forward instead.
       heldElsewhere: (workspaceId) => {
         const holder = scopes
@@ -977,8 +1119,9 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
       server: { client: serverClient, accounts: accountService, live: liveClients },
       engine: engineService,
       globals: globalProperties,
-      secrets: secretStore,
-      teamSecrets,
+      // A project's import-time credentials (a definition's password or token ref) are resolutions too.
+      secrets: { get: reporting(async (ref) => await secretStore.get(ref)) },
+      ...(hasTeamSecrets ? { teamSecrets } : {}),
       preferences: preferencesService,
       picks,
       issuedTokens: issuedTokensService.source,
@@ -1152,12 +1295,12 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
   });
   features = startupFeatures({
     preferences: startupPreferences,
-    env: process.env,
+    env,
     isPackaged: platform.app.packaged(),
     ...(plugins.host !== undefined ? { plugins: plugins.host } : {}),
   });
   // The managed policy (read by the load above) may switch an area off (#360); it beats the environment.
-  areas = resolveAreas({ policy: preferencesService.policy().areasOff, env: process.env });
+  areas = resolveAreas({ policy: preferencesService.policy().areasOff, env, capabilities: platform.capabilities });
 
   // A platform with no power events has no resume to forward, no screen lock and no idle time to lock on.
   const power = platform.power;
@@ -1188,7 +1331,9 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     channel: () => preferencesService.get().updates.channel,
   });
   // Every channel's handler goes into this one table; a transport (`bindIpc`) serves it once all are in.
-  const handlerTable = new HandlerTable(hostState.redactor);
+  // A host with a root holds every caller-named path inside it (`path-access.ts`).
+  const root = platform.paths.root?.();
+  const handlerTable = new HandlerTable(hostState.redactor, root !== undefined ? { root } : {});
   registerKerberosChannels(handlerTable);
   registerAppChannels(
     handlerTable,
@@ -1232,8 +1377,10 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     workspaceService.hostFor(projectId).proposeConversions(ownerId),
   );
   // This machine's MCP stdio approvals (#79); a send with no window of its own asks in the focused one.
+  // A host that may not start processes refuses every stdio command before anything is asked (§3.10).
   const mcpApprovals = new McpApprovals({
     store: new McpApprovalStore(join(platform.paths.userData(), MCP_APPROVALS_FILE)),
+    ...(platform.capabilities.has('processes') ? {} : { processes: false as const }),
     defaultWindow: () => {
       const focused = embedder.windows?.focused();
       const window =
@@ -1254,7 +1401,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
         enabledProperties(state.properties, state.disabled),
         currentValues.overlaysFor(undefined).global,
       );
-      return { project: {}, global, system: process.env };
+      return { project: {}, global, system: hostState.systemValues };
     },
     showSecrets: showSecretsFlag,
     cookies: () => cookieStore.host(),
@@ -1293,6 +1440,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     },
     auditWorkspace: () => scopes.callerOrOnly()?.audit.workspaceId,
     confirmProtected: nativeDialogs.confirmProtected,
+    ...egressOption,
   };
   registerRequestChannels(handlerTable, engineService, requestDeps);
   registerMockChannels(handlerTable, mockRunner, {
@@ -1581,19 +1729,22 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
       broadcast(events.preferences.changed, { preferences });
     },
   });
-  registerGitChannels(handlerTable, {
-    preferences: preferencesService,
-    picks: appPicks,
-    dialogs: nativeDialogs,
-    // `git.detect` uses exactly `gitLocator`'s precedence (e2e override, then a marked
-    // `git.path`, then discovery) — no configured-path logic of its own, so a marked preference
-    // can never bypass the e2e "no git" override. `git.locate` keeps probing the picked file
-    // directly (its own explicit candidate) via the default `findGit`.
-    locate: gitLocator,
-    onChanged: (preferences) => {
-      broadcast(events.preferences.changed, { preferences });
-    },
-  });
+  // Git runs on the machine's own files: a host without them has no git.
+  if (hasFiles) {
+    registerGitChannels(handlerTable, {
+      preferences: preferencesService,
+      picks: appPicks,
+      dialogs: nativeDialogs,
+      // `git.detect` uses exactly `gitLocator`'s precedence (e2e override, then a marked
+      // `git.path`, then discovery) — no configured-path logic of its own, so a marked preference
+      // can never bypass the e2e "no git" override. `git.locate` keeps probing the picked file
+      // directly (its own explicit candidate) via the default `findGit`.
+      locate: gitLocator,
+      onChanged: (preferences) => {
+        broadcast(events.preferences.changed, { preferences });
+      },
+    });
+  }
   registerSyncChannels(handlerTable, {
     service: workspaceService,
     reveal: (path) => {
@@ -1612,7 +1763,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     registerDialogsChannels(handlerTable, dialogPicks, nativeDialogs);
   }
   registerPluginChannels(handlerTable, { plugins: () => plugins, picks: dialogPicks });
-  if (platform.dialogs !== undefined) {
+  if (platform.dialogs !== undefined && hasFiles) {
     registerFsChannels(handlerTable, platform);
   }
   // A kind that is off registers no channels: a call to one is refused as an unknown channel.
@@ -1647,8 +1798,16 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
   }
   registerSearchChannels(handlerTable, engineService, workspaceService);
   registerSecretsChannels(handlerTable, teamSecretStore, showSecretsFlag);
-  registerSecretSourcesChannels(handlerTable, workspaceService, secretSources);
-  registerTeamSecretsChannels(handlerTable, teamSecrets, (feature) => workspaceService.requireFeature(feature));
+  // A secret source is a command or a file on the machine (spec D6): only a host with both has them.
+  if (hasSecretSources) {
+    registerSecretSourcesChannels(handlerTable, workspaceService, secretSources);
+  }
+  registerTeamSecretsChannels(
+    handlerTable,
+    teamSecrets,
+    (feature) => workspaceService.requireFeature(feature),
+    hasTeamSecrets,
+  );
   registerSecretScanChannels(handlerTable, secretScans);
   registerSnapshotChannels(
     handlerTable,

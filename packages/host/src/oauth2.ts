@@ -32,6 +32,7 @@ import { sendHttp } from '@wirebench/engine';
 import type {
   ClientIdentity,
   DeviceAuthorization,
+  EgressPolicy,
   HttpExchange,
   HttpRequest,
   OAuth2Auth,
@@ -88,6 +89,11 @@ export interface FetchTokenOptions {
 export interface OAuth2Deps {
   /** Opens the authorization URL in the user's browser. `shell.openExternal` in the app. */
   readonly openExternal: (url: string) => Promise<void>;
+  /**
+   * Whether the host can send the user to a browser (its platform has a `shell`). `false` refuses the
+   * authorization-code and device-code grants before anything is bound or sent; absent, they run.
+   */
+  readonly browserFlows?: boolean;
   /** The fixed loopback port a provider demands, when the user configured one. */
   readonly callbackPort?: () => number | undefined;
   /** Sends the token request. The engine's `sendHttp` by default; a stub in tests. */
@@ -95,6 +101,8 @@ export interface OAuth2Deps {
   readonly now?: () => Date;
   /** Waits between device-code polls; the engine's timer by default, instant in tests. */
   readonly sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** The host's egress rule (`HostPlatform.network`): every request to a provider is held to it. Absent, none. */
+  readonly egress?: EgressPolicy;
 }
 
 /** The key a token is cached under: the configuration that produced it, and nothing else. */
@@ -215,6 +223,12 @@ export class OAuth2Service {
    * authorization-code grant, the device flow for device code, a plain token request otherwise.
    */
   async fetchToken(config: OAuth2Auth, options: FetchTokenOptions = {}): Promise<OAuth2Status> {
+    if (this.deps.browserFlows === false && (config.grant === 'device-code' || config.grant === 'authorization-code')) {
+      // Before the loopback port is bound or the provider asked for a code: neither is any use here.
+      throw new WirebenchError('host-capability-missing', 'This host cannot open a browser to sign in', {
+        details: { capability: 'shell' },
+      });
+    }
     if (config.grant === 'device-code') {
       await this.deviceFlow(config, options);
       return this.status(config);
@@ -297,6 +311,7 @@ export class OAuth2Service {
           ...request,
           ...(tls !== undefined ? { tls } : {}),
           ...(options.proxy !== undefined ? { proxy: options.proxy } : {}),
+          ...(this.deps.egress !== undefined ? { egress: this.deps.egress } : {}),
         }),
     };
   }

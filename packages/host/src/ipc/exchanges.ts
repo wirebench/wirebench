@@ -1,5 +1,6 @@
 import type { HostPlatform } from '../host/platform.js';
 import { requireCapability } from '../host/capability.js';
+import { machineEnv } from '../host/machine-env.js';
 import { nodeFs, WirebenchError, writeFileAtomic } from '@wirebench/engine';
 import { channels } from '@wirebench/wire/ipc';
 import { extensionForContentType } from '../kinds/soap/channels/attachments.js';
@@ -18,7 +19,7 @@ export function registerExchangeChannels(
   table: HandlerTable,
   cache: ExchangeCache,
   showSecrets: { get(): boolean },
-  platform: Pick<HostPlatform, 'dialogs'>,
+  platform: Pick<HostPlatform, 'dialogs' | 'machineValues'>,
 ): void {
   registerHandler(table, channels.exchanges.saveRestBody, async (request, sender) => {
     const summary = cache.getRest(request.sendId);
@@ -32,7 +33,7 @@ export function registerExchangeChannels(
     // bytes a remote server sent, and letting the page name the file would let it write them
     // anywhere the user can write. It comes from the native dialog, or the e2e override.
     const contentType = summary.http.headers['content-type'] ?? 'application/octet-stream';
-    let targetPath = process.env['WIREBENCH_E2E_SAVE_PATH'];
+    let targetPath = machineEnv(platform)['WIREBENCH_E2E_SAVE_PATH'];
     if (targetPath === undefined) {
       const result = await requireCapability(platform, 'dialogs').saveFile(sender, {
         title: 'Save response as…',

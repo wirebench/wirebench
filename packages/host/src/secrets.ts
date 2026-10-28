@@ -153,10 +153,30 @@ export class SecretStore {
   private readonly log: (message: string) => void;
   private queue: Promise<void> = Promise.resolve();
 
-  constructor(userDataDir: string, crypto: CryptoBackend, log: (message: string) => void = console.warn) {
+  /**
+   * @param onWritten told the ref and label of each value stored, once it is on disk, never the value:
+   *   an embedder's audit (`HostOptions.onSecret`). A listener that throws does not fail the write.
+   */
+  constructor(
+    userDataDir: string,
+    crypto: CryptoBackend,
+    log: (message: string) => void = console.warn,
+    private readonly onWritten?: (written: { readonly ref: string; readonly label?: string }) => void,
+  ) {
     this.file = join(userDataDir, SECRETS_FILE);
     this.crypto = crypto;
     this.log = log;
+  }
+
+  /** Tells {@link onWritten} of a stored entry; its failure is logged, never thrown. */
+  private noteWritten(ref: string): void {
+    if (this.onWritten === undefined) return;
+    const label = this.data.entries[ref]?.label;
+    try {
+      this.onWritten({ ref, ...(label !== undefined ? { label } : {}) });
+    } catch (error) {
+      this.log(`[secrets] the write listener failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /** Reads the file into memory. Safe to call more than once — concurrent calls share one read. */
@@ -248,6 +268,7 @@ export class SecretStore {
       };
       this.data = { version: 2, entries: { ...this.data.entries, [ref]: entry } };
       await this.persist();
+      this.noteWritten(ref);
       return ref;
     });
   }
@@ -307,6 +328,7 @@ export class SecretStore {
     };
     this.data = { version: 2, entries: { ...this.data.entries, [ref]: entry } };
     await this.persist();
+    this.noteWritten(ref);
   }
 
   /** Whether values are really encrypted at rest here; team secrets refuse to make a key without it. */

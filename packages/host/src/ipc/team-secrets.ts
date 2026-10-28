@@ -26,12 +26,20 @@ export function registerTeamSecretsChannels(
   service: TeamSecretsChannelService,
   /** Refuses every call but `status` when `team-secrets` is off (phase 4 spec §7). */
   requireFeature: (feature: string) => void = () => undefined,
+  /**
+   * `false` on a host whose platform lacks the `team-secrets` capability (the server's, hosted edition
+   * decision 5): only `status` is registered, so nothing can make, request or use a machine key there.
+   */
+  machineKeys = true,
 ): void {
   const guarded = <T>(run: () => Promise<T>): Promise<T> => {
     requireFeature('team-secrets');
     return run();
   };
   registerHandler(table, channels.teamSecrets.status, () => service.status());
+  if (!machineKeys) {
+    return;
+  }
   registerHandler(table, channels.teamSecrets.turnOn, () => guarded(() => service.turnOn({ commit: true })));
   registerHandler(table, channels.teamSecrets.requestAccess, () => guarded(() => service.requestAccess()));
   registerHandler(table, channels.teamSecrets.approve, ({ keyId }) => guarded(() => service.approve(keyId)));

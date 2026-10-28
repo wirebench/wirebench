@@ -3,6 +3,7 @@
  * implements it with Electron; the agent and the server implement it with plain Node. This file
  * is types only, so importing it never pulls in `electron`.
  */
+import type { EgressPolicy } from '@wirebench/engine';
 
 /** Every capability there is, in one place; a platform declares the subset it has. */
 export const ALL_CAPABILITIES = [
@@ -18,6 +19,8 @@ export const ALL_CAPABILITIES = [
   'team-secrets',
   'updates',
   'app-lock',
+  /** Start processes on the machine: MCP servers over stdio. */
+  'processes',
 ] as const;
 
 /** What a platform can do; a host switches features off when the platform lacks one. */
@@ -90,7 +93,17 @@ export interface MessageBoxOptions {
 }
 
 export interface HostPlatform {
-  readonly paths: { userData(): string; temp(): string; logs(): string };
+  readonly paths: {
+    userData(): string;
+    temp(): string;
+    logs(): string;
+    /**
+     * The one directory this host may touch on a caller's behalf (the server's checkout parent).
+     * When set, every path a caller names is resolved inside it, symbolic links included, and one
+     * that leaves it is refused with `host-path-outside-workspace`. The desktop names none.
+     */
+    root?(): string;
+  };
   readonly secrets: { available(): boolean; encrypt(plain: string): Buffer; decrypt(sealed: Buffer): string };
   readonly dialogs?: {
     openFile(owner: DialogOwner, opts: OpenDialogOptions): Promise<{ canceled: boolean; filePaths: string[] }>;
@@ -122,5 +135,22 @@ export interface HostPlatform {
     /** Seconds since the last input anywhere on the machine. */
     idleSeconds(): number;
   };
+  /**
+   * The egress rule every connection the host opens on a caller's behalf is held to (hosted edition
+   * spec §17.5): sends, token calls, definition fetches, certificate probes and WebSocket
+   * connections. Absent (the desktop), connections go wherever they are pointed.
+   */
+  readonly network?: { readonly egress: EgressPolicy };
+  /**
+   * `false` on a host that is not the user's machine (the server): `${#System#…}` values resolve
+   * to nothing and no environment variable is read as an override (`WIREBENCH_AREAS`,
+   * `WIREBENCH_FEATURES`, `WIREBENCH_E2E_*`, the policy-file lookup). Absent, the machine's own.
+   */
+  readonly machineValues?: false;
+  /**
+   * What the platform can do. A host leaves out what needs a missing one: without `ssh` or `pty`
+   * the SSH area or the local terminal is off, without `files` only server workspaces open, and
+   * `fs`, `git` and secret-source channels are not registered.
+   */
   readonly capabilities: ReadonlySet<Capability>;
 }

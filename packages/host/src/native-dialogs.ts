@@ -54,16 +54,16 @@ export interface NativeDialogs {
  * The pickers over `platform`'s native dialogs. The queue of e2e folder answers lives in the
  * returned object, so two platforms never share a position in it.
  */
-export function createNativeDialogs(platform: Pick<HostPlatform, 'dialogs' | 'app'>): NativeDialogs {
+export function createNativeDialogs(platform: Pick<HostPlatform, 'dialogs' | 'app' | 'machineValues'>): NativeDialogs {
   /**
    * Whether the e2e dialog overrides below may be honoured at all.
    *
    * They exist so Playwright can answer a native picker it cannot drive, and every e2e run is
    * unpackaged. In a shipped build they would let anything that can set an environment variable
    * decide which folder the app links, exports to or reads — without a dialog the user ever saw —
-   * so a packaged app ignores them outright.
+   * so a packaged app ignores them outright, and so does a host without machine values.
    */
-  const e2eOverridesAllowed = (): boolean => !platform.app.packaged();
+  const e2eOverridesAllowed = (): boolean => !platform.app.packaged() && platform.machineValues !== false;
   const dialogs = () => requireCapability(platform, 'dialogs');
 
   /** How many entries of `WIREBENCH_E2E_DIALOG_FOLDERS` the folder pickers have consumed. */
