@@ -54,8 +54,11 @@ import type { HistoryEntryWire, LogEntryWire } from '@wirebench/wire/wire-types'
 import type { FailedExchangeWire } from '@wirebench/wire/wire-base';
 
 export interface DesktopSendDeps {
-  /** This host's secret redactor and its e2e trust anchors: what a send records into and reads. */
-  readonly hostState: Pick<HostState, 'redactor' | 'e2eTrustAnchors'>;
+  /**
+   * This host's secret redactor, its e2e trust anchors and its `${#System#…}` values: what a send records
+   * into and reads.
+   */
+  readonly hostState: Pick<HostState, 'redactor' | 'e2eTrustAnchors' | 'systemValues'>;
   readonly project: RequestChannelProject;
   /** The exchange cache and the contract checker. */
   readonly service: EngineService;

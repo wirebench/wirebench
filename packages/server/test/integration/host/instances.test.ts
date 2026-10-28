@@ -35,9 +35,9 @@ function fakeHost(): ServerHost & { disposed: number } {
   return host;
 }
 
-function socket(token: string, tokenId: string): HostSocketHandle & { closedWith: number[] } {
+function socket(token: string, tokenId: string, ip?: string): HostSocketHandle & { closedWith: number[] } {
   const closedWith: number[] = [];
-  return { token, tokenId, closedWith, close: (code) => closedWith.push(code) };
+  return { token, tokenId, ...(ip !== undefined ? { ip } : {}), closedWith, close: (code) => closedWith.push(code) };
 }
 
 describe('HostInstances', () => {
@@ -84,6 +84,36 @@ describe('HostInstances', () => {
     // The newest socket closes: the credential is the newest left.
     instances.release(ALICE.id, two);
     expect(credentialOf(ALICE.id)).toBe('token-1');
+  });
+
+  it('carries the newest socket’s address with its token, for the host’s calls to the server', async () => {
+    const one = socket('token-1', 't1', '198.51.100.1');
+    const two = socket('token-2', 't2', '198.51.100.2');
+    await instances.open(ALICE, one);
+    await instances.open(ALICE, two);
+    expect(made[0]!.session()).toEqual({ token: 'token-2', tokenId: 't2', ip: '198.51.100.2' });
+    instances.release(ALICE.id, two);
+    expect(made[0]!.session()).toEqual({ token: 'token-1', tokenId: 't1', ip: '198.51.100.1' });
+  });
+
+  it('counts a user’s sockets, open or waiting for an eviction, and only theirs', async () => {
+    const gate = slowEviction();
+    const first = socket('token-1', 't1');
+    await instances.open(ALICE, first);
+    await instances.open(ALICE, socket('token-1', 't1'));
+    await instances.open(BOB, socket('token-b', 'tb'));
+    expect(instances.socketCount(ALICE.id)).toBe(2);
+    expect(instances.socketCount(BOB.id)).toBe(1);
+    instances.sessionEnded({ tokenId: 't1' });
+    expect(instances.socketCount(ALICE.id)).toBe(0);
+    const waiting = socket('token-2', 't2');
+    const opened = instances.open(ALICE, waiting);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(instances.socketCount(ALICE.id)).toBe(1);
+    instances.release(ALICE.id, waiting);
+    expect(instances.socketCount(ALICE.id)).toBe(0);
+    gate.finish();
+    await opened;
   });
 
   it('evicts after the idle time once the last socket closed; a socket in between keeps it', async () => {

@@ -13,7 +13,7 @@
  * Groups served on the server host:
  * - pure functions over the user's checkout and `state/`, and every protocol kind's editors;
  * - the server's own services, called in process as the user (`sync`, `account`, `team`, ...);
- * - `secrets`, sealed under the user's key;
+ * - `secrets`, sealed under the user's key (never shown: values do not leave the server);
  * - `oauth2`, the importers (`api`) and `certificates`, every connection under the egress rule.
  */
 export const SERVED_GROUPS: ReadonlySet<string> = new Set([
@@ -46,6 +46,7 @@ export const SERVED_GROUPS: ReadonlySet<string> = new Set([
   'sync',
   'account',
   'team',
+  // `teamSecrets.status` only; every channel that makes or uses a machine key is refused below.
   'teamSecrets',
   'license',
   'audit',
@@ -138,6 +139,19 @@ export const REFUSED_CHANNELS: Readonly<Record<string, string>> = {
   'workspace.reveal': 'shows a folder in the machine’s file manager',
   'workspace.revealProject': 'shows a folder in the machine’s file manager',
   'sync.revealTree': 'shows a folder in the machine’s file manager',
+  // Team-secret keys are an approved machine's (decision 5): the server host holds none, so it neither
+  // makes one, asks for access with one, nor opens or seals the vault with one.
+  'teamSecrets.turnOn': 'team-secret keys live on approved machines only (decision 5)',
+  'teamSecrets.requestAccess': 'team-secret keys live on approved machines only (decision 5)',
+  'teamSecrets.approve': 'team-secret keys live on approved machines only (decision 5)',
+  'teamSecrets.decline': 'team-secret keys live on approved machines only (decision 5)',
+  'teamSecrets.remove': 'team-secret keys live on approved machines only (decision 5)',
+  'teamSecrets.grantAdmin': 'team-secret keys live on approved machines only (decision 5)',
+  'teamSecrets.revokeAdmin': 'team-secret keys live on approved machines only (decision 5)',
+  'teamSecrets.restoreMine': 'team-secret keys live on approved machines only (decision 5)',
+  'teamSecrets.dismissReplaced': 'team-secret keys live on approved machines only (decision 5)',
+  // "Show secrets" would put values in the socket's frames, and the flag is the host's, shared by every tab.
+  'secrets.setShowSecrets': 'values never leave the server (ADR-0004)',
 };
 
 /** The group a channel belongs to: `workspace` for `workspace.open`. */

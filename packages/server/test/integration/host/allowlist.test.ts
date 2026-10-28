@@ -76,6 +76,11 @@ describe('the server host allowlist (§3.10)', () => {
       'workspace.create',
       'workspace.join',
       'wsi.exportHtml',
+      // Decision 5 and ADR-0004: no team-secret key on the server host, and no value shown in a frame.
+      'teamSecrets.turnOn',
+      'teamSecrets.requestAccess',
+      'teamSecrets.approve',
+      'secrets.setShowSecrets',
     ]) {
       expect(isServedChannel(channel), channel).toBe(false);
     }
@@ -91,6 +96,8 @@ describe('the server host allowlist (§3.10)', () => {
       'oauth2.fetchToken',
       'api.importOpenApi',
       'certificates.check',
+      'teamSecrets.status',
+      'secrets.getShowSecrets',
     ]) {
       expect(isServedChannel(channel), channel).toBe(true);
     }

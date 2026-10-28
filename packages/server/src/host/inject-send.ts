@@ -11,8 +11,22 @@
 import { WirebenchError, type HttpExchange, type HttpRequest } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
 
-/** Request headers the host may not set: the session is the credential's, never a cookie or a caller's. */
-const DROPPED = new Set(['authorization', 'cookie', 'host', 'content-length', 'connection', 'transfer-encoding']);
+/**
+ * Request headers the host may not set: the session is the credential's, never a cookie or a caller's,
+ * and the address is the socket's, never a forwarding header (which `trustProxy` would believe).
+ */
+const DROPPED = new Set([
+  'authorization',
+  'cookie',
+  'host',
+  'content-length',
+  'connection',
+  'transfer-encoding',
+  'forwarded',
+  'x-forwarded-for',
+  'x-forwarded-host',
+  'x-forwarded-proto',
+]);
 
 function originOf(url: string): string | undefined {
   try {
@@ -32,14 +46,16 @@ function refusedSession(body: string): boolean {
 }
 
 /**
- * @param session the instance's current token and its id
+ * @param session the instance's current token and its id, and the address of the socket it came from:
+ *   the call reaches the routes from there, so it is audited and rate-limited as the browser's, not as
+ *   the server's own loopback
  * @param onRefused told the token's id when the server answered `identity-unauthenticated` for it: the
  *   session expired or was revoked without an announcement reaching this side first
  */
 export function injectSend(
   app: Pick<FastifyInstance, 'inject'>,
   publicUrl: string,
-  session: () => { readonly token: string; readonly tokenId: string } | undefined,
+  session: () => { readonly token: string; readonly tokenId: string; readonly ip?: string } | undefined,
   onRefused: (tokenId: string) => void,
 ): (request: HttpRequest) => Promise<HttpExchange> {
   return async (request) => {
@@ -60,6 +76,7 @@ export function injectSend(
     const response = await app.inject({
       method: request.method,
       url: `${target.pathname}${target.search}`,
+      ...(current?.ip !== undefined ? { remoteAddress: current.ip } : {}),
       headers,
       ...(request.body !== undefined ? { payload: Buffer.from(request.body) } : {}),
     });

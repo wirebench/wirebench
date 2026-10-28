@@ -122,11 +122,23 @@ const PROD = {
   protected: true,
 };
 
-async function harness(projectId: string, files: Record<string, string> = {}, guard?: Guard) {
+/** A host other than the desktop's (`state`), or a model of the test's own. */
+interface HarnessOptions {
+  readonly state?: ReturnType<typeof createHostState>;
+  readonly model?: Project;
+}
+
+async function harness(
+  projectId: string,
+  files: Record<string, string> = {},
+  guard?: Guard,
+  options: HarnessOptions = {},
+) {
   seen = [];
-  const history = new HistoryService(userDataDir, hostState.redactor);
+  const state = options.state ?? hostState;
+  const history = new HistoryService(userDataDir, state.redactor);
   await history.open(projectId);
-  const model = guard === undefined ? project() : { ...project(), environments: [PROD] };
+  const model = options.model ?? (guard === undefined ? project() : { ...project(), environments: [PROD] });
   const events: RunnerProgressEvent[] = [];
   const store = join(userDataDir, projectId);
   const settings = new RunnerSettingsStore(store);
@@ -134,7 +146,7 @@ async function harness(projectId: string, files: Record<string, string> = {}, gu
   const runner = new RunnerService({
     service: new EngineService(),
     requests: {
-      hostState,
+      hostState: state,
       project: surface(projectId, model, guard !== undefined ? PROD.id : undefined),
       history,
       ...(guard !== undefined ? { confirmProtected: guard.confirm } : {}),
@@ -281,6 +293,39 @@ describe('RunnerService', () => {
       ['Flow/1. one', 0],
       ['Flow/1. one', 1],
     ]);
+  });
+
+  it('reads no `${#System#…}` value from the process on a host without machine values, in a run or a sequence', async () => {
+    const PATH_VALUE = process.env.PATH;
+    expect(PATH_VALUE).toBeTruthy();
+    const model: Project = {
+      ...createProject('Sys', { id: 'P-sys' }),
+      containers: {
+        rest: [
+          createApi('Sys', {
+            id: 'A-sys',
+            baseUrl: url,
+            requests: [createRestRequest('sys', { id: 'sys', url: '/sys?p=${#System#PATH}' })],
+          }),
+        ],
+      },
+      sequences: [createSequence('SysFlow', { id: 'S-sys', steps: [createSequenceStep('sys', { id: 'T-sys' })] })],
+    };
+    const state = createHostState({ machineValues: false });
+    for (const targetId of ['A-sys', 'S-sys']) {
+      const { runner } = await harness(`P-sys-${targetId}`, {}, undefined, { state, model });
+      const result = await runner.run({ targetId, runId: `R-sys-${targetId}` });
+      // Nothing resolves the reference, so nothing is sent; the process's PATH never is.
+      expect(seen, targetId).toEqual([]);
+      expect(
+        result.requests.map((one) => [one.outcome, one.error?.code]),
+        targetId,
+      ).toEqual([['errored', 'rest-unresolved-properties']]);
+    }
+    // The desktop's host reads the machine's own values, as before.
+    const { runner } = await harness('P-sys-desktop', {}, undefined, { model });
+    await runner.run({ targetId: 'A-sys', runId: 'R-sys-desktop' });
+    expect(seen).toEqual([`/sys?p=${encodeURIComponent(PATH_VALUE!)}`]);
   });
 
   it('refuses a run whose data file does not read, before anything is sent', async () => {

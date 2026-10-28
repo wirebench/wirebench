@@ -14,6 +14,7 @@
  */
 import { rm } from 'node:fs/promises';
 import type { SessionEnded } from '../context.js';
+import { HOST_CLOSE } from './errors.js';
 import type { ServerHost } from './host-runtime.js';
 import { hostDirectories } from './server-platform.js';
 
@@ -22,6 +23,8 @@ export interface HostSocketHandle {
   /** The browser session's device token, and its id. */
   readonly token: string;
   readonly tokenId: string;
+  /** The address the upgrade came from (`request.ip`, so `trustProxy` applies). */
+  readonly ip?: string;
   /** Closes the socket; its own close handler then calls {@link HostInstances.release}. */
   close(code: number, reason: string): void;
 }
@@ -50,6 +53,15 @@ export interface HostInstancesDeps {
 export interface HostSession {
   readonly token: string;
   readonly tokenId: string;
+  /**
+   * The address of the socket the token came from: the host's calls to this server are audited and
+   * rate-limited as coming from there, not from the server itself.
+   */
+  readonly ip?: string;
+}
+
+function sessionOf(socket: HostSocketHandle): HostSession {
+  return { token: socket.token, tokenId: socket.tokenId, ...(socket.ip !== undefined ? { ip: socket.ip } : {}) };
 }
 
 interface Instance {
@@ -112,7 +124,7 @@ export class HostInstances {
     instance.idle?.cancel();
     instance.idle = undefined;
     instance.sockets.push(socket);
-    instance.credential = { token: socket.token, tokenId: socket.tokenId };
+    instance.credential = sessionOf(socket);
     try {
       return await instance.host;
     } catch (error) {
@@ -149,14 +161,14 @@ export class HostInstances {
     for (const [socket, wait] of this.waiting) {
       if (wait.gone || !endedFor(wait.userId, socket.tokenId)) continue;
       wait.gone = true;
-      socket.close(4401, 'session ended');
+      socket.close(HOST_CLOSE.unauthenticated, 'session ended');
     }
     for (const instance of [...this.instances.values()]) {
       const ended = (tokenId: string): boolean => endedFor(instance.user.id, tokenId);
       const closing = instance.sockets.filter((one) => ended(one.tokenId));
       for (const socket of closing) {
         this.forget(instance, socket);
-        socket.close(4401, 'session ended');
+        socket.close(HOST_CLOSE.unauthenticated, 'session ended');
       }
       if (instance.credential !== undefined && ended(instance.credential.tokenId)) {
         instance.credential = undefined;
@@ -176,6 +188,18 @@ export class HostInstances {
     await Promise.all([...this.evicting.values()]);
   }
 
+  /**
+   * How many host sockets `userId` has: open on their instance, or waiting for its eviction. The module
+   * turns away a socket past `HOST_LIMITS.maxSocketsPerUser` before calling {@link open}.
+   */
+  socketCount(userId: string): number {
+    let count = this.instances.get(userId)?.sockets.length ?? 0;
+    for (const wait of this.waiting.values()) {
+      if (wait.userId === userId && !wait.gone) count += 1;
+    }
+    return count;
+  }
+
   /** How many instances exist, for tests and logs. */
   get size(): number {
     return this.instances.size;
@@ -188,7 +212,7 @@ export class HostInstances {
   private settle(instance: Instance): void {
     const newest = instance.sockets.at(-1);
     if (newest !== undefined) {
-      instance.credential = { token: newest.token, tokenId: newest.tokenId };
+      instance.credential = sessionOf(newest);
       return;
     }
     if (instance.idle !== undefined) return;

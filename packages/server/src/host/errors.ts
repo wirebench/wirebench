@@ -6,7 +6,10 @@
 export const HOST_CLOSE = {
   /** The server is shutting down. */
   goingAway: 1001,
-  /** A frame over {@link HOST_LIMITS.maxFrameBytes}; `ws` sends it itself. */
+  /**
+   * A frame over {@link HOST_LIMITS.maxFrameBytes} (`ws` sends it itself), or calls queued before the host
+   * was ready past {@link HOST_LIMITS.maxQueuedBytes}.
+   */
   tooBig: 1009,
   serverError: 1011,
   badFrame: 4400,
@@ -14,6 +17,8 @@ export const HOST_CLOSE = {
   unauthenticated: 4401,
   /** Another site's page, or a caller that is not a browser session. */
   forbidden: 4403,
+  /** The user already has {@link HOST_LIMITS.maxSocketsPerUser} host sockets open (HTTP's 429). */
+  tooManySockets: 4429,
 } as const;
 
 export const HOST_LIMITS = {
@@ -21,6 +26,13 @@ export const HOST_LIMITS = {
   maxFrameBytes: 32 * 1024 * 1024,
   /** Calls a socket may have running; past it a call is answered `host-busy`, not served. */
   maxInFlight: 64,
+  /** Host sockets one user may have open at once, every tab and window together; the next closes `4429`. */
+  maxSocketsPerUser: 8,
+  /**
+   * Bytes of calls a socket may queue while its host is being built; the frame that passes it closes the
+   * socket {@link HOST_CLOSE.tooBig}. Without it, 64 queued frames of 32 MiB would each be held.
+   */
+  maxQueuedBytes: 64 * 1024 * 1024,
 } as const;
 
 /** The reply to a call past {@link HOST_LIMITS.maxInFlight}: the socket stays open, the call is not run. */

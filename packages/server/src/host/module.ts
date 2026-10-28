@@ -10,13 +10,20 @@
  * route raises it for its own sockets (see {@link allowLargeFrames}).
  *
  * At the upgrade the socket needs a signed-in browser session from the cookie and our own `Origin`;
- * otherwise it is closed before any frame, `4401` without a session and `4403` for another site or a
- * bearer caller. Identity's hook reads the cookie for this route as for any other: a `GET` needs no
- * `Origin` there, so the check here is what holds a page on another site out.
+ * otherwise it is closed before any frame, `4401` without a session (or one revoked by the time its
+ * token is read here) and `4403` for another site or a bearer caller. A user's
+ * `HOST_LIMITS.maxSocketsPerUser + 1`th socket closes `4429`, also before any frame.
+ *
+ * Identity's guard checks `Origin` only on mutating methods: every `GET` under `/api/v1` is free of side
+ * effects, so a cross-site `GET` with the cookie can read nothing it may not and change nothing. That
+ * invariant does not cover this route. Its upgrade is a cookie `GET` too, but the socket it opens drives
+ * the user's host, writes included, and a page on another site can open a WebSocket with the cookie
+ * attached. So the `Origin` check here is what holds such a page out, and no route may rely on the
+ * guard for a `GET` with side effects.
  */
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
-import { recordAudit, type AuditInput, type ServerContext, type ServerModule } from '../context.js';
+import { auditIp, recordAudit, type AuditInput, type ServerContext, type ServerModule } from '../context.js';
 import { sessionToken } from '../identity/cookies.js';
 import { identitySettings } from '../identity/env.js';
 import { tokenByHash } from '../identity/repo.js';
@@ -26,9 +33,9 @@ import { isServedChannel } from './allowlist.js';
 import { HOST_CLOSE, HOST_LIMITS } from './errors.js';
 import { loadHostRuntime, type HostSecretEvent } from './host-runtime.js';
 import { injectSend } from './inject-send.js';
-import { HostInstances, type HostSocketHandle, type HostUser } from './instances.js';
+import { HostInstances, type HostSession, type HostSocketHandle, type HostUser } from './instances.js';
 import { liveBridge } from './live-bridge.js';
-import { runHostSocket } from './socket.js';
+import { runHostSocket, type HostSocket } from './socket.js';
 
 export interface HostModuleOptions {
   /** Injected clock, shared with identity's in tests: each socket's maximum-age deadline. */
@@ -59,10 +66,16 @@ function allowLargeFrames(ws: WebSocket): void {
   receiver._maxPayload = HOST_LIMITS.maxFrameBytes;
 }
 
-/** A secret's name (and the request's host), never its value, as an audit event (spec §17.4). */
-function secretAudit(user: HostUser, tokenId: string | undefined, event: HostSecretEvent): AuditInput {
+/**
+ * A secret's name (and the request's host), never its value, as an audit event (spec §17.4), from the
+ * address of the socket the instance's session came from.
+ */
+function secretAudit(user: HostUser, session: HostSession | undefined, event: HostSecretEvent): AuditInput {
+  const tokenId = session?.tokenId;
+  const ip = auditIp(session?.ip);
   return {
     actor: { kind: 'user', userId: user.id, email: user.email, ...(tokenId !== undefined ? { tokenId } : {}) },
+    ...(ip !== undefined ? { ip } : {}),
     action: event.kind === 'written' ? 'secret.written' : 'secret.resolved',
     target: { kind: 'user', id: user.id },
     details: { name: event.name, ...(event.target !== undefined ? { target: event.target } : {}) },
@@ -144,7 +157,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
             },
             onSecret: (event) => {
               ctx.db
-                .transaction((tx) => recordAudit(ctx.hooks, tx, secretAudit(user, session()?.tokenId, event)))
+                .transaction((tx) => recordAudit(ctx.hooks, tx, secretAudit(user, session(), event)))
                 .catch((error: unknown) => {
                   log('a secret audit event could not be recorded', error);
                 });
@@ -182,21 +195,35 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           refuse(HOST_CLOSE.serverError, 'server error');
           return;
         }
+        if (instances.socketCount(caller.id) >= HOST_LIMITS.maxSocketsPerUser) {
+          refuse(HOST_CLOSE.tooManySockets, 'too many host sockets');
+          return;
+        }
         const user: HostUser = { id: caller.id, email: caller.email };
+        /** Set once the socket runs, just below; `instances.open` calls nothing on the handle before then. */
+        const running: { socket?: HostSocket } = {};
         const handle: HostSocketHandle = {
           token,
           tokenId: caller.tokenId,
+          ip: request.ip,
+          // Ends it at once (nothing more is served or pushed), not when the peer answers the close.
           close: (code, reason) => {
-            if (socket.readyState === socket.OPEN) socket.close(code, reason);
+            if (running.socket !== undefined) running.socket.end(code, reason);
+            else if (socket.readyState === socket.OPEN) socket.close(code, reason);
           },
         };
-        const host = instances.open(user, handle);
+        const opened = instances.open(user, handle);
         // The session ends at its token's creation plus the maximum age, as a live socket's does.
         let deadline: { cancel(): void } | undefined;
         let closed = false;
-        tokenByHash(ctx.db, hashToken(token))
+        const checked = tokenByHash(ctx.db, hashToken(token))
           .then((found) => {
-            if (closed || found === undefined) return;
+            if (closed) return;
+            // Revoked or deleted since identity's check: the session is over, so is this socket.
+            if (found === undefined || found.token.revokedAt !== null) {
+              instances.sessionEnded({ tokenId: caller.tokenId });
+              return;
+            }
             deadline = at(Date.parse(found.token.createdAt) + tokenMaxMs, () => {
               instances.sessionEnded({ tokenId: caller.tokenId });
             });
@@ -204,7 +231,9 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           .catch((error: unknown) => {
             log("a host socket's session age could not be read", error);
           });
-        runHostSocket(socket, {
+        // The hello waits for that read too, so a session revoked since identity's check is never served.
+        const host = Promise.all([opened, checked]).then(([ready]) => ready);
+        running.socket = runHostSocket(socket, {
           host,
           callerId: nextCallerId++,
           allowed: isServedChannel,

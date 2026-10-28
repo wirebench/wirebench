@@ -295,7 +295,9 @@ export class RunnerService {
       ...(located?.globals !== undefined ? { globals: located.globals } : {}),
       ...(located?.current !== undefined ? { current: located.current } : {}),
       ...(located?.registry !== undefined ? { registry: located.registry } : {}),
-      ...(located?.system !== undefined ? { system: located.system } : {}),
+      // Always the host's own `${#System#…}` scope, so the engine never falls back to the process
+      // environment: on a host without machine values (the server's) that would be the server's.
+      system: located?.system ?? this.deps.requests.hostState.systemValues,
       overrides: {},
       // The run's own sender sends; this host only hears of a value to mask.
       host: {

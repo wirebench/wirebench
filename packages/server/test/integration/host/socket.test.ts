@@ -10,13 +10,24 @@ import type { AddressInfo } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { createRestRequest, entry, type SyncPushResponse } from '@wirebench/engine';
-import { HOST_LIMITS } from '../../../src/host/errors.js';
+import {
+  accessEntryPath,
+  createRestRequest,
+  entry,
+  generateMachineKeys,
+  keyRequestPath,
+  nextAccessEntryId,
+  signDocument,
+  teamSecretsFileText,
+  type RestRequestDef,
+  type SyncPushResponse,
+} from '@wirebench/engine';
+import { HOST_CLOSE, HOST_LIMITS } from '../../../src/host/errors.js';
 import { hostDirectories } from '../../../src/host/server-platform.js';
 import { sessionCookieName } from '../../../src/identity/cookies.js';
 import * as teamsRepo from '../../../src/teams/repo.js';
 import { describeDb } from '../../helpers/database.js';
-import { browserUser, hostHarness, openHost, PUBLIC_URL, type HostHarness } from '../../helpers/host.js';
+import { browserUser, hostHarness, openHost, openRawHost, PUBLIC_URL, type HostHarness } from '../../helpers/host.js';
 import { signedInUser } from '../../helpers/identity.js';
 import { workspaceSnapshot } from '../../helpers/schedule-runs.js';
 import { seedSyncWorkspace } from '../../helpers/sync.js';
@@ -25,8 +36,12 @@ import { call, seedTeam } from '../../helpers/teams.js';
 const AT = '2026-09-24T12:00:00.000Z';
 
 /** `workspaceSnapshot`'s files, its `workspace.yaml` carrying the server workspace's id as a shared one must. */
-async function snapshotOf(workspaceId: string, requests: Parameters<typeof workspaceSnapshot>[0]) {
-  return (await workspaceSnapshot(requests)).map((file) =>
+async function snapshotOf(
+  workspaceId: string,
+  requests: Parameters<typeof workspaceSnapshot>[0],
+  extra: Record<string, string> = {},
+) {
+  return (await workspaceSnapshot(requests, { extra })).map((file) =>
     file.path === 'workspace.yaml'
       ? {
           path: file.path,
@@ -241,16 +256,23 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
       try {
         const base = `http://${lan!}:${(target.address() as AddressInfo).port}`;
         const alice = await browserUser(h, 'alice@example.com');
+        const bob = await browserUser(h, 'bob@example.com');
         const editor = await signedInUser(h, { email: 'editor@example.com' });
-        const team = await seedTeam(h, { name: 'Payments QA', admins: [alice], members: [editor] });
+        const team = await seedTeam(h, { name: 'Payments QA', admins: [alice], members: [editor, bob] });
         const workspaceId = await seedSyncWorkspace(h, { team, name: 'Staging' });
         await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+        await teamsRepo.upsertGrant(h.db, { workspaceId, userId: bob.user.id, role: 'editor', at: h.clock.now });
         const requests = [
           {
             ...createRestRequest('Allowed', { id: 'req-allowed', url: `${base}/ok` }),
             headers: [entry('X-Key', '${secret:API_KEY}')],
           },
           createRestRequest('Loopback', { id: 'req-loopback', url: 'http://127.0.0.1:9/' }),
+          // The same characters as Alice's secret, typed in: nothing Bob's host was ever handed as a secret.
+          {
+            ...createRestRequest('Literal', { id: 'req-literal', url: `${base}/literal` }),
+            headers: [entry('X-Key', 'sk-fake-0123456789abcdef')],
+          },
         ];
         const first = await call<SyncPushResponse>(h, editor, 'POST', `/workspaces/${workspaceId}/sync/commits`, {
           parent: null,
@@ -269,9 +291,36 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
           }),
         ).toMatchObject({ ok: true });
 
+        // "Show secrets" is refused here (ADR-0004): values never leave the server in a frame.
+        expect(await client.call('secrets.setShowSecrets', { show: true })).toMatchObject({
+          ok: false,
+          error: { code: 'host-capability-missing' },
+        });
+        expect(await client.call('secrets.getShowSecrets')).toMatchObject({ ok: true, value: { show: false } });
+
         const sent = await client.call('request.sendRest', { sendId: 's1', requestId: 'req-allowed' });
         expect(sent).toMatchObject({ ok: true, value: { http: { status: 200 } } });
         expect(seen).toEqual(['/ok sk-fake-0123456789abcdef']);
+        // Masked in Alice's own exchange and in its cURL, as a recorded secret value.
+        expect(JSON.stringify(sent)).not.toContain('sk-fake');
+        const curl = await client.call('log.curl', {
+          entry: { kind: 'exchange', exchange: sent.value, requestId: 'req-allowed' },
+          shell: 'posix',
+        });
+        expect(curl).toMatchObject({ ok: true });
+        expect(JSON.stringify(curl)).not.toContain('sk-fake');
+
+        // Each host has its own redactor: Alice's secret is no redaction in Bob's.
+        const other = await openHost(h, bob);
+        await other.waitFor((frame) => frame.type === 'hello');
+        expect(await other.call('workspace.joinFromServer', { url: PUBLIC_URL, workspaceId })).toMatchObject({
+          ok: true,
+        });
+        const literal = await other.call('request.sendRest', { sendId: 'b1', requestId: 'req-literal' });
+        expect(literal).toMatchObject({ ok: true, value: { http: { status: 200 } } });
+        expect(JSON.stringify(literal)).toContain('sk-fake-0123456789abcdef');
+        other.close();
+        await other.closed;
         expect(h.audit.filter((event) => event.action === 'secret.resolved')).toContainEqual(
           expect.objectContaining({ details: { name: 'API_KEY', target: lan } }),
         );
@@ -351,6 +400,182 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
     expect(await client.call('api.refreshMcpCatalogue', { apiId, sendId: 'm2' })).toMatchObject(refusal);
     expect(client.frames.filter((frame) => frame.event === 'mcp.approval')).toEqual([]);
   });
+
+  it('holds no team-secret key (decision 5): key channels refused, and opening a vault workspace makes none', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    // A vault already on: another admin's machine turned it on and is its first approved key.
+    const theirs = generateMachineKeys();
+    const now = Date.parse(AT);
+    const request = signDocument(
+      {
+        version: 1 as const,
+        keyId: theirs.keyId,
+        encryptionKey: theirs.encryptionKey,
+        signingKey: theirs.signingKey,
+        name: 'Editor',
+        email: 'editor@example.com',
+        machine: 'laptop',
+        requestedAt: AT,
+      },
+      theirs,
+    );
+    const genesis = signDocument(
+      {
+        version: 1 as const,
+        id: nextAccessEntryId([], now),
+        action: 'genesis' as const,
+        authority: 'server' as const,
+        key: theirs.keyId,
+        by: theirs.keyId,
+        at: AT,
+      },
+      theirs,
+    );
+    const { client, workspaceId } = await joinedWorkspace(h, alice, {
+      admin: true,
+      extra: () => ({
+        [keyRequestPath(theirs.keyId)]: teamSecretsFileText(request),
+        [accessEntryPath(genesis.id)]: teamSecretsFileText(genesis),
+      }),
+    });
+    // The first pull has run once sync is idle at the server's head.
+    await client.waitFor(
+      (frame) =>
+        frame.event === 'sync.statusChanged' &&
+        (frame.payload as { status: { state?: string; live?: string } }).status.live === 'connected',
+    );
+    // Behind any refresh the pull started, on the team-secrets queue.
+    expect(await client.call('teamSecrets.status')).toMatchObject({ ok: true });
+    const secrets = join(hostDirectories(h.dataDir, alice.user.id).checkout, 'secrets.json');
+    const stored = existsSync(secrets) ? await readFile(secrets, 'utf8') : '';
+    expect(stored).not.toContain('wirebench-team-key:');
+    // No key request reached the server either: the vault still has the one key it started with.
+    const snapshot = await call<{ files: { path: string }[] }>(
+      h,
+      alice,
+      'GET',
+      `/workspaces/${workspaceId}/sync/snapshot`,
+    );
+    expect(snapshot.body.files.filter((file) => file.path.startsWith('team-secrets/keys/'))).toHaveLength(1);
+    const keyCalls: [string, unknown][] = [
+      ['teamSecrets.turnOn', undefined],
+      ['teamSecrets.requestAccess', undefined],
+      ['teamSecrets.approve', { keyId: theirs.keyId }],
+    ];
+    for (const [channel, request] of keyCalls) {
+      expect(await client.call(channel, request), channel).toMatchObject({
+        ok: false,
+        error: { code: 'host-capability-missing' },
+      });
+    }
+  });
+
+  it('serves nothing a client sends after its session ended, though it has not answered the close', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const raw = await openRawHost(h, alice);
+    try {
+      await raw.waitFor((frame) => frame.opcode === 1 && frame.payload.toString('utf8').includes('"hello"'));
+      const res = await h.app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/sign-out',
+        headers: { cookie: `${sessionCookieName(PUBLIC_URL)}=${alice.token}`, origin: PUBLIC_URL },
+      });
+      expect(res.statusCode).toBe(204);
+      const close = await raw.waitFor((frame) => frame.opcode === 8);
+      expect(close.payload.readUInt16BE(0)).toBe(HOST_CLOSE.unauthenticated);
+      // The server is closing and waits for the answer; the client sends a call instead.
+      raw.sendText(
+        JSON.stringify({ id: 1, channel: 'secrets.set', request: { value: 'late-0123456789', label: 'late' } }),
+      );
+      raw.sendClose();
+      await raw.ended;
+      await vi.waitFor(() => expect(h.instances().size).toBe(0));
+      await vi.waitFor(() => expect(existsSync(hostDirectories(h.dataDir, alice.user.id).temp)).toBe(false));
+      expect(raw.json().filter((frame) => frame.id === 1)).toEqual([]);
+      expect(h.audit.filter((event) => event.action === 'secret.written')).toEqual([]);
+    } finally {
+      raw.destroy();
+    }
+  });
+
+  it('closes 4401 when the token was revoked between the identity check and the socket', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const db = h.db as unknown as { query: (text: string, params?: readonly unknown[]) => Promise<unknown> };
+    const query = db.query.bind(db);
+    let lookups = 0;
+    db.query = async (text, params) => {
+      // The identity check's lookup is the first; revoke the token before the host module's own.
+      if (text.includes('from device_tokens t join users u') && ++lookups === 2) {
+        await query('update device_tokens set revoked_at = now() where id = $1', [alice.tokenId]);
+      }
+      return await query(text, params);
+    };
+    try {
+      const client = await openHost(h, alice);
+      expect(await client.closed).toEqual({ code: HOST_CLOSE.unauthenticated });
+      expect(client.frames.filter((frame) => frame.type === 'hello')).toEqual([]);
+      expect(lookups).toBeGreaterThanOrEqual(2);
+    } finally {
+      db.query = query;
+    }
+  });
+
+  it(`closes a user's ${HOST_LIMITS.maxSocketsPerUser + 1}th host socket ${HOST_CLOSE.tooManySockets} before any frame`, async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const bob = await browserUser(h, 'bob@example.com');
+    const open = [];
+    for (let i = 0; i < HOST_LIMITS.maxSocketsPerUser; i += 1) {
+      const client = await openHost(h, alice);
+      await client.waitFor((frame) => frame.type === 'hello');
+      open.push(client);
+    }
+    const extra = await openHost(h, alice);
+    expect(await extra.closed).toEqual({ code: HOST_CLOSE.tooManySockets });
+    expect(extra.frames).toEqual([]);
+    // Another user is not held to Alice's count, and a socket that closes makes room again.
+    const other = await openHost(h, bob);
+    await other.waitFor((frame) => frame.type === 'hello');
+    open[0]!.close();
+    await open[0]!.closed;
+    await vi.waitFor(async () => {
+      const again = await openHost(h, alice);
+      await again.waitFor((frame) => frame.type === 'hello');
+    });
+  });
+
+  it('refuses a browser sign-in (authorization code) before binding the callback port', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const taken: Server = createServer();
+    await new Promise<void>((done) => taken.listen(0, '127.0.0.1', done));
+    try {
+      const port = (taken.address() as AddressInfo).port;
+      const requests: RestRequestDef[] = [
+        {
+          ...createRestRequest('OAuth', { id: 'req-oauth', url: 'https://api.example/x' }),
+          auth: {
+            type: 'oauth2',
+            grant: 'authorization-code',
+            tokenUrl: 'https://idp.example/token',
+            authorizationUrl: 'https://idp.example/authorize',
+            clientId: 'app',
+            scopes: ['read'],
+            clientAuth: 'body',
+            pkce: true,
+          },
+        },
+      ];
+      const { client } = await joinedWorkspace(h, alice, { requests });
+      expect(await client.call('preferences.update', { patch: { rest: { oauth2CallbackPort: port } } })).toMatchObject({
+        ok: true,
+      });
+      expect(await client.call('oauth2.fetchToken', { ownerId: 'req-oauth' })).toMatchObject({
+        ok: false,
+        error: { code: 'host-capability-missing', details: { capability: 'shell' } },
+      });
+    } finally {
+      await new Promise((done) => taken.close(done));
+    }
+  });
 });
 
 describeDb('the host socket and its token’s age (hosted edition spec §17.3)', () => {
@@ -393,17 +618,62 @@ describeDb('the host socket and its token’s age (hosted edition spec §17.3)',
   });
 });
 
-/** Alice's team workspace on the server, pushed by an editor, opened over a host socket. */
-async function joinedWorkspace(h: HostHarness, alice: Awaited<ReturnType<typeof browserUser>>) {
+describeDb('the host socket behind a trusted proxy (hosted edition spec §17.3)', () => {
+  let h: HostHarness;
+  beforeEach(async () => {
+    h = await hostHarness({ env: { WIREBENCH_SERVER_TRUST_PROXY: 'true' } });
+  });
+  afterEach(() => h.close());
+
+  it("audits a host's call to the server, and its secret writes, from the socket's address", async () => {
+    const root = await browserUser(h, 'root@example.com', { serverAdmin: true });
+    const client = await openHost(h, root, { 'x-forwarded-for': '203.0.113.7' });
+    await client.waitFor((frame) => frame.type === 'hello');
+    expect(await client.call('team.create', { url: PUBLIC_URL, name: 'Platform' })).toMatchObject({ ok: true });
+    expect(h.audit.filter((event) => event.action === 'team.created')).toEqual([
+      expect.objectContaining({ ip: '203.0.113.7' }),
+    ]);
+    expect(await client.call('secrets.set', { value: 'proxy-0123456789', label: 'proxied' })).toMatchObject({
+      ok: true,
+    });
+    await vi.waitFor(() =>
+      expect(h.audit.filter((event) => event.action === 'secret.written')).toEqual([
+        expect.objectContaining({ ip: '203.0.113.7' }),
+      ]),
+    );
+  });
+});
+
+/**
+ * Alice's team workspace on the server, pushed by `pusher` (an editor of its own unless given; a team
+ * admin to push team-secrets access entries), opened over a host socket.
+ */
+async function joinedWorkspace(
+  h: HostHarness,
+  alice: Awaited<ReturnType<typeof browserUser>>,
+  options: {
+    readonly requests?: readonly RestRequestDef[];
+    readonly extra?: (workspaceId: string) => Record<string, string>;
+    readonly admin?: boolean;
+  } = {},
+) {
   const editor = await signedInUser(h, { email: 'editor@example.com' });
-  const team = await seedTeam(h, { name: 'Payments QA', admins: [alice], members: [editor] });
+  const team = await seedTeam(
+    h,
+    options.admin === true
+      ? { name: 'Payments QA', admins: [alice, editor] }
+      : { name: 'Payments QA', admins: [alice], members: [editor] },
+  );
   const workspaceId = await seedSyncWorkspace(h, { team, name: 'Staging' });
-  await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+  if (options.admin !== true) {
+    await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+  }
+  const changes = await snapshotOf(workspaceId, options.requests ?? [], options.extra?.(workspaceId) ?? {});
   const pushed = await call<SyncPushResponse>(h, editor, 'POST', `/workspaces/${workspaceId}/sync/commits`, {
     parent: null,
-    commits: [{ subject: 'Start', at: AT, changes: await snapshotOf(workspaceId, []) }],
+    commits: [{ subject: 'Start', at: AT, changes }],
   });
-  expect(pushed.status).toBe(201);
+  expect(pushed.status, JSON.stringify(pushed.body)).toBe(201);
   const client = await openHost(h, alice);
   await client.waitFor((frame) => frame.type === 'hello');
   expect(await client.call('workspace.joinFromServer', { url: PUBLIC_URL, workspaceId })).toMatchObject({ ok: true });

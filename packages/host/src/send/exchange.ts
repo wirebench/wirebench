@@ -633,7 +633,8 @@ function runContextOf(located: Located, host: SendHost): RunContext {
     ...(located.loadedDefinitionFor !== undefined ? { loadedDefinitionFor: located.loadedDefinitionFor } : {}),
     // The run's registry: a send selects and runs through the kinds this run has on.
     ...(located.registry !== undefined ? { registry: located.registry } : {}),
-    // The host's `${#System#…}` scope; the engine falls back to the process environment without it.
+    // The host's `${#System#…}` scope (`savedContext` and `adHocContext` always set one), so the engine
+    // never falls back to the process environment.
     ...(located.system !== undefined ? { system: located.system } : {}),
     host,
   };
@@ -673,6 +674,8 @@ function savedContext(deps: SendThroughEngineDeps, requestId: string, envId: str
   const { service } = deps;
   return {
     ...located,
+    // The host's own `${#System#…}` scope when the project gives none: never the process fallback.
+    system: located.system ?? deps.hostState.systemValues,
     ...(defaultAction !== undefined
       ? { defaultWsaActionFor: (selected) => defaultAction.call(deps.project, selected.request.id) }
       : {}),
@@ -696,7 +699,7 @@ function adHocContext(deps: SendThroughEngineDeps, input: ResolvedSendInputWire)
     projectDir: tmpdir(),
     globals: { ...scopes?.global },
     overrides: { ...scopes?.env },
-    ...(scopes?.system !== undefined ? { system: scopes.system } : {}),
+    system: scopes?.system ?? deps.hostState.systemValues,
   };
 }
 

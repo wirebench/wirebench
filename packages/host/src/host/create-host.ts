@@ -368,6 +368,12 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
   const hasFiles = platform.capabilities.has('files');
   /** Whether secret sources (spec D6: commands and files on the machine) resolve here. */
   const hasSecretSources = hasFiles && platform.capabilities.has('secret-sources');
+  /**
+   * Whether this host may hold a team-secrets machine key (decision 5: the server's never does). Without
+   * it no workspace is handed to team secrets, so nothing makes, requests or uses a key, and only the
+   * status channel is served.
+   */
+  const hasTeamSecrets = platform.capabilities.has('team-secrets');
   /** Tells the embedder of a secret by name; its failure is never the caller's. */
   const reportSecret = (event: SecretEvent): void => {
     try {
@@ -496,6 +502,8 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
    */
   const oauth2Service = new OAuth2Service({
     openExternal: openExternalChecked,
+    // Without a shell there is no browser to send the user to: those grants are refused up front.
+    browserFlows: platform.shell !== undefined,
     callbackPort: () => preferencesService.get().rest.oauth2CallbackPort,
     ...egressOption,
   });
@@ -1113,7 +1121,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
       globals: globalProperties,
       // A project's import-time credentials (a definition's password or token ref) are resolutions too.
       secrets: { get: reporting(async (ref) => await secretStore.get(ref)) },
-      teamSecrets,
+      ...(hasTeamSecrets ? { teamSecrets } : {}),
       preferences: preferencesService,
       picks,
       issuedTokens: issuedTokensService.source,
@@ -1794,7 +1802,12 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
   if (hasSecretSources) {
     registerSecretSourcesChannels(handlerTable, workspaceService, secretSources);
   }
-  registerTeamSecretsChannels(handlerTable, teamSecrets, (feature) => workspaceService.requireFeature(feature));
+  registerTeamSecretsChannels(
+    handlerTable,
+    teamSecrets,
+    (feature) => workspaceService.requireFeature(feature),
+    hasTeamSecrets,
+  );
   registerSecretScanChannels(handlerTable, secretScans);
   registerSnapshotChannels(
     handlerTable,
