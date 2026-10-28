@@ -8,6 +8,8 @@ import type * as Engine from '../../src/index.js';
 
 /** Every type 3.0 adds. */
 export type Added = [
+  Engine.EgressPolicy,
+  Engine.AddressClass,
   Engine.ProtocolModule,
   Engine.ProtocolStorage,
   Engine.ProtocolRun,

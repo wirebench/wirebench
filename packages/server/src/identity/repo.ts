@@ -34,11 +34,14 @@ export interface InvitationRow {
   readonly acceptedAt: string | null;
   readonly revokedAt: string | null;
 }
+/** A desktop's device token, or a browser's session cookie (hosted spec §17.2). */
+export type TokenKind = 'device' | 'browser';
 export interface TokenRow {
   readonly id: string;
   readonly userId: string;
   readonly tokenHash: string;
   readonly deviceName: string;
+  readonly kind: TokenKind;
   readonly createdAt: string;
   readonly lastUsedAt: string;
   readonly revokedAt: string | null;
@@ -78,7 +81,7 @@ const INVITATION_COLUMNS =
   'id, kind, email, email_lower as "emailLower", user_id as "userId", secret_hash as "secretHash", server_admin as "serverAdmin", created_by as "createdBy", created_at as "createdAt", expires_at as "expiresAt", accepted_at as "acceptedAt", revoked_at as "revokedAt"';
 const INVITATION_DATES = ['createdAt', 'expiresAt', 'acceptedAt', 'revokedAt'];
 const TOKEN_COLUMNS =
-  'id, user_id as "userId", token_hash as "tokenHash", device_name as "deviceName", created_at as "createdAt", last_used_at as "lastUsedAt", revoked_at as "revokedAt"';
+  'id, user_id as "userId", token_hash as "tokenHash", device_name as "deviceName", kind, created_at as "createdAt", last_used_at as "lastUsedAt", revoked_at as "revokedAt"';
 const TOKEN_DATES = ['createdAt', 'lastUsedAt', 'revokedAt'];
 const FLOW_COLUMNS =
   'id, code_challenge as "codeChallenge", loopback_port as "loopbackPort", device_name as "deviceName", state, nonce, grant_hash as "grantHash", created_at as "createdAt", expires_at as "expiresAt", user_id as "userId"';
@@ -334,12 +337,14 @@ export async function insertToken(
     readonly userId: string;
     readonly tokenHash: string;
     readonly deviceName: string;
+    /** `device` when left out. */
+    readonly kind?: TokenKind;
     readonly at: Date;
   },
 ): Promise<void> {
   await db.query(
-    'insert into device_tokens (id, user_id, token_hash, device_name, created_at, last_used_at) values ($1, $2, $3, $4, $5, $5)',
-    [input.id, input.userId, input.tokenHash, input.deviceName, input.at],
+    'insert into device_tokens (id, user_id, token_hash, device_name, kind, created_at, last_used_at) values ($1, $2, $3, $4, $5, $6, $6)',
+    [input.id, input.userId, input.tokenHash, input.deviceName, input.kind ?? 'device', input.at],
   );
 }
 
@@ -350,7 +355,7 @@ export async function tokenByHash(
 ): Promise<{ readonly token: TokenRow; readonly user: UserRow } | undefined> {
   const rows = (
     await db.query(
-      `select t.id, t.user_id as "userId", t.token_hash as "tokenHash", t.device_name as "deviceName", t.created_at as "createdAt", t.last_used_at as "lastUsedAt", t.revoked_at as "revokedAt",
+      `select t.id, t.user_id as "userId", t.token_hash as "tokenHash", t.device_name as "deviceName", t.kind, t.created_at as "createdAt", t.last_used_at as "lastUsedAt", t.revoked_at as "revokedAt",
               u.email as "u_email", u.email_lower as "u_emailLower", u.display_name as "u_displayName", u.server_admin as "u_serverAdmin", u.created_at as "u_createdAt", u.disabled_at as "u_disabledAt"
        from device_tokens t join users u on u.id = t.user_id where t.token_hash = $1`,
       [tokenHash],
@@ -466,4 +471,9 @@ export async function claimGrantedFlow(db: Querier, id: string, grantHash: strin
 
 export async function deleteExpiredFlows(db: Querier, now: Date): Promise<number> {
   return (await db.query('delete from oidc_flows where expires_at < $1', [now])).rowCount ?? 0;
+}
+
+/** The browser's OIDC and SAML sign-ins that never came back (hosted spec §17.2). */
+export async function deleteExpiredBrowserFlows(db: Querier, now: Date): Promise<number> {
+  return (await db.query('delete from browser_flows where expires_at < $1', [now])).rowCount ?? 0;
 }

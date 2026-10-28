@@ -7,10 +7,11 @@
  * the run facet resolves those once per send and the transports only carry them on every call.
  */
 import type { Dispatcher } from 'undici';
-import { HttpError, McpError } from '#core/errors';
+import { HttpError, McpError, WirebenchError } from '#core/errors';
 import { createDispatcher } from '#core/http/client';
 import { createSseParser, type SseParser } from '#core/http/sse';
 import type { HttpExchange, ProxyOptions, Timings, TlsOptions } from '#core/http/types';
+import type { EgressPolicy } from '#core/net/egress';
 import type { JsonRpcId } from './jsonrpc.js';
 import { MCP_DEFAULT_TIMEOUT_MS, MCP_MAX_MESSAGE_BYTES } from './limits.js';
 
@@ -25,6 +26,8 @@ export interface McpHttpConnectionOptions {
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
   readonly localAddress?: string;
+  /** The egress rule a server applies (spec §17.5); absent, no check. */
+  readonly egress?: EgressPolicy;
   /** See `HttpRequest.allowH2`. */
   readonly allowH2?: boolean;
   /** Each call's own limit; the session's deadline is the one that normally ends it. Default 30 s. */
@@ -92,7 +95,8 @@ export function openMcpDispatcher(options: McpHttpConnectionOptions): McpDispatc
     options.tls !== undefined ||
     options.proxy !== undefined ||
     options.localAddress !== undefined ||
-    options.allowH2 === false;
+    options.allowH2 === false ||
+    options.egress !== undefined;
   try {
     return {
       dispatcher: createDispatcher({
@@ -100,10 +104,12 @@ export function openMcpDispatcher(options: McpHttpConnectionOptions): McpDispatc
         ...(options.proxy !== undefined ? { proxy: options.proxy } : {}),
         ...(options.localAddress !== undefined ? { localAddress: options.localAddress } : {}),
         ...(options.allowH2 !== undefined ? { allowH2: options.allowH2 } : {}),
+        ...(options.egress !== undefined ? { egress: options.egress } : {}),
       }),
       owned,
     };
   } catch (err) {
+    if (err instanceof WirebenchError && err.code === 'egress-refused') throw err;
     throw new McpError('mcp-transport-failed', err instanceof Error ? err.message : String(err), { cause: err });
   }
 }

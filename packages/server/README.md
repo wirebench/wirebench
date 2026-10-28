@@ -56,6 +56,10 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_SCHEDULES_ALERT_HOSTS` | no | — | The only hosts Slack, Teams and webhook alerts may go to: names or `*.example.com`, comma-separated. Unset, any https host. |
 | `WIREBENCH_SERVER_SMTP_URL` | no | — | Where email alerts are sent: `smtp://user:pass@mail.example.com:587` (STARTTLS when offered) or `smtps://…:465`. Unset, email alerts are refused. Never logged. |
 | `WIREBENCH_SERVER_SMTP_FROM` | no | — | The sender address of email alerts; required with WIREBENCH_SERVER_SMTP_URL. |
+| `WIREBENCH_SERVER_BROWSER_CLIENT` | no | `false` | Preview: the app in a browser tab arrives in a later release; for now this turns on the browser sign-in page (`/sign-in`) and cookie sessions. Needs WIREBENCH_SERVER_SECRETS_KEY. False, none of it runs. |
+| `WIREBENCH_SERVER_SECRETS_KEY` | no | — | Preview: the browser client that stores secrets arrives in a later release. Will encrypt them at rest: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on. Never logged. |
+| `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE` | no | `false` | Also refuse private network addresses (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7) for connections the server opens for users: scheduled runs, alerts and the browser client. Loopback, link-local and cloud metadata addresses are always refused. |
+| `WIREBENCH_SERVER_HOST_IDLE_MINUTES` | no | `30` | Preview: used by the browser tab, which arrives in a later release. Minutes after a user’s last browser connection closes before the server frees that user’s session (1–1440). |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
 
@@ -90,11 +94,14 @@ however the team already talks — the server sends no email. `admin list-invita
 Two sign-in methods, both on by default once configured: local accounts (email and password,
 `WIREBENCH_SERVER_LOCAL_AUTH`) and OpenID Connect (`WIREBENCH_SERVER_OIDC_*`). With OIDC, register
 the redirect URI `wirebench-server config check` prints (`<public URL>/api/v1/auth/oidc/callback`)
-at the identity provider; a login is linked to an existing account, or to an open invitation, by
-the provider's **verified** email, and never creates an account on its own. Sign-in and invitation
-endpoints are rate-limited to ten attempts a minute per address and per email (one process, so
-the counters reset on restart). Device tokens expire after `WIREBENCH_SERVER_TOKEN_IDLE_DAYS`
-without use or `WIREBENCH_SERVER_TOKEN_MAX_DAYS` at most; a user sees and revokes their devices
+at the identity provider. With the browser client on (`WIREBENCH_SERVER_BROWSER_CLIENT`), also
+register a second redirect URI, `<public URL>/api/v1/auth/oidc/browser-callback`, which the same
+command prints too: sign-ins started from the browser's `/sign-in` page come back there. A login is
+linked to an existing account, or to an open invitation, by the provider's **verified** email, and
+never creates an account on its own. Sign-in and invitation endpoints are rate-limited to ten
+attempts a minute per address and per email (one process, so the counters reset on restart). Device
+tokens expire after `WIREBENCH_SERVER_TOKEN_IDLE_DAYS` without use or
+`WIREBENCH_SERVER_TOKEN_MAX_DAYS` at most; a user sees and revokes their devices
 in the app, and an admin who disables a user revokes them all.
 
 ## SAML and SCIM
@@ -104,6 +111,11 @@ turns on SAML sign-in: the app offers _Continue with SSO_ and runs the same loop
 needs the entity ID `<public URL>/api/v1/auth/saml/metadata` and the ACS URL
 `<public URL>/api/v1/auth/saml/acs`; `serve` logs both. The metadata is read at start-up, so an IdP
 certificate rotation needs a restart. SAML never creates an account: SCIM or an invitation does.
+
+With the browser client on, the IdP also needs a second ACS URL, `<public URL>/api/v1/auth/saml/browser-acs`,
+for sign-ins started from the browser. `serve` logs it too, but the SP metadata names only the first, so
+add it at the IdP by hand. SAML from the browser needs an `https://` public URL: the IdP posts the response
+from its own site, and browsers only send the cookie that ties it to the sign-in when it is `Secure`.
 
 SCIM 2.0 answers at `<public URL>/scim/v2` with a bearer token from the app's Provisioning tab or the
 console. Deactivating a user at the IdP disables the account and revokes its devices; nothing is deleted.

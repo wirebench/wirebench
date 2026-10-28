@@ -296,6 +296,7 @@ export async function connectMcp(
     timeoutMs,
     ...(tls !== undefined ? { tls } : {}),
     ...(proxy !== undefined ? { proxy } : {}),
+    ...(context.host.egress !== undefined ? { egress: context.host.egress } : {}),
   };
   return {
     wire: transport.type === 'http' ? openStreamableHttpTransport(options) : openSseTransport(options),

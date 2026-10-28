@@ -11,9 +11,20 @@ export interface OidcClaims {
 
 export interface OidcProvider {
   readonly issuer: string;
-  authorizationUrl(input: { readonly state: string; readonly nonce: string; readonly redirectUri: string }): string;
+  /** `codeChallenge` (S256) is the browser flow's PKCE; the desktop's PKCE runs between it and this server. */
+  authorizationUrl(input: {
+    readonly state: string;
+    readonly nonce: string;
+    readonly redirectUri: string;
+    readonly codeChallenge?: string;
+  }): string;
   /** Exchanges the code in `callbackUrl` and verifies the ID token; rejects when the IdP refuses. */
-  exchange(input: { readonly callbackUrl: URL; readonly state: string; readonly nonce: string }): Promise<OidcClaims>;
+  exchange(input: {
+    readonly callbackUrl: URL;
+    readonly state: string;
+    readonly nonce: string;
+    readonly codeVerifier?: string;
+  }): Promise<OidcClaims>;
 }
 
 export interface OidcSettings {
@@ -42,18 +53,20 @@ export async function discoverOidc(settings: OidcSettings): Promise<OidcProvider
   const issuer = config.serverMetadata().issuer;
   return {
     issuer,
-    authorizationUrl: ({ state, nonce, redirectUri }) =>
+    authorizationUrl: ({ state, nonce, redirectUri, codeChallenge }) =>
       client.buildAuthorizationUrl(config, {
         redirect_uri: redirectUri,
         scope: settings.scopes.join(' '),
         state,
         nonce,
+        ...(codeChallenge !== undefined ? { code_challenge: codeChallenge, code_challenge_method: 'S256' } : {}),
       }).href,
-    exchange: async ({ callbackUrl, state, nonce }) => {
+    exchange: async ({ callbackUrl, state, nonce, codeVerifier }) => {
       const tokens = await client.authorizationCodeGrant(config, callbackUrl, {
         expectedState: state,
         expectedNonce: nonce,
         idTokenExpected: true,
+        ...(codeVerifier !== undefined ? { pkceCodeVerifier: codeVerifier } : {}),
       });
       const claims = tokens.claims();
       if (claims === undefined) throw new Error('the token response carried no ID token');

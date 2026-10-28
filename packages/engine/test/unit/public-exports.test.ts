@@ -90,6 +90,9 @@ const ADDED = [
   'stagePlugin',
   'appendPluginNetRecord',
   'pluginHistoryFile',
+  'checkEgress',
+  'checkedLookup',
+  'classifyAddress',
 ] as const;
 
 /** 2.x name, 3.0 name. */

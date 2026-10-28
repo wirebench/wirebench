@@ -192,6 +192,7 @@ export async function startServer(
     git,
     log: undefined as unknown as ServerContext['log'], // buildServer replaces it with the app's logger
     meta: new MetaRegistry(),
+    egress: { denyPrivate: config.egressDenyPrivate },
     hooks: serverHooks(),
     license: permissiveLicense(),
   };

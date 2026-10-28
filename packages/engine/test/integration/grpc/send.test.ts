@@ -58,6 +58,35 @@ function call(overrides: Partial<Parameters<typeof callGrpc>[0]> = {}) {
   });
 }
 
+describe('sendGrpc under the egress rule', () => {
+  const port = (): string => server.target.slice(server.target.lastIndexOf(':') + 1);
+
+  it('refuses localhost by name and never reaches the server', async () => {
+    const before = server.calls.length;
+    await expect(
+      sendGrpc(input({ target: `localhost:${port()}`, egress: { denyPrivate: false } })),
+    ).rejects.toMatchObject({ code: 'egress-refused', details: { host: 'localhost', addressClass: 'loopback' } });
+    expect(server.calls.length).toBe(before);
+  });
+
+  it('refuses a literal loopback address before dialling', async () => {
+    const before = server.calls.length;
+    await expect(
+      sendGrpc(input({ target: `127.0.0.1:${port()}`, egress: { denyPrivate: false } })),
+    ).rejects.toMatchObject({ code: 'egress-refused', details: { host: '127.0.0.1', addressClass: 'loopback' } });
+    await expect(call({ target: `grpc://[::1]:${port()}`, egress: { denyPrivate: false } })).rejects.toMatchObject({
+      code: 'egress-refused',
+      details: { addressClass: 'loopback' },
+    });
+    expect(server.calls.length).toBe(before);
+  });
+
+  it('still reaches localhost without a policy', async () => {
+    const exchange = await sendGrpc(input({ target: `localhost:${port()}` }));
+    expect(exchange.status).toBe(0);
+  });
+});
+
 describe('sendGrpc', () => {
   it('makes a unary call and reads the status from the trailers', async () => {
     const exchange = await sendGrpc(

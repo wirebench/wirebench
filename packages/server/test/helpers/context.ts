@@ -31,7 +31,7 @@ export async function testContext(
   const dataDir = overrides.dataDir ?? process.cwd();
   const { dataDir: droppedDataDir, ...rest } = overrides;
   void droppedDataDir; // not a ServerContext field; only used above to pick dataDir
-  return {
+  const context: ServerContext = {
     config: loadConfig(
       {
         WIREBENCH_SERVER_DATABASE_URL: 'postgres://test',
@@ -49,10 +49,15 @@ export async function testContext(
     git: new GitCli(location, { hooksDir: dataDir }),
     log: undefined as unknown as ServerContext['log'], // buildServer replaces it with the app's logger
     meta: new MetaRegistry(),
+    egress: { denyPrivate: false },
     hooks: serverHooks(),
     license: permissiveLicense(),
     ...rest,
   };
+  // Follows the config, as serve.ts builds it, unless the test passed its own.
+  return rest.egress !== undefined
+    ? context
+    : { ...context, egress: { denyPrivate: context.config.egressDenyPrivate } };
 }
 
 /** Wirebench's own token (`identity/tokens.ts` `TOKEN_PREFIX`) and license shapes, which the credential rules do not know. */

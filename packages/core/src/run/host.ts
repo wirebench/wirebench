@@ -6,6 +6,7 @@ import type { CookieJarHost } from '../http/cookies.js';
 import type { ProxyOptions } from '../http/types.js';
 import type { JwtSource } from '../http/auth/jwt.js';
 import type { Keystore } from '../keystore/index.js';
+import type { EgressPolicy } from '../net/egress.js';
 import type { Preferences } from '../project/preferences.js';
 import type { SelectedBase } from '../protocol/module.js';
 import type { GetSecret } from '../secrets/resolve.js';
@@ -75,6 +76,12 @@ export interface SendHost {
   /** Told every OAuth2 access token the send obtains, so the host can mask it in all it prints. */
   readonly onSecretValue?: (value: string) => void;
   readonly proxyFor?: (url: string) => Promise<ProxyOptions | undefined>;
+  /**
+   * The egress rule (hosted edition spec §17.5, ADR-0034): a server sets it, and every connection a
+   * send opens (the request, its redirects, its proxy hop, an OAuth2 token or a WS-Trust call)
+   * reaches only an address the policy allows. Absent: no check, as on the desktop and the CLI.
+   */
+  readonly egress?: EgressPolicy;
   readonly tls?: {
     /** Added to every TLS connection's trust: the system roots, a CA bundle, test anchors. */
     readonly anchors?: readonly string[];

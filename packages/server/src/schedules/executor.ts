@@ -21,6 +21,7 @@ import {
   parseDataFile,
   planIterations,
   runSuite,
+  scopedEgress,
   SECRET_ENV_PREFIX,
   secretNeedsOf,
   selectSuite,
@@ -28,6 +29,8 @@ import {
   unavailableCaptureSource,
   workspaceProjectDir,
   type DataTable,
+  type EgressPolicy,
+  type EgressScope,
   type GetSecret,
   type Iteration,
   type RunResult,
@@ -60,6 +63,12 @@ export interface ExecutorEnv {
   readonly now: () => Date;
   readonly setTimer: SetTimer;
   readonly log: FastifyBaseLogger;
+  /**
+   * The egress rule for every connection a run opens (hosted edition spec §17.5). `'unchecked'` exists
+   * for tests whose fixture servers listen on loopback; production always passes `ctx.egress`.
+   * Required, so a new caller cannot forget it.
+   */
+  readonly egress: EgressPolicy | 'unchecked';
 }
 
 /** Why the scheduler aborted a run; the executor's own deadline is `timeout`. */
@@ -156,6 +165,8 @@ export async function executeRun(env: ExecutorEnv, runId: string, signal: AbortS
   let commit: string | null = null;
   let environment: string | null = null;
   let snapshot: Materialised | undefined;
+  // One egress agent for the whole run, so its requests keep their connections as the CLI's do.
+  const egress: EgressScope | undefined = env.egress === 'unchecked' ? undefined : scopedEgress(env.egress);
   let outcome: Outcome;
   try {
     if (Object.keys(schedule.secrets).length > 0 && env.settings.secretKey === undefined) {
@@ -222,6 +233,7 @@ export async function executeRun(env: ExecutorEnv, runId: string, signal: AbortS
           onSecretValue: (value) => known.add(value),
           // One jar for the whole run: every request, sequence step and iteration shares it.
           cookies: jarCookieHost(new CookieJar()),
+          ...(egress !== undefined ? { egress: egress.policy } : {}),
         },
         insecure: options.insecureTls,
         signal: runSignal,
@@ -261,6 +273,7 @@ export async function executeRun(env: ExecutorEnv, runId: string, signal: AbortS
     }
   } finally {
     timer.cancel();
+    await egress?.close();
     await snapshot?.dispose();
   }
 

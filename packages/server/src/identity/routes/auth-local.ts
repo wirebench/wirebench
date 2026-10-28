@@ -1,10 +1,15 @@
-import { localSignInRequestSchema, signInResponseSchema, type LocalSignInRequest } from '@wirebench/engine';
+import {
+  localSignInRequestSchema,
+  signInResponseSchema,
+  type LocalSignInRequest,
+  type WirebenchError,
+} from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import { ANONYMOUS_SOURCE, announce, auditSource, recordAudit } from '../../context.js';
+import { ANONYMOUS_SOURCE, announce, auditSource, recordAudit, type AuditSource } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
+import { clearSessionCookie, sessionToken } from '../cookies.js';
 import type { IdentityEnv } from '../env.js';
-import { invalidCredentials, methodDisabled, userDisabled } from '../errors.js';
-import { requireUser } from '../guard.js';
+import { invalidCredentials, methodDisabled, unauthenticated, userDisabled } from '../errors.js';
 import { hashPassword, verifyPassword } from '../passwords.js';
 import { emailKey, ipKey, rateLimit } from '../rate-limit.js';
 import * as repo from '../repo.js';
@@ -17,6 +22,43 @@ import { emailLower, signIn } from '../sessions.js';
  */
 let decoy: Promise<string> | undefined;
 const decoyHash = (): Promise<string> => (decoy ??= hashPassword('wirebench-decoy-never-matches'));
+
+export type LocalCheck =
+  { readonly ok: true; readonly user: repo.UserRow } | { readonly ok: false; readonly error: WirebenchError };
+
+/**
+ * The email and password check both local sign-ins share, the desktop's JSON route and the browser's
+ * form: the decoy for an unknown email, one refusal for an unknown email and a wrong password, the
+ * `auth.sign_in_failed` event, and the rehash of an outdated hash. The callers charge the rate limits.
+ */
+export async function checkLocalCredentials(
+  env: IdentityEnv,
+  source: AuditSource,
+  email: string,
+  password: string,
+): Promise<LocalCheck> {
+  const user = await repo.findUserByEmail(env.ctx.db, emailLower(email));
+  const credential = user === undefined ? undefined : await repo.credentialOf(env.ctx.db, user.id);
+  const verdict = await verifyPassword(password, credential?.passwordHash ?? (await decoyHash()));
+  const failed = (reason: string) =>
+    recordAudit(env.ctx.hooks, env.ctx.db, {
+      ...source,
+      ...ANONYMOUS_SOURCE,
+      action: 'auth.sign_in_failed',
+      target: { kind: 'server' },
+      details: { method: 'local', reason, emailLower: emailLower(email) },
+    });
+  if (user === undefined || credential === undefined || !verdict.ok) {
+    await failed('identity-invalid-credentials');
+    return { ok: false, error: invalidCredentials() };
+  }
+  if (user.disabledAt !== null) {
+    await failed('identity-user-disabled');
+    return { ok: false, error: userDisabled() };
+  }
+  if (verdict.rehash) await repo.upsertCredential(env.ctx.db, user.id, await hashPassword(password), env.now());
+  return { ok: true, user };
+}
 
 export const authLocalRoutes =
   (env: IdentityEnv) =>
@@ -33,43 +75,34 @@ export const authLocalRoutes =
       async (request, reply) => {
         if (!env.settings.local) throw methodDisabled();
         const body = request.body as LocalSignInRequest;
-        const user = await repo.findUserByEmail(env.ctx.db, emailLower(body.email));
-        const credential = user === undefined ? undefined : await repo.credentialOf(env.ctx.db, user.id);
-        const verdict = await verifyPassword(body.password, credential?.passwordHash ?? (await decoyHash()));
         const source = auditSource(request);
-        const failed = (reason: string) =>
-          recordAudit(env.ctx.hooks, env.ctx.db, {
-            ...source,
-            ...ANONYMOUS_SOURCE,
-            action: 'auth.sign_in_failed',
-            target: { kind: 'server' },
-            details: { method: 'local', reason, emailLower: emailLower(body.email) },
-          });
-        if (user === undefined || credential === undefined || !verdict.ok) {
-          await failed('identity-invalid-credentials');
-          throw invalidCredentials();
-        }
-        if (user.disabledAt !== null) {
-          await failed('identity-user-disabled');
-          throw userDisabled();
-        }
-        if (verdict.rehash)
-          await repo.upsertCredential(env.ctx.db, user.id, await hashPassword(body.password), env.now());
-        return reply.code(201).send(await signIn(env, user, 'local', body.device.name, source));
+        const checked = await checkLocalCredentials(env, source, body.email, body.password);
+        if (!checked.ok) throw checked.error;
+        return reply.code(201).send(await signIn(env, checked.user, 'local', body.device.name, source));
       },
     );
 
-    app.post('/auth/sign-out', { preHandler: requireUser }, async (request, reply) => {
+    app.post('/auth/sign-out', async (request, reply) => {
+      if (request.caller === undefined) {
+        // A cookie the guard found stale (revoked, expired, unknown) is still dropped, so the browser
+        // stops presenting it; the answer stays 401 since no session was ended.
+        if (env.ctx.config.browserClient && sessionToken(request, env.ctx.config.publicUrl) !== undefined)
+          clearSessionCookie(reply, env.ctx.config.publicUrl);
+        throw unauthenticated();
+      }
+      const caller = request.caller;
       await env.ctx.db.transaction(async (tx) => {
-        await repo.revokeToken(tx, request.caller!.tokenId, env.now());
+        await repo.revokeToken(tx, caller.tokenId, env.now());
         await recordAudit(env.ctx.hooks, tx, {
           ...auditSource(request),
           action: 'auth.signed_out',
-          target: { kind: 'user', id: request.caller!.id },
-          details: { tokenId: request.caller!.tokenId },
+          target: { kind: 'user', id: caller.id },
+          details: { tokenId: caller.tokenId },
         });
       });
-      announce(env.ctx.hooks.sessionEnded, { tokenId: request.caller!.tokenId }, request.log);
+      announce(env.ctx.hooks.sessionEnded, { tokenId: caller.tokenId }, request.log);
+      // A browser session also loses its cookie (hosted spec §17.2); a desktop's reply carries none.
+      if (caller.via === 'cookie') clearSessionCookie(reply, env.ctx.config.publicUrl);
       return reply.code(204).send();
     });
   };

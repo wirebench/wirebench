@@ -12,6 +12,7 @@
 import { WirebenchError } from '../errors.js';
 import { sendHttp } from '../http/client.js';
 import type { HttpExchange, HttpRequest, ProxyOptions, TlsOptions } from '../http/types.js';
+import type { EgressPolicy } from '../net/egress.js';
 import type { OAuth2Auth } from '../project/model.js';
 import { expand } from '../project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
@@ -37,6 +38,8 @@ export interface TokenRequestContext {
   readonly tls?: TlsOptions;
   /** The proxy for the token URL, chosen after it is expanded. */
   readonly proxy?: (tokenUrl: string) => Promise<ProxyOptions | undefined>;
+  /** The egress rule a server applies (hosted edition spec §17.5); absent, no check. */
+  readonly egress?: EgressPolicy;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
   /**
@@ -182,6 +185,7 @@ export function createRunTokenSource(options: RunTokenSourceOptions): RunTokenSo
       ...built,
       ...(tls !== undefined ? { tls } : {}),
       ...(proxy !== undefined ? { proxy } : {}),
+      ...(request.egress !== undefined ? { egress: request.egress } : {}),
     });
     const token = parseTokenResponse({ status: exchange.status, body: exchange.body, now });
     options.onSecretValue?.(token.accessToken);

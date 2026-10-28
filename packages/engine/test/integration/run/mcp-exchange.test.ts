@@ -154,6 +154,29 @@ describe('an MCP API run', () => {
     }
   });
 
+  it('under the egress rule, refuses the Streamable HTTP helper on loopback, by address and by name, sending nothing', async () => {
+    const before = http.requests.length;
+    for (const url of [http.url, http.url.replace('127.0.0.1', 'localhost')]) {
+      const server = createMcpServer('Remote', {
+        id: 's-remote',
+        transport: { type: 'http', url, headers: [] },
+        requests: [request('List', { method: 'tools/list' })],
+      });
+      const p = project([server]);
+      const result = await runRequests(
+        selectRequests(p, []).selected,
+        context(p, testHost({}, { egress: { denyPrivate: false } })),
+      );
+      // MCP wraps every transport failure as `mcp-http-failed`; the refusal is its reason.
+      expect(result.requests[0]).toMatchObject({
+        protocol: 'mcp',
+        outcome: 'errored',
+        error: { code: 'mcp-http-failed', details: { reason: 'egress-refused', addressClass: 'loopback' } },
+      });
+    }
+    expect(http.requests.length).toBe(before);
+  });
+
   it('a run against a server that exits fails rather than passes', async () => {
     const server = createMcpServer('Crash', {
       id: 's-crash',

@@ -2,14 +2,16 @@
  * The guard other modules use (identity spec §3.2). One `onRequest` hook parses the header when
  * present and leaves `request.caller` undefined when absent; the two `preHandler`s turn absence
  * into `identity-unauthenticated` / `identity-forbidden`. Nothing else in the server reads
- * `Authorization`.
+ * `Authorization`. With the browser client on, the same hook also reads the session cookie
+ * (hosted spec §17.2).
  */
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyRequest, onRequestAsyncHookHandler, preHandlerHookHandler } from 'fastify';
 import { DEVICE_TOKEN_PATTERN, isWirebenchError } from '@wirebench/engine';
 import type { Querier } from '../context.js';
 import type { IdentityEnv, IdentitySettings } from './env.js';
-import { forbidden, unauthenticated, userDisabled } from './errors.js';
+import { sessionToken } from './cookies.js';
+import { forbidden, originRefused, unauthenticated, userDisabled } from './errors.js';
 import * as repo from './repo.js';
 import { bearerToken, hashToken } from './tokens.js';
 
@@ -18,6 +20,8 @@ export interface Caller {
   readonly email: string;
   readonly serverAdmin: boolean;
   readonly tokenId: string;
+  /** How the token arrived: an `Authorization` header, or the browser's session cookie (hosted spec §17.2). */
+  readonly via: 'bearer' | 'cookie';
 }
 
 declare module 'fastify' {
@@ -64,17 +68,20 @@ export interface TokenCaller {
  * `identity-unauthenticated` for a malformed, unknown, revoked or expired token (deleting an expired
  * one lazily), and `identity-user-disabled` for a disabled user. It touches `last_used_at` at most
  * once a minute. `authenticate` and the live socket's `auth` message (live-updates spec §3.3, §5.1)
- * both call it, so the two can never disagree about a token.
+ * both call it, so the two can never disagree about a token. From the cookie (`via: 'cookie'`) only a
+ * `browser` token counts, so a desktop's token cannot be replayed as a browser session.
  */
 export async function callerForToken(
   env: { readonly db: Querier; readonly settings: IdentitySettings; readonly now: () => Date },
   token: string,
+  via: Caller['via'] = 'bearer',
 ): Promise<TokenCaller> {
   if (!DEVICE_TOKEN_PATTERN.test(token)) throw unauthenticated(); // no query for something that is not a token
   const hash = hashToken(token);
   const found = await repo.tokenByHash(env.db, hash);
   if (found === undefined || !sameHash(found.token.tokenHash, hash) || found.token.revokedAt !== null)
     throw unauthenticated();
+  if (via === 'cookie' && found.token.kind !== 'browser') throw unauthenticated();
   const now = env.now();
   if (isTokenExpired(found.token, now, env.settings)) {
     await repo.deleteToken(env.db, found.token.id); // lazy expiry (§3.5); the daily sweep gets the rest
@@ -89,6 +96,7 @@ export async function callerForToken(
       email: found.user.email,
       serverAdmin: found.user.serverAdmin,
       tokenId: found.token.id,
+      via,
     },
     displayName: found.user.displayName,
     tokenCreatedAt: found.token.createdAt,
@@ -107,13 +115,53 @@ declare module 'fastify' {
     /** Filled by modules registered after identity; read by `authenticate` at request time. */
     bearerFallbacks: BearerFallback[];
   }
+  interface FastifyContextConfig {
+    /**
+     * `false` on a route that takes no caller and is posted to by another site: an IdP's SAML ACS or
+     * an OIDC callback. The guard then ignores the session cookie entirely, so a browser that already
+     * holds a session is neither signed in by it nor refused for the IdP's `Origin`.
+     */
+    cookieAuth?: boolean;
+  }
+}
+
+/** Methods a cross-site page may trigger with the cookie under `SameSite=Lax`; every other one needs our `Origin`. */
+const SAFE_METHODS = new Set(['GET', 'HEAD']);
+
+/**
+ * The session cookie, tried only when no `Authorization` header named a token. A cookie the guard
+ * refuses as unknown, revoked or expired leaves the caller undefined, as if absent: a stale cookie must
+ * not break the routes that need no caller, and `requireUser` still answers `401`. A write
+ * authenticated this way must carry `Origin` equal to the public URL (CSRF; hosted spec §17.2).
+ */
+async function cookieCaller(
+  env: IdentityEnv,
+  tokens: Parameters<typeof callerForToken>[0],
+  request: FastifyRequest,
+): Promise<void> {
+  const token = sessionToken(request, env.ctx.config.publicUrl);
+  if (token === undefined) return;
+  let caller: Caller;
+  try {
+    caller = (await callerForToken(tokens, token, 'cookie')).caller;
+  } catch (error) {
+    if (isWirebenchError(error) && error.code === 'identity-unauthenticated') return;
+    throw error;
+  }
+  if (!SAFE_METHODS.has(request.method) && request.headers.origin !== env.ctx.config.publicUrl) throw originRefused();
+  request.caller = caller;
 }
 
 export function authenticate(env: IdentityEnv, fallbacks: readonly BearerFallback[] = []): onRequestAsyncHookHandler {
   const tokens = { db: env.ctx.db, settings: env.settings, now: env.now };
   return async (request) => {
     const token = bearerToken(request.headers.authorization);
-    if (token === undefined) return; // no header (or not a device token): the preHandlers decide
+    if (token === undefined) {
+      // No header (or not a device token): the cookie when the browser client is on, else the preHandlers decide.
+      if (env.ctx.config.browserClient && request.routeOptions.config.cookieAuth !== false)
+        await cookieCaller(env, tokens, request);
+      return;
+    }
     try {
       request.caller = (await callerForToken(tokens, token)).caller;
     } catch (error) {

@@ -80,11 +80,12 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
         now,
         setTimer,
         log: ctx.log,
+        egress: ctx.egress,
         license,
         ...(options.execute !== undefined ? { execute: options.execute } : {}),
       });
       options.onScheduler?.(scheduler);
-      const deliver = options.deliver ?? alertDelivery(settings);
+      const deliver = options.deliver ?? alertDelivery(settings, { egress: ctx.egress });
       const outbox = new AlertOutbox({ db: ctx.db, now, setTimer, log: ctx.log, license, deliver });
       options.onOutbox?.(outbox);
       scheduleRoutes({ db: ctx.db, hooks: ctx.hooks, license, settings, now, deliver })(app);

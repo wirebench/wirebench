@@ -1,11 +1,12 @@
 /**
  * An OpenID provider in a few dozen lines: discovery, JWKS, `/authorize` (answers a code at
- * once, no login page), `/token` (client_secret_post, one use per code) and RS256 ID tokens
+ * once, no login page), `/token` (client_secret_post, one use per code, PKCE when the request
+ * carried a challenge) and RS256 ID tokens
  * signed with node:crypto — enough for `openid-client` to really discover, exchange and verify.
  * `nextUser` decides whose claims the next code carries; omit `email` or `email_verified` to
  * test the refusals of spec §3.3.
  */
-import { createSign, generateKeyPairSync, randomBytes, type KeyObject } from 'node:crypto';
+import { createHash, createSign, generateKeyPairSync, randomBytes, type KeyObject } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
@@ -22,6 +23,8 @@ export interface FakeOidcIssuer {
   readonly clientSecret: string;
   /** Whose claims the next authorization code carries. */
   nextUser(user: FakeIdpUser): void;
+  /** Signs the next ID token with this nonce instead of the one the request carried (a replayed token). */
+  nextNonce(nonce: string): void;
   /** Plays the browser: opens the authorization URL and returns the URL the IdP redirects back to. */
   authorize(authorizationUrl: string): Promise<URL>;
   readonly tokenRequests: number;
@@ -45,8 +48,12 @@ export async function startFakeOidcIssuer(
   const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const kid = 'fake-idp-key';
   const jwk = publicKey.export({ format: 'jwk' });
-  const codes = new Map<string, { user: FakeIdpUser; nonce: string; redirectUri: string }>();
+  const codes = new Map<
+    string,
+    { user: FakeIdpUser; nonce: string; redirectUri: string; codeChallenge: string | undefined }
+  >();
   let pending: FakeIdpUser = { sub: 'sub-alice', email: 'alice@example.com', email_verified: true, name: 'Alice' };
+  let nonceOverride: string | undefined;
   let tokenRequests = 0;
   let url = '';
 
@@ -76,8 +83,15 @@ export async function startFakeOidcIssuer(
     }
     if (target.pathname === '/authorize') {
       const code = randomBytes(16).toString('hex');
+      const overridden = nonceOverride;
+      nonceOverride = undefined;
       const redirectUri = target.searchParams.get('redirect_uri') ?? '';
-      codes.set(code, { user: pending, nonce: target.searchParams.get('nonce') ?? '', redirectUri });
+      codes.set(code, {
+        user: pending,
+        nonce: overridden ?? target.searchParams.get('nonce') ?? '',
+        redirectUri,
+        codeChallenge: target.searchParams.get('code_challenge') ?? undefined,
+      });
       const back = new URL(redirectUri);
       back.searchParams.set('code', code);
       back.searchParams.set('state', target.searchParams.get('state') ?? '');
@@ -98,7 +112,12 @@ export async function startFakeOidcIssuer(
           grant === undefined ||
           form.get('client_id') !== clientId ||
           form.get('client_secret') !== clientSecret ||
-          form.get('redirect_uri') !== grant.redirectUri
+          form.get('redirect_uri') !== grant.redirectUri ||
+          // PKCE (RFC 7636 S256), checked only when the authorization request carried a challenge.
+          (grant.codeChallenge !== undefined &&
+            createHash('sha256')
+              .update(form.get('code_verifier') ?? '')
+              .digest('base64url') !== grant.codeChallenge)
         ) {
           json(400, { error: 'invalid_grant' });
           return;
@@ -138,6 +157,9 @@ export async function startFakeOidcIssuer(
     clientSecret,
     nextUser: (user) => {
       pending = user;
+    },
+    nextNonce: (nonce) => {
+      nonceOverride = nonce;
     },
     authorize: async (authorizationUrl) => {
       const response = await fetch(authorizationUrl, { redirect: 'manual' });

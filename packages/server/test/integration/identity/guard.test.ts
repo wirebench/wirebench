@@ -45,7 +45,13 @@ describeDb('the caller guard (§3.2)', () => {
     const ok = await get('/api/v1/probe/user', alice.headers.authorization);
     expect(ok.statusCode).toBe(200);
     expect(ok.json()).toEqual({
-      caller: { id: alice.user.id, email: 'alice@example.com', serverAdmin: false, tokenId: alice.tokenId },
+      caller: {
+        id: alice.user.id,
+        email: 'alice@example.com',
+        serverAdmin: false,
+        tokenId: alice.tokenId,
+        via: 'bearer',
+      },
     });
     const forbidden = await get('/api/v1/probe/admin', alice.headers.authorization);
     expect(forbidden.statusCode).toBe(403);
@@ -115,7 +121,13 @@ describeDb('callerForToken (live-updates §3.3, §5.1)', () => {
     const root = await signedInUser(h, { email: 'root@example.com', serverAdmin: true });
     h.clock.advance(5 * 60_000); // the creation time, not the time of the check
     expect(await resolve(alice.token)).toEqual({
-      caller: { id: alice.user.id, email: 'alice@example.com', serverAdmin: false, tokenId: alice.tokenId },
+      caller: {
+        id: alice.user.id,
+        email: 'alice@example.com',
+        serverAdmin: false,
+        tokenId: alice.tokenId,
+        via: 'bearer',
+      },
       displayName: 'alice',
       tokenCreatedAt: '2026-09-24T12:00:00.000Z',
     });

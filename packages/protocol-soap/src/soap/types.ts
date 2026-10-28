@@ -11,6 +11,7 @@ import type { SchemaSet } from '../xsd/schema-set.js';
 import type { AuthSummary, SendAuth } from '#core/http/auth/send-auth';
 import type { KerberosSendAuth } from '#core/http/auth/kerberos-token';
 import type { HttpExchange, ProxyOptions, TlsOptions } from '#core/http/types';
+import type { EgressPolicy } from '#core/net/egress';
 import type { SoapEnvelopeVersion } from './envelope.js';
 import type { SoapFault } from './fault.js';
 import type { UnresolvedRef } from '#core/project/properties';
@@ -137,6 +138,8 @@ export interface SoapSendInput {
   readonly skipSoapAction?: boolean;
   /** Local network interface address to bind the outgoing socket to ("Bind Address"). */
   readonly localAddress?: string;
+  /** The egress rule a server applies (hosted edition spec §17.5); absent, no check. */
+  readonly egress?: EgressPolicy;
   /** Compress the request body and set `Content-Encoding` accordingly. Default: uncompressed. */
   readonly compressBody?: 'gzip';
   /**

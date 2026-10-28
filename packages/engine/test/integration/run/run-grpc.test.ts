@@ -153,6 +153,16 @@ describe('runRequests — gRPC', () => {
     expect(dead?.status).toBeUndefined();
   });
 
+  it("errors a call to a loopback server under the host's egress rule, and sends nothing", async () => {
+    const project = makeProject([call('hello', 0, 'SayHello', { name: 'Ada' }, [{ type: 'status', equals: 0 }])]);
+    const before = server.calls.length;
+    const [only] = (
+      await runRequests(all(project), contextFor(project, { host: { ...testHost(), egress: { denyPrivate: false } } }))
+    ).requests;
+    expect(only).toMatchObject({ protocol: 'grpc', outcome: 'errored', error: { code: 'egress-refused' } });
+    expect(server.calls.length).toBe(before);
+  });
+
   it('holds a call to --timeout rather than its own deadline, and errors it with timeout', async () => {
     const project = makeProject([
       {

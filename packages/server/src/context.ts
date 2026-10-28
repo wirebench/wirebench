@@ -6,6 +6,7 @@ import type {
   AuditTargetKind,
   Edition,
   Feature,
+  EgressPolicy,
   GitCli,
   HooksMeta,
   LicenseState,
@@ -328,6 +329,11 @@ export interface ServerContext {
   readonly log: FastifyBaseLogger;
   readonly meta: MetaRegistry;
   readonly hooks: ServerHooks;
+  /**
+   * The egress rule for connections the server opens on a user's or workspace's behalf (hosted edition
+   * spec §17.5): `{ denyPrivate: config.egressDenyPrivate }`.
+   */
+  readonly egress: EgressPolicy;
   /** Replaced by the licensing module in `register()`; the one field a module may assign (licensing spec §5.1). */
   license: LicenseService;
 }

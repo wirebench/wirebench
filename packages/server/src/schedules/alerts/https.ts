@@ -8,6 +8,8 @@
 import { createHmac } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { request } from 'node:https';
+import { isIP } from 'node:net';
+import { checkEgress, checkedLookup, type EgressPolicy } from '@wirebench/engine';
 import { reason, trustAnchors } from '../../audit-log/forward/trust.js';
 import { alertHostAllowed } from '../settings.js';
 
@@ -27,6 +29,13 @@ export interface HttpsDeliveryOptions {
   /** A PEM bundle added to the system roots. */
   readonly ca?: string;
   readonly timeoutMs?: number;
+  /**
+   * The egress rule (hosted edition spec §17.5): the connection resolves through the checked lookup, and
+   * a literal address in the URL is checked first, since it never reaches a lookup. `'unchecked'` exists
+   * for tests whose fixture servers listen on loopback; production always passes `ctx.egress`. Required,
+   * so a new caller cannot forget it.
+   */
+  readonly egress: EgressPolicy | 'unchecked';
 }
 
 /** The `X-Wirebench-Signature` value for `body` under `secret`. */
@@ -34,7 +43,7 @@ export function alertSignature(secret: string, body: string): string {
   return `sha256=${createHmac('sha256', secret).update(body, 'utf8').digest('hex')}`;
 }
 
-export function postAlert(alert: HttpsAlert, options: HttpsDeliveryOptions = {}): Promise<void> {
+export function postAlert(alert: HttpsAlert, options: HttpsDeliveryOptions): Promise<void> {
   const url = new URL(alert.url);
   const host = url.hostname.toLowerCase();
   if (url.protocol !== 'https:') return Promise.reject(new Error(`the alert URL for ${host} is not https://`));
@@ -43,6 +52,15 @@ export function postAlert(alert: HttpsAlert, options: HttpsDeliveryOptions = {})
   const body = JSON.stringify(alert.body);
   const timeoutMs = options.timeoutMs ?? ALERT_DEADLINE_MS;
   const ca = trustAnchors(options.ca);
+  const literal = host.startsWith('[') ? host.slice(1, -1) : host;
+  const policy = options.egress === 'unchecked' ? undefined : options.egress;
+  if (policy !== undefined && isIP(literal) !== 0) {
+    try {
+      checkEgress(host, literal, policy);
+    } catch (error) {
+      return Promise.reject(new Error(`the alert to ${host} failed: ${reason(error)}`));
+    }
+  }
   return new Promise((resolve, reject) => {
     let settled = false;
     const settle = (error?: Error) => {
@@ -57,6 +75,7 @@ export function postAlert(alert: HttpsAlert, options: HttpsDeliveryOptions = {})
       {
         method: 'POST',
         agent: false,
+        ...(policy !== undefined ? { lookup: checkedLookup(policy) } : {}),
         ...(ca !== undefined ? { ca } : {}),
         headers: {
           'content-type': 'application/json',

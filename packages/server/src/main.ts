@@ -31,6 +31,11 @@ export async function main(argv: readonly string[], io: ServerIo, serveOptions: 
           io.stdout.write(
             `OIDC redirect URI to register at the issuer: ${config.publicUrl}/api/v1/auth/oidc/callback\n`,
           );
+          // Hosted spec §17.2: sign-ins started from the browser come back to a second one.
+          if (config.browserClient)
+            io.stdout.write(
+              `OIDC redirect URI for the browser client: ${config.publicUrl}/api/v1/auth/oidc/browser-callback\n`,
+            );
         }
         return ExitCode.Ok;
       } catch (error) {

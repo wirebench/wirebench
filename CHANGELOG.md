@@ -38,6 +38,13 @@ All notable changes to this project are documented here. The format follows
   Keyboard shortcuts table keeps a minimum width (it scrolls sideways in a narrow window) with Reset all on one line.
 - **Comment toggle in a JSON body keeps the indent.** Ctrl+/ puts `//` at the indent of the selected
   lines instead of at column 1, and toggling again restores the text exactly.
+- **Server: scheduled runs and alerts no longer reach the server's own machine (behaviour change for
+  existing servers).** A request in a scheduled run, and a Slack, Teams or webhook alert, whose host
+  resolves to a loopback, link-local, unspecified or cloud-metadata address is now refused with
+  `egress-refused`, so a schedule that sent to `localhost`, `127.0.0.1` or a sidecar on the same host
+  fails after the upgrade. Address an internal service by a name that resolves to a non-loopback address
+  instead. Private ranges (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7) stay reachable unless
+  `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true`, which refuses them too.
 
 ## [6.1.0] - 2026-10-23
 

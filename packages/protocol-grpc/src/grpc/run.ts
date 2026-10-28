@@ -179,6 +179,7 @@ export async function connectGrpc(
     ...input,
     ...(auth !== undefined ? { auth } : {}),
     ...(tls !== undefined ? { tlsOptions: { ...input.tlsOptions, ...tls } } : {}),
+    ...(context.host.egress !== undefined ? { egress: context.host.egress } : {}),
   };
 }
 

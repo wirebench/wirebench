@@ -14,15 +14,18 @@
  *   travels in its first message (§6).
  */
 import diagnosticsChannel from 'node:diagnostics_channel';
-import { ProxyAgent, WebSocket, type Dispatcher } from 'undici';
-import { WsError } from '#core/errors';
-import { createDispatcher, proxyAgentOptionsFor } from '#core/http/client';
+import { WebSocket, type Dispatcher } from 'undici';
+import { WirebenchError, WsError } from '#core/errors';
+import { createDispatcher, createProxyAgent, proxyAgentOptionsFor } from '#core/http/client';
 import type { ProxyOptions, TlsOptions } from '#core/http/types';
+import type { EgressPolicy } from '#core/net/egress';
 
 /** Options for {@link connectWebSocket}: the TLS and proxy settings an HTTP call to the same server gets. */
 export interface ConnectOptions {
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
+  /** The egress rule a server applies (spec §17.5); absent, no check. */
+  readonly egress?: EgressPolicy;
 }
 
 /** A socket from {@link connectWebSocket}, and what to call once finished with it. */
@@ -51,6 +54,8 @@ export interface WsTransportOptions {
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
   readonly localAddress?: string;
+  /** The egress rule: the handshake connects through the checked lookup, the proxy hop included. */
+  readonly egress?: EgressPolicy;
 }
 
 /** A handshake's dispatcher, and whether the caller owns (and so must close) it. */
@@ -69,22 +74,28 @@ export interface WsDispatcher {
  *
  * When an unproxied socket owns its dispatcher: only when it asked for TLS or bind-address options.
  * With neither, `createDispatcher` hands back the shared keep-alive agent, which the caller must never
- * close.
+ * close. With an egress policy it always owns one, since the shared agent checks nothing.
  *
  * Not part of the package's public surface: `index.ts` does not re-export it.
+ *
+ * @throws WirebenchError `egress-refused` for a proxy at a literal address the policy refuses
  */
 export function wsDispatcher(options: WsTransportOptions): WsDispatcher {
   const connect = {
     ...(options.tls !== undefined ? { tls: options.tls } : {}),
     ...(options.localAddress !== undefined ? { localAddress: options.localAddress } : {}),
+    ...(options.egress !== undefined ? { egress: options.egress } : {}),
   };
   if (options.proxy !== undefined) {
-    const agent = new ProxyAgent(proxyAgentOptionsFor(options.proxy, connect, false, { proxyTunnel: true }));
+    const agent = createProxyAgent(
+      proxyAgentOptionsFor(options.proxy, connect, false, { proxyTunnel: true }),
+      options.egress,
+    );
     return { dispatcher: agent, owned: true };
   }
   return {
     dispatcher: createDispatcher(connect),
-    owned: options.tls !== undefined || options.localAddress !== undefined,
+    owned: options.tls !== undefined || options.localAddress !== undefined || options.egress !== undefined,
   };
 }
 
@@ -111,11 +122,18 @@ function refusalStatusFor(message: unknown, httpOrigin: string, pathAndSearch: s
   return typeof status === 'number' && status !== 101 ? status : undefined;
 }
 
+/** Whether `err` is the egress rule's refusal, which a caller must see as itself, not as bad options. */
+export function isEgressRefusal(err: unknown): err is WirebenchError {
+  return err instanceof WirebenchError && err.code === 'egress-refused';
+}
+
 /**
- * Opens `url` (`ws:` or `wss:`) through a dispatcher built from `options`.
+ * Opens `url` (`ws:` or `wss:`) through a dispatcher built from `options`. Under an egress policy a
+ * refused name fails the socket with `error`, as any connection failure does.
  *
  * @throws WsError `ws-bad-options` for a URL or an option the constructor refuses. When it throws,
  *   nothing is left subscribed or open.
+ * @throws WirebenchError `egress-refused` for a proxy at a literal address the policy refuses
  */
 export function connectWebSocket(url: string, options: ConnectOptions = {}): ConnectedWebSocket {
   let target: URL;
@@ -145,6 +163,7 @@ export function connectWebSocket(url: string, options: ConnectOptions = {}): Con
   } catch (err) {
     stopWatching();
     if (transport?.owned === true) void transport.dispatcher.close().catch(() => undefined);
+    if (isEgressRefusal(err)) throw err;
     const reason = err instanceof Error ? err.message : String(err);
     throw new WsError('ws-bad-options', `The WebSocket options for "${url}" are invalid: ${reason}`, {
       cause: err,

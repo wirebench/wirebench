@@ -35,6 +35,21 @@ export interface IdentityHarness {
   close(): Promise<void>;
 }
 
+/** Every way a `redirect_to` could leave the origin, including dot-segments that collapse into `//host`. */
+export const EVIL_REDIRECTS = [
+  'https://evil.test/',
+  '//evil.test/x',
+  '/\\evil.test',
+  '/a\\..\\/evil.test',
+  '/..//evil.test/x',
+  '/%2e%2e//evil.test',
+  '/a/..//evil.test',
+  '/./../..//evil.test',
+  'javascript:alert(1)',
+  'w/1',
+  '',
+];
+
 export const OIDC_ENV = {
   WIREBENCH_SERVER_OIDC_ISSUER: 'https://idp.test',
   WIREBENCH_SERVER_OIDC_CLIENT_ID: 'wirebench',
@@ -134,6 +149,8 @@ export async function signedInUser(
     readonly serverAdmin?: boolean;
     readonly disabled?: boolean;
     readonly deviceName?: string;
+    /** `browser` for a cookie session (hosted spec §17.2); a desktop device token by default. */
+    readonly kind?: repo.TokenKind;
   },
 ): Promise<SignedInUser> {
   const at = harness.clock.now;
@@ -154,6 +171,7 @@ export async function signedInUser(
     userId: user.id,
     tokenHash: hash,
     deviceName: input.deviceName ?? 'test device',
+    ...(input.kind !== undefined ? { kind: input.kind } : {}),
     at,
   });
   return { user, token, tokenId, headers: { authorization: `Bearer ${token}` } };

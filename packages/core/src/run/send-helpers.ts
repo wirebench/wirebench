@@ -236,6 +236,7 @@ export async function authFor(
     identityFor: (keystoreId) => oauth2IdentityFor(context, keystoreId),
     ...(tls !== undefined ? { tls } : {}),
     ...(context.host.proxyFor !== undefined ? { proxy: context.host.proxyFor } : {}),
+    ...(context.host.egress !== undefined ? { egress: context.host.egress } : {}),
     ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });

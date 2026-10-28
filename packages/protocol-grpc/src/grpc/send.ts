@@ -15,6 +15,7 @@
 
 import { Buffer } from 'node:buffer';
 import http2 from 'node:http2';
+import { isIP } from 'node:net';
 import type { ClientHttp2Session, ClientHttp2Stream, IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http2';
 import { gunzipSync, inflateSync } from 'node:zlib';
 import { GrpcError } from '#core/errors';
@@ -23,6 +24,7 @@ import { toHttpError } from '#core/http/errors';
 import { captureSslInfo } from '#core/http/tls';
 import type { SslInfo, TlsSocketLike } from '#core/http/tls';
 import type { Timings, TlsOptions } from '#core/http/types';
+import { checkEgress, checkedLookup, type EgressPolicy } from '#core/net/egress';
 import type { KeyValueEntry } from '#core/http/entries';
 import type { SendAuth } from '#core/http/auth/send-auth';
 import { encodeGrpcFrame, GrpcFrameParser } from './framing.js';
@@ -54,6 +56,11 @@ export interface GrpcSendInput {
   readonly maxSizeBytes?: number;
   readonly localAddress?: string;
   readonly tlsOptions?: TlsOptions;
+  /**
+   * The egress rule a server applies (hosted edition spec §17.5): the connection resolves through the
+   * checked lookup, and a literal address is checked before it is dialled. Absent: no check.
+   */
+  readonly egress?: EgressPolicy;
   readonly signal?: AbortSignal;
   /** Clock for timings; tests inject one. */
   readonly now?: () => number;
@@ -278,6 +285,7 @@ function connectOptions(input: GrpcSendInput, target: GrpcTarget): http2.SecureC
   const tls = input.tlsOptions;
   return {
     ...(input.localAddress !== undefined ? { localAddress: input.localAddress } : {}),
+    ...(input.egress !== undefined ? { lookup: checkedLookup(input.egress) } : {}),
     ...(target.tls
       ? {
           ...(tls?.rejectUnauthorized !== undefined ? { rejectUnauthorized: tls.rejectUnauthorized } : {}),
@@ -304,13 +312,19 @@ function connectOptions(input: GrpcSendInput, target: GrpcTarget): http2.SecureC
  * {@link GrpcSendInput.onHeaders} and {@link GrpcSendInput.onMessage} report the initial metadata
  * and each response message as they arrive, for a caller that shows a stream while it runs.
  *
- * @throws HttpError for a connection, DNS, TLS or abort failure, with the HTTP transport's codes;
+ * @throws HttpError for a connection, DNS, TLS or abort failure, with the HTTP transport's codes
+ * (`egress-refused` under an egress policy; a refused literal address is a WirebenchError of that code);
  * GrpcError `grpc-target-invalid`, `grpc-auth-unsupported`, `grpc-stream-malformed`,
  * `grpc-encoding-unsupported`, `grpc-message-too-large`, `grpc-stream-closed`; HttpError `kerberos-*` when Kerberos
  * cannot make a token, `timeout` | `aborted` while waiting for a Kerberos token
  */
 export async function sendGrpc(input: GrpcSendInput): Promise<GrpcExchange> {
   const target = parseGrpcTarget(input.target, input.tls);
+  // A literal address never reaches the lookup, so the egress rule checks it here, before anything else.
+  if (input.egress !== undefined) {
+    const host = target.host.startsWith('[') ? target.host.slice(1, -1) : target.host;
+    if (isIP(host) !== 0) checkEgress(host, host, input.egress);
+  }
   const now = input.now ?? (() => performance.now());
   const startedAtMs = now();
   const startedAt = new Date().toISOString();
