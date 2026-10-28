@@ -586,12 +586,18 @@ importers:
       '@xmldom/xmldom':
         specifier: ^0.8.10
         version: 0.8.15
+      bcrypt-pbkdf:
+        specifier: 1.0.2
+        version: 1.0.2
       croner:
         specifier: 10.0.1
         version: 10.0.1
       fastify:
         specifier: ^5.12.6
         version: 5.12.6
+      graphql:
+        specifier: ^17.0.2
+        version: 17.0.2
       nodemailer:
         specifier: 10.1.4
         version: 10.1.4
@@ -617,6 +623,15 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      '@wirebench/host':
+        specifier: workspace:*
+        version: link:../host
+      '@wirebench/wire':
+        specifier: workspace:*
+        version: link:../wire
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
       xml-crypto:
         specifier: ^6.1.2
         version: 6.1.2

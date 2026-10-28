@@ -4,17 +4,22 @@ import { join } from 'node:path';
 
 /**
  * Builds the engine and the server once before the integration suite, whose bin test spawns
- * `dist/bin.js`: Node cannot run the source directly (its `.js` import specifiers name files that
- * only exist after a build).
+ * `dist/bin.js` and whose host test imports `dist/host/bundle.js`: Node cannot run the source directly
+ * (its `.js` import specifiers name files that only exist after a build).
  *
  * `tsc -b` is run as a script under this very Node, not through `pnpm`: on Windows `pnpm` is a
  * `pnpm.cmd` shim, which `execFile` refuses to start without a shell, and a shell is one more thing
- * whose quoting differs by OS. Both packages' `build` script is exactly `tsc -b`.
+ * whose quoting differs by OS. The engine's `build` script is exactly `tsc -b`; the server's is
+ * `tsc -b` and then `scripts/bundle-host.mjs`.
  */
 export default function setup(): void {
   const repoRoot = join(import.meta.dirname, '..', '..', '..', '..');
   const tsc = createRequire(join(repoRoot, 'package.json')).resolve('typescript/bin/tsc');
   execFileSync(process.execPath, [tsc, '-b', join('packages', 'engine'), join('packages', 'server')], {
+    cwd: repoRoot,
+    stdio: 'inherit',
+  });
+  execFileSync(process.execPath, [join('packages', 'server', 'scripts', 'bundle-host.mjs')], {
     cwd: repoRoot,
     stdio: 'inherit',
   });
