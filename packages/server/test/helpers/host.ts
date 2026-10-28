@@ -123,7 +123,7 @@ export async function openHost(
   const Socket = WebSocket as unknown as new (url: string, init: { headers: Record<string, string> }) => WebSocket;
   const socket = new Socket(`ws://127.0.0.1:${h.port}/api/v1/host`, { headers: sent });
   const frames: HostFrame[] = [];
-  const waiters = new Set<{ match: (frame: HostFrame) => boolean; resolve: (frame: HostFrame) => void }>();
+  const waiters = new Set<{ accepts: (frame: HostFrame) => boolean; resolve: (frame: HostFrame) => void }>();
   let resolveClosed: (value: { code: number }) => void = () => undefined;
   const closed = new Promise<{ code: number }>((resolve) => {
     resolveClosed = resolve;
@@ -133,7 +133,7 @@ export async function openHost(
     const frame = JSON.parse(String(event.data)) as HostFrame;
     frames.push(frame);
     for (const waiter of [...waiters]) {
-      if (waiter.match(frame)) {
+      if (waiter.accepts(frame)) {
         waiters.delete(waiter);
         waiter.resolve(frame);
       }
@@ -153,7 +153,7 @@ export async function openHost(
     if (found !== undefined) return Promise.resolve(found);
     return new Promise<HostFrame>((resolve, reject) => {
       const waiter = {
-        match,
+        accepts: match,
         resolve: (frame: HostFrame) => {
           clearTimeout(timer);
           resolve(frame);
@@ -250,7 +250,7 @@ export async function openRawHost(h: Pick<HostHarness, 'port'>, user: SignedInUs
     ].join('\r\n'),
   );
   const frames: RawFrame[] = [];
-  const waiters = new Set<{ match: (frame: RawFrame) => boolean; resolve: (frame: RawFrame) => void }>();
+  const waiters = new Set<{ accepts: (frame: RawFrame) => boolean; resolve: (frame: RawFrame) => void }>();
   let buffer = Buffer.alloc(0);
   let upgraded = false;
   const ended = new Promise<void>((resolve) => {
@@ -288,7 +288,7 @@ export async function openRawHost(h: Pick<HostHarness, 'port'>, user: SignedInUs
       buffer = buffer.subarray(offset + length);
       frames.push(frame);
       for (const waiter of [...waiters]) {
-        if (waiter.match(frame)) {
+        if (waiter.accepts(frame)) {
           waiters.delete(waiter);
           waiter.resolve(frame);
         }
@@ -305,7 +305,7 @@ export async function openRawHost(h: Pick<HostHarness, 'port'>, user: SignedInUs
       const found = frames.find(match);
       if (found !== undefined) return Promise.resolve(found);
       return new Promise<RawFrame>((resolve, reject) => {
-        const waiter = { match, resolve };
+        const waiter = { accepts: match, resolve };
         waiters.add(waiter);
         setTimeout(() => {
           if (waiters.delete(waiter)) reject(new Error(`no matching raw host frame within ${WAIT_MS} ms`));
