@@ -408,6 +408,7 @@ describe('HostOptions for an embedder inside a server', () => {
         connectLive: () => {
           throw new Error('unused');
         },
+        credential: () => undefined,
       },
     });
     await call(host, 'account.probe', { url: 'https://wb.example.test' });

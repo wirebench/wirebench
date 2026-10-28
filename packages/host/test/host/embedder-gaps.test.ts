@@ -129,6 +129,7 @@ describe('every resolution is reported by name', () => {
         connectLive: () => {
           throw new Error('unused');
         },
+        credential: () => undefined,
       },
     });
     const stored = (await call(host, 'secrets.set', { value: 'proxy-pass', label: 'corporate proxy' })) as {

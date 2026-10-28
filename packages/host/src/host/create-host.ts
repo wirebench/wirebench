@@ -225,13 +225,17 @@ export interface HostOptions {
   /**
    * A host that runs inside a Wirebench Server (hosted edition spec §17.3): its calls to that server go
    * through `send` and its live socket through `connectLive`, in process, rather than over the network.
-   * The account for `url` is the embedder's to seed. Absent, the host reaches servers over the network.
+   * The account for `url` is the embedder's: signed in with whatever `credential()` returns, never stored,
+   * and not one the host can sign in to, sign out of or remove. Absent, the host reaches servers over the
+   * network.
    */
   readonly server?: {
     /** The server's public URL: the host's one account. */
     readonly url: string;
     readonly send: (request: HttpRequest) => Promise<HttpExchange>;
     readonly connectLive: (wsUrl: string) => ConnectedWebSocket;
+    /** The account's device token now, or `undefined` while the embedder has none; read on every use. */
+    readonly credential: () => string | undefined;
   };
   /**
    * Told of every value the host stores (`written`: the Secrets page, a cURL import, a refresh token,
@@ -584,6 +588,9 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     secrets: secretStore,
     openExternal: openExternalChecked,
     defaultDeviceName: hostname,
+    ...(embedder.server !== undefined
+      ? { embedded: { url: embedder.server.url, credential: embedder.server.credential } }
+      : {}),
   });
 
   /**

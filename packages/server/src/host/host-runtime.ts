@@ -51,6 +51,8 @@ export interface ServerHostInput extends ServerPlatformInput {
     readonly url: string;
     readonly send: (request: HttpRequest) => Promise<HttpExchange>;
     readonly connectLive: (wsUrl: string) => ConnectedWebSocket;
+    /** The browser session's device token the host is signed in with now (`HostOptions.server.credential`). */
+    readonly credential: () => string | undefined;
   };
   /** Told of every secret written or resolved, by name (`HostOptions.onSecret`). */
   readonly onSecret?: (event: HostSecretEvent) => void;
