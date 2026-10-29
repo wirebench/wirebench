@@ -10,7 +10,7 @@ import type { ServerCommand } from '../args.js';
 import { ConfigError, forgetDatabaseUrls, loadConfig, type ServerConfig } from '../config.js';
 import { createDatabase } from '../db/pool.js';
 import { ExitCode, packageVersion, type ServerIo } from '../io.js';
-import { appRolePlan, ensureAppRole, roleNameOf } from './roles.js';
+import { appRolePlan, ensureAppRole, roleMode } from './roles.js';
 
 type TenancyRoleCommand = Extract<ServerCommand, { command: 'admin-tenancy-role' }>;
 
@@ -29,21 +29,34 @@ export async function runTenancyRole(command: TenancyRoleCommand, io: ServerIo):
     }
     throw error;
   }
-  const ownerUrl = config.migrationDatabaseUrl;
-  if (
-    ownerUrl === undefined ||
-    ownerUrl === config.databaseUrl ||
-    roleNameOf(ownerUrl) === roleNameOf(config.databaseUrl)
-  ) {
+  // The same rule as `serve` and `migrate`, so the three never disagree about a configuration.
+  let mode: 'one-role' | 'two-roles';
+  try {
+    mode = roleMode(config);
+  } catch (error) {
+    if (!(error instanceof WirebenchError)) throw error;
+    io.stderr.write(`${error.code}: ${error.message}\n`);
+    return ExitCode.Config;
+  }
+  if (mode === 'one-role' || config.migrationDatabaseUrl === undefined) {
     io.stderr.write(`${NEEDS_TWO_ROLES}\n`);
     return ExitCode.Config;
   }
-  const owner = createDatabase(ownerUrl);
+  const owner = createDatabase(config.migrationDatabaseUrl);
   try {
     if (command.printSql) {
       // Read-only: the plan comes from the catalog, and nothing is run.
+      // Who may run what: `create role` needs CREATEROLE, the grants and default privileges need the owner.
+      // The verifier in `create role` is not the password, but it allows guessing at it offline.
       const plan = await appRolePlan(owner, config.databaseUrl);
-      for (const statement of plan.statements) io.stdout.write(`${statement};\n`);
+      const [first, ...rest] = plan.statements;
+      if (!plan.exists) {
+        io.stdout.write('-- Secret: the next statement holds the app role password as a SCRAM-SHA-256 verifier.\n');
+        io.stdout.write('-- As a role that may create roles (CREATEROLE):\n');
+        io.stdout.write(`${first!};\n`);
+      }
+      io.stdout.write(`-- As the owner, ${plan.owner}:\n`);
+      for (const statement of plan.exists ? plan.statements : rest) io.stdout.write(`${statement};\n`);
       return ExitCode.Ok;
     }
     const plan = await ensureAppRole(owner, config.databaseUrl);

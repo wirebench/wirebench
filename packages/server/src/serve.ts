@@ -19,7 +19,7 @@ import {
 } from './context.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migration } from './db/migrate.js';
 import { createDatabase } from './db/pool.js';
-import { ensureAppRole, roleNameOf } from './tenancy/roles.js';
+import { ensureAppRole, roleMode } from './tenancy/roles.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { NO_HOOKS_DIR, RepoStore } from './repos/repo-store.js';
 import { buildServer } from './server.js';
@@ -84,13 +84,33 @@ async function locateGit(config: ServerConfig): Promise<GitCli> {
 }
 
 /**
- * Whether the configuration names an owner apart from the app role (spec §19.4). With one URL, or two that
- * name the same role, the one role migrates and queries, exactly as before slice 4.
+ * `roleMode` (spec §19.4), with its refusal of a keyword-form connection string as a configuration error.
+ * One role migrates and queries, exactly as before slice 4; two have the owner migrate and grant.
  */
-function hasSeparateOwner(config: ServerConfig): config is ServerConfig & { migrationDatabaseUrl: string } {
-  if (config.migrationDatabaseUrl === undefined || config.migrationDatabaseUrl === config.databaseUrl) return false;
-  const owner = roleNameOf(config.migrationDatabaseUrl);
-  return owner === undefined || owner !== roleNameOf(config.databaseUrl);
+function roleModeOf(config: ServerConfig): 'one-role' | 'two-roles' {
+  try {
+    return roleMode(config);
+  } catch (error) {
+    if (error instanceof WirebenchError) throw new StartupError(ExitCode.Config, `${error.code}: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * The app pool's first query, with a refused password named for what it most likely is: an app role that
+ * already existed with another password, which `ensureAppRole` leaves alone (spec §19.4 only creates).
+ */
+async function checkAppSignIn(db: Database, appUrl: string): Promise<void> {
+  try {
+    await db.query('select 1');
+  } catch (error) {
+    if ((error as { readonly code?: unknown }).code !== '28P01') throw error;
+    const role = new URL(appUrl).username;
+    throw new StartupError(
+      ExitCode.Config,
+      `the app role ${decodeURIComponent(role)} refused the password in WIREBENCH_SERVER_DATABASE_URL; it existed already, and its password is not changed at start-up: run alter role ... password as the owner, or fix the URL`,
+    );
+  }
 }
 
 /**
@@ -161,6 +181,14 @@ export async function runMigrate(
     }
     throw error;
   }
+  let mode: 'one-role' | 'two-roles';
+  try {
+    mode = roleModeOf(config);
+  } catch (error) {
+    if (!(error instanceof StartupError)) throw error;
+    io.stderr.write(`${error.message}\n`);
+    return error.exitCode;
+  }
   const db = createDatabase(migrationUrlOf(config));
   try {
     const migrations = await allMigrations(modules);
@@ -173,9 +201,10 @@ export async function runMigrate(
       );
       return pending.length === 0 ? ExitCode.Ok : ExitCode.Pending;
     }
-    const applied = hasSeparateOwner(config)
-      ? await migrateAndGrant(db, config.databaseUrl, migrations)
-      : (await migrate(db, migrations)).applied;
+    const applied =
+      mode === 'two-roles'
+        ? await migrateAndGrant(db, config.databaseUrl, migrations)
+        : (await migrate(db, migrations)).applied;
     io.stdout.write(
       applied.length === 0 ? 'migrations: nothing to apply\n' : `migrations: applied ${applied.join(', ')}\n`,
     );
@@ -198,20 +227,25 @@ export async function startServer(
   const config = configFrom(env, io);
   const git = await locateGit(config);
   // With an owner of its own (spec §19.4), the server migrates and grants as the owner, then connects as
-  // the app role; with one URL it does both as that role, as it always has.
+  // the app role. With one role it migrates as that role: over the migration URL when one is set apart (a
+  // direct connection beside a pooler, say), as `migrate` does, and otherwise over the one pool, as always.
+  const mode = roleModeOf(config);
+  const migrationUrl = migrationUrlOf(config);
   const db = createDatabase(config.databaseUrl);
   try {
     const migrations = await allMigrations(modules);
-    if (hasSeparateOwner(config)) {
-      const owner = createDatabase(config.migrationDatabaseUrl);
+    if (migrationUrl === config.databaseUrl) {
+      await migrate(db, migrations);
+    } else {
+      const owner = createDatabase(migrationUrl);
       try {
-        await migrateAndGrant(owner, config.databaseUrl, migrations);
+        if (mode === 'two-roles') await migrateAndGrant(owner, config.databaseUrl, migrations);
+        else await migrate(owner, migrations);
       } finally {
         await owner.close();
       }
-    } else {
-      await migrate(db, migrations);
     }
+    if (mode === 'two-roles') await checkAppSignIn(db, config.databaseUrl);
   } catch (error) {
     await db.close();
     if (error instanceof StartupError) throw error;

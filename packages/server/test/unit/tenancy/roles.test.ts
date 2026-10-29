@@ -1,7 +1,14 @@
 import { createHash, createHmac, pbkdf2Sync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { appRoleGrants, READ_ONLY_TABLES } from '../../../src/tenancy/grants.js';
-import { appRoleOf, roleNameOf, scramVerifier, SCRAM_ITERATIONS } from '../../../src/tenancy/roles.js';
+import {
+  appRoleOf,
+  roleMode,
+  roleNameOf,
+  saslprep,
+  scramVerifier,
+  SCRAM_ITERATIONS,
+} from '../../../src/tenancy/roles.js';
 
 describe('scramVerifier', () => {
   it('is PostgreSQL’s stored form, and never carries the password', () => {
@@ -27,8 +34,9 @@ describe('the app URL', () => {
     expect(appRoleOf('postgres://wirebench_app:p%40ss@db:5432/wirebench')).toEqual({
       role: 'wirebench_app',
       password: 'p@ss',
+      certificate: false,
     });
-    expect(appRoleOf('postgres://app@db/wirebench')).toEqual({ role: 'app' });
+    expect(appRoleOf('postgres://app@db/wirebench?sslcert=/c.crt')).toEqual({ role: 'app', certificate: true });
     expect(roleNameOf('postgres://My%20Role:x@db/w')).toBe('My Role');
     expect(roleNameOf('host=db user=x')).toBeUndefined();
   });
@@ -72,5 +80,43 @@ describe('appRoleGrants', () => {
     ]) {
       expect(() => appRoleGrants(names)).toThrow(expect.objectContaining({ code: 'tenancy-role-name-invalid' }));
     }
+  });
+});
+
+describe('saslprep (RFC 4013, as pg and PostgreSQL apply it)', () => {
+  it('maps non-ASCII spaces to a space, drops the mapped-to-nothing characters, and NFKC-normalises', () => {
+    expect(saslprep('\uFB01')).toBe('fi');
+    expect(saslprep('a\u00A0b\u3000c')).toBe('a b c');
+    expect(saslprep('soft\u00ADhyphen\u200D')).toBe('softhyphen');
+    expect(saslprep('caf\u0065\u0301')).toBe('caf\u00E9');
+    expect(saslprep('\uFF21')).toBe('A');
+    expect(saslprep('plain-ascii-0019')).toBe('plain-ascii-0019');
+  });
+
+  it('builds the verifier from the prepared password', () => {
+    const salt = Buffer.from('W22ZaJ0SNY7soEsUEjb6gQ==', 'base64');
+    expect(scramVerifier('\uFB01', salt)).toBe(scramVerifier('fi', salt));
+    expect(scramVerifier('a\u00A0b', salt)).toBe(scramVerifier('a b', salt));
+  });
+});
+
+describe('roleMode', () => {
+  const app = 'postgres://wirebench_app:a@db/wirebench';
+  const owner = 'postgres://wirebench:o@db/wirebench';
+  it('is one role with no migration URL, the same URL, or two URLs naming one role', () => {
+    expect(roleMode({ databaseUrl: app })).toBe('one-role');
+    expect(roleMode({ databaseUrl: 'host=db user=x', migrationDatabaseUrl: 'host=db user=x' })).toBe('one-role');
+    expect(roleMode({ databaseUrl: owner, migrationDatabaseUrl: 'postgres://wirebench:o@direct-db/wirebench' })).toBe(
+      'one-role',
+    );
+    expect(roleMode({ databaseUrl: app, migrationDatabaseUrl: owner })).toBe('two-roles');
+  });
+  it('refuses a keyword string beside a different migration URL, naming the variable', () => {
+    expect(() => roleMode({ databaseUrl: app, migrationDatabaseUrl: 'host=db user=wirebench' })).toThrow(
+      /WIREBENCH_SERVER_MIGRATION_DATABASE_URL must be a postgres:\/\/ URL/,
+    );
+    expect(() => roleMode({ databaseUrl: 'host=db user=app', migrationDatabaseUrl: owner })).toThrow(
+      /WIREBENCH_SERVER_DATABASE_URL must be a postgres:\/\/ URL/,
+    );
   });
 });

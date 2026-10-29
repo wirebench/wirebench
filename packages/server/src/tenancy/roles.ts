@@ -17,15 +17,30 @@ import { appRoleGrants } from './grants.js';
 export const SCRAM_ITERATIONS = 4096;
 
 /**
+ * SASLprep (RFC 4013) as `pg` applies it before SCRAM (`pg/lib/crypto/sasl.js`), which matches PostgreSQL's
+ * own for every password it accepts: non-ASCII spaces become a space, the RFC 3454 B.1 characters are
+ * removed, and the result is NFKC-normalised. The prohibition and bidi checks are skipped, as `pg` skips them.
+ */
+export function saslprep(password: string): string {
+  // RFC 3454 C.1.2, the non-ASCII spaces.
+  const nonAsciiSpace = /[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g;
+  // RFC 3454 B.1, "commonly mapped to nothing": joiners and variation selectors, which combine with their
+  // neighbours and are stripped for that reason.
+  const mappedToNothing = /[\u00AD\u034F\u1806\u180B\u180C\u180D\u200C\u200D\u2060\uFE00-\uFE0F\uFEFF]/g;
+  return password.replace(nonAsciiSpace, ' ').replace(mappedToNothing, '').normalize('NFKC');
+}
+
+/**
  * A SCRAM-SHA-256 verifier for `password` (RFC 7677, in PostgreSQL's stored form). PostgreSQL stores a
  * `password` that is already a verifier as it is, so the statement never carries the password itself,
  * which `log_statement = ddl` would write to the database's log.
  *
- * The password is hashed as its UTF-8 bytes, without SASLprep: that is what the server's own client
- * (`pg`) sends, so the role signs in with exactly the password in the app URL.
+ * The password goes through SASLprep first, as every client (`pg`, libpq) and PostgreSQL's own
+ * `password 'plaintext'` path do, so the role signs in with the password in the app URL whatever its
+ * characters.
  */
 export function scramVerifier(password: string, salt: Buffer = randomBytes(16), iterations = SCRAM_ITERATIONS): string {
-  const salted = pbkdf2Sync(Buffer.from(password, 'utf8'), salt, iterations, 32, 'sha256');
+  const salted = pbkdf2Sync(Buffer.from(saslprep(password), 'utf8'), salt, iterations, 32, 'sha256');
   const clientKey = createHmac('sha256', salted).update('Client Key').digest();
   const storedKey = createHash('sha256').update(clientKey).digest();
   const serverKey = createHmac('sha256', salted).update('Server Key').digest();
@@ -42,8 +57,37 @@ export function roleNameOf(url: string): string | undefined {
   }
 }
 
+/**
+ * Whether a configuration runs with one role or two (spec §19.4), the one rule `serve`, `migrate` and
+ * `admin tenancy role` share. With no migration URL, or one equal to the database URL, it is one role, as
+ * before slice 4. Otherwise both must be `postgres://` URLs that name their users, since the app role is
+ * read from its URL: a keyword string (`host=… user=…`) is refused. Two URLs naming one role (a direct
+ * connection for migrations and a pooler for queries, say) are still one role.
+ */
+export function roleMode(config: {
+  readonly databaseUrl: string;
+  readonly migrationDatabaseUrl?: string | undefined;
+}): 'one-role' | 'two-roles' {
+  const migration = config.migrationDatabaseUrl;
+  if (migration === undefined || migration === config.databaseUrl) return 'one-role';
+  const owner = roleNameOf(migration);
+  const app = roleNameOf(config.databaseUrl);
+  if (owner === undefined || app === undefined) {
+    throw new WirebenchError(
+      'tenancy-app-url-invalid',
+      `${owner === undefined ? 'WIREBENCH_SERVER_MIGRATION_DATABASE_URL' : 'WIREBENCH_SERVER_DATABASE_URL'} must be a postgres:// URL that names its user when the migration URL is set`,
+    );
+  }
+  return owner === app ? 'one-role' : 'two-roles';
+}
+
 /** The role and password a connection string names. Only the URL form is read; values are never echoed. */
-export function appRoleOf(url: string): { readonly role: string; readonly password?: string } {
+export function appRoleOf(url: string): {
+  readonly role: string;
+  readonly password?: string;
+  /** A client certificate in the URL (`sslcert`): a way to sign in that needs no password. */
+  readonly certificate: boolean;
+} {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -60,7 +104,10 @@ export function appRoleOf(url: string): { readonly role: string; readonly passwo
       'WIREBENCH_SERVER_DATABASE_URL names no user; it must name the app role',
     );
   }
-  return parsed.password === '' ? { role } : { role, password: decodeURIComponent(parsed.password) };
+  const certificate = parsed.searchParams.has('sslcert');
+  return parsed.password === ''
+    ? { role, certificate }
+    : { role, password: decodeURIComponent(parsed.password), certificate };
 }
 
 export interface AppRolePlan {
@@ -80,7 +127,7 @@ export interface AppRolePlan {
  * `format('%L')`, on the server, so the statement quotes them exactly as PostgreSQL does.
  */
 export async function appRolePlan(owner: Querier, appUrl: string): Promise<AppRolePlan> {
-  const { role, password } = appRoleOf(appUrl);
+  const { role, password, certificate } = appRoleOf(appUrl);
   const who = (
     await owner.query<{ owner: string; schema: string | null }>(
       'select current_user::text as owner, current_schema() as schema',
@@ -100,6 +147,14 @@ export async function appRolePlan(owner: Querier, appUrl: string): Promise<AppRo
   }
   const exists = ((await owner.query('select 1 from pg_roles where rolname = $1', [role])).rowCount ?? 0) > 0;
   const statements: string[] = [];
+  if (!exists && password === undefined && !certificate) {
+    // Created `login` with no password, it could sign in only by trust, peer or a certificate: on a host that
+    // asks for a password every start would then fail. An existing role keeps whatever it uses.
+    throw new WirebenchError(
+      'tenancy-app-password-missing',
+      `WIREBENCH_SERVER_DATABASE_URL names no password for the app role ${role}, which does not exist yet; put the password it should have in the URL`,
+    );
+  }
   if (!exists) {
     const created = await owner.query<{ sql: string }>(
       password === undefined
@@ -132,11 +187,24 @@ export async function ensureAppRole(owner: Database, appUrl: string): Promise<Ap
       if (may.rows[0]?.may !== true) {
         throw new WirebenchError(
           'tenancy-role-not-creatable',
-          `the app role ${plan.role} does not exist and ${plan.owner} may not create roles; run wirebench-server admin tenancy role --print-sql and apply its statements as a role that may`,
+          `the app role ${plan.role} does not exist and ${plan.owner} may not create roles; run wirebench-server admin tenancy role --print-sql, apply its create role as a role that may create roles, and the rest as the owner`,
         );
       }
     }
-    for (const statement of plan.statements) await tx.query(statement);
+    const [first, ...grants] = plan.statements;
+    if (!plan.exists) {
+      // Roles are cluster-wide but the lock above is per database: another database of the cluster may
+      // have created the role a moment ago. `duplicate_object` then means it exists, and the grants go on.
+      await tx.query('savepoint wirebench_create_role');
+      try {
+        await tx.query(first!);
+        await tx.query('release savepoint wirebench_create_role');
+      } catch (error) {
+        if ((error as { readonly code?: unknown }).code !== '42710') throw error;
+        await tx.query('rollback to savepoint wirebench_create_role');
+      }
+    }
+    for (const statement of plan.exists ? plan.statements : grants) await tx.query(statement);
     return plan;
   });
 }

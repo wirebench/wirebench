@@ -76,7 +76,8 @@ Usage:
   wirebench-server admin tenancy role [--print-sql]
                                     As the owner (WIREBENCH_SERVER_MIGRATION_DATABASE_URL), create the
                                     app role of WIREBENCH_SERVER_DATABASE_URL if missing and grant it its
-                                    privileges; --print-sql prints the statements instead
+                                    privileges; --print-sql prints the statements instead, which
+                                    hold a password verifier: handle them as a secret
   wirebench-server --version
   wirebench-server --help
 

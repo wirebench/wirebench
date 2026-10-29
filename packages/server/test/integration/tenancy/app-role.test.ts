@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import type { Database } from '../../../src/context.js';
 import { createDatabase } from '../../../src/db/pool.js';
 import { main } from '../../../src/main.js';
@@ -43,6 +43,24 @@ describeDb('the app role (hosted spec §19.4)', () => {
   };
   const roleExists = async (role: string) =>
     ((await admin.query('select 1 from pg_roles where rolname = $1', [role])).rowCount ?? 0) > 0;
+
+  // A run that crashed before its afterEach leaves throwaway roles on the cluster; the next run sweeps them.
+  // Only this file makes `wb_test_app_` roles. One still granted something in another database cannot be
+  // dropped from here, and is left alone.
+  beforeAll(async () => {
+    const sweeper = createDatabase(TEST_DATABASE_URL!);
+    try {
+      const stale = await sweeper.query<{ role: string }>(
+        "select rolname as role from pg_roles where rolname like 'wb\\_test\\_app\\_%'",
+      );
+      for (const { role } of stale.rows) {
+        await sweeper.query(`drop owned by "${role}"`).catch(() => undefined);
+        await sweeper.query(`drop role "${role}"`).catch(() => undefined);
+      }
+    } finally {
+      await sweeper.close();
+    }
+  });
 
   beforeEach(async () => {
     db = await testDatabase();
@@ -107,6 +125,61 @@ describeDb('the app role (hosted spec §19.4)', () => {
     }
   });
 
+  it('applies SASLprep to the password, so a non-ASCII one signs in too', async () => {
+    for (const password of ['\uFB01x-ligature-0019', 'no\u00A0break\u00A0space-0019', 'caf\u0065\u0301-0019']) {
+      const role = freshRole();
+      const appUrl = urlAs(TEST_DATABASE_URL!, role, password, db.schema);
+      await ensureAppRole(admin, appUrl);
+      const app = createDatabase(appUrl);
+      try {
+        expect((await app.query<{ me: string }>('select current_user::text as me')).rows[0]!.me, password).toBe(role);
+      } finally {
+        await app.close();
+      }
+    }
+  });
+
+  it('refuses to create an app role with no password in its URL, unless it names a client certificate', async () => {
+    const role = freshRole();
+    const url = new URL(urlAs(TEST_DATABASE_URL!, role, 'x', db.schema));
+    url.password = '';
+    await expect(ensureAppRole(admin, url.toString())).rejects.toMatchObject({ code: 'tenancy-app-password-missing' });
+    expect(await roleExists(role)).toBe(false);
+    url.searchParams.set('sslcert', '/etc/wirebench/app.crt');
+    expect((await appRolePlan(admin, url.toString())).statements[0]).toMatch(
+      /^create role \S+ login nosuperuser nobypassrls noinherit$/,
+    );
+  });
+
+  it('carries on when another database of the cluster created the role a moment before (duplicate_object)', async () => {
+    const role = freshRole();
+    const appUrl = urlAs(TEST_DATABASE_URL!, role, 'pw-race-0019', db.schema);
+    // The other database's server wins the race between this one's plan and its create role.
+    const racing: Database = {
+      ...admin,
+      transaction: (fn) =>
+        admin.transaction((tx) =>
+          fn({
+            query: async (text: string, params?: readonly unknown[]) => {
+              if (text.startsWith('create role')) {
+                const other = createDatabase(TEST_DATABASE_URL!);
+                try {
+                  await other.query(text);
+                } finally {
+                  await other.close();
+                }
+              }
+              return tx.query(text, params);
+            },
+          }),
+        ),
+    };
+    expect(await ensureAppRole(racing, appUrl)).toMatchObject({ role, exists: false });
+    expect(await roleExists(role)).toBe(true);
+    const grants = await admin.query('select 1 from information_schema.role_table_grants where grantee = $1', [role]);
+    expect(grants.rowCount).toBeGreaterThan(0);
+  });
+
   it('sets the password as a SCRAM-SHA-256 verifier, never the password itself', async () => {
     const role = freshRole();
     const password = `pw-${randomBytes(8).toString('hex')}`;
@@ -153,6 +226,10 @@ describeDb('the app role (hosted spec §19.4)', () => {
     expect(printed.stdout()).toContain(`create role ${role} login nosuperuser nobypassrls noinherit password 'SCRAM`);
     expect(printed.stdout()).toContain(`grant usage on schema "${db.schema}" to "${role}";`);
     expect(printed.stdout()).not.toContain(password);
+    expect(printed.stdout()).toMatch(
+      /^-- Secret: .*\n-- As a role that may create roles \(CREATEROLE\):\ncreate role /,
+    );
+    expect(printed.stdout()).toContain(`-- As the owner, wirebench:\ngrant usage`);
     expect(await roleExists(role)).toBe(false);
 
     const run = io(env);
@@ -176,6 +253,16 @@ describeDb('the app role (hosted spec §19.4)', () => {
     }
   });
 
+  it('admin tenancy role refuses keyword-form connection strings, as serve does', async () => {
+    const out = io({
+      WIREBENCH_SERVER_DATABASE_URL: db.url,
+      WIREBENCH_SERVER_MIGRATION_DATABASE_URL: 'host=127.0.0.1 user=wirebench_owner',
+      WIREBENCH_SERVER_PUBLIC_URL: 'https://wirebench.test',
+    });
+    expect(await main(['admin', 'tenancy', 'role'], out.io)).toBe(2);
+    expect(out.stderr()).toContain('tenancy-app-url-invalid: WIREBENCH_SERVER_MIGRATION_DATABASE_URL must be');
+  });
+
   it('an owner that may not create roles fails with the hint on stderr, exit 1', async () => {
     const role = freshRole();
     const out = io({
@@ -184,7 +271,9 @@ describeDb('the app role (hosted spec §19.4)', () => {
       WIREBENCH_SERVER_PUBLIC_URL: 'https://wirebench.test',
     });
     expect(await main(['admin', 'tenancy', 'role'], out.io)).toBe(1);
-    expect(out.stderr()).toMatch(/^tenancy-role-not-creatable: .*--print-sql/);
+    expect(out.stderr()).toMatch(
+      /^tenancy-role-not-creatable: .*--print-sql, apply its create role as a role that may create roles, and the rest as the owner/,
+    );
   });
 });
 
@@ -268,5 +357,52 @@ describeDb('serve and migrate with one URL or two (hosted spec §19.4)', () => {
     await expect(db.query("insert into schema_migrations (version, name) values (9, 'x')")).rejects.toMatchObject({
       code: '42501',
     });
+  });
+
+  it('with two URLs naming one role, serve migrates over the migration URL, as migrate does', async () => {
+    // The same role in a second schema of this file's: what lands there is what the migration URL ran.
+    const other = await testDatabase({ migrated: false });
+    try {
+      const server = await start({
+        WIREBENCH_SERVER_MIGRATION_DATABASE_URL: other.ownerUrl,
+        WIREBENCH_SERVER_DATABASE_URL: db.ownerUrl,
+      });
+      await server.close();
+      const tables = async (schema: string) =>
+        (await db.owner.query('select 1 from pg_tables where schemaname = $1', [schema])).rowCount;
+      expect(await tables(other.schema)).toBeGreaterThan(0);
+      expect(await tables(db.schema)).toBe(0);
+    } finally {
+      await other.close();
+    }
+  });
+
+  it('refuses to start when the app role exists with another password, naming the fix', async () => {
+    const wrong = new URL(db.url);
+    wrong.password = 'not-the-password';
+    const urls = {
+      WIREBENCH_SERVER_MIGRATION_DATABASE_URL: db.ownerUrl,
+      WIREBENCH_SERVER_DATABASE_URL: wrong.toString(),
+    };
+    const refusal = await start(urls).catch((error: unknown) => error);
+    expect(refusal).toMatchObject({
+      exitCode: 2,
+      message: expect.stringContaining('alter role ... password') as unknown,
+    });
+    expect(String((refusal as Error).message)).not.toContain('not-the-password');
+  });
+
+  it('refuses a keyword-form connection string beside a migration URL, before connecting', async () => {
+    const urls = {
+      WIREBENCH_SERVER_MIGRATION_DATABASE_URL: db.ownerUrl,
+      WIREBENCH_SERVER_DATABASE_URL: 'host=db user=app',
+    };
+    await expect(start(urls)).rejects.toMatchObject({
+      exitCode: 2,
+      message: expect.stringContaining('tenancy-app-url-invalid') as unknown,
+    });
+    const run = io(env(urls));
+    expect(await main(['migrate'], run.io, { modules: [] })).toBe(2);
+    expect(run.stderr()).toContain('tenancy-app-url-invalid');
   });
 });

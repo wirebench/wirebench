@@ -88,11 +88,21 @@ role when it is missing and the owner may create roles (`login nosuperuser nobyp
 password stored as a SCRAM-SHA-256 verifier), and grants it its privileges. `compose.yaml` does this with
 `wirebench` as the owner and `wirebench_app` as the app role, so an existing volume starts as well.
 
-With only `WIREBENCH_SERVER_DATABASE_URL` set, nothing changes: that one role migrates and queries. To
-switch an installation outside compose, run `wirebench-server admin tenancy role` with both URLs set (or
-apply what `admin tenancy role --print-sql` prints, as a role that may create roles), then restart. Going
-back is pointing `WIREBENCH_SERVER_DATABASE_URL` at the owner again and unsetting the migration URL; unsetting
-only the migration URL would leave migrations to the app role, which may not create tables.
+With only `WIREBENCH_SERVER_DATABASE_URL` set, nothing changes: that one role migrates and queries. Two URLs
+that name the same role (a direct connection for migrations beside a pooler, say) are one role too: the
+migrations run over the migration URL. With two roles, both must be `postgres://` URLs that name their users,
+and the app URL must name the password the role is created with.
+
+To switch an installation outside compose, run `wirebench-server admin tenancy role` with both URLs set, then
+restart. When the owner may not create roles, `admin tenancy role --print-sql` prints the statements instead:
+the `create role` for a role with `CREATEROLE`, the rest for the owner. That output holds the app role's
+password as a SCRAM-SHA-256 verifier, so handle it as a secret.
+
+The app role is created once and its password is never changed afterwards: after changing it in the URL, run
+`alter role wirebench_app password '…'` as the owner too, or the server refuses to start. The role is shared by
+every database of the cluster, since PostgreSQL roles are. Going back is pointing
+`WIREBENCH_SERVER_DATABASE_URL` at the owner again and unsetting the migration URL; unsetting only the
+migration URL would leave migrations to the app role, which may not create tables.
 
 The image carries the browser client's build. A server run from a checkout with
 `WIREBENCH_SERVER_BROWSER_CLIENT` on needs it too, or it refuses to start: run
