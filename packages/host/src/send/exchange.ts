@@ -388,6 +388,8 @@ export interface SendThroughEngineDeps extends DesktopSendDeps {
    * `true` to send. Absent (a test, a headless caller), a guarded send is refused: it fails safe.
    */
   readonly confirmProtected?: (environmentNames: readonly string[]) => Promise<boolean>;
+  /** Where this host's sends go out from (`HostOptions.sendOrigin`): each summary says so. Absent on the desktop. */
+  readonly sendOrigin?: 'server';
 }
 
 /**
@@ -406,17 +408,44 @@ export function protectedEnvironmentOf(
     : undefined;
 }
 
-/** Asks about the protected environments named, `true` at once when there are none; never throws. */
+/**
+ * Asks about the protected environments named, `true` at once when there are none; never throws. A host that
+ * cannot ask (no dialogs: `needs-confirmation`) is a "no" here: a run or a batch has no tab flow to confirm
+ * it yet (#794), so its protected sends are declined as before.
+ */
 export async function confirmProtectedSend(
   deps: Pick<SendThroughEngineDeps, 'confirmProtected'>,
   environmentNames: readonly string[],
 ): Promise<boolean> {
-  if (environmentNames.length === 0) return true;
   try {
-    return (await deps.confirmProtected?.(environmentNames)) === true;
+    return await askProtected(deps, environmentNames);
   } catch {
     return false;
   }
+}
+
+/**
+ * {@link confirmProtectedSend} for one editor send, which the tab can confirm: a host with no dialogs refuses
+ * with `needs-confirmation`, and the tab asks and sends again `confirmed`. Any other failure to ask is a "no".
+ */
+async function confirmEditorSend(
+  deps: Pick<SendThroughEngineDeps, 'confirmProtected'>,
+  environmentNames: readonly string[],
+): Promise<boolean> {
+  try {
+    return await askProtected(deps, environmentNames);
+  } catch (error) {
+    if (isWirebenchError(error) && error.code === 'needs-confirmation') throw error;
+    return false;
+  }
+}
+
+async function askProtected(
+  deps: Pick<SendThroughEngineDeps, 'confirmProtected'>,
+  environmentNames: readonly string[],
+): Promise<boolean> {
+  if (environmentNames.length === 0) return true;
+  return (await deps.confirmProtected?.(environmentNames)) === true;
 }
 
 /** The refusal of a send the person did not confirm, naming its protected environments. */
@@ -490,7 +519,7 @@ async function sendReserved(
   // Asked before anything is resolved or sent; an ad-hoc send runs under no environment.
   if (adHoc === undefined && options.protectedConfirmed !== true) {
     const guarded = protectedEnvironmentOf(located);
-    if (guarded !== undefined && !(await confirmProtectedSend(deps, [guarded]))) {
+    if (guarded !== undefined && !(await confirmEditorSend(deps, [guarded]))) {
       throw sendDeclined([guarded]);
     }
   }
@@ -554,6 +583,7 @@ async function sendReserved(
       ...summarised.summary,
       ...(sent.script !== undefined ? finishScripts(deps.hostState.redactor, stepDeps, projectId, sent.script) : {}),
       ...(scripts.kind === 'off' ? { scriptsOff: true } : {}),
+      ...(deps.sendOrigin !== undefined ? { sentFrom: deps.sendOrigin } : {}),
     };
     const recorded: Recorded = {
       ...recordedOf(item, masks, options),
@@ -626,6 +656,8 @@ function runContextOf(located: Located, host: SendHost): RunContext {
     ...(located.workspace !== undefined ? { workspace: located.workspace } : {}),
     // The `${#Global#…}` scope: without it a global property stays unresolved.
     ...(located.globals !== undefined ? { globals: located.globals } : {}),
+    // A bundle send's `${#Workspace#…}` scope, outside any workspace (§18.4).
+    ...(located.workspaceProperties !== undefined ? { workspaceProperties: located.workspaceProperties } : {}),
     // The session's current values (cookie jar spec §5.2), laid over committed ones by the engine.
     ...(located.current !== undefined ? { current: located.current } : {}),
     overrides: located.overrides ?? {},

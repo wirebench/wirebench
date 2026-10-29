@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { defineChannel, defineEvent } from './ipc-contract.js';
 import { agentChannels } from './agent.js';
+import { agentRouteChannels } from './agent-route.js';
 import {
   sshCloseRequestSchema,
   sshConnectRequestSchema,
@@ -618,6 +619,8 @@ export const channels = {
     ...grpcChannels.request,
     ...wsChannels.request,
     ...mcpChannels.request,
+    /** Routing a browser send (hosted edition spec §18.4): where it goes, and the agent's bundle. */
+    ...agentRouteChannels.request,
   },
   /**
    * Obtaining an OAuth2 token. Every call names the entity whose configuration to use, never the
@@ -1126,6 +1129,7 @@ export const channels = {
   exchanges: {
     get: defineChannel('exchanges.get', exchangesGetRequestSchema, exchangesGetResponseSchema),
     ...restChannels.exchanges,
+    ...agentRouteChannels.exchanges,
   },
   // What the HTTP Log asks main to do with a row it already holds.
   log: {

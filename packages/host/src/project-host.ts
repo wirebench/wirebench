@@ -394,6 +394,8 @@ export class ProjectHost {
         readonly registry?: ProtocolRegistry;
         /** The `${#System#…}` scope: the process environment, or nothing on a host without machine values. */
         readonly system?: Readonly<Record<string, string | undefined>>;
+        /** A bundle send's `${#Workspace#…}` scope (never set here; a detached send's router lays it on). */
+        readonly workspaceProperties?: PropertyMap;
       }
     | undefined {
     if (this.open === undefined || !this.knowsEnvironment(this.open.project, envId)) {

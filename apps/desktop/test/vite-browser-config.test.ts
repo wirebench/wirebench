@@ -12,11 +12,22 @@ import {
 describe('vite.browser.config CSP', () => {
   it("is spec §17.6's policy (the server's header pins the same string), and its meta copy is that less frame-ancestors", () => {
     expect(BROWSER_CONTENT_SECURITY_POLICY).toBe(
-      "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+      "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:47615 ws://127.0.0.1:47616 ws://127.0.0.1:47617 ws://127.0.0.1:47618 ws://127.0.0.1:47619 ws://127.0.0.1:47620 ws://127.0.0.1:47621 ws://127.0.0.1:47622 ws://127.0.0.1:47623 ws://127.0.0.1:47624 ws://127.0.0.1:47625 ws://127.0.0.1:47626 ws://127.0.0.1:47627 ws://127.0.0.1:47628 ws://127.0.0.1:47629 ws://127.0.0.1:47630 ws://127.0.0.1:47631 ws://127.0.0.1:47632 ws://127.0.0.1:47633 ws://127.0.0.1:47634; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     );
     expect(BROWSER_META_CONTENT_SECURITY_POLICY).toBe(
-      "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'",
+      "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:47615 ws://127.0.0.1:47616 ws://127.0.0.1:47617 ws://127.0.0.1:47618 ws://127.0.0.1:47619 ws://127.0.0.1:47620 ws://127.0.0.1:47621 ws://127.0.0.1:47622 ws://127.0.0.1:47623 ws://127.0.0.1:47624 ws://127.0.0.1:47625 ws://127.0.0.1:47626 ws://127.0.0.1:47627 ws://127.0.0.1:47628 ws://127.0.0.1:47629 ws://127.0.0.1:47630 ws://127.0.0.1:47631 ws://127.0.0.1:47632 ws://127.0.0.1:47633 ws://127.0.0.1:47634; object-src 'none'; base-uri 'none'; form-action 'self'",
     );
+  });
+});
+
+describe('the agent ports in connect-src (spec §18.3)', () => {
+  it('lists exactly the twenty ports the agent listens on, and the tab accepts the same range', async () => {
+    const { AGENT_PORTS } = await import('../../../packages/agent/src/ports.js');
+    const { AGENT_PORT_RANGE } = await import('../src/browser/agent-connection.js');
+    const connect = /connect-src ([^;]*)/.exec(BROWSER_CONTENT_SECURITY_POLICY)?.[1]?.split(' ') ?? [];
+    expect(connect).toEqual(["'self'", ...AGENT_PORTS.map((port) => `ws://127.0.0.1:${String(port)}`)]);
+    expect(AGENT_PORTS).toHaveLength(20);
+    expect([AGENT_PORT_RANGE.first, AGENT_PORT_RANGE.last]).toEqual([AGENT_PORTS[0], AGENT_PORTS.at(-1)]);
   });
 });
 

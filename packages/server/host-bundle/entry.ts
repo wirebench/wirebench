@@ -23,6 +23,8 @@ import { createServerPlatform } from '../src/host/server-platform.js';
 export const createServerHost: CreateServerHost = async (input) => {
   const platform: HostPlatform = createServerPlatform(input);
   const options: HostOptions = {
+    // Sends from here go out from the server: History says so, and browser sends are routed (§18.4).
+    sendOrigin: 'server',
     ...(input.server !== undefined ? { server: input.server } : {}),
     ...(input.onSecret !== undefined ? { onSecret: input.onSecret } : {}),
   };

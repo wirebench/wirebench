@@ -30,6 +30,7 @@ import { subscribeToCurrentValues } from '../state/current-values.js';
 import { subscribeToScriptValues } from '../state/script-values.js';
 import { subscribeToPreferences, usePreferencesStore } from '../state/preferences.js';
 import { subscribeToHistory } from '../state/history.js';
+import { watchAgent } from '../state/send-route.js';
 import {
   subscribeToExchangeFailures,
   subscribeToExchangeLogged,
@@ -72,6 +73,7 @@ import { WorkspaceManageDialog } from '../features/workspace/manage-dialog.js';
 import { RemoveProjectDialog } from '../features/workspace/remove-project-dialog.js';
 import { RevealSecretsDialog } from '../features/console/reveal-secrets-dialog.js';
 import { LiveCloseDialog } from './live-close-dialog.js';
+import { ProtectedSendDialog } from '../features/request-editor/protected-send-dialog.js';
 import { UnsavedCloseDialog } from './unsaved-close-dialog.js';
 import { ShareDialog } from '../features/workspace/share-dialog.js';
 import { JoinDialog } from '../features/workspace/join-dialog.js';
@@ -467,6 +469,8 @@ export function AppShell() {
     void useAccountStore.getState().load();
   }, []);
   useEffect(() => subscribeToProject(), []);
+  // The browser tab's paired agent (status, cookie domains); nothing on the desktop.
+  useEffect(() => watchAgent(), []);
   useEffect(() => subscribeToGlobals(), []);
   useEffect(() => subscribeToCertificateExpiry(), []);
   // Each activity-bar area shows its own set of editor tabs.
@@ -766,6 +770,7 @@ export function AppShell() {
       <WorkspaceManageDialog />
       <RemoveProjectDialog />
       <RevealSecretsDialog />
+      <ProtectedSendDialog />
       <LiveCloseDialog />
       <UnsavedCloseDialog />
       <ShareDialog />

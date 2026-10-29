@@ -18,6 +18,7 @@ import {
   requestScriptsWireSchema,
   scriptResultWireSchema,
   unresolvedRefWireSchema,
+  sentFromSchema,
 } from '../../wire-base.js';
 
 /** The four shapes a gRPC method can take; mirrors the engine's `GrpcMethodKind`. */
@@ -137,6 +138,8 @@ export type GrpcResponseMessageWire = z.infer<typeof grpcResponseMessageWireSche
  * metadata both ways and the decoded messages are what the gRPC response pane adds.
  */
 export const grpcExchangeSummarySchema = z.object({
+  /** Where the send went out from (spec §18.4); absent on the desktop. */
+  sentFrom: sentFromSchema.optional(),
   /** The request's own assertions as an editor Send checked them; absent when it has none or nothing checked them. */
   assertions: z.array(requestAssertionResultWireSchema).optional(),
   sendId: z.string(),

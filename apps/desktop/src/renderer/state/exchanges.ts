@@ -23,13 +23,26 @@ import type { Problem } from './problems.js';
 import { useProblemsStore } from './problems.js';
 import { isProblemOutcome, sendProblemText } from '../features/request-editor/send-error.js';
 import { selectRequestEndpointUrl } from './project-endpoint.js';
-import { sendTemplatesUnasked } from './ui.js';
+import { sendTemplatesUnasked, useUiStore } from './ui.js';
 import { useWorkspaceStore } from './workspace.js';
 import { useProjectStore } from './project.js';
 import { useDraftsStore } from './drafts.js';
 import { useEditorsStore } from './editors.js';
 import { useSecretsVisibilityStore } from './secrets-visibility.js';
 import { flushScriptEdits, hasScriptEditors } from './script-edits.js';
+import { withProtectedConfirmation } from './protected-send.js';
+import {
+  ABORTED,
+  agentEnv,
+  cancelRoutedSend,
+  releaseRoutedSend,
+  routedSendCancelled,
+  routeOf,
+  routingActive,
+  sendNeedsAgentError,
+  sendThroughAgent,
+  trackRoutedSend,
+} from './send-route.js';
 
 /** Newest-last log of every completed exchange, capped so it can't grow unbounded over a session. */
 /** The row limit before preferences load; `ui.logSize` replaces it (Preferences › Behaviour). */
@@ -90,6 +103,70 @@ function offerSecretAction(requestId: string, error: IpcError): void {
       openSecretTokenDialog(projectId, name);
     },
   });
+}
+
+/**
+ * A send that must go from the person's machine with no agent connected: says so, with the way to pair one
+ * (Settings → *This machine*). The send's own error, in the response pane, names the needs.
+ */
+function offerAgentAction(error: IpcError): void {
+  if (error.code !== 'send-needs-agent') return;
+  showToast(error.message, {
+    label: 'Pair this machine…',
+    onClick: () => {
+      useUiStore.getState().openPreferences('this-machine');
+    },
+  });
+}
+
+/**
+ * Where a browser tab's send goes (hosted edition spec §18.4): `server` as today, `agent` through the paired
+ * agent, or a failure to show (no agent connected, or the server refused the route). The desktop has no
+ * `env.agent` ({@link routingActive}) and answers `server` without asking anything. An unsaved edit is committed to the
+ * model first, since the server routes, and builds the agent's bundle, from the model it holds.
+ */
+async function sendRouteFor(
+  requestId: string,
+  sendId: string,
+  commit: (requestId: string) => Promise<boolean>,
+): Promise<{ readonly kind: 'server' | 'agent' } | { readonly kind: 'error'; readonly error: IpcError }> {
+  const agent = agentEnv();
+  if (agent === undefined || !routingActive()) return { kind: 'server' };
+  // Tracked before the first await: a cancel during the commit, the route or the bundle stops the send.
+  trackRoutedSend(sendId);
+  const settle = (
+    answer: { readonly kind: 'server' | 'agent' } | { readonly kind: 'error'; readonly error: IpcError },
+  ): typeof answer => {
+    // Only an agent send stays tracked: a server send's cancel goes to the server, as before.
+    if (answer.kind !== 'agent') releaseRoutedSend(sendId);
+    return answer;
+  };
+  const committed = await commit(requestId);
+  if (routedSendCancelled(sendId)) return settle({ kind: 'error', error: ABORTED });
+  if (!committed) {
+    return settle({
+      kind: 'error',
+      error: { code: 'commit-failed', message: 'The unsaved edit could not be applied' },
+    });
+  }
+  const route = await routeOf(requestId);
+  if (routedSendCancelled(sendId)) return settle({ kind: 'error', error: ABORTED });
+  if (route === undefined || (route.ok && route.value.route === 'server')) return settle({ kind: 'server' });
+  if (!route.ok) return settle({ kind: 'error', error: route.error });
+  if (agent.status() !== 'connected') {
+    return settle({ kind: 'error', error: sendNeedsAgentError(route.value.needs, route.value.unresolved === true) });
+  }
+  return settle({ kind: 'agent' });
+}
+
+/** Cancels a send wherever it is: still being routed, on the agent, or on the server host. */
+async function cancelSend(sendId: string): Promise<void> {
+  const routed = cancelRoutedSend(sendId);
+  if (routed !== undefined) {
+    await routed;
+    return;
+  }
+  await ipc().request.cancel({ sendId });
 }
 
 /**
@@ -1139,6 +1216,8 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         };
       });
 
+      const route = await sendRouteFor(requestId, sendId, (id) => useProjectStore.getState().commitRestRequest(id));
+
       // The draft, not a resolved URL: main owns the environment, the model and the keychain, so it
       // is main that decides where this goes and what it carries.
       const draftPatch = useDraftsStore.getState().peekRestRequest(requestId);
@@ -1153,11 +1232,22 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
             ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
           }),
       );
-      const result = await ipc().request.sendRest({
-        sendId,
-        requestId,
-        ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
-      });
+      const result =
+        route.kind === 'error'
+          ? ({ ok: false, error: route.error } as const)
+          : route.kind === 'agent'
+            ? await sendThroughAgent('rest', requestId, sendId)
+            : await withProtectedConfirmation((confirmed) =>
+                // A send cancelled while the person was asked is not sent after all.
+                confirmed && get().restByRequest[requestId]?.sendId !== sendId
+                  ? Promise.resolve({ ok: false as const, error: ABORTED })
+                  : ipc().request.sendRest({
+                      sendId,
+                      requestId,
+                      ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
+                      ...(confirmed ? { confirmed: true } : {}),
+                    }),
+              );
 
       // A cancel may already have cleared this send; only settle it if it is still ours.
       if (get().restByRequest[requestId]?.sendId !== sendId) {
@@ -1181,6 +1271,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
           };
         });
         offerSecretAction(requestId, result.error);
+        offerAgentAction(result.error);
         recordSendProblem(requestId, result.error);
         return;
       }
@@ -1211,7 +1302,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       await Promise.all(
         open.map(async ([, state]) => {
           try {
-            await ipc().request.cancel({ sendId: state.sendId! });
+            await cancelSend(state.sendId!);
           } catch {
             // Nothing to report: the state this cancel was tidying is being dropped anyway.
           }
@@ -1224,7 +1315,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       if (entry?.sendId === undefined) {
         return;
       }
-      await ipc().request.cancel({ sendId: entry.sendId });
+      await cancelSend(entry.sendId);
     },
 
     clearRestRequest: (requestId) => {
@@ -1358,17 +1449,32 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         return;
       }
 
-      const result = await ipc().request.send({
-        sendId,
-        requestId,
-        input: {
-          endpoint,
-          envelopeXml: draftRequest.envelopeXml,
-          soapVersion: draftRequest.soapVersion,
-          ...(draftRequest.soapAction !== undefined ? { soapAction: draftRequest.soapAction } : {}),
-          headers: Object.fromEntries(draftRequest.headers.map((header) => [header.name, header.value])),
-        },
-      });
+      const route = await sendRouteFor(requestId, sendId, (id) => useProjectStore.getState().commitRequest(id));
+      // A cancel while the route was asked for has already settled this send.
+      if (get().byRequest[requestId]?.sendId !== sendId) {
+        return;
+      }
+      const result =
+        route.kind === 'error'
+          ? ({ ok: false, error: route.error } as const)
+          : route.kind === 'agent'
+            ? await sendThroughAgent('soap', requestId, sendId)
+            : await withProtectedConfirmation((confirmed) =>
+                confirmed && get().byRequest[requestId]?.sendId !== sendId
+                  ? Promise.resolve({ ok: false as const, error: ABORTED })
+                  : ipc().request.send({
+                      sendId,
+                      requestId,
+                      input: {
+                        endpoint,
+                        envelopeXml: draftRequest.envelopeXml,
+                        soapVersion: draftRequest.soapVersion,
+                        ...(draftRequest.soapAction !== undefined ? { soapAction: draftRequest.soapAction } : {}),
+                        headers: Object.fromEntries(draftRequest.headers.map((header) => [header.name, header.value])),
+                      },
+                      ...(confirmed ? { confirmed: true } : {}),
+                    }),
+              );
 
       // A cancel may have already cleared/overwritten this send; only settle it if it's still ours.
       if (get().byRequest[requestId]?.sendId !== sendId) {
@@ -1380,6 +1486,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
           draft.byRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
         offerSecretAction(requestId, result.error);
+        offerAgentAction(result.error);
         // A failed send is not just a red status line that the next send erases: it belongs in
         // Problems alongside everything else that went wrong with this request.
         recordSendProblem(requestId, result.error);
@@ -1420,7 +1527,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       if (entry?.sendId === undefined) {
         return;
       }
-      await ipc().request.cancel({ sendId: entry.sendId });
+      await cancelSend(entry.sendId);
     },
 
     refreshExchange: async (sendId) => {

@@ -319,6 +319,12 @@ export interface HistoryEntry {
   readonly contract?: HistoryContract;
   readonly sizeBytes: number;
   readonly tags?: readonly string[];
+  /**
+   * Where the send went out from in the hosted edition (spec §18.4): the team's server, or the paired agent
+   * on the person's machine. Absent on the desktop. Lines are not validated against a schema on read, and
+   * the wire shape strips a key it does not know, so an older build reads a line that has it unchanged.
+   */
+  readonly sentFrom?: 'server' | 'agent';
 }
 
 /** How long a writer waits for the file's lock, and when a lock counts as a crashed writer's. */

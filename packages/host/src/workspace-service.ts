@@ -1627,6 +1627,15 @@ export class WorkspaceService implements ProjectRouter {
     return this.current?.workspace.id;
   }
 
+  /**
+   * The server workspace id of the open workspace's share, which a send bundle carries (hosted edition spec
+   * §18.4); `undefined` unless it is shared to a server.
+   */
+  serverWorkspaceId(): string | undefined {
+    const open = this.current;
+    return open?.share?.kind === 'server' ? open.share.server?.workspaceId : undefined;
+  }
+
   /** The open workspace's tree root: `sync.revealTree` joins its (tree-relative) path against this. */
   treeDir(): string {
     return this.requireOpen().tree;

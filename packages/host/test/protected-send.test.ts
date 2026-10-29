@@ -2,14 +2,22 @@
 /**
  * A send under a protected environment (#345) asks first, at the one point every saved request's
  * send passes: declined, or with no one to ask, nothing reaches the wire; a caller that already
- * asked (a run, a batch) says so with `protectedConfirmed`.
+ * asked (a run, a batch) says so with `protectedConfirmed`. A host with no dialogs (the server) hands
+ * the question to the tab with `needs-confirmation`, and the tab sends again `confirmed`.
  */
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApi, createProject, createRestRequest } from '@wirebench/engine';
 import type { Environment, Project } from '@wirebench/engine';
-import { protectedEnvironmentOf, sendThroughEngine } from '../src/send/exchange.js';
+import { confirmProtectedSend, protectedEnvironmentOf, sendThroughEngine } from '../src/send/exchange.js';
+import { channels } from '@wirebench/wire/ipc';
+import { EngineService } from '../src/engine-service.js';
+import { HandlerTable } from '../src/ipc/register.js';
+import type { RequestChannelDeps } from '../src/ipc/request.js';
+import { registerRestRequestChannels } from '../src/kinds/rest/ipc.js';
+import { createNativeDialogs } from '../src/native-dialogs.js';
+import { createFakePlatform, createHeadlessPlatform, fakeCaller } from './helpers/fake-platform.js';
 import { sendDepsFor } from './helpers/send-deps.js';
 
 let url = '';
@@ -95,6 +103,47 @@ describe('a send under a protected environment', () => {
     await send(depsOf(model(false), confirm), 's5');
     expect(confirm).not.toHaveBeenCalled();
     expect(hits).toBe(before + 2);
+  });
+});
+
+describe('a send under a protected environment on a host with no dialogs (the server)', () => {
+  const headless = () => createNativeDialogs(createHeadlessPlatform()).confirmProtected;
+
+  it('refuses with needs-confirmation naming the environment, rather than declining, and sends nothing', async () => {
+    const before = hits;
+    await expect(send(depsOf(model(true), headless()), 'h1')).rejects.toMatchObject({
+      code: 'needs-confirmation',
+      details: { environment: 'Prod', environments: ['Prod'] },
+    });
+    expect(hits).toBe(before);
+  });
+
+  it('sends once over request.sendRest when the tab says the person confirmed, and still refuses without it', async () => {
+    const project = model(true);
+    const deps = depsOf(project, headless()) as unknown as RequestChannelDeps;
+    const table = new HandlerTable(deps.hostState.redactor);
+    registerRestRequestChannels(table, new EngineService(), deps);
+    const call = (request: unknown) => table.get(channels.request.sendRest.name)!(request, fakeCaller(1));
+    const before = hits;
+    await expect(call({ sendId: 'c1', requestId: 'rest-1' })).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'needs-confirmation', details: { environment: 'Prod' } },
+    });
+    expect(hits).toBe(before);
+    await expect(call({ sendId: 'c2', requestId: 'rest-1', confirmed: true })).resolves.toMatchObject({ ok: true });
+    expect(hits).toBe(before + 1);
+  });
+
+  it('is a "no" for a run or a sequence, which ask through confirmProtectedSend and cannot ask the tab yet', async () => {
+    await expect(confirmProtectedSend({ confirmProtected: headless() }, ['Prod'])).resolves.toBe(false);
+  });
+
+  it('leaves a desktop with dialogs asking natively, whatever it answers', async () => {
+    const platform = createFakePlatform();
+    // The fake dialogs answer Cancel: declined, as before.
+    await expect(send(depsOf(model(true), createNativeDialogs(platform).confirmProtected), 'd1')).rejects.toMatchObject(
+      { code: 'send-declined' },
+    );
   });
 });
 

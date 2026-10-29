@@ -14,12 +14,13 @@
  *   the agent passes only the names the bundle declares and this machine allows.
  * - Its OAuth2 tokens, issued SAML tokens and cookies are the caller's session (one per pairing).
  * - It writes no History, HTTP Log row or audit event, reads no window's picks or plugins, and keeps no
- *   script value.
+ *   script value. A failed send's Log row is handed to the caller (`onFailed`), which takes it to the server
+ *   the bundle came from.
  */
 import { createIssuedTokenSource, parseSecretPseudoRef, WirebenchError } from '@wirebench/engine';
 import type { CookieJarHost, EgressPolicy, GetSecret, IssuedTokenSource, PropertyMap } from '@wirebench/engine';
 import type { ExchangeSummary } from '@wirebench/wire/kinds/soap/wire';
-import type { ProxyOptionsWire } from '@wirebench/wire/wire-base';
+import type { FailedExchangeWire, ProxyOptionsWire } from '@wirebench/wire/wire-base';
 import type { RestExchangeSummary } from '@wirebench/wire/kinds/rest/wire';
 import type { EngineService } from '../engine-service.js';
 import type { HostState } from '../host/host-state.js';
@@ -109,12 +110,22 @@ export interface SendFromDirectoryInput {
    * empty. Never the process environment by default: a paired server must not read it.
    */
   readonly systemValues: Readonly<Record<string, string>>;
+  /**
+   * The `${#Workspace#…}` and `${#Global#…}` scopes the bundle carries (the server's, values only). They are
+   * the send's whole workspace and global scopes: this machine's own globals are never read.
+   */
+  readonly scopes?: { readonly workspace: PropertyMap; readonly global: PropertyMap };
   /** The cookie jar this send reads and stores into: the caller's, never a window's. */
   readonly cookies: CookieJarHost;
   /** The caller's token caches. */
   readonly session: SendSession;
   /** Aborts the send, as `request.cancel` does a window's. */
   readonly signal?: AbortSignal;
+  /**
+   * Hears the HTTP Log's failure row of a send that failed, built and redacted as a window's is (never shown
+   * with its secrets), before the send rejects. The host writes no row itself: the caller hands it on.
+   */
+  readonly onFailed?: (failure: FailedExchangeWire) => void;
 }
 
 /** The kind's ordinary send result. */
@@ -250,6 +261,30 @@ export function singleProjectRouter(
 }
 
 /**
+ * `router` with the bundle's workspace and global scopes laid on every run context and scope it answers,
+ * in place of the host's (which has none): exactly those, or none at all.
+ */
+function withBundleScopes(
+  router: RequestChannelProject,
+  scopes: SendFromDirectoryInput['scopes'],
+): RequestChannelProject {
+  const workspace = { ...scopes?.workspace };
+  const global = { ...scopes?.global };
+  return {
+    ...router,
+    runContextFor: (...args: Parameters<NonNullable<RequestChannelProject['runContextFor']>>) => {
+      const located = router.runContextFor?.(...args);
+      return located === undefined ? undefined : { ...located, globals: global, workspaceProperties: workspace };
+    },
+    scopesFor: (...args: Parameters<RequestChannelProject['scopesFor']>) => ({
+      ...router.scopesFor(...args),
+      workspace,
+      global,
+    }),
+  };
+}
+
+/**
  * The scripts of the bundle's project, read from its own model, with no session: a value a script keeps is
  * not kept, and none of a window's is read.
  */
@@ -302,7 +337,7 @@ export async function sendFromDirectory(
     const { oauth2, issuedTokens } = input.session;
     const sendDeps: SendThroughEngineDeps = {
       hostState,
-      project: singleProjectRouter(host, deps.proxyFor),
+      project: withBundleScopes(singleProjectRouter(host, deps.proxyFor), input.scopes),
       service: engine,
       registry: deps.registry,
       oauth2: {
@@ -320,6 +355,7 @@ export async function sendFromDirectory(
       ...(deps.scripts !== undefined ? { scripts: detachedScripts(deps.scripts, host, engine) } : {}),
       ...(deps.confirmProtected !== undefined ? { confirmProtected: deps.confirmProtected } : {}),
       ...(deps.egress !== undefined ? { egress: deps.egress } : {}),
+      ...(input.onFailed !== undefined ? { onSendFailed: input.onFailed } : {}),
     };
     // The same abort a window's `request.cancel` reaches: the send's handle in the registry.
     const onAbort = (): void => {

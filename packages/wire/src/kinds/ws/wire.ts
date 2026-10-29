@@ -17,6 +17,7 @@ import {
   requestAssertionWireSchema,
   restFolderWireSchema,
   tlsInfoWireSchema,
+  sentFromSchema,
 } from '../../wire-base.js';
 
 /** A WebSocket folder, sharing the project's `folders` list with REST and gRPC. */
@@ -185,6 +186,8 @@ export type WsHandshakeWire = z.infer<typeof wsHandshakeWireSchema>;
 
 /** What one WebSocket session produced (so far, or in whole): the handshake, its frames, how it closed. */
 export const wsExchangeSummarySchema = z.object({
+  /** Where the send went out from (spec §18.4); absent on the desktop. */
+  sentFrom: sentFromSchema.optional(),
   /** The request's own assertions as an editor Send checked them; absent when it has none or nothing checked them. */
   assertions: z.array(requestAssertionResultWireSchema).optional(),
   sendId: z.string(),

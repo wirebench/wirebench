@@ -15,7 +15,7 @@ import type {
   PreferencesStoredSectionWire,
   PreferencesWire,
 } from '@shared/wire-base.js';
-import { hasCapability, type Capability } from '../../lib/capabilities.js';
+import { hasAgent, hasCapability, type Capability } from '../../lib/capabilities.js';
 
 /** A section of the Settings page. */
 export type SettingsSectionId =
@@ -37,6 +37,7 @@ export type SettingsSectionId =
   | 'ssh'
   | 'secrets'
   | 'accounts'
+  | 'this-machine'
   | 'tokens';
 
 /**
@@ -71,6 +72,8 @@ export interface SettingsSection {
    * nor searched.
    */
   readonly capability?: Capability | readonly Capability[];
+  /** Shown only where the window has a local agent to pair (the browser, spec §18.3). */
+  readonly agent?: true;
 }
 
 export interface SettingsNavGroup {
@@ -256,6 +259,15 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         searchable: true,
       },
       {
+        id: 'this-machine',
+        label: 'This machine',
+        subtitle: 'Pair this computer so requests that need it are sent from here.',
+        keys: { kind: 'none' },
+        searchable: false,
+        keywords: ['agent', 'pair', 'localhost', 'local'],
+        agent: true,
+      },
+      {
         id: 'tokens',
         label: 'Devices & tokens',
         subtitle: 'CI tokens for the open server workspace.',
@@ -268,6 +280,7 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
 
 /** Whether the connected host can do what `section` needs; see {@link SettingsSection.capability}. */
 export function sectionAvailable(section: SettingsSection): boolean {
+  if (section.agent === true && !hasAgent()) return false;
   const needs = section.capability;
   if (needs === undefined) return true;
   return typeof needs === 'string' ? hasCapability(needs) : needs.some((capability) => hasCapability(capability));

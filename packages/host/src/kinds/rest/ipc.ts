@@ -150,6 +150,7 @@ export function registerRestRequestChannels(
       sendThroughEngine(sendDeps, request.sendId, request.requestId, {
         draft: { kind: 'rest', ...(request.draft !== undefined ? { draft: request.draft } : {}) },
         checkAssertions: true,
+        ...(request.confirmed === true ? { protectedConfirmed: true } : {}),
         onLive: (live) => {
           emitEvent(sender, events.rest.live, live);
         },

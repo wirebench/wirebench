@@ -150,13 +150,17 @@ describe('the pickers over the platform dialogs', () => {
     await expect(subject().confirmProtected(['Prod', 'Live'])).resolves.toBe(false);
   });
 
-  it('refuses with host-capability-missing on a platform with no dialogs', async () => {
+  it('refuses with host-capability-missing on a platform with no dialogs; a protected send asks the tab', async () => {
     const bare = createNativeDialogs(createFakePlatform({ without: ['dialogs'] }));
     await expect(bare.pickFolder(SENDER)).rejects.toMatchObject({
       code: 'host-capability-missing',
       details: { capability: 'dialogs' },
     });
-    await expect(bare.confirmProtected(['Prod'])).rejects.toMatchObject({ code: 'host-capability-missing' });
+    // Not a silent "no": the caller (a browser tab) asks, and sends again confirmed.
+    await expect(bare.confirmProtected(['Prod'])).rejects.toMatchObject({
+      code: 'needs-confirmation',
+      details: { environment: 'Prod' },
+    });
   });
 
   it('answers an e2e override even on a platform with no dialogs', async () => {

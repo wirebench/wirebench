@@ -181,6 +181,7 @@ export function registerSoapRequestChannels(
     const summary = await sendThroughEngine(sendDeps, request.sendId, request.requestId ?? AD_HOC_ID, {
       draft: { kind: 'soap', override: soapOverrideOf(request.input) },
       checkAssertions: true,
+      ...(request.confirmed === true ? { protectedConfirmed: true } : {}),
       ...(request.requestId === undefined ? { adHoc: { input: request.input, names: AD_HOC_NAME } } : {}),
     });
     return request.requestId === undefined

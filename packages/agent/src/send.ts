@@ -1,5 +1,5 @@
 /**
- * `agent.send`, `agent.cancel` and `agent.cookies.clear` (hosted edition spec §18.1, §18.4; ADR-0035): a
+ * `agent.send`, `agent.cancel`, `agent.cookies.clear` and `agent.cookies.domains` (hosted edition spec §18.1, §18.4; ADR-0035): a
  * paired tab hands the agent a send bundle its server built, and the agent sends that one request from this
  * machine.
  *
@@ -28,11 +28,13 @@ import { createSendSession, type Host, type HostPlatform, type SendSession } fro
 import {
   AGENT_SEND_KINDS,
   agentCancelRequestSchema,
+  type AgentCookieDomainsResponse,
   agentSendRequestSchema,
   agentSendResponseSchema,
   type AgentSendResponse,
   type SendBundleFile,
 } from '@wirebench/wire/agent';
+import type { FailedExchangeWire } from '@wirebench/wire/wire-base';
 import type { z } from 'zod';
 import type { PairingStore } from './pairings.js';
 import type { AgentCallContext, AgentHandler } from './server.js';
@@ -238,6 +240,22 @@ function systemValuesFor(
 }
 
 /**
+ * A failed send's error, with the HTTP Log's row for it on `details.failure` (already redacted by the host),
+ * so the tab can have its server write the History entry and the row a failed send leaves there.
+ */
+function withFailure(error: unknown, failure: FailedExchangeWire): WirebenchError {
+  const known = error instanceof WirebenchError;
+  // The transport's own copy of the request is unredacted: only the row, which is, goes with the error.
+  const details = Object.fromEntries(
+    Object.entries(known ? (error.details ?? {}) : {}).filter(([key]) => key !== 'request'),
+  );
+  return new WirebenchError(known ? error.code : failure.error.code, known ? error.message : failure.error.message, {
+    details: { ...details, failure },
+    cause: error,
+  });
+}
+
+/**
  * The three send handlers, for `startAgent({ handlers })`. Each send and each jar belongs to the pairing of
  * the tab that called: a tab cancels only its pairing's sends and clears only its pairing's jar, even beside
  * another pairing of the same origin (two accounts on one server).
@@ -328,7 +346,9 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
         });
       }
       const state = stateFor(pairingId, host);
-      const result = await host.sendFromDirectory({
+      /** The HTTP Log's row of a send that failed, which the tab takes to its server (§18.4). */
+      let failed: FailedExchangeWire | undefined;
+      const sending = host.sendFromDirectory({
         // The host's own id for it: two pairings may each run a send of one id, and the host keeps one registry.
         sendId: randomUUID(),
         projectDir: dir,
@@ -339,12 +359,24 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
         origin,
         workspaceId: bundle.workspaceId,
         secretNames: bundle.secretNames,
+        // The server's workspace and global values, as the bundle carries them; never this machine's globals.
+        scopes: { workspace: bundle.scopes?.workspace ?? {}, global: bundle.scopes?.global ?? {} },
         systemValues: systemValuesFor(bundle.systemNames, options.store.allowedSystemNames(), env),
         cookies: jarHost(state.jar),
         session: state.session,
         signal: abort.signal,
+        onFailed: (failure) => {
+          failed = failure;
+        },
       });
-      return agentSendResponseSchema.parse({ ...result, sentFrom: 'agent' });
+      let result: Awaited<typeof sending>;
+      try {
+        result = await sending;
+      } catch (error) {
+        throw failed === undefined ? error : withFailure(error, { ...failed, sendId });
+      }
+      // The tab's id, not the host's own: History and the HTTP Log match the send the tab shows.
+      return agentSendResponseSchema.parse({ ...result, sendId, sentFrom: 'agent' });
     } finally {
       running.delete(key(pairingId, sendId));
       if (dir !== undefined) await rm(dir, { recursive: true, force: true });
@@ -367,9 +399,21 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
     return Promise.resolve(undefined);
   };
 
+  /** One row per domain the pairing's jar holds; a domain both host-only and not is listed as not. */
+  const cookieDomains = (_raw: unknown, { pairing }: AgentCallContext): Promise<AgentCookieDomainsResponse> => {
+    const state = pairings.get(pairing.pairingId);
+    const byDomain = new Map<string, boolean>();
+    for (const cookie of state?.jar.list(Date.now()) ?? []) {
+      byDomain.set(cookie.domain, (byDomain.get(cookie.domain) ?? true) && cookie.hostOnly);
+    }
+    const domains = [...byDomain].slice(0, 1000).map(([domain, hostOnly]) => ({ domain, hostOnly }));
+    return Promise.resolve({ domains });
+  };
+
   return new Map<string, AgentHandler>([
     ['agent.send', send],
     ['agent.cancel', cancel],
     ['agent.cookies.clear', clearCookies],
+    ['agent.cookies.domains', cookieDomains],
   ]);
 }

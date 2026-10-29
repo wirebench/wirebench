@@ -160,6 +160,12 @@ describe('isChosenOutcome', () => {
 });
 
 describe('isProblemOutcome', () => {
+  it('leaves out where the send could run, and an edit that would not apply: none is the project (§18.4)', () => {
+    for (const code of ['send-needs-agent', 'host-disconnected', 'commit-failed']) {
+      expect(isProblemOutcome(code)).toBe(false);
+    }
+  });
+
   it('leaves out a choice and a transport failure, and keeps what the project can fix (#635)', () => {
     for (const code of [
       'aborted',

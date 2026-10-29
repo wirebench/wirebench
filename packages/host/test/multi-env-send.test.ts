@@ -15,6 +15,8 @@ import type { HistoryService } from '../src/history-service.js';
 import type { RequestChannelDeps } from '../src/ipc/request.js';
 import { cancelEnvironmentBatch, sendToEnvironments } from '../src/multi-env-send.js';
 import type { SendThroughEngineDeps } from '../src/send/exchange.js';
+import { createNativeDialogs } from '../src/native-dialogs.js';
+import { createHeadlessPlatform } from './helpers/fake-platform.js';
 import { sendDepsFor } from './helpers/send-deps.js';
 import { createHostState } from '../src/host/host-state.js';
 
@@ -166,6 +168,25 @@ describe('sendToEnvironments', () => {
 
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(confirm).toHaveBeenCalledWith(['Prod']);
+    expect(response.results.map((result) => [result.environmentId, result.outcome])).toEqual([
+      ['dev', 'ok'],
+      ['prod', 'error'],
+    ]);
+    expect(response.results[1]).toMatchObject({ code: 'send-declined' });
+    expect(received.slice(before).map((request) => request.url)).toEqual(['/pets/dev']);
+  });
+
+  it('on a host with no dialogs, sends the unprotected environments and declines the protected one', async () => {
+    // The server host: its confirmation refuses with needs-confirmation, which a batch cannot ask the tab for yet.
+    const headless = createNativeDialogs(createHeadlessPlatform()).confirmProtected;
+    const { sendDeps, deps } = depsOf(fakeProject(model({ protectedIn: 'prod' })), undefined, headless);
+    const before = received.length;
+    const response = await sendToEnvironments(sendDeps, deps, batches, {
+      batchId: 'b-guard-headless',
+      requestId: 'rest-1',
+      environmentIds: ['dev', 'prod'],
+      restDraft: {},
+    });
     expect(response.results.map((result) => [result.environmentId, result.outcome])).toEqual([
       ['dev', 'ok'],
       ['prod', 'error'],

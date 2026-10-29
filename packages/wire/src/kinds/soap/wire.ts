@@ -22,6 +22,7 @@ import {
   scriptResultWireSchema,
   sendTlsOptionsSchema,
   unresolvedRefWireSchema,
+  sentFromSchema,
 } from '../../wire-base.js';
 
 /**
@@ -457,6 +458,8 @@ export const requestSendRequestSchema = z.object({
   input: soapSendInputWireSchema,
   /** The saved request this send came from, if any — used to resolve its effective auth. */
   requestId: z.string().optional(),
+  /** The person confirmed the protected environment it goes under; see `requestSendRestRequestSchema`. */
+  confirmed: z.boolean().optional(),
 });
 export type RequestSendRequest = z.infer<typeof requestSendRequestSchema>;
 
@@ -538,7 +541,7 @@ export const responseAttachmentWireSchema = z.object({
 });
 export type ResponseAttachmentWire = z.infer<typeof responseAttachmentWireSchema>;
 
-const soapResponseWireSchema = z.object({
+export const soapResponseWireSchema = z.object({
   envelopeXml: z.string(),
   version: z.enum(['1.1', '1.2']).optional(),
   isSoap: z.boolean(),
@@ -639,6 +642,8 @@ export type WssExchangeWire = z.infer<typeof wssExchangeWireSchema>;
 
 /** Response payload for `request.send`: a JSON-serialisable projection of `SoapExchange`. */
 export const exchangeSummarySchema = z.object({
+  /** Where the send went out from (spec §18.4); absent on the desktop. */
+  sentFrom: sentFromSchema.optional(),
   /** The request's own assertions as an editor Send checked them; absent when it has none or nothing checked them. */
   assertions: z.array(requestAssertionResultWireSchema).optional(),
   sendId: z.string(),

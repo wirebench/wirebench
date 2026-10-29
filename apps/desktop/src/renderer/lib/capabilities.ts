@@ -33,3 +33,11 @@ export function secretKeptHint(desktop: string): string {
 export function tabSignOut(): (() => void) | undefined {
   return (globalThis as { wirebench?: { env?: { signOut?: () => void } } }).wirebench?.env?.signOut;
 }
+
+/**
+ * Whether this window has a local agent to route sends to: the browser bootstrap sets `env.agent`
+ * (hosted edition spec §18.3), the desktop preload never does. Asked about the API's shape, never `host`.
+ */
+export function hasAgent(): boolean {
+  return (globalThis as { wirebench?: { env?: { agent?: unknown } } }).wirebench?.env?.agent !== undefined;
+}

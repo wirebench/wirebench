@@ -9,4 +9,11 @@ void startBrowserClient({
   target: window,
   mountRenderer: () => import('../renderer/main.js'),
   matchMedia: (query) => window.matchMedia(query),
+  // Reading `localStorage` itself throws where site data is blocked; the bootstrap guards every use too.
+  storage: {
+    getItem: (key) => window.localStorage.getItem(key),
+    setItem: (key, value) => {
+      window.localStorage.setItem(key, value);
+    },
+  },
 });

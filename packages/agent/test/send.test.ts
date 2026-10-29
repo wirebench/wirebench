@@ -191,6 +191,56 @@ describe('agent.send', () => {
     expect(await sendsLeft()).toEqual([]);
   });
 
+  it("answers under the tab's send id, not the host's own", async () => {
+    const id = sendId();
+    const result = (await call('agent.send', { sendId: id, bundle: await restBundle() })) as { sendId: string };
+    expect(result.sendId).toBe(id);
+  });
+
+  it('puts the HTTP Log row of a send that failed on the error, under the tab’s send id and with no secret', async () => {
+    await storeAgentSecret('api_token', SECRET);
+    // Nothing listens on port 1: the send fails on the wire.
+    const project = {
+      ...createProject('Demo', { id: 'p1' }),
+      containers: {
+        rest: [
+          createApi('Gone', {
+            id: 'api-1',
+            baseUrl: 'http://127.0.0.1:1',
+            requests: [
+              createRestRequest('Echo', {
+                id: 'req-1',
+                url: '/echo',
+                headers: [entry('Authorization', 'Bearer ${secret:api_token}')],
+              }),
+            ],
+          }),
+        ],
+      },
+    };
+    const id = sendId();
+    const bundle = { ...(await bundleOf(project, 'req-1')), secretNames: ['api_token'] };
+    const error = (await failure({ sendId: id, bundle })) as {
+      code: string;
+      details?: { failure?: { sendId: string; protocol: string; request: { url: string }; error: { code: string } } };
+    };
+    expect(error.code).toBe('connection-refused');
+    expect(error.details?.failure).toMatchObject({
+      sendId: id,
+      protocol: 'rest',
+      request: { url: 'http://127.0.0.1:1/echo' },
+      error: { code: 'connection-refused' },
+    });
+    expect(JSON.stringify(error.details)).not.toContain(SECRET);
+    expect(await sendsLeft()).toEqual([]);
+  });
+
+  it('marks the row of a send that failed while it was prepared, which leaves no History entry', async () => {
+    const bundle = await restBundle({ headers: [entry('x-sys', '${#System#WB_TEST_OTHER}')] });
+    const error = (await failure({ sendId: sendId(), bundle })) as { details?: { failure?: { stage?: string } } };
+    expect(error.details?.failure?.stage).toBe('prepare');
+  });
+
   it('runs a pre-request script of the folder chain', { timeout: 60_000 }, async () => {
     const folder = createFolder('Orders', {
       id: 'folder-1',
@@ -221,6 +271,73 @@ describe('agent.send', () => {
     // Declared and allowed.
     await call('agent.send', { sendId: sendId(), bundle: { ...bundle, systemNames: ['WB_TEST_ALLOWED'] } });
     expect(echo.received[0]?.headers['x-sys']).toBe('[allowed-value]');
+  });
+
+  it("resolves ${#Workspace#…}, ${#Global#…} and the shorthand from the bundle's scopes, never this machine's globals", async () => {
+    // This machine's own global of the same name: a bundle send must not read it.
+    const caller = quietCaller(8);
+    host.attach(caller);
+    expect(
+      await serveCall(host, caller, { id: 1, channel: 'globals.set', request: { name: 'y', value: 'desktop' } }),
+    ).toMatchObject({
+      ok: true,
+    });
+    await host.detach(caller.id);
+    const request = createRestRequest('Echo', {
+      id: 'req-1',
+      url: '/echo',
+      headers: [
+        entry('x-ws', '${#Workspace#x}'),
+        entry('x-gl', '${#Global#y}'),
+        entry('x-a', '${a}'),
+        entry('x-b', '${b}'),
+        entry('x-c', '${c}'),
+        entry('x-d', '${d}'),
+      ],
+    });
+    const environment = {
+      id: 'env-1',
+      name: 'Dev',
+      slug: 'dev',
+      order: 0,
+      endpoints: {},
+      properties: { a: 'env' },
+      disabledProperties: [],
+    };
+    const project: Project = {
+      ...restProject([request]),
+      properties: { a: 'project', b: 'project' },
+      environments: [environment],
+      activeEnvironmentId: 'env-1',
+    };
+    const bundle = await bundleOf(project, 'req-1', 'rest', {
+      environment: 'env-1',
+      scopes: {
+        workspace: { x: 'ws-x', a: 'workspace', b: 'workspace', c: 'workspace' },
+        global: { y: 'gl-y', a: 'global', b: 'global', c: 'global', d: 'global' },
+      },
+    });
+    await call('agent.send', { sendId: sendId(), bundle });
+    const headers = echo.received[0]?.headers;
+    expect(headers?.['x-ws']).toBe('ws-x');
+    expect(headers?.['x-gl']).toBe('gl-y');
+    // Env, then Project, then Workspace, then Global.
+    expect([headers?.['x-a'], headers?.['x-b'], headers?.['x-c'], headers?.['x-d']]).toEqual([
+      'env',
+      'project',
+      'workspace',
+      'global',
+    ]);
+  });
+
+  it('reads no global of this machine for a bundle without scopes', async () => {
+    const caller = quietCaller(9);
+    host.attach(caller);
+    await serveCall(host, caller, { id: 1, channel: 'globals.set', request: { name: 'y', value: 'desktop' } });
+    await host.detach(caller.id);
+    const bundle = await restBundle({ headers: [entry('x-gl', '[${#Global#y}]')] });
+    expect((await failure({ sendId: sendId(), bundle })).code).toBe('rest-unresolved-properties');
+    expect(echo.received).toEqual([]);
   });
 
   it("never falls back to this process's own environment", async () => {
@@ -341,6 +458,19 @@ describe('agent.send', () => {
     // The other origin's jar was not cleared.
     await call('agent.send', { sendId: sendId(), bundle }, OTHER);
     expect(echo.received[4]?.headers.cookie).toBe('sid=abc');
+  });
+
+  it("lists the domains the pairing's jar holds, names only, and none once cleared", async () => {
+    expect(await call('agent.cookies.domains', undefined)).toEqual({ domains: [] });
+    const bundle = await restBundle({ url: '/cookie', settings: { sendCookies: true } });
+    await call('agent.send', { sendId: sendId(), bundle });
+    const listed = await call('agent.cookies.domains', undefined);
+    expect(listed).toEqual({ domains: [{ domain: '127.0.0.1', hostOnly: true }] });
+    expect(JSON.stringify(listed)).not.toContain('abc');
+    // Another pairing's jar is its own.
+    expect(await call('agent.cookies.domains', undefined, OTHER)).toEqual({ domains: [] });
+    await call('agent.cookies.clear', undefined);
+    expect(await call('agent.cookies.domains', undefined)).toEqual({ domains: [] });
   });
 });
 

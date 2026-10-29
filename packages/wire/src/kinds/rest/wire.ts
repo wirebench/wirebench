@@ -31,6 +31,7 @@ import {
   scriptResultWireSchema,
   unresolvedRefWireSchema,
   webhookSigningWireSchema,
+  sentFromSchema,
 } from '../../wire-base.js';
 
 /**
@@ -365,6 +366,8 @@ export const restContractResultSchema = z.object({
 export type RestContractResultWire = z.infer<typeof restContractResultSchema>;
 
 export const restExchangeSummarySchema = z.object({
+  /** Where the send went out from (spec §18.4); absent on the desktop. */
+  sentFrom: sentFromSchema.optional(),
   /** The request's own assertions as an editor Send checked them; absent when it has none or nothing checked them. */
   assertions: z.array(requestAssertionResultWireSchema).optional(),
   sendId: z.string(),
@@ -433,6 +436,11 @@ export const requestSendRestRequestSchema = z.object({
   requestId: z.string(),
   /** The editor's unsaved edits, applied to this send only. */
   draft: restRequestPatchSchema.optional(),
+  /**
+   * The person was asked about the protected environment it goes under, and said send: a host with no
+   * dialogs of its own (the server's) answers `needs-confirmation` and the tab asks (#345, §18.4).
+   */
+  confirmed: z.boolean().optional(),
 });
 export type RequestSendRestRequest = z.infer<typeof requestSendRestRequestSchema>;
 

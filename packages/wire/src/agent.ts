@@ -98,16 +98,48 @@ export const sendBundleSchema = z
           .regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
       )
       .max(1000),
+    /**
+     * The `${#Workspace#…}` and `${#Global#…}` values of the server the request came from, values only (a
+     * secret is a `${secret:…}` token in them, never a value). They are the send's whole workspace and global
+     * scopes on the agent: its own machine's globals are never read. Absent: both empty.
+     */
+    scopes: z
+      .strictObject({
+        workspace: z.record(z.string().max(256), z.string()),
+        global: z.record(z.string().max(256), z.string()),
+      })
+      .optional(),
+    /**
+     * The workspace's `team-secrets/` subtree, as it is, by path relative to that subtree, when the request
+     * reads a team secret (§18.4, §18.5): checked against what the machine imported, never a value it opens.
+     * Counts toward the caps with `files`. The agent reads it from Task 10.
+     */
+    teamSecrets: z.array(sendBundleFileSchema).max(AGENT_BUNDLE_MAX_FILES).optional(),
   })
   .superRefine((bundle, context) => {
     let total = 0;
-    bundle.files.forEach((file, index) => {
+    const count = bundle.files.length + (bundle.teamSecrets?.length ?? 0);
+    if (count > AGENT_BUNDLE_MAX_FILES) {
+      context.addIssue({
+        code: 'custom',
+        path: ['files'],
+        message: `The bundle holds more than ${String(AGENT_BUNDLE_MAX_FILES)} files`,
+        params: { tooLarge: true },
+      });
+    }
+    const measure = (key: 'files' | 'teamSecrets', file: SendBundleFile, index: number): void => {
       const bytes = bundleFileBytes(file);
       if (bytes === undefined) {
-        context.addIssue({ code: 'custom', path: ['files', index, 'content'], message: 'Not base64' });
+        context.addIssue({ code: 'custom', path: [key, index, 'content'], message: 'Not base64' });
         return;
       }
       total += bytes;
+    };
+    bundle.files.forEach((file, index) => {
+      measure('files', file, index);
+    });
+    bundle.teamSecrets?.forEach((file, index) => {
+      measure('teamSecrets', file, index);
     });
     if (total > AGENT_BUNDLE_MAX_BYTES) {
       context.addIssue({
@@ -143,6 +175,16 @@ export type AgentSendResponse = z.infer<typeof agentSendResponseSchema>;
 export const agentCancelRequestSchema = z.strictObject({ sendId: sendIdSchema });
 export const agentCancelResponseSchema = z.object({ cancelled: z.boolean() });
 
+/**
+ * The cookie domains the agent's jar holds for this tab's pairing, names only, never a cookie: a domain the
+ * jar holds sends the next request to it through the agent (`agent-cookies`), so it carries those cookies.
+ * `hostOnly` is a cookie set for that exact host; otherwise its subdomains match too.
+ */
+export const agentCookieDomainsResponseSchema = z.object({
+  domains: z.array(z.object({ domain: z.string().max(256), hostOnly: z.boolean() })).max(1000),
+});
+export type AgentCookieDomainsResponse = z.infer<typeof agentCookieDomainsResponseSchema>;
+
 /** The agent's share of the IPC registry; served by a paired agent only, never by a window's host. */
 export const agentChannels = {
   agent: {
@@ -153,6 +195,8 @@ export const agentChannels = {
     /** Empties the cookie jar the agent holds for this tab's pairing. */
     cookies: {
       clear: defineChannel('agent.cookies.clear', z.undefined(), z.undefined()),
+      /** The domains that jar holds cookies for, without the cookies. */
+      domains: defineChannel('agent.cookies.domains', z.undefined(), agentCookieDomainsResponseSchema),
     },
   },
 } as const;

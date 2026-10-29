@@ -14,8 +14,13 @@
  *   the first hello it says the workspace cannot be reached (the page is otherwise blank); after it, that
  *   the connection was lost. A hello whose capabilities differ from the first reloads the page: the renderer hid
  *   what the first set lacked, and only a fresh load redoes that.
+ *
+ * It also opens the tab's second socket, to the user's paired local agent (`agent-connection.ts`, spec
+ * §18.3), after the first hello: `env.agent` carries its status and the pairing calls, and the API's
+ * `invoke` sends every `agent.*` channel over that socket and everything else to the server.
  */
-import { buildApi, type WirebenchApi } from '../preload/build-api.js';
+import { buildApi, type Invoke, type WirebenchApi } from '../preload/build-api.js';
+import { createAgentConnection, type FetchAnswer } from './agent-connection.js';
 import { createSocketTransport, hostSocketUrl, type Hello, type SocketLike } from './socket-transport.js';
 
 /** The close codes the bootstrap reads (the server's `HOST_CLOSE`). */
@@ -56,12 +61,16 @@ export interface BootstrapDeps {
     reload(): void;
   };
   readonly document: Document;
-  readonly fetch: (url: string, init: RequestInit) => Promise<{ readonly status: number }>;
+  readonly fetch: (url: string, init: RequestInit) => Promise<FetchAnswer>;
   /** Where `wirebench` is set: the page's `window`. */
   readonly target: { wirebench?: WirebenchApi };
   /** Loads the renderer; called once, after `wirebench` is set. */
   readonly mountRenderer: () => Promise<unknown>;
   readonly createSocket?: (url: string) => SocketLike;
+  /** The page's `localStorage`: which pairing to try first. Optional, and every use is guarded. */
+  readonly storage?: Pick<Storage, 'getItem' | 'setItem'>;
+  /** Opens the agent's socket; `createSocket` unless a test passes its own. */
+  readonly createAgentSocket?: (url: string) => SocketLike;
   /** The page's `matchMedia`: "System" follows the browser's `prefers-color-scheme`, not the server. */
   readonly matchMedia?: (query: string) => MediaQueryList;
 }
@@ -133,9 +142,18 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
   let leaving = false;
   let checkingSession = false;
 
+  const agentSocket = deps.createAgentSocket ?? deps.createSocket;
+  const agent = createAgentConnection({
+    fetch: deps.fetch,
+    serverOrigin: `${deps.location.protocol}//${deps.location.host}`,
+    ...(agentSocket === undefined ? {} : { createSocket: agentSocket }),
+    ...(deps.storage === undefined ? {} : { storage: deps.storage }),
+  });
+
   const toSignIn = (): void => {
     if (leaving) return;
     leaving = true;
+    agent.close();
     transport.close();
     deps.location.assign(signInUrl(deps.location));
   };
@@ -165,6 +183,7 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
         first = hello;
       } else if (!sameCapabilities(first, hello)) {
         leaving = true;
+        agent.close();
         transport.close();
         deps.location.reload();
         return;
@@ -204,13 +223,18 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
     form.hidden = true;
     deps.document.body.appendChild(form);
     form.submit();
+    agent.close();
     transport.close();
   };
 
   const hello = await transport.ready;
+  // Pairings are the server's to list, so they are read once it answers; with none, no agent socket opens.
+  void agent.refresh();
+  const invoke: Invoke = (channel, request) =>
+    channel.startsWith('agent.') ? agent.invoke(channel, request) : transport.invoke(channel, request);
   const os = pageOsTheme(deps.matchMedia);
   deps.target.wirebench = buildApi(
-    transport.invoke,
+    invoke,
     transport.on,
     {
       e2e: false,
@@ -219,6 +243,7 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
       capabilities: hello.capabilities,
       signOut,
       onOsThemeChanged: os.onChanged,
+      agent: agent.env,
     },
     () => '',
   );
