@@ -30,7 +30,8 @@ describeDb('the server id (license-binding spec §3.1)', () => {
 
   it('is an error, never a re-mint, when the row is gone', async () => {
     h = await licensingHarness(keys);
-    await h.db.query('delete from server_identity');
+    // The app role only reads server_identity, so the owner takes the row away.
+    await h.db.owner.query('delete from server_identity');
     await expect(repo.serverId(h.db)).rejects.toThrow(repo.MISSING_SERVER_ID);
   });
 });

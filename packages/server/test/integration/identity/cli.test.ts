@@ -4,23 +4,23 @@ import { describeDb, testDatabase } from '../../helpers/database.js';
 
 describeDb('wirebench-server admin (§3.7)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
-  const env = () => ({
-    WIREBENCH_SERVER_DATABASE_URL: db.url,
+  const env = (url = db.url) => ({
+    WIREBENCH_SERVER_DATABASE_URL: url,
     WIREBENCH_SERVER_PUBLIC_URL: 'https://wirebench.test',
     WIREBENCH_SERVER_LOG_LEVEL: 'fatal',
   });
-  const run = async (args: string[]) => {
+  const run = async (args: string[], url = db.url) => {
     const stdout: string[] = [];
     const stderr: string[] = [];
     const code = await main(args, {
       stdout: { write: (t: string) => stdout.push(t) },
       stderr: { write: (t: string) => stderr.push(t) },
-      env: env(),
+      env: env(url),
     });
     return { code, stdout: stdout.join(''), stderr: stderr.join('') };
   };
   beforeEach(async () => {
-    db = await testDatabase();
+    db = await testDatabase({ migrated: false });
   });
   afterEach(() => db.close());
 
@@ -28,7 +28,9 @@ describeDb('wirebench-server admin (§3.7)', () => {
     const early = await run(['admin', 'invite', 'alice@example.com']);
     expect(early.code).toBe(3);
     expect(early.stderr).toContain('wirebench-server migrate');
-    expect((await run(['migrate'])).code).toBe(0);
+    // Migrations are the owner's; the admin commands then run as the app role.
+    expect((await run(['migrate'], db.ownerUrl)).code).toBe(0);
+    await db.grant();
 
     const invite = await run(['admin', 'invite', 'Alice@example.com']);
     expect(invite.code).toBe(0);

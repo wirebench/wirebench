@@ -100,6 +100,12 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      # The suite connects as two roles (hosted edition spec §19.4, §19.13): wirebench_owner owns each
+      # file's schema and runs its migrations, wirebench_app runs the queries. Neither is a superuser or
+      # bypasses row-level security, and tenancy/role.test.ts fails if that ever changes. The superuser
+      # above only creates and drops the schemas. The script is idempotent.
+      - name: Create the test database roles
+        run: docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U wirebench -d wirebench_test < scripts/ci/server-test-roles.sql
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @wirebench/engine... build
       - run: pnpm --filter @wirebench/server test

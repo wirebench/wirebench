@@ -10,7 +10,7 @@ import {
   sealedPage,
   sealRows,
 } from '../../../src/audit-log/repo.js';
-import { loadMigrations, migrate, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
+import { loadMigrations, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
 import { FIXED_ROW } from '../../helpers/audit-chain.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 
@@ -22,12 +22,11 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
 
   beforeAll(async () => {
-    db = await testDatabase();
+    db = await testDatabase({ migrated: false });
     const modules = await Promise.all(
       ['identity', 'teams-access', 'audit-log'].map((name) => loadMigrations(dir(name), { contiguous: false })),
     );
-    await migrate(
-      db,
+    await db.migrate(
       [...(await loadMigrations(MIGRATIONS_DIR)), ...modules.flat()].sort((a, b) => a.version - b.version),
     );
   });

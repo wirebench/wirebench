@@ -23,7 +23,7 @@ import {
   setAnchorHead,
 } from '../../../src/audit-log/repo.js';
 import type { Database, Querier } from '../../../src/context.js';
-import { loadMigrations, migrate, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
+import { loadMigrations, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
 import { SWEEP_INTERVAL_MS } from '../../../src/hooks/sweep.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { licensingHarness, testKeys } from '../../helpers/licensing.js';
@@ -170,12 +170,11 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
   };
 
   beforeAll(async () => {
-    db = await testDatabase();
+    db = await testDatabase({ migrated: false });
     const modules = await Promise.all(
       ['identity', 'teams-access', 'audit-log'].map((name) => loadMigrations(dir(name), { contiguous: false })),
     );
-    await migrate(
-      db,
+    await db.migrate(
       [...(await loadMigrations(MIGRATIONS_DIR)), ...modules.flat()].sort((a, b) => a.version - b.version),
     );
   });

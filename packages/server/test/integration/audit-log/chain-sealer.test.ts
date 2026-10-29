@@ -22,7 +22,7 @@ import { auditHook } from '../../../src/audit-log/hook.js';
 import { auditLogModule } from '../../../src/audit-log/module.js';
 import { insertGenesis, readAnchor, sealedPage, type ChainLink } from '../../../src/audit-log/repo.js';
 import type { AuditInput, Database, Querier } from '../../../src/context.js';
-import { loadMigrations, migrate, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
+import { loadMigrations, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
 import { SWEEP_INTERVAL_MS } from '../../../src/hooks/sweep.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { signedInUser } from '../../helpers/identity.js';
@@ -133,12 +133,11 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     new AuditSealer({ db, key: KEY, now: clock, setTimer: manualTimers().setTimer, log: recordingLog().log, ...extra });
 
   beforeAll(async () => {
-    db = await testDatabase();
+    db = await testDatabase({ migrated: false });
     const modules = await Promise.all(
       ['identity', 'teams-access', 'audit-log'].map((name) => loadMigrations(dir(name), { contiguous: false })),
     );
-    await migrate(
-      db,
+    await db.migrate(
       [...(await loadMigrations(MIGRATIONS_DIR)), ...modules.flat()].sort((a, b) => a.version - b.version),
     );
   });

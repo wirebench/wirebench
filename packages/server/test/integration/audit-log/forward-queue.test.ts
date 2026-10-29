@@ -14,7 +14,7 @@ import {
 import { auditHook } from '../../../src/audit-log/hook.js';
 import { deleteAuditEventsBefore } from '../../../src/audit-log/repo.js';
 import { permissiveLicense, type AuditInput, type LicenseService } from '../../../src/context.js';
-import { loadMigrations, migrate, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
+import { loadMigrations, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 
 const dir = (name: string) => fileURLToPath(new URL(`../../../migrations/${name}/`, import.meta.url));
@@ -138,12 +138,11 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
     });
 
   beforeAll(async () => {
-    db = await testDatabase();
+    db = await testDatabase({ migrated: false });
     const modules = await Promise.all(
       ['identity', 'teams-access', 'audit-log'].map((name) => loadMigrations(dir(name), { contiguous: false })),
     );
-    await migrate(
-      db,
+    await db.migrate(
       [...(await loadMigrations(MIGRATIONS_DIR)), ...modules.flat()].sort((a, b) => a.version - b.version),
     );
   });

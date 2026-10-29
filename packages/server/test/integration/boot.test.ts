@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { permissiveLicense, type ServerModule } from '../../src/context.js';
 import { main } from '../../src/main.js';
-import { startServer, StartupError } from '../../src/serve.js';
+import { allMigrations, startServer, StartupError } from '../../src/serve.js';
 import { describeDb, testDatabase } from '../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../helpers/git.js';
 import { freePort } from '../helpers/net.js';
@@ -19,12 +19,15 @@ const slowModule = (ms: number): ServerModule => ({
   },
 });
 
+// startServer migrates before it serves, with the one database URL it has. So the first test starts it as
+// the owner on an empty schema, to show it migrates; every other test has the owner migrate first and
+// starts it as the app role, whose migrate then has nothing to apply.
 describeDb('startServer', () => {
   let dataDir: string;
   let port: number;
   let db: Awaited<ReturnType<typeof testDatabase>>;
-  const env = () => ({
-    WIREBENCH_SERVER_DATABASE_URL: db.url,
+  const env = (url = db.url) => ({
+    WIREBENCH_SERVER_DATABASE_URL: url,
     WIREBENCH_SERVER_PUBLIC_URL: 'https://wirebench.test',
     WIREBENCH_SERVER_DATA_DIR: dataDir,
     WIREBENCH_SERVER_HOST: '127.0.0.1',
@@ -32,10 +35,12 @@ describeDb('startServer', () => {
     WIREBENCH_SERVER_LOG_LEVEL: 'fatal',
   });
   const io = () => ({ stdout: { write: vi.fn() }, stderr: { write: vi.fn() }, env: env() });
+  /** What startServer applies with the modules these tests pass, none of which has migrations. */
+  const migrated = async () => db.migrate(await allMigrations([]));
   beforeEach(async () => {
     dataDir = await mkTempDir();
     port = await freePort();
-    db = await testDatabase();
+    db = await testDatabase({ migrated: false });
   });
   afterEach(async () => {
     await db.close();
@@ -44,7 +49,7 @@ describeDb('startServer', () => {
 
   it('migrates, prepares the data dir, listens, and answers healthz and meta', async () => {
     const exit = vi.fn();
-    const server = await startServer(env(), io(), { signals: new EventEmitter(), exit });
+    const server = await startServer(env(db.ownerUrl), io(), { signals: new EventEmitter(), exit });
     try {
       expect(server.port).toBe(port);
       expect((await fetch(`http://127.0.0.1:${server.port}/healthz`)).status).toBe(200);
@@ -58,6 +63,7 @@ describeDb('startServer', () => {
   });
 
   it('returns the context a module replaced the license on, not the permissive default', async () => {
+    await migrated();
     const live = { ...permissiveLicense() };
     const module: ServerModule = {
       name: 'licensing',
@@ -75,6 +81,7 @@ describeDb('startServer', () => {
   });
 
   it('shuts down on SIGTERM after draining an in-flight request', async () => {
+    await migrated();
     const signals = new EventEmitter();
     const exit = vi.fn();
     const server = await startServer(env(), io(), { signals, exit, modules: [slowModule(300)] });
@@ -89,6 +96,7 @@ describeDb('startServer', () => {
   });
 
   it('exits 130 at once on a second signal', async () => {
+    await migrated();
     const signals = new EventEmitter();
     const exit = vi.fn();
     const server = await startServer(env(), io(), { signals, exit, modules: [slowModule(300)] });
@@ -104,6 +112,7 @@ describeDb('startServer', () => {
   });
 
   it('when draining outlasts drainMs, drops the remaining connections, closes the pool and does not exit', async () => {
+    await migrated();
     const signals = new EventEmitter();
     const exit = vi.fn();
     const server = await startServer(env(), io(), { signals, exit, drainMs: 100, modules: [slowModule(2_000)] });
@@ -119,6 +128,7 @@ describeDb('startServer', () => {
   });
 
   it('close() lets work holding a repository lock finish before the pool closes, then refuses new work', async () => {
+    await migrated();
     const server = await startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn() });
     const workspaceId = '01J8ZC5Q0V7R3T9XK2M4N6P8QA';
     let release: () => void = () => undefined;
@@ -142,6 +152,7 @@ describeDb('startServer', () => {
   });
 
   it('main serve returns 0 after a SIGTERM whose drain timed out', async () => {
+    await migrated();
     const signals = new EventEmitter();
     const exit = vi.fn();
     const running = main(['serve'], io(), { signals, exit, drainMs: 100, modules: [slowModule(2_000)] });
@@ -163,6 +174,7 @@ describeDb('startServer', () => {
   });
 
   it('refuses to start when the port is taken, naming the address, and releases the pool', async () => {
+    await migrated();
     const first = await startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn() });
     try {
       const error = await startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn() }).catch(
@@ -177,9 +189,11 @@ describeDb('startServer', () => {
   });
 
   it('exits 3 when the database is newer than this server', async () => {
+    await migrated();
     const first = await startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn() });
     await first.close();
-    await db.query('insert into schema_migrations (version, name) values (99, $1)', ['future']);
+    // The ledger is the owner's to write; the app role only reads it.
+    await db.owner.query('insert into schema_migrations (version, name) values (99, $1)', ['future']);
     await expect(startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn() })).rejects.toMatchObject({
       exitCode: 3,
     });
