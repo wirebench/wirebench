@@ -2119,11 +2119,12 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
         // A send's own engine: a bundle's definitions never replace the ones a window has loaded.
         engine: (getSecret) => new EngineService(getSecret, (url) => mainHttpOptions(url, mainHttpDeps)),
         // No workspace, globals, current values or picks: a bundle carries the values it is sent with.
-        projectHost: (engine, getSecret) =>
+        // On the send's own view of the host state: its `${#System#…}` scope is the send's, never this process's.
+        projectHost: (engine, getSecret, sendState) =>
           new ProjectHost(
             engine,
             {
-              hostState,
+              hostState: sendState,
               ...egressOption,
               enabledKinds: features.enabledKinds,
               ...(features.registry !== undefined ? { registry: features.registry } : {}),

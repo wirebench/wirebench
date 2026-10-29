@@ -35,7 +35,18 @@ export class AgentServerError extends Error {
   }
 }
 
-/** `serverUrl` without a trailing slash, as an `http(s)` URL; throws when it is not one. */
+/** Whether `hostname` (as `URL` gives it) is this machine's loopback: `localhost`, `127.0.0.0/8` or `::1`. */
+function isLoopbackHost(hostname: string): boolean {
+  if (hostname === 'localhost' || hostname === '[::1]') return true;
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname);
+}
+
+/**
+ * `serverUrl` as the origin the agent pairs with: `https://host[:port]`, with any path, query or fragment
+ * the user typed dropped (the pairing routes are at the server's root). `http://` only for a server on this
+ * machine's loopback, since the code and every signed request would otherwise cross the network in the
+ * clear. Throws when it is none of these.
+ */
 export function normaliseServerUrl(serverUrl: string): string {
   let url: URL;
   try {
@@ -44,11 +55,15 @@ export function normaliseServerUrl(serverUrl: string): string {
     throw new AgentServerError('unreachable', 'The server address is not a URL');
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new AgentServerError('unreachable', 'The server address must start with https:// or http://');
+    throw new AgentServerError('unreachable', 'The server address must start with https://');
   }
-  url.search = '';
-  url.hash = '';
-  return url.href.replace(/\/+$/, '');
+  if (url.protocol === 'http:' && !isLoopbackHost(url.hostname)) {
+    throw new AgentServerError(
+      'unreachable',
+      'The server address must start with https:// (http:// is for this machine only)',
+    );
+  }
+  return url.origin;
 }
 
 /** The URL of `route` (starting `/api/…`) on the server, and its path as the server signs it. */
@@ -143,6 +158,14 @@ export async function pair(options: PairOptions): Promise<PairResult> {
   const origin = answer.success ? canonicalOrigin(answer.data.origin) : undefined;
   if (!answer.success || origin === undefined) {
     throw new AgentServerError('bad-answer', 'The server answered the pairing with something unexpected');
+  }
+  // The origin tabs may connect from is the server's own: a server must not name another's origin, or its
+  // pairing would accept the other server's tabs.
+  if (origin !== serverUrl) {
+    throw new AgentServerError(
+      'bad-answer',
+      `The server answered that its address is ${origin}, not ${serverUrl}; pair with the server's own address`,
+    );
   }
   await options.store.add({
     pairingId: answer.data.pairingId,

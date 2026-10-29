@@ -7,10 +7,12 @@
  * preferences and its protected-environment question, and nothing else of the host's. In particular:
  *
  * - Its secrets are the agent's own: a `${secret:name}` the bundle declares, read from the store under
- *   `agent:<origin>:<workspaceId>:<name>` (or from the team-secrets hook). The desktop's project secrets,
+ *   `agent:<pairingId>:<workspaceId>:<name>` (or from the team-secrets hook). The desktop's project secrets,
  *   secret sources and team secrets are never consulted, whatever project id the bundle names: a paired
  *   server must not be able to send this machine's secrets to a URL it chooses. Any other ref is missing.
- * - Its OAuth2 tokens, issued SAML tokens and cookies are the caller's session (one per pairing origin).
+ * - Its `${#System#…}` scope is the map the caller passes (`systemValues`), never the process environment:
+ *   the agent passes only the names the bundle declares and this machine allows.
+ * - Its OAuth2 tokens, issued SAML tokens and cookies are the caller's session (one per pairing).
  * - It writes no History, HTTP Log row or audit event, reads no window's picks or plugins, and keeps no
  *   script value.
  */
@@ -36,14 +38,29 @@ import { ExchangeRegistry, sendThroughEngine, type SendThroughEngineDeps } from 
 /** The kinds a detached send sends: a WebSocket session is not a send, and gRPC and MCP are not yet served. */
 export type DetachedSendKind = 'rest' | 'soap';
 
-/** The store label of an agent secret: the pairing's origin, the server workspace and the name. */
-export function agentSecretLabel(origin: string, workspaceId: string, name: string): string {
-  return `agent:${origin}:${workspaceId}:${name}`;
+/**
+ * The store label of an agent secret: the pairing, the server workspace and the name. Keyed by pairing, not
+ * origin: two accounts on one server that pair the same machine never read each other's values.
+ */
+export function agentSecretLabel(pairingId: string, workspaceId: string, name: string): string {
+  return `agent:${pairingId}:${workspaceId}:${name}`;
 }
 
 /**
- * The token caches one caller's detached sends share (the agent keeps one per pairing origin), so two
- * paired servers never get each other's OAuth2 or SAML tokens, nor a window's.
+ * What the team-secrets hook is asked. The workspace id comes from a bundle, which the server named: the
+ * implementer must confirm that workspace belongs to `serverOrigin` (the pairing's server) before answering,
+ * or server M could name server S's workspace and read S's team secrets.
+ */
+export interface AgentTeamSecretQuery {
+  readonly pairingId: string;
+  readonly serverOrigin: string;
+  readonly workspaceId: string;
+  readonly name: string;
+}
+
+/**
+ * The token caches one caller's detached sends share (the agent keeps one per pairing), so two pairings
+ * never get each other's OAuth2 or SAML tokens, nor a window's.
  */
 export interface SendSession {
   readonly oauth2: Pick<OAuth2Service, 'accessToken' | 'clear'>;
@@ -81,11 +98,17 @@ export interface SendFromDirectoryInput {
   /** The environment id it is sent under; the project's active one when absent. */
   readonly environment?: string;
   readonly kind: DetachedSendKind;
-  /** The paired server's origin and its workspace: they name the secrets this send may read. */
+  /** The pairing the send came through, with its server's origin and workspace: they name its secrets. */
+  readonly pairingId: string;
   readonly origin: string;
   readonly workspaceId: string;
   /** The `${secret:name}` names the bundle declares; any other ref is missing. */
   readonly secretNames: readonly string[];
+  /**
+   * The whole `${#System#…}` scope of this send, already cut to what it may read; every other name resolves
+   * empty. Never the process environment by default: a paired server must not read it.
+   */
+  readonly systemValues: Readonly<Record<string, string>>;
   /** The cookie jar this send reads and stores into: the caller's, never a window's. */
   readonly cookies: CookieJarHost;
   /** The caller's token caches. */
@@ -99,7 +122,7 @@ export type DetachedSendResult = RestExchangeSummary | ExchangeSummary;
 
 /** What the host lends a detached send: each part named, nothing of a window's. */
 export interface DetachedSendDeps {
-  readonly hostState: Pick<HostState, 'redactor' | 'e2eTrustAnchors' | 'systemValues'>;
+  readonly hostState: DetachedHostState;
   /** The machine's preferences: its CA bundle, proxy and TLS floor. */
   readonly preferences: Pick<PreferencesService, 'get'>;
   /** Asks about a protected environment as the host asks for any send; absent, such a send is refused. */
@@ -112,14 +135,20 @@ export interface DetachedSendDeps {
   readonly proxyFor: (url: string) => Promise<ProxyOptionsWire | undefined>;
   /** Reads one value of the host's secret store by its label, for the agent's namespace only. */
   readonly agentSecret: (label: string) => Promise<string | undefined>;
-  /** Team secrets of a server workspace (Task 10 plugs it in); absent, none resolve. */
-  readonly teamSecrets?: (workspaceId: string, name: string) => Promise<string | undefined>;
+  /**
+   * Team secrets of a server workspace (Task 10 plugs it in); absent, none resolve. It must confirm the
+   * workspace belongs to `serverOrigin` before it answers (see {@link AgentTeamSecretQuery}).
+   */
+  readonly teamSecrets?: (query: AgentTeamSecretQuery) => Promise<string | undefined>;
   /** Wraps a getter so the embedder hears what it resolves, by name (`HostOptions.onSecret`). */
   readonly report?: (get: GetSecret, target?: string) => GetSecret;
   /** A fresh engine service whose definition imports read `getSecret`. */
   readonly engine: (getSecret: GetSecret) => EngineService;
-  /** A fresh project host over `engine`, with no workspace, globals, current values or picks. */
-  readonly projectHost: (engine: EngineService, getSecret: GetSecret) => ProjectHost;
+  /**
+   * A fresh project host over `engine`, with no workspace, globals, current values or picks, on `hostState`:
+   * the send's own view of the host's state, whose `${#System#…}` scope is the send's `systemValues`.
+   */
+  readonly projectHost: (engine: EngineService, getSecret: GetSecret, hostState: DetachedHostState) => ProjectHost;
   /** The host's script host: the one sandbox and checker. */
   readonly scripts?: ScriptHost;
   /** The detached sends in flight; never a window's registry, so a window's cancel cannot reach them. */
@@ -128,7 +157,7 @@ export interface DetachedSendDeps {
 
 /**
  * The only secrets a detached send reads: a declared `${secret:name}` from the agent's namespace for the
- * caller's origin and workspace, else from the team-secrets hook. A plain store ref, an undeclared name and
+ * caller's pairing and workspace, else from the team-secrets hook. A plain store ref, an undeclared name and
  * a source-backed one are all missing. Each value it hands out is recorded for masking.
  */
 function agentSecrets(deps: DetachedSendDeps, input: SendFromDirectoryInput): GetSecret {
@@ -137,12 +166,41 @@ function agentSecrets(deps: DetachedSendDeps, input: SendFromDirectoryInput): Ge
     const name = parseSecretPseudoRef(ref);
     if (name === undefined || !declared.has(name)) return undefined;
     const value =
-      (await deps.agentSecret(agentSecretLabel(input.origin, input.workspaceId, name))) ??
-      (await deps.teamSecrets?.(input.workspaceId, name));
+      (await deps.agentSecret(agentSecretLabel(input.pairingId, input.workspaceId, name))) ??
+      (await deps.teamSecrets?.({
+        pairingId: input.pairingId,
+        serverOrigin: input.origin,
+        workspaceId: input.workspaceId,
+        name,
+      }));
     if (value !== undefined) deps.hostState.redactor.recordSecretValue(value);
     return value;
   };
   return deps.report?.(get) ?? get;
+}
+
+/** The part of the host's state a detached send and its project host read. */
+export type DetachedHostState = Pick<HostState, 'redactor' | 'e2eTrustAnchors' | 'systemValues'>;
+
+/**
+ * The host's state as one detached send sees it: the host's redactor and trust anchors, and `systemValues`
+ * in place of the host's `${#System#…}` scope, so neither the send path nor the project host falls back to
+ * the process environment.
+ */
+function detachedHostState(
+  hostState: DetachedHostState,
+  systemValues: Readonly<Record<string, string>>,
+): DetachedHostState {
+  return {
+    redactor: hostState.redactor,
+    get e2eTrustAnchors() {
+      return hostState.e2eTrustAnchors;
+    },
+    set e2eTrustAnchors(anchors) {
+      hostState.e2eTrustAnchors = anchors;
+    },
+    systemValues: { ...systemValues },
+  };
 }
 
 /** A detached send is never shown with its secrets: what it answers leaves the host. */
@@ -226,8 +284,9 @@ export async function sendFromDirectory(
   const { signal } = input;
   stopIfAborted(signal);
   const getSecret = agentSecrets(deps, input);
+  const hostState = detachedHostState(deps.hostState, input.systemValues);
   const engine = deps.engine(getSecret);
-  const host = deps.projectHost(engine, getSecret);
+  const host = deps.projectHost(engine, getSecret, hostState);
   try {
     await host.openProject(input.projectDir);
     // A SOAP request's default `wsa:Action` and its script types come from the loaded definition.
@@ -242,7 +301,7 @@ export async function sendFromDirectory(
     stopIfAborted(signal);
     const { oauth2, issuedTokens } = input.session;
     const sendDeps: SendThroughEngineDeps = {
-      hostState: deps.hostState,
+      hostState,
       project: singleProjectRouter(host, deps.proxyFor),
       service: engine,
       registry: deps.registry,

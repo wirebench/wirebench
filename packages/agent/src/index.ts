@@ -21,6 +21,7 @@ export {
   openPairingStore,
   PAIRINGS_FILE,
   STALE_LOCK_MS,
+  SYSTEM_NAME_PATTERN,
   type PairingStoreOptions,
   type AgentIdentity,
   type Pairing,

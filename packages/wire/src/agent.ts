@@ -55,8 +55,9 @@ export function bundleFileBytes(file: Pick<SendBundleFile, 'encoding' | 'content
 
 /**
  * A send bundle (§18.4), version 1: the project files the one request item needs (its manifest, the item,
- * its folder chain's scripts, the non-secret values, the files it reads) and the names of the secrets it
- * reads, never their values: those names are the only `${secret:…}` refs the send may resolve. `itemId` is
+ * its folder chain's scripts, the non-secret values, the files it reads) and the names of the secrets and
+ * `${#System#…}` values it reads, never their values: those names are the only `${secret:…}` refs the send may
+ * resolve, and the only system names it may read (when this machine allows them too). `itemId` is
  * the request's id in those files; `environment` the environment id it is sent under, the project's active
  * one when absent.
  */
@@ -65,8 +66,8 @@ export const sendBundleSchema = z
     version: z.literal(1),
     kind: z.enum(AGENT_SEND_KINDS),
     /**
-     * The server workspace the request belongs to: with the pairing's origin, it names the agent's own
-     * secret namespace (`agent:<origin>:<workspaceId>:<name>`).
+     * The server workspace the request belongs to: with the pairing's id, it names the agent's own secret
+     * namespace (`agent:<pairingId>:<workspaceId>:<name>`).
      */
     workspaceId: z
       .string()
@@ -77,6 +78,19 @@ export const sendBundleSchema = z
     environment: z.string().min(1).max(256).optional(),
     files: z.array(sendBundleFileSchema).max(AGENT_BUNDLE_MAX_FILES),
     secretNames: z
+      .array(
+        z
+          .string()
+          .max(256)
+          .regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+      )
+      .max(1000),
+    /**
+     * The `${#System#NAME}` names the request reads. A name resolves only when it is declared here and this
+     * machine's agent allows it (`allowedSystemNames`, empty by default); any other resolves empty, as on the
+     * server host, so a paired server cannot read the agent's process environment.
+     */
+    systemNames: z
       .array(
         z
           .string()
@@ -134,9 +148,9 @@ export const agentChannels = {
   agent: {
     /** Runs one send bundle on this machine; answers the kind's result with `sentFrom: 'agent'`. */
     send: defineChannel('agent.send', agentSendRequestSchema, agentSendResponseSchema),
-    /** Aborts a send this tab's origin started; `false` when none of that id is running. */
+    /** Aborts a send this tab's pairing started; `false` when none of that id is running. */
     cancel: defineChannel('agent.cancel', agentCancelRequestSchema, agentCancelResponseSchema),
-    /** Empties the cookie jar the agent holds for this tab's origin. */
+    /** Empties the cookie jar the agent holds for this tab's pairing. */
     cookies: {
       clear: defineChannel('agent.cookies.clear', z.undefined(), z.undefined()),
     },

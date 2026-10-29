@@ -6,7 +6,7 @@
  */
 import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { chmod, mkdir, readdir, symlink, utimes, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readdir, stat, symlink, utimes, writeFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -38,6 +38,7 @@ import {
   AGENT_MAX_SENDS_PER_ORIGIN,
   AGENT_SENDS_DIR,
   AGENT_STALE_INSTANCE_MS,
+  AGENT_YOUNG_INSTANCE_MS,
   agentSendHandlers,
   PID_FILE,
   writeBundle,
@@ -63,20 +64,27 @@ let platform: HostPlatform;
 let host: Host;
 let echo: EchoServer;
 let handlers: Map<string, AgentHandler>;
+/** This machine's `${#System#…}` allowlist, as the pairing store would hold it. */
+let allowed: string[];
+const store = { allowedSystemNames: (): readonly string[] => allowed };
+/** The environment the handlers read an allowed name from. */
+const ENV = { WB_TEST_ALLOWED: 'allowed-value', WB_TEST_OTHER: 'other-value', HOME: '/home/agent' };
 
 beforeEach(async () => {
   platform = hostPlatform();
   host = await createHost(platform);
   onCleanUp(() => host.shutdown());
   echo = await startEchoServer();
-  handlers = agentSendHandlers({ platform });
+  allowed = [];
+  handlers = agentSendHandlers({ platform, store, env: ENV });
 });
 
 afterEach(cleanUp);
 
-function pairingOf(origin: string): Pairing {
+/** The pairing a tab of `origin` came through; `account` tells two pairings of one origin apart. */
+function pairingOf(origin: string, account = ''): Pairing {
   return {
-    pairingId: `pairing-${origin}`,
+    pairingId: `pairing-${origin}${account}`,
     serverUrl: origin,
     origin,
     email: 'ada@example.test',
@@ -85,15 +93,16 @@ function pairingOf(origin: string): Pairing {
   };
 }
 
-/** Calls `channel` as the agent's server does, for a tab of `origin`. */
-async function call(channel: string, request: unknown, origin = TEAM): Promise<unknown> {
+/** Calls `channel` as the agent's server does, for a tab of `origin` (or of that pairing). */
+async function call(channel: string, request: unknown, origin: string | Pairing = TEAM): Promise<unknown> {
   const handler = handlers.get(channel);
   if (handler === undefined) throw new Error(`no handler for ${channel}`);
-  return await handler(request, { caller: quietCaller(1_000_000), pairing: pairingOf(origin), host });
+  const pairing = typeof origin === 'string' ? pairingOf(origin) : origin;
+  return await handler(request, { caller: quietCaller(1_000_000), pairing, host });
 }
 
 /** What `agent.send` threw, for a send that must fail. */
-async function failure(request: unknown, origin = TEAM): Promise<{ code: string; message: string }> {
+async function failure(request: unknown, origin: string | Pairing = TEAM): Promise<{ code: string; message: string }> {
   try {
     await call('agent.send', request, origin);
   } catch (error) {
@@ -117,9 +126,10 @@ async function storeLabelled(label: string, value: string): Promise<void> {
   await host.detach(caller.id);
 }
 
-/** Stores `value` as the agent's own secret `name` for `origin` and workspace `ws-1`. */
-async function storeAgentSecret(name: string, value: string, origin = TEAM): Promise<void> {
-  await storeLabelled(agentSecretLabel(origin, 'ws-1', name), value);
+/** Stores `value` as the agent's own secret `name` for `origin`'s pairing (or that pairing) and workspace `ws-1`. */
+async function storeAgentSecret(name: string, value: string, origin: string | Pairing = TEAM): Promise<void> {
+  const pairing = typeof origin === 'string' ? pairingOf(origin) : origin;
+  await storeLabelled(agentSecretLabel(pairing.pairingId, 'ws-1', name), value);
 }
 
 /** A project `p1` whose REST API points at the echo server, holding `requests` (and `folders`). */
@@ -192,11 +202,33 @@ describe('agent.send', () => {
     expect(echo.received[0]?.headers['x-folder']).toBe('ran');
   });
 
-  it("resolves ${#System#…} from this machine's environment", async () => {
+  // As on the server host, a name outside the scope resolves to nothing: the send is refused, never sent.
+  it('reads a ${#System#…} name only when the bundle declares it and this machine allows it', async () => {
+    const bundle = await restBundle({ headers: [entry('x-sys', '[${#System#WB_TEST_ALLOWED}]')] });
+    allowed = ['WB_TEST_ALLOWED'];
+    // Allowed but not declared.
+    expect((await failure({ sendId: sendId(), bundle })).code).toBe('rest-unresolved-properties');
+    // Declared but not allowed.
+    const other = await restBundle({ headers: [entry('x-sys', '[${#System#WB_TEST_OTHER}]')] });
+    const declaredOther = { ...other, systemNames: ['WB_TEST_OTHER', 'WB_TEST_ALLOWED'] };
+    expect((await failure({ sendId: sendId(), bundle: declaredOther })).code).toBe('rest-unresolved-properties');
+    expect(echo.received).toEqual([]);
+    // Declared and allowed.
+    await call('agent.send', { sendId: sendId(), bundle: { ...bundle, systemNames: ['WB_TEST_ALLOWED'] } });
+    expect(echo.received[0]?.headers['x-sys']).toBe('[allowed-value]');
+  });
+
+  it("never falls back to this process's own environment", async () => {
     const name = process.platform === 'win32' ? 'USERPROFILE' : 'HOME';
-    const bundle = await restBundle({ headers: [entry('x-home', `\${#System#${name}}`)] });
-    await call('agent.send', { sendId: sendId(), bundle });
-    expect(echo.received[0]?.headers['x-home']).toBe(process.env[name]);
+    handlers = agentSendHandlers({ platform, store });
+    const bundle = await restBundle({ headers: [entry('x-home', `[\${#System#${name}}]`)] });
+    const declared = { ...bundle, systemNames: [name] };
+    // The allowlist is empty: the machine's own value is not read.
+    expect((await failure({ sendId: sendId(), bundle: declared })).code).toBe('rest-unresolved-properties');
+    expect(echo.received).toEqual([]);
+    allowed = [name];
+    await call('agent.send', { sendId: sendId(), bundle: declared });
+    expect(echo.received[0]?.headers['x-home']).toBe(`[${String(process.env[name])}]`);
   });
 
   it('answers secret-missing for a secret this machine does not have, and removes the directory', async () => {
@@ -429,17 +461,36 @@ describe('the sends folder', () => {
     const stale = await sibling('stale', String(process.pid));
     const old = new Date(Date.now() - AGENT_STALE_INSTANCE_MS - 60_000);
     await utimes(stale, old, old);
+    // Another agent between its mkdir and its pid file's rename: kept while young, swept once old.
+    const young = join(root, 'young');
+    await mkdir(young);
+    const oldYoung = join(root, 'old-young');
+    await mkdir(oldYoung);
+    const past = new Date(Date.now() - AGENT_YOUNG_INSTANCE_MS - 10_000);
+    await utimes(oldYoung, past, past);
 
-    handlers = agentSendHandlers({ platform });
+    handlers = agentSendHandlers({ platform, store });
     await call('agent.send', { sendId: sendId(), bundle: await restBundle() });
     const kept = await readdir(root);
-    expect(kept).toContain('live');
-    expect(kept.filter((name) => ['dead', 'no-pid', 'stale'].includes(name))).toEqual([]);
+    expect(kept).toEqual(expect.arrayContaining(['live', 'young']));
+    expect(kept.filter((name) => ['dead', 'no-pid', 'stale', 'old-young'].includes(name))).toEqual([]);
     expect(await readdir(live)).toEqual(expect.arrayContaining(['send-x', PID_FILE]));
     // This process's own folder is the one other entry, and it holds no send.
-    const own = kept.filter((name) => name !== 'live');
+    const own = kept.filter((name) => name !== 'live' && name !== 'young');
     expect(own).toHaveLength(1);
     expect(await readdir(join(root, own[0] ?? ''))).toEqual([PID_FILE]);
+  });
+
+  it("sets its instance folder's mtime when a send starts, so a sweep sees it in use", async () => {
+    await call('agent.send', { sendId: sendId(), bundle: await restBundle() });
+    const root = join(platform.paths.temp(), AGENT_SENDS_DIR);
+    const [own] = await readdir(root);
+    const folder = join(root, own ?? '');
+    const old = new Date(Date.now() - AGENT_STALE_INSTANCE_MS - 60_000);
+    await utimes(folder, old, old);
+    await call('agent.send', { sendId: sendId(), bundle: await restBundle() });
+    expect(Date.now() - (await stat(folder)).mtimeMs).toBeLessThan(AGENT_YOUNG_INSTANCE_MS);
+    expect(await readdir(folder)).toEqual([PID_FILE]);
   });
 
   it('runs a send under its own instance folder, so another process using the id does not collide', async () => {
@@ -448,7 +499,7 @@ describe('the sends folder', () => {
     await mkdir(join(root, 'live', id), { recursive: true, mode: 0o700 });
     await chmod(root, 0o700);
     await writeFile(join(root, 'live', PID_FILE), String(process.pid));
-    handlers = agentSendHandlers({ platform });
+    handlers = agentSendHandlers({ platform, store });
     const result = (await call('agent.send', { sendId: id, bundle: await restBundle() })) as { sentFrom: string };
     expect(result.sentFrom).toBe('agent');
     expect(existsSync(join(root, 'live', id))).toBe(true);
@@ -463,7 +514,7 @@ describe('the sends folder', () => {
       await writeFile(join(victim, PID_FILE), 'x');
       await symlink(victim, join(platform.paths.temp(), AGENT_SENDS_DIR));
       const lines: string[] = [];
-      handlers = agentSendHandlers({ platform, log: (message) => lines.push(message) });
+      handlers = agentSendHandlers({ platform, store, log: (message) => lines.push(message) });
       expect((await failure({ sendId: sendId(), bundle: await restBundle() })).code).toBe('agent-temp-unsafe');
       expect((await failure({ sendId: sendId(), bundle: await restBundle() })).code).toBe('agent-temp-unsafe');
       expect((await readdir(victim)).sort()).toEqual(['pid', 'precious']);
@@ -553,6 +604,72 @@ describe('agent.send concurrency', () => {
   });
 });
 
+describe('two pairings of one origin', () => {
+  // Two accounts on one server that pair this machine: one origin, two pairings.
+  const ada = pairingOf(TEAM, '#ada');
+  const bob = pairingOf(TEAM, '#bob');
+
+  it('keep separate cookie jars, and clearing one leaves the other', async () => {
+    const bundle = await restBundle({ url: '/cookie', settings: { sendCookies: true } });
+    await call('agent.send', { sendId: sendId(), bundle }, ada);
+    await call('agent.send', { sendId: sendId(), bundle }, bob);
+    await call('agent.send', { sendId: sendId(), bundle }, ada);
+    expect(echo.received.map((one) => one.headers.cookie)).toEqual([undefined, undefined, 'sid=abc']);
+    await call('agent.cookies.clear', undefined, ada);
+    await call('agent.send', { sendId: sendId(), bundle }, ada);
+    await call('agent.send', { sendId: sendId(), bundle }, bob);
+    expect(echo.received[3]?.headers.cookie).toBeUndefined();
+    expect(echo.received[4]?.headers.cookie).toBe('sid=abc');
+  });
+
+  it('keep separate secrets and OAuth2 tokens', async () => {
+    await storeAgentSecret('client_secret', 'client-pass-123456', ada);
+    const auth = {
+      ...DEFAULT_OAUTH2_AUTH,
+      tokenUrl: `${echo.url}/token`,
+      clientId: 'wirebench',
+      clientSecretRef: 'secret:client_secret',
+    };
+    const api = createApi('Echo', {
+      id: 'api-1',
+      baseUrl: echo.url,
+      auth,
+      requests: [createRestRequest('Echo', { id: 'req-1', url: '/echo' })],
+    });
+    const project: Project = { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } };
+    const bundle = { ...(await bundleOf(project, 'req-1')), secretNames: ['client_secret'] };
+    await call('agent.send', { sendId: sendId(), bundle }, ada);
+    // Ada's secret is not Bob's: a ref to it is missing on his pairing.
+    const leak = {
+      ...(await restBundle({ headers: [entry('x-leak', '${secret:client_secret}')] })),
+      secretNames: ['client_secret'],
+    };
+    expect((await failure({ sendId: sendId(), bundle: leak }, bob)).code).toBe('secret-missing');
+    await storeAgentSecret('client_secret', 'client-pass-654321', bob);
+    await call('agent.send', { sendId: sendId(), bundle }, bob);
+    await call('agent.send', { sendId: sendId(), bundle }, ada);
+    const sent = echo.received.filter((one) => one.url.startsWith('/echo')).map((one) => one.headers.authorization);
+    expect(sent).toEqual(['Bearer tok-1', 'Bearer tok-2', 'Bearer tok-1']);
+  });
+
+  it("cannot cancel each other's sends, even by the same send id", async () => {
+    const bundle = await restBundle({ url: '/hold' });
+    const id = sendId();
+    const held = echo.held();
+    const sending = failure({ sendId: id, bundle }, ada);
+    await held;
+    expect(await call('agent.cancel', { sendId: id }, bob)).toEqual({ cancelled: false });
+    // Bob may use the same id for a send of his own while Ada's runs.
+    const bobHeld = echo.held();
+    const bobSending = failure({ sendId: id, bundle }, bob);
+    await bobHeld;
+    expect(await call('agent.cancel', { sendId: id }, ada)).toEqual({ cancelled: true });
+    expect((await sending).code).toBe('aborted');
+    expect(await call('agent.cancel', { sendId: id }, bob)).toEqual({ cancelled: true });
+    expect((await bobSending).code).toBe('aborted');
+  });
+});
+
 describe('agent.cancel', () => {
   it("aborts a send of the tab's origin, and only that origin's, and removes its directory", async () => {
     const bundle = await restBundle({ url: '/hold' });
@@ -560,7 +677,7 @@ describe('agent.cancel', () => {
     const held = echo.held();
     const sending = failure({ sendId: id, bundle });
     await held;
-    expect(await sendsLeft()).toEqual([id]);
+    expect(await sendsLeft()).toHaveLength(1);
     expect(await call('agent.cancel', { sendId: id }, OTHER)).toEqual({ cancelled: false });
     expect(await call('agent.cancel', { sendId: id })).toEqual({ cancelled: true });
     expect((await sending).code).toBe('aborted');

@@ -37,6 +37,9 @@ bundle.** Precisely:
 - A paired agent does send whatever request its server hands it, including to the person's `localhost` and private
   network. That is the agent's purpose, and it is why pairing is always a code typed on the machine (decision 9) and
   can be undone from either side; the docs say plainly that pairing trusts that server with sends from this machine.
+- What a bundle send reads from the machine is named, never open-ended: a `${secret:…}` only from the agent's own
+  namespace for that pairing, and a `${#System#…}` value only when the bundle declares the name and the machine's
+  own allowlist (empty by default) holds it (spec §18.5). A paired server never reads the process environment.
 - Scripts in a bundle run in the capability-free sandbox of ADR-0016, as every script does.
 - The agent keeps no copy of a workspace. A bundle's directory is deleted after its send.
 - A later feature that needs the machine from a browser (SSH, a file pick) adds its own `agent.*` channel with its own

@@ -159,7 +159,16 @@ export async function bundleOf(
 ): Promise<SendBundle> {
   const dir = tempFolder('wb-agent-project-');
   await saveProject(project, dir);
-  return { version: 1, kind, workspaceId: 'ws-1', itemId, files: await filesUnder(dir), secretNames: [], ...extra };
+  return {
+    version: 1,
+    kind,
+    workspaceId: 'ws-1',
+    itemId,
+    files: await filesUnder(dir),
+    secretNames: [],
+    systemNames: [],
+    ...extra,
+  };
 }
 
 export interface ProxyServer {

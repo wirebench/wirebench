@@ -1,5 +1,5 @@
 /**
- * The pairing store's file (`userData/agent-pairings.json`, version 1): written only once there is an
+ * The pairing store's file (`userData/agent-pairings.json`, version 2): written only once there is an
  * identity, the key sealed by the platform, read back by a second store over the same directory.
  */
 import { existsSync, readdirSync, readFileSync, statSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
@@ -40,7 +40,7 @@ describe('openPairingStore', () => {
 
     const text = readFileSync(join(platform.paths.userData(), PAIRINGS_FILE), 'utf8');
     const file = JSON.parse(text) as { version: number; agentId: string; privateKeySealed: string };
-    expect(file.version).toBe(1);
+    expect(file.version).toBe(2);
     expect(file.agentId).toBe(agentId);
     // Sealed by the platform: the PKCS8 text is not in the file, only what `encrypt` made of it.
     expect(text).not.toContain(key.sealable());
@@ -64,6 +64,69 @@ describe('openPairingStore', () => {
     const platform = fakePlatform();
     writeFileSync(join(platform.paths.userData(), PAIRINGS_FILE), JSON.stringify({ version: 2 }));
     await expect(openPairingStore(platform)).rejects.toThrow(/not a pairings file/);
+    writeFileSync(
+      join(platform.paths.userData(), PAIRINGS_FILE),
+      JSON.stringify({ version: 3, agentId: 'a', privateKeySealed: 'x', allowedSystemNames: [], pairings: [] }),
+    );
+    await expect(openPairingStore(platform)).rejects.toThrow(/not a pairings file/);
+  });
+
+  it('reads a version 1 file as version 2 with an empty allowlist, and writes it back as version 2', async () => {
+    const platform = fakePlatform();
+    const made = await openPairingStore(platform);
+    const { agentId } = await made.identity();
+    const kept = pairing();
+    await made.add(kept);
+    const path = join(platform.paths.userData(), PAIRINGS_FILE);
+    const v1 = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    delete v1['allowedSystemNames'];
+    writeFileSync(path, JSON.stringify({ ...v1, version: 1 }));
+
+    const store = await openPairingStore(platform);
+    expect((await store.identity()).agentId).toBe(agentId);
+    expect(store.list()).toEqual([kept]);
+    expect(store.allowedSystemNames()).toEqual([]);
+    await store.setAllowedSystemNames(['CI_TOKEN']);
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({
+      version: 2,
+      agentId,
+      allowedSystemNames: ['CI_TOKEN'],
+      pairings: [kept],
+    });
+  });
+
+  it('keeps the ${#System#…} allowlist: empty by default, shared with another process', async () => {
+    const platform = fakePlatform();
+    const store = await openPairingStore(platform);
+    expect(store.allowedSystemNames()).toEqual([]);
+    await expect(store.setAllowedSystemNames(['HOME'])).rejects.toThrow(/no identity/);
+    await store.identity();
+    expect(store.allowedSystemNames()).toEqual([]);
+    await store.setAllowedSystemNames(['HOME', 'CI_TOKEN', 'HOME']);
+    expect(store.allowedSystemNames()).toEqual(['HOME', 'CI_TOKEN']);
+    await expect(store.setAllowedSystemNames(['BAD=NAME'])).rejects.toThrow(/not an environment variable name/);
+    await expect(store.setAllowedSystemNames(['1ST'])).rejects.toThrow(/not an environment variable name/);
+    expect(store.allowedSystemNames()).toEqual(['HOME', 'CI_TOKEN']);
+
+    const other = await openPairingStore(fakePlatform(undefined, platform.paths.userData()));
+    expect(other.allowedSystemNames()).toEqual(['HOME', 'CI_TOKEN']);
+    await other.setAllowedSystemNames([]);
+    await store.refresh();
+    expect(store.allowedSystemNames()).toEqual([]);
+  });
+
+  it("refuses a pairing id that is already another server's", async () => {
+    const store = await openPairingStore(fakePlatform());
+    await store.identity();
+    const first = pairing();
+    await store.add(first);
+    await expect(
+      store.add({ ...first, serverUrl: 'https://evil.example.test', origin: 'https://evil.example.test' }),
+    ).rejects.toThrow(/belongs to another server/);
+    expect(store.list()).toEqual([first]);
+    // The same server pairing the same id again replaces it.
+    await store.add({ ...first, port: 47_620 });
+    expect(store.list()).toEqual([{ ...first, port: 47_620 }]);
   });
 
   it('will not make a key on a platform that cannot keep it secret', async () => {
@@ -443,7 +506,8 @@ describe('openPairingStore', () => {
       const a = await openPairingStore(fakePlatform(undefined, dir), {
         whileLocked: () => holdA.wait(),
         lockIo: {
-          // A's release reads the lock; just then, past the stale age, B takes over and holds.
+          // A's release has moved its lock aside and reads it there; just then B finds no lock, makes its
+          // own and holds it. A must remove only the file it moved, never B's lock in its place.
           read: async (at) => {
             const text = readFileSync(at, 'utf8');
             if (addB === undefined) {

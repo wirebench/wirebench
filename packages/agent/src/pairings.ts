@@ -1,8 +1,14 @@
 /**
  * The agent's pairings and key, in `userData/agent-pairings.json` (hosted edition spec §18.2):
  *
- * `{ version: 1, agentId, privateKeySealed, pairings: [{ pairingId, serverUrl, origin, email, sshOptIn,
- * createdAt, port? }] }`
+ * `{ version: 2, agentId, privateKeySealed, allowedSystemNames: [], pairings: [{ pairingId, serverUrl, origin,
+ * email, sshOptIn, createdAt, port? }] }`
+ *
+ * `allowedSystemNames` is this machine's allowlist of `${#System#NAME}` names a bundle send may read (§18.5),
+ * empty by default. It lives here rather than in a file of its own so one lock, one re-read and one atomic
+ * rename cover it: a `wirebench agent` beside the desktop sees a change at its next refresh, and two writers
+ * never lose each other's edit. A version 1 file (before the allowlist) reads as version 2 with an empty
+ * list, and is written back as version 2 at its next change.
  *
  * The private key is sealed by the platform's secret store (`safeStorage` on the desktop, the headless
  * agent's own key file) before it touches the disk; nothing else in the file is a secret. The agent id and
@@ -59,9 +65,9 @@ export interface LockStat {
 /** One pairing with a Wirebench Server, as the agent keeps it. */
 export interface Pairing {
   readonly pairingId: string;
-  /** The server's URL, as the user gave it at pairing: where nonces are redeemed. */
+  /** The server's address, the origin of what the user gave at pairing: where nonces are redeemed. */
   readonly serverUrl: string;
-  /** The one `Origin` this pairing's tabs may connect from (the server's public URL, from its answer). */
+  /** The one `Origin` this pairing's tabs may connect from: the server's public URL, which must be `serverUrl`. */
   readonly origin: string;
   /** The account the pairing belongs to, to show "paired as …". */
   readonly email: string;
@@ -81,14 +87,31 @@ const pairingSchema = z.object({
   port: z.number().int().min(1).max(65_535).optional(),
 });
 
-const fileSchema = z.object({
-  version: z.literal(1),
+/** A `${#System#…}` name the allowlist may hold: the names a bundle may declare (`sendBundleSchema`). */
+export const SYSTEM_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+const fileFields = {
   agentId: z.string().min(1),
   /** Base64 of what `platform.secrets.encrypt` made of the key's base64 PKCS8 DER. */
   privateKeySealed: z.string().min(1),
   pairings: z.array(pairingSchema),
+};
+
+const fileSchema = z.object({
+  version: z.literal(2),
+  ...fileFields,
+  allowedSystemNames: z.array(z.string().max(256).regex(SYSTEM_NAME_PATTERN)),
 });
 type PairingsFile = z.infer<typeof fileSchema>;
+
+/** The file before the system-name allowlist: it reads as version 2 with an empty one. */
+const fileSchemaV1 = z.object({ version: z.literal(1), ...fileFields });
+
+/** The file as this agent reads it, an older version brought up to the current one. */
+const anyFileSchema = z.union([
+  fileSchema,
+  fileSchemaV1.transform((v1): PairingsFile => ({ ...v1, version: 2, allowedSystemNames: [] })),
+]);
 
 /** The agent's identity: made once, at the first pairing. */
 export interface AgentIdentity {
@@ -109,12 +132,26 @@ export interface PairingStore {
    * stay as last read.
    */
   refresh(): Promise<void>;
-  /** Adds `pairing`, replacing one with the same id. */
+  /**
+   * Adds `pairing`, replacing one with the same id at the same server URL. Throws when that id is already a
+   * pairing with another server: a server must not be able to replace another server's pairing by answering
+   * its id.
+   */
   add(pairing: Pairing): Promise<void>;
   /** Removes the pairing; `false` when there was none. */
   remove(pairingId: string): Promise<boolean>;
   /** Records the port the server now knows for the pairing. */
   setPort(pairingId: string, port: number): Promise<void>;
+  /**
+   * The `${#System#NAME}` names a bundle send on this machine may read, as of the last read or write; empty
+   * by default and before the first pairing. For `wirebench agent` and the desktop's Settings.
+   */
+  allowedSystemNames(): readonly string[];
+  /**
+   * Replaces the allowlist (duplicates dropped, order kept). Throws for a name that is not a plain
+   * environment variable name, and before the first pairing, when the agent has no file to keep it in.
+   */
+  setAllowedSystemNames(names: readonly string[]): Promise<void>;
   /**
    * Runs `listener` whenever the pairings may have changed (a write here, or a refresh that read a new file);
    * returns a function that unsubscribes.
@@ -138,8 +175,8 @@ function notAPairingsFile(): Error {
 type Stamp = string | undefined;
 
 /**
- * Opens the store in `platform.paths.userData()`. A file that is not version 1 of this shape, or a key the
- * platform cannot unseal, is refused (a throw) rather than replaced: replacing it would drop every pairing
+ * Opens the store in `platform.paths.userData()`. A file that is not version 1 or 2 of this shape, or a key
+ * the platform cannot unseal, is refused (a throw) rather than replaced: replacing it would drop every pairing
  * without the user asking.
  */
 export async function openPairingStore(
@@ -195,7 +232,7 @@ export async function openPairingStore(
     } catch {
       throw notAPairingsFile();
     }
-    const parsed = fileSchema.safeParse(json);
+    const parsed = anyFileSchema.safeParse(json);
     if (!parsed.success) throw notAPairingsFile();
     return parsed.data;
   };
@@ -394,7 +431,7 @@ export async function openPairingStore(
       }
       const made: AgentIdentity = { agentId: randomUUID(), key: generateAgentKey() };
       const privateKeySealed = platform.secrets.encrypt(made.key.sealable()).toString('base64');
-      await write({ version: 1, agentId: made.agentId, privateKeySealed, pairings: [] });
+      await write({ version: 2, agentId: made.agentId, privateKeySealed, allowedSystemNames: [], pairings: [] });
       identity = made;
       return made;
     }).finally(() => {
@@ -415,10 +452,16 @@ export async function openPairingStore(
         if (await reload(true)) changed();
       }),
     add: (pairing) =>
-      modify((now) => ({
-        ...now,
-        pairings: [...now.pairings.filter((one) => one.pairingId !== pairing.pairingId), { ...pairing }],
-      })),
+      modify((now) => {
+        const held = now.pairings.find((one) => one.pairingId === pairing.pairingId);
+        if (held !== undefined && held.serverUrl !== pairing.serverUrl) {
+          throw new Error('That pairing id belongs to another server; it was not replaced');
+        }
+        return {
+          ...now,
+          pairings: [...now.pairings.filter((one) => one.pairingId !== pairing.pairingId), { ...pairing }],
+        };
+      }),
     remove: async (pairingId) => {
       let removed = false;
       await locked(async () => {
@@ -434,6 +477,13 @@ export async function openPairingStore(
           ? { ...now, pairings: now.pairings.map((one) => (one.pairingId === pairingId ? { ...one, port } : one)) }
           : undefined,
       ),
+    allowedSystemNames: () => [...(file?.allowedSystemNames ?? [])],
+    setAllowedSystemNames: (names) => {
+      const bad = names.find((name) => name.length > 256 || !SYSTEM_NAME_PATTERN.test(name));
+      if (bad !== undefined) return Promise.reject(new Error(`${bad} is not an environment variable name`));
+      const allowed = [...new Set(names)];
+      return modify((now) => ({ ...now, allowedSystemNames: allowed }));
+    },
     onChange: (listener) => {
       listeners.add(listener);
       return () => {

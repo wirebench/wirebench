@@ -317,7 +317,8 @@ second working copy; there is one working copy, on the server host.
 ### 3.8 Pairing the agent
 
 - The browser client offers *Pair this machine* when a send needs the agent (§3.4) or from Settings. The
-  page shows a six-character code that lives ten minutes and dies on the fifth wrong attempt (my call).
+  page shows a six-character code that lives ten minutes (my call). Guessing is bounded per address and
+  server-wide, since a guess carries only the code (§18.2 has the limits).
   The person opens the desktop app (or runs `wirebench agent pair`) and types the code; the agent
   connects to the tenant's server once, exchanges the code for a pairing record
   (`agent_pairings(tenant_id, user_id, agent_id, public_key, port, subset, created_at, last_seen)`) and
@@ -917,10 +918,11 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
     the caller's window scope, and the agent opens no workspace (§3.4), so serving them would mean a second working
     copy.
 - The `agent.*` channels:
-  - `agent.hello`: capabilities, the agent's version and `sshOptIn`.
+  - `agent.hello`: capabilities, the agent's version and `sshOptIn`. The capabilities leave out `secret-sources`
+    and `team-secrets` until a bundle send has them (#792, and the desktop's team-secrets hook).
   - `agent.send`: one send bundle in, the kind's ordinary send result out, with `sentFrom: 'agent'`.
   - `agent.cancel`.
-  - `agent.cookies.clear`: clears the jars the agent holds for this pairing's origin.
+  - `agent.cookies.clear`: clears the jar the agent holds for this pairing.
 - `ssh` is recorded as an opt-in at pairing, and nothing is served for it yet. The browser's SSH area needs the hosts
   and snippets files the agent does not hold, so it stays off in slice 3. SSH in the browser is a follow-up.
 - Everything else answers `host-capability-missing`. The agent's allowlist is the gate, and a test classifies every
@@ -941,16 +943,27 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
   - `POST /api/v1/agent/pairings` (no session; rate-limited per address): `{ code, agentId, publicKey, port,
     sshOptIn }` → creates the pairing row and answers `{ pairingId, origin, email }`, where `origin` is the
     server's public URL and `email` the account's, so the agent can show who it paired with. A wrong code
-    cannot be tied to a user or a code (it matches no row), so guessing is bounded by two limits: five
-    attempts per address in ten minutes, and 50 failed attempts server-wide in ten minutes, after which
-    pairing answers `429` for everyone until the window refills.
+    cannot be tied to a user or a code (it matches no row), so guessing is bounded by two limits: 20
+    attempts per address in ten minutes (an office pairs many machines from one NAT address), and 50 failed
+    attempts server-wide in ten minutes, after which pairing answers `429` for everyone until the window
+    refills.
+  - The agent keeps the pairing only when `origin` is the origin of the address it was given (the agent pairs
+    with that origin, and drops any path typed after it), and it refuses `http://` except for a server on its
+    own loopback. A pairing id it already holds for another server is not replaced.
   - `GET /api/v1/agent/pairings` (cookie): the user's pairings, with port and last seen.
   - `POST /api/v1/agent/nonces` (cookie, Origin-checked): `{ pairingId }` → a single-use nonce that lives 60 seconds.
-  - `POST /api/v1/agent/nonces/redeem` (rate-limited per address): signed by the agent's key over
-    `nonce‖pairingId‖timestamp`. It answers `{ userId, email, displayName }` and consumes the nonce. A replayed
-    or expired nonce, a bad signature or an unknown pairing answers `401`.
+  - `POST /api/v1/agent/nonces/redeem`: signed by the agent's key over `nonce‖pairingId‖timestamp`. It answers
+    `{ userId, email, displayName }` and consumes the nonce. A replayed or expired nonce, a bad signature or an
+    unknown pairing answers `401`. It is limited to 300 a minute per address before the signature is checked,
+    loosely for an office behind one address, and to 30 a minute per pairing once the signature holds.
   - `DELETE /api/v1/agent/pairings/:id` (cookie or agent signature): unpairs, from either side.
   - `PATCH /api/v1/agent/pairings/:id` (agent signature): the agent's new port, when it moved.
+  - An agent-signed `DELETE` or `PATCH` is limited to 60 a minute per address: a refusal on a known pairing
+    writes an audit row. One whose signature held for another pairing than `:id` is audited as that pairing's
+    user.
+  - These limits count by client address. Behind a reverse proxy, `WIREBENCH_SERVER_TRUST_PROXY` must be set,
+    or every request counts as the proxy's one address. The agent routes exist only when
+    `WIREBENCH_SERVER_BROWSER_CLIENT` is on.
   - An agent-signed `DELETE` or `PATCH` signs `METHOD‖path‖pairingId‖timestamp‖sha256(body)`, the hash over
     the exact body bytes (of an empty body for a `DELETE`). Every signed request sends the pairing id, an
     ISO-8601 timestamp no more than 60 s from the server's clock, and the signature in
@@ -985,7 +998,8 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
     server could reach a private range. In the browser, §3.4 rule 1 wins over decision 12: the person's `localhost`
     is never the server's.
   - A `${#System#…}` reference, a secret source, a team secret, a keystore on a machine path, Kerberos, NTLM with a
-    machine credential, or a cookie jar the agent holds for the target's domain.
+    machine credential, or a cookie jar the agent holds for the target's domain. A `${#System#…}` name reads
+    only what the agent's own allowlist lets it (§18.5).
 
   A pin to `agent` in the browser state, on the workspace or on the request, also forces the agent.
 - **The renderer** asks `request.route` before a send when the window has an agent transport or lacks
@@ -1002,6 +1016,7 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
   - the project's and the active environment's non-secret values;
   - the cookie-jar policy;
   - secret references, by name only;
+  - the `${#System#…}` names the request reads (`systemNames`), by name only;
   - the project files the request reads, by relative path (a body file, attachments, a proto set), capped at 32 MiB;
   - for a team secret, the workspace's `team-secrets/` subtree.
 
@@ -1017,20 +1032,31 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
   desktop window's team secrets or secret sources (my call, on review: the bundle names the project, so a server
   that could pick a project id could otherwise have that project's stored secrets sent to a URL it chose). It
   resolves a `${secret:…}` only when the bundle declares that name, and then only from the agent's own namespace,
-  `agent:<pairing origin>:<workspace id>:<name>` in the host's secret store, or from team secrets below. Everything
-  else answers `secret-missing`. Nothing fills the agent namespace in slice 3; a later screen may.
+  `agent:<pairing id>:<workspace id>:<name>` in the host's secret store, or from team secrets below. Everything
+  else answers `secret-missing`. Nothing fills the agent namespace in slice 3; a later screen may. The namespace is
+  keyed by pairing, not origin: two accounts on one server that pair one machine are two pairings.
+- **`${#System#…}` on the agent** (owner's ruling, on review: the agent's whole process environment must not be
+  readable by a paired server). A bundle send resolves `${#System#NAME}` only when the bundle declares the name in
+  `systemNames` and the name is on this machine's agent allowlist, `allowedSystemNames`, which is empty by default.
+  Every other name resolves to nothing, as on the server host, so a request that reads it is refused as
+  unresolved. The allowlist is the agent's own setting, kept in its pairings file (version 2) under the same lock,
+  and `wirebench agent` and the desktop's Settings read and change it there. The host is handed the cut map
+  itself and never falls back to the process environment for a bundle send.
 - **Team secrets on a desktop agent.** It resolves a team secret from the values its own approved machine has
   already imported for that workspace, by the bundle's workspace id and the name, exactly as a desktop send does.
   The bundle's `team-secrets/` subtree is used only to check that the value is current (my call: one trust pipeline,
   the desktop's). If the machine is not approved for that workspace, the send fails with
-  `team-secret-needs-approval`.
+  `team-secret-needs-approval`. The workspace id comes from the bundle, so the hook is asked with the pairing id and
+  its server's origin as well, and must confirm the workspace belongs to that server before it answers: a server
+  must never name another server's workspace and read its team secrets.
 - **Headless agent.** It has no team secrets in slice 3: it has no approved machine key and no UI to request one. A
   team-secret send routed to it fails with `team-secret-needs-approval`, saying to use the desktop app.
 - **Secret sources** on the agent wait for #792. A source runs a command on the person's machine, so a mapping that
   arrives in a bundle must not run until this machine approves it (ADR-0020). Until then a source-backed name
   answers `secret-missing` on the agent.
-- **Per-origin state.** Cookie jars, OAuth2 tokens and issued tokens are kept per pairing origin, in memory, and
-  never shared with a desktop window.
+- **Per-pairing state.** Cookie jars, OAuth2 tokens and issued tokens are kept per pairing, in memory, and never
+  shared with a desktop window or another pairing, even one of the same origin. A tab cancels only its own
+  pairing's sends. At most four sends run per origin.
 
 ### 18.6 `wirebench agent` (headless)
 
@@ -1053,7 +1079,8 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
 
 - Unit and integration tests per task.
 - The agent's allowlist classification test.
-- Pairing refused for a wrong origin, a replayed nonce, an expired code, a code after its fifth wrong attempt and an unpaired agent.
+- Pairing refused for a wrong origin, a replayed nonce, an expired code, an address past its 20 attempts, the
+  server past its 50 failed attempts, and an unpaired agent.
 - A send that needs the agent fails cleanly without one.
 - The browser e2e of §17.7 gains a headless `wirebench agent` beside the browser, in CI on the runner, outside
   Docker. It pairs through the UI, sends to an echo server on the runner's `127.0.0.1`, and sees `sentFrom: 'agent'`

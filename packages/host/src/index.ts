@@ -21,4 +21,10 @@ export type {
 export { HandlerTable } from './ipc/register.js';
 export { toIpcError } from './ipc/envelope.js';
 export { agentSecretLabel, createSendSession } from './send/detached.js';
-export type { DetachedSendKind, DetachedSendResult, SendFromDirectoryInput, SendSession } from './send/detached.js';
+export type {
+  AgentTeamSecretQuery,
+  DetachedSendKind,
+  DetachedSendResult,
+  SendFromDirectoryInput,
+  SendSession,
+} from './send/detached.js';

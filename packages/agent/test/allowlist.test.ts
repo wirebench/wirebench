@@ -46,16 +46,13 @@ describe('the agent allowlist (§18.1)', () => {
       'reveal-secrets',
       'updates',
       'app-lock',
+      // Not claimed until a bundle send has them: #792 and the desktop's team-secrets hook.
+      'secret-sources',
+      'team-secrets',
     ] as const) {
       expect(BROWSER_CAPABILITIES.has(capability), capability).toBe(false);
     }
-    expect(browserCapabilities(new Set(ALL_CAPABILITIES))).toEqual([
-      'kerberos',
-      'send:private',
-      'send:public',
-      'secret-sources',
-      'team-secrets',
-    ]);
+    expect(browserCapabilities(new Set(ALL_CAPABILITIES))).toEqual(['kerberos', 'send:private', 'send:public']);
     expect(browserCapabilities(new Set(['files', 'send:public']))).toEqual(['send:public']);
   });
 });
