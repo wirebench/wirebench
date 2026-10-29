@@ -303,6 +303,9 @@ importers:
       ssh2:
         specifier: 1.17.0
         version: 1.17.0
+      undici:
+        specifier: 8.12.2
+        version: 8.12.2
       yaml:
         specifier: 2.9.0
         version: 2.9.0
@@ -13137,7 +13140,7 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
       ohash: 2.0.12
-      undici: 8.12.3
+      undici: 8.12.2
 
   unist-util-find-after@5.0.0:
     dependencies:

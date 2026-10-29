@@ -13,15 +13,20 @@
  *   not installed with the CLI; `test/integration/agent-bundle.test.ts` proves the bundle starts without them.
  * - `kerberos`, which the engine loads when it is present (ADR-0019) and the agent then offers.
  *
- * `node scripts/bundle-agent.mjs [outfile]`; the default is `dist/agent/bundle.js`.
+ * `node scripts/bundle-agent.mjs [--no-sourcemap] [outfile]`; the default is `dist/agent/bundle.js`. A local
+ * build keeps a source map for stack traces; `prepack` passes `--no-sourcemap`, so the published package
+ * carries no map (and a map left by an earlier build is removed).
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { build } from 'esbuild';
 
 const cliDir = join(import.meta.dirname, '..');
 const manifest = JSON.parse(readFileSync(join(cliDir, 'package.json'), 'utf8'));
-const outfile = process.argv[2] === undefined ? join(cliDir, 'dist', 'agent', 'bundle.js') : resolve(process.argv[2]);
+const args = process.argv.slice(2);
+const sourcemap = !args.includes('--no-sourcemap');
+const target = args.find((arg) => !arg.startsWith('--'));
+const outfile = target === undefined ? join(cliDir, 'dist', 'agent', 'bundle.js') : resolve(target);
 
 const NATIVE = ['@lydell/node-pty', '@serialport/*', 'node-hid', 'kerberos', 'cpu-features', '*.node'];
 
@@ -50,11 +55,12 @@ await build({
   external: [...Object.keys(manifest.dependencies ?? {}).flatMap(withSubpaths), ...NATIVE],
   // CommonJS packages bundled into an ES module still `require` Node's built-ins and read `__dirname`.
   banner: { js: BANNER },
-  // Stack traces map back to file and line; the sources themselves stay out of the package.
-  sourcemap: 'linked',
+  // Stack traces map back to file and line in a local build; the sources themselves are never in the map.
+  sourcemap: sourcemap ? 'linked' : false,
   sourcesContent: false,
   logLevel: 'warning',
 });
+if (!sourcemap) rmSync(`${outfile}.map`, { force: true });
 
 /**
  * Resolves each of `names` (a workspace package with one `.` export) to its `development` export, its

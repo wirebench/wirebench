@@ -10,6 +10,8 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  AGENT_FIRST_PORT as FIRST_PORT,
+  AgentServerError,
   agentSendHandlers,
   normaliseServerUrl,
   openPairingStore,
@@ -22,8 +24,11 @@ import {
   type PairingStore,
 } from '@wirebench/agent';
 import { createHost, type HostPlatform } from '@wirebench/host';
-import type { AgentBundle, AgentBundleInput, AgentPairingRow } from '../src/agent/agent-runtime.js';
+import type { AgentBundle, AgentBundleInput, AgentPairingRow, AgentUnpairOutcome } from '../src/agent/agent-runtime.js';
 import { createAgentPlatform, kerberosLoads, openAgentHome } from '../src/agent/node-platform.js';
+import { serverFetch } from '../src/agent/server-fetch.js';
+
+export const AGENT_FIRST_PORT: AgentBundle['AGENT_FIRST_PORT'] = FIRST_PORT;
 
 /** `changeAllowedEnv` before the first pairing: the list is kept in the pairings file, which does not exist yet. */
 export class AgentNotPairedError extends Error {
@@ -49,7 +54,7 @@ async function platformFor(input: AgentBundleInput, kerberos: boolean): Promise<
 }
 
 function fetchOf(input: AgentBundleInput): AgentFetch {
-  return input.fetch ?? ((url, init) => globalThis.fetch(url, init));
+  return input.fetch ?? serverFetch(input.env);
 }
 
 /** The pairing store, without the Kerberos probe: only `startHeadlessAgent` needs the capabilities. */
@@ -110,14 +115,36 @@ export const pairAgent: AgentBundle['pairAgent'] = async (input) => {
 
 export const unpairAgent: AgentBundle['unpairAgent'] = async (input) => {
   const store = await storeFor(input);
+  const fetch = fetchOf(input);
   const origin = input.serverUrl === undefined ? undefined : normaliseServerUrl(input.serverUrl);
   const chosen = store.list().filter((pairing) => origin === undefined || pairing.origin === origin);
-  const removed: AgentPairingRow[] = [];
+  const outcomes: AgentUnpairOutcome[] = [];
+  // Each pairing on its own: one server's refusal or absence must not keep the rest paired.
   for (const pairing of chosen) {
-    await unpair({ pairingId: pairing.pairingId, store, fetch: fetchOf(input) });
-    removed.push(rowOf(pairing));
+    const row = rowOf(pairing);
+    if (input.local === true) {
+      await store.remove(pairing.pairingId);
+      outcomes.push({ pairing: row, outcome: 'local' });
+      continue;
+    }
+    try {
+      await unpair({ pairingId: pairing.pairingId, store, fetch });
+      outcomes.push({ pairing: row, outcome: 'unpaired' });
+    } catch (error) {
+      if (error instanceof AgentServerError && error.code === 'unreachable') {
+        // A server that is gone (or not reachable from here) would otherwise hold the pairing here forever.
+        await store.remove(pairing.pairingId);
+        outcomes.push({ pairing: row, outcome: 'dropped', message: error.message });
+      } else {
+        outcomes.push({
+          pairing: row,
+          outcome: 'failed',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
-  return removed;
+  return outcomes;
 };
 
 export const agentStatus: AgentBundle['agentStatus'] = async (input) => {

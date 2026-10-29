@@ -8,21 +8,21 @@ import { join } from 'node:path';
 
 export const AGENT_STATUS_FILE = 'agent.json';
 
-/** The port the agent takes first (`AGENT_FIRST_PORT` of `@wirebench/agent`), which a pairing made while none runs names. */
-export const AGENT_FIRST_PORT = 47_615;
-
 export interface AgentRunStatus {
   readonly pid: number;
   readonly port: number;
 }
 
-/** Whether process `pid` is running: `EPERM` is a live process of another account. */
+/**
+ * Whether process `pid` is a running agent. `EPERM` (a live process of another account) counts as not: the
+ * folder is `0700`, so only this account writes pids into it, and such a pid is a reused one.
+ */
 function alive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch (error) {
-    return (error as { code?: unknown }).code === 'EPERM';
+  } catch {
+    return false;
   }
 }
 

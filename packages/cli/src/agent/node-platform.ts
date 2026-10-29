@@ -14,8 +14,9 @@
  */
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
-import { mkdir, open, stat, type FileHandle } from 'node:fs/promises';
+import { link, lstat, mkdir, open, stat, unlink, type FileHandle } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
+import { isIP } from 'node:net';
 import { join } from 'node:path';
 import { kerberosProvider } from '@wirebench/engine';
 import { proxyFromEnv } from '../proxy-env.js';
@@ -96,27 +97,50 @@ async function checkKey(handle: FileHandle, path: string, platform: NodeJS.Platf
       );
     }
   }
+  if (info.size === 0) {
+    throw new AgentHomeError(
+      `${path} is empty (an earlier run stopped while writing it): delete it and start the agent again`,
+    );
+  }
   if (info.size !== AGENT_KEY_BYTES) {
     throw new AgentHomeError(`${path} is not a key this agent wrote (${String(info.size)} bytes, not 32)`);
   }
 }
 
-/** Writes a fresh key to `path`, `0600`, only if there is none (`wx`); `false` when one is there already. */
-async function createKey(path: string): Promise<boolean> {
-  let handle: FileHandle;
+/**
+ * Makes the key at `path` unless one is there, never leaving a short one in its place: a fresh key is written
+ * to a temporary file (`0600`), flushed, and hard-linked to `path`, which fails when another run linked its
+ * own first (that one is then read). The temporary file goes either way.
+ */
+async function createKey(path: string): Promise<void> {
+  const temporary = `${path}.${randomBytes(8).toString('hex')}.tmp`;
+  const handle = await open(temporary, 'wx', 0o600);
   try {
-    handle = await open(path, 'wx', 0o600);
+    try {
+      await handle.writeFile(randomBytes(AGENT_KEY_BYTES));
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    try {
+      await link(temporary, path);
+    } catch (error) {
+      if (codeOf(error) !== 'EEXIST') throw error;
+    }
+  } finally {
+    await unlink(temporary).catch(() => undefined);
+  }
+}
+
+/** Whether `path` exists, as a link or anything else. */
+async function present(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
   } catch (error) {
-    if (codeOf(error) === 'EEXIST') return false;
+    if (codeOf(error) === 'ENOENT') return false;
     throw error;
   }
-  try {
-    await handle.writeFile(randomBytes(AGENT_KEY_BYTES));
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  return true;
 }
 
 /**
@@ -129,7 +153,7 @@ async function createKey(path: string): Promise<boolean> {
 export async function openAgentHome(dir: string, platform: NodeJS.Platform = process.platform): Promise<Buffer> {
   await prepareFolder(dir, platform);
   const path = join(dir, AGENT_KEY_FILE);
-  await createKey(path);
+  if (!(await present(path))) await createKey(path);
   // Not through a link: a key file swapped for a link to someone else's file must not be read as ours.
   const noFollow = posix(platform) ? (constants.O_NOFOLLOW ?? 0) : 0;
   let handle: FileHandle;
@@ -201,12 +225,43 @@ export interface AgentNodePlatform {
   readonly capabilities: ReadonlySet<AgentCapability>;
 }
 
+/**
+ * Whether a send to `hostname` (as `URL` gives it) never goes through a proxy, whatever `NO_PROXY` says: this
+ * machine's loopback (`localhost`, `*.localhost`, `127.0.0.0/8`, `::1`) and link-local addresses
+ * (`169.254.0.0/16`, `fe80::/10`). A proxy elsewhere cannot reach them as this machine does, and reaching
+ * them is what the agent is for.
+ */
+export function directHost(hostname: string): boolean {
+  const host = hostname
+    .toLowerCase()
+    .replace(/^\[(.*)\]$/, '$1')
+    .replace(/\.$/, '');
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (isIP(host) === 4) return host.startsWith('127.') || host.startsWith('169.254.');
+  if (isIP(host) === 6) {
+    if (host === '::1') return true;
+    if (/^fe[89ab][0-9a-f]:/.test(host)) return true;
+    // An IPv4 address mapped into IPv6.
+    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(host);
+    return mapped?.[1] !== undefined && directHost(mapped[1]);
+  }
+  return false;
+}
+
 /** A proxy URL as a PAC entry: `PROXY host:port`, or `HTTPS host:port` for a proxy reached over TLS. */
 function pacEntry(proxyUrl: string): string {
   const url = new URL(proxyUrl);
   const tls = url.protocol === 'https:';
   const port = url.port !== '' ? url.port : tls ? '443' : '80';
   return `${tls ? 'HTTPS' : 'PROXY'} ${url.hostname}:${port}`;
+}
+
+function directTarget(target: string): boolean {
+  try {
+    return directHost(new URL(target).hostname);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -246,7 +301,7 @@ export function createAgentPlatform(input: AgentPlatformInput): AgentNodePlatfor
     // A terminal has no system proxy setting of its own; the conventional variables are what it obeys.
     proxy: {
       resolve: (target) => {
-        const proxy = proxyFor(target);
+        const proxy = directTarget(target) ? undefined : proxyFor(target);
         return Promise.resolve(proxy === undefined ? 'DIRECT' : pacEntry(proxy.url));
       },
     },

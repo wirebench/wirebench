@@ -16,6 +16,8 @@ export interface FakePairingServer {
   readonly pairings: Map<string, { readonly publicKey: string; port: number }>;
   /** Every signed request, and whether its signature held. */
   readonly signed: { readonly method: string; readonly path: string; readonly ok: boolean }[];
+  /** Answer every unpairing `403`, as a server that will not let this one go. */
+  refuseUnpair: boolean;
   close(): Promise<void>;
 }
 
@@ -51,6 +53,7 @@ export async function startFakePairingServer(): Promise<FakePairingServer> {
   const code = 'ABC234';
   const email = 'ada@example.test';
   let origin = '';
+  const state = { refuseUnpair: false };
   const server = createServer((request, response) => {
     void (async () => {
       const body = await bodyOf(request);
@@ -118,6 +121,10 @@ export async function startFakePairingServer(): Promise<FakePairingServer> {
           reply(401, { error: { code: 'agent-signature-invalid' } });
           return;
         }
+        if (method === 'DELETE' && state.refuseUnpair) {
+          reply(403, { error: { code: 'forbidden' } });
+          return;
+        }
         if (method === 'DELETE') pairings.delete(id);
         else pairing.port = (JSON.parse(body) as { port: number }).port;
         reply(204);
@@ -129,7 +136,7 @@ export async function startFakePairingServer(): Promise<FakePairingServer> {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
   origin = `http://127.0.0.1:${String(port)}`;
-  return {
+  return Object.assign(state, {
     url: origin,
     code,
     email,
@@ -142,5 +149,5 @@ export async function startFakePairingServer(): Promise<FakePairingServer> {
           resolve();
         });
       }),
-  };
+  });
 }

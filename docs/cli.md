@@ -1641,7 +1641,10 @@ wirebench agent unpair --server https://wirebench.example.com
   port it took.
 - `pair <code> --server <url> [--ssh]` trades the code for a pairing. The address is `https://`, or
   `http://` for a server on this machine. `--ssh` lets that server's tabs open SSH sessions here.
-- `unpair [--server <url>]` unpairs at the server and here: every server, or only that one.
+- `unpair [--server <url>] [--local]` unpairs at the server and here: every server, or only that one,
+  each whatever became of the others. A server that cannot be reached is forgotten here anyway, with a
+  warning that it still lists this machine; a server that refuses keeps its pairing, and the command exits
+  3. `--local` forgets the pairing here without asking the server.
 - `status` lists the pairings, the allowed environment variables, and whether the agent runs.
 - `allow-env <NAME…>`, `disallow-env <NAME…>`, `allowed-env`: a paired server's requests read
   `${#System#NAME}` only for a name on this list, which is empty by default; every other name resolves to
@@ -1657,6 +1660,11 @@ sealed under with AES-256-GCM. The CLI has no OS keychain, so the file mode is t
 is made `0700` and the key `0600`, and on macOS and Linux the agent refuses to start when either is open
 to the group or to others, naming the `chmod 700` or `chmod 600` that fixes it. Windows has no such mode
 bits; there the folder's ACL (your user profile) protects it.
+
+**Proxies.** Sends and the agent's own calls to its servers (pairing, unpairing, letting a tab in) go
+through `HTTPS_PROXY` / `HTTP_PROXY`, minus `NO_PROXY`. A send to this machine's loopback (`localhost`,
+`*.localhost`, `127.0.0.0/8`, `::1`) or a link-local address always goes direct, whatever `NO_PROXY`
+says.
 
 **Team secrets.** A request that reads a team secret answers `team-secret-needs-approval` from this agent:
 it has no approved machine key. Pair the desktop app with the server and send through it.

@@ -7,7 +7,7 @@ import { UsageError } from './usage-error.js';
 
 export const AGENT_HELP = `wirebench agent
 wirebench agent pair <code> --server <url> [--ssh]
-wirebench agent unpair [--server <url>]
+wirebench agent unpair [--server <url>] [--local]
 wirebench agent status
 wirebench agent allow-env <NAME…> | disallow-env <NAME…> | allowed-env
 
@@ -21,8 +21,11 @@ a container's 127.0.0.1 is its own, and the browser cannot reach it.
 pair <code>            Pairs this machine with the server: the code is the one the browser shows under
   --server <url>       Pair this machine… (https://, or http:// for a server on this machine).
   --ssh                Let that server's tabs open SSH sessions through this machine.
-unpair                 Unpairs every server, at the server and here.
+unpair                 Unpairs every server, at the server and here. A server that cannot be reached is
+                       forgotten here anyway, with a warning that it still lists this machine; one that
+                       refuses keeps its pairing (exit 3).
   --server <url>       Only that server.
+  --local              Here only, without asking the server.
 status                 The pairings, the allowed environment variables, and whether the agent runs.
 allow-env <NAME…>      Lets a paired server's requests read these environment variables as
                        \${#System#NAME}. None is readable by default. Needs a pairing first: the list is
@@ -39,7 +42,7 @@ Exit 0 when done, 2 for a usage problem, 3 when the agent, a server or the folde
 export type AgentArgs =
   | { readonly command: 'agent-run' }
   | { readonly command: 'agent-pair'; readonly code: string; readonly server: string; readonly ssh: boolean }
-  | { readonly command: 'agent-unpair'; readonly server?: string }
+  | { readonly command: 'agent-unpair'; readonly server?: string; readonly local: boolean }
   | { readonly command: 'agent-status' }
   | { readonly command: 'agent-allow-env'; readonly names: readonly string[] }
   | { readonly command: 'agent-disallow-env'; readonly names: readonly string[] }
@@ -55,6 +58,7 @@ export function parseAgent(argv: readonly string[]): AgentArgs | { readonly comm
       options: {
         server: { type: 'string' },
         ssh: { type: 'boolean' },
+        local: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
       },
     });
@@ -67,6 +71,7 @@ export function parseAgent(argv: readonly string[]): AgentArgs | { readonly comm
   const [sub, ...rest] = positionals;
   const verb = `wirebench agent${sub === undefined ? '' : ` ${sub}`}`;
   if (values.ssh === true && sub !== 'pair') throw new UsageError(`--ssh applies to wirebench agent pair only`);
+  if (values.local === true && sub !== 'unpair') throw new UsageError(`--local applies to wirebench agent unpair only`);
   if (values.server !== undefined && sub !== 'pair' && sub !== 'unpair') {
     throw new UsageError(`--server does not apply to ${verb}`);
   }
@@ -85,7 +90,11 @@ export function parseAgent(argv: readonly string[]): AgentArgs | { readonly comm
     }
     case 'unpair':
       none();
-      return { command: 'agent-unpair', ...(values.server !== undefined ? { server: values.server } : {}) };
+      return {
+        command: 'agent-unpair',
+        local: values.local === true,
+        ...(values.server !== undefined ? { server: values.server } : {}),
+      };
     case 'status':
       none();
       return { command: 'agent-status' };

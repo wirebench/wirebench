@@ -40,6 +40,17 @@ export interface HeadlessAgent {
   close(): Promise<void>;
 }
 
+/**
+ * What became of one pairing on `unpair`: `unpaired` at the server and here; `dropped` here because its server
+ * could not be reached (it still lists this machine); `local` here only, as asked; `failed` when the server
+ * refused, and the pairing is kept. `message` is the server's refusal or the reason it was not reached.
+ */
+export interface AgentUnpairOutcome {
+  readonly pairing: AgentPairingRow;
+  readonly outcome: 'unpaired' | 'dropped' | 'local' | 'failed';
+  readonly message?: string;
+}
+
 export interface AgentStatusReport {
   readonly pairings: readonly AgentPairingRow[];
   /** The `${#System#…}` names a paired server's sends may read here. */
@@ -48,6 +59,8 @@ export interface AgentStatusReport {
 
 /** What the bundle exports. */
 export interface AgentBundle {
+  /** The port the agent takes first, which a pairing made while none runs names (47615). */
+  readonly AGENT_FIRST_PORT: number;
   /** Starts the agent on the first free port of `ports` (47615–47634 when absent). */
   startHeadlessAgent(
     input: AgentBundleInput & {
@@ -63,8 +76,13 @@ export interface AgentBundle {
       readonly port: number;
     },
   ): Promise<{ readonly pairingId: string; readonly origin: string; readonly email: string }>;
-  /** Unpairs every pairing, or those of `serverUrl`, at the server and here; returns the ones removed. */
-  unpairAgent(input: AgentBundleInput & { readonly serverUrl?: string }): Promise<readonly AgentPairingRow[]>;
+  /**
+   * Unpairs every pairing, or those of `serverUrl`, at the server and here, each one whatever became of the
+   * others; with `local`, here only. Never rejects for one pairing's server: its outcome says.
+   */
+  unpairAgent(
+    input: AgentBundleInput & { readonly serverUrl?: string; readonly local?: boolean },
+  ): Promise<readonly AgentUnpairOutcome[]>;
   agentStatus(input: AgentBundleInput): Promise<AgentStatusReport>;
   /**
    * Adds and removes names on the allowlist; returns the list now.
@@ -109,5 +127,6 @@ async function importBundle(href: string): Promise<AgentBundle> {
   for (const name of EXPORTS) {
     if (typeof module[name] !== 'function') throw new Error(`The agent bundle does not export ${name}`);
   }
+  if (typeof module.AGENT_FIRST_PORT !== 'number') throw new Error('The agent bundle does not export AGENT_FIRST_PORT');
   return module as unknown as AgentBundle;
 }

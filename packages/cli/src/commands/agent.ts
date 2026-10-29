@@ -10,7 +10,7 @@ import {
   type AgentPairingRow,
 } from '../agent/agent-runtime.js';
 import { agentHome } from '../agent/node-platform.js';
-import { AGENT_FIRST_PORT, clearRunStatus, readRunStatus, writeRunStatus } from '../agent/status-file.js';
+import { clearRunStatus, readRunStatus, writeRunStatus } from '../agent/status-file.js';
 import type { AgentArgs } from '../args-agent.js';
 import { ExitCode } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
@@ -86,20 +86,36 @@ export async function agentCommand(args: AgentArgs, io: CliIo, options: AgentCom
           code: args.code,
           serverUrl: args.server,
           sshOptIn: args.ssh,
-          port: running?.port ?? AGENT_FIRST_PORT,
+          port: running?.port ?? bundle.AGENT_FIRST_PORT,
         });
         out(`Paired with ${result.origin} as ${result.email}.`);
         if (running === undefined) out('Start the agent with: wirebench agent');
         return ExitCode.Ok;
       }
       case 'agent-unpair': {
-        const removed = await bundle.unpairAgent({
+        const outcomes = await bundle.unpairAgent({
           ...input,
+          local: args.local,
           ...(args.server !== undefined ? { serverUrl: args.server } : {}),
         });
-        if (removed.length === 0) out(args.server === undefined ? 'No pairings.' : `Not paired with ${args.server}.`);
-        for (const pairing of removed) out(`Unpaired from ${pairing.origin} (${pairing.email}).`);
-        return ExitCode.Ok;
+        if (outcomes.length === 0) out(args.server === undefined ? 'No pairings.' : `Not paired with ${args.server}.`);
+        let failed = false;
+        for (const { pairing, outcome, message } of outcomes) {
+          const who = `${pairing.origin} (${pairing.email})`;
+          if (outcome === 'unpaired') out(`Unpaired from ${who}.`);
+          else if (outcome === 'failed') {
+            failed = true;
+            io.stderr.write(`wirebench agent: ${pairing.origin}: ${message ?? 'the unpairing failed'}; still paired\n`);
+          } else {
+            out(`Removed ${pairing.origin} here (${pairing.email}).`);
+            const why =
+              outcome === 'dropped' ? `${pairing.origin} could not be reached` : `${pairing.origin} was not asked`;
+            io.stderr.write(
+              `warning: ${why}: it still lists this machine until you unpair it there (or it is unpaired from the browser)\n`,
+            );
+          }
+        }
+        return failed ? ExitCode.RunError : ExitCode.Ok;
       }
       case 'agent-status': {
         const status = await bundle.agentStatus(input);

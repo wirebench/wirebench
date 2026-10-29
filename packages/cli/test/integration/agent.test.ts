@@ -29,7 +29,7 @@ async function setUp(): Promise<{ readonly home: string; readonly server: FakePa
   return { home: join(dir, 'agent'), server };
 }
 
-function capture(home: string) {
+function capture(home: string, env: NodeJS.ProcessEnv = {}) {
   const stdout = new PassThrough();
   const stderr = new PassThrough();
   let out = '';
@@ -37,14 +37,18 @@ function capture(home: string) {
   stdout.on('data', (chunk: Buffer) => (out += chunk.toString('utf8')));
   stderr.on('data', (chunk: Buffer) => (err += chunk.toString('utf8')));
   return {
-    io: { stdout, stderr, env: { WIREBENCH_AGENT_HOME: home } },
+    io: { stdout, stderr, env: { ...env, WIREBENCH_AGENT_HOME: home } },
     out: () => out,
     err: () => err,
   };
 }
 
-async function run(home: string, argv: readonly string[]): Promise<{ code: number; out: string; err: string }> {
-  const io = capture(home);
+async function run(
+  home: string,
+  argv: readonly string[],
+  env: NodeJS.ProcessEnv = {},
+): Promise<{ code: number; out: string; err: string }> {
+  const io = capture(home, env);
   const code = await main(['agent', ...argv], io.io);
   return { code, out: io.out(), err: io.err() };
 }
@@ -136,6 +140,61 @@ describe('wirebench agent', () => {
     expect(await running).toBe(0);
     expect(io.out()).toContain('Wirebench agent stopped.');
     expect(existsSync(join(home, AGENT_STATUS_FILE))).toBe(false);
+  });
+
+  it('unpairs every server it can: a refusal is kept and exits 3, a server gone is dropped with a warning', async () => {
+    const { home, server: reachable } = await setUp();
+    const refusing = await startFakePairingServer();
+    const gone = await startFakePairingServer();
+    cleanups.push(
+      () => refusing.close(),
+      () => gone.close(),
+    );
+    for (const one of [refusing, gone, reachable]) {
+      expect((await run(home, ['pair', one.code, '--server', one.url])).code).toBe(0);
+    }
+    refusing.refuseUnpair = true;
+    await gone.close();
+
+    const result = await run(home, ['unpair']);
+    expect(result.code).toBe(3);
+    expect(result.out).toContain(`Unpaired from ${reachable.url}`);
+    expect(result.out).toContain(`Removed ${gone.url} here`);
+    expect(result.err).toContain(`${gone.url} could not be reached: it still lists this machine`);
+    expect(result.err).toContain(`${refusing.url}: The server refused the unpairing (HTTP 403)`);
+    expect(reachable.pairings.size).toBe(0);
+    expect(refusing.pairings.size).toBe(1);
+    const status = (await run(home, ['status'])).out;
+    expect(status).toContain(refusing.url);
+    expect(status).not.toContain(gone.url);
+    expect(status).not.toContain(reachable.url);
+
+    // --local forgets it here without asking the server.
+    const local = await run(home, ['unpair', '--local', '--server', refusing.url]);
+    expect(local).toMatchObject({ code: 0 });
+    expect(local.out).toContain(`Removed ${refusing.url} here`);
+    expect(local.err).toContain('it still lists this machine');
+    expect(refusing.signed.filter((one) => one.method === 'DELETE')).toHaveLength(1);
+    expect((await run(home, ['status'])).out).toContain('Pairings: none');
+  });
+
+  it('reaches a pairing server through HTTPS_PROXY', async () => {
+    const { home } = await setUp();
+    const seen: string[] = [];
+    const proxy = createServer((socket) => {
+      socket.once('data', (chunk: Buffer) => {
+        seen.push(chunk.toString('latin1').split('\r\n')[0] ?? '');
+        socket.end('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n');
+      });
+    });
+    await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve));
+    cleanups.push(() => new Promise<void>((resolve) => proxy.close(() => resolve())));
+    const { port } = proxy.address() as { port: number };
+    const result = await run(home, ['pair', 'ABC234', '--server', 'https://wirebench.example.test'], {
+      HTTPS_PROXY: `http://127.0.0.1:${String(port)}`,
+    });
+    expect(result.code).toBe(3);
+    expect(seen).toEqual(['CONNECT wirebench.example.test:443 HTTP/1.1']);
   });
 
   it('refuses to start when the key can be read by others', async () => {

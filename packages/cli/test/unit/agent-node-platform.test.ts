@@ -2,7 +2,7 @@
  * The headless agent's folder and key (hosted edition spec §18.6): made `0700` and `0600` on the first run,
  * and refused at start-up when either is open to other accounts, with the `chmod` that fixes it.
  */
-import { chmod, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -14,6 +14,7 @@ import {
   seal,
   unseal,
 } from '../../src/agent/node-platform.js';
+import { readRunStatus, writeRunStatus } from '../../src/agent/status-file.js';
 import { parseAgent } from '../../src/args-agent.js';
 
 const posix = process.platform !== 'win32';
@@ -83,7 +84,58 @@ describe('the agent folder', () => {
   });
 });
 
+describe('the agent key, made', () => {
+  it('once by two runs at the same time: both read the one key, and no temporary file is left', async () => {
+    const home = join(await scratch(), 'agent');
+    const [one, two] = await Promise.all([openAgentHome(home), openAgentHome(home)]);
+    expect(one).toEqual(two);
+    expect(await readdir(home)).toEqual([AGENT_KEY_FILE]);
+  });
+
+  it('refuses an empty key file, saying to delete it', async () => {
+    const home = join(await scratch(), 'agent');
+    await mkdir(home, { recursive: true, mode: 0o700 });
+    await writeFile(join(home, AGENT_KEY_FILE), '', { mode: 0o600 });
+    await expect(openAgentHome(home)).rejects.toThrow('delete it and start the agent again');
+  });
+});
+
+describe('the run status file', () => {
+  it.runIf(posix && process.getuid?.() !== 0)('counts a pid of another account (EPERM) as not running', async () => {
+    const home = await scratch();
+    await writeRunStatus(home, { pid: 1, port: 47_615 });
+    expect(await readRunStatus(home)).toBeUndefined();
+    await writeRunStatus(home, { pid: process.pid, port: 47_615 });
+    expect(await readRunStatus(home)).toEqual({ pid: process.pid, port: 47_615 });
+  });
+});
+
 describe('the agent platform', () => {
+  it('sends to loopback and link-local directly, whatever the proxy variables say', async () => {
+    const platform = createAgentPlatform({
+      home: '/agent',
+      key: Buffer.alloc(32),
+      version: '1.2.3',
+      kerberos: false,
+      env: {
+        HTTPS_PROXY: 'http://proxy.example.test:3128',
+        HTTP_PROXY: 'http://proxy.example.test:3128',
+        NO_PROXY: '',
+      },
+    });
+    for (const target of [
+      'http://localhost:8080/',
+      'https://api.localhost/x',
+      'http://127.0.0.5/',
+      'http://[::1]:3000/',
+      'http://169.254.169.254/latest',
+      'http://[fe80::1]/',
+    ]) {
+      expect(await platform.proxy.resolve(target), target).toBe('DIRECT');
+    }
+    expect(await platform.proxy.resolve('http://api.example.test/')).toBe('PROXY proxy.example.test:3128');
+  });
+
   it('seals with AES-256-GCM under the key, and refuses a box sealed under another', () => {
     const key = Buffer.alloc(32, 3);
     const sealed = seal(key, 'the private key');
@@ -125,7 +177,13 @@ describe('wirebench agent arguments', () => {
       server: 'https://wb.test',
       ssh: true,
     });
-    expect(parseAgent(['unpair'])).toEqual({ command: 'agent-unpair' });
+    expect(parseAgent(['unpair'])).toEqual({ command: 'agent-unpair', local: false });
+    expect(parseAgent(['unpair', '--local', '--server', 'https://wb.test'])).toEqual({
+      command: 'agent-unpair',
+      local: true,
+      server: 'https://wb.test',
+    });
+    expect(() => parseAgent(['status', '--local'])).toThrow('--local applies to wirebench agent unpair only');
     expect(parseAgent(['allow-env', 'A', 'B'])).toEqual({ command: 'agent-allow-env', names: ['A', 'B'] });
     expect(parseAgent(['--help'])).toEqual({ command: 'help', topic: 'agent' });
     expect(() => parseAgent(['pair', 'ABC234'])).toThrow('--server <url> is required');
