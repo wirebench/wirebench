@@ -12,6 +12,8 @@ docs
 .claude
 e2e/playwright-report
 e2e/test-results
+e2e/browser/playwright-report
+e2e/browser/test-results
 THIRD-PARTY-LICENSES.md
 .serena/
 docs-site/.astro

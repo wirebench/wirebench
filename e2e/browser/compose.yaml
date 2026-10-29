@@ -1,0 +1,78 @@
+# The browser client's end-to-end stack (hosted edition spec §17.7): the server image with the browser
+# client on, PostgreSQL, and an echo service the server can reach on the compose network (a private
+# address, open by default on a self-hosted server).
+#
+#   WIREBENCH_E2E_SECRETS_KEY="$(openssl rand -base64 32)" docker compose -f e2e/browser/compose.yaml up -d --build --wait
+#
+# `pnpm test:e2e:browser` starts it this way itself, with a fresh key, when nothing answers on the port.
+# The key is never committed: it encrypts nothing that outlives `down -v`.
+name: wirebench-browser-e2e
+services:
+  server:
+    build:
+      context: ../..
+      dockerfile: packages/server/Dockerfile
+    image: wirebench-server:browser-e2e
+    # A fixed name, so global setup runs the admin CLI with `docker exec` (no compose interpolation).
+    container_name: wirebench-browser-e2e-server
+    depends_on:
+      db:
+        condition: service_healthy
+      echo:
+        condition: service_healthy
+    environment:
+      WIREBENCH_SERVER_DATABASE_URL: postgres://wirebench:wirebench@db:5432/wirebench
+      WIREBENCH_SERVER_DATA_DIR: /data
+      # The browser must load the page from exactly this origin: the sign-in form and sign-out check
+      # Origin against it, and on http the cookie is `wb_session` without `Secure`.
+      WIREBENCH_SERVER_PUBLIC_URL: http://localhost:${WIREBENCH_E2E_PORT:-18080}
+      WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL: 'true'
+      WIREBENCH_SERVER_BROWSER_CLIENT: 'true'
+      WIREBENCH_SERVER_SECRETS_KEY: ${WIREBENCH_E2E_SECRETS_KEY:-}
+    ports:
+      - '127.0.0.1:${WIREBENCH_E2E_PORT:-18080}:8080'
+    # The image's own check runs every 30 s; `up --wait` should not sit out that long.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/healthz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 2s
+      timeout: 5s
+      retries: 60
+      start_period: 5s
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: wirebench
+      POSTGRES_PASSWORD: wirebench
+      POSTGRES_DB: wirebench
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U wirebench']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  # Answers every request with its method, path and headers as JSON. The server's own Node image, so the
+  # stack pulls nothing it does not already need.
+  echo:
+    image: node:24-bookworm-slim
+    command:
+      - node
+      - -e
+      - >-
+        require('node:http').createServer((req, res) => {
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify({ echo: true, method: req.method, url: req.url, headers: req.headers }));
+        }).listen(8080);
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 2s
+      timeout: 3s
+      retries: 30
