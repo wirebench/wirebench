@@ -11,10 +11,14 @@
  *   parser keeps the raw body.
  *
  * A wrong code cannot be tied to any user or code: the request carries only the code, lookup is by its
- * HMAC, and a wrong guess matches no row. So guessing is bounded by two limits instead: five attempts per
- * address in ten minutes (the life of a code), and 50 failed attempts server-wide in ten minutes, after
- * which pairing answers 429 for everyone until the window refills. Against 31^6 ≈ 887 million codes that
- * keeps a distributed guess hopeless.
+ * HMAC, and a wrong guess matches no row. So guessing is bounded by two limits instead: 20 attempts per
+ * address in ten minutes (the life of a code; an office behind one NAT address pairs many machines), and 50
+ * failed attempts server-wide in ten minutes, after which pairing answers 429 for everyone until the window
+ * refills. Against 31^6 ≈ 887 million codes that keeps a distributed guess hopeless.
+ *
+ * The agent's signed requests are limited per address loosely (a whole office's agents may share one) and,
+ * for a redeem, per pairing once its signature holds: one agent cannot spend its office's allowance, and a
+ * flood of refusals on a known pairing, each an audit row, stops at the address limit.
  */
 import { createHash } from 'node:crypto';
 import {
@@ -41,7 +45,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandl
 import { announce, auditSource, recordAudit, type AuditInput, type Querier, type ServerContext } from '../context.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { unauthenticated } from '../identity/errors.js';
-import { RateLimiter, callerKey, ipKey, rateLimit } from '../identity/rate-limit.js';
+import { RateLimiter, callerKey, chargeKeys, ipKey, rateLimit } from '../identity/rate-limit.js';
 import { findUserById } from '../identity/repo.js';
 import { hashSecret, mintSecret, newId } from '../identity/tokens.js';
 import { problem } from '../problem.js';
@@ -73,14 +77,18 @@ const TEN_MINUTES = 10 * 60 * 1000;
 
 /** The route limits (hosted edition spec §18.2): capacity per window, refilled continuously. */
 export const AGENT_RATE_LIMITS = {
-  /** `POST /pairings` per address: five in ten minutes, a code's whole life. */
-  pairPerAddress: { capacity: 5, windowMs: TEN_MINUTES },
+  /** `POST /pairings` per address: 20 in ten minutes, a code's whole life, for an office behind one address. */
+  pairPerAddress: { capacity: 20, windowMs: TEN_MINUTES },
   /** Failed `POST /pairings` across the whole server; when spent, pairing answers 429 for everyone. */
   pairFailures: { capacity: 50, windowMs: TEN_MINUTES },
   /** `POST /pairing-codes` per user. */
   codesPerUser: { capacity: 10, windowMs: TEN_MINUTES },
-  /** `POST /nonces/redeem` per address: a tab redeems once when it opens. */
-  redeemPerAddress: { capacity: 30, windowMs: 60 * 1000 },
+  /** `POST /nonces/redeem` per address, before the signature is checked: loose, for many agents behind one NAT. */
+  redeemPerAddress: { capacity: 300, windowMs: 60 * 1000 },
+  /** `POST /nonces/redeem` per pairing, once its signature holds: a tab redeems once when it opens. */
+  redeemPerPairing: { capacity: 30, windowMs: 60 * 1000 },
+  /** An agent-signed `DELETE` or `PATCH` per address: a refusal on a known pairing writes an audit row. */
+  signedPerAddress: { capacity: 60, windowMs: 60 * 1000 },
 } as const;
 
 const CODE_COLLISION_RETRIES = 3;
@@ -133,6 +141,12 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
   const pairFailures = limiterFor(AGENT_RATE_LIMITS.pairFailures, now);
   const codesPerUser = limiterFor(AGENT_RATE_LIMITS.codesPerUser, now);
   const redeemPerAddress = limiterFor(AGENT_RATE_LIMITS.redeemPerAddress, now);
+  const redeemPerPairing = limiterFor(AGENT_RATE_LIMITS.redeemPerPairing, now);
+  const signedPerAddress = limiterFor(AGENT_RATE_LIMITS.signedPerAddress, now);
+  /** Charges an agent-signed request's address; a browser's cookie `DELETE` is not the agent's. */
+  const signedLimit = rateLimit({ limiter: signedPerAddress }, (request) => [
+    agentHeaders(request.headers) !== undefined ? ipKey(request) : undefined,
+  ]);
 
   /** The pairing's user as the actor of what its agent did (the agent acts for them). */
   const asUser = async (tx: Querier, userId: string): Promise<AuditInput['actor']> => {
@@ -179,7 +193,8 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
 
   /**
    * An agent-signed `DELETE` or `PATCH` of pairing `id`, or the refusal to throw. A refusal against a known
-   * pairing is audited as `agent.request_refused`; malformed headers and unknown pairings only log.
+   * pairing is audited as `agent.request_refused`; malformed headers and unknown pairings only log. A
+   * signature that held for another pairing than `id` is that pairing's user's refusal.
    */
   const verifiedRequest = async (
     request: FastifyRequest,
@@ -195,13 +210,17 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
       request.log.debug({ reason: refused, method }, 'agent request refused');
       throw refused === 'unknown-pairing' ? pairingUnknown() : signatureInvalid();
     }
-    await auditRefusal({
-      ...auditSource(request),
-      actor: { kind: 'anonymous' },
-      action: 'agent.request_refused',
-      target: { kind: 'agent-pairing', id: verified.pairing.id },
-      details: { method, reason: refused },
-    });
+    const signer = verified.pairing;
+    await db.transaction(async (tx) =>
+      recordAudit(hooks, tx, {
+        ...auditSource(request),
+        // The signature held for `signer`: its user is the actor, as for any verified refusal.
+        actor: refused === 'pairing-mismatch' ? await asUser(tx, signer.userId) : { kind: 'anonymous' },
+        action: 'agent.request_refused',
+        target: { kind: 'agent-pairing', id: signer.id },
+        details: { method, reason: refused },
+      }),
+    );
     throw signatureInvalid();
   };
 
@@ -331,7 +350,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
         preHandler: rateLimit({ limiter: redeemPerAddress }, (request) => [ipKey(request)]),
         schema: { body: jsonSchema(agentRedeemRequestSchema, { io: 'input' }) },
       },
-      async (request) => {
+      async (request, reply) => {
         const { nonce } = request.body as AgentRedeemRequest;
         const verified = await verifiedAgent(request, (pairingId, timestamp) =>
           agentRedeemMessage(nonce, pairingId, timestamp),
@@ -353,6 +372,9 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
           throw signatureInvalid();
         }
         const { pairing } = verified;
+        // Charged only now the signature holds, so no one else can spend this pairing's allowance.
+        const retryAfter = chargeKeys(redeemPerPairing, [`pairing:${pairing.id}`]);
+        if (retryAfter > 0) return reply.header('retry-after', String(retryAfter)).code(429).send(RATE_LIMITED);
         const redeemed = await db.transaction(async (tx) => {
           const userId = await repo.takeNonce(tx, { nonceHash: hashSecret(nonce), pairingId: pairing.id, now: now() });
           if (userId === undefined) return { refused: 'nonce' as const };
@@ -389,7 +411,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
 
     app.delete(
       '/agent/pairings/:id',
-      { schema: { params: jsonSchema(agentPairingParamsSchema, { io: 'input' }) } },
+      { preHandler: signedLimit, schema: { params: jsonSchema(agentPairingParamsSchema, { io: 'input' }) } },
       async (request, reply) => {
         const { id } = request.params as { id: string };
         let by: 'agent' | 'user';
@@ -424,6 +446,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
       '/agent/pairings/:id',
       {
         config: { cookieAuth: false },
+        preHandler: signedLimit,
         schema: {
           params: jsonSchema(agentPairingParamsSchema, { io: 'input' }),
           body: jsonSchema(agentPortRequestSchema, { io: 'input' }),

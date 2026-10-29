@@ -2,6 +2,7 @@ import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { AGENT_PAIRING_CODE_PATTERN, agentRedeemMessage, agentRequestMessage } from '@wirebench/engine';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { agentModule, sweepAgent } from '../../../src/agent/module.js';
+import { AGENT_RATE_LIMITS } from '../../../src/agent/routes.js';
 import type { AgentUnpaired, AuditInput } from '../../../src/context.js';
 import { recordingAudit } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
@@ -230,13 +231,13 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     expect(codeOf(res)).toBe('agent-pairing-code-invalid');
   });
 
-  it('stops an address on the fifth wrong attempt, for the life of a code', async () => {
+  it('stops an address after 20 attempts, for the life of a code', async () => {
     const code = await newCode();
     const wrong = code === 'AAAAAA' ? 'BBBBBB' : 'AAAAAA';
-    for (let i = 0; i < 4; i++)
+    expect(AGENT_RATE_LIMITS.pairPerAddress.capacity).toBe(20);
+    for (let i = 0; i < 20; i++)
       expect(codeOf(await pair(wrong, { remoteAddress: '203.0.113.9' }))).toBe('agent-pairing-code-invalid');
-    expect(codeOf(await pair(wrong, { remoteAddress: '203.0.113.9' }))).toBe('agent-pairing-code-invalid');
-    // Five spent: even the right code is refused from that address until the window refills.
+    // Twenty spent: even the right code is refused from that address until the window refills.
     const blocked = await pair(code, { remoteAddress: '203.0.113.9' });
     expect(blocked.statusCode).toBe(429);
     expect(blocked.headers['retry-after']).toBeDefined();
@@ -374,10 +375,11 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     expect(audits.length).toBe(before);
   });
 
-  it('limits redeem attempts per address', async () => {
+  it('limits redeem attempts per address, loosely enough for an office behind one address', async () => {
     const pairingId = await paired();
     const nonce = await issueNonce(pairingId);
-    for (let i = 0; i < 30; i++) {
+    expect(AGENT_RATE_LIMITS.redeemPerAddress.capacity).toBe(300);
+    for (let i = 0; i < 300; i++) {
       const res = await h.app.inject({
         method: 'POST',
         url: '/api/v1/agent/nonces/redeem',
@@ -394,6 +396,23 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     });
     expect(blocked.statusCode).toBe(429);
     expect((await redeem(nonce, pairingId)).statusCode).toBe(200);
+  });
+
+  it('limits redeems per pairing once the signature holds, leaving other pairings on the address alone', async () => {
+    const pairingId = await paired();
+    const otherKey = agentKey();
+    const other = await paired(alice, { key: otherKey, agentId: 'agent-2' });
+    const nonce = await issueNonce(pairingId);
+    // Forged attempts do not spend the pairing's allowance.
+    for (let i = 0; i < 40; i++)
+      expect((await redeem('x'.repeat(43), pairingId, { key: agentKey() })).statusCode).toBe(401);
+    expect(AGENT_RATE_LIMITS.redeemPerPairing.capacity).toBe(30);
+    for (let i = 0; i < 29; i++) expect((await redeem(`spent-${String(i)}`, pairingId)).statusCode).toBe(401);
+    expect((await redeem(nonce, pairingId)).statusCode).toBe(200);
+    const blocked = await redeem(await issueNonce(pairingId), pairingId);
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.headers['retry-after']).toBeDefined();
+    expect((await redeem(await issueNonce(other), other, { key: otherKey })).statusCode).toBe(200);
   });
 
   it('refuses a nonce issued for another pairing', async () => {
@@ -458,6 +477,59 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     });
     const list = await h.app.inject({ method: 'GET', url: '/api/v1/agent/pairings', headers: browser(alice) });
     expect(list.json()).toEqual({ pairings: [] });
+  });
+
+  it('audits a DELETE signed for another pairing as that pairing’s user', async () => {
+    const pairingId = await paired();
+    const bob = await signedInUser(h, { email: 'bob@example.com', kind: 'browser' });
+    const bobKey = agentKey();
+    const bobs = await paired(bob, { key: bobKey, agentId: 'agent-b' });
+    // Alice's agent, signing truly as itself, asks to delete Bob's pairing.
+    const url = `/api/v1/agent/pairings/${bobs}`;
+    const timestamp = h.clock.now.toISOString();
+    const res = await h.app.inject({
+      method: 'DELETE',
+      url,
+      headers: {
+        'x-wirebench-agent-pairing': pairingId,
+        'x-wirebench-agent-timestamp': timestamp,
+        'x-wirebench-agent-signature': key.sign(agentRequestMessage('DELETE', url, pairingId, timestamp, sha256(''))),
+      },
+    });
+    expect(res.statusCode).toBe(401);
+    expect(audits.at(-1)).toMatchObject({
+      action: 'agent.request_refused',
+      actor: { kind: 'user', userId: alice.user.id, email: 'alice@example.com' },
+      target: { kind: 'agent-pairing', id: pairingId },
+      details: { method: 'DELETE', reason: 'pairing-mismatch' },
+    });
+    const list = await h.app.inject({ method: 'GET', url: '/api/v1/agent/pairings', headers: browser(bob) });
+    expect(list.json<{ pairings: unknown[] }>().pairings).toHaveLength(1);
+  });
+
+  it('limits agent-signed DELETEs and PATCHes per address, not a browser’s DELETE', async () => {
+    const pairingId = await paired();
+    const forged = agentKey();
+    expect(AGENT_RATE_LIMITS.signedPerAddress.capacity).toBe(60);
+    for (let i = 0; i < 60; i++) {
+      const method = i % 2 === 0 ? 'DELETE' : 'PATCH';
+      const body = method === 'PATCH' ? JSON.stringify({ port: 47616 }) : undefined;
+      const res = await signedRequest(method, pairingId, { key: forged, ...(body !== undefined ? { body } : {}) });
+      expect(res.statusCode).toBe(401);
+    }
+    const refusals = audits.filter((e) => e.action === 'agent.request_refused').length;
+    expect(refusals).toBe(60);
+    const blocked = await signedRequest('DELETE', pairingId);
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.headers['retry-after']).toBeDefined();
+    expect(audits.filter((e) => e.action === 'agent.request_refused')).toHaveLength(60);
+    // The browser's own unpair is not the agent's request.
+    const res = await h.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/agent/pairings/${pairingId}`,
+      headers: browser(alice),
+    });
+    expect(res.statusCode).toBe(204);
   });
 
   it('refuses an unpair with neither a session nor a signature', async () => {
