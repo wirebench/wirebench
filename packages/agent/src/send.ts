@@ -67,7 +67,8 @@ export interface AgentSendOptions {
   /** Where a failure of the agent's own housekeeping goes; never handed a bundle or a value. */
   readonly log?: (message: string, error?: unknown) => void;
   /**
-   * Whether this embedder can resolve team secrets (the desktop's agent, §18.5). Absent, a bundle that reads
+   * Whether this embedder can resolve team secrets (the desktop's agent, §18.5: its host has the
+   * team-secrets hook, and the bundle's subtree is handed to it). Absent, a bundle that reads
    * one (it carries the workspace's `team-secrets/` subtree) answers `team-secret-needs-approval` before
    * anything is written: the headless agent has no approved machine key, and no screen to ask for one on.
    */
@@ -223,6 +224,11 @@ export async function writeBundle(dir: string, files: readonly SendBundleFile[],
   }
 }
 
+/** The bundle's `team-secrets/` subtree as text, by path inside it. */
+function teamSecretTexts(files: readonly SendBundleFile[]): Map<string, string> {
+  return new Map(files.map((file) => [file.path, Buffer.from(file.content, file.encoding).toString('utf8')]));
+}
+
 /** A jar as the engine reads and stores into it, on the clock of the moment. */
 function jarHost(jar: CookieJar): CookieJarHost {
   return {
@@ -374,6 +380,8 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
         origin,
         workspaceId: bundle.workspaceId,
         secretNames: bundle.secretNames,
+        // Read by the desktop's team-secrets hook only to tell whether this machine's copy is current.
+        ...(bundle.teamSecrets !== undefined ? { teamSecrets: teamSecretTexts(bundle.teamSecrets) } : {}),
         // The server's workspace and global values, as the bundle carries them; never this machine's globals.
         scopes: { workspace: bundle.scopes?.workspace ?? {}, global: bundle.scopes?.global ?? {} },
         systemValues: systemValuesFor(bundle.systemNames, options.store.allowedSystemNames(), env),

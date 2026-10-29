@@ -200,3 +200,72 @@ export const agentChannels = {
     },
   },
 } as const;
+
+/** One pairing of this machine's agent, as the desktop's Settings → Paired browsers lists it. */
+export const machineAgentPairingSchema = z.object({
+  pairingId: z.string(),
+  origin: z.string(),
+  email: z.string(),
+  createdAt: z.string(),
+  port: z.number().int().optional(),
+  sshOptIn: z.boolean(),
+});
+export type MachineAgentPairingWire = z.infer<typeof machineAgentPairingSchema>;
+
+/** The desktop's agent: its pairings, whether it listens, and its `${#System#…}` allowlist. */
+export const machineAgentStatusSchema = z.object({
+  /** The port it listens on; absent while it is off (it runs only with a pairing). */
+  port: z.number().int().optional(),
+  pairings: z.array(machineAgentPairingSchema),
+  /** Whether this machine ever paired: the allowlist is kept with the pairings, so it needs one first. */
+  paired: z.boolean(),
+  allowedSystemNames: z.array(z.string()),
+});
+export type MachineAgentStatusWire = z.infer<typeof machineAgentStatusSchema>;
+
+export const machineAgentPairRequestSchema = z.strictObject({
+  serverUrl: z.string().min(1).max(2048),
+  code: z.string().min(1).max(64),
+});
+export const machineAgentPairResponseSchema = z.object({
+  pairingId: z.string(),
+  origin: z.string(),
+  email: z.string(),
+});
+
+export const machineAgentUnpairRequestSchema = z.strictObject({
+  pairingId: z.string().min(1).max(128),
+  /** Removes the pairing here without asking its server (the server still lists this machine). */
+  local: z.boolean().optional(),
+});
+
+export const machineAgentAllowRequestSchema = z.strictObject({
+  names: z
+    .array(
+      z
+        .string()
+        .max(256)
+        .regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+    )
+    .max(1000),
+});
+
+/**
+ * The desktop's own control of its agent (§18.2, §18.5): pair, list, unpair and the allowlist. Served by the
+ * desktop app's main process only: never by a server host (its allowlist refuses the group) and never by the
+ * agent's socket, which serves `agent.*` alone. Kept out of `agent.*`, which is a browser caller's.
+ */
+export const machineAgentChannels = {
+  machineAgent: {
+    status: defineChannel('machineAgent.status', z.undefined(), machineAgentStatusSchema),
+    /** Trades a code from the server's Settings → This machine for a pairing, and starts the agent. */
+    pair: defineChannel('machineAgent.pair', machineAgentPairRequestSchema, machineAgentPairResponseSchema),
+    /** Unpairs at the server and here (or here only); the agent stops with the last pairing. */
+    unpair: defineChannel('machineAgent.unpair', machineAgentUnpairRequestSchema, machineAgentStatusSchema),
+    setAllowedSystemNames: defineChannel(
+      'machineAgent.setAllowedSystemNames',
+      machineAgentAllowRequestSchema,
+      machineAgentStatusSchema,
+    ),
+  },
+} as const;

@@ -285,5 +285,6 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Command | macOS | Windows and Linux |
 | --- | --- | --- |
 | Account: Sign in to a server… | — | — |
+| Pair this machine… | — | — |
 | Account: Sign out… | — | — |
 | Account: Manage teams… | — | — |

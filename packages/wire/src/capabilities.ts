@@ -28,6 +28,11 @@ export const ALL_CAPABILITIES = [
   'accounts',
   /** Show secret values in this window. */
   'reveal-secrets',
+  /**
+   * Run this machine's local agent for paired browser tabs (hosted edition spec §18): the desktop app pairs
+   * from *Pair this machine…* and lists its pairings in Settings → Paired browsers.
+   */
+  'machine-agent',
 ] as const;
 
 /** What a platform can do; a host switches features off when the platform lacks one. */

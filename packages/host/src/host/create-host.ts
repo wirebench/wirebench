@@ -144,6 +144,7 @@ import { registerIssuedTokenChannels } from '../ipc/issued-tokens.js';
 import { IssuedTokensService, type ResolvedIssuedToken } from '../issued-tokens.js';
 import { desktopSecrets, stsLogEntry } from '../send/host.js';
 import { ExchangeRegistry } from '../send/exchange.js';
+import { agentTeamSecrets } from '../agent-team-secrets.js';
 import { sendFromDirectory, type DetachedSendResult, type SendFromDirectoryInput } from '../send/detached.js';
 import { ProjectHost } from '../project-host.js';
 import { OAuth2Service } from '../oauth2.js';
@@ -2148,6 +2149,10 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
           const ref = await secretStore.findByLabel(label);
           return ref === undefined ? undefined : await secretStore.get(ref);
         },
+        // Team secrets from this machine's own approved, imported values (§18.5); a host without them has none.
+        ...(hasTeamSecrets
+          ? { teamSecrets: agentTeamSecrets({ userDataDir: platform.paths.userData(), store: secretStore }) }
+          : {}),
         report: reporting,
         // This machine's proxy, as its Settings name it. Its password is read for the proxy alone: the ref
         // the preference names, never anything a bundle's `${secret:…}` refs could reach.

@@ -163,6 +163,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^5.2.0
         version: 5.2.0(vite@7.3.7(@types/node@26.6.5)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.0))
+      '@wirebench/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@wirebench/host':
         specifier: workspace:*
         version: link:../../packages/host

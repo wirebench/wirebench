@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { Loader2 } from 'lucide-react';
 import { SecretReviewDialog } from '../components/secret-review-dialog.js';
+import { PairMachineDialog } from '../features/account/pair-machine-dialog.js';
 import { SignInDialog } from '../features/account/sign-in-dialog.js';
 import { TeamDialog } from '../features/team/team-dialog.js';
 import { WebhooksDialogs } from '../features/webhooks/webhooks-dialogs.js';
@@ -777,6 +778,7 @@ export function AppShell() {
       <JoinDialog />
       <OpenTeamWorkspaceDialog />
       <SignInDialog />
+      <PairMachineDialog />
       <TeamDialog />
       <WebhooksDialogs />
       <SchedulesDialogs />

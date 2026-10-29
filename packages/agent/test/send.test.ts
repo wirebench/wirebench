@@ -445,6 +445,28 @@ describe('agent.send', () => {
     expect(await sendsLeft()).toEqual([]);
   });
 
+  it('asks the desktop host’s team-secrets hook, with the bundle’s project, and answers what it says', async () => {
+    // A desktop-shaped host: it has team secrets, and the handlers are told so.
+    const desktop: HostPlatform = { ...platform, capabilities: new Set([...platform.capabilities, 'team-secrets']) };
+    const desktopHost = await createHost(desktop);
+    onCleanUp(() => desktopHost.shutdown());
+    const desktopHandlers = agentSendHandlers({ platform: desktop, store, env: ENV, teamSecrets: true });
+    const bundle = await restBundle({ headers: [entry('Authorization', 'Bearer ${secret:api_token}')] });
+    let refused: { code: string; message: string } | undefined;
+    try {
+      await desktopHandlers.get('agent.send')!(
+        { sendId: sendId(), bundle: { ...bundle, secretNames: ['api_token'], teamSecrets: [] } },
+        { caller: quietCaller(1_000_000), pairing: pairingOf(TEAM), host: desktopHost },
+      );
+    } catch (error) {
+      refused = error as { code: string; message: string };
+    }
+    // No server workspace of this origin on this machine: the hook says to open it, and nothing is sent.
+    expect(refused?.code).toBe('team-secret-needs-approval');
+    expect(refused?.message).toContain(`Open the workspace from ${TEAM}`);
+    expect(echo.received).toEqual([]);
+  });
+
   it.each(['grpc', 'mcp', 'websocket'])('answers agent-kind-unsupported for a %s bundle', async (kind) => {
     const bundle = await restBundle();
     expect((await failure({ sendId: sendId(), bundle: { ...bundle, kind } })).code).toBe('agent-kind-unsupported');

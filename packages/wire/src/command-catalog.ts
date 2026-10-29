@@ -1140,6 +1140,12 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Account: Sign in to a server…',
     category: 'Account',
   },
+  'account.pairThisMachine': {
+    id: 'account.pairThisMachine',
+    label: 'Pair this machine…',
+    category: 'Account',
+    aliases: ['agent', 'browser', 'pairing code'],
+  },
   'account.signOut': {
     id: 'account.signOut',
     label: 'Account: Sign out…',

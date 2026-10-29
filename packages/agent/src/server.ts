@@ -99,6 +99,11 @@ export interface StartAgentOptions {
   readonly refreshIntervalMs?: number;
   /** Where a failure goes; never handed a frame, a nonce or a key. */
   readonly log?: (message: string, error: unknown) => void;
+  /**
+   * Whether a bundle send here resolves team secrets (the desktop's agent, with `agentSendHandlers({
+   * teamSecrets: true })`): the hello then names `team-secrets` when the platform has it.
+   */
+  readonly teamSecrets?: boolean;
 }
 
 export interface RunningAgent {
@@ -232,7 +237,7 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
       'agent.hello',
       (_request, { pairing }) =>
         Promise.resolve({
-          capabilities: browserCapabilities(platform.capabilities),
+          capabilities: browserCapabilities(platform.capabilities, { teamSecrets: options.teamSecrets === true }),
           version: platform.app.version(),
           sshOptIn: pairing.sshOptIn,
         }),
@@ -296,7 +301,7 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
           hello: {
             type: 'hello',
             host: 'agent',
-            capabilities: browserCapabilities(platform.capabilities),
+            capabilities: browserCapabilities(platform.capabilities, { teamSecrets: options.teamSecrets === true }),
             sshOptIn: pairing.sshOptIn,
           },
           // No scope on the host: a browser caller reaches nothing of it.
