@@ -7,7 +7,7 @@ customers · Amended 2026-10-26 after an independent review: its four high findi
 guard 6 (background jobs have a tenant scope) and §5.1 (the host package is a factory with no module-level
 state); the rest are folded in where they apply · Amended 2026-10-27 for slice 2 (§17, decision 12,
 ADR-0034) · Amended 2026-10-29 for slice 3 (§18, ADR-0035) · Amended 2026-10-29 for slice 4 (§19, ADR-0036) ·
-Issue: #776 (slice 1 is #777, slice 2 is #783, slice 3 is #790, slice 4 is #ISSUE) · Module ids: `host-seam`,
+Issue: #776 (slice 1 is #777, slice 2 is #783, slice 3 is #790, slice 4 is #798) · Module ids: `host-seam`,
 `browser-client`, `local-agent`, `tenancy`, `operations`, `domains`, `control-plane`, `custom-domains`
 
 - Intent: `docs/intent/wirebench-server-teams.md` (roles and sign-in for people without git hosting) extended
@@ -653,7 +653,7 @@ self-hosted teams on their own, which is why they would come first whenever the 
 | 1 | `host-seam` | **Built** (#779 and #780, 2026-10-27; ADR-0033 accepted). `@wirebench/host` as `createHost(platform)` with `HostPlatform` and `Caller`, no module-level state and its gate; the Electron app embeds it; proven by the existing tests on a fake platform and a fake-socket test of `buildApi` (the loopback server moves to slice 3) | — | yes (no user-visible change) |
 | 2 | `browser-client` | **Built** (#785, #787 and #789, 2026-10-29, for #783; §17 records what changed from this row). The Vite browser build, `browser-bootstrap.ts`, capability discovery, the sign-in page and `browser_flows`, the cookie session, the server host with checkouts and per-user state via `inject`, live events over the host socket, user-scoped sealed secrets under one server-wide root, the §3.10 allowlist and path guard, the egress rule on every outbound connection | 1 | yes: a self-hosted team gets a browser tab |
 | 3 | `local-agent` | **Scheduled 2026-10-29** (#790; §18 records what changed from this row). `packages/agent` as a library, the loopback socket transport, pairing with the browser subset, the send-route rule and the send bundle, `wirebench agent`, the agent's packaging | 1, 2 | yes |
-| 4 | `tenancy` | **Specified 2026-10-29** (#ISSUE; §19 records what changed from this row). `tenants`, `tenant_id` on every table, forced row-level security, tenant resolution by `Host`, per-tenant directories and data keys with the one-time re-wrap, the six guards of §5.4 including the job scope, the host-instance lease, the self-hosted migration | 2 | yes, invisibly (one tenant) |
+| 4 | `tenancy` | **Specified 2026-10-29** (#798; §19 records what changed from this row). `tenants`, `tenant_id` on every table, forced row-level security, tenant resolution by `Host`, per-tenant directories and data keys with the one-time re-wrap, the six guards of §5.4 including the job scope, the host-instance lease, the self-hosted migration | 2 | yes, invisibly (one tenant) |
 | 5 | `operations` | `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
 | 6 | `domains` | The two registrable names, wildcard certificates, `app.` entry with emailed links, reserved slugs, public suffix submission | 4 | no |
 | 7 | `control-plane` | Signup, subscriptions, edition from subscription, suspension, export, deletion, operator commands; per-tenant settings (OIDC, SAML, SCIM, audit forwarding, SMTP sender, retention), today's environment variables becoming the default tenant's (§19.1, §19.12) | 4, 5, 6 | no |
@@ -1127,7 +1127,7 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
 
 ## 19. Slice 4 amendment: tenancy (2026-10-29)
 
-Slice 4 (#ISSUE) makes the server multi-tenant. A self-hosted installation is unchanged to everyone who uses it: one
+Slice 4 (#798) makes the server multi-tenant. A self-hosted installation is unchanged to everyone who uses it: one
 tenant, created by the migration, whose slug nothing shows and whose `Host` nothing matches. It builds §4.1, §4.2,
 §4.4, §5.3, §5.4 and §5.5's lease, the per-tenant data key of §3.5, and the migration of §14. It builds nothing of
 slices 5 to 8, which stay gated (§10): no signup, no payment provider, no wildcard names, no `LISTEN`/`NOTIFY`, no

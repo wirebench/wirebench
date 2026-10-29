@@ -1,7 +1,7 @@
 # ADR-0036: each tenant seals under its own data key, wrapped by the server root
 
 Date: 2026-10-29 · Status: proposed · Design: `docs/specs/2026-10-24-wirebench-hosted-edition-design.md` §3.5, §17.4,
-§19.7, §19.10 · Issue: #776, slice 4 #ISSUE
+§19.7, §19.10 · Issue: #776, slice 4 #798
 
 ## Context
 
