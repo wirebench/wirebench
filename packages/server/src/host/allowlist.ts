@@ -100,6 +100,8 @@ export const REFUSED_GROUPS: ReadonlySet<string> = new Set([
   'sessionLog',
   // A lock over the desktop's window.
   'appLock',
+  // The local agent's own channels (§18.1): a paired agent on the person's machine serves them.
+  'agent',
 ]);
 
 /** Channels of a served group the server host refuses anyway, each with its reason. */

@@ -19,3 +19,5 @@ export type {
   WebSocketLike,
 } from './host/host-socket.js';
 export { HandlerTable } from './ipc/register.js';
+export { toIpcError } from './ipc/envelope.js';
+export type { DetachedSendKind, DetachedSendResult, SendFromDirectoryInput } from './send/detached.js';

@@ -38,8 +38,10 @@ describe('createHost', () => {
   it('builds two hosts in one process, each with every channel', async () => {
     const first = await started();
     const second = await started();
-    expect([...first.handlers.keys()].sort()).toEqual(pinned.channels);
-    expect([...second.handlers.keys()].sort()).toEqual(pinned.channels);
+    // `agent.*` is the local agent's own group (spec §18.1): a paired agent serves it, a host never does.
+    const hostChannels = pinned.channels.filter((name) => !name.startsWith('agent.'));
+    expect([...first.handlers.keys()].sort()).toEqual(hostChannels);
+    expect([...second.handlers.keys()].sort()).toEqual(hostChannels);
     expect(first.handlers).not.toBe(second.handlers);
   });
 

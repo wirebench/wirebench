@@ -44,6 +44,7 @@ describe('buildApi', () => {
 
     expect(Object.keys(api).sort()).toEqual([
       'account',
+      'agent',
       'api',
       'app',
       'appLock',

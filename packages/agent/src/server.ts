@@ -22,11 +22,13 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { z } from 'zod';
+import { isWirebenchError } from '@wirebench/engine';
 import {
   HOST_AUTH_TIMEOUT_MS,
   HOST_CLOSE,
   HOST_LIMITS,
   runHostSocket,
+  toIpcError,
   type CallFrame,
   type Caller,
   type Host,
@@ -87,7 +89,7 @@ export interface StartAgentOptions {
   readonly ports?: readonly number[];
   /** The time a socket has to pass its `auth` frame; {@link HOST_AUTH_TIMEOUT_MS} when absent. */
   readonly authTimeoutMs?: number;
-  /** More `agent.*` handlers (`agent.send` and the rest come with the send bundle). */
+  /** More `agent.*` handlers: `agentSendHandlers()` gives `agent.send`, `agent.cancel` and `agent.cookies.clear`. */
   readonly handlers?: ReadonlyMap<string, AgentHandler>;
   /**
    * How often the pairings file is re-read while the agent runs, so a pairing another process removed ends
@@ -245,6 +247,9 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
     try {
       return { id: frame.id, ok: true, value: await local(frame.request, { caller, pairing, host }) };
     } catch (error) {
+      // A Wirebench error keeps its code, masked by the host's redactor as any channel's is; anything else
+      // tells the tab nothing of what went wrong here.
+      if (isWirebenchError(error)) return { id: frame.id, ok: false, error: toIpcError(host.handlers.redactor, error) };
       log('an agent call failed', error);
       return { id: frame.id, ok: false, error: { code: 'internal-error', message: 'The call failed' } };
     }

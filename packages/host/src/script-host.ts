@@ -79,6 +79,15 @@ export interface ScriptHostDeps {
   readonly createChecker?: () => ScriptChecker;
 }
 
+/**
+ * Where a request's scripts and the types they are checked against are read from: the open workspace's
+ * projects by default, or one project loaded on its own (an agent's send bundle, spec §18.4).
+ */
+export type ScriptSource = Pick<
+  ScriptHostDeps,
+  'modelOf' | 'openApiDocumentFor' | 'grpcProtoSetFor' | 'soapDefinitionFor'
+>;
+
 /** What a send of a request does about scripts. */
 export type ScriptLookup =
   { readonly kind: 'none' } | { readonly kind: 'off' } | { readonly kind: 'on'; readonly request: ScriptedRequest };
@@ -187,8 +196,8 @@ export class ScriptHost {
     return this.scriptingInstance;
   }
 
-  private locate(requestId: string): Located | undefined {
-    const project = this.deps.modelOf(requestId);
+  private locate(requestId: string, source: ScriptSource = this.deps): Located | undefined {
+    const project = source.modelOf(requestId);
     if (project === undefined) return undefined;
 
     const soap = findRequest(project, requestId);
@@ -204,7 +213,7 @@ export class ScriptHost {
         types: () => {
           let loaded: WsdlImportResult | undefined;
           try {
-            loaded = this.deps.soapDefinitionFor(iface.id);
+            loaded = source.soapDefinitionFor(iface.id);
           } catch {
             loaded = undefined;
           }
@@ -240,7 +249,7 @@ export class ScriptHost {
           const document =
             rest.contract === undefined
               ? undefined
-              : await this.deps.openApiDocumentFor(restApi.id).catch(() => undefined);
+              : await source.openApiDocumentFor(restApi.id).catch(() => undefined);
           const contract = rest.contract;
           return memo(document, contract === undefined ? '' : `${contract.method} ${contract.path}`, () => ({
             generated: restScriptTypes(restOperationFor(document, contract)),
@@ -260,7 +269,7 @@ export class ScriptHost {
         scripts: grpc.scripts,
         outer: containerScriptLevels(grpcApi, 'api', folderChain(grpcApi, requestId) ?? []),
         types: async () => {
-          const set = await this.deps.grpcProtoSetFor(grpcApi.id).catch(() => undefined);
+          const set = await source.grpcProtoSetFor(grpcApi.id).catch(() => undefined);
           return memo(set, `${grpc.service}/${grpc.method}`, () => {
             const types = grpcMessageTypes(set, grpc.service, grpc.method);
             return {
@@ -302,10 +311,10 @@ export class ScriptHost {
 
   /**
    * Whether a send of `requestId` runs scripts, its own or its levels' (#334), and the request as the
-   * scripting runs it when it does.
+   * scripting runs it when it does. `source` reads the request from elsewhere than the open workspace.
    */
-  async lookup(requestId: string): Promise<ScriptLookup> {
-    const located = this.locate(requestId);
+  async lookup(requestId: string, source?: ScriptSource): Promise<ScriptLookup> {
+    const located = this.locate(requestId, source);
     if (located === undefined || (located.scripts === undefined && located.outer.length === 0)) {
       return { kind: 'none' };
     }

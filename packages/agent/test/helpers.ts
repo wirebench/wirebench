@@ -78,6 +78,7 @@ export function fakeHost(channels: readonly string[] = []): Host & { attached: n
       host.attached += 1;
     },
     detach: () => Promise.resolve(),
+    sendFromDirectory: () => Promise.reject(new Error('this fake host sends nothing')),
     shutdown: () => Promise.resolve(),
   };
   return host;
