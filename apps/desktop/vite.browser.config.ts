@@ -9,7 +9,7 @@
  * both builds bundle the same renderer; what differs is the entry, the output folder and the CSP.
  */
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, type Plugin, type Rollup } from 'vite';
@@ -38,40 +38,89 @@ function cspMetaPlugin(): Plugin {
   };
 }
 
+interface Manifest {
+  readonly exports?: Record<string, unknown>;
+  readonly imports?: Record<string, unknown>;
+}
+
+const packagesDir = resolve(repo, 'packages');
+const manifests = new Map<string, Manifest>();
+
+function manifestOf(name: string): Manifest | undefined {
+  let manifest = manifests.get(name);
+  if (manifest === undefined) {
+    try {
+      manifest = JSON.parse(readFileSync(resolve(packagesDir, name, 'package.json'), 'utf8')) as Manifest;
+    } catch {
+      return undefined;
+    }
+    manifests.set(name, manifest);
+  }
+  return manifest;
+}
+
+/** A map entry's target: a string, or the `development` (else `default`) branch of a conditions object. */
+function targetOf(entry: unknown): string | undefined {
+  if (typeof entry === 'string') return entry;
+  if (typeof entry !== 'object' || entry === null) return undefined;
+  const conditions = entry as Record<string, unknown>;
+  return targetOf(conditions['development'] ?? conditions['default']);
+}
+
+/** Node's subpath-pattern match over an `exports` or `imports` map: an exact key, else one `*` pattern. */
+function matchMap(map: Record<string, unknown>, key: string): string | undefined {
+  const exact = targetOf(map[key]);
+  if (exact !== undefined) return exact;
+  for (const [pattern, entry] of Object.entries(map)) {
+    const star = pattern.indexOf('*');
+    if (star < 0) continue;
+    const prefix = pattern.slice(0, star);
+    const suffix = pattern.slice(star + 1);
+    if (!key.startsWith(prefix) || !key.endsWith(suffix) || key.length < prefix.length + suffix.length) continue;
+    const target = targetOf(entry);
+    if (target !== undefined) return target.replaceAll('*', key.slice(prefix.length, key.length - suffix.length));
+  }
+  return undefined;
+}
+
 /**
- * Resolves `@wirebench/<package>[/<subpath>]` to the package's sources: the `development` entry of its
- * `exports`, as the spec asks, so the build needs no `tsc -b` first. Vite's own `development` condition
- * cannot be used: it would also send `graphql` to its development build for a bare import and to the plain
- * one for a deep import, two copies whose realm checks refuse each other's schemas (see `vitest.config.ts`).
+ * Resolves a workspace package's own imports to its sources, so the build needs no `tsc -b` first:
+ *
+ * - `@wirebench/<package>[/<subpath>]` → the `development` entry of that package's `exports` (spec §17.6);
+ * - `#name/...` in a file under `packages/<package>/` → that package's `imports` entry, followed through to
+ *   the sources when it names another workspace package (the engine's `#core/*` is `@wirebench/core/*`).
+ *
+ * Anything else is `null`, left to Vite. Vite's own `development` condition cannot be used instead: it would
+ * also send `graphql` to its development build for a bare import and to the plain one for a deep import, two
+ * copies whose realm checks refuse each other's schemas (see `vitest.config.ts`). Without this, Vite reads
+ * the `default` branch, `dist/`, which only exists where `tsc -b` has run.
  */
+export function resolveWorkspaceSource(source: string, importer: string | undefined): string | null {
+  if (source.startsWith('#')) {
+    if (importer === undefined) return null;
+    const inside = relative(packagesDir, importer.replace(/[?#].*$/, ''));
+    if (inside.startsWith('..') || isAbsolute(inside)) return null;
+    const name = inside.split(sep)[0] ?? '';
+    const imports = manifestOf(name)?.imports;
+    const target = imports === undefined ? undefined : matchMap(imports, source);
+    if (target === undefined) return null;
+    if (target.startsWith('@wirebench/')) return resolveWorkspaceSource(target, undefined);
+    return target.startsWith('./') ? resolve(packagesDir, name, target) : null;
+  }
+  const match = /^@wirebench\/([a-z0-9-]+)(\/.*)?$/.exec(source);
+  if (match === null) return null;
+  const [, name = '', subpath = ''] = match;
+  const exports = manifestOf(name)?.exports;
+  const target = exports === undefined ? undefined : matchMap(exports, `.${subpath}`);
+  return target === undefined ? null : resolve(packagesDir, name, target);
+}
+
 function workspaceSourcesPlugin(): Plugin {
-  const exportsOf = new Map<string, Record<string, unknown>>();
   return {
     name: 'wirebench-workspace-sources',
     enforce: 'pre',
-    resolveId(source) {
-      const match = /^@wirebench\/([a-z0-9-]+)(\/.*)?$/.exec(source);
-      if (match === null) return null;
-      const [, name = '', subpath = ''] = match;
-      const dir = resolve(repo, 'packages', name);
-      let exports = exportsOf.get(name);
-      if (exports === undefined) {
-        const manifest = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8')) as {
-          exports?: Record<string, unknown>;
-        };
-        exports = manifest.exports ?? {};
-        exportsOf.set(name, exports);
-      }
-      const key = `.${subpath}`;
-      const entry = exports[key];
-      if (typeof entry === 'object' && entry !== null && 'development' in entry) {
-        const target = entry.development;
-        if (typeof target === 'string') return resolve(dir, target);
-      }
-      // A wildcard export such as wire's `"./*": "./src/*.ts"`.
-      const wildcard = exports['./*'];
-      if (subpath !== '' && typeof wildcard === 'string') return resolve(dir, wildcard.replace('*', subpath.slice(1)));
-      return null;
+    resolveId(source, importer) {
+      return resolveWorkspaceSource(source, importer);
     },
   };
 }
