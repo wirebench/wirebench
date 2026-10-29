@@ -1,6 +1,6 @@
 import { isAbsolute, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CONFIG_VARIABLES, ConfigError, describeConfig, loadConfig } from '../../src/config.js';
+import { CONFIG_VARIABLES, ConfigError, describeConfig, loadConfig, migrationUrlOf } from '../../src/config.js';
 
 const required = {
   WIREBENCH_SERVER_DATABASE_URL: 'postgres://u:p@db/wirebench',
@@ -23,6 +23,18 @@ describe('loadConfig', () => {
       version: '2.1.1',
     });
     expect(config.gitPath).toBeUndefined();
+  });
+
+  it('leaves the migration URL unset by default: migrations run as the one database URL', () => {
+    const config = loadConfig(required, '2.1.1');
+    expect(config.migrationDatabaseUrl).toBeUndefined();
+    expect(migrationUrlOf(config)).toBe(required.WIREBENCH_SERVER_DATABASE_URL);
+    const owner = 'postgres://owner:o@db/wirebench';
+    const both = loadConfig({ ...required, WIREBENCH_SERVER_MIGRATION_DATABASE_URL: owner }, '2.1.1');
+    expect([both.databaseUrl, migrationUrlOf(both)]).toEqual([required.WIREBENCH_SERVER_DATABASE_URL, owner]);
+    const rows = Object.fromEntries(describeConfig(required).map((row) => [row.variable, row.status]));
+    expect(rows.WIREBENCH_SERVER_MIGRATION_DATABASE_URL).toBe('defaulted');
+    expect(CONFIG_VARIABLES.find((v) => v.key === 'migrationDatabaseUrl')?.secret).toBe(true);
   });
 
   it('names every missing required variable in one error and never echoes a value', () => {
@@ -209,6 +221,7 @@ describe('describeConfig', () => {
         'WIREBENCH_SERVER_INVITATION_DAYS',
         'WIREBENCH_SERVER_LOCAL_AUTH',
         'WIREBENCH_SERVER_LOG_LEVEL',
+        'WIREBENCH_SERVER_MIGRATION_DATABASE_URL',
         'WIREBENCH_SERVER_OIDC_CLIENT_ID',
         'WIREBENCH_SERVER_OIDC_CLIENT_SECRET',
         'WIREBENCH_SERVER_OIDC_DISPLAY_NAME',

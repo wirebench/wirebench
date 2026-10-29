@@ -10,7 +10,8 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 <!-- config:start -->
 | Variable | Required | Default | Meaning |
 | --- | --- | --- | --- |
-| `WIREBENCH_SERVER_DATABASE_URL` | yes | — | PostgreSQL connection string. Never logged. |
+| `WIREBENCH_SERVER_DATABASE_URL` | yes | — | PostgreSQL connection string. Every query runs as its role. Never logged. |
+| `WIREBENCH_SERVER_MIGRATION_DATABASE_URL` | no | `WIREBENCH_SERVER_DATABASE_URL` | PostgreSQL connection string for the role that owns the schema. Migrations and `admin tenancy role` run as it. When it names a role other than the database URL’s, the server creates that app role if it is missing and the owner may create roles, and grants it its privileges at every start. Never logged. |
 | `WIREBENCH_SERVER_PUBLIC_URL` | yes | — | The `https://…` origin clients use; no path, query or trailing slash. |
 | `WIREBENCH_SERVER_DATA_DIR` | no | `/data` | Repositories and temporary files. |
 | `WIREBENCH_SERVER_HOST` | no | `0.0.0.0` | Listen address. |
@@ -77,6 +78,21 @@ in-process. `wirebench-server migrate` applies schema migrations ahead of a rest
 `wirebench-server migrate --check` exits 1 while any are pending; `wirebench-server config check`
 lists each variable as set, defaulted or missing without printing values. `/healthz` reports
 pass/fail per check (database, data directory, git) and nothing else.
+
+### Database roles
+
+The server can use two PostgreSQL roles. The role in `WIREBENCH_SERVER_MIGRATION_DATABASE_URL` owns the
+schema and runs the migrations; the role in `WIREBENCH_SERVER_DATABASE_URL`, the app role, runs every
+query and owns nothing. With two URLs, the server connects as the owner at every start, creates the app
+role when it is missing and the owner may create roles (`login nosuperuser nobypassrls noinherit`, its
+password stored as a SCRAM-SHA-256 verifier), and grants it its privileges. `compose.yaml` does this with
+`wirebench` as the owner and `wirebench_app` as the app role, so an existing volume starts as well.
+
+With only `WIREBENCH_SERVER_DATABASE_URL` set, nothing changes: that one role migrates and queries. To
+switch an installation outside compose, run `wirebench-server admin tenancy role` with both URLs set (or
+apply what `admin tenancy role --print-sql` prints, as a role that may create roles), then restart. Going
+back is pointing `WIREBENCH_SERVER_DATABASE_URL` at the owner again and unsetting the migration URL; unsetting
+only the migration URL would leave migrations to the app role, which may not create tables.
 
 The image carries the browser client's build. A server run from a checkout with
 `WIREBENCH_SERVER_BROWSER_CLIENT` on needs it too, or it refuses to start: run

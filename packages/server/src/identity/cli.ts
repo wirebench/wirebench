@@ -6,7 +6,7 @@
 import type { KeyObject } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
-import { ConfigError, loadConfig } from '../config.js';
+import { ConfigError, forgetDatabaseUrls, loadConfig } from '../config.js';
 import { auditHook } from '../audit-log/hook.js';
 import { runAuditCommand, runVerifyCommand } from '../audit-log/cli.js';
 import { SYSTEM_SOURCE, serverHooks } from '../context.js';
@@ -25,7 +25,8 @@ import { identitySettings, type InvitationEnv } from './env.js';
 import { createInvitation, invitationSummary, isOpen, revokeOpenInvitation } from './invitations.js';
 import * as repo from './repo.js';
 
-type AdminCommand = Extract<ServerCommand, { command: `admin-${string}` }>;
+// `admin tenancy role` runs as the owner, not the app role, so it has its own runner (tenancy/cli.ts).
+type AdminCommand = Exclude<Extract<ServerCommand, { command: `admin-${string}` }>, { command: 'admin-tenancy-role' }>;
 
 /** `now` exists for tests; the bin passes nothing. */
 export async function runAdmin(
@@ -40,7 +41,7 @@ export async function runAdmin(
   const now = options.now ?? (() => new Date());
   try {
     config = loadConfig(io.env, packageVersion());
-    delete process.env.WIREBENCH_SERVER_DATABASE_URL;
+    forgetDatabaseUrls();
     db = createDatabase(config.databaseUrl);
     publicKeys = options.publicKeys ?? PRODUCTION_PUBLIC_KEYS;
     hooks = serverHooks();

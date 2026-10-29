@@ -4,6 +4,7 @@ import { runAdmin } from './identity/cli.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { BUILTIN_MODULES } from './modules.js';
 import { runMigrate, startServer, StartupError, type StartOptions } from './serve.js';
+import { runTenancyRole } from './tenancy/cli.js';
 
 /** `serveOptions` exists for tests (signals, exit, drain time, modules); the bin passes none. */
 export async function main(argv: readonly string[], io: ServerIo, serveOptions: StartOptions = {}): Promise<number> {
@@ -67,6 +68,8 @@ export async function main(argv: readonly string[], io: ServerIo, serveOptions: 
     case 'admin-scim-group-link':
     case 'admin-scim-group-unlink':
       return runAdmin(command, io);
+    case 'admin-tenancy-role':
+      return runTenancyRole(command, io);
     case 'serve': {
       try {
         const server = await startServer(io.env, io, { modules: BUILTIN_MODULES, ...serveOptions });

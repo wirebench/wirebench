@@ -33,6 +33,7 @@ export type ServerCommand =
   | { readonly command: 'admin-schedules-enable'; readonly id: string }
   | { readonly command: 'admin-schedules-disable'; readonly id: string }
   | { readonly command: 'admin-schedules-runs'; readonly id: string; readonly limit: number }
+  | { readonly command: 'admin-tenancy-role'; readonly printSql: boolean }
   | { readonly command: 'help' }
   | { readonly command: 'version' };
 
@@ -72,6 +73,10 @@ Usage:
   wirebench-server admin schedules disable <id>
   wirebench-server admin schedules runs <id> [--limit <n>]
                                     A schedule's runs as NDJSON, newest first (default 50, at most 200)
+  wirebench-server admin tenancy role [--print-sql]
+                                    As the owner (WIREBENCH_SERVER_MIGRATION_DATABASE_URL), create the
+                                    app role of WIREBENCH_SERVER_DATABASE_URL if missing and grant it its
+                                    privileges; --print-sql prints the statements instead
   wirebench-server --version
   wirebench-server --help
 
@@ -90,6 +95,7 @@ const OPTIONS = {
   head: { type: 'string' },
   json: { type: 'boolean' },
   limit: { type: 'string' },
+  'print-sql': { type: 'boolean' },
 } as const;
 
 const SCHEDULES_USAGE =
@@ -143,6 +149,9 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
     if (parsed.values[key] !== undefined && !isAuditVerify) {
       throw new UsageError(`--${key} applies to admin audit verify only`);
     }
+  }
+  if (parsed.values['print-sql'] !== undefined && !(word === 'admin' && second === 'tenancy' && third === 'role')) {
+    throw new UsageError('--print-sql applies to admin tenancy role only');
   }
   switch (word) {
     case undefined:
@@ -209,6 +218,9 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
             default:
               throw new UsageError(SCHEDULES_USAGE);
           }
+        case 'tenancy':
+          if (third !== 'role') throw new UsageError('usage: wirebench-server admin tenancy role [--print-sql]');
+          return { command: 'admin-tenancy-role', printSql: parsed.values['print-sql'] === true };
         case 'license':
           switch (third) {
             case 'install':

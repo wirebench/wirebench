@@ -107,6 +107,7 @@ const alertHostsText = z
 
 const inputSchema = z.object({
   databaseUrl: z.string().min(1),
+  migrationDatabaseUrl: z.string().min(1).optional(),
   publicUrl: originText,
   dataDir: z.string().min(1).default('/data'),
   host: z.string().min(1).default('0.0.0.0'),
@@ -191,7 +192,16 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     key: 'databaseUrl',
     required: true,
     secret: true,
-    description: 'PostgreSQL connection string.',
+    description: 'PostgreSQL connection string. Every query runs as its role.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_MIGRATION_DATABASE_URL',
+    key: 'migrationDatabaseUrl',
+    required: false,
+    defaultText: 'WIREBENCH_SERVER_DATABASE_URL',
+    secret: true,
+    description:
+      'PostgreSQL connection string for the role that owns the schema. Migrations and `admin tenancy role` run as it. When it names a role other than the database URL’s, the server creates that app role if it is missing and the owner may create roles, and grants it its privileges at every start.',
   },
   {
     env: 'WIREBENCH_SERVER_PUBLIC_URL',
@@ -736,6 +746,20 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
     dataDir: isAbsolute(config.dataDir) ? config.dataDir : resolve(config.dataDir),
     version,
   };
+}
+
+/**
+ * Deletes both database URLs from `process.env` once the configuration is loaded: `GitCli` spreads
+ * `process.env` into every git child's environment, which would hand them the connection strings.
+ */
+export function forgetDatabaseUrls(): void {
+  delete process.env.WIREBENCH_SERVER_DATABASE_URL;
+  delete process.env.WIREBENCH_SERVER_MIGRATION_DATABASE_URL;
+}
+
+/** The URL migrations run as: the owner's when it is set, else the one database URL. */
+export function migrationUrlOf(config: Pick<ServerConfig, 'databaseUrl' | 'migrationDatabaseUrl'>): string {
+  return config.migrationDatabaseUrl ?? config.databaseUrl;
 }
 
 export type ConfigStatus = 'set' | 'defaulted' | 'missing' | 'invalid';

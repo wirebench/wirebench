@@ -41,6 +41,7 @@ describeDb('0003_teams (§4.1)', () => {
   it('refuses to run over a workspaces table that already has rows', async () => {
     const all = await allMigrations(BUILTIN_MODULES);
     await migrate(db.owner, all.slice(0, 2));
+    await db.grant();
     await db.query("insert into workspaces (id, name) values ('01J8ZC5Q0V7R3T9XK2M4N6P8QA', 'early')");
     await expect(migrate(db.owner, all)).rejects.toThrow(/0003_teams needs an empty workspaces table/);
   });

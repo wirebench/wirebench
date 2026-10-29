@@ -8,10 +8,18 @@ import { access, constants } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { GitCli, WirebenchError, findGit } from '@wirebench/engine';
-import { ConfigError, loadConfig, type ServerConfig } from './config.js';
-import { MetaRegistry, permissiveLicense, serverHooks, type ServerContext, type ServerModule } from './context.js';
+import { ConfigError, forgetDatabaseUrls, loadConfig, migrationUrlOf, type ServerConfig } from './config.js';
+import {
+  MetaRegistry,
+  permissiveLicense,
+  serverHooks,
+  type Database,
+  type ServerContext,
+  type ServerModule,
+} from './context.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migration } from './db/migrate.js';
 import { createDatabase } from './db/pool.js';
+import { ensureAppRole, roleNameOf } from './tenancy/roles.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { NO_HOOKS_DIR, RepoStore } from './repos/repo-store.js';
 import { buildServer } from './server.js';
@@ -49,14 +57,14 @@ export interface StartOptions {
 }
 
 /**
- * Loads the configuration, then deletes the database URL from `process.env`: `GitCli` always
+ * Loads the configuration, then deletes the database URLs from `process.env`: `GitCli` always
  * spreads `process.env` into git's environment (an `env` option can only add to it), so leaving
- * the variable there would hand the connection string to every git child process.
+ * the variables there would hand the connection strings to every git child process.
  */
 function configFrom(env: NodeJS.ProcessEnv, io: ServerIo): ServerConfig {
   try {
     const config = loadConfig(env, packageVersion());
-    delete process.env.WIREBENCH_SERVER_DATABASE_URL;
+    forgetDatabaseUrls();
     return config;
   } catch (error) {
     if (error instanceof ConfigError) {
@@ -73,6 +81,26 @@ async function locateGit(config: ServerConfig): Promise<GitCli> {
     throw new StartupError(ExitCode.Config, 'git was not found; install git or set WIREBENCH_SERVER_GIT_PATH');
   }
   return new GitCli(location, { hooksDir: join(config.dataDir, NO_HOOKS_DIR) });
+}
+
+/**
+ * Whether the configuration names an owner apart from the app role (spec §19.4). With one URL, or two that
+ * name the same role, the one role migrates and queries, exactly as before slice 4.
+ */
+function hasSeparateOwner(config: ServerConfig): config is ServerConfig & { migrationDatabaseUrl: string } {
+  if (config.migrationDatabaseUrl === undefined || config.migrationDatabaseUrl === config.databaseUrl) return false;
+  const owner = roleNameOf(config.migrationDatabaseUrl);
+  return owner === undefined || owner !== roleNameOf(config.databaseUrl);
+}
+
+/**
+ * As the owner: the pending migrations, then the app role and its grants (`ensureAppRole`), every time,
+ * so a table a migration just created is granted before the app role connects.
+ */
+async function migrateAndGrant(owner: Database, appUrl: string, migrations: readonly Migration[]): Promise<number[]> {
+  const { applied } = await migrate(owner, migrations);
+  await ensureAppRole(owner, appUrl);
+  return applied;
 }
 
 /** How a failed migration reads on stderr: a WirebenchError (e.g. `server-schema-too-new`) keeps its code. */
@@ -133,7 +161,7 @@ export async function runMigrate(
     }
     throw error;
   }
-  const db = createDatabase(config.databaseUrl);
+  const db = createDatabase(migrationUrlOf(config));
   try {
     const migrations = await allMigrations(modules);
     if (check) {
@@ -145,7 +173,9 @@ export async function runMigrate(
       );
       return pending.length === 0 ? ExitCode.Ok : ExitCode.Pending;
     }
-    const { applied } = await migrate(db, migrations);
+    const applied = hasSeparateOwner(config)
+      ? await migrateAndGrant(db, config.databaseUrl, migrations)
+      : (await migrate(db, migrations)).applied;
     io.stdout.write(
       applied.length === 0 ? 'migrations: nothing to apply\n' : `migrations: applied ${applied.join(', ')}\n`,
     );
@@ -167,9 +197,21 @@ export async function startServer(
   const exit = options.exit ?? ((code: number) => process.exit(code));
   const config = configFrom(env, io);
   const git = await locateGit(config);
+  // With an owner of its own (spec §19.4), the server migrates and grants as the owner, then connects as
+  // the app role; with one URL it does both as that role, as it always has.
   const db = createDatabase(config.databaseUrl);
   try {
-    await migrate(db, await allMigrations(modules));
+    const migrations = await allMigrations(modules);
+    if (hasSeparateOwner(config)) {
+      const owner = createDatabase(config.migrationDatabaseUrl);
+      try {
+        await migrateAndGrant(owner, config.databaseUrl, migrations);
+      } finally {
+        await owner.close();
+      }
+    } else {
+      await migrate(db, migrations);
+    }
   } catch (error) {
     await db.close();
     if (error instanceof StartupError) throw error;

@@ -5,7 +5,7 @@ import { migrate, type Migration } from '../../src/db/migrate.js';
 import { createDatabase } from '../../src/db/pool.js';
 import { BUILTIN_MODULES } from '../../src/modules.js';
 import { allMigrations } from '../../src/serve.js';
-import { appRoleGrants } from '../../src/tenancy/grants.js';
+import { ensureAppRole } from '../../src/tenancy/roles.js';
 
 /** The admin URL: a superuser, used only to create and drop each file's schema. */
 export const TEST_DATABASE_URL = process.env.WIREBENCH_SERVER_TEST_DATABASE_URL;
@@ -69,11 +69,10 @@ function withSchema(base: string, schema: string): string {
 /**
  * A fresh schema per test file so files run in parallel; dropped on close. The admin creates it,
  * `authorization wirebench_owner`; the owner migrates it with every built-in module's migrations and
- * grants the app role its privileges (`appRoleGrants`, the list `ensureAppRole` applies in production).
- * The returned database queries as the app role.
+ * runs `ensureAppRole`, as `serve` does with two URLs. The returned database queries as the app role.
  *
- * With `{ migrated: false }` the schema is left empty, for a suite that migrates it itself: through
- * `migrate` (as the owner, then the grants), or through the server at `ownerUrl`.
+ * With `{ migrated: false }` the schema is left empty and nothing is granted, for a suite that migrates
+ * it itself: through `migrate` (as the owner, then the grants), or through the server at `ownerUrl`.
  */
 export async function testDatabase(options: { readonly migrated?: boolean } = {}): Promise<TestDatabase> {
   const schema = `t_${randomBytes(6).toString('hex')}`;
@@ -85,9 +84,7 @@ export async function testDatabase(options: { readonly migrated?: boolean } = {}
   const owner = createDatabase(ownerUrl);
   const db = createDatabase(url);
   const grant = async (): Promise<void> => {
-    for (const statement of appRoleGrants({ schema, owner: OWNER_ROLE, app: APP_ROLE })) {
-      await owner.query(statement);
-    }
+    await ensureAppRole(owner, url);
   };
   const close = async (): Promise<void> => {
     await db.close();
@@ -97,7 +94,6 @@ export async function testDatabase(options: { readonly migrated?: boolean } = {}
     await cleanup.close();
   };
   try {
-    await grant();
     if (options.migrated !== false) {
       await migrate(owner, await allMigrations(BUILTIN_MODULES));
       await grant();
