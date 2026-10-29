@@ -1011,15 +1011,26 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
   The desktop leaves it out, and the renderer shows a chip only when it is present. The send button shows *Server* or
   *Agent* for the route the next send takes, and the pin.
 
-### 18.5 Team secrets on the agent
+### 18.5 Secrets on the agent
 
-- **Desktop agent.** It resolves a team secret from the values its own approved machine has already imported for
-  that workspace, by workspace id and name, exactly as a desktop send does. The bundle's `team-secrets/` subtree is
-  then used only to check that the value is current (my call: one trust pipeline, the desktop's). If the agent's
-  machine is not approved for that workspace, the send fails with `team-secret-needs-approval`.
-- **Headless agent.** It has no team secrets in slice 3 (my call): it has no approved machine key, and no UI to
-  request one. A team-secret send routed to a headless agent fails with `team-secret-needs-approval`, which says to
-  use the desktop app.
+- **What a bundle send may read.** A bundle send never reads the desktop's own project secrets, and never a
+  desktop window's team secrets or secret sources (my call, on review: the bundle names the project, so a server
+  that could pick a project id could otherwise have that project's stored secrets sent to a URL it chose). It
+  resolves a `${secret:…}` only when the bundle declares that name, and then only from the agent's own namespace,
+  `agent:<pairing origin>:<workspace id>:<name>` in the host's secret store, or from team secrets below. Everything
+  else answers `secret-missing`. Nothing fills the agent namespace in slice 3; a later screen may.
+- **Team secrets on a desktop agent.** It resolves a team secret from the values its own approved machine has
+  already imported for that workspace, by the bundle's workspace id and the name, exactly as a desktop send does.
+  The bundle's `team-secrets/` subtree is used only to check that the value is current (my call: one trust pipeline,
+  the desktop's). If the machine is not approved for that workspace, the send fails with
+  `team-secret-needs-approval`.
+- **Headless agent.** It has no team secrets in slice 3: it has no approved machine key and no UI to request one. A
+  team-secret send routed to it fails with `team-secret-needs-approval`, saying to use the desktop app.
+- **Secret sources** on the agent wait for #792. A source runs a command on the person's machine, so a mapping that
+  arrives in a bundle must not run until this machine approves it (ADR-0020). Until then a source-backed name
+  answers `secret-missing` on the agent.
+- **Per-origin state.** Cookie jars, OAuth2 tokens and issued tokens are kept per pairing origin, in memory, and
+  never shared with a desktop window.
 
 ### 18.6 `wirebench agent` (headless)
 
