@@ -102,6 +102,8 @@ export const REFUSED_GROUPS: ReadonlySet<string> = new Set([
   'appLock',
   // The local agent's own channels (§18.1): a paired agent on the person's machine serves them.
   'agent',
+  // The desktop app's control of its own agent (pairing, the allowlist): served by its main process only.
+  'machineAgent',
 ]);
 
 /** Channels of a served group the server host refuses anyway, each with its reason. */

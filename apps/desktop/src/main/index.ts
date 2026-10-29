@@ -14,13 +14,14 @@ import {
   setUpKerberos,
 } from '@wirebench/host/desktop';
 import { setDeviceKeySigner } from '@wirebench/ssh';
-import { app, BrowserWindow, protocol } from 'electron';
+import { app, BrowserWindow, net, protocol } from 'electron';
 import { registerAppProtocol } from './electron/app-protocol-handler.js';
 import { createElectronAppMenu } from './electron/app-menu.js';
 import { callerForWebContents, createElectronPlatform } from './electron/electron-platform.js';
 import { bindIpc } from './electron/ipc-binding.js';
 import { createUpdateController } from './electron/update-service.js';
 import { createMainWindow } from './electron/windows.js';
+import { MachineAgent } from './machine-agent.js';
 import { portableDataDir } from './portable.js';
 
 // Must run before `app.ready` — Electron only honours scheme privileges registered this
@@ -73,6 +74,8 @@ app.setAboutPanelOptions({ applicationName: 'Wirebench', applicationVersion: pla
 
 /** The one host, built once the app is ready; the quit path asks it to shut down. */
 let host: Host | undefined;
+/** This machine's local agent for paired browser tabs; it listens only while there is a pairing. */
+let machineAgent: MachineAgent | undefined;
 /** Every open window by its caller's id, for what the host asks of a window (title, focus). */
 const windows = new Map<number, BrowserWindow>();
 
@@ -119,9 +122,23 @@ void app.whenReady().then(async () => {
     deviceKeys: { keys: deviceKeys, appLockSupported: deviceHelper.file !== undefined },
   });
   host = started;
+  const agent = await MachineAgent.open({
+    host: started,
+    platform,
+    // Electron's own fetch: the pairing calls go through the system proxy, as the app's other calls do.
+    fetch: (url, init) => net.fetch(url, init),
+    log: (message, error) => {
+      console.warn(`[agent] ${message}`, error instanceof Error ? error.message : '');
+    },
+  });
+  machineAgent = agent;
+  // The desktop's own control of its agent; never part of `agent.*`, which is a browser tab's.
+  agent.register(started.handlers);
   // Every channel's handler is in the host's table; served over `ipcMain` once all are in.
   bindIpc(started.handlers);
   openWindow(started, { reopenLast: true });
+  // Only with a pairing: without one no port is opened.
+  void agent.sync().catch(() => undefined);
 
   // The first window after every one closed (macOS) picks up where the last left off, as at launch.
   app.on('activate', () => {
@@ -171,10 +188,12 @@ app.on('before-quit', (event) => {
   }
   event.preventDefault();
   quitting = true;
-  void (host?.shutdown() ?? Promise.resolve()).finally(() => {
-    quitStashDone = true;
-    app.quit();
-  });
+  void (machineAgent?.close() ?? Promise.resolve())
+    .then(() => host?.shutdown())
+    .finally(() => {
+      quitStashDone = true;
+      app.quit();
+    });
 });
 
 app.on('window-all-closed', () => {

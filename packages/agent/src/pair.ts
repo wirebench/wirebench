@@ -1,8 +1,14 @@
 /**
  * The agent's calls to a Wirebench Server's pairing routes (hosted edition spec §18.2): trading a code
- * for a pairing, unpairing, telling the server a new port, and redeeming a tab's nonce. Every call after
+ * for a pairing, unpairing, telling the server its port, and redeeming a tab's nonce. Every call after
  * the pairing itself is signed with the agent's key. `fetch` is injected, so the embedder decides how the
  * agent reaches the server (and a test can stand one up on loopback).
+ *
+ * A signed call the server answers with its definitive "no such pairing" (`404 agent-pairing-unknown`:
+ * unpaired from the browser's side) removes the pairing here too, so the agent stops letting anyone in for
+ * it, and an embedder that listens only while paired stops listening with the last one. Anything else (no
+ * answer, a `5xx`, a refused signature, a bare `404` from a proxy) keeps it: only the server's own answer
+ * says the pairing is gone. A forged answer of that kind costs a pairing, as `unpair --local` does.
  */
 import {
   AGENT_EMPTY_BODY_SHA256,
@@ -25,7 +31,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
 /** Why a call to the server did not do what it was for; the message is safe to show. */
 export class AgentServerError extends Error {
   constructor(
-    readonly code: 'unreachable' | 'refused' | 'rate-limited' | 'bad-answer',
+    readonly code: 'unreachable' | 'refused' | 'rate-limited' | 'bad-answer' | 'unpaired',
     message: string,
     /** The HTTP status, when the server answered. */
     readonly status?: number,
@@ -91,6 +97,34 @@ function refusal(response: Response, what: string): AgentServerError {
     : new AgentServerError('refused', `The server refused ${what} (HTTP ${String(response.status)})`, response.status);
 }
 
+/** The server's code for a pairing it does not hold (`packages/server/src/agent/errors.ts`). */
+export const PAIRING_UNKNOWN_CODE = 'agent-pairing-unknown';
+
+/** Whether `response` is the server's own "no such pairing": `404` with {@link PAIRING_UNKNOWN_CODE}. */
+async function saysPairingUnknown(response: Response): Promise<boolean> {
+  if (response.status !== 404) return false;
+  try {
+    const body: unknown = await response.clone().json();
+    return typeof body === 'object' && body !== null && (body as { code?: unknown }).code === PAIRING_UNKNOWN_CODE;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Removes `pairing` here when the server answered that it no longer holds it, and throws what to say;
+ * returns quietly for any other answer.
+ */
+async function forgetIfUnpaired(response: Response, pairing: Pairing, store: PairingStore): Promise<void> {
+  if (!(await saysPairingUnknown(response))) return;
+  await store.remove(pairing.pairingId);
+  throw new AgentServerError(
+    'unpaired',
+    `${pairing.origin} no longer holds this machine's pairing (it was unpaired there), so it was removed here`,
+    404,
+  );
+}
+
 async function jsonOf(response: Response): Promise<unknown> {
   try {
     return await response.json();
@@ -114,6 +148,10 @@ export interface PairOptions {
   /** As the user typed it. */
   readonly code: string;
   readonly serverUrl: string;
+  /**
+   * Kept on the wire for the version that serves SSH; both agents send `false` in slice 3, and that version
+   * asks again rather than trust it (spec §18.1).
+   */
   readonly sshOptIn: boolean;
   readonly store: PairingStore;
   readonly fetch: AgentFetch;
@@ -205,7 +243,10 @@ export async function unpair(options: UnpairOptions): Promise<void> {
   await options.store.remove(pairing.pairingId);
 }
 
-/** Tells the pairing's server the agent listens on `port` now, signed, and records it. */
+/**
+ * Tells the pairing's server the agent listens on `port`, signed, and records it. `startAgent` does this for
+ * every pairing at each start, which is also when it learns of a pairing unpaired from the browser's side.
+ */
 export async function reportPort(
   pairing: Pairing,
   port: number,
@@ -225,13 +266,15 @@ export async function reportPort(
     },
     body,
   });
+  await forgetIfUnpaired(response, pairing, store);
   if (!response.ok) throw refusal(response, 'the port change');
   await store.setPort(pairing.pairingId, port);
 }
 
 /**
  * Redeems a tab's `nonce` at the pairing's server, signed. The answer says whose tab it is; a refusal
- * (replayed, expired, unknown) throws. The nonce is sent once and kept nowhere.
+ * (replayed, expired) throws, and a pairing the server no longer holds is removed here as well. The nonce
+ * is sent once and kept nowhere.
  */
 export async function redeemNonce(
   pairing: Pairing,
@@ -257,6 +300,7 @@ export async function redeemNonce(
     },
     signal,
   );
+  await forgetIfUnpaired(response, pairing, store);
   if (!response.ok) throw refusal(response, 'the tab');
   const answer = agentRedeemResponseSchema.safeParse(await jsonOf(response));
   if (!answer.success)

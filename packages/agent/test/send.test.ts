@@ -18,6 +18,9 @@ import {
   createRequest,
   createRestRequest,
   entry,
+  teamSecretsFileText,
+  vaultEntryId,
+  vaultEntryPath,
   type OAuth2Auth,
   type Project,
   type RestFolder,
@@ -28,6 +31,7 @@ import {
   createHost,
   createSendSession,
   serveCall,
+  type Caller,
   type Host,
   type HostPlatform,
 } from '@wirebench/host';
@@ -63,7 +67,7 @@ const PROXY_PASSWORD = 'proxy-pass-0123456789';
 let platform: HostPlatform;
 let host: Host;
 let echo: EchoServer;
-let handlers: Map<string, AgentHandler>;
+let handlers: ReadonlyMap<string, AgentHandler>;
 /** This machine's `${#System#…}` allowlist, as the pairing store would hold it. */
 let allowed: string[];
 const store = { allowedSystemNames: (): readonly string[] => allowed };
@@ -117,13 +121,29 @@ function sendId(): string {
   return `send-${String(sends)}`;
 }
 
+/**
+ * A desktop window attached to seed the host. `leave` detaches it as a window that has closed: a live one's
+ * quit path waits up to 2 s for drafts that a quiet caller never hands over.
+ */
+function attachWindow(id: number): { readonly caller: Caller; readonly leave: () => Promise<void> } {
+  let closed = false;
+  const caller: Caller = { ...quietCaller(id), isClosed: () => closed };
+  host.attach(caller);
+  return {
+    caller,
+    leave: async () => {
+      closed = true;
+      await host.detach(caller.id);
+    },
+  };
+}
+
 /** Stores `value` under `label` in the agent machine's secret store, as the Secrets page does. */
 async function storeLabelled(label: string, value: string): Promise<void> {
-  const caller = quietCaller(7);
-  host.attach(caller);
+  const { caller, leave } = attachWindow(7);
   const reply = await serveCall(host, caller, { id: 1, channel: 'secrets.set', request: { value, label } });
   expect(reply).toMatchObject({ ok: true });
-  await host.detach(caller.id);
+  await leave();
 }
 
 /** Stores `value` as the agent's own secret `name` for `origin`'s pairing (or that pairing) and workspace `ws-1`. */
@@ -275,14 +295,13 @@ describe('agent.send', () => {
 
   it("resolves ${#Workspace#…}, ${#Global#…} and the shorthand from the bundle's scopes, never this machine's globals", async () => {
     // This machine's own global of the same name: a bundle send must not read it.
-    const caller = quietCaller(8);
-    host.attach(caller);
+    const { caller, leave } = attachWindow(8);
     expect(
       await serveCall(host, caller, { id: 1, channel: 'globals.set', request: { name: 'y', value: 'desktop' } }),
     ).toMatchObject({
       ok: true,
     });
-    await host.detach(caller.id);
+    await leave();
     const request = createRestRequest('Echo', {
       id: 'req-1',
       url: '/echo',
@@ -331,10 +350,9 @@ describe('agent.send', () => {
   });
 
   it('reads no global of this machine for a bundle without scopes', async () => {
-    const caller = quietCaller(9);
-    host.attach(caller);
+    const { caller, leave } = attachWindow(9);
     await serveCall(host, caller, { id: 1, channel: 'globals.set', request: { name: 'y', value: 'desktop' } });
-    await host.detach(caller.id);
+    await leave();
     const bundle = await restBundle({ headers: [entry('x-gl', '[${#Global#y}]')] });
     expect((await failure({ sendId: sendId(), bundle })).code).toBe('rest-unresolved-properties');
     expect(echo.received).toEqual([]);
@@ -436,6 +454,88 @@ describe('agent.send', () => {
     expect(await sendsLeft()).toEqual([]);
   });
 
+  it('answers team-secret-needs-approval, with the desktop hint, for a team-secret bundle on a headless agent', async () => {
+    const bundle = await restBundle();
+    const refused = await failure({ sendId: sendId(), bundle: { ...bundle, teamSecrets: [] } });
+    expect(refused.code).toBe('team-secret-needs-approval');
+    expect(refused.message).toContain('desktop app');
+    expect(echo.received).toEqual([]);
+    expect(await sendsLeft()).toEqual([]);
+  });
+
+  it('refuses a team-secret bundle plainly where the platform has no team-secrets hook, though asked to resolve them', async () => {
+    // One flag for the hello and the send: without the capability, neither claims team secrets.
+    const handlers = agentSendHandlers({ platform, store, env: ENV, teamSecrets: true });
+    expect(platform.capabilities.has('team-secrets')).toBe(false);
+    expect(handlers.resolvesTeamSecrets).toBe(false);
+    const bundle = await restBundle();
+    const refused = await handlers.get('agent.send')!(
+      { sendId: sendId(), bundle: { ...bundle, teamSecrets: [] } },
+      { caller: quietCaller(1_000_000), pairing: pairingOf(TEAM), host },
+    ).catch((error: unknown) => error as { code: string });
+    expect(refused).toMatchObject({ code: 'team-secret-needs-approval' });
+    expect(echo.received).toEqual([]);
+  });
+
+  describe('on a desktop-shaped host with team secrets', () => {
+    let desktopHost: Host;
+    let desktopHandlers: ReturnType<typeof agentSendHandlers>;
+    beforeEach(async () => {
+      const desktop: HostPlatform = { ...platform, capabilities: new Set([...platform.capabilities, 'team-secrets']) };
+      desktopHost = await createHost(desktop);
+      onCleanUp(() => desktopHost.shutdown());
+      desktopHandlers = agentSendHandlers({ platform: desktop, store, env: ENV, teamSecrets: true });
+      expect(desktopHandlers.resolvesTeamSecrets).toBe(true);
+    });
+
+    async function desktopFailure(extra: Partial<SendBundle>): Promise<{ code: string; message: string }> {
+      const bundle = await restBundle({ headers: [entry('Authorization', 'Bearer ${secret:api_token}')] });
+      try {
+        await desktopHandlers.get('agent.send')!(
+          { sendId: sendId(), bundle: { ...bundle, secretNames: ['api_token'], ...extra } },
+          { caller: quietCaller(1_000_000), pairing: pairingOf(TEAM), host: desktopHost },
+        );
+      } catch (error) {
+        return error as { code: string; message: string };
+      }
+      throw new Error('the send did not fail');
+    }
+
+    /** The server vault's entry for project p1's `api_token`, as a bundle's subtree carries it. */
+    function vaultFile(): { path: string; encoding: 'utf8'; content: string } {
+      const secret = { token: { projectId: 'p1', name: 'api_token' } };
+      const id = vaultEntryId(secret);
+      const content = teamSecretsFileText({
+        version: 1,
+        secret,
+        label: 'api_token',
+        cipher: 'AA',
+        wraps: {},
+        updatedAt: '2026-10-29T10:00:00.000Z',
+        updatedBy: 'A'.repeat(26),
+        signature: 'A'.repeat(86),
+      });
+      return { path: vaultEntryPath(id).replace(/^team-secrets\//, ''), encoding: 'utf8', content };
+    }
+
+    it('answers secret-missing for a plain ${secret:…} with no team-secrets subtree, as the headless agent does', async () => {
+      expect((await desktopFailure({})).code).toBe('secret-missing');
+      expect(echo.received).toEqual([]);
+    });
+
+    it('answers secret-missing when the subtree does not hold the name', async () => {
+      expect((await desktopFailure({ teamSecrets: [] })).code).toBe('secret-missing');
+    });
+
+    it('asks the hook with the bundle’s project, and answers what it says, when the vault holds the name', async () => {
+      // No server workspace of this origin on this machine: the hook says to open it, and nothing is sent.
+      const refused = await desktopFailure({ teamSecrets: [vaultFile()] });
+      expect(refused.code).toBe('team-secret-needs-approval');
+      expect(refused.message).toContain(`Open the workspace from ${TEAM}`);
+      expect(echo.received).toEqual([]);
+    });
+  });
+
   it.each(['grpc', 'mcp', 'websocket'])('answers agent-kind-unsupported for a %s bundle', async (kind) => {
     const bundle = await restBundle();
     expect((await failure({ sendId: sendId(), bundle: { ...bundle, kind } })).code).toBe('agent-kind-unsupported');
@@ -477,9 +577,8 @@ describe('agent.send', () => {
 describe("the agent's secrets", () => {
   it("never reads the desktop's own secrets or secret sources for the project a bundle names", async () => {
     // A desktop window has a workspace open, with a project, a stored project secret and a secret source.
-    const caller = quietCaller(9);
-    host.attach(caller);
-    onCleanUp(() => host.detach(caller.id));
+    const { caller, leave } = attachWindow(9);
+    onCleanUp(leave);
     const invoke = async (channel: string, request: unknown): Promise<unknown> => {
       const reply = await serveCall(host, caller, { id: 1, channel, request });
       expect(reply, channel).toMatchObject({ ok: true });
@@ -661,9 +760,8 @@ describe('the sends folder', () => {
 describe('the machine proxy', () => {
   it("carries this machine's proxy password for an agent send, which a bundle ref cannot read", async () => {
     const proxy = await startProxy();
-    const caller = quietCaller(11);
-    host.attach(caller);
-    onCleanUp(() => host.detach(caller.id));
+    const { caller, leave } = attachWindow(11);
+    onCleanUp(leave);
     const stored = (await serveCall(host, caller, {
       id: 1,
       channel: 'secrets.set',
@@ -719,19 +817,35 @@ describe('createSendSession', () => {
 describe('agent.send concurrency', () => {
   it(`runs at most ${String(AGENT_MAX_SENDS_PER_ORIGIN)} sends per origin`, async () => {
     const bundle = await restBundle({ url: '/hold' });
-    const held = (count: number) => async (): Promise<void> => {
-      while (echo.received.filter((one) => one.url.startsWith('/hold')).length < count) {
+    /** How each send ended, by id, or `running`: what a wait that gives up reports. */
+    const outcomes = new Map<string, string>();
+    const track = (id: string, origin: string = TEAM): Promise<{ code: string; message: string }> => {
+      outcomes.set(id, 'running');
+      const ended = failure({ sendId: id, bundle }, origin);
+      void ended.then((error) => outcomes.set(id, `${error.code}: ${error.message}`));
+      return ended;
+    };
+    const holds = (): number => echo.received.filter((one) => one.url.startsWith('/hold')).length;
+    // Gives up well inside the test's timeout, saying how far the sends got.
+    const held = async (count: number): Promise<void> => {
+      const deadline = Date.now() + 10_000;
+      while (holds() < count) {
+        if (Date.now() > deadline) {
+          throw new Error(
+            `${String(holds())} of ${String(count)} sends reached /hold; the sends: ${JSON.stringify(Object.fromEntries(outcomes))}`,
+          );
+        }
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
     };
     const ids = Array.from({ length: AGENT_MAX_SENDS_PER_ORIGIN }, () => sendId());
-    const running = ids.map((id) => failure({ sendId: id, bundle }));
-    await held(AGENT_MAX_SENDS_PER_ORIGIN)();
+    const running = ids.map((id) => track(id));
+    await held(AGENT_MAX_SENDS_PER_ORIGIN);
     expect((await failure({ sendId: sendId(), bundle })).code).toBe('agent-busy');
     // Another origin has its own allowance.
     const other = sendId();
-    const otherRunning = failure({ sendId: other, bundle }, OTHER);
-    await held(AGENT_MAX_SENDS_PER_ORIGIN + 1)();
+    const otherRunning = track(other, OTHER);
+    await held(AGENT_MAX_SENDS_PER_ORIGIN + 1);
     for (const id of ids) await call('agent.cancel', { sendId: id });
     await call('agent.cancel', { sendId: other }, OTHER);
     for (const result of [...running, otherRunning]) expect((await result).code).toBe('aborted');

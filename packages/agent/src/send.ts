@@ -37,7 +37,7 @@ import {
 import type { FailedExchangeWire } from '@wirebench/wire/wire-base';
 import type { z } from 'zod';
 import type { PairingStore } from './pairings.js';
-import type { AgentCallContext, AgentHandler } from './server.js';
+import type { AgentCallContext, AgentHandler, AgentHandlers } from './server.js';
 
 /** The folder under the platform's temp directory each send's own directory is made in. */
 export const AGENT_SENDS_DIR = 'agent-sends';
@@ -59,14 +59,26 @@ export const AGENT_YOUNG_INSTANCE_MS = 60 * 1000;
 
 export interface AgentSendOptions {
   /** `network` gives the egress rule every agent send, its token requests included, is held to. */
-  readonly platform: Pick<HostPlatform, 'paths' | 'network'>;
+  readonly platform: Pick<HostPlatform, 'paths' | 'network' | 'capabilities'>;
   /** Where this machine's `${#System#…}` allowlist is read, at each send (it may change while the agent runs). */
   readonly store: Pick<PairingStore, 'allowedSystemNames'>;
   /** The environment an allowed name is read from; `process.env` when absent. */
   readonly env?: NodeJS.ProcessEnv;
   /** Where a failure of the agent's own housekeeping goes; never handed a bundle or a value. */
   readonly log?: (message: string, error?: unknown) => void;
+  /**
+   * Whether this embedder can resolve team secrets (the desktop's agent, §18.5: its host has the
+   * team-secrets hook, and the bundle's subtree is handed to it); it counts only when the platform has the
+   * `team-secrets` capability, and the handlers say so (`resolvesTeamSecrets`). Otherwise a bundle that reads
+   * one (it carries the workspace's `team-secrets/` subtree) answers `team-secret-needs-approval` before
+   * anything is written: the headless agent has no approved machine key, and no screen to ask for one on.
+   */
+  readonly teamSecrets?: boolean;
 }
+
+/** What the headless agent answers a send that reads a team secret. */
+export const HEADLESS_TEAM_SECRET_MESSAGE =
+  'This request reads a team secret, which the command-line agent cannot hold. Pair the Wirebench desktop app with this server instead (Pair this machine…), and send through it.';
 
 /** What a bundle the agent will not run is answered with: the paths and messages of its faults. */
 function invalid(message: string, details?: Record<string, unknown>): WirebenchError {
@@ -213,6 +225,11 @@ export async function writeBundle(dir: string, files: readonly SendBundleFile[],
   }
 }
 
+/** The bundle's `team-secrets/` subtree as text, by path inside it. */
+function teamSecretTexts(files: readonly SendBundleFile[]): Map<string, string> {
+  return new Map(files.map((file) => [file.path, Buffer.from(file.content, file.encoding).toString('utf8')]));
+}
+
 /** A jar as the engine reads and stores into it, on the clock of the moment. */
 function jarHost(jar: CookieJar): CookieJarHost {
   return {
@@ -260,8 +277,13 @@ function withFailure(error: unknown, failure: FailedExchangeWire): WirebenchErro
  * the tab that called: a tab cancels only its pairing's sends and clears only its pairing's jar, even beside
  * another pairing of the same origin (two accounts on one server).
  */
-export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentHandler> {
+export function agentSendHandlers(
+  options: AgentSendOptions,
+): AgentHandlers & { readonly resolvesTeamSecrets: boolean } {
   const { platform } = options;
+  // The embedder's word and the platform's hook together: a host without the team-secrets capability has
+  // no hook, so a team-secret bundle there is refused plainly instead of answering `secret-missing`.
+  const resolvesTeamSecrets = options.teamSecrets === true && platform.capabilities.has('team-secrets');
   const log = options.log ?? (() => undefined);
   const env = options.env ?? process.env;
   /** This agent process's own folder under the sends folder: no other process's send id can collide. */
@@ -278,16 +300,30 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
    * This process's folder, made again when missing (another agent's sweep may have judged it stale). Its
    * `pid` file is written under a temporary name and renamed in, so a sweep never reads half of one, and the
    * folder's mtime is set to now (rewriting a file in it would not move it), so a sweep sees it in use.
+   *
+   * Sends starting together take turns here, and the `pid` file is written only when it does not already
+   * name this process. On Windows a rename onto a file that another rename is replacing fails with `EPERM`,
+   * so concurrent sends each renaming a `pid` file in would fail all but one of them.
    */
-  const instanceFolder = async (): Promise<string> => {
+  let preparing: Promise<unknown> = Promise.resolve();
+  const prepareInstanceFolder = async (): Promise<string> => {
     const folder = join(await sendsRoot(platform), instance);
     await mkdir(folder, { recursive: true, mode: 0o700 });
-    const temporary = join(folder, `${PID_FILE}.${randomUUID()}.tmp`);
-    await writeFile(temporary, String(process.pid), { mode: 0o600 });
-    await rename(temporary, join(folder, PID_FILE));
+    const pidFile = join(folder, PID_FILE);
+    const current = await readFile(pidFile, 'utf8').catch(() => undefined);
+    if (current !== String(process.pid)) {
+      const temporary = join(folder, `${PID_FILE}.${randomUUID()}.tmp`);
+      await writeFile(temporary, String(process.pid), { mode: 0o600 });
+      await rename(temporary, pidFile);
+    }
     const now = new Date();
     await utimes(folder, now, now);
     return folder;
+  };
+  const instanceFolder = (): Promise<string> => {
+    const turn = preparing.then(prepareInstanceFolder);
+    preparing = turn.catch(() => undefined);
+    return turn;
   };
 
   const key = (pairingId: string, sendId: string): string => `${pairingId}\n${sendId}`;
@@ -320,6 +356,11 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
     }
     const { sendId, bundle } = parsed.data;
     const { origin, pairingId } = pairing;
+    if (bundle.teamSecrets !== undefined && !resolvesTeamSecrets) {
+      throw new WirebenchError('team-secret-needs-approval', HEADLESS_TEAM_SECRET_MESSAGE, {
+        details: { workspaceId: bundle.workspaceId },
+      });
+    }
     if (running.has(key(pairingId, sendId))) {
       throw new WirebenchError('agent-send-exists', 'A send with that id is already running', { details: { sendId } });
     }
@@ -359,6 +400,8 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
         origin,
         workspaceId: bundle.workspaceId,
         secretNames: bundle.secretNames,
+        // Read by the desktop's team-secrets hook only to tell whether this machine's copy is current.
+        ...(bundle.teamSecrets !== undefined ? { teamSecrets: teamSecretTexts(bundle.teamSecrets) } : {}),
         // The server's workspace and global values, as the bundle carries them; never this machine's globals.
         scopes: { workspace: bundle.scopes?.workspace ?? {}, global: bundle.scopes?.global ?? {} },
         systemValues: systemValuesFor(bundle.systemNames, options.store.allowedSystemNames(), env),
@@ -410,10 +453,11 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
     return Promise.resolve({ domains });
   };
 
-  return new Map<string, AgentHandler>([
+  const handlers = new Map<string, AgentHandler>([
     ['agent.send', send],
     ['agent.cancel', cancel],
     ['agent.cookies.clear', clearCookies],
     ['agent.cookies.domains', cookieDomains],
   ]);
+  return Object.assign(handlers, { resolvesTeamSecrets });
 }

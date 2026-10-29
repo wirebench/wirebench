@@ -277,29 +277,21 @@ server-side send path until an operator asks for them.
   SFTP and port forwards, files and folders picked from a dialog (imports from a file, exports to one,
   attachments, keystores), mock services, Kerberos, secret sources, the OS keychain, team-secret machine
   keys, MCP servers that run as local processes, plugins and more than one window. The app hides these
-  rather than failing on them. A team workspace is not created from the browser yet (#786): create it once
-  from the desktop app, and the browser opens it.
+  rather than failing on them. A request that needs the user's machine (`localhost`, a host only their
+  network knows, a team secret) is sent from it by a paired [local agent](#local-agent). A team workspace
+  is not created from the browser yet (#786): create it once from the desktop app, and the browser opens
+  it.
 - **Secrets.** A value a user stores in the tab is sealed with AES-256-GCM under a key derived for that user
   from `WIREBENCH_SERVER_SECRETS_KEY`, and kept in the user's directory. It is never shown again, not even
   to its owner, and never leaves the server in a socket frame. Every write and every use in a send is
   audited by name (`secret.written`, `secret.resolved` with the target host), never by value. A new key
   cannot open what the old one sealed.
-- **Pairing a local agent.** The agent routes (`/api/v1/agent/…`) exist only when
-  `WIREBENCH_SERVER_BROWSER_CLIENT` is on. A tab asks for a six-character code
-  (`POST /api/v1/agent/pairing-codes`, ten minutes, one live code per user); the agent on the user's machine
-  trades it for a pairing that holds its Ed25519 public key (`POST /api/v1/agent/pairings`, 20 attempts per
-  address in ten minutes; after 50 failed attempts server-wide in ten minutes, pairing answers `429` for
-  everyone until the window refills). Before serving a tab, the agent redeems a single-use nonce the server
-  gave that tab, signed with its key (300 redeems a minute per address, then 30 a minute per pairing once
-  the signature holds); an agent-signed unpair or port change is limited to 60 a minute per address. These
-  limits count by client address, so behind a reverse proxy set `WIREBENCH_SERVER_TRUST_PROXY`, or every
-  request counts as the proxy's one address. Codes are stored as an HMAC under a key derived from
-  `WIREBENCH_SERVER_SECRETS_KEY`, nonces as a hash. `agent.paired`, `agent.unpaired`, `agent.port_changed`,
-  `agent.nonce_redeemed`, `agent.nonce_refused` and `agent.request_refused` (with the reason) are audited.
 - **Egress.** Every connection a tab's host opens — sends, redirects, the proxy hop, OAuth token calls, URL
   imports, definition fetches — is checked at connect time, the same rule as scheduled runs: loopback,
   link-local, unspecified, cloud-metadata, multicast and broadcast addresses are always refused with
-  `egress-refused`; private ranges only with `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true`.
+  `egress-refused`; private ranges only with `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true`. A tab asks
+  where a send goes before it sends, so a request to an address the rule refuses goes to the paired agent
+  instead (or fails with `send-needs-agent`); the rule stays the server's own backstop.
 - **Memory and disk.** A user's host starts with their first tab and stops
   `WIREBENCH_SERVER_HOST_IDLE_MINUTES` (default 30) after their last tab closes; the working copies and
   state under `<data dir>/checkouts/<user id>/` stay. One user holds at most 8 tab sockets (the ninth closes
@@ -311,6 +303,75 @@ server-side send path until an operator asks for them.
   browser build, then the copy: `pnpm --filter @wirebench/server... build`,
   `pnpm --filter @wirebench/desktop build:browser`, `pnpm --filter @wirebench/server copy-browser`. With the
   switch on and no build copied, the server refuses to start.
+
+## Local agent
+
+A browser tab cannot reach the user's `localhost`, a host only their network knows, or a team secret: the
+server sends from its own network, and its `127.0.0.1` is its own. A **local agent** on the user's machine
+sends those requests instead. The desktop app is one (_Pair this machine…_ in its Tools menu, or Settings →
+Paired browsers); `wirebench agent` is the same agent without a window, for a machine with only the CLI
+([docs/cli.md](../../docs/cli.md#wirebench-agent)). The two are separate agents, each with its own pairings,
+key and allowlist; one agent per machine and server is the intended set-up. Both may be paired, and then a
+tab sends a request that reads a team secret through the desktop app's. The agent routes exist only when
+`WIREBENCH_SERVER_BROWSER_CLIENT` is on.
+
+- **Pairing.** In the tab, Settings → This machine → _Pair this machine_ shows a six-character code. Type it
+  into the desktop app's _Pair this machine…_, or run `wirebench agent pair <code> --server <public URL>`.
+  The agent pairs only with the origin it was given, and the server must answer with that origin as its
+  public URL; `http://` is accepted only for a server on the agent's own loopback. The tab then opens a
+  second socket, to `ws://127.0.0.1:47615` (or the next free port up to 47634), beside the server's.
+- **What a paired server may do.** A paired server can send requests from this machine on your behalf,
+  including to addresses on this machine's network. That is the whole grant: a tab reaches the agent's
+  `agent.*` channels only — a send bundle in, the send's result out, cancel, and clearing its cookie jar.
+  It opens no files, runs no shell, and has no SSH, SFTP or other channel of the desktop's (ADR-0035). SSH
+  is not served to a tab, and no SSH opt-in is recorded at pairing yet: the version that serves it asks then.
+- **The route.** Before each REST or SOAP send, the tab asks the server where it goes. A target that
+  resolves to loopback, link-local or a metadata address, a host the server cannot resolve, a private
+  address when `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE` is set, a `${#System#…}` reference, a secret source, a
+  team secret, a keystore on a machine path, Kerberos, NTLM with a machine credential, a cookie jar the
+  agent holds for the target's domain, or a pin to the agent sends from the agent; anything else from the
+  server. A send
+  that needs the agent with none connected fails with `send-needs-agent` and offers to pair one. History
+  stays one list, and its entries say _Server_ or _Agent_.
+- **What a bundle carries.** The request, its folder scripts, the non-secret values of the project and the
+  active environment, secret and `${#System#…}` names (never values), the project files it reads (32 MiB at
+  most) and, for a team secret, the workspace's `team-secrets/` subtree. The agent writes it to a temp
+  folder, sends, and deletes it.
+- **Environment variables.** A `${#System#NAME}` on the agent reads only names on that agent's own
+  allowlist, which is empty by default: `wirebench agent allow-env` for the headless agent, Settings →
+  Paired browsers for the desktop's. Each changes only its own agent's list. Every other name resolves to
+  nothing, and the send is refused as unresolved.
+- **Team secrets.** The desktop app only, on a machine approved for that workspace: it uses the values it
+  has already imported, and refuses a value the server's vault holds a newer version of
+  (`team-secret-stale`) until the workspace is synced there. The headless agent has no machine key and
+  answers `team-secret-needs-approval`.
+- **Browsers.** Chrome, Edge and Firefox are supported. The first time a page on the server reaches the
+  agent, the browser may ask whether the site may reach devices on the local network (local network
+  access); the user allows it, and This machine says so. **Safari** refuses a plain `ws://` loopback socket
+  from an `https://` page, so a Safari tab cannot reach the agent: Safari users pair the desktop app and
+  open the workspace there instead.
+- **The headless agent's key.** `wirebench agent` seals its private key and secrets under `agent.key` in
+  its folder (`~/.wirebench/agent`, mode `0700`; the key `0600`). The CLI has no OS keychain, so that file
+  mode is the only protection; on macOS and Linux the agent refuses to start when either is open to others.
+- **Unpairing.** From the agent's side (the desktop's Settings, or `wirebench agent unpair`), the agent
+  unpairs at the server and here. From the tab's This machine list, the server's row goes at once, so no
+  tab of this server gets in from then on; the agent removes its own copy the next time it calls the server
+  about that pairing (at its next start, when it tells each server its port, at the latest), and the
+  desktop app stops listening when that was its last pairing. Only the server's own `404
+agent-pairing-unknown` removes it: an unreachable server or any other answer leaves the pairing in place.
+- **Codes, nonces and limits.** A tab asks for a six-character code
+  (`POST /api/v1/agent/pairing-codes`, ten minutes, one live code per user); the agent on the user's machine
+  trades it for a pairing that holds its Ed25519 public key (`POST /api/v1/agent/pairings`, 20 attempts per
+  address in ten minutes; after 50 failed attempts server-wide in ten minutes, pairing answers `429` for
+  everyone until the window refills). Before serving a tab, the agent redeems a single-use nonce the server
+  gave that tab, signed with its key (300 redeems a minute per address, then 30 a minute per pairing once
+  the signature holds); an agent-signed unpair or port report (one per pairing at every agent start) is
+  limited to 60 a minute per address. A signed call for a pairing the server does not hold answers `404
+agent-pairing-unknown`. These
+  limits count by client address, so behind a reverse proxy set `WIREBENCH_SERVER_TRUST_PROXY`, or every
+  request counts as the proxy's one address. Codes are stored as an HMAC under a key derived from
+  `WIREBENCH_SERVER_SECRETS_KEY`, nonces as a hash. `agent.paired`, `agent.unpaired`, `agent.port_changed`,
+  `agent.nonce_redeemed`, `agent.nonce_refused` and `agent.request_refused` (with the reason) are audited.
 
 ## Webhook capture
 

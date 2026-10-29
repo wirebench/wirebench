@@ -203,6 +203,28 @@ function forbiddenLabel(entry: Pick<VaultEntryFile, 'label' | 'secret'>): boolea
 
 type MyState = TeamSecretsStatusWire['me']['state'];
 
+/** {@link TeamSecretsService.agentLookup}'s answer for one secret of a workspace. */
+export interface AgentTeamSecretLookup {
+  /** Team secrets are on in the workspace, and its access log is intact. */
+  readonly on: boolean;
+  /** A remembered access entry is missing or no longer checks out: the log may have been tampered with. */
+  readonly damaged: boolean;
+  readonly state: MyState;
+  /** This machine's name, as its key request gives it (the host name before it has one). */
+  readonly machine: string;
+  /** The tree holds a vault entry for the secret, trusted or not. */
+  readonly inVault: boolean;
+  /** That entry is one this machine trusts (signed by an approved key, not rolled back). */
+  readonly trusted: boolean;
+  /** The entry's `updatedAt` this machine last imported; absent when it never did. */
+  readonly acceptedAt?: string;
+  /**
+   * The value, opened from this workspace's trusted entry with this machine's key: only when this machine
+   * is approved and the entry is wrapped for it. Never logged or shown.
+   */
+  readonly value?: string;
+}
+
 /** What the send path reads synchronously (Task 7). */
 interface SendCache {
   readonly on: boolean;
@@ -575,6 +597,35 @@ export class TeamSecretsService {
     }
     const secret: SecretKey = name === undefined ? { ref } : { token: { projectId: projectId!, name } };
     return this.cache.vaultIds.has(vaultEntryId(secret)) ? notApprovedError(this.cache.state) : undefined;
+  }
+
+  /**
+   * What a local agent's send may know of `secret` in `ws` (hosted edition spec §18.5), read from the tree
+   * and this machine's own state, with nothing attached, pinned or written: `ws` need not be open in any
+   * window. Ids, states and times only: never a value.
+   */
+  async agentLookup(ws: TeamSecretsWorkspace, secret: SecretKey): Promise<AgentTeamSecretLookup> {
+    const view = await this.load(ws, { remember: false });
+    const id = vaultEntryId(secret);
+    const named = view.me === undefined ? undefined : view.access.keys.get(view.me.keyId)?.machine;
+    const accepted = view.local.accepted[id];
+    const state = this.myState(view);
+    const trusted = this.trustedValues(view).get(id);
+    // Opened from this workspace's own entry, never read by a store label another workspace's import shares.
+    const value =
+      state === 'approved' && trusted !== undefined && view.me !== undefined
+        ? openVaultEntry(trusted, view.me)
+        : undefined;
+    return {
+      on: view.access.on && !view.damaged,
+      damaged: view.damaged,
+      state,
+      machine: named ?? ((this.deps.machine ?? hostname)() || 'this machine'),
+      inVault: view.files.values.has(id),
+      trusted: trusted !== undefined,
+      ...(accepted !== undefined ? { acceptedAt: accepted } : {}),
+      ...(value !== undefined ? { value } : {}),
+    };
   }
 
   /**

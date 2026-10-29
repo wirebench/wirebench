@@ -77,8 +77,11 @@ async function treeChanges(dir: string): Promise<{ path: string; encoding: 'utf8
   );
 }
 
-/** Seeds one user, team and server workspace holding one REST project, and says what it made. */
-export async function seedServer(): Promise<Seed> {
+/**
+ * Seeds one user, team and server workspace holding one REST project, and says what it made. `agentEchoUrl`
+ * is the echo server on this machine's loopback that only the paired agent reaches.
+ */
+export async function seedServer(agentEchoUrl: string): Promise<Seed> {
   const stamp = `${Date.now().toString(36)}${randomBytes(2).toString('hex')}`;
   const seed: Seed = {
     email: `browser-e2e-${stamp}@example.com`,
@@ -90,6 +93,8 @@ export async function seedServer(): Promise<Seed> {
     apiName: 'Echo API',
     echoRequest: 'Echo hello',
     loopbackRequest: 'Loopback',
+    agentRequest: 'Agent echo',
+    agentPath: '/from-agent',
   };
 
   const secret = invite(seed.email);
@@ -114,6 +119,7 @@ export async function seedServer(): Promise<Seed> {
       requests: [
         createRestRequest(seed.echoRequest, { url: `${ECHO_URL}/hello`, order: 0 }),
         createRestRequest(seed.loopbackRequest, { url: 'http://127.0.0.1:9/', order: 1 }),
+        createRestRequest(seed.agentRequest, { url: `${agentEchoUrl}${seed.agentPath}`, order: 2 }),
       ],
     });
     const slug = 'echo-project';

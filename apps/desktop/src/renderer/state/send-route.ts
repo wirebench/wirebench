@@ -216,6 +216,32 @@ export async function setRoutePin(
 }
 
 /**
+ * The hello capability a need asks of the agent, for the needs one agent may lack: `wirebench agent` has no
+ * team secrets, and Kerberos only where its binding loads. The rest every agent has.
+ */
+const NEED_CAPABILITIES: Partial<Readonly<Record<SendNeed, string>>> = {
+  'team-secret': 'team-secrets',
+  kerberos: 'kerberos',
+};
+
+/** The hello capabilities `needs` ask of the agent that sends, without repeats. */
+export function agentCapabilitiesFor(needs: readonly SendNeed[]): string[] {
+  return [...new Set(needs.map((need) => NEED_CAPABILITIES[need]).filter((one): one is string => one !== undefined))];
+}
+
+/**
+ * What a team-secret send answers when no paired agent of this machine resolves team secrets: the agent
+ * connected is `wirebench agent`, which has no approved machine key. Said in the tab, before a bundle is built.
+ */
+export function teamSecretNeedsDesktopError(): IpcError {
+  return {
+    code: 'team-secret-needs-approval',
+    message:
+      'This request reads a team secret, which only the Wirebench desktop app can send: the command-line agent cannot hold one. Pair the desktop app with this server (Pair this machine… in its Tools menu), and send again.',
+  };
+}
+
+/**
  * The error a send that needs the agent answers when none is connected. `unresolved` says the target's host
  * does not resolve from the server, so it may be a name only the person's network knows.
  */

@@ -113,6 +113,20 @@ describe('startAgent', () => {
     });
   });
 
+  it('names team-secrets in the hello and agent.hello only for an embedder that resolves them', async () => {
+    const withTeam = fakePlatform(['send:public', 'send:private', 'team-secrets']);
+    const resolving = Object.assign(new Map(), { resolvesTeamSecrets: true });
+    const desktop = await authed(await setUp({ platform: withTeam, handlers: resolving }));
+    expect(desktop.hello).toMatchObject({ capabilities: ['send:public', 'send:private', 'team-secrets'] });
+    expect(await desktop.call('agent.hello')).toMatchObject({
+      value: { capabilities: ['send:public', 'send:private', 'team-secrets'] },
+    });
+    // The platform has them, but this embedder did not say its sends resolve them.
+    const plain = await authed(await setUp({ platform: withTeam }));
+    expect(plain.hello).toMatchObject({ capabilities: ['send:public', 'send:private'] });
+    expect(await plain.call('agent.hello')).toMatchObject({ value: { capabilities: ['send:public', 'send:private'] } });
+  });
+
   it('answers host-capability-missing for every registry channel, though the host would serve each', async () => {
     const setup = await setUp();
     const { call } = await authed(setup);
@@ -270,7 +284,7 @@ describe('startAgent', () => {
     expect(await elsewhere.closed).toEqual({ status: 404 });
   });
 
-  it('tells a pairing whose server knows another port the new one, signed', async () => {
+  it('tells each pairing its port, signed, at every start', async () => {
     const server = await startFakeServer();
     const platform = fakePlatform();
     const store = await openPairingStore(platform);
@@ -290,11 +304,69 @@ describe('startAgent', () => {
     expect(server.pairings.get(pairingId)?.port).toBe(port);
     expect(store.get(pairingId)?.port).toBe(port);
 
-    // Told once: a restart on the same port sends nothing.
+    // Told again at a restart on the same port: that is how the agent learns of an unpairing in the tab.
     const count = server.seen.length;
     const again = await startAgent({ host: fakeHost(), platform, store, fetch, ports: [port] });
     await again.close();
-    expect(server.seen).toHaveLength(count);
+    expect(server.seen.slice(count)).toEqual([
+      expect.objectContaining({ method: 'PATCH', signed: true, body: JSON.stringify({ port }) }),
+    ]);
+  });
+
+  it('removes a pairing unpaired from the tab at its next start, and keeps one whose server failed', async () => {
+    const server = await startFakeServer();
+    const platform = fakePlatform();
+    const store = await openPairingStore(platform);
+    const port = await freePort();
+    const { pairingId } = await pair({ code: server.code, serverUrl: server.url, sshOptIn: false, store, fetch, port });
+    const logged: string[] = [];
+    const log = (message: string): void => {
+      logged.push(message);
+    };
+
+    // A transient failure keeps it: only the server's own answer says the pairing is gone.
+    server.signedAnswer = { status: 503, body: { code: 'unavailable', message: 'Try later' } };
+    const first = await startAgent({ host: fakeHost(), platform, store, fetch, ports: [port], log });
+    await first.close();
+    expect(store.list()).toHaveLength(1);
+    expect(logged).toContain('a paired server could not be told the agent port');
+
+    // Unpaired in the tab: the server holds the pairing no more, and says so.
+    server.signedAnswer = undefined;
+    server.pairings.delete(pairingId);
+    const changes: number[] = [];
+    store.onChange(() => changes.push(store.list().length));
+    const second = await startAgent({ host: fakeHost(), platform, store, fetch, ports: [port], log });
+    await second.close();
+    expect(store.list()).toEqual([]);
+    expect(changes).toContain(0);
+    expect(logged).toContain('a pairing its server no longer holds was removed');
+  });
+
+  it('removes a pairing whose redeem the server answers agent-pairing-unknown, and lets the tab in no more', async () => {
+    const setup = await setUp();
+    const nonce = setup.server.nonce(setup.pairingId);
+    setup.server.pairings.delete(setup.pairingId);
+    const socket = openSocket(setup.port, { origin: setup.server.origin });
+    socket.send({ type: 'auth', pairingId: setup.pairingId, nonce });
+    expect((await socket.closed).code).toBe(HOST_CLOSE.unauthenticated);
+    expect(setup.store.list()).toEqual([]);
+  });
+
+  it('keeps a pairing whose redeem fails for any other reason', async () => {
+    const setup = await setUp();
+    for (const answer of [
+      { status: 503, body: { code: 'unavailable' } },
+      { status: 401, body: { code: 'agent-signature-invalid' } },
+      { status: 404 },
+      { status: 404, body: { code: 'not-found' } },
+    ]) {
+      setup.server.signedAnswer = answer;
+      const socket = openSocket(setup.port, { origin: setup.server.origin });
+      socket.send({ type: 'auth', pairingId: setup.pairingId, nonce: setup.server.nonce(setup.pairingId) });
+      expect((await socket.closed).code, String(answer.status)).toBe(HOST_CLOSE.unauthenticated);
+    }
+    expect(setup.store.list()).toHaveLength(1);
   });
 
   it('starts with no pairings, and closes its sockets 1001', async () => {

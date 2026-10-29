@@ -17,6 +17,10 @@ COPY packages/protocol-ws/package.json packages/protocol-ws/package.json
 COPY packages/protocol-mcp/package.json packages/protocol-mcp/package.json
 COPY packages/protocol-graphql/package.json packages/protocol-graphql/package.json
 COPY packages/ssh/package.json packages/ssh/package.json
+# The agent bundle's sources (`wirebench agent`): build-time only, esbuild inlines them into dist/agent/bundle.js.
+COPY packages/agent/package.json packages/agent/package.json
+COPY packages/host/package.json packages/host/package.json
+COPY packages/wire/package.json packages/wire/package.json
 RUN pnpm install --frozen-lockfile --filter @wirebench/cli...
 
 COPY . .
@@ -40,6 +44,8 @@ COPY --from=build /out /app
 # `wirebench mock` listens on loopback by default, which nothing outside the container can reach; here the
 # container's own network is the boundary, and only a port published with -p is reachable (#61).
 ENV WIREBENCH_MOCK_HOST=0.0.0.0
+# `wirebench agent` runs here too, but its 127.0.0.1 is the container's own, which a browser on the host
+# cannot reach: the agent belongs on the person's machine. Its folder defaults to ~/.wirebench/agent.
 USER node
 WORKDIR /work
 ENTRYPOINT ["node", "/app/dist/bin.js"]

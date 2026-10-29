@@ -26,6 +26,8 @@ import type { ScriptsConvertArgs } from './args-scripts.js';
 import { parseSsh, SSH_HELP } from './args-ssh.js';
 import type { SshForwardArgs } from './args-ssh.js';
 import type { FeatureArgs } from './features.js';
+import { AGENT_HELP, parseAgent } from './args-agent.js';
+import type { AgentArgs } from './args-agent.js';
 import { parsePlugin, PLUGIN_HELP } from './args-plugin.js';
 import type { PluginArgs } from './args-plugin.js';
 import { secretSourcesOptionsFrom, type CliSecretSourcesOptions } from './source-secrets.js';
@@ -40,6 +42,7 @@ export type { MockRecordArgs } from './args-mock-record.js';
 export type { ScriptsConvertArgs } from './args-scripts.js';
 export type { SshForwardArgs } from './args-ssh.js';
 export type { FeatureArgs } from './features.js';
+export type { AgentArgs } from './args-agent.js';
 
 /** `wirebench <verb> --help` for every verb that has its own help. */
 export const HELP_TOPICS: Readonly<Record<string, string>> = {
@@ -50,6 +53,7 @@ export const HELP_TOPICS: Readonly<Record<string, string>> = {
   scripts: SCRIPTS_HELP,
   ssh: SSH_HELP,
   plugin: PLUGIN_HELP,
+  agent: AGENT_HELP,
 };
 
 /** Spec §3.1: `wirebench run <path> [selector…] [options]`. */
@@ -147,6 +151,10 @@ wirebench plugin install <folder | file.tgz> [--yes] | list | remove <id>
                        Installs, lists or removes this user's plugins: importers, reporters and code
                        generators that run in the script sandbox (see wirebench plugin --help).
 
+wirebench agent [pair <code> --server <url> | unpair | status | allow-env <NAME…> | …]
+                       Lets a browser tab at your team's Wirebench Server send from this machine
+                       (see wirebench agent --help).
+
 wirebench --version | --help
 wirebench <verb> --help`;
 
@@ -211,6 +219,7 @@ type VerbArgs =
   | SshForwardArgs
   | ScriptsConvertArgs
   | PluginArgs
+  | AgentArgs
   | { readonly command: 'help'; readonly topic?: string }
   | { readonly command: 'version' };
 
@@ -280,6 +289,9 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
   }
   if (argv[0] === 'ssh') {
     return parseSsh(argv.slice(1));
+  }
+  if (argv[0] === 'agent') {
+    return parseAgent(argv.slice(1));
   }
   const { values, positionals } = parseShared(argv);
   const verb = parseVerb(values, positionals);

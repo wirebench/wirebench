@@ -11,6 +11,7 @@ export { ALL_CAPABILITIES } from './host/platform.js';
 export type { DialogOwner } from './host/platform.js';
 export type { AppMenu } from './ipc/app.js';
 export { emitEvent } from './ipc/events.js';
+export { registerHandler } from './ipc/register.js';
 export { setUpKerberos } from './kerberos.js';
 export {
   APP_SCHEME,

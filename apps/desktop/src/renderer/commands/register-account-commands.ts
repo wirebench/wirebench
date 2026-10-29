@@ -23,6 +23,13 @@ export function registerAccountCommands(): void {
   });
 
   registerCommand({
+    ...catalogEntry('account.pairThisMachine'),
+    run: () => {
+      useUiStore.getState().setPairMachineDialogOpen(true);
+    },
+  });
+
+  registerCommand({
     ...catalogEntry('account.signOut'),
     when: hasSignedInServer,
     whenScope: 'account.signedIn',

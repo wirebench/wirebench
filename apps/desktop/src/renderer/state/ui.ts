@@ -192,6 +192,8 @@ export interface UiStore extends UiSnapshot {
    * bar's "Sign in" on a signed-out account), which URL to start from. Transient.
    */
   readonly signInDialog: { readonly open: boolean; readonly url: string | undefined };
+  /** *Pair this machine…* (desktop only): a server's pairing code makes this app an agent for its tabs. */
+  readonly pairMachineDialogOpen: boolean;
   /** *Manage teams…* (teams-access §3.5); `url` picks the server, or the first signed-in one. */
   readonly teamDialog: { readonly open: boolean; readonly url: string | undefined };
   /** The project id the Move to Workspace dialog is open for, or `null` when it is closed. */
@@ -237,6 +239,7 @@ export interface UiStore extends UiSnapshot {
   readonly setTeamWorkspaceDialogOpen: (open: boolean) => void;
   readonly openSignInDialog: (url?: string) => void;
   readonly setSignInDialogOpen: (open: boolean) => void;
+  readonly setPairMachineDialogOpen: (open: boolean) => void;
   readonly openTeamDialog: (url?: string) => void;
   readonly setTeamDialogOpen: (open: boolean) => void;
   readonly setMoveProjectDialog: (projectId: string | null) => void;
@@ -383,6 +386,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     joinDialogOpen: false,
     teamWorkspaceDialogOpen: false,
     signInDialog: { open: false, url: undefined },
+    pairMachineDialogOpen: false,
     teamDialog: { open: false, url: undefined },
     moveProjectDialog: null,
     secretTokenDialog: null,
@@ -481,6 +485,9 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     setSignInDialogOpen: (open) => {
       set({ signInDialog: { open, url: open ? get().signInDialog.url : undefined } });
+    },
+    setPairMachineDialogOpen: (open) => {
+      set({ pairMachineDialogOpen: open });
     },
     openTeamDialog: (url) => {
       set({ teamDialog: { open: true, url } });

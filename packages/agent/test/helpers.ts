@@ -116,6 +116,8 @@ export interface FakeServer {
   answerOrigin?: string;
   /** Never answer a redeem; count the ones the agent gave up on. */
   holdRedeem?: boolean;
+  /** Answer every signed redeem and `PATCH` with this instead (a transient failure, a proxy's bare `404`). */
+  signedAnswer?: { readonly status: number; readonly body?: unknown } | undefined;
   abortedRedeems: number;
 }
 
@@ -138,6 +140,12 @@ function signatureHolds(publicKey: string, message: string, signature: string): 
     return false;
   }
 }
+
+/** The server's answer for a pairing it does not hold, as `packages/server/src/agent/errors.ts` gives it. */
+export const PAIRING_UNKNOWN = {
+  code: 'agent-pairing-unknown',
+  message: 'This machine is not paired with this server any more.',
+} as const;
 
 /** The pairing routes of §18.2, as far as the agent uses them; nonces are single-use. */
 export async function startFakeServer(): Promise<FakeServer> {
@@ -195,12 +203,27 @@ export async function startFakeServer(): Promise<FakeServer> {
         });
         return;
       }
+      const isSigned =
+        (method === 'POST' && path === '/api/v1/agent/nonces/redeem') ||
+        (method === 'PATCH' && path.startsWith('/api/v1/agent/pairings/'));
+      if (isSigned && state.signedAnswer !== undefined) {
+        seen.push({ method, path, body });
+        reply(state.signedAnswer.status, state.signedAnswer.body);
+        return;
+      }
       if (method === 'POST' && path === '/api/v1/agent/nonces/redeem') {
         const { nonce } = JSON.parse(body) as { nonce: string };
         const pairing = pairings.get(pairingId);
-        const signed =
-          pairing !== undefined &&
-          signatureHolds(pairing.request.publicKey, agentRedeemMessage(nonce, pairingId, timestamp), signature);
+        if (pairing === undefined) {
+          seen.push({ method, path, body, signed: false });
+          reply(404, PAIRING_UNKNOWN);
+          return;
+        }
+        const signed = signatureHolds(
+          pairing.request.publicKey,
+          agentRedeemMessage(nonce, pairingId, timestamp),
+          signature,
+        );
         seen.push({ method, path, body, signed });
         if (!signed || nonces.get(nonce) !== pairingId) {
           reply(401, { error: { code: 'agent-nonce-invalid' } });
@@ -221,7 +244,7 @@ export async function startFakeServer(): Promise<FakeServer> {
           signatureHolds(pairing.request.publicKey, agentRequestMessage(method, path, id, timestamp, hash), signature);
         seen.push({ method, path, body, signed });
         if (pairing === undefined) {
-          reply(404, { error: { code: 'not-found' } });
+          reply(404, PAIRING_UNKNOWN);
           return;
         }
         if (!signed) {

@@ -9,18 +9,25 @@
  *   range (47615–47634) is skipped. For a pairing it opens `ws://127.0.0.1:<port>/host`. Each attempt first
  *   mints a nonce (`POST /api/v1/agent/nonces`, one per attempt) and sends `{ type: 'auth', pairingId, nonce }`
  *   as the socket's first frame. An agent that is not running leaves the status at `connecting`, retried on
- *   the transport's backoff (up to 30 s).
+ *   the transport's backoff (up to 30 s); every third open in a row that gets no hello reads the pairings
+ *   again, so an agent that moved to another port (it took the next free one) is found there.
  * - An agent that refuses a pairing (`4401`, `4403`: this machine's agent holds another pairing, or it was
  *   unpaired there) moves the tab on to the next pairing, after 1 s, then 2 s, for a pairing refused before.
  *   A pairing refused three times in a row is `refused` (all of them refused is the status `refused`), and is
  *   tried again only every five minutes. A hello clears its count.
+ * - With more than one pairing, a send may need what only one of the agents has: the desktop app's
+ *   agent resolves team secrets, `wirebench agent` does not. {@link AgentEnv.selectFor} keeps the agent
+ *   connected when its hello covers the capabilities asked for, and otherwise tries the other pairings in
+ *   order (the hellos already seen first ruling out an agent), staying on the first that covers them. When
+ *   none does, it goes back to the one it had. The two agents of one machine keep separate pairings, so a
+ *   person may well have both paired.
  * - Its status shows in Settings → *This machine*; it has no reconnect bar of its own. A call made without a
  *   connected agent answers `host-disconnected`, as the server socket's calls do.
  *
  * Kept free of zod and React, like the transport: it runs before the renderer loads.
  */
 import type { Invoke } from '../preload/build-api.js';
-import type { AgentEnv, AgentPairingView, AgentStatus } from '../preload/build-api.js';
+import type { AgentEnv, AgentPairingView, AgentSelection, AgentStatus } from '../preload/build-api.js';
 import { createSocketTransport, type SocketLike, type SocketTransport } from './socket-transport.js';
 
 export const AGENT_PAIRINGS_PATH = '/api/v1/agent/pairings';
@@ -39,6 +46,12 @@ export const PREFERRED_PAIRING_KEY = 'wirebench.agent.pairing';
 /** Refusals in a row after which a pairing counts as refused, and how long it then waits between tries. */
 export const REFUSED_AFTER = 3;
 export const REFUSED_RETRY_MS = 5 * 60_000;
+
+/** Failed opens in a row of one pairing after which the pairings are read again, for a port that moved. */
+export const REREAD_AFTER_FAILURES = 3;
+
+/** How long {@link AgentEnv.selectFor} waits for another pairing's agent to say hello. */
+export const SELECT_TIMEOUT_MS = 10_000;
 
 /** The delay before trying a pairing refused `refusals` times in a row: none, 1 s, 2 s, then five minutes. */
 function refusalDelay(refusals: number): number {
@@ -138,8 +151,14 @@ export function createAgentConnection(deps: AgentConnectionDeps): AgentConnectio
         readonly port: number;
         transport?: SocketTransport;
         timer?: ReturnType<typeof setTimeout>;
+        /** Hears how this attempt went, for {@link AgentEnv.selectFor}: a hello, or a close or failure. */
+        settle?: ((outcome: 'hello' | 'failed') => void) | undefined;
       }
     | undefined;
+  /** The capabilities each pairing's agent named in its last hello, by pairing id. */
+  const helloCapabilities = new Map<string, ReadonlySet<string>>();
+  /** Set while {@link AgentEnv.selectFor} moves between pairings: a refusal then does not move on by itself. */
+  let selecting = false;
   /** The usable pairings, in the order they are tried. */
   let candidates: readonly AgentPairingView[] = [];
   /** Refusals in a row, by pairing id. */
@@ -212,12 +231,22 @@ export function createAgentConnection(deps: AgentConnectionDeps): AgentConnectio
 
   const open = (pairing: AgentPairingView): void => {
     const slot: NonNullable<typeof current> = { id: pairing.id, port: pairing.port };
+    /** Opens in a row that got no hello: nothing may listen on this port any more. */
+    let failures = 0;
+    /** Every few failed opens, the pairings are read again: the agent may have moved to another port. */
+    const failedOpen = (): void => {
+      failures += 1;
+      if (failures % REREAD_AFTER_FAILURES === 0 && !selecting) void refresh();
+    };
     const transport: SocketTransport = createSocketTransport(`ws://127.0.0.1:${String(pairing.port)}/host`, {
       ...(deps.createSocket === undefined ? {} : { createSocket: deps.createSocket }),
       firstFrame: authFrame(pairing.id),
       disconnected: AGENT_DISCONNECTED,
-      onHello() {
+      onHello(hello) {
         if (current !== slot) return;
+        failures = 0;
+        helloCapabilities.set(pairing.id, new Set(hello.capabilities));
+        slot.settle?.('hello');
         refusals.delete(pairing.id);
         remember(pairing.id);
         setStatus('connected');
@@ -233,17 +262,24 @@ export function createAgentConnection(deps: AgentConnectionDeps): AgentConnectio
         });
       },
       onOpenFailed() {
-        if (current === slot && status !== 'refused') setStatus('connecting');
-      },
-      onClosed(code) {
         if (current !== slot) return;
+        slot.settle?.('failed');
+        if (status !== 'refused') setStatus('connecting');
+        failedOpen();
+      },
+      onClosed(code, helloSeen) {
+        if (current !== slot) return;
+        slot.settle?.('failed');
         if (!PAIRING_CLOSES.has(code)) {
           setStatus('connecting');
+          if (!helloSeen) failedOpen();
           return;
         }
         // Refused: this pairing is not this machine's (or no longer is). The next one is tried.
         refusals.set(pairing.id, (refusals.get(pairing.id) ?? 0) + 1);
         drop();
+        // While a send picks its agent, it moves on itself.
+        if (selecting) return;
         advanceFrom = pairing.id;
         void refresh();
       },
@@ -328,6 +364,68 @@ export function createAgentConnection(deps: AgentConnectionDeps): AgentConnectio
     await reading;
   };
 
+  /** Whether `pairingId`'s agent named every one of `needed` in its last hello; `undefined` before one. */
+  const covers = (pairingId: string, needed: readonly string[]): boolean | undefined => {
+    const named = helloCapabilities.get(pairingId);
+    return named === undefined ? undefined : needed.every((capability) => named.has(capability));
+  };
+
+  /** Opens `pairing` now, without a refusal's wait, and resolves on its hello or its first failure. */
+  const attempt = (pairing: AgentPairingView): Promise<'hello' | 'failed'> =>
+    new Promise((resolve) => {
+      drop();
+      setStatus('connecting');
+      open(pairing);
+      const slot = current;
+      if (slot === undefined) {
+        resolve('failed');
+        return;
+      }
+      const timer = setTimeout(() => {
+        slot.settle?.('failed');
+      }, SELECT_TIMEOUT_MS);
+      slot.settle = (outcome) => {
+        clearTimeout(timer);
+        slot.settle = undefined;
+        resolve(outcome);
+      };
+    });
+
+  const selectFor = async (needed: readonly string[]): Promise<AgentSelection> => {
+    const connected = (): AgentSelection => {
+      if (status !== 'connected' || current === undefined) return { connected: false, missing: [] };
+      const named = helloCapabilities.get(current.id) ?? new Set<string>();
+      return { connected: true, missing: needed.filter((capability) => !named.has(capability)) };
+    };
+    if (closed || needed.length === 0 || selecting) return connected();
+    if (status === 'connected' && current !== undefined && covers(current.id, needed) === true) return connected();
+    const had = candidates.find((one) => one.id === current?.id);
+    /** The agent connected now, which does not cover the needs. */
+    const before = status === 'connected' ? had : undefined;
+    // The others in order, skipping a refused one and one whose agent is known not to cover the needs.
+    const others = candidates.filter(
+      (one) => one.id !== before?.id && !isRefused(one.id) && covers(one.id, needed) !== false,
+    );
+    if (others.length === 0) return connected();
+    selecting = true;
+    try {
+      for (const pairing of others) {
+        if (closed) break;
+        if ((await attempt(pairing)) === 'hello' && covers(pairing.id, needed) === true) return connected();
+      }
+      // None covers them: back to the agent it had, which answers for what it lacks; or, if none was
+      // connected and none answered now, back to the pairing it was trying.
+      if (!closed && before !== undefined) {
+        if (current?.id !== before.id) await attempt(before);
+      } else if (!closed && status !== 'connected' && had !== undefined && current?.id !== had.id) {
+        tryPairing(had);
+      }
+      return connected();
+    } finally {
+      selecting = false;
+    }
+  };
+
   const invoke: Invoke = (channel, request) =>
     current?.transport === undefined ? Promise.resolve(AGENT_DISCONNECTED) : current.transport.invoke(channel, request);
 
@@ -336,6 +434,7 @@ export function createAgentConnection(deps: AgentConnectionDeps): AgentConnectio
     status: () => status,
     version: () => version,
     refused: isRefused,
+    selectFor,
     onStatus(listener) {
       listeners.add(listener);
       return () => {

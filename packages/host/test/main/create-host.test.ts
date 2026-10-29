@@ -39,7 +39,9 @@ describe('createHost', () => {
     const first = await started();
     const second = await started();
     // `agent.*` is the local agent's own group (spec §18.1): a paired agent serves it, a host never does.
-    const hostChannels = pinned.channels.filter((name) => !name.startsWith('agent.'));
+    const hostChannels = pinned.channels.filter(
+      (name) => !name.startsWith('agent.') && !name.startsWith('machineAgent.'),
+    );
     expect([...first.handlers.keys()].sort()).toEqual(hostChannels);
     expect([...second.handlers.keys()].sort()).toEqual(hostChannels);
     expect(first.handlers).not.toBe(second.handlers);

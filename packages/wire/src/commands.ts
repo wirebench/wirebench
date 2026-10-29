@@ -213,6 +213,7 @@ export const COMMAND_IDS = [
   'workspace.stopSharing',
   'project.moveToWorkspace',
   'account.signIn',
+  'account.pairThisMachine',
   'account.signOut',
   'team.manage',
 ] as const;

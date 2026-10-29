@@ -231,6 +231,10 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       # Global setup seeds the server with the engine's own writers, which run from its build.
       - run: pnpm --filter @wirebench/engine build
+      # Global setup also runs the headless `wirebench agent` on the runner, outside Docker, from the built
+      # CLI and its agent bundle (spec §18.7); the suite pairs it through the tab and sends to the runner's
+      # own 127.0.0.1 through it. Teardown stops it.
+      - run: pnpm --filter @wirebench/cli build
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:

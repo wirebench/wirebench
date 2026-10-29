@@ -652,7 +652,7 @@ self-hosted teams on their own, which is why they would come first whenever the 
 | --- | --- | --- | --- | --- |
 | 1 | `host-seam` | **Built** (#779 and #780, 2026-10-27; ADR-0033 accepted). `@wirebench/host` as `createHost(platform)` with `HostPlatform` and `Caller`, no module-level state and its gate; the Electron app embeds it; proven by the existing tests on a fake platform and a fake-socket test of `buildApi` (the loopback server moves to slice 3) | — | yes (no user-visible change) |
 | 2 | `browser-client` | **Built** (#785, #787 and #789, 2026-10-29, for #783; §17 records what changed from this row). The Vite browser build, `browser-bootstrap.ts`, capability discovery, the sign-in page and `browser_flows`, the cookie session, the server host with checkouts and per-user state via `inject`, live events over the host socket, user-scoped sealed secrets under one server-wide root, the §3.10 allowlist and path guard, the egress rule on every outbound connection | 1 | yes: a self-hosted team gets a browser tab |
-| 3 | `local-agent` | **Scheduled 2026-10-29** (#790; §18 records what changed from this row). `packages/agent` as a library, the loopback socket transport, pairing with the browser subset, the send-route rule and the send bundle, `wirebench agent`, the agent's packaging | 1, 2 | yes |
+| 3 | `local-agent` | **Built** (#793, #795 and, for the agent hosts, #790, 2026-10-29; ADR-0035; §18 records what changed from this row). `packages/agent` as a library, the loopback socket transport, pairing with the browser subset, the send-route rule and the send bundle, `wirebench agent`, the agent's packaging | 1, 2 | yes |
 | 4 | `tenancy` | **Specified 2026-10-29** (#798; §19 records what changed from this row). `tenants`, `tenant_id` on every table, forced row-level security, tenant resolution by `Host`, per-tenant directories and data keys with the one-time re-wrap, the six guards of §5.4 including the job scope, the host-instance lease, the self-hosted migration | 2 | yes, invisibly (one tenant) |
 | 5 | `operations` | `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
 | 6 | `domains` | The two registrable names, wildcard certificates, `app.` entry with emailed links, reserved slugs, public suffix submission | 4 | no |
@@ -927,8 +927,11 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
   - `agent.send`: one send bundle in, the kind's ordinary send result out, with `sentFrom: 'agent'`.
   - `agent.cancel`.
   - `agent.cookies.clear`: clears the jar the agent holds for this pairing.
-- `ssh` is recorded as an opt-in at pairing, and nothing is served for it yet. The browser's SSH area needs the hosts
-  and snippets files the agent does not hold, so it stays off in slice 3. SSH in the browser is a follow-up.
+- `ssh` is not served, and no opt-in is recorded yet (owner's ruling, on the final review): the pairing request
+  keeps its `sshOptIn` field, but both agents always send `false`, and `wirebench agent pair` has no `--ssh`. The
+  browser's SSH area needs the hosts and snippets files the agent does not hold, so it stays off in slice 3. SSH in
+  the browser is a follow-up, and that version asks for the opt-in then: it must not trust a slice-3 pairing as
+  consent.
 - Everything else answers `host-capability-missing`. The agent's allowlist is the gate, and a test classifies every
   registry channel as refused for a browser caller.
 
@@ -957,11 +960,17 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
   - `GET /api/v1/agent/pairings` (cookie): the user's pairings, with port and last seen.
   - `POST /api/v1/agent/nonces` (cookie, Origin-checked): `{ pairingId }` → a single-use nonce that lives 60 seconds.
   - `POST /api/v1/agent/nonces/redeem`: signed by the agent's key over `nonce‖pairingId‖timestamp`. It answers
-    `{ userId, email, displayName }` and consumes the nonce. A replayed or expired nonce, a bad signature or an
-    unknown pairing answers `401`. It is limited to 300 a minute per address before the signature is checked,
+    `{ userId, email, displayName }` and consumes the nonce. A replayed or expired nonce or a bad signature answers
+    `401`; an unknown pairing answers `404 agent-pairing-unknown`, as a signed `DELETE` or `PATCH` does (pairing ids
+    are random, and those routes already say it). It is limited to 300 a minute per address before the signature is checked,
     loosely for an office behind one address, and to 30 a minute per pairing once the signature holds.
   - `DELETE /api/v1/agent/pairings/:id` (cookie or agent signature): unpairs, from either side.
-  - `PATCH /api/v1/agent/pairings/:id` (agent signature): the agent's new port, when it moved.
+  - `PATCH /api/v1/agent/pairings/:id` (agent signature): the agent's port, told for every pairing at each start;
+    only a move is audited (`agent.port_changed`).
+  - **Unpaired from the tab.** A cookie `DELETE` removes only the server's row. The agent removes its own copy when
+    a signed call (the port report at its next start, or a tab's redeem) gets `404 agent-pairing-unknown`, and the
+    desktop stops listening when that was its last pairing. Only that answer removes it: no answer, a `5xx`, a
+    refused signature or a bare `404` keeps the pairing. A forged answer costs a pairing, as `unpair --local` does.
   - An agent-signed `DELETE` or `PATCH` is limited to 60 a minute per address: a refusal on a known pairing
     writes an audit row. One whose signature held for another pairing than `:id` is audited as that pairing's
     user.
@@ -1006,7 +1015,9 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
   this machine's agent* and is retried only every five minutes. With no pairing there is no second socket.
   Its status (none, connecting, connected with the agent's version, refused) shows in Settings → *This
   machine*; it has no reconnect bar. The renderer's `agent.*` calls go to this socket, and answer
-  `host-disconnected` without it; every other call goes to the server's.
+  `host-disconnected` without it; every other call goes to the server's. With more than one pairing, a send picks
+  the agent whose hello covers its needs (§18.6). A pairing whose agent stops answering is read again every third
+  failed open, so an agent that moved port is found.
 
 ### 18.4 The send route rule and the send bundle (amends §3.4)
 
@@ -1079,7 +1090,8 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
   `systemNames` and the name is on this machine's agent allowlist, `allowedSystemNames`, which is empty by default.
   Every other name resolves to nothing, as on the server host, so a request that reads it is refused as
   unresolved. The allowlist is the agent's own setting, kept in its pairings file (version 2) under the same lock,
-  and `wirebench agent` and the desktop's Settings read and change it there. The host is handed the cut map
+  and each agent reads and changes its own (`wirebench agent allow-env` the headless agent's, Settings → Paired
+  browsers the desktop's; §18.6). The host is handed the cut map
   itself and never falls back to the process environment for a bundle send.
 - **Team secrets on a desktop agent.** It resolves a team secret from the values its own approved machine has
   already imported for that workspace, by the bundle's workspace id and the name, exactly as a desktop send does.
@@ -1088,6 +1100,8 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
   `team-secret-needs-approval`. The workspace id comes from the bundle, so the hook is asked with the pairing id and
   its server's origin as well, and must confirm the workspace belongs to that server before it answers: a server
   must never name another server's workspace and read its team secrets.
+  When the bundle's vault entry for the name is newer than what this machine imported, the send fails with
+  `team-secret-stale`: open or sync the workspace on this machine, then send again.
 - **Headless agent.** It has no team secrets in slice 3: it has no approved machine key and no UI to request one. A
   team-secret send routed to it fails with `team-secret-needs-approval`, saying to use the desktop app.
 - **Secret sources** on the agent wait for #792. A source runs a command on the person's machine, so a mapping that
@@ -1108,11 +1122,23 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
     CLI has no OS keychain binding, so the file mode is the protection, and the docs say so plainly.
   - Capabilities: `send:private`, `send:public`, `secret-sources`, and `kerberos` when the binding loads. No dialogs,
     shell, power, files, team secrets or listeners.
+- **Two agents, separate stores.** The desktop's agent keeps its pairings file, identity and allowlist in its own
+  `userData`; the headless agent keeps its own in `~/.wirebench/agent`. Neither reads or changes the other's, and
+  both may be paired with one server at once. They share only the port range (each takes the next free port and
+  tells its servers) and the `agent-sends/` temp root (one folder per process). A tab with more than one pairing
+  picks, for each send, the agent whose hello names what the send's needs ask for (`team-secret` asks
+  `team-secrets`, the desktop's; `kerberos` asks `kerberos`), in its usual order otherwise; with none that does, a
+  team-secret send answers `team-secret-needs-approval` in the tab, saying to use the desktop app.
 - **Commands:**
   - `wirebench agent`: start, print the port, wait.
-  - `wirebench agent pair <code> --server <url> [--ssh]`.
-  - `wirebench agent unpair [--server <url>]`.
-  - `wirebench agent status`.
+  - `wirebench agent pair <code> --server <url>`: prints the trust sentence of §3.8 once paired. No `--ssh`
+    (§18.1).
+  - `wirebench agent unpair [--server <url>] [--local]`: every pairing by default, or that server's, at the
+    server and here. A server that cannot be reached is dropped here with a warning that it still lists the
+    machine; one that refuses keeps its pairing (exit 3). `--local` forgets it here without asking.
+  - `wirebench agent status`: the pairings, the allowlist and whether the agent runs.
+  - `wirebench agent allow-env <NAME…>`, `disallow-env <NAME…>`, `allowed-env`: this agent's `${#System#…}`
+    allowlist (§18.5), which needs a pairing first.
 
 ### 18.7 Testing
 

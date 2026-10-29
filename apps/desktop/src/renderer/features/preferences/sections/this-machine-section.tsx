@@ -10,9 +10,17 @@ import { showToast } from '../../../components/toast.js';
 import { agentEnv, useSendRouteStore } from '../../../state/send-route.js';
 import type { AgentPairingView, AgentStatus } from '../../../../preload/build-api.js';
 
-/** The trust a pairing gives, said once (spec §18.2). */
+/** The trust a pairing gives, said where the pairing is offered (spec §3.8), as the desktop and the CLI say it. */
 export const PAIRING_TRUST_TEXT =
-  'A paired machine sends requests from this server’s workspaces on your behalf, including to addresses on that machine’s network.';
+  'A paired server can send requests from this machine on your behalf, including to addresses on this machine’s network.';
+
+/** The browser's own prompt the first time this page reaches the agent (spec §3.8, decision 6). */
+export const LOCAL_NETWORK_TEXT =
+  'Your browser may ask whether this site may reach devices on your local network (local network access): allow it, so this tab can reach the agent on this machine.';
+
+/** Safari refuses the agent's socket from an https page (spec §3.8, decision 6). */
+export const SAFARI_TEXT =
+  'Safari cannot reach an agent on this machine from an https:// page. In Safari, pair the Wirebench desktop app and open the workspace there instead.';
 
 /** How often the list is read again while a code is shown, so a pairing made elsewhere appears. */
 const CODE_POLL_MS = 3_000;
@@ -94,11 +102,16 @@ export function ThisMachineSection() {
 
   return (
     <div data-testid="this-machine-section">
-      <SettingsGroup title="Local agent" hint={PAIRING_TRUST_TEXT}>
+      <SettingsGroup title="Local agent">
         <SettingsItem>
           <p data-testid="agent-status" data-status={status} className="mb-2 text-sm text-fg-default">
             {statusText(status, version)}
           </p>
+          <div data-testid="agent-pair-notes" className="mb-2 flex flex-col gap-1 text-sm text-fg-subtle">
+            <p className="text-fg-default">{PAIRING_TRUST_TEXT}</p>
+            <p>{LOCAL_NETWORK_TEXT}</p>
+            <p>{SAFARI_TEXT}</p>
+          </div>
           {code === undefined ? (
             <Button data-testid="agent-pair" disabled={busy} onClick={() => void pair()}>
               Pair this machine
