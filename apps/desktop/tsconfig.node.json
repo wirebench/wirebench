@@ -19,6 +19,7 @@
     "src/preload/**/*",
     "../../packages/wire/src/**/*",
     "electron.vite.config.ts",
+    "vite.browser.config.ts",
     "after-pack.ts",
     "test/*.ts"
   ]

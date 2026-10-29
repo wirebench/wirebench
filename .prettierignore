@@ -1,6 +1,7 @@
 pnpm-lock.yaml
 dist
 dist-test
+dist-browser
 out
 coverage
 .superpowers

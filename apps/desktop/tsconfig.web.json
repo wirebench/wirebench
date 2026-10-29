@@ -16,10 +16,12 @@
   },
   "include": [
     "src/renderer/**/*",
+    "src/browser/**/*",
     "../../packages/wire/src/**/*",
     "src/preload/api.d.ts",
     "src/preload/build-api.ts",
     "test/renderer/**/*",
+    "test/browser/**/*",
     "test/mocks/**/*"
   ]
 }
