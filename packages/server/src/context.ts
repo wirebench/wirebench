@@ -85,7 +85,8 @@ export interface ScheduleRunFinished {
 
 /**
  * A local agent's pairing was deleted, from the browser or by the agent (hosted edition spec §18.2); fired
- * after the delete committed, so the server host can drop the pairing from its view.
+ * after the delete committed. Meant for the server host to drop the pairing from its view; nothing
+ * listens yet.
  */
 export interface AgentUnpaired {
   readonly pairingId: string;

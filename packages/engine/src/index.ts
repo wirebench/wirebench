@@ -2398,6 +2398,7 @@ export {
   ciWhoamiResponseSchema,
 } from '#core/server-api/ci-tokens';
 export {
+  AGENT_EMPTY_BODY_SHA256,
   AGENT_HEADERS,
   AGENT_LIMITS,
   AGENT_PAIRING_CODE_ALPHABET,

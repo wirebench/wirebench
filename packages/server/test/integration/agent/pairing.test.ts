@@ -1,4 +1,4 @@
-import { generateKeyPairSync, sign } from 'node:crypto';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { AGENT_PAIRING_CODE_PATTERN, agentRedeemMessage, agentRequestMessage } from '@wirebench/engine';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { agentModule, sweepAgent } from '../../../src/agent/module.js';
@@ -113,16 +113,33 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     });
   };
 
-  const signed = (method: 'DELETE' | 'PATCH', pairingId: string, options: { key?: AgentKey; path?: string } = {}) => {
-    const path = `/api/v1/agent/pairings/${pairingId}`;
+  const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
+
+  /**
+   * An agent-signed `DELETE` or `PATCH` of `pairingId`. `body` is sent as these exact bytes and its hash is
+   * signed, unless `signedBody` names other bytes to sign; `path` signs another path than the one requested.
+   */
+  const signedRequest = (
+    method: 'DELETE' | 'PATCH',
+    pairingId: string,
+    options: { key?: AgentKey; path?: string; body?: string; signedBody?: string } = {},
+  ) => {
+    const url = `/api/v1/agent/pairings/${pairingId}`;
     const timestamp = h.clock.now.toISOString();
-    return {
-      'x-wirebench-agent-pairing': pairingId,
-      'x-wirebench-agent-timestamp': timestamp,
-      'x-wirebench-agent-signature': (options.key ?? key).sign(
-        agentRequestMessage(method, options.path ?? path, pairingId, timestamp),
-      ),
-    };
+    const signedBody = options.signedBody ?? options.body ?? '';
+    return h.app.inject({
+      method,
+      url,
+      headers: {
+        'x-wirebench-agent-pairing': pairingId,
+        'x-wirebench-agent-timestamp': timestamp,
+        'x-wirebench-agent-signature': (options.key ?? key).sign(
+          agentRequestMessage(method, options.path ?? url, pairingId, timestamp, sha256(signedBody)),
+        ),
+        ...(options.body !== undefined ? { 'content-type': 'application/json' } : {}),
+      },
+      ...(options.body !== undefined ? { payload: options.body } : {}),
+    });
   };
 
   const codeOf = (res: { json: <T>() => T }) => res.json<{ code: string }>().code;
@@ -156,19 +173,38 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('limits a user to ten codes in ten minutes', async () => {
+    for (let i = 0; i < 10; i++) await newCode();
+    const res = await h.app.inject({ method: 'POST', url: '/api/v1/agent/pairing-codes', headers: browser(alice) });
+    expect(res.statusCode).toBe(429);
+    const bob = await signedInUser(h, { email: 'bob@example.com', kind: 'browser' });
+    expect(await newCode(bob)).toMatch(AGENT_PAIRING_CODE_PATTERN);
+  });
+
+  it('keeps the code as an HMAC, not a plain hash of it', async () => {
+    const code = await newCode();
+    const stored = (await h.db.query<{ code_hash: string }>('select code_hash from agent_pairing_codes')).rows;
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.code_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(stored[0]!.code_hash).not.toBe(sha256(code));
+  });
+
   // ---- pairing -------------------------------------------------------------------------
 
-  it('pairs an agent with the code, answers the public URL, and audits agent.paired', async () => {
+  it('pairs an agent with the code, answers the public URL and the account, and audits agent.paired', async () => {
     const code = await newCode();
     const res = await pair(`${code.slice(0, 3).toLowerCase()}-${code.slice(3)}`);
     expect(res.statusCode).toBe(201);
-    const { pairingId, origin } = res.json<{ pairingId: string; origin: string }>();
+    const { pairingId, origin, email } = res.json<{ pairingId: string; origin: string; email: string }>();
     expect(origin).toBe(PUBLIC_URL);
-    expect(audits.find((e) => e.action === 'agent.paired')).toMatchObject({
+    expect(email).toBe('alice@example.com');
+    const event = audits.find((e) => e.action === 'agent.paired');
+    expect(event).toMatchObject({
       actor: { kind: 'user', userId: alice.user.id, email: 'alice@example.com' },
       target: { kind: 'agent-pairing', id: pairingId },
       details: { agentId: 'agent-1', port: 47615, sshOptIn: false },
     });
+    expect(event?.details).not.toHaveProperty('replaced');
     // Single use: the same code again is wrong.
     expect(codeOf(await pair(code))).toBe('agent-pairing-code-invalid');
     const list = await h.app.inject({ method: 'GET', url: '/api/v1/agent/pairings', headers: browser(alice) });
@@ -208,6 +244,21 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     expect((await pair(code, { remoteAddress: '198.51.100.7' })).statusCode).toBe(201);
   });
 
+  it('stops pairing for everyone after 50 failed attempts in ten minutes, from any addresses', async () => {
+    const code = await newCode();
+    const wrong = code === 'AAAAAA' ? 'BBBBBB' : 'AAAAAA';
+    for (let i = 0; i < 50; i++) {
+      const res = await pair(wrong, { remoteAddress: `203.0.113.${Math.floor(i / 5) + 1}` });
+      expect(codeOf(res)).toBe('agent-pairing-code-invalid');
+    }
+    const blocked = await pair(code, { remoteAddress: '198.51.100.7' });
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.headers['retry-after']).toBeDefined();
+    // A new code after the window: pairing works again.
+    h.clock.advance(10 * 60 * 1000);
+    expect((await pair(await newCode(), { remoteAddress: '198.51.100.7' })).statusCode).toBe(201);
+  });
+
   it('refuses a public key that is not Ed25519, without spending the code', async () => {
     const code = await newCode();
     const rsa = generateKeyPairSync('rsa', { modulusLength: 1024 })
@@ -224,6 +275,7 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     const newKey = agentKey();
     const again = await paired(alice, { key: newKey });
     expect(again).toBe(first);
+    expect(audits.filter((e) => e.action === 'agent.paired').at(-1)?.details).toMatchObject({ replaced: true });
     const nonce = await issueNonce(first);
     expect((await redeem(nonce, first)).statusCode).toBe(401);
     expect((await redeem(nonce, first, { key: newKey })).statusCode).toBe(200);
@@ -237,14 +289,16 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     const res = await redeem(nonce, pairingId);
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ userId: alice.user.id, email: 'alice@example.com', displayName: 'alice' });
-    expect(audits.find((e) => e.action === 'agent.nonce.redeemed')).toMatchObject({
+    expect(audits.find((e) => e.action === 'agent.nonce_redeemed')).toMatchObject({
       actor: { kind: 'user', userId: alice.user.id },
       target: { kind: 'agent-pairing', id: pairingId },
     });
     const replay = await redeem(nonce, pairingId);
     expect(replay.statusCode).toBe(401);
     expect(codeOf(replay)).toBe('agent-nonce-invalid');
-    expect(audits.find((e) => e.action === 'agent.nonce.refused')).toMatchObject({
+    // Refused after the signature held: the pairing's user is the actor.
+    expect(audits.find((e) => e.action === 'agent.nonce_refused')).toMatchObject({
+      actor: { kind: 'user', userId: alice.user.id },
       target: { kind: 'agent-pairing', id: pairingId },
       details: { reason: 'nonce' },
     });
@@ -286,7 +340,11 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     const forged = await redeem(nonce, pairingId, { key: agentKey() });
     expect(forged.statusCode).toBe(401);
     expect(codeOf(forged)).toBe('agent-signature-invalid');
-    expect(audits.at(-1)).toMatchObject({ action: 'agent.nonce.refused', details: { reason: 'signature' } });
+    expect(audits.at(-1)).toMatchObject({
+      action: 'agent.nonce_refused',
+      actor: { kind: 'anonymous' },
+      details: { reason: 'signature' },
+    });
     expect((await redeem(nonce, pairingId)).statusCode).toBe(200);
   });
 
@@ -298,20 +356,49 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
       const res = await redeem(nonce, pairingId, { timestamp });
       expect(res.statusCode).toBe(401);
       expect(codeOf(res)).toBe('agent-signature-invalid');
-      expect(audits.at(-1)).toMatchObject({ action: 'agent.nonce.refused', details: { reason: 'timestamp' } });
+      expect(audits.at(-1)).toMatchObject({ action: 'agent.nonce_refused', details: { reason: 'timestamp' } });
     }
     expect((await redeem(nonce, pairingId)).statusCode).toBe(200);
   });
 
-  it('refuses an unknown pairing, missing headers, and a nonce issued for another pairing', async () => {
+  it('refuses an unknown pairing as a bad signature, and missing headers, auditing neither', async () => {
     const pairingId = await paired();
     const nonce = await issueNonce(pairingId);
+    const before = audits.length;
     const unknown = await redeem(nonce, '01JZZZZZZZZZZZZZZZZZZZZZZZ');
-    expect(unknown.statusCode).toBe(404);
-    expect(codeOf(unknown)).toBe('agent-pairing-unknown');
+    expect(unknown.statusCode).toBe(401);
+    expect(codeOf(unknown)).toBe('agent-signature-invalid');
     const bare = await h.app.inject({ method: 'POST', url: '/api/v1/agent/nonces/redeem', payload: { nonce } });
     expect(bare.statusCode).toBe(401);
     expect(codeOf(bare)).toBe('agent-signature-invalid');
+    expect(audits.length).toBe(before);
+  });
+
+  it('limits redeem attempts per address', async () => {
+    const pairingId = await paired();
+    const nonce = await issueNonce(pairingId);
+    for (let i = 0; i < 30; i++) {
+      const res = await h.app.inject({
+        method: 'POST',
+        url: '/api/v1/agent/nonces/redeem',
+        remoteAddress: '203.0.113.20',
+        payload: { nonce },
+      });
+      expect(res.statusCode).toBe(401);
+    }
+    const blocked = await h.app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/nonces/redeem',
+      remoteAddress: '203.0.113.20',
+      payload: { nonce },
+    });
+    expect(blocked.statusCode).toBe(429);
+    expect((await redeem(nonce, pairingId)).statusCode).toBe(200);
+  });
+
+  it('refuses a nonce issued for another pairing', async () => {
+    const pairingId = await paired();
+    const nonce = await issueNonce(pairingId);
     const otherKey = agentKey();
     const other = await paired(alice, { key: otherKey, agentId: 'agent-2' });
     const crossed = await redeem(nonce, other, { key: otherKey });
@@ -342,7 +429,7 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
       actor: { kind: 'user', userId: alice.user.id },
       details: { by: 'user' },
     });
-    expect(codeOf(await redeem(nonce, pairingId))).toBe('agent-pairing-unknown');
+    expect(codeOf(await redeem(nonce, pairingId))).toBe('agent-signature-invalid');
     const again = await h.app.inject({
       method: 'DELETE',
       url: `/api/v1/agent/pairings/${pairingId}`,
@@ -351,17 +438,18 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     expect(again.statusCode).toBe(404);
   });
 
-  it('unpairs from the agent with a signed DELETE, and refuses a signature over another path', async () => {
+  it('unpairs from the agent with a signed DELETE, and refuses and audits a signature over another path', async () => {
     const pairingId = await paired();
-    const url = `/api/v1/agent/pairings/${pairingId}`;
-    const wrongPath = await h.app.inject({
-      method: 'DELETE',
-      url,
-      headers: signed('DELETE', pairingId, { path: '/api/v1/agent/pairings/other' }),
-    });
+    const wrongPath = await signedRequest('DELETE', pairingId, { path: '/api/v1/agent/pairings/other' });
     expect(wrongPath.statusCode).toBe(401);
     expect(codeOf(wrongPath)).toBe('agent-signature-invalid');
-    const res = await h.app.inject({ method: 'DELETE', url, headers: signed('DELETE', pairingId) });
+    expect(audits.at(-1)).toMatchObject({
+      action: 'agent.request_refused',
+      actor: { kind: 'anonymous' },
+      target: { kind: 'agent-pairing', id: pairingId },
+      details: { method: 'DELETE', reason: 'signature' },
+    });
+    const res = await signedRequest('DELETE', pairingId);
     expect(res.statusCode).toBe(204);
     expect(unpaired).toEqual([{ pairingId, userId: alice.user.id }]);
     expect(audits.find((e) => e.action === 'agent.unpaired')).toMatchObject({
@@ -379,26 +467,30 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     expect(unpaired).toEqual([]);
   });
 
-  it('takes the agent’s new port from a signed PATCH only', async () => {
+  it('takes the agent’s new port from a signed PATCH only, with the body’s hash signed', async () => {
     const pairingId = await paired();
     const url = `/api/v1/agent/pairings/${pairingId}`;
     const unsigned = await h.app.inject({ method: 'PATCH', url, headers: browser(alice), payload: { port: 47616 } });
     expect(unsigned.statusCode).toBe(401);
-    const forged = await h.app.inject({
-      method: 'PATCH',
-      url,
-      headers: signed('PATCH', pairingId, { key: agentKey() }),
-      payload: { port: 47616 },
-    });
+    const body = JSON.stringify({ port: 47616 });
+    const forged = await signedRequest('PATCH', pairingId, { key: agentKey(), body });
     expect(codeOf(forged)).toBe('agent-signature-invalid');
-    h.clock.advance(5_000);
-    const res = await h.app.inject({
-      method: 'PATCH',
-      url,
-      headers: signed('PATCH', pairingId),
-      payload: { port: 47616 },
+    expect(audits.at(-1)).toMatchObject({
+      action: 'agent.request_refused',
+      details: { method: 'PATCH', reason: 'signature' },
     });
+    // A signature over another port's body does not carry over to this one.
+    const swapped = await signedRequest('PATCH', pairingId, { body, signedBody: JSON.stringify({ port: 47620 }) });
+    expect(codeOf(swapped)).toBe('agent-signature-invalid');
+    h.clock.advance(5_000);
+    const res = await signedRequest('PATCH', pairingId, { body });
     expect(res.statusCode).toBe(204);
+    expect(audits.at(-1)).toMatchObject({
+      action: 'agent.port_changed',
+      actor: { kind: 'user', userId: alice.user.id },
+      target: { kind: 'agent-pairing', id: pairingId },
+      details: { from: 47615, to: 47616 },
+    });
     const list = await h.app.inject({ method: 'GET', url: '/api/v1/agent/pairings', headers: browser(alice) });
     expect(list.json<{ pairings: { port: number; lastSeenAt: string }[] }>().pairings[0]).toMatchObject({
       port: 47616,

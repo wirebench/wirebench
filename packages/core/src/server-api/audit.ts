@@ -84,11 +84,16 @@ export const AUDIT_ACTIONS = [
   'terminal_share.control_returned',
   'terminal_share.viewer_removed',
   'terminal_share.ended',
-  /** A local agent paired or unpaired, and a tab's nonce redeemed or refused (hosted edition spec §18.2). */
+  /**
+   * A local agent paired, unpaired or moved port; a tab's nonce redeemed or refused; an agent-signed unpair
+   * or port change refused (hosted edition spec §18.2).
+   */
   'agent.paired',
   'agent.unpaired',
-  'agent.nonce.redeemed',
-  'agent.nonce.refused',
+  'agent.port_changed',
+  'agent.nonce_redeemed',
+  'agent.nonce_refused',
+  'agent.request_refused',
 ] as const;
 export const auditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof auditActionSchema>;

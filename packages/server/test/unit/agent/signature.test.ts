@@ -1,7 +1,12 @@
-import { generateKeyPairSync, sign } from 'node:crypto';
-import { AGENT_PAIRING_CODE_PATTERN, agentRedeemMessage, agentRequestMessage } from '@wirebench/engine';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import {
+  AGENT_EMPTY_BODY_SHA256,
+  AGENT_PAIRING_CODE_PATTERN,
+  agentRedeemMessage,
+  agentRequestMessage,
+} from '@wirebench/engine';
 import { describe, expect, it } from 'vitest';
-import { hashPairingCode, newPairingCode, normalizePairingCode } from '../../../src/agent/codes.js';
+import { newPairingCode, normalizePairingCode, pairingCodeHasher } from '../../../src/agent/codes.js';
 import {
   agentHeaders,
   checkAgentSignature,
@@ -31,8 +36,14 @@ describe('agent signatures (hosted edition spec §18.2)', () => {
   it('refuses another key, another message, a truncated or non-base64 signature', () => {
     const k = keys();
     const other = keys();
-    const message = agentRequestMessage('delete', '/api/v1/agent/pairings/x', 'x', NOW.toISOString());
-    expect(message.startsWith('DELETE\n/api/v1/agent/pairings/x\nx\n')).toBe(true);
+    const message = agentRequestMessage(
+      'delete',
+      '/api/v1/agent/pairings/x',
+      'x',
+      NOW.toISOString(),
+      AGENT_EMPTY_BODY_SHA256,
+    );
+    expect(message).toBe(`DELETE\n/api/v1/agent/pairings/x\nx\n${NOW.toISOString()}\n${AGENT_EMPTY_BODY_SHA256}`);
     const signature = k.sign(message);
     expect(signatureValid(other.publicKey, message, signature)).toBe(false);
     expect(signatureValid(k.publicKey, `${message}!`, signature)).toBe(false);
@@ -101,8 +112,16 @@ describe('pairing codes', () => {
     expect(normalizePairingCode('AB3K7')).toBeUndefined();
   });
 
-  it('hashes, never stores the code itself', () => {
-    expect(hashPairingCode('AB3K7Z')).toMatch(/^[0-9a-f]{64}$/);
-    expect(hashPairingCode('AB3K7Z')).not.toBe(hashPairingCode('AB3K7Y'));
+  it('names the hash of an empty body', () => {
+    expect(AGENT_EMPTY_BODY_SHA256).toBe(createHash('sha256').update('').digest('hex'));
+  });
+
+  it('keys the code HMAC on the secrets key, so a plain hash of every code reveals nothing', () => {
+    const hash = pairingCodeHasher(Buffer.alloc(32, 7));
+    expect(hash('AB3K7Z')).toMatch(/^[0-9a-f]{64}$/);
+    expect(hash('AB3K7Z')).toBe(hash('AB3K7Z'));
+    expect(hash('AB3K7Z')).not.toBe(hash('AB3K7Y'));
+    expect(hash('AB3K7Z')).not.toBe(createHash('sha256').update('AB3K7Z').digest('hex'));
+    expect(pairingCodeHasher(Buffer.alloc(32, 8))('AB3K7Z')).not.toBe(hash('AB3K7Z'));
   });
 });

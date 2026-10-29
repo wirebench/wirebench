@@ -26,4 +26,16 @@ describe('RateLimiter (§3.6)', () => {
     for (let i = 0; i < 10; i += 1) expect(limit.take('k').allowed).toBe(true);
     expect(limit.take('k').allowed).toBe(false);
   });
+  it('peeks without taking an attempt', () => {
+    const { limit, tick } = limiter();
+    expect(limit.peek('k').allowed).toBe(true);
+    for (let i = 0; i < 10; i += 1) limit.take('k');
+    for (let i = 0; i < 3; i += 1) expect(limit.peek('k').allowed).toBe(false);
+    expect(limit.peek('k').retryAfterSeconds).toBeGreaterThanOrEqual(1);
+    tick(6_000);
+    expect(limit.peek('k').allowed).toBe(true);
+    expect(limit.peek('k').allowed).toBe(true);
+    expect(limit.take('k').allowed).toBe(true);
+    expect(limit.peek('k').allowed).toBe(false);
+  });
 });

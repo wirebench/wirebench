@@ -37,9 +37,23 @@ export function agentRedeemMessage(nonce: string, pairingId: string, timestamp: 
   return `${nonce}\n${pairingId}\n${timestamp}`;
 }
 
-/** The text the agent signs for a request without a nonce (`DELETE` or `PATCH` of its pairing). */
-export function agentRequestMessage(method: string, path: string, pairingId: string, timestamp: string): string {
-  return `${method.toUpperCase()}\n${path}\n${pairingId}\n${timestamp}`;
+/** Hex `sha256` of an empty body: what a `DELETE` signs as its body hash. */
+export const AGENT_EMPTY_BODY_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+/**
+ * The text the agent signs for a request without a nonce (`DELETE` or `PATCH` of its pairing):
+ * `METHOD\npath\npairingId\ntimestamp\nbodySha256Hex`. `path` is the request path without its query; the
+ * body hash is over the exact bytes sent ({@link AGENT_EMPTY_BODY_SHA256} for none), so a signed port change
+ * cannot be replayed with another port.
+ */
+export function agentRequestMessage(
+  method: string,
+  path: string,
+  pairingId: string,
+  timestamp: string,
+  bodySha256Hex: string,
+): string {
+  return `${method.toUpperCase()}\n${path}\n${pairingId}\n${timestamp}\n${bodySha256Hex}`;
 }
 
 /** `POST /api/v1/agent/pairing-codes`: the user's one live code, replacing any earlier one. */
@@ -65,6 +79,8 @@ export const agentPairResponseSchema = z.object({
   pairingId: teamsIdSchema,
   /** The server's public URL: the one `Origin` the agent will accept for this pairing. */
   origin: z.string(),
+  /** The account the code belonged to, so the agent can say who it paired with. */
+  email: z.string(),
 });
 export type AgentPairResponse = z.infer<typeof agentPairResponseSchema>;
 

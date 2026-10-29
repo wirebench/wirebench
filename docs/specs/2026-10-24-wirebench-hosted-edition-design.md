@@ -928,21 +928,33 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
 
 ### 18.2 Pairing (amends §3.8)
 
-- **Tables.** Migration `0019` adds two tables, both without `tenant_id` until slice 4 adds it everywhere:
-  - `agent_pairings(id, user_id, agent_id, public_key, port, ssh_opt_in, created_at, last_seen_at)`;
-  - `agent_pairing_codes(code_hash, user_id, expires_at, attempts)`.
+- **Tables.** Migration `0019` adds three tables, all without `tenant_id` until slice 4 adds it everywhere:
+  - `agent_pairings(id, user_id, agent_id, public_key, port, ssh_opt_in, created_at, last_seen_at)`, one per
+    user and agent install;
+  - `agent_pairing_codes(code_hash, user_id, expires_at)`, where `code_hash` is an HMAC-SHA256 of the code
+    under a key HKDF derives from `WIREBENCH_SERVER_SECRETS_KEY` (`info = 'wirebench-agent-pairing-codes'`);
+  - `agent_nonces(nonce_hash, pairing_id, user_id, expires_at)`, a tab's nonce bound to its pairing and user.
 - **Routes:**
   - `POST /api/v1/agent/pairing-codes` (cookie, Origin-checked): a new six-character code from an alphabet without
-    look-alikes. It lives ten minutes, and a user has one live code at a time.
+    look-alikes. It lives ten minutes, and a user has one live code at a time (at most ten new codes in ten
+    minutes).
   - `POST /api/v1/agent/pairings` (no session; rate-limited per address): `{ code, agentId, publicKey, port,
-    sshOptIn }` → creates the pairing row and answers `{ pairingId, origin }`, where `origin` is the server's public
-    URL. The fifth wrong code for a user deletes that user's code.
+    sshOptIn }` → creates the pairing row and answers `{ pairingId, origin, email }`, where `origin` is the
+    server's public URL and `email` the account's, so the agent can show who it paired with. A wrong code
+    cannot be tied to a user or a code (it matches no row), so guessing is bounded by two limits: five
+    attempts per address in ten minutes, and 50 failed attempts server-wide in ten minutes, after which
+    pairing answers `429` for everyone until the window refills.
   - `GET /api/v1/agent/pairings` (cookie): the user's pairings, with port and last seen.
   - `POST /api/v1/agent/nonces` (cookie, Origin-checked): `{ pairingId }` → a single-use nonce that lives 60 seconds.
-  - `POST /api/v1/agent/nonces/redeem`: signed by the agent's key over `nonce‖pairingId‖timestamp`. It answers
-    `{ userId, email }` and consumes the nonce. A replayed or expired nonce, or a bad signature, answers `401`.
+  - `POST /api/v1/agent/nonces/redeem` (rate-limited per address): signed by the agent's key over
+    `nonce‖pairingId‖timestamp`. It answers `{ userId, email, displayName }` and consumes the nonce. A replayed
+    or expired nonce, a bad signature or an unknown pairing answers `401`.
   - `DELETE /api/v1/agent/pairings/:id` (cookie or agent signature): unpairs, from either side.
   - `PATCH /api/v1/agent/pairings/:id` (agent signature): the agent's new port, when it moved.
+  - An agent-signed `DELETE` or `PATCH` signs `METHOD‖path‖pairingId‖timestamp‖sha256(body)`, the hash over
+    the exact body bytes (of an empty body for a `DELETE`). Every signed request sends the pairing id, an
+    ISO-8601 timestamp no more than 60 s from the server's clock, and the signature in
+    `x-wirebench-agent-*` headers.
 - **Agent key.** Ed25519, generated at the first pairing, one per agent install. The desktop keeps it behind
   `safeStorage` like any secret; the headless agent keeps it in its own key file (§18.6).
 - **Where to pair.** The desktop pairs from *Pair this machine…* in the app menu and from Settings → Paired browsers.

@@ -66,7 +66,6 @@ describe('audit labels and ranges (audit-log spec §3.6)', () => {
   it('schedule events read as words and name the schedule', () => {
     expect(ACTION_GROUP_LABELS['schedule']).toBe('Schedules');
     expect(actionLabel('schedule.secrets_set')).toBe('Secrets set');
-    expect(actionLabel('agent.nonce.redeemed')).toBe('Nonce redeemed');
     expect(
       targetLabel({ action: 'schedule.created', target: { kind: 'schedule', id: 'S1' }, details: { name: 'Smoke' } }),
     ).toBe('Schedule Smoke');

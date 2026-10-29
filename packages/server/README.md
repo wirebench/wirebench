@@ -286,10 +286,12 @@ server-side send path until an operator asks for them.
   cannot open what the old one sealed.
 - **Pairing a local agent.** A tab asks for a six-character code (`POST /api/v1/agent/pairing-codes`, ten
   minutes, one live code per user); the agent on the user's machine trades it for a pairing that holds its
-  Ed25519 public key (`POST /api/v1/agent/pairings`, five attempts per address in ten minutes). Before
-  serving a tab, the agent redeems a single-use nonce the server gave that tab, signed with its key.
-  Codes and nonces are stored hashed. `agent.paired`, `agent.unpaired`, `agent.nonce.redeemed` and
-  `agent.nonce.refused` (with the reason) are audited.
+  Ed25519 public key (`POST /api/v1/agent/pairings`, five attempts per address in ten minutes; after 50
+  failed attempts server-wide in ten minutes, pairing answers `429` for everyone until the window refills).
+  Before serving a tab, the agent redeems a single-use nonce the server gave that tab, signed with its key.
+  Codes are stored as an HMAC under a key derived from `WIREBENCH_SERVER_SECRETS_KEY`, nonces as a hash.
+  `agent.paired`, `agent.unpaired`, `agent.port_changed`, `agent.nonce_redeemed`, `agent.nonce_refused` and
+  `agent.request_refused` (with the reason) are audited.
 - **Egress.** Every connection a tab's host opens — sends, redirects, the proxy hop, OAuth token calls, URL
   imports, definition fetches — is checked at connect time, the same rule as scheduled runs: loopback,
   link-local, unspecified, cloud-metadata, multicast and broadcast addresses are always refused with

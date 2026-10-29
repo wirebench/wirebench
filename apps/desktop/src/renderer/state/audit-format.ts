@@ -57,9 +57,7 @@ export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
 };
 
 export function actionLabel(action: string): string {
-  // Everything after the group, so `agent.nonce.redeemed` reads "Nonce redeemed".
-  const dot = action.indexOf('.');
-  const words = (dot === -1 ? action : action.slice(dot + 1)).replace(/[._]/g, ' ');
+  const words = (action.split('.')[1] ?? action).replace(/_/g, ' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 

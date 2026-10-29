@@ -1,12 +1,14 @@
 /**
- * Pairing codes and tab nonces (hosted edition spec §18.2). A code is six characters from an alphabet
- * without look-alikes, short enough to type from one screen into another; a nonce is long random material.
- * The database keeps only `sha256` of either, and looks a code up by that hash, so a guess can never
+ * Pairing codes (hosted edition spec §18.2). A code is six characters from an alphabet without look-alikes,
+ * short enough to type from one screen into another. With only 31^6 of them, a plain hash would be reversed
+ * by trying them all, so the database keeps an HMAC under a key derived from `WIREBENCH_SERVER_SECRETS_KEY`
+ * (which the browser client already requires). A code is looked up by that HMAC, so a guess can never
  * reveal another user's code.
  */
-import { randomInt } from 'node:crypto';
+import { createHmac, hkdfSync, randomInt } from 'node:crypto';
 import { AGENT_PAIRING_CODE_ALPHABET, AGENT_PAIRING_CODE_LENGTH, AGENT_PAIRING_CODE_PATTERN } from '@wirebench/engine';
-import { hashSecret } from '../identity/tokens.js';
+
+const CODE_KEY_INFO = 'wirebench-agent-pairing-codes';
 
 /** A fresh code: each character drawn uniformly from the alphabet. */
 export function newPairingCode(): string {
@@ -26,4 +28,8 @@ export function normalizePairingCode(typed: string): string | undefined {
   return AGENT_PAIRING_CODE_PATTERN.test(code) ? code : undefined;
 }
 
-export const hashPairingCode = (code: string): string => hashSecret(code);
+/** HMAC-SHA256 of a normalised code, hex, under a key HKDF derives from the server's secrets key. */
+export function pairingCodeHasher(secretsKey: Buffer): (code: string) => string {
+  const key = Buffer.from(hkdfSync('sha256', secretsKey, Buffer.alloc(0), CODE_KEY_INFO, 32));
+  return (code) => createHmac('sha256', key).update(code, 'utf8').digest('hex');
+}

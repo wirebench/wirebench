@@ -4,7 +4,8 @@
  * `WIREBENCH_SERVER_BROWSER_CLIENT` is on (only a browser tab has an agent to pair), but its migration
  * always runs, as every module's does, so the version list stays contiguous.
  *
- * It comes after `host`, whose server host listens to `agentUnpaired` to drop a pairing from its view.
+ * It comes after `host`. It announces `agentUnpaired` for the server host to drop a pairing from its view;
+ * nothing listens yet (Part B's server host will).
  * Expired codes and nonces are swept daily, like identity's flows.
  */
 import { fileURLToPath } from 'node:url';
@@ -35,9 +36,11 @@ export function agentModule(options: AgentModuleOptions = {}): ServerModule {
     name: 'agent',
     migrationsDir: AGENT_MIGRATIONS_DIR,
 
-    register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
-      if (!ctx.config.browserClient) return Promise.resolve();
-      agentRoutes({ ctx, now })(app);
+    async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
+      if (!ctx.config.browserClient) return;
+      // loadConfig refuses the browser client without the key; checked again so the type knows it.
+      if (ctx.config.secretsKey === undefined) throw new Error('the agent module needs WIREBENCH_SERVER_SECRETS_KEY');
+      await agentRoutes({ ctx, now, secretsKey: ctx.config.secretsKey })(app);
       const interval = options.sweepIntervalMs ?? DAY_MS;
       if (interval > 0) {
         const timer = setInterval(() => {
@@ -48,7 +51,6 @@ export function agentModule(options: AgentModuleOptions = {}): ServerModule {
           clearInterval(timer);
         });
       }
-      return Promise.resolve();
     },
   };
 }

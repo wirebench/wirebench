@@ -38,7 +38,7 @@ export async function replaceCode(
 ): Promise<void> {
   await db.query(
     `insert into agent_pairing_codes (code_hash, user_id, expires_at) values ($1, $2, $3)
-     on conflict (user_id) do update set code_hash = excluded.code_hash, expires_at = excluded.expires_at, attempts = 0`,
+     on conflict (user_id) do update set code_hash = excluded.code_hash, expires_at = excluded.expires_at`,
     [input.codeHash, input.userId, input.expiresAt],
   );
 }
@@ -80,6 +80,17 @@ export async function upsertPairing(
     )
   ).rows;
   return pairingOf(rows[0]!);
+}
+
+/** The pairing of `agentId` for `userId`, if that install paired before. */
+export async function pairingOfAgent(db: Querier, userId: string, agentId: string): Promise<PairingRow | undefined> {
+  const row = (
+    await db.query(`select ${PAIRING_COLUMNS} from agent_pairings where user_id = $1 and agent_id = $2`, [
+      userId,
+      agentId,
+    ])
+  ).rows[0];
+  return row === undefined ? undefined : pairingOf(row);
 }
 
 export async function pairingById(db: Querier, id: string): Promise<PairingRow | undefined> {
