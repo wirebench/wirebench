@@ -44,6 +44,11 @@ export interface SocketTransportOptions {
    * hello arrived on it. The next attempt is already scheduled unless the listener calls `close()`.
    */
   readonly onClosed?: (code: number, helloSeen: boolean) => void;
+  /**
+   * Each time opening a socket throws (a URL the page may not connect to, say). The next attempt is
+   * already scheduled, on the same backoff as after a close.
+   */
+  readonly onOpenFailed?: (error: unknown) => void;
 }
 
 export interface SocketTransport {
@@ -128,7 +133,8 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
     for (const answer of answers) answer(HOST_DISCONNECTED);
   };
 
-  const onFrame = (frame: Record<string, unknown>): void => {
+  /** Handles one frame; `true` when it was a hello. */
+  const onFrame = (frame: Record<string, unknown>): boolean => {
     const hello = helloOf(frame);
     if (hello !== undefined) {
       connected = true;
@@ -138,14 +144,14 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
         resolveReady(hello);
       }
       options.onHello?.(hello);
-      return;
+      return true;
     }
     if (typeof frame['id'] === 'number' && typeof frame['ok'] === 'boolean') {
       const answer = pending.get(frame['id']);
-      if (answer === undefined) return;
+      if (answer === undefined) return false;
       pending.delete(frame['id']);
       answer(resultOf(frame));
-      return;
+      return false;
     }
     if (typeof frame['event'] === 'string') {
       for (const listener of [...(listeners.get(frame['event']) ?? [])]) {
@@ -157,12 +163,26 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
         }
       }
     }
+    return false;
+  };
+
+  /** Schedules the next attempt and doubles the wait for the one after, up to the ceiling. */
+  const retry = (): void => {
+    timer = setTimeout(connect, delay);
+    delay = Math.min(delay * 2, RECONNECT_DELAY.maxMs);
   };
 
   const connect = (): void => {
     timer = undefined;
     if (stopped) return;
-    const current = createSocket(url);
+    let current: SocketLike;
+    try {
+      current = createSocket(url);
+    } catch (error) {
+      retry();
+      options.onOpenFailed?.(error);
+      return;
+    }
     socket = current;
     let helloSeen = false;
     current.onmessage = (event) => {
@@ -174,8 +194,7 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
         return;
       }
       if (!isRecord(frame)) return;
-      if (frame['type'] === 'hello') helloSeen = true;
-      onFrame(frame);
+      if (onFrame(frame)) helloSeen = true;
     };
     current.onclose = (event) => {
       if (socket !== current || stopped) return;
@@ -183,8 +202,7 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
       connected = false;
       failPending();
       // Scheduled before the listener runs, so a listener that gives up can still cancel it with close().
-      timer = setTimeout(connect, delay);
-      delay = Math.min(delay * 2, RECONNECT_DELAY.maxMs);
+      retry();
       options.onClosed?.(event.code, helloSeen);
     };
     // A failed socket also closes; the close handler does the work.

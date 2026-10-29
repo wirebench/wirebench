@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
   ME_PATH,
+  signInUrl,
   RECONNECT_BAR_ID,
   RECONNECT_TEXT,
-  SIGN_IN_PATH,
   startBrowserClient,
   type BootstrapDeps,
 } from '../../src/browser/browser-bootstrap.js';
@@ -20,7 +20,7 @@ interface Harness {
   readonly started: Promise<void>;
 }
 
-function start(meStatus = 200): Harness {
+function start(meStatus = 200, createSocket: BootstrapDeps['createSocket'] = FakeSocket.create): Harness {
   const target: { wirebench?: WirebenchApi } = {};
   const assign = vi.fn<(url: string) => void>();
   const reload = vi.fn<() => void>();
@@ -31,15 +31,26 @@ function start(meStatus = 200): Harness {
     return Promise.resolve();
   });
   const deps: BootstrapDeps = {
-    location: { protocol: 'https:', host: 'acme.example.test', assign, reload },
+    location: {
+      protocol: 'https:',
+      host: 'acme.example.test',
+      pathname: '/w/team',
+      search: '?tab=1',
+      hash: '#req',
+      assign,
+      reload,
+    },
     document,
     fetch,
     target,
     mountRenderer,
-    createSocket: FakeSocket.create,
+    createSocket,
   };
   return { deps, target, assign, reload, fetch, mountRenderer, started: startBrowserClient(deps) };
 }
+
+/** Where the tab goes to sign in again: back to the page it was on afterwards. */
+const SIGN_IN = '/sign-in?redirect_to=%2Fw%2Fteam%3Ftab%3D1%23req';
 
 function bar(): HTMLElement | null {
   return document.getElementById(RECONNECT_BAR_ID);
@@ -100,7 +111,7 @@ describe('startBrowserClient', () => {
     FakeSocket.last().drop(4401);
     await vi.advanceTimersByTimeAsync(60_000);
 
-    expect(h.assign).toHaveBeenCalledWith(SIGN_IN_PATH);
+    expect(h.assign).toHaveBeenCalledWith(SIGN_IN);
     expect(FakeSocket.all).toHaveLength(1);
   });
 
@@ -108,7 +119,7 @@ describe('startBrowserClient', () => {
     const h = start();
     FakeSocket.last().drop(4401);
     await vi.advanceTimersByTimeAsync(0);
-    expect(h.assign).toHaveBeenCalledWith(SIGN_IN_PATH);
+    expect(h.assign).toHaveBeenCalledWith(SIGN_IN);
   });
 
   it('asks /api/v1/me after a socket fails before its hello, and signs in again on 401', async () => {
@@ -117,7 +128,7 @@ describe('startBrowserClient', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(h.fetch).toHaveBeenCalledWith(ME_PATH, { credentials: 'same-origin' });
-    expect(h.assign).toHaveBeenCalledWith(SIGN_IN_PATH);
+    expect(h.assign).toHaveBeenCalledWith(SIGN_IN);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(FakeSocket.all).toHaveLength(1);
   });
@@ -131,7 +142,7 @@ describe('startBrowserClient', () => {
     // The reopened socket's upgrade is refused: the page sees 1006 before any hello.
     FakeSocket.last().drop(1006);
     await vi.advanceTimersByTimeAsync(0);
-    expect(h.assign).toHaveBeenCalledWith(SIGN_IN_PATH);
+    expect(h.assign).toHaveBeenCalledWith(SIGN_IN);
   });
 
   it('keeps reconnecting when /api/v1/me answers 200 or cannot be reached', async () => {
@@ -205,5 +216,29 @@ describe('startBrowserClient', () => {
     expect(h.reload).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(FakeSocket.all).toHaveLength(3);
+  });
+
+  it('shows the reconnect bar, not a blank page, when the first socket cannot even be opened', async () => {
+    let throws = 1;
+    const h = start(200, (url) => {
+      if (throws > 0) {
+        throws -= 1;
+        throw new Error('blocked');
+      }
+      return FakeSocket.create(url);
+    });
+    expect(bar()?.hidden).toBe(false);
+    expect(bar()?.textContent).toBe(RECONNECT_TEXT.reconnecting);
+    await vi.advanceTimersByTimeAsync(1_000);
+    FakeSocket.last().hello();
+    await h.started;
+    expect(bar()?.hidden).toBe(true);
+  });
+});
+
+describe('signInUrl', () => {
+  it('sends the current path, query and hash back as redirect_to', () => {
+    expect(signInUrl({ pathname: '/', search: '', hash: '' })).toBe('/sign-in?redirect_to=%2F');
+    expect(signInUrl({ pathname: '/w/team', search: '?tab=1', hash: '#req' })).toBe(SIGN_IN);
   });
 });

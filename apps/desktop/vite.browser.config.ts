@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, type Plugin, type Rollup } from 'vite';
 
 const here = import.meta.dirname;
 const repo = resolve(here, '../..');
@@ -77,6 +77,17 @@ function workspaceSourcesPlugin(): Plugin {
 }
 
 /**
+ * Rollup's `onwarn`: a Node module Vite "externalized for browser compatibility" is replaced by an empty
+ * stand-in, so the build succeeds and the page fails when that code runs. Here it fails the build instead.
+ */
+export function failOnBrowserExternal(warning: Rollup.RollupLog, warn: (warning: Rollup.RollupLog) => void): void {
+  if (warning.message.includes('externalized for browser compatibility')) {
+    throw new Error(`browser build: ${warning.message}`);
+  }
+  warn(warning);
+}
+
+/**
  * Vite names the page after its place under `root` (`browser/index.html`); the server serves it at `/`.
  * `base` is `/`, so its asset URLs are absolute and do not depend on where the page sits.
  */
@@ -110,6 +121,7 @@ export default defineConfig({
     assetsDir: 'assets',
     rollupOptions: {
       input: resolve(here, 'src/browser/index.html'),
+      onwarn: failOnBrowserExternal,
       output: {
         entryFileNames: 'assets/[name]-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',

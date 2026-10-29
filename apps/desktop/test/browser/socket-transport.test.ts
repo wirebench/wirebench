@@ -217,4 +217,41 @@ describe('createSocketTransport', () => {
       error: { code: 'internal-error', message: 'The server sent a reply the client cannot read' },
     });
   });
+
+  it('does not count a hello-typed frame it cannot read as the hello', async () => {
+    const onClosed = vi.fn();
+    const onHello = vi.fn();
+    transport({ onClosed, onHello });
+    FakeSocket.last().receive({ type: 'hello', host: 'browser' });
+    FakeSocket.last().drop(1006);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onHello).not.toHaveBeenCalled();
+    expect(onClosed).toHaveBeenCalledWith(1006, false);
+  });
+
+  it('retries with the same backoff when opening a socket throws, and tells onOpenFailed', async () => {
+    const onOpenFailed = vi.fn();
+    let throws = 2;
+    const t = createSocketTransport(URL, {
+      onOpenFailed,
+      createSocket: (url) => {
+        if (throws > 0) {
+          throws -= 1;
+          throw new Error('blocked');
+        }
+        return FakeSocket.create(url);
+      },
+    });
+    expect(onOpenFailed).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(onOpenFailed).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(onOpenFailed).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(FakeSocket.all).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeSocket.all).toHaveLength(1);
+    FakeSocket.last().hello();
+    await expect(t.ready).resolves.toMatchObject({ type: 'hello' });
+  });
 });

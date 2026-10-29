@@ -6,7 +6,7 @@
  *
  * Afterwards it owns two things outside React:
  *
- * - The session. A `4401` close sends the tab to `/sign-in`. A server answers the upgrade of a disabled
+ * - The session. A `4401` close sends the tab to `/sign-in`, with `redirect_to` the page it was on. A server answers the upgrade of a disabled
  *   user with HTTP 403, which a page sees only as a close (`1006`) before any hello; so after such a close
  *   it asks `/api/v1/me`, and a 401 or 403 there sends the tab to `/sign-in` too.
  * - The reconnect bar, a plain element shown while the socket is down after the first hello, hidden by
@@ -20,6 +20,18 @@ import { createSocketTransport, hostSocketUrl, type Hello, type SocketLike } fro
 export const CLOSE_CODE = { unauthenticated: 4401, tooManySockets: 4429 } as const;
 
 export const SIGN_IN_PATH = '/sign-in';
+
+/**
+ * The sign-in page, told to come back to where the tab was: path, query and hash. The server checks
+ * `redirect_to` (`safeRedirectPath`) before it follows it, so it cannot be used to leave the site.
+ */
+export function signInUrl(location: {
+  readonly pathname: string;
+  readonly search: string;
+  readonly hash: string;
+}): string {
+  return `${SIGN_IN_PATH}?redirect_to=${encodeURIComponent(location.pathname + location.search + location.hash)}`;
+}
 export const ME_PATH = '/api/v1/me';
 export const RECONNECT_BAR_ID = 'wirebench-reconnect-bar';
 
@@ -32,6 +44,9 @@ export interface BootstrapDeps {
   readonly location: {
     readonly protocol: string;
     readonly host: string;
+    readonly pathname: string;
+    readonly search: string;
+    readonly hash: string;
     assign(url: string): void;
     reload(): void;
   };
@@ -94,7 +109,7 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
     if (leaving) return;
     leaving = true;
     transport.close();
-    deps.location.assign(SIGN_IN_PATH);
+    deps.location.assign(signInUrl(deps.location));
   };
 
   // A socket that fails before its hello may be a refused upgrade (a disabled user is answered 403);
@@ -127,6 +142,10 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
         return;
       }
       bar.hide();
+    },
+    // Not even a socket to wait on: say so rather than leave the page blank until the next attempt.
+    onOpenFailed() {
+      bar.show(RECONNECT_TEXT.reconnecting);
     },
     onClosed(code, helloSeen) {
       if (code === CLOSE_CODE.unauthenticated) {

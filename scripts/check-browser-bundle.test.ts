@@ -21,9 +21,11 @@ describe('forbiddenImports', () => {
           'import("node:fs");',
           "import 'node:path';",
           'export*from"electron/renderer";',
+          'import"electron";',
+          'import"node:fs";',
         ].join('\n'),
       ),
-    ).toEqual(['electron', 'electron', 'node:fs', 'node:path', 'electron/renderer']);
+    ).toEqual(['electron', 'electron', 'node:fs', 'node:path', 'electron/renderer', 'electron', 'node:fs']);
   });
 
   it('leaves the word electron in text alone', () => {
@@ -53,5 +55,15 @@ describe('checkBrowserBundle', () => {
     ]);
     const empty = await mkdtemp(join(tmpdir(), 'dist-browser-'));
     expect(checkBrowserBundle(empty)).toEqual([`${join(empty, 'index.html')} is missing`]);
+  });
+
+  it('names a module Vite swapped for its browser-external stand-in', async () => {
+    const dir = await bundle({
+      'index.html': '',
+      'assets/index-AbCd1234.js': 'const fs={};export{fs as __vite-browser-external};',
+    });
+    expect(checkBrowserBundle(dir)).toEqual([
+      `${join('assets', 'index-AbCd1234.js')} holds __vite-browser-external: a Node module was stubbed out for the browser`,
+    ]);
   });
 });
