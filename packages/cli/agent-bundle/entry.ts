@@ -106,7 +106,8 @@ export const pairAgent: AgentBundle['pairAgent'] = async (input) => {
   return await pair({
     code: input.code,
     serverUrl: input.serverUrl,
-    sshOptIn: input.sshOptIn,
+    // No SSH opt-in in slice 3: nothing serves SSH yet, and the version that does asks for it then.
+    sshOptIn: false,
     port: input.port,
     store,
     fetch: fetchOf(input),

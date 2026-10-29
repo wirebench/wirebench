@@ -12,7 +12,7 @@
 import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { openTeamDialog } from '../helpers/server.js';
 import { apiRow, responseStatus, restRequestRow, sendRest, unfoldRow } from '../helpers/rest.js';
-import { pairAgent, unpairAgent } from './agent.js';
+import { ensureUnpaired, pairAgent, unpairAgent } from './agent.js';
 import { BASE_URL, readAgentHome, readSeed, type Seed } from './stack.js';
 
 test.describe.configure({ mode: 'serial' });
@@ -27,6 +27,8 @@ const consoleErrors: string[] = [];
 
 test.beforeAll(async ({ browser }) => {
   seed = readSeed();
+  // A retry must start where the first attempt did: the loopback step expects no agent connected.
+  await ensureUnpaired(readAgentHome());
   context = await browser.newContext();
   // A binding outlives navigations, so a violation on the sign-in page counts as much as one in the app.
   await context.exposeBinding('__wirebenchCspViolation', (_source, line: string) => {
@@ -51,9 +53,12 @@ test.beforeAll(async ({ browser }) => {
 });
 
 test.afterAll(async () => {
-  await context.close();
-  // A retry starts from an unpaired machine, as the first attempt did: the loopback step expects no agent.
-  await unpairAgent(readAgentHome());
+  try {
+    await context.close();
+  } finally {
+    // Unpaired at the server too, so a retry's tab lists no pairing; `beforeAll` checks the machine.
+    await unpairAgent(readAgentHome());
+  }
 });
 
 function projectRow(): Locator {

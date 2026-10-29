@@ -3,7 +3,13 @@
  * in the main process, over the app's own host, but only while this machine has a pairing: without one no
  * port is opened and nothing changes for anyone who never pairs. It starts after the IPC is bound when the
  * pairings file holds a pairing, starts when *Pair this machine…* pairs, and stops when the last pairing goes
- * (here, or from `wirebench agent unpair` beside it) and when the app quits.
+ * and when the app quits. A pairing goes when it is unpaired here, or when its server answers that it no
+ * longer holds it (unpaired from the browser's tab): the agent then removes it itself, at its next call to
+ * that server (every start tells each server the port).
+ *
+ * This agent's pairings file, identity and `${#System#…}` allowlist are the app's own, in its `userData`;
+ * `wirebench agent` on the same machine is a separate agent with its own (`~/.wirebench/agent`). Only this
+ * process writes this file, so nothing here re-reads it for another writer.
  *
  * Its controls are the `machineAgent.*` channels, which this module registers on the desktop's own table:
  * a browser caller never reaches them (the agent's socket serves `agent.*` alone, and a server host refuses
@@ -24,7 +30,7 @@ import {
   startAgent,
   unpair,
   type AgentFetch,
-  type AgentHandler,
+  type AgentHandlers,
   type PairingStore,
   type RunningAgent,
   type StartAgentOptions,
@@ -65,7 +71,7 @@ function shown(error: unknown): unknown {
 
 export class MachineAgent {
   private running: RunningAgent | undefined;
-  private handlers: ReadonlyMap<string, AgentHandler> | undefined;
+  private handlers: AgentHandlers | undefined;
   /** One start or stop at a time: a pairing and an unpairing never race each other. */
   private queue: Promise<void> = Promise.resolve();
   private closed = false;
@@ -110,8 +116,8 @@ export class MachineAgent {
           host: this.deps.host,
           platform: this.deps.platform,
           store,
+          // Their `resolvesTeamSecrets` names `team-secrets` in the hello, from the same flag the sends use.
           handlers: this.sendHandlers(store),
-          teamSecrets: true,
           ...(this.deps.fetch !== undefined ? { fetch: this.deps.fetch } : {}),
           ...(this.deps.ports !== undefined ? { ports: this.deps.ports } : {}),
           ...(this.deps.log !== undefined ? { log: this.deps.log } : {}),
@@ -129,15 +135,6 @@ export class MachineAgent {
     return next;
   }
 
-  /**
-   * Reads the pairings file again, then starts or stops the agent to match: a pairing `wirebench agent pair`
-   * made while the agent was off (nothing re-reads the file then) counts once a window is focused.
-   */
-  async refresh(): Promise<void> {
-    await this.store?.refresh().catch(() => undefined);
-    await this.sync().catch(() => undefined);
-  }
-
   /** Stops the agent for good: the app is quitting. */
   async close(): Promise<void> {
     this.closed = true;
@@ -145,7 +142,7 @@ export class MachineAgent {
   }
 
   /** The send handlers, made once: making them sweeps the agent's temporary folder. */
-  private sendHandlers(store: PairingStore): ReadonlyMap<string, AgentHandler> {
+  private sendHandlers(store: PairingStore): AgentHandlers {
     this.handlers ??= agentSendHandlers({
       platform: this.deps.platform,
       store,
@@ -166,11 +163,9 @@ export class MachineAgent {
     return this.deps.fetch ?? ((url, init) => globalThis.fetch(url, init));
   }
 
-  async status(): Promise<MachineAgentStatusWire> {
+  status(): Promise<MachineAgentStatusWire> {
     const store = this.store;
-    if (store === undefined) return { pairings: [], paired: false, allowedSystemNames: [] };
-    // A pairing made or removed by `wirebench agent` beside the app counts without a restart.
-    await store.refresh().catch(() => undefined);
+    if (store === undefined) return Promise.resolve({ pairings: [], paired: false, allowedSystemNames: [] });
     const pairings = store.list().map((pairing): MachineAgentPairingWire => ({
       pairingId: pairing.pairingId,
       origin: pairing.origin,
@@ -179,12 +174,12 @@ export class MachineAgent {
       sshOptIn: pairing.sshOptIn,
       ...(pairing.port !== undefined ? { port: pairing.port } : {}),
     }));
-    return {
+    return Promise.resolve({
       ...(this.running !== undefined ? { port: this.running.port } : {}),
       pairings,
       paired: existsSync(join(this.deps.platform.paths.userData(), PAIRINGS_FILE)),
       allowedSystemNames: [...store.allowedSystemNames()],
-    };
+    });
   }
 
   /** Pairs with the code, then starts the agent (on the port the server was told, or reports the one it got). */

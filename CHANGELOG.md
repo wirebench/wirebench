@@ -40,8 +40,10 @@ All notable changes to this project are documented here. The format follows
   `send-needs-agent` and an offer to pair. The chip beside Send says Server or Agent, a request or
   workspace can be pinned to the agent, and History tags each entry with the host that sent it. A paired
   server can send requests from your machine on your behalf, including to addresses on its network, and
-  nothing more: no files, shell, SSH or SFTP. `${#System#…}` reads only the names on the machine's own
-  allowlist, empty by default. Chrome, Edge and Firefox; Safari users use the desktop app.
+  nothing more: no files, shell, SSH or SFTP. `${#System#…}` reads only the names on the agent's own
+  allowlist, empty by default. Chrome, Edge and Firefox; Safari users use the desktop app. A send under a
+  protected environment now asks in the tab before it goes, whichever host sends it; before, such a send
+  could not be made from a browser tab at all.
 - **Desktop: Settings → Paired browsers.** The servers whose browser tabs may send from this machine, with
   Unpair and Remove here only, the port the agent listens on, and the `${#System#…}` allowlist. A paired
   desktop app resolves team secrets for a tab's send from the values its approved machine has imported,
@@ -49,8 +51,9 @@ All notable changes to this project are documented here. The format follows
 - **CLI: `wirebench agent` (#790).** The local agent without a window: `wirebench agent` serves on
   `127.0.0.1:47615` (or the next free port up to 47634) until Ctrl+C, with `pair`, `unpair [--server]
   [--local]`, `status`, and `allow-env`, `disallow-env`, `allowed-env` for the allowlist. Its secrets are
-  sealed under `~/.wirebench/agent/agent.key`, protected only by its file mode (the agent refuses to start
-  when the folder or key is open to others). It has no team secrets: use the desktop app for those.
+  sealed under `~/.wirebench/agent/agent.key`, protected only by its file mode (on macOS and Linux the
+  agent refuses to start when the folder or key is open to others). It has no team secrets: use the
+  desktop app for those. It is a separate agent from the desktop app's, with its own pairings and allowlist.
 
 ### Changed
 - **The open editor tab stands out.** It carries an accent bar along its bottom edge, and the editor

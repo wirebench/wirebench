@@ -33,6 +33,7 @@ import { flushScriptEdits, hasScriptEditors } from './script-edits.js';
 import { withProtectedConfirmation } from './protected-send.js';
 import {
   ABORTED,
+  agentCapabilitiesFor,
   agentEnv,
   cancelRoutedSend,
   releaseRoutedSend,
@@ -41,6 +42,7 @@ import {
   routingActive,
   sendNeedsAgentError,
   sendThroughAgent,
+  teamSecretNeedsDesktopError,
   trackRoutedSend,
 } from './send-route.js';
 
@@ -153,9 +155,15 @@ async function sendRouteFor(
   if (routedSendCancelled(sendId)) return settle({ kind: 'error', error: ABORTED });
   if (route === undefined || (route.ok && route.value.route === 'server')) return settle({ kind: 'server' });
   if (!route.ok) return settle({ kind: 'error', error: route.error });
-  if (agent.status() !== 'connected') {
+  // With more than one paired agent, the one whose hello covers what this send needs (team secrets are the
+  // desktop app's); the order the agents are tried in otherwise.
+  const selection = await agent.selectFor(agentCapabilitiesFor(route.value.needs));
+  if (routedSendCancelled(sendId)) return settle({ kind: 'error', error: ABORTED });
+  if (!selection.connected) {
     return settle({ kind: 'error', error: sendNeedsAgentError(route.value.needs, route.value.unresolved === true) });
   }
+  if (selection.missing.includes('team-secrets'))
+    return settle({ kind: 'error', error: teamSecretNeedsDesktopError() });
   return settle({ kind: 'agent' });
 }
 

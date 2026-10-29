@@ -1625,7 +1625,11 @@ recorded, redacted and without bodies, in `history/plugin-<id>.jsonl`. Writing o
 
 The local agent lets a browser tab at your team's Wirebench Server send requests from your machine, to
 hosts only it reaches: `localhost`, the office network, a VPN (hosted edition spec §18.6). The desktop
-app runs the same agent; `wirebench agent` is it without a window.
+app runs the same agent code; `wirebench agent` is it without a window. The two are separate agents: each
+has its own pairings, key and allowlist (the desktop's in its own profile, this one's in
+`~/.wirebench/agent`), so these commands never change the desktop's, and Settings → Paired browsers never
+changes this one's. Pair one of them per machine and server; if both are paired, a tab sends a request
+that reads a team secret through the desktop app's and anything else through whichever it reached first.
 
 ```bash
 wirebench agent pair ABC234 --server https://wirebench.example.com   # the code the browser shows
@@ -1639,12 +1643,19 @@ wirebench agent unpair --server https://wirebench.example.com
   another terminal: `pair` tells the server the port of an agent already running (it reads
   `agent.json` in the agent's folder), or 47615 when none runs, and a started agent tells each server the
   port it took.
-- `pair <code> --server <url> [--ssh]` trades the code for a pairing. The address is `https://`, or
-  `http://` for a server on this machine. `--ssh` lets that server's tabs open SSH sessions here.
+- `pair <code> --server <url>` trades the code for a pairing. The address is `https://`, or `http://` for
+  a server on this machine. A paired server can send requests from this machine on your behalf, including
+  to addresses on this machine's network; `pair` says so when it succeeds. SSH is not served to a tab, and
+  no SSH opt-in is recorded at pairing: the version that serves it will ask then.
 - `unpair [--server <url>] [--local]` unpairs at the server and here: every server, or only that one,
   each whatever became of the others. A server that cannot be reached is forgotten here anyway, with a
   warning that it still lists this machine; a server that refuses keeps its pairing, and the command exits
   3. `--local` forgets the pairing here without asking the server.
+- Unpairing in the tab (Settings → This machine → Unpair) removes the pairing at the server at once: no
+  tab of that server gets in from then on. The agent removes its own copy the next time it calls that
+  server about it: at its next start, when it tells each server its port, or when a tab offers it a nonce.
+  Only the server's own "no such pairing" answer removes it; a server that cannot be reached, or answers
+  anything else, leaves it in place.
 - `status` lists the pairings, the allowed environment variables, and whether the agent runs.
 - `allow-env <NAME…>`, `disallow-env <NAME…>`, `allowed-env`: a paired server's requests read
   `${#System#NAME}` only for a name on this list, which is empty by default; every other name resolves to

@@ -1,12 +1,13 @@
 // @vitest-environment node
 /**
  * The desktop app as this machine's agent (hosted edition spec §18.2, §18.5): no listener without a pairing,
- * one after *Pair this machine…*, none again after the last pairing goes; the `machineAgent.*` channels on the
- * desktop's own table, and no `agent.*` channel there at all.
+ * one after *Pair this machine…*, none again after the last pairing goes (unpaired here, or answered unknown by
+ * its server after an unpairing in the tab); the `machineAgent.*` channels on the desktop's own table, and no
+ * `agent.*` channel there at all. Its pairings file is its own: `wirebench agent` keeps another.
  */
 import { createServer } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
-import { openPairingStore, type RunningAgent, type StartAgentOptions } from '@wirebench/agent';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { RunningAgent, StartAgentOptions } from '@wirebench/agent';
 import { generateId } from '@wirebench/engine';
 import { createHost, type Host } from '../../../../packages/host/src/host/create-host.js';
 import { createFakePlatform, fakeCaller } from '../../../../packages/host/test/helpers/fake-platform.js';
@@ -40,9 +41,14 @@ afterEach(async () => {
   for (const host of hosts.splice(0)) await host.shutdown();
 });
 
-/** A server that pairs `GOOD_CODE`, refuses any other code with 404, and accepts an unpairing. */
+/**
+ * A server that pairs `GOOD_CODE`, refuses any other code with 404, and accepts an unpairing and a port.
+ * `unknownPairings` answers every signed call as a server that no longer holds the pairing; `failSigned`
+ * answers them `503`.
+ */
 function fakeServer() {
   const calls: { method: string; url: string }[] = [];
+  const state = { unknownPairings: false, failSigned: false };
   const answer = (url: string, init: RequestInit): Response => {
     calls.push({ method: init.method ?? 'GET', url });
     if (init.method === 'POST' && url.endsWith('/api/v1/agent/pairings')) {
@@ -50,11 +56,17 @@ function fakeServer() {
       if (body.code !== GOOD_CODE) return new Response('{}', { status: 404 });
       return Response.json({ pairingId: generateId(), origin: SERVER, email: 'ada@example.test' }, { status: 201 });
     }
-    if (init.method === 'DELETE' || init.method === 'PATCH') return new Response(null, { status: 204 });
+    if (init.method === 'DELETE' || init.method === 'PATCH') {
+      if (state.unknownPairings) {
+        return Response.json({ code: 'agent-pairing-unknown', message: 'Not paired any more.' }, { status: 404 });
+      }
+      if (state.failSigned) return Response.json({ code: 'unavailable', message: 'Try later' }, { status: 503 });
+      return new Response(null, { status: 204 });
+    }
     return new Response('{}', { status: 404 });
   };
   const fetch = (url: string, init: RequestInit): Promise<Response> => Promise.resolve(answer(url, init));
-  return { fetch, calls };
+  return Object.assign(state, { fetch, calls });
 }
 
 /** A `startAgent` that listens nowhere: records each start and close. */
@@ -112,7 +124,8 @@ describe('the desktop agent', () => {
     const paired = await call('machineAgent.pair', { serverUrl: `${SERVER}/some/path`, code: ` ${GOOD_CODE} ` });
     expect(paired).toMatchObject({ ok: true, value: { origin: SERVER, email: 'ada@example.test' } });
     expect(agent.started).toHaveLength(1);
-    expect(agent.started[0]).toMatchObject({ teamSecrets: true });
+    // One flag for the hello and the sends: the handlers say they resolve team secrets.
+    expect(agent.started[0]?.handlers?.resolvesTeamSecrets).toBe(true);
     expect(agent.started[0]?.handlers?.has('agent.send')).toBe(true);
     expect(machine.port).toBe(47616);
     const status = (await call('machineAgent.status', undefined)) as {
@@ -181,18 +194,59 @@ describe('the desktop agent', () => {
     expect(secondRun.closed()).toBe(1);
   });
 
-  it('stops when `wirebench agent unpair` removes the last pairing beside it', async () => {
-    const { platform, machine, agent, call } = await setUp();
-    await call('machineAgent.pair', { serverUrl: SERVER, code: GOOD_CODE });
-    expect(machine.port).toBe(47616);
-    // The CLI's own store over the same profile.
-    const cli = await openPairingStore(platform);
-    for (const pairing of cli.list()) await cli.remove(pairing.pairingId);
-    // Settings (or a window's focus) reads the file again; the change stops the agent.
-    await call('machineAgent.status', undefined);
-    await machine.sync();
-    expect(agent.closed()).toBe(1);
-    expect(machine.port).toBeUndefined();
+  it('stops listening when its server answers that the last pairing was unpaired in the tab', async () => {
+    const platform = createFakePlatform();
+    const host = await createHost(platform);
+    hosts.push(host);
+    const port = await freePort();
+    const server = fakeServer();
+    const machine = await MachineAgent.open({ host, platform, fetch: server.fetch, ports: [port] });
+    await machine.pair({ serverUrl: SERVER, code: GOOD_CODE });
+    expect(machine.port).toBe(port);
+    await machine.close();
+
+    // Unpaired in the tab while the app was closed: at the next start the port report gets the server's
+    // `agent-pairing-unknown`, and the agent removes the pairing, which stops the listener.
+    server.unknownPairings = true;
+    const again = await MachineAgent.open({ host, platform, fetch: server.fetch, ports: [port] });
+    await again.sync();
+    await vi.waitFor(async () => {
+      expect((await again.status()).pairings).toEqual([]);
+      expect(again.port).toBeUndefined();
+    });
+    expect(await free(port)).toBe(true);
+    await again.close();
+  });
+
+  it('keeps the pairing and listens on when the server only fails for now', async () => {
+    const platform = createFakePlatform();
+    const host = await createHost(platform);
+    hosts.push(host);
+    const port = await freePort();
+    const server = fakeServer();
+    const machine = await MachineAgent.open({ host, platform, fetch: server.fetch, ports: [port] });
+    await machine.pair({ serverUrl: SERVER, code: GOOD_CODE });
+    server.failSigned = true;
+    await machine.close();
+    const again = await MachineAgent.open({ host, platform, fetch: server.fetch, ports: [port] });
+    await again.sync();
+    await vi.waitFor(() => expect(server.calls.filter((one) => one.method === 'PATCH').length).toBeGreaterThan(1));
+    expect((await again.status()).pairings).toHaveLength(1);
+    expect(again.port).toBe(port);
+    await again.close();
+  });
+
+  it('says plainly that a machine without secret storage cannot pair', async () => {
+    const platform = createFakePlatform({
+      secrets: { available: () => false, encrypt: () => Buffer.alloc(0), decrypt: () => '' },
+    });
+    const host = await createHost(platform);
+    hosts.push(host);
+    const machine = await MachineAgent.open({ host, platform, fetch: fakeServer().fetch, start: fakeStart().start });
+    await expect(machine.pair({ serverUrl: SERVER, code: GOOD_CODE })).rejects.toMatchObject({
+      code: 'agent-no-secret-storage',
+      message: 'This machine cannot keep the agent key secret, so it cannot pair',
+    });
   });
 
   it('keeps the pairing when the agent cannot start, and shows it off', async () => {

@@ -64,10 +64,16 @@ async function freePort(): Promise<number> {
 describe('wirebench agent', () => {
   it('pairs, lists the pairing, and unpairs it at the server and here', async () => {
     const { home, server } = await setUp();
-    const paired = await run(home, ['pair', server.code, '--server', server.url, '--ssh']);
+    const paired = await run(home, ['pair', server.code, '--server', server.url]);
     expect(paired).toMatchObject({ code: 0, err: '' });
     expect(paired.out).toContain(`Paired with ${server.url} as ${server.email}.`);
+    // The trust the pairing gives, said where it is made (spec §3.8).
+    expect(paired.out).toContain(
+      "A paired server can send requests from this machine on your behalf, including to addresses on this machine's network.",
+    );
     expect(server.pairings.size).toBe(1);
+    // No SSH opt-in is recorded in slice 3.
+    expect([...server.pairings.values()][0]?.sshOptIn).toBe(false);
     // No agent runs: the server is told the port the agent will take first.
     expect([...server.pairings.values()][0]?.port).toBe(47_615);
 
@@ -75,7 +81,7 @@ describe('wirebench agent', () => {
     expect(status.code).toBe(0);
     expect(status.out).toContain('Agent: not running');
     expect(status.out).toContain(`${server.url}  ${server.email}`);
-    expect(status.out).toContain('SSH allowed');
+    expect(status.out).not.toContain('SSH');
     expect(status.out).toContain('Allowed environment variables: none');
 
     const unpaired = await run(home, ['unpair', '--server', server.url]);

@@ -171,12 +171,13 @@ describe('the agent platform', () => {
 describe('wirebench agent arguments', () => {
   it('parses each subcommand and refuses what does not belong', () => {
     expect(parseAgent([])).toEqual({ command: 'agent-run' });
-    expect(parseAgent(['pair', 'ABC234', '--server', 'https://wb.test', '--ssh'])).toEqual({
+    expect(parseAgent(['pair', 'ABC234', '--server', 'https://wb.test'])).toEqual({
       command: 'agent-pair',
       code: 'ABC234',
       server: 'https://wb.test',
-      ssh: true,
     });
+    // No SSH opt-in in slice 3: nothing serves SSH, and the version that does asks for it then.
+    expect(() => parseAgent(['pair', 'ABC234', '--server', 'https://wb.test', '--ssh'])).toThrow(/ssh/);
     expect(parseAgent(['unpair'])).toEqual({ command: 'agent-unpair', local: false });
     expect(parseAgent(['unpair', '--local', '--server', 'https://wb.test'])).toEqual({
       command: 'agent-unpair',
@@ -187,7 +188,6 @@ describe('wirebench agent arguments', () => {
     expect(parseAgent(['allow-env', 'A', 'B'])).toEqual({ command: 'agent-allow-env', names: ['A', 'B'] });
     expect(parseAgent(['--help'])).toEqual({ command: 'help', topic: 'agent' });
     expect(() => parseAgent(['pair', 'ABC234'])).toThrow('--server <url> is required');
-    expect(() => parseAgent(['status', '--ssh'])).toThrow('--ssh applies to wirebench agent pair only');
     expect(() => parseAgent(['allow-env'])).toThrow('at least one name');
     expect(() => parseAgent(['nope'])).toThrow('unknown subcommand');
   });

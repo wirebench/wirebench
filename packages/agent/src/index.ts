@@ -38,6 +38,7 @@ export {
   startAgent,
   type AgentCallContext,
   type AgentHandler,
+  type AgentHandlers,
   type RunningAgent,
   type StartAgentOptions,
 } from './server.js';

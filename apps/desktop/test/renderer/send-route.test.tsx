@@ -59,6 +59,8 @@ function fakeAgent(initial: AgentStatus = 'connected') {
     status: () => status,
     version: () => (status === 'connected' ? '7.0.0' : undefined),
     refused: (id: string) => refusedIds.has(id),
+    // A connected agent that covers every need, unless a test says otherwise.
+    selectFor: vi.fn<AgentEnv['selectFor']>(() => Promise.resolve({ connected: status === 'connected', missing: [] })),
     onStatus: (listener: (next: AgentStatus) => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -243,6 +245,37 @@ describe('a browser send', () => {
     const open = vi.spyOn(useUiStore.getState(), 'openPreferences');
     action?.onClick();
     expect(open).toHaveBeenCalledWith('this-machine');
+  });
+
+  it('asks for an agent that resolves team secrets, and says to use the desktop app when none does', async () => {
+    const agent = fakeAgent();
+    const calls = install(agent.env);
+    calls.route.mockResolvedValue({
+      ok: true,
+      value: { route: 'agent', needs: ['team-secret', 'loopback-target'], info: INFO },
+    });
+    await useExchangesStore.getState().sendRest('rest-1');
+    expect(agent.env.selectFor).toHaveBeenLastCalledWith(['team-secrets']);
+    expect(calls.agentSend).toHaveBeenCalledTimes(1);
+
+    // Only `wirebench agent` is paired here: it lacks team secrets, so nothing is built or sent.
+    agent.env.selectFor.mockResolvedValue({ connected: true, missing: ['team-secrets'] });
+    calls.bundle.mockClear();
+    calls.agentSend.mockClear();
+    await useExchangesStore.getState().sendRest('rest-1');
+    const state = useExchangesStore.getState().restByRequest['rest-1'];
+    expect(state?.status).toBe('error');
+    expect(state?.error?.code).toBe('team-secret-needs-approval');
+    expect(state?.error?.message).toContain('desktop app');
+    expect(calls.bundle).not.toHaveBeenCalled();
+    expect(calls.agentSend).not.toHaveBeenCalled();
+  });
+
+  it('asks for no capability for a send any agent can make', async () => {
+    const agent = fakeAgent();
+    install(agent.env);
+    await useExchangesStore.getState().sendRest('rest-1');
+    expect(agent.env.selectFor).toHaveBeenLastCalledWith([]);
   });
 
   it('answers host-disconnected when the agent drops mid-send, and records nothing', async () => {
@@ -493,7 +526,15 @@ describe('Settings → This machine', () => {
     expect(screen.getByTestId('agent-status').dataset['status']).toBe('connecting');
     act(() => agent.set('connected'));
     expect(screen.getByTestId('agent-status').textContent).toBe('Connected (agent 7.0.0)');
-    expect(screen.getByText(/sends requests from this server’s workspaces on your behalf/)).toBeTruthy();
+    // What pairing trusts the server with, the browser's prompt and Safari, where the pairing is offered.
+    const notes = screen.getByTestId('agent-pair-notes').textContent ?? '';
+    expect(notes).toContain(
+      'A paired server can send requests from this machine on your behalf, including to addresses on this machine’s network.',
+    );
+    expect(notes).toContain('local network access');
+    expect(notes).toContain('allow it');
+    expect(notes).toContain('Safari cannot reach an agent on this machine from an https:// page');
+    expect(notes).toContain('pair the Wirebench desktop app');
 
     await vi.waitFor(() => expect(screen.getAllByTestId('agent-pairing-row')).toHaveLength(2));
     // Two machines told apart by their agent id and when they were paired.
@@ -508,6 +549,8 @@ describe('Settings → This machine', () => {
     expect(agent.env.createPairingCode).toHaveBeenCalledTimes(1);
     const text = screen.getByTestId('agent-pair-code').textContent ?? '';
     expect(text).toContain('Pair this machine…');
+    // Still said beside the code.
+    expect(screen.getByTestId('agent-pair-notes').textContent).toContain('on your behalf');
     expect(text).toContain('wirebench agent pair K7QW2P --server https://acme.example.test');
 
     fireEvent.click(screen.getAllByTestId('agent-unpair')[0]!);

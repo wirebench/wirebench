@@ -13,7 +13,7 @@ export interface FakePairingServer {
   readonly code: string;
   readonly email: string;
   /** The pairings it holds, by id: the agent's public key and the port it was last told. */
-  readonly pairings: Map<string, { readonly publicKey: string; port: number }>;
+  readonly pairings: Map<string, { readonly publicKey: string; port: number; readonly sshOptIn?: boolean }>;
   /** Every signed request, and whether its signature held. */
   readonly signed: { readonly method: string; readonly path: string; readonly ok: boolean }[];
   /** Answer every unpairing `403`, as a server that will not let this one go. */
@@ -47,7 +47,7 @@ function holds(publicKey: string, message: string, signature: string): boolean {
 }
 
 export async function startFakePairingServer(): Promise<FakePairingServer> {
-  const pairings = new Map<string, { readonly publicKey: string; port: number }>();
+  const pairings = new Map<string, { readonly publicKey: string; port: number; readonly sshOptIn?: boolean }>();
   const nonces = new Map<string, string>();
   const signed: { method: string; path: string; ok: boolean }[] = [];
   const code = 'ABC234';
@@ -79,13 +79,13 @@ export async function startFakePairingServer(): Promise<FakePairingServer> {
         return;
       }
       if (method === 'POST' && url.pathname === '/api/v1/agent/pairings') {
-        const sent = JSON.parse(body) as { code: string; publicKey: string; port: number };
+        const sent = JSON.parse(body) as { code: string; publicKey: string; port: number; sshOptIn: boolean };
         if (sent.code !== code) {
           reply(401, { error: { code: 'agent-pairing-code-invalid', message: 'The code is not valid' } });
           return;
         }
         const id = ulidLike();
-        pairings.set(id, { publicKey: sent.publicKey, port: sent.port });
+        pairings.set(id, { publicKey: sent.publicKey, port: sent.port, sshOptIn: sent.sshOptIn });
         reply(201, { pairingId: id, origin, email });
         return;
       }
@@ -114,7 +114,11 @@ export async function startFakePairingServer(): Promise<FakePairingServer> {
           holds(pairing.publicKey, agentRequestMessage(method, url.pathname, id, timestamp, hash), signature);
         signed.push({ method, path: url.pathname, ok });
         if (pairing === undefined) {
-          reply(404, { error: { code: 'not-found' } });
+          // The server's own answer for a pairing it does not hold (`packages/server/src/agent/errors.ts`).
+          reply(404, {
+            code: 'agent-pairing-unknown',
+            message: 'This machine is not paired with this server any more.',
+          });
           return;
         }
         if (!ok) {

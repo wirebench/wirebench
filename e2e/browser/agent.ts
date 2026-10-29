@@ -149,3 +149,17 @@ export async function unpairAgent(home: string): Promise<void> {
     console.error('wirebench agent unpair failed:', error);
   }
 }
+
+/**
+ * Leaves `home` with no pairing, whatever an earlier attempt left: `unpair` at the server (best effort),
+ * then `unpair --local` for anything a server could not be asked about. Throws when `status` still lists
+ * one, since the loopback step needs a machine with no agent connected.
+ */
+export async function ensureUnpaired(home: string): Promise<void> {
+  assertBuilt();
+  await unpairAgent(home);
+  const env = agentEnv(home);
+  await run(process.execPath, [CLI_BIN, 'agent', 'unpair', '--local'], { env, timeout: 60_000 });
+  const { stdout } = await run(process.execPath, [CLI_BIN, 'agent', 'status'], { env, timeout: 60_000 });
+  if (!stdout.includes('Pairings: none')) throw new Error(`the agent is still paired:\n${stdout}`);
+}

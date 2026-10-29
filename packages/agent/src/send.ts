@@ -37,7 +37,7 @@ import {
 import type { FailedExchangeWire } from '@wirebench/wire/wire-base';
 import type { z } from 'zod';
 import type { PairingStore } from './pairings.js';
-import type { AgentCallContext, AgentHandler } from './server.js';
+import type { AgentCallContext, AgentHandler, AgentHandlers } from './server.js';
 
 /** The folder under the platform's temp directory each send's own directory is made in. */
 export const AGENT_SENDS_DIR = 'agent-sends';
@@ -59,7 +59,7 @@ export const AGENT_YOUNG_INSTANCE_MS = 60 * 1000;
 
 export interface AgentSendOptions {
   /** `network` gives the egress rule every agent send, its token requests included, is held to. */
-  readonly platform: Pick<HostPlatform, 'paths' | 'network'>;
+  readonly platform: Pick<HostPlatform, 'paths' | 'network' | 'capabilities'>;
   /** Where this machine's `${#System#…}` allowlist is read, at each send (it may change while the agent runs). */
   readonly store: Pick<PairingStore, 'allowedSystemNames'>;
   /** The environment an allowed name is read from; `process.env` when absent. */
@@ -68,7 +68,8 @@ export interface AgentSendOptions {
   readonly log?: (message: string, error?: unknown) => void;
   /**
    * Whether this embedder can resolve team secrets (the desktop's agent, §18.5: its host has the
-   * team-secrets hook, and the bundle's subtree is handed to it). Absent, a bundle that reads
+   * team-secrets hook, and the bundle's subtree is handed to it); it counts only when the platform has the
+   * `team-secrets` capability, and the handlers say so (`resolvesTeamSecrets`). Otherwise a bundle that reads
    * one (it carries the workspace's `team-secrets/` subtree) answers `team-secret-needs-approval` before
    * anything is written: the headless agent has no approved machine key, and no screen to ask for one on.
    */
@@ -276,8 +277,13 @@ function withFailure(error: unknown, failure: FailedExchangeWire): WirebenchErro
  * the tab that called: a tab cancels only its pairing's sends and clears only its pairing's jar, even beside
  * another pairing of the same origin (two accounts on one server).
  */
-export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentHandler> {
+export function agentSendHandlers(
+  options: AgentSendOptions,
+): AgentHandlers & { readonly resolvesTeamSecrets: boolean } {
   const { platform } = options;
+  // The embedder's word and the platform's hook together: a host without the team-secrets capability has
+  // no hook, so a team-secret bundle there is refused plainly instead of answering `secret-missing`.
+  const resolvesTeamSecrets = options.teamSecrets === true && platform.capabilities.has('team-secrets');
   const log = options.log ?? (() => undefined);
   const env = options.env ?? process.env;
   /** This agent process's own folder under the sends folder: no other process's send id can collide. */
@@ -336,7 +342,7 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
     }
     const { sendId, bundle } = parsed.data;
     const { origin, pairingId } = pairing;
-    if (bundle.teamSecrets !== undefined && options.teamSecrets !== true) {
+    if (bundle.teamSecrets !== undefined && !resolvesTeamSecrets) {
       throw new WirebenchError('team-secret-needs-approval', HEADLESS_TEAM_SECRET_MESSAGE, {
         details: { workspaceId: bundle.workspaceId },
       });
@@ -433,10 +439,11 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
     return Promise.resolve({ domains });
   };
 
-  return new Map<string, AgentHandler>([
+  const handlers = new Map<string, AgentHandler>([
     ['agent.send', send],
     ['agent.cancel', cancel],
     ['agent.cookies.clear', clearCookies],
     ['agent.cookies.domains', cookieDomains],
   ]);
+  return Object.assign(handlers, { resolvesTeamSecrets });
 }

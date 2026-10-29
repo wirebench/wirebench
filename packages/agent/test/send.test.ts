@@ -66,7 +66,7 @@ const PROXY_PASSWORD = 'proxy-pass-0123456789';
 let platform: HostPlatform;
 let host: Host;
 let echo: EchoServer;
-let handlers: Map<string, AgentHandler>;
+let handlers: ReadonlyMap<string, AgentHandler>;
 /** This machine's `${#System#…}` allowlist, as the pairing store would hold it. */
 let allowed: string[];
 const store = { allowedSystemNames: (): readonly string[] => allowed };
@@ -448,14 +448,29 @@ describe('agent.send', () => {
     expect(await sendsLeft()).toEqual([]);
   });
 
+  it('refuses a team-secret bundle plainly where the platform has no team-secrets hook, though asked to resolve them', async () => {
+    // One flag for the hello and the send: without the capability, neither claims team secrets.
+    const handlers = agentSendHandlers({ platform, store, env: ENV, teamSecrets: true });
+    expect(platform.capabilities.has('team-secrets')).toBe(false);
+    expect(handlers.resolvesTeamSecrets).toBe(false);
+    const bundle = await restBundle();
+    const refused = await handlers.get('agent.send')!(
+      { sendId: sendId(), bundle: { ...bundle, teamSecrets: [] } },
+      { caller: quietCaller(1_000_000), pairing: pairingOf(TEAM), host },
+    ).catch((error: unknown) => error as { code: string });
+    expect(refused).toMatchObject({ code: 'team-secret-needs-approval' });
+    expect(echo.received).toEqual([]);
+  });
+
   describe('on a desktop-shaped host with team secrets', () => {
     let desktopHost: Host;
-    let desktopHandlers: Map<string, AgentHandler>;
+    let desktopHandlers: ReturnType<typeof agentSendHandlers>;
     beforeEach(async () => {
       const desktop: HostPlatform = { ...platform, capabilities: new Set([...platform.capabilities, 'team-secrets']) };
       desktopHost = await createHost(desktop);
       onCleanUp(() => desktopHost.shutdown());
       desktopHandlers = agentSendHandlers({ platform: desktop, store, env: ENV, teamSecrets: true });
+      expect(desktopHandlers.resolvesTeamSecrets).toBe(true);
     });
 
     async function desktopFailure(extra: Partial<SendBundle>): Promise<{ code: string; message: string }> {

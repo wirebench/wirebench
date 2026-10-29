@@ -149,9 +149,15 @@ the tab. The desktop app is one; `wirebench agent`, from the CLI, is the same ag
 
 </Steps>
 
-The desktop app is the agent while it is running; `wirebench agent` serves until you stop it. Unpair from
-the tab's list, from the desktop's **Settings → Paired browsers**, or with `wirebench agent unpair`:
-either side removes the pairing at both. See the
+The desktop app is the agent while it is running; `wirebench agent` serves until you stop it. They are two
+separate agents, each with its own pairings and allowlist: pair one of them per machine and server. If
+both are paired, the tab sends a request that reads a team secret through the desktop app's.
+
+To unpair, use the desktop's **Settings → Paired browsers** or `wirebench agent unpair`: the agent unpairs
+at the server and on the machine. **Unpair** in the tab's list removes the pairing at the server at once,
+so no tab of this server gets in from then on; the machine's agent removes its own copy the next time it
+asks the server about it (at its next start, at the latest), and the desktop app then stops listening if
+that was its last pairing. A server that cannot be reached never makes it remove one. See the
 [CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#wirebench-agent) for every
 `wirebench agent` command.
 
@@ -168,7 +174,9 @@ Before each REST or SOAP send, the tab asks the server where it should go. It go
   resolve (it may be one only your network knows);
 - it is in a private range and the server refuses private ranges
   (`WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true`);
-- it reads a `${#System#…}` value, a team secret, a keystore, or Kerberos;
+- it reads a `${#System#…}` value, a secret source, a team secret, a keystore on a machine path, Kerberos,
+  or NTLM with a machine credential;
+- the agent holds cookies for the target's domain;
 - you pinned the request or the workspace to the agent, from the chip's menu.
 
 Everything else goes from the server, as before. With no agent connected, a send that needs one stops with
@@ -182,11 +190,13 @@ writes it to a temporary folder, sends it, returns the result, and deletes the f
 send and clears the cookies it keeps for that pairing.
 
 That is all. A paired tab cannot open or read files on the machine, run a command, or open an SSH session,
-a terminal, SFTP or a port forward; nothing else the desktop app does is reachable from it.
+a terminal, SFTP or a port forward; nothing else the desktop app does is reachable from it. SSH is not
+served to a tab, and no SSH opt-in is recorded when you pair: a later version that serves it will ask then.
 
-- **Environment variables.** `${#System#NAME}` reads only names on the machine's own allowlist, which is
-  empty by default. Add a name with `wirebench agent allow-env NAME`, or in the desktop's **Settings →
-  Paired browsers**. Any other name resolves to nothing, and the send is refused as unresolved.
+- **Environment variables.** `${#System#NAME}` reads only names on the agent's own allowlist, which is
+  empty by default. Each agent has its own: add a name for the headless agent with
+  `wirebench agent allow-env NAME`, and for the desktop app's in its **Settings → Paired browsers**. Any
+  other name resolves to nothing, and the send is refused as unresolved.
 - **Team secrets** need the **desktop app** on a machine already approved for that workspace. It uses the
   values that machine has imported; if the server holds a newer one, the send fails with
   `team-secret-stale` until you open or sync the workspace there. Unapproved, the send fails with
@@ -197,9 +207,11 @@ a terminal, SFTP or a port forward; nothing else the desktop app does is reachab
 
 ### Browsers
 
-Chrome, Edge and Firefox let a secure page reach an agent on `127.0.0.1`. **Safari** refuses a plain
-loopback connection from an `https://` page, so a Safari tab cannot reach any agent: on a Mac with Safari,
-open the workspace in the desktop app instead.
+Chrome, Edge and Firefox let a secure page reach an agent on `127.0.0.1`. The first time the tab reaches
+the agent, the browser may ask whether this site may reach devices on your local network (local network
+access): allow it, or the tab cannot reach the agent. **Safari** refuses a plain loopback connection from
+an `https://` page, so a Safari tab cannot reach any agent: on a Mac with Safari, pair the desktop app and
+open the workspace there instead. **This machine** says both beside **Pair this machine**.
 
 ### The headless agent's key
 

@@ -35,9 +35,12 @@ function describe(error: unknown): string {
 }
 
 function pairingLine(pairing: AgentPairingRow): string {
-  const ssh = pairing.sshOptIn ? ', SSH allowed' : '';
-  return `  ${pairing.origin}  ${pairing.email}  paired ${pairing.createdAt.slice(0, 10)}${ssh}`;
+  return `  ${pairing.origin}  ${pairing.email}  paired ${pairing.createdAt.slice(0, 10)}`;
 }
+
+/** The trust a pairing gives, said where it is made (spec §3.8), as the desktop and the tab say it. */
+export const AGENT_PAIRING_TRUST_TEXT =
+  "A paired server can send requests from this machine on your behalf, including to addresses on this machine's network.";
 
 export async function agentCommand(args: AgentArgs, io: CliIo, options: AgentCommandOptions = {}): Promise<number> {
   const home = agentHome(io.env);
@@ -85,10 +88,10 @@ export async function agentCommand(args: AgentArgs, io: CliIo, options: AgentCom
           ...input,
           code: args.code,
           serverUrl: args.server,
-          sshOptIn: args.ssh,
           port: running?.port ?? bundle.AGENT_FIRST_PORT,
         });
         out(`Paired with ${result.origin} as ${result.email}.`);
+        out(AGENT_PAIRING_TRUST_TEXT);
         if (running === undefined) out('Start the agent with: wirebench agent');
         return ExitCode.Ok;
       }

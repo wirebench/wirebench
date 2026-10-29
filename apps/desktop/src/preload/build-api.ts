@@ -51,6 +51,15 @@ const { agent: _agentChannels, ...windowChannels } = channels;
  */
 export type AgentStatus = 'none' | 'connecting' | 'connected' | 'refused';
 
+/**
+ * Which agent a send goes to: `connected` when one is, and the capabilities asked for that it did not name
+ * in its hello (none when it covers them all).
+ */
+export interface AgentSelection {
+  readonly connected: boolean;
+  readonly missing: readonly string[];
+}
+
 /** One of the user's paired machines, as `GET /api/v1/agent/pairings` lists it. */
 export interface AgentPairingView {
   readonly id: string;
@@ -75,6 +84,12 @@ export interface AgentEnv {
   version(): string | undefined;
   /** Whether this machine's agent refused the pairing three times in a row. */
   refused(pairingId: string): boolean;
+  /**
+   * Picks, among the paired agents, one whose hello names every capability in `capabilities` (a team-secret
+   * send needs the desktop app's), trying the others in order when the connected one does not; without one
+   * that does, it stays on (or goes back to) the agent it had. Resolves once the choice is made.
+   */
+  selectFor(capabilities: readonly string[]): Promise<AgentSelection>;
   /** Each status change, and once more when the version arrives. */
   onStatus(listener: (status: AgentStatus) => void): () => void;
   pairings(): Promise<readonly AgentPairingView[]>;

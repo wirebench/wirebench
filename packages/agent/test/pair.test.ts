@@ -2,7 +2,7 @@
  * `pair()` and `unpair()` against a fake server that checks every signature (hosted edition spec §18.2).
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { normaliseServerUrl, pair, unpair, type AgentFetch } from '../src/pair.js';
+import { normaliseServerUrl, pair, redeemNonce, reportPort, unpair, type AgentFetch } from '../src/pair.js';
 import { openPairingStore } from '../src/pairings.js';
 import { cleanUp, fakePlatform, startFakeServer } from './helpers.js';
 
@@ -144,5 +144,64 @@ describe('pair and unpair', () => {
       pair({ code: server.code, serverUrl: server.url, sshOptIn: false, store, fetch, port: 47_615 }),
     ).rejects.toMatchObject({ code: 'bad-answer' });
     expect(store.list()).toEqual([]);
+  });
+});
+
+describe('a pairing the server no longer holds', () => {
+  async function paired() {
+    const server = await startFakeServer();
+    const store = await openPairingStore(fakePlatform());
+    const { pairingId } = await pair({
+      code: server.code,
+      serverUrl: server.url,
+      sshOptIn: false,
+      store,
+      fetch,
+      port: 47_615,
+    });
+    return { server, store, pairingId, pairing: store.get(pairingId)! };
+  }
+
+  it('is removed here when a port report or a redeem gets agent-pairing-unknown', async () => {
+    const reported = await paired();
+    reported.server.pairings.clear();
+    await expect(reportPort(reported.pairing, 47_620, reported.store, fetch)).rejects.toMatchObject({
+      code: 'unpaired',
+      status: 404,
+    });
+    expect(reported.store.list()).toEqual([]);
+
+    const redeemed = await paired();
+    const nonce = redeemed.server.nonce(redeemed.pairingId);
+    redeemed.server.pairings.clear();
+    await expect(redeemNonce(redeemed.pairing, nonce, redeemed.store, fetch)).rejects.toMatchObject({
+      code: 'unpaired',
+    });
+    expect(redeemed.store.list()).toEqual([]);
+  });
+
+  it('is kept for any other answer: none, a 5xx, a refused signature, a bare 404', async () => {
+    const { server, store, pairingId, pairing } = await paired();
+    const down: AgentFetch = () => Promise.reject(new Error('offline'));
+    await expect(reportPort(pairing, 47_620, store, down)).rejects.toMatchObject({ code: 'unreachable' });
+    await expect(redeemNonce(pairing, server.nonce(pairingId), store, down)).rejects.toMatchObject({
+      code: 'unreachable',
+    });
+    for (const answer of [
+      { status: 503, body: { code: 'unavailable', message: 'Try later' } },
+      { status: 401, body: { code: 'agent-signature-invalid' } },
+      { status: 404 },
+      { status: 404, body: { code: 'not-found' } },
+    ]) {
+      server.signedAnswer = answer;
+      await expect(reportPort(pairing, 47_620, store, fetch), String(answer.status)).rejects.toMatchObject({
+        code: 'refused',
+        status: answer.status,
+      });
+      await expect(redeemNonce(pairing, server.nonce(pairingId), store, fetch)).rejects.toMatchObject({
+        code: 'refused',
+      });
+    }
+    expect(store.list()).toHaveLength(1);
   });
 });

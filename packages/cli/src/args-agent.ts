@@ -6,7 +6,7 @@ import { parseArgs } from 'node:util';
 import { UsageError } from './usage-error.js';
 
 export const AGENT_HELP = `wirebench agent
-wirebench agent pair <code> --server <url> [--ssh]
+wirebench agent pair <code> --server <url>
 wirebench agent unpair [--server <url>] [--local]
 wirebench agent status
 wirebench agent allow-env <NAME…> | disallow-env <NAME…> | allowed-env
@@ -20,7 +20,8 @@ a container's 127.0.0.1 is its own, and the browser cannot reach it.
                        up a pairing made later from another terminal.
 pair <code>            Pairs this machine with the server: the code is the one the browser shows under
   --server <url>       Pair this machine… (https://, or http:// for a server on this machine).
-  --ssh                Let that server's tabs open SSH sessions through this machine.
+                       A paired server can send requests from this machine on your behalf,
+                       including to addresses on this machine's network.
 unpair                 Unpairs every server, at the server and here. A server that cannot be reached is
                        forgotten here anyway, with a warning that it still lists this machine; one that
                        refuses keeps its pairing (exit 3).
@@ -35,13 +36,14 @@ allowed-env            Prints the list.
 
 The agent keeps its pairings and key in ~/.wirebench/agent (or $WIREBENCH_AGENT_HOME), sealed under
 agent.key. That folder must be yours alone (mode 700, the key 600); the agent refuses to start otherwise.
-Requests that read a team secret are sent through the desktop app, not this agent.
+Requests that read a team secret are sent through the desktop app, not this agent. The desktop app
+is a separate agent with its own pairings and allowlist: these commands do not change it.
 
 Exit 0 when done, 2 for a usage problem, 3 when the agent, a server or the folder refuses.`;
 
 export type AgentArgs =
   | { readonly command: 'agent-run' }
-  | { readonly command: 'agent-pair'; readonly code: string; readonly server: string; readonly ssh: boolean }
+  | { readonly command: 'agent-pair'; readonly code: string; readonly server: string }
   | { readonly command: 'agent-unpair'; readonly server?: string; readonly local: boolean }
   | { readonly command: 'agent-status' }
   | { readonly command: 'agent-allow-env'; readonly names: readonly string[] }
@@ -57,7 +59,6 @@ export function parseAgent(argv: readonly string[]): AgentArgs | { readonly comm
       strict: true,
       options: {
         server: { type: 'string' },
-        ssh: { type: 'boolean' },
         local: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
       },
@@ -70,7 +71,6 @@ export function parseAgent(argv: readonly string[]): AgentArgs | { readonly comm
   if (values.help === true) return { command: 'help', topic: 'agent' };
   const [sub, ...rest] = positionals;
   const verb = `wirebench agent${sub === undefined ? '' : ` ${sub}`}`;
-  if (values.ssh === true && sub !== 'pair') throw new UsageError(`--ssh applies to wirebench agent pair only`);
   if (values.local === true && sub !== 'unpair') throw new UsageError(`--local applies to wirebench agent unpair only`);
   if (values.server !== undefined && sub !== 'pair' && sub !== 'unpair') {
     throw new UsageError(`--server does not apply to ${verb}`);
@@ -86,7 +86,7 @@ export function parseAgent(argv: readonly string[]): AgentArgs | { readonly comm
       if (code === undefined) throw new UsageError('wirebench agent pair <code> --server <url>: the code is required');
       if (extra.length > 0) throw new UsageError(`wirebench agent pair: unexpected "${extra.join(' ')}"`);
       if (values.server === undefined) throw new UsageError('wirebench agent pair: --server <url> is required');
-      return { command: 'agent-pair', code, server: values.server, ssh: values.ssh === true };
+      return { command: 'agent-pair', code, server: values.server };
     }
     case 'unpair':
       none();

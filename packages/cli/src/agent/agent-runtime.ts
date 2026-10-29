@@ -72,7 +72,6 @@ export interface AgentBundle {
     input: AgentBundleInput & {
       readonly code: string;
       readonly serverUrl: string;
-      readonly sshOptIn: boolean;
       readonly port: number;
     },
   ): Promise<{ readonly pairingId: string; readonly origin: string; readonly email: string }>;

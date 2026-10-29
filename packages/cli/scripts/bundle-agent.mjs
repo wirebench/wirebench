@@ -9,8 +9,9 @@
  *   at runtime anyway, and the host must share the engine's `graphql` (a schema from one copy is not a schema
  *   to another) and its WebAssembly files, which a bundle would lose.
  * - The native modules the host loads lazily, for channels the agent never serves: the terminal's
- *   `@lydell/node-pty`, serial's `@serialport/*`, security keys' `node-hid`, and any `.node` binding. They are
- *   not installed with the CLI; `test/integration/agent-bundle.test.ts` proves the bundle starts without them.
+ *   `@lydell/node-pty`, serial's `@serialport/*`, security keys' `node-hid`, and any `.node` binding. The agent
+ *   never loads them, even where one is installed with the CLI (`node-hid` is a CLI dependency):
+ *   `test/integration/agent-bundle.test.ts` proves the bundle starts with none of them loaded.
  * - `kerberos`, which the engine loads when it is present (ADR-0019) and the agent then offers.
  *
  * `node scripts/bundle-agent.mjs [--no-sourcemap] [outfile]`; the default is `dist/agent/bundle.js`. A local

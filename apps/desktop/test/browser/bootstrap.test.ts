@@ -519,6 +519,105 @@ describe('more than one pairing', () => {
     expect(storage.get('wirebench.agent.pairing')).toBe('pair-b');
   });
 
+  it('picks the pairing whose agent covers a send’s capabilities: team secrets go to the desktop app’s', async () => {
+    const storage = new Map<string, string>();
+    const h = start(200, FakeSocket.create, two(), storage);
+    FakeSocket.last().hello();
+    await h.started;
+    await vi.advanceTimersByTimeAsync(0);
+    // pair-a is `wirebench agent` on this machine: no team secrets.
+    const headless = FakeSocket.lastAgent();
+    expect(headless.url).toBe('ws://127.0.0.1:47615/host');
+    headless.agentHello(['send:public', 'send:private']);
+    const env = h.target.wirebench!.env.agent!;
+    expect(env.status()).toBe('connected');
+
+    // A send any agent can make stays where it is.
+    await expect(env.selectFor([])).resolves.toEqual({ connected: true, missing: [] });
+    expect(FakeSocket.agents).toHaveLength(1);
+
+    const picked = env.selectFor(['team-secrets']);
+    await vi.advanceTimersByTimeAsync(0);
+    const desktop = FakeSocket.lastAgent();
+    expect(desktop.url).toBe('ws://127.0.0.1:47616/host');
+    expect(headless.closedWith).toBeDefined();
+    desktop.agentHello(['send:public', 'send:private', 'team-secrets']);
+    await expect(picked).resolves.toEqual({ connected: true, missing: [] });
+    expect(storage.get('wirebench.agent.pairing')).toBe('pair-b');
+
+    // Covered now: asked again, it moves nowhere.
+    await expect(env.selectFor(['team-secrets'])).resolves.toEqual({ connected: true, missing: [] });
+    expect(FakeSocket.agents).toHaveLength(2);
+  });
+
+  it('goes back to the agent it had when no paired agent covers the capabilities', async () => {
+    const h = start(200, FakeSocket.create, two());
+    FakeSocket.last().hello();
+    await h.started;
+    await vi.advanceTimersByTimeAsync(0);
+    FakeSocket.lastAgent().agentHello(['send:public', 'send:private']);
+    const env = h.target.wirebench!.env.agent!;
+
+    const picked = env.selectFor(['team-secrets']);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeSocket.lastAgent().url).toBe('ws://127.0.0.1:47616/host');
+    FakeSocket.lastAgent().agentHello(['send:public']);
+    await vi.advanceTimersByTimeAsync(0);
+    // Back on pair-a, which answers for what it lacks.
+    expect(FakeSocket.lastAgent().url).toBe('ws://127.0.0.1:47615/host');
+    FakeSocket.lastAgent().agentHello(['send:public', 'send:private']);
+    await expect(picked).resolves.toEqual({ connected: true, missing: ['team-secrets'] });
+
+    // Both hellos are known now: nothing is tried again.
+    const opened = FakeSocket.agents.length;
+    await expect(env.selectFor(['team-secrets'])).resolves.toEqual({ connected: true, missing: ['team-secrets'] });
+    expect(FakeSocket.agents).toHaveLength(opened);
+  });
+
+  it('moves on from a pairing whose agent does not answer while it picks', async () => {
+    const h = start(200, FakeSocket.create, {
+      pairings: [
+        { id: 'pair-a', port: 47615 },
+        { id: 'pair-b', port: 47616 },
+        { id: 'pair-c', port: 47617 },
+      ],
+      nonces: 0,
+      failNonce: false,
+    });
+    FakeSocket.last().hello();
+    await h.started;
+    await vi.advanceTimersByTimeAsync(0);
+    FakeSocket.lastAgent().agentHello(['send:public']);
+    const env = h.target.wirebench!.env.agent!;
+    const picked = env.selectFor(['team-secrets']);
+    await vi.advanceTimersByTimeAsync(0);
+    // pair-b's agent is not running.
+    expect(FakeSocket.lastAgent().url).toBe('ws://127.0.0.1:47616/host');
+    FakeSocket.lastAgent().drop(1006);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeSocket.lastAgent().url).toBe('ws://127.0.0.1:47617/host');
+    FakeSocket.lastAgent().agentHello(['send:public', 'team-secrets']);
+    await expect(picked).resolves.toEqual({ connected: true, missing: [] });
+  });
+
+  it('reads the pairings again after three failed opens, and follows an agent that moved port', async () => {
+    const server: Server = { pairings: [{ id: 'pair-a', port: 47615 }], nonces: 0, failNonce: false };
+    const h = start(200, FakeSocket.create, server);
+    FakeSocket.last().hello();
+    await h.started;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeSocket.lastAgent().url).toBe('ws://127.0.0.1:47615/host');
+    // The agent restarted on the next free port; nothing listens on the old one.
+    server.pairings = [{ id: 'pair-a', port: 47616 }];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      FakeSocket.lastAgent().drop(1006);
+      await vi.advanceTimersByTimeAsync(30_000);
+    }
+    expect(FakeSocket.lastAgent().url).toBe('ws://127.0.0.1:47616/host');
+    FakeSocket.lastAgent().agentHello();
+    expect(h.target.wirebench!.env.agent!.status()).toBe('connected');
+  });
+
   it('tries the remembered pairing first next time', async () => {
     const storage = new Map([['wirebench.agent.pairing', 'pair-b']]);
     const h = start(200, FakeSocket.create, two(), storage);
