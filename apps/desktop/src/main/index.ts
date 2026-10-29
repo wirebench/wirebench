@@ -139,6 +139,10 @@ void app.whenReady().then(async () => {
   openWindow(started, { reopenLast: true });
   // Only with a pairing: without one no port is opened.
   void agent.sync().catch(() => undefined);
+  // A pairing made by `wirebench agent pair` while the agent was off counts at the next focus.
+  app.on('browser-window-focus', () => {
+    void agent.refresh();
+  });
 
   // The first window after every one closed (macOS) picks up where the last left off, as at launch.
   app.on('activate', () => {

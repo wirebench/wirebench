@@ -186,20 +186,24 @@ function agentSecrets(
   projectId: () => string | undefined,
 ): GetSecret {
   const declared = new Set(input.secretNames);
-  const bundleTeamSecrets = input.teamSecrets ?? new Map<string, string>();
+  const bundleTeamSecrets = input.teamSecrets;
   const get: GetSecret = async (ref) => {
     const name = parseSecretPseudoRef(ref);
     if (name === undefined || !declared.has(name)) return undefined;
     const value =
       (await deps.agentSecret(agentSecretLabel(input.pairingId, input.workspaceId, name))) ??
-      (await deps.teamSecrets?.({
-        pairingId: input.pairingId,
-        serverOrigin: input.origin,
-        workspaceId: input.workspaceId,
-        projectId: projectId(),
-        name,
-        bundleTeamSecrets,
-      }));
+      // Only a bundle the server built for a team secret carries the subtree: any other name stays missing,
+      // as on the headless agent (§18.4), and is never a reason to ask for a workspace here.
+      (bundleTeamSecrets === undefined
+        ? undefined
+        : await deps.teamSecrets?.({
+            pairingId: input.pairingId,
+            serverOrigin: input.origin,
+            workspaceId: input.workspaceId,
+            projectId: projectId(),
+            name,
+            bundleTeamSecrets,
+          }));
     if (value !== undefined) deps.hostState.redactor.recordSecretValue(value);
     return value;
   };

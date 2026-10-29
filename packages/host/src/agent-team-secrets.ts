@@ -11,14 +11,16 @@
  *   newer entry there answers `team-secret-stale` rather than sending an old value; a forged one can only
  *   make the send fail, which the server could do anyway.
  *
- * Nothing here attaches to a window, writes the workspace's state or opens a vault entry: the values were
- * imported on pull, and are read from the store by the label a send reads them under.
+ * Nothing here attaches to a window or writes the workspace's state. The value is opened from this workspace's
+ * own trusted vault entry with this machine's key: the entry it imported, with the same trust. Never by the
+ * store label a desktop send reads, which another workspace holding the same project id would share.
  */
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   loadWorkspace,
   parseTeamSecretsFile,
+  teamSecretsError,
   TEAM_SECRETS_DIR,
   vaultEntryFileSchema,
   vaultEntryId,
@@ -28,7 +30,6 @@ import {
   type SecretKey,
   type Workspace,
 } from '@wirebench/engine';
-import { secretStoreLabel } from './secret-resolver.js';
 import type { AgentTeamSecretQuery } from './send/detached.js';
 import { TeamSecretsService, type TeamSecretsStore, type TeamSecretsWorkspace } from './team-secrets-service.js';
 import { resolveWorkspaceTree } from './workspace-files.js';
@@ -36,7 +37,7 @@ import { resolveWorkspaceTree } from './workspace-files.js';
 export interface AgentTeamSecretsDeps {
   /** The host's userData: its `workspaces/` folder is where this machine's workspaces are. */
   readonly userDataDir: string;
-  /** The raw keychain-backed store: the machine keys and the imported values. */
+  /** The raw keychain-backed store: this machine's keys per workspace. */
   readonly store: TeamSecretsStore;
   /** This machine's name before its key request gives one; the host name by default. */
   readonly machine?: () => string;
@@ -130,8 +131,12 @@ export function agentTeamSecrets(
   return async (query) => {
     const { projectId, name } = query;
     if (projectId === undefined) return undefined;
+    const secret: SecretKey = { token: { projectId, name } };
+    const serverAt = bundleUpdatedAt(query.bundleTeamSecrets, secret);
     const local = await serverWorkspace(deps.userDataDir, query.workspaceId, query.serverOrigin);
     if (local === undefined) {
+      // Only a name the server's vault holds asks for the workspace; any other is plainly missing.
+      if (serverAt === undefined) return undefined;
       throw needsApproval(
         `This request reads a team secret of a workspace this machine has not opened. Open the workspace from ${query.serverOrigin} in the Wirebench desktop app on this machine, then send again.`,
         { workspaceId: query.workspaceId },
@@ -139,12 +144,12 @@ export function agentTeamSecrets(
     }
     const { workspace } = local;
     if (!workspace.projects.some((ref) => ref.id === projectId)) return undefined;
-    const secret: SecretKey = { token: { projectId, name } };
     // A service of its own, never attached: a window's, if one has the workspace open, is left alone.
     const service = new TeamSecretsService({ store: deps.store, ...(deps.machine ? { machine: deps.machine } : {}) });
     const lookup = await service.agentLookup(readOnlyWorkspace(local), secret);
-    const serverAt = bundleUpdatedAt(query.bundleTeamSecrets, secret);
     if (!lookup.inVault && serverAt === undefined) return undefined;
+    // A tampered access log is said as such, never as a copy to sync.
+    if (lookup.damaged) throw teamSecretsError('team-secrets-damaged');
     if (lookup.on && lookup.state !== 'approved') {
       throw needsApproval(
         `This machine (${lookup.machine}) is not approved for the team secrets of ${workspace.name}. Ask an admin of the workspace to approve ${lookup.machine}, then send again.`,
@@ -155,9 +160,13 @@ export function agentTeamSecrets(
     if (!lookup.on || !lookup.inVault || serverAt === undefined || lookup.acceptedAt === undefined) {
       throw stale(name, workspace);
     }
-    if (Date.parse(serverAt) > Date.parse(lookup.acceptedAt)) throw stale(name, workspace);
+    const server = Date.parse(serverAt);
+    const imported = Date.parse(lookup.acceptedAt);
+    // A time that does not parse proves nothing current: it counts as stale.
+    if (Number.isNaN(server) || Number.isNaN(imported) || server > imported) throw stale(name, workspace);
     if (!lookup.trusted) return undefined;
-    const ref = await deps.store.findByLabel(secretStoreLabel(projectId, name));
-    return ref === undefined ? undefined : await deps.store.get(ref);
+    // This workspace's own entry, opened with this machine's key: another workspace's import of the same
+    // project and name (which shares one store label) can never answer for it.
+    return lookup.value;
   };
 }

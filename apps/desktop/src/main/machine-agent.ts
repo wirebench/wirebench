@@ -48,14 +48,19 @@ export interface MachineAgentDeps {
   readonly log?: (message: string, error?: unknown) => void;
 }
 
-/** An agent server's refusal as an error the renderer shows; its message is already safe to show. */
+/**
+ * An agent server's refusal as an error the renderer shows; its message is already safe to show. Anything
+ * else from pairing (the store refusing a pairing id another server holds, a key it cannot seal) is said
+ * plainly rather than reaching the dialog as an internal error.
+ */
 function shown(error: unknown): unknown {
   if (error instanceof AgentServerError) {
     return new WirebenchError(`agent-${error.code}`, error.message, {
       ...(error.status !== undefined ? { details: { status: error.status } } : {}),
     });
   }
-  return error;
+  if (error instanceof WirebenchError) return error;
+  return new WirebenchError('agent-pair-failed', 'This machine could not keep the pairing', { cause: error });
 }
 
 export class MachineAgent {
@@ -70,7 +75,8 @@ export class MachineAgent {
     private readonly store: PairingStore | undefined,
   ) {
     store?.onChange(() => {
-      void this.sync();
+      // A failed start is logged by the queue and tried again at the next change.
+      void this.sync().catch(() => undefined);
     });
   }
 
@@ -121,6 +127,15 @@ export class MachineAgent {
       this.deps.log?.('the agent could not start or stop', error);
     });
     return next;
+  }
+
+  /**
+   * Reads the pairings file again, then starts or stops the agent to match: a pairing `wirebench agent pair`
+   * made while the agent was off (nothing re-reads the file then) counts once a window is focused.
+   */
+  async refresh(): Promise<void> {
+    await this.store?.refresh().catch(() => undefined);
+    await this.sync().catch(() => undefined);
   }
 
   /** Stops the agent for good: the app is quitting. */
@@ -175,8 +190,9 @@ export class MachineAgent {
   /** Pairs with the code, then starts the agent (on the port the server was told, or reports the one it got). */
   async pair(request: { readonly serverUrl: string; readonly code: string }) {
     const store = this.requireStore();
+    let result: Awaited<ReturnType<typeof pair>>;
     try {
-      const result = await pair({
+      result = await pair({
         code: request.code.trim(),
         serverUrl: request.serverUrl.trim(),
         // SSH through the agent is a later version's: nothing is opted in until something serves it.
@@ -185,11 +201,13 @@ export class MachineAgent {
         store,
         fetch: this.fetch(),
       });
-      await this.sync();
-      return result;
     } catch (error) {
       throw shown(error);
     }
+    // The pairing is made whatever the start does: a start that fails (every port busy) is logged, and
+    // Settings shows the agent off.
+    await this.sync().catch(() => undefined);
+    return result;
   }
 
   /** Unpairs at the server and here, or here only (`local`); the agent stops with the last pairing. */
@@ -204,7 +222,7 @@ export class MachineAgent {
     } catch (error) {
       throw shown(error);
     }
-    await this.sync();
+    await this.sync().catch(() => undefined);
     return await this.status();
   }
 

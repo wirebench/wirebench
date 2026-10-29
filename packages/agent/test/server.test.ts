@@ -113,6 +113,19 @@ describe('startAgent', () => {
     });
   });
 
+  it('names team-secrets in the hello and agent.hello only for an embedder that resolves them', async () => {
+    const withTeam = fakePlatform(['send:public', 'send:private', 'team-secrets']);
+    const desktop = await authed(await setUp({ platform: withTeam, teamSecrets: true }));
+    expect(desktop.hello).toMatchObject({ capabilities: ['send:public', 'send:private', 'team-secrets'] });
+    expect(await desktop.call('agent.hello')).toMatchObject({
+      value: { capabilities: ['send:public', 'send:private', 'team-secrets'] },
+    });
+    // The platform has them, but this embedder did not say its sends resolve them.
+    const plain = await authed(await setUp({ platform: withTeam }));
+    expect(plain.hello).toMatchObject({ capabilities: ['send:public', 'send:private'] });
+    expect(await plain.call('agent.hello')).toMatchObject({ value: { capabilities: ['send:public', 'send:private'] } });
+  });
+
   it('answers host-capability-missing for every registry channel, though the host would serve each', async () => {
     const setup = await setUp();
     const { call } = await authed(setup);

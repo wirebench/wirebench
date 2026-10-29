@@ -298,6 +298,8 @@ describe('commands by capability', () => {
       'workspace.newWindow',
       'secrets.toggleShowSecrets',
       'account.signIn',
+      // The desktop's own agent: a browser tab pairs from Settings → This machine instead.
+      'account.pairThisMachine',
     ] as const) {
       registerCommand({
         id,
@@ -322,8 +324,8 @@ describe('commands by capability', () => {
 
   it('lists them all with every capability', () => {
     install(ALL_CAPABILITIES);
-    expect(listCommands(context)).toHaveLength(7);
-    expect(listAllCommands()).toHaveLength(7);
+    expect(listCommands(context)).toHaveLength(8);
+    expect(listAllCommands()).toHaveLength(8);
   });
 
   it('declares listen, windows, accounts and reveal-secrets, which the desktop has and the browser does not', () => {
@@ -339,7 +341,7 @@ describe('Settings by capability', () => {
   it('leaves out the sections the browser cannot use, and opens on the default instead of one', () => {
     install(BROWSER);
     const ids = sectionIds();
-    for (const id of ['updates', 'git', 'plugins', 'terminal', 'ssh', 'secrets', 'mocks']) {
+    for (const id of ['updates', 'git', 'plugins', 'terminal', 'ssh', 'secrets', 'mocks', 'paired-browsers']) {
       expect(ids).not.toContain(id);
     }
     expect(ids).toContain('appearance');
@@ -349,7 +351,7 @@ describe('Settings by capability', () => {
   it('lists every section with every capability', () => {
     install(ALL_CAPABILITIES);
     expect(sectionIds()).toEqual(
-      expect.arrayContaining(['updates', 'git', 'plugins', 'terminal', 'ssh', 'secrets', 'mocks']),
+      expect.arrayContaining(['updates', 'git', 'plugins', 'terminal', 'ssh', 'secrets', 'mocks', 'paired-browsers']),
     );
     expect(resolveSection('updates')).toBe('updates');
   });

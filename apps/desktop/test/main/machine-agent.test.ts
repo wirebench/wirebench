@@ -4,8 +4,9 @@
  * one after *Pair this machine…*, none again after the last pairing goes; the `machineAgent.*` channels on the
  * desktop's own table, and no `agent.*` channel there at all.
  */
+import { createServer } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { RunningAgent, StartAgentOptions } from '@wirebench/agent';
+import { openPairingStore, type RunningAgent, type StartAgentOptions } from '@wirebench/agent';
 import { generateId } from '@wirebench/engine';
 import { createHost, type Host } from '../../../../packages/host/src/host/create-host.js';
 import { createFakePlatform, fakeCaller } from '../../../../packages/host/test/helpers/fake-platform.js';
@@ -13,6 +14,26 @@ import { MachineAgent } from '../../src/main/machine-agent.js';
 
 const SERVER = 'https://wirebench.example.test';
 const GOOD_CODE = 'ABC234';
+
+/** A port nothing listens on now. */
+async function freePort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as { port: number };
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
+
+/** Whether `port` on 127.0.0.1 can be listened on now: nothing else holds it. */
+async function free(port: number): Promise<boolean> {
+  const server = createServer();
+  const listened = await new Promise<boolean>((resolve) => {
+    server.once('error', () => resolve(false));
+    server.listen({ port, host: '127.0.0.1', exclusive: true }, () => resolve(true));
+  });
+  if (listened) await new Promise<void>((resolve) => server.close(() => resolve()));
+  return listened;
+}
 
 const hosts: Host[] = [];
 afterEach(async () => {
@@ -29,7 +50,7 @@ function fakeServer() {
       if (body.code !== GOOD_CODE) return new Response('{}', { status: 404 });
       return Response.json({ pairingId: generateId(), origin: SERVER, email: 'ada@example.test' }, { status: 201 });
     }
-    if (init.method === 'DELETE') return new Response(null, { status: 204 });
+    if (init.method === 'DELETE' || init.method === 'PATCH') return new Response(null, { status: 204 });
     return new Response('{}', { status: 404 });
   };
   const fetch = (url: string, init: RequestInit): Promise<Response> => Promise.resolve(answer(url, init));
@@ -63,7 +84,7 @@ async function setUp() {
   machine.register(host.handlers);
   const call = async (channel: string, request: unknown): Promise<unknown> =>
     await host.handlers.get(channel)!(request, fakeCaller(1));
-  return { host, machine, agent, server, call };
+  return { platform, host, machine, agent, server, call };
 }
 
 describe('the desktop agent', () => {
@@ -158,5 +179,50 @@ describe('the desktop agent', () => {
     expect(secondRun.started).toHaveLength(1);
     await second.close();
     expect(secondRun.closed()).toBe(1);
+  });
+
+  it('stops when `wirebench agent unpair` removes the last pairing beside it', async () => {
+    const { platform, machine, agent, call } = await setUp();
+    await call('machineAgent.pair', { serverUrl: SERVER, code: GOOD_CODE });
+    expect(machine.port).toBe(47616);
+    // The CLI's own store over the same profile.
+    const cli = await openPairingStore(platform);
+    for (const pairing of cli.list()) await cli.remove(pairing.pairingId);
+    // Settings (or a window's focus) reads the file again; the change stops the agent.
+    await call('machineAgent.status', undefined);
+    await machine.sync();
+    expect(agent.closed()).toBe(1);
+    expect(machine.port).toBeUndefined();
+  });
+
+  it('keeps the pairing when the agent cannot start, and shows it off', async () => {
+    const platform = createFakePlatform();
+    const host = await createHost(platform);
+    hosts.push(host);
+    const machine = await MachineAgent.open({
+      host,
+      platform,
+      fetch: fakeServer().fetch,
+      start: () => Promise.reject(new Error('No port from 47615 to 47634 is free on 127.0.0.1')),
+    });
+    await expect(machine.pair({ serverUrl: SERVER, code: GOOD_CODE })).resolves.toMatchObject({ origin: SERVER });
+    const status = await machine.status();
+    expect(status.port).toBeUndefined();
+    expect(status.pairings).toHaveLength(1);
+  });
+
+  it('listens on a real port after pairing and releases it after the last unpairing', async () => {
+    const platform = createFakePlatform();
+    const host = await createHost(platform);
+    hosts.push(host);
+    const port = await freePort();
+    const machine = await MachineAgent.open({ host, platform, fetch: fakeServer().fetch, ports: [port] });
+    const { pairingId } = await machine.pair({ serverUrl: SERVER, code: GOOD_CODE });
+    expect(machine.port).toBe(port);
+    expect(await free(port)).toBe(false);
+    await machine.unpair({ pairingId });
+    expect(machine.port).toBeUndefined();
+    expect(await free(port)).toBe(true);
+    await machine.close();
   });
 });

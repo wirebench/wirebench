@@ -207,6 +207,8 @@ type MyState = TeamSecretsStatusWire['me']['state'];
 export interface AgentTeamSecretLookup {
   /** Team secrets are on in the workspace, and its access log is intact. */
   readonly on: boolean;
+  /** A remembered access entry is missing or no longer checks out: the log may have been tampered with. */
+  readonly damaged: boolean;
   readonly state: MyState;
   /** This machine's name, as its key request gives it (the host name before it has one). */
   readonly machine: string;
@@ -216,6 +218,11 @@ export interface AgentTeamSecretLookup {
   readonly trusted: boolean;
   /** The entry's `updatedAt` this machine last imported; absent when it never did. */
   readonly acceptedAt?: string;
+  /**
+   * The value, opened from this workspace's trusted entry with this machine's key: only when this machine
+   * is approved and the entry is wrapped for it. Never logged or shown.
+   */
+  readonly value?: string;
 }
 
 /** What the send path reads synchronously (Task 7). */
@@ -602,13 +609,22 @@ export class TeamSecretsService {
     const id = vaultEntryId(secret);
     const named = view.me === undefined ? undefined : view.access.keys.get(view.me.keyId)?.machine;
     const accepted = view.local.accepted[id];
+    const state = this.myState(view);
+    const trusted = this.trustedValues(view).get(id);
+    // Opened from this workspace's own entry, never read by a store label another workspace's import shares.
+    const value =
+      state === 'approved' && trusted !== undefined && view.me !== undefined
+        ? openVaultEntry(trusted, view.me)
+        : undefined;
     return {
       on: view.access.on && !view.damaged,
-      state: this.myState(view),
+      damaged: view.damaged,
+      state,
       machine: named ?? ((this.deps.machine ?? hostname)() || 'this machine'),
       inVault: view.files.values.has(id),
-      trusted: this.trustedValues(view).has(id),
+      trusted: trusted !== undefined,
       ...(accepted !== undefined ? { acceptedAt: accepted } : {}),
+      ...(value !== undefined ? { value } : {}),
     };
   }
 

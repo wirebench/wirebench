@@ -59,8 +59,18 @@ interface Setup {
  * `hunter2` for the project's `API_KEY`; Bob asks for access and, when `approve`, Alice approves and Bob
  * pulls (importing the value).
  */
-async function setUp(options: { readonly approve: boolean }): Promise<Setup> {
-  const projectId = generateId();
+async function setUp(options: {
+  readonly approve: boolean;
+  readonly origin?: string;
+  readonly projectId?: string;
+  readonly value?: string;
+  /** Bob's machine store, when a second workspace is set up on the same machine. */
+  readonly bobStore?: SecretStore;
+  /** Tells two Alices (two servers' admins) apart. */
+  readonly tag?: string;
+}): Promise<Setup> {
+  const projectId = options.projectId ?? generateId();
+  const tag = options.tag ?? 'a';
   const workspace = {
     ...createWorkspace('Payments QA'),
     projects: [{ id: projectId, slug: 'payments', source: 'internal' as const }],
@@ -73,7 +83,7 @@ async function setUp(options: { readonly approve: boolean }): Promise<Setup> {
   await saveShare(dir, {
     version: 1,
     kind: 'server',
-    server: { ...DEFAULT_SYNC_SETTINGS, url: ORIGIN, workspaceId: workspace.id },
+    server: { ...DEFAULT_SYNC_SETTINGS, url: options.origin ?? ORIGIN, workspaceId: workspace.id },
   });
   const secret: SecretKey = { token: { projectId, name: NAME } };
   const now = (): Date => new Date((clock += 1000));
@@ -89,13 +99,13 @@ async function setUp(options: { readonly approve: boolean }): Promise<Setup> {
     afterWrite: () => undefined,
   });
 
-  const aliceStore = new SecretStore(join(base, 'alice'), crypto);
-  await aliceStore.set('hunter2', { label: secretStoreLabel(projectId, NAME) });
+  const aliceStore = new SecretStore(join(base, `alice-${tag}`), crypto);
+  await aliceStore.set(options.value ?? 'hunter2', { label: secretStoreLabel(projectId, NAME) });
   const alice = new TeamSecretsService({ store: aliceStore, machine: () => 'alice-laptop', now });
-  alice.attach(wsOf(join(base, 'alice', 'workspace'), 'folder', 'alice@example.test'));
+  alice.attach(wsOf(join(base, `alice-${tag}`, 'workspace'), 'folder', 'alice@example.test'));
   await alice.turnOn();
 
-  const bobStore = new SecretStore(join(bobUserData, 'secrets'), crypto);
+  const bobStore = options.bobStore ?? new SecretStore(join(bobUserData, 'secrets'), crypto);
   const bob = new TeamSecretsService({ store: bobStore, machine: () => 'bob-laptop', now });
   bob.attach(wsOf(dir, 'folder', 'bob@example.test'));
   await bob.afterPull([]);
@@ -172,6 +182,52 @@ describe('team secrets on the desktop agent (§18.5)', () => {
     // Once this machine syncs, the new value resolves.
     await setup.bob.service.afterPull([]);
     await expect(resolverFor(setup)(await query(setup))).resolves.toBe('rotated');
+  });
+
+  it('gives each server its own workspace’s value when two workspaces share a project id and name', async () => {
+    const projectId = generateId();
+    const a = await setUp({ approve: true, projectId, value: 'value-of-a' });
+    const b = await setUp({
+      approve: true,
+      projectId,
+      value: 'value-of-b',
+      origin: OTHER_ORIGIN,
+      bobStore: a.bob.store,
+      tag: 'b',
+    });
+    // Both imports wrote the one store label; the last (B's) holds it.
+    const ref = await a.bob.store.findByLabel(secretStoreLabel(projectId, NAME));
+    expect(await a.bob.store.get(ref!)).toBe('value-of-b');
+    const resolve = resolverFor(a);
+    await expect(resolve(await query(a))).resolves.toBe('value-of-a');
+    await expect(resolve(await query(b, { serverOrigin: OTHER_ORIGIN }))).resolves.toBe('value-of-b');
+  });
+
+  it('asks to open the workspace only for a name the server’s vault holds', async () => {
+    const setup = await setUp({ approve: true });
+    const resolve = resolverFor(setup);
+    // Another server, whose bundle's subtree does not hold the name: plainly missing.
+    await expect(
+      resolve(await query(setup, { serverOrigin: OTHER_ORIGIN, bundleTeamSecrets: new Map() })),
+    ).resolves.toBeUndefined();
+  });
+
+  it('treats an import time that does not parse as stale', async () => {
+    const setup = await setUp({ approve: true });
+    const files = await query(setup);
+    const [path, text] = [...files.bundleTeamSecrets].find(([one]) => one.startsWith('values/'))!;
+    const broken = new Map(files.bundleTeamSecrets).set(path, text.replace(/updatedAt: .*/, 'updatedAt: not-a-time'));
+    // A server copy whose time does not parse is not proof of anything current.
+    await expect(resolverFor(setup)({ ...files, bundleTeamSecrets: broken })).rejects.toMatchObject({
+      code: 'team-secret-stale',
+    });
+  });
+
+  it('says a tampered access log is damaged, not stale', async () => {
+    const setup = await setUp({ approve: true });
+    const access = join(setup.tree, 'team-secrets', 'access');
+    for (const name of await readdir(access)) await rm(join(access, name));
+    await expect(resolverFor(setup)(await query(setup))).rejects.toMatchObject({ code: 'team-secrets-damaged' });
   });
 
   it('answers nothing for a name that is not a team secret, or a project outside the workspace', async () => {

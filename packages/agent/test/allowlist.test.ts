@@ -46,7 +46,9 @@ describe('the agent allowlist (§18.1)', () => {
       'reveal-secrets',
       'updates',
       'app-lock',
-      // Not claimed until a bundle send has them: #792 and the desktop's team-secrets hook.
+      // The desktop's own control of its agent, never a browser caller's.
+      'machine-agent',
+      // Not claimed until a bundle send has them: #792, and the desktop's team-secrets hook (below).
       'secret-sources',
       'team-secrets',
     ] as const) {
@@ -54,5 +56,14 @@ describe('the agent allowlist (§18.1)', () => {
     }
     expect(browserCapabilities(new Set(ALL_CAPABILITIES))).toEqual(['kerberos', 'send:private', 'send:public']);
     expect(browserCapabilities(new Set(['files', 'send:public']))).toEqual(['send:public']);
+    // `team-secrets` only for an embedder whose sends resolve them, and only when the platform has it.
+    expect(browserCapabilities(new Set(ALL_CAPABILITIES), { teamSecrets: true })).toEqual([
+      'kerberos',
+      'send:private',
+      'send:public',
+      'team-secrets',
+    ]);
+    expect(browserCapabilities(new Set(['send:public']), { teamSecrets: true })).toEqual(['send:public']);
+    expect(browserCapabilities(new Set(ALL_CAPABILITIES), { teamSecrets: false })).not.toContain('team-secrets');
   });
 });

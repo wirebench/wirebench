@@ -1086,6 +1086,8 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
   `team-secret-needs-approval`. The workspace id comes from the bundle, so the hook is asked with the pairing id and
   its server's origin as well, and must confirm the workspace belongs to that server before it answers: a server
   must never name another server's workspace and read its team secrets.
+  When the bundle's vault entry for the name is newer than what this machine imported, the send fails with
+  `team-secret-stale`: open or sync the workspace on this machine, then send again.
 - **Headless agent.** It has no team secrets in slice 3: it has no approved machine key and no UI to request one. A
   team-secret send routed to it fails with `team-secret-needs-approval`, saying to use the desktop app.
 - **Secret sources** on the agent wait for #792. A source runs a command on the person's machine, so a mapping that
