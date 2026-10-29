@@ -20,7 +20,7 @@ import { HISTORY_BODY_MAX_CHARS } from '@wirebench/wire/history-body';
 import { ThisMachineSection } from '../../src/renderer/features/preferences/sections/this-machine-section.js';
 import { availableNav } from '../../src/renderer/features/preferences/settings-model.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import { makeRestExchange } from '../mocks/exchange-fixtures.js';
+import { makeExchange, makeRestExchange } from '../mocks/exchange-fixtures.js';
 import { REQUEST_PROPERTIES, restApiWire, restRequestWire } from '../helpers/wire-defaults.js';
 
 vi.mock('../../src/renderer/components/toast.js', async (importOriginal) => ({
@@ -658,5 +658,74 @@ describe('an agent send, further', () => {
     });
     expect(calls.record).not.toHaveBeenCalled();
     expect(useExchangesStore.getState().restByRequest['rest-1']?.error?.code).toBe('connection-refused');
+  });
+});
+
+describe('a server send under a protected environment', () => {
+  const NEEDS = {
+    ok: false,
+    error: {
+      code: 'needs-confirmation',
+      message: '"Production" is a protected environment: confirm the send first',
+      details: { environment: 'Production' },
+    },
+  };
+  const SERVER_ROUTE = { ok: true, value: { route: 'server', info: INFO } };
+
+  it('asks, then sends the REST request once more, confirmed', async () => {
+    const calls = install(fakeAgent().env);
+    calls.route.mockResolvedValue(SERVER_ROUTE);
+    calls.sendRest.mockResolvedValueOnce(NEEDS);
+    render(<ProtectedSendDialog />);
+    const sending = useExchangesStore.getState().sendRest('rest-1');
+    await screen.findByTestId('protected-send-dialog');
+    fireEvent.click(screen.getByTestId('protected-send-confirm'));
+    await act(async () => {
+      await sending;
+    });
+    const sendId = useExchangesStore.getState().restByRequest['rest-1']?.sendId;
+    expect(calls.sendRest).toHaveBeenCalledTimes(2);
+    expect(calls.sendRest).toHaveBeenNthCalledWith(1, { sendId, requestId: 'rest-1' });
+    expect(calls.sendRest).toHaveBeenNthCalledWith(2, { sendId, requestId: 'rest-1', confirmed: true });
+    expect(useExchangesStore.getState().restByRequest['rest-1']?.status).toBe('done');
+  });
+
+  it('sends nothing more when the person declines', async () => {
+    const calls = install(fakeAgent().env);
+    calls.route.mockResolvedValue(SERVER_ROUTE);
+    calls.sendRest.mockResolvedValueOnce(NEEDS);
+    render(<ProtectedSendDialog />);
+    const sending = useExchangesStore.getState().sendRest('rest-1');
+    await screen.findByTestId('protected-send-dialog');
+    fireEvent.click(screen.getByTestId('protected-send-cancel'));
+    await act(async () => {
+      await sending;
+    });
+    expect(calls.sendRest).toHaveBeenCalledTimes(1);
+    expect(useExchangesStore.getState().restByRequest['rest-1']?.error).toMatchObject({ code: 'send-declined' });
+    expect(useProblemsStore.getState().items).toEqual([]);
+  });
+
+  it('asks for a SOAP send too, and resends it confirmed', async () => {
+    const calls = install(fakeAgent().env);
+    calls.route.mockResolvedValue(SERVER_ROUTE);
+    calls.send.mockResolvedValueOnce(NEEDS).mockResolvedValueOnce({ ok: true, value: makeExchange() });
+    render(<ProtectedSendDialog />);
+    const sending = useExchangesStore.getState().send('soap-1', true);
+    await screen.findByTestId('protected-send-dialog');
+    fireEvent.click(screen.getByTestId('protected-send-confirm'));
+    await act(async () => {
+      await sending;
+    });
+    expect(calls.send).toHaveBeenCalledTimes(2);
+    expect(calls.send.mock.calls[0]?.[0]).not.toHaveProperty('confirmed');
+    expect(calls.send.mock.calls[1]?.[0]).toMatchObject({ requestId: 'soap-1', confirmed: true });
+  });
+
+  it('on the desktop, sends once and never asks: its host asks natively', async () => {
+    const calls = install(undefined);
+    await useExchangesStore.getState().sendRest('rest-1');
+    expect(calls.sendRest).toHaveBeenCalledTimes(1);
+    expect(calls.sendRest.mock.calls[0]?.[0]).not.toHaveProperty('confirmed');
   });
 });

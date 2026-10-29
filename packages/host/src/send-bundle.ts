@@ -38,6 +38,7 @@ import {
   type SendBundle,
   type SendBundleFile,
 } from '@wirebench/wire/agent';
+import { needsConfirmation } from './native-dialogs.js';
 import { protectedEnvironmentOf, type SendThroughEngineDeps } from './send/exchange.js';
 import type { SendRouteDeps } from './send-route.js';
 import {
@@ -252,9 +253,7 @@ export async function buildSendBundle(
   // The person is asked in the tab, before the bundle is built; the agent never asks (§18.4).
   const guarded = protectedEnvironmentOf(located);
   if (guarded !== undefined && request.confirmed !== true) {
-    throw new WirebenchError('needs-confirmation', `"${guarded}" is a protected environment: confirm the send first`, {
-      details: { environment: guarded },
-    });
+    throw needsConfirmation([guarded]);
   }
   const bundled = withEnvironment(project, prunedProject(project, item, registry), item, located, scopes);
   const maxBytes = deps.limits?.maxBytes ?? AGENT_BUNDLE_MAX_BYTES;

@@ -408,7 +408,11 @@ export function protectedEnvironmentOf(
     : undefined;
 }
 
-/** Asks about the protected environments named, `true` at once when there are none; never throws. */
+/**
+ * Asks about the protected environments named, `true` at once when there are none. Throws only a host's
+ * `needs-confirmation` (it has no dialogs; the caller asks and sends again confirmed); any other failure to
+ * ask is a "no".
+ */
 export async function confirmProtectedSend(
   deps: Pick<SendThroughEngineDeps, 'confirmProtected'>,
   environmentNames: readonly string[],
@@ -416,7 +420,9 @@ export async function confirmProtectedSend(
   if (environmentNames.length === 0) return true;
   try {
     return (await deps.confirmProtected?.(environmentNames)) === true;
-  } catch {
+  } catch (error) {
+    // A host with no dialogs hands the question to its caller (the tab): that refusal goes out as it is.
+    if (isWirebenchError(error) && error.code === 'needs-confirmation') throw error;
     return false;
   }
 }

@@ -1033,7 +1033,9 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
   - A protected environment (the workspace's, or its linked project environment) is asked about in the tab: the
     bundle answers `needs-confirmation` with the environment's name, the tab asks with its protected-send prompt,
     and asks again with `confirmed: true`. A "no" sends nothing. The bundle's environment is never protected, so
-    the agent does not ask again.
+    the agent does not ask again. A send the server host makes itself is asked the same way: a host with no
+    dialogs answers `needs-confirmation` instead of declining unasked, and the tab sends `request.sendRest` or
+    `request.send` again with `confirmed: true`. The desktop asks with its native dialog, as before.
   - What is recorded: the tab trims the agent's exchange as History trims a body (256 Ki characters, with its
     marker) before `exchanges.recordAgentSend`, so a large response never crosses the server socket whole; the
     response's own size goes with it. The send is audited as a send of the server host's own

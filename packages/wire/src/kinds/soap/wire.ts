@@ -458,6 +458,8 @@ export const requestSendRequestSchema = z.object({
   input: soapSendInputWireSchema,
   /** The saved request this send came from, if any — used to resolve its effective auth. */
   requestId: z.string().optional(),
+  /** The person confirmed the protected environment it goes under; see `requestSendRestRequestSchema`. */
+  confirmed: z.boolean().optional(),
 });
 export type RequestSendRequest = z.infer<typeof requestSendRequestSchema>;
 

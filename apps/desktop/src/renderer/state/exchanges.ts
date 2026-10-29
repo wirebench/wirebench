@@ -30,6 +30,7 @@ import { useDraftsStore } from './drafts.js';
 import { useEditorsStore } from './editors.js';
 import { useSecretsVisibilityStore } from './secrets-visibility.js';
 import { flushScriptEdits, hasScriptEditors } from './script-edits.js';
+import { withProtectedConfirmation } from './protected-send.js';
 import {
   ABORTED,
   agentEnv,
@@ -1236,11 +1237,17 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
           ? ({ ok: false, error: route.error } as const)
           : route.kind === 'agent'
             ? await sendThroughAgent('rest', requestId, sendId)
-            : await ipc().request.sendRest({
-                sendId,
-                requestId,
-                ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
-              });
+            : await withProtectedConfirmation((confirmed) =>
+                // A send cancelled while the person was asked is not sent after all.
+                confirmed && get().restByRequest[requestId]?.sendId !== sendId
+                  ? Promise.resolve({ ok: false as const, error: ABORTED })
+                  : ipc().request.sendRest({
+                      sendId,
+                      requestId,
+                      ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
+                      ...(confirmed ? { confirmed: true } : {}),
+                    }),
+              );
 
       // A cancel may already have cleared this send; only settle it if it is still ours.
       if (get().restByRequest[requestId]?.sendId !== sendId) {
@@ -1452,17 +1459,22 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
           ? ({ ok: false, error: route.error } as const)
           : route.kind === 'agent'
             ? await sendThroughAgent('soap', requestId, sendId)
-            : await ipc().request.send({
-                sendId,
-                requestId,
-                input: {
-                  endpoint,
-                  envelopeXml: draftRequest.envelopeXml,
-                  soapVersion: draftRequest.soapVersion,
-                  ...(draftRequest.soapAction !== undefined ? { soapAction: draftRequest.soapAction } : {}),
-                  headers: Object.fromEntries(draftRequest.headers.map((header) => [header.name, header.value])),
-                },
-              });
+            : await withProtectedConfirmation((confirmed) =>
+                confirmed && get().byRequest[requestId]?.sendId !== sendId
+                  ? Promise.resolve({ ok: false as const, error: ABORTED })
+                  : ipc().request.send({
+                      sendId,
+                      requestId,
+                      input: {
+                        endpoint,
+                        envelopeXml: draftRequest.envelopeXml,
+                        soapVersion: draftRequest.soapVersion,
+                        ...(draftRequest.soapAction !== undefined ? { soapAction: draftRequest.soapAction } : {}),
+                        headers: Object.fromEntries(draftRequest.headers.map((header) => [header.name, header.value])),
+                      },
+                      ...(confirmed ? { confirmed: true } : {}),
+                    }),
+              );
 
       // A cancel may have already cleared/overwritten this send; only settle it if it's still ours.
       if (get().byRequest[requestId]?.sendId !== sendId) {

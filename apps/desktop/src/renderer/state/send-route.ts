@@ -28,7 +28,7 @@ import type { FailedExchangeWire } from '@shared/wire-base.js';
 import { historyBody, HISTORY_BODY_MAX_CHARS } from '@shared/history-body.js';
 import type { AgentEnv, AgentStatus } from '../../preload/build-api.js';
 import { ipc } from './ipc-client.js';
-import { askProtectedSend } from './protected-send.js';
+import { withProtectedConfirmation } from './protected-send.js';
 import { useProjectStore } from './project.js';
 
 /** The plain words for each need, as the error and the chip's tooltip name them. */
@@ -312,21 +312,9 @@ async function bundleFor(
   projectId: string,
   requestId: string,
 ): Promise<Awaited<ReturnType<ReturnType<typeof ipc>['request']['bundle']>>> {
-  const first = await api.request.bundle({ projectId, itemId: requestId });
-  if (first.ok || first.error.code !== 'needs-confirmation') return first;
-  const environment = (first.error.details as { environment?: unknown } | undefined)?.environment;
-  const name = typeof environment === 'string' ? environment : 'This environment';
-  if (!(await askProtectedSend(name))) {
-    return {
-      ok: false,
-      error: {
-        code: 'send-declined',
-        message: `Not sent: "${name}" is protected and the send was not confirmed`,
-        details: { environments: [name] },
-      },
-    };
-  }
-  return await api.request.bundle({ projectId, itemId: requestId, confirmed: true });
+  return await withProtectedConfirmation((confirmed) =>
+    api.request.bundle({ projectId, itemId: requestId, ...(confirmed ? { confirmed: true } : {}) }),
+  );
 }
 
 /** The HTTP Log's row the agent built for a failed send, from its error; `undefined` when it sent none. */

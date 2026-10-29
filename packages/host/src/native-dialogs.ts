@@ -9,6 +9,7 @@
 
 import { delimiter } from 'node:path';
 import type { Caller, DialogFilter, HostPlatform } from './host/platform.js';
+import { WirebenchError } from '@wirebench/engine';
 import { requireCapability } from './host/capability.js';
 import type { RecordsReadPicks, RecordsWritePicks } from './dialog-picks.js';
 
@@ -54,6 +55,17 @@ export interface NativeDialogs {
  * The pickers over `platform`'s native dialogs. The queue of e2e folder answers lives in the
  * returned object, so two platforms never share a position in it.
  */
+/**
+ * The refusal of a send under a protected environment that this host cannot ask about itself (#345, hosted
+ * edition spec §18.4): the tab asks, and sends again confirmed. `details.environment` is the first name.
+ */
+export function needsConfirmation(environmentNames: readonly string[]): WirebenchError {
+  const first = environmentNames[0] ?? '';
+  return new WirebenchError('needs-confirmation', `"${first}" is a protected environment: confirm the send first`, {
+    details: { environment: first, environments: [...environmentNames] },
+  });
+}
+
 export function createNativeDialogs(platform: Pick<HostPlatform, 'dialogs' | 'app' | 'machineValues'>): NativeDialogs {
   /**
    * Whether the e2e dialog overrides below may be honoured at all.
@@ -193,9 +205,12 @@ export function createNativeDialogs(platform: Pick<HostPlatform, 'dialogs' | 'ap
 
     /**
      * Over the focused window. Cancel is the default and the answer to Escape, so a
-     * stray Enter never sends to production.
+     * stray Enter never sends to production. A host with no dialogs refuses with
+     * `needs-confirmation` rather than declining unasked.
      */
     async confirmProtected(environmentNames) {
+      // No dialogs here (the server host): the tab asks instead, and sends again with `confirmed`.
+      if (platform.dialogs === undefined) throw needsConfirmation(environmentNames);
       const list = environmentNames.map((name) => `"${name}"`).join(', ');
       const one = environmentNames.length === 1;
       const { response } = await dialogs().message('focused', {

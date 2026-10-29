@@ -436,6 +436,11 @@ export const requestSendRestRequestSchema = z.object({
   requestId: z.string(),
   /** The editor's unsaved edits, applied to this send only. */
   draft: restRequestPatchSchema.optional(),
+  /**
+   * The person was asked about the protected environment it goes under, and said send: a host with no
+   * dialogs of its own (the server's) answers `needs-confirmation` and the tab asks (#345, §18.4).
+   */
+  confirmed: z.boolean().optional(),
 });
 export type RequestSendRestRequest = z.infer<typeof requestSendRestRequestSchema>;
 
