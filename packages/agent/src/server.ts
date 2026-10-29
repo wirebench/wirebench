@@ -9,8 +9,11 @@
  *    itself redeemed the nonce at that pairing's server, signed with its key; otherwise `4401`. The peer
  *    has {@link HOST_AUTH_TIMEOUT_MS} to get there.
  *
- * Then the hello goes out and calls are served, `agent.*` only (`allowlist.ts`). The browser caller gets
- * no scope on the embedder's host: nothing of the desktop's own windows, workspaces or channels is its.
+ * Then the hello goes out and calls are served: the agent's own `agent.*` handlers only (`allowlist.ts`),
+ * never the embedder's host table. The browser caller gets no scope on that host: nothing of the desktop's
+ * own windows, workspaces or channels is its. A pairing that goes away (unpaired here, or removed from the
+ * pairings file by another process) ends its sockets `4401`; the file is re-read on every preflight,
+ * upgrade and auth frame, and every {@link AGENT_REFRESH_INTERVAL_MS} besides.
  *
  * Plain HTTP answers only the private-network preflight (`OPTIONS /host`) for a paired origin; anything
  * else is a bare `404`.
@@ -24,7 +27,6 @@ import {
   HOST_CLOSE,
   HOST_LIMITS,
   runHostSocket,
-  serveCall,
   type CallFrame,
   type Caller,
   type Host,
@@ -47,6 +49,9 @@ export const AGENT_CALLER_ID_BASE = 1_000_000;
 /** Sockets the agent holds open at once, every tab together; the next closes `4429`. */
 export const AGENT_MAX_SOCKETS = 16;
 
+/** How often a running agent re-reads its pairings file. */
+export const AGENT_REFRESH_INTERVAL_MS = 2_000;
+
 /** How long `close()` waits for peers to answer the close before cutting them off. */
 const CLOSE_GRACE_MS = 1_000;
 
@@ -61,17 +66,19 @@ const authFrameSchema = z
   })
   .strict();
 
-/** What an `agent.*` handler gets: who asked, and the pairing its tab proved itself with. */
+/** What an `agent.*` handler gets: who asked, the pairing its tab proved itself with, and the embedder's host. */
 export interface AgentCallContext {
   readonly caller: Caller;
   readonly pairing: Pairing;
+  /** For a handler's own use (a send bundle may need the host's services); never a channel the tab calls. */
+  readonly host: Host;
 }
 
 /** An agent-local channel: run by the agent itself, never by the embedder's host. */
 export type AgentHandler = (request: unknown, context: AgentCallContext) => Promise<unknown>;
 
 export interface StartAgentOptions {
-  /** The embedder's host; a browser caller reaches none of its channels (the allowlist answers for it). */
+  /** The embedder's host, handed to `agent.*` handlers; a browser caller reaches none of its channels. */
   readonly host: Host;
   readonly platform: Pick<HostPlatform, 'capabilities' | 'app'>;
   readonly store: PairingStore;
@@ -82,6 +89,12 @@ export interface StartAgentOptions {
   readonly authTimeoutMs?: number;
   /** More `agent.*` handlers (`agent.send` and the rest come with the send bundle). */
   readonly handlers?: ReadonlyMap<string, AgentHandler>;
+  /**
+   * How often the pairings file is re-read while the agent runs, so a pairing another process removed ends
+   * its sockets without a request coming in; {@link AGENT_REFRESH_INTERVAL_MS} when absent. The file is also
+   * re-read on every preflight, upgrade and auth frame.
+   */
+  readonly refreshIntervalMs?: number;
   /** Where a failure goes; never handed a frame, a nonce or a key. */
   readonly log?: (message: string, error: unknown) => void;
 }
@@ -134,6 +147,21 @@ function refuseUpgrade(socket: Duplex, status: 403 | 404): void {
   socket.end(`HTTP/1.1 ${String(status)} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
 }
 
+/** The answer to every channel a browser caller may not reach, `agent.*` without a local handler included. */
+function refused(frame: CallFrame): ReplyFrame {
+  const dot = frame.channel.indexOf('.');
+  const capability = dot === -1 ? frame.channel : frame.channel.slice(0, dot);
+  return {
+    id: frame.id,
+    ok: false,
+    error: {
+      code: 'host-capability-missing',
+      message: `This host does not serve ${capability} calls`,
+      details: { capability },
+    },
+  };
+}
+
 /**
  * Starts the agent on the first free port of `ports`, on `127.0.0.1` only. It starts with no pairings as
  * readily as with some; the embedder decides when. A pairing whose server has not been told this port is
@@ -144,7 +172,8 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
   const fetch: AgentFetch = options.fetch ?? ((url, init) => globalThis.fetch(url, init));
   const log = options.log ?? (() => undefined);
   const ports = options.ports ?? AGENT_PORTS;
-  const sockets = new Set<HostSocket>();
+  /** Every open socket, and the pairing it proved itself with once it has. */
+  const sockets = new Map<HostSocket, { pairingId?: string }>();
   const reports = new Set<Promise<void>>();
   let nextCallerId = AGENT_CALLER_ID_BASE;
   let port = 0;
@@ -152,19 +181,43 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
   const pairedOrigin = (origin: string | undefined): boolean =>
     origin !== undefined && store.list().some((pairing) => pairing.origin === origin);
 
-  const http = createServer((request: IncomingMessage, response: ServerResponse) => {
-    const origin = header(request, 'origin');
-    if (request.method === 'OPTIONS' && pathOf(request) === SOCKET_PATH && pairedOrigin(origin)) {
-      response.writeHead(204, {
-        'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Private-Network': 'true',
-        Vary: 'Origin',
-      });
-      response.end();
-      return;
+  /** The pairings as they are on disk now; on a read failure, as last read. */
+  const fresh = (): Promise<void> =>
+    store.refresh().catch((error: unknown) => {
+      log('the pairings file could not be read again', error);
+    });
+
+  // A pairing that is gone (unpaired here, or removed from the file by another process) ends its tabs.
+  const prune = (): void => {
+    for (const [socket, bound] of sockets) {
+      if (bound.pairingId !== undefined && store.get(bound.pairingId) === undefined) {
+        socket.end(HOST_CLOSE.unauthenticated, 'unpaired');
+      }
     }
-    response.writeHead(404, { 'Content-Length': '0' });
-    response.end();
+  };
+  const unsubscribe = store.onChange(prune);
+  const refresher = setInterval(() => {
+    void fresh();
+  }, options.refreshIntervalMs ?? AGENT_REFRESH_INTERVAL_MS);
+  refresher.unref();
+
+  const http = createServer((request: IncomingMessage, response: ServerResponse) => {
+    void (async () => {
+      const origin = header(request, 'origin');
+      const preflight = request.method === 'OPTIONS' && pathOf(request) === SOCKET_PATH;
+      if (preflight) await fresh();
+      if (preflight && pairedOrigin(origin)) {
+        response.writeHead(204, {
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Private-Network': 'true',
+          Vary: 'Origin',
+        });
+        response.end();
+        return;
+      }
+      response.writeHead(404, { 'Content-Length': '0' });
+      response.end();
+    })();
   });
   const wss = new WebSocketServer({ noServer: true, maxPayload: HOST_LIMITS.maxFrameBytes });
 
@@ -182,12 +235,11 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
   ]);
 
   const serve = async (caller: Caller, pairing: Pairing, frame: CallFrame): Promise<ReplyFrame> => {
+    // Only the agent's own handlers are reachable: never the host's table, not even for an `agent.*` name.
     const local = isAgentChannel(frame.channel) ? handlers.get(frame.channel) : undefined;
-    // Everything else goes to the host's own dispatch, which answers `host-capability-missing` for any
-    // channel the allowlist refuses: one refusal, spelled once.
-    if (local === undefined) return serveCall(host, caller, frame, isAgentChannel);
+    if (local === undefined) return refused(frame);
     try {
-      return { id: frame.id, ok: true, value: await local(frame.request, { caller, pairing }) };
+      return { id: frame.id, ok: true, value: await local(frame.request, { caller, pairing, host }) };
     } catch (error) {
       log('an agent call failed', error);
       return { id: frame.id, ok: false, error: { code: 'internal-error', message: 'The call failed' } };
@@ -201,6 +253,9 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
     const ready = new Promise<HostSocketReady | undefined>((resolve) => {
       admit = resolve;
     });
+    const bound: { pairingId?: string } = {};
+    // The redeem stops when the socket does (its deadline passed, or the peer went).
+    const abort = new AbortController();
     const socket = runHostSocket(ws, {
       ready,
       callerId,
@@ -209,22 +264,25 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
       authTimeoutMs: options.authTimeoutMs ?? HOST_AUTH_TIMEOUT_MS,
       onClosed: () => {
         sockets.delete(socket);
+        abort.abort();
         admit(undefined);
       },
       beforeReady: async (frame) => {
         const auth = authFrameSchema.safeParse(frame);
         if (!auth.success) return false;
+        await fresh();
         const pairing = store.get(auth.data.pairingId);
         // A tab proves itself only for a pairing of the origin it came from.
         if (pairing === undefined || pairing.origin !== origin) return false;
         try {
-          await redeemNonce(pairing, auth.data.nonce, store, fetch);
+          await redeemNonce(pairing, auth.data.nonce, store, fetch, abort.signal);
         } catch (error) {
           log('a tab could not be let in', error);
           return false;
         }
         // Unpaired while the redeem ran.
         if (store.get(pairing.pairingId) === undefined) return false;
+        bound.pairingId = pairing.pairingId;
         admit({
           hello: {
             type: 'hello',
@@ -240,7 +298,7 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
         return true;
       },
     });
-    sockets.add(socket);
+    sockets.set(socket, bound);
   };
 
   http.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -255,18 +313,20 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
       refuseUpgrade(socket, 403);
       return;
     }
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      ws.on('error', () => undefined);
-      const origin = header(request, 'origin');
-      if (origin === undefined || !pairedOrigin(origin)) {
-        ws.close(HOST_CLOSE.forbidden, 'forbidden');
-        return;
-      }
-      if (sockets.size >= AGENT_MAX_SOCKETS) {
-        ws.close(HOST_CLOSE.tooManySockets, 'too many sockets');
-        return;
-      }
-      accept(ws, origin);
+    void fresh().then(() => {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        ws.on('error', () => undefined);
+        const origin = header(request, 'origin');
+        if (origin === undefined || !pairedOrigin(origin)) {
+          ws.close(HOST_CLOSE.forbidden, 'forbidden');
+          return;
+        }
+        if (sockets.size >= AGENT_MAX_SOCKETS) {
+          ws.close(HOST_CLOSE.tooManySockets, 'too many sockets');
+          return;
+        }
+        accept(ws, origin);
+      });
     });
   });
 
@@ -276,7 +336,11 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
       break;
     }
   }
-  if (port === 0) throw new AgentPortsBusyError(ports);
+  if (port === 0) {
+    clearInterval(refresher);
+    unsubscribe();
+    throw new AgentPortsBusyError(ports);
+  }
 
   for (const pairing of store.list()) {
     if (pairing.port === port) continue;
@@ -295,7 +359,9 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
     port,
     close: () => {
       closing ??= (async () => {
-        for (const socket of [...sockets]) socket.end(HOST_CLOSE.goingAway, 'agent stopping');
+        clearInterval(refresher);
+        unsubscribe();
+        for (const socket of [...sockets.keys()]) socket.end(HOST_CLOSE.goingAway, 'agent stopping');
         // A peer gets a moment to answer the close; one that does not is cut off.
         await Promise.race([
           Promise.all(

@@ -50,7 +50,14 @@ describe('pair and unpair', () => {
   it('forgets a pairing the server no longer knows (404)', async () => {
     const server = await startFakeServer();
     const store = await openPairingStore(fakePlatform());
-    const { pairingId } = await pair({ code: server.code, serverUrl: server.url, sshOptIn: false, store, fetch });
+    const { pairingId } = await pair({
+      code: server.code,
+      serverUrl: server.url,
+      sshOptIn: false,
+      store,
+      fetch,
+      port: 47_615,
+    });
     server.pairings.clear();
     await unpair({ pairingId, store, fetch });
     expect(store.list()).toEqual([]);
@@ -59,7 +66,14 @@ describe('pair and unpair', () => {
   it('keeps the pairing when the server cannot be reached', async () => {
     const server = await startFakeServer();
     const store = await openPairingStore(fakePlatform());
-    const { pairingId } = await pair({ code: server.code, serverUrl: server.url, sshOptIn: false, store, fetch });
+    const { pairingId } = await pair({
+      code: server.code,
+      serverUrl: server.url,
+      sshOptIn: false,
+      store,
+      fetch,
+      port: 47_615,
+    });
     const down: AgentFetch = () => Promise.reject(new Error('offline'));
     await expect(unpair({ pairingId, store, fetch: down })).rejects.toMatchObject({ code: 'unreachable' });
     expect(store.list()).toHaveLength(1);
@@ -68,7 +82,9 @@ describe('pair and unpair', () => {
   it('refuses a wrong code and keeps nothing', async () => {
     const server = await startFakeServer();
     const store = await openPairingStore(fakePlatform());
-    await expect(pair({ code: 'WRONG2', serverUrl: server.url, sshOptIn: false, store, fetch })).rejects.toMatchObject({
+    await expect(
+      pair({ code: 'WRONG2', serverUrl: server.url, sshOptIn: false, store, fetch, port: 47_615 }),
+    ).rejects.toMatchObject({
       code: 'refused',
       status: 401,
     });
@@ -80,7 +96,7 @@ describe('pair and unpair', () => {
     server.answerOrigin = 'https://team.example.test/path';
     const store = await openPairingStore(fakePlatform());
     await expect(
-      pair({ code: server.code, serverUrl: server.url, sshOptIn: false, store, fetch }),
+      pair({ code: server.code, serverUrl: server.url, sshOptIn: false, store, fetch, port: 47_615 }),
     ).rejects.toMatchObject({ code: 'bad-answer' });
     expect(store.list()).toEqual([]);
   });

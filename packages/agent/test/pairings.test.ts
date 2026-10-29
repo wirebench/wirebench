@@ -71,4 +71,65 @@ describe('openPairingStore', () => {
     const store = await openPairingStore({ ...platform, secrets: { ...platform.secrets, available: () => false } });
     await expect(store.identity()).rejects.toThrow(/cannot keep the agent key secret/);
   });
+
+  it('refuses a file that is not JSON with the same error, not a raw SyntaxError', async () => {
+    const platform = fakePlatform();
+    writeFileSync(join(platform.paths.userData(), PAIRINGS_FILE), '{ not json');
+    const failure: unknown = await openPairingStore(platform).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(SyntaxError);
+    expect((failure as Error).message).toMatch(/not a pairings file/);
+  });
+
+  it('makes one identity when two first pairings ask at once', async () => {
+    const platform = fakePlatform();
+    const store = await openPairingStore(platform);
+    const [a, b] = await Promise.all([store.identity(), store.identity()]);
+    expect(a.agentId).toBe(b.agentId);
+    expect(a.key.publicKey).toBe(b.key.publicKey);
+    const file = JSON.parse(readFileSync(join(platform.paths.userData(), PAIRINGS_FILE), 'utf8')) as {
+      agentId: string;
+    };
+    expect(file.agentId).toBe(a.agentId);
+  });
+
+  it("sees another process's pairings on refresh, and keeps them when it writes", async () => {
+    const platform = fakePlatform();
+    const here = await openPairingStore(platform);
+    const { agentId } = await here.identity();
+    const there = await openPairingStore(fakePlatform(undefined, platform.paths.userData()));
+    const theirs = pairing();
+    await there.add(theirs);
+    expect(here.get(theirs.pairingId)).toBeUndefined();
+    let changes = 0;
+    here.onChange(() => {
+      changes += 1;
+    });
+    await here.refresh();
+    expect(here.get(theirs.pairingId)).toEqual(theirs);
+    expect(changes).toBe(1);
+    await here.refresh();
+    expect(changes).toBe(1);
+
+    // A write here starts from the file on disk, so it does not drop what the other process added since.
+    const later = pairing();
+    await there.add(later);
+    const mine = pairing();
+    await here.add(mine);
+    expect(here.list().map((one) => one.pairingId)).toEqual([theirs.pairingId, later.pairingId, mine.pairingId]);
+
+    await there.refresh();
+    await there.remove(theirs.pairingId);
+    await here.refresh();
+    expect(here.get(theirs.pairingId)).toBeUndefined();
+    expect((await there.identity()).agentId).toBe(agentId);
+  });
+
+  it('adopts the identity another process made first instead of making a second', async () => {
+    const platform = fakePlatform();
+    const here = await openPairingStore(platform);
+    const there = await openPairingStore(fakePlatform(undefined, platform.paths.userData()));
+    const theirs = await there.identity();
+    expect((await here.identity()).agentId).toBe(theirs.agentId);
+  });
 });

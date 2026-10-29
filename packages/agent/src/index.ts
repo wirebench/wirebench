@@ -28,6 +28,7 @@ export { AGENT_FIRST_PORT, AGENT_LAST_PORT, AGENT_PORTS } from './ports.js';
 export {
   AGENT_CALLER_ID_BASE,
   AGENT_MAX_SOCKETS,
+  AGENT_REFRESH_INTERVAL_MS,
   AgentPortsBusyError,
   startAgent,
   type AgentCallContext,

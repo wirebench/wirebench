@@ -15,7 +15,6 @@ import {
 } from '@wirebench/engine';
 import { bodySha256, signedHeaders } from './keys.js';
 import type { Pairing, PairingStore } from './pairings.js';
-import { AGENT_FIRST_PORT } from './ports.js';
 
 /** The part of `fetch` the agent uses. */
 export type AgentFetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -103,8 +102,12 @@ export interface PairOptions {
   readonly sshOptIn: boolean;
   readonly store: PairingStore;
   readonly fetch: AgentFetch;
-  /** The port the agent listens on, or will; {@link AGENT_FIRST_PORT} when not yet known. */
-  readonly port?: number;
+  /**
+   * The running agent's port (`RunningAgent.port`). With no agent running, the port it will listen on
+   * (the CLI's pair step passes `AGENT_FIRST_PORT`, 47615); if it lands on another, `startAgent` tells the
+   * server with a signed `PATCH`.
+   */
+  readonly port: number;
 }
 
 /** What the caller shows: "paired as <email>". */
@@ -121,7 +124,7 @@ export interface PairResult {
 export async function pair(options: PairOptions): Promise<PairResult> {
   const serverUrl = normaliseServerUrl(options.serverUrl);
   const { agentId, key } = await options.store.identity();
-  const port = options.port ?? AGENT_FIRST_PORT;
+  const { port } = options;
   const body: AgentPairRequest = {
     code: options.code,
     agentId,

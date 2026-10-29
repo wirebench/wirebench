@@ -7,7 +7,7 @@
 import { createServer as createNetServer, type Server as NetServer } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { HOST_CLOSE } from '@wirebench/host';
-import { pair, type AgentFetch } from '../src/pair.js';
+import { pair, unpair, type AgentFetch } from '../src/pair.js';
 import { openPairingStore, type PairingStore } from '../src/pairings.js';
 import {
   AGENT_CALLER_ID_BASE,
@@ -23,6 +23,7 @@ import {
   fakePlatform,
   onCleanUp,
   openSocket,
+  rawUpgradeStatus,
   registryChannelNames,
   startFakeServer,
   type FakeServer,
@@ -201,6 +202,7 @@ describe('startAgent', () => {
       sshOptIn: false,
       store: setup.store,
       fetch,
+      port: setup.port,
     });
     const frames = [
       { type: 'auth', pairingId: otherId, nonce: other.nonce(otherId) },
@@ -269,7 +271,14 @@ describe('startAgent', () => {
     const server = await startFakeServer();
     const platform = fakePlatform();
     const store = await openPairingStore(platform);
-    const { pairingId } = await pair({ code: server.code, serverUrl: server.url, sshOptIn: false, store, fetch });
+    const { pairingId } = await pair({
+      code: server.code,
+      serverUrl: server.url,
+      sshOptIn: false,
+      store,
+      fetch,
+      port: 47_615,
+    });
     expect(store.get(pairingId)?.port).toBe(47_615);
     const port = await freePort();
     const agent = await startAgent({ host: fakeHost(), platform, store, fetch, ports: [port] });
@@ -299,5 +308,102 @@ describe('startAgent', () => {
     await empty.close();
     await setup.agent.close();
     expect(await socket.closed).toEqual({ code: HOST_CLOSE.goingAway });
+  });
+
+  it('reaches no host channel by an agent.* name: only the agent handlers answer', async () => {
+    const server = await startFakeServer();
+    const platform = fakePlatform();
+    const store = await openPairingStore(platform);
+    const port = await freePort();
+    const { pairingId } = await pair({ code: server.code, serverUrl: server.url, sshOptIn: false, store, fetch, port });
+    const agent = await startAgent({
+      host: fakeHost(['agent.secret', 'agent.send', 'fs.openText']),
+      platform,
+      store,
+      fetch,
+      ports: [port],
+    });
+    onCleanUp(() => agent.close());
+    const { call } = await authed({ server, store, pairingId, port, agent });
+    for (const channel of ['agent.secret', 'agent.send', 'fs.openText']) {
+      expect(await call(channel), channel).toMatchObject({ ok: false, error: { code: 'host-capability-missing' } });
+    }
+  });
+
+  it("ends a pairing's open sockets 4401 when it is unpaired here, and leaves the others", async () => {
+    const setup = await setUp();
+    const other = await startFakeServer();
+    const { pairingId: otherId } = await pair({
+      code: other.code,
+      serverUrl: other.url,
+      sshOptIn: false,
+      store: setup.store,
+      fetch,
+      port: setup.port,
+    });
+    const doomed = await authed(setup);
+    const kept = await authed({ ...setup, server: other, pairingId: otherId });
+    await unpair({ pairingId: setup.pairingId, store: setup.store, fetch });
+    expect(await doomed.socket.closed).toEqual({ code: HOST_CLOSE.unauthenticated });
+    expect(await kept.call('agent.hello')).toMatchObject({ ok: true });
+  });
+
+  it('takes a pairing another process made, and ends its sockets when another process removes it', async () => {
+    const server = await startFakeServer();
+    const platform = fakePlatform();
+    const store = await openPairingStore(platform);
+    await store.identity();
+    const port = await freePort();
+    const agent = await startAgent({ host: fakeHost(), platform, store, fetch, ports: [port], refreshIntervalMs: 50 });
+    onCleanUp(() => agent.close());
+
+    // `wirebench agent pair` in a second process, over the same file.
+    const elsewhere = await openPairingStore(fakePlatform(undefined, platform.paths.userData()));
+    const { pairingId } = await pair({
+      code: server.code,
+      serverUrl: server.url,
+      sshOptIn: false,
+      store: elsewhere,
+      fetch,
+      port,
+    });
+    const preflight = await globalThis.fetch(`http://127.0.0.1:${String(port)}/host`, {
+      method: 'OPTIONS',
+      headers: { origin: server.origin },
+    });
+    expect(preflight.status).toBe(204);
+    const tab = await authed({ server, store, pairingId, port, agent });
+    expect(tab.hello).toMatchObject({ type: 'hello' });
+
+    await elsewhere.remove(pairingId);
+    expect(await tab.socket.closed).toEqual({ code: HOST_CLOSE.unauthenticated });
+  });
+
+  it('aborts the redeem when the socket closes before the server answers', async () => {
+    const setup = await setUp({ authTimeoutMs: 100 });
+    setup.server.holdRedeem = true;
+    const socket = openSocket(setup.port, { origin: setup.server.origin });
+    socket.send({ type: 'auth', pairingId: setup.pairingId, nonce: setup.server.nonce(setup.pairingId) });
+    expect(await socket.closed).toEqual({ code: HOST_CLOSE.unauthenticated });
+    await expect.poll(() => setup.server.abortedRedeems, { timeout: 2_000 }).toBe(1);
+  });
+
+  it('refuses every other spelling of the loopback Host, and a missing one', async () => {
+    const setup = await setUp();
+    const port = String(setup.port);
+    const origin = setup.server.origin;
+    for (const host of [
+      `LOCALHOST:${port}`,
+      `127.0.0.1.:${port}`,
+      `localhost.:${port}`,
+      `[::1]:${port}`,
+      `127.0.0.1:${port}.`,
+    ]) {
+      expect(await rawUpgradeStatus(setup.port, { Host: host, Origin: origin }), host).toBe(403);
+    }
+    // Node answers an HTTP/1.1 request with no Host itself (400); either way it never upgrades.
+    expect([400, 403]).toContain(await rawUpgradeStatus(setup.port, { Origin: origin }));
+    expect(await rawUpgradeStatus(setup.port, { Host: `127.0.0.1:${port}`, Origin: origin })).toBe(101);
+    expect(await rawUpgradeStatus(setup.port, { Host: `localhost:${port}`, Origin: origin })).toBe(101);
   });
 });

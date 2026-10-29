@@ -6,7 +6,7 @@
 import { createHash, createPublicKey, randomUUID, verify } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { connect, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
@@ -113,6 +113,9 @@ export interface FakeServer {
   nonce(pairingId: string): string;
   /** Answer the next pairing with this origin instead of the server's own. */
   answerOrigin?: string;
+  /** Never answer a redeem; count the ones the agent gave up on. */
+  holdRedeem?: boolean;
+  abortedRedeems: number;
 }
 
 function readBody(request: IncomingMessage): Promise<string> {
@@ -146,6 +149,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     origin: '',
     email: 'ada@example.test',
     code: 'ABC234',
+    abortedRedeems: 0,
     pairings,
     seen,
     nonce: (pairingId) => {
@@ -181,6 +185,13 @@ export async function startFakeServer(): Promise<FakeServer> {
         const id = ulidLike();
         pairings.set(id, { request: parsed.data, port: parsed.data.port });
         reply(201, { pairingId: id, origin: state.answerOrigin ?? state.origin, email: state.email });
+        return;
+      }
+      if (method === 'POST' && path === '/api/v1/agent/nonces/redeem' && state.holdRedeem === true) {
+        seen.push({ method, path, body });
+        response.on('close', () => {
+          if (!response.writableEnded) state.abortedRedeems += 1;
+        });
         return;
       }
       if (method === 'POST' && path === '/api/v1/agent/nonces/redeem') {
@@ -323,4 +334,40 @@ export function registryChannelNames(): string[] {
   };
   walk(channels);
   return names.sort();
+}
+
+/**
+ * Sends a raw upgrade request for `/host` with exactly `headers` (none added, `Host` included) and resolves
+ * with the status code of the answer.
+ */
+export function rawUpgradeStatus(port: number, headers: Readonly<Record<string, string>>): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(port, '127.0.0.1');
+    onCleanUp(() => {
+      socket.destroy();
+    });
+    let text = '';
+    socket.on('data', (chunk: Buffer) => {
+      text += chunk.toString('latin1');
+      const match = /^HTTP\/1\.1 (\d{3})/.exec(text);
+      if (match !== null) {
+        resolve(Number(match[1]));
+        socket.destroy();
+      }
+    });
+    socket.on('error', reject);
+    const lines = [
+      'GET /host HTTP/1.1',
+      ...Object.entries({
+        Connection: 'Upgrade',
+        Upgrade: 'websocket',
+        'Sec-WebSocket-Version': '13',
+        'Sec-WebSocket-Key': Buffer.from(randomUUID().slice(0, 16)).toString('base64'),
+        ...headers,
+      }).map(([name, value]) => `${name}: ${value}`),
+      '',
+      '',
+    ];
+    socket.write(lines.join('\r\n'));
+  });
 }
