@@ -649,7 +649,7 @@ self-hosted teams on their own, which is why they would come first whenever the 
 | Slice | Module id | Delivers | Depends on | Serves self-hosted alone? |
 | --- | --- | --- | --- | --- |
 | 1 | `host-seam` | **Built** (#779 and #780, 2026-10-27; ADR-0033 accepted). `@wirebench/host` as `createHost(platform)` with `HostPlatform` and `Caller`, no module-level state and its gate; the Electron app embeds it; proven by the existing tests on a fake platform and a fake-socket test of `buildApi` (the loopback server moves to slice 3) | — | yes (no user-visible change) |
-| 2 | `browser-client` | **Scheduled 2026-10-27** (#783; §17 records what changed from this row). The Vite browser build, `browser-bootstrap.ts`, capability discovery, the sign-in page and `browser_flows`, the cookie session, the server host with checkouts and per-user state via `inject`, live events over the host socket, user-scoped sealed secrets under one server-wide root, the §3.10 allowlist and path guard, the egress rule on every outbound connection | 1 | yes: a self-hosted team gets a browser tab |
+| 2 | `browser-client` | **Built** (#785, #787 and this PR, 2026-10-29, for #783; §17 records what changed from this row). The Vite browser build, `browser-bootstrap.ts`, capability discovery, the sign-in page and `browser_flows`, the cookie session, the server host with checkouts and per-user state via `inject`, live events over the host socket, user-scoped sealed secrets under one server-wide root, the §3.10 allowlist and path guard, the egress rule on every outbound connection | 1 | yes: a self-hosted team gets a browser tab |
 | 3 | `local-agent` | `packages/agent` as a library, the loopback socket transport, pairing with the browser subset, the send-route rule and the send bundle, `wirebench agent`, the agent's packaging | 1, 2 | yes |
 | 4 | `tenancy` | `tenants`, `tenant_id` on every table, forced row-level security, tenant resolution by `Host`, per-tenant directories and data keys with the one-time re-wrap, the six guards of §5.4 including the job scope, the host-instance lease, the self-hosted migration | 2 | yes, invisibly (one tenant) |
 | 5 | `operations` | `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
@@ -732,10 +732,10 @@ The payment provider is Paddle, as merchant of record (decision 10).
 
 ## 17. Slice 2 amendment: the browser client (2026-10-27)
 
-Slice 2 (#783) is scheduled on its merits, before the trigger, because a self-hosted team gets a browser
-tab from it. It builds §3.1–§3.5, §3.10, §5.2 (the server transport) and §6 with one tenant implied, so no
-`tenant_id` appears yet. Where the build differs from the sections above, this section wins until slice 4
-folds it back. Plan: `docs/plans/2026-10-27-browser-client.md`.
+Slice 2 (#783) was scheduled on its merits, before the trigger, because a self-hosted team gets a browser
+tab from it, and is built: #785 the server side, #787 the server host, and this PR the tab. It builds
+§3.1–§3.5, §3.10, §5.2 (the server transport) and §6 with one tenant implied, so no `tenant_id` appears
+yet. Where the build differs from the sections above, this section wins until slice 4 folds it back. Plan: `docs/plans/2026-10-27-browser-client.md`.
 
 ### 17.1 Switching it on
 
@@ -753,7 +753,14 @@ folds it back. Plan: `docs/plans/2026-10-27-browser-client.md`.
   `/sign-in/local`, with the desktop route's rate limits and decoy. OIDC and SAML start at
   `/sign-in/oidc` and `/sign-in/saml`, keep their state in `browser_flows`, and their callbacks
   (`/api/v1/auth/oidc/browser-callback`, `/api/v1/auth/saml/browser-acs`) set the cookie and redirect
-  to `/`. The desktop's loopback flows are untouched.
+  to `/`. The desktop's loopback flows are untouched. The SP metadata keeps naming the desktop's ACS URL
+  only, so an operator adds the browser one at the IdP by hand; `serve` logs both.
+- A flow's start also sets `__Host-wb_flow` (`wb_flow` on an `http://` URL), holding the flow's state for
+  its ten minutes; a callback whose state the cookie does not match is refused. Without it, a callback URL
+  someone started and handed on would sign another person into their account (login CSRF through the
+  redirect flow). The cookie is cleared only on a matching state. For SAML it is `SameSite=None`, because
+  the IdP posts the response from its own site, and browsers keep that only when `Secure`: **browser SAML
+  needs an `https://` public URL**. OIDC returns by a top-level `GET`, which `Lax` allows.
 - The cookie is `__Host-wb_session` (`HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, no `Domain`). On an
   `http://` public URL, which the server accepts only with `WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL`,
   it is `wb_session` without `Secure`, because browsers drop a `__Host-` cookie that is not `Secure`.
@@ -761,8 +768,11 @@ folds it back. Plan: `docs/plans/2026-10-27-browser-client.md`.
 - The identity guard reads `Authorization` first, then the cookie. A request authenticated by the cookie
   whose method is not `GET` or `HEAD` must carry `Origin` equal to the public URL, or it is refused with
   `identity-origin-refused` (`403`); the sign-in form is checked the same way, against login CSRF.
-- `POST /sign-out` revokes the row, clears the cookie, and announces `sessionEnded`, which closes the
-  user's host sockets that used that token with `4401`.
+- `POST /sign-out` at the root, a same-origin form post checked against `Origin` like the sign-in form,
+  revokes the row, clears the cookie (a stale one too), announces `sessionEnded`, which closes the
+  user's host sockets that used that token with `4401`, and redirects to `/sign-in`. The tab's account
+  menu offers **Sign out** when the bootstrap passes a sign-out action in `env` (17.6), which posts that
+  form. A new browser sign-in also revokes the session token the browser presented, if any.
 
 ### 17.3 The server host
 
@@ -777,19 +787,39 @@ folds it back. Plan: `docs/plans/2026-10-27-browser-client.md`.
 - **Embedding.** The server builds with `tsc -b` and `@wirebench/host` is source-only (ADR-0033), so the
   server bundles the host with esbuild into `dist/host/` at build time, and loads that bundle only when the
   switch is on. Native modules the host loads lazily (`node-pty`, serial, `node-hid`, Kerberos) stay
-  external and are never loaded, since their channels are not registered.
+  external and are never loaded, since their channels are not registered. The server's build stays
+  `tsc -b` plus that bundle; the browser build and its copy into `dist/browser/` are separate steps
+  (`build:browser`, then `copy-browser`), and with the switch on the server refuses to start without them.
 - **Transport to the server's own routes.** `HostOptions.server` gives the host a `send` for its
   `ServerClient` built on Fastify `inject` with the user's token as a bearer, and a `connectLive` that
   opens an in-process socket on the live module's handler, so every call runs the full route pipeline and
   live events reach the host's existing live client. The host's account for the server's public URL is
-  seeded at creation with the token of the socket that created it, and updated to the newest socket's.
+  the server's to hold: `HostOptions.server.credential()` returns the token of the newest socket, and the
+  host's `AccountService` treats `server.url` as signed in with it, writing nothing to `accounts.yaml` or
+  the secret store.
+- **Sockets.** One user holds at most 8 host sockets (`HOST_LIMITS.maxSocketsPerUser`), every tab and
+  window together; the ninth closes `4429` before any frame. A frame either way is at most 32 MiB
+  (`HOST_LIMITS.maxFrameBytes`, `1009` past it), the largest sync transfer; calls queued while the host is
+  built are bounded to 64 MiB. A user disabled by the time the socket upgrades gets the guard's HTTP `403`
+  rather than a close code, so the bootstrap, on a failed upgrade, asks `GET /api/v1/me` and goes to
+  `/sign-in` on `401` or `403`.
 - **What it serves** is §3.10's table, as one allowlist of channel groups in `packages/server/src/host/`.
   A channel outside it answers `host-capability-missing`. The server platform has no `dialogs`, `shell`
   or `power`, and its capabilities are `send:public` only, so the SSH, terminal and Kerberos areas are
-  off through `app.areas`. Kinds whose transport cannot take the egress check (17.5) are left out of
-  `app.kinds` on the server host until it can; gRPC is the known one.
+  off through `app.areas`. Every kind is in `app.kinds`: gRPC's transport takes the egress check too
+  (17.5), so no kind is left out. The save-time secret scan (`secretScan.*`) is served, over the open
+  project's model, so a team workspace gets the same review before a save; only folder scans of local
+  paths stay refused, as §3.10 says.
+- **Three more capabilities** in the wire list, which the Electron platform declares and the server
+  platform does not: `processes` (MCP servers over stdio), `listen` (a mock listener on the machine's
+  network) and `windows` (more than one window). The renderer gates mock services, Start and Record, the
+  explorer's mock entries and New Window on them, and attachments, keystores and plugin imports on
+  `files`, so no refused channel is offered.
 - **Server-kind workspaces only.** A host without the `files` capability refuses to create or open a
   git or local workspace (`host-capability-missing`), and the renderer offers only server workspaces.
+  Slice 2 opens existing server workspaces only: creating a team workspace from a browser tab (create and
+  share as one server-targeted operation, with its own UI) is follow-up #786, so a browser-only team needs
+  one desktop user to create a workspace. §13 criterion 2 asks only that a tab open one.
 - **Path guard.** The server platform names a root, the checkout parent; every renderer-supplied path is
   resolved and `realpath`ed against it before any file is touched, and one outside answers
   `host-path-outside-workspace`.
@@ -803,7 +833,9 @@ folds it back. Plan: `docs/plans/2026-10-27-browser-client.md`.
   (AES-256-GCM) under a per-user key derived by HKDF from `WIREBENCH_SERVER_SECRETS_KEY` and the user id.
   The host's own `SecretStore` keeps them in `secrets.json` in the user's directory, exactly as the
   desktop keeps its `safeStorage` blobs, and the host's `secrets.*` channels already never read a value
-  back, so the renderer's Secrets page is unchanged.
+  back, so the renderer's Secrets page is unchanged. `secrets.setShowSecrets` is refused and previews and
+  copied commands are masked, so no value enters a socket frame: a browser user sets a value and never
+  reads it back.
 - The `tenant_secrets` table waits for slice 4 (my call). A second store beside the host's own would
   be a second resolver for one name; slice 4 introduces per-tenant keys and re-wraps every user's
   `secrets.json` once, which is the moment a table can replace the file if it still earns its place.
@@ -815,17 +847,21 @@ folds it back. Plan: `docs/plans/2026-10-27-browser-client.md`.
 
 - One function, `checkEgress(address, family)`, in `@wirebench/core`, used as the DNS `lookup` of every
   connector the server builds: the engine's undici dispatchers (so every redirect and the proxy hop are
-  checked, because they connect through the same lookup), the WebSocket connector, and the server's own
-  alert and webhook clients. The connection goes to the address the check passed; nothing resolves twice.
+  checked, because they connect through the same lookup), the WebSocket connector, gRPC's `node:http2`
+  connect (which takes a `lookup` as well), and the server's own alert and webhook clients. The
+  connection goes to the address the check passed; nothing resolves twice.
 - Always refused, on every server: loopback (`127.0.0.0/8`, `::1`), unspecified (`0.0.0.0/8`, `::`),
   link-local (`169.254.0.0/16`, `fe80::/10`), which covers the IPv4 cloud-metadata address, the IPv6
   metadata address `fd00:ec2::254`, the metadata address `100.100.100.200` (inside `100.64.0.0/10`),
   multicast and broadcast. IPv4-mapped IPv6 is unwrapped first.
 - Refused only when `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true` (and always in hosted mode, slice 4):
   `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `fc00::/7`.
-- Covered: server-host sends of every served kind, scheduled runs, schedule alerts, OAuth token calls,
-  URL imports and definition fetches made by a server host. Not covered: destinations only the operator
-  configures (the OIDC issuer, SMTP, audit forwarding), which are the operator's own network.
+- Covered: server-host sends of every served kind, gRPC included, scheduled runs, schedule alerts, OAuth
+  token calls, URL imports and definition fetches made by a server host (gRPC reflection and the MCP
+  catalogue fetch among them). Behind a proxy a user names in a request, the hop to the proxy is checked,
+  and a literal or `localhost` target is refused before it reaches the proxy. Not covered: destinations
+  only the operator configures (the OIDC issuer, SMTP, audit forwarding), which are the operator's own
+  network.
 - A refusal is `egress-refused` naming the host and the class of address, never the resolved address of
   a private target, so the message is not a probe of the server's network.
 
@@ -839,7 +875,10 @@ folds it back. Plan: `docs/plans/2026-10-27-browser-client.md`.
   renderer. `env` gains `host` and `capabilities` on both builds; the renderer reads them through one
   helper, `hasCapability`, and never compares `host`. `pathForFile` is `() => ''`.
 - A dropped socket shows a reconnect bar and reopens with backoff; a `4401` close sends the tab to
-  `/sign-in`.
+  `/sign-in`, and so does a `401` or `403` from `GET /api/v1/me`, which the bootstrap asks after an
+  upgrade fails (a disabled user's upgrade is refused with HTTP `403`, which a socket cannot read). Calls
+  pending at a drop resolve to `{ ok: false, error: { code: 'host-disconnected' } }`. `env` also carries
+  the sign-out action (17.2).
 - The server serves the build from `dist/browser/` with `@fastify/static`, hashed assets cached as
   immutable, and the CSP `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;
   connect-src 'self'; frame-ancestors 'none'`. The container image builds it in its build stage.

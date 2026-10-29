@@ -87,7 +87,8 @@ a host that resolves to a loopback, link-local, unspecified or cloud-metadata ad
 `egress-refused`, on every redirect and through a proxy too. A schedule that used to reach `localhost`
 or `127.0.0.1` fails with that error after upgrading; address the internal service by a name that
 resolves to a non-loopback address. Private ranges stay reachable unless
-`WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true`, which refuses them as well.
+`WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true`, which refuses them as well. Requests sent from a
+[browser tab](/wirebench/docs/guides/server-browser-client/#where-requests-can-go) follow the same rule.
 
 Outcomes: `passed`; `failed` when an assertion or SLA failed; `errored` when a request or the run
 itself errored, with a `reason` such as `timeout`, `target-missing`, `environment-protected`,

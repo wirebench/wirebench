@@ -1,7 +1,8 @@
 /**
  * The browser tab's page and files at the root (hosted edition spec §17.2, §17.6), registered through the
  * host module's `registerPublic` only when the browser client is on. The build is the desktop renderer's
- * Vite build (`apps/desktop/dist-browser`), which the server's `build` copies to `dist/browser/`:
+ * Vite build (`apps/desktop/dist-browser`), which `copy-browser` copies to `dist/browser/` after the
+ * server's `build`:
  *
  * - `GET /`, and any other page path, since the renderer is one page: `index.html` for a signed-in browser
  *   session, else a `303` to `/sign-in` carrying the path as `redirect_to`. The page goes out with

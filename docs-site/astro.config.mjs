@@ -64,6 +64,7 @@ export default defineConfig({
             { label: 'Audit log', slug: 'guides/server-audit-log' },
             { label: 'SAML and SCIM', slug: 'guides/server-saml-scim' },
             { label: 'Scheduled runs', slug: 'guides/server-scheduled-runs' },
+            { label: 'Browser client', slug: 'guides/server-browser-client' },
             { label: 'Webhook inbox', slug: 'guides/webhooks' },
             { label: 'Sending webhooks', slug: 'guides/sending-webhooks' },
             { label: 'Webhook signatures', slug: 'guides/webhook-signatures' },

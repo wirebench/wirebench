@@ -43,3 +43,10 @@ applied to the resolved address as the socket's DNS lookup.** Precisely:
   its kind is not offered there until its connector takes the check.
 - The check lives in `@wirebench/core`, so the engine, the server and later the hosted control plane
   share one table of ranges and one test of it.
+
+## What slice 2 taught
+
+- **gRPC is not excluded.** Its `node:http2` connect takes a `lookup` too, so it got the check in the
+  first task and every kind is offered on the server host; the second consequence above no longer holds.
+- **Behind a proxy a user names, only the hop to the proxy is checked**, since the proxy resolves the
+  target; a literal or `localhost` target is refused before it is handed to the proxy.

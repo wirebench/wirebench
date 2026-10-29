@@ -25,6 +25,13 @@ All notable changes to this project are documented here. The format follows
   On Preview, **Check for Updates…** also offers release candidates such as `6.2.0-rc.1`, marked
   "(preview)" in the download prompt. Going back to Stable never downgrades: a preview build waits for
   the next stable release that is newer. A managed-preferences policy can lock the channel.
+- **Server: the app in a browser tab (#783).** With `WIREBENCH_SERVER_BROWSER_CLIENT=true` and
+  `WIREBENCH_SERVER_SECRETS_KEY` set, the server serves the app at its public URL: a teammate signs in at
+  `/sign-in` (email and password, OpenID Connect or SAML), opens the team's server workspaces and sends
+  requests from the server, under the same egress rule as scheduled runs. Each user's secrets are sealed
+  under their own key, never shown again and audited by name. Anything that needs the user's machine —
+  SSH, terminals, file dialogs, mock services, Kerberos, the keychain — is absent. OIDC and SAML need one
+  more redirect URI and ACS URL at the identity provider; see the _Browser client_ guide. Off by default.
 
 ### Changed
 - **The open editor tab stands out.** It carries an accent bar along its bottom edge, and the editor

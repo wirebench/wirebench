@@ -56,10 +56,10 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_SCHEDULES_ALERT_HOSTS` | no | — | The only hosts Slack, Teams and webhook alerts may go to: names or `*.example.com`, comma-separated. Unset, any https host. |
 | `WIREBENCH_SERVER_SMTP_URL` | no | — | Where email alerts are sent: `smtp://user:pass@mail.example.com:587` (STARTTLS when offered) or `smtps://…:465`. Unset, email alerts are refused. Never logged. |
 | `WIREBENCH_SERVER_SMTP_FROM` | no | — | The sender address of email alerts; required with WIREBENCH_SERVER_SMTP_URL. |
-| `WIREBENCH_SERVER_BROWSER_CLIENT` | no | `false` | Preview: the app in a browser tab arrives in a later release; for now this turns on the browser sign-in page (`/sign-in`), cookie sessions and the socket a tab will use (`/api/v1/host`), which runs a host per signed-in user. Needs WIREBENCH_SERVER_SECRETS_KEY. False, none of it runs. |
-| `WIREBENCH_SERVER_SECRETS_KEY` | no | — | Preview: encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on. Never logged. |
+| `WIREBENCH_SERVER_BROWSER_CLIENT` | no | `false` | Serve the app in a browser tab at `/`: the browser sign-in page (`/sign-in`), cookie sessions and the tab’s socket (`/api/v1/host`), which runs a host per signed-in user. Needs WIREBENCH_SERVER_SECRETS_KEY. False, none of it runs. |
+| `WIREBENCH_SERVER_SECRETS_KEY` | no | — | Encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on. Never logged. |
 | `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE` | no | `false` | Also refuse private network addresses (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7) for connections the server opens for users: scheduled runs, alerts and the browser client. Loopback, link-local and cloud metadata addresses are always refused. |
-| `WIREBENCH_SERVER_HOST_IDLE_MINUTES` | no | `30` | Preview: minutes after a user’s last browser connection closes before the server stops that user’s host and frees its memory (1–1440). The user’s files stay. |
+| `WIREBENCH_SERVER_HOST_IDLE_MINUTES` | no | `30` | Minutes after a user’s last browser connection closes before the server stops that user’s host and frees its memory (1–1440). The user’s files stay. |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
 
@@ -251,6 +251,55 @@ API stays the source of truth; while connected, it polls only every five minutes
 - On shutdown every socket closes with `1001` before in-flight requests drain, and the app reconnects when
   the server is back.
 
+## Browser client
+
+The server can serve the app itself in a browser tab at its public URL, so a teammate opens a team
+workspace without installing anything. It is the desktop app's own interface, run against a host the
+server keeps for each signed-in user. Off by default: an upgrade opens no new sign-in page and no
+server-side send path until an operator asks for them.
+
+- **Switching it on.** Set `WIREBENCH_SERVER_BROWSER_CLIENT=true` and `WIREBENCH_SERVER_SECRETS_KEY`
+  (32 random bytes, base64: `openssl rand -base64 32`); `config check` refuses the one without the other.
+  The public URL should be `https://`: the session cookie is `__Host-wb_session` (`Secure`, `HttpOnly`,
+  `SameSite=Lax`), and on an `http://` URL allowed by `WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL` it
+  falls back to a plain `wb_session`, for development only.
+- **Signing in.** `/` without a session redirects to `/sign-in`, which offers the enabled methods.
+  Register the extra OIDC redirect URI `<public URL>/api/v1/auth/oidc/browser-callback` and the second SAML
+  ACS URL `<public URL>/api/v1/auth/saml/browser-acs` at the IdP ([Accounts](#accounts),
+  [SAML and SCIM](#saml-and-scim)). SAML from the browser needs an `https://` public URL. The tab's
+  account menu signs out (`POST /sign-out`), which ends the session and closes its sockets.
+- **What a tab can do.** Open the team's server workspaces, edit and save them, sync, and send every
+  request kind from the server (SOAP, REST, GraphQL, gRPC, WebSocket, MCP over HTTP), to public addresses
+  and, unless `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE` is set, to private ranges on the server's network.
+  Sequences, the runner, scripts, history, environments, the admin tabs and the save-time secret review
+  work as on the desktop.
+- **What it cannot do.** Anything that needs the user's machine: local and git workspaces, SSH, terminals,
+  SFTP and port forwards, files and folders picked from a dialog (imports from a file, exports to one,
+  attachments, keystores), mock services, Kerberos, secret sources, the OS keychain, team-secret machine
+  keys, MCP servers that run as local processes, plugins and more than one window. The app hides these
+  rather than failing on them. A team workspace is not created from the browser yet (#786): create it once
+  from the desktop app, and the browser opens it.
+- **Secrets.** A value a user stores in the tab is sealed with AES-256-GCM under a key derived for that user
+  from `WIREBENCH_SERVER_SECRETS_KEY`, and kept in the user's directory. It is never shown again, not even
+  to its owner, and never leaves the server in a socket frame. Every write and every use in a send is
+  audited by name (`secret.written`, `secret.resolved` with the target host), never by value. A new key
+  cannot open what the old one sealed.
+- **Egress.** Every connection a tab's host opens — sends, redirects, the proxy hop, OAuth token calls, URL
+  imports, definition fetches — is checked at connect time, the same rule as scheduled runs: loopback,
+  link-local, unspecified, cloud-metadata, multicast and broadcast addresses are always refused with
+  `egress-refused`; private ranges only with `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true`.
+- **Memory and disk.** A user's host starts with their first tab and stops
+  `WIREBENCH_SERVER_HOST_IDLE_MINUTES` (default 30) after their last tab closes; the working copies and
+  state under `<data dir>/checkouts/<user id>/` stay. One user holds at most 8 tab sockets (the ninth closes
+  `4429`), and a socket frame is at most 32 MiB.
+- **Reverse proxy.** Forward the whole origin, not only `/api/v1/`: the page at `/`, `/assets/`,
+  `/sign-in`, `/sign-out`, and the WebSocket upgrade for `/api/v1/host` with `Upgrade` and `Connection`,
+  as for `/api/v1/live`. The socket refuses an `Origin` other than the public URL.
+- **Building.** The image carries the build. From a checkout, the order is the server's build, then the
+  browser build, then the copy: `pnpm --filter @wirebench/server... build`,
+  `pnpm --filter @wirebench/desktop build:browser`, `pnpm --filter @wirebench/server copy-browser`. With the
+  switch on and no build copied, the server refuses to start.
+
 ## Webhook capture
 
 A workspace's editors create **catch URLs**. Each one is a public address,
@@ -311,6 +360,11 @@ API, alerts and muting.
   `WIREBENCH_SERVER_SCHEDULES_MAX_SNAPSHOT_MB`) and removes it after.
 - **A run never sees the server's environment.** It gets the project, its environment and the
   schedule's own sealed secrets only.
+- **Nor the server's own machine.** A request in a run, and a Slack, Teams or webhook alert, whose host
+  resolves to a loopback, link-local, unspecified or cloud-metadata address is refused with
+  `egress-refused`, on redirects and through a proxy too. After an upgrade, a schedule that sent to
+  `localhost` or a sidecar on the same host fails: address it by a name that resolves to a non-loopback
+  address. Private ranges stay reachable unless `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true`.
 - **Retention.** Runs and results older than `WIREBENCH_SERVER_SCHEDULES_MAX_AGE_DAYS` are deleted in
   batches; delivered and given-up alerts after 7 days.
 - **Console commands**, on any edition: `wirebench-server admin schedules list [--workspace <id>]`,
