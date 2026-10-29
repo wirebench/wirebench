@@ -1,0 +1,239 @@
+/**
+ * The agent's calls to a Wirebench Server's pairing routes (hosted edition spec §18.2): trading a code
+ * for a pairing, unpairing, telling the server a new port, and redeeming a tab's nonce. Every call after
+ * the pairing itself is signed with the agent's key. `fetch` is injected, so the embedder decides how the
+ * agent reaches the server (and a test can stand one up on loopback).
+ */
+import {
+  AGENT_EMPTY_BODY_SHA256,
+  agentPairResponseSchema,
+  agentRedeemMessage,
+  agentRedeemResponseSchema,
+  agentRequestMessage,
+  type AgentPairRequest,
+  type AgentRedeemResponse,
+} from '@wirebench/engine';
+import { bodySha256, signedHeaders } from './keys.js';
+import type { Pairing, PairingStore } from './pairings.js';
+import { AGENT_FIRST_PORT } from './ports.js';
+
+/** The part of `fetch` the agent uses. */
+export type AgentFetch = (url: string, init: RequestInit) => Promise<Response>;
+
+/** How long one call to the server may take. */
+const REQUEST_TIMEOUT_MS = 10_000;
+
+/** Why a call to the server did not do what it was for; the message is safe to show. */
+export class AgentServerError extends Error {
+  constructor(
+    readonly code: 'unreachable' | 'refused' | 'rate-limited' | 'bad-answer',
+    message: string,
+    /** The HTTP status, when the server answered. */
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = 'AgentServerError';
+  }
+}
+
+/** `serverUrl` without a trailing slash, as an `http(s)` URL; throws when it is not one. */
+export function normaliseServerUrl(serverUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(serverUrl);
+  } catch {
+    throw new AgentServerError('unreachable', 'The server address is not a URL');
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new AgentServerError('unreachable', 'The server address must start with https:// or http://');
+  }
+  url.search = '';
+  url.hash = '';
+  return url.href.replace(/\/+$/, '');
+}
+
+/** The URL of `route` (starting `/api/…`) on the server, and its path as the server signs it. */
+function routeOf(serverUrl: string, route: string): { readonly url: string; readonly path: string } {
+  const url = new URL(`${serverUrl}${route}`);
+  return { url: url.href, path: url.pathname };
+}
+
+async function call(fetch: AgentFetch, url: string, init: RequestInit, signal?: AbortSignal): Promise<Response> {
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      ...init,
+      redirect: 'error',
+      signal: signal === undefined ? timeout : AbortSignal.any([timeout, signal]),
+    });
+  } catch {
+    throw new AgentServerError('unreachable', 'The server could not be reached');
+  }
+}
+
+function refusal(response: Response, what: string): AgentServerError {
+  return response.status === 429
+    ? new AgentServerError('rate-limited', `The server refused ${what}: too many attempts, try again later`, 429)
+    : new AgentServerError('refused', `The server refused ${what} (HTTP ${String(response.status)})`, response.status);
+}
+
+async function jsonOf(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    throw new AgentServerError('bad-answer', 'The server answered with something that is not JSON');
+  }
+}
+
+/** A canonical `scheme://host[:port]`, or `undefined` when `origin` is not exactly one. */
+function canonicalOrigin(origin: string): string | undefined {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
+    return url.origin === origin.replace(/\/+$/, '') ? url.origin : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export interface PairOptions {
+  /** As the user typed it. */
+  readonly code: string;
+  readonly serverUrl: string;
+  readonly sshOptIn: boolean;
+  readonly store: PairingStore;
+  readonly fetch: AgentFetch;
+  /** The port the agent listens on, or will; {@link AGENT_FIRST_PORT} when not yet known. */
+  readonly port?: number;
+}
+
+/** What the caller shows: "paired as <email>". */
+export interface PairResult {
+  readonly pairingId: string;
+  readonly origin: string;
+  readonly email: string;
+}
+
+/**
+ * Trades `code` for a pairing at `serverUrl` and keeps it. Makes the agent's key first if this is its
+ * first pairing. The code is sent once and kept nowhere.
+ */
+export async function pair(options: PairOptions): Promise<PairResult> {
+  const serverUrl = normaliseServerUrl(options.serverUrl);
+  const { agentId, key } = await options.store.identity();
+  const port = options.port ?? AGENT_FIRST_PORT;
+  const body: AgentPairRequest = {
+    code: options.code,
+    agentId,
+    publicKey: key.publicKey,
+    port,
+    sshOptIn: options.sshOptIn,
+  };
+  const { url } = routeOf(serverUrl, '/api/v1/agent/pairings');
+  const response = await call(options.fetch, url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw refusal(response, 'the pairing code');
+  const answer = agentPairResponseSchema.safeParse(await jsonOf(response));
+  const origin = answer.success ? canonicalOrigin(answer.data.origin) : undefined;
+  if (!answer.success || origin === undefined) {
+    throw new AgentServerError('bad-answer', 'The server answered the pairing with something unexpected');
+  }
+  await options.store.add({
+    pairingId: answer.data.pairingId,
+    serverUrl,
+    origin,
+    email: answer.data.email,
+    sshOptIn: options.sshOptIn,
+    createdAt: new Date().toISOString(),
+    port,
+  });
+  return { pairingId: answer.data.pairingId, origin, email: answer.data.email };
+}
+
+export interface UnpairOptions {
+  readonly pairingId: string;
+  readonly store: PairingStore;
+  readonly fetch: AgentFetch;
+}
+
+/**
+ * Unpairs at the server, signed, and forgets the pairing here. A server that no longer knows it (`404`,
+ * unpaired from the browser's side already) counts as done. Any other refusal, or no answer, keeps the
+ * pairing and throws, so the user is not told it is gone while the server still holds it.
+ */
+export async function unpair(options: UnpairOptions): Promise<void> {
+  const pairing = options.store.get(options.pairingId);
+  if (pairing === undefined) return;
+  const { key } = await options.store.identity();
+  const { url, path } = routeOf(pairing.serverUrl, `/api/v1/agent/pairings/${encodeURIComponent(pairing.pairingId)}`);
+  const response = await call(options.fetch, url, {
+    method: 'DELETE',
+    headers: signedHeaders(key, pairing.pairingId, (timestamp) =>
+      agentRequestMessage('DELETE', path, pairing.pairingId, timestamp, AGENT_EMPTY_BODY_SHA256),
+    ),
+  });
+  if (!response.ok && response.status !== 404) throw refusal(response, 'the unpairing');
+  await options.store.remove(pairing.pairingId);
+}
+
+/** Tells the pairing's server the agent listens on `port` now, signed, and records it. */
+export async function reportPort(
+  pairing: Pairing,
+  port: number,
+  store: PairingStore,
+  fetch: AgentFetch,
+): Promise<void> {
+  const { key } = await store.identity();
+  const body = JSON.stringify({ port });
+  const { url, path } = routeOf(pairing.serverUrl, `/api/v1/agent/pairings/${encodeURIComponent(pairing.pairingId)}`);
+  const response = await call(fetch, url, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+      ...signedHeaders(key, pairing.pairingId, (timestamp) =>
+        agentRequestMessage('PATCH', path, pairing.pairingId, timestamp, bodySha256(body)),
+      ),
+    },
+    body,
+  });
+  if (!response.ok) throw refusal(response, 'the port change');
+  await store.setPort(pairing.pairingId, port);
+}
+
+/**
+ * Redeems a tab's `nonce` at the pairing's server, signed. The answer says whose tab it is; a refusal
+ * (replayed, expired, unknown) throws. The nonce is sent once and kept nowhere.
+ */
+export async function redeemNonce(
+  pairing: Pairing,
+  nonce: string,
+  store: PairingStore,
+  fetch: AgentFetch,
+  signal?: AbortSignal,
+): Promise<AgentRedeemResponse> {
+  const { key } = await store.identity();
+  const { url } = routeOf(pairing.serverUrl, '/api/v1/agent/nonces/redeem');
+  const response = await call(
+    fetch,
+    url,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...signedHeaders(key, pairing.pairingId, (timestamp) =>
+          agentRedeemMessage(nonce, pairing.pairingId, timestamp),
+        ),
+      },
+      body: JSON.stringify({ nonce }),
+    },
+    signal,
+  );
+  if (!response.ok) throw refusal(response, 'the tab');
+  const answer = agentRedeemResponseSchema.safeParse(await jsonOf(response));
+  if (!answer.success)
+    throw new AgentServerError('bad-answer', 'The server answered the tab with something unexpected');
+  return answer.data;
+}

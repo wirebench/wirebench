@@ -1,0 +1,28 @@
+{
+  "name": "@wirebench/agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Wirebench local agent: the loopback server a browser tab at a team's Wirebench Server pairs with, to send from this machine. Embedded by the CLI and the desktop app; not published on its own.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ../.. --project agent",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@wirebench/engine": "workspace:*",
+    "@wirebench/host": "workspace:*",
+    "@wirebench/wire": "workspace:*",
+    "ws": "8.21.3",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
+  }
+}

@@ -4,8 +4,9 @@
  * `beforeReady`.
  */
 import { EventEmitter } from 'node:events';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  HOST_AUTH_TIMEOUT_MS,
   HOST_CLOSE,
   HOST_LIMITS,
   runHostSocket,
@@ -273,6 +274,67 @@ describe('runHostSocket (shared)', () => {
       await flush();
       expect(ws.closes).toEqual([{ code: HOST_CLOSE.unauthenticated, reason: 'unauthenticated' }]);
       expect(JSON.stringify(events.logs)).not.toContain('secret-token');
+    });
+
+    it('closes 4401 when it throws synchronously, without the throw escaping the listener', async () => {
+      const ws = new FakeWs();
+      const { events } = run(ws, Promise.resolve(fakeReady()), {
+        beforeReady: () => {
+          throw new Error('sync');
+        },
+      });
+      expect(() => {
+        ws.frame({ type: 'auth' });
+      }).not.toThrow();
+      await flush();
+      expect(ws.closes).toEqual([{ code: HOST_CLOSE.unauthenticated, reason: 'unauthenticated' }]);
+      expect(events.closed).toBe(1);
+    });
+
+    it('closes 4401 when no first frame passes before the deadline, sent or still being checked', async () => {
+      const silent = new FakeWs();
+      const silentRun = run(silent, Promise.resolve(fakeReady()), {
+        beforeReady: () => Promise.resolve(true),
+        authTimeoutMs: 20,
+      });
+      const slow = new FakeWs();
+      run(slow, Promise.resolve(fakeReady()), {
+        beforeReady: () => new Promise<boolean>(() => undefined),
+        authTimeoutMs: 20,
+      });
+      slow.frame({ type: 'auth' });
+      await new Promise((done) => setTimeout(done, 60));
+      expect(silent.closes).toEqual([{ code: HOST_CLOSE.unauthenticated, reason: 'unauthenticated' }]);
+      expect(slow.closes).toEqual([{ code: HOST_CLOSE.unauthenticated, reason: 'unauthenticated' }]);
+      expect(silent.sent).toEqual([]);
+      expect(silentRun.events.closed).toBe(1);
+    });
+
+    it('lets a peer that passed in time stay past the deadline', async () => {
+      const ws = new FakeWs();
+      run(ws, Promise.resolve(fakeReady()), { beforeReady: () => Promise.resolve(true), authTimeoutMs: 20 });
+      ws.frame({ type: 'auth' });
+      await new Promise((done) => setTimeout(done, 60));
+      expect(ws.closes).toEqual([]);
+      expect(ws.sent).toEqual([{ type: 'hello', host: 'agent' }]);
+    });
+
+    it(`gives a peer ${String(HOST_AUTH_TIMEOUT_MS)} ms by default, and sets no deadline without beforeReady`, async () => {
+      vi.useFakeTimers();
+      try {
+        const checked = new FakeWs();
+        run(checked, Promise.resolve(fakeReady()), { beforeReady: () => Promise.resolve(true) });
+        const plain = new FakeWs();
+        run(plain, Promise.resolve(fakeReady()));
+        await vi.advanceTimersByTimeAsync(HOST_AUTH_TIMEOUT_MS - 1);
+        expect(checked.closes).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(checked.closes).toEqual([{ code: HOST_CLOSE.unauthenticated, reason: 'unauthenticated' }]);
+        await vi.advanceTimersByTimeAsync(HOST_AUTH_TIMEOUT_MS * 10);
+        expect(plain.closes).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('closes 4400 for a first frame that is not JSON or binary, or a second while it is pending', () => {

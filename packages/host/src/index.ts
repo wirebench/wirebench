@@ -9,7 +9,7 @@ export type { AttachOptions, Host, HostOptions, HostWindows, SecretEvent } from 
 export type { Caller, Capability, HostPlatform } from './host/platform.js';
 export { serveCall } from './host/serve-call.js';
 export type { CallFrame, ReplyFrame } from './host/serve-call.js';
-export { HOST_CLOSE, HOST_LIMITS, hostBusy, runHostSocket } from './host/host-socket.js';
+export { HOST_AUTH_TIMEOUT_MS, HOST_CLOSE, HOST_LIMITS, hostBusy, runHostSocket } from './host/host-socket.js';
 export type {
   HostLimits,
   HostSocket,

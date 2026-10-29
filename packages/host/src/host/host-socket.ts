@@ -54,6 +54,12 @@ export const HOST_LIMITS = {
   maxQueuedBytes: 64 * 1024 * 1024,
 } as const;
 
+/**
+ * How long a peer has to pass `beforeReady`, counted from the socket's start, when the embedder names no
+ * other time. A peer that sends nothing, or whose check is still running, is closed `4401` past it.
+ */
+export const HOST_AUTH_TIMEOUT_MS = 10_000;
+
 /** The two limits {@link runHostSocket} enforces; an embedder may pass tighter ones. */
 export interface HostLimits {
   readonly maxInFlight: number;
@@ -125,6 +131,12 @@ export interface HostSocketOptions {
    * socket starts with the hello and the first frame is a call.
    */
   readonly beforeReady?: (frame: unknown) => Promise<boolean>;
+  /**
+   * With `beforeReady`: the milliseconds the peer has, from now, to send its first frame and pass the
+   * check; past them the socket closes `4401`. {@link HOST_AUTH_TIMEOUT_MS} when absent. Without
+   * `beforeReady` (the server, whose caller is authenticated at the upgrade) there is no deadline.
+   */
+  readonly authTimeoutMs?: number;
 }
 
 /** What the embedder holds of a running socket. */
@@ -181,6 +193,8 @@ export function runHostSocket(ws: WebSocketLike, options: HostSocketOptions): Ho
   const closedListeners = new Set<() => void>();
   let closed = false;
   let inFlight = 0;
+  /** The `beforeReady` deadline, until the peer passes it or the socket ends. */
+  let deadline: ReturnType<typeof setTimeout> | undefined;
   let host: HostSocketReady | undefined;
   /** The host's answer, once it came; held until `beforeReady` has passed. */
   let built: { readonly value: HostSocketReady | undefined } | undefined;
@@ -224,6 +238,7 @@ export function runHostSocket(ws: WebSocketLike, options: HostSocketOptions): Ho
   const finish = (): void => {
     if (closed) return;
     closed = true;
+    if (deadline !== undefined) clearTimeout(deadline);
     waiting.length = 0;
     waitingBytes = 0;
     const detached = host === undefined ? Promise.resolve() : host.detach();
@@ -294,26 +309,39 @@ export function runHostSocket(ws: WebSocketLike, options: HostSocketOptions): Ho
     },
   );
 
+  // A peer that never proves itself does not hold the socket (and its slot) open.
+  if (options.beforeReady !== undefined) {
+    deadline = setTimeout(() => {
+      if (!authorised) end(HOST_CLOSE.unauthenticated, 'unauthenticated');
+    }, options.authTimeoutMs ?? HOST_AUTH_TIMEOUT_MS);
+    deadline.unref();
+  }
+
   const admit = (frame: unknown): void => {
     const check = options.beforeReady;
     if (check === undefined) return;
     checking = true;
-    check(frame).then(
-      (ok) => {
-        if (closed) return;
-        if (!ok) {
+    // Through a promise, so a check that throws synchronously closes the socket like one that rejects,
+    // rather than escaping the socket's message listener.
+    Promise.resolve(frame)
+      .then(check)
+      .then(
+        (ok) => {
+          if (closed) return;
+          if (!ok) {
+            end(HOST_CLOSE.unauthenticated, 'unauthenticated');
+            return;
+          }
+          authorised = true;
+          checking = false;
+          if (deadline !== undefined) clearTimeout(deadline);
+          start();
+        },
+        (error: unknown) => {
+          log('a host socket could not check its first frame', error);
           end(HOST_CLOSE.unauthenticated, 'unauthenticated');
-          return;
-        }
-        authorised = true;
-        checking = false;
-        start();
-      },
-      (error: unknown) => {
-        log('a host socket could not check its first frame', error);
-        end(HOST_CLOSE.unauthenticated, 'unauthenticated');
-      },
-    );
+        },
+      );
   };
 
   ws.on('message', (data: RawFrameData, isBinary: boolean) => {

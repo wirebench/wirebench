@@ -1,0 +1,36 @@
+/**
+ * What a browser caller on the agent may reach (hosted edition spec §18.1, ADR-0035): the `agent.*` group
+ * and nothing else of the registry. The desktop's own window may call nearly every channel; a page on the
+ * team server's address is not inside the signed app, and a compromised server or an injected script must
+ * not become file access or a shell on every paired machine. Every other channel answers
+ * `host-capability-missing`, a channel added to the registry later included, until someone decides
+ * otherwise here.
+ */
+import type { Capability } from '@wirebench/host';
+
+/** The one channel group a browser caller reaches. */
+export const AGENT_GROUP = 'agent';
+
+/** Whether a browser caller on the agent may call `channel`. */
+export function isAgentChannel(channel: string): boolean {
+  return channel.startsWith(`${AGENT_GROUP}.`) && channel.length > AGENT_GROUP.length + 1;
+}
+
+/**
+ * The capabilities a browser tab may use through the agent, while `agent.send` runs a bundle (§2's browser
+ * subset): none of them is a channel the page can call by itself. The hello names the platform's own,
+ * cut to these. `ssh` is an opt-in recorded at pairing and served by nothing yet, so it is not here; the
+ * renderer-gated ones of slice 2 (`listen`, `windows`, `accounts`, `reveal-secrets`) are refused too.
+ */
+export const BROWSER_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability>([
+  'send:public',
+  'send:private',
+  'secret-sources',
+  'team-secrets',
+  'kerberos',
+]);
+
+/** The platform's capabilities a browser caller is told of, in the platform's order. */
+export function browserCapabilities(platform: ReadonlySet<Capability>): Capability[] {
+  return [...platform].filter((capability) => BROWSER_CAPABILITIES.has(capability));
+}

@@ -139,6 +139,14 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'agent',
+          include: ['packages/agent/test/**/*.test.ts'],
+          // Real sockets on 127.0.0.1 against a fake server on loopback.
+          testTimeout: 15_000,
+        },
+      },
+      {
+        test: {
           name: 'scripts',
           include: ['scripts/**/*.test.ts'],
         },
