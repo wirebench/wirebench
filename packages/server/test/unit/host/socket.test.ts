@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import type { WebSocket } from 'ws';
 import { HOST_CLOSE, HOST_LIMITS } from '../../../src/host/errors.js';
 import type { HostCaller, HostCallFrame, ServerHost } from '../../../src/host/host-runtime.js';
+import { runHostSocket as sharedLoop } from '@wirebench/host';
 import { runHostSocket, type HostSocketDeps } from '../../../src/host/socket.js';
 
 /** The part of a `ws` socket `runHostSocket` uses; `close` only starts the handshake, as the real one does. */
@@ -77,7 +78,7 @@ function run(ws: FakeWs, host: Promise<ServerHost | undefined>, closed: () => vo
     log: () => undefined,
     onClosed: closed,
   };
-  return runHostSocket(ws as unknown as WebSocket, deps);
+  return runHostSocket(sharedLoop, ws as unknown as WebSocket, deps);
 }
 
 const flush = (): Promise<void> => new Promise((done) => setImmediate(done));
