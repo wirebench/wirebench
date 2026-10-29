@@ -1,4 +1,3 @@
-import { fileURLToPath } from 'node:url';
 import type { FastifyBaseLogger } from 'fastify';
 import { auditEventSchema, type AuditEvent, type LicenseState } from '@wirebench/engine';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -14,10 +13,7 @@ import {
 import { auditHook } from '../../../src/audit-log/hook.js';
 import { deleteAuditEventsBefore } from '../../../src/audit-log/repo.js';
 import { permissiveLicense, type AuditInput, type LicenseService } from '../../../src/context.js';
-import { loadMigrations, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
-
-const dir = (name: string) => fileURLToPath(new URL(`../../../migrations/${name}/`, import.meta.url));
 
 /** Records every batch; `failWith` makes the next sends reject; `gate` holds sends until released. */
 class FakeSink implements ForwardSink {
@@ -138,13 +134,8 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
     });
 
   beforeAll(async () => {
-    db = await testDatabase({ migrated: false });
-    const modules = await Promise.all(
-      ['identity', 'teams-access', 'audit-log'].map((name) => loadMigrations(dir(name), { contiguous: false })),
-    );
-    await db.migrate(
-      [...(await loadMigrations(MIGRATIONS_DIR)), ...modules.flat()].sort((a, b) => a.version - b.version),
-    );
+    // Every migration, 0020 included: the repositories' upserts name the tenant keys.
+    db = await testDatabase();
   });
   afterAll(() => db.close());
   beforeEach(async () => {

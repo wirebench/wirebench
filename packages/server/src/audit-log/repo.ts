@@ -302,7 +302,7 @@ export async function insertGenesis(tx: Querier, key: string): Promise<ChainAnch
   const hash = genesisHash(key);
   await tx.query(
     `insert into audit_chain_anchor (seq, hash, key_id, head_seq, mac) values (0, $1, $2, 0, $3)
-     on conflict (only_row) do nothing`,
+     on conflict (tenant_id) do nothing`,
     [hash, keyId(key), anchorMac(key, 0n, hash, 0n)],
   );
   const anchor = await readAnchor(tx);
@@ -328,9 +328,10 @@ export async function chainHead(db: Querier): Promise<ChainLink | undefined> {
 export async function claimUnsealed(tx: Querier, limit: number): Promise<CanonicalRow[]> {
   const rows = await tx.query<CanonicalRaw>(
     // Qualified: a bare `at` in `order by` would name CANONICAL_COLUMNS' text output, which the
-    // audit_events_unsealed (at, id) index cannot serve.
+    // audit_events_unsealed (tenant_id, at, id) index cannot serve. tenant_id leads the order so that the
+    // index serves it before the policy of 0021 narrows every query to one tenant.
     `select ${CANONICAL_COLUMNS} from audit_events where chain_seq is null
-     order by audit_events.at, audit_events.id limit $1 for update skip locked`,
+     order by audit_events.tenant_id, audit_events.at, audit_events.id limit $1 for update skip locked`,
     [limit],
   );
   return rows.rows;

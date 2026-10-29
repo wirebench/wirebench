@@ -19,6 +19,7 @@ import {
 } from './context.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migration } from './db/migrate.js';
 import { createDatabase } from './db/pool.js';
+import { TENANCY_MIGRATIONS_DIR } from './tenancy/migrations.js';
 import { ensureAppRole, roleMode } from './tenancy/roles.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { NO_HOOKS_DIR, RepoStore } from './repos/repo-store.js';
@@ -132,25 +133,34 @@ function migrationFailure(error: unknown): string {
 /**
  * The host's migrations and each module's, merged in version order. No single folder has to be
  * contiguous — once identity takes 0002, a later host migration is 0005 — so contiguity from 0001
- * (and uniqueness) is checked on the combined, sorted list. `hostDir` exists for tests.
+ * (and uniqueness) is checked on the combined, sorted list. `hostDir` and `tenancyDir` exist for tests.
  */
 export async function allMigrations(
   modules: readonly ServerModule[],
   hostDir: string = MIGRATIONS_DIR,
+  tenancyDir: string = TENANCY_MIGRATIONS_DIR,
 ): Promise<readonly Migration[]> {
   const moduleDirs = modules.flatMap((m) =>
     m.migrationsDir === undefined ? [] : typeof m.migrationsDir === 'string' ? [m.migrationsDir] : [...m.migrationsDir],
   );
   let perFolder: (readonly Migration[])[];
+  let tenancy: readonly Migration[];
   try {
-    perFolder = await Promise.all([
+    [tenancy, ...perFolder] = await Promise.all([
+      loadMigrations(tenancyDir, { contiguous: false }),
       loadMigrations(hostDir, { contiguous: false }),
       ...moduleDirs.map((dir) => loadMigrations(dir, { contiguous: false })),
     ]);
   } catch (error) {
     throw new StartupError(ExitCode.Migration, error instanceof Error ? error.message : String(error));
   }
-  const combined = perFolder.flat().sort((a, b) => a.version - b.version);
+  // The tenancy migrations scope every module's tables, so they join only a list that reaches the version
+  // before them: every production list does, and a test's partial module set stops short of them.
+  const modular = perFolder.flat();
+  const before = (tenancy[0]?.version ?? 1) - 1;
+  const combined = [...modular, ...(modular.some((m) => m.version === before) ? tenancy : [])].sort(
+    (a, b) => a.version - b.version,
+  );
   for (const [index, migration] of combined.entries()) {
     if (index > 0 && combined[index - 1]!.version === migration.version) {
       throw new StartupError(ExitCode.Migration, `duplicate migration version ${migration.version} across modules`);

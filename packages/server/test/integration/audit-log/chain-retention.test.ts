@@ -3,7 +3,6 @@
  * from the chain's oldest end, and the anchor moves to the last deleted row in the same transaction, so
  * the kept chain still verifies. Links are recomputed with `canonical.ts` after every deletion.
  */
-import { fileURLToPath } from 'node:url';
 import type { FastifyBaseLogger } from 'fastify';
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { anchorMac, keyId, link } from '../../../src/audit-log/chain/canonical.js';
@@ -23,13 +22,11 @@ import {
   setAnchorHead,
 } from '../../../src/audit-log/repo.js';
 import type { Database, Querier } from '../../../src/context.js';
-import { loadMigrations, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
 import { SWEEP_INTERVAL_MS } from '../../../src/hooks/sweep.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { licensingHarness, testKeys } from '../../helpers/licensing.js';
 import { manualTimers } from '../../helpers/timers.js';
 
-const dir = (name: string) => fileURLToPath(new URL(`../../../migrations/${name}/`, import.meta.url));
 const KEY = 'test-chain-key-0123456789abcdefghij';
 
 const silentLog = (() => {
@@ -170,13 +167,8 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
   };
 
   beforeAll(async () => {
-    db = await testDatabase({ migrated: false });
-    const modules = await Promise.all(
-      ['identity', 'teams-access', 'audit-log'].map((name) => loadMigrations(dir(name), { contiguous: false })),
-    );
-    await db.migrate(
-      [...(await loadMigrations(MIGRATIONS_DIR)), ...modules.flat()].sort((a, b) => a.version - b.version),
-    );
+    // Every migration, 0020 included: the repositories' upserts name the tenant keys.
+    db = await testDatabase();
   });
   afterAll(() => db.close());
   beforeEach(async () => {

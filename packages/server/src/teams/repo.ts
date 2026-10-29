@@ -426,7 +426,7 @@ export async function upsertGrant(
 ): Promise<void> {
   await db.query(
     `insert into workspace_grants (workspace_id, user_id, role, granted_at) values ($1, $2, $3, $4)
-     on conflict (workspace_id, user_id) do update set role = excluded.role, granted_at = excluded.granted_at`,
+     on conflict (tenant_id, workspace_id, user_id) do update set role = excluded.role, granted_at = excluded.granted_at`,
     [input.workspaceId, input.userId, input.role, input.at],
   );
 }

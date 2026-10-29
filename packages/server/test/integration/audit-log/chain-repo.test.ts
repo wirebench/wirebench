@@ -1,4 +1,3 @@
-import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 import { anchorMac, genesisHash, keyId, link } from '../../../src/audit-log/chain/canonical.js';
 import {
@@ -10,11 +9,9 @@ import {
   sealedPage,
   sealRows,
 } from '../../../src/audit-log/repo.js';
-import { loadMigrations, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
 import { FIXED_ROW } from '../../helpers/audit-chain.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 
-const dir = (name: string) => fileURLToPath(new URL(`../../../migrations/${name}/`, import.meta.url));
 const KEY = 'test-chain-key-0123456789abcdefghij';
 const OTHER_KEY = 'another-chain-key-9876543210zyxwvuts';
 
@@ -22,13 +19,8 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
 
   beforeAll(async () => {
-    db = await testDatabase({ migrated: false });
-    const modules = await Promise.all(
-      ['identity', 'teams-access', 'audit-log'].map((name) => loadMigrations(dir(name), { contiguous: false })),
-    );
-    await db.migrate(
-      [...(await loadMigrations(MIGRATIONS_DIR)), ...modules.flat()].sort((a, b) => a.version - b.version),
-    );
+    // Every migration, 0020 included: the repositories' upserts name the tenant keys.
+    db = await testDatabase();
   });
   afterAll(() => db.close());
   beforeEach(async () => {

@@ -1,0 +1,9 @@
+{
+  "rowsPerSecond": 2533483,
+  "heapBytesPerSecond": 7455013057,
+  "migrationSeconds": 6.11,
+  "rows": 3113865,
+  "heapBytes": 2868289536,
+  "minutesPerMillionRows": 0.033,
+  "measuredOn": "2026-10-29"
+}

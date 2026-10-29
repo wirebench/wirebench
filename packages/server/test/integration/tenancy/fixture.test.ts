@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { main } from '../../../src/main.js';
+import { verifyChain } from '../../../src/audit-log/chain/verify.js';
 import { FIXTURE_VERSION, loadFixture0019, type Fixture0019 } from '../../fixtures/tenancy/load.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
@@ -60,20 +60,17 @@ describeDb('the frozen 0019 fixture (hosted spec §19.13)', () => {
     expect((await db.query('select 1 from server_identity')).rowCount).toBe(1);
   });
 
-  it('passes admin audit verify at 0019 with the test chain key', async () => {
-    const out: string[] = [];
-    const err: string[] = [];
-    const code = await main(['admin', 'audit', 'verify'], {
-      stdout: { write: (text: string) => out.push(text) },
-      stderr: { write: (text: string) => err.push(text) },
-      env: {
-        WIREBENCH_SERVER_DATABASE_URL: db.url,
-        WIREBENCH_SERVER_PUBLIC_URL: 'https://wirebench.test',
-        WIREBENCH_SERVER_AUDIT_CHAIN_KEY: fixture.keys.auditChainKey,
-      },
+  // Through the verifier, not `admin audit verify`: the command refuses a schema with migrations pending, and
+  // 0020 is pending here.
+  it('has an intact audit chain at 0019 under the test chain key', async () => {
+    const outcome = await verifyChain(db, fixture.keys.auditChainKey);
+    expect(outcome).toMatchObject({
+      kind: 'checked',
+      result: 'intact',
+      firstSeq: BigInt(fixture.chain.firstSeq),
+      lastSeq: BigInt(fixture.chain.lastSeq),
+      unsealed: fixture.chain.unsealed,
     });
-    expect({ code, err: err.join('') }).toEqual({ code: 0, err: '' });
-    expect(out.join('')).toContain(`${fixture.chain.lastSeq}`);
   });
 
   it('unpacks a data directory with two repositories, a removed one, scratch, and a host checkout', async () => {

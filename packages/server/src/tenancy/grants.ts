@@ -5,7 +5,7 @@
  *
  * The app role owns nothing, so row-level security applies to it whether forced or not. It gets:
  * - `usage` on the schema, and no `create`;
- * - `select` only on the tables in `READ_ONLY_TABLES`;
+ * - `select` only on the tables in `READ_ONLY_TABLES`, plus `update (tenancy_step)` on `server_identity`;
  * - `select, insert, update, delete` on every other table, and by default on every table the owner creates
  *   later.
  *
@@ -16,8 +16,8 @@
 import { WirebenchError } from '@wirebench/engine';
 
 /**
- * Tables the app role reads and never writes. Today's server only reads `server_identity` (0013 mints its
- * row); slice 4's Task 4 adds `update (tenancy_step)` on it once 0020 adds that column.
+ * Tables the app role reads and never writes, but for one column: on `server_identity` (0013 mints its row)
+ * it may update `tenancy_step`, which 0020 adds and the file step writes.
  */
 export const READ_ONLY_TABLES: readonly string[] = ['schema_migrations', 'server_identity'];
 
@@ -58,15 +58,23 @@ export function appRoleGrants(names: AppRoleNames): readonly string[] {
     `do $grants$
 declare
   t text;
+  rel oid;
 begin
-  for t in
-    select c.relname from pg_class c
+  for t, rel in
+    select c.relname, c.oid from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = ${quoteLiteral(names.schema)} and c.relkind in ('r', 'p', 'v', 'm', 'f')
   loop
     if t = any (array[${readOnly}]::text[]) then
       execute format('grant select on %I.%I to %I', ${quoteLiteral(names.schema)}, t, ${quoteLiteral(names.app)});
       execute format('revoke insert, update, delete, truncate on %I.%I from %I', ${quoteLiteral(names.schema)}, t, ${quoteLiteral(names.app)});
+      -- The one column the server writes, once 0020 has added it (file step, spec §19.10).
+      if t = 'server_identity' and exists (
+        select 1 from pg_attribute a
+        where a.attrelid = rel and a.attname = 'tenancy_step' and not a.attisdropped
+      ) then
+        execute format('grant update (tenancy_step) on %I.%I to %I', ${quoteLiteral(names.schema)}, t, ${quoteLiteral(names.app)});
+      end if;
     else
       execute format('grant select, insert, update, delete on %I.%I to %I', ${quoteLiteral(names.schema)}, t, ${quoteLiteral(names.app)});
     end if;

@@ -54,7 +54,7 @@ export async function openLog(
     `insert into session_logs (id, workspace_id, user_id, client_log_id, host_id, host_name, address, port, ssh_user,
        started_at, last_write_at)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-     on conflict (workspace_id, user_id, client_log_id) do nothing returning id`,
+     on conflict (tenant_id, workspace_id, user_id, client_log_id) do nothing returning id`,
     [
       input.id,
       input.workspaceId,

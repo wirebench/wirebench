@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerModule } from '../../src/context.js';
+import { BUILTIN_MODULES } from '../../src/modules.js';
 import { allMigrations, runMigrate, StartupError } from '../../src/serve.js';
 
 /** The StartupError `allMigrations` rejects with, for asserting its code and message. */
@@ -90,6 +91,22 @@ describe('allMigrations', () => {
     const combined = await allMigrations([moduleWith(identity), moduleWith(teams, 'teams-access')], host);
     expect(combined.map((m) => m.version)).toEqual([1, 2, 3, 4, 5]);
     expect((await refusal([moduleWith(identity)], host)).message).toContain('not contiguous at 5');
+  });
+
+  it('adds the tenancy folder only to a list that reaches the version before it', async () => {
+    const host = await folder('0001_init.sql');
+    const identity = await folder('0002_identity.sql');
+    const teams = await folder('0003_teams.sql');
+    const tenancy = await folder('0004_tenancy.sql');
+    const full = await allMigrations([moduleWith(identity), moduleWith(teams, 'teams-access')], host, tenancy);
+    expect(full.map((m) => `${m.version}_${m.name}`)).toEqual(['1_init', '2_identity', '3_teams', '4_tenancy']);
+    // A test's partial set stops short of it, and is not refused for the gap.
+    expect((await allMigrations([moduleWith(identity)], host, tenancy)).map((m) => m.version)).toEqual([1, 2]);
+  });
+
+  it('puts 0020_tenancy after every built-in module', async () => {
+    const versions = (await allMigrations(BUILTIN_MODULES)).map((m) => `${m.version}_${m.name}`);
+    expect(versions.slice(-2)).toEqual(['19_agent-pairings', '20_tenancy']);
   });
 });
 

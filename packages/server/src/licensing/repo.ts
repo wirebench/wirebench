@@ -36,7 +36,7 @@ export async function putLicense(
 ): Promise<void> {
   await db.query(
     `insert into license (singleton, text, license_id, installed_by, installed_at) values (true, $1, $2, $3, $4)
-     on conflict (singleton) do update set text = excluded.text, license_id = excluded.license_id,
+     on conflict (tenant_id) do update set text = excluded.text, license_id = excluded.license_id,
        installed_by = excluded.installed_by, installed_at = excluded.installed_at`,
     [input.text, input.licenseId, input.installedBy, input.at],
   );

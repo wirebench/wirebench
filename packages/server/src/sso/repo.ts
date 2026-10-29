@@ -122,7 +122,7 @@ export async function scimUserOf(
 export async function upsertScimUser(db: Querier, userId: string, externalId: string | null, at: Date): Promise<void> {
   await db.query(
     `insert into scim_users (user_id, external_id, created_at, updated_at) values ($1, $2, $3, $3)
-     on conflict (user_id) do update set external_id = excluded.external_id, updated_at = excluded.updated_at`,
+     on conflict (tenant_id, user_id) do update set external_id = excluded.external_id, updated_at = excluded.updated_at`,
     [userId, externalId, at],
   );
 }

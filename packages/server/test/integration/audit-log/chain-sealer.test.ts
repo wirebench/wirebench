@@ -3,7 +3,6 @@
  * timers: claim order, gapless sequence numbers, links recomputed with `canonical.ts`, rows left open in
  * another transaction, two sealers on one database, a wrong key, the loop's delays, and a running server.
  */
-import { fileURLToPath } from 'node:url';
 import type { FastifyBaseLogger } from 'fastify';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { anchorMac, genesisHash, keyId, link } from '../../../src/audit-log/chain/canonical.js';
@@ -22,7 +21,6 @@ import { auditHook } from '../../../src/audit-log/hook.js';
 import { auditLogModule } from '../../../src/audit-log/module.js';
 import { insertGenesis, readAnchor, sealedPage, type ChainLink } from '../../../src/audit-log/repo.js';
 import type { AuditInput, Database, Querier } from '../../../src/context.js';
-import { loadMigrations, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
 import { SWEEP_INTERVAL_MS } from '../../../src/hooks/sweep.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { signedInUser } from '../../helpers/identity.js';
@@ -30,7 +28,6 @@ import { licensingHarness, testKeys } from '../../helpers/licensing.js';
 import { call } from '../../helpers/teams.js';
 import { manualTimers, type ManualTimers } from '../../helpers/timers.js';
 
-const dir = (name: string) => fileURLToPath(new URL(`../../../migrations/${name}/`, import.meta.url));
 const KEY = 'test-chain-key-0123456789abcdefghij';
 const OTHER_KEY = 'another-chain-key-0123456789abcdefgh';
 
@@ -133,13 +130,8 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     new AuditSealer({ db, key: KEY, now: clock, setTimer: manualTimers().setTimer, log: recordingLog().log, ...extra });
 
   beforeAll(async () => {
-    db = await testDatabase({ migrated: false });
-    const modules = await Promise.all(
-      ['identity', 'teams-access', 'audit-log'].map((name) => loadMigrations(dir(name), { contiguous: false })),
-    );
-    await db.migrate(
-      [...(await loadMigrations(MIGRATIONS_DIR)), ...modules.flat()].sort((a, b) => a.version - b.version),
-    );
+    // Every migration, 0020 included: the repositories' upserts name the tenant keys.
+    db = await testDatabase();
   });
   afterAll(() => db.close());
   beforeEach(async () => {

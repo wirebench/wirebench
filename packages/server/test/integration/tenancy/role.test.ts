@@ -26,8 +26,8 @@ const ROLE_SQL = `select current_user::text as name, r.rolsuper as superuser, r.
 
 /**
  * Every table the migrations create, and what the app role holds on it (spec §19.4). A new table fails
- * the last test until it is classified here: read-only, or the four DML privileges. Task 4 adds `tenants`,
- * and `update (tenancy_step)` on `server_identity`.
+ * the last test until it is classified here: read-only, or the four DML privileges. `server_identity` also
+ * grants `update (tenancy_step)`, a column privilege, checked on its own below.
  */
 const READ = ['SELECT'];
 const DML = ['DELETE', 'INSERT', 'SELECT', 'UPDATE'];
@@ -43,6 +43,7 @@ const EXPECTED_GRANTS: Readonly<Record<string, readonly string[]>> = {
   catch_urls: DML,
   ci_tokens: DML,
   device_tokens: DML,
+  host_leases: DML,
   invitations: DML,
   license: DML,
   local_credentials: DML,
@@ -66,6 +67,7 @@ const EXPECTED_GRANTS: Readonly<Record<string, readonly string[]>> = {
   team_invitations: DML,
   team_members: DML,
   teams: DML,
+  tenants: DML,
   users: DML,
   workspace_grants: DML,
   workspaces: DML,
@@ -80,6 +82,8 @@ const READ_ONLY_WRITES = [
   'insert into server_identity (server_id) values (gen_random_uuid())',
   'update server_identity set created_at = created_at',
   'update server_identity set server_id = server_id',
+  'update server_identity set default_tenant_id = default_tenant_id',
+  'update server_identity set tenancy_step = tenancy_step, created_at = created_at',
   'delete from server_identity',
 ];
 
@@ -130,12 +134,14 @@ describeDb('the test database roles (§19.4)', () => {
     await expect(db.query('alter table workspaces add column x int')).rejects.toMatchObject({ code: '42501' });
   });
 
-  it('leaves the app role a reader of schema_migrations and server_identity', async () => {
+  it('leaves the app role a reader of schema_migrations and server_identity, but for tenancy_step', async () => {
     expect((await db.query('select server_id from server_identity')).rowCount).toBe(1);
     expect((await db.query('select version from schema_migrations')).rowCount).toBeGreaterThan(0);
     for (const sql of READ_ONLY_WRITES) {
       await expect(db.query(sql), sql).rejects.toMatchObject({ code: '42501' });
     }
+    // The file step's one write (spec §19.10).
+    expect((await db.query('update server_identity set tenancy_step = tenancy_step')).rowCount).toBe(1);
   });
 
   it('grants every table exactly what EXPECTED_GRANTS says, so a new table needs a decision', async () => {
@@ -152,12 +158,13 @@ describeDb('the test database roles (§19.4)', () => {
       [db.schema],
     );
     expect(Object.fromEntries(rows.rows.map((row) => [row.table, row.privileges]))).toEqual(EXPECTED_GRANTS);
-    const columns = await db.owner.query(
-      `select 1 from information_schema.column_privileges
+    const columns = await db.owner.query<{ table: string; column: string; privilege: string }>(
+      `select table_name as table, column_name as column, privilege_type as privilege
+        from information_schema.column_privileges
         where table_schema = $1 and grantee = 'wirebench_app' and privilege_type <> 'SELECT'
           and table_name = any($2)`,
       [db.schema, ['schema_migrations', 'server_identity']],
     );
-    expect(columns.rowCount).toBe(0);
+    expect(columns.rows).toEqual([{ table: 'server_identity', column: 'tenancy_step', privilege: 'UPDATE' }]);
   });
 });
