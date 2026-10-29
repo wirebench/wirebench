@@ -221,7 +221,7 @@ function jarHost(jar: CookieJar): CookieJarHost {
 
 /**
  * The `${#System#…}` scope of one send: each name the bundle declares that this machine allows, with its
- * value here. Every other name is absent, so it resolves empty.
+ * value here. Every other name is absent, so it is unresolved and the send is refused.
  */
 function systemValuesFor(
   declared: readonly string[],

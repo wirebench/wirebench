@@ -87,8 +87,8 @@ export const sendBundleSchema = z
       .max(1000),
     /**
      * The `${#System#NAME}` names the request reads. A name resolves only when it is declared here and this
-     * machine's agent allows it (`allowedSystemNames`, empty by default); any other resolves empty, as on the
-     * server host, so a paired server cannot read the agent's process environment.
+     * machine's agent allows it (`allowedSystemNames`, empty by default); any other is unresolved and the send
+     * is refused, as on the server host, so a paired server cannot read the agent's process environment.
      */
     systemNames: z
       .array(
