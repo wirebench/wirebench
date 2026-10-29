@@ -1,14 +1,15 @@
 /**
  * The browser's sign-in routes at the root (hosted spec §17.2), registered through `registerPublic`
- * only when `WIREBENCH_SERVER_BROWSER_CLIENT` is on: the page, the local form, and the start of the
- * OIDC flow, whose callback lives with the desktop's in `auth-oidc.ts`. SAML's start is the sso
- * module's. These routes sit outside `/api/v1`, so the guard's Origin check does not reach them; the
- * form checks Origin itself against login CSRF.
+ * only when `WIREBENCH_SERVER_BROWSER_CLIENT` is on: the page, the local form, the start of the
+ * OIDC flow, whose callback lives with the desktop's in `auth-oidc.ts`, and the sign-out form. SAML's
+ * start is the sso module's. These routes sit outside `/api/v1`, so the guard's Origin check does not
+ * reach them; the two forms check Origin themselves, against login CSRF and forced sign-out.
  */
 import type { FastifyInstance } from 'fastify';
 import { auditSource } from '../../context.js';
 import { toProblem } from '../../problem.js';
-import { finishBrowserSignIn, safeRedirectPath, startBrowserFlow } from '../browser-flows.js';
+import { endPresentedSession, finishBrowserSignIn, safeRedirectPath, startBrowserFlow } from '../browser-flows.js';
+import { clearSessionCookie } from '../cookies.js';
 import type { IdentityEnv } from '../env.js';
 import { methodDisabled, originRefused } from '../errors.js';
 import { chargeKeys, emailKey, ipKey, rateLimit } from '../rate-limit.js';
@@ -73,6 +74,16 @@ export const browserSignInRoutes =
             redirectTo,
           });
         return finishBrowserSignIn(env, request, reply, checked.user, 'local', source, redirectTo);
+      });
+      // Sign-out (spec §17.2): revokes the presented browser token, which announces `sessionEnded` and so
+      // closes that session's host sockets with 4401. A stale or missing cookie is still cleared, so the
+      // browser stops presenting it, and lands on the sign-in page all the same.
+      form.post('/sign-out', { bodyLimit: FORM_BODY_LIMIT }, async (request, reply) => {
+        // Another site must not sign this browser out (a nuisance, and a step towards login CSRF).
+        if (request.headers.origin !== publicUrl) throw originRefused();
+        await endPresentedSession(env, request, auditSource(request));
+        clearSessionCookie(reply, publicUrl);
+        return reply.code(303).header('location', '/sign-in').header('cache-control', 'no-store').send();
       });
       registered();
     });

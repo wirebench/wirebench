@@ -1,5 +1,10 @@
 **/node_modules
-apps
+apps/*
+# The server image builds the browser client from the desktop's renderer (hosted edition spec §17.6).
+!apps/desktop
+apps/desktop/dist-browser
+apps/desktop/out
+apps/desktop/release
 docs-site
 e2e
 git-worktrees

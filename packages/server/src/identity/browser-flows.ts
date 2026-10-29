@@ -152,9 +152,10 @@ export async function takeBrowserFlow(
 /**
  * Revokes the live browser token the request's session cookie holds, if any, as a sign-out of that
  * session. A new sign-in overwrites the cookie, so without this the old token would live on, unseen by
- * the browser, until it expired. Read straight from the cookie: the callbacks do not take a caller from it.
+ * the browser, until it expired. Read straight from the cookie: the callbacks do not take a caller from it,
+ * and neither does the root `POST /sign-out`, which sits outside the guard.
  */
-async function endPresentedSession(env: FlowEnv, request: FastifyRequest, source: AuditSource): Promise<void> {
+export async function endPresentedSession(env: FlowEnv, request: FastifyRequest, source: AuditSource): Promise<void> {
   const token = sessionToken(request, env.ctx.config.publicUrl);
   if (token === undefined || !DEVICE_TOKEN_PATTERN.test(token)) return;
   const found = await repo.tokenByHash(env.ctx.db, hashToken(token));
@@ -164,6 +165,11 @@ async function endPresentedSession(env: FlowEnv, request: FastifyRequest, source
     await repo.revokeToken(tx, tokenId, env.now());
     await recordAudit(env.ctx.hooks, tx, {
       ...source,
+      // The browser presenting the cookie is that session's holder, as the API sign-out's caller is.
+      actor:
+        source.actor.kind === 'anonymous'
+          ? { kind: 'user', userId: found.user.id, email: found.user.email, tokenId }
+          : source.actor,
       action: 'auth.signed_out',
       target: { kind: 'user', id: found.user.id },
       details: { tokenId },

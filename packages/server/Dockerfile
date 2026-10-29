@@ -21,13 +21,24 @@ COPY packages/protocol-graphql/package.json packages/protocol-graphql/package.js
 COPY packages/host/package.json packages/host/package.json
 COPY packages/wire/package.json packages/wire/package.json
 COPY packages/ssh/package.json packages/ssh/package.json
-RUN pnpm install --frozen-lockfile --filter @wirebench/server...
+# The browser client is the desktop's renderer built by Vite (spec §17.6), so the build stage installs the
+# desktop's dependencies too: its renderer's React, Monaco and Vite. Electron's binary is never fetched, and
+# none of the desktop's packages reach the runtime stage, which takes only the server's deploy.
+COPY apps/desktop/package.json apps/desktop/package.json
+RUN ELECTRON_SKIP_BINARY_DOWNLOAD=1 pnpm install --frozen-lockfile --filter @wirebench/server... --filter @wirebench/desktop...
 
 COPY . .
+# The server's build first: it builds the engine's core and protocol packages, whose built files the
+# renderer's `#core/*` imports resolve to. Its copy step finds no browser build yet and says so; the
+# browser build is copied into dist/browser once it exists.
 RUN pnpm --filter @wirebench/server... build
+RUN pnpm --filter @wirebench/desktop build:browser && node packages/server/scripts/copy-browser.mjs
 RUN pnpm deploy --filter @wirebench/server --prod /out
-# The deploy carries the bundle but none of the sources it was built from.
-RUN test -f /out/dist/host/bundle.js && test ! -e /out/node_modules/@wirebench/host && test -z "$(find /out/dist -name '*.ts' ! -name '*.d.ts')"
+# The deploy carries the bundle and the browser build but none of the sources they were built from, and
+# nothing of the desktop's.
+RUN test -f /out/dist/host/bundle.js && test -f /out/dist/browser/index.html \
+  && test ! -e /out/node_modules/@wirebench/host && test ! -e /out/node_modules/electron \
+  && test -z "$(find /out/dist -name '*.ts' ! -name '*.d.ts')"
 # The engine's core and protocol packages are private dev dependencies of the engine: its deployed copy
 # carries its own, as the npm package does.
 RUN node packages/engine/scripts/vendor-packages.mjs /out/node_modules/@wirebench/engine
