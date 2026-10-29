@@ -114,6 +114,13 @@ const httpRequestSummarySchema = z.object({
   headers: z.record(z.string(), z.string()),
 });
 
+/**
+ * Where a send went out from, in the hosted edition (spec §18.4): the team's server, or the paired agent on
+ * the person's machine. Optional wherever it appears: the desktop sets none, and an older reader ignores it.
+ */
+export const sentFromSchema = z.enum(['server', 'agent']);
+export type SentFrom = z.infer<typeof sentFromSchema>;
+
 export const timingsWireSchema = z.object({
   startedAt: z.string(),
   totalMs: z.number(),

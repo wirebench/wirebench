@@ -31,6 +31,7 @@ import {
   scriptResultWireSchema,
   unresolvedRefWireSchema,
   webhookSigningWireSchema,
+  sentFromSchema,
 } from '../../wire-base.js';
 
 /**
@@ -365,6 +366,8 @@ export const restContractResultSchema = z.object({
 export type RestContractResultWire = z.infer<typeof restContractResultSchema>;
 
 export const restExchangeSummarySchema = z.object({
+  /** Where the send went out from (spec §18.4); absent on the desktop. */
+  sentFrom: sentFromSchema.optional(),
   /** The request's own assertions as an editor Send checked them; absent when it has none or nothing checked them. */
   assertions: z.array(requestAssertionResultWireSchema).optional(),
   sendId: z.string(),

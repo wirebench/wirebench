@@ -280,6 +280,8 @@ export interface RequestChannelDeps {
   readonly audit?: (event: DesktopAuditEvent, workspaceId: string | undefined) => void;
   /** The server workspace audit events are queued for now; read when a send or run starts. */
   readonly auditWorkspace?: () => string | undefined;
+  /** Where this host's sends go out from (`HostOptions.sendOrigin`); absent on the desktop. */
+  readonly sendOrigin?: 'server';
 }
 
 /**
@@ -325,6 +327,7 @@ export function toSendDeps(
     ...(deps.confirmProtected !== undefined ? { confirmProtected: deps.confirmProtected } : {}),
     ...(deps.mcpApprovals !== undefined ? { approveCommand: deps.mcpApprovals.approver() } : {}),
     ...(deps.egress !== undefined ? { egress: deps.egress } : {}),
+    ...(deps.sendOrigin !== undefined ? { sendOrigin: deps.sendOrigin } : {}),
   };
 }
 

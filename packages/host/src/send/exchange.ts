@@ -388,6 +388,8 @@ export interface SendThroughEngineDeps extends DesktopSendDeps {
    * `true` to send. Absent (a test, a headless caller), a guarded send is refused: it fails safe.
    */
   readonly confirmProtected?: (environmentNames: readonly string[]) => Promise<boolean>;
+  /** Where this host's sends go out from (`HostOptions.sendOrigin`): each summary says so. Absent on the desktop. */
+  readonly sendOrigin?: 'server';
 }
 
 /**
@@ -554,6 +556,7 @@ async function sendReserved(
       ...summarised.summary,
       ...(sent.script !== undefined ? finishScripts(deps.hostState.redactor, stepDeps, projectId, sent.script) : {}),
       ...(scripts.kind === 'off' ? { scriptsOff: true } : {}),
+      ...(deps.sendOrigin !== undefined ? { sentFrom: deps.sendOrigin } : {}),
     };
     const recorded: Recorded = {
       ...recordedOf(item, masks, options),

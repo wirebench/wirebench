@@ -14,6 +14,7 @@ import {
   restFolderWireSchema,
   scriptResultWireSchema,
   timingsWireSchema,
+  sentFromSchema,
 } from '../../wire-base.js';
 
 /** An MCP folder, sharing the project's `folders` list with REST, gRPC and WebSocket. */
@@ -279,6 +280,8 @@ export const mcpErrorObjectWireSchema = z.object({
  * unless the session shows secrets, with the send's id, its assertions and its scripts beside it.
  */
 export const mcpExchangeSummarySchema = z.object({
+  /** Where the send went out from (spec §18.4); absent on the desktop. */
+  sentFrom: sentFromSchema.optional(),
   /** The request's own assertions as an editor Send checked them; absent when it has none or nothing checked them. */
   assertions: z.array(requestAssertionResultWireSchema).optional(),
   sendId: z.string(),

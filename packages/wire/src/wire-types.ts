@@ -42,6 +42,7 @@ import {
   unresolvedRefWireSchema,
   unsavedRestoreNoticeSchema,
   webhookSigningWireSchema,
+  sentFromSchema,
 } from './wire-base.js';
 import type { AssertTrue, TlsOptionsWire, TypesEqual } from './wire-base.js';
 import {
@@ -1129,6 +1130,8 @@ export type ProjectChangedEvent = z.infer<typeof projectChangedEventSchema>;
 
 /** Wire (and on-disk) shape of one recorded send — mirrors the engine's `HistoryEntry`. */
 export const historyEntrySchema = z.object({
+  /** Where the send went out from (spec §18.4); absent on the desktop. */
+  sentFrom: sentFromSchema.optional(),
   id: z.string(),
   /**
    * Which protocol the send used. Optional, and honestly so: a line written before the REST client

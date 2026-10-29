@@ -153,6 +153,12 @@ export interface HistoryServiceOptions {
   readonly watch?: HistoryWatch;
   /** Called after a watched file changed on disk and was reloaded; main broadcasts `history.changed`. */
   readonly onChanged?: (projectId: string) => void;
+  /**
+   * Where this host's own sends go out from (`HostOptions.sendOrigin`): the server host stamps each entry it
+   * records `sentFrom: 'server'`. Absent on the desktop, which stamps none. An entry recorded for an agent
+   * send says `'agent'` itself.
+   */
+  readonly sendOrigin?: 'server';
 }
 
 /** What `HistoryService.recordSend` needs to build one entry, beyond the wire input it sent. */
@@ -170,6 +176,8 @@ export interface RecordSendInput {
   readonly error?: { readonly code: string; readonly message: string };
   readonly durationMs: number;
   readonly tags?: readonly string[];
+  /** Where the send went out from: `'agent'` for an agent's exchange; else the service's own origin. */
+  readonly sentFrom?: 'server' | 'agent';
 }
 
 /** True for a 2xx HTTP response carrying no SOAP fault. */
@@ -232,6 +240,7 @@ export function buildHistoryEntry(redactor: Redactor, projectId: string, record:
     ...(record.error !== undefined ? { error: record.error } : {}),
     sizeBytes: sizeOf(exchange, record.input),
     ...(record.tags !== undefined ? { tags: record.tags } : {}),
+    ...(record.sentFrom !== undefined ? { sentFrom: record.sentFrom } : {}),
   };
 }
 
@@ -260,6 +269,8 @@ export interface RecordRestSendInput {
   readonly keyParams?: readonly string[];
   /** When the exchange happened, for one recorded elsewhere (an imported capture); absent means now. */
   readonly at?: string;
+  /** Where the send went out from: `'agent'` for an agent's exchange; else the service's own origin. */
+  readonly sentFrom?: 'server' | 'agent';
 }
 
 /** How much of a body a history line keeps. Beyond this it is truncated with a marker. */
@@ -377,6 +388,7 @@ export function buildRestHistoryEntry(
         ? Buffer.byteLength(record.requestBody, 'utf8')
         : Buffer.from(exchange.http.rawResponseBase64, 'base64').byteLength,
     ...(record.tags !== undefined ? { tags: record.tags } : {}),
+    ...(record.sentFrom !== undefined ? { sentFrom: record.sentFrom } : {}),
   };
 }
 
@@ -782,6 +794,12 @@ export class HistoryService {
     }
   }
 
+  /** `entry` saying where it went out from: `sentFrom` when given, else this host's own origin, else nothing. */
+  private stamped(entry: HistoryEntry, sentFrom?: 'server' | 'agent'): HistoryEntry {
+    const origin = sentFrom ?? this.options.sendOrigin;
+    return origin === undefined ? entry : { ...entry, sentFrom: origin };
+  }
+
   /** The ids of the projects whose history is currently open, in open order. */
   openProjectIds(): readonly string[] {
     return [...this.files.keys()];
@@ -809,7 +827,7 @@ export class HistoryService {
     if (file === undefined) {
       return undefined;
     }
-    const entry = buildHistoryEntry(this.redactor, projectId, record);
+    const entry = this.stamped(buildHistoryEntry(this.redactor, projectId, record), record.sentFrom);
     return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
   }
 
@@ -819,7 +837,7 @@ export class HistoryService {
     if (file === undefined) {
       return undefined;
     }
-    const entry = buildGrpcHistoryEntry(this.redactor, projectId, record);
+    const entry = this.stamped(buildGrpcHistoryEntry(this.redactor, projectId, record));
     return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
   }
 
@@ -829,7 +847,7 @@ export class HistoryService {
     if (file === undefined) {
       return undefined;
     }
-    const entry = buildWsHistoryEntry(this.redactor, projectId, record);
+    const entry = this.stamped(buildWsHistoryEntry(this.redactor, projectId, record));
     return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
   }
 
@@ -843,7 +861,9 @@ export class HistoryService {
     if (file === undefined) {
       return undefined;
     }
-    const entry = buildMcpHistoryEntry(projectId, record, { text: (text) => this.redactor.redactSecretValues(text) });
+    const entry = this.stamped(
+      buildMcpHistoryEntry(projectId, record, { text: (text) => this.redactor.redactSecretValues(text) }),
+    );
     return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
   }
 
@@ -853,7 +873,7 @@ export class HistoryService {
     if (file === undefined) {
       return undefined;
     }
-    const entry = buildRestHistoryEntry(this.redactor, projectId, record);
+    const entry = this.stamped(buildRestHistoryEntry(this.redactor, projectId, record), record.sentFrom);
     return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
   }
 

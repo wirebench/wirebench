@@ -7,7 +7,7 @@
  */
 import { lookup } from 'node:dns/promises';
 import { existsSync, mkdirSync } from 'node:fs';
-import { mkdir, rename } from 'node:fs/promises';
+import { access, mkdir, rename } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { basename, join } from 'node:path';
 import {
@@ -18,6 +18,8 @@ import {
   enabledProperties,
   overlayCurrent,
   parseSecretPseudoRef,
+  TEAM_SECRETS_VALUES_DIR,
+  vaultEntryId,
   type ConnectOptions,
   type ConnectedWebSocket,
   type GetSecret,
@@ -106,6 +108,8 @@ import { registerKeystoreChannels } from '../ipc/keystores.js';
 import { registerCertificateChannels } from '../ipc/certificates.js';
 import { registerDialogsChannels } from '../ipc/dialogs.js';
 import { registerExchangeChannels } from '../ipc/exchanges.js';
+import { registerSendRouteChannels } from '../ipc/send-route.js';
+import { RoutePins, routePinsPath } from '../send-route.js';
 import { registerLogChannels } from '../ipc/log.js';
 import { registerFsChannels } from '../ipc/fs.js';
 import { registerGlobalsChannels } from '../ipc/globals.js';
@@ -255,6 +259,13 @@ export interface HostOptions {
    * changes nothing.
    */
   readonly onSecret?: (event: SecretEvent) => void;
+  /**
+   * Where this host's sends go out from (hosted edition spec §18.4): `'server'` on a Wirebench Server's host,
+   * which then stamps its History entries and summaries `sentFrom: 'server'` and routes browser sends
+   * (`request.route`, `request.bundle`, `request.setRoutePin`, `exchanges.recordAgentSend`). Absent on the
+   * desktop, which stamps nothing and always answers `request.route` with `server`.
+   */
+  readonly sendOrigin?: 'server';
 }
 
 /** What {@link HostOptions.onSecret} hears: a secret's name, never its value. */
@@ -709,6 +720,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     {
       watch: watchHistoryFile,
       onChanged: (projectId) => broadcast(events.history.changed, { projectId }),
+      ...(embedder.sendOrigin !== undefined ? { sendOrigin: embedder.sendOrigin } : {}),
     },
   );
 
@@ -1451,8 +1463,38 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     auditWorkspace: () => scopes.callerOrOnly()?.audit.workspaceId,
     confirmProtected: nativeDialogs.confirmProtected,
     ...egressOption,
+    ...(embedder.sendOrigin !== undefined ? { sendOrigin: embedder.sendOrigin } : {}),
   };
   registerRequestChannels(handlerTable, engineService, requestDeps);
+  /** The window whose workspace holds `projectId`. */
+  const scopeOfProject = (projectId: string): WindowScope | undefined =>
+    scopes.find((candidate) => candidate.workspace.projectId(projectId) !== undefined);
+  registerSendRouteChannels(
+    handlerTable,
+    requestDeps,
+    embedder.sendOrigin !== 'server'
+      ? undefined
+      : {
+          send: toSendDeps(engineService, requestDeps),
+          pins: new RoutePins(routePinsPath(platform.paths.userData())),
+          secretSourceNames: (projectId) => scopeOfProject(projectId)?.secretSources.mappedNames() ?? [],
+          // A team secret is one the workspace's vault holds a value for; the server can open none of them.
+          isTeamSecret: async (projectId, name) => {
+            const scope = scopeOfProject(projectId);
+            if (scope === undefined) return false;
+            const id = vaultEntryId({ token: { projectId, name } });
+            try {
+              await access(join(scope.workspace.treeDir(), `${TEAM_SECRETS_VALUES_DIR}/${id}.yaml`));
+              return true;
+            } catch {
+              return false;
+            }
+          },
+          serverSecretNames: async (projectId) => (await requestDeps.secretNamesFor?.(projectId)) ?? [],
+          workspaceIdOf: (projectId) => scopeOfProject(projectId)?.workspace.openWorkspaceId(),
+          serverWorkspaceId: (projectId) => scopeOfProject(projectId)?.workspace.serverWorkspaceId(),
+        },
+  );
   registerMockChannels(handlerTable, mockRunner, {
     locate: (mockId) => {
       const projectId = workspaceService.projectId(mockId);
