@@ -148,7 +148,7 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
     }
     if (typeof frame['id'] === 'number' && typeof frame['ok'] === 'boolean') {
       const answer = pending.get(frame['id']);
-      if (answer === undefined) return false;
+      if (typeof answer !== 'function') return false;
       pending.delete(frame['id']);
       answer(resultOf(frame));
       return false;
@@ -159,7 +159,7 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
           listener(frame['payload']);
         } catch (error) {
           // One listener's fault is not the socket's: the others still hear the event.
-          console.error(`a listener for ${frame['event']} failed`, error);
+          console.error('a host event listener failed:', frame['event'], error);
         }
       }
     }
