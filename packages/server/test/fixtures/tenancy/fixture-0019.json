@@ -1,0 +1,87 @@
+{
+  "commit": "e9bdc5af1",
+  "ids": {
+    "users": [
+      "01M64WHQDVWTHFB1DWMYPZMPGQ",
+      "01M64WHQFEDMHG77MG3KTC8P6X",
+      "01M64WHQFGWQ40A4TBSB5H128Y",
+      "01M64WHQGXPWVWGK03399A1WD0"
+    ],
+    "teams": [
+      "01M64WHQHQF85V8JJAJPY7YM24"
+    ],
+    "workspaces": [
+      "01M64WHQJ1M9SQ5HRNYHNJ5A9X",
+      "01M64WHQKA72ZJ588PC3986NT3",
+      "01M64WHQMD2F9038KHW01AS3AJ"
+    ],
+    "agent_pairings": [
+      "01M64WHR15ND8Z3PRYJRPBKVNR"
+    ],
+    "ci_tokens": [
+      "01M64WHR0N3DBYM42YCT4T9T51"
+    ],
+    "catch_urls": [
+      "01M64WHR01VHZHMCC3X383G9HB"
+    ],
+    "schedules": [
+      "01M64WHR0Q8QYKQH54DQ8CCM0P"
+    ],
+    "session_logs": [
+      "01M64WHR12N8TENKXBKDK207RK"
+    ],
+    "invitations": [
+      "01M64WHQHJGA6T6HKN4V456N4P",
+      "01M64WHQHYEEW5JRSE3GCGZ484"
+    ],
+    "scim_groups": [
+      "01M64WHR10RQQKSGHCVETYQBDS"
+    ],
+    "schedule_runs": [
+      "01M64WHR0RAXFJV0PST9MQP1E2"
+    ]
+  },
+  "users": {
+    "admin": "01M64WHQDVWTHFB1DWMYPZMPGQ",
+    "alice": "01M64WHQFEDMHG77MG3KTC8P6X",
+    "editor": "01M64WHQFGWQ40A4TBSB5H128Y",
+    "viewer": "01M64WHQGXPWVWGK03399A1WD0"
+  },
+  "workspaces": {
+    "staging": "01M64WHQJ1M9SQ5HRNYHNJ5A9X",
+    "billing": "01M64WHQKA72ZJ588PC3986NT3",
+    "retired": "01M64WHQMD2F9038KHW01AS3AJ"
+  },
+  "dataDirPlaceholder": {
+    "token": "@WIREBENCH_FIXTURE_DATA_DIR@",
+    "files": [
+      "repos/01M64WHQJ1M9SQ5HRNYHNJ5A9X.git/config",
+      "repos/01M64WHQKA72ZJ588PC3986NT3.git/config",
+      "repos/01M64WHR1DDHQ2PN2JKMT7C7J7.git/config",
+      "tmp/removed-01M64WHQMD2F9038KHW01AS3AJ-1793313005236/config"
+    ]
+  },
+  "checkout": "checkouts/01M64WHQFEDMHG77MG3KTC8P6X",
+  "chain": {
+    "firstSeq": "1",
+    "lastSeq": "14",
+    "unsealed": 1
+  },
+  "keys": {
+    "secretsKey": "UVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVE=",
+    "auditChainKey": "fixture-0019-audit-chain-key-0123456789abcdef",
+    "hooksSecretKey": "UlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlI=",
+    "schedulesSecretKey": "U1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1M="
+  },
+  "plaintexts": {
+    "hostSecret": "sk-fixture-0123456789abcdef",
+    "hostSecretLabel": "wirebench-secret:project-billing:API_KEY",
+    "cookies": {
+      "staging": "session=staging-cookie-0019",
+      "billing": "session=billing-cookie-0019"
+    },
+    "hookSignatureSecret": "whsec_fixture0019signingsecret",
+    "scheduleSecret": "sk-schedule-fixture-0019",
+    "slackUrl": "https://hooks.slack.example.test/services/T000/B000/fixture0019"
+  }
+}
