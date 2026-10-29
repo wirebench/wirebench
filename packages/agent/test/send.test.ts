@@ -436,6 +436,15 @@ describe('agent.send', () => {
     expect(await sendsLeft()).toEqual([]);
   });
 
+  it('answers team-secret-needs-approval, with the desktop hint, for a team-secret bundle on a headless agent', async () => {
+    const bundle = await restBundle();
+    const refused = await failure({ sendId: sendId(), bundle: { ...bundle, teamSecrets: [] } });
+    expect(refused.code).toBe('team-secret-needs-approval');
+    expect(refused.message).toContain('desktop app');
+    expect(echo.received).toEqual([]);
+    expect(await sendsLeft()).toEqual([]);
+  });
+
   it.each(['grpc', 'mcp', 'websocket'])('answers agent-kind-unsupported for a %s bundle', async (kind) => {
     const bundle = await restBundle();
     expect((await failure({ sendId: sendId(), bundle: { ...bundle, kind } })).code).toBe('agent-kind-unsupported');

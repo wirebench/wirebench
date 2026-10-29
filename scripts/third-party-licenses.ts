@@ -19,6 +19,8 @@
  *     `dist/host/bundle.js` also carries the host's and `@wirebench/ssh`'s pure-JS dependencies (yaml,
  *     the GraphQL language service, ssh2). The host's are desktop `dependencies` too
  *     (`scripts/host-dependencies.test.ts`) and ssh's are a root of their own, so both are covered below.
+ *   * The CLI's `dist/agent/bundle.js` (`wirebench agent`) carries the same host and ssh code, and the local
+ *     agent's own pure-JS dependencies (`ws`): `packages/agent`'s `dependencies` are a root too.
  *   * {@link BUNDLED_DEV_DEPENDENCIES}, transitively. They sit in `devDependencies` because
  *     electron-vite bundles them rather than resolving them at runtime, but their code (React,
  *     Monaco, Radix, Tailwind's preflight CSS) is inside the shipped renderer bundle all the
@@ -296,11 +298,19 @@ export async function renderThirdPartyLicenses(): Promise<string> {
   const engineDir = join(repoRoot, 'packages', 'engine');
   const serverDir = join(repoRoot, 'packages', 'server');
   const sshDir = join(repoRoot, 'packages', 'ssh');
+  const agentDir = join(repoRoot, 'packages', 'agent');
   const desktop = await readManifest(desktopDir);
   const engine = await readManifest(engineDir);
   const server = await readManifest(serverDir);
   const ssh = await readManifest(sshDir);
-  if (desktop === undefined || engine === undefined || server === undefined || ssh === undefined) {
+  const agent = await readManifest(agentDir);
+  if (
+    desktop === undefined ||
+    engine === undefined ||
+    server === undefined ||
+    ssh === undefined ||
+    agent === undefined
+  ) {
     throw new Error('Cannot read the workspace manifests');
   }
   const vendored = await Promise.all(
@@ -319,6 +329,9 @@ export async function renderThirdPartyLicenses(): Promise<string> {
     })),
     ...Object.keys(server.dependencies ?? {}).map((name) => ({ name, from: serverDir })),
     ...Object.keys(ssh.dependencies ?? {}).map((name) => ({ name, from: sshDir })),
+    ...Object.keys(agent.dependencies ?? {})
+      .filter((name) => !name.startsWith('@wirebench/'))
+      .map((name) => ({ name, from: agentDir })),
     ...vendored.flatMap(({ dir, manifest }) =>
       Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies })
         .filter((name) => !name.startsWith('@wirebench/'))

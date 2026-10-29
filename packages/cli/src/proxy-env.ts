@@ -1,5 +1,5 @@
 import type { ProxyOptions } from '@wirebench/engine';
-import { UsageError } from './args.js';
+import { UsageError } from './usage-error.js';
 
 /** Parses one proxy variable eagerly, so a typo is exit 2 before anything is sent. */
 function parseProxy(name: string, raw: string | undefined): ProxyOptions | undefined {

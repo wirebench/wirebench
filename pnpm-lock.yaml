@@ -294,6 +294,9 @@ importers:
       bcrypt-pbkdf:
         specifier: 1.0.2
         version: 1.0.2
+      graphql:
+        specifier: ^17.0.2
+        version: 17.0.2
       node-hid:
         specifier: 3.4.0
         version: 3.4.0
@@ -307,9 +310,21 @@ importers:
         specifier: ^4.6.6
         version: 4.6.6
     devDependencies:
+      '@wirebench/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@wirebench/host':
+        specifier: workspace:*
+        version: link:../host
       '@wirebench/ssh':
         specifier: workspace:*
         version: link:../ssh
+      '@wirebench/wire':
+        specifier: workspace:*
+        version: link:../wire
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
 
   packages/core:
     dependencies:

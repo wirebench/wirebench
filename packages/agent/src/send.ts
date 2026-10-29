@@ -66,7 +66,17 @@ export interface AgentSendOptions {
   readonly env?: NodeJS.ProcessEnv;
   /** Where a failure of the agent's own housekeeping goes; never handed a bundle or a value. */
   readonly log?: (message: string, error?: unknown) => void;
+  /**
+   * Whether this embedder can resolve team secrets (the desktop's agent, §18.5). Absent, a bundle that reads
+   * one (it carries the workspace's `team-secrets/` subtree) answers `team-secret-needs-approval` before
+   * anything is written: the headless agent has no approved machine key, and no screen to ask for one on.
+   */
+  readonly teamSecrets?: boolean;
 }
+
+/** What the headless agent answers a send that reads a team secret. */
+export const HEADLESS_TEAM_SECRET_MESSAGE =
+  'This request reads a team secret, which the command-line agent cannot hold. Pair the Wirebench desktop app with this server instead (Pair this machine…), and send through it.';
 
 /** What a bundle the agent will not run is answered with: the paths and messages of its faults. */
 function invalid(message: string, details?: Record<string, unknown>): WirebenchError {
@@ -320,6 +330,11 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
     }
     const { sendId, bundle } = parsed.data;
     const { origin, pairingId } = pairing;
+    if (bundle.teamSecrets !== undefined && options.teamSecrets !== true) {
+      throw new WirebenchError('team-secret-needs-approval', HEADLESS_TEAM_SECRET_MESSAGE, {
+        details: { workspaceId: bundle.workspaceId },
+      });
+    }
     if (running.has(key(pairingId, sendId))) {
       throw new WirebenchError('agent-send-exists', 'A send with that id is already running', { details: { sendId } });
     }

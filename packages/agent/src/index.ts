@@ -28,7 +28,7 @@ export {
   type PairingPlatform,
   type PairingStore,
 } from './pairings.js';
-export { AGENT_SENDS_DIR, agentSendHandlers, type AgentSendOptions } from './send.js';
+export { AGENT_SENDS_DIR, agentSendHandlers, HEADLESS_TEAM_SECRET_MESSAGE, type AgentSendOptions } from './send.js';
 export { AGENT_FIRST_PORT, AGENT_LAST_PORT, AGENT_PORTS } from './ports.js';
 export {
   AGENT_CALLER_ID_BASE,

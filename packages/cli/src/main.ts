@@ -1,3 +1,4 @@
+import { agentCommand } from './commands/agent.js';
 import { callCommand } from './commands/call.js';
 import { diffContractCommand } from './commands/diff-contract.js';
 import { exportCommand } from './commands/export.js';
@@ -80,6 +81,15 @@ export async function main(
       }
       case 'ssh-forward': {
         return await sshForwardCommand(args, io);
+      }
+      case 'agent-run':
+      case 'agent-pair':
+      case 'agent-unpair':
+      case 'agent-status':
+      case 'agent-allow-env':
+      case 'agent-disallow-env':
+      case 'agent-allowed-env': {
+        return await agentCommand(args, io);
       }
       case 'plugin-install':
       case 'plugin-list':
