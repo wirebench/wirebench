@@ -631,7 +631,7 @@ describe('an agent send, further', () => {
     // Well under the server socket's 32 MiB.
     expect(JSON.stringify(request).length).toBeLessThan(2 * 1024 * 1024);
     expect(useExchangesStore.getState().restByRequest['rest-1']?.exchange?.text.length).toBe(whole.length);
-  });
+  }, 60_000); // builds and trims 30 MiB of text, which takes several seconds on CI runners
 
   it('has the server record a failed agent send, under the tab’s send id', async () => {
     const calls = install(fakeAgent().env);
