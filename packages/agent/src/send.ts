@@ -339,6 +339,8 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
         origin,
         workspaceId: bundle.workspaceId,
         secretNames: bundle.secretNames,
+        // The server's workspace and global values, as the bundle carries them; never this machine's globals.
+        scopes: { workspace: bundle.scopes?.workspace ?? {}, global: bundle.scopes?.global ?? {} },
         systemValues: systemValuesFor(bundle.systemNames, options.store.allowedSystemNames(), env),
         cookies: jarHost(state.jar),
         session: state.session,

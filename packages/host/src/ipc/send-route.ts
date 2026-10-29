@@ -16,7 +16,7 @@ import type { RequestChannelDeps } from './request.js';
 
 /** What the server host lends the routing channels; absent on the desktop. */
 export interface SendRoutingDeps
-  extends Omit<SendRouteDeps, 'pins'>, Pick<SendBundleDeps, 'serverWorkspaceId' | 'limits'> {
+  extends Omit<SendRouteDeps, 'pins'>, Pick<SendBundleDeps, 'serverWorkspaceId' | 'teamSecretsDir' | 'limits'> {
   readonly pins: RoutePins;
 }
 

@@ -18,6 +18,7 @@ import {
   enabledProperties,
   overlayCurrent,
   parseSecretPseudoRef,
+  TEAM_SECRETS_DIR,
   TEAM_SECRETS_VALUES_DIR,
   vaultEntryId,
   type ConnectOptions,
@@ -1491,8 +1492,13 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
             }
           },
           serverSecretNames: async (projectId) => (await requestDeps.secretNamesFor?.(projectId)) ?? [],
-          workspaceIdOf: (projectId) => scopeOfProject(projectId)?.workspace.openWorkspaceId(),
+          // The browser knows a workspace by its server id, and pins it by that id.
+          workspaceIdOf: (projectId) => scopeOfProject(projectId)?.workspace.serverWorkspaceId(),
           serverWorkspaceId: (projectId) => scopeOfProject(projectId)?.workspace.serverWorkspaceId(),
+          teamSecretsDir: (projectId) => {
+            const scope = scopeOfProject(projectId);
+            return scope === undefined ? undefined : join(scope.workspace.treeDir(), TEAM_SECRETS_DIR);
+          },
         },
   );
   registerMockChannels(handlerTable, mockRunner, {

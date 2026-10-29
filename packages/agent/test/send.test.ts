@@ -218,6 +218,73 @@ describe('agent.send', () => {
     expect(echo.received[0]?.headers['x-sys']).toBe('[allowed-value]');
   });
 
+  it("resolves ${#Workspace#…}, ${#Global#…} and the shorthand from the bundle's scopes, never this machine's globals", async () => {
+    // This machine's own global of the same name: a bundle send must not read it.
+    const caller = quietCaller(8);
+    host.attach(caller);
+    expect(
+      await serveCall(host, caller, { id: 1, channel: 'globals.set', request: { name: 'y', value: 'desktop' } }),
+    ).toMatchObject({
+      ok: true,
+    });
+    await host.detach(caller.id);
+    const request = createRestRequest('Echo', {
+      id: 'req-1',
+      url: '/echo',
+      headers: [
+        entry('x-ws', '${#Workspace#x}'),
+        entry('x-gl', '${#Global#y}'),
+        entry('x-a', '${a}'),
+        entry('x-b', '${b}'),
+        entry('x-c', '${c}'),
+        entry('x-d', '${d}'),
+      ],
+    });
+    const environment = {
+      id: 'env-1',
+      name: 'Dev',
+      slug: 'dev',
+      order: 0,
+      endpoints: {},
+      properties: { a: 'env' },
+      disabledProperties: [],
+    };
+    const project: Project = {
+      ...restProject([request]),
+      properties: { a: 'project', b: 'project' },
+      environments: [environment],
+      activeEnvironmentId: 'env-1',
+    };
+    const bundle = await bundleOf(project, 'req-1', 'rest', {
+      environment: 'env-1',
+      scopes: {
+        workspace: { x: 'ws-x', a: 'workspace', b: 'workspace', c: 'workspace' },
+        global: { y: 'gl-y', a: 'global', b: 'global', c: 'global', d: 'global' },
+      },
+    });
+    await call('agent.send', { sendId: sendId(), bundle });
+    const headers = echo.received[0]?.headers;
+    expect(headers?.['x-ws']).toBe('ws-x');
+    expect(headers?.['x-gl']).toBe('gl-y');
+    // Env, then Project, then Workspace, then Global.
+    expect([headers?.['x-a'], headers?.['x-b'], headers?.['x-c'], headers?.['x-d']]).toEqual([
+      'env',
+      'project',
+      'workspace',
+      'global',
+    ]);
+  });
+
+  it('reads no global of this machine for a bundle without scopes', async () => {
+    const caller = quietCaller(9);
+    host.attach(caller);
+    await serveCall(host, caller, { id: 1, channel: 'globals.set', request: { name: 'y', value: 'desktop' } });
+    await host.detach(caller.id);
+    const bundle = await restBundle({ headers: [entry('x-gl', '[${#Global#y}]')] });
+    expect((await failure({ sendId: sendId(), bundle })).code).toBe('rest-unresolved-properties');
+    expect(echo.received).toEqual([]);
+  });
+
   it("never falls back to this process's own environment", async () => {
     const name = process.platform === 'win32' ? 'USERPROFILE' : 'HOME';
     handlers = agentSendHandlers({ platform, store });

@@ -42,7 +42,12 @@ export type RequestRouteRequest = z.infer<typeof requestRouteRequestSchema>;
 /** Where the send goes: as today, or through the agent, with every reason it must. */
 export const requestRouteResponseSchema = z.discriminatedUnion('route', [
   z.object({ route: z.literal('server') }),
-  z.object({ route: z.literal('agent'), needs: z.array(sendNeedSchema).min(1) }),
+  z.object({
+    route: z.literal('agent'),
+    needs: z.array(sendNeedSchema).min(1),
+    /** Why: `unresolved` when the target's host did not resolve on the server (`private-target`). */
+    detail: z.object({ reason: z.literal('unresolved') }).optional(),
+  }),
 ]);
 export type RequestRouteResponse = z.infer<typeof requestRouteResponseSchema>;
 

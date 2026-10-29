@@ -629,6 +629,8 @@ function runContextOf(located: Located, host: SendHost): RunContext {
     ...(located.workspace !== undefined ? { workspace: located.workspace } : {}),
     // The `${#Global#…}` scope: without it a global property stays unresolved.
     ...(located.globals !== undefined ? { globals: located.globals } : {}),
+    // A bundle send's `${#Workspace#…}` scope, outside any workspace (§18.4).
+    ...(located.workspaceProperties !== undefined ? { workspaceProperties: located.workspaceProperties } : {}),
     // The session's current values (cookie jar spec §5.2), laid over committed ones by the engine.
     ...(located.current !== undefined ? { current: located.current } : {}),
     overrides: located.overrides ?? {},

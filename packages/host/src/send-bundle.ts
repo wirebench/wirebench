@@ -7,11 +7,14 @@
  * - the environment it is sent under, values only (a secret is a `${secret:…}` token in it, never a value);
  * - the project files it reads (a body file, a part, an attachment, a keystore inside the project) and its
  *   container's cached definition;
- * - the names of the `${secret:…}` and `${#System#…}` values it reads, never a value.
+ * - the names of the `${secret:…}` and `${#System#…}` values it reads, never a value;
+ * - the workspace and global properties (`scopes`), values only, which are the send's whole
+ *   `${#Workspace#…}` and `${#Global#…}` scopes on the agent;
+ * - when it reads a team secret, the workspace's `team-secrets/` subtree as it is (`teamSecrets`).
  *
- * Inside a workspace the agent has no workspace to resolve through, so the environment it is sent under is
- * written as a project environment: the values that apply, and the container's resolved address. Workspace
- * and global properties fill the project's own where it has none of that name.
+ * Inside a workspace the agent has no workspace to resolve environments through, so the environment it is
+ * sent under is written as a project environment: the values that apply, and the container's resolved
+ * address.
  */
 import { lstat, readdir, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -35,6 +38,7 @@ import {
   type SendBundleFile,
 } from '@wirebench/wire/agent';
 import { previewRest, previewSoap, type SendThroughEngineDeps } from './send/exchange.js';
+import type { SendRouteDeps } from './send-route.js';
 import { itemReferences, keystoreOnMachine, locateRouted, type RoutableItem, type RoutedItem } from './send-route.js';
 
 /** Where the bundle builder reads the item and its workspace. */
@@ -42,6 +46,10 @@ export interface SendBundleDeps {
   readonly send: SendThroughEngineDeps;
   /** The server workspace id the project belongs to (the agent's secret namespace is keyed by it). */
   readonly serverWorkspaceId: (projectId: string) => string | undefined;
+  /** Whether the project's workspace holds a team secret of that name; none is when absent. */
+  readonly isTeamSecret?: SendRouteDeps['isTeamSecret'];
+  /** The absolute path of the project's workspace's `team-secrets/` folder; absent when it has none. */
+  readonly teamSecretsDir?: (projectId: string) => string | undefined;
   /** The bundle's caps; the wire's when absent (tests lower them). */
   readonly limits?: { readonly maxBytes: number; readonly maxFiles: number };
 }
@@ -126,8 +134,7 @@ async function containerAddress(
 
 /**
  * The environments the bundle carries: the project's own one it is sent under, or, inside a workspace, that
- * workspace environment written as a project one. Laid on `pruned`, with the project's properties filled
- * from the workspace's and the globals where it has none of that name.
+ * workspace environment written as a project one. Laid on `pruned`.
  */
 async function withEnvironment(
   deps: SendThroughEngineDeps,
@@ -143,9 +150,8 @@ async function withEnvironment(
     const rest = withoutActive(pruned);
     return { ...rest, environments, ...(environmentId !== undefined ? { activeEnvironmentId: environmentId } : {}) };
   }
-  const properties = { ...scopes.global, ...scopes.workspace, ...pruned.properties };
   const rest = withoutActive(pruned);
-  if (environmentId === undefined) return { ...rest, properties, environments: [] };
+  if (environmentId === undefined) return { ...rest, environments: [] };
   const address = await containerAddress(deps, item, request);
   const slug = item.kind === 'rest' ? item.api.slug : item.iface.slug;
   const environment: Environment = {
@@ -157,18 +163,21 @@ async function withEnvironment(
     properties: { ...scopes.env },
     disabledProperties: [],
   };
-  return { ...rest, properties, environments: [environment], activeEnvironmentId: environmentId };
+  return { ...rest, environments: [environment], activeEnvironmentId: environmentId };
 }
 
-/** A file the request reads, by its path relative to the project, refused when it leaves the project. */
-async function insideProject(
-  projectDir: string,
+/**
+ * A file the request reads, by its path relative to `rootDir` (the project, or the `team-secrets/` folder),
+ * refused when it, or a link on its way, leaves that folder.
+ */
+async function insideRoot(
+  rootDir: string,
   path: string,
 ): Promise<{ readonly relative: string; readonly absolute: string }> {
   const outside = (): ProjectError =>
     new ProjectError('send-bundle-path-outside', `The file "${path}" is outside the project`, { details: { path } });
   if (isAbsolute(path)) throw outside();
-  const root = await realpath(projectDir);
+  const root = await realpath(rootDir);
   const target = resolve(root, path);
   if (!target.startsWith(root + sep)) throw outside();
   let real: string;
@@ -184,7 +193,10 @@ async function insideProject(
   return { relative: rel, absolute: real };
 }
 
-/** Every file under `dir` (relative to `root`), following no link; nothing when `dir` is not there. */
+/**
+ * Every file and link under `dir` (relative to `root`), descending into no link; nothing when `dir` is not
+ * there. A link is listed so {@link insideRoot} refuses it when it leads out.
+ */
 async function filesUnder(root: string, dir: string): Promise<string[]> {
   let entries;
   try {
@@ -196,7 +208,7 @@ async function filesUnder(root: string, dir: string): Promise<string[]> {
   for (const entry of entries) {
     const child = `${dir}/${entry.name}`;
     if (entry.isDirectory()) found.push(...(await filesUnder(root, child)));
-    else if (entry.isFile()) found.push(child);
+    else if (entry.isFile() || entry.isSymbolicLink()) found.push(child);
   }
   return found;
 }
@@ -228,7 +240,7 @@ export async function buildSendBundle(deps: SendBundleDeps, request: RoutedItem)
   }
   const registry = located.registry ?? createBuiltinRegistry();
   const scopes = deps.send.project.scopesFor(request.itemId, request.environment);
-  const references = itemReferences(item, scopes);
+  const references = itemReferences(project, item, scopes);
   const bundled = await withEnvironment(
     deps.send,
     prunedProject(project, item, registry),
@@ -241,17 +253,37 @@ export async function buildSendBundle(deps: SendBundleDeps, request: RoutedItem)
   const maxFiles = deps.limits?.maxFiles ?? AGENT_BUNDLE_MAX_FILES;
 
   const files = new Map<string, SendBundleFile>();
+  const teamFiles = new Map<string, SendBundleFile>();
   let bytes = 0;
-  const add = (file: SendBundleFile, size: number): void => {
-    if (files.has(file.path)) return;
+  /** Adds `file` to `into`; both lists count toward one cap of files and of bytes. */
+  const add = (file: SendBundleFile, size: number, into = files): void => {
+    if (into.has(file.path)) return;
     bytes += size;
-    if (files.size + 1 > maxFiles) {
+    if (files.size + teamFiles.size + 1 > maxFiles) {
       throw tooLarge(`The request reads more than ${String(maxFiles)} files`, { maxFiles });
     }
     if (bytes > maxBytes) {
       throw tooLarge(`The request's files come to more than ${String(maxBytes)} bytes`, { maxBytes });
     }
-    files.set(file.path, file);
+    into.set(file.path, file);
+  };
+  /** Reads `path` under `root` into `into`, held to the folder and the caps; a missing file is skipped. */
+  const readInto = async (root: string, path: string, into: Map<string, SendBundleFile>): Promise<void> => {
+    const { relative: rel, absolute } = await insideRoot(root, path);
+    if (into.has(rel)) return;
+    let stat;
+    try {
+      stat = await lstat(absolute);
+    } catch {
+      return;
+    }
+    if (!stat.isFile()) return;
+    // Checked against the cap before it is read, so an outsized file is never held in memory.
+    if (bytes + stat.size > maxBytes) {
+      throw tooLarge(`The request's files come to more than ${String(maxBytes)} bytes`, { maxBytes });
+    }
+    const content = await readFile(absolute);
+    add({ path: rel, encoding: 'base64', content: content.toString('base64') }, content.byteLength, into);
   };
   for (const [path, content] of projectFiles(bundled, { registry })) {
     add({ path, encoding: 'utf8', content }, Buffer.byteLength(content, 'utf8'));
@@ -272,22 +304,17 @@ export async function buildSendBundle(deps: SendBundleDeps, request: RoutedItem)
         ? `apis/${item.api.slug}/definition`
         : undefined;
   if (definition !== undefined) for (const path of await filesUnder(projectDir, definition)) readPaths.add(path);
-  for (const path of [...readPaths].sort()) {
-    const { relative: rel, absolute } = await insideProject(projectDir, path);
-    if (files.has(rel)) continue;
-    let stat;
-    try {
-      stat = await lstat(absolute);
-    } catch {
-      continue;
-    }
-    if (!stat.isFile()) continue;
-    // Checked against the cap before it is read, so an outsized file is never held in memory.
-    if (bytes + stat.size > maxBytes) {
-      throw tooLarge(`The request's files come to more than ${String(maxBytes)} bytes`, { maxBytes });
-    }
-    const content = await readFile(absolute);
-    add({ path: rel, encoding: 'base64', content: content.toString('base64') }, content.byteLength);
+  for (const path of [...readPaths].sort()) await readInto(projectDir, path, files);
+
+  // A team secret: the workspace's `team-secrets/` subtree as it is, by path inside it (§18.4).
+  let readsTeamSecret = false;
+  for (const name of references.secretNames) {
+    if ((await deps.isTeamSecret?.(request.projectId, name)) === true) readsTeamSecret = true;
+  }
+  const teamDir = readsTeamSecret ? deps.teamSecretsDir?.(request.projectId) : undefined;
+  if (teamDir !== undefined) {
+    const listed = (await filesUnder(teamDir, '.')).map((path) => path.replace(/^\.\//, ''));
+    for (const path of listed.sort()) await readInto(teamDir, path, teamFiles);
   }
 
   const parsed = sendBundleSchema.safeParse({
@@ -299,6 +326,8 @@ export async function buildSendBundle(deps: SendBundleDeps, request: RoutedItem)
     files: [...files.values()],
     secretNames: references.secretNames.filter((name) => SECRET_NAME.test(name)),
     systemNames: references.systemNames.filter((name) => SECRET_NAME.test(name)),
+    scopes: { workspace: { ...scopes.workspace }, global: { ...scopes.global } },
+    ...(teamDir !== undefined ? { teamSecrets: [...teamFiles.values()] } : {}),
   });
   if (!parsed.success) {
     throw new WirebenchError('send-bundle-invalid', 'The request could not be bundled for the agent', {

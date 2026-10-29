@@ -42,6 +42,12 @@ export interface RunContext {
    * its environment (with the linked project one laid over it) the `${…}` shorthand's.
    */
   readonly workspace?: RunWorkspace;
+  /**
+   * The `${#Workspace#…}` scope of a run outside a workspace: an agent's bundle send, whose bundle carries
+   * the workspace properties of the server it came from (hosted edition spec §18.4). Ignored when
+   * `workspace` is set, which supplies its own.
+   */
+  readonly workspaceProperties?: PropertyMap;
   /** `--var` overrides, laid over the environment's properties. */
   readonly overrides: PropertyMap;
   /** The host's global properties, the `${#Global#…}` scope. Absent: none. */
@@ -104,7 +110,10 @@ export function scopesFor(context: RunContext): PropertyScopes {
   );
   const scopes =
     workspace === undefined
-      ? resolveScopes(project, environmentId, globals, context.system ?? process.env)
+      ? {
+          ...resolveScopes(project, environmentId, globals, context.system ?? process.env),
+          ...(context.workspaceProperties !== undefined ? { workspace: { ...context.workspaceProperties } } : {}),
+        }
       : resolveWorkspaceScopes({
           workspace: withActiveEnvironment(workspace, environmentId),
           project,

@@ -14,12 +14,12 @@
  * secret and no process environment.
  */
 import { lookup as dnsLookup } from 'node:dns/promises';
-import { isAbsolute } from 'node:path';
-import { isIP } from 'node:net';
 import { mkdir, readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { isIP } from 'node:net';
+import { dirname, isAbsolute, join } from 'node:path';
 import {
   classifyAddress,
+  composeUrl,
   expand,
   nodeFs,
   parseSecretPseudoRef,
@@ -31,6 +31,7 @@ import {
   toKeystoreDef,
   WirebenchError,
   writeFileAtomic,
+  wssConfigsOf,
 } from '@wirebench/engine';
 import type { AuthConfig, Project, PropertyScopes, RestSelected, SoapSelected } from '@wirebench/engine';
 import { SEND_NEEDS, type RequestRouteResponse, type SendNeed } from '@wirebench/wire/agent-route';
@@ -80,8 +81,21 @@ function own(value: object, ...children: readonly string[]): Record<string, unkn
   return copy;
 }
 
+/**
+ * The WS-Security configurations a SOAP request names, as stored: their keystores, and their passwords'
+ * `secret:` refs (`passwordRef`, `defaultPasswordRef`), are read like any other part.
+ */
+function wssParts(project: Project, item: SoapSelected): readonly unknown[] {
+  const { outgoing, incoming } = wssConfigsOf(project);
+  const { wssOutgoingRef, wssIncomingRef } = item.request;
+  return [
+    ...outgoing.filter((config) => config.id === wssOutgoingRef),
+    ...incoming.filter((config) => config.id === wssIncomingRef),
+  ].map((config) => config.document);
+}
+
 /** The parts of the item a send reads: the request, and its folders', API's or interface's own settings. */
-function itemParts(item: RoutableItem): readonly unknown[] {
+function itemParts(project: Project, item: RoutableItem): readonly unknown[] {
   if (item.kind === 'rest') {
     return [
       item.request,
@@ -91,7 +105,12 @@ function itemParts(item: RoutableItem): readonly unknown[] {
       item.signing,
     ];
   }
-  return [item.request, own(item.iface, 'operations', 'endpoints'), soapEffectiveAuth(item)];
+  return [
+    item.request,
+    own(item.iface, 'operations', 'endpoints'),
+    soapEffectiveAuth(item),
+    ...wssParts(project, item),
+  ];
 }
 
 /**
@@ -154,11 +173,12 @@ export function routableItem(project: Project, itemId: string): RoutableItem | u
 
 /** The references of `item`, against the scopes its send expands with. */
 export function itemReferences(
+  project: Project,
   item: RoutableItem,
   scopes: PropertyScopes,
   extra: readonly unknown[] = [],
 ): SendReferences {
-  return sendReferences([...itemParts(item), ...extra], scopes);
+  return sendReferences([...itemParts(project, item), ...extra], scopes);
 }
 
 /** The addresses a host name resolves to; a literal address is its own answer. */
@@ -167,27 +187,39 @@ export type ResolveHost = (host: string) => Promise<readonly string[]>;
 const systemResolve: ResolveHost = async (host) =>
   (await dnsLookup(host, { all: true, verbatim: true })).map((answer) => answer.address);
 
+/** What the target's address asks for: its needs, and whether its host did not resolve on the server. */
+export interface AddressNeeds {
+  readonly needs: readonly SendNeed[];
+  readonly unresolved: boolean;
+}
+
 /**
  * The address needs of `url`'s host: `loopback-target` for a loopback or unspecified answer, and
- * `private-target` for a private, link-local or metadata one. A URL with no host, or a host that does not
- * resolve, needs nothing: the send goes to the server, which then fails as it does today.
+ * `private-target` for a private, link-local or metadata one. A host the server cannot resolve needs the
+ * agent too (`private-target`, `unresolved`): it is most likely a name only the person's network knows. A URL
+ * with no host needs nothing.
  */
-export async function addressNeeds(url: string | undefined, resolve: ResolveHost = systemResolve): Promise<SendNeed[]> {
-  if (url === undefined) return [];
+export async function addressNeeds(
+  url: string | undefined,
+  resolve: ResolveHost = systemResolve,
+): Promise<AddressNeeds> {
+  const none: AddressNeeds = { needs: [], unresolved: false };
+  if (url === undefined) return none;
   let host: string;
   try {
     host = new URL(url).hostname;
   } catch {
-    return [];
+    return none;
   }
   const bare = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
-  if (bare.length === 0) return [];
+  if (bare.length === 0) return none;
   let addresses: readonly string[];
   try {
     addresses = isIP(bare) !== 0 ? [bare] : await resolve(bare);
   } catch {
-    return [];
+    return { needs: ['private-target'], unresolved: true };
   }
+  if (addresses.length === 0) return { needs: ['private-target'], unresolved: true };
   const needs = new Set<SendNeed>();
   for (const address of addresses) {
     const addressClass = classifyAddress(address);
@@ -196,13 +228,13 @@ export async function addressNeeds(url: string | undefined, resolve: ResolveHost
       needs.add('private-target');
     }
   }
-  return [...needs];
+  return { needs: [...needs], unresolved: false };
 }
 
 /** The machine's own credentials an auth configuration reads: its Kerberos ticket, or its NTLM logon. */
 export function authNeeds(auth: AuthConfig | undefined): SendNeed[] {
   if (auth?.type === 'kerberos') return ['kerberos'];
-  // NTLM with no stored password logs on as the machine's own user; one with a password is a plain secret.
+  // No stored password: NTLM then logs on with the machine's own account, which only the person's machine has.
   if (auth?.type === 'ntlm' && auth.passwordRef === undefined) return ['ntlm-machine'];
   return [];
 }
@@ -233,7 +265,7 @@ export interface SendRouteDeps {
   readonly serverSecretNames?: (projectId: string) => Promise<readonly string[]>;
   /** The person's pins. */
   readonly pins?: Pick<RoutePins, 'pinned'>;
-  /** The id of the workspace the project is open in, which a workspace pin names. */
+  /** The server workspace id of the project's workspace: what the browser knows it by, and pins it by. */
   readonly workspaceIdOf?: (projectId: string) => string | undefined;
 }
 
@@ -274,11 +306,20 @@ async function targetOf(
   }
 }
 
-/** A REST preview's URL: the request's own when absolute, else joined to its base. */
-function composedUrl(preview: NonNullable<Awaited<ReturnType<typeof previewRest>>>): string {
-  const { baseUrl, request } = preview.input;
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(request.url)) return request.url;
-  return baseUrl;
+/** A host and port with no scheme in front: `localhost:8080/x`, `[::1]:80`, `localhost/x`. */
+const SCHEMELESS_HOST = /^(?:localhost(?=[:/?#]|$)|\[[0-9A-Fa-f:.]+\](?=[:/?#]|$)|[A-Za-z0-9.-]+(?=:\d+(?:[/?#]|$)))/;
+
+/**
+ * A REST preview's URL, composed as the send composes it. A request URL written without a scheme but with
+ * a host of its own (`localhost:8080/x`) is classified by that host, never by the base URL's.
+ */
+export function composedUrl(preview: Pick<NonNullable<Awaited<ReturnType<typeof previewRest>>>, 'input'>): string {
+  const { baseUrl, request, settings } = preview.input;
+  if (SCHEMELESS_HOST.test(request.url)) return `http://${request.url}`;
+  const { url } = composeUrl(baseUrl, request.url, request.pathParams, request.query, {
+    encode: settings.encodeUrl ?? true,
+  });
+  return url;
 }
 
 /**
@@ -293,8 +334,9 @@ export async function routeSend(deps: SendRouteDeps, request: RoutedItem): Promi
   const { project, item } = locateRouted(deps.send, request);
   if (item === undefined) return { route: 'server' };
   const scopes = deps.send.project.scopesFor(request.itemId, request.environment);
-  const references = itemReferences(item, scopes);
-  const needs = new Set<SendNeed>(await addressNeeds(await targetOf(deps.send, item, request), deps.resolve));
+  const references = itemReferences(project, item, scopes);
+  const address = await addressNeeds(await targetOf(deps.send, item, request), deps.resolve);
+  const needs = new Set<SendNeed>(address.needs);
   if (references.systemNames.length > 0) needs.add('system-values');
   const sources = new Set(deps.secretSourceNames?.(request.projectId) ?? []);
   const machineSecrets = new Set<string>();
@@ -325,7 +367,11 @@ export async function routeSend(deps: SendRouteDeps, request: RoutedItem): Promi
       { details: { name: stranded, missingOn: 'agent', needs: ordered(needs) } },
     );
   }
-  return { route: 'agent', needs: ordered(needs) };
+  return {
+    route: 'agent',
+    needs: ordered(needs),
+    ...(address.unresolved ? { detail: { reason: 'unresolved' as const } } : {}),
+  };
 }
 
 /** `needs` in the order the wire lists them. */
@@ -339,6 +385,9 @@ interface PinsFile {
   readonly workspace: Readonly<Record<string, 'agent'>>;
   readonly request: Readonly<Record<string, 'agent'>>;
 }
+
+/** How many pins of each scope are kept. */
+export const MAX_ROUTE_PINS = 1000;
 
 const EMPTY_PINS: PinsFile = { version: 1, workspace: {}, request: {} };
 
@@ -381,7 +430,11 @@ export class RoutePins {
     const current = this.state ?? EMPTY_PINS;
     const entries = { ...current[scope] };
     if (pin === null) delete entries[id];
-    else entries[id] = pin;
+    else if (!Object.hasOwn(entries, id) && Object.keys(entries).length >= MAX_ROUTE_PINS) {
+      throw new WirebenchError('route-pins-full', `At most ${String(MAX_ROUTE_PINS)} ${scope} pins are kept`, {
+        details: { scope, max: MAX_ROUTE_PINS },
+      });
+    } else entries[id] = pin;
     const next: PinsFile = { ...current, [scope]: entries };
     this.state = next;
     const write = this.writes.then(async () => {
@@ -400,7 +453,11 @@ function parsePins(text: string | undefined): PinsFile {
     const parsed = JSON.parse(text) as Partial<PinsFile> | null;
     const pick = (value: unknown): Record<string, 'agent'> =>
       value !== null && typeof value === 'object'
-        ? Object.fromEntries(Object.entries(value).filter((pair): pair is [string, 'agent'] => pair[1] === 'agent'))
+        ? Object.fromEntries(
+            Object.entries(value)
+              .filter((pair): pair is [string, 'agent'] => pair[1] === 'agent')
+              .slice(0, MAX_ROUTE_PINS),
+          )
         : {};
     return { version: 1, workspace: pick(parsed?.workspace), request: pick(parsed?.request) };
   } catch {

@@ -109,6 +109,11 @@ export interface SendFromDirectoryInput {
    * empty. Never the process environment by default: a paired server must not read it.
    */
   readonly systemValues: Readonly<Record<string, string>>;
+  /**
+   * The `${#Workspace#…}` and `${#Global#…}` scopes the bundle carries (the server's, values only). They are
+   * the send's whole workspace and global scopes: this machine's own globals are never read.
+   */
+  readonly scopes?: { readonly workspace: PropertyMap; readonly global: PropertyMap };
   /** The cookie jar this send reads and stores into: the caller's, never a window's. */
   readonly cookies: CookieJarHost;
   /** The caller's token caches. */
@@ -250,6 +255,30 @@ export function singleProjectRouter(
 }
 
 /**
+ * `router` with the bundle's workspace and global scopes laid on every run context and scope it answers,
+ * in place of the host's (which has none): exactly those, or none at all.
+ */
+function withBundleScopes(
+  router: RequestChannelProject,
+  scopes: SendFromDirectoryInput['scopes'],
+): RequestChannelProject {
+  const workspace = { ...scopes?.workspace };
+  const global = { ...scopes?.global };
+  return {
+    ...router,
+    runContextFor: (...args: Parameters<NonNullable<RequestChannelProject['runContextFor']>>) => {
+      const located = router.runContextFor?.(...args);
+      return located === undefined ? undefined : { ...located, globals: global, workspaceProperties: workspace };
+    },
+    scopesFor: (...args: Parameters<RequestChannelProject['scopesFor']>) => ({
+      ...router.scopesFor(...args),
+      workspace,
+      global,
+    }),
+  };
+}
+
+/**
  * The scripts of the bundle's project, read from its own model, with no session: a value a script keeps is
  * not kept, and none of a window's is read.
  */
@@ -302,7 +331,7 @@ export async function sendFromDirectory(
     const { oauth2, issuedTokens } = input.session;
     const sendDeps: SendThroughEngineDeps = {
       hostState,
-      project: singleProjectRouter(host, deps.proxyFor),
+      project: withBundleScopes(singleProjectRouter(host, deps.proxyFor), input.scopes),
       service: engine,
       registry: deps.registry,
       oauth2: {

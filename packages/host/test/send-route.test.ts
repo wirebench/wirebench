@@ -3,19 +3,22 @@
  * The send route rule and the send bundle (hosted edition spec §18.4), on the server host: where a browser
  * send must go and why, what the agent is handed for it, and History's `sentFrom`.
  */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   createApi,
   createFolder,
+  createInterface,
   createProject,
+  createRequest,
   createRestRequest,
   entry,
   loadProject,
   resolveScopes,
   restItemFor,
+  withWssConfigs,
   type AuthConfig,
   type Environment,
   type Project,
@@ -28,8 +31,15 @@ import { HistoryService } from '../src/history-service.js';
 import { HandlerTable } from '../src/ipc/register.js';
 import type { RequestChannelDeps } from '../src/ipc/request.js';
 import { registerSendRouteChannels } from '../src/ipc/send-route.js';
-import { buildSendBundle } from '../src/send-bundle.js';
-import { routeSend, RoutePins, routePinsPath, type SendRouteDeps } from '../src/send-route.js';
+import { buildSendBundle, type SendBundleDeps } from '../src/send-bundle.js';
+import {
+  composedUrl,
+  MAX_ROUTE_PINS,
+  routeSend,
+  RoutePins,
+  routePinsPath,
+  type SendRouteDeps,
+} from '../src/send-route.js';
 import { sendDepsFor } from './helpers/send-deps.js';
 
 const SECRET_VALUE = 'S3CR3T-VALUE-ON-THE-SERVER';
@@ -149,10 +159,37 @@ describe('request.route', () => {
     await expect(routeSend(deps, ITEM)).resolves.toEqual({ route: 'agent', needs: ['private-target'] });
   });
 
-  it('sends a host that does not resolve from the server, which then fails as it does today', async () => {
+  it('sends a host the server cannot resolve through the agent: a name only the person may know', async () => {
     await expect(routeSend(routeDeps(seeded({ base: 'http://nowhere.invalid' })), ITEM)).resolves.toEqual({
-      route: 'server',
+      route: 'agent',
+      needs: ['private-target'],
+      detail: { reason: 'unresolved' },
     });
+  });
+
+  it('classifies a bracketed IPv6 literal and an IPv4-mapped one by the address they carry', async () => {
+    await expect(routeSend(routeDeps(seeded({ base: 'http://[::1]:8080' })), ITEM)).resolves.toEqual({
+      route: 'agent',
+      needs: ['loopback-target'],
+    });
+    await expect(routeSend(routeDeps(seeded({ base: 'http://[::ffff:10.0.0.5]/' })), ITEM)).resolves.toEqual({
+      route: 'agent',
+      needs: ['private-target'],
+    });
+  });
+
+  it('classifies a request URL with a host but no scheme by its own host, not the base URL', async () => {
+    const deps = routeDeps(seeded({ request: { url: 'localhost:8080/x' } }), {
+      resolve: (host) => Promise.resolve(host === 'localhost' ? ['127.0.0.1'] : []),
+    });
+    await expect(routeSend(deps, ITEM)).resolves.toEqual({ route: 'agent', needs: ['loopback-target'] });
+    const input = { baseUrl: 'https://8.8.8.8', settings: {}, request: { pathParams: [], query: [] } };
+    expect(composedUrl({ input: { ...input, request: { ...input.request, url: '/pets' } } } as never)).toBe(
+      'https://8.8.8.8/pets',
+    );
+    expect(composedUrl({ input: { ...input, request: { ...input.request, url: '[::1]:81/x' } } } as never)).toBe(
+      'http://[::1]:81/x',
+    );
   });
 
   it('needs the agent for a ${#System#…} value', async () => {
@@ -215,6 +252,17 @@ describe('request.route', () => {
     await expect(routeSend(deps, ITEM)).resolves.toEqual({ route: 'agent', needs: ['pinned'] });
   });
 
+  it(`keeps at most ${String(MAX_ROUTE_PINS)} pins of a scope`, async () => {
+    const pins = new RoutePins(routePinsPath(tempDir()));
+    for (let index = 0; index < MAX_ROUTE_PINS; index += 1) await pins.set('request', `r-${String(index)}`, 'agent');
+    await expect(pins.set('request', 'one-more', 'agent')).rejects.toMatchObject({ code: 'route-pins-full' });
+    // Pinning one already pinned, taking one off and pinning a workspace still work.
+    await expect(pins.set('request', 'r-1', 'agent')).resolves.toBe('agent');
+    await expect(pins.set('request', 'r-1', null)).resolves.toBeNull();
+    await expect(pins.set('request', 'one-more', 'agent')).resolves.toBe('agent');
+    await expect(pins.set('workspace', 'ws-1', 'agent')).resolves.toBe('agent');
+  });
+
   it('keeps pins in a JSON file a new host reads back', async () => {
     const userData = tempDir();
     await new RoutePins(routePinsPath(userData)).set('request', 'req-1', 'agent');
@@ -257,8 +305,13 @@ describe('request.route', () => {
 });
 
 describe('request.bundle', () => {
-  function bundled(seed: Seed = {}, limits?: { maxBytes: number; maxFiles: number }) {
+  function bundled(
+    seed: Seed = {},
+    limits?: { maxBytes: number; maxFiles: number },
+    extra: { readonly deps?: Partial<SendBundleDeps>; readonly setup?: (dir: string) => void } = {},
+  ) {
     const projectDir = tempDir();
+    extra.setup?.(projectDir);
     mkdirSync(join(projectDir, 'bodies'), { recursive: true });
     writeFileSync(join(projectDir, 'bodies', 'payload.bin'), Buffer.from([0, 1, 2, 3]));
     const model = seeded({
@@ -278,6 +331,7 @@ describe('request.bundle', () => {
         send: sendDeps(model, projectDir),
         serverWorkspaceId: () => 'ws_server_1',
         ...(limits !== undefined ? { limits } : {}),
+        ...extra.deps,
       },
       ITEM,
     );
@@ -480,5 +534,205 @@ describe('History says where a send went out from', () => {
         error: { code: 'host-capability-missing' },
       });
     }
+  });
+});
+
+describe('request.bundle, further', () => {
+  function restBundled(
+    seed: Seed,
+    options: {
+      readonly deps?: Partial<SendBundleDeps>;
+      readonly setup?: (dir: string) => void;
+      readonly limits?: { maxBytes: number; maxFiles: number };
+    } = {},
+  ) {
+    const projectDir = tempDir();
+    options.setup?.(projectDir);
+    const model = seeded(seed);
+    return buildSendBundle(
+      {
+        send: sendDeps(model, projectDir),
+        serverWorkspaceId: () => 'ws_server_1',
+        ...(options.limits !== undefined ? { limits: options.limits } : {}),
+        ...options.deps,
+      },
+      ITEM,
+    );
+  }
+
+  it("carries the container's cached definition folder", async () => {
+    const bundle = await restBundled(
+      {},
+      {
+        setup: (dir) => {
+          mkdirSync(join(dir, 'apis', 'Pets', 'definition'), { recursive: true });
+          writeFileSync(join(dir, 'apis', 'Pets', 'definition', 'openapi.yaml'), 'openapi: 3.0.0\n');
+        },
+      },
+    );
+    expect(bundle.files.find((file) => file.path === 'apis/Pets/definition/openapi.yaml')).toMatchObject({
+      encoding: 'base64',
+      content: Buffer.from('openapi: 3.0.0\n').toString('base64'),
+    });
+  });
+
+  it('refuses a file behind a link that leads out of the project', async () => {
+    const outside = join(tempDir(), 'secret.bin');
+    writeFileSync(outside, 'outside');
+    await expect(
+      restBundled(
+        {
+          request: {
+            body: {
+              kind: 'binary',
+              source: { kind: 'path', path: 'bodies/link.bin' },
+              contentType: 'application/octet-stream',
+            },
+          },
+        },
+        {
+          setup: (dir) => {
+            mkdirSync(join(dir, 'bodies'), { recursive: true });
+            symlinkSync(outside, join(dir, 'bodies', 'link.bin'));
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'send-bundle-path-outside' });
+  });
+
+  it("carries the server's workspace and global values as its scopes, and folds none into the project", async () => {
+    const model = seeded();
+    const projectDir = tempDir();
+    const send = sendDeps(model, projectDir);
+    const scopesFor = send.project.scopesFor.bind(send.project);
+    const withScopes = {
+      ...send,
+      project: {
+        ...send.project,
+        scopesFor: (id: string, env?: string) => ({
+          ...scopesFor(id, env),
+          workspace: { x: 'ws-x' },
+          global: { y: 'gl-y' },
+        }),
+      },
+    };
+    const bundle = await buildSendBundle({ send: withScopes, serverWorkspaceId: () => 'ws_1' }, ITEM);
+    expect(bundle.scopes).toEqual({ workspace: { x: 'ws-x' }, global: { y: 'gl-y' } });
+    const manifest = bundle.files.find((file) => file.path === 'wirebench.yaml')?.content ?? '';
+    expect(manifest).not.toContain('ws-x');
+    expect(manifest).not.toContain('gl-y');
+  });
+
+  describe("a team secret: the workspace's team-secrets/ subtree", () => {
+    function teamTree(): string {
+      const dir = tempDir();
+      mkdirSync(join(dir, 'values'), { recursive: true });
+      mkdirSync(join(dir, 'keys'), { recursive: true });
+      writeFileSync(join(dir, 'values', 'AAAA.yaml'), 'sealed: abc\n');
+      writeFileSync(join(dir, 'keys', 'KKKK.yaml'), 'key: pub\n');
+      return dir;
+    }
+    const reads = { request: { headers: [entry('Authorization', 'Bearer ${secret:teamKey}')] } };
+
+    it('is carried as it is, by path inside the subtree, when the request reads a team secret', async () => {
+      const dir = teamTree();
+      const bundle = await restBundled(reads, {
+        deps: { isTeamSecret: (_p, name) => Promise.resolve(name === 'teamKey'), teamSecretsDir: () => dir },
+      });
+      expect(sendBundleSchema.safeParse(bundle).success).toBe(true);
+      expect(bundle.teamSecrets?.map((file) => file.path)).toEqual(['keys/KKKK.yaml', 'values/AAAA.yaml']);
+      expect(bundle.teamSecrets?.[1]).toEqual({
+        path: 'values/AAAA.yaml',
+        encoding: 'base64',
+        content: Buffer.from('sealed: abc\n').toString('base64'),
+      });
+    });
+
+    it('is left out when the request reads no team secret', async () => {
+      const dir = teamTree();
+      const bundle = await restBundled(
+        {},
+        { deps: { isTeamSecret: () => Promise.resolve(false), teamSecretsDir: () => dir } },
+      );
+      expect(bundle.teamSecrets).toBeUndefined();
+    });
+
+    it('counts toward the caps and is held to the same path rules', async () => {
+      const dir = teamTree();
+      const deps = { isTeamSecret: () => Promise.resolve(true), teamSecretsDir: () => dir };
+      const plain = await restBundled(reads, { deps });
+      await expect(
+        restBundled(reads, { deps, limits: { maxBytes: 1024 * 1024, maxFiles: plain.files.length + 1 } }),
+      ).rejects.toMatchObject({ code: 'send-bundle-too-large' });
+      const outside = join(tempDir(), 'elsewhere.yaml');
+      writeFileSync(outside, 'x');
+      symlinkSync(outside, join(dir, 'values', 'LINK.yaml'));
+      await expect(restBundled(reads, { deps })).rejects.toMatchObject({ code: 'send-bundle-path-outside' });
+    });
+  });
+});
+
+describe('WS-Security configurations a SOAP request names', () => {
+  /** A SOAP request whose outgoing WS-Security signs with keystore `ks-1` (at `path`), its password `secret:ksPass`. */
+  function soapSeeded(path: string): Project {
+    const request = {
+      ...createRequest('Add', { id: 'soap-1', envelopeXml: '<e/>', soapVersion: '1.1' }),
+      endpointUrl: 'https://8.8.8.8/soap',
+      wssOutgoingRef: 'out-1',
+    };
+    const iface = createInterface('Calc', {
+      id: 'iface-1',
+      definitionUrl: 'https://8.8.8.8/calc?wsdl',
+      cacheDefinition: false,
+      operations: [{ name: 'Add', bindingName: '{urn:calc}B', slug: 'add', order: 0, requests: [request] }],
+    });
+    const project: Project = {
+      ...createProject('Demo', { id: 'p1' }),
+      containers: { soap: [iface] },
+      keystores: [{ id: 'ks-1', name: 'Signer', document: { id: 'ks-1', name: 'Signer', path, type: 'pkcs12' } }],
+    };
+    return withWssConfigs(project, {
+      outgoing: [
+        {
+          id: 'out-1',
+          name: 'Sign',
+          file: 'wss/outgoing/sign.yaml',
+          document: {
+            id: 'out-1',
+            name: 'Sign',
+            entries: [{ type: 'signature', keystoreRef: 'ks-1', passwordRef: 'secret:ksPass' }],
+          },
+        },
+      ],
+      incoming: [],
+    });
+  }
+  const SOAP_ITEM = { projectId: 'p1', itemId: 'soap-1' };
+
+  it('needs the agent for a signing keystore on a machine path, and its secret: password stays on the agent', async () => {
+    const model = soapSeeded('/Users/me/signer.p12');
+    await expect(routeSend(routeDeps(model), SOAP_ITEM)).resolves.toEqual({ route: 'agent', needs: ['keystore'] });
+    await expect(
+      routeSend(routeDeps(model, { serverSecretNames: () => Promise.resolve(['ksPass']) }), SOAP_ITEM),
+    ).rejects.toMatchObject({ code: 'secret-missing', details: { name: 'ksPass', missingOn: 'agent' } });
+  });
+
+  it('bundles a keystore inside the project and names its password', async () => {
+    const model = soapSeeded('wss/signer.p12');
+    await expect(routeSend(routeDeps(model), SOAP_ITEM)).resolves.toEqual({ route: 'server' });
+    const projectDir = tempDir();
+    mkdirSync(join(projectDir, 'wss'), { recursive: true });
+    writeFileSync(join(projectDir, 'wss', 'signer.p12'), Buffer.from([9, 9, 9]));
+    const bundle = await buildSendBundle(
+      { send: sendDeps(model, projectDir), serverWorkspaceId: () => 'ws_1' },
+      SOAP_ITEM,
+    );
+    expect(bundle.secretNames).toEqual(['ksPass']);
+    expect(bundle.files.find((file) => file.path === 'wss/signer.p12')).toEqual({
+      path: 'wss/signer.p12',
+      encoding: 'base64',
+      content: Buffer.from([9, 9, 9]).toString('base64'),
+    });
+    expect(bundle.files.map((file) => file.path)).toContain('wss/outgoing/sign.yaml');
   });
 });
