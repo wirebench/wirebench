@@ -3,7 +3,7 @@
  * Server for the pairing routes (on loopback, checking every signature over the shared message builders),
  * and a `ws` client that opens the agent's socket with chosen headers.
  */
-import { createHash, createPublicKey, randomUUID, verify } from 'node:crypto';
+import { createHash, createPublicKey, randomBytes, randomUUID, verify } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { connect, type AddressInfo } from 'node:net';
@@ -87,7 +87,7 @@ export function fakeHost(channels: readonly string[] = []): Host & { attached: n
 /** A ULID-shaped id, as the server's pairing ids are. */
 export function ulidLike(): string {
   const alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-  return Array.from({ length: 26 }, () => alphabet[Math.floor(Math.random() * 32)]).join('');
+  return Array.from(randomBytes(26), (byte) => alphabet[byte % 32]).join('');
 }
 
 interface FakePairing {

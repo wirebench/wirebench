@@ -262,7 +262,7 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
 
   it('refuses a public key that is not Ed25519, without spending the code', async () => {
     const code = await newCode();
-    const rsa = generateKeyPairSync('rsa', { modulusLength: 1024 })
+    const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 })
       .publicKey.export({ format: 'der', type: 'spki' })
       .toString('base64');
     const res = await pair(code, { key: { publicKey: rsa, sign: () => '' } });

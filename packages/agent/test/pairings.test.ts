@@ -45,7 +45,10 @@ describe('openPairingStore', () => {
     // Sealed by the platform: the PKCS8 text is not in the file, only what `encrypt` made of it.
     expect(text).not.toContain(key.sealable());
     expect(Buffer.from(file.privateKeySealed, 'base64').toString('utf8')).toMatch(/^sealed:/);
-    expect(statSync(join(platform.paths.userData(), PAIRINGS_FILE)).mode & 0o777).toBe(0o600);
+    // Windows keeps no POSIX mode bits, so the mode is checked where they exist.
+    if (process.platform !== 'win32') {
+      expect(statSync(join(platform.paths.userData(), PAIRINGS_FILE)).mode & 0o777).toBe(0o600);
+    }
     expect(readdirSync(platform.paths.userData())).toEqual([PAIRINGS_FILE]);
 
     const again = await openPairingStore(fakePlatform(undefined, platform.paths.userData()));

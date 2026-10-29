@@ -17,8 +17,8 @@ import {
   createProject,
   createRequest,
   createRestRequest,
-  DEFAULT_OAUTH2_AUTH,
   entry,
+  type OAuth2Auth,
   type Project,
   type RestFolder,
   type RestRequestDef,
@@ -151,6 +151,11 @@ async function sendsLeft(): Promise<string[]> {
     left.push(...(await readdir(join(root, instance))).filter((name) => name !== PID_FILE));
   }
   return left;
+}
+
+/** A client-credentials OAuth2 configuration, written out field by field (the defaults a new entry starts with). */
+function clientCredentialsGrant(fields: Partial<OAuth2Auth> & Pick<OAuth2Auth, 'tokenUrl' | 'clientId'>): OAuth2Auth {
+  return { type: 'oauth2', grant: 'client-credentials', scopes: [], clientAuth: 'basic', pkce: true, ...fields };
 }
 
 describe('agent.send', () => {
@@ -399,12 +404,11 @@ describe("the agent's secrets", () => {
 
   it('keeps OAuth2 tokens apart per origin', async () => {
     for (const origin of [TEAM, OTHER]) await storeAgentSecret('client_secret', 'client-pass-123456', origin);
-    const auth = {
-      ...DEFAULT_OAUTH2_AUTH,
+    const auth = clientCredentialsGrant({
       tokenUrl: `${echo.url}/token`,
       clientId: 'wirebench',
       clientSecretRef: 'secret:client_secret',
-    };
+    });
     const api = createApi('Echo', {
       id: 'api-1',
       baseUrl: echo.url,
@@ -571,7 +575,7 @@ describe('the machine proxy', () => {
 
 describe('createSendSession', () => {
   it("holds an agent's OAuth2 token requests to the host's egress rule", async () => {
-    const config = { ...DEFAULT_OAUTH2_AUTH, tokenUrl: `${echo.url}/token`, clientId: 'wirebench' };
+    const config = clientCredentialsGrant({ tokenUrl: `${echo.url}/token`, clientId: 'wirebench' });
     const open = createSendSession(host, { egress: undefined });
     await expect(open.oauth2.accessToken(config, { credentials: { clientSecret: 'x' } })).resolves.toBe('tok-1');
     const held = createSendSession(host, { egress: { denyPrivate: true } });
@@ -624,12 +628,11 @@ describe('two pairings of one origin', () => {
 
   it('keep separate secrets and OAuth2 tokens', async () => {
     await storeAgentSecret('client_secret', 'client-pass-123456', ada);
-    const auth = {
-      ...DEFAULT_OAUTH2_AUTH,
+    const auth = clientCredentialsGrant({
       tokenUrl: `${echo.url}/token`,
       clientId: 'wirebench',
       clientSecretRef: 'secret:client_secret',
-    };
+    });
     const api = createApi('Echo', {
       id: 'api-1',
       baseUrl: echo.url,

@@ -53,7 +53,7 @@ describe('agent signatures (hosted edition spec §18.2)', () => {
 
   it('parses only an Ed25519 SPKI key', () => {
     expect(parseAgentPublicKey(keys().publicKey)?.asymmetricKeyType).toBe('ed25519');
-    const rsa = generateKeyPairSync('rsa', { modulusLength: 1024 }).publicKey.export({ format: 'der', type: 'spki' });
+    const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey.export({ format: 'der', type: 'spki' });
     expect(parseAgentPublicKey(rsa.toString('base64'))).toBeUndefined();
     expect(parseAgentPublicKey('AAAA')).toBeUndefined();
     expect(parseAgentPublicKey('not a key')).toBeUndefined();
