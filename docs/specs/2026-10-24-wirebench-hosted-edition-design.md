@@ -963,7 +963,8 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
 
 ### 18.3 The loopback socket (amends §5.2)
 
-- **Address.** `ws://127.0.0.1:<port>/host`, never another interface. The port is `47615` by default, and the next
+- **Address.** `ws://127.0.0.1:<port>/host`, never another interface. The upgrade's `Host` must be exactly
+  `127.0.0.1:<port>` or `localhost:<port>`, which a page cannot rebind; anything else is refused before the handshake. The port is `47615` by default, and the next
   free one up to `47634`.
 - **Shared code.** The frame codec, the hello and the in-flight cap are the server host socket's, moved into
   `@wirebench/host` as `host-socket` so the server and the agent share one implementation.
