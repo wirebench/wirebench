@@ -4,6 +4,7 @@ import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { useSyncStore } from '../../state/sync.js';
 import { useUiStore } from '../../state/ui.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 /**
  * The conflict resolver: every unresolved sync conflict, each with Keep mine / Keep theirs /
@@ -108,14 +109,17 @@ export function ConflictResolver() {
                     >
                       Keep theirs
                     </Button>
-                    <Button
-                      data-testid="conflict-resolver-open"
-                      onClick={() => {
-                        void revealTree(conflict.path);
-                      }}
-                    >
-                      Open file
-                    </Button>
+                    {/* Opens the file in the machine's file manager. */}
+                    {hasCapability('files') && (
+                      <Button
+                        data-testid="conflict-resolver-open"
+                        onClick={() => {
+                          void revealTree(conflict.path);
+                        }}
+                      >
+                        Open file
+                      </Button>
+                    )}
                   </div>
                 </li>
               ))}

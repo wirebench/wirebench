@@ -4,6 +4,7 @@ import { formatBytes } from '../../../lib/format-size.js';
 import { ipc } from '../../../state/ipc-client.js';
 import type { ExchangeSummary } from '@shared/kinds/soap/wire.js';
 import { InspectorIconButton } from './inspector-strip.js';
+import { hasCapability } from '../../../lib/capabilities.js';
 
 export interface ResponseAttachmentsInspectorProps {
   /** The exchange whose response parts to list; absent before the first send. */
@@ -62,22 +63,27 @@ export function ResponseAttachmentsInspector({ exchange }: ResponseAttachmentsIn
               </td>
               <td className="py-0.5 pr-2 text-xs text-fg-muted">{attachment.name ?? '—'}</td>
               <td className="py-0.5 whitespace-nowrap">
-                <InspectorIconButton
-                  label="Save attachment as…"
-                  onClick={() => {
-                    void run(ipc().attachments.saveResponse({ sendId, index: attachment.index }));
-                  }}
-                >
-                  <Save size={13} aria-hidden="true" />
-                </InspectorIconButton>
-                <InspectorIconButton
-                  label="Open attachment"
-                  onClick={() => {
-                    void run(ipc().attachments.openResponse({ sendId, index: attachment.index }));
-                  }}
-                >
-                  <ExternalLink size={13} aria-hidden="true" />
-                </InspectorIconButton>
+                {/* Save goes through a native dialog; Open hands the file to the machine's default app. */}
+                {hasCapability('dialogs') && (
+                  <InspectorIconButton
+                    label="Save attachment as…"
+                    onClick={() => {
+                      void run(ipc().attachments.saveResponse({ sendId, index: attachment.index }));
+                    }}
+                  >
+                    <Save size={13} aria-hidden="true" />
+                  </InspectorIconButton>
+                )}
+                {hasCapability('files') && (
+                  <InspectorIconButton
+                    label="Open attachment"
+                    onClick={() => {
+                      void run(ipc().attachments.openResponse({ sendId, index: attachment.index }));
+                    }}
+                  >
+                    <ExternalLink size={13} aria-hidden="true" />
+                  </InspectorIconButton>
+                )}
               </td>
             </tr>
           ))}

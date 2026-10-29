@@ -53,7 +53,6 @@ describe('the server host allowlist (§3.10)', () => {
       'keystores',
       'ssl',
       'secretSources',
-      'secretScan',
       'mock',
       'plugins',
       'localTerminal',
@@ -101,6 +100,20 @@ describe('the server host allowlist (§3.10)', () => {
     ]) {
       expect(isServedChannel(channel), channel).toBe(true);
     }
+  });
+
+  it('serves the save-time secret scan, every channel of it, since a save and a commit go through it', async () => {
+    const scan = (await registry()).filter((channel) => channelGroup(channel) === 'secretScan');
+    expect(scan.sort()).toEqual([
+      'secretScan.hold',
+      'secretScan.keep',
+      'secretScan.move',
+      'secretScan.release',
+      'secretScan.scan',
+      'secretScan.setValue',
+      'secretScan.tokens',
+    ]);
+    for (const channel of scan) expect(isServedChannel(channel), channel).toBe(true);
   });
 
   it('classifies every channel a real server host registers', async () => {

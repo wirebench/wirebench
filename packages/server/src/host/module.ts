@@ -1,6 +1,7 @@
 /**
  * The `host` ServerModule (hosted edition spec §5.2, §17.3): `GET /api/v1/host`, a browser tab's socket
- * to the signed-in user's host. It registers nothing unless `WIREBENCH_SERVER_BROWSER_CLIENT` is on, and
+ * to the signed-in user's host, and at the root the tab's page and files (`browser-client.ts`, §17.6).
+ * It registers nothing unless `WIREBENCH_SERVER_BROWSER_CLIENT` is on, and
  * then loads the host bundle at start-up, so a server without a built bundle fails to start rather than
  * on the first socket.
  *
@@ -30,6 +31,7 @@ import { tokenByHash } from '../identity/repo.js';
 import { hashToken } from '../identity/tokens.js';
 import { realTimer } from '../live/module.js';
 import { isServedChannel } from './allowlist.js';
+import { browserClientRoutes } from './browser-client.js';
 import { HOST_CLOSE, HOST_LIMITS } from './errors.js';
 import { loadHostRuntime, type HostSecretEvent } from './host-runtime.js';
 import { injectSend } from './inject-send.js';
@@ -46,6 +48,8 @@ export interface HostModuleOptions {
   readonly bundle?: URL;
   /** Told of each instance set, so a test can watch evictions. */
   readonly onInstances?: (instances: HostInstances) => void;
+  /** Another browser build than the copied one (`dist/browser/`), for tests: a fixture folder. */
+  readonly browserRoot?: string;
 }
 
 const ROUTE = '/host';
@@ -251,6 +255,15 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
       });
       app.addHook('onClose', async () => {
         await instances.closeAll();
+      });
+    },
+
+    // The tab itself (spec §17.2, §17.6): `/`, the renderer's other page paths and the build's assets.
+    async registerPublic(root: FastifyInstance, ctx: ServerContext): Promise<void> {
+      if (!ctx.config.browserClient) return;
+      await browserClientRoutes(root, ctx, {
+        now,
+        ...(options.browserRoot !== undefined ? { root: options.browserRoot } : {}),
       });
     },
   };

@@ -11,6 +11,7 @@ import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { formatClockTime } from '../../src/renderer/lib/format-size.js';
 import { ToastViewport } from '../../src/renderer/components/toast.js';
 import { toggleLogFilter } from '../helpers/log-filters.js';
+import { useBrowserEnv } from '../helpers/browser-env.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
@@ -209,6 +210,23 @@ describe('HttpLog', () => {
       expect(rows()).toHaveLength(3);
     });
     expect(screen.getByTestId('http-log-count').textContent).toBe('3 of 3');
+  });
+
+  it('offers no Show secrets without reveal-secrets, and a stray request to reveal does nothing', async () => {
+    useBrowserEnv(window.wirebench);
+    useExchangesStore.setState({ log: [logExchange(makeExchange({ sendId: 'a' }))] });
+    render(
+      <>
+        <HttpLog />
+        <RevealSecretsDialog />
+      </>,
+    );
+    expect(screen.queryByRole('button', { name: 'Show secrets' })).toBeNull();
+    await act(async () => {
+      await useSecretsVisibilityStore.getState().requestToggle();
+    });
+    expect(useSecretsVisibilityStore.getState().confirmingReveal).toBe(false);
+    expect(screen.queryByTestId('reveal-secrets-confirm')).toBeNull();
   });
 
   it('re-fetches the open detail through exchanges.get when show-secrets is toggled', async () => {

@@ -9,6 +9,7 @@
 
 import type { WsiAssertionReportWire, WsiReportWire } from '@shared/kinds/soap/wire.js';
 import { useWsiStore } from '../../state/wsi.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 /** How each result is labelled and coloured. */
 const RESULT: Readonly<Record<WsiAssertionReportWire['result'], { label: string; className: string }>> = {
@@ -106,16 +107,19 @@ export function WsiReport() {
           >
             Failed only
           </button>
-          <button
-            type="button"
-            data-testid="wsi-export-html"
-            onClick={() => {
-              void exportHtml();
-            }}
-            className="rounded border border-hairline px-2 py-0.5 text-xs text-fg-default hover:bg-surface-raised"
-          >
-            Export HTML
-          </button>
+          {/* Writes to a file picked in a native dialog. */}
+          {hasCapability('dialogs') && (
+            <button
+              type="button"
+              data-testid="wsi-export-html"
+              onClick={() => {
+                void exportHtml();
+              }}
+              className="rounded border border-hairline px-2 py-0.5 text-xs text-fg-default hover:bg-surface-raised"
+            >
+              Export HTML
+            </button>
+          )}
         </div>
       </div>
       <p className="shrink-0 truncate text-xs text-fg-subtle" data-testid="wsi-target" title={report.target}>

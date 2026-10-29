@@ -92,6 +92,10 @@ describe('server platform surface (§17.3)', () => {
   it('has send:public alone, no machine values, the egress rule and no optional members', () => {
     const platform = platformFor(ALICE);
     expect([...platform.capabilities]).toEqual(['send:public']);
+    // Accounts and secret values stay in the desktop: a browser tab manages neither.
+    for (const capability of ['accounts', 'reveal-secrets']) {
+      expect((platform.capabilities as ReadonlySet<string>).has(capability)).toBe(false);
+    }
     expect(platform.machineValues).toBe(false);
     expect(platform.network.egress).toEqual({ denyPrivate: true });
     expect(platform.secrets.available()).toBe(true);

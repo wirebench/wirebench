@@ -18,11 +18,13 @@
   ],
   "scripts": {
     "build": "tsc -b && node scripts/bundle-host.mjs",
+    "copy-browser": "node scripts/copy-browser.mjs",
     "typecheck": "tsc -b",
     "test": "vitest run --root ../.. --project server-unit --project server-integration",
     "dev": "node --watch dist/bin.js serve"
   },
   "dependencies": {
+    "@fastify/static": "10.1.6",
     "@fastify/websocket": "^11.3.1",
     "@node-saml/node-saml": "^5.1.0",
     "@wirebench/engine": "workspace:*",

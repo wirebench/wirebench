@@ -89,3 +89,18 @@ build differs from the decision above:
   short named allowlist). The platform supplies the app version, so the host reads no desktop file.
 - **Left for later:** host tests still run on jsdom and some still carry dead `electron` mocks. A few
   test helpers are shared across the two packages by relative path.
+
+## What slice 2 taught
+
+Built in #785, #787 and #789 (spec §17). Where it differs from the above:
+
+- **The server bundles.** It took the first option: `scripts/bundle-host.mjs` bundles the host with esbuild
+  into `dist/host/`, loaded only with the browser client on; neither package emits yet.
+- **The `@wirebench/host/desktop` gate exists.** `check-host-boundary.ts` now refuses that import outside
+  `apps/desktop/`.
+- **More capabilities than the decision named.** `processes` (stdio MCP servers), `listen` (mock
+  listeners), `windows` (a second window), `accounts` (managing server accounts in the window) and
+  `reveal-secrets` (showing secret values in the window) joined the list, since "files" and "shell" did
+  not say whether a host may start a process, open a port or a window. `listen`, `windows`, `accounts`
+  and `reveal-secrets` are enforced by the renderer's gates and the server's allowlist, not by the host,
+  and the agent host in slice 3 must enforce them for a browser caller.

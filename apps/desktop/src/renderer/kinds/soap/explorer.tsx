@@ -6,6 +6,7 @@ import { exportItems, groups, type ExplorerMenuGroup } from '../../features/expl
 import type { ExplorerNode } from '../../features/explorer/tree-nodes.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
+import { hasCapability } from '../../lib/capabilities.js';
 import type { KindExplorer } from '../renderer-kind.js';
 
 function interfaceMenu(node: ExplorerNode): readonly ExplorerMenuGroup[] {
@@ -23,17 +24,26 @@ function interfaceMenu(node: ExplorerNode): readonly ExplorerMenuGroup[] {
         label: 'Update Definition…',
         run: () => explorerActions.updateDefinition(node.interfaceId),
       },
-      {
-        key: 'export-definition',
-        label: 'Export Definition…',
-        run: () => explorerActions.exportDefinition(node.interfaceId),
-      },
+      // Both write to a folder or file picked in a native dialog.
+      ...(hasCapability('dialogs')
+        ? [
+            {
+              key: 'export-definition',
+              label: 'Export Definition…',
+              run: () => explorerActions.exportDefinition(node.interfaceId),
+            },
+          ]
+        : []),
       ...(node.interfaceId !== undefined ? exportItems({ containerId: node.interfaceId }) : []),
-      {
-        key: 'generate-docs',
-        label: 'Generate Documentation…',
-        run: () => explorerActions.generateDocs(node.interfaceId),
-      },
+      ...(hasCapability('dialogs')
+        ? [
+            {
+              key: 'generate-docs',
+              label: 'Generate Documentation…',
+              run: () => explorerActions.generateDocs(node.interfaceId),
+            },
+          ]
+        : []),
       {
         key: 'check-wsi',
         label: 'Check WSDL WS-I compliance',
@@ -48,13 +58,16 @@ function interfaceMenu(node: ExplorerNode): readonly ExplorerMenuGroup[] {
       },
       { key: 'import-another', label: 'Import another WSDL…', run: () => explorerActions.importAnother() },
     ],
-    [
-      {
-        key: 'new-mock',
-        label: 'New Mock',
-        run: () => explorerActions.newMock(node.interfaceId),
-      },
-    ],
+    // A mock is a listener on the machine's network.
+    hasCapability('listen')
+      ? [
+          {
+            key: 'new-mock',
+            label: 'New Mock',
+            run: () => explorerActions.newMock(node.interfaceId),
+          },
+        ]
+      : [],
     [{ key: 'remove', label: 'Remove interface', run: () => explorerActions.removeInterface(node.interfaceId) }],
   );
 }
@@ -136,7 +149,7 @@ export const soapExplorer: KindExplorer = {
     binding: {
       icon: Network,
       menu: (node) =>
-        node.interfaceId === undefined
+        node.interfaceId === undefined || !hasCapability('listen')
           ? []
           : groups([
               {

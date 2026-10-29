@@ -28,6 +28,7 @@ import { useWebhookItemsDialogs } from '../webhook-items/webhook-items-state.js'
 import { lintRestDefinition } from './lint-actions.js';
 import type { ApiRestPlanUpdateResponse, RestUpdateSourceWire } from '@shared/kinds/rest/wire.js';
 import type { AuthConfigWire } from '@shared/wire-base.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 export interface RestUpdateDialogProps {
   readonly apiId: string;
@@ -441,11 +442,13 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
                 registerFlush={registerAuthFlush}
                 newSecretRefs
               />
-              <div>
-                <Button data-testid="rest-update-browse" disabled={busy} onClick={() => void browse()}>
-                  Choose file…
-                </Button>
-              </div>
+              {hasCapability('dialogs') && (
+                <div>
+                  <Button data-testid="rest-update-browse" disabled={busy} onClick={() => void browse()}>
+                    Choose file…
+                  </Button>
+                </div>
+              )}
             </fieldset>
           ) : (
             <div className="mt-3">

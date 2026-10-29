@@ -6,6 +6,7 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { useBrowserEnv } from '../helpers/browser-env.js';
 import { makeDraft } from '../mocks/exchange-fixtures.js';
 import type { AttachmentWire, MimePartWire, RequestPropertiesWire } from '@wirebench/wire/kinds/soap/wire';
 
@@ -191,6 +192,30 @@ describe('AttachmentsInspector', () => {
         ],
       });
     });
+  });
+
+  it('takes no drop and offers no Add… or Open where the host has no files and no dialogs', async () => {
+    const addDropped = vi.fn().mockResolvedValue({ ok: true, value: { attachmentIds: ['a'] } });
+    useBrowserEnv(installWirebenchApi({ attachments: { addDropped } }));
+    install([]);
+    render(<AttachmentsInspector requestId="req-1" />);
+
+    expect(screen.queryByTestId('attachments-add')).toBeNull();
+    expect(screen.queryByText(/drop them here/)).toBeNull();
+    expect(screen.getByText(/Attachments are added in the desktop app\./)).toBeDefined();
+    fireEvent.drop(screen.getByTestId('attachments-dropzone'), {
+      dataTransfer: { files: [fakeFile('one.png', 'image/png', [1, 2, 3])] },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(addDropped).not.toHaveBeenCalled();
+  });
+
+  it('has no Open button on a row without files', () => {
+    useBrowserEnv(installWirebenchApi());
+    render(<AttachmentsInspector requestId="req-1" />);
+
+    expect(screen.getByText('logo.png')).toBeDefined();
+    expect(screen.queryByLabelText('Open attachment')).toBeNull();
   });
 
   it('warns that MTOM is off while attachments are present', () => {

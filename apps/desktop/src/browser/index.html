@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- The browser client's page (hosted edition spec §17.6). The Content-Security-Policy meta tag is
+         injected at build time by vite.browser.config.ts, without `frame-ancestors`; the server sends the
+         whole policy as a header, the only place `frame-ancestors` takes effect. `entry.ts` runs the bootstrap, which opens the
+         host socket and then mounts the renderer into #root, as the desktop's renderer/index.html does. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wirebench</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./entry.ts"></script>
+  </body>
+</html>

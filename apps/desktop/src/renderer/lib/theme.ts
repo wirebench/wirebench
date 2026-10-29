@@ -93,8 +93,9 @@ export function resolveTheme(preference: ThemePreference): ResolvedTheme {
  *
  * `nativeTheme` in main is the authority — a sandboxed renderer's `prefers-color-scheme` does
  * not see a per-app appearance override — so the bridge asks `theme.get` once and then listens
- * for `theme.changed`. When there is no preload bridge (unit tests, a bare jsdom render) it
- * falls back to the media query, which is close enough for a browser-only environment.
+ * for `theme.changed`. Where `env.onOsThemeChanged` is set (the browser client) it follows that
+ * instead. When there is no preload bridge (unit tests, a bare jsdom render) it falls back to the
+ * media query, which is close enough for a browser-only environment.
  *
  * @returns an unsubscribe function.
  */
@@ -103,6 +104,14 @@ export function startOsThemeBridge(): () => void {
   const fromEnv = osThemeFromEnv();
   if (fromEnv !== undefined) {
     setOsTheme(fromEnv);
+  }
+  // A page with its own OS-theme source (the browser's media query) follows that: the host it talks to
+  // may run on a server, whose `theme.get` knows nothing of the user's screen.
+  const pageSource = api?.env?.onOsThemeChanged;
+  if (pageSource !== undefined) {
+    return pageSource((os) => {
+      setOsTheme(os);
+    });
   }
   if (api?.theme?.get !== undefined) {
     let live = true;

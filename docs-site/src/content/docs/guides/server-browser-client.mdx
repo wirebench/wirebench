@@ -1,0 +1,177 @@
+---
+title: Browser client
+description: How Wirebench Server serves the app in a browser tab, so a teammate opens a team workspace and sends requests from the server without installing anything.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Wirebench Server can serve the app in a browser tab at its public URL. A teammate signs in, opens one of
+the team's server workspaces and works in the same interface as the desktop app, with requests sent from
+the server. This page is for the person who runs the server. For running it at all, see
+[Wirebench Server](/wirebench/docs/guides/wirebench-server/).
+
+The browser client is off unless you turn it on, so upgrading a server opens no new sign-in page and no
+new way to send requests from it.
+
+## Turn it on
+
+<Steps>
+
+1. Make a key for the secrets your users store in the browser: 32 random bytes, base64-encoded.
+
+   ```sh
+   openssl rand -base64 32
+   ```
+
+2. Set `WIREBENCH_SERVER_BROWSER_CLIENT=true` and put the key in `WIREBENCH_SERVER_SECRETS_KEY`. The
+   server refuses to start with the switch on and no key.
+
+3. If people sign in with OpenID Connect or SAML, register the extra addresses at the identity provider
+   (see [Sign-in](#sign-in)).
+
+4. Make sure the reverse proxy forwards the whole origin (see [Behind a reverse proxy](#behind-a-reverse-proxy)),
+   restart the server, and open its public URL in a browser.
+
+</Steps>
+
+The public URL should be `https://`. The session cookie, `__Host-wb_session`, is `Secure` and `HttpOnly`;
+on an `http://` URL, which the server accepts only with `WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL`, it
+falls back to a plain cookie meant for development.
+
+## Sign-in
+
+Opening the public URL without a session goes to `/sign-in`, which offers the methods the server has
+on: email and password, OpenID Connect, SAML, or several. Accounts are still invite-only; an invitation
+link opens in the browser as before.
+
+- **OpenID Connect** needs a second redirect URI at the identity provider, beside the desktop's:
+  `<public URL>/api/v1/auth/oidc/browser-callback`. `wirebench-server config check` prints both.
+- **SAML** needs a second ACS URL, `<public URL>/api/v1/auth/saml/browser-acs`. `serve` logs it, but the
+  SP metadata names only the desktop's ACS URL, so add this one at the IdP by hand. See
+  [SAML sign-in and SCIM provisioning](/wirebench/docs/guides/server-saml-scim/).
+
+<Aside type="caution">
+SAML from the browser needs an `https://` public URL. The IdP posts its response from its own site, and
+the browser sends back the cookie that ties the response to the sign-in only when that cookie is `Secure`.
+</Aside>
+
+**Sign out** in the tab's account menu ends the browser session and closes its connections. A session
+expires like a desktop's device token, after `WIREBENCH_SERVER_TOKEN_IDLE_DAYS` without use or
+`WIREBENCH_SERVER_TOKEN_MAX_DAYS` at most; disabling a user ends it at once.
+
+## What a browser tab can do
+
+- Open the team's **server workspaces**, edit and save them, and sync, with the same roles as the desktop.
+- **Send every request kind** — SOAP, REST, GraphQL, gRPC, WebSocket and MCP over HTTP — from the server.
+  A request reaches what the server's network reaches: public addresses, and private ranges unless you
+  refuse them (see [Where requests can go](#where-requests-can-go)).
+- Run sequences, the runner and scripts; keep history; use environments, OAuth 2.0 tokens, URL imports,
+  the save-time secret review and the server's admin tabs.
+
+## What it cannot do
+
+A browser tab has no machine of its own, so everything that needs one is absent. The app hides it rather
+than failing:
+
+- local and git workspaces;
+- SSH, terminals, SFTP and port forwards;
+- files and folders picked from a dialog: importing from a file, exporting to one, attachments, keystores;
+- mock services, which listen on a port;
+- Kerberos, secret sources and the OS keychain;
+- team-secret keys, which live on approved machines only;
+- MCP servers that run as local processes, and plugins;
+- a second window and the native menu;
+- the project's folder path on the server;
+- **Show secrets** in the HTTP log: a value stored in the tab is never shown back;
+- adding, removing or signing in to other servers. Settings → Accounts shows the tab's own server with
+  **Sign out**, and nothing else.
+
+A team workspace cannot be created from the browser yet. Someone creates it once from the desktop app
+([Share with Wirebench Server](/wirebench/docs/guides/shared-workspaces/#share-with-wirebench-server)),
+and from then on the team opens it in the browser.
+
+## Secrets
+
+A secret value a user stores in the tab is sealed with AES-256-GCM under a key the server derives for that
+user from `WIREBENCH_SERVER_SECRETS_KEY`, and kept in that user's directory on the server.
+
+- **Never shown again.** The value leaves the server in no response, not even to the user who typed it. A
+  user can replace it, not read it back.
+- **Audited by name.** Every write and every use in a send is an audit event, `secret.written` or
+  `secret.resolved` with the request's target host, naming the secret and never its value. See
+  [Audit log](/wirebench/docs/guides/server-audit-log/).
+- **Keep the key.** A new key cannot open what the old one sealed: users would have to store their values
+  again.
+
+## Where requests can go
+
+Every connection a tab opens through the server is checked when it connects, on every redirect and
+through a proxy too, by the rule scheduled runs follow:
+
+- **Always refused:** loopback, link-local, unspecified, multicast and broadcast addresses. A request to
+  `localhost` or `127.0.0.1` fails with `egress-refused`.
+- **Always refused too:** the cloud providers' metadata addresses, `169.254.169.254`, `fd00:ec2::254` and
+  `100.100.100.200`, whatever the private-range setting.
+- **Refused only if you ask:** the private ranges `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`,
+  `100.64.0.0/10` and `fc00::/7`, with `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true`.
+
+The error names the host and the kind of address, never the address a private name resolved to.
+
+## Memory and limits
+
+- **One host per user.** The server starts a user's host with their first tab and stops it
+  `WIREBENCH_SERVER_HOST_IDLE_MINUTES` (30 by default) after their last tab closes. Their working copies
+  and state stay under `<data dir>/checkouts/<user id>/`, so the next tab picks up where they left off.
+- **Eight tabs.** One user holds at most 8 tab connections, every tab and window together; the ninth is
+  refused.
+- **32 MiB a message.** A single message between a tab and its host is at most 32 MiB, which bounds the
+  largest workspace a sync can move in one go.
+
+## Behind a reverse proxy
+
+Forward the whole origin, not only `/api/v1/`: the page at `/`, its files under `/assets/`, `/sign-in`,
+`/sign-out`, and the WebSocket upgrade for `/api/v1/host`, with the same `Upgrade` and `Connection`
+headers as `/api/v1/live`. With nginx, beside the locations in
+[Behind a reverse proxy](/wirebench/docs/guides/wirebench-server/#behind-a-reverse-proxy):
+
+```nginx
+location /api/v1/host {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+The tab's connection is refused when its `Origin` is not the public URL.
+
+## Building from source
+
+The published image carries the browser build. A server run from a checkout needs it too, or it refuses to
+start with the switch on. Build in this order:
+
+```sh
+pnpm --filter @wirebench/server... build
+pnpm --filter @wirebench/desktop build:browser
+pnpm --filter @wirebench/server copy-browser
+```
+
+## Related
+
+- [Wirebench Server](/wirebench/docs/guides/wirebench-server/) — running the server, its configuration and
+  sign-in.
+- [SAML sign-in and SCIM provisioning](/wirebench/docs/guides/server-saml-scim/) — the IdP side.
+- [Shared workspaces](/wirebench/docs/guides/shared-workspaces/) — sharing a workspace on the server from
+  the desktop app.
+- [Scheduled runs](/wirebench/docs/guides/server-scheduled-runs/) — the same egress rule for runs on a
+  schedule.

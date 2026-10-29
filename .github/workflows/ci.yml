@@ -1,7 +1,7 @@
 name: CI
 
 # A change that touches only Markdown skips this workflow: no build, test or package reads a tracked
-# `.md`/`.mdx` file, so the 17 jobs below would only re-prove the code that was already green.
+# `.md`/`.mdx` file, so the 18 jobs below would only re-prove the code that was already green.
 # What Markdown can break — formatting, the generated docs, cited paths, images, banned terms — is
 # checked by `docs.yml`. A change that mixes Markdown with anything else still runs everything.
 on:
@@ -210,6 +210,62 @@ jobs:
         with:
           name: test-results-${{ matrix.os }}
           path: e2e/test-results
+
+  # The browser client end to end (hosted edition spec §17.7): builds the server image, which carries the
+  # browser build, starts it beside PostgreSQL and an echo service (e2e/browser/compose.yaml), and runs
+  # the Playwright suite in headless Chromium. It is also where CI builds the server image at all; until
+  # now only release.yml did. The image goes through buildx with the Actions cache, then compose starts
+  # the loaded tag without building again.
+  browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      # Global setup seeds the server with the engine's own writers, which run from its build.
+      - run: pnpm --filter @wirebench/engine build
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/server/Dockerfile
+          load: true
+          push: false
+          platforms: linux/amd64
+          tags: wirebench-server:browser-e2e
+          cache-from: type=gha,scope=server-image
+          cache-to: type=gha,scope=server-image,mode=max
+      # A secrets key made for this run only: it encrypts nothing that outlives `down -v`.
+      - name: Start the stack
+        run: |
+          WIREBENCH_E2E_SECRETS_KEY="$(openssl rand -base64 32)"
+          echo "::add-mask::$WIREBENCH_E2E_SECRETS_KEY"
+          echo "WIREBENCH_E2E_SECRETS_KEY=$WIREBENCH_E2E_SECRETS_KEY" >> "$GITHUB_ENV"
+          export WIREBENCH_E2E_SECRETS_KEY
+          docker compose -f e2e/browser/compose.yaml up -d --no-build --wait
+      - run: pnpm --filter @wirebench/e2e exec playwright install chromium --with-deps
+      - run: pnpm test:e2e:browser
+      - name: Stack logs
+        if: failure()
+        run: docker compose -f e2e/browser/compose.yaml logs --no-color --tail=200
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-browser
+          path: |
+            e2e/browser/playwright-report
+            e2e/browser/test-results
+      - name: Stop the stack
+        if: always()
+        run: docker compose -f e2e/browser/compose.yaml down -v
 
   # Builds the container image the way a release tag will and proves it actually runs a
   # project: `docker run --version` sanity-checks the entrypoint, then `cli:smoke --via docker`

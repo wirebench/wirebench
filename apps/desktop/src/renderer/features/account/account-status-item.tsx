@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { UserRound } from 'lucide-react';
+import { tabSignOut } from '../../lib/capabilities.js';
 import { signedInServers, useAccountStore } from '../../state/account.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { useUiStore } from '../../state/ui.js';
@@ -31,7 +32,9 @@ function Separator() {
  * The status bar's account item (identity spec §3.8). Hidden until a server is known and while
  * `accounts.showInStatusBar` is off. A signed-out server shows *Sign in*, which reopens the
  * dialog on that URL; a signed-in one shows the email with a menu holding *Sign out of <server>*
- * per server, *Manage teams…* and *Manage accounts…*.
+ * per server, *Manage teams…* and *Manage accounts…*. In a browser tab (`env.signOut` set) the
+ * per-server items give way to one *Sign out*, which ends the tab's session, and *Manage accounts…*
+ * opens the reduced Accounts view a window without `accounts` gets: that session's row alone.
  */
 export function AccountStatusItem() {
   const servers = useAccountStore((state) => state.servers);
@@ -41,6 +44,7 @@ export function AccountStatusItem() {
   const openTeamDialog = useUiStore((state) => state.openTeamDialog);
   const signOut = useAccountStore((state) => state.signOut);
   const [open, setOpen] = useState(false);
+  const endTab = tabSignOut();
 
   if (!show || servers.length === 0) return null;
 
@@ -94,18 +98,31 @@ export function AccountStatusItem() {
             data-testid="status-bar-account-menu"
             className="z-dropdown min-w-48 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
           >
-            {signedIn.map((server) => (
+            {endTab !== undefined ? (
+              // A browser tab: the server holds its account, so the tab signs its session out.
               <DropdownMenu.Item
-                key={server.url}
-                data-testid={`account-sign-out-${hostOf(server.url)}`}
+                data-testid="account-sign-out"
                 className={ITEM_CLASS}
                 onSelect={() => {
-                  void signOut(server.url);
+                  endTab();
                 }}
               >
-                Sign out of {server.url}
+                Sign out
               </DropdownMenu.Item>
-            ))}
+            ) : (
+              signedIn.map((server) => (
+                <DropdownMenu.Item
+                  key={server.url}
+                  data-testid={`account-sign-out-${hostOf(server.url)}`}
+                  className={ITEM_CLASS}
+                  onSelect={() => {
+                    void signOut(server.url);
+                  }}
+                >
+                  Sign out of {server.url}
+                </DropdownMenu.Item>
+              ))
+            )}
             <DropdownMenu.Separator className="my-1 h-px bg-hairline" />
             <DropdownMenu.Item
               data-testid="account-manage-teams"

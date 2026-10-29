@@ -17,6 +17,7 @@ import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import { ApiDefinitionCard } from '../rest-api/api-definition-card.js';
 import type { GrpcApiWire, GrpcReflectionVersionWire } from '@shared/kinds/grpc/wire.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 export interface GrpcDefinitionCardProps {
   readonly apiId: string;
@@ -103,7 +104,7 @@ export function GrpcDefinitionCard({ apiId, definition }: GrpcDefinitionCardProp
         >
           {running ? 'Asking…' : 'Refresh from server'}
         </Button>
-        {definition.cache && (
+        {definition.cache && hasCapability('dialogs') && (
           <Button variant="secondary" data-testid="api-definition-export" onClick={() => void onExport()}>
             Export…
           </Button>

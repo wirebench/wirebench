@@ -57,6 +57,16 @@ export const SERVED_GROUPS: ReadonlySet<string> = new Set([
   'provisioning',
   // Sealed secrets.
   'secrets',
+  // The save-time secret scan (controller ruling, Task 10 review): every channel takes an open project's
+  // id and works on that project's model in memory, which the host read from the open workspace's working
+  // copy under the platform root. None names a path, so none can scan a folder of its own choosing:
+  // - `secretScan.hold` / `release`: pause and resume autosave while the review before a save is open;
+  // - `secretScan.scan`: the findings, as masked previews;
+  // - `secretScan.keep`: findings left in place for this session;
+  // - `secretScan.move`: values moved into the user's sealed secrets, `${secret:name}` left behind;
+  // - `secretScan.tokens`: the project's secret names and whether each has a value (names only);
+  // - `secretScan.setValue`: one typed value, sealed; no response carries it.
+  'secretScan',
   // Under the egress rule.
   'oauth2',
   'api',
@@ -74,7 +84,6 @@ export const REFUSED_GROUPS: ReadonlySet<string> = new Set([
   'keystores',
   'ssl',
   'secretSources',
-  'secretScan',
   'attachments',
   // Kerberos reads the machine's credentials cache.
   'auth',

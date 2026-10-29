@@ -9,6 +9,7 @@ import {
 } from '../../state/audit-format.js';
 import { useAuditStore } from '../../state/audit.js';
 import { SELECT_CLASS } from './roles.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 /** The Audit tab's filters (audit-log spec §3.6): range, kind and, when the server has any, workspace. */
 export function AuditFilterBar({
@@ -78,14 +79,17 @@ export function AuditFilterBar({
         <Button variant="ghost" data-testid="audit-refresh" onClick={() => void store().load(url)}>
           Refresh
         </Button>
-        <Button
-          variant="primary"
-          data-testid="audit-export"
-          disabled={exporting}
-          onClick={() => void store().exportToFile(url)}
-        >
-          Export…
-        </Button>
+        {/* Writes to a file picked in a native dialog. */}
+        {hasCapability('dialogs') && (
+          <Button
+            variant="primary"
+            data-testid="audit-export"
+            disabled={exporting}
+            onClick={() => void store().exportToFile(url)}
+          >
+            Export…
+          </Button>
+        )}
       </div>
     </div>
   );

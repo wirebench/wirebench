@@ -58,7 +58,7 @@ import { ShortcutsSection } from './sections/shortcuts-section.js';
 import { TokensSection } from './sections/tokens-section.js';
 import type { SectionProps } from './sections/section-props.js';
 import {
-  SETTINGS_NAV,
+  availableNav,
   sectionsForSearch,
   canReset,
   isModified,
@@ -326,7 +326,7 @@ export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
               </kbd>
             </div>
             <nav aria-label="Settings sections" className="min-h-0 flex-1 overflow-auto px-2.5 pb-3">
-              {SETTINGS_NAV.map((group) => (
+              {availableNav().map((group) => (
                 <div key={group.title} className="mt-3 first:mt-1">
                   <h2 className="mb-1 px-2 text-xs font-medium text-fg-subtle">{group.title}</h2>
                   <ul>

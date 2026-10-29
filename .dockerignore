@@ -1,5 +1,12 @@
 **/node_modules
 apps
+# The server image builds the browser client from the desktop's renderer (hosted edition spec §17.6).
+# Only what `build:browser` reads comes back: never the desktop's node_modules, native bindings,
+# build output or anything else beside them.
+!apps/desktop/package.json
+!apps/desktop/vite.browser.config.ts
+!apps/desktop/tsconfig*.json
+!apps/desktop/src
 docs-site
 e2e
 git-worktrees
@@ -9,3 +16,8 @@ git-worktrees
 .superpowers
 coverage
 release
+# After every negation above, so none of them can bring these back.
+**/node_modules
+**/.env*
+**/*.pem
+**/*.p12

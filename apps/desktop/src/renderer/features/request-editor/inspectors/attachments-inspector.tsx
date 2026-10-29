@@ -10,6 +10,7 @@ import { MAX_DROPPED_ATTACHMENT_BYTES, MAX_DROPPED_FILES } from '@shared/kinds/s
 import type { AttachmentPatchWire, MimePartWire } from '@shared/kinds/soap/wire.js';
 import { addAttachmentsThroughPicker, removeSelectedAttachment } from '../attachment-actions.js';
 import { AttachmentsTable } from './attachments-table.js';
+import { hasCapability } from '../../../lib/capabilities.js';
 
 /** Base64 for a dropped file's bytes, chunked so a multi-MB file cannot blow the argument list. */
 function toBase64(bytes: Uint8Array): string {
@@ -128,11 +129,16 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
 
   const mtomOff = !request.properties.enableMtom && !request.properties.enableInlineFiles;
 
+  // A dropped file is copied into the project's folder on the machine; a host without `files` takes none.
+  const canDrop = hasCapability('files');
+  const canPick = hasCapability('dialogs');
+
   return (
     <div
       className={`flex flex-col gap-2 p-3 ${dragging ? 'bg-accent-muted ring-1 ring-accent ring-inset' : ''}`}
       data-testid="attachments-dropzone"
       onDragOver={(event) => {
+        if (!canDrop) return;
         event.preventDefault();
         setDragging(true);
       }}
@@ -143,22 +149,26 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
         setDragging(false);
       }}
       onDrop={(event) => {
+        if (!canDrop) return;
         event.preventDefault();
         setDragging(false);
         void drop([...event.dataTransfer.files]);
       }}
     >
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          data-testid="attachments-add"
-          onClick={() => {
-            void addAttachmentsThroughPicker(requestId, copyToCache);
-          }}
-          className="h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-3 text-xs text-fg-default hover:bg-surface-hover"
-        >
-          Add…
-        </button>
+        {/* The native picker; a host without one still takes a drop. */}
+        {canPick && (
+          <button
+            type="button"
+            data-testid="attachments-add"
+            onClick={() => {
+              void addAttachmentsThroughPicker(requestId, copyToCache);
+            }}
+            className="h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-3 text-xs text-fg-default hover:bg-surface-hover"
+          >
+            Add…
+          </button>
+        )}
         <button
           type="button"
           data-testid="attachments-remove"
@@ -192,8 +202,15 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
 
       {attachments.length === 0 ? (
         <p className="text-sm text-fg-subtle">
-          No attachments. Add files or drop them here. Reference one from the envelope as{' '}
-          <code className="font-mono">cid:&lt;Content-ID&gt;</code>.
+          No attachments.{' '}
+          {canPick && canDrop
+            ? 'Add files or drop them here. '
+            : canPick
+              ? 'Add files. '
+              : canDrop
+                ? 'Drop files here. '
+                : 'Attachments are added in the desktop app. '}
+          Reference one from the envelope as <code className="font-mono">cid:&lt;Content-ID&gt;</code>.
         </p>
       ) : (
         <AttachmentsTable
@@ -205,9 +222,13 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
             setSelectedAttachment(requestId, attachmentId);
           }}
           onPatch={patch}
-          onOpen={(attachmentId) => {
-            void open(attachmentId);
-          }}
+          {...(hasCapability('files')
+            ? {
+                onOpen: (attachmentId: string) => {
+                  void open(attachmentId);
+                },
+              }
+            : {})}
           onRemoveSelected={requestRemove}
         />
       )}

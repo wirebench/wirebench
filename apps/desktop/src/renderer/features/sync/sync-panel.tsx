@@ -14,6 +14,7 @@ import { syncBadgeLabel } from './sync-badge.js';
 import { SYNC_ACTION_LABELS, syncCodeInfo, VIEWER_PUSH_REASON } from './sync-codes.js';
 import { TeamSecretsSection } from './team-secrets-section.js';
 import { useNow } from './use-now.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 /**
  * The auto-fetch field's bounds — mirrors `syncSettingsPatchWireSchema.autoFetchSeconds`
@@ -444,24 +445,32 @@ export function SyncPanel() {
             </SettingsGroup>
 
             <div className="mt-4 flex justify-between gap-2">
-              <Button
-                data-testid="sync-reveal-tree"
-                onClick={() => {
-                  void revealTree();
-                }}
-              >
-                <FolderOpen size={14} aria-hidden="true" />
-                Reveal shared folder
-              </Button>
-              <div className="flex gap-2">
+              {/* The working copy in the machine's file manager; turning the workspace local again needs a
+                  folder of the machine's too. A host without `files` offers neither. */}
+              {hasCapability('files') ? (
                 <Button
-                  data-testid="sync-stop-sharing"
+                  data-testid="sync-reveal-tree"
                   onClick={() => {
-                    setStopSharingOpen(true);
+                    void revealTree();
                   }}
                 >
-                  Stop sharing…
+                  <FolderOpen size={14} aria-hidden="true" />
+                  Reveal shared folder
                 </Button>
+              ) : (
+                <span />
+              )}
+              <div className="flex gap-2">
+                {hasCapability('files') && (
+                  <Button
+                    data-testid="sync-stop-sharing"
+                    onClick={() => {
+                      setStopSharingOpen(true);
+                    }}
+                  >
+                    Stop sharing…
+                  </Button>
+                )}
                 <Dialog.Close asChild>
                   <Button>Close</Button>
                 </Dialog.Close>

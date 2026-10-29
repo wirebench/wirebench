@@ -365,6 +365,94 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
     },
   );
 
+  it('answers the save-time secret scan over an open server workspace, and only for an open project', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const editor = await signedInUser(h, { email: 'editor@example.com' });
+    const team = await seedTeam(h, { name: 'Payments QA', admins: [alice], members: [editor] });
+    const workspaceId = await seedSyncWorkspace(h, { team, name: 'Staging' });
+    await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+    const requests = [
+      {
+        ...createRestRequest('Leaky', { id: 'req-leaky', url: 'https://api.example.test/' }),
+        headers: [entry('Authorization', 'Bearer ghp_0123456789abcdefghijklmnopqrstuvwxyzAB')],
+      },
+    ];
+    const first = await call<SyncPushResponse>(h, editor, 'POST', `/workspaces/${workspaceId}/sync/commits`, {
+      parent: null,
+      commits: [{ subject: 'Start', at: AT, changes: await snapshotOf(workspaceId, requests) }],
+    });
+    expect(first.status).toBe(201);
+
+    const client = await openHost(h, alice);
+    await client.waitFor((frame) => frame.type === 'hello');
+    expect(await client.call('workspace.joinFromServer', { url: PUBLIC_URL, workspaceId })).toMatchObject({
+      ok: true,
+    });
+
+    // What a manual save does first: hold autosave, scan, release.
+    const hold = await client.call('secretScan.hold', { projectIds: ['project-billing'] });
+    expect(hold).toMatchObject({ ok: true });
+    expect(typeof (hold.value as { holdId?: unknown }).holdId).toBe('string');
+    const scan = await client.call('secretScan.scan', { projectId: 'project-billing' });
+    expect(scan, JSON.stringify(scan)).toMatchObject({ ok: true, value: { findings: [expect.anything()] } });
+    // Masked previews only: the value never rides a frame.
+    expect(JSON.stringify(scan)).not.toContain('ghp_0123456789abcdefghijklmnopqrstuvwxyzAB');
+    expect(await client.call('secretScan.tokens', { projectId: 'project-billing' })).toMatchObject({
+      ok: true,
+      value: { tokens: [] },
+    });
+    expect(
+      await client.call('secretScan.release', { holdId: (hold.value as { holdId: string }).holdId }),
+    ).toMatchObject({ ok: true });
+    // A project that is not open is no way into the checkout: the call fails and opens nothing.
+    expect(await client.call('secretScan.scan', { projectId: '../../other-user' })).toMatchObject({ ok: false });
+  });
+
+  it('seals what secretScan.setValue and secretScan.move store, and reports it by name only', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const leaked = 'ghp_0123456789abcdefghijklmnopqrstuvwxyzAB';
+    const typed = 'typed-value-0123456789abcdef';
+    const { client } = await joinedWorkspace(h, alice, {
+      requests: [
+        {
+          ...createRestRequest('Leaky', { id: 'req-leaky', url: 'https://api.example.test/' }),
+          headers: [entry('Authorization', `Bearer ${leaked}`)],
+        },
+      ],
+    });
+
+    // The opened project carried the literal token before the move; what follows must not.
+    const before = client.frames.length;
+    const scan = await client.call('secretScan.scan', { projectId: 'project-billing' });
+    const findings = (scan.value as { findings: { id: string }[] }).findings;
+    expect(findings.length, JSON.stringify(scan)).toBeGreaterThan(0);
+    const moved = await client.call('secretScan.move', {
+      projectId: 'project-billing',
+      items: [{ id: findings[0]!.id, name: 'GITHUB_TOKEN' }],
+    });
+    expect(moved, JSON.stringify(moved)).toMatchObject({ ok: true, value: { moved: [findings[0]!.id] } });
+    expect(
+      await client.call('secretScan.setValue', { projectId: 'project-billing', name: 'TYPED_KEY', value: typed }),
+    ).toMatchObject({ ok: true, value: { replaced: false } });
+
+    // Sealed: neither value is in the user's secrets file as text.
+    const sealed = await readFile(join(hostDirectories(h.dataDir, alice.user.id).checkout, 'secrets.json'));
+    expect(sealed.includes(leaked)).toBe(false);
+    expect(sealed.includes(typed)).toBe(false);
+    // Reported by name only: one audit row per write, whose details hold a name and nothing else.
+    await vi.waitFor(() => {
+      const written = h.audit.filter((event) => event.action === 'secret.written');
+      expect(written).toHaveLength(2);
+      for (const event of written) expect(Object.keys(event.details as object)).toEqual(['name']);
+    });
+    expect(JSON.stringify(h.audit)).not.toContain(leaked);
+    expect(JSON.stringify(h.audit)).not.toContain(typed);
+    // And no frame back to the tab since the scan carries either value.
+    const frames = JSON.stringify(client.frames.slice(before));
+    expect(frames).not.toContain(leaked);
+    expect(frames).not.toContain(typed);
+  });
+
   it('closes 1009 for a frame just over 32 MiB', async () => {
     const alice = await browserUser(h, 'alice@example.com');
     const client = await openHost(h, alice);

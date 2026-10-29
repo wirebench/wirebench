@@ -56,6 +56,7 @@ import { SecretField } from '../../components/secret-field.js';
 import { Tabs } from '../../components/tabs.js';
 import { useKerberosAvailability } from '../../lib/use-kerberos-availability.js';
 import { ipc } from '../../state/ipc-client.js';
+import { hasCapability } from '../../lib/capabilities.js';
 import { lintGroupId, lintSummary, useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore, type ImportDialogFormat } from '../../state/ui.js';
@@ -405,8 +406,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
    * main, shortly after it settles; a picked file's answer already says. Only the plugin's title and
    * id come back: no plugin code reaches this window (ADR-0031).
    */
+  // Plugins are installed in a folder of the host's machine; a host without `files` has none to ask.
   const pluginTextKey =
-    open && format === 'auto' && pickedKey === '' && detected.kind === 'unknown'
+    open && hasCapability('files') && format === 'auto' && pickedKey === '' && detected.kind === 'unknown'
       ? tab === 'paste' && pasted.trim().length > 0
         ? JSON.stringify(['paste', pasted])
         : tab === 'file' && dropped !== undefined
@@ -1697,49 +1699,53 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
                 {tab === 'file' && (
                   <>
-                    <div className="flex gap-2">
-                      <input
-                        aria-label={format === 'postman' ? 'Postman collection file path' : 'File path'}
-                        data-testid={
-                          format === 'postman'
-                            ? 'import-postman-file-input'
-                            : format === 'openapi'
-                              ? 'import-openapi-path'
-                              : 'import-file-input'
-                        }
-                        value={filePath}
-                        onChange={(e) => {
-                          setDropped(undefined);
-                          setFolderPicked(false);
-                          setFilePath(e.target.value);
-                        }}
-                        placeholder={
-                          format === 'postman'
-                            ? 'Path to collection.json'
-                            : format === 'proto'
-                              ? '/path/to/service.proto'
-                              : '/path/to/spec.json, .yaml, .wsdl, or .proto'
-                        }
-                        className="flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm outline-none"
-                      />
-                      <Button
-                        data-testid={
-                          format === 'postman'
-                            ? 'import-postman-browse'
-                            : format === 'openapi'
-                              ? 'import-openapi-browse'
-                              : 'import-browse'
-                        }
-                        onClick={() => void browseForFile()}
-                      >
-                        Browse…
-                      </Button>
-                      {(format === 'auto' || pickedRow(format)?.folder === true) && (
-                        <Button data-testid="import-browse-folder" onClick={() => void browseForFolder()}>
-                          Folder…
+                    {/* A path and the Browse… / Folder… pickers name files on the host's machine; without one
+                        (no `files`, no `dialogs`) a file comes in by drop alone, read here as text. */}
+                    {hasCapability('files') && hasCapability('dialogs') && (
+                      <div className="flex gap-2">
+                        <input
+                          aria-label={format === 'postman' ? 'Postman collection file path' : 'File path'}
+                          data-testid={
+                            format === 'postman'
+                              ? 'import-postman-file-input'
+                              : format === 'openapi'
+                                ? 'import-openapi-path'
+                                : 'import-file-input'
+                          }
+                          value={filePath}
+                          onChange={(e) => {
+                            setDropped(undefined);
+                            setFolderPicked(false);
+                            setFilePath(e.target.value);
+                          }}
+                          placeholder={
+                            format === 'postman'
+                              ? 'Path to collection.json'
+                              : format === 'proto'
+                                ? '/path/to/service.proto'
+                                : '/path/to/spec.json, .yaml, .wsdl, or .proto'
+                          }
+                          className="flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm outline-none"
+                        />
+                        <Button
+                          data-testid={
+                            format === 'postman'
+                              ? 'import-postman-browse'
+                              : format === 'openapi'
+                                ? 'import-openapi-browse'
+                                : 'import-browse'
+                          }
+                          onClick={() => void browseForFile()}
+                        >
+                          Browse…
                         </Button>
-                      )}
-                    </div>
+                        {(format === 'auto' || pickedRow(format)?.folder === true) && (
+                          <Button data-testid="import-browse-folder" onClick={() => void browseForFolder()}>
+                            Folder…
+                          </Button>
+                        )}
+                      </div>
+                    )}
                     <div
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={(e) => void onDrop(e)}
@@ -1749,25 +1755,26 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                         ? `Loaded: ${dropped.name}`
                         : 'Drop an OpenAPI, Postman, WSDL or .proto file here'}
                     </div>
-                    {effectiveFormat === 'postman-v3' && (
+                    {/* These say how to pick with Browse… and Folder…, which only a host with dialogs offers. */}
+                    {hasCapability('dialogs') && effectiveFormat === 'postman-v3' && (
                       <p data-testid="import-postman-v3-help" className="text-xs text-fg-subtle">
                         Pick the collection's folder with Folder…, or its .resources/definition.yaml. A workspace folder
                         holding collections/ imports every collection, with its environments and globals.
                       </p>
                     )}
-                    {effectiveFormat === 'bruno' && (
+                    {hasCapability('dialogs') && effectiveFormat === 'bruno' && (
                       <p data-testid="import-bruno-help" className="text-xs text-fg-subtle">
                         Pick the collection's folder with Folder…, or its bruno.json. An exported collection .json is
                         read on its own. .env files are never read.
                       </p>
                     )}
-                    {effectiveFormat === 'thunder-client' && (
+                    {hasCapability('dialogs') && effectiveFormat === 'thunder-client' && (
                       <p data-testid="import-thunder-client-help" className="text-xs text-fg-subtle">
                         Pick the workspace's thunder-tests folder with Folder…, or an exported collection .json. A
                         folder that keeps one file per request cannot be read: export the collection instead.
                       </p>
                     )}
-                    {effectiveFormat === 'opencollection' && (
+                    {hasCapability('dialogs') && effectiveFormat === 'opencollection' && (
                       <p data-testid="import-opencollection-help" className="text-xs text-fg-subtle">
                         For a collection saved as a folder, pick its opencollection.yml: the files beside it are read
                         too.

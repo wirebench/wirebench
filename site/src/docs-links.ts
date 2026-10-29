@@ -38,6 +38,7 @@ export const DOCS_LINKS = {
   serverAuditLog: 'guides/server-audit-log',
   serverSamlScim: 'guides/server-saml-scim',
   serverScheduledRuns: 'guides/server-scheduled-runs',
+  serverBrowserClient: 'guides/server-browser-client',
   managedPreferences: 'guides/managed-preferences',
   featureSwitches: 'guides/feature-switches',
   plugins: 'guides/plugins',

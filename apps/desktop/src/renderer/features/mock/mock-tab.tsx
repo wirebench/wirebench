@@ -42,6 +42,7 @@ import { SelectField } from '../sequence/step-fields.js';
 import { MockLog } from './mock-log.js';
 import { MockResponseEditor } from './mock-response-editor.js';
 import { MockStubCheck } from './mock-stub-check.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 export interface MockTabProps {
   readonly mockId: string;
@@ -108,12 +109,24 @@ function useHandlers(mockId: string) {
   };
 }
 
+/** What the mock tab says where a mock cannot be started. */
+export const MOCK_UNAVAILABLE =
+  'Mocks run from the desktop app: a mock service listens on your own computer’s network, so this window edits the mock file only.';
+
 function RunBar({ mock }: { readonly mock: MockWire }) {
   const state = useMockRunsStore((s) => s.states[mock.id]);
   const busy = useMockRunsStore((s) => s.busy[mock.id] === true);
   const { start, stop, reset } = useMockRunsStore.getState();
   const exposedPreference = usePreferencesStore((s) => s.preferences.mocks.listenOnAllInterfaces);
   const running = state?.running === true;
+  // A mock is a listener on the machine's network; a host that cannot listen keeps the mock as a file only.
+  if (!hasCapability('listen')) {
+    return (
+      <p data-testid="mock-unavailable" className="py-1 text-sm text-fg-subtle">
+        {MOCK_UNAVAILABLE}
+      </p>
+    );
+  }
   return (
     <div className="flex flex-col gap-1 py-1">
       <div className="flex flex-wrap items-center gap-2">
@@ -562,12 +575,15 @@ export function MockTab({ mockId }: MockTabProps) {
         )}
       </SettingsGroup>
 
-      <SettingsGroup
-        title="Stubs against the contract"
-        hint="Each response's status, headers and body, checked as a received response is."
-      >
-        <MockStubCheck mock={mock} onSelect={setOperationId} />
-      </SettingsGroup>
+      {/* The check runs on the host's mock engine, which a host that cannot listen does not serve. */}
+      {hasCapability('listen') && (
+        <SettingsGroup
+          title="Stubs against the contract"
+          hint="Each response's status, headers and body, checked as a received response is."
+        >
+          <MockStubCheck mock={mock} onSelect={setOperationId} />
+        </SettingsGroup>
+      )}
 
       <SettingsGroup title="Requests" hint="What this mock answered this session; credentials are masked.">
         <MockLog mockId={mock.id} />

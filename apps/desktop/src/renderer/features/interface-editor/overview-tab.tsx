@@ -14,6 +14,7 @@ import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
 import { useProjectStore } from '../../state/project.js';
 import { exportDefinition, generateDocumentation, updateDefinition } from './interface-actions.js';
 import { useInterfaceEditorStore } from './interface-editor-state.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 export interface OverviewTabProps {
   readonly interfaceId: string;
@@ -75,12 +76,17 @@ export function OverviewTab({ interfaceId }: OverviewTabProps) {
           <Button data-testid="interface-update-definition" onClick={() => updateDefinition(interfaceId)}>
             Update Definition…
           </Button>
-          <Button data-testid="interface-export-definition" onClick={() => void exportDefinition(interfaceId)}>
-            Export Definition…
-          </Button>
-          <Button data-testid="interface-generate-docs" onClick={() => generateDocumentation(interfaceId)}>
-            Generate Documentation…
-          </Button>
+          {/* Export and Generate write to a folder or file picked in a native dialog. */}
+          {hasCapability('dialogs') && (
+            <Button data-testid="interface-export-definition" onClick={() => void exportDefinition(interfaceId)}>
+              Export Definition…
+            </Button>
+          )}
+          {hasCapability('dialogs') && (
+            <Button data-testid="interface-generate-docs" onClick={() => generateDocumentation(interfaceId)}>
+              Generate Documentation…
+            </Button>
+          )}
         </div>
       </SettingsGroup>
       <SettingsGroup title="Cache">

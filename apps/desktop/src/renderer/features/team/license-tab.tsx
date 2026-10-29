@@ -5,6 +5,7 @@ import { ipc } from '../../state/ipc-client.js';
 import { licenseLineProblem } from '../../state/license-format.js';
 import { useLicenseStore } from '../../state/license.js';
 import { INPUT_CLASS } from './roles.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 const EDITION = { community: 'Community', team: 'Team', enterprise: 'Enterprise' } as const;
 const STATUS = {
@@ -127,9 +128,12 @@ export function LicenseTab({ url }: { readonly url: string }) {
         <Button variant="primary" data-testid="license-install" disabled={busy} onClick={() => void submit()}>
           Install license
         </Button>
-        <Button data-testid="license-choose-file" onClick={() => void chooseFile()}>
-          Choose file…
-        </Button>
+        {/* Reads a file picked in a native dialog; pasting works anywhere. */}
+        {hasCapability('dialogs') && (
+          <Button data-testid="license-choose-file" onClick={() => void chooseFile()}>
+            Choose file…
+          </Button>
+        )}
         {state?.licenseId !== undefined && (
           <Button
             variant="ghost"

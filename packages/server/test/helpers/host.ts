@@ -13,6 +13,7 @@ import { sessionCookieName } from '../../src/identity/cookies.js';
 import { liveModule } from '../../src/live/module.js';
 import { syncModule } from '../../src/sync/module.js';
 import { teamsModule } from '../../src/teams/module.js';
+import { browserBuildFixture, type BrowserBuildFixture } from './browser-build.js';
 import { recordingAudit } from './context.js';
 import { identityHarness, signedInUser, type IdentityHarness, type SignedInUser } from './identity.js';
 import { manualTimers, type ManualTimers } from './timers.js';
@@ -31,13 +32,23 @@ export interface HostHarness extends IdentityHarness {
   instances(): HostInstances;
   /** `WIREBENCH_SERVER_HOST_IDLE_MINUTES` in milliseconds: the delay the idle timer is armed with. */
   readonly idleMs: number;
+  /** The stand-in browser build the module serves at `/`. */
+  readonly browserBuild: BrowserBuildFixture;
 }
 
-export async function hostHarness(options: { readonly env?: Record<string, string> } = {}): Promise<HostHarness> {
+export async function hostHarness(
+  options: {
+    readonly env?: Record<string, string>;
+    /** Another browser build folder than the harness's fixture: a missing one, say. */
+    readonly browserRoot?: string;
+  } = {},
+): Promise<HostHarness> {
   const timers = manualTimers();
   const hostTimers = manualTimers();
   let instances: HostInstances | undefined;
-  const h = await identityHarness({
+  // The module reads the browser build at start-up; a fixture stands in for the Vite build.
+  const build = await browserBuildFixture();
+  const started = identityHarness({
     env: {
       WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
       WIREBENCH_SERVER_SECRETS_KEY: randomBytes(32).toString('base64'),
@@ -54,8 +65,13 @@ export async function hostHarness(options: { readonly env?: Record<string, strin
         onInstances: (made) => {
           instances = made;
         },
+        browserRoot: options.browserRoot ?? build.root,
       }),
     ],
+  });
+  const h = await started.catch(async (error: unknown) => {
+    await build.remove();
+    throw error;
   });
   const audit = recordingAudit(h.hooks);
   await h.app.listen({ host: '127.0.0.1', port: 0 });
@@ -63,11 +79,16 @@ export async function hostHarness(options: { readonly env?: Record<string, strin
   if (address === null || typeof address === 'string') throw new Error('the host harness is not listening on a port');
   return {
     ...h,
+    close: async () => {
+      await h.close();
+      await build.remove();
+    },
     port: address.port,
     timers,
     hostTimers,
     audit,
     idleMs: 30 * 60_000,
+    browserBuild: build,
     instances: () => {
       if (instances === undefined) throw new Error('the host module did not register');
       return instances;

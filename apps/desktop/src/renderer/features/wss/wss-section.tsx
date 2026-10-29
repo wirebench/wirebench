@@ -4,6 +4,7 @@
 
 import { placeholderMessage } from '../../kinds/placeholders.js';
 import { useUiStore } from '../../state/ui.js';
+import { hasCapability } from '../../lib/capabilities.js';
 import { IncomingConfigEditor } from './incoming-config-editor.js';
 import { KeystoresView } from './keystores-view.js';
 import { OutgoingConfigEditor } from './outgoing-config-editor.js';
@@ -15,7 +16,8 @@ export function WssSection() {
   const soapOn = useUiStore((state) => state.enabledKinds.includes('soap'));
   return (
     <div data-testid="wss-section" className="min-h-0 flex-1 overflow-auto">
-      <KeystoresView />
+      {/* A keystore is a file on the machine, read there; a host without `files` has none to show. */}
+      {hasCapability('files') && <KeystoresView />}
       {soapOn ? (
         <>
           <OutgoingConfigEditor />

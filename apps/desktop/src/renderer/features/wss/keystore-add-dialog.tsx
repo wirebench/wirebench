@@ -14,6 +14,7 @@ import { SecretField } from '../../components/secret-field.js';
 import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore, useTargetProjectId } from '../../state/project.js';
+import { secretKeptHint } from '../../lib/capabilities.js';
 
 export interface KeystoreAddDialogProps {
   readonly open: boolean;
@@ -98,8 +99,8 @@ export function KeystoreAddDialog({ open, onOpenChange }: KeystoreAddDialogProps
         >
           <Dialog.Title className="text-md font-medium text-fg-default">Add keystore</Dialog.Title>
           <Dialog.Description className="mt-1 text-sm text-fg-subtle">
-            A PKCS#12 (.p12/.pfx) or PEM bundle (.pem/.crt/.cer/.key). The password is stored in the OS keychain, never
-            in the project.
+            A PKCS#12 (.p12/.pfx) or PEM bundle (.pem/.crt/.cer/.key).{' '}
+            {secretKeptHint('The password is stored in the OS keychain, never in the project.')}
           </Dialog.Description>
 
           <label className="mt-3 block text-sm text-fg-subtle" htmlFor="keystore-path">

@@ -5,6 +5,7 @@ import { loadXmlFrom, saveXmlAs } from '../../editor/xml-file-ops.js';
 import { gotoLine } from '../../editor/xml-language.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { useUiStore } from '../../state/ui.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
@@ -78,27 +79,32 @@ export function OverflowMenu({ onLoaded, currentText }: OverflowMenuProps) {
             <span className="w-4">{lineNumbers ? <Check size={14} aria-hidden="true" /> : null}</span>
             Line numbers
           </DropdownMenu.Item>
-          <DropdownMenu.Separator className="my-1 h-px bg-hairline" />
-          <DropdownMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
-              void saveXmlAs(currentText);
-            }}
-          >
-            Save as…
-          </DropdownMenu.Item>
-          <DropdownMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
-              void loadXmlFrom(currentText).then((text) => {
-                if (text !== undefined) {
-                  onLoaded(text);
-                }
-              });
-            }}
-          >
-            Load from…
-          </DropdownMenu.Item>
+          {/* Both go through a native file dialog. */}
+          {hasCapability('dialogs') && (
+            <>
+              <DropdownMenu.Separator className="my-1 h-px bg-hairline" />
+              <DropdownMenu.Item
+                className={ITEM_CLASS}
+                onSelect={() => {
+                  void saveXmlAs(currentText);
+                }}
+              >
+                Save as…
+              </DropdownMenu.Item>
+              <DropdownMenu.Item
+                className={ITEM_CLASS}
+                onSelect={() => {
+                  void loadXmlFrom(currentText).then((text) => {
+                    if (text !== undefined) {
+                      onLoaded(text);
+                    }
+                  });
+                }}
+              >
+                Load from…
+              </DropdownMenu.Item>
+            </>
+          )}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

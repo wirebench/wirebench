@@ -23,6 +23,8 @@ run. This page is for the person who runs it. For using a server from the app, s
   for each approved machine. See [Team secrets](/wirebench/docs/guides/shared-workspaces/#team-secrets).
 - **Catch URLs.** A workspace's editors create public addresses that record every webhook sent to them.
   See [Webhook inbox](/wirebench/docs/guides/webhooks/).
+- **A browser tab.** Optionally, the server serves the app itself at its public URL, so a teammate opens a
+  team workspace without installing anything. See [Browser client](/wirebench/docs/guides/server-browser-client/).
 
 Nothing in the app needs a server. Without one, the status bar shows no account.
 
@@ -139,10 +141,10 @@ with the variable's name and the rule it broke, never the value.
 | `WIREBENCH_SERVER_SCHEDULES_ALERT_HOSTS` | no | — | The only hosts Slack, Teams and webhook alerts may go to: names or `*.example.com`, comma-separated. Unset, any https host. |
 | `WIREBENCH_SERVER_SMTP_URL` | no | — | Where email alerts are sent: `smtp://user:pass@mail.example.com:587` (STARTTLS when offered) or `smtps://…:465`. Unset, email alerts are refused. Never logged. |
 | `WIREBENCH_SERVER_SMTP_FROM` | no | — | The sender address of email alerts; required with WIREBENCH_SERVER_SMTP_URL. |
-| `WIREBENCH_SERVER_BROWSER_CLIENT` | no | `false` | Preview: the app in a browser tab arrives in a later release; for now this turns on the browser sign-in page (`/sign-in`), cookie sessions and the socket a tab will use (`/api/v1/host`), which runs a host per signed-in user. Needs WIREBENCH_SERVER_SECRETS_KEY. False, none of it runs. |
-| `WIREBENCH_SERVER_SECRETS_KEY` | no | — | Preview: encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on. Never logged. |
+| `WIREBENCH_SERVER_BROWSER_CLIENT` | no | `false` | Serve the app in a browser tab at `/`: the browser sign-in page (`/sign-in`), cookie sessions and the tab’s socket (`/api/v1/host`), which runs a host per signed-in user. Needs WIREBENCH_SERVER_SECRETS_KEY. False, none of it runs. |
+| `WIREBENCH_SERVER_SECRETS_KEY` | no | — | Encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on. Never logged. |
 | `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE` | no | `false` | Also refuse private network addresses (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7) for connections the server opens for users: scheduled runs, alerts and the browser client. Loopback, link-local and cloud metadata addresses are always refused. |
-| `WIREBENCH_SERVER_HOST_IDLE_MINUTES` | no | `30` | Preview: minutes after a user’s last browser connection closes before the server stops that user’s host and frees its memory (1–1440). The user’s files stay. |
+| `WIREBENCH_SERVER_HOST_IDLE_MINUTES` | no | `30` | Minutes after a user’s last browser connection closes before the server stops that user’s host and frees its memory (1–1440). The user’s files stay. |
 {/* config:end */}
 {/* prettier-ignore-end */}
 
@@ -186,10 +188,13 @@ send it however your team already talks. `admin list-invitations` and
 - **Local accounts** (email and password) are on unless `WIREBENCH_SERVER_LOCAL_AUTH` is `false`.
 - **OpenID Connect** is on once `WIREBENCH_SERVER_OIDC_ISSUER` is set. Register the redirect URI that
   `config check` prints, `<public URL>/api/v1/auth/oidc/callback`, at the identity
-  provider. A login is linked to an existing account or an open invitation by the provider's verified
-  email. It never creates an account on its own.
+  provider. With the browser client on, also register `<public URL>/api/v1/auth/oidc/browser-callback`,
+  which `config check` prints too. A login is linked to an existing account or an open invitation by the
+  provider's verified email. It never creates an account on its own.
 - **SAML** is on once `WIREBENCH_SERVER_SAML_IDP_METADATA` is set, on an Enterprise server. SCIM
-  provisioning comes with it. See [SAML sign-in and SCIM provisioning](/wirebench/docs/guides/server-saml-scim/).
+  provisioning comes with it. With the browser client on, the IdP also needs a second ACS URL,
+  `<public URL>/api/v1/auth/saml/browser-acs`. See
+  [SAML sign-in and SCIM provisioning](/wirebench/docs/guides/server-saml-scim/).
 - Sign-in and invitation endpoints accept ten attempts a minute per address and per email. The counters
   live in the process, so a restart resets them.
 - Each installation of the app holds a device token. It expires after `WIREBENCH_SERVER_TOKEN_IDLE_DAYS`
@@ -228,6 +233,8 @@ forward:
   Without them, the app shows *Reconnecting…* and falls back to polling; sync keeps working.
 - `/hooks/` with every method, the request body and the client's address, when catch URLs are on.
 - `/scim/v2/` with every method, when an identity provider provisions accounts over SCIM.
+- The whole origin, and `/api/v1/host` with the `Upgrade` and `Connection` headers, when the
+  [browser client](/wirebench/docs/guides/server-browser-client/#behind-a-reverse-proxy) is on.
 
 With nginx:
 
@@ -303,3 +310,4 @@ admin turns team secrets on, everyone in the workspace should update the app.
   or a CI run.
 - [Editions and licenses](/wirebench/docs/guides/server-licensing/) — seats, editions and installing a license.
 - [Audit log](/wirebench/docs/guides/server-audit-log/) — who did what on the server, read and exported by server admins.
+- [Browser client](/wirebench/docs/guides/server-browser-client/) — the app in a browser tab, served by the server.

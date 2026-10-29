@@ -28,6 +28,7 @@ import {
   statusTooltipOf,
   urlOf,
 } from './log-filter.js';
+import { hasCapability } from '../../lib/capabilities.js';
 
 // Split out: the comparison is a Monaco diff editor, and the log is part of the shell, so a static
 // import put all of Monaco in the window's first script.
@@ -317,21 +318,23 @@ export function HttpLog() {
         total={log.length}
         actions={
           <>
-            <Button
-              variant="ghost"
-              aria-pressed={showSecrets}
-              title={showSecrets ? 'Secrets are shown — click to redact' : 'Secrets are redacted — click to reveal'}
-              onClick={() => {
-                void toggleSecrets();
-              }}
-            >
-              {showSecrets ? (
-                <LockOpen aria-hidden="true" className="size-3.5" />
-              ) : (
-                <Lock aria-hidden="true" className="size-3.5" />
-              )}
-              <span className="sr-only">{showSecrets ? 'Hide secrets' : 'Show secrets'}</span>
-            </Button>
+            {hasCapability('reveal-secrets') && (
+              <Button
+                variant="ghost"
+                aria-pressed={showSecrets}
+                title={showSecrets ? 'Secrets are shown — click to redact' : 'Secrets are redacted — click to reveal'}
+                onClick={() => {
+                  void toggleSecrets();
+                }}
+              >
+                {showSecrets ? (
+                  <LockOpen aria-hidden="true" className="size-3.5" />
+                ) : (
+                  <Lock aria-hidden="true" className="size-3.5" />
+                )}
+                <span className="sr-only">{showSecrets ? 'Hide secrets' : 'Show secrets'}</span>
+              </Button>
+            )}
             <Button
               variant="ghost"
               aria-pressed={preserveLog}
@@ -345,23 +348,26 @@ export function HttpLog() {
               {/* An icon like the actions beside it, so the bar fits a console narrowed by the code panel (#636). */}
               <Pin aria-hidden="true" className="size-3.5" />
             </Button>
-            <Button
-              variant="ghost"
-              disabled={visible.length === 0}
-              aria-label="Export HAR"
-              title="Export the rows shown as a HAR file (secrets are always masked)"
-              onClick={() => {
-                void (async () => {
-                  const result = await ipc().log.exportHar({ entries: [...visible] });
-                  if (!result.ok) showToast(result.error.message);
-                  else if (result.value.saved && result.value.path !== undefined)
-                    showToast(`Saved ${result.value.path}`);
-                })();
-              }}
-            >
-              {/* Icons, so search and Reset keep their room in a narrow console. */}
-              <Download aria-hidden="true" className="size-3.5" />
-            </Button>
+            {/* Writes to a file picked in a native dialog. */}
+            {hasCapability('dialogs') && (
+              <Button
+                variant="ghost"
+                disabled={visible.length === 0}
+                aria-label="Export HAR"
+                title="Export the rows shown as a HAR file (secrets are always masked)"
+                onClick={() => {
+                  void (async () => {
+                    const result = await ipc().log.exportHar({ entries: [...visible] });
+                    if (!result.ok) showToast(result.error.message);
+                    else if (result.value.saved && result.value.path !== undefined)
+                      showToast(`Saved ${result.value.path}`);
+                  })();
+                }}
+              >
+                {/* Icons, so search and Reset keep their room in a narrow console. */}
+                <Download aria-hidden="true" className="size-3.5" />
+              </Button>
+            )}
             <Button variant="ghost" aria-label="Clear" title="Clear the log" onClick={clearLog}>
               <Trash2 aria-hidden="true" className="size-3.5" />
             </Button>

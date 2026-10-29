@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { buildApi } from './build-api.js';
 import { OS_THEME_ARGUMENT } from '@wirebench/wire/os-theme-argument';
+import { ALL_CAPABILITIES } from '@wirebench/wire/capabilities';
 
 /**
  * The real `window.wirebench` implementation, backed by `ipcRenderer`. Built via the pure,
@@ -23,6 +24,9 @@ const api = buildApi(
     // is a main-process API, and a sandboxed renderer's `prefers-color-scheme` does not see a
     // per-app appearance override. Absent (a preload loaded outside our window) means dark.
     osTheme: process.argv.includes(`${OS_THEME_ARGUMENT}light`) ? 'light' : 'dark',
+    // The desktop's platform has every capability (`main/electron/electron-platform.ts`).
+    host: 'electron',
+    capabilities: ALL_CAPABILITIES,
     ...(process.env['WIREBENCH_E2E_FIXED_LAYOUT'] === '1' ? { fixedLayout: true } : {}),
     ...(process.env['WIREBENCH_E2E_SEND_TEMPLATES'] === '1' ? { sendTemplatesUnasked: true } : {}),
   },

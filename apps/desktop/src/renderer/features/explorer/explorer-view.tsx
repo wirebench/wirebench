@@ -38,6 +38,7 @@ import { usePreferencesStore } from '../../state/preferences.js';
 import { kindLabel } from '../../kinds/placeholders.js';
 import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
+import { hasCapability } from '../../lib/capabilities.js';
 import { explorerActions } from './explorer-actions.js';
 import { openProjectTab, projectRowActions } from './project-actions.js';
 import { openFolderTab } from '../folder/folder-actions.js';
@@ -378,16 +379,18 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             </span>
             {node.data.projectId !== undefined && (
               <span className="flex shrink-0 items-center gap-1">
-                <button
-                  type="button"
-                  className={INLINE_BUTTON_CLASS}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    projectRowActions.locate(node.data.projectId ?? '');
-                  }}
-                >
-                  Locate…
-                </button>
+                {hasCapability('files') && (
+                  <button
+                    type="button"
+                    className={INLINE_BUTTON_CLASS}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      projectRowActions.locate(node.data.projectId ?? '');
+                    }}
+                  >
+                    Locate…
+                  </button>
+                )}
                 <button
                   type="button"
                   className={INLINE_BUTTON_CLASS}
@@ -700,20 +703,23 @@ export function ExplorerView() {
         <IconButton label="Import…" onClick={() => openImportDialog()}>
           <FileDown size={14} aria-hidden="true" />
         </IconButton>
-        <IconButton
-          data-testid="explorer-link-project"
-          label={
-            shared
-              ? 'Shared workspaces hold their projects inside the workspace; use Move to workspace…'
-              : 'Link Project Folder…'
-          }
-          disabled={shared}
-          onClick={() => {
-            void workspaceActions.linkProject();
-          }}
-        >
-          <Link2 size={14} aria-hidden="true" />
-        </IconButton>
+        {/* Links a folder on the machine, which a host without `files` has none of. */}
+        {hasCapability('files') && (
+          <IconButton
+            data-testid="explorer-link-project"
+            label={
+              shared
+                ? 'Shared workspaces hold their projects inside the workspace; use Move to workspace…'
+                : 'Link Project Folder…'
+            }
+            disabled={shared}
+            onClick={() => {
+              void workspaceActions.linkProject();
+            }}
+          >
+            <Link2 size={14} aria-hidden="true" />
+          </IconButton>
+        )}
         <IconButton label="Expand all" onClick={() => expandExplorerAll()}>
           <UnfoldVertical size={14} aria-hidden="true" />
         </IconButton>

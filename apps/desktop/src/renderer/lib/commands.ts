@@ -2,6 +2,7 @@ import type { CommandDefinition, CommandId } from '@shared/commands.js';
 import type { UiSnapshot } from '../state/ui-state.js';
 import type { Selection } from '../state/ui.js';
 import type { Platform } from './platform.js';
+import { hasCapability, type Capability } from './capabilities.js';
 
 /** What a command sees when it is listed, gated, or run. */
 export interface CommandContext {
@@ -70,8 +71,51 @@ function stripHandler(command: Command): CommandDefinition<CommandContext> {
   return definition;
 }
 
+/**
+ * The commands that need something of the connected host's machine (hosted edition spec §3.1): without
+ * the capability they are not offered anywhere (palette, menu, keybinding), whatever their `when` says.
+ * The host refuses the channels behind them as well; this keeps them out of sight.
+ */
+export const COMMAND_CAPABILITIES: Readonly<Partial<Record<CommandId, Capability>>> = {
+  'app.checkForUpdates': 'updates',
+  // Local and git workspaces, and folders on the machine.
+  'workspace.create': 'files',
+  'workspace.join': 'files',
+  'workspace.share': 'files',
+  'workspace.stopSharing': 'files',
+  'workspace.linkProject': 'files',
+  'workspace.importProjectFolder': 'files',
+  'sync.revealTree': 'files',
+  // Writes a file or folder picked in a native dialog.
+  'workspace.exportProject': 'dialogs',
+  'workspace.exportPostman': 'dialogs',
+  'workspace.exportOpenCollection': 'dialogs',
+  'explorer.exportDefinition': 'dialogs',
+  'explorer.generateDocs': 'dialogs',
+  'request.exportWsiReport': 'dialogs',
+  'editor.saveAs': 'dialogs',
+  'editor.loadFrom': 'dialogs',
+  'request.addAttachment': 'dialogs',
+  // A listener on the machine's network.
+  'mock.start': 'listen',
+  'mock.stop': 'listen',
+  'workspace.newWindow': 'windows',
+  // Adds a server account; a browser tab's one account is the server's.
+  'account.signIn': 'accounts',
+  // Shows secret values in the HTTP log; the browser never shows a value back.
+  'secrets.toggleShowSecrets': 'reveal-secrets',
+  'workspace.secretSources': 'secret-sources',
+  'secrets.clearSourceCache': 'secret-sources',
+};
+
+/** Whether the connected host can do what `command` needs; see {@link COMMAND_CAPABILITIES}. */
+function hostCanRun(command: Command): boolean {
+  const capability = COMMAND_CAPABILITIES[command.id];
+  return capability === undefined || hasCapability(capability);
+}
+
 function isAvailable(command: Command, context: CommandContext): boolean {
-  return command.when === undefined || command.when(context);
+  return hostCanRun(command) && (command.when === undefined || command.when(context));
 }
 
 /**
@@ -93,12 +137,15 @@ export async function runCommand(id: CommandId, context: CommandContext, arg?: u
 }
 
 /**
- * Every registered command, ungated, sorted by category then label. What the application menu
- * is built from: main cannot evaluate a `when` guard, so menu items are all generated and the
- * registry decides at click time (see `shell/app-menu.ts`).
+ * Every registered command the connected host can run, ungated by `when`, sorted by category then
+ * label. What the application menu and the shortcuts table are built from: main cannot evaluate a
+ * `when` guard, so menu items are all generated and the registry decides at click time (see
+ * `shell/app-menu.ts`). A command whose capability is missing ({@link COMMAND_CAPABILITIES}) is left
+ * out: no click could ever run it.
  */
 export function listAllCommands(): readonly CommandDefinition<CommandContext>[] {
   return [...registry.values()]
+    .filter(hostCanRun)
     .map((command) => stripHandler(command))
     .sort((a, b) => a.category.localeCompare(b.category) || a.label.localeCompare(b.label));
 }
@@ -112,6 +159,8 @@ export function listPaletteCommands(context: CommandContext): readonly PaletteCo
     .flatMap((command): PaletteCommand[] => {
       // A menu's argument-taking twin of a palette command (see `CommandCatalogEntry.paletteHidden`).
       if (command.paletteHidden === true) return [];
+      // Not "disabled, because": the host cannot do it at all, so it is not listed.
+      if (!hostCanRun(command)) return [];
       if (isAvailable(command, context)) return [{ command: stripHandler(command) }];
       const disabledReason = command.unavailable?.(context);
       return disabledReason === undefined ? [] : [{ command: stripHandler(command), disabledReason }];

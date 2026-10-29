@@ -67,6 +67,8 @@ describe('createElectronPlatform', () => {
 
   it('declares every capability', () => {
     expect([...createElectronPlatform().capabilities].sort()).toEqual([...ALL_CAPABILITIES].sort());
+    expect(createElectronPlatform().capabilities.has('accounts')).toBe(true);
+    expect(createElectronPlatform().capabilities.has('reveal-secrets')).toBe(true);
   });
 
   it('reports the Electron runtime version as the runtime version', () => {
