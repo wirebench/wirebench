@@ -1,7 +1,9 @@
 /**
- * The browser client end to end (hosted edition spec §17.7): a signed-in tab opens a server workspace,
- * sends to a service on the server's network, is refused a loopback address by the egress rule, shows
- * no SSH area and no file-manager reveal, and signs out to the sign-in page.
+ * The browser client end to end (hosted edition spec §17.7, §18.7): a signed-in tab opens a server
+ * workspace, sends to a service on the server's network, finds that a loopback address needs this
+ * machine, pairs the headless `wirebench agent` running beside it (global setup starts it, unpaired) and
+ * sends to this machine's `127.0.0.1` through it, sees in History which host sent each exchange, shows no
+ * SSH area and no file-manager reveal, and signs out to the sign-in page.
  *
  * The steps share one page and one session, in order: each builds on the last, and the sign-in
  * endpoints are rate-limited per address. Every page the flow loads reports its CSP violations and the
@@ -10,7 +12,8 @@
 import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { openTeamDialog } from '../helpers/server.js';
 import { apiRow, responseStatus, restRequestRow, sendRest, unfoldRow } from '../helpers/rest.js';
-import { readSeed, type Seed } from './stack.js';
+import { pairAgent, unpairAgent } from './agent.js';
+import { BASE_URL, readAgentHome, readSeed, type Seed } from './stack.js';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -49,6 +52,8 @@ test.beforeAll(async ({ browser }) => {
 
 test.afterAll(async () => {
   await context.close();
+  // A retry starts from an unpaired machine, as the first attempt did: the loopback step expects no agent.
+  await unpairAgent(readAgentHome());
 });
 
 function projectRow(): Locator {
@@ -125,7 +130,51 @@ test('a request to 127.0.0.1 needs this machine: the tab has no agent, so it off
   // The person's localhost is never the server's: nothing went out from the server, and with no agent
   // paired the send stops here. The code sits in the panel's folded details; its text is there either way.
   await expect(panel.getByTestId('send-error-code')).toHaveText('send-needs-agent');
-  await expect(page.getByRole('button', { name: 'Pair this machine…' })).toBeVisible();
+  // The offer leads to Settings → This machine, where the next step pairs.
+  await page.getByRole('button', { name: 'Pair this machine…' }).click();
+  await expect(page.getByTestId('this-machine-section')).toBeVisible();
+});
+
+test('pairs the headless agent on this machine with the code This machine shows', async () => {
+  const section = page.getByTestId('this-machine-section');
+  await section.getByTestId('agent-pair').click();
+  // The command the tab offers is the one to run: its code, and the server's origin as the tab sees it,
+  // which is the origin the agent then checks every socket's Origin against.
+  const command = (await section.getByTestId('agent-pair-code').locator('code').innerText()).trim();
+  const typed = /^wirebench agent pair (\S+) --server (\S+)$/.exec(command);
+  expect(typed, `the offered command: ${command}`).not.toBeNull();
+  const [, code, server] = typed as unknown as [string, string, string];
+  expect(server).toBe(BASE_URL);
+
+  const out = await pairAgent(readAgentHome(), code, server);
+  expect(out).toContain(`Paired with ${BASE_URL} as ${seed.email}.`);
+
+  // The section reads the pairings again while the code is out, and the tab opens its socket to the agent.
+  await expect(section.getByTestId('agent-pairing-row').first()).toBeVisible({ timeout: 30_000 });
+  await expect(section.getByTestId('agent-status')).toHaveAttribute('data-status', 'connected', { timeout: 60_000 });
+  await section.getByTestId('agent-pair-done').click();
+  // Settings takes the whole window while open: leave it before touching the explorer.
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('settings-page')).toHaveCount(0);
+});
+
+test('a request to this machine’s 127.0.0.1 goes out through the paired agent', async () => {
+  await openRequest(seed.agentRequest);
+  await expect(page.getByTestId('send-route-chip')).toHaveText('Agent');
+  await sendRest(page);
+  await expect(responseStatus(page)).toContainText('200');
+  // Only this machine's echo server answers this: the server's 127.0.0.1 is its own container.
+  await expect(page.getByTestId('rest-response')).toContainText(seed.agentPath);
+});
+
+test('History says which host sent each exchange: the agent, or the server', async () => {
+  await page.getByTestId('activity-bar').getByRole('button', { name: 'History' }).click();
+  const rows = page.getByTestId('history-row');
+  // A row shows the request's path or its name, depending on the History view.
+  const agentRow = rows.filter({ hasText: new RegExp(`${seed.agentPath}|${seed.agentRequest}`) }).first();
+  const serverRow = rows.filter({ hasText: new RegExp(`/hello|${seed.echoRequest}`) }).first();
+  await expect(agentRow.getByTestId('history-origin')).toHaveAttribute('data-origin', 'agent');
+  await expect(serverRow.getByTestId('history-origin')).toHaveAttribute('data-origin', 'server');
 });
 
 test('signing out lands on the sign-in page, and the app is no longer served', async () => {

@@ -71,7 +71,8 @@ expires like a desktop's device token, after `WIREBENCH_SERVER_TOKEN_IDLE_DAYS` 
 ## What it cannot do
 
 A browser tab has no machine of its own, so everything that needs one is absent. The app hides it rather
-than failing:
+than failing. A request that must leave from the user's own machine is the exception: a paired
+[local agent](#send-from-your-machine-the-local-agent) sends it. The rest stays out of the tab:
 
 - local and git workspaces;
 - SSH, terminals, SFTP and port forwards;
@@ -108,14 +109,105 @@ user from `WIREBENCH_SERVER_SECRETS_KEY`, and kept in that user's directory on t
 Every connection a tab opens through the server is checked when it connects, on every redirect and
 through a proxy too, by the rule scheduled runs follow:
 
-- **Always refused:** loopback, link-local, unspecified, multicast and broadcast addresses. A request to
-  `localhost` or `127.0.0.1` fails with `egress-refused`.
+- **Always refused:** loopback, link-local, unspecified, multicast and broadcast addresses. The server's
+  `localhost` is its own, never the user's, so a tab sends a request to `localhost` or `127.0.0.1` through
+  the user's [local agent](#send-from-your-machine-the-local-agent) instead, and without one it fails with
+  `send-needs-agent`.
 - **Always refused too:** the cloud providers' metadata addresses, `169.254.169.254`, `fd00:ec2::254` and
   `100.100.100.200`, whatever the private-range setting.
 - **Refused only if you ask:** the private ranges `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`,
   `100.64.0.0/10` and `fc00::/7`, with `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true`.
 
 The error names the host and the kind of address, never the address a private name resolved to.
+
+## Send from your machine: the local agent
+
+Some requests can only leave from the user's own machine: one to `localhost`, to a host only their office
+network or VPN knows, or one that reads a team secret. A **local agent** on that machine sends them for
+the tab. The desktop app is one; `wirebench agent`, from the CLI, is the same agent without a window.
+
+### Pair a machine
+
+<Steps>
+
+1. In the browser tab, open **Settings → This machine** and choose **Pair this machine**. The tab shows a
+   six-character code, valid for ten minutes, and the command that uses it.
+
+2. On the machine the browser runs on, either:
+   - in the **desktop app**, choose **Pair this machine…** (in the **Tools** menu, or **Settings → Paired
+     browsers**), and type the server's address and the code; or
+   - in a terminal, run the command the tab shows, then start the agent if it is not running:
+
+     ```sh
+     wirebench agent pair ABC234 --server https://wirebench.example.com
+     wirebench agent
+     ```
+
+3. The tab's **This machine** list shows the machine, and its status turns to **Connected**. From then
+   on, the chip beside **Send** says **Agent** or **Server** for where the next send goes, and History
+   tags each entry the same way.
+
+</Steps>
+
+The desktop app is the agent while it is running; `wirebench agent` serves until you stop it. Unpair from
+the tab's list, from the desktop's **Settings → Paired browsers**, or with `wirebench agent unpair`:
+either side removes the pairing at both. See the
+[CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#wirebench-agent) for every
+`wirebench agent` command.
+
+<Aside type="caution" title="What pairing trusts the server with">
+A paired server can send requests from this machine on your behalf, including to addresses on this
+machine's network. Pair only with your own team's server, and unpair a machine you no longer use with it.
+</Aside>
+
+### Where a send goes
+
+Before each REST or SOAP send, the tab asks the server where it should go. It goes from the agent when:
+
+- its host is `localhost`, a loopback, link-local or cloud-metadata address, or a name the server cannot
+  resolve (it may be one only your network knows);
+- it is in a private range and the server refuses private ranges
+  (`WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true`);
+- it reads a `${#System#…}` value, a team secret, a keystore, or Kerberos;
+- you pinned the request or the workspace to the agent, from the chip's menu.
+
+Everything else goes from the server, as before. With no agent connected, a send that needs one stops with
+`send-needs-agent` and offers **Pair this machine…**.
+
+### What the agent may do
+
+The agent serves a browser tab one thing: it takes a **send bundle** — the request, its folder's scripts,
+the project's and active environment's values, and the names (never the values) of the secrets it reads —
+writes it to a temporary folder, sends it, returns the result, and deletes the folder. It also cancels a
+send and clears the cookies it keeps for that pairing.
+
+That is all. A paired tab cannot open or read files on the machine, run a command, or open an SSH session,
+a terminal, SFTP or a port forward; nothing else the desktop app does is reachable from it.
+
+- **Environment variables.** `${#System#NAME}` reads only names on the machine's own allowlist, which is
+  empty by default. Add a name with `wirebench agent allow-env NAME`, or in the desktop's **Settings →
+  Paired browsers**. Any other name resolves to nothing, and the send is refused as unresolved.
+- **Team secrets** need the **desktop app** on a machine already approved for that workspace. It uses the
+  values that machine has imported; if the server holds a newer one, the send fails with
+  `team-secret-stale` until you open or sync the workspace there. Unapproved, the send fails with
+  `team-secret-needs-approval`. The headless `wirebench agent` has no machine key, so a team secret always
+  needs the desktop app.
+- **The desktop's own secrets stay its own.** A bundle never reads the values the desktop app holds for
+  its projects, nor a secret source: secret sources do not run for a tab yet.
+
+### Browsers
+
+Chrome, Edge and Firefox let a secure page reach an agent on `127.0.0.1`. **Safari** refuses a plain
+loopback connection from an `https://` page, so a Safari tab cannot reach any agent: on a Mac with Safari,
+open the workspace in the desktop app instead.
+
+### The headless agent's key
+
+`wirebench agent` keeps its state in `~/.wirebench/agent` (or `$WIREBENCH_AGENT_HOME`), and seals its private
+key and secrets under `agent.key` there. The CLI has no OS keychain, so the **file mode is the only
+protection**: the folder is `0700` and the key `0600`, and on macOS and Linux the agent refuses to start
+when either is open to other users. Anyone who can read that file can act as this machine's agent. Run it
+on the machine your browser runs on, never in a container, whose `127.0.0.1` the browser cannot reach.
 
 ## Memory and limits
 
