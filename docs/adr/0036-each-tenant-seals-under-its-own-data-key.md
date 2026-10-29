@@ -39,7 +39,7 @@ that seals a server host's files derives from the tenant's data key, never from 
   of the root.
 - **When it exists.** `data_key` is null until a root is configured, since the root is optional on a self-hosted
   server without the browser client, and nothing is sealed until then. The key is created with the tenant, or the
-  first time the root exists.
+  first time the root exists, by a compare-and-set on the null column, so two processes never make two keys.
 - **The re-wrap.** The tenancy migration re-seals every blob slice 2 wrote under the old derivation, once, before any
   host opens. Each blob is checked by trying the new key first, so the step is idempotent and resumable.
 - **Server-wide keys stay server-wide.** The hooks key, the schedules key and the pairing-code HMAC key keep their
@@ -52,8 +52,10 @@ that seals a server host's files derives from the tenant's data key, never from 
 
 ## Consequences
 
-- Deleting a tenant clears one column, and every file sealed for its users is unreadable from then on, wherever a
-  copy survived.
+- Deleting a tenant clears one column. Every file sealed for its users is unreadable once every database backup
+  older than the deletion has expired, wherever a copy of the files survived: such a backup still holds the wrapped
+  key, and the root still opens it. Keeping backup retention short is therefore part of deletion (slice 7, which
+  holds a deletion 14 days).
 - Rotating the root re-wraps one column per tenant, and no user file is touched.
 - A process unwraps a tenant's key once and holds it in memory. A memory dump of a running server still reveals the
   keys of the tenants it served; this design does not change that.
