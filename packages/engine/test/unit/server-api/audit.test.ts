@@ -44,7 +44,7 @@ describe('audit wire shapes (audit-log spec §3.4, §5.2)', () => {
     }
     for (const action of AUDIT_ACTIONS) expect(action).toMatch(/^[a-z_]+\.[a-z_]+$/);
     expect(new Set(AUDIT_ACTIONS).size).toBe(AUDIT_ACTIONS.length);
-    expect(AUDIT_ACTIONS).toHaveLength(74);
+    expect(AUDIT_ACTIONS).toHaveLength(80);
   });
 
   it('parses an event and refuses an unknown action or a nested details value', () => {

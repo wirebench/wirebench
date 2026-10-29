@@ -33,7 +33,11 @@ export type HostReplyFrame = { readonly id: number } & (
   | { readonly ok: true; readonly value: unknown }
   | {
       readonly ok: false;
-      readonly error: { readonly code: string; readonly message: string; readonly details?: unknown };
+      readonly error: {
+        readonly code: string;
+        readonly message: string;
+        readonly details?: Record<string, unknown> | undefined;
+      };
     }
 );
 
@@ -82,10 +86,44 @@ export interface ServerHost {
 /** What the bundle exports. */
 export type CreateServerHost = (input: ServerHostInput) => Promise<ServerHost>;
 
+/** What the shared socket loop needs of a WebSocket (`@wirebench/host`'s `WebSocketLike`, structurally). */
+export interface SharedSocketLike {
+  readonly readyState: number;
+  readonly OPEN: number;
+  send(data: string): void;
+  close(code: number, reason: string): void;
+  on(event: 'message', listener: (data: Buffer | ArrayBuffer | Buffer[], isBinary: boolean) => void): unknown;
+  on(event: 'close', listener: () => void): unknown;
+}
+
+/** A host that is ready to serve one socket (`HostSocketReady`, structurally). */
+export interface SharedSocketReady {
+  readonly hello: unknown;
+  attach(caller: HostCaller): void;
+  serve(caller: HostCaller, frame: HostCallFrame): Promise<HostReplyFrame>;
+  detach(): Promise<void>;
+}
+
+/** `HostSocketOptions`, structurally. */
+export interface SharedSocketOptions {
+  readonly ready: Promise<SharedSocketReady | undefined>;
+  readonly callerId: number;
+  readonly limits: { readonly maxInFlight: number; readonly maxQueuedBytes: number };
+  readonly log: (message: string, error: unknown) => void;
+  readonly onClosed: () => void;
+  readonly beforeReady?: (frame: unknown) => Promise<boolean>;
+}
+
+/** The shared socket loop, `runHostSocket` of `@wirebench/host`; the bundle exports it. */
+export type RunSharedHostSocket = (
+  ws: SharedSocketLike,
+  options: SharedSocketOptions,
+) => { end(code: number, reason: string): void };
+
 /** The built bundle, beside this file's own compiled output; the same path from `src/host/` under a test. */
 export const HOST_BUNDLE_URL = new URL('../../dist/host/bundle.js', import.meta.url);
 
-const loaded = new Map<string, Promise<CreateServerHost>>();
+const loaded = new Map<string, Promise<BundleExports>>();
 
 /**
  * The bundle's `createServerHost`, or `undefined` when the browser client is off, in which case the
@@ -98,7 +136,29 @@ export async function loadHostRuntime(options: {
   readonly bundle?: URL;
 }): Promise<CreateServerHost | undefined> {
   if (!options.browserClient) return undefined;
-  const url = (options.bundle ?? HOST_BUNDLE_URL).href;
+  return (await bundleExports(options.bundle)).createServerHost;
+}
+
+/**
+ * The bundle's shared socket loop (`runHostSocket` of `@wirebench/host`), or `undefined` when the browser
+ * client is off. Loaded from the same bundle as {@link loadHostRuntime}'s host, so the server and the agent
+ * run one implementation of the wire.
+ */
+export async function loadHostSocketLoop(options: {
+  readonly browserClient: boolean;
+  readonly bundle?: URL;
+}): Promise<RunSharedHostSocket | undefined> {
+  if (!options.browserClient) return undefined;
+  return (await bundleExports(options.bundle)).runHostSocket;
+}
+
+interface BundleExports {
+  readonly createServerHost: CreateServerHost;
+  readonly runHostSocket: RunSharedHostSocket;
+}
+
+async function bundleExports(bundle: URL | undefined): Promise<BundleExports> {
+  const url = (bundle ?? HOST_BUNDLE_URL).href;
   let loading = loaded.get(url);
   if (loading === undefined) {
     loading = importBundle(url);
@@ -109,15 +169,21 @@ export async function loadHostRuntime(options: {
   return await loading;
 }
 
-async function importBundle(url: string): Promise<CreateServerHost> {
-  let module: { readonly createServerHost?: unknown };
+async function importBundle(url: string): Promise<BundleExports> {
+  let module: { readonly createServerHost?: unknown; readonly runHostSocket?: unknown };
   try {
-    module = (await import(url)) as { readonly createServerHost?: unknown };
+    module = (await import(url)) as typeof module;
   } catch (error) {
     throw new Error('The host bundle could not be loaded; build the server (`pnpm build`) first', { cause: error });
   }
   if (typeof module.createServerHost !== 'function') {
     throw new Error('The host bundle does not export createServerHost');
   }
-  return module.createServerHost as CreateServerHost;
+  if (typeof module.runHostSocket !== 'function') {
+    throw new Error('The host bundle does not export runHostSocket');
+  }
+  return {
+    createServerHost: module.createServerHost as CreateServerHost,
+    runHostSocket: module.runHostSocket as RunSharedHostSocket,
+  };
 }

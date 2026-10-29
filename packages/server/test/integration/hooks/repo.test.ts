@@ -38,6 +38,7 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
       'session-logs',
       'terminal-shares',
       'host',
+      'agent',
     ]);
   });
 

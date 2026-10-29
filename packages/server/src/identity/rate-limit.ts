@@ -44,6 +44,19 @@ export class RateLimiter {
     return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((1 - tokens) / this.refillPerMs / 1000)) };
   }
 
+  /**
+   * Whether `key` has an attempt left, without taking one: for a bucket charged only on failure (the
+   * agent module's server-wide failed-pairing limit), checked before the attempt is made.
+   */
+  peek(key: string): RateLimitDecision {
+    const now = this.now();
+    const bucket = this.buckets.get(key);
+    if (bucket === undefined) return { allowed: true, retryAfterSeconds: 0 };
+    const tokens = Math.min(this.capacity, bucket.tokens + Math.max(0, now - bucket.updatedAt) * this.refillPerMs);
+    if (tokens >= 1) return { allowed: true, retryAfterSeconds: 0 };
+    return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((1 - tokens) / this.refillPerMs / 1000)) };
+  }
+
   private prune(): void {
     if (this.buckets.size <= PRUNE_ABOVE) return;
     const now = this.now();

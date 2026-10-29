@@ -34,6 +34,7 @@ describeDb('0003_teams (§4.1)', () => {
       'session-logs',
       'terminal-shares',
       'host',
+      'agent',
     ]);
   });
 

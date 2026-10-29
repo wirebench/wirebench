@@ -139,6 +139,8 @@ import { registerIssuedTokenChannels } from '../ipc/issued-tokens.js';
 import { IssuedTokensService, type ResolvedIssuedToken } from '../issued-tokens.js';
 import { desktopSecrets, stsLogEntry } from '../send/host.js';
 import { ExchangeRegistry } from '../send/exchange.js';
+import { sendFromDirectory, type DetachedSendResult, type SendFromDirectoryInput } from '../send/detached.js';
+import { ProjectHost } from '../project-host.js';
 import { OAuth2Service } from '../oauth2.js';
 import { registerAccountChannels, toAccountWire } from '../ipc/account.js';
 import { registerTeamChannels } from '../ipc/team.js';
@@ -155,7 +157,7 @@ import { AccountService } from '../account-service.js';
 import { AuditReporter } from '../audit/reporter.js';
 import { normalizeServerUrl, ServerClient } from '../server-client.js';
 import { LiveClients } from '../live/live-clients.js';
-import { mainHttpOptions, type MainHttpDeps } from '../network-options.js';
+import { mainHttpOptions, resolveProxy, type MainHttpDeps } from '../network-options.js';
 import { OpenApiImportService } from '../openapi-import.js';
 import { ProtoImportService } from '../proto-import.js';
 import { registerSearchChannels } from '../ipc/search.js';
@@ -189,6 +191,14 @@ export interface Host {
   detach(callerId: number): Promise<void>;
   /** What the app's quit does, minus quitting: resolves once every window's quit path ran. */
   shutdown(): Promise<void>;
+  /**
+   * Sends one item of the project in a folder no window has open, for the local agent's send bundle (spec
+   * §18.4): the same send dependencies a window's send gets (the secret getter, the redactor, the
+   * preferences), over a project and an engine service of its own, with `input.cookies` as its jar. It
+   * writes no History, HTTP Log row or audit event, keeps no script value, and its result is always
+   * redacted. Called in process; no channel reaches it.
+   */
+  sendFromDirectory(input: SendFromDirectoryInput): Promise<DetachedSendResult>;
 }
 
 export interface AttachOptions {
@@ -2074,5 +2084,63 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     await Promise.all(scopes.all().map(async (scope) => await closeWindowScope(scope))).catch(() => undefined);
   }
 
-  return { handlers: handlerTable, attach, detach, shutdown };
+  /** The agent's sends in flight: apart from the windows', so neither cancels the other's. */
+  const detachedExchanges = new ExchangeRegistry();
+  const detachedSend = (input: SendFromDirectoryInput): Promise<DetachedSendResult> =>
+    sendFromDirectory(
+      {
+        hostState,
+        preferences: preferencesService,
+        confirmProtected: nativeDialogs.confirmProtected,
+        ...egressOption,
+        // The agent's own namespace of the store, by label; never a project's `${secret:…}` entries.
+        agentSecret: async (label) => {
+          const ref = await secretStore.findByLabel(label);
+          return ref === undefined ? undefined : await secretStore.get(ref);
+        },
+        report: reporting,
+        // This machine's proxy, as its Settings name it. Its password is read for the proxy alone: the ref
+        // the preference names, never anything a bundle's `${secret:…}` refs could reach.
+        proxyFor: async (url) => {
+          const { proxy } = preferencesService.get();
+          return await resolveProxy({
+            url,
+            proxy,
+            getSecret: async (ref) => {
+              if (ref !== proxy.passwordRef) return undefined;
+              const password = await reporting(async (one) => await secretStore.get(one))(ref);
+              // An error naming the proxy's URL must not carry its password.
+              if (password !== undefined) hostState.redactor.recordSecretValue(password);
+              return password;
+            },
+            resolveSystemProxy: async (target) => await platform.proxy.resolve(target).catch(() => undefined),
+          });
+        },
+        // A send's own engine: a bundle's definitions never replace the ones a window has loaded.
+        engine: (getSecret) => new EngineService(getSecret, (url) => mainHttpOptions(url, mainHttpDeps)),
+        // No workspace, globals, current values or picks: a bundle carries the values it is sent with.
+        // On the send's own view of the host state: its `${#System#…}` scope is the send's, never this process's.
+        projectHost: (engine, getSecret, sendState) =>
+          new ProjectHost(
+            engine,
+            {
+              hostState: sendState,
+              ...egressOption,
+              enabledKinds: features.enabledKinds,
+              ...(features.registry !== undefined ? { registry: features.registry } : {}),
+            },
+            undefined,
+            undefined,
+            { get: getSecret },
+            preferencesService,
+            undefined,
+            async (url) => await platform.proxy.resolve(url).catch(() => undefined),
+          ),
+        scripts,
+        registry: detachedExchanges,
+      },
+      input,
+    );
+
+  return { handlers: handlerTable, attach, detach, shutdown, sendFromDirectory: detachedSend };
 }

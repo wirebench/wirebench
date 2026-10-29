@@ -261,6 +261,28 @@ importers:
         specifier: workspace:*
         version: link:../packages/ssh
 
+  packages/agent:
+    dependencies:
+      '@wirebench/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@wirebench/host':
+        specifier: workspace:*
+        version: link:../host
+      '@wirebench/wire':
+        specifier: workspace:*
+        version: link:../wire
+      ws:
+        specifier: 8.21.3
+        version: 8.21.3
+      zod:
+        specifier: ^4.6.6
+        version: 4.6.6
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+
   packages/cli:
     dependencies:
       '@modelcontextprotocol/sdk':

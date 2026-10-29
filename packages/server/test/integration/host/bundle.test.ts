@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, describe, expect, it } from 'vitest';
+import { HOST_CLOSE, HOST_LIMITS } from '../../../src/host/errors.js';
 
 const run = promisify(execFile);
 const bundle = fileURLToPath(new URL('../../../dist/host/bundle.js', import.meta.url));
@@ -41,7 +42,7 @@ process.dlopen = (module, filename, ...rest) => {
   opened.push(filename);
   return dlopen.call(process, module, filename, ...rest);
 };
-const { createServerHost } = await import(bundleUrl);
+const { createServerHost, hostWire, runHostSocket } = await import(bundleUrl);
 const host = await createServerHost({
   userId,
   dataDir,
@@ -67,7 +68,7 @@ closed = true;
 await host.detach(1);
 await host.dispose();
 process.stdout.write(JSON.stringify({
-  version, fsOpen, areas, refused, opened,
+  version, fsOpen, areas, refused, opened, hostWire, socketLoop: typeof runHostSocket,
   capabilities: host.capabilities, osTheme: host.osTheme, channelCount: channels.length,
   terminal: channels.filter((channel) => /^(terminal|localTerminal|serial|kerberos)\\./.test(channel)),
 }));
@@ -84,6 +85,8 @@ interface ChildReport {
   readonly osTheme: string;
   readonly channelCount: number;
   readonly terminal: string[];
+  readonly hostWire: { close: unknown; limits: unknown };
+  readonly socketLoop: string;
 }
 
 describe('the host bundle', () => {
@@ -120,6 +123,10 @@ describe('the host bundle', () => {
       report.refused.filter((specifier) => specifier !== 'cpu-features' && !specifier.endsWith('sshcrypto.node')),
     ).toEqual([]);
     expect(report.opened).toEqual([]);
+    // The server's mirror of the shared socket's close codes and limits is the original, value for value,
+    // and the bundle carries the loop the server runs its sockets on.
+    expect(report.hostWire).toEqual({ close: HOST_CLOSE, limits: HOST_LIMITS });
+    expect(report.socketLoop).toBe('function');
     // The host wrote its state into the user's checkout and nowhere else in the data directory.
     expect(readdirSync(dataDir)).toEqual(['checkouts']);
     expect(readdirSync(join(dataDir, 'checkouts'))).toEqual([USER]);

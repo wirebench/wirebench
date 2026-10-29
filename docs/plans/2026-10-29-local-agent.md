@@ -100,15 +100,15 @@ tests do not change.
 
 **Interfaces:** the routes and tables of spec §18.2, registered only when `config.browserClient` is on.
 
-- **Codes:** alphabet `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, stored hashed, dead on the fifth wrong attempt.
+- **Codes:** alphabet `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, stored as an HMAC, ten minutes, with per-address and server-wide failure limits (spec §18.2).
 - **Signatures:** Ed25519 over `nonce‖pairingId‖timestamp`, with the timestamp no more than 60 s old.
 - **Nonces:** single-use, 60 s, taken with `delete … returning`.
 - **Audit events:** `agent.paired`, `agent.unpaired`, and `agent.nonce.redeemed` (failures too, with the reason).
 - **Rate limits:** the identity module's limiter.
 - **Unpairing** announces an event the server host uses to drop the pairing from its view.
 
-- [ ] Write failing tests for every route: success, wrong Origin, replayed nonce, expired code, the fifth wrong
-  attempt, bad signature, old timestamp, unknown pairing, and unpairing from either side.
+- [ ] Write failing tests for every route: success, wrong Origin, replayed nonce, expired code, the failure limits,
+  bad signature, old timestamp, unknown pairing, and unpairing from either side.
 - [ ] Implement, run `pnpm check`, commit.
 
 ### Task 3: `packages/agent`, the loopback server
@@ -163,13 +163,13 @@ How `agent.send` runs:
    inside it, and the 32 MiB cap is enforced.
 2. It loads the project with the engine's `loadProject`.
 3. It runs the one item through the host's send path, the same one a desktop send uses. Secrets resolve through the
-   host's getter, and cookie jars are kept per pairing origin.
+   host's getter, and cookie jars are kept per pairing.
 4. It removes the directory in a `finally`.
 
 - [ ] Write failing tests:
   - a REST send to a local echo server;
   - a script in the folder chain runs;
-  - `${#System#HOME}` resolves on the agent;
+  - a declared and allowed `${#System#…}` name resolves on the agent, and any other is refused;
   - a missing secret answers `secret-missing`;
   - `../` and absolute paths are refused;
   - a bundle over the cap is refused;

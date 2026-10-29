@@ -84,6 +84,16 @@ export const AUDIT_ACTIONS = [
   'terminal_share.control_returned',
   'terminal_share.viewer_removed',
   'terminal_share.ended',
+  /**
+   * A local agent paired, unpaired or moved port; a tab's nonce redeemed or refused; an agent-signed unpair
+   * or port change refused (hosted edition spec §18.2).
+   */
+  'agent.paired',
+  'agent.unpaired',
+  'agent.port_changed',
+  'agent.nonce_redeemed',
+  'agent.nonce_refused',
+  'agent.request_refused',
 ] as const;
 export const auditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof auditActionSchema>;
@@ -104,6 +114,7 @@ export const AUDIT_ACTION_GROUPS = [
   'schedule',
   'session_log',
   'terminal_share',
+  'agent',
 ] as const;
 export type AuditActionGroup = (typeof AUDIT_ACTION_GROUPS)[number];
 
@@ -124,6 +135,7 @@ export const AUDIT_TARGET_KINDS = [
   'schedule',
   'session-log',
   'terminal-share',
+  'agent-pairing',
 ] as const;
 export type AuditTargetKind = (typeof AUDIT_TARGET_KINDS)[number];
 

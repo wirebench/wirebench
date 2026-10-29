@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { defineChannel, defineEvent } from './ipc-contract.js';
+import { agentChannels } from './agent.js';
 import {
   sshCloseRequestSchema,
   sshConnectRequestSchema,
@@ -522,6 +523,8 @@ export type IpcResult<T> = { readonly ok: true; readonly value: T } | { readonly
 
 /** The registry of request/response IPC channels shared by main, preload, and renderer. */
 export const channels = {
+  /** The local agent's own channels (hosted edition spec §18.1): a paired agent serves them, a window's host never does. */
+  ...agentChannels,
   app: {
     version: defineChannel(
       'app.version',

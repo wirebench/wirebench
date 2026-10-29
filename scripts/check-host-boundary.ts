@@ -1,15 +1,17 @@
 /**
  * Keeps the host portable (host seam, ADR-0033): host code in `@wirebench/host` (`packages/host/src`) reaches
- * Electron only through `HostPlatform`, and keeps its state in the host it belongs to.
+ * Electron only through `HostPlatform`, and keeps its state in the host it belongs to. The local agent
+ * (`@wirebench/agent`, `packages/agent/src`) is embedded beside the host by the CLI and the desktop, so it is
+ * held to the same rules.
  *
- * Three rules, applied to every file under the host (the Electron shell that adapts it stays in the desktop
- * app, under `apps/desktop/src/main`):
+ * Three rules, applied to every file under the host and the agent (the Electron shell that adapts the host
+ * stays in the desktop app, under `apps/desktop/src/main`):
  *  - `electron-import`: no import of `electron` or any `electron/*` subpath, in any spelling (`from`,
  *    `import(...)`, a bare `import`, `require(...)`; type imports too: they still tie host code to
  *    Electron's types).
  *  - `outside-package`: no relative import, static or dynamic, JSON included, that resolves outside
- *    `packages/host`. Host code reaches other code only by package name, so an embedding gets everything the
- *    host needs from its declared dependencies (the Electron shell, the desktop manifest and other packages'
+ *    the file's own package (`packages/host` or `packages/agent`). Host code reaches other code only by
+ *    package name, so an embedding gets everything the host needs from its declared dependencies (the Electron shell, the desktop manifest and other packages'
  *    sources are all out of reach).
  *  - `module-state`: no top-level `let`/`var`, and no top-level `new Map`/`Set`/`WeakMap`/`WeakSet`/
  *    `AsyncLocalStorage` held in a `const` that is not annotated `ReadonlyMap`/`ReadonlySet`. A second host
@@ -26,11 +28,21 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-/** Where the host lives, relative to the repo root. */
-const HOST_DIR = 'packages/host/src';
+/** A tree the rules apply to: its sources, and the package no relative import may leave. */
+interface CheckedRoot {
+  /** The sources, relative to the repo root. */
+  readonly src: string;
+  /** The package, relative to the repo root. */
+  readonly pkg: string;
+  /** Whether a missing tree fails the gate (a wrong root must not pass it). */
+  readonly required: boolean;
+}
 
-/** The host package, relative to the repo root: no relative import may leave it. */
-const PACKAGE_DIR = 'packages/host';
+/** The host, which must exist, and the agent, held to the same rules where it exists. */
+const CHECKED_ROOTS: readonly CheckedRoot[] = [
+  { src: 'packages/host/src', pkg: 'packages/host', required: true },
+  { src: 'packages/agent/src', pkg: 'packages/agent', required: false },
+];
 
 /** Why each rule exists, printed beside a violation. */
 export const RULE_REASONS: Readonly<Record<HostBoundaryViolation['rule'], string>> = {
@@ -152,10 +164,10 @@ export interface HostBoundaryResult {
   scanned: number;
 }
 
-/** Whether `specifier` (relative, from `file` under `hostDir`) lands outside the host package. */
-function leavesPackage(root: string, hostDir: string, file: string, specifier: string): boolean {
-  const target = resolve(hostDir, dirname(file), specifier);
-  const packageDir = join(root, PACKAGE_DIR);
+/** Whether `specifier` (relative, from `file` under `srcDir`) lands outside the package at `pkg`. */
+function leavesPackage(root: string, pkg: string, srcDir: string, file: string, specifier: string): boolean {
+  const target = resolve(srcDir, dirname(file), specifier);
+  const packageDir = join(root, pkg);
   return target !== packageDir && !target.startsWith(packageDir + sep);
 }
 
@@ -164,15 +176,28 @@ function leavesPackage(root: string, hostDir: string, file: string, specifier: s
  * host directory is missing: a wrong root must fail the gate, not pass it.
  */
 export function findHostBoundaryViolations(root: string): HostBoundaryResult {
-  const hostDir = join(root, HOST_DIR);
-  if (!existsSync(hostDir)) {
-    throw new Error(`host boundary: no host directory at ${hostDir}`);
-  }
   const violations: HostBoundaryViolation[] = [];
-  const files = sourceFiles(hostDir);
+  let scanned = 0;
+  for (const checked of CHECKED_ROOTS) {
+    const srcDir = join(root, checked.src);
+    if (!existsSync(srcDir)) {
+      if (checked.required) throw new Error(`host boundary: no host directory at ${srcDir}`);
+      continue;
+    }
+    const files = sourceFiles(srcDir);
+    scanned += files.length;
+    violations.push(...rootViolations(root, checked.pkg, srcDir, files));
+  }
+  violations.push(...desktopExportViolations(root));
+  return { violations, scanned };
+}
+
+/** The violations of the three host rules in `files` (relative to `srcDir`, in the package at `pkg`). */
+function rootViolations(root: string, pkg: string, srcDir: string, files: readonly string[]): HostBoundaryViolation[] {
+  const violations: HostBoundaryViolation[] = [];
   for (const file of files) {
-    const repoPath = relative(root, join(hostDir, file)).split('\\').join('/');
-    const lines = readFileSync(join(hostDir, file), 'utf8').split('\n');
+    const repoPath = relative(root, join(srcDir, file)).split('\\').join('/');
+    const lines = readFileSync(join(srcDir, file), 'utf8').split('\n');
     lines.forEach((text, index) => {
       const line = index + 1;
       const report = (rule: HostBoundaryViolation['rule']): void => {
@@ -183,7 +208,7 @@ export function findHostBoundaryViolations(root: string): HostBoundaryResult {
           report('electron-import');
           return;
         }
-        if ([...text.matchAll(RELATIVE_IMPORT)].some((m) => leavesPackage(root, hostDir, file, m[1]!))) {
+        if ([...text.matchAll(RELATIVE_IMPORT)].some((m) => leavesPackage(root, pkg, srcDir, file, m[1]!))) {
           report('outside-package');
           return;
         }
@@ -203,8 +228,7 @@ export function findHostBoundaryViolations(root: string): HostBoundaryResult {
       }
     });
   }
-  violations.push(...desktopExportViolations(root));
-  return { violations, scanned: files.length };
+  return violations;
 }
 
 function main(): void {
@@ -212,7 +236,7 @@ function main(): void {
   const { violations, scanned } = findHostBoundaryViolations(root);
   if (violations.length === 0) {
     process.stdout.write(
-      `host boundary: no electron imports, imports outside the package or module state in host code (${String(scanned)} files scanned), and no import of @wirebench/host/desktop outside the desktop\n`,
+      `host boundary: no electron imports, imports outside the package or module state in host or agent code (${String(scanned)} files scanned), and no import of @wirebench/host/desktop outside the desktop\n`,
     );
     return;
   }

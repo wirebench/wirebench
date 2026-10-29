@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -197,5 +197,32 @@ describe('findHostBoundaryViolations', () => {
       ['packages/host/src/d.ts', 'outside-package'],
       ['packages/host/src/host/b.ts', 'outside-package'],
     ]);
+  });
+
+  it('holds the agent to the same rules, inside its own package', () => {
+    const root = repoFixture({
+      'packages/agent/src/a.ts': "import { app } from 'electron';\n",
+      'packages/agent/src/b.ts': 'let sockets = 0;\nconst pairings = new Map();\n',
+      'packages/agent/src/c.ts': "import { x } from '../../host/src/index.js';\n",
+      'packages/agent/src/d.ts':
+        "import { y } from './allowlist.js';\nimport { z } from '../package.json' with { type: 'json' };\n",
+    });
+    expect(violationsOf(root).map((v) => [v.file, v.line, v.rule])).toEqual([
+      ['packages/agent/src/a.ts', 1, 'electron-import'],
+      ['packages/agent/src/b.ts', 1, 'module-state'],
+      ['packages/agent/src/b.ts', 2, 'module-state'],
+      ['packages/agent/src/c.ts', 1, 'outside-package'],
+    ]);
+    expect(findHostBoundaryViolations(root).scanned).toBe(5);
+  });
+
+  it('scans the real agent too', () => {
+    const root = fileURLToPath(new URL('..', import.meta.url));
+    const count = (dir: string): number =>
+      readdirSync(join(root, dir), { recursive: true, encoding: 'utf8' }).filter(
+        (file) => /\.tsx?$/.test(file) && !file.endsWith('.d.ts'),
+      ).length;
+    expect(count('packages/agent/src')).toBeGreaterThan(0);
+    expect(findHostBoundaryViolations(root).scanned).toBe(count('packages/host/src') + count('packages/agent/src'));
   });
 });

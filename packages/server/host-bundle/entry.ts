@@ -7,8 +7,17 @@
  * `tsconfig.json` beside this file typechecks it against the host's own types, which is what holds the
  * server's structural copies (`HostCaller`, `ServerPlatform`, ...) to the real ones.
  */
-import { createHost, serveCall, type HostOptions, type HostPlatform } from '@wirebench/host';
-import type { CreateServerHost, ServerHost } from '../src/host/host-runtime.js';
+import {
+  createHost,
+  HOST_CLOSE,
+  HOST_LIMITS,
+  runHostSocket as sharedRunHostSocket,
+  serveCall,
+  type HostOptions,
+  type HostPlatform,
+} from '@wirebench/host';
+import { HOST_CLOSE as SERVER_CLOSE, HOST_LIMITS as SERVER_LIMITS } from '../src/host/errors.js';
+import type { CreateServerHost, RunSharedHostSocket, ServerHost } from '../src/host/host-runtime.js';
 import { createServerPlatform } from '../src/host/server-platform.js';
 
 export const createServerHost: CreateServerHost = async (input) => {
@@ -28,4 +37,19 @@ export const createServerHost: CreateServerHost = async (input) => {
     dispose: () => host.shutdown(),
   };
   return serverHost;
+};
+
+/**
+ * The shared socket loop, which `src/host/socket.ts` runs the server's sockets on; typechecked against
+ * the server's structural copy of its shapes.
+ */
+export const runHostSocket: RunSharedHostSocket = sharedRunHostSocket;
+
+/**
+ * The server's mirrors of the close codes and limits (`src/host/errors.ts`) are held to the originals:
+ * a code changed on one side and not the other no longer typechecks (both are `as const`).
+ */
+export const hostWire: { readonly close: typeof HOST_CLOSE; readonly limits: typeof HOST_LIMITS } = {
+  close: SERVER_CLOSE,
+  limits: SERVER_LIMITS,
 };

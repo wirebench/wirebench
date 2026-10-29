@@ -38,7 +38,14 @@ type WirebenchEventMap = { [E in AllEvents as E['name']]: EventPayload<E> };
  * The API surface exposed on `window.wirebench`: one callable invoker per channel, mirroring
  * the shape of {@link channels}, plus a single generic `on` for subscribing to events.
  */
-export type WirebenchApi = ApiFromChannels<typeof channels> & {
+/**
+ * Every channel a window calls: the registry without the local agent's own group (`agent.*`, spec §18.1),
+ * which a paired agent serves to a browser tab over its own socket and no window's host serves.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to leave it out
+const { agent: _agentChannels, ...windowChannels } = channels;
+
+export type WirebenchApi = ApiFromChannels<typeof windowChannels> & {
   on<Name extends keyof WirebenchEventMap>(
     name: Name,
     listener: (payload: WirebenchEventMap[Name]) => void,
@@ -127,7 +134,7 @@ export function buildApi(
   env: WirebenchApi['env'] = { e2e: false, osTheme: 'dark', host: 'electron', capabilities: ALL_CAPABILITIES },
   pathForFile: (file: File) => string = () => '',
 ): WirebenchApi {
-  const channelApi = buildChannelApi(channels, invoke);
+  const channelApi = buildChannelApi(windowChannels, invoke);
   return {
     ...channelApi,
     on: (name, listener) => on(name as string, listener as (payload: unknown) => void),

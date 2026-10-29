@@ -33,7 +33,7 @@ import { realTimer } from '../live/module.js';
 import { isServedChannel } from './allowlist.js';
 import { browserClientRoutes } from './browser-client.js';
 import { HOST_CLOSE, HOST_LIMITS } from './errors.js';
-import { loadHostRuntime, type HostSecretEvent } from './host-runtime.js';
+import { loadHostRuntime, loadHostSocketLoop, type HostSecretEvent } from './host-runtime.js';
 import { injectSend } from './inject-send.js';
 import { HostInstances, type HostSession, type HostSocketHandle, type HostUser } from './instances.js';
 import { liveBridge } from './live-bridge.js';
@@ -125,8 +125,17 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         browserClient: true,
         ...(options.bundle !== undefined ? { bundle: options.bundle } : {}),
       });
+      const runSocket = await loadHostSocketLoop({
+        browserClient: true,
+        ...(options.bundle !== undefined ? { bundle: options.bundle } : {}),
+      });
       const runLive = app.liveConnection;
-      if (createServerHost === undefined || runLive === undefined || config.secretsKey === undefined) {
+      if (
+        createServerHost === undefined ||
+        runSocket === undefined ||
+        runLive === undefined ||
+        config.secretsKey === undefined
+      ) {
         throw new Error('the host module needs the host bundle, the live module and WIREBENCH_SERVER_SECRETS_KEY');
       }
       const secretsKey = config.secretsKey;
@@ -237,7 +246,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           });
         // The hello waits for that read too, so a session revoked since identity's check is never served.
         const host = Promise.all([opened, checked]).then(([ready]) => ready);
-        running.socket = runHostSocket(socket, {
+        running.socket = runHostSocket(runSocket, socket, {
           host,
           callerId: nextCallerId++,
           allowed: isServedChannel,

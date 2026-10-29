@@ -284,6 +284,18 @@ server-side send path until an operator asks for them.
   to its owner, and never leaves the server in a socket frame. Every write and every use in a send is
   audited by name (`secret.written`, `secret.resolved` with the target host), never by value. A new key
   cannot open what the old one sealed.
+- **Pairing a local agent.** The agent routes (`/api/v1/agent/…`) exist only when
+  `WIREBENCH_SERVER_BROWSER_CLIENT` is on. A tab asks for a six-character code
+  (`POST /api/v1/agent/pairing-codes`, ten minutes, one live code per user); the agent on the user's machine
+  trades it for a pairing that holds its Ed25519 public key (`POST /api/v1/agent/pairings`, 20 attempts per
+  address in ten minutes; after 50 failed attempts server-wide in ten minutes, pairing answers `429` for
+  everyone until the window refills). Before serving a tab, the agent redeems a single-use nonce the server
+  gave that tab, signed with its key (300 redeems a minute per address, then 30 a minute per pairing once
+  the signature holds); an agent-signed unpair or port change is limited to 60 a minute per address. These
+  limits count by client address, so behind a reverse proxy set `WIREBENCH_SERVER_TRUST_PROXY`, or every
+  request counts as the proxy's one address. Codes are stored as an HMAC under a key derived from
+  `WIREBENCH_SERVER_SECRETS_KEY`, nonces as a hash. `agent.paired`, `agent.unpaired`, `agent.port_changed`,
+  `agent.nonce_redeemed`, `agent.nonce_refused` and `agent.request_refused` (with the reason) are audited.
 - **Egress.** Every connection a tab's host opens — sends, redirects, the proxy hop, OAuth token calls, URL
   imports, definition fetches — is checked at connect time, the same rule as scheduled runs: loopback,
   link-local, unspecified, cloud-metadata, multicast and broadcast addresses are always refused with
