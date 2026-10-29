@@ -6,7 +6,7 @@ customers · Amended 2026-10-26 after an independent review: its four high findi
 (row-level security must be forced), §3.8 and §3.10 (the agent serves a browser a declared subset), §5.4
 guard 6 (background jobs have a tenant scope) and §5.1 (the host package is a factory with no module-level
 state); the rest are folded in where they apply · Amended 2026-10-27 for slice 2 (§17, decision 12,
-ADR-0034) · Issue: #776 (slice 1 is #777, slice 2 is #783) · Module ids: `host-seam`,
+ADR-0034) · Amended 2026-10-29 for slice 3 (§18, ADR-0035) · Issue: #776 (slice 1 is #777, slice 2 is #783, slice 3 is #790) · Module ids: `host-seam`,
 `browser-client`, `local-agent`, `tenancy`, `operations`, `domains`, `control-plane`, `custom-domains`
 
 - Intent: `docs/intent/wirebench-server-teams.md` (roles and sign-in for people without git hosting) extended
@@ -650,7 +650,7 @@ self-hosted teams on their own, which is why they would come first whenever the 
 | --- | --- | --- | --- | --- |
 | 1 | `host-seam` | **Built** (#779 and #780, 2026-10-27; ADR-0033 accepted). `@wirebench/host` as `createHost(platform)` with `HostPlatform` and `Caller`, no module-level state and its gate; the Electron app embeds it; proven by the existing tests on a fake platform and a fake-socket test of `buildApi` (the loopback server moves to slice 3) | — | yes (no user-visible change) |
 | 2 | `browser-client` | **Built** (#785, #787 and #789, 2026-10-29, for #783; §17 records what changed from this row). The Vite browser build, `browser-bootstrap.ts`, capability discovery, the sign-in page and `browser_flows`, the cookie session, the server host with checkouts and per-user state via `inject`, live events over the host socket, user-scoped sealed secrets under one server-wide root, the §3.10 allowlist and path guard, the egress rule on every outbound connection | 1 | yes: a self-hosted team gets a browser tab |
-| 3 | `local-agent` | `packages/agent` as a library, the loopback socket transport, pairing with the browser subset, the send-route rule and the send bundle, `wirebench agent`, the agent's packaging | 1, 2 | yes |
+| 3 | `local-agent` | **Scheduled 2026-10-29** (#790; §18 records what changed from this row). `packages/agent` as a library, the loopback socket transport, pairing with the browser subset, the send-route rule and the send bundle, `wirebench agent`, the agent's packaging | 1, 2 | yes |
 | 4 | `tenancy` | `tenants`, `tenant_id` on every table, forced row-level security, tenant resolution by `Host`, per-tenant directories and data keys with the one-time re-wrap, the six guards of §5.4 including the job scope, the host-instance lease, the self-hosted migration | 2 | yes, invisibly (one tenant) |
 | 5 | `operations` | `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
 | 6 | `domains` | The two registrable names, wildcard certificates, `app.` entry with emailed links, reserved slugs, public suffix submission | 4 | no |
@@ -898,3 +898,139 @@ Plan: `docs/plans/2026-10-27-browser-client.md`.
   sign in with a local password, open a server workspace, send a request to an echo service on the compose network (a private address, open by default), see
   a request to `127.0.0.1` refused by the egress rule, and see
   that the SSH area and the file dialogs are absent. No local Electron windows are involved.
+
+## 18. Slice 3 amendment: the local agent (2026-10-29)
+
+Slice 3 (#790) is scheduled on its merits, after slice 2. With it, a self-hosted team's browser tab can send to
+`localhost`, to private hosts the server cannot reach, and to anything that needs the person's machine. It builds
+§3.4, §3.8, the agent rows of §3.10 and §5.2's agent transport. Where the build differs from the sections above, this
+section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
+
+### 18.1 What the agent serves (amends §2's browser subset and §3.10)
+
+- A browser caller on the agent reaches one channel group, `agent.*`. It reaches nothing of the registry the
+  desktop's own window gets (my call, ADR-0035).
+  - The browser subset of §2 (`send:private`, `secret-sources`, `team-secrets`, `keystores`, `kerberos`, the agent's
+    cookie jars) is what `agent.send` can use while it runs a send bundle (§18.4). None of them is a channel the page
+    can call by itself.
+  - This is narrower than "serve the subset's channels". The desktop's request channels address an open project in
+    the caller's window scope, and the agent opens no workspace (§3.4), so serving them would mean a second working
+    copy.
+- The `agent.*` channels:
+  - `agent.hello`: capabilities, the agent's version and `sshOptIn`.
+  - `agent.send`: one send bundle in, the kind's ordinary send result out, with `sentFrom: 'agent'`.
+  - `agent.cancel`.
+  - `agent.cookies.clear`: clears the jars the agent holds for this pairing's origin.
+- `ssh` is recorded as an opt-in at pairing, and nothing is served for it yet. The browser's SSH area needs the hosts
+  and snippets files the agent does not hold, so it stays off in slice 3. SSH in the browser is a follow-up.
+- Everything else answers `host-capability-missing`. The agent's allowlist is the gate, and a test classifies every
+  registry channel as refused for a browser caller.
+
+### 18.2 Pairing (amends §3.8)
+
+- **Tables.** Migration `0019` adds two tables, both without `tenant_id` until slice 4 adds it everywhere:
+  - `agent_pairings(id, user_id, agent_id, public_key, port, ssh_opt_in, created_at, last_seen_at)`;
+  - `agent_pairing_codes(code_hash, user_id, expires_at, attempts)`.
+- **Routes:**
+  - `POST /api/v1/agent/pairing-codes` (cookie, Origin-checked): a new six-character code from an alphabet without
+    look-alikes. It lives ten minutes, and a user has one live code at a time.
+  - `POST /api/v1/agent/pairings` (no session; rate-limited per address): `{ code, agentId, publicKey, port,
+    sshOptIn }` → creates the pairing row and answers `{ pairingId, origin }`, where `origin` is the server's public
+    URL. The fifth wrong code for a user deletes that user's code.
+  - `GET /api/v1/agent/pairings` (cookie): the user's pairings, with port and last seen.
+  - `POST /api/v1/agent/nonces` (cookie, Origin-checked): `{ pairingId }` → a single-use nonce that lives 60 seconds.
+  - `POST /api/v1/agent/nonces/redeem`: signed by the agent's key over `nonce‖pairingId‖timestamp`. It answers
+    `{ userId, email }` and consumes the nonce. A replayed or expired nonce, or a bad signature, answers `401`.
+  - `DELETE /api/v1/agent/pairings/:id` (cookie or agent signature): unpairs, from either side.
+  - `PATCH /api/v1/agent/pairings/:id` (agent signature): the agent's new port, when it moved.
+- **Agent key.** Ed25519, generated at the first pairing, one per agent install. The desktop keeps it behind
+  `safeStorage` like any secret; the headless agent keeps it in its own key file (§18.6).
+- **Where to pair.** The desktop pairs from *Pair this machine…* in the app menu and from Settings → Paired browsers.
+  The headless agent pairs with `wirebench agent pair <code> --server <url>`. Pairing is always the code
+  (decision 9).
+
+### 18.3 The loopback socket (amends §5.2)
+
+- **Address.** `ws://127.0.0.1:<port>/host`, never another interface. The port is `47615` by default, and the next
+  free one up to `47634`.
+- **Shared code.** The frame codec, the hello and the in-flight cap are the server host socket's, moved into
+  `@wirebench/host` as `host-socket` so the server and the agent share one implementation.
+- **Origin.** The upgrade must carry an `Origin` equal to a pairing's origin, or the agent closes `4403` before any
+  frame.
+- **Auth.** The first client frame is `{ type: 'auth', pairingId, nonce }`. The agent redeems the nonce at that
+  pairing's server and serves nothing until that succeeds (`4401` otherwise). One redemption per socket; the agent
+  never trusts a nonce it has not redeemed itself.
+- **Preflight.** For paired origins only, the agent answers the HTTP `OPTIONS` preflight that browsers send for
+  private-network requests, with `Access-Control-Allow-Private-Network: true`.
+- **CSP.** The browser build's CSP gains `connect-src ws://127.0.0.1:*`.
+
+### 18.4 The send route rule and the send bundle (amends §3.4)
+
+- **The rule** runs on the server host, which has the project: `request.route { projectId, itemId, environment? }` →
+  `{ route: 'server' } | { route: 'agent', needs: Capability[] }`. These need the agent:
+  - A target whose host the egress classifier resolves to loopback, link-local or a private range, even when the
+    server could reach a private range. In the browser, §3.4 rule 1 wins over decision 12: the person's `localhost`
+    is never the server's.
+  - A `${#System#…}` reference, a secret source, a team secret, a keystore on a machine path, Kerberos, NTLM with a
+    machine credential, or a cookie jar the agent holds for the target's domain.
+
+  A pin to `agent` in the browser state, on the workspace or on the request, also forces the agent.
+- **The renderer** asks `request.route` before a send when the window has an agent transport or lacks
+  `send:private`:
+  - `route: 'server'`: the send goes as today.
+  - `route: 'agent'` with an agent connected: `request.bundle` on the server host, then `agent.send` on the agent,
+    then `exchanges.recordAgentSend` on the server host with the redacted exchange, so History stays one list.
+  - `route: 'agent'` with no agent: the send fails with `send-needs-agent` naming the needs, and the error offers
+    *Pair this machine*.
+- **No split sends.** A send whose needs span both hosts is not split (§3.4 rule 4). It fails with `secret-missing`
+  naming the host that lacks the value.
+- **The bundle** holds:
+  - the request item and every script in its folder chain;
+  - the project's and the active environment's non-secret values;
+  - the cookie-jar policy;
+  - secret references, by name only;
+  - the project files the request reads, by relative path (a body file, attachments, a proto set), capped at 32 MiB;
+  - for a team secret, the workspace's `team-secrets/` subtree.
+
+  The agent writes the bundle to a fresh directory under its temp dir, loads it with the engine's `loadProject`,
+  runs the one send path on that one item, and deletes the directory.
+- **`sentFrom`.** `sentFrom: 'server' | 'agent'` is an optional field on History entries and the exchange summaries.
+  The desktop leaves it out, and the renderer shows a chip only when it is present. The send button shows *Server* or
+  *Agent* for the route the next send takes, and the pin.
+
+### 18.5 Team secrets on the agent
+
+- **Desktop agent.** It resolves a team secret from the values its own approved machine has already imported for
+  that workspace, by workspace id and name, exactly as a desktop send does. The bundle's `team-secrets/` subtree is
+  then used only to check that the value is current (my call: one trust pipeline, the desktop's). If the agent's
+  machine is not approved for that workspace, the send fails with `team-secret-needs-approval`.
+- **Headless agent.** It has no team secrets in slice 3 (my call): it has no approved machine key, and no UI to
+  request one. A team-secret send routed to a headless agent fails with `team-secret-needs-approval`, which says to
+  use the desktop app.
+
+### 18.6 `wirebench agent` (headless)
+
+- **Bundle.** The CLI bundles `@wirebench/host` and `packages/agent` with esbuild into `dist/agent/bundle.js`, as the
+  server bundles its host (§17.3), and loads it only for `wirebench agent`. `kerberos` stays an optional native
+  dependency (ADR-0019); `node-pty`, serial and `node-hid` are never loaded.
+- **Platform:**
+  - `userData` is `~/.wirebench/agent/` (or `$WIREBENCH_AGENT_HOME`), mode `0700`.
+  - `secrets` are sealed with AES-256-GCM under a 32-byte key in `agent.key`, mode `0600`, created on first run. The
+    CLI has no OS keychain binding, so the file mode is the protection, and the docs say so plainly.
+  - Capabilities: `send:private`, `send:public`, `secret-sources`, and `kerberos` when the binding loads. No dialogs,
+    shell, power, files, team secrets or listeners.
+- **Commands:**
+  - `wirebench agent`: start, print the port, wait.
+  - `wirebench agent pair <code> --server <url> [--ssh]`.
+  - `wirebench agent unpair [--server <url>]`.
+  - `wirebench agent status`.
+
+### 18.7 Testing
+
+- Unit and integration tests per task.
+- The agent's allowlist classification test.
+- Pairing refused for a wrong origin, a replayed nonce, an expired code, a code after its fifth wrong attempt and an unpaired agent.
+- A send that needs the agent fails cleanly without one.
+- The browser e2e of §17.7 gains a headless `wirebench agent` beside the browser, in CI on the runner, outside
+  Docker. It pairs through the UI, sends to an echo server on the runner's `127.0.0.1`, and sees `sentFrom: 'agent'`
+  on that exchange and `sentFrom: 'server'` on the echo-service send. That is §13 criterion 2 in full.
