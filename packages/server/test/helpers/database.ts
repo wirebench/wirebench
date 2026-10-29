@@ -8,7 +8,8 @@ import { allMigrations } from '../../src/serve.js';
 import { ensureAppRole } from '../../src/tenancy/roles.js';
 
 /** The admin URL: a superuser, used only to create and drop each file's schema. */
-export const TEST_DATABASE_URL = process.env.WIREBENCH_SERVER_TEST_DATABASE_URL;
+export const TEST_DATABASE_URL =
+  process.env.WIREBENCH_SERVER_TEST_DATABASE_URL === '' ? undefined : process.env.WIREBENCH_SERVER_TEST_DATABASE_URL;
 
 /**
  * The two roles of spec §19.4 (`scripts/ci/server-test-roles.sql` creates them): the owner owns each
@@ -30,8 +31,25 @@ function roleUrl(override: string | undefined, role: string): string | undefined
 const OWNER_URL = roleUrl(process.env.WIREBENCH_SERVER_TEST_OWNER_URL, OWNER_ROLE);
 const APP_URL = roleUrl(process.env.WIREBENCH_SERVER_TEST_APP_URL, APP_ROLE);
 
+const ROLES_HINT = 'create the test roles: psql the superuser URL -f scripts/ci/server-test-roles.sql';
+
 /**
- * `describe` that skips, saying how to get a database, when none is configured.
+ * Whether the database suites run. With no database URL they skip, saying how to get one, unless
+ * `WIREBENCH_SERVER_REQUIRE_DB=1` (CI's server-integration job), where a lost URL must fail the job rather
+ * than skip every suite, the role test included, and pass green.
+ */
+export function databaseSuites(env: NodeJS.ProcessEnv): 'run' | 'skip' {
+  if (env.WIREBENCH_SERVER_TEST_DATABASE_URL !== undefined && env.WIREBENCH_SERVER_TEST_DATABASE_URL !== '') {
+    return 'run';
+  }
+  if (env.WIREBENCH_SERVER_REQUIRE_DB === '1') {
+    throw new Error('WIREBENCH_SERVER_REQUIRE_DB=1 but WIREBENCH_SERVER_TEST_DATABASE_URL is unset');
+  }
+  return 'skip';
+}
+
+/**
+ * `describe` that skips, saying how to get a database, when none is configured (see `databaseSuites`).
  *
  * Typed as the narrower `(name, factory) => void` rather than `typeof describe`: vitest 5's
  * `SuiteAPI` type has `describe` and `describe.skip` structurally incompatible (their `skipIf`/
@@ -39,9 +57,9 @@ const APP_URL = roleUrl(process.env.WIREBENCH_SERVER_TEST_APP_URL, APP_ROLE);
  * fails to typecheck. Only the plain two-argument call form is used here.
  */
 export const describeDb: (name: string, factory: () => void) => void = (() => {
-  if (TEST_DATABASE_URL !== undefined) return describe;
+  if (databaseSuites(process.env) === 'run') return describe;
   console.warn(
-    'WIREBENCH_SERVER_TEST_DATABASE_URL is unset; server integration tests are skipped (docker compose -f packages/server/compose.yaml up -d db, then psql the roles in scripts/ci/server-test-roles.sql)',
+    `WIREBENCH_SERVER_TEST_DATABASE_URL is unset; server integration tests are skipped (docker compose -f packages/server/compose.yaml up -d db, then ${ROLES_HINT})`,
   );
   return describe.skip;
 })();
@@ -58,6 +76,15 @@ export interface TestDatabase extends Database {
   migrate(migrations: readonly Migration[]): Promise<void>;
   /** Grants the app role what the server's app role holds, after the server migrated at `ownerUrl`. */
   grant(): Promise<void>;
+}
+
+/** A missing role (`42704`) or a refused sign-in (`28P01`, `28000`) means the roles script has not run. */
+function withRolesHint(error: unknown): never {
+  const code = (error as { readonly code?: unknown }).code;
+  if (code === '42704' || code === '28P01' || code === '28000') {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}; ${ROLES_HINT}`, { cause: error });
+  }
+  throw error;
 }
 
 function withSchema(base: string, schema: string): string {
@@ -77,8 +104,11 @@ function withSchema(base: string, schema: string): string {
 export async function testDatabase(options: { readonly migrated?: boolean } = {}): Promise<TestDatabase> {
   const schema = `t_${randomBytes(6).toString('hex')}`;
   const admin = createDatabase(TEST_DATABASE_URL!);
-  await admin.query(`create schema ${schema} authorization ${OWNER_ROLE}`);
-  await admin.close();
+  try {
+    await admin.query(`create schema ${schema} authorization ${OWNER_ROLE}`).catch(withRolesHint);
+  } finally {
+    await admin.close();
+  }
   const ownerUrl = withSchema(OWNER_URL!, schema);
   const url = withSchema(APP_URL!, schema);
   const owner = createDatabase(ownerUrl);
@@ -94,6 +124,8 @@ export async function testDatabase(options: { readonly migrated?: boolean } = {}
     await cleanup.close();
   };
   try {
+    await owner.query('select 1').catch(withRolesHint);
+    await db.query('select 1').catch(withRolesHint);
     if (options.migrated !== false) {
       await migrate(owner, await allMigrations(BUILTIN_MODULES));
       await grant();

@@ -47,16 +47,30 @@ describe('the app URL', () => {
 });
 
 describe('appRoleGrants', () => {
-  it('quotes every name, grants on all tables and by default, and narrows the read-only tables', () => {
+  it('quotes every name, grants table by table in one block, and sets the default privileges', () => {
     const statements = appRoleGrants({ schema: 'we"ird', owner: 'own er', app: "o'app" });
+    expect(statements).toHaveLength(3);
     expect(statements[0]).toBe(`grant usage on schema "we""ird" to "o'app"`);
-    expect(statements[1]).toBe(`grant select, insert, update, delete on all tables in schema "we""ird" to "o'app"`);
+    expect(statements[1]).toMatch(/^do \$grants\$\n[\s\S]*\n\$grants\$$/);
+    expect(statements[1]).toContain(`where n.nspname = 'we"ird'`);
+    expect(statements[1]).toContain(`'o''app'`);
+    expect(statements[1]).toContain(`array['schema_migrations', 'server_identity']::text[]`);
+    expect(statements[1]).toContain(`'grant select on %I.%I to %I'`);
+    expect(statements[1]).toContain(`'revoke insert, update, delete, truncate on %I.%I from %I'`);
+    expect(statements[1]).toContain(`'grant select, insert, update, delete on %I.%I to %I'`);
     expect(statements[2]).toBe(
       `alter default privileges for role "own er" in schema "we""ird" grant select, insert, update, delete on tables to "o'app"`,
     );
-    expect(statements[3]).toContain(`'we"ird'`);
-    expect(statements[3]).toContain(`'o''app'`);
-    for (const table of READ_ONLY_TABLES) expect(statements[3]).toContain(`'${table}'`);
-    expect(statements.join('\n')).not.toMatch(/\bexecute on\b|\bcreate on\b/);
+    expect(READ_ONLY_TABLES).toEqual(['schema_migrations', 'server_identity']);
+    expect(statements.join('\n')).not.toMatch(/\bexecute on\b|\bcreate on\b|\bon all tables\b/);
+  });
+
+  it('refuses a name with a "$", which could end the block', () => {
+    for (const names of [
+      { schema: 's$grants$', owner: 'o', app: 'a' },
+      { schema: 's', owner: 'o', app: 'a$' },
+    ]) {
+      expect(() => appRoleGrants(names)).toThrow(expect.objectContaining({ code: 'tenancy-role-name-invalid' }));
+    }
   });
 });

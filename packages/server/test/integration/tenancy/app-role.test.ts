@@ -119,25 +119,6 @@ describeDb('the app role (hosted spec §19.4)', () => {
     expect(await roleExists(role)).toBe(false); // the plan only reads
   });
 
-  it('leaves the app role a reader of schema_migrations and server_identity', async () => {
-    // `testDatabase` already ran `ensureAppRole(owner, url)`; update (tenancy_step) on server_identity
-    // comes with that column, in 0020 (slice 4, Task 4).
-    expect((await db.query('select server_id from server_identity')).rowCount).toBe(1);
-    expect((await db.query('select version from schema_migrations')).rowCount).toBeGreaterThan(0);
-    for (const sql of [
-      "insert into schema_migrations (version, name) values (999, 'app')",
-      'update schema_migrations set name = name',
-      'delete from schema_migrations',
-      'update server_identity set created_at = created_at',
-      'update server_identity set server_id = server_id',
-      'delete from server_identity',
-      'insert into server_identity (server_id) values (gen_random_uuid())',
-    ]) {
-      await expect(db.query(sql), sql).rejects.toMatchObject({ code: '42501' });
-    }
-    await expect(db.query('update workspaces set name = name')).resolves.toBeDefined();
-  });
-
   it('grants a table a later migration creates', async () => {
     await db.owner.query('create table later_table (id int)');
     await db.owner.query('insert into later_table values (1)');

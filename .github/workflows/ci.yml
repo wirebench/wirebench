@@ -90,6 +90,8 @@ jobs:
     env:
       WIREBENCH_REQUIRE_GIT: '1'
       WIREBENCH_SERVER_TEST_DATABASE_URL: postgres://wirebench:wirebench@127.0.0.1:5432/wirebench_test
+      # Without the URL the suites would skip and the job pass green; this makes that a failure instead.
+      WIREBENCH_SERVER_REQUIRE_DB: '1'
     defaults:
       run:
         shell: bash
