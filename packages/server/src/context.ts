@@ -83,6 +83,15 @@ export interface ScheduleRunFinished {
   readonly status: ScheduleRunStatus;
 }
 
+/**
+ * A local agent's pairing was deleted, from the browser or by the agent (hosted edition spec §18.2); fired
+ * after the delete committed, so the server host can drop the pairing from its view.
+ */
+export interface AgentUnpaired {
+  readonly pairingId: string;
+  readonly userId: string;
+}
+
 /** An after-commit listener: synchronous, never awaited, and its throw never reaches the caller (R3). */
 export type Announcement<E> = (event: E) => void;
 
@@ -161,7 +170,7 @@ export const ANONYMOUS_SOURCE: AuditSource = { actor: { kind: 'anonymous' } };
  *   and are awaited. Their writes commit with the caller's, and a throw rolls the caller back.
  * - **Announcements** (`headMoved`, `accessChanged`, `sessionEnded`; live-updates spec §3.2, R3;
  *   `captureReceived`, `hooksChanged`; webhook-capture spec §3.6; `licenseChanged`; licensing spec §3.9;
- *   `scheduleRunFinished`; scheduled-runs spec §3.5) run through {@link announce} after
+ *   `scheduleRunFinished`; scheduled-runs spec §3.5; `agentUnpaired`; hosted edition spec §18.2) run through {@link announce} after
  *   the caller's statement or transaction has resolved, on the success path. They are never awaited
  *   and never run inside a transaction, and a throw is logged and swallowed. A rolled-back
  *   transaction never reaches the line that announces.
@@ -176,6 +185,7 @@ export interface ServerHooks {
   readonly hooksChanged: Announcement<HooksChanged>[];
   readonly licenseChanged: Announcement<LicenseChanged>[];
   readonly scheduleRunFinished: Announcement<ScheduleRunFinished>[];
+  readonly agentUnpaired: Announcement<AgentUnpaired>[];
 }
 
 /**
@@ -193,6 +203,7 @@ export function serverHooks(): ServerHooks {
     hooksChanged: [],
     licenseChanged: [],
     scheduleRunFinished: [],
+    agentUnpaired: [],
   };
 }
 
@@ -352,7 +363,8 @@ export interface ServerModule {
     | 'sso'
     | 'session-logs'
     | 'terminal-shares'
-    | 'host';
+    | 'host'
+    | 'agent';
   /**
    * The module's `NNNN_name.sql` files, merged with the host's in version order (`serve.ts`
    * `allMigrations`). By convention `packages/server/migrations/<module>/` (e.g.

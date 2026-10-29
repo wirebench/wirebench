@@ -23,6 +23,7 @@ describe('live-updates module wiring (§5.1)', () => {
       'session-logs',
       'terminal-shares',
       'host',
+      'agent',
     ]);
   });
 

@@ -284,6 +284,12 @@ server-side send path until an operator asks for them.
   to its owner, and never leaves the server in a socket frame. Every write and every use in a send is
   audited by name (`secret.written`, `secret.resolved` with the target host), never by value. A new key
   cannot open what the old one sealed.
+- **Pairing a local agent.** A tab asks for a six-character code (`POST /api/v1/agent/pairing-codes`, ten
+  minutes, one live code per user); the agent on the user's machine trades it for a pairing that holds its
+  Ed25519 public key (`POST /api/v1/agent/pairings`, five attempts per address in ten minutes). Before
+  serving a tab, the agent redeems a single-use nonce the server gave that tab, signed with its key.
+  Codes and nonces are stored hashed. `agent.paired`, `agent.unpaired`, `agent.nonce.redeemed` and
+  `agent.nonce.refused` (with the reason) are audited.
 - **Egress.** Every connection a tab's host opens — sends, redirects, the proxy hop, OAuth token calls, URL
   imports, definition fetches — is checked at connect time, the same rule as scheduled runs: loopback,
   link-local, unspecified, cloud-metadata, multicast and broadcast addresses are always refused with

@@ -42,9 +42,13 @@ describe('audit wire shapes (audit-log spec §3.4, §5.2)', () => {
     ]) {
       expect(AUDIT_ACTIONS).toContain(action);
     }
-    for (const action of AUDIT_ACTIONS) expect(action).toMatch(/^[a-z_]+\.[a-z_]+$/);
+    // <area>.<verb>, or <area>.<object>.<verb> for the agent's nonce events (hosted edition spec §18.2).
+    for (const action of AUDIT_ACTIONS) expect(action).toMatch(/^[a-z_]+(\.[a-z_]+){1,2}$/);
+    expect(AUDIT_ACTIONS).toEqual(
+      expect.arrayContaining(['agent.paired', 'agent.unpaired', 'agent.nonce.redeemed', 'agent.nonce.refused']),
+    );
     expect(new Set(AUDIT_ACTIONS).size).toBe(AUDIT_ACTIONS.length);
-    expect(AUDIT_ACTIONS).toHaveLength(74);
+    expect(AUDIT_ACTIONS).toHaveLength(78);
   });
 
   it('parses an event and refuses an unknown action or a nested details value', () => {

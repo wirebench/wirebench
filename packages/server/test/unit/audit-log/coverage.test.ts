@@ -9,6 +9,7 @@ const DIRS = [
   '../../integration/session-logs/',
   '../../integration/terminal-shares/',
   '../../integration/host/',
+  '../../integration/agent/',
   './',
 ].map((dir) => fileURLToPath(new URL(dir, import.meta.url)));
 const text = DIRS.flatMap((dir) =>
