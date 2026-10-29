@@ -404,6 +404,19 @@ describe('agent.send', () => {
     await call('agent.send', { sendId: sendId(), bundle }, OTHER);
     expect(echo.received[4]?.headers.cookie).toBe('sid=abc');
   });
+
+  it("lists the domains the pairing's jar holds, names only, and none once cleared", async () => {
+    expect(await call('agent.cookies.domains', undefined)).toEqual({ domains: [] });
+    const bundle = await restBundle({ url: '/cookie', settings: { sendCookies: true } });
+    await call('agent.send', { sendId: sendId(), bundle });
+    const listed = await call('agent.cookies.domains', undefined);
+    expect(listed).toEqual({ domains: [{ domain: '127.0.0.1', hostOnly: true }] });
+    expect(JSON.stringify(listed)).not.toContain('abc');
+    // Another pairing's jar is its own.
+    expect(await call('agent.cookies.domains', undefined, OTHER)).toEqual({ domains: [] });
+    await call('agent.cookies.clear', undefined);
+    expect(await call('agent.cookies.domains', undefined)).toEqual({ domains: [] });
+  });
 });
 
 describe("the agent's secrets", () => {

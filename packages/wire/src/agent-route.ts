@@ -39,11 +39,25 @@ export const requestRouteRequestSchema = z.object({
 });
 export type RequestRouteRequest = z.infer<typeof requestRouteRequestSchema>;
 
+/**
+ * What a tab shows beside the send button (§18.4): the pins on this request and its workspace, the server
+ * workspace id a workspace pin is set by, and the target's host name, which the tab checks against the
+ * cookie domains its agent holds (`agent-cookies`, a need only the tab can see). Absent on a host that does
+ * not route.
+ */
+export const requestRouteInfoSchema = z.object({
+  pins: z.object({ request: z.boolean(), workspace: z.boolean() }),
+  workspaceId: z.string().min(1).max(256).optional(),
+  targetHost: z.string().min(1).max(256).optional(),
+});
+export type RequestRouteInfo = z.infer<typeof requestRouteInfoSchema>;
+
 /** Where the send goes: as today, or through the agent, with every reason it must. */
 export const requestRouteResponseSchema = z.discriminatedUnion('route', [
-  z.object({ route: z.literal('server') }),
+  z.object({ route: z.literal('server'), info: requestRouteInfoSchema.optional() }),
   z.object({
     route: z.literal('agent'),
+    info: requestRouteInfoSchema.optional(),
     needs: z.array(sendNeedSchema).min(1),
     /** Why: `unresolved` when the target's host did not resolve on the server (`private-target`). */
     detail: z.object({ reason: z.literal('unresolved') }).optional(),

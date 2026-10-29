@@ -62,6 +62,12 @@ export function isChosenOutcome(code: string): boolean {
  */
 const TRANSPORT = new Set(['connection-refused', 'dns', 'timeout', 'tls', 'proxy', 'network']);
 
+/**
+ * Codes about where the send could run, not about the project: no agent connected for a send that needs one,
+ * or the agent socket dropping mid-send (spec §18.4). The pane says what to do; nothing in Problems would.
+ */
+const NOT_THE_PROJECT = new Set(['send-needs-agent', 'host-disconnected']);
+
 /** The `<protocol>-unresolved-properties` codes: a send refused because a `${name}` has no value. */
 function isUnresolvedCode(code: string): boolean {
   return code.endsWith('-unresolved-properties');
@@ -74,7 +80,7 @@ function isUnresolvedCode(code: string): boolean {
  * red count would add.
  */
 export function isProblemOutcome(code: string): boolean {
-  return !CHOSEN.has(code) && !TRANSPORT.has(code) && !isUnresolvedCode(code);
+  return !CHOSEN.has(code) && !TRANSPORT.has(code) && !isUnresolvedCode(code) && !NOT_THE_PROJECT.has(code);
 }
 
 const TEXT_HINTS: Readonly<Record<string, { readonly title: string; readonly hint?: string }>> = {
@@ -100,6 +106,10 @@ const TEXT_HINTS: Readonly<Record<string, { readonly title: string; readonly hin
   'invalid-url': { title: 'Invalid URL', hint: 'A URL needs a scheme and a host, such as https://api.example.com.' },
   'rest-url-incomplete': { title: 'Incomplete URL' },
   'script-type-error': { title: 'Script type errors' },
+  'send-needs-agent': {
+    title: 'Needs this machine',
+    hint: 'Pair this machine in Settings → This machine, or start the agent on the machine you paired.',
+  },
 };
 
 /** The messages the engine gives a failure that say nothing its title does not. */

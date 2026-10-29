@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { SentFromTag } from './sent-from-tag.js';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { MoreHorizontal } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -146,6 +147,7 @@ function Row({
                 {entry.operationName.length > 0 && <span className="text-fg-subtle"> · {entry.operationName}</span>}
               </span>
             )}
+            <SentFromTag sentFrom={entry.sentFrom} />
             <span
               data-testid="history-status-chip"
               title={entry.error?.message}

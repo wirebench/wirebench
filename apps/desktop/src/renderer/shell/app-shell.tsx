@@ -30,6 +30,7 @@ import { subscribeToCurrentValues } from '../state/current-values.js';
 import { subscribeToScriptValues } from '../state/script-values.js';
 import { subscribeToPreferences, usePreferencesStore } from '../state/preferences.js';
 import { subscribeToHistory } from '../state/history.js';
+import { watchAgent } from '../state/send-route.js';
 import {
   subscribeToExchangeFailures,
   subscribeToExchangeLogged,
@@ -467,6 +468,8 @@ export function AppShell() {
     void useAccountStore.getState().load();
   }, []);
   useEffect(() => subscribeToProject(), []);
+  // The browser tab's paired agent (status, cookie domains); nothing on the desktop.
+  useEffect(() => watchAgent(), []);
   useEffect(() => subscribeToGlobals(), []);
   useEffect(() => subscribeToCertificateExpiry(), []);
   // Each activity-bar area shows its own set of editor tabs.

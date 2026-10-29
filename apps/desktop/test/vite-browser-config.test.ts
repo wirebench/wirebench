@@ -12,10 +12,10 @@ import {
 describe('vite.browser.config CSP', () => {
   it("is spec §17.6's policy (the server's header pins the same string), and its meta copy is that less frame-ancestors", () => {
     expect(BROWSER_CONTENT_SECURITY_POLICY).toBe(
-      "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+      "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     );
     expect(BROWSER_META_CONTENT_SECURITY_POLICY).toBe(
-      "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'",
+      "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'self'",
     );
   });
 });

@@ -5,6 +5,7 @@ import { TrustInvalidBadge } from '../../components/trust-invalid-badge.js';
 import type { RequestDraft } from '../../state/project.js';
 import type { EndpointSourceWire, InterfaceSummary } from '@shared/kinds/soap/wire.js';
 import { SendMenu } from '../multi-env/send-menu.js';
+import { RouteChip } from './route-chip.js';
 import { EndpointSelect } from './endpoint-select.js';
 import { EndpointsDialog } from './endpoints-dialog.js';
 import { flipMode, flipOrientation, setEditorLayout, useEditorLayout } from './layout.js';
@@ -88,6 +89,7 @@ export function RequestToolbar({
           <SendMenu requestId={draft.id} kind="soap" />
         </div>
       )}
+      <RouteChip requestId={draft.id} />
 
       {endpointSource === 'environment' || endpointSource === 'workspace-environment' ? (
         // The active environment overrides this interface's address, so the request's own

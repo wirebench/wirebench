@@ -335,7 +335,8 @@ export async function routeSend(deps: SendRouteDeps, request: RoutedItem): Promi
   if (item === undefined) return { route: 'server' };
   const scopes = deps.send.project.scopesFor(request.itemId, request.environment);
   const references = itemReferences(project, item, scopes);
-  const address = await addressNeeds(await targetOf(deps.send, item, request), deps.resolve);
+  const target = await targetOf(deps.send, item, request);
+  const address = await addressNeeds(target, deps.resolve);
   const needs = new Set<SendNeed>(address.needs);
   if (references.systemNames.length > 0) needs.add('system-values');
   const sources = new Set(deps.secretSourceNames?.(request.projectId) ?? []);
@@ -354,9 +355,18 @@ export async function routeSend(deps: SendRouteDeps, request: RoutedItem): Promi
     needs.add(need);
   }
   const workspaceId = deps.workspaceIdOf?.(request.projectId);
-  if (deps.pins?.pinned('request', request.itemId) === true) needs.add('pinned');
-  if (workspaceId !== undefined && deps.pins?.pinned('workspace', workspaceId) === true) needs.add('pinned');
-  if (needs.size === 0) return { route: 'server' };
+  const pins = {
+    request: deps.pins?.pinned('request', request.itemId) === true,
+    workspace: workspaceId !== undefined && deps.pins?.pinned('workspace', workspaceId) === true,
+  };
+  if (pins.request || pins.workspace) needs.add('pinned');
+  const targetHost = hostOf(target);
+  const info = {
+    pins,
+    ...(workspaceId !== undefined ? { workspaceId } : {}),
+    ...(targetHost !== undefined ? { targetHost } : {}),
+  };
+  if (needs.size === 0) return { route: 'server', info };
   // No split sends: a value only the server holds never travels to the agent, and the agent has no other.
   const onServer = new Set(await (deps.serverSecretNames?.(request.projectId) ?? Promise.resolve([])));
   const stranded = references.secretNames.find((name) => onServer.has(name) && !machineSecrets.has(name));
@@ -369,9 +379,22 @@ export async function routeSend(deps: SendRouteDeps, request: RoutedItem): Promi
   }
   return {
     route: 'agent',
+    info,
     needs: ordered(needs),
     ...(address.unresolved ? { detail: { reason: 'unresolved' as const } } : {}),
   };
+}
+
+/** The lower-case host name of a target URL, brackets off; `undefined` when there is none. */
+function hostOf(url: string | undefined): string | undefined {
+  if (url === undefined) return undefined;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    const bare = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+    return bare.length === 0 || bare.length > 256 ? undefined : bare;
+  } catch {
+    return undefined;
+  }
 }
 
 /** `needs` in the order the wire lists them. */

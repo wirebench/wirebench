@@ -7,6 +7,7 @@ describe('sectionsForSearch (#594)', () => {
     expect(ids('ssh')[0]).toBe('ssh');
     expect(ids('ssh').indexOf('ssh')).toBeLessThan(ids('ssh').indexOf('terminal'));
     expect(ids('mock')[0]).toBe('mocks');
-    expect(ids('timeout')).toEqual(SETTINGS_SECTIONS.map((s) => s.id));
+    // On the desktop (no agent) every section but the browser's own This machine.
+    expect(ids('timeout')).toEqual(SETTINGS_SECTIONS.map((s) => s.id).filter((id) => id !== 'this-machine'));
   });
 });

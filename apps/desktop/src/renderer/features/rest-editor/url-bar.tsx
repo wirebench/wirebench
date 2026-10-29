@@ -46,6 +46,8 @@ export interface UrlBarProps {
   readonly sendDisabledReason?: string | undefined;
   /** The ▾ joined to Send's right; passed in so this strip needs nothing from the stores. */
   readonly menu?: React.ReactNode;
+  /** The Server or Agent chip after Send, in a browser tab only (spec §18.4). */
+  readonly routeChip?: React.ReactNode;
 }
 
 /** The Send, method and URL strip. */
@@ -64,6 +66,7 @@ export function UrlBar({
   sendShortcut,
   sendDisabledReason,
   menu,
+  routeChip,
 }: UrlBarProps) {
   const known = (KNOWN_METHODS as readonly string[]).includes(method.toUpperCase());
   const [custom, setCustom] = useState(!known);
@@ -109,6 +112,7 @@ export function UrlBar({
           </Button>
         )}
       </div>
+      {routeChip}
 
       {custom ? (
         <input

@@ -175,6 +175,16 @@ export type AgentSendResponse = z.infer<typeof agentSendResponseSchema>;
 export const agentCancelRequestSchema = z.strictObject({ sendId: sendIdSchema });
 export const agentCancelResponseSchema = z.object({ cancelled: z.boolean() });
 
+/**
+ * The cookie domains the agent's jar holds for this tab's pairing, names only, never a cookie: a domain the
+ * jar holds sends the next request to it through the agent (`agent-cookies`), so it carries those cookies.
+ * `hostOnly` is a cookie set for that exact host; otherwise its subdomains match too.
+ */
+export const agentCookieDomainsResponseSchema = z.object({
+  domains: z.array(z.object({ domain: z.string().max(256), hostOnly: z.boolean() })).max(1000),
+});
+export type AgentCookieDomainsResponse = z.infer<typeof agentCookieDomainsResponseSchema>;
+
 /** The agent's share of the IPC registry; served by a paired agent only, never by a window's host. */
 export const agentChannels = {
   agent: {
@@ -185,6 +195,8 @@ export const agentChannels = {
     /** Empties the cookie jar the agent holds for this tab's pairing. */
     cookies: {
       clear: defineChannel('agent.cookies.clear', z.undefined(), z.undefined()),
+      /** The domains that jar holds cookies for, without the cookies. */
+      domains: defineChannel('agent.cookies.domains', z.undefined(), agentCookieDomainsResponseSchema),
     },
   },
 } as const;

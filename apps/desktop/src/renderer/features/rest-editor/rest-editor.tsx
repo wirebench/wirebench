@@ -49,6 +49,7 @@ import { SigningTab } from './signing-tab.js';
 import { inheritedSigningOf } from '../webhook-items/signing.js';
 import { isWebhookApiId } from '../webhook-items/webhook-api-id.js';
 import { RestResponsePane } from './response/response-pane.js';
+import { RouteChip } from '../request-editor/route-chip.js';
 import { UrlBar } from './url-bar.js';
 import { bodyBadge, rowsBadge } from './tab-counts.js';
 import { SendMenu } from '../multi-env/send-menu.js';
@@ -460,6 +461,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
         sendShortcut={shortcutFor('rest.send', platform)}
         sendDisabledReason={sendDisabledReason}
         menu={<SendMenu requestId={requestId} kind="rest" />}
+        routeChip={<RouteChip requestId={requestId} />}
       />
       {badUrlReason !== undefined && (
         <p

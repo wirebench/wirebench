@@ -22,7 +22,7 @@ const repo = resolve(here, '../..');
  * with the files.
  */
 export const BROWSER_CONTENT_SECURITY_POLICY =
-  "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+  "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 /**
  * The meta tag's copy: the policy without `frame-ancestors`, which a meta tag cannot carry (the browser

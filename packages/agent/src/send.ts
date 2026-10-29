@@ -1,5 +1,5 @@
 /**
- * `agent.send`, `agent.cancel` and `agent.cookies.clear` (hosted edition spec §18.1, §18.4; ADR-0035): a
+ * `agent.send`, `agent.cancel`, `agent.cookies.clear` and `agent.cookies.domains` (hosted edition spec §18.1, §18.4; ADR-0035): a
  * paired tab hands the agent a send bundle its server built, and the agent sends that one request from this
  * machine.
  *
@@ -28,6 +28,7 @@ import { createSendSession, type Host, type HostPlatform, type SendSession } fro
 import {
   AGENT_SEND_KINDS,
   agentCancelRequestSchema,
+  type AgentCookieDomainsResponse,
   agentSendRequestSchema,
   agentSendResponseSchema,
   type AgentSendResponse,
@@ -369,9 +370,21 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
     return Promise.resolve(undefined);
   };
 
+  /** One row per domain the pairing's jar holds; a domain both host-only and not is listed as not. */
+  const cookieDomains = (_raw: unknown, { pairing }: AgentCallContext): Promise<AgentCookieDomainsResponse> => {
+    const state = pairings.get(pairing.pairingId);
+    const byDomain = new Map<string, boolean>();
+    for (const cookie of state?.jar.list(Date.now()) ?? []) {
+      byDomain.set(cookie.domain, (byDomain.get(cookie.domain) ?? true) && cookie.hostOnly);
+    }
+    const domains = [...byDomain].slice(0, 1000).map(([domain, hostOnly]) => ({ domain, hostOnly }));
+    return Promise.resolve({ domains });
+  };
+
   return new Map<string, AgentHandler>([
     ['agent.send', send],
     ['agent.cancel', cancel],
     ['agent.cookies.clear', clearCookies],
+    ['agent.cookies.domains', cookieDomains],
   ]);
 }

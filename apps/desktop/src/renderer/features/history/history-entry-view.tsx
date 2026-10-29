@@ -1,4 +1,5 @@
 import { Fragment, Suspense, useState } from 'react';
+import { SentFromTag } from './sent-from-tag.js';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { rendererKindOf } from '../../kinds/index.js';
 import { CodeEditor } from '../../editor/code-editor.js';
@@ -93,6 +94,7 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
             {entry.requestName}
             {entry.operationName.length > 0 ? ` · ${entry.operationName}` : ''}
             {kind.history.Chip !== undefined && <kind.history.Chip entry={entry} />}
+            <SentFromTag sentFrom={entry.sentFrom} />
           </p>
           <p className="truncate text-xs text-fg-subtle" title={entry.endpoint}>
             {entry.response !== undefined && (

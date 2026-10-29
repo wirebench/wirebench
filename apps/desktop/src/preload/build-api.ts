@@ -42,10 +42,49 @@ type WirebenchEventMap = { [E in AllEvents as E['name']]: EventPayload<E> };
  * Every channel a window calls: the registry without the local agent's own group (`agent.*`, spec §18.1),
  * which a paired agent serves to a browser tab over its own socket and no window's host serves.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to leave it out
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured to leave it out; its type is used below
 const { agent: _agentChannels, ...windowChannels } = channels;
 
+/** Where the tab's paired agent stands (spec §18.3): no pairing, a pairing not answering yet, or connected. */
+export type AgentStatus = 'none' | 'connecting' | 'connected';
+
+/** One of the user's paired machines, as `GET /api/v1/agent/pairings` lists it. */
+export interface AgentPairingView {
+  readonly id: string;
+  readonly port: number;
+  readonly sshOptIn: boolean;
+  readonly createdAt: string;
+  readonly lastSeenAt: string;
+}
+
+/**
+ * The browser tab's local agent (spec §18.2, §18.3), set by the browser bootstrap only: the second socket's
+ * status, and the pairing calls *This machine* makes on the server with the tab's cookie. The desktop has no
+ * agent of its own to route to, so the preload never sets it, and nothing about a send changes there.
+ */
+export interface AgentEnv {
+  /** The server's origin, for `wirebench agent pair <code> --server <origin>`. */
+  readonly serverOrigin: string;
+  status(): AgentStatus;
+  /** The connected agent's version; `undefined` until it says, or while not connected. */
+  version(): string | undefined;
+  /** Each status change, and once more when the version arrives. */
+  onStatus(listener: (status: AgentStatus) => void): () => void;
+  pairings(): Promise<readonly AgentPairingView[]>;
+  /** A new pairing code for this user (the server keeps one live code). */
+  createPairingCode(): Promise<{ readonly code: string; readonly expiresAt: string }>;
+  /** Unpairs on the server, then reads the pairings again. */
+  unpair(id: string): Promise<void>;
+  /** Reads the pairings again and opens, moves or closes the agent socket to match. */
+  refresh(): Promise<void>;
+}
+
+/** The agent's own channels, on the API only where `env.agent` is set (the browser). */
+type AgentChannelApi = ApiFromChannels<{ agent: typeof _agentChannels }>;
+
 export type WirebenchApi = ApiFromChannels<typeof windowChannels> & {
+  /** Set only beside `env.agent`: calls go over the agent's socket. */
+  readonly agent?: AgentChannelApi['agent'];
   on<Name extends keyof WirebenchEventMap>(
     name: Name,
     listener: (payload: WirebenchEventMap[Name]) => void,
@@ -85,6 +124,8 @@ export type WirebenchApi = ApiFromChannels<typeof windowChannels> & {
    * `prefers-color-scheme`, since the server has no OS theme of the user's. When it is there the renderer
    * follows it and not `theme.get`/`theme.changed`; the preload leaves it unset, as main's `nativeTheme`
    * is the authority on the desktop.
+   *
+   * `agent` is the browser tab's paired local agent ({@link AgentEnv}); the preload never sets it.
    */
   env: {
     readonly e2e: boolean;
@@ -95,6 +136,7 @@ export type WirebenchApi = ApiFromChannels<typeof windowChannels> & {
     readonly sendTemplatesUnasked?: boolean;
     readonly signOut?: () => void;
     readonly onOsThemeChanged?: (listener: (os: 'dark' | 'light') => void) => () => void;
+    readonly agent?: AgentEnv;
   };
   /**
    * The path on this machine of a file dropped from the OS (`webUtils.getPathForFile`), or `''` for one
@@ -134,7 +176,8 @@ export function buildApi(
   env: WirebenchApi['env'] = { e2e: false, osTheme: 'dark', host: 'electron', capabilities: ALL_CAPABILITIES },
   pathForFile: (file: File) => string = () => '',
 ): WirebenchApi {
-  const channelApi = buildChannelApi(windowChannels, invoke);
+  // The agent's group only where a bootstrap has an agent to send it to (the browser's routing `invoke`).
+  const channelApi = buildChannelApi(env.agent === undefined ? windowChannels : channels, invoke);
   return {
     ...channelApi,
     on: (name, listener) => on(name as string, listener as (payload: unknown) => void),

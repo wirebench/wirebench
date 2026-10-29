@@ -12,6 +12,7 @@
     "account.startSaml",
     "agent.cancel",
     "agent.cookies.clear",
+    "agent.cookies.domains",
     "agent.send",
     "api.asyncApiApplyUpdate",
     "api.asyncApiPlanUpdate",

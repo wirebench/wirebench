@@ -254,4 +254,54 @@ describe('createSocketTransport', () => {
     FakeSocket.last().hello();
     await expect(t.ready).resolves.toMatchObject({ type: 'hello' });
   });
+
+  it('sends the first frame as each socket opens, before the hello, and makes a fresh one per attempt', async () => {
+    let made = 0;
+    const firstFrame = vi.fn(() => {
+      made += 1;
+      return Promise.resolve({ type: 'auth', pairingId: 'pair-1', nonce: `n${String(made)}` });
+    });
+    const t = transport({ firstFrame });
+    // Asked before the socket is created.
+    await vi.advanceTimersByTimeAsync(0);
+    const first = FakeSocket.last();
+    expect(first.sent).toEqual([]);
+    first.open();
+    expect(first.sent).toEqual([{ type: 'auth', pairingId: 'pair-1', nonce: 'n1' }]);
+    first.agentHello();
+    await expect(t.ready).resolves.toMatchObject({ host: 'agent', capabilities: ['send:public', 'send:private'] });
+
+    first.drop();
+    await vi.advanceTimersByTimeAsync(1_000);
+    const second = FakeSocket.last();
+    expect(second).not.toBe(first);
+    second.open();
+    expect(second.sent).toEqual([{ type: 'auth', pairingId: 'pair-1', nonce: 'n2' }]);
+    expect(firstFrame).toHaveBeenCalledTimes(2);
+  });
+
+  it('counts a first frame that cannot be made as a failed attempt: one ask per attempt, on the backoff', async () => {
+    const firstFrame = vi.fn(() => Promise.reject(new Error('no nonce')));
+    const onOpenFailed = vi.fn();
+    transport({ firstFrame, onOpenFailed });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeSocket.all).toHaveLength(0);
+    expect(firstFrame).toHaveBeenCalledTimes(1);
+    expect(onOpenFailed).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(firstFrame).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(firstFrame).toHaveBeenCalledTimes(2);
+    // 2 s next, then 4 s: never faster than the backoff.
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(firstFrame).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(3_999);
+    expect(firstFrame).toHaveBeenCalledTimes(3);
+  });
+
+  it('answers with its own disconnected result when one is given', async () => {
+    const down = { ok: false, error: { code: 'host-disconnected', message: 'agent gone' } } as const;
+    const t = transport({ disconnected: down });
+    await expect(t.invoke('agent.send', {})).resolves.toEqual(down);
+  });
 });

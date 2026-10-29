@@ -6,6 +6,10 @@
  * - client → `{ id, channel, request }`, answered `{ id, ok, value | error }`
  * - server → `{ event, payload }`, a push
  *
+ * The same transport carries the tab's second socket, to the paired local agent (spec §18.3): its
+ * `firstFrame` option is sent as soon as each socket opens, before the hello is awaited (the agent's auth
+ * frame), and is made afresh for every attempt (a new single-use nonce each time).
+ *
  * A dropped socket reopens with backoff (1 s, doubling to 30 s, back to 1 s after a hello). A reopen
  * re-sends nothing: a call pending at the drop, or made while the socket is down, is answered
  * `host-disconnected` as an ordinary failed `IpcResult`, so the renderer shows it as it shows any other
@@ -16,10 +20,10 @@
 import { ALL_CAPABILITIES, type Capability } from '@wirebench/wire/capabilities';
 import type { Invoke, On } from '../preload/build-api.js';
 
-/** The server's first frame on a socket. */
+/** The host's first frame on a socket: the server's (`browser`) or the paired agent's (`agent`). */
 export interface Hello {
   readonly type: 'hello';
-  readonly host: 'browser';
+  readonly host: 'browser' | 'agent';
   readonly capabilities: readonly Capability[];
   readonly osTheme: 'dark' | 'light';
 }
@@ -27,6 +31,7 @@ export interface Hello {
 /** What the transport needs of a WebSocket; the browser's own satisfies it. */
 export interface SocketLike {
   readonly readyState: number;
+  onopen: ((event: unknown) => void) | null;
   onmessage: ((event: { readonly data: unknown }) => void) | null;
   onclose: ((event: { readonly code: number }) => void) | null;
   onerror: ((event: unknown) => void) | null;
@@ -49,6 +54,15 @@ export interface SocketTransportOptions {
    * already scheduled, on the same backoff as after a close.
    */
   readonly onOpenFailed?: (error: unknown) => void;
+  /**
+   * Makes the frame each socket sends first, once it opens and before its hello: asked once per attempt,
+   * before the socket is created. A rejection fails that attempt like a socket that would not open
+   * (`onOpenFailed`, then the next attempt on the backoff), so a failing source is asked at most once per
+   * attempt.
+   */
+  readonly firstFrame?: () => Promise<unknown>;
+  /** What a call answers while the socket is down; {@link HOST_DISCONNECTED} unless given. */
+  readonly disconnected?: { readonly ok: false; readonly error: { readonly code: string; readonly message: string } };
 }
 
 export interface SocketTransport {
@@ -89,7 +103,7 @@ function helloOf(frame: Record<string, unknown>): Hello | undefined {
   );
   return {
     type: 'hello',
-    host: 'browser',
+    host: frame['host'] === 'agent' ? 'agent' : 'browser',
     capabilities,
     osTheme: frame['osTheme'] === 'light' ? 'light' : 'dark',
   };
@@ -112,6 +126,7 @@ export function hostSocketUrl(location: { readonly protocol: string; readonly ho
 
 export function createSocketTransport(url: string, options: SocketTransportOptions = {}): SocketTransport {
   const createSocket = options.createSocket ?? ((target: string) => new WebSocket(target) as SocketLike);
+  const disconnected = options.disconnected ?? HOST_DISCONNECTED;
   const pending = new Map<number, (result: unknown) => void>();
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
   let nextId = 1;
@@ -130,7 +145,7 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
   const failPending = (): void => {
     const answers = [...pending.values()];
     pending.clear();
-    for (const answer of answers) answer(HOST_DISCONNECTED);
+    for (const answer of answers) answer(disconnected);
   };
 
   /** Handles one frame; `true` when it was a hello. */
@@ -175,6 +190,25 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
   const connect = (): void => {
     timer = undefined;
     if (stopped) return;
+    const source = options.firstFrame;
+    if (source === undefined) {
+      open(undefined);
+      return;
+    }
+    source().then(
+      (frame) => {
+        if (!stopped) open(JSON.stringify(frame));
+      },
+      (error: unknown) => {
+        if (stopped) return;
+        retry();
+        options.onOpenFailed?.(error);
+      },
+    );
+  };
+
+  /** Opens one socket; `first`, when given, is sent the moment it opens. */
+  const open = (first: string | undefined): void => {
     let current: SocketLike;
     try {
       current = createSocket(url);
@@ -185,6 +219,14 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
     }
     socket = current;
     let helloSeen = false;
+    current.onopen = () => {
+      if (socket !== current || first === undefined) return;
+      try {
+        current.send(first);
+      } catch {
+        // A socket that cannot take its first frame closes; the close handler retries.
+      }
+    };
     current.onmessage = (event) => {
       if (socket !== current || typeof event.data !== 'string') return;
       let frame: unknown;
@@ -212,7 +254,7 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
   const invoke: Invoke = (channel, request) => {
     const current = socket;
     if (!connected || current === undefined || current.readyState !== OPEN) {
-      return Promise.resolve(HOST_DISCONNECTED);
+      return Promise.resolve(disconnected);
     }
     const id = nextId++;
     return new Promise((resolve, reject) => {

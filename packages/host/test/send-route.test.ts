@@ -131,18 +131,18 @@ const ITEM = { projectId: 'p1', itemId: 'req-1' };
 
 describe('request.route', () => {
   it('sends a public target from the server', async () => {
-    await expect(routeSend(routeDeps(seeded()), ITEM)).resolves.toEqual({ route: 'server' });
+    await expect(routeSend(routeDeps(seeded()), ITEM)).resolves.toMatchObject({ route: 'server' });
   });
 
   it('sends a host that resolves to a public address from the server', async () => {
     const deps = routeDeps(seeded({ base: 'https://api.example.test' }), {
       resolve: () => Promise.resolve(['8.8.4.4']),
     });
-    await expect(routeSend(deps, ITEM)).resolves.toEqual({ route: 'server' });
+    await expect(routeSend(deps, ITEM)).resolves.toMatchObject({ route: 'server' });
   });
 
   it('sends a 127.0.0.1 target through the agent', async () => {
-    await expect(routeSend(routeDeps(seeded({ base: 'http://127.0.0.1:8080' })), ITEM)).resolves.toEqual({
+    await expect(routeSend(routeDeps(seeded({ base: 'http://127.0.0.1:8080' })), ITEM)).resolves.toMatchObject({
       route: 'agent',
       needs: ['loopback-target'],
     });
@@ -150,17 +150,17 @@ describe('request.route', () => {
 
   it('sends a host that resolves to loopback through the agent', async () => {
     const deps = routeDeps(seeded({ base: 'http://dev.box' }), { resolve: () => Promise.resolve(['8.8.8.8', '::1']) });
-    await expect(routeSend(deps, ITEM)).resolves.toEqual({ route: 'agent', needs: ['loopback-target'] });
+    await expect(routeSend(deps, ITEM)).resolves.toMatchObject({ route: 'agent', needs: ['loopback-target'] });
   });
 
   it('sends a 10.0.0.5 target through the agent even with private ranges open on the server', async () => {
     const deps = routeDeps(seeded({ base: 'http://10.0.0.5' }));
     expect(deps.send.egress).toEqual({ denyPrivate: false });
-    await expect(routeSend(deps, ITEM)).resolves.toEqual({ route: 'agent', needs: ['private-target'] });
+    await expect(routeSend(deps, ITEM)).resolves.toMatchObject({ route: 'agent', needs: ['private-target'] });
   });
 
   it('sends a host the server cannot resolve through the agent: a name only the person may know', async () => {
-    await expect(routeSend(routeDeps(seeded({ base: 'http://nowhere.invalid' })), ITEM)).resolves.toEqual({
+    await expect(routeSend(routeDeps(seeded({ base: 'http://nowhere.invalid' })), ITEM)).resolves.toMatchObject({
       route: 'agent',
       needs: ['private-target'],
       detail: { reason: 'unresolved' },
@@ -168,11 +168,11 @@ describe('request.route', () => {
   });
 
   it('classifies a bracketed IPv6 literal and an IPv4-mapped one by the address they carry', async () => {
-    await expect(routeSend(routeDeps(seeded({ base: 'http://[::1]:8080' })), ITEM)).resolves.toEqual({
+    await expect(routeSend(routeDeps(seeded({ base: 'http://[::1]:8080' })), ITEM)).resolves.toMatchObject({
       route: 'agent',
       needs: ['loopback-target'],
     });
-    await expect(routeSend(routeDeps(seeded({ base: 'http://[::ffff:10.0.0.5]/' })), ITEM)).resolves.toEqual({
+    await expect(routeSend(routeDeps(seeded({ base: 'http://[::ffff:10.0.0.5]/' })), ITEM)).resolves.toMatchObject({
       route: 'agent',
       needs: ['private-target'],
     });
@@ -182,7 +182,7 @@ describe('request.route', () => {
     const deps = routeDeps(seeded({ request: { url: 'localhost:8080/x' } }), {
       resolve: (host) => Promise.resolve(host === 'localhost' ? ['127.0.0.1'] : []),
     });
-    await expect(routeSend(deps, ITEM)).resolves.toEqual({ route: 'agent', needs: ['loopback-target'] });
+    await expect(routeSend(deps, ITEM)).resolves.toMatchObject({ route: 'agent', needs: ['loopback-target'] });
     const input = { baseUrl: 'https://8.8.8.8', settings: {}, request: { pathParams: [], query: [] } };
     expect(composedUrl({ input: { ...input, request: { ...input.request, url: '/pets' } } } as never)).toBe(
       'https://8.8.8.8/pets',
@@ -194,21 +194,21 @@ describe('request.route', () => {
 
   it('needs the agent for a ${#System#…} value', async () => {
     const deps = routeDeps(seeded({ request: { headers: [entry('X-User', '${#System#USER}')] } }));
-    await expect(routeSend(deps, ITEM)).resolves.toEqual({ route: 'agent', needs: ['system-values'] });
+    await expect(routeSend(deps, ITEM)).resolves.toMatchObject({ route: 'agent', needs: ['system-values'] });
   });
 
   it('needs the agent for a secret mapped to a secret source', async () => {
     const deps = routeDeps(seeded({ request: { headers: [entry('X-Key', '${secret:apiKey}')] } }), {
       secretSourceNames: () => ['apiKey'],
     });
-    await expect(routeSend(deps, ITEM)).resolves.toEqual({ route: 'agent', needs: ['secret-source'] });
+    await expect(routeSend(deps, ITEM)).resolves.toMatchObject({ route: 'agent', needs: ['secret-source'] });
   });
 
   it('needs the agent for a team secret, reached through a property', async () => {
     const model = seeded({ request: { headers: [entry('X-Key', '${key}')] } });
     const withProperty = { ...model, properties: { key: '${secret:teamKey}' } };
     const deps = routeDeps(withProperty, { isTeamSecret: (_p, name) => Promise.resolve(name === 'teamKey') });
-    await expect(routeSend(deps, ITEM)).resolves.toEqual({ route: 'agent', needs: ['team-secret'] });
+    await expect(routeSend(deps, ITEM)).resolves.toMatchObject({ route: 'agent', needs: ['team-secret'] });
   });
 
   it('needs the agent for a keystore on a machine path, but not for one inside the project', async () => {
@@ -218,38 +218,59 @@ describe('request.route', () => {
     const request = { settings: { sslKeystoreRef: 'ks-1' } };
     await expect(
       routeSend(routeDeps(seeded({ request, keystores: keystore('/Users/me/client.p12') })), ITEM),
-    ).resolves.toEqual({ route: 'agent', needs: ['keystore'] });
+    ).resolves.toMatchObject({ route: 'agent', needs: ['keystore'] });
     await expect(
       routeSend(routeDeps(seeded({ request, keystores: keystore('wss/client.p12') })), ITEM),
-    ).resolves.toEqual({ route: 'server' });
+    ).resolves.toMatchObject({ route: 'server' });
   });
 
   it('needs the agent for Kerberos', async () => {
-    await expect(routeSend(routeDeps(seeded({ auth: { type: 'kerberos' } })), ITEM)).resolves.toEqual({
+    await expect(routeSend(routeDeps(seeded({ auth: { type: 'kerberos' } })), ITEM)).resolves.toMatchObject({
       route: 'agent',
       needs: ['kerberos'],
     });
   });
 
   it('needs the agent for NTLM with the machine logon, not for NTLM with a stored password', async () => {
-    await expect(routeSend(routeDeps(seeded({ auth: { type: 'ntlm', username: 'me' } })), ITEM)).resolves.toEqual({
-      route: 'agent',
-      needs: ['ntlm-machine'],
-    });
+    await expect(routeSend(routeDeps(seeded({ auth: { type: 'ntlm', username: 'me' } })), ITEM)).resolves.toMatchObject(
+      {
+        route: 'agent',
+        needs: ['ntlm-machine'],
+      },
+    );
     await expect(
       routeSend(routeDeps(seeded({ auth: { type: 'ntlm', username: 'me', passwordRef: 'secret:pw' } })), ITEM),
-    ).resolves.toEqual({ route: 'server' });
+    ).resolves.toMatchObject({ route: 'server' });
   });
 
   it('sends a pinned request, or a request in a pinned workspace, through the agent', async () => {
     const pins = new RoutePins(routePinsPath(tempDir()));
     const deps = routeDeps(seeded(), { pins, workspaceIdOf: () => 'ws-1' });
     await pins.set('request', 'req-1', 'agent');
-    await expect(routeSend(deps, ITEM)).resolves.toEqual({ route: 'agent', needs: ['pinned'] });
+    await expect(routeSend(deps, ITEM)).resolves.toMatchObject({ route: 'agent', needs: ['pinned'] });
     await pins.set('request', 'req-1', null);
-    await expect(routeSend(deps, ITEM)).resolves.toEqual({ route: 'server' });
+    await expect(routeSend(deps, ITEM)).resolves.toMatchObject({ route: 'server' });
     await pins.set('workspace', 'ws-1', 'agent');
-    await expect(routeSend(deps, ITEM)).resolves.toEqual({ route: 'agent', needs: ['pinned'] });
+    await expect(routeSend(deps, ITEM)).resolves.toMatchObject({ route: 'agent', needs: ['pinned'] });
+  });
+
+  it('tells the tab which pins hold, the workspace id they are set by and the target host', async () => {
+    const pins = new RoutePins(routePinsPath(tempDir()));
+    const deps = routeDeps(seeded({ base: 'https://api.example.test' }), {
+      pins,
+      workspaceIdOf: () => 'ws-1',
+      resolve: () => Promise.resolve(['8.8.4.4']),
+    });
+    await expect(routeSend(deps, ITEM)).resolves.toEqual({
+      route: 'server',
+      info: { pins: { request: false, workspace: false }, workspaceId: 'ws-1', targetHost: 'api.example.test' },
+    });
+    await pins.set('workspace', 'ws-1', 'agent');
+    await expect(routeSend(deps, ITEM)).resolves.toEqual({
+      route: 'agent',
+      needs: ['pinned'],
+      info: { pins: { request: false, workspace: true }, workspaceId: 'ws-1', targetHost: 'api.example.test' },
+    });
   });
 
   it(`keeps at most ${String(MAX_ROUTE_PINS)} pins of a scope`, async () => {
@@ -280,7 +301,7 @@ describe('request.route', () => {
         request: { headers: [entry('U', '${#System#USER}')] },
       }),
     );
-    await expect(routeSend(deps, ITEM)).resolves.toEqual({
+    await expect(routeSend(deps, ITEM)).resolves.toMatchObject({
       route: 'agent',
       needs: ['private-target', 'system-values', 'kerberos'],
     });
@@ -711,7 +732,10 @@ describe('WS-Security configurations a SOAP request names', () => {
 
   it('needs the agent for a signing keystore on a machine path, and its secret: password stays on the agent', async () => {
     const model = soapSeeded('/Users/me/signer.p12');
-    await expect(routeSend(routeDeps(model), SOAP_ITEM)).resolves.toEqual({ route: 'agent', needs: ['keystore'] });
+    await expect(routeSend(routeDeps(model), SOAP_ITEM)).resolves.toMatchObject({
+      route: 'agent',
+      needs: ['keystore'],
+    });
     await expect(
       routeSend(routeDeps(model, { serverSecretNames: () => Promise.resolve(['ksPass']) }), SOAP_ITEM),
     ).rejects.toMatchObject({ code: 'secret-missing', details: { name: 'ksPass', missingOn: 'agent' } });
@@ -719,7 +743,7 @@ describe('WS-Security configurations a SOAP request names', () => {
 
   it('bundles a keystore inside the project and names its password', async () => {
     const model = soapSeeded('wss/signer.p12');
-    await expect(routeSend(routeDeps(model), SOAP_ITEM)).resolves.toEqual({ route: 'server' });
+    await expect(routeSend(routeDeps(model), SOAP_ITEM)).resolves.toMatchObject({ route: 'server' });
     const projectDir = tempDir();
     mkdirSync(join(projectDir, 'wss'), { recursive: true });
     writeFileSync(join(projectDir, 'wss', 'signer.p12'), Buffer.from([9, 9, 9]));
