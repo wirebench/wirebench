@@ -2,7 +2,7 @@
  * The pairing store's file (`userData/agent-pairings.json`, version 1): written only once there is an
  * identity, the key sealed by the platform, read back by a second store over the same directory.
  */
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openPairingStore, PAIRINGS_FILE } from '../src/pairings.js';
@@ -131,5 +131,119 @@ describe('openPairingStore', () => {
     const there = await openPairingStore(fakePlatform(undefined, platform.paths.userData()));
     const theirs = await there.identity();
     expect((await here.identity()).agentId).toBe(theirs.agentId);
+  });
+
+  describe('across processes', () => {
+    /** A store whose next write waits, holding the lock, until `release()`; `entered` resolves once it does. */
+    async function holding(dir: string) {
+      let gate: { entered: () => void; until: Promise<void> } | undefined;
+      const store = await openPairingStore(fakePlatform(undefined, dir), {
+        whileLocked: async () => {
+          const held = gate;
+          gate = undefined;
+          if (held === undefined) return;
+          held.entered();
+          await held.until;
+        },
+      });
+      const hold = () => {
+        let entered: () => void = () => undefined;
+        let release: () => void = () => undefined;
+        const inside = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const until = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        gate = { entered, until };
+        return { inside, release };
+      };
+      return { store, hold };
+    }
+
+    it('makes one identity and keeps both pairings when two stores write at the same moment', async () => {
+      const platform = fakePlatform();
+      const dir = platform.paths.userData();
+      const a = await holding(dir);
+      const b = await openPairingStore(fakePlatform(undefined, dir));
+
+      const first = a.hold();
+      const madeA = a.store.identity();
+      await first.inside;
+      const madeB = b.identity();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      first.release();
+      const [ia, ib] = await Promise.all([madeA, madeB]);
+      expect(ib.agentId).toBe(ia.agentId);
+      expect(ib.key.publicKey).toBe(ia.key.publicKey);
+
+      const one = pairing();
+      const two = pairing();
+      const second = a.hold();
+      const addA = a.store.add(one);
+      await second.inside;
+      const addB = b.add(two);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      second.release();
+      await Promise.all([addA, addB]);
+
+      const reread = await openPairingStore(fakePlatform(undefined, dir));
+      expect(
+        reread
+          .list()
+          .map((row) => row.pairingId)
+          .sort(),
+      ).toEqual([one.pairingId, two.pairingId].sort());
+      expect((await reread.identity()).agentId).toBe(ia.agentId);
+      expect(existsSync(join(dir, `${PAIRINGS_FILE}.lock`))).toBe(false);
+    });
+
+    it('takes over a stale lock, and gives up on a live one past its timeout', async () => {
+      const platform = fakePlatform();
+      const dir = platform.paths.userData();
+      const lockFile = join(dir, `${PAIRINGS_FILE}.lock`);
+      const store = await openPairingStore(platform, { lockTimeoutMs: 100 });
+      writeFileSync(lockFile, '');
+      const old = new Date(Date.now() - 60_000);
+      utimesSync(lockFile, old, old);
+      await store.identity();
+      expect(existsSync(lockFile)).toBe(false);
+
+      writeFileSync(lockFile, '');
+      await expect(store.add(pairing())).rejects.toThrow(/being written by another Wirebench process/);
+      expect(store.list()).toEqual([]);
+    });
+
+    it('starts over with a new identity when the file is deleted while it runs', async () => {
+      const platform = fakePlatform();
+      const store = await openPairingStore(platform);
+      const before = await store.identity();
+      await store.add(pairing());
+      unlinkSync(join(platform.paths.userData(), PAIRINGS_FILE));
+      await store.refresh();
+      expect(store.list()).toEqual([]);
+      const after = await store.identity();
+      expect(after.agentId).not.toBe(before.agentId);
+      const next = pairing();
+      await store.add(next);
+      expect(store.list()).toEqual([next]);
+    });
+
+    it('reports a broken file on refresh once per change, keeping the pairings it had', async () => {
+      const platform = fakePlatform();
+      const store = await openPairingStore(platform);
+      await store.identity();
+      const kept = pairing();
+      await store.add(kept);
+      const path = join(platform.paths.userData(), PAIRINGS_FILE);
+      writeFileSync(path, 'broken');
+      await expect(store.refresh()).rejects.toThrow(/not a pairings file/);
+      await expect(store.refresh()).resolves.toBeUndefined();
+      expect(store.list()).toEqual([kept]);
+      writeFileSync(path, 'broken again');
+      await expect(store.refresh()).rejects.toThrow(/not a pairings file/);
+      // A write never takes the broken file as empty.
+      await expect(store.add(pairing())).rejects.toThrow(/not a pairings file/);
+    });
   });
 });

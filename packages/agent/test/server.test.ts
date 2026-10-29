@@ -4,11 +4,13 @@
  * missing or `null` Origin, DNS rebinding, a call before auth, a replayed nonce, a late auth frame, a
  * refused channel), the port fallback, the preflight and the port report.
  */
+import { writeFileSync } from 'node:fs';
 import { createServer as createNetServer, type Server as NetServer } from 'node:net';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { HOST_CLOSE } from '@wirebench/host';
 import { pair, unpair, type AgentFetch } from '../src/pair.js';
-import { openPairingStore, type PairingStore } from '../src/pairings.js';
+import { openPairingStore, PAIRINGS_FILE, type PairingStore } from '../src/pairings.js';
 import {
   AGENT_CALLER_ID_BASE,
   AgentPortsBusyError,
@@ -23,6 +25,7 @@ import {
   fakePlatform,
   onCleanUp,
   openSocket,
+  rawUpgrade,
   rawUpgradeStatus,
   registryChannelNames,
   startFakeServer,
@@ -405,5 +408,67 @@ describe('startAgent', () => {
     expect([400, 403]).toContain(await rawUpgradeStatus(setup.port, { Origin: origin }));
     expect(await rawUpgradeStatus(setup.port, { Host: `127.0.0.1:${port}`, Origin: origin })).toBe(101);
     expect(await rawUpgradeStatus(setup.port, { Host: `localhost:${port}`, Origin: origin })).toBe(101);
+  });
+
+  it('refuses an upgrade that was waiting on the file once close() has started', async () => {
+    const server = await startFakeServer();
+    const platform = fakePlatform();
+    const real = await openPairingStore(platform);
+    const port = await freePort();
+    await pair({ code: server.code, serverUrl: server.url, sshOptIn: false, store: real, fetch, port });
+    const gate: { until?: Promise<void> } = {};
+    let entered: () => void = () => undefined;
+    const store: PairingStore = {
+      ...real,
+      refresh: async () => {
+        if (gate.until !== undefined) {
+          entered();
+          await gate.until;
+        }
+        return real.refresh();
+      },
+    };
+    const agent = await startAgent({ host: fakeHost(), platform, store, fetch, ports: [port] });
+    let open: () => void = () => undefined;
+    gate.until = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const inside = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const answer = rawUpgrade(port, { Host: `127.0.0.1:${String(port)}`, Origin: server.origin });
+    await inside;
+    const closed = agent.close();
+    open();
+    // The agent's own refusal (an empty body), not one from the WebSocket server after it closed.
+    const { status, head } = await answer;
+    expect(status).toBe(503);
+    expect(head).toContain('Content-Length: 0');
+    expect(head).not.toContain('text/html');
+    await closed;
+  });
+
+  it('logs a broken pairings file once per change while it polls', async () => {
+    const logs: string[] = [];
+    const platform = fakePlatform();
+    const store = await openPairingStore(platform);
+    await store.identity();
+    const agent = await startAgent({
+      host: fakeHost(),
+      platform,
+      store,
+      fetch,
+      ports: [await freePort()],
+      refreshIntervalMs: 10,
+      log: (message) => logs.push(message),
+    });
+    onCleanUp(() => agent.close());
+    const path = join(platform.paths.userData(), PAIRINGS_FILE);
+    writeFileSync(path, 'broken');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(logs).toEqual(['the pairings file could not be read again']);
+    writeFileSync(path, 'broken, differently');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(logs).toHaveLength(2);
   });
 });

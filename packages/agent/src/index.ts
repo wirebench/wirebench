@@ -17,8 +17,11 @@ export {
   type UnpairOptions,
 } from './pair.js';
 export {
+  LOCK_TIMEOUT_MS,
   openPairingStore,
   PAIRINGS_FILE,
+  STALE_LOCK_MS,
+  type PairingStoreOptions,
   type AgentIdentity,
   type Pairing,
   type PairingPlatform,

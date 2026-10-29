@@ -8,15 +8,34 @@
  * agent's own key file) before it touches the disk; nothing else in the file is a secret. The agent id and
  * the key are made at the first pairing, so an install that never pairs writes nothing. Every write goes to a
  * temporary file renamed over the old one, so a crash leaves the old file or the new, never half of one.
+ *
+ * The desktop's agent and a `wirebench agent pair` may write the file at the same time, so every write
+ * (identity creation included) holds `agent-pairings.json.lock`, made with `O_EXCL`, across its re-read, its
+ * change, the rename and the stamp read. A lock older than {@link STALE_LOCK_MS} is a crashed writer's and
+ * is taken over.
  */
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { HostPlatform } from '@wirebench/host';
 import { agentKeyFromPkcs8, generateAgentKey, type AgentKey } from './keys.js';
 
 export const PAIRINGS_FILE = 'agent-pairings.json';
+
+/** How long a write waits for another process's lock before it gives up. */
+export const LOCK_TIMEOUT_MS = 5_000;
+/** A lock whose file is older than this (by its mtime) was left by a writer that died; it may be taken over. */
+export const STALE_LOCK_MS = 30_000;
+
+export interface PairingStoreOptions {
+  /** {@link LOCK_TIMEOUT_MS} when absent. */
+  readonly lockTimeoutMs?: number;
+  /** {@link STALE_LOCK_MS} when absent. */
+  readonly staleLockMs?: number;
+  /** Runs while a write holds the lock, after its re-read and before its rename: for tests to interleave writers. */
+  readonly whileLocked?: () => Promise<void>;
+}
 
 /** One pairing with a Wirebench Server, as the agent keeps it. */
 export interface Pairing {
@@ -67,7 +86,8 @@ export interface PairingStore {
   /**
    * Reads the file again if it changed on disk since the last read or write, so a pairing another process
    * made or removed (`wirebench agent pair` beside a running agent) counts without a restart. Cheap when it
-   * has not changed: one `stat`.
+   * has not changed: one `stat`. A file it cannot read throws once per change of the file, and the pairings
+   * stay as last read.
    */
   refresh(): Promise<void>;
   /** Adds `pairing`, replacing one with the same id. */
@@ -103,12 +123,20 @@ type Stamp = string | undefined;
  * platform cannot unseal, is refused (a throw) rather than replaced: replacing it would drop every pairing
  * without the user asking.
  */
-export async function openPairingStore(platform: PairingPlatform): Promise<PairingStore> {
+export async function openPairingStore(
+  platform: PairingPlatform,
+  options: PairingStoreOptions = {},
+): Promise<PairingStore> {
   const dir = platform.paths.userData();
   const path = join(dir, PAIRINGS_FILE);
+  const lockPath = `${path}.lock`;
+  const lockTimeoutMs = options.lockTimeoutMs ?? LOCK_TIMEOUT_MS;
+  const staleLockMs = options.staleLockMs ?? STALE_LOCK_MS;
   let file: PairingsFile | undefined;
   let identity: AgentIdentity | undefined;
   let stamp: Stamp;
+  /** The stamp of the last file a quiet refresh could not read: it is not reported again. */
+  let failedStamp: Stamp | null = null;
   const listeners = new Set<() => void>();
 
   const changed = (): void => {
@@ -151,22 +179,71 @@ export async function openPairingStore(platform: PairingPlatform): Promise<Pairi
     return parsed.data;
   };
 
-  /** Takes `next` as the file, unsealing its key when the identity is new to this store. */
+  /**
+   * Takes `next` as the file, unsealing its key when the identity is new to this store. No file means no
+   * identity either: a deleted file starts the install over, and the next pairing makes a new key.
+   */
   const adopt = (next: PairingsFile | undefined): void => {
-    if (next !== undefined && (identity === undefined || identity.agentId !== next.agentId)) {
+    if (next === undefined) {
+      identity = undefined;
+    } else if (identity === undefined || identity.agentId !== next.agentId) {
       const pkcs8 = platform.secrets.decrypt(Buffer.from(next.privateKeySealed, 'base64'));
       identity = { agentId: next.agentId, key: agentKeyFromPkcs8(pkcs8) };
     }
     file = next;
   };
 
-  /** Reads the file again when its stamp moved; whether it did. */
-  const reload = async (): Promise<boolean> => {
+  /**
+   * Reads the file again when its stamp moved; whether it did. A file it cannot read throws, except that a
+   * `quiet` reload throws only once per stamp (a poll every few seconds over a broken file says so once).
+   */
+  const reload = async (quiet = false): Promise<boolean> => {
     const now = await stampNow();
     if (now === stamp) return false;
-    adopt(await read());
+    if (quiet && now === failedStamp) return false;
+    try {
+      adopt(await read());
+    } catch (error) {
+      failedStamp = now;
+      throw error;
+    }
+    failedStamp = null;
     stamp = now;
     return true;
+  };
+
+  const pause = (ms: number): Promise<void> =>
+    new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
+
+  /** Takes the cross-process lock, waiting with backoff; throws past `lockTimeoutMs`. */
+  const lock = async (): Promise<() => Promise<void>> => {
+    await mkdir(dir, { recursive: true });
+    const deadline = Date.now() + lockTimeoutMs;
+    let wait = 10;
+    for (;;) {
+      try {
+        const handle = await open(lockPath, 'wx', 0o600);
+        return async () => {
+          await handle.close();
+          await unlink(lockPath).catch(() => undefined);
+        };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      }
+      const held = await stat(lockPath).catch(() => undefined);
+      if (held !== undefined && Date.now() - held.mtimeMs > staleLockMs) {
+        // Its writer died holding it. Only one taker's `wx` open wins after the unlink.
+        await unlink(lockPath).catch(() => undefined);
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(`${PAIRINGS_FILE} is being written by another Wirebench process; try again`);
+      }
+      await pause(Math.min(wait, Math.max(1, deadline - Date.now())));
+      wait = Math.min(wait * 2, 200);
+    }
   };
 
   await reload();
@@ -179,8 +256,20 @@ export async function openPairingStore(platform: PairingPlatform): Promise<Pairi
     queue = run.catch(() => undefined);
     return run;
   };
+  /** `work` in turn here, holding the file's lock against other processes, and starting from the file on disk. */
+  const locked = <T>(work: () => Promise<T>): Promise<T> =>
+    serially(async () => {
+      const release = await lock();
+      try {
+        if (await reload()) changed();
+        return await work();
+      } finally {
+        await release();
+      }
+    });
+  /** Only inside {@link locked}: the stamp is read before the lock goes, so no other write is taken as seen. */
   const write = async (next: PairingsFile): Promise<void> => {
-    await mkdir(dir, { recursive: true });
+    await options.whileLocked?.();
     const temporary = `${path}.${randomUUID()}.tmp`;
     await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
     await rename(temporary, path);
@@ -190,19 +279,21 @@ export async function openPairingStore(platform: PairingPlatform): Promise<Pairi
   };
   /** Applies `change` to the file as it is on disk now. */
   const modify = (change: (now: PairingsFile) => PairingsFile | undefined): Promise<void> =>
-    serially(async () => {
-      if (await reload()) changed();
+    locked(async () => {
       if (file === undefined) throw new Error('The agent has no identity yet');
       const next = change(file);
       if (next !== undefined) await write(next);
     });
 
   let making: Promise<AgentIdentity> | undefined;
-  const identityOf = (): Promise<AgentIdentity> => {
-    if (identity !== undefined) return Promise.resolve(identity);
-    making ??= serially(async () => {
-      // Another process may have paired first: its key is the install's key.
+  const identityOf = async (): Promise<AgentIdentity> => {
+    // The file as it is now: a deleted file has no identity, and another process may have made one.
+    await serially(async () => {
       if (await reload()) changed();
+    });
+    if (identity !== undefined) return identity;
+    making ??= locked(async () => {
+      // Another process may have paired first, under the lock: its key is the install's key.
       if (identity !== undefined) return identity;
       if (!platform.secrets.available()) {
         throw new Error('This machine cannot keep the agent key secret, so it cannot pair');
@@ -227,7 +318,7 @@ export async function openPairingStore(platform: PairingPlatform): Promise<Pairi
     },
     refresh: () =>
       serially(async () => {
-        if (await reload()) changed();
+        if (await reload(true)) changed();
       }),
     add: (pairing) =>
       modify((now) => ({
@@ -236,8 +327,7 @@ export async function openPairingStore(platform: PairingPlatform): Promise<Pairi
       })),
     remove: async (pairingId) => {
       let removed = false;
-      await serially(async () => {
-        if (await reload()) changed();
+      await locked(async () => {
         if (file === undefined || !file.pairings.some((one) => one.pairingId === pairingId)) return;
         removed = true;
         await write({ ...file, pairings: file.pairings.filter((one) => one.pairingId !== pairingId) });

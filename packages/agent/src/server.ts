@@ -142,8 +142,10 @@ function pathOf(request: IncomingMessage): string {
   return query === -1 ? url : url.slice(0, query);
 }
 
-function refuseUpgrade(socket: Duplex, status: 403 | 404): void {
-  const text = status === 403 ? 'Forbidden' : 'Not Found';
+const STATUS_TEXT = { 403: 'Forbidden', 404: 'Not Found', 503: 'Service Unavailable' } as const;
+
+function refuseUpgrade(socket: Duplex, status: keyof typeof STATUS_TEXT): void {
+  const text = STATUS_TEXT[status];
   socket.end(`HTTP/1.1 ${String(status)} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
 }
 
@@ -176,6 +178,8 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
   const sockets = new Map<HostSocket, { pairingId?: string }>();
   const reports = new Set<Promise<void>>();
   let nextCallerId = AGENT_CALLER_ID_BASE;
+  /** Set once `close()` starts: an upgrade that was waiting on the file is refused, not let in. */
+  let stopping = false;
   let port = 0;
 
   const pairedOrigin = (origin: string | undefined): boolean =>
@@ -314,6 +318,10 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
       return;
     }
     void fresh().then(() => {
+      if (stopping) {
+        refuseUpgrade(socket, 503);
+        return;
+      }
       wss.handleUpgrade(request, socket, head, (ws) => {
         ws.on('error', () => undefined);
         const origin = header(request, 'origin');
@@ -359,6 +367,7 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
     port,
     close: () => {
       closing ??= (async () => {
+        stopping = true;
         clearInterval(refresher);
         unsubscribe();
         for (const socket of [...sockets.keys()]) socket.end(HOST_CLOSE.goingAway, 'agent stopping');

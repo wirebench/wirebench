@@ -340,7 +340,15 @@ export function registryChannelNames(): string[] {
  * Sends a raw upgrade request for `/host` with exactly `headers` (none added, `Host` included) and resolves
  * with the status code of the answer.
  */
-export function rawUpgradeStatus(port: number, headers: Readonly<Record<string, string>>): Promise<number> {
+export async function rawUpgradeStatus(port: number, headers: Readonly<Record<string, string>>): Promise<number> {
+  return (await rawUpgrade(port, headers)).status;
+}
+
+/** As {@link rawUpgradeStatus}, with the answer's head (status line and headers) as sent. */
+export function rawUpgrade(
+  port: number,
+  headers: Readonly<Record<string, string>>,
+): Promise<{ readonly status: number; readonly head: string }> {
   return new Promise((resolve, reject) => {
     const socket = connect(port, '127.0.0.1');
     onCleanUp(() => {
@@ -349,9 +357,10 @@ export function rawUpgradeStatus(port: number, headers: Readonly<Record<string, 
     let text = '';
     socket.on('data', (chunk: Buffer) => {
       text += chunk.toString('latin1');
+      const end = text.indexOf('\r\n\r\n');
       const match = /^HTTP\/1\.1 (\d{3})/.exec(text);
-      if (match !== null) {
-        resolve(Number(match[1]));
+      if (match !== null && end !== -1) {
+        resolve({ status: Number(match[1]), head: text.slice(0, end) });
         socket.destroy();
       }
     });
