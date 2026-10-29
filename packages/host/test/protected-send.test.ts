@@ -10,7 +10,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApi, createProject, createRestRequest } from '@wirebench/engine';
 import type { Environment, Project } from '@wirebench/engine';
-import { protectedEnvironmentOf, sendThroughEngine } from '../src/send/exchange.js';
+import { confirmProtectedSend, protectedEnvironmentOf, sendThroughEngine } from '../src/send/exchange.js';
 import { channels } from '@wirebench/wire/ipc';
 import { EngineService } from '../src/engine-service.js';
 import { HandlerTable } from '../src/ipc/register.js';
@@ -132,6 +132,10 @@ describe('a send under a protected environment on a host with no dialogs (the se
     expect(hits).toBe(before);
     await expect(call({ sendId: 'c2', requestId: 'rest-1', confirmed: true })).resolves.toMatchObject({ ok: true });
     expect(hits).toBe(before + 1);
+  });
+
+  it('is a "no" for a run or a sequence, which ask through confirmProtectedSend and cannot ask the tab yet', async () => {
+    await expect(confirmProtectedSend({ confirmProtected: headless() }, ['Prod'])).resolves.toBe(false);
   });
 
   it('leaves a desktop with dialogs asking natively, whatever it answers', async () => {

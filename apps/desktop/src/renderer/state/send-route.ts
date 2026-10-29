@@ -317,12 +317,20 @@ async function bundleFor(
   );
 }
 
-/** The HTTP Log's row the agent built for a failed send, from its error; `undefined` when it sent none. */
+/**
+ * The HTTP Log's row the agent built for a failed send, from its error; `undefined` when it sent none. Its raw
+ * request's body is cut as History cuts it, as a successful send's is, so a large one is still recorded.
+ */
 function failureOf(error: IpcError, sendId: string): FailedExchangeWire | undefined {
   const failure = (error.details as { failure?: unknown } | undefined)?.failure;
   if (typeof failure !== 'object' || failure === null) return undefined;
+  const row = failure as FailedExchangeWire;
   // The tab's id, so the row matches the send it shows.
-  return { ...(failure as FailedExchangeWire), sendId };
+  return {
+    ...row,
+    sendId,
+    ...(row.rawRequestBase64 !== undefined ? { rawRequestBase64: trimmedRaw(row.rawRequestBase64) } : {}),
+  };
 }
 
 /**

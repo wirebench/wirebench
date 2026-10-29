@@ -661,6 +661,37 @@ describe('an agent send, further', () => {
   });
 });
 
+describe('a failed agent send with a large request body', () => {
+  it('has its row recorded with the raw request cut as History cuts it, under the cap', async () => {
+    const calls = install(fakeAgent().env);
+    const body = 'q'.repeat(5 * 1024 * 1024);
+    const raw = Buffer.from(`POST /upload HTTP/1.1\r\nhost: 127.0.0.1:1\r\n\r\n${body}`).toString('base64');
+    const row = {
+      sendId: 'host-own-id',
+      protocol: 'rest',
+      requestId: 'rest-1',
+      request: { url: 'http://127.0.0.1:1/upload', method: 'POST', headers: {} },
+      rawRequestBase64: raw,
+      startedAt: '2026-10-29T10:00:00.000Z',
+      durationMs: 3,
+      error: { code: 'connection-reset', message: 'Connection reset.' },
+    };
+    calls.agentSend.mockResolvedValue({
+      ok: false,
+      error: { code: 'connection-reset', message: 'Connection reset.', details: { failure: row } },
+    });
+    await useExchangesStore.getState().sendRest('rest-1');
+
+    const [request] = calls.recordFailure.mock.calls[0] as [{ failure: { rawRequestBase64: string } }];
+    const sentRaw = Buffer.from(request.failure.rawRequestBase64, 'base64').toString('utf8');
+    expect(sentRaw.startsWith('POST /upload HTTP/1.1\r\nhost: 127.0.0.1:1\r\n\r\n')).toBe(true);
+    expect(sentRaw).toMatch(/… truncated, \d+ more characters$/);
+    // Under the record schema's cap (`AGENT_RECORD_MAX_BODY_CHARS`, 2 Mi characters).
+    expect(request.failure.rawRequestBase64.length).toBeLessThan(2 * 1024 * 1024);
+    expect(request.failure.rawRequestBase64.length).toBeLessThan(HISTORY_BODY_MAX_CHARS * 2);
+  });
+});
+
 describe('a server send under a protected environment', () => {
   const NEEDS = {
     ok: false,

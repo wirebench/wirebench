@@ -409,22 +409,43 @@ export function protectedEnvironmentOf(
 }
 
 /**
- * Asks about the protected environments named, `true` at once when there are none. Throws only a host's
- * `needs-confirmation` (it has no dialogs; the caller asks and sends again confirmed); any other failure to
- * ask is a "no".
+ * Asks about the protected environments named, `true` at once when there are none; never throws. A host that
+ * cannot ask (no dialogs: `needs-confirmation`) is a "no" here: a run or a batch has no tab flow to confirm
+ * it yet (#794), so its protected sends are declined as before.
  */
 export async function confirmProtectedSend(
   deps: Pick<SendThroughEngineDeps, 'confirmProtected'>,
   environmentNames: readonly string[],
 ): Promise<boolean> {
-  if (environmentNames.length === 0) return true;
   try {
-    return (await deps.confirmProtected?.(environmentNames)) === true;
+    return await askProtected(deps, environmentNames);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * {@link confirmProtectedSend} for one editor send, which the tab can confirm: a host with no dialogs refuses
+ * with `needs-confirmation`, and the tab asks and sends again `confirmed`. Any other failure to ask is a "no".
+ */
+async function confirmEditorSend(
+  deps: Pick<SendThroughEngineDeps, 'confirmProtected'>,
+  environmentNames: readonly string[],
+): Promise<boolean> {
+  try {
+    return await askProtected(deps, environmentNames);
   } catch (error) {
-    // A host with no dialogs hands the question to its caller (the tab): that refusal goes out as it is.
     if (isWirebenchError(error) && error.code === 'needs-confirmation') throw error;
     return false;
   }
+}
+
+async function askProtected(
+  deps: Pick<SendThroughEngineDeps, 'confirmProtected'>,
+  environmentNames: readonly string[],
+): Promise<boolean> {
+  if (environmentNames.length === 0) return true;
+  return (await deps.confirmProtected?.(environmentNames)) === true;
 }
 
 /** The refusal of a send the person did not confirm, naming its protected environments. */
@@ -498,7 +519,7 @@ async function sendReserved(
   // Asked before anything is resolved or sent; an ad-hoc send runs under no environment.
   if (adHoc === undefined && options.protectedConfirmed !== true) {
     const guarded = protectedEnvironmentOf(located);
-    if (guarded !== undefined && !(await confirmProtectedSend(deps, [guarded]))) {
+    if (guarded !== undefined && !(await confirmEditorSend(deps, [guarded]))) {
       throw sendDeclined([guarded]);
     }
   }
