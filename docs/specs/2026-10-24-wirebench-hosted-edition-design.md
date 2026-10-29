@@ -649,7 +649,7 @@ self-hosted teams on their own, which is why they would come first whenever the 
 | Slice | Module id | Delivers | Depends on | Serves self-hosted alone? |
 | --- | --- | --- | --- | --- |
 | 1 | `host-seam` | **Built** (#779 and #780, 2026-10-27; ADR-0033 accepted). `@wirebench/host` as `createHost(platform)` with `HostPlatform` and `Caller`, no module-level state and its gate; the Electron app embeds it; proven by the existing tests on a fake platform and a fake-socket test of `buildApi` (the loopback server moves to slice 3) | — | yes (no user-visible change) |
-| 2 | `browser-client` | **Built** (#785, #787 and this PR, 2026-10-29, for #783; §17 records what changed from this row). The Vite browser build, `browser-bootstrap.ts`, capability discovery, the sign-in page and `browser_flows`, the cookie session, the server host with checkouts and per-user state via `inject`, live events over the host socket, user-scoped sealed secrets under one server-wide root, the §3.10 allowlist and path guard, the egress rule on every outbound connection | 1 | yes: a self-hosted team gets a browser tab |
+| 2 | `browser-client` | **Built** (#785, #787 and #789, 2026-10-29, for #783; §17 records what changed from this row). The Vite browser build, `browser-bootstrap.ts`, capability discovery, the sign-in page and `browser_flows`, the cookie session, the server host with checkouts and per-user state via `inject`, live events over the host socket, user-scoped sealed secrets under one server-wide root, the §3.10 allowlist and path guard, the egress rule on every outbound connection | 1 | yes: a self-hosted team gets a browser tab |
 | 3 | `local-agent` | `packages/agent` as a library, the loopback socket transport, pairing with the browser subset, the send-route rule and the send bundle, `wirebench agent`, the agent's packaging | 1, 2 | yes |
 | 4 | `tenancy` | `tenants`, `tenant_id` on every table, forced row-level security, tenant resolution by `Host`, per-tenant directories and data keys with the one-time re-wrap, the six guards of §5.4 including the job scope, the host-instance lease, the self-hosted migration | 2 | yes, invisibly (one tenant) |
 | 5 | `operations` | `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
@@ -733,7 +733,7 @@ The payment provider is Paddle, as merchant of record (decision 10).
 ## 17. Slice 2 amendment: the browser client (2026-10-27)
 
 Slice 2 (#783) was scheduled on its merits, before the trigger, because a self-hosted team gets a browser
-tab from it, and is built: #785 the server side, #787 the server host, and this PR the tab. It builds
+tab from it, and is built: #785 the server side, #787 the server host, and #789 the tab. It builds
 §3.1–§3.5, §3.10, §5.2 (the server transport) and §6 with one tenant implied, so no `tenant_id` appears
 yet. Where the build differs from the sections above, this section wins until slice 4 folds it back.
 Plan: `docs/plans/2026-10-27-browser-client.md`.

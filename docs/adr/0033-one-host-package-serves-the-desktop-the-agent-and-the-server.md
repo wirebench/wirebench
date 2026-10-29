@@ -92,7 +92,7 @@ build differs from the decision above:
 
 ## What slice 2 taught
 
-Built in #785, #787 and this PR (spec §17). Where it differs from the above:
+Built in #785, #787 and #789 (spec §17). Where it differs from the above:
 
 - **The server bundles.** It took the first option: `scripts/bundle-host.mjs` bundles the host with esbuild
   into `dist/host/`, loaded only with the browser client on; neither package emits yet.
