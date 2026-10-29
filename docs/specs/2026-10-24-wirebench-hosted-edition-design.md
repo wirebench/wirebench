@@ -1197,7 +1197,8 @@ test can check them (§19.8, guard 3):
 1. **The column.** At the end of slice 4 it is `tenant_id uuid not null default nullif(current_setting(
    'wirebench.tenant_id', true), '')::uuid references tenants (id)`. Because the default reads the setting, an
    insert inside `withTenant` names no tenant. The repositories' insert statements do not change, except their
-   `on conflict` targets, which gain `tenant_id` first (rule 2). Outside a tenant transaction the default is null,
+   `on conflict` targets: those gain `tenant_id` first (rule 2), and the `license` and `audit_chain_anchor` upserts
+   become `on conflict (tenant_id)`, their new primary key (rule 5). Outside a tenant transaction the default is null,
    and the insert fails. Until `0021` the default is the default tenant's id as a constant (§19.10).
 2. **Uniqueness.** Every unique index leads with `tenant_id`, and so does every primary key other than a lone `id`
    column **that the server mints**. `users (tenant_id, email_lower)`, `teams (tenant_id, lower(name))` and
@@ -1303,16 +1304,29 @@ tenant through its own column, not only through `users`. The same email in two t
     `WIREBENCH_SERVER_MIGRATION_DATABASE_URL`, and in `WIREBENCH_SERVER_DATABASE_URL` when that variable is unset.
     Migrations, `admin tenancy role` and `admin tenancy revert` connect as it.
   - **The app role** is the role in `WIREBENCH_SERVER_DATABASE_URL`. It is neither superuser, nor `BYPASSRLS`, nor
-    owner, and holds `select, insert, update, delete` on every table, `usage` on the schema and default privileges
-    for tables the owner creates later. Being no owner, it is under every policy whether forced or not.
+    owner. Being no owner, it is under every policy whether forced or not. It holds:
+    - `usage` on the schema;
+    - `select, insert, update, delete` on every scoped table and on `tenants`;
+    - `select` only on `schema_migrations`;
+    - on `server_identity`, `select`, and `update` of the columns the server writes (`tenancy_step`);
+    - default privileges for scoped tables the owner creates later.
+
+    It has no `execute` on `tenant_scope()` or `for_each_tenant()`.
   - **`force`** is what puts the owner under the policy too, so a one-role installation still isolates tenants. It
     is also why the owner is not the role to back up as or to run a data migration as (below).
   - **Data migrations.** From `0022` on, a migration that updates or inserts rows in a scoped table either runs per
     tenant through the `for_each_tenant(sql)` helper that `0021` ships, or brackets its statements with `alter table
-    … no force row level security` and `… force row level security` inside its own transaction. Other sessions never
-    see the unforced state: the `alter table` holds `ACCESS EXCLUSIVE` until commit. The migration test checks that
-    `relforcerowsecurity` is on for every scoped table after the last migration. Without either, a back-fill like
-    `0010`'s would touch no row and still succeed.
+    … no force row level security` and `… force row level security` inside its own transaction.
+    - Other sessions never see the unforced state: the `alter table` holds `ACCESS EXCLUSIVE` until commit.
+    - Without either, a back-fill like `0010`'s would touch no row and still succeed on a non-superuser owner. It
+      would work on compose, where the owner is a superuser, which is why the check is textual as well as
+      catalogued.
+    - The migration test therefore checks two things. Every scoped table has `relforcerowsecurity` on after the last
+      migration. And, as a lint, every migration from `0022` on that holds an `insert`, `update` or `delete` on a
+      scoped table also holds `for_each_tenant(` or the bracket.
+    - `0021` revokes `execute` on `for_each_tenant(text)` and `tenant_scope(regclass)` from `public`, so only the
+      owner can call them. `check:tenant-scope` refuses `for_each_tenant` anywhere in `src/`: it is a loop across
+      every tenant, which no request may hold.
   - **Backups.** `pg_dump` as the app role, or as a non-superuser owner, refuses a scoped table (`row_security` is
     off by default in `pg_dump`) or, with `--enable-row-security`, dumps it empty. Back up as a superuser or a
     dedicated `BYPASSRLS` backup role. The README says so, and `admin tenancy check` and `admin tenancy status`
@@ -1332,14 +1346,18 @@ tenant through its own column, not only through `users`. The same email in two t
     superuser) upgrades as before, with the warning. The one role is both owner and app role.
   - **The new `compose.yaml`** sets two URLs: the migration URL on `wirebench`, the owner every existing compose
     volume already has, and the app URL on `wirebench_app`. At start-up, before connecting as the app role, the
-    server connects as the owner. If the app role does not exist and the owner may create roles, the server runs
-    `admin tenancy role`, creating the role with the app URL's password. An old volume with the new compose file
-    therefore starts, and so does a new one. The `docker-entrypoint-initdb.d` route was not taken, because it runs
-    only on an empty volume.
-  - **`admin tenancy role`** is idempotent, and runs as the owner. It creates the app role if it is missing
-    (`login nosuperuser nobypassrls noinherit`), grants it the privileges above, and sets the default privileges.
-    With `--print-sql` it prints the statements instead, for an operator whose owner may not create roles.
-  - **No ownership moves** (amends the review's object-by-object reassignment). The app role is a grantee, not the
+    server connects as the owner and runs `admin tenancy role` whenever the two URLs differ. The command is
+    idempotent: it creates the app role when it is missing and the owner may create roles, and it re-applies the
+    grants every time. An old volume with the new compose file therefore starts, and so does a new one. The
+    `docker-entrypoint-initdb.d` route was not taken, because it runs only on an empty volume.
+  - **`admin tenancy role`** runs as the owner.
+    - It creates the app role if it is missing (`login nosuperuser nobypassrls noinherit`).
+    - It names the role with `format('%I')`. It sets the password as a SCRAM-SHA-256 verifier computed in Node from
+      the app URL's password, never as plaintext in `create role … password`, which `log_statement = ddl` would
+      write to the database's log.
+    - It grants the privileges above, and sets the default privileges.
+    - With `--print-sql` it prints the statements instead, for an operator whose owner may not create roles.
+  - **No ownership moves.** The app role is a grantee, not the
     owner, so the tables stay with the owner they have. PostgreSQL refuses `reassign owned by` the bootstrap
     superuser, which is the reason a design that made the app role the owner would have had to move every object
     by hand.
@@ -1349,7 +1367,9 @@ tenant through its own column, not only through `users`. The same email in two t
        role.
     3. Restart.
 
-    `admin tenancy check` then reports the app role as isolating. Going back is unsetting the migration URL.
+    `admin tenancy check` then reports the app role as isolating. Going back is pointing
+    `WIREBENCH_SERVER_DATABASE_URL` at the owner again and unsetting the migration URL. Unsetting the migration URL
+    alone would leave migrations running as the app role, which owns nothing, so the next migration would fail.
 - **Two role names in tests.** CI and the test helper use a non-superuser owner, `wirebench_owner`, which stands for
   a managed database's owner role and owns each test file's schema (`create schema … authorization
   wirebench_owner`), and `wirebench_app` for queries. Production compose has `wirebench`, the superuser owner, and
@@ -1389,7 +1409,8 @@ tenant through its own column, not only through `users`. The same email in two t
   of the request's scope.
 - **The compiler is the guard.** `config.publicUrl` is gone from the config type that modules see, and only
   `src/tenancy/urls.ts` holds it (§19.8, guard 2). The start-up and `migrate` output in `main.ts` and `serve.ts` is
-  the operator's and keeps printing the configured URL.
+  the operator's and keeps printing the configured URL, through `operatorPublicUrl()`, which `urls.ts` exports for
+  those two files only.
 - **Outside a request.** A job takes its scope from the job loop (§19.8, guard 6). An admin command takes it from
   `--tenant <slug>` in hosted mode, or the default tenant in self-hosted mode (§19.11).
 
@@ -1481,10 +1502,14 @@ tenant through its own column, not only through `users`. The same email in two t
    - Every repository function takes a `TenantQuerier` first, where it took a `Querier`. A call with the raw pool, or
      with no scope, does not compile.
    - `ServerConfig.publicUrl` is not in the config type modules see (§19.5).
-   - A script gate in `pnpm check`, `check:tenant-scope`, is the backstop. It refuses five things outside
-     `src/tenancy/` (and `src/db/` for the first): an import of `db/pool.ts` or of the raw `Querier` type; any
-     `publicUrl` read or destructuring of the config outside `src/tenancy/urls.ts`; `set_config`;
-     `wirebench.tenant_id`; and SQL that names `from tenants` or `join tenants`.
+   - A script gate in `pnpm check`, `check:tenant-scope`, is the backstop. Outside `src/tenancy/` it refuses:
+     - an import of `db/pool.ts` or of the raw `Querier` type (`src/db/` excepted);
+     - any `publicUrl` read or destructuring of the config, and `operatorPublicUrl(` outside `main.ts` and
+       `serve.ts`;
+     - `set_config`, `wirebench.tenant_id`, and SQL that names `from tenants` or `join tenants`;
+     - `for_each_tenant` (§19.4);
+     - `defaultScope(`, except in the admin command line's self-hosted default (§19.11). A route or a module that
+       reached for the default tenant would pass every one-tenant test, so the call itself is refused.
    - A single statement in its own transaction costs three extra round trips. `pnpm test:perf` measures a typical
      route's query count before and after, and a route that regresses groups its statements into one `transaction`.
 3. **The migration test.** It reads the catalog after every migration has run, and fails when a table outside the
@@ -1568,8 +1593,9 @@ tenant through its own column, not only through `users`. The same email in two t
 - **Giving it back.** Eviction deletes the lease after the host's quit path has run. Shutdown releases every lease
   after `closeAll`.
 - **After a crash.** A self-hosted server is one process (ADR-0013), so in self-hosted mode start-up deletes every
-  lease it finds, and a crash and restart do not keep users out for a minute (my call). A hosted process leaves
-  leases to expire. A multi-instance self-hosted server (slice 5) must drop the start-up delete (§19.12).
+  lease it finds, through `forEachTenant`, since the app role outside a tenant sees no row. A crash and restart then
+  do not keep users out for a minute (my call). A hosted process leaves leases to expire. A multi-instance
+  self-hosted server (slice 5) must drop the start-up delete (§19.12).
 - **The cap** (decision 11).
   - A tenant holds at most its seat limit of live leases (`LicenseService.state(scope)`; none when the limit is
     null), counted across processes in the same transaction.
@@ -1591,7 +1617,8 @@ Two forward steps, each resumable; a way back, also resumable; and a stated cost
   read-only. It reports:
   - the PostgreSQL version, whether the app role isolates (§19.4), and the backup-role advice;
   - whether `tenants/` can be created on the same filesystem as `repos/`, since the move is a rename, never a copy;
-  - the row count and `pg_total_relation_size` of each table, and an estimated duration (below);
+  - each table's row count, read from `pg_class.reltuples` so that it is right before and after the upgrade and
+    under any role, its `pg_relation_size` and `pg_total_relation_size`, and an estimated duration (below);
   - any path the move would not know.
 
   The upgrade notes say to stop every server process and to back up the database (as the backup role, §19.4) and the
@@ -1601,15 +1628,23 @@ Two forward steps, each resumable; a way back, also resumable; and a stated cost
   and unique index plus the listing indexes of rule 4, and validates every composite foreign key. Each of those is
   one pass over a table's rows. So the cost is about:
 
-  `T ≈ Σ over tables of rows × (1 + rebuilt indexes + composite foreign keys) ÷ R`
+  `T ≈ Σ over tables of passes × (rows ÷ R + pg_relation_size ÷ B)`, where `passes = 1 + rebuilt indexes +
+  composite foreign keys`
 
   - **The basis for `R`** is reasoned, to be measured. A B-tree build sorts a `uuid` and a short text key from the
-    heap, and a key validation is an index probe per row. Both run at about 0.5 to 1 million rows a second, single
-    threaded, on a two-vCPU SSD machine with `maintenance_work_mem` at 256 MB, which `0020` sets with `set local`.
-    Large `bytea` values in `captures` and `session_log_chunks` sit in TOAST, which neither a build nor a probe
-    reads.
+    heap, and a key validation is one anti-join per key, which the formula overcounts as a pass. Both run at about
+    0.5 to 1 million rows a second, single threaded, on a two-vCPU SSD machine with `maintenance_work_mem` at
+    256 MB, which `0020` sets with `set local`.
+  - **The heap term.** Every pass also reads the heap, at a sequential scan rate `B` of about 200 to 500 MB a second
+    from SSD (less from cache-cold disk). Values over about 2 KB in `captures.body` and `session_log_chunks.data` sit
+    in TOAST, which no pass reads, but smaller ones stay in the heap, so `pg_relation_size`, not the row count, is
+    what that term reads.
+  - **`analyze`.** `0020` ends with `analyze` on every scoped table. Its new leading `tenant_id` columns have no
+    statistics until autovacuum reaches them, and the planner would choose badly until then. That costs one sampled
+    pass per table, a few seconds in all.
   - **For `audit_events`** (about seven passes: the tenant key, `unique (tenant_id, id)`, `chain_seq`, three listing
-    indexes, plus the heap), 5 million rows take about 35 to 70 seconds.
+    indexes, plus the heap), 5 million rows in about 1 GB of heap take about `7 × (5 to 10 s + 2 to 5 s)`, so 50 to
+    105 seconds.
   - **A typical installation** with under a million rows in all is down for under a minute.
   - **The measurement.** A perf test (plan Task 4) migrates a scaled fixture (1 million `audit_events`, 1 million
     `captures`, 2 GB of `session_log_chunks`) and records `R`. The upgrade notes give the measured minutes per
@@ -1652,9 +1687,17 @@ Two forward steps, each resumable; a way back, also resumable; and a stated cost
   - The server listens from `keys`; host sockets are accepted only at `done`.
 - **The way back** (my call). `wirebench-server admin tenancy revert` undoes slice 4. It runs as the owner role.
   - **It is refused:** when there is more than one tenant; when any migration newer than `0021` has run; and when it
-    cannot take the server-running lock. A running server holds a session-level advisory lock,
-    `pg_advisory_lock(SERVER_RUNNING_CLASS, hashtext(current_schema()))`, on one dedicated connection outside the
-    pool for its whole life, so "on a stopped server" is checked, not trusted.
+    cannot take the server-running lock exclusively. "On a stopped server" is checked, not trusted:
+    - Every running server holds the lock **shared**,
+      `pg_try_advisory_lock_shared(SERVER_RUNNING_CLASS, hashtext(current_schema()))`, on one dedicated connection
+      outside the pool, for its whole life. Any number of servers hold it at once, so several hosted processes, a
+      start-before-stop restart and slice 5's multi-instance self-hosted server all start.
+    - A server refuses start-up (`tenancy-reverting`) only when the shared try fails, which happens only while a
+      revert holds it exclusively.
+    - When the dedicated connection drops, the lock is gone with it, silently. The server re-takes the lock on a new
+      connection, or exits when it cannot.
+    - Revert takes `pg_try_advisory_lock(SERVER_RUNNING_CLASS, …)`, exclusive, which fails while any server holds the
+      shared one, and holds it until revert finishes.
   - **It is resumable.** It drives `tenancy_step` backwards through three states, each idempotent, and a forward
     start-up refuses (`tenancy-reverting`) while the step is any of them:
     1. `reverting-keys`: every blob is re-sealed under the old per-user key. A blob is tried under the old key
@@ -1724,10 +1767,19 @@ Two forward steps, each resumable; a way back, also resumable; and a stated cost
 ### 19.13 Testing
 
 - **Unit and integration tests per task.**
-  - Until `0021`, a moved module is tested on one tenant, and its suite proves that every statement goes through
-    `withTenant`: the module is registered with a `ctx.db` that throws `tenancy-unscoped`, and the tenant database's
-    test log asserts that each statement ran after `set_config` with the request's tenant. Keyed structures (hub,
-    limiters, locks, instance map) get unit tests with two tenant ids.
+  - **Until `0021`, a moved module is tested on one tenant**, and its suite shows that every statement it exercises
+    goes through `withTenant`.
+    - The module under test is registered with a `Proxy` over the one shared `ServerContext`. Its `db` getter throws
+      `tenancy-unscoped`; every other read and write passes through, so licensing's replacement of `ctx.license` and
+      `buildServer`'s of `ctx.log` still reach it. The modules registered beside it, not yet moved, see the real
+      `ctx`.
+    - The tenant database's test log asserts that each statement ran after `set_config`.
+    - Keyed structures (hub, limiters, locks, instance map) get unit tests with two tenant ids.
+    - **The limit:** with one tenant this cannot show the right tenant, only a tenant, and it covers only the paths a
+      test runs: timers are off in the suites, and untested error branches are not seen. `check:tenant-scope`'s
+      refusal of `defaultScope(` closes the commonest wrong-tenant case, and Tasks 18 and 19 prove the rest under the
+      policy. They land in the same Part C pull request as `0021`, before anything can make a second tenant, and no
+      release is cut in between.
   - Once `0021` forces the policy, each module gains its two-tenant case (guard 4).
 - **The database roles.**
   - CI's PostgreSQL service creates `wirebench_owner` (`login nosuperuser nobypassrls`) and `wirebench_app`. The test

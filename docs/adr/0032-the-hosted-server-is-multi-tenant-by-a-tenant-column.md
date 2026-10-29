@@ -4,7 +4,7 @@ Date: 2026-10-24 · Status: accepted (owner, 2026-10-24, popup; design
 `docs/specs/2026-10-24-wirebench-hosted-edition-design.md` §4, §5.3, §5.4) · Issue: #776 · Amended 2026-10-29 by
 spec §19 (slice 4, §19.15): `set_config(…, true)` replaces `set local`; repositories take a `TenantQuerier`, which
 carries the `TenantScope`; a self-hosted server may run with a bypassing role, with a warning (owner ruling), and
-queries run as an app role apart from the owner where one is set up; no job uses a bypass, every job runs per tenant
+queries run as an app role apart from the owner where one is set up; no job uses a bypass, every job runs per tenant.
 
 ## Context
 
