@@ -38,8 +38,11 @@ export const BROWSER_CONTENT_SECURITY_POLICY =
 const HASHED_NAME = /-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$/;
 
 const ASSETS_PREFIX = '/assets/';
-/** Paths that are never the page: the API answers its own `404`, and a missing asset is a missing file. */
-const NOT_PAGES = ['/api/', ASSETS_PREFIX];
+/**
+ * First segments that are never the page, compared once decoded (`/%61pi` is `/api`): the API answers its
+ * own `404`, and a missing asset is a missing file.
+ */
+const NOT_PAGES = new Set(['api', 'assets']);
 
 /** On every response these routes send. */
 function commonHeaders(reply: FastifyReply): void {
@@ -48,9 +51,9 @@ function commonHeaders(reply: FastifyReply): void {
 
 /**
  * Whether `path` (the raw request path, still encoded) is one a page could have: no `.` or `..` segment
- * and no empty one inside it, nothing that decodes to a slash, a backslash or a control character. A page
- * path never needs them, and refusing them keeps every traversal spelling (`/../x`, `%2e%2e`, `..%2f`) a
- * plain `404` rather than a page.
+ * and no empty one inside it, nothing that decodes to a slash, a backslash or a control character, and a
+ * first segment that, decoded, is not one of {@link NOT_PAGES}. A page path never needs the others, and
+ * refusing them keeps every traversal spelling (`/../x`, `%2e%2e`, `..%2f`) a plain `404` rather than a page.
  */
 function isPagePath(path: string): boolean {
   if (!path.startsWith('/') || path.includes('\\')) return false;
@@ -62,6 +65,7 @@ function isPagePath(path: string): boolean {
     } catch {
       return false;
     }
+    if (index === 0 && NOT_PAGES.has(segment)) return false;
     if (segment === '' && index < segments.length - 1) return false; // `//`; a trailing slash is fine
     if (segment === '.' || segment === '..' || /[/\\\u0000-\u001f\u007f]/.test(segment)) return false;
   }
@@ -99,7 +103,7 @@ export async function browserClientRoutes(
     page = await readFile(join(root, 'index.html'));
   } catch (error) {
     throw new Error(
-      `The browser client is not built (no index.html in ${root}); run \`pnpm --filter @wirebench/desktop build:browser\`, then the server's \`pnpm build\``,
+      `The browser client is not built (no index.html in ${root}); run \`pnpm --filter @wirebench/desktop build:browser\`, then \`pnpm --filter @wirebench/server copy-browser\``,
       { cause: error },
     );
   }
@@ -139,7 +143,7 @@ export async function browserClientRoutes(
 
   const servePage = async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     const path = request.raw.url?.split('?', 1)[0] ?? '/';
-    if (NOT_PAGES.some((prefix) => path.startsWith(prefix)) || !isPagePath(path)) {
+    if (!isPagePath(path)) {
       reply.callNotFound();
       return reply;
     }

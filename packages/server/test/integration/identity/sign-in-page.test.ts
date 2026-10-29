@@ -173,6 +173,16 @@ describeDb('the sign-in page and local form sign-in (hosted spec §17.2)', () =>
         bob.user.id,
         alice.user.id,
       ]);
+      // Each ended session's holder is the actor, not an anonymous caller: the cookie was theirs.
+      expect(events.filter((e) => e.action === 'auth.signed_out').map((e) => e.actor)).toEqual([
+        { kind: 'user', userId: bob.user.id, email: bob.user.email, tokenId: bob.tokenId },
+        {
+          kind: 'user',
+          userId: alice.user.id,
+          email: alice.user.email,
+          tokenId: (ended[1] as { tokenId: string }).tokenId,
+        },
+      ]);
       // An unrelated user's session is left alone.
       expect(await repo.tokensOfUser(h.db, aliceBrowser.user.id)).toHaveLength(1);
     });

@@ -119,7 +119,19 @@ describeDb('the browser tab at the root (hosted spec §17.2, §17.6)', () => {
 
   it('answers 404 for a missing asset, a dotfile and an unknown API path, never the page', async () => {
     const alice = await browserUser(h, 'alice@example.com');
-    for (const url of ['/assets/missing-AAAAAAAA.js', '/assets/.secret', '/assets/', '/api/v1/nothing-here']) {
+    const urls = [
+      '/assets/missing-AAAAAAAA.js',
+      '/assets/.secret',
+      '/assets/',
+      '/assets',
+      '/%61ssets/x',
+      '/api/v1/nothing-here',
+      '/api',
+      '/api/',
+      '/%61pi/v1/nothing-here',
+      '/%61%70%69',
+    ];
+    for (const url of urls) {
       for (const headers of [{}, cookie(alice.token)]) {
         const res = await h.app.inject({ method: 'GET', url, headers });
         expect(res.statusCode, url).toBe(404);

@@ -28,11 +28,9 @@ COPY apps/desktop/package.json apps/desktop/package.json
 RUN ELECTRON_SKIP_BINARY_DOWNLOAD=1 pnpm install --frozen-lockfile --filter @wirebench/server... --filter @wirebench/desktop...
 
 COPY . .
-# The server's build first: it builds the engine's core and protocol packages, whose built files the
-# renderer's `#core/*` imports resolve to. Its copy step finds no browser build yet and says so; the
-# browser build is copied into dist/browser once it exists.
 RUN pnpm --filter @wirebench/server... build
-RUN pnpm --filter @wirebench/desktop build:browser && node packages/server/scripts/copy-browser.mjs
+# The browser client, copied into dist/browser where the host module serves it.
+RUN pnpm --filter @wirebench/desktop build:browser && pnpm --filter @wirebench/server copy-browser
 RUN pnpm deploy --filter @wirebench/server --prod /out
 # The deploy carries the bundle and the browser build but none of the sources they were built from, and
 # nothing of the desktop's.

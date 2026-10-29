@@ -78,6 +78,11 @@ in-process. `wirebench-server migrate` applies schema migrations ahead of a rest
 lists each variable as set, defaulted or missing without printing values. `/healthz` reports
 pass/fail per check (database, data directory, git) and nothing else.
 
+The image carries the browser client's build. A server run from a checkout with
+`WIREBENCH_SERVER_BROWSER_CLIENT` on needs it too, or it refuses to start: run
+`pnpm --filter @wirebench/desktop build:browser`, then `pnpm --filter @wirebench/server copy-browser`
+after the server's `pnpm build`.
+
 ## Accounts
 
 Accounts are invite-only. On a fresh server, create the first admin from the console:

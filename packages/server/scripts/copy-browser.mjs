@@ -1,8 +1,9 @@
 /**
  * Copies the browser client's build (`apps/desktop/dist-browser`, hosted edition spec §17.6) to
- * `dist/browser/`, where the host module serves it. The desktop's `build:browser` makes it; this step does
- * not run that build. Without one it warns and leaves `dist/browser/` as it is: a server with the browser
- * client off needs none, and one with it on refuses to start until it is there.
+ * `dist/browser/`, where the host module serves it. It is not part of the server's `build`, which needs no
+ * browser build: run it where one exists, after `pnpm --filter @wirebench/desktop build:browser`. The
+ * Dockerfile does so, and from a checkout it is `pnpm --filter @wirebench/server copy-browser`. Without a
+ * build it fails, since whoever runs it expects one.
  *
  * `node scripts/copy-browser.mjs`
  */
@@ -13,12 +14,9 @@ const serverDir = join(import.meta.dirname, '..');
 const source = join(serverDir, '..', '..', 'apps', 'desktop', 'dist-browser');
 const target = join(serverDir, 'dist', 'browser');
 
-if (existsSync(join(source, 'index.html'))) {
-  rmSync(target, { recursive: true, force: true });
-  cpSync(source, target, { recursive: true });
-} else {
-  console.warn(
-    `warning: no browser client build in ${source}; dist/browser is not updated. ` +
-      'Run `pnpm --filter @wirebench/desktop build:browser` first to serve the browser tab.',
-  );
+if (!existsSync(join(source, 'index.html'))) {
+  console.error(`No browser client build in ${source}; run \`pnpm --filter @wirebench/desktop build:browser\` first.`);
+  process.exit(1);
 }
+rmSync(target, { recursive: true, force: true });
+cpSync(source, target, { recursive: true });
