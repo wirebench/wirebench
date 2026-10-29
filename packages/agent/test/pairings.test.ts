@@ -245,5 +245,138 @@ describe('openPairingStore', () => {
       // A write never takes the broken file as empty.
       await expect(store.add(pairing())).rejects.toThrow(/not a pairings file/);
     });
+    /** A one-shot gate: `wait()` blocks until `open()`, and `reached` resolves once something waits. */
+    function gate() {
+      let reach: () => void = () => undefined;
+      let release: () => void = () => undefined;
+      const reached = new Promise<void>((resolve) => {
+        reach = resolve;
+      });
+      const until = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return {
+        reached,
+        open: release,
+        wait: () => {
+          reach();
+          return until;
+        },
+      };
+    }
+
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 100));
+
+    function staleLock(dir: string): string {
+      const lockFile = join(dir, `${PAIRINGS_FILE}.lock`);
+      writeFileSync(lockFile, 'dead:holder');
+      const old = new Date(Date.now() - 60_000);
+      utimesSync(lockFile, old, old);
+      return lockFile;
+    }
+
+    it('lets one of two takers of the same stale lock in at a time', async () => {
+      const platform = fakePlatform();
+      const dir = platform.paths.userData();
+      const seed = await openPairingStore(platform);
+      await seed.identity();
+      staleLock(dir);
+
+      let inside = 0;
+      let most = 0;
+      const takeA = gate();
+      const takeB = gate();
+      const holdA = gate();
+      const enter = async (hold?: () => Promise<void>) => {
+        inside += 1;
+        most = Math.max(most, inside);
+        await hold?.();
+        inside -= 1;
+      };
+      let aHeld = false;
+      const a = await openPairingStore(fakePlatform(undefined, dir), {
+        beforeTakeover: () => takeA.wait(),
+        whileLocked: () => {
+          aHeld = true;
+          return enter(holdA.wait);
+        },
+      });
+      let bTook = false;
+      const b = await openPairingStore(fakePlatform(undefined, dir), {
+        beforeTakeover: () => {
+          bTook = true;
+          return takeB.wait();
+        },
+        whileLocked: () => enter(),
+      });
+      const one = pairing();
+      const two = pairing();
+      const addA = a.add(one);
+      const addB = b.add(two);
+      // Both judged the same lock stale and wait to rename it.
+      await Promise.all([takeA.reached, takeB.reached]);
+      takeA.open();
+      await holdA.reached;
+      expect(aHeld).toBe(true);
+      // B acts on its old judgement now: it must not get in beside A.
+      takeB.open();
+      await settle();
+      expect(inside).toBe(1);
+      holdA.open();
+      await Promise.all([addA, addB]);
+      expect(bTook).toBe(true);
+      expect(most).toBe(1);
+      const reread = await openPairingStore(fakePlatform(undefined, dir));
+      expect(
+        reread
+          .list()
+          .map((row) => row.pairingId)
+          .sort(),
+      ).toEqual([one.pairingId, two.pairingId].sort());
+      expect(readdirSync(dir).filter((name) => name.includes('.lock'))).toEqual([]);
+    });
+
+    it("leaves its successor's lock in place when it was taken over while it ran", async () => {
+      const platform = fakePlatform();
+      const dir = platform.paths.userData();
+      const lockFile = join(dir, `${PAIRINGS_FILE}.lock`);
+      const seed = await openPairingStore(platform);
+      await seed.identity();
+
+      const holdA = gate();
+      const a = await openPairingStore(fakePlatform(undefined, dir), { whileLocked: () => holdA.wait() });
+      const holdB = gate();
+      const b = await openPairingStore(fakePlatform(undefined, dir), { whileLocked: () => holdB.wait() });
+
+      const addA = a.add(pairing());
+      await holdA.reached;
+      const aToken = readFileSync(lockFile, 'utf8');
+      // A has run past the stale age: B takes over.
+      const old = new Date(Date.now() - 60_000);
+      utimesSync(lockFile, old, old);
+      const addB = b.add(pairing());
+      await holdB.reached;
+      const bToken = readFileSync(lockFile, 'utf8');
+      expect(bToken).not.toBe(aToken);
+      expect(bToken).toMatch(new RegExp(`^${String(process.pid)}:`));
+
+      holdA.open();
+      await addA;
+      expect(readFileSync(lockFile, 'utf8')).toBe(bToken);
+      holdB.open();
+      await addB;
+      expect(existsSync(lockFile)).toBe(false);
+    });
+
+    it('keeps the identity it knows when the file turns unreadable, saying so once', async () => {
+      const platform = fakePlatform();
+      const logs: string[] = [];
+      const store = await openPairingStore(platform, { log: (message) => logs.push(message) });
+      const known = await store.identity();
+      writeFileSync(join(platform.paths.userData(), PAIRINGS_FILE), 'broken');
+      expect((await store.identity()).agentId).toBe(known.agentId);
+      expect((await store.identity()).agentId).toBe(known.agentId);
+      expect(logs).toEqual(['the pairings file could not be read again']);
+    });
   });
 });

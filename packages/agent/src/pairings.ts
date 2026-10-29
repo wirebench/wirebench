@@ -11,11 +11,13 @@
  *
  * The desktop's agent and a `wirebench agent pair` may write the file at the same time, so every write
  * (identity creation included) holds `agent-pairings.json.lock`, made with `O_EXCL`, across its re-read, its
- * change, the rename and the stamp read. A lock older than {@link STALE_LOCK_MS} is a crashed writer's and
- * is taken over.
+ * change, the rename and the stamp read. The lock file holds its holder's token (pid and a random id), and a
+ * holder removes it only while it still holds that token. A lock older than {@link STALE_LOCK_MS} is a
+ * crashed writer's: a taker renames it aside (only one rename of it can succeed), checks it moved the very
+ * file it judged stale, and then competes for a new lock like anyone else.
  */
 import { randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { HostPlatform } from '@wirebench/host';
@@ -35,6 +37,10 @@ export interface PairingStoreOptions {
   readonly staleLockMs?: number;
   /** Runs while a write holds the lock, after its re-read and before its rename: for tests to interleave writers. */
   readonly whileLocked?: () => Promise<void>;
+  /** Runs once a lock was judged stale, just before it is renamed aside: for tests to interleave takers. */
+  readonly beforeTakeover?: () => Promise<void>;
+  /** Where a failure the store goes on past is reported (an unreadable file while a key is cached). */
+  readonly log?: (message: string, error: unknown) => void;
 }
 
 /** One pairing with a Wirebench Server, as the agent keeps it. */
@@ -218,24 +224,63 @@ export async function openPairingStore(
     });
 
   /** Takes the cross-process lock, waiting with backoff; throws past `lockTimeoutMs`. */
+  const sameFile = (a: { dev: number; ino: number }, b: { dev: number; ino: number }): boolean =>
+    a.dev === b.dev && a.ino === b.ino;
+
+  /**
+   * Moves the lock judged stale (`judged`) out of the way. Renaming is atomic, so of several takers only one
+   * moves a given file. A taker that judged an older file and moved a fresh one instead puts it back with a
+   * `link`, which never replaces a lock someone made meanwhile.
+   */
+  const takeOver = async (judged: { dev: number; ino: number }): Promise<void> => {
+    const now = await stat(lockPath).catch(() => undefined);
+    if (now === undefined || !sameFile(now, judged)) return;
+    await options.beforeTakeover?.();
+    const aside = `${lockPath}.stale-${randomUUID()}`;
+    try {
+      await rename(lockPath, aside);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+    const moved = await stat(aside);
+    if (!sameFile(moved, judged)) {
+      await link(aside, lockPath).catch(() => undefined);
+    }
+    await unlink(aside).catch(() => undefined);
+  };
+
   const lock = async (): Promise<() => Promise<void>> => {
     await mkdir(dir, { recursive: true });
     const deadline = Date.now() + lockTimeoutMs;
+    const token = `${String(process.pid)}:${randomUUID()}`;
     let wait = 10;
     for (;;) {
       try {
         const handle = await open(lockPath, 'wx', 0o600);
-        return async () => {
-          await handle.close();
+        try {
+          await handle.writeFile(token, 'utf8');
+        } catch (error) {
+          await handle.close().catch(() => undefined);
           await unlink(lockPath).catch(() => undefined);
+          throw error;
+        }
+        return async () => {
+          try {
+            await handle.close();
+          } finally {
+            // Taken over while it ran past the stale age: the lock there now is its successor's.
+            const there = await readFile(lockPath, 'utf8').catch(() => undefined);
+            if (there === token) await unlink(lockPath).catch(() => undefined);
+          }
         };
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       }
       const held = await stat(lockPath).catch(() => undefined);
       if (held !== undefined && Date.now() - held.mtimeMs > staleLockMs) {
-        // Its writer died holding it. Only one taker's `wx` open wins after the unlink.
-        await unlink(lockPath).catch(() => undefined);
+        // Its writer died holding it.
+        await takeOver(held);
         continue;
       }
       if (Date.now() >= deadline) {
@@ -287,10 +332,16 @@ export async function openPairingStore(
 
   let making: Promise<AgentIdentity> | undefined;
   const identityOf = async (): Promise<AgentIdentity> => {
-    // The file as it is now: a deleted file has no identity, and another process may have made one.
-    await serially(async () => {
-      if (await reload()) changed();
-    });
+    // The file as it is now: a deleted file has no identity, and another process may have made one. A file
+    // that cannot be read keeps the identity already known (said once per change of the file).
+    try {
+      await serially(async () => {
+        if (await reload(true)) changed();
+      });
+    } catch (error) {
+      if (identity === undefined) throw error;
+      options.log?.('the pairings file could not be read again', error);
+    }
     if (identity !== undefined) return identity;
     making ??= locked(async () => {
       // Another process may have paired first, under the lock: its key is the install's key.
