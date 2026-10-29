@@ -6,15 +6,16 @@
 #
 # `pnpm test:e2e:browser` starts it this way itself, with a fresh key, when nothing answers on the port.
 # The key is never committed: it encrypts nothing that outlives `down -v`.
-name: wirebench-browser-e2e
+#
+# The project is named after the port, so `WIREBENCH_E2E_PORT` alone runs a second stack beside this one:
+# nothing here has a fixed container name or a second published port.
+name: wirebench-browser-e2e-${WIREBENCH_E2E_PORT:-18080}
 services:
   server:
     build:
       context: ../..
       dockerfile: packages/server/Dockerfile
     image: wirebench-server:browser-e2e
-    # A fixed name, so global setup runs the admin CLI with `docker exec` (no compose interpolation).
-    container_name: wirebench-browser-e2e-server
     depends_on:
       db:
         condition: service_healthy

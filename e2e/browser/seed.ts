@@ -3,7 +3,7 @@
  * desktop's *Share to a team* would. The browser opens existing server workspaces only (#786 covers
  * creating one), so the workspace, its project and its requests are all here before the spec starts:
  *
- * 1. `admin invite` (in the server container) invites a server admin.
+ * 1. `admin invite`, run in the server service with `docker compose exec`, invites a server admin.
  * 2. `POST /invitations/accept` sets that user's local password; the answer carries a device token.
  * 3. `POST /teams` makes a team; its creator is its first admin.
  * 4. `POST /teams/:id/workspaces` makes a server workspace in it. The creator, a member, gets the
@@ -30,7 +30,7 @@ import {
   saveWorkspace,
   workspaceProjectDir,
 } from '@wirebench/engine';
-import { BASE_URL, ECHO_URL, SERVER_CONTAINER, type Seed } from './stack.js';
+import { BASE_URL, COMPOSE_FILE, ECHO_URL, SERVER_SERVICE, type Seed } from './stack.js';
 
 const API = `${BASE_URL}/api/v1`;
 
@@ -53,9 +53,12 @@ async function call<T>(method: string, path: string, body: unknown, token?: stri
 
 /** Step 1: `wirebench-server admin invite`, and the secret at the end of the link it prints. */
 function invite(email: string): string {
-  const out = execFileSync('docker', ['exec', SERVER_CONTAINER, 'node', '/app/dist/bin.js', 'admin', 'invite', email], {
-    encoding: 'utf8',
-  });
+  // The compose file names the project after WIREBENCH_E2E_PORT, so this reaches this run's stack.
+  const out = execFileSync(
+    'docker',
+    ['compose', '-f', COMPOSE_FILE, 'exec', '-T', SERVER_SERVICE, 'node', '/app/dist/bin.js', 'admin', 'invite', email],
+    { encoding: 'utf8' },
+  );
   const link = /\/invite\/([^\s/]+)\s*$/m.exec(out);
   if (link?.[1] === undefined) throw new Error(`admin invite printed no link:\n${out}`);
   return link[1];

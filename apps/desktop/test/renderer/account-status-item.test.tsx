@@ -102,4 +102,36 @@ describe('AccountStatusItem', () => {
     fireEvent.click(entry);
     expect(useUiStore.getState().preferences).toEqual({ open: true, section: 'tokens' });
   });
+  describe('in a browser tab, whose env carries signOut', () => {
+    it('offers one Sign out that calls env.signOut, never the account channel', async () => {
+      const ipcSignOut = vi.fn();
+      const api = installWirebenchApi({ account: { signOut: ipcSignOut } });
+      const signOut = vi.fn();
+      Object.defineProperty(api, 'env', {
+        configurable: true,
+        value: { e2e: false, osTheme: 'dark', host: 'browser', capabilities: ['send:public'], signOut },
+      });
+      useAccountStore.setState({ servers: [account('https://wb.test')] });
+      render(<AccountStatusItem />);
+      const item = screen.getByTestId('status-bar-account');
+      fireEvent.pointerDown(item, { button: 0, ctrlKey: false });
+      fireEvent.click(item);
+      const signOutItem = await screen.findByTestId('account-sign-out');
+      expect(signOutItem.textContent).toBe('Sign out');
+      expect(screen.queryByTestId('account-sign-out-wb.test')).toBeNull();
+      fireEvent.click(signOutItem);
+      expect(signOut).toHaveBeenCalledTimes(1);
+      expect(ipcSignOut).not.toHaveBeenCalled();
+    });
+
+    it('the desktop, without env.signOut, keeps its per-server Sign out and no plain one', async () => {
+      useAccountStore.setState({ servers: [account('https://wb.test')] });
+      render(<AccountStatusItem />);
+      const item = screen.getByTestId('status-bar-account');
+      fireEvent.pointerDown(item, { button: 0, ctrlKey: false });
+      fireEvent.click(item);
+      await screen.findByTestId('account-sign-out-wb.test');
+      expect(screen.queryByTestId('account-sign-out')).toBeNull();
+    });
+  });
 });

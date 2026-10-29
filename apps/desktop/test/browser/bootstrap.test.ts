@@ -82,13 +82,42 @@ describe('startBrowserClient', () => {
 
     expect(h.mountRenderer).toHaveBeenCalledTimes(1);
     const api = h.target.wirebench;
-    expect(api?.env).toEqual({
+    const { signOut, ...env } = api?.env ?? {};
+    expect(env).toEqual({
       e2e: false,
       osTheme: 'light',
       host: 'browser',
       capabilities: ['send:public', 'send:private'],
     });
+    expect(typeof signOut).toBe('function');
     expect(api?.pathForFile(new File(['x'], 'x.txt'))).toBe('');
+  });
+
+  it('signs out with a same-origin form post to /sign-out, and a 4401 after it does not navigate again', async () => {
+    const submit = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => undefined);
+    try {
+      const h = start();
+      const socket = FakeSocket.last();
+      socket.hello();
+      await h.started;
+
+      h.target.wirebench?.env.signOut?.();
+      expect(submit).toHaveBeenCalledTimes(1);
+      const form = submit.mock.contexts[0] as HTMLFormElement;
+      expect(form.method).toBe('post');
+      expect(new URL(form.action, 'https://acme.example.test').pathname).toBe('/sign-out');
+      expect(form.getAttribute('action')).toBe('/sign-out');
+      expect(form.isConnected).toBe(true);
+      expect(form.children).toHaveLength(0);
+
+      // The server's sign-out closes the socket 4401; the form's own navigation already leaves.
+      socket.drop(4401);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.assign).not.toHaveBeenCalled();
+      form.remove();
+    } finally {
+      submit.mockRestore();
+    }
   });
 
   it('carries the renderer calls over the socket', async () => {

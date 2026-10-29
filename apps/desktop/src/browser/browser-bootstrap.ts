@@ -20,6 +20,8 @@ import { createSocketTransport, hostSocketUrl, type Hello, type SocketLike } fro
 export const CLOSE_CODE = { unauthenticated: 4401, tooManySockets: 4429 } as const;
 
 export const SIGN_IN_PATH = '/sign-in';
+/** The root sign-out (spec §17.2): a form post, so the browser sends the page's Origin, which it checks. */
+export const SIGN_OUT_PATH = '/sign-out';
 
 /**
  * The sign-in page, told to come back to where the tab was: path, query and hash. The server checks
@@ -161,11 +163,26 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
     },
   });
 
+  // Ends the session with a same-origin form post, built with DOM calls (no markup). The server revokes
+  // the cookie's token, which closes this socket 4401; the form's navigation is already leaving, so
+  // that close sends the tab nowhere else.
+  const signOut = (): void => {
+    if (leaving) return;
+    leaving = true;
+    const form = deps.document.createElement('form');
+    form.method = 'post';
+    form.action = SIGN_OUT_PATH;
+    form.hidden = true;
+    deps.document.body.appendChild(form);
+    form.submit();
+    transport.close();
+  };
+
   const hello = await transport.ready;
   deps.target.wirebench = buildApi(
     transport.invoke,
     transport.on,
-    { e2e: false, osTheme: hello.osTheme, host: 'browser', capabilities: hello.capabilities },
+    { e2e: false, osTheme: hello.osTheme, host: 'browser', capabilities: hello.capabilities, signOut },
     () => '',
   );
   await deps.mountRenderer();

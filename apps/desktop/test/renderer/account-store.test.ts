@@ -66,6 +66,21 @@ describe('account store', () => {
     expect(useAccountStore.getState().servers[0]?.signedOut).toBe(true);
   });
 
+  it('in a browser tab (env.signOut set), sign-out ends the tab session instead of calling the account channel', async () => {
+    const ipcSignOut = vi.fn();
+    const api = installWirebenchApi({ account: { signOut: ipcSignOut } });
+    const envSignOut = vi.fn();
+    Object.defineProperty(api, 'env', {
+      configurable: true,
+      value: { e2e: false, osTheme: 'dark', host: 'browser', capabilities: ['send:public'], signOut: envSignOut },
+    });
+    useAccountStore.getState().applyChanged([account()]);
+    expect(await useAccountStore.getState().signOut('https://wb.test')).toBe(true);
+    expect(envSignOut).toHaveBeenCalledTimes(1);
+    expect(ipcSignOut).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
   it('remove drops the entry and a failed call is toasted and reported', async () => {
     const remove = vi.fn().mockResolvedValue({ ok: false, error: { code: 'server-unreachable', message: 'down' } });
     installWirebenchApi({ account: { remove } });

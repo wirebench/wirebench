@@ -252,9 +252,9 @@ jobs:
           docker compose -f e2e/browser/compose.yaml up -d --no-build --wait
       - run: pnpm --filter @wirebench/e2e exec playwright install chromium --with-deps
       - run: pnpm test:e2e:browser
-      - name: Server logs
+      - name: Stack logs
         if: failure()
-        run: docker compose -f e2e/browser/compose.yaml logs --no-color server
+        run: docker compose -f e2e/browser/compose.yaml logs --no-color --tail=200
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v7

@@ -49,6 +49,12 @@ test('a tab without a session is sent to sign in, and a local password signs it 
   await expect(page).toHaveURL(/\/$/);
   // The browser opens server workspaces only: the picker offers that and nothing that needs files.
   await expect(page.getByTestId('workspace-open-team')).toBeVisible({ timeout: 60_000 });
+  // What needs local files (the `files` capability) is not offered: no new or imported workspace, no
+  // project folders from before.
+  for (const testId of ['workspace-create-name', 'workspace-create', 'workspace-import-folder']) {
+    await expect(page.getByTestId(testId)).toHaveCount(0);
+  }
+  await expect(page.getByText('Project folders you opened before')).toHaveCount(0);
 });
 
 test('opens the seeded server workspace', async () => {
@@ -61,8 +67,12 @@ test('opens the seeded server workspace', async () => {
 
 test('the SSH area and the file-manager reveal are absent', async () => {
   // The rail's SSH entry (`activity-hosts`) needs the `ssh` capability, which the browser host lacks.
-  await expect(page.getByTestId('activity-bar')).toBeVisible();
+  const rail = page.getByTestId('activity-bar');
+  await expect(rail).toBeVisible();
   await expect(page.getByTestId('activity-hosts')).toHaveCount(0);
+  // The rail itself is there with its other areas, so the absence above is the SSH area's alone.
+  const areas = rail.locator('[data-testid^="activity-"]:not([data-testid="activity-settings"])');
+  expect(await areas.count()).toBeGreaterThan(0);
 
   // The project's context menu: its New ▸ submenu is there, its Reveal is not (`files`).
   await projectRow().click({ button: 'right' });
@@ -92,15 +102,10 @@ test('a request to 127.0.0.1 is refused by the egress rule', async () => {
 });
 
 test('signing out lands on the sign-in page, and the app is no longer served', async () => {
-  // No control in the tab signs out yet: this is the form post such a control makes, from the page,
-  // so the browser sends the page's own Origin.
-  await page.evaluate(() => {
-    const form = document.createElement('form');
-    form.method = 'post';
-    form.action = '/sign-out';
-    document.body.append(form);
-    form.submit();
-  });
+  // The status bar's account menu: in a tab its one *Sign out* ends the session (`env.signOut`, a form
+  // post to `/sign-out` from the page, so the browser sends the page's own Origin).
+  await page.getByTestId('status-bar-account').click();
+  await page.getByTestId('account-sign-out').click();
   // The server answers the post with `/sign-in`; the tab's host socket, closed 4401 by the same sign-out,
   // may send the page there first with its way back (`?redirect_to=%2F`). Either is the sign-in page.
   await expect(page).toHaveURL(/\/sign-in(\?redirect_to=%2F)?$/);

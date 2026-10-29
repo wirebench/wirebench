@@ -15,8 +15,8 @@ export const BASE_URL = `http://localhost:${PORT}`;
 
 export const COMPOSE_FILE = fileURLToPath(new URL('./compose.yaml', import.meta.url));
 
-/** `container_name` in `compose.yaml`: the admin CLI runs in it. */
-export const SERVER_CONTAINER = 'wirebench-browser-e2e-server';
+/** The compose service the admin CLI runs in (`docker compose exec`). */
+export const SERVER_SERVICE = 'server';
 
 /** The echo service's address as the server sees it, on the compose network. */
 export const ECHO_URL = 'http://echo:8080';

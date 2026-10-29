@@ -24,3 +24,12 @@ export function hasCapability(capability: Capability): boolean {
 export function secretKeptHint(desktop: string): string {
   return hasCapability('keychain') ? desktop : 'Sealed on the server and never shown again.';
 }
+
+/**
+ * The tab's own sign-out, when the API has one: the browser bootstrap sets `env.signOut`, since a tab's
+ * account is the server's and `account.signOut` is refused there. The desktop has none, and signs out
+ * of each server through the account channel as before.
+ */
+export function tabSignOut(): (() => void) | undefined {
+  return (globalThis as { wirebench?: { env?: { signOut?: () => void } } }).wirebench?.env?.signOut;
+}

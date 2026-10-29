@@ -69,6 +69,10 @@ export type WirebenchApi = ApiFromChannels<typeof channels> & {
    * server's host socket (hosted edition spec §3.1). `capabilities` are what the connected host can do;
    * the desktop has every one, the browser what the socket's hello frame lists. The renderer reads them
    * through `hasCapability` only and never compares `host`.
+   *
+   * `signOut` is set by the browser bootstrap only: a tab's account is held by the server, which refuses
+   * `account.signOut`, so the tab ends its session with the root `/sign-out` instead (hosted edition spec
+   * §17.2). The preload never sets it; the renderer offers its plain *Sign out* only when it is there.
    */
   env: {
     readonly e2e: boolean;
@@ -77,6 +81,7 @@ export type WirebenchApi = ApiFromChannels<typeof channels> & {
     readonly capabilities: readonly Capability[];
     readonly fixedLayout?: boolean;
     readonly sendTemplatesUnasked?: boolean;
+    readonly signOut?: () => void;
   };
   /**
    * The path on this machine of a file dropped from the OS (`webUtils.getPathForFile`), or `''` for one

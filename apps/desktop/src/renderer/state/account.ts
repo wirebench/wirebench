@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import type { IpcError } from '@shared/ipc.js';
 import type { AccountChangedEvent, AccountWire } from '@shared/wire-base.js';
 import { showToast } from '../components/toast.js';
+import { tabSignOut } from '../lib/capabilities.js';
 import { ipc } from './ipc-client.js';
 import { useUiStore } from './ui.js';
 
@@ -17,7 +18,7 @@ export interface AccountStore {
   readonly load: () => Promise<void>;
   /** Applies an `account.changed` payload; toasts a sign-out the user did not ask for. */
   readonly applyChanged: (servers: readonly AccountWire[]) => void;
-  /** Signs out of `url`; resolves `true` when main did. */
+  /** Signs out of `url`; resolves `true` when main did. In a browser tab, ends the tab's session instead. */
   readonly signOut: (url: string) => Promise<boolean>;
   readonly remove: (url: string) => Promise<boolean>;
 }
@@ -61,6 +62,12 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
   },
 
   signOut: async (url) => {
+    // A browser tab ends its whole session; the page leaves for the sign-in page.
+    const endTab = tabSignOut();
+    if (endTab !== undefined) {
+      endTab();
+      return true;
+    }
     expectedSignOuts.add(url);
     const result = await ipc().account.signOut({ url });
     if (!result.ok) {
