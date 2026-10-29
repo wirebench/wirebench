@@ -20,6 +20,27 @@ interface Harness {
   readonly started: Promise<void>;
 }
 
+/** A `prefers-color-scheme: light` query the test can flip, as a browser's would on an OS change. */
+const scheme = {
+  light: false,
+  listeners: new Set<() => void>(),
+  flip(light: boolean): void {
+    this.light = light;
+    for (const listener of this.listeners) listener();
+  },
+};
+
+function matchMedia(query: string): MediaQueryList {
+  expect(query).toBe('(prefers-color-scheme: light)');
+  return {
+    get matches() {
+      return scheme.light;
+    },
+    addEventListener: (_name: string, listener: () => void) => scheme.listeners.add(listener),
+    removeEventListener: (_name: string, listener: () => void) => scheme.listeners.delete(listener),
+  } as unknown as MediaQueryList;
+}
+
 function start(meStatus = 200, createSocket: BootstrapDeps['createSocket'] = FakeSocket.create): Harness {
   const target: { wirebench?: WirebenchApi } = {};
   const assign = vi.fn<(url: string) => void>();
@@ -45,6 +66,7 @@ function start(meStatus = 200, createSocket: BootstrapDeps['createSocket'] = Fak
     target,
     mountRenderer,
     createSocket,
+    matchMedia,
   };
   return { deps, target, assign, reload, fetch, mountRenderer, started: startBrowserClient(deps) };
 }
@@ -57,6 +79,8 @@ function bar(): HTMLElement | null {
 }
 
 beforeEach(() => {
+  scheme.light = true;
+  scheme.listeners.clear();
   FakeSocket.reset();
   vi.useFakeTimers();
 });
@@ -82,7 +106,8 @@ describe('startBrowserClient', () => {
 
     expect(h.mountRenderer).toHaveBeenCalledTimes(1);
     const api = h.target.wirebench;
-    const { signOut, ...env } = api?.env ?? {};
+    const { signOut, onOsThemeChanged, ...env } = api?.env ?? {};
+    expect(typeof onOsThemeChanged).toBe('function');
     expect(env).toEqual({
       e2e: false,
       osTheme: 'light',
@@ -91,6 +116,24 @@ describe('startBrowserClient', () => {
     });
     expect(typeof signOut).toBe('function');
     expect(api?.pathForFile(new File(['x'], 'x.txt'))).toBe('');
+  });
+
+  it("takes the OS theme from the browser's prefers-color-scheme, not the hello, and follows it", async () => {
+    scheme.light = false;
+    const h = start();
+    // The server's host has no OS theme of the user's; its hello says light.
+    FakeSocket.last().hello(['send:public'], 'light');
+    await h.started;
+
+    const env = h.target.wirebench?.env;
+    expect(env?.osTheme).toBe('dark');
+    const seen: string[] = [];
+    const off = env?.onOsThemeChanged?.((os) => seen.push(os));
+    scheme.flip(true);
+    expect(seen).toEqual(['light']);
+    off?.();
+    scheme.flip(false);
+    expect(seen).toEqual(['light']);
   });
 
   it('signs out with a same-origin form post to /sign-out, and a 4401 after it does not navigate again', async () => {
@@ -195,13 +238,32 @@ describe('startBrowserClient', () => {
     expect(h.fetch).not.toHaveBeenCalled();
   });
 
+  it.each([1011, 4403, 4400, 1006])(
+    'says the workspace cannot be reached on a %i close before the first hello, and keeps retrying',
+    async (code) => {
+      const h = start(200);
+      FakeSocket.last().drop(code);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(bar()?.hidden).toBe(false);
+      expect(bar()?.textContent).toBe(RECONNECT_TEXT.unreachable);
+      expect(bar()?.getAttribute('role')).toBe('status');
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(FakeSocket.all).toHaveLength(2);
+      FakeSocket.last().drop(code);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(FakeSocket.all).toHaveLength(3);
+      expect(bar()?.textContent).toBe(RECONNECT_TEXT.unreachable);
+      expect(h.assign).not.toHaveBeenCalled();
+
+      FakeSocket.last().hello();
+      await h.started;
+      expect(bar()?.hidden).toBe(true);
+    },
+  );
+
   it('shows the reconnect bar while the socket is down after the first hello, and hides it on the next', async () => {
     const h = start();
-    FakeSocket.last().drop(1006);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(bar()).toBeNull();
-
-    await vi.advanceTimersByTimeAsync(1_000);
     FakeSocket.last().hello();
     await h.started;
     expect(bar()).toBeNull();
@@ -257,7 +319,7 @@ describe('startBrowserClient', () => {
       return FakeSocket.create(url);
     });
     expect(bar()?.hidden).toBe(false);
-    expect(bar()?.textContent).toBe(RECONNECT_TEXT.reconnecting);
+    expect(bar()?.textContent).toBe(RECONNECT_TEXT.unreachable);
     await vi.advanceTimersByTimeAsync(1_000);
     FakeSocket.last().hello();
     await h.started;

@@ -18,13 +18,22 @@ const here = import.meta.dirname;
 const repo = resolve(here, '../..');
 
 /**
- * Spec §17.6, verbatim. A meta tag cannot carry `frame-ancestors` (browsers ignore it there), so the
- * server sends this policy as a header too; the meta is the copy that travels with the files.
+ * Spec §17.6, verbatim. The server sends this policy as a header; the meta tag is the copy that travels
+ * with the files.
  */
 export const BROWSER_CONTENT_SECURITY_POLICY =
-  "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'";
+  "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
-/** Injects {@link BROWSER_CONTENT_SECURITY_POLICY} as a meta tag, build only, as the desktop's plugin does. */
+/**
+ * The meta tag's copy: the policy without `frame-ancestors`, which a meta tag cannot carry (the browser
+ * ignores it there and logs an error on every load). The header holds it.
+ */
+export const BROWSER_META_CONTENT_SECURITY_POLICY = BROWSER_CONTENT_SECURITY_POLICY.replace(
+  /;\s*frame-ancestors [^;]*/,
+  '',
+);
+
+/** Injects {@link BROWSER_META_CONTENT_SECURITY_POLICY} as a meta tag, build only, as the desktop's plugin does. */
 function cspMetaPlugin(): Plugin {
   return {
     name: 'wirebench-browser-csp-meta',
@@ -32,7 +41,7 @@ function cspMetaPlugin(): Plugin {
     transformIndexHtml(html) {
       return html.replace(
         '<meta name="viewport"',
-        `<meta http-equiv="Content-Security-Policy" content="${BROWSER_CONTENT_SECURITY_POLICY}" />\n    <meta name="viewport"`,
+        `<meta http-equiv="Content-Security-Policy" content="${BROWSER_META_CONTENT_SECURITY_POLICY}" />\n    <meta name="viewport"`,
       );
     },
   };

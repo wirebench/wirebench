@@ -4,7 +4,8 @@
  * no SSH area and no file-manager reveal, and signs out to the sign-in page.
  *
  * The steps share one page and one session, in order: each builds on the last, and the sign-in
- * endpoints are rate-limited per address.
+ * endpoints are rate-limited per address. Every page the flow loads reports its CSP violations and the
+ * console reports its errors; the last step asserts there were none.
  */
 import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { openTeamDialog } from '../helpers/server.js';
@@ -17,11 +18,33 @@ test.describe.configure({ mode: 'serial' });
 let seed: Seed;
 let context: BrowserContext;
 let page: Page;
+/** What the pages reported: `securitypolicyviolation` events, console errors and uncaught errors. */
+const violations: string[] = [];
+const consoleErrors: string[] = [];
 
 test.beforeAll(async ({ browser }) => {
   seed = readSeed();
   context = await browser.newContext();
+  // A binding outlives navigations, so a violation on the sign-in page counts as much as one in the app.
+  await context.exposeBinding('__wirebenchCspViolation', (_source, line: string) => {
+    violations.push(line);
+  });
+  await context.addInitScript(() => {
+    document.addEventListener('securitypolicyviolation', (event) => {
+      const report = (window as unknown as { __wirebenchCspViolation: (line: string) => Promise<void> })
+        .__wirebenchCspViolation;
+      void report(
+        `${event.violatedDirective} blocked ${event.blockedURI} at ${event.sourceFile}:${String(event.lineNumber)}`,
+      );
+    });
+  });
   page = await context.newPage();
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(`${page.url()}: ${message.text()}`);
+  });
+  page.on('pageerror', (error) => {
+    consoleErrors.push(`${page.url()}: uncaught ${error.message}`);
+  });
 });
 
 test.afterAll(async () => {
@@ -112,4 +135,9 @@ test('signing out lands on the sign-in page, and the app is no longer served', a
   await expect(page.locator('#email')).toBeVisible();
   await page.goto('/');
   await expect(page).toHaveURL(/\/sign-in\?redirect_to=/);
+});
+
+test('no page broke its CSP or logged an error along the way', () => {
+  expect(violations).toEqual([]);
+  expect(consoleErrors).toEqual([]);
 });

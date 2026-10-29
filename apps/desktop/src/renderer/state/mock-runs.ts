@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import { showToast } from '../components/toast.js';
 import type { MockExchangeEventWire, MockStateEvent } from '@shared/wire-base.js';
+import { hasCapability } from '../lib/capabilities.js';
 import { ipc } from './ipc-client.js';
 
 /** How many requests a mock's log keeps; older ones fall off the end. */
@@ -100,14 +101,16 @@ export function subscribeToMocks(): () => void {
   const offExchange = window.wirebench.on('mock.exchange', ((payload: MockExchangeEventWire) => {
     useMockRunsStore.getState().applyExchange(payload);
   }) as (payload: unknown) => void);
-  // A reloaded renderer learns which of its mocks are still running.
-  void ipc()
-    .mock.states({})
-    .then((result) => {
-      if (result.ok) {
-        for (const state of result.value.states) useMockRunsStore.getState().applyState(state);
-      }
-    });
+  // A reloaded renderer learns which of its mocks are still running; a host that cannot listen runs none.
+  if (hasCapability('listen')) {
+    void ipc()
+      .mock.states({})
+      .then((result) => {
+        if (result.ok) {
+          for (const state of result.value.states) useMockRunsStore.getState().applyState(state);
+        }
+      });
+  }
   return () => {
     offState();
     offExchange();

@@ -735,7 +735,8 @@ The payment provider is Paddle, as merchant of record (decision 10).
 Slice 2 (#783) was scheduled on its merits, before the trigger, because a self-hosted team gets a browser
 tab from it, and is built: #785 the server side, #787 the server host, and this PR the tab. It builds
 §3.1–§3.5, §3.10, §5.2 (the server transport) and §6 with one tenant implied, so no `tenant_id` appears
-yet. Where the build differs from the sections above, this section wins until slice 4 folds it back. Plan: `docs/plans/2026-10-27-browser-client.md`.
+yet. Where the build differs from the sections above, this section wins until slice 4 folds it back.
+Plan: `docs/plans/2026-10-27-browser-client.md`.
 
 ### 17.1 Switching it on
 
@@ -810,10 +811,14 @@ yet. Where the build differs from the sections above, this section wins until sl
   (17.5), so no kind is left out. The save-time secret scan (`secretScan.*`) is served, over the open
   project's model, so a team workspace gets the same review before a save; only folder scans of local
   paths stay refused, as §3.10 says.
-- **Three more capabilities** in the wire list, which the Electron platform declares and the server
+- **Five more capabilities** in the wire list, which the Electron platform declares and the server
   platform does not: `processes` (MCP servers over stdio), `listen` (a mock listener on the machine's
-  network) and `windows` (more than one window). The renderer gates mock services, Start and Record, the
-  explorer's mock entries and New Window on them, and attachments, keystores and plugin imports on
+  network), `windows` (more than one window), `accounts` (signing in to and managing server accounts in
+  the window) and `reveal-secrets` (showing secret values in the window). The renderer gates mock
+  services, Start and Record, the stub check, the explorer's mock entries and New Window and the native
+  menu on them; Settings → Accounts without `accounts` shows only the tab's own server with Sign out (no
+  Add server, Remove or Sign in), and Show secrets (the HTTP log's lock and the palette command) needs
+  `reveal-secrets`. Attachments, keystores, plugin imports and the project's folder path gate on
   `files`, so no refused channel is offered.
 - **Server-kind workspaces only.** A host without the `files` capability refuses to create or open a
   git or local workspace (`host-capability-missing`), and the renderer offers only server workspaces.
@@ -880,8 +885,10 @@ yet. Where the build differs from the sections above, this section wins until sl
   pending at a drop resolve to `{ ok: false, error: { code: 'host-disconnected' } }`. `env` also carries
   the sign-out action (17.2).
 - The server serves the build from `dist/browser/` with `@fastify/static`, hashed assets cached as
-  immutable, and the CSP `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;
-  connect-src 'self'; frame-ancestors 'none'`. The container image builds it in its build stage.
+  immutable, and the CSP `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:
+  blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors
+  'none'` (`blob:` for image previews) as a header. The page's meta tag carries the same policy less
+  `frame-ancestors`, which only a header can. The container image builds it in its build stage.
 
 ### 17.7 Testing
 

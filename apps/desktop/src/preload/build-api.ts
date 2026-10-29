@@ -73,6 +73,11 @@ export type WirebenchApi = ApiFromChannels<typeof channels> & {
    * `signOut` is set by the browser bootstrap only: a tab's account is held by the server, which refuses
    * `account.signOut`, so the tab ends its session with the root `/sign-out` instead (hosted edition spec
    * §17.2). The preload never sets it; the renderer offers its plain *Sign out* only when it is there.
+   *
+   * `onOsThemeChanged` is a live OS-theme source the page itself has: the browser bootstrap sets it over
+   * `prefers-color-scheme`, since the server has no OS theme of the user's. When it is there the renderer
+   * follows it and not `theme.get`/`theme.changed`; the preload leaves it unset, as main's `nativeTheme`
+   * is the authority on the desktop.
    */
   env: {
     readonly e2e: boolean;
@@ -82,6 +87,7 @@ export type WirebenchApi = ApiFromChannels<typeof channels> & {
     readonly fixedLayout?: boolean;
     readonly sendTemplatesUnasked?: boolean;
     readonly signOut?: () => void;
+    readonly onOsThemeChanged?: (listener: (os: 'dark' | 'light') => void) => () => void;
   };
   /**
    * The path on this machine of a file dropped from the OS (`webUtils.getPathForFile`), or `''` for one

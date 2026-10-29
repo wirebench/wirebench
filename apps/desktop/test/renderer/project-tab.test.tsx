@@ -7,6 +7,7 @@ import { useGlobalsStore } from '../../src/renderer/state/globals.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { useBrowserEnv } from '../helpers/browser-env.js';
 import { NO_REST } from '../helpers/wire-defaults.js';
 import type { ProjectWire } from '@wirebench/wire/wire-types';
 import { openSettingsTab, resetSettingsTabs } from '../helpers/settings-page-tabs.js';
@@ -98,6 +99,15 @@ describe('ProjectTab', () => {
     expect(screen.getByLabelText('Name').textContent).toBe('Demo');
     expect(screen.getByLabelText<HTMLInputElement>('Folder').value).toBe('/tmp/workspaces/w1/projects/Demo');
     expect(screen.getByLabelText('Source').textContent).toBe('Internal');
+  });
+
+  it('shows no folder path, nor Reveal, without files: the path is on the server', () => {
+    useBrowserEnv(window.wirebench);
+    useProjectStore.setState({ projects: { p1: project() } });
+    renderTab();
+    expect(screen.queryByLabelText('Folder')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reveal' })).toBeNull();
+    expect(document.body.textContent).not.toContain('/tmp/workspaces');
   });
 
   it('reports a linked project as linked', () => {

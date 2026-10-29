@@ -110,7 +110,8 @@ function useHandlers(mockId: string) {
 }
 
 /** What the mock tab says where a mock cannot be started. */
-export const MOCK_UNAVAILABLE = 'Not available here: a mock service listens on your own computer’s network.';
+export const MOCK_UNAVAILABLE =
+  'Mocks run from the desktop app: a mock service listens on your own computer’s network, so this window edits the mock file only.';
 
 function RunBar({ mock }: { readonly mock: MockWire }) {
   const state = useMockRunsStore((s) => s.states[mock.id]);
@@ -574,12 +575,15 @@ export function MockTab({ mockId }: MockTabProps) {
         )}
       </SettingsGroup>
 
-      <SettingsGroup
-        title="Stubs against the contract"
-        hint="Each response's status, headers and body, checked as a received response is."
-      >
-        <MockStubCheck mock={mock} onSelect={setOperationId} />
-      </SettingsGroup>
+      {/* The check runs on the host's mock engine, which a host that cannot listen does not serve. */}
+      {hasCapability('listen') && (
+        <SettingsGroup
+          title="Stubs against the contract"
+          hint="Each response's status, headers and body, checked as a received response is."
+        >
+          <MockStubCheck mock={mock} onSelect={setOperationId} />
+        </SettingsGroup>
+      )}
 
       <SettingsGroup title="Requests" hint="What this mock answered this session; credentials are masked.">
         <MockLog mockId={mock.id} />

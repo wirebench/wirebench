@@ -8,4 +8,5 @@ void startBrowserClient({
   fetch: (url, init) => fetch(url, init),
   target: window,
   mountRenderer: () => import('../renderer/main.js'),
+  matchMedia: (query) => window.matchMedia(query),
 });

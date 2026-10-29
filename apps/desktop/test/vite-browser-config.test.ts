@@ -2,7 +2,23 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Rollup } from 'vite';
 import { resolve } from 'node:path';
-import { failOnBrowserExternal, resolveWorkspaceSource } from '../vite.browser.config.js';
+import {
+  BROWSER_CONTENT_SECURITY_POLICY,
+  BROWSER_META_CONTENT_SECURITY_POLICY,
+  failOnBrowserExternal,
+  resolveWorkspaceSource,
+} from '../vite.browser.config.js';
+
+describe('vite.browser.config CSP', () => {
+  it("is spec §17.6's policy (the server's header pins the same string), and its meta copy is that less frame-ancestors", () => {
+    expect(BROWSER_CONTENT_SECURITY_POLICY).toBe(
+      "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    );
+    expect(BROWSER_META_CONTENT_SECURITY_POLICY).toBe(
+      "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'",
+    );
+  });
+});
 
 describe('vite.browser.config failOnBrowserExternal', () => {
   it('turns a "externalized for browser compatibility" warning into a build error', () => {

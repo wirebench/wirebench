@@ -30,6 +30,8 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { TEAM_SECRETS_OFF_STATUS, useTeamSecretsStore } from '../../src/renderer/state/team-secrets.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { syncAppMenu } from '../../src/renderer/shell/app-menu.js';
+import { subscribeToMocks } from '../../src/renderer/state/mock-runs.js';
 
 /** What the server's hello frame lists today (Part B): a public send and nothing of a machine. */
 const BROWSER: readonly Capability[] = ['send:public'];
@@ -294,6 +296,8 @@ describe('commands by capability', () => {
       'workspace.manage',
       'mock.start',
       'workspace.newWindow',
+      'secrets.toggleShowSecrets',
+      'account.signIn',
     ] as const) {
       registerCommand({
         id,
@@ -318,14 +322,14 @@ describe('commands by capability', () => {
 
   it('lists them all with every capability', () => {
     install(ALL_CAPABILITIES);
-    expect(listCommands(context)).toHaveLength(5);
-    expect(listAllCommands()).toHaveLength(5);
+    expect(listCommands(context)).toHaveLength(7);
+    expect(listAllCommands()).toHaveLength(7);
   });
 
-  it('declares listen and windows, which the desktop has and the browser does not', () => {
-    expect(ALL_CAPABILITIES).toEqual(expect.arrayContaining(['listen', 'windows']));
-    expect(BROWSER).not.toContain('listen');
-    expect(BROWSER).not.toContain('windows');
+  it('declares listen, windows, accounts and reveal-secrets, which the desktop has and the browser does not', () => {
+    const local: readonly Capability[] = ['listen', 'windows', 'accounts', 'reveal-secrets'];
+    expect(ALL_CAPABILITIES).toEqual(expect.arrayContaining([...local]));
+    for (const capability of local) expect(BROWSER).not.toContain(capability);
   });
 });
 
@@ -403,5 +407,27 @@ describe('Team secrets by capability', () => {
     const { container } = render(<TeamSecretsSection />);
 
     expect(container.textContent).toBe('');
+  });
+});
+
+describe('start-up calls by capability', () => {
+  it('pushes no native menu without windows, and does with it', async () => {
+    const registerMenu = vi.fn().mockResolvedValue({ ok: true, value: {} });
+    install(BROWSER, { app: { registerMenu } });
+    await syncAppMenu();
+    expect(registerMenu).not.toHaveBeenCalled();
+    install(ALL_CAPABILITIES, { app: { registerMenu } });
+    await syncAppMenu();
+    expect(registerMenu).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks for no mock states without listen, and does with it', () => {
+    const states = vi.fn().mockResolvedValue({ ok: true, value: { states: [] } });
+    install(BROWSER, { mock: { states } });
+    subscribeToMocks()();
+    expect(states).not.toHaveBeenCalled();
+    install(ALL_CAPABILITIES, { mock: { states } });
+    subscribeToMocks()();
+    expect(states).toHaveBeenCalledTimes(1);
   });
 });

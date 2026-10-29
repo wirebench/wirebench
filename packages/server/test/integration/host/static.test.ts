@@ -75,7 +75,7 @@ describeDb('the browser tab at the root (hosted spec §17.2, §17.6)', () => {
       expect(res.body).toBe(h.browserBuild.page);
       expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
       expect(res.headers['content-security-policy']).toBe(
-        "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
+        "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
       );
       expect(res.headers['cache-control']).toBe('no-store');
       expect(res.headers['x-content-type-options']).toBe('nosniff');

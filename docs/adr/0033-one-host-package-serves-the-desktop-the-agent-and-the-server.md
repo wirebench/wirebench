@@ -99,5 +99,8 @@ Built in #785, #787 and this PR (spec §17). Where it differs from the above:
 - **The `@wirebench/host/desktop` gate exists.** `check-host-boundary.ts` now refuses that import outside
   `apps/desktop/`.
 - **More capabilities than the decision named.** `processes` (stdio MCP servers), `listen` (mock
-  listeners) and `windows` (a second window) joined the list, since "files" and "shell" did not say
-  whether a host may start a process, open a port or a window.
+  listeners), `windows` (a second window), `accounts` (managing server accounts in the window) and
+  `reveal-secrets` (showing secret values in the window) joined the list, since "files" and "shell" did
+  not say whether a host may start a process, open a port or a window. `listen`, `windows`, `accounts`
+  and `reveal-secrets` are enforced by the renderer's gates and the server's allowlist, not by the host,
+  and the agent host in slice 3 must enforce them for a browser caller.

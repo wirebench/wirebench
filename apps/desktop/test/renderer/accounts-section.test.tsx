@@ -6,6 +6,7 @@ import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-d
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import type { AccountWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { useBrowserEnv } from '../helpers/browser-env.js';
 
 const account = (url: string, signedOut = false): AccountWire => ({
   url,
@@ -57,6 +58,25 @@ describe('AccountsSection', () => {
     await vi.waitFor(() => expect(remove).toHaveBeenCalledWith({ url: 'https://one.test' }));
     fireEvent.click(screen.getByTestId('accounts-show-in-status-bar'));
     expect(update).toHaveBeenCalledWith({ accounts: { showInStatusBar: false } });
+  });
+
+  it('without accounts shows only the tab session, signed out through env.signOut, and nothing to add or remove', () => {
+    const signOut = vi.fn();
+    const endTab = vi.fn();
+    const api = installWirebenchApi({ account: { signOut } });
+    useBrowserEnv(api);
+    Object.defineProperty(api, 'env', { configurable: true, value: { ...api.env, signOut: endTab } });
+    useAccountStore.setState({ servers: [account('https://old.test', true), account('https://wb.test')] });
+    render(<AccountsSection preferences={DEFAULT_PREFERENCES_WIRE} update={vi.fn()} />);
+
+    expect(screen.queryByTestId('account-row-old.test')).toBeNull();
+    const row = screen.getByTestId('account-row-wb.test');
+    for (const testId of ['account-row-remove', 'account-row-sign-in', 'accounts-add-server']) {
+      expect(screen.queryByTestId(testId)).toBeNull();
+    }
+    fireEvent.click(row.querySelector('[data-testid="account-row-sign-out"]')!);
+    expect(endTab).toHaveBeenCalledTimes(1);
+    expect(signOut).not.toHaveBeenCalled();
   });
 
   it('says so when no server is known', () => {

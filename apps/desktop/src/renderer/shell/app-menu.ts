@@ -9,6 +9,7 @@
 
 import type { CommandInvokeEvent, MenuCommandWire } from '@shared/wire-base.js';
 import { showToast } from '../components/toast.js';
+import { hasCapability } from '../lib/capabilities.js';
 import type { CommandContext } from '../lib/commands.js';
 import { getCommand, listAllCommands, runCommand } from '../lib/commands.js';
 import { effectiveShortcut, toAccelerator } from '../lib/keybindings.js';
@@ -28,8 +29,12 @@ export function menuManifest(): readonly MenuCommandWire[] {
   });
 }
 
-/** Pushes the current manifest to main. Call after registration and after any keymap change. */
+/**
+ * Pushes the current manifest to main. Call after registration and after any keymap change. A host
+ * without `windows` (the browser client) has no native window, so no menu to push to; it is not asked.
+ */
 export async function syncAppMenu(): Promise<void> {
+  if (!hasCapability('windows')) return;
   await ipc().app.registerMenu({ items: [...menuManifest()] });
 }
 

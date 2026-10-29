@@ -408,6 +408,51 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
     expect(await client.call('secretScan.scan', { projectId: '../../other-user' })).toMatchObject({ ok: false });
   });
 
+  it('seals what secretScan.setValue and secretScan.move store, and reports it by name only', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const leaked = 'ghp_0123456789abcdefghijklmnopqrstuvwxyzAB';
+    const typed = 'typed-value-0123456789abcdef';
+    const { client } = await joinedWorkspace(h, alice, {
+      requests: [
+        {
+          ...createRestRequest('Leaky', { id: 'req-leaky', url: 'https://api.example.test/' }),
+          headers: [entry('Authorization', `Bearer ${leaked}`)],
+        },
+      ],
+    });
+
+    // The opened project carried the literal token before the move; what follows must not.
+    const before = client.frames.length;
+    const scan = await client.call('secretScan.scan', { projectId: 'project-billing' });
+    const findings = (scan.value as { findings: { id: string }[] }).findings;
+    expect(findings.length, JSON.stringify(scan)).toBeGreaterThan(0);
+    const moved = await client.call('secretScan.move', {
+      projectId: 'project-billing',
+      items: [{ id: findings[0]!.id, name: 'GITHUB_TOKEN' }],
+    });
+    expect(moved, JSON.stringify(moved)).toMatchObject({ ok: true, value: { moved: [findings[0]!.id] } });
+    expect(
+      await client.call('secretScan.setValue', { projectId: 'project-billing', name: 'TYPED_KEY', value: typed }),
+    ).toMatchObject({ ok: true, value: { replaced: false } });
+
+    // Sealed: neither value is in the user's secrets file as text.
+    const sealed = await readFile(join(hostDirectories(h.dataDir, alice.user.id).checkout, 'secrets.json'));
+    expect(sealed.includes(leaked)).toBe(false);
+    expect(sealed.includes(typed)).toBe(false);
+    // Reported by name only: one audit row per write, whose details hold a name and nothing else.
+    await vi.waitFor(() => {
+      const written = h.audit.filter((event) => event.action === 'secret.written');
+      expect(written).toHaveLength(2);
+      for (const event of written) expect(Object.keys(event.details as object)).toEqual(['name']);
+    });
+    expect(JSON.stringify(h.audit)).not.toContain(leaked);
+    expect(JSON.stringify(h.audit)).not.toContain(typed);
+    // And no frame back to the tab since the scan carries either value.
+    const frames = JSON.stringify(client.frames.slice(before));
+    expect(frames).not.toContain(leaked);
+    expect(frames).not.toContain(typed);
+  });
+
   it('closes 1009 for a frame just over 32 MiB', async () => {
     const alice = await browserUser(h, 'alice@example.com');
     const client = await openHost(h, alice);

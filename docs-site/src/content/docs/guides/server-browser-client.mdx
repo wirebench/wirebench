@@ -80,7 +80,11 @@ than failing:
 - Kerberos, secret sources and the OS keychain;
 - team-secret keys, which live on approved machines only;
 - MCP servers that run as local processes, and plugins;
-- a second window.
+- a second window and the native menu;
+- the project's folder path on the server;
+- **Show secrets** in the HTTP log: a value stored in the tab is never shown back;
+- adding, removing or signing in to other servers. Settings → Accounts shows the tab's own server with
+  **Sign out**, and nothing else.
 
 A team workspace cannot be created from the browser yet. Someone creates it once from the desktop app
 ([Share with Wirebench Server](/wirebench/docs/guides/shared-workspaces/#share-with-wirebench-server)),
@@ -104,9 +108,10 @@ user from `WIREBENCH_SERVER_SECRETS_KEY`, and kept in that user's directory on t
 Every connection a tab opens through the server is checked when it connects, on every redirect and
 through a proxy too, by the rule scheduled runs follow:
 
-- **Always refused:** loopback, link-local, unspecified, multicast and broadcast addresses, which covers
-  the cloud providers' metadata addresses. A request to `localhost` or `127.0.0.1` fails with
-  `egress-refused`.
+- **Always refused:** loopback, link-local, unspecified, multicast and broadcast addresses. A request to
+  `localhost` or `127.0.0.1` fails with `egress-refused`.
+- **Always refused too:** the cloud providers' metadata addresses, `169.254.169.254`, `fd00:ec2::254` and
+  `100.100.100.200`, whatever the private-range setting.
 - **Refused only if you ask:** the private ranges `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`,
   `100.64.0.0/10` and `fc00::/7`, with `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true`.
 
@@ -136,6 +141,8 @@ location /api/v1/host {
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
     proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
 }
 
 location / {

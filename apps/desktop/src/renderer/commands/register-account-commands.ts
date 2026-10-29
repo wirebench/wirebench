@@ -1,4 +1,5 @@
 import { catalogEntry } from '@shared/command-catalog.js';
+import { hasCapability, tabSignOut } from '../lib/capabilities.js';
 import { registerCommand } from '../lib/commands.js';
 import { signedInServers, useAccountStore } from '../state/account.js';
 import { useUiStore } from '../state/ui.js';
@@ -26,6 +27,12 @@ export function registerAccountCommands(): void {
     when: hasSignedInServer,
     whenScope: 'account.signedIn',
     run: () => {
+      // A browser tab ends its own session; `account.signOut` is refused there.
+      const endTab = tabSignOut();
+      if (!hasCapability('accounts') && endTab !== undefined) {
+        endTab();
+        return;
+      }
       const signedIn = signedInServers(useAccountStore.getState().servers);
       const only = signedIn.length === 1 ? signedIn[0] : undefined;
       if (only !== undefined) {

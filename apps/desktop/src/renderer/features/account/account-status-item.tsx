@@ -33,7 +33,8 @@ function Separator() {
  * `accounts.showInStatusBar` is off. A signed-out server shows *Sign in*, which reopens the
  * dialog on that URL; a signed-in one shows the email with a menu holding *Sign out of <server>*
  * per server, *Manage teams…* and *Manage accounts…*. In a browser tab (`env.signOut` set) the
- * per-server items give way to one *Sign out*, which ends the tab's session.
+ * per-server items give way to one *Sign out*, which ends the tab's session, and *Manage accounts…*
+ * opens the reduced Accounts view a window without `accounts` gets: that session's row alone.
  */
 export function AccountStatusItem() {
   const servers = useAccountStore((state) => state.servers);

@@ -139,8 +139,11 @@ describe('MockTab', () => {
     useBrowserEnv(window.wirebench);
     mount();
     expect(screen.queryByTestId('mock-start')).toBeNull();
-    expect(screen.getByTestId('mock-unavailable').textContent).toMatch(/^Not available here/);
+    expect(screen.getByTestId('mock-unavailable').textContent).toMatch(/^Mocks run from the desktop app/);
     expect(start).not.toHaveBeenCalled();
+    // Nor the stub check, which runs on the host's mock engine.
+    expect(screen.queryByTestId('mock-stub-check-run')).toBeNull();
+    expect(check).not.toHaveBeenCalled();
   });
 
   it('commits a settings edit as one update-mock', () => {

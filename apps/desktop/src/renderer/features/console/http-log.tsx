@@ -318,21 +318,23 @@ export function HttpLog() {
         total={log.length}
         actions={
           <>
-            <Button
-              variant="ghost"
-              aria-pressed={showSecrets}
-              title={showSecrets ? 'Secrets are shown — click to redact' : 'Secrets are redacted — click to reveal'}
-              onClick={() => {
-                void toggleSecrets();
-              }}
-            >
-              {showSecrets ? (
-                <LockOpen aria-hidden="true" className="size-3.5" />
-              ) : (
-                <Lock aria-hidden="true" className="size-3.5" />
-              )}
-              <span className="sr-only">{showSecrets ? 'Hide secrets' : 'Show secrets'}</span>
-            </Button>
+            {hasCapability('reveal-secrets') && (
+              <Button
+                variant="ghost"
+                aria-pressed={showSecrets}
+                title={showSecrets ? 'Secrets are shown — click to redact' : 'Secrets are redacted — click to reveal'}
+                onClick={() => {
+                  void toggleSecrets();
+                }}
+              >
+                {showSecrets ? (
+                  <LockOpen aria-hidden="true" className="size-3.5" />
+                ) : (
+                  <Lock aria-hidden="true" className="size-3.5" />
+                )}
+                <span className="sr-only">{showSecrets ? 'Hide secrets' : 'Show secrets'}</span>
+              </Button>
+            )}
             <Button
               variant="ghost"
               aria-pressed={preserveLog}

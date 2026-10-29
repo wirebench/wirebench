@@ -94,6 +94,33 @@ describe('startOsThemeBridge', () => {
     stop();
   });
 
+  it('follows env.onOsThemeChanged and not theme.get where the page has its own source', async () => {
+    stubBridge('light');
+    const pageListeners: ((os: 'dark' | 'light') => void)[] = [];
+    const api = window.wirebench as unknown as { env: Record<string, unknown>; theme: { get: () => unknown } };
+    api.env = {
+      ...api.env,
+      osTheme: 'dark',
+      onOsThemeChanged: (listener: (os: 'dark' | 'light') => void) => {
+        pageListeners.push(listener);
+        return () => pageListeners.splice(pageListeners.indexOf(listener), 1);
+      },
+    };
+    const stop = startOsThemeBridge();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // The host's `theme.get` (a server's fixed light) does not override the page's dark.
+    expect(api.theme.get).not.toHaveBeenCalled();
+    expect(getOsTheme()).toBe('dark');
+    act(() => {
+      pageListeners[0]?.('light');
+    });
+    expect(getOsTheme()).toBe('light');
+    stop();
+    expect(pageListeners).toHaveLength(0);
+  });
+
   it('falls back to prefers-color-scheme when there is no bridge', () => {
     Reflect.deleteProperty(window, 'wirebench');
     const listeners: (() => void)[] = [];

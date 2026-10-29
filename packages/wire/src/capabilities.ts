@@ -24,6 +24,10 @@ export const ALL_CAPABILITIES = [
   'listen',
   /** Open more than one window of the app. */
   'windows',
+  /** Sign in to and manage server accounts in this window. */
+  'accounts',
+  /** Show secret values in this window. */
+  'reveal-secrets',
 ] as const;
 
 /** What a platform can do; a host switches features off when the platform lacks one. */

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { showToast } from '../components/toast.js';
+import { hasCapability } from '../lib/capabilities.js';
 import { ipc } from './ipc-client.js';
 
 /** The renderer's mirror of main's session-only "show secrets" flag. */
@@ -60,6 +61,8 @@ export const useSecretsVisibilityStore = create<SecretsVisibilityStore>((set, ge
   },
 
   requestToggle: async () => {
+    // A window without `reveal-secrets` offers no way in; this holds should one slip through.
+    if (!get().show && !hasCapability('reveal-secrets')) return;
     if (get().show) {
       await get().setShow(false);
       return;

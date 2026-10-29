@@ -100,6 +100,10 @@ export const COMMAND_CAPABILITIES: Readonly<Partial<Record<CommandId, Capability
   'mock.start': 'listen',
   'mock.stop': 'listen',
   'workspace.newWindow': 'windows',
+  // Adds a server account; a browser tab's one account is the server's.
+  'account.signIn': 'accounts',
+  // Shows secret values in the HTTP log; the browser never shows a value back.
+  'secrets.toggleShowSecrets': 'reveal-secrets',
   'workspace.secretSources': 'secret-sources',
   'secrets.clearSourceCache': 'secret-sources',
 };

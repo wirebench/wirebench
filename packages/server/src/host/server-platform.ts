@@ -99,7 +99,8 @@ export function createServerPlatform(input: ServerPlatformInput): ServerPlatform
       packaged: () => true,
       // The server's lifecycle is not the host's to end.
       quit: () => undefined,
-      // A server has no OS theme; the renderer follows the browser's own.
+      // A server has no OS theme of the user's. The browser bootstrap passes the page's own
+      // `prefers-color-scheme` (and its changes) to the renderer, which then ignores this value.
       osTheme: () => 'light',
       onOsThemeChanged: () => () => undefined,
     },

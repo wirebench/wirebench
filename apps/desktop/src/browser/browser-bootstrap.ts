@@ -1,7 +1,8 @@
 /**
  * The browser client's bootstrap (hosted edition spec §3.1, §17.6). It opens the host socket, waits for
  * the hello, builds `window.wirebench` with `buildApi` over the socket (`host: 'browser'`, the hello's
- * capabilities and `osTheme`, `pathForFile` answering `''`), and only then loads the renderer, which reads
+ * capabilities, the browser's own `prefers-color-scheme` as `osTheme` and its live source, `pathForFile`
+ * answering `''`), and only then loads the renderer, which reads
  * `window.wirebench` as it loads.
  *
  * Afterwards it owns two things outside React:
@@ -9,8 +10,9 @@
  * - The session. A `4401` close sends the tab to `/sign-in`, with `redirect_to` the page it was on. A server answers the upgrade of a disabled
  *   user with HTTP 403, which a page sees only as a close (`1006`) before any hello; so after such a close
  *   it asks `/api/v1/me`, and a 401 or 403 there sends the tab to `/sign-in` too.
- * - The reconnect bar, a plain element shown while the socket is down after the first hello, hidden by
- *   the next one. A hello whose capabilities differ from the first reloads the page: the renderer hid
+ * - The reconnect bar, a plain element shown while the socket is down, hidden by the next hello. Before
+ *   the first hello it says the workspace cannot be reached (the page is otherwise blank); after it, that
+ *   the connection was lost. A hello whose capabilities differ from the first reloads the page: the renderer hid
  *   what the first set lacked, and only a fresh load redoes that.
  */
 import { buildApi, type WirebenchApi } from '../preload/build-api.js';
@@ -39,6 +41,7 @@ export const RECONNECT_BAR_ID = 'wirebench-reconnect-bar';
 
 export const RECONNECT_TEXT = {
   reconnecting: 'The connection to the server was lost. Reconnecting…',
+  unreachable: 'Can’t reach your workspace; retrying…',
   tooManyTabs: 'Too many Wirebench tabs are open; close one to continue.',
 } as const;
 
@@ -59,6 +62,29 @@ export interface BootstrapDeps {
   /** Loads the renderer; called once, after `wirebench` is set. */
   readonly mountRenderer: () => Promise<unknown>;
   readonly createSocket?: (url: string) => SocketLike;
+  /** The page's `matchMedia`: "System" follows the browser's `prefers-color-scheme`, not the server. */
+  readonly matchMedia?: (query: string) => MediaQueryList;
+}
+
+/** The user's OS scheme as the browser reports it, and a way to follow it; dark when it cannot tell. */
+function pageOsTheme(matchMedia: BootstrapDeps['matchMedia']): {
+  readonly current: () => 'dark' | 'light';
+  readonly onChanged: (listener: (os: 'dark' | 'light') => void) => () => void;
+} {
+  const query = matchMedia?.('(prefers-color-scheme: light)');
+  const current = (): 'dark' | 'light' => (query?.matches === true ? 'light' : 'dark');
+  return {
+    current,
+    onChanged(listener) {
+      const changed = (): void => {
+        listener(current());
+      };
+      query?.addEventListener('change', changed);
+      return () => {
+        query?.removeEventListener('change', changed);
+      };
+    },
+  };
 }
 
 /** The bar's element, created on first use and kept; `hidden` while the socket is up. */
@@ -147,7 +173,7 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
     },
     // Not even a socket to wait on: say so rather than leave the page blank until the next attempt.
     onOpenFailed() {
-      bar.show(RECONNECT_TEXT.reconnecting);
+      bar.show(first === undefined ? RECONNECT_TEXT.unreachable : RECONNECT_TEXT.reconnecting);
     },
     onClosed(code, helloSeen) {
       if (code === CLOSE_CODE.unauthenticated) {
@@ -158,7 +184,10 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
         bar.show(RECONNECT_TEXT.tooManyTabs);
         return;
       }
-      if (first !== undefined) bar.show(RECONNECT_TEXT.reconnecting);
+      // Before the first hello the page is blank but for this bar, whatever the close (a server error,
+      // a refused upgrade, the server down): say so, and keep retrying. A 401/403 from the session check
+      // still sends the tab to sign in.
+      bar.show(first === undefined ? RECONNECT_TEXT.unreachable : RECONNECT_TEXT.reconnecting);
       if (!helloSeen) checkSession();
     },
   });
@@ -179,10 +208,18 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
   };
 
   const hello = await transport.ready;
+  const os = pageOsTheme(deps.matchMedia);
   deps.target.wirebench = buildApi(
     transport.invoke,
     transport.on,
-    { e2e: false, osTheme: hello.osTheme, host: 'browser', capabilities: hello.capabilities, signOut },
+    {
+      e2e: false,
+      osTheme: os.current(),
+      host: 'browser',
+      capabilities: hello.capabilities,
+      signOut,
+      onOsThemeChanged: os.onChanged,
+    },
     () => '',
   );
   await deps.mountRenderer();
