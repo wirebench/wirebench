@@ -10,8 +10,11 @@ import { defineChannel } from './ipc-contract.js';
 import { restExchangeSummarySchema } from './kinds/rest/wire.js';
 import { exchangeSummarySchema } from './kinds/soap/wire.js';
 
-/** A bundle's files together, decoded: the server never sends more, and the agent refuses more. */
-export const AGENT_BUNDLE_MAX_BYTES = 32 * 1024 * 1024;
+/**
+ * A bundle's files together, decoded: the server never sends more, and the agent refuses more. 24 MiB, so
+ * a bundle sent all as base64 (a third larger) still fits the socket's 32 MiB frame.
+ */
+export const AGENT_BUNDLE_MAX_BYTES = 24 * 1024 * 1024;
 /** A bundle's files, at most. */
 export const AGENT_BUNDLE_MAX_FILES = 2000;
 
@@ -52,13 +55,23 @@ export function bundleFileBytes(file: Pick<SendBundleFile, 'encoding' | 'content
 /**
  * A send bundle (§18.4), version 1: the project files the one request item needs (its manifest, the item,
  * its folder chain's scripts, the non-secret values, the files it reads) and the names of the secrets it
- * reads, never their values. `itemId` is the request's id in those files; `environment` the environment
- * id it is sent under, the project's active one when absent.
+ * reads, never their values: those names are the only `${secret:…}` refs the send may resolve. `itemId` is
+ * the request's id in those files; `environment` the environment id it is sent under, the project's active
+ * one when absent.
  */
 export const sendBundleSchema = z
   .strictObject({
     version: z.literal(1),
     kind: z.enum(AGENT_SEND_KINDS),
+    /**
+     * The server workspace the request belongs to: with the pairing's origin, it names the agent's own
+     * secret namespace (`agent:<origin>:<workspaceId>:<name>`).
+     */
+    workspaceId: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[A-Za-z0-9_-]+$/),
     itemId: z.string().min(1).max(256),
     environment: z.string().min(1).max(256).optional(),
     files: z.array(sendBundleFileSchema).max(AGENT_BUNDLE_MAX_FILES),

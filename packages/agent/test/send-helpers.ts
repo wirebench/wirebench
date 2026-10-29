@@ -72,10 +72,12 @@ export interface EchoServer {
 
 /**
  * Answers every request with what it received, as JSON; `/cookie` also sets `sid=abc`; `/hold` never
- * answers; a `text/xml` request gets its own body back.
+ * answers; `/token` hands out `tok-1`, `tok-2`, … as an OAuth2 token endpoint; a `text/xml` request gets
+ * its own body back.
  */
 export async function startEchoServer(): Promise<EchoServer> {
   const received: Received[] = [];
+  let tokens = 0;
   let onHeld: (() => void) | undefined;
   const open = new Set<ServerResponse>();
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
@@ -92,6 +94,12 @@ export async function startEchoServer(): Promise<EchoServer> {
       if (request.headers['content-type']?.includes('xml') === true) {
         response.writeHead(200, { 'content-type': 'text/xml' });
         response.end(body);
+        return;
+      }
+      if (request.url?.startsWith('/token') === true) {
+        tokens += 1;
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ access_token: `tok-${String(tokens)}`, token_type: 'Bearer', expires_in: 3600 }));
         return;
       }
       response.writeHead(200, {
@@ -145,5 +153,5 @@ export async function bundleOf(
 ): Promise<SendBundle> {
   const dir = tempFolder('wb-agent-project-');
   await saveProject(project, dir);
-  return { version: 1, kind, itemId, files: await filesUnder(dir), secretNames: [], ...extra };
+  return { version: 1, kind, workspaceId: 'ws-1', itemId, files: await filesUnder(dir), secretNames: [], ...extra };
 }

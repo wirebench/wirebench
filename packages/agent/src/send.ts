@@ -3,23 +3,24 @@
  * paired tab hands the agent a send bundle its server built, and the agent sends that one request from this
  * machine.
  *
- * 1. The bundle is checked against `sendBundleSchema`: relative paths only, at most 2000 files and 32 MiB
- *    decoded.
+ * 1. The bundle is checked against `sendBundleSchema`: relative paths only, at most 2000 files and 24 MiB
+ *    decoded. An origin has at most four sends running.
  * 2. Its files are written to `<temp>/agent-sends/<sendId>`, a directory made for this send alone. Each
  *    path is resolved and must stay inside it; each file is created with `wx`, and nothing here makes a
  *    link.
  * 3. The engine's `loadProject` reads it, and the embedder's host sends the one item through the send
- *    path a desktop send uses (`Host.sendFromDirectory`): the host's secret getter and redactor, with the
- *    cookie jar this agent holds for the tab's origin.
+ *    path a desktop send uses (`Host.sendFromDirectory`). Its secrets are only the agent's own namespace
+ *    for the tab's origin and workspace, never the desktop's project secrets; its cookie jar and token
+ *    caches are the ones this agent holds for the tab's origin.
  * 4. The directory is removed however the send ended.
  *
  * WebSocket is a session, not a send, so it has no bundle; gRPC and MCP answer `agent-kind-unsupported`
  * until they are added. The jars are held in memory only.
  */
-import { lstat, mkdir, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { CookieJar, loadProject, WirebenchError, type CookieJarHost } from '@wirebench/engine';
-import type { HostPlatform } from '@wirebench/host';
+import { createSendSession, type Host, type HostPlatform, type SendSession } from '@wirebench/host';
 import {
   AGENT_SEND_KINDS,
   agentCancelRequestSchema,
@@ -33,6 +34,9 @@ import type { AgentCallContext, AgentHandler } from './server.js';
 
 /** The folder under the platform's temp directory each send's own directory is made in. */
 export const AGENT_SENDS_DIR = 'agent-sends';
+
+/** Sends one pairing origin may have running at once; the next answers `agent-busy`. */
+export const AGENT_MAX_SENDS_PER_ORIGIN = 4;
 
 export interface AgentSendOptions {
   readonly platform: Pick<HostPlatform, 'paths'>;
@@ -71,14 +75,21 @@ function codeOf(error: unknown): string | undefined {
 
 /**
  * The directory sends are made in, created owner-only. On a shared temp directory another account could
- * have made it first, or made it a link: then it is refused rather than written into.
+ * have made it first, made it a link or left it open to others: then it is refused rather than written into.
  */
 async function sendsRoot(platform: Pick<HostPlatform, 'paths'>): Promise<string> {
   const root = join(platform.paths.temp(), AGENT_SENDS_DIR);
   await mkdir(root, { recursive: true, mode: 0o700 });
   const stat = await lstat(root);
   const ownUid = process.getuid?.();
-  if (!stat.isDirectory() || stat.isSymbolicLink() || (ownUid !== undefined && stat.uid !== ownUid)) {
+  // Windows has no owner or mode bits worth the name here; its temp directory is the user's own.
+  const posix = process.platform !== 'win32';
+  if (
+    !stat.isDirectory() ||
+    stat.isSymbolicLink() ||
+    (ownUid !== undefined && stat.uid !== ownUid) ||
+    (posix && (stat.mode & 0o077) !== 0)
+  ) {
     throw new WirebenchError('agent-temp-unsafe', 'The agent’s temporary folder is not its own', {
       details: { dir: root },
     });
@@ -86,8 +97,30 @@ async function sendsRoot(platform: Pick<HostPlatform, 'paths'>): Promise<string>
   return root;
 }
 
-/** Writes `files` under `dir`: each inside it, each a new file. */
-async function writeBundle(dir: string, files: readonly SendBundleFile[], signal: AbortSignal): Promise<void> {
+/**
+ * Removes what an agent that stopped mid-send left in the sends folder. Run once when the handlers are
+ * made, at agent start, and waited for by the first send. Another agent process on the same temp folder
+ * (the desktop and a headless one at once) would lose a send in flight; both are rare, and the send then
+ * fails rather than leaking.
+ */
+async function sweepSends(platform: Pick<HostPlatform, 'paths'>): Promise<void> {
+  const root = join(platform.paths.temp(), AGENT_SENDS_DIR);
+  let entries: string[];
+  try {
+    entries = await readdir(root);
+  } catch {
+    return;
+  }
+  await Promise.all(
+    entries.map((name) => rm(join(root, name), { recursive: true, force: true }).catch(() => undefined)),
+  );
+}
+
+/**
+ * Writes `files` under `dir`: each inside it, each a new file. The schema already refused any path that
+ * could leave; the prefix check here holds even for one it let through.
+ */
+export async function writeBundle(dir: string, files: readonly SendBundleFile[], signal: AbortSignal): Promise<void> {
   for (const file of files) {
     if (signal.aborted) throw new WirebenchError('aborted', 'The request was aborted.');
     const target = resolve(dir, file.path);
@@ -119,18 +152,22 @@ function jarHost(jar: CookieJar): CookieJarHost {
  */
 export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentHandler> {
   const { platform } = options;
-  /** One jar per pairing origin, in memory only (slice 3). */
-  const jars = new Map<string, CookieJar>();
-  /** The sends running, by send id, and the origin each came from. */
+  /** Each pairing origin's jar and token caches, in memory only (slice 3). */
+  const origins = new Map<string, { jar: CookieJar; readonly session: SendSession }>();
+  /** The sends running, by origin and send id. */
   const running = new Map<string, { readonly origin: string; readonly abort: AbortController }>();
+  const swept = sweepSends(platform);
 
-  const jarFor = (origin: string): CookieJar => {
-    let jar = jars.get(origin);
-    if (jar === undefined) {
-      jar = new CookieJar();
-      jars.set(origin, jar);
+  const key = (origin: string, sendId: string): string => `${origin}\n${sendId}`;
+  const runningFor = (origin: string): number => [...running.values()].filter((one) => one.origin === origin).length;
+
+  const stateFor = (origin: string, host: Host): { jar: CookieJar; readonly session: SendSession } => {
+    let state = origins.get(origin);
+    if (state === undefined) {
+      state = { jar: new CookieJar(), session: createSendSession(host) };
+      origins.set(origin, state);
     }
-    return jar;
+    return state;
   };
 
   const send = async (raw: unknown, { pairing, host }: AgentCallContext): Promise<AgentSendResponse> => {
@@ -150,13 +187,20 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
       throw invalid('The bundle is not one the agent can run', { issues: issuesOf(parsed.error) });
     }
     const { sendId, bundle } = parsed.data;
-    if (running.has(sendId)) {
+    const { origin } = pairing;
+    if (running.has(key(origin, sendId))) {
       throw new WirebenchError('agent-send-exists', 'A send with that id is already running', { details: { sendId } });
     }
+    if (runningFor(origin) >= AGENT_MAX_SENDS_PER_ORIGIN) {
+      throw new WirebenchError('agent-busy', 'This machine is already sending as much as it will for that server', {
+        details: { limit: AGENT_MAX_SENDS_PER_ORIGIN },
+      });
+    }
     const abort = new AbortController();
-    running.set(sendId, { origin: pairing.origin, abort });
+    running.set(key(origin, sendId), { origin, abort });
     let dir: string | undefined;
     try {
+      await swept;
       const root = await sendsRoot(platform);
       const candidate = join(root, sendId);
       try {
@@ -179,18 +223,23 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
           reason: error instanceof Error ? error.message.replaceAll(dir, '<bundle>') : 'unknown',
         });
       }
+      const state = stateFor(origin, host);
       const result = await host.sendFromDirectory({
         sendId,
         projectDir: dir,
         itemId: bundle.itemId,
         ...(bundle.environment !== undefined ? { environment: bundle.environment } : {}),
         kind: bundle.kind,
-        cookies: jarHost(jarFor(pairing.origin)),
+        origin,
+        workspaceId: bundle.workspaceId,
+        secretNames: bundle.secretNames,
+        cookies: jarHost(state.jar),
+        session: state.session,
         signal: abort.signal,
       });
       return agentSendResponseSchema.parse({ ...result, sentFrom: 'agent' });
     } finally {
-      running.delete(sendId);
+      running.delete(key(origin, sendId));
       if (dir !== undefined) await rm(dir, { recursive: true, force: true });
     }
   };
@@ -198,15 +247,16 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
   const cancel = (raw: unknown, { pairing }: AgentCallContext): Promise<{ cancelled: boolean }> => {
     const parsed = agentCancelRequestSchema.safeParse(raw);
     if (!parsed.success) return Promise.reject(invalid('Not a cancel request', { issues: issuesOf(parsed.error) }));
-    const entry = running.get(parsed.data.sendId);
-    // Another origin's send is not this tab's to stop, nor is one that already ended.
-    if (entry?.origin !== pairing.origin || entry.abort.signal.aborted) return Promise.resolve({ cancelled: false });
+    // Only this origin's sends are looked at: another's is not this tab's to stop.
+    const entry = running.get(key(pairing.origin, parsed.data.sendId));
+    if (entry === undefined || entry.abort.signal.aborted) return Promise.resolve({ cancelled: false });
     entry.abort.abort();
     return Promise.resolve({ cancelled: true });
   };
 
   const clearCookies = (_raw: unknown, { pairing }: AgentCallContext): Promise<undefined> => {
-    jars.delete(pairing.origin);
+    const state = origins.get(pairing.origin);
+    if (state !== undefined) state.jar = new CookieJar();
     return Promise.resolve(undefined);
   };
 

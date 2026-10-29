@@ -5,7 +5,7 @@
  * send ends. The handlers are called as the agent's server calls them, and once over a paired socket.
  */
 import { existsSync } from 'node:fs';
-import { readdir } from 'node:fs/promises';
+import { chmod, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -16,16 +16,17 @@ import {
   createProject,
   createRequest,
   createRestRequest,
+  DEFAULT_OAUTH2_AUTH,
   entry,
   type Project,
   type RestFolder,
   type RestRequestDef,
 } from '@wirebench/engine';
-import { createHost, serveCall, type Host, type HostPlatform } from '@wirebench/host';
+import { agentSecretLabel, createHost, serveCall, type Host, type HostPlatform } from '@wirebench/host';
 import { AGENT_BUNDLE_MAX_BYTES, AGENT_BUNDLE_MAX_FILES, type SendBundle } from '@wirebench/wire/agent';
 import { pair, type AgentFetch } from '../src/pair.js';
 import { openPairingStore, type Pairing } from '../src/pairings.js';
-import { AGENT_SENDS_DIR, agentSendHandlers } from '../src/send.js';
+import { AGENT_MAX_SENDS_PER_ORIGIN, AGENT_SENDS_DIR, agentSendHandlers, writeBundle } from '../src/send.js';
 import { startAgent, type AgentHandler } from '../src/server.js';
 import { cleanUp, onCleanUp, openSocket, startFakeServer } from './helpers.js';
 import { bundleOf, hostPlatform, quietCaller, startEchoServer, tempFolder, type EchoServer } from './send-helpers.js';
@@ -83,17 +84,18 @@ function sendId(): string {
   return `send-${String(sends)}`;
 }
 
-/** Stores `value` as the project's `${secret:name}` on the agent's machine, as the Secrets page does. */
-async function storeSecret(projectId: string, name: string, value: string): Promise<void> {
+/** Stores `value` under `label` in the agent machine's secret store, as the Secrets page does. */
+async function storeLabelled(label: string, value: string): Promise<void> {
   const caller = quietCaller(7);
   host.attach(caller);
-  const reply = await serveCall(host, caller, {
-    id: 1,
-    channel: 'secrets.set',
-    request: { value, label: `wirebench-secret:${projectId}:${name}` },
-  });
+  const reply = await serveCall(host, caller, { id: 1, channel: 'secrets.set', request: { value, label } });
   expect(reply).toMatchObject({ ok: true });
   await host.detach(caller.id);
+}
+
+/** Stores `value` as the agent's own secret `name` for `origin` and workspace `ws-1`. */
+async function storeAgentSecret(name: string, value: string, origin = TEAM): Promise<void> {
+  await storeLabelled(agentSecretLabel(origin, 'ws-1', name), value);
 }
 
 /** A project `p1` whose REST API points at the echo server, holding `requests` (and `folders`). */
@@ -113,7 +115,7 @@ async function sendsLeft(): Promise<string[]> {
 
 describe('agent.send', () => {
   it('sends a REST bundle from this machine and masks the secret it resolved', async () => {
-    await storeSecret('p1', 'api_token', SECRET);
+    await storeAgentSecret('api_token', SECRET);
     const bundle = await restBundle({ headers: [entry('Authorization', 'Bearer ${secret:api_token}')] });
     const result = (await call('agent.send', {
       sendId: sendId(),
@@ -272,6 +274,143 @@ describe('agent.send', () => {
     // The other origin's jar was not cleared.
     await call('agent.send', { sendId: sendId(), bundle }, OTHER);
     expect(echo.received[4]?.headers.cookie).toBe('sid=abc');
+  });
+});
+
+describe("the agent's secrets", () => {
+  it("never reads the desktop's own secrets or secret sources for the project a bundle names", async () => {
+    // A desktop window has a workspace open, with a project, a stored project secret and a secret source.
+    const caller = quietCaller(9);
+    host.attach(caller);
+    onCleanUp(() => host.detach(caller.id));
+    const invoke = async (channel: string, request: unknown): Promise<unknown> => {
+      const reply = await serveCall(host, caller, { id: 1, channel, request });
+      expect(reply, channel).toMatchObject({ ok: true });
+      return (reply as { value: unknown }).value;
+    };
+    await invoke('workspace.create', { name: 'Mine' });
+    const { projectId } = (await invoke('workspace.addProject', { name: 'Local' })) as { projectId: string };
+    await invoke('secrets.set', { value: SECRET, label: `wirebench-secret:${projectId}:local_secret` });
+    await invoke('secretSources.setLocal', {
+      name: 'from_source',
+      entry: { kind: 'vault', path: 'kv/app', field: 'f' },
+    });
+
+    // A bundle naming that project's id asks for both, and declares them.
+    for (const name of ['local_secret', 'from_source']) {
+      const project = {
+        ...restProject([
+          createRestRequest('Echo', { id: 'req-1', url: '/echo', headers: [entry('x-leak', `\${secret:${name}}`)] }),
+        ]),
+        id: projectId,
+      };
+      const bundle = { ...(await bundleOf(project, 'req-1')), secretNames: [name] };
+      expect((await failure({ sendId: sendId(), bundle })).code, name).toBe('secret-missing');
+    }
+    expect(echo.received).toEqual([]);
+  });
+
+  it('reads the agent namespace of the calling origin and workspace only', async () => {
+    await storeAgentSecret('api_token', SECRET, OTHER);
+    const bundle = {
+      ...(await restBundle({ headers: [entry('x-token', '${secret:api_token}')] })),
+      secretNames: ['api_token'],
+    };
+    expect((await failure({ sendId: sendId(), bundle })).code).toBe('secret-missing');
+    expect((await failure({ sendId: sendId(), bundle: { ...bundle, workspaceId: 'ws-2' } }, OTHER)).code).toBe(
+      'secret-missing',
+    );
+    expect(echo.received).toEqual([]);
+    await call('agent.send', { sendId: sendId(), bundle }, OTHER);
+    expect(echo.received[0]?.headers['x-token']).toBe(SECRET);
+  });
+
+  it('refuses a ref the bundle did not declare', async () => {
+    await storeAgentSecret('api_token', SECRET);
+    const bundle = await restBundle({ headers: [entry('x-token', '${secret:api_token}')] });
+    expect((await failure({ sendId: sendId(), bundle })).code).toBe('secret-missing');
+    expect((await failure({ sendId: sendId(), bundle: { ...bundle, secretNames: ['other'] } })).code).toBe(
+      'secret-missing',
+    );
+    expect(echo.received).toEqual([]);
+  });
+
+  it('keeps OAuth2 tokens apart per origin', async () => {
+    for (const origin of [TEAM, OTHER]) await storeAgentSecret('client_secret', 'client-pass-123456', origin);
+    const auth = {
+      ...DEFAULT_OAUTH2_AUTH,
+      tokenUrl: `${echo.url}/token`,
+      clientId: 'wirebench',
+      clientSecretRef: 'secret:client_secret',
+    };
+    const api = createApi('Echo', {
+      id: 'api-1',
+      baseUrl: echo.url,
+      auth,
+      requests: [createRestRequest('Echo', { id: 'req-1', url: '/echo' })],
+    });
+    const project: Project = { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } };
+    const bundle = { ...(await bundleOf(project, 'req-1')), secretNames: ['client_secret'] };
+    await call('agent.send', { sendId: sendId(), bundle });
+    await call('agent.send', { sendId: sendId(), bundle });
+    await call('agent.send', { sendId: sendId(), bundle }, OTHER);
+    const sent = echo.received.filter((one) => one.url.startsWith('/echo')).map((one) => one.headers.authorization);
+    expect(sent).toEqual(['Bearer tok-1', 'Bearer tok-1', 'Bearer tok-2']);
+    expect(echo.received.filter((one) => one.url.startsWith('/token'))).toHaveLength(2);
+  });
+});
+
+describe('the sends folder', () => {
+  it('holds every written path inside the send directory, even one the schema would refuse', async () => {
+    const dir = tempFolder('wb-agent-write-');
+    const inner = join(dir, 'send');
+    await mkdir(inner);
+    for (const path of ['../escape', '.', 'a/../../escape2']) {
+      await expect(
+        writeBundle(inner, [{ path, encoding: 'utf8', content: 'x' }], new AbortController().signal),
+      ).rejects.toMatchObject({ code: 'agent-bundle-invalid' });
+    }
+    expect(await readdir(dir)).toEqual(['send']);
+  });
+
+  it.skipIf(process.platform === 'win32')('refuses a sends folder others may open', async () => {
+    const root = join(platform.paths.temp(), AGENT_SENDS_DIR);
+    await mkdir(root, { mode: 0o755 });
+    await chmod(root, 0o755);
+    expect((await failure({ sendId: sendId(), bundle: await restBundle() })).code).toBe('agent-temp-unsafe');
+    expect(echo.received).toEqual([]);
+  });
+
+  it('sweeps what a stopped agent left behind when it starts', async () => {
+    const left = join(platform.paths.temp(), AGENT_SENDS_DIR, 'old-send');
+    await mkdir(left, { recursive: true, mode: 0o700 });
+    await chmod(join(platform.paths.temp(), AGENT_SENDS_DIR), 0o700);
+    await writeFile(join(left, 'wirebench.yaml'), 'x');
+    handlers = agentSendHandlers({ platform });
+    await call('agent.send', { sendId: sendId(), bundle: await restBundle() });
+    expect(await sendsLeft()).toEqual([]);
+  });
+});
+
+describe('agent.send concurrency', () => {
+  it(`runs at most ${String(AGENT_MAX_SENDS_PER_ORIGIN)} sends per origin`, async () => {
+    const bundle = await restBundle({ url: '/hold' });
+    const held = (count: number) => async (): Promise<void> => {
+      while (echo.received.filter((one) => one.url.startsWith('/hold')).length < count) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    };
+    const ids = Array.from({ length: AGENT_MAX_SENDS_PER_ORIGIN }, () => sendId());
+    const running = ids.map((id) => failure({ sendId: id, bundle }));
+    await held(AGENT_MAX_SENDS_PER_ORIGIN)();
+    expect((await failure({ sendId: sendId(), bundle })).code).toBe('agent-busy');
+    // Another origin has its own allowance.
+    const other = sendId();
+    const otherRunning = failure({ sendId: other, bundle }, OTHER);
+    await held(AGENT_MAX_SENDS_PER_ORIGIN + 1)();
+    for (const id of ids) await call('agent.cancel', { sendId: id });
+    await call('agent.cancel', { sendId: other }, OTHER);
+    for (const result of [...running, otherRunning]) expect((await result).code).toBe('aborted');
   });
 });
 

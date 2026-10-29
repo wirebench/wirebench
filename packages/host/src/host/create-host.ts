@@ -2089,11 +2089,20 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
   const detachedSend = (input: SendFromDirectoryInput): Promise<DetachedSendResult> =>
     sendFromDirectory(
       {
-        request: requestDeps,
+        hostState,
+        preferences: preferencesService,
+        confirmProtected: nativeDialogs.confirmProtected,
+        ...egressOption,
+        // The agent's own namespace of the store, by label; never a project's `${secret:…}` entries.
+        agentSecret: async (label) => {
+          const ref = await secretStore.findByLabel(label);
+          return ref === undefined ? undefined : await secretStore.get(ref);
+        },
+        report: reporting,
         // A send's own engine: a bundle's definitions never replace the ones a window has loaded.
-        engine: () => new EngineService(secretsFor(undefined), (url) => mainHttpOptions(url, mainHttpDeps)),
+        engine: (getSecret) => new EngineService(getSecret, (url) => mainHttpOptions(url, mainHttpDeps)),
         // No workspace, globals, current values or picks: a bundle carries the values it is sent with.
-        projectHost: (engine) =>
+        projectHost: (engine, getSecret) =>
           new ProjectHost(
             engine,
             {
@@ -2104,7 +2113,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
             },
             undefined,
             undefined,
-            { get: reporting(async (ref) => await secretStore.get(ref)) },
+            { get: getSecret },
             preferencesService,
             undefined,
             async (url) => await platform.proxy.resolve(url).catch(() => undefined),

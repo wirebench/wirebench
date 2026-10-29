@@ -20,4 +20,5 @@ export type {
 } from './host/host-socket.js';
 export { HandlerTable } from './ipc/register.js';
 export { toIpcError } from './ipc/envelope.js';
-export type { DetachedSendKind, DetachedSendResult, SendFromDirectoryInput } from './send/detached.js';
+export { agentSecretLabel, createSendSession } from './send/detached.js';
+export type { DetachedSendKind, DetachedSendResult, SendFromDirectoryInput, SendSession } from './send/detached.js';
