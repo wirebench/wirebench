@@ -6,7 +6,8 @@ customers · Amended 2026-10-26 after an independent review: its four high findi
 (row-level security must be forced), §3.8 and §3.10 (the agent serves a browser a declared subset), §5.4
 guard 6 (background jobs have a tenant scope) and §5.1 (the host package is a factory with no module-level
 state); the rest are folded in where they apply · Amended 2026-10-27 for slice 2 (§17, decision 12,
-ADR-0034) · Amended 2026-10-29 for slice 3 (§18, ADR-0035) · Issue: #776 (slice 1 is #777, slice 2 is #783, slice 3 is #790) · Module ids: `host-seam`,
+ADR-0034) · Amended 2026-10-29 for slice 3 (§18, ADR-0035) · Amended 2026-10-29 for slice 4 (§19, ADR-0036) ·
+Issue: #776 (slice 1 is #777, slice 2 is #783, slice 3 is #790, slice 4 is #798) · Module ids: `host-seam`,
 `browser-client`, `local-agent`, `tenancy`, `operations`, `domains`, `control-plane`, `custom-domains`
 
 - Intent: `docs/intent/wirebench-server-teams.md` (roles and sign-in for people without git hosting) extended
@@ -556,7 +557,7 @@ named as the upgrade path, and the host socket is sticky by `(tenantId, userId)`
 balancer honours, because a host instance is an in-memory object on one node. The data directory,
 checkouts and `state/` included, is **one volume shared read-write by every instance** (my call), so a
 user bounced to another node finds the same working copy and state. A host instance takes a **lease per
-`(tenantId, userId)`** in PostgreSQL (an advisory lock held by a heartbeat row) before it touches
+`(tenantId, userId)`** in PostgreSQL (an advisory lock held by a heartbeat row; amended by §19.9 to a row lease with an expiry) before it touches
 `checkouts/<user>/`, and the node that loses the lease refuses the socket with a retry hint; that closes
 the two-writer window a failover or a drain would otherwise open on the shared volume. Scheduled runs
 are already leased per run; the lease gains the tenant.
@@ -652,10 +653,10 @@ self-hosted teams on their own, which is why they would come first whenever the 
 | 1 | `host-seam` | **Built** (#779 and #780, 2026-10-27; ADR-0033 accepted). `@wirebench/host` as `createHost(platform)` with `HostPlatform` and `Caller`, no module-level state and its gate; the Electron app embeds it; proven by the existing tests on a fake platform and a fake-socket test of `buildApi` (the loopback server moves to slice 3) | — | yes (no user-visible change) |
 | 2 | `browser-client` | **Built** (#785, #787 and #789, 2026-10-29, for #783; §17 records what changed from this row). The Vite browser build, `browser-bootstrap.ts`, capability discovery, the sign-in page and `browser_flows`, the cookie session, the server host with checkouts and per-user state via `inject`, live events over the host socket, user-scoped sealed secrets under one server-wide root, the §3.10 allowlist and path guard, the egress rule on every outbound connection | 1 | yes: a self-hosted team gets a browser tab |
 | 3 | `local-agent` | **Scheduled 2026-10-29** (#790; §18 records what changed from this row). `packages/agent` as a library, the loopback socket transport, pairing with the browser subset, the send-route rule and the send bundle, `wirebench agent`, the agent's packaging | 1, 2 | yes |
-| 4 | `tenancy` | `tenants`, `tenant_id` on every table, forced row-level security, tenant resolution by `Host`, per-tenant directories and data keys with the one-time re-wrap, the six guards of §5.4 including the job scope, the host-instance lease, the self-hosted migration | 2 | yes, invisibly (one tenant) |
+| 4 | `tenancy` | **Specified 2026-10-29** (#798; §19 records what changed from this row). `tenants`, `tenant_id` on every table, forced row-level security, tenant resolution by `Host`, per-tenant directories and data keys with the one-time re-wrap, the six guards of §5.4 including the job scope, the host-instance lease, the self-hosted migration | 2 | yes, invisibly (one tenant) |
 | 5 | `operations` | `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
 | 6 | `domains` | The two registrable names, wildcard certificates, `app.` entry with emailed links, reserved slugs, public suffix submission | 4 | no |
-| 7 | `control-plane` | Signup, subscriptions, edition from subscription, suspension, export, deletion, operator commands | 4, 5, 6 | no |
+| 7 | `control-plane` | Signup, subscriptions, edition from subscription, suspension, export, deletion, operator commands; per-tenant settings (OIDC, SAML, SCIM, audit forwarding, SMTP sender, retention), today's environment variables becoming the default tenant's (§19.1, §19.12) | 4, 5, 6 | no |
 | 8 | `custom-domains` | CNAME plus TXT verification for Enterprise tenants | 6, 7 | no |
 
 The 2026-10-15 trigger (ten self-hosted paying customers) gates slices 5 to 8. Slices 1 to 4 may be
@@ -700,7 +701,8 @@ scheduled earlier on their own merits, each with its own spec amendment and issu
 ## 14. Migration and compatibility
 
 - The tenancy migration is one transaction for rows and one directory move for repositories, with the
-  single tenant's id written to `server_identity` first so a crash between the two is resumable.
+  single tenant's id written to `server_identity` first so a crash between the two is resumable (amended by
+  §19.10: two migrations for rows, each one transaction, then a resumable file step and key step, and a way back).
 - Project files, `share.yaml`, the CLI, the MCP server and the desktop's channels do not change shape.
 - A desktop or CLI of any version joins a hosted tenant at `https://<slug>.<app-domain>` exactly as it
   joins a self-hosted server, since tenants resolve by `Host` alone (§3.7); there is no minimum client
@@ -1122,3 +1124,757 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
 - The browser e2e of §17.7 gains a headless `wirebench agent` beside the browser, in CI on the runner, outside
   Docker. It pairs through the UI, sends to an echo server on the runner's `127.0.0.1`, and sees `sentFrom: 'agent'`
   on that exchange and `sentFrom: 'server'` on the echo-service send. That is §13 criterion 2 in full.
+
+## 19. Slice 4 amendment: tenancy (2026-10-29)
+
+Slice 4 (#798) makes the server multi-tenant. A self-hosted installation is unchanged to everyone who uses it: one
+tenant, created by the migration, whose slug nothing shows and whose `Host` nothing matches. It builds §4.1, §4.2,
+§4.4, §5.3, §5.4 and §5.5's lease, the per-tenant data key of §3.5, and the migration of §14. It builds nothing of
+slices 5 to 8, which stay gated (§10): no signup, no payment provider, no wildcard names, no `LISTEN`/`NOTIFY`, no
+bypass role. §19.12 lists the hooks it leaves for them. Where the build differs from the sections above, this section
+wins, and ADR-0032 carries a note of what changed (§19.15). Plan: `docs/plans/2026-10-29-tenancy.md`.
+
+### 19.1 What a reader of the server sees
+
+- Hosted mode exists in the code, and the tests run it with two tenants, but no operator can switch it on yet
+  (my call). `WIREBENCH_SERVER_MODE` accepts `self-hosted`, its default. `loadConfig` refuses `hosted` with "hosted
+  mode arrives with the control plane", so `serve`, `migrate` and `config check` all refuse it. Tests build a hosted
+  `ServerConfig` directly. A half-hosted server, with tenants but no way to create, bill, suspend or delete one, is
+  not something to hand an operator.
+- **Per-tenant settings are slice 7's** (owner ruling, 2026-10-29). Slice 4 adds no settings table.
+  - What the environment configures today stays server-wide: OIDC, SAML, SCIM, audit forwarding, the SMTP sender and
+    retention. In slice 7 it becomes the default tenant's settings, and slice 7 moves those into per-tenant rows, so
+    that each hosted tenant has its own identity provider (§19.12).
+  - **In hosted mode the federated routes answer `404` for every tenant until then:** the OIDC and SAML sign-in
+    starts, callbacks and ACS, the SCIM base, and the desktop's OIDC and SAML flows. Otherwise the operator's one
+    identity provider, with OIDC's link-by-verified-email rule (`identity/linking.ts`), would sign people into any
+    tenant whose admin had created a matching email. A tenant other than the default one, which exists only in
+    tests, signs in by local password.
+- In hosted mode the egress rule always denies private ranges, whatever `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE` says
+  (§17.5, decision 12).
+- **The server needs PostgreSQL 15 or later**, for `on delete set null (column)` on composite foreign keys (§19.3).
+  Start-up refuses an older server with `server-postgres-too-old`, and the README gains a "Requires PostgreSQL 15 or
+  later" line. Until now it only named 16 as the compose image's version.
+
+### 19.2 The `tenants` table (amends §4.1)
+
+```sql
+create table tenants (
+  id          uuid primary key,
+  slug        text not null check (slug ~ '^[a-z0-9]([a-z0-9-]{1,38}[a-z0-9])?$'),
+  name        text not null,
+  edition     text not null default 'community' check (edition in ('community', 'team', 'enterprise')),
+  status      text not null default 'active' check (status in ('active', 'suspended', 'deleting')),
+  region      text not null default 'eu' check (region in ('eu')),
+  seats       integer check (seats > 0),
+  data_key    bytea,
+  created_at  timestamptz not null default now(),
+  deleting_at timestamptz
+);
+create unique index tenants_slug on tenants (slug);
+```
+
+- `region` has one allowed value (decision 8). A second region is a new value in the check, not a migration of rows.
+- `data_key` is **nullable** (amends §4.1's `not null`): it is the tenant's data key sealed under the server root
+  (§19.7), and the root, `WIREBENCH_SERVER_SECRETS_KEY`, is optional on a self-hosted server without the browser
+  client (§17.1). A tenant gets its key the first time the root exists.
+- `edition`, `seats`, `status` and `deleting_at` are written by slice 7 and read by nothing in self-hosted mode,
+  where the license row still decides the edition (§19.8, guard 5). In slice 4 every tenant is `active`.
+- The migration creates the **default tenant** on every installation, fresh or upgraded: slug `default`, name
+  `Default`, edition `community`, region `eu`, with its id in `server_identity.default_tenant_id`. In hosted mode the
+  default tenant holds nothing and is never resolved by `Host` (§19.5).
+- `tenants`, `schema_migrations` and `server_identity` are the only tables without `tenant_id`. `server_identity`
+  gains `default_tenant_id uuid references tenants` and `tenancy_step text` (§19.10). The control plane's own tables
+  (`subscriptions`, `signups`, `tenant_exports`, `tenant_slugs_retired`) are slice 7's, and join the allowlist then.
+
+### 19.3 `tenant_id` on every table (amends §4.1 and §3.9)
+
+The server has 37 tables at migration `0019`, not the 33 §4.1 counted: slices 2 and 3 added `browser_flows` and the
+three agent tables. Every one except `schema_migrations` and `server_identity` gains the column, and slice 4 adds one
+more scoped table, `host_leases` (§19.9). That makes 36 scoped tables. The rules are mechanical, so the migration
+test can check them (§19.8, guard 3):
+
+1. **The column.** At the end of slice 4 it is `tenant_id uuid not null default nullif(current_setting(
+   'wirebench.tenant_id', true), '')::uuid references tenants (id)`. Because the default reads the setting, an
+   insert inside `withTenant` names no tenant. The repositories' insert statements do not change, except their
+   `on conflict` targets: those gain `tenant_id` first (rule 2), and the `license` and `audit_chain_anchor` upserts
+   become `on conflict (tenant_id)`, their new primary key (rule 5). Outside a tenant transaction the default is null,
+   and the insert fails. Until `0021` the default is the default tenant's id as a constant (§19.10).
+2. **Uniqueness.** Every unique index leads with `tenant_id`, and so does every primary key other than a lone `id`
+   column **that the server mints**. `users (tenant_id, email_lower)`, `teams (tenant_id, lower(name))` and
+   `catch_urls (tenant_id, secret)` follow from that, as do the token, code and state hashes.
+   - A minted id (a ULID from `newId()`, or a random token id) is unique on every server, so its primary key stays
+     as it is.
+   - **`workspaces.id` is not minted.** The desktop sends its local workspace manifest's ULID when it shares a
+     workspace (`teams/routes/workspaces.ts`: `body.id ?? newId()`), so one person may share one workspace into two
+     tenants. Its primary key is `(tenant_id, id)`. A clash answers `409 workspace-exists` only inside one tenant,
+     and a unique check in B can never confirm that an id exists in A.
+   - Every other id was checked and is minted by the server.
+3. **Composite foreign keys** (my call). Every table referenced by another has a key on `(tenant_id, id)`: the
+   `workspaces` primary key, and `unique (tenant_id, id)` on the rest. Every foreign key between scoped tables
+   becomes `(tenant_id, x) references parent (tenant_id, id)`.
+   - PostgreSQL checks a foreign key without row-level security, so a single-column key would accept a row in
+     tenant A that names tenant B's row when a caller passes a foreign id. The composite key makes that row
+     impossible to write.
+   - `on delete set null` becomes `on delete set null (x)`, so the tenant column is never nulled with it.
+   - **Every route that takes a workspace id resolves it inside the request's tenant**, through the policy and the
+     composite keys. The live hub, the repo store and the host's checkouts key a workspace by `tenantId:workspaceId`
+     (§19.6, §19.8 guard 5).
+4. **Listing indexes.** A non-unique index led by a parent id (`workspace_id`, `actor_user_id`, `team_id`, `log_id`
+   and the like) stays as it is: the policy adds the tenant filter on top, and the parent id already selects a
+   handful of rows. Every other non-unique index leads with `tenant_id`, because every list and every sweep now
+   runs inside one tenant.
+5. **Singletons.** `license` and `audit_chain_anchor` take `tenant_id` as their primary key: one license and one
+   chain anchor per tenant. Their old one-row key columns, `singleton` and `only_row`, **stay**: only their primary
+   key is dropped, and their `check` and default are kept, so a revert restores a constraint rather than a column
+   (§19.10).
+6. **Names are kept.** Every rebuilt key, index and foreign key keeps its `0019` name, written out with `constraint
+   <name>` and `create unique index <name>`. Routes map violations by constraint name (`db/errors.ts`), so a new
+   default name would turn a `409` or `404` into a `500`. That covers `users_email_lower_key`, `workspaces_pkey`,
+   `workspaces_team_id_fkey`, `team_members_team_id_fkey`, `catch_urls_workspace_id_fkey`,
+   `captures_catch_url_id_fkey`, `teams_name_lower`, `invitations_one_open_per_email`, the `*_workspace_name_lower`
+   indexes and the `scim_*_lower` indexes. A revert needs the same names.
+
+Per table, beyond rule 1 (`+t` means the key or index gains `tenant_id` first):
+
+| Module | Table | Keys and indexes after slice 4 |
+| --- | --- | --- |
+| host | `workspaces` | primary key `(tenant_id, id)` (rule 2: a client-supplied id); `(team_id, lower(name))` +t |
+| identity | `users` | `unique (tenant_id, id)`; `email_lower` +t |
+| | `local_credentials` | primary key `user_id` +t |
+| | `oidc_identities` | primary key `(issuer, subject)` +t: two tenants may trust one issuer |
+| | `invitations` | `unique (tenant_id, id)`; `secret_hash` +t; one open invite per email +t |
+| | `device_tokens` | `token_hash` +t; `kind` unchanged |
+| | `oidc_flows`, `browser_flows` | `state`, `grant_hash`, `state_hash` +t |
+| teams-access | `teams` | `unique (tenant_id, id)`; `lower(name)` +t |
+| | `team_members` | primary key `(team_id, user_id)` +t, the target of `provisioned_memberships`' key |
+| | `team_invitations`, `workspace_grants` | primary keys +t |
+| licensing | `license` | primary key `tenant_id`; `singleton` kept (rule 5) |
+| ci-tokens | `ci_tokens` | `token_hash` +t; live `(workspace_id, lower(name))` +t |
+| webhook-capture | `catch_urls` | `unique (tenant_id, id)`; `secret` +t; `(workspace_id, lower(name))` +t |
+| | `captures` | `captures_received_at` +t (retention) |
+| scheduled-runs | `schedules`, `schedule_runs` | `unique (tenant_id, id)`; `schedules_due`, `schedule_runs_open`, `schedule_runs_queued_at` +t |
+| | `schedule_results` | primary key `(run_id, ordinal)` +t |
+| | `schedule_alert_outbox` | both partial indexes +t |
+| audit-log | `audit_events` | `unique (tenant_id, id)`; `chain_seq` +t: one chain per tenant; `audit_events_at`, `audit_events_action_at`, `audit_events_unsealed` +t; `_workspace_at`, `_actor_at`, `_team_at` stay (rule 4) |
+| | `audit_forward_queue` | primary key `event_id` +t |
+| | `audit_chain_anchor` | primary key `tenant_id`; `only_row` kept (rule 5) |
+| sso | `saml_identities` | primary key `(entity_id, name_id)` +t |
+| | `saml_flows` | `request_id`, `relay_state`, `grant_hash` +t |
+| | `scim_tokens` | `token_hash` +t; live `lower(name)` +t |
+| | `scim_users`, `scim_group_members`, `provisioned_memberships` | primary keys +t |
+| | `scim_groups` | `unique (tenant_id, id)`; `lower(display_name)` +t |
+| session-logs | `session_logs` | `unique (tenant_id, id)`; `(workspace_id, user_id, client_log_id)` +t; `last_write_at` +t |
+| | `session_log_chunks` | primary key `(log_id, offset_bytes)` +t |
+| agent | `agent_pairings` | `unique (tenant_id, id)`; `(user_id, agent_id)` +t |
+| | `agent_pairing_codes` | primary key `code_hash` +t, so two tenants may hold one code; `user_id` +t |
+| | `agent_nonces` | primary key `nonce_hash` +t; `expires_at` +t |
+| tenancy | `host_leases` | primary key `(tenant_id, user_id)` (§19.9) |
+
+Everything per user (credentials, identities, device tokens, pairings, codes, nonces, session logs, leases) is per
+tenant through its own column, not only through `users`. The same email in two tenants is two users.
+
+### 19.4 Row-level security and the database roles (amends §4.2)
+
+- **The policy.** Migration `0020` creates `tenant_scope(t regclass)`. The function runs `enable row level security`
+  and `force row level security`, then creates one permissive policy for every command and every role:
+  `create policy tenant_isolation on t for all to public using (tenant_id = nullif(current_setting(
+  'wirebench.tenant_id', true), '')::uuid) with check (` the same `)`.
+  - `0021` calls it for the 36 tables, named one by one (my call: an explicit list, not every table in the schema,
+    so a table someone forgot is caught by the test rather than scoped by accident).
+  - Every later migration that creates a table calls it in the same file.
+  - The setting is `wirebench.tenant_id`, as §4.2 names it. **Forced** row-level security is an owner ruling, and
+    stays.
+- **Per unit of work.**
+  - `withTenant(scope, fn)` takes a pool client, runs `begin`, then `select set_config('wirebench.tenant_id', $1,
+    true)`, then `fn`, and commits or rolls back. The third argument makes the setting transaction-local, so a
+    connection goes back to the pool with no tenant on it. `set local` is not used, because it takes no bind
+    parameter (amends ADR-0032, §19.15).
+  - **A client in doubt is destroyed, never reused.** When `rollback` throws, or the client is not idle once the unit
+    ends, `withTenant` calls `client.release(error)`, which ends the connection, instead of returning it to the pool
+    still inside a transaction. Today's `db/pool.ts` swallows a failed `rollback` and releases the client normally.
+  - **The querier handed to `fn` is revoked** at commit or rollback. A later `query` on it, from an un-awaited call,
+    throws `tenancy-scope-ended` rather than running on whatever transaction that pooled client is in next.
+- **Unset means deny.** Outside a tenant transaction the setting is empty, the policy compares with null, and every
+  scoped table reads as empty. An insert fails twice over: the column default is null, and `with check` refuses.
+  An insert that names another tenant's `tenant_id` explicitly fails `with check` (SQLSTATE `42501`). Nothing raises
+  from the policy itself (`missing_ok`).
+- **Two roles** (my call). The owner of the schema runs migrations; the app role runs every query.
+  - **The owner role** owns the schema, the tables and `tenant_scope()`. It is the role in the new
+    `WIREBENCH_SERVER_MIGRATION_DATABASE_URL`, and in `WIREBENCH_SERVER_DATABASE_URL` when that variable is unset.
+    Migrations, `admin tenancy role` and `admin tenancy revert` connect as it.
+  - **The app role** is the role in `WIREBENCH_SERVER_DATABASE_URL`. It is neither superuser, nor `BYPASSRLS`, nor
+    owner. Being no owner, it is under every policy whether forced or not. It holds:
+    - `usage` on the schema;
+    - `select, insert, update, delete` on every scoped table and on `tenants`;
+    - `select` only on `schema_migrations`;
+    - on `server_identity`, `select`, and `update` of the columns the server writes (`tenancy_step`);
+    - default privileges for scoped tables the owner creates later.
+
+    It has no `execute` on `tenant_scope()` or `for_each_tenant()`.
+  - **`force`** is what puts the owner under the policy too, so a one-role installation still isolates tenants. It
+    is also why the owner is not the role to back up as or to run a data migration as (below).
+  - **Data migrations.** From `0022` on, a migration that updates or inserts rows in a scoped table either runs per
+    tenant through the `for_each_tenant(sql)` helper that `0021` ships, or brackets its statements with `alter table
+    … no force row level security` and `… force row level security` inside its own transaction.
+    - Other sessions never see the unforced state: the `alter table` holds `ACCESS EXCLUSIVE` until commit.
+    - Without either, a back-fill like `0010`'s would touch no row and still succeed on a non-superuser owner. It
+      would work on compose, where the owner is a superuser, which is why the check is textual as well as
+      catalogued.
+    - The migration test therefore checks two things. Every scoped table has `relforcerowsecurity` on after the last
+      migration. And, as a lint, every migration from `0022` on that holds an `insert`, `update` or `delete` on a
+      scoped table also holds `for_each_tenant(` or the bracket.
+    - `0021` revokes `execute` on `for_each_tenant(text)` and `tenant_scope(regclass)` from `public`, so only the
+      owner can call them. `check:tenant-scope` refuses `for_each_tenant` anywhere in `src/`: it is a loop across
+      every tenant, which no request may hold.
+  - **Backups.** `pg_dump` as the app role, or as a non-superuser owner, refuses a scoped table (`row_security` is
+    off by default in `pg_dump`) or, with `--enable-row-security`, dumps it empty. Back up as a superuser or a
+    dedicated `BYPASSRLS` backup role. The README says so, and `admin tenancy check` and `admin tenancy status`
+    print it. On the default compose installation the owner, `wirebench`, is a superuser, so existing backup
+    scripts keep working.
+- **When the server's role bypasses** (owner ruling, 2026-10-29). PostgreSQL applies no policy, forced or not, to a
+  superuser or a role with `BYPASSRLS`. At start-up the server reads `rolsuper`, `rolbypassrls` and table ownership
+  for the app role:
+  - In hosted mode, a superuser, `BYPASSRLS` or owning app role refuses start-up with `tenancy-role-bypasses`. The
+    owning case is my call: an owner can switch the policy off with one statement.
+  - In self-hosted mode it is a warning in the start-up log and in `admin tenancy check`, because one tenant has
+    nobody to leak to and an upgrade must not stop a working server. `config check` does not connect to the
+    database today, so it does not gain the warning.
+  - New compose installations get a non-superuser app role (below).
+- **Existing installations keep upgrading** (owner ruling). The old URL keeps working and nothing has to move:
+  - **An existing installation that keeps its environment** (one URL, often the compose image's bootstrap
+    superuser) upgrades as before, with the warning. The one role is both owner and app role.
+  - **The new `compose.yaml`** sets two URLs: the migration URL on `wirebench`, the owner every existing compose
+    volume already has, and the app URL on `wirebench_app`. At start-up, before connecting as the app role, the
+    server connects as the owner and runs `admin tenancy role` whenever the two URLs differ. The command is
+    idempotent: it creates the app role when it is missing and the owner may create roles, and it re-applies the
+    grants every time. An old volume with the new compose file therefore starts, and so does a new one. The
+    `docker-entrypoint-initdb.d` route was not taken, because it runs only on an empty volume.
+  - **`admin tenancy role`** runs as the owner.
+    - It creates the app role if it is missing (`login nosuperuser nobypassrls noinherit`).
+    - It names the role with `format('%I')`. It sets the password as a SCRAM-SHA-256 verifier computed in Node from
+      the app URL's password, never as plaintext in `create role … password`, which `log_statement = ddl` would
+      write to the database's log.
+    - It grants the privileges above, and sets the default privileges.
+    - With `--print-sql` it prints the statements instead, for an operator whose owner may not create roles.
+  - **No ownership moves.** The app role is a grantee, not the
+    owner, so the tables stay with the owner they have. PostgreSQL refuses `reassign owned by` the bootstrap
+    superuser, which is the reason a design that made the app role the owner would have had to move every object
+    by hand.
+  - **The operator's switch**, outside compose:
+    1. Run `wirebench-server admin tenancy role` (or apply its `--print-sql`) as the owner.
+    2. Set `WIREBENCH_SERVER_MIGRATION_DATABASE_URL` to the owner and `WIREBENCH_SERVER_DATABASE_URL` to the app
+       role.
+    3. Restart.
+
+    `admin tenancy check` then reports the app role as isolating. Going back is pointing
+    `WIREBENCH_SERVER_DATABASE_URL` at the owner again and unsetting the migration URL. Unsetting the migration URL
+    alone would leave migrations running as the app role, which owns nothing, so the next migration would fail.
+- **Two role names in tests.** CI and the test helper use a non-superuser owner, `wirebench_owner`, which stands for
+  a managed database's owner role and owns each test file's schema (`create schema … authorization
+  wirebench_owner`), and `wirebench_app` for queries. Production compose has `wirebench`, the superuser owner, and
+  `wirebench_app`. A test asserts both test roles' attributes (§19.13), so no test passes against a policy that does
+  not apply.
+
+### 19.5 Tenant resolution (amends §5.3)
+
+- **One hook, first.** A root-level `onRequest` hook, registered before every module, sets `request.tenant` to a
+  `TenantScope` (`{ tenantId, slug }`, branded, built only by the resolver, the job loop and the admin command line).
+  It covers `/api/v1`, the public routes (`/sign-in`, `/invite/…`, `/hooks/…`, `/scim/v2`) and every WebSocket
+  upgrade, which pass through the same hooks. `/health` reads no tenant row and takes none.
+- **Self-hosted.** The scope is always the default tenant. The `Host` header is not read, so an installation reached
+  by any name, or by several, keeps working.
+- **Hosted.** `request.hostname` (which honours `WIREBENCH_SERVER_TRUST_PROXY`), lower-cased, port stripped, must be
+  exactly one label followed by `.<appDomain>`. The label is looked up in an in-memory map of active tenants by slug,
+  leaving out the default tenant. Anything else answers `404` with an empty body and `cache-control: no-store`, so
+  the answer names nothing. A `suspended` or `deleting` tenant also answers `404` in slice 4; slice 7 gives each its
+  page.
+- **The map** is loaded at start-up and reloaded after any write through the tenant directory in this process, and
+  every 60 s (my call). Slice 5 replaces the poll with a notification. It is keyed by full host name, so a custom
+  name (slice 8) is one more entry.
+- **`appDomain`** is a `ServerConfig` field that only tests set in slice 4. Slice 6 gives it its environment
+  variable.
+- **The tenant's own URL.** `tenantUrl(scope)` is the self-hosted `WIREBENCH_SERVER_PUBLIC_URL`, or
+  `https://<slug>.<appDomain>` in hosted mode. Every place that compares with or prints the public URL for a tenant
+  reads it:
+  - the cookie session's `Origin` check (§17.2), the host socket's and the terminal-share socket's `Origin` checks;
+  - the cookie's `Secure` choice, and the flow cookie's (§17.2);
+  - `safeRedirectPath` in the browser flows;
+  - the OIDC redirect URI, the OIDC and SAML callback and ACS URLs, the SAML entity id and the SCIM base;
+  - invitation links, alert links (`schedules/settings.ts`, `alerts/outbox.ts`), and a catch URL's `url` field;
+  - the agent's pairing `origin` (§18.2);
+  - the host's in-process transport, which sends each `inject` with the tenant's `Host` so that it resolves to the
+    same tenant.
+- **Values computed at registration** (`settings.publicUrl`, `ssoUrls(…)`, identity's `redirectUri`) become functions
+  of the request's scope.
+- **The compiler is the guard.** `config.publicUrl` is gone from the config type that modules see, and only
+  `src/tenancy/urls.ts` holds it (§19.8, guard 2). The start-up and `migrate` output in `main.ts` and `serve.ts` is
+  the operator's and keeps printing the configured URL, through `operatorPublicUrl()`, which `urls.ts` exports for
+  those two files only.
+- **Outside a request.** A job takes its scope from the job loop (§19.8, guard 6). An admin command takes it from
+  `--tenant <slug>` in hosted mode, or the default tenant in self-hosted mode (§19.11).
+
+### 19.6 Per-tenant directories (amends §3.3, §4.4 and §17.3)
+
+```
+<dataDir>/
+  no-hooks/                        # stays here: every repository's core.hooksPath names this absolute path
+  tenants/<tenantId>/
+    repos/<workspaceId>.git        # was <dataDir>/repos
+    checkouts/<userId>/            # the user's host userData (§17.3), its workspaces/ beneath; was <dataDir>/checkouts
+    tmp/                           # staging, moved-away repositories, sync's index files, the schedules' commit store
+    tmp/schedules/                 # scheduled runs' working copies; was <dataDir>/tmp/schedules
+    tmp/hosts/<userId>/            # one host's scratch directory, removed at eviction; was <dataDir>/tmp/<userId>
+```
+
+- **`tenantRoot(dataDir, scope)`** is the one function that builds `tenants/<id>`. It accepts only a canonical
+  lower-case UUID, and refuses a root that is a symlink or that resolves outside `<dataDir>/tenants`.
+  - The repo store's `path`, `create`, `remove` and `withLock` take the scope first, and the lock is keyed
+    `tenantId:workspaceId`. Two tenants with one workspace id (§19.3) get two repositories.
+  - `hostDirectories(dataDir, scope, userId)` builds on it.
+  - The scheduled-runs module's `CommitStore` and run copies (`schedules/module.ts`) take the tenant's `tmp/`.
+  - The server platform's path guard (§17.3) is unchanged, so a host still cannot leave its checkout, and so cannot
+    reach another tenant's.
+- `no-hooks/` stays at the data directory's root, because each bare repository's config holds its absolute path.
+  Moving it would mean rewriting every repository's config.
+- `RepoStore.prepare` makes `tenants/` and `no-hooks/` only, and the start-up writability check moves from `repos/`
+  and `tmp/` to `tenants/`.
+- The move itself is §19.10's file step.
+
+### 19.7 Data keys (amends §3.5 and §17.4; ADR-0036)
+
+- **The hierarchy.** The server root `WIREBENCH_SERVER_SECRETS_KEY` wraps one data key per tenant. The data key is
+  32 random bytes, sealed with the secret box (AES-256-GCM) under a wrapping key that HKDF derives from the root with
+  the tenant id as `info` (`salt = 'wirebench-tenant-data-key'`). A wrapped key copied onto another tenant's row
+  therefore does not open. The result is `tenants.data_key`.
+- **The user key** that seals a host's `secrets.json` entries and its cookie jars becomes
+  `HKDF(dataKey, 'wirebench-host-secrets', userId)`: §17.4's derivation, with the tenant's data key in place of the
+  root. One user's files do not open under another user's key, nor under another tenant's.
+- **The cache.** Unwrapped data keys are kept in memory per tenant for the life of the process, and are dropped when
+  the tenant's row changes. Until slice 5's notification, only a change made in this process drops one.
+- **When the key is made.**
+  - With the root configured, a tenant's key is created with the tenant, and for the default tenant by the tenancy
+    migration's key step (§19.10).
+  - Without the root, `data_key` stays null and nothing is sealed, since the browser client cannot be on without the
+    root (§17.1). The key is created the first time the root exists.
+  - A lazy creation is a compare-and-set: `update tenants set data_key = $1 where id = $2 and data_key is null
+    returning id`. A process that loses re-reads the row and uses the winner's key.
+- **The one-time re-wrap.** Every blob the server platform sealed before slice 4 is under the old per-user key,
+  `HKDF(root, …, userId)`. The key step re-seals each one under the new user key. The step must finish before any
+  host opens, because a blob the cookie store cannot open is set aside as `.corrupt` (`cookie-store.ts`): a
+  half-done re-wrap would lose cookie jars quietly rather than fail (§19.10).
+- **No `tenant_secrets` table** (my call; amends §3.5 and §4.3, settles §17.4's deferral). The host's own
+  `SecretStore` is the one resolver of a sealed name, and its file is already per user inside the tenant's
+  directory, under the tenant's key. A table would be a second store beside it, and would not change who can read a
+  value. The table is for the workspace scope §3.5 deferred, which needs a value shared across users that a per-user
+  file cannot hold. It arrives with that scope.
+- **What stays server-wide** (my call):
+  - The hooks and schedules keys, as §3.5 says. Their sealed values are rows under row-level security, and slice 7's
+    deletion removes the rows.
+  - The agent pairing-code HMAC key (§18.2). Codes live ten minutes, and their rows are scoped.
+- **The audit chain key** (my call).
+  - **Self-hosted:** the default tenant's chain keeps `WIREBENCH_SERVER_AUDIT_CHAIN_KEY`, under which its rows are
+    already sealed, and no migration may update a sealed row (`0012`).
+  - **Every other tenant** has its chain keyed by `HKDF(chainKey, 'wirebench-audit-chain', tenantId)`, recorded by
+    its fingerprint in the tenant's anchor `key_id`.
+  - **In hosted mode** every tenant's key is derived, the default tenant's included. The default tenant holds no
+    rows there, since a hosted server starts fresh (§14). The configured key itself then seals nothing and is never
+    exported.
+  - A tenant's export can then be verified with its own key, without handing out the key of any other chain (§13
+    criterion 6, slice 7).
+- **Shredding and rotation.**
+  - Deleting a tenant (slice 7) clears `data_key`. Every file of the tenant is unreadable **once every database
+    backup older than the deletion has expired**: such a backup still holds the wrapped key, and the root still
+    opens it. Keeping backup retention short is an operations duty of slice 7, where deletion is held 14 days
+    (§3.6).
+  - Rotating the root re-wraps one column, not every blob.
+
+### 19.8 The six guards, made concrete (amends §5.4)
+
+1. **Forced row-level security** on the 36 scoped tables (§19.4), queried by an app role that cannot bypass it:
+   refused at start-up in hosted mode, warned about in self-hosted mode, and asserted in CI.
+2. **The scope in the signature.**
+   - `ServerContext.db` goes away. Modules get `ctx.tenancy`, whose `db(scope)` returns a `TenantDb` bound to that
+     tenant.
+   - Its `query` runs one statement in its own short tenant transaction, and its `transaction(fn)` runs a unit of
+     work as one. Both are branded types (`TenantQuerier`), constructible only in `src/tenancy/`. A `TenantQuerier`
+     carries its `TenantScope`, which is how ADR-0032's "repositories take a `TenantScope` first" is met (§19.15).
+   - Every repository function takes a `TenantQuerier` first, where it took a `Querier`. A call with the raw pool, or
+     with no scope, does not compile.
+   - `ServerConfig.publicUrl` is not in the config type modules see (§19.5).
+   - A script gate in `pnpm check`, `check:tenant-scope`, is the backstop. Outside `src/tenancy/` it refuses:
+     - an import of `db/pool.ts` or of the raw `Querier` type (`src/db/` excepted);
+     - any `publicUrl` read or destructuring of the config, and `operatorPublicUrl(` outside `main.ts` and
+       `serve.ts`;
+     - `set_config`, `wirebench.tenant_id`, and SQL that names `from tenants` or `join tenants`;
+     - `for_each_tenant` (§19.4);
+     - `defaultScope(`, except in the admin command line's self-hosted default (§19.11). A route or a module that
+       reached for the default tenant would pass every one-tenant test, so the call itself is refused.
+   - A single statement in its own transaction costs three extra round trips. `pnpm test:perf` measures a typical
+     route's query count before and after, and a route that regresses groups its statements into one `transaction`.
+3. **The migration test.** It reads the catalog after every migration has run, and fails when a table outside the
+   allowlist (`schema_migrations`, `server_identity`, `tenants`) lacks any of these:
+   - `tenant_id uuid not null` with the setting default;
+   - `relrowsecurity` and `relforcerowsecurity`;
+   - exactly one policy, `tenant_isolation`: permissive, `polcmd = '*'`, `polroles = {0}` (public), and with `using`
+     and `with check` both the expression above;
+   - `tenant_id` first in every unique index and in every primary key that is not a lone minted `id`;
+   - composite foreign keys only, between scoped tables;
+   - the `0019` names of every rebuilt key, index and foreign key (§19.3, rule 6).
+4. **Two tenants per module, and a sweep.** Each module gains a two-tenant case once `0021` forces the policy
+   (§19.13), run as the app role. Above those, one isolation suite tries every scoped table and every registered
+   route, with positive controls so that it fails when the policy is off (§19.13).
+5. **Keyed by tenant first:**
+   - The live hub: subscriptions are keyed `tenantId:workspaceId`, and every announcement (`headMoved`,
+     `accessChanged`, `sessionEnded`, `captureReceived`, `hooksChanged`, `scheduleRunFinished`, `agentUnpaired`,
+     `licenseChanged`) carries `tenantId`.
+   - The terminal-share registry.
+   - The host instances, keyed `tenantId:userId`.
+   - The repo store's paths and locks (§19.6).
+   - Every rate limiter: sign-in per address and per email, hooks per workspace, pairing per address, nonce
+     redemption. Pairing's server-wide budget of 50 failed attempts in ten minutes (§18.2) becomes **per tenant**
+     (amends §18.2): server-wide, one tenant's attacker would shut pairing for every customer.
+   - **Advisory locks** take the two-int form with the schema and the tenant hashed together, so test schemas and
+     tenants never share one:
+     - the seat lock: `pg_advisory_xact_lock(SEAT_LOCK_KEY, hashtext(current_schema() || ':' || tenant_id::text))`;
+     - the audit chain lock: `pg_try_advisory_xact_lock(AUDIT_CHAIN_LOCK_CLASS, hashtext(current_schema() || ':' ||
+       tenant_id::text))`;
+     - the host-lease lock of §19.9, likewise.
+   - Seats are counted per tenant by the policy itself. The licensing service's `state(scope)` takes the tenant; in
+     self-hosted mode it reads that tenant's license row, and in hosted mode, from slice 7, `tenants.edition`.
+   - Scheduled runs:
+     - the per-server concurrency cap is unchanged;
+     - queued runs start round-robin across tenants (my call), whether a pass starts them or a finished run's
+       `launch().finally` does, so one tenant's backlog cannot starve another's schedules;
+     - the in-flight map and `cancel(runId)` are keyed `tenantId:runId`.
+6. **The job scope.** `forEachTenant(job, fn)` reads tenant ids through the tenant directory, the one unscoped read
+   (`select id, slug from tenants where status <> 'deleting'`), then runs `fn` in one `withTenant` per tenant. A
+   suspended tenant's data is kept and still ages out. One tenant's failure is logged with the job name and the
+   tenant id, and does not stop the others. The jobs:
+   - the scheduler's pass, which fires due schedules, starts queued runs and ends interrupted ones. Its license
+     check (`license().state()`, read once per pass today) moves inside the loop, so a tenant without
+     `scheduled-runs` skips only its own schedules;
+   - the alert outbox;
+   - the audit sealer, retention and forwarder;
+   - the audit module's license listener (`audit-log/license-listener.ts`), which writes an event after commit,
+     outside any request: it takes the announcement's `tenantId` and writes in that tenant's `withTenant`;
+   - capture retention;
+   - session-log retention;
+   - the identity sweep (expired tokens, invitations and flows), the SSO sweep and the agent sweep.
+
+   The live hub's two queries (`effectiveRole`, `workspaceIdsOfTeam`) take the scope from the socket's session. No
+   bypass is built (my call; amends ADR-0032, §19.15): §5.4's "named, allowlisted bypass" was for the scheduler's
+   pick-up, and a pick-up per tenant needs none. A job that measurably does need one waits for slice 5's per-tenant
+   budgets, with its own audited role.
+
+### 19.9 The host-instance lease and the instance cap (amends §5.5 and §17.3)
+
+- **The table.** `host_leases(tenant_id, user_id, holder text, acquired_at, renewed_at, expires_at)`, primary key
+  `(tenant_id, user_id)`, scoped like every other table. Its user key is composite and cascades on delete. `holder`
+  is the server process's id: random at start-up, and logged. A row with an expiry replaces §5.5's "advisory lock
+  held by a heartbeat row" (§19.15): a session-level advisory lock would pin one pool connection per live host.
+- **Taking it.** Before `createHost`, the first socket of a user takes the lease in one tenant transaction:
+  - take the tenant's lease lock (`pg_advisory_xact_lock(HOST_LEASE_CLASS, hashtext(current_schema() || ':' ||
+    tenant_id::text))`);
+  - delete the tenant's expired leases;
+  - check the cap (below);
+  - then `insert … on conflict (tenant_id, user_id) do update … where host_leases.holder = $holder or
+    host_leases.expires_at < now() returning user_id`.
+
+  No row back means another process holds the user. The socket closes `4409` with reason `host-lease-held` and a
+  `retryAfterMs` of the lease's remaining time. The bootstrap's reconnect backoff (§17.6) waits at least that long.
+- **Keeping it.**
+  - Leases last 60 s. Every 15 s the process renews them with one statement for each tenant **that has an instance
+    in this process** (`update … where holder = $holder returning user_id`), not for every tenant.
+  - A lease missing from that answer was lost: its instance closes its sockets `4409` and is disposed.
+  - A process that has not renewed for 30 s by its own monotonic clock stops its instances on its own, half a lease
+    before anyone else could take them, so two processes never write one checkout (§5.5). Database time sets the
+    expiry; local time only decides when to stop early.
+- **Giving it back.** Eviction deletes the lease after the host's quit path has run. Shutdown releases every lease
+  after `closeAll`.
+- **After a crash.** A self-hosted server is one process (ADR-0013), so in self-hosted mode start-up deletes every
+  lease it finds, through `forEachTenant`, since the app role outside a tenant sees no row. A crash and restart then
+  do not keep users out for a minute (my call). A hosted process leaves leases to expire. A multi-instance
+  self-hosted server (slice 5) must drop the start-up delete (§19.12).
+- **The cap** (decision 11).
+  - A tenant holds at most its seat limit of live leases (`LicenseService.state(scope)`; none when the limit is
+    null), counted across processes in the same transaction.
+  - At the cap, this process first evicts its own idle instances of that tenant (no sockets, idle timer running),
+    oldest first, and counts again.
+  - Still at the cap, the socket closes `4429` with reason `host-instance-cap`, and the tab says that every seat of
+    the team has a browser host open (my call).
+  - `4429` then has two reasons, this one and §17.3's ninth socket of one user (`too many host sockets`), so the
+    bootstrap branches on the reason for its message.
+  - With seats binding users, a self-hosted server reaches the cap only after a license downgrade below its enabled
+    users.
+- **Unchanged.** Idle eviction after `WIREBENCH_SERVER_HOST_IDLE_MINUTES` (default 30), and eight sockets per user.
+
+### 19.10 The self-hosted migration (amends §14)
+
+Two forward steps, each resumable; a way back, also resumable; and a stated cost.
+
+- **Before the upgrade.** `wirebench-server admin tenancy check` runs from the new image against the old database,
+  read-only. It reports:
+  - the PostgreSQL version, whether the app role isolates (§19.4), and the backup-role advice;
+  - whether `tenants/` can be created on the same filesystem as `repos/`, since the move is a rename, never a copy;
+  - each table's row count, read from `pg_class.reltuples` so that it is right before and after the upgrade and
+    under any role, its `pg_relation_size` and `pg_total_relation_size`, and an estimated duration (below);
+  - any path the move would not know.
+
+  The upgrade notes say to stop every server process and to back up the database (as the backup role, §19.4) and the
+  data directory first.
+- **How long the server is down.** Only the column add is catalog-only. In one transaction under `ACCESS
+  EXCLUSIVE`, `0020` then validates a new foreign key to `tenants` on every scoped table, rebuilds every primary key
+  and unique index plus the listing indexes of rule 4, and validates every composite foreign key. Each of those is
+  one pass over a table's rows. So the cost is about:
+
+  `T ≈ Σ over tables of passes × (rows ÷ R + pg_relation_size ÷ B)`, where `passes = 1 + rebuilt indexes +
+  composite foreign keys`
+
+  - **The basis for `R`** is reasoned, to be measured. A B-tree build sorts a `uuid` and a short text key from the
+    heap, and a key validation is one anti-join per key, which the formula overcounts as a pass. Both run at about
+    0.5 to 1 million rows a second, single threaded, on a two-vCPU SSD machine with `maintenance_work_mem` at
+    256 MB, which `0020` sets with `set local`.
+  - **The heap term.** Every pass also reads the heap, at a sequential scan rate `B` of about 200 to 500 MB a second
+    from SSD (less from cache-cold disk). Values over about 2 KB in `captures.body` and `session_log_chunks.data` sit
+    in TOAST, which no pass reads, but smaller ones stay in the heap, so `pg_relation_size`, not the row count, is
+    what that term reads.
+  - **`analyze`.** `0020` ends with `analyze` on every scoped table. Its new leading `tenant_id` columns have no
+    statistics until autovacuum reaches them, and the planner would choose badly until then. That costs one sampled
+    pass per table, a few seconds in all.
+  - **For `audit_events`** (about seven passes: the tenant key, `unique (tenant_id, id)`, `chain_seq`, three listing
+    indexes, plus the heap), 5 million rows in about 1 GB of heap take about `7 × (5 to 10 s + 2 to 5 s)`, so 50 to
+    105 seconds.
+  - **A typical installation** with under a million rows in all is down for under a minute.
+  - **The measurement.** A perf test (plan Task 4) migrates a scaled fixture (1 million `audit_events`, 1 million
+    `captures`, 2 GB of `session_log_chunks`) and records `R`. The upgrade notes give the measured minutes per
+    million rows, and `admin tenancy check` uses it.
+- **Step 1: rows, in SQL.** Migrations `0020` and `0021`, each one transaction (the migration runner's rule), run as
+  the owner role:
+  - `0020` creates `tenants` and the default tenant, sets `server_identity.default_tenant_id` and
+    `tenancy_step = 'files'`, and creates `tenant_scope()` and `host_leases`.
+  - For each table, `0020` adds `tenant_id` with the default tenant's id as a **constant** default, which is a
+    catalog-only change: no row is rewritten, so sealed audit rows keep their bytes (`0012`'s rule). It then rebuilds
+    the keys, indexes and foreign keys of §19.3, under their `0019` names.
+  - `0021`, two pull requests later (amends §14's "one transaction for rows"; §19.15), switches each column's default
+    to the setting expression, calls `tenant_scope()` on the 36 tables, and creates `for_each_tenant()`.
+  - A crash rolls back the migration it was in, and the next start-up runs it again.
+- **Step 2: files, at start-up.** It also runs from `wirebench-server migrate`. **The start-up order** is: the
+  migrations, then this step, then `RepoStore.prepare` (now making only `tenants/` and `no-hooks/`) and the
+  writability check of `tenants/`, then `buildServer`. `prepare` can therefore never make an empty `repos/` beside a
+  half-moved one. `migrate --check` exits `1` while `tenancy_step` is not `done`. `tenancy_step` drives the step:
+  - **`files`:**
+    - Rename `repos/` and `checkouts/` into `tenants/<defaultId>/`. A rename is done when the source is gone and the
+      destination is there, and is due when the reverse holds; both present refuses start-up with
+      `tenancy-move-conflict`, naming the paths.
+    - From the old `tmp/`, move the `removed-…` repositories, which are deleted workspaces kept on purpose, into the
+      tenant's `tmp/`, and delete the rest. The rest is scratch that is rebuilt as needed: `creating-…` staging,
+      sync's index files, `tmp/schedules/` run copies, and the hosts' `tmp/<userId>/` directories.
+    - Check the users' state files for the old absolute prefix (`<dataDir>/checkouts/`). A server host cannot create
+      a linked project, but a file that holds one is listed and refuses the step, rather than breaking later. The
+      test runs this check on a checkout a real host wrote with a server workspace open, so ordinary installations
+      pass.
+    - Then `tenancy_step = 'keys'`.
+  - **`keys`:**
+    - With the root configured, create the default tenant's data key and re-wrap every blob (§19.7) in each user's
+      `secrets.json` and `cookie-jars/*.json`.
+    - A blob that opens under the new key is already done; one that opens under the old key is re-sealed, and the
+      file is written atomically. One that opens under neither is left exactly as it is and counted in the log line,
+      never set aside.
+    - Then `tenancy_step = 'done'`.
+    - Without the root, the step stays `keys` and blocks only the host module, which cannot be on without the root
+      anyway.
+  - The server listens from `keys`; host sockets are accepted only at `done`.
+- **The way back** (my call). `wirebench-server admin tenancy revert` undoes slice 4. It runs as the owner role.
+  - **It is refused:** when there is more than one tenant; when any migration newer than `0021` has run; and when it
+    cannot take the server-running lock exclusively. "On a stopped server" is checked, not trusted:
+    - Every running server holds the lock **shared**,
+      `pg_try_advisory_lock_shared(SERVER_RUNNING_CLASS, hashtext(current_schema()))`, on one dedicated connection
+      outside the pool, for its whole life. Any number of servers hold it at once, so several hosted processes, a
+      start-before-stop restart and slice 5's multi-instance self-hosted server all start.
+    - A server refuses start-up (`tenancy-reverting`) only when the shared try fails, which happens only while a
+      revert holds it exclusively.
+    - When the dedicated connection drops, the lock is gone with it, silently. The server re-takes the lock on a new
+      connection, or exits when it cannot.
+    - Revert takes `pg_try_advisory_lock(SERVER_RUNNING_CLASS, …)`, exclusive, which fails while any server holds the
+      shared one, and holds it until revert finishes.
+  - **It is resumable.** It drives `tenancy_step` backwards through three states, each idempotent, and a forward
+    start-up refuses (`tenancy-reverting`) while the step is any of them:
+    1. `reverting-keys`: every blob is re-sealed under the old per-user key. A blob is tried under the old key
+       first, so a resumed run never seals twice.
+    2. `reverting-files`: the directories are renamed back.
+    3. `reverting-rows`: one transaction drops the policies, `tenant_scope()`, `for_each_tenant()` and
+       `host_leases`; restores the `0019` keys, indexes and foreign keys under their names, including the singleton
+       primary keys on the kept `singleton` and `only_row` columns; drops the tenant columns (catalog-only again);
+       drops `tenants` and the two `server_identity` columns; and deletes rows `20` and `21` of `schema_migrations`.
+  - **The column order is restored.** No column of `0019` is dropped forward (rule 5), and a dropped `tenant_id` only
+    leaves a hidden placeholder at the end of each table. The live columns are therefore those of `0019`, in the same
+    order. The round-trip test compares the catalog through the migration test's own readers (§19.13).
+  - **When it works.** The previous server image then starts on the result. Revert works only on a release that has
+    `0020`, `0021` and the command. In the plan `0020` merges with Part A, `0021` with Part C and the revert with
+    Part E, so **no release is cut from main between the merges of Part A and Part E**. The command goes away with
+    the first release that adds migration `0022`.
+
+### 19.11 Admin commands (amends §8)
+
+- **Added:**
+  - `wirebench-server admin tenancy check` (§19.10);
+  - `admin tenancy status`: the step, the default tenant's id, whether its data key exists, the re-wrap counts and
+    the backup-role advice;
+  - `admin tenancy role [--print-sql]` (§19.4);
+  - `admin tenancy revert`.
+- **`--tenant <slug>`** joins every existing admin command (`invite`, `license`, `audit verify|export`, `schedules`,
+  `scim-token`, `scim-group`). Hosted mode requires it. Self-hosted mode refuses it as a usage error (my call), since
+  there is one tenant and nothing should ever print or ask for its slug.
+- **Not in slice 4:** `admin tenant create|set-edition|suspend|resume|export|delete|import|migrate-self-hosted` are
+  slice 7's, because the owner's ruling keeps slices 5 to 8 out of this one, and these commands need them:
+  - §13 criterion 6 is about the export's format, its signed link and a chain verified by its own key, and §3.6
+    makes export a control-plane lifecycle step;
+  - `migrate-self-hosted` copies an installation into a hosted server that slices 5 to 7 have yet to make, and is
+    `import` applied to an installation's own export.
+
+  What slice 4 leaves for them:
+  - `TenantDirectory.create({ slug, name, edition, region })`, the one function that makes a tenant and its data
+    key, which the test helper calls and slice 7's signup and `admin tenant create` will call;
+  - the list of scoped tables, generated from `tenant_scope()`'s callers, which an export will walk.
+
+### 19.12 What slice 4 leaves for slices 5 to 8
+
+- **5 `operations`:**
+  - announcements carry `tenantId`, the payload §5.5's notification needs;
+  - the tenant map has an `invalidate()` the notification listener will call, and so does the data-key cache;
+  - the host lease already works across processes, and the repo-store lock is keyed so that an advisory lock can
+    replace it;
+  - a multi-instance self-hosted server must drop the self-hosted start-up's lease delete (§19.9);
+  - `forEachTenant` is the place for per-tenant budgets, and the rate-limiter keys already lead with the tenant.
+- **6 `domains`:**
+  - `config.appDomain`, the one-label rule and `tenantUrl()`;
+  - the slug check is syntax only, and the reserved list (§3.6) is slice 6's.
+- **7 `control-plane`:**
+  - the unread `tenants` columns and `TenantDirectory.create`;
+  - `--tenant` on the admin commands;
+  - `LicenseService.state(scope)`, ready to read `tenants.edition`;
+  - the data key, which deletion clears, and the backup retention that makes the clearing final (§19.7);
+  - the per-tenant chain key;
+  - a database factory that takes a connection string, for its bypass role;
+  - **per-tenant settings** (§19.1, owner ruling): slice 7 reads each module's sign-in, SCIM, forwarding, SMTP and
+    retention settings through the tenant's scope. Today's environment variables become the default tenant's
+    settings, and the federated routes stop answering `404` in hosted mode once a tenant has its own.
+
+  No signup page, subscription webhook, payment-provider code or control-plane table exists in slice 4.
+- **8 `custom-domains`:** the resolver's map, keyed by full host name.
+
+### 19.13 Testing
+
+- **Unit and integration tests per task.**
+  - **Until `0021`, a moved module is tested on one tenant**, and its suite shows that every statement it exercises
+    goes through `withTenant`.
+    - The module under test is registered with a `Proxy` over the one shared `ServerContext`. Its `db` getter throws
+      `tenancy-unscoped`; every other read and write passes through, so licensing's replacement of `ctx.license` and
+      `buildServer`'s of `ctx.log` still reach it. The modules registered beside it, not yet moved, see the real
+      `ctx`.
+    - The tenant database's test log asserts that each statement ran after `set_config`.
+    - Keyed structures (hub, limiters, locks, instance map) get unit tests with two tenant ids.
+    - **The limit:** with one tenant this cannot show the right tenant, only a tenant, and it covers only the paths a
+      test runs: timers are off in the suites, and untested error branches are not seen. `check:tenant-scope`'s
+      refusal of `defaultScope(` closes the commonest wrong-tenant case, and Tasks 18 and 19 prove the rest under the
+      policy. They land in the same Part C pull request as `0021`, before anything can make a second tenant, and no
+      release is cut in between.
+  - Once `0021` forces the policy, each module gains its two-tenant case (guard 4).
+- **The database roles.**
+  - CI's PostgreSQL service creates `wirebench_owner` (`login nosuperuser nobypassrls`) and `wirebench_app`. The test
+    helper creates each file's schema as the admin, `authorization wirebench_owner`, runs the migrations as the owner
+    and the queries as the app role.
+  - `test/integration/tenancy/role.test.ts` fails when the app role is a superuser, has `BYPASSRLS`, or owns a table,
+    and when the owner is a superuser. A change to CI therefore cannot make every isolation test pass vacuously.
+- **The migration test** (guard 3), over the catalog, as §19.8 lists it, after `0020` (constant default, no policy)
+  and after `0021` (setting default, forced policy).
+- **Outside a tenant.** For every scoped table, as the app role and as the owner, a select outside `withTenant`
+  returns no rows and an insert fails.
+- **The cross-tenant isolation suite**, `test/integration/tenancy/isolation.test.ts`. It starts a hosted-mode server
+  with tenants A and B, made by `TenantDirectory.create`, and fills A through its own routes and repositories.
+  - **Positive controls first**, so that the suite cannot pass for the wrong reason:
+    - `fill` asserts at least one row of A's in every scoped table, counted inside A's scope.
+    - Every route template answers `2xx` as A's admin on A's host before it is sent as B.
+    - As the admin superuser, which bypasses the policy, every scoped table shows rows of both tenants, while the
+      app role sees only the scope it set.
+    - The table and route sweeps are run once more on a throwaway schema with the policies disabled (`alter table …
+      disable row level security`), and must fail there.
+  - **Every table.**
+    - Inside B's scope, every scoped table counts zero.
+    - An insert in B that names one of A's ids is refused by the composite key.
+    - An insert in B that names `tenant_id = A` explicitly fails with `42501`.
+    - B creates a workspace with A's workspace id and gets `201`, and both repositories exist (§19.3, rule 2).
+  - **Every route.**
+    - The suite collects every route Fastify registers (`onRoute`), and maps each one to a request template filled
+      with A's ids, sent as B's server admin on B's host name.
+    - The map's classes:
+      - **refused or empty:** `404`, `403` or an empty list;
+      - **B's own:** `200` holding only B's own data, such as `/api/v1/me`, `/api/v1/meta` or the license;
+      - **federated:** answers `404` in hosted mode (§19.1).
+
+      No response body may contain any of A's ids, names or emails.
+    - A route missing from the map fails the suite, so every new route is classified when it is added.
+    - A's token or cookie sent to B's host name answers `401`. An unknown host name answers `404` with an empty
+      body.
+  - **Every socket.**
+    - Live: B cannot subscribe to A's workspace, and A's announcements never reach B's sockets.
+    - Host: B's host cannot open a path in A's directory.
+    - Terminal shares: B cannot join A's share.
+  - **Every job.** With due rows in both tenants, each job of guard 6 serves both, the license listener included,
+    and each effect stays inside its tenant:
+    - one tenant's schedule alert never carries the other's data;
+    - a tenant without `scheduled-runs` does not stop the other's schedules;
+    - each tenant's chain seals on its own and verifies with its own key.
+  - **Keys.** A blob sealed for a user of A does not open under B's key, nor under A's key for another user.
+- **The migration.**
+  - **The fixture is frozen** at `e9bdc5af1`: a `seed-0019.sql` (`pg_dump --data-only`) with rows in all 37 tables
+    and sealed audit rows under a test chain key, a data-directory tarball (repositories, a checkout a real host
+    wrote with a server workspace open, a `secrets.json` and cookie jars), and a script that regenerates both from
+    that commit. The repositories the plan rewrites never touch it.
+  - Migrating the fixture leaves:
+    - every row in the default tenant;
+    - `admin audit verify` passing;
+    - every workspace syncing (head, snapshot, a push);
+    - the host opening with its secrets and jars.
+  - The file step is killed after each rename and halfway through the re-wrap, and resumes.
+  - `admin tenancy revert` is killed in each of its three states and resumes. Its result matches the fixture's
+    catalog (tables, live columns in order, keys and indexes by name and definition) and rows, and the old layout.
+  - The scaled fixture's migration time is recorded (§19.10).
+- **The lease.**
+  - Two `HostInstances` with two holders on one database: the second socket gets `4409`.
+  - An expired lease is taken over.
+  - A process that cannot renew stops its instances before expiry.
+  - The cap evicts an idle instance before it refuses with `4429`.
+  - Self-hosted start-up clears leases.
+- **End to end.**
+  - The browser e2e of §17.7 and §18.7 runs unchanged on a server migrated from the frozen fixture, with its queries
+    as `wirebench_app`. That is "invisible to self-hosted", tested.
+  - An upgrade test starts a `0019` volume under the new `compose.yaml`: the app role is created and the server
+    starts. The same volume with the old single URL starts too, with the warning.
+
+### 19.14 Success criteria 3 and 4 (amends §13)
+
+- **Criterion 3** ("two tenants … cannot read, list, push to or be alerted about each other's anything") is met by
+  the isolation suite of §19.13 for every table, route, socket and job that exists when slice 4 ships. Each later
+  slice's tables and routes join the suite, which refuses an unclassified route. The two tenants live in tests until
+  slice 7 can create one.
+- **Criterion 4** splits, because the owner's ruling keeps slices 5 to 8 out of slice 4 and a copy into a hosted
+  server needs them:
+  - **4a, slice 4:** an existing self-hosted database and data directory become one tenant in place, with every
+    workspace syncing after (the migration tests of §19.13);
+  - **4b, slice 7:** `admin tenant migrate-self-hosted` copies one into a hosted server, as an import of the
+    installation's own export (§19.11).
+
+### 19.15 What §19 changes in ADR-0032, §5.5 and §14
+
+ADR-0032 (accepted) carries an amendment note naming these, as §17 and §18 did for theirs:
+
+- `set_config(…, true)` replaces `set local`, which takes no bind parameter (§19.4).
+- Repositories take a `TenantQuerier`, which carries the `TenantScope` (§19.8, guard 2).
+- A self-hosted server may run with a bypassing role, with a warning (owner ruling, §19.4). Queries run as an app
+  role separate from the owner where the operator sets one up, and new compose installations do.
+- No bypass for jobs: every job runs per tenant (§19.8, guard 6).
+
+§5.5's heartbeat advisory lock is a row lease (§19.9). §14's "one transaction for rows" is two migrations, `0020`
+and `0021`, each one transaction (§19.10).
