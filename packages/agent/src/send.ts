@@ -300,16 +300,30 @@ export function agentSendHandlers(
    * This process's folder, made again when missing (another agent's sweep may have judged it stale). Its
    * `pid` file is written under a temporary name and renamed in, so a sweep never reads half of one, and the
    * folder's mtime is set to now (rewriting a file in it would not move it), so a sweep sees it in use.
+   *
+   * Sends starting together take turns here, and the `pid` file is written only when it does not already
+   * name this process. On Windows a rename onto a file that another rename is replacing fails with `EPERM`,
+   * so concurrent sends each renaming a `pid` file in would fail all but one of them.
    */
-  const instanceFolder = async (): Promise<string> => {
+  let preparing: Promise<unknown> = Promise.resolve();
+  const prepareInstanceFolder = async (): Promise<string> => {
     const folder = join(await sendsRoot(platform), instance);
     await mkdir(folder, { recursive: true, mode: 0o700 });
-    const temporary = join(folder, `${PID_FILE}.${randomUUID()}.tmp`);
-    await writeFile(temporary, String(process.pid), { mode: 0o600 });
-    await rename(temporary, join(folder, PID_FILE));
+    const pidFile = join(folder, PID_FILE);
+    const current = await readFile(pidFile, 'utf8').catch(() => undefined);
+    if (current !== String(process.pid)) {
+      const temporary = join(folder, `${PID_FILE}.${randomUUID()}.tmp`);
+      await writeFile(temporary, String(process.pid), { mode: 0o600 });
+      await rename(temporary, pidFile);
+    }
     const now = new Date();
     await utimes(folder, now, now);
     return folder;
+  };
+  const instanceFolder = (): Promise<string> => {
+    const turn = preparing.then(prepareInstanceFolder);
+    preparing = turn.catch(() => undefined);
+    return turn;
   };
 
   const key = (pairingId: string, sendId: string): string => `${pairingId}\n${sendId}`;
