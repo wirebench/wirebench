@@ -34,6 +34,7 @@ import {
   type AgentSendResponse,
   type SendBundleFile,
 } from '@wirebench/wire/agent';
+import type { FailedExchangeWire } from '@wirebench/wire/wire-base';
 import type { z } from 'zod';
 import type { PairingStore } from './pairings.js';
 import type { AgentCallContext, AgentHandler } from './server.js';
@@ -239,6 +240,22 @@ function systemValuesFor(
 }
 
 /**
+ * A failed send's error, with the HTTP Log's row for it on `details.failure` (already redacted by the host),
+ * so the tab can have its server write the History entry and the row a failed send leaves there.
+ */
+function withFailure(error: unknown, failure: FailedExchangeWire): WirebenchError {
+  const known = error instanceof WirebenchError;
+  // The transport's own copy of the request is unredacted: only the row, which is, goes with the error.
+  const details = Object.fromEntries(
+    Object.entries(known ? (error.details ?? {}) : {}).filter(([key]) => key !== 'request'),
+  );
+  return new WirebenchError(known ? error.code : failure.error.code, known ? error.message : failure.error.message, {
+    details: { ...details, failure },
+    cause: error,
+  });
+}
+
+/**
  * The three send handlers, for `startAgent({ handlers })`. Each send and each jar belongs to the pairing of
  * the tab that called: a tab cancels only its pairing's sends and clears only its pairing's jar, even beside
  * another pairing of the same origin (two accounts on one server).
@@ -329,7 +346,9 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
         });
       }
       const state = stateFor(pairingId, host);
-      const result = await host.sendFromDirectory({
+      /** The HTTP Log's row of a send that failed, which the tab takes to its server (§18.4). */
+      let failed: FailedExchangeWire | undefined;
+      const sending = host.sendFromDirectory({
         // The host's own id for it: two pairings may each run a send of one id, and the host keeps one registry.
         sendId: randomUUID(),
         projectDir: dir,
@@ -346,8 +365,18 @@ export function agentSendHandlers(options: AgentSendOptions): Map<string, AgentH
         cookies: jarHost(state.jar),
         session: state.session,
         signal: abort.signal,
+        onFailed: (failure) => {
+          failed = failure;
+        },
       });
-      return agentSendResponseSchema.parse({ ...result, sentFrom: 'agent' });
+      let result: Awaited<typeof sending>;
+      try {
+        result = await sending;
+      } catch (error) {
+        throw failed === undefined ? error : withFailure(error, { ...failed, sendId });
+      }
+      // The tab's id, not the host's own: History and the HTTP Log match the send the tab shows.
+      return agentSendResponseSchema.parse({ ...result, sendId, sentFrom: 'agent' });
     } finally {
       running.delete(key(pairingId, sendId));
       if (dir !== undefined) await rm(dir, { recursive: true, force: true });

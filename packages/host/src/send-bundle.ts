@@ -13,8 +13,9 @@
  * - when it reads a team secret, the workspace's `team-secrets/` subtree as it is (`teamSecrets`).
  *
  * Inside a workspace the agent has no workspace to resolve environments through, so the environment it is
- * sent under is written as a project environment: the values that apply, and the container's resolved
- * address.
+ * sent under is written as a project environment: the values that apply, and the container's address when
+ * that environment overrides it. A protected environment is sent only once the tab says the person
+ * confirmed it, and the bundle's environment is never protected, so the agent does not ask again.
  */
 import { lstat, readdir, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -28,7 +29,7 @@ import {
   toKeystoreDef,
   WirebenchError,
 } from '@wirebench/engine';
-import type { Environment, Project, PropertyScopes, ProtocolRegistry } from '@wirebench/engine';
+import type { Environment, Project, PropertyScopes, ProtocolRegistry, RunWorkspace } from '@wirebench/engine';
 import {
   AGENT_BUNDLE_MAX_BYTES,
   AGENT_BUNDLE_MAX_FILES,
@@ -37,9 +38,16 @@ import {
   type SendBundle,
   type SendBundleFile,
 } from '@wirebench/wire/agent';
-import { previewRest, previewSoap, type SendThroughEngineDeps } from './send/exchange.js';
+import { protectedEnvironmentOf, type SendThroughEngineDeps } from './send/exchange.js';
 import type { SendRouteDeps } from './send-route.js';
-import { itemReferences, keystoreOnMachine, locateRouted, type RoutableItem, type RoutedItem } from './send-route.js';
+import {
+  environmentAddress,
+  itemReferences,
+  keystoreOnMachine,
+  locateRouted,
+  type RoutableItem,
+  type RoutedItem,
+} from './send-route.js';
 
 /** Where the bundle builder reads the item and its workspace. */
 export interface SendBundleDeps {
@@ -117,49 +125,45 @@ function withoutActive(project: Project): Project {
   return copy;
 }
 
-/** The resolved address the request's container has under the environment, for a written environment. */
-async function containerAddress(
-  deps: SendThroughEngineDeps,
-  item: RoutableItem,
-  request: RoutedItem,
-): Promise<string | undefined> {
-  try {
-    if (item.kind === 'rest')
-      return (await previewRest(deps, request.itemId, undefined, request.environment))?.input.baseUrl;
-    return (await previewSoap(deps, request.itemId, undefined, request.environment))?.input.endpoint;
-  } catch {
-    return undefined;
-  }
+/**
+ * An environment as the bundle carries it: never `protected`. The tab asked before it asked for the bundle
+ * (`confirmed`), and the agent has no one to ask.
+ */
+function unguarded(environment: Environment): Environment {
+  const copy: { -readonly [K in keyof Environment]: Environment[K] } = { ...environment };
+  delete copy.protected;
+  return copy;
 }
 
 /**
  * The environments the bundle carries: the project's own one it is sent under, or, inside a workspace, that
  * workspace environment written as a project one. Laid on `pruned`.
  */
-async function withEnvironment(
-  deps: SendThroughEngineDeps,
+function withEnvironment(
+  project: Project,
   pruned: Project,
   item: RoutableItem,
-  request: RoutedItem,
-  located: { readonly environmentId?: string; readonly workspace?: unknown },
+  located: { readonly environmentId?: string; readonly workspace?: RunWorkspace },
   scopes: PropertyScopes,
-): Promise<Project> {
+): Project {
   const environmentId = located.environmentId;
+  const rest = withoutActive(pruned);
   if (located.workspace === undefined) {
-    const environments = pruned.environments.filter((environment) => environment.id === environmentId);
-    const rest = withoutActive(pruned);
+    const environments = pruned.environments.filter((environment) => environment.id === environmentId).map(unguarded);
     return { ...rest, environments, ...(environmentId !== undefined ? { activeEnvironmentId: environmentId } : {}) };
   }
-  const rest = withoutActive(pruned);
   if (environmentId === undefined) return { ...rest, environments: [] };
-  const address = await containerAddress(deps, item, request);
   const slug = item.kind === 'rest' ? item.api.slug : item.iface.slug;
+  // As written, its `${…}` left for the agent; none when the environment does not override the container,
+  // so the container's own address ladder (a SOAP request's chosen endpoint and its `trustInvalid`) applies.
+  const address = environmentAddress(project, item, located);
   const environment: Environment = {
     id: environmentId,
     name: 'Sent under',
     slug: slugify(environmentId) || 'environment',
     order: 0,
-    endpoints: address !== undefined && address.length > 0 ? { [slug]: address } : {},
+    endpoints: address !== undefined ? { [slug]: address } : {},
+    // The send's whole env scope: the workspace environment's and the linked one's, switched-off ones left out.
     properties: { ...scopes.env },
     disabledProperties: [],
   };
@@ -218,10 +222,14 @@ async function filesUnder(root: string, dir: string): Promise<string[]> {
  *
  * @throws ProjectError `unknown-entity` when the project does not own the item, `send-bundle-path-outside`
  * when it reads a file outside the project
- * @throws WirebenchError `agent-kind-unsupported` for a kind the agent does not send,
+ * @throws WirebenchError `needs-confirmation` under a protected environment without `confirmed` (details
+ * `environment`), `agent-kind-unsupported` for a kind the agent does not send,
  * `send-bundle-no-workspace` for a project in no server workspace, `send-bundle-too-large` over the caps
  */
-export async function buildSendBundle(deps: SendBundleDeps, request: RoutedItem): Promise<SendBundle> {
+export async function buildSendBundle(
+  deps: SendBundleDeps,
+  request: RoutedItem & { readonly confirmed?: boolean | undefined },
+): Promise<SendBundle> {
   const { project, item } = locateRouted(deps.send, request);
   if (item === undefined) {
     throw new WirebenchError('agent-kind-unsupported', 'The agent sends REST and SOAP requests only', {
@@ -240,15 +248,15 @@ export async function buildSendBundle(deps: SendBundleDeps, request: RoutedItem)
   }
   const registry = located.registry ?? createBuiltinRegistry();
   const scopes = deps.send.project.scopesFor(request.itemId, request.environment);
-  const references = itemReferences(project, item, scopes);
-  const bundled = await withEnvironment(
-    deps.send,
-    prunedProject(project, item, registry),
-    item,
-    request,
-    located,
-    scopes,
-  );
+  const references = itemReferences(project, item, scopes, located);
+  // The person is asked in the tab, before the bundle is built; the agent never asks (§18.4).
+  const guarded = protectedEnvironmentOf(located);
+  if (guarded !== undefined && request.confirmed !== true) {
+    throw new WirebenchError('needs-confirmation', `"${guarded}" is a protected environment: confirm the send first`, {
+      details: { environment: guarded },
+    });
+  }
+  const bundled = withEnvironment(project, prunedProject(project, item, registry), item, located, scopes);
   const maxBytes = deps.limits?.maxBytes ?? AGENT_BUNDLE_MAX_BYTES;
   const maxFiles = deps.limits?.maxFiles ?? AGENT_BUNDLE_MAX_FILES;
 

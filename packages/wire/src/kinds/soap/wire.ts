@@ -539,7 +539,7 @@ export const responseAttachmentWireSchema = z.object({
 });
 export type ResponseAttachmentWire = z.infer<typeof responseAttachmentWireSchema>;
 
-const soapResponseWireSchema = z.object({
+export const soapResponseWireSchema = z.object({
   envelopeXml: z.string(),
   version: z.enum(['1.1', '1.2']).optional(),
   isSoap: z.boolean(),

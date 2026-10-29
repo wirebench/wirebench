@@ -95,6 +95,7 @@ import type { RestExchangeSummary } from '@wirebench/wire/kinds/rest/wire';
 import type { ExchangeSummary } from '@wirebench/wire/kinds/soap/wire';
 import type { WsExchangeSummary } from '@wirebench/wire/kinds/ws/wire';
 import type { HeaderEntryWire } from '@wirebench/wire/wire-base';
+import { historyBody, isHistoryCut } from '@wirebench/wire/history-body';
 
 /**
  * Converts the engine's `HistoryEntry` (all `readonly` fields/arrays) to the plain, mutable
@@ -178,6 +179,8 @@ export interface RecordSendInput {
   readonly tags?: readonly string[];
   /** Where the send went out from: `'agent'` for an agent's exchange; else the service's own origin. */
   readonly sentFrom?: 'server' | 'agent';
+  /** The response's size on the wire, when `exchange` was trimmed before it got here (an agent's). */
+  readonly sizeBytes?: number;
 }
 
 /** True for a 2xx HTTP response carrying no SOAP fault. */
@@ -238,7 +241,7 @@ export function buildHistoryEntry(redactor: Redactor, projectId: string, record:
         }
       : {}),
     ...(record.error !== undefined ? { error: record.error } : {}),
-    sizeBytes: sizeOf(exchange, record.input),
+    sizeBytes: record.sizeBytes ?? sizeOf(exchange, record.input),
     ...(record.tags !== undefined ? { tags: record.tags } : {}),
     ...(record.sentFrom !== undefined ? { sentFrom: record.sentFrom } : {}),
   };
@@ -271,35 +274,23 @@ export interface RecordRestSendInput {
   readonly at?: string;
   /** Where the send went out from: `'agent'` for an agent's exchange; else the service's own origin. */
   readonly sentFrom?: 'server' | 'agent';
+  /** The response's size on the wire, when `exchange` was trimmed before it got here (an agent's). */
+  readonly sizeBytes?: number;
 }
-
-/** How much of a body a history line keeps. Beyond this it is truncated with a marker. */
-const MAX_HISTORY_BODY_CHARS = 256 * 1024;
 
 /**
  * A body as stored: itself when small, or its first characters with a marker naming what was cut —
  * either way with every secret value a send was handed masked, since History is written to disk.
- * An XML body (by `contentType`) gets the escaped marker, as `redactor.redactXml` writes it.
+ * An XML body (by `contentType`) gets the escaped marker, as `redactor.redactXml` writes it. A body
+ * already cut this way (an agent's exchange, trimmed in the tab before it was uploaded) is kept as cut.
  */
 function storedBody(redactor: Redactor, body: string, contentType?: string): string {
   const text = redactor.redactSecretValues(body, { xml: isXmlType(contentType) });
-  if (text.length <= MAX_HISTORY_BODY_CHARS) {
-    return text;
-  }
-  const kept = text.slice(0, MAX_HISTORY_BODY_CHARS);
-  return `${kept}\n… truncated, ${String(text.length - MAX_HISTORY_BODY_CHARS)} more characters`;
+  return isHistoryCut(text) ? text : historyBody(text);
 }
 
-/** The line {@link storedBody} ends a cut body with. */
-const TRUNCATION_TAIL = /\n… truncated, \d+ more characters$/;
-
-/**
- * True when `text` is History's truncated copy of a body: longer than the cap, and ending with the
- * line {@link storedBody} writes. Only the tail is tested, so a 256 KB body costs one short match.
- */
-export function isTruncatedBody(text: string): boolean {
-  return text.length > MAX_HISTORY_BODY_CHARS && TRUNCATION_TAIL.test(text.slice(-64));
-}
+/** History's own test for a cut body, kept here for its callers. */
+export { isTruncatedBody } from '@wirebench/wire/history-body';
 
 /** An event-stream row as stored: its data or text masked, whatever the summary showed. */
 function storedSseRow(redactor: Redactor, row: SseRow): SseRow {
@@ -384,9 +375,10 @@ export function buildRestHistoryEntry(
       ? { contract: historyContractOf(exchange.contract as RestContractResult) }
       : {}),
     sizeBytes:
-      exchange === undefined
+      record.sizeBytes ??
+      (exchange === undefined
         ? Buffer.byteLength(record.requestBody, 'utf8')
-        : Buffer.from(exchange.http.rawResponseBase64, 'base64').byteLength,
+        : Buffer.from(exchange.http.rawResponseBase64, 'base64').byteLength),
     ...(record.tags !== undefined ? { tags: record.tags } : {}),
     ...(record.sentFrom !== undefined ? { sentFrom: record.sentFrom } : {}),
   };

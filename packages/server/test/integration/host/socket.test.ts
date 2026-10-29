@@ -22,6 +22,7 @@ import {
   type RestRequestDef,
   type SyncPushResponse,
 } from '@wirebench/engine';
+import { HISTORY_BODY_MAX_CHARS, historyBody } from '@wirebench/wire/history-body';
 import { HOST_CLOSE, HOST_LIMITS } from '../../../src/host/errors.js';
 import { hostDirectories } from '../../../src/host/server-platform.js';
 import { sessionCookieName } from '../../../src/identity/cookies.js';
@@ -463,6 +464,50 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
     expect(Buffer.byteLength(frame)).toBeLessThan(HOST_LIMITS.maxFrameBytes + 64);
     client.sendRaw(frame);
     expect(await client.closed).toEqual({ code: 1009 });
+  });
+
+  it('records an agent send of a 30 MiB response the tab trimmed as History does, and the socket stays up', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const requests = [createRestRequest('Big', { id: 'req-big', url: 'http://127.0.0.1:9/big' })];
+    const { client } = await joinedWorkspace(h, alice, { requests });
+    const responseBytes = 30 * 1024 * 1024;
+    // What the tab uploads (`forHistory`): the body cut as History cuts it, the bodies History never reads left out.
+    const head = (text: string) => Buffer.from(text).toString('base64');
+    const result = {
+      sendId: 'tab-send-1',
+      durationMs: 40,
+      http: {
+        status: 200,
+        statusText: 'OK',
+        headers: { 'content-type': 'text/plain' },
+        rawHeaders: [['content-type', 'text/plain']],
+        bodyBase64: '',
+        rawBodyBase64: '',
+        rawRequestBase64: head('GET /big HTTP/1.1\r\nhost: 127.0.0.1:9\r\n\r\n'),
+        rawResponseBase64: head(`HTTP/1.1 200 OK\r\n\r\n${historyBody('z'.repeat(responseBytes))}`),
+        truncated: false,
+        httpVersion: '1.1',
+        timings: { startedAt: AT, totalMs: 40 },
+        redirects: [],
+        request: { url: 'http://127.0.0.1:9/big', method: 'GET', headers: {} },
+      },
+      url: 'http://127.0.0.1:9/big',
+      method: 'GET',
+      text: historyBody('z'.repeat(responseBytes)),
+      language: 'text',
+      cookies: [],
+      methodChanged: false,
+      problems: [],
+      sentFrom: 'agent',
+    };
+    const request = { projectId: 'project-billing', itemId: 'req-big', kind: 'rest', result, responseBytes };
+    expect(Buffer.byteLength(JSON.stringify(request))).toBeLessThan(2 * 1024 * 1024);
+    const answer = await client.call('exchanges.recordAgentSend', request);
+    expect(answer).toMatchObject({ ok: true, value: { entry: { sentFrom: 'agent', sizeBytes: responseBytes } } });
+    const entry = (answer.value as { entry: { response: { envelopeXml: string } } }).entry;
+    expect(entry.response.envelopeXml.length).toBeLessThan(HISTORY_BODY_MAX_CHARS + 64);
+    expect(entry.response.envelopeXml).toMatch(/… truncated, \d+ more characters$/);
+    expect(await client.call('app.version')).toMatchObject({ ok: true });
   });
 
   it('refuses a stdio MCP send and catalogue refresh at once with host-capability-missing', async () => {

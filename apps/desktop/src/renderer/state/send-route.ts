@@ -14,6 +14,8 @@
  *   host matches one goes to the agent even when the server says `server`, so it carries those cookies.
  * - The chip beside the send button reads the cached route per request, refreshed on edit (debounced) and
  *   after a pin changes.
+ * - Under a protected environment the server answers the bundle with `needs-confirmation`; the tab asks, and
+ *   asks for the bundle again with `confirmed`. The agent never asks.
  *
  * Types only from the wire: the renderer's eager chain must not build a zod schema (CSP).
  */
@@ -22,8 +24,11 @@ import type { IpcError, IpcResult } from '@shared/ipc.js';
 import type { RequestRouteInfo, RequestRouteResponse, SendNeed } from '@shared/agent-route.js';
 import type { RestExchangeSummary } from '@shared/kinds/rest/wire.js';
 import type { ExchangeSummary } from '@shared/kinds/soap/wire.js';
+import type { FailedExchangeWire } from '@shared/wire-base.js';
+import { historyBody, HISTORY_BODY_MAX_CHARS } from '@shared/history-body.js';
 import type { AgentEnv, AgentStatus } from '../../preload/build-api.js';
 import { ipc } from './ipc-client.js';
+import { askProtectedSend } from './protected-send.js';
 import { useProjectStore } from './project.js';
 
 /** The plain words for each need, as the error and the chip's tooltip name them. */
@@ -48,6 +53,8 @@ export interface RouteView {
   readonly route: 'server' | 'agent';
   readonly needs: readonly SendNeed[];
   readonly info?: RequestRouteInfo;
+  /** The target's host does not resolve from the server: a name only the person's network may know. */
+  readonly unresolved?: true;
 }
 
 interface CookieDomain {
@@ -142,7 +149,13 @@ function viewOf(answer: RequestRouteResponse): RouteView {
   if (heldByAgent(info?.targetHost, useSendRouteStore.getState().cookieDomains) && !needs.includes('agent-cookies')) {
     needs.push('agent-cookies');
   }
-  return { route: needs.length > 0 ? 'agent' : 'server', needs, ...(info !== undefined ? { info } : {}) };
+  const unresolved = answer.route === 'agent' && answer.detail?.reason === 'unresolved';
+  return {
+    route: needs.length > 0 ? 'agent' : 'server',
+    needs,
+    ...(info !== undefined ? { info } : {}),
+    ...(unresolved ? { unresolved: true as const } : {}),
+  };
 }
 
 /** Reads the agent's cookie domains again; an agent not connected holds none this tab can use. */
@@ -202,21 +215,133 @@ export async function setRoutePin(
   return result;
 }
 
-/** The error a send that needs the agent answers when none is connected. */
-export function sendNeedsAgentError(needs: readonly SendNeed[]): IpcError {
+/**
+ * The error a send that needs the agent answers when none is connected. `unresolved` says the target's host
+ * does not resolve from the server, so it may be a name only the person's network knows.
+ */
+export function sendNeedsAgentError(needs: readonly SendNeed[], unresolved = false): IpcError {
   const named = needs.map((need) => SEND_NEED_LABELS[need]).join(', ');
+  const why = unresolved
+    ? 'The host this request goes to does not resolve from the server: it may be a name only your network knows, which only your machine can send to. No Wirebench agent is connected. Pair this machine, or start the paired agent, and send again.'
+    : `This request must be sent from your machine (it needs ${named}), and no Wirebench agent is connected. Pair this machine, or start the paired agent, and send again.`;
   return {
     code: 'send-needs-agent',
-    message: `This request must be sent from your machine (it needs ${named}), and no Wirebench agent is connected. Pair this machine, or start the paired agent, and send again.`,
-    details: { needs: [...needs] },
+    message: why,
+    details: { needs: [...needs], ...(unresolved ? { reason: 'unresolved' } : {}) },
   };
+}
+
+/** A body cut as History cuts it, in base64: the raw HTTP's head kept whole, its body cut. */
+function trimmedRaw(rawBase64: string): string {
+  if (rawBase64.length <= HISTORY_BODY_MAX_CHARS) return rawBase64;
+  const raw = atobBytes(rawBase64);
+  const end = indexOfHeadEnd(raw);
+  if (end === -1) return '';
+  const head = raw.subarray(0, end + 4);
+  const body = new TextDecoder().decode(raw.subarray(end + 4));
+  const cut = new TextEncoder().encode(historyBody(body));
+  const joined = new Uint8Array(head.length + cut.length);
+  joined.set(head);
+  joined.set(cut, head.length);
+  return bytesToBase64(joined);
+}
+
+function atobBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return btoa(binary);
+}
+
+/** Where a raw HTTP message's head ends (the `\r\n\r\n`), or -1. */
+function indexOfHeadEnd(raw: Uint8Array): number {
+  for (let index = 0; index + 3 < raw.length; index += 1) {
+    if (raw[index] === 13 && raw[index + 1] === 10 && raw[index + 2] === 13 && raw[index + 3] === 10) return index;
+  }
+  return -1;
+}
+
+/** The bytes a base64 string decodes to, without decoding it. */
+function base64Bytes(base64: string): number {
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+  return Math.max(0, (base64.length / 4) * 3 - padding);
+}
+
+/**
+ * An agent's exchange as it is uploaded for History: every body cut as History cuts it, the bodies History
+ * never reads left out, so a large response does not have to cross the server socket (capped at 32 MiB) whole.
+ * The response's own size goes with it. What the tab shows is the whole exchange.
+ */
+export function forHistory<T extends RestExchangeSummary | ExchangeSummary>(
+  result: T,
+): { readonly result: T; readonly responseBytes: number } {
+  const { http } = result;
+  const trimmedHttp = {
+    ...http,
+    bodyBase64: '',
+    rawBodyBase64: '',
+    rawRequestBase64: trimmedRaw(http.rawRequestBase64),
+    rawResponseBase64: trimmedRaw(http.rawResponseBase64),
+  };
+  const trimmed =
+    'text' in result
+      ? { ...result, http: trimmedHttp, text: historyBody(result.text) }
+      : {
+          ...result,
+          http: trimmedHttp,
+          ...(result.response !== undefined
+            ? { response: { ...result.response, envelopeXml: historyBody(result.response.envelopeXml) } }
+            : {}),
+        };
+  return { result: trimmed, responseBytes: base64Bytes(http.rawResponseBase64) };
 }
 
 type AgentSendResult<K extends 'rest' | 'soap'> = K extends 'rest' ? RestExchangeSummary : ExchangeSummary;
 
+/** The bundle of `requestId`, asking first when its environment is protected; a "no" sends nothing. */
+async function bundleFor(
+  api: ReturnType<typeof ipc>,
+  projectId: string,
+  requestId: string,
+): Promise<Awaited<ReturnType<ReturnType<typeof ipc>['request']['bundle']>>> {
+  const first = await api.request.bundle({ projectId, itemId: requestId });
+  if (first.ok || first.error.code !== 'needs-confirmation') return first;
+  const environment = (first.error.details as { environment?: unknown } | undefined)?.environment;
+  const name = typeof environment === 'string' ? environment : 'This environment';
+  if (!(await askProtectedSend(name))) {
+    return {
+      ok: false,
+      error: {
+        code: 'send-declined',
+        message: `Not sent: "${name}" is protected and the send was not confirmed`,
+        details: { environments: [name] },
+      },
+    };
+  }
+  return await api.request.bundle({ projectId, itemId: requestId, confirmed: true });
+}
+
+/** The HTTP Log's row the agent built for a failed send, from its error; `undefined` when it sent none. */
+function failureOf(error: IpcError, sendId: string): FailedExchangeWire | undefined {
+  const failure = (error.details as { failure?: unknown } | undefined)?.failure;
+  if (typeof failure !== 'object' || failure === null) return undefined;
+  // The tab's id, so the row matches the send it shows.
+  return { ...(failure as FailedExchangeWire), sendId };
+}
+
 /**
- * Sends one saved request through the agent: the server builds the bundle, the agent sends it, the server
- * records the redacted exchange in History. Answers the agent's result as an ordinary send's.
+ * Sends one saved request through the agent: the server builds the bundle (after the person confirms a
+ * protected environment), the agent sends it, the server records the redacted exchange in History, trimmed
+ * as History trims it. A send that failed on the agent leaves the same History entry and HTTP Log row on the
+ * server a failed server send leaves. Answers the agent's result as an ordinary send's.
  */
 export async function sendThroughAgent<K extends 'rest' | 'soap'>(
   kind: K,
@@ -233,7 +358,7 @@ export async function sendThroughAgent<K extends 'rest' | 'soap'>(
   let sent: Awaited<ReturnType<NonNullable<typeof api.agent>['send']>>;
   try {
     if (entry.cancelled) return { ok: false, error: ABORTED };
-    const bundle = await api.request.bundle({ projectId, itemId: requestId });
+    const bundle = await bundleFor(api, projectId, requestId);
     if (!bundle.ok) return bundle;
     if (entry.cancelled) return { ok: false, error: ABORTED };
     entry.atAgent = true;
@@ -241,7 +366,14 @@ export async function sendThroughAgent<K extends 'rest' | 'soap'>(
   } finally {
     routedSends.delete(sendId);
   }
-  if (!sent.ok) return sent;
+  if (!sent.ok) {
+    const failure = failureOf(sent.error, sendId);
+    if (failure !== undefined) {
+      const recorded = await api.exchanges.recordAgentFailure({ projectId, itemId: requestId, kind, failure });
+      if (!recorded.ok) console.error('the failed agent send could not be recorded:', recorded.error);
+    }
+    return sent;
+  }
   // The jar may hold a new domain now.
   void refreshCookieDomains().catch(() => undefined);
   const record =
@@ -250,13 +382,13 @@ export async function sendThroughAgent<K extends 'rest' | 'soap'>(
           projectId,
           itemId: requestId,
           kind: 'rest',
-          result: sent.value as RestExchangeSummary & { sentFrom: 'agent' },
+          ...forHistory(sent.value as RestExchangeSummary & { sentFrom: 'agent' }),
         })
       : await api.exchanges.recordAgentSend({
           projectId,
           itemId: requestId,
           kind: 'soap',
-          result: sent.value,
+          ...forHistory(sent.value as ExchangeSummary & { sentFrom: 'agent' }),
         });
   if (!record.ok) {
     // The send happened; History missing it is worth saying, but the response is still the person's to see.

@@ -437,6 +437,19 @@ describe('request.bundle', () => {
     expect(text).toContain('${secret:token}');
   });
 
+  it('asks for the tab to confirm a protected project environment, and carries it unprotected once confirmed', async () => {
+    const protectedModel = { ...seeded(), environments: [{ ...environment('https://8.8.8.8'), protected: true }] };
+    const deps = { send: sendDeps(protectedModel), serverWorkspaceId: () => 'ws_server_1' };
+    await expect(buildSendBundle(deps, ITEM)).rejects.toMatchObject({
+      code: 'needs-confirmation',
+      details: { environment: 'Dev' },
+    });
+    const bundle = await buildSendBundle(deps, { ...ITEM, confirmed: true });
+    const environmentFile = bundle.files.find((file) => file.path.startsWith('environments/'));
+    expect(environmentFile?.content).toContain('name: Dev');
+    expect(environmentFile?.content).not.toContain('protected');
+  });
+
   it('refuses a file outside the project', async () => {
     await expect(
       bundled({

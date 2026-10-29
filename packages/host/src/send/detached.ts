@@ -14,12 +14,13 @@
  *   the agent passes only the names the bundle declares and this machine allows.
  * - Its OAuth2 tokens, issued SAML tokens and cookies are the caller's session (one per pairing).
  * - It writes no History, HTTP Log row or audit event, reads no window's picks or plugins, and keeps no
- *   script value.
+ *   script value. A failed send's Log row is handed to the caller (`onFailed`), which takes it to the server
+ *   the bundle came from.
  */
 import { createIssuedTokenSource, parseSecretPseudoRef, WirebenchError } from '@wirebench/engine';
 import type { CookieJarHost, EgressPolicy, GetSecret, IssuedTokenSource, PropertyMap } from '@wirebench/engine';
 import type { ExchangeSummary } from '@wirebench/wire/kinds/soap/wire';
-import type { ProxyOptionsWire } from '@wirebench/wire/wire-base';
+import type { FailedExchangeWire, ProxyOptionsWire } from '@wirebench/wire/wire-base';
 import type { RestExchangeSummary } from '@wirebench/wire/kinds/rest/wire';
 import type { EngineService } from '../engine-service.js';
 import type { HostState } from '../host/host-state.js';
@@ -120,6 +121,11 @@ export interface SendFromDirectoryInput {
   readonly session: SendSession;
   /** Aborts the send, as `request.cancel` does a window's. */
   readonly signal?: AbortSignal;
+  /**
+   * Hears the HTTP Log's failure row of a send that failed, built and redacted as a window's is (never shown
+   * with its secrets), before the send rejects. The host writes no row itself: the caller hands it on.
+   */
+  readonly onFailed?: (failure: FailedExchangeWire) => void;
 }
 
 /** The kind's ordinary send result. */
@@ -349,6 +355,7 @@ export async function sendFromDirectory(
       ...(deps.scripts !== undefined ? { scripts: detachedScripts(deps.scripts, host, engine) } : {}),
       ...(deps.confirmProtected !== undefined ? { confirmProtected: deps.confirmProtected } : {}),
       ...(deps.egress !== undefined ? { egress: deps.egress } : {}),
+      ...(input.onFailed !== undefined ? { onSendFailed: input.onFailed } : {}),
     };
     // The same abort a window's `request.cancel` reaches: the send's handle in the registry.
     const onAbort = (): void => {

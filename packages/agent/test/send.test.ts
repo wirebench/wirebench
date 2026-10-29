@@ -191,6 +191,56 @@ describe('agent.send', () => {
     expect(await sendsLeft()).toEqual([]);
   });
 
+  it("answers under the tab's send id, not the host's own", async () => {
+    const id = sendId();
+    const result = (await call('agent.send', { sendId: id, bundle: await restBundle() })) as { sendId: string };
+    expect(result.sendId).toBe(id);
+  });
+
+  it('puts the HTTP Log row of a send that failed on the error, under the tab’s send id and with no secret', async () => {
+    await storeAgentSecret('api_token', SECRET);
+    // Nothing listens on port 1: the send fails on the wire.
+    const project = {
+      ...createProject('Demo', { id: 'p1' }),
+      containers: {
+        rest: [
+          createApi('Gone', {
+            id: 'api-1',
+            baseUrl: 'http://127.0.0.1:1',
+            requests: [
+              createRestRequest('Echo', {
+                id: 'req-1',
+                url: '/echo',
+                headers: [entry('Authorization', 'Bearer ${secret:api_token}')],
+              }),
+            ],
+          }),
+        ],
+      },
+    };
+    const id = sendId();
+    const bundle = { ...(await bundleOf(project, 'req-1')), secretNames: ['api_token'] };
+    const error = (await failure({ sendId: id, bundle })) as {
+      code: string;
+      details?: { failure?: { sendId: string; protocol: string; request: { url: string }; error: { code: string } } };
+    };
+    expect(error.code).toBe('connection-refused');
+    expect(error.details?.failure).toMatchObject({
+      sendId: id,
+      protocol: 'rest',
+      request: { url: 'http://127.0.0.1:1/echo' },
+      error: { code: 'connection-refused' },
+    });
+    expect(JSON.stringify(error.details)).not.toContain(SECRET);
+    expect(await sendsLeft()).toEqual([]);
+  });
+
+  it('marks the row of a send that failed while it was prepared, which leaves no History entry', async () => {
+    const bundle = await restBundle({ headers: [entry('x-sys', '${#System#WB_TEST_OTHER}')] });
+    const error = (await failure({ sendId: sendId(), bundle })) as { details?: { failure?: { stage?: string } } };
+    expect(error.details?.failure?.stage).toBe('prepare');
+  });
+
   it('runs a pre-request script of the folder chain', { timeout: 60_000 }, async () => {
     const folder = createFolder('Orders', {
       id: 'folder-1',

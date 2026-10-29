@@ -22,10 +22,12 @@ import {
   classifyAddress,
   composeUrl,
   expand,
+  linkedEnvironment,
   nodeFs,
   parseSecretPseudoRef,
   ProjectError,
   restEffectiveAuth,
+  resolveAuthEndpoint,
   restItemFor,
   soapEffectiveAuth,
   soapItemFor,
@@ -34,7 +36,15 @@ import {
   writeFileAtomic,
   wssConfigsOf,
 } from '@wirebench/engine';
-import type { AuthConfig, EgressPolicy, Project, PropertyScopes, RestSelected, SoapSelected } from '@wirebench/engine';
+import type {
+  AuthConfig,
+  EgressPolicy,
+  Project,
+  PropertyScopes,
+  RestSelected,
+  RunWorkspace,
+  SoapSelected,
+} from '@wirebench/engine';
 import { SEND_NEEDS, type RequestRouteResponse, type SendNeed } from '@wirebench/wire/agent-route';
 import { previewRest, previewSoap, type SendThroughEngineDeps } from './send/exchange.js';
 
@@ -172,14 +182,46 @@ export function routableItem(project: Project, itemId: string): RoutableItem | u
   return restItemFor(project, itemId) ?? soapItemFor(project, itemId);
 }
 
-/** The references of `item`, against the scopes its send expands with. */
+/** Where a send runs: the environment it is sent under, and the workspace it is inside when it is. */
+export interface SendPlace {
+  readonly environmentId?: string | undefined;
+  readonly workspace?: RunWorkspace | undefined;
+}
+
+/**
+ * The address the environment a send runs under gives the item's container, as written (its `${…}`
+ * unexpanded), or `undefined` when it gives none. Inside a workspace: the linked project environment's
+ * override first, then the workspace environment's `<projectSlug>/<slug>`; outside one, the project
+ * environment's own.
+ */
+export function environmentAddress(project: Project, item: RoutableItem, place: SendPlace): string | undefined {
+  const slug = item.kind === 'rest' ? item.api.slug : item.iface.slug;
+  const { environmentId, workspace } = place;
+  if (environmentId === undefined) return undefined;
+  if (workspace === undefined) {
+    return project.environments.find((environment) => environment.id === environmentId)?.endpoints[slug];
+  }
+  const environment = workspace.workspace.environments.find((candidate) => candidate.id === environmentId);
+  return (
+    linkedEnvironment(project, environment)?.endpoints[slug] ??
+    environment?.endpoints[`${workspace.projectSlug}/${slug}`]
+  );
+}
+
+/**
+ * The references of `item`, against the scopes its send expands with: its own parts, and the addresses it
+ * may go to (the environment's override for its container, and a SOAP request's chosen endpoint), so a
+ * `${#System#…}` or `${secret:…}` in one counts.
+ */
 export function itemReferences(
   project: Project,
   item: RoutableItem,
   scopes: PropertyScopes,
-  extra: readonly unknown[] = [],
+  place: SendPlace = {},
 ): SendReferences {
-  return sendReferences([...itemParts(project, item), ...extra], scopes);
+  const addresses = [environmentAddress(project, item, place)];
+  if (item.kind === 'soap') addresses.push(resolveAuthEndpoint(item.iface, item.request)?.url);
+  return sendReferences([...itemParts(project, item), ...addresses.filter((url) => url !== undefined)], scopes);
 }
 
 /** The addresses a host name resolves to; a literal address is its own answer. */
@@ -341,7 +383,8 @@ export async function routeSend(deps: SendRouteDeps, request: RoutedItem): Promi
   const { project, item } = locateRouted(deps.send, request);
   if (item === undefined) return { route: 'server' };
   const scopes = deps.send.project.scopesFor(request.itemId, request.environment);
-  const references = itemReferences(project, item, scopes);
+  const place = deps.send.project.runContextFor?.(request.itemId, request.environment) ?? {};
+  const references = itemReferences(project, item, scopes, place);
   const target = await targetOf(deps.send, item, request);
   const address = await addressNeeds(target, deps.resolve, deps.egress);
   const needs = new Set<SendNeed>(address.needs);

@@ -101,6 +101,7 @@
     "dialogs.openFolder",
     "dialogs.saveFile",
     "exchanges.get",
+    "exchanges.recordAgentFailure",
     "exchanges.recordAgentSend",
     "exchanges.saveRestBody",
     "forward.freePort",

@@ -153,7 +153,7 @@ async function sendRouteFor(
   if (route === undefined || (route.ok && route.value.route === 'server')) return settle({ kind: 'server' });
   if (!route.ok) return settle({ kind: 'error', error: route.error });
   if (agent.status() !== 'connected') {
-    return settle({ kind: 'error', error: sendNeedsAgentError(route.value.needs) });
+    return settle({ kind: 'error', error: sendNeedsAgentError(route.value.needs, route.value.unresolved === true) });
   }
   return settle({ kind: 'agent' });
 }

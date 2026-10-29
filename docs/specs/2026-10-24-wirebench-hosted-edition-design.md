@@ -1028,12 +1028,27 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
   - `route: 'agent'` with an agent connected: `request.bundle` on the server host, then `agent.send` on the agent,
     then `exchanges.recordAgentSend` on the server host with the redacted exchange, so History stays one list.
   - `route: 'agent'` with no agent connected (none paired, or the paired one not answering): the send fails with
-    `send-needs-agent` naming the needs, and the error offers *Pair this machine*.
+    `send-needs-agent` naming the needs, and the error offers *Pair this machine*. A host the server cannot
+    resolve (`detail.reason: 'unresolved'`) is named as such: it may be a name only the person's network knows.
+  - A protected environment (the workspace's, or its linked project environment) is asked about in the tab: the
+    bundle answers `needs-confirmation` with the environment's name, the tab asks with its protected-send prompt,
+    and asks again with `confirmed: true`. A "no" sends nothing. The bundle's environment is never protected, so
+    the agent does not ask again.
+  - What is recorded: the tab trims the agent's exchange as History trims a body (256 Ki characters, with its
+    marker) before `exchanges.recordAgentSend`, so a large response never crosses the server socket whole; the
+    response's own size goes with it. The send is audited as a send of the server host's own
+    (`desktop.request_sent`). A send that fails on the agent carries the HTTP Log's failure row on the error
+    (`details.failure`); the tab hands it to `exchanges.recordAgentFailure`, which leaves the same History entry
+    and Log row a failed server send leaves (the row alone when it failed while prepared). Both carry the tab's
+    `sendId`.
 - **No split sends.** A send whose needs span both hosts is not split (§3.4 rule 4). It fails with `secret-missing`
   naming the host that lacks the value.
 - **The bundle** holds:
   - the request item and every script in its folder chain;
-  - the project's and the active environment's non-secret values;
+  - the project's and the active environment's non-secret values; inside a workspace, the environment is written
+    as a project one holding the send's env scope, with an address for the container only when that environment
+    (or its linked project environment) overrides it, as written, so the container's own address ladder (a SOAP
+    endpoint's `trustInvalid`) applies otherwise;
   - the cookie-jar policy;
   - secret references, by name only;
   - the `${#System#…}` names the request reads (`systemNames`), by name only;

@@ -223,6 +223,8 @@ export const soapStorage: ProtocolStorage<Interface> = {
       url: e.url,
       ...optional('auth', soapOwnerAuth(e.auth)),
       authMode: e.authMode,
+      // Written by `interfaceDocument`; without it here a reopened project (or an agent's bundle) loses it.
+      ...(e.trustInvalid === true ? { trustInvalid: true } : {}),
     }));
     return {
       kind: 'soap',

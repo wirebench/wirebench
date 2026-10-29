@@ -15,6 +15,8 @@ import { useSendRouteStore, watchAgent } from '../../src/renderer/state/send-rou
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { showToast } from '../../src/renderer/components/toast.js';
 import { RouteChip } from '../../src/renderer/features/request-editor/route-chip.js';
+import { ProtectedSendDialog } from '../../src/renderer/features/request-editor/protected-send-dialog.js';
+import { HISTORY_BODY_MAX_CHARS } from '@wirebench/wire/history-body';
 import { ThisMachineSection } from '../../src/renderer/features/preferences/sections/this-machine-section.js';
 import { availableNav } from '../../src/renderer/features/preferences/settings-model.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -89,6 +91,7 @@ interface Calls {
   readonly send: ReturnType<typeof vi.fn>;
   readonly cancel: ReturnType<typeof vi.fn>;
   readonly record: ReturnType<typeof vi.fn>;
+  readonly recordFailure: ReturnType<typeof vi.fn>;
   readonly agentSend: ReturnType<typeof vi.fn>;
   readonly agentCancel: ReturnType<typeof vi.fn>;
   readonly domains: ReturnType<typeof vi.fn>;
@@ -103,6 +106,7 @@ function install(agent: AgentEnv | undefined, capabilities: readonly string[] = 
     send: vi.fn(),
     cancel: vi.fn().mockResolvedValue({ ok: true, value: { cancelled: true } }),
     record: vi.fn().mockResolvedValue({ ok: true, value: {} }),
+    recordFailure: vi.fn().mockResolvedValue({ ok: true, value: {} }),
     agentSend: vi.fn().mockResolvedValue({ ok: true, value: { ...makeRestExchange(), sentFrom: 'agent' } }),
     agentCancel: vi.fn().mockResolvedValue({ ok: true, value: { cancelled: true } }),
     domains: vi.fn().mockResolvedValue({ ok: true, value: { domains: [] } }),
@@ -118,7 +122,7 @@ function install(agent: AgentEnv | undefined, capabilities: readonly string[] = 
       preflightRest: vi.fn().mockResolvedValue({ ok: false, error: { code: 'x', message: 'x' } }),
       preflight: vi.fn().mockResolvedValue({ ok: false, error: { code: 'x', message: 'x' } }),
     },
-    exchanges: { recordAgentSend: calls.record },
+    exchanges: { recordAgentSend: calls.record, recordAgentFailure: calls.recordFailure },
   } as never);
   Object.assign(api, {
     env: { e2e: false, osTheme: 'dark', host: 'browser', capabilities, ...(agent ? { agent } : {}) },
@@ -537,5 +541,122 @@ describe('History', () => {
     expect(screen.getByTestId('history-origin').textContent).toBe('Server');
     rerender(<SentFromTag sentFrom={undefined} />);
     expect(screen.queryByTestId('history-origin')).toBeNull();
+  });
+});
+
+describe('an agent send, further', () => {
+  const NEEDS_CONFIRMATION = {
+    ok: false,
+    error: {
+      code: 'needs-confirmation',
+      message: '"Production" is a protected environment: confirm the send first',
+      details: { environment: 'Production' },
+    },
+  };
+
+  it('asks before a protected environment, and sends once the person confirms', async () => {
+    const calls = install(fakeAgent().env);
+    calls.bundle.mockResolvedValueOnce(NEEDS_CONFIRMATION);
+    render(<ProtectedSendDialog />);
+    const sending = useExchangesStore.getState().sendRest('rest-1');
+
+    const dialog = await screen.findByTestId('protected-send-dialog');
+    expect(dialog.textContent).toContain('Send to Production?');
+    expect(dialog.textContent).toContain('"Production" is a protected environment');
+    expect(calls.agentSend).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('protected-send-confirm'));
+    await act(async () => {
+      await sending;
+    });
+
+    expect(calls.bundle).toHaveBeenNthCalledWith(2, { projectId: 'p1', itemId: 'rest-1', confirmed: true });
+    expect(calls.agentSend).toHaveBeenCalledTimes(1);
+    expect(useExchangesStore.getState().restByRequest['rest-1']?.status).toBe('done');
+  });
+
+  it('sends nothing when the person declines', async () => {
+    const calls = install(fakeAgent().env);
+    calls.bundle.mockResolvedValueOnce(NEEDS_CONFIRMATION);
+    render(<ProtectedSendDialog />);
+    const sending = useExchangesStore.getState().sendRest('rest-1');
+    await screen.findByTestId('protected-send-dialog');
+    fireEvent.click(screen.getByTestId('protected-send-cancel'));
+    await act(async () => {
+      await sending;
+    });
+
+    expect(calls.bundle).toHaveBeenCalledTimes(1);
+    expect(calls.agentSend).not.toHaveBeenCalled();
+    expect(calls.record).not.toHaveBeenCalled();
+    const state = useExchangesStore.getState().restByRequest['rest-1'];
+    expect(state?.error).toMatchObject({ code: 'send-declined', details: { environments: ['Production'] } });
+    // The person's own choice: not a Problem.
+    expect(useProblemsStore.getState().items).toEqual([]);
+  });
+
+  it('says a host the server cannot resolve may be one only this network knows, and offers to pair', async () => {
+    const calls = install(fakeAgent('none').env);
+    calls.route.mockResolvedValue({
+      ok: true,
+      value: { route: 'agent', needs: ['private-target'], detail: { reason: 'unresolved' }, info: INFO },
+    });
+    await useExchangesStore.getState().sendRest('rest-1');
+    const error = useExchangesStore.getState().restByRequest['rest-1']?.error;
+    expect(error).toMatchObject({
+      code: 'send-needs-agent',
+      details: { needs: ['private-target'], reason: 'unresolved' },
+    });
+    expect(error?.message).toContain('does not resolve from the server');
+    expect(error?.message).toContain('only your network knows');
+    const [message, action] = vi.mocked(showToast).mock.calls.at(-1) ?? [];
+    expect(message).toContain('does not resolve from the server');
+    expect(action?.label).toBe('Pair this machine…');
+  });
+
+  it('uploads a 30 MiB response trimmed as History trims it, and shows the whole of it', async () => {
+    const calls = install(fakeAgent().env);
+    const whole = 'y'.repeat(30 * 1024 * 1024);
+    const big = makeRestExchange({ text: whole, sentFrom: 'agent' });
+    calls.agentSend.mockResolvedValue({ ok: true, value: big });
+    await useExchangesStore.getState().sendRest('rest-1');
+
+    const [request] = calls.record.mock.calls[0] as [
+      { result: { text: string; http: { rawResponseBase64: string; bodyBase64: string } }; responseBytes: number },
+    ];
+    expect(request.result.text.startsWith('y'.repeat(HISTORY_BODY_MAX_CHARS))).toBe(true);
+    expect(request.result.text.length).toBeLessThan(HISTORY_BODY_MAX_CHARS + 64);
+    expect(request.result.text).toMatch(/… truncated, \d+ more characters$/);
+    expect(request.result.http.bodyBase64).toBe('');
+    expect(request.responseBytes).toBe(Buffer.from(big.http.rawResponseBase64, 'base64').byteLength);
+    // Well under the server socket's 32 MiB.
+    expect(JSON.stringify(request).length).toBeLessThan(2 * 1024 * 1024);
+    expect(useExchangesStore.getState().restByRequest['rest-1']?.exchange?.text.length).toBe(whole.length);
+  });
+
+  it('has the server record a failed agent send, under the tab’s send id', async () => {
+    const calls = install(fakeAgent().env);
+    const row = {
+      sendId: 'host-own-id',
+      protocol: 'rest',
+      requestId: 'rest-1',
+      request: { url: 'http://127.0.0.1:1/echo', method: 'GET', headers: {} },
+      startedAt: '2026-10-29T10:00:00.000Z',
+      durationMs: 3,
+      error: { code: 'connection-refused', message: 'Connection refused.' },
+    };
+    calls.agentSend.mockResolvedValue({
+      ok: false,
+      error: { code: 'connection-refused', message: 'Connection refused.', details: { failure: row } },
+    });
+    await useExchangesStore.getState().sendRest('rest-1');
+    const sendId = useExchangesStore.getState().restByRequest['rest-1']?.sendId;
+    expect(calls.recordFailure).toHaveBeenCalledWith({
+      projectId: 'p1',
+      itemId: 'rest-1',
+      kind: 'rest',
+      failure: { ...row, sendId },
+    });
+    expect(calls.record).not.toHaveBeenCalled();
+    expect(useExchangesStore.getState().restByRequest['rest-1']?.error?.code).toBe('connection-refused');
   });
 });
