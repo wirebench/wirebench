@@ -887,9 +887,9 @@ Plan: `docs/plans/2026-10-27-browser-client.md`.
   the sign-out action (17.2).
 - The server serves the build from `dist/browser/` with `@fastify/static`, hashed assets cached as
   immutable, and the CSP `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:
-  blob:; connect-src 'self' ws://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'self';
-  frame-ancestors 'none'` (`blob:` for image previews; `ws://127.0.0.1:*` for the paired agent, §18.3) as a
-  header. The page's meta tag carries the same policy less
+  blob:; connect-src 'self' ws://127.0.0.1:47615 … ws://127.0.0.1:47634; object-src 'none'; base-uri 'none';
+  form-action 'self'; frame-ancestors 'none'` (`blob:` for image previews; the twenty agent ports, each
+  spelled out, for the paired agent, §18.3) as a header. The page's meta tag carries the same policy less
   `frame-ancestors`, which only a header can. The container image builds it in its build stage.
 
 ### 17.7 Testing
@@ -898,7 +898,8 @@ Plan: `docs/plans/2026-10-27-browser-client.md`.
   egress rule as a table test over every range above.
 - One Playwright suite (`e2e/browser/`) against the server image in Docker with PostgreSQL, run in CI:
   sign in with a local password, open a server workspace, send a request to an echo service on the compose network (a private address, open by default), see
-  a request to `127.0.0.1` refused by the egress rule, and see
+  a request to `127.0.0.1` stop with `send-needs-agent` and *Pair this machine* (§18.4: the person's localhost
+  is never the server's; before slice 3 the egress rule refused it), and see
   that the SSH area and the file dialogs are absent. No local Electron windows are involved.
 
 ## 18. Slice 3 amendment: the local agent (2026-10-29)
@@ -989,39 +990,45 @@ section wins. Plan: `docs/plans/2026-10-29-local-agent.md`.
   never trusts a nonce it has not redeemed itself.
 - **Preflight.** For paired origins only, the agent answers the HTTP `OPTIONS` preflight that browsers send for
   private-network requests, with `Access-Control-Allow-Private-Network: true`.
-- **CSP.** The browser build's CSP gains `ws://127.0.0.1:*` in `connect-src`, beside `'self'`, in both the
-  header and the build's meta tag (§17.6). Any port, since the agent may move within its range.
+- **CSP.** The browser build's CSP gains the agent's twenty ports in `connect-src`, beside `'self'`, each
+  spelled out (`ws://127.0.0.1:47615` through `ws://127.0.0.1:47634`), in both the header and the build's
+  meta tag (§17.6): the agent may move within its range, and nowhere else on loopback. The tab refuses a
+  pairing whose port is not an integer in that range.
 - **The tab's side.** The bootstrap reads `GET /api/v1/agent/pairings` once after the server's hello, and
-  again when *This machine* pairs or unpairs. For the first pairing it mints a nonce
+  again when *This machine* pairs or unpairs. It tries the user's pairings in turn, the one that last
+  connected from this browser first (kept in `localStorage`). For a pairing it mints a nonce
   (`POST /api/v1/agent/nonces`) and opens a second socket to `ws://127.0.0.1:<port>/host`, sending the auth
   frame before it waits for the hello; every reconnect mints a fresh nonce, one per attempt, with backoff up
-  to 30 s. With no pairing there is no second socket. Its status (none, connecting, connected, and the
-  agent's version) shows in Settings → *This machine*; it has no reconnect bar. The renderer's `agent.*`
-  calls go to this socket, and answer `host-disconnected` without it; every other call goes to the server's.
-  A tab with no pairing does not ask `request.route` at all and shows no chip: it sends as before the agent
-  existed. The "or lacks `send:private`" of §18.4 is not used: the server's hello never lists that
-  capability (it reaches private ranges through its egress policy instead), so it would route every
-  private target of every tab, paired or not.
+  to 30 s. An agent that refuses the pairing (`4401`, `4403`: it belongs to another machine, or was unpaired
+  there) moves the tab on to the next pairing; a pairing refused three times in a row shows *Refused by
+  this machine's agent* and is retried only every five minutes. With no pairing there is no second socket.
+  Its status (none, connecting, connected with the agent's version, refused) shows in Settings → *This
+  machine*; it has no reconnect bar. The renderer's `agent.*` calls go to this socket, and answer
+  `host-disconnected` without it; every other call goes to the server's.
 
 ### 18.4 The send route rule and the send bundle (amends §3.4)
 
 - **The rule** runs on the server host, which has the project: `request.route { projectId, itemId, environment? }` →
   `{ route: 'server' } | { route: 'agent', needs: Capability[] }`. These need the agent:
-  - A target whose host the egress classifier resolves to loopback, link-local or a private range, even when the
-    server could reach a private range. In the browser, §3.4 rule 1 wins over decision 12: the person's `localhost`
-    is never the server's.
+  - A target whose host the egress classifier resolves to loopback, link-local or a metadata address, or a host the
+    server cannot resolve: always. In the browser, §3.4 rule 1 wins over decision 12: the person's `localhost` is
+    never the server's.
+  - A target in a private range only when the server's egress policy denies private ranges (`denyPrivate`). A
+    server that may reach them sends there itself, as decision 12 has it (corrected on review: the earlier text
+    sent every private target to the agent, which would take a team's own network away from a server that can
+    reach it). The host reads the rule from its platform (`network.egress`).
   - A `${#System#…}` reference, a secret source, a team secret, a keystore on a machine path, Kerberos, NTLM with a
     machine credential, or a cookie jar the agent holds for the target's domain. A `${#System#…}` name reads
     only what the agent's own allowlist lets it (§18.5).
 
   A pin to `agent` in the browser state, on the workspace or on the request, also forces the agent.
-- **The renderer** asks `request.route` before a send when the window has an agent transport (a pairing,
-  §18.3):
+- **The renderer** asks `request.route` before every REST and SOAP send in a browser tab, paired or not (the
+  desktop never asks):
   - `route: 'server'`: the send goes as today.
   - `route: 'agent'` with an agent connected: `request.bundle` on the server host, then `agent.send` on the agent,
     then `exchanges.recordAgentSend` on the server host with the redacted exchange, so History stays one list.
-  - `route: 'agent'` with no agent: the send fails with `send-needs-agent` naming the needs, and the error offers
-    *Pair this machine*.
+  - `route: 'agent'` with no agent connected (none paired, or the paired one not answering): the send fails with
+    `send-needs-agent` naming the needs, and the error offers *Pair this machine*.
 - **No split sends.** A send whose needs span both hosts is not split (§3.4 rule 4). It fails with `secret-missing`
   naming the host that lacks the value.
 - **The bundle** holds:

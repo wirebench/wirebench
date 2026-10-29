@@ -45,13 +45,18 @@ type WirebenchEventMap = { [E in AllEvents as E['name']]: EventPayload<E> };
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured to leave it out; its type is used below
 const { agent: _agentChannels, ...windowChannels } = channels;
 
-/** Where the tab's paired agent stands (spec §18.3): no pairing, a pairing not answering yet, or connected. */
-export type AgentStatus = 'none' | 'connecting' | 'connected';
+/**
+ * Where the tab's paired agent stands (spec §18.3): no pairing, a pairing not answering yet, connected, or
+ * every pairing refused by this machine's agent three times in a row.
+ */
+export type AgentStatus = 'none' | 'connecting' | 'connected' | 'refused';
 
 /** One of the user's paired machines, as `GET /api/v1/agent/pairings` lists it. */
 export interface AgentPairingView {
   readonly id: string;
   readonly port: number;
+  /** The agent install's id; its first characters tell two machines apart. */
+  readonly agentId: string;
   readonly sshOptIn: boolean;
   readonly createdAt: string;
   readonly lastSeenAt: string;
@@ -68,6 +73,8 @@ export interface AgentEnv {
   status(): AgentStatus;
   /** The connected agent's version; `undefined` until it says, or while not connected. */
   version(): string | undefined;
+  /** Whether this machine's agent refused the pairing three times in a row. */
+  refused(pairingId: string): boolean;
   /** Each status change, and once more when the version arrives. */
   onStatus(listener: (status: AgentStatus) => void): () => void;
   pairings(): Promise<readonly AgentPairingView[]>;

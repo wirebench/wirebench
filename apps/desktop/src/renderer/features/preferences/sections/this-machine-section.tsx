@@ -17,8 +17,17 @@ export const PAIRING_TRUST_TEXT =
 /** How often the list is read again while a code is shown, so a pairing made elsewhere appears. */
 const CODE_POLL_MS = 3_000;
 
+/** What a pairing this machine's agent refused three times in a row shows. */
+export const REFUSED_TEXT = 'Refused by this machine’s agent';
+
+/** A machine's short name: the first eight characters of its agent id. */
+function machineLabel(pairing: AgentPairingView): string {
+  return pairing.agentId === '' ? 'Machine' : `Machine ${pairing.agentId.slice(0, 8)}`;
+}
+
 function statusText(status: AgentStatus, version: string | undefined): string {
   if (status === 'connected') return version === undefined ? 'Connected' : `Connected (agent ${version})`;
+  if (status === 'refused') return REFUSED_TEXT;
   if (status === 'connecting')
     return 'Paired, connecting… Start the Wirebench desktop app or wirebench agent on this machine.';
   return 'Not paired';
@@ -123,15 +132,23 @@ export function ThisMachineSection() {
               {(pairings ?? []).map((pairing) => (
                 <li key={pairing.id} data-testid="agent-pairing-row" className="flex items-center gap-3 py-2">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-fg-default">Port {String(pairing.port)}</p>
+                    <p className="truncate text-sm text-fg-default">
+                      <span className="font-mono">{machineLabel(pairing)}</span> · paired{' '}
+                      {new Date(pairing.createdAt).toLocaleDateString()}
+                    </p>
                     <p className="text-xs text-fg-subtle">
-                      paired {new Date(pairing.createdAt).toLocaleString()} · last seen{' '}
-                      {new Date(pairing.lastSeenAt).toLocaleString()}
+                      port {String(pairing.port)} · last seen {new Date(pairing.lastSeenAt).toLocaleString()}
+                      {agent.refused(pairing.id) && (
+                        <span data-testid="agent-pairing-refused" className="text-status-danger">
+                          {' '}
+                          · {REFUSED_TEXT}
+                        </span>
+                      )}
                     </p>
                   </div>
                   <Button
                     data-testid="agent-unpair"
-                    aria-label={`Unpair the machine on port ${String(pairing.port)}`}
+                    aria-label={`Unpair ${machineLabel(pairing)}`}
                     disabled={busy}
                     onClick={() => void unpair(pairing.id)}
                   >

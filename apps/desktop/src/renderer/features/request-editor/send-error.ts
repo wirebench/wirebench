@@ -63,10 +63,11 @@ export function isChosenOutcome(code: string): boolean {
 const TRANSPORT = new Set(['connection-refused', 'dns', 'timeout', 'tls', 'proxy', 'network']);
 
 /**
- * Codes about where the send could run, not about the project: no agent connected for a send that needs one,
- * or the agent socket dropping mid-send (spec §18.4). The pane says what to do; nothing in Problems would.
+ * Codes that are not about the project: no agent connected for a send that needs one, a socket (the
+ * server's or the agent's) dropping mid-send (spec §18.4), or an unsaved edit that would not apply before
+ * a routed send (its toast already said why). The pane says what to do; nothing in Problems would.
  */
-const NOT_THE_PROJECT = new Set(['send-needs-agent', 'host-disconnected']);
+const NOT_THE_PROJECT = new Set(['send-needs-agent', 'host-disconnected', 'commit-failed']);
 
 /** The `<protocol>-unresolved-properties` codes: a send refused because a `${name}` has no value. */
 function isUnresolvedCode(code: string): boolean {

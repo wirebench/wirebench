@@ -153,10 +153,25 @@ describe('request.route', () => {
     await expect(routeSend(deps, ITEM)).resolves.toMatchObject({ route: 'agent', needs: ['loopback-target'] });
   });
 
-  it('sends a 10.0.0.5 target through the agent even with private ranges open on the server', async () => {
-    const deps = routeDeps(seeded({ base: 'http://10.0.0.5' }));
-    expect(deps.send.egress).toEqual({ denyPrivate: false });
+  it('sends a 10.0.0.5 target from the server when its egress rule opens private ranges', async () => {
+    const deps = routeDeps(seeded({ base: 'http://10.0.0.5' }), { egress: { denyPrivate: false } });
+    await expect(routeSend(deps, ITEM)).resolves.toMatchObject({ route: 'server' });
+    // No egress rule at all is the same: nothing denies the range.
+    await expect(routeSend(routeDeps(seeded({ base: 'http://10.0.0.5' })), ITEM)).resolves.toMatchObject({
+      route: 'server',
+    });
+  });
+
+  it('sends a 10.0.0.5 target through the agent when the egress rule denies private ranges', async () => {
+    const deps = routeDeps(seeded({ base: 'http://10.0.0.5' }), { egress: { denyPrivate: true } });
     await expect(routeSend(deps, ITEM)).resolves.toMatchObject({ route: 'agent', needs: ['private-target'] });
+  });
+
+  it('sends link-local and metadata targets through the agent whatever the egress rule', async () => {
+    for (const base of ['http://169.254.10.1', 'http://169.254.169.254']) {
+      const deps = routeDeps(seeded({ base }), { egress: { denyPrivate: false } });
+      await expect(routeSend(deps, ITEM)).resolves.toMatchObject({ route: 'agent', needs: ['private-target'] });
+    }
   });
 
   it('sends a host the server cannot resolve through the agent: a name only the person may know', async () => {
@@ -172,7 +187,10 @@ describe('request.route', () => {
       route: 'agent',
       needs: ['loopback-target'],
     });
-    await expect(routeSend(routeDeps(seeded({ base: 'http://[::ffff:10.0.0.5]/' })), ITEM)).resolves.toMatchObject({
+    const deny = { egress: { denyPrivate: true } };
+    await expect(
+      routeSend(routeDeps(seeded({ base: 'http://[::ffff:10.0.0.5]/' }), deny), ITEM),
+    ).resolves.toMatchObject({
       route: 'agent',
       needs: ['private-target'],
     });
@@ -300,6 +318,7 @@ describe('request.route', () => {
         auth: { type: 'kerberos' },
         request: { headers: [entry('U', '${#System#USER}')] },
       }),
+      { egress: { denyPrivate: true } },
     );
     await expect(routeSend(deps, ITEM)).resolves.toMatchObject({
       route: 'agent',

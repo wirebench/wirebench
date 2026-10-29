@@ -37,15 +37,26 @@ function fakeAgent(initial: AgentStatus = 'connected') {
     {
       id: 'pair-1',
       port: 47615,
+      agentId: '3f9c2a71-0d4e-4b8a-9e11-5a6b7c8d9e0f',
       sshOptIn: false,
       createdAt: '2026-10-29T10:00:00Z',
       lastSeenAt: '2026-10-29T11:00:00Z',
     },
+    {
+      id: 'pair-2',
+      port: 47615,
+      agentId: 'b2e8d4f0-1111-4c2d-8e3f-000000000000',
+      sshOptIn: false,
+      createdAt: '2026-10-20T09:00:00Z',
+      lastSeenAt: '2026-10-21T09:00:00Z',
+    },
   ];
+  const refusedIds = new Set<string>();
   const env = {
     serverOrigin: 'https://acme.example.test',
     status: () => status,
     version: () => (status === 'connected' ? '7.0.0' : undefined),
+    refused: (id: string) => refusedIds.has(id),
     onStatus: (listener: (next: AgentStatus) => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -60,6 +71,9 @@ function fakeAgent(initial: AgentStatus = 'connected') {
   } satisfies AgentEnv;
   return {
     env,
+    refuse(id: string) {
+      refusedIds.add(id);
+    },
     set(next: AgentStatus) {
       status = next;
       for (const listener of listeners) listener(next);
@@ -272,6 +286,55 @@ describe('a browser send', () => {
     expect(useExchangesStore.getState().restByRequest['rest-1']?.error?.code).toBe('aborted');
   });
 
+  it.each(['rest', 'soap'] as const)(
+    'stops a %s send cancelled while its route is asked: nothing is sent anywhere',
+    async (kind) => {
+      const calls = install(fakeAgent().env);
+      let release: (value: unknown) => void = () => undefined;
+      calls.route.mockReturnValue(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+      const store = useExchangesStore.getState();
+      const sending = kind === 'rest' ? store.sendRest('rest-1') : store.send('soap-1', true);
+      await vi.waitFor(() => expect(calls.route).toHaveBeenCalled());
+      await (kind === 'rest' ? store.cancelRest('rest-1') : store.cancel('soap-1'));
+      release({ ok: true, value: { route: 'server', info: INFO } });
+      await sending;
+      expect(calls.sendRest).not.toHaveBeenCalled();
+      expect(calls.send).not.toHaveBeenCalled();
+      expect(calls.bundle).not.toHaveBeenCalled();
+      expect(calls.agentSend).not.toHaveBeenCalled();
+      // The server had nothing of it to cancel.
+      expect(calls.cancel).not.toHaveBeenCalled();
+      const state =
+        kind === 'rest'
+          ? useExchangesStore.getState().restByRequest['rest-1']
+          : useExchangesStore.getState().byRequest['soap-1'];
+      expect(state?.error?.code).toBe('aborted');
+    },
+  );
+
+  it('stops a send cancelled while its unsaved edit is committed', async () => {
+    const calls = install(fakeAgent().env);
+    let release: (value: boolean) => void = () => undefined;
+    const commit = vi.spyOn(useProjectStore.getState(), 'commitRestRequest').mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    const sending = useExchangesStore.getState().sendRest('rest-1');
+    await vi.waitFor(() => expect(commit).toHaveBeenCalled());
+    await useExchangesStore.getState().cancelRest('rest-1');
+    release(true);
+    await sending;
+    commit.mockRestore();
+    expect(calls.route).not.toHaveBeenCalled();
+    expect(calls.sendRest).not.toHaveBeenCalled();
+    expect(useExchangesStore.getState().restByRequest['rest-1']?.error?.code).toBe('aborted');
+  });
+
   it('sends to the agent when it holds cookies for the target host, though the server says server', async () => {
     const agent = fakeAgent();
     const calls = install(agent.env);
@@ -322,20 +385,26 @@ describe('the desktop', () => {
 });
 
 describe('a tab with no pairing', () => {
-  it('asks for no route, shows no chip, and sends from the server as before', async () => {
+  it('still asks for the route and shows the chip: a private target the server reaches goes from the server', async () => {
     const calls = install(fakeAgent('none').env);
+    calls.route.mockResolvedValue({ ok: true, value: { route: 'server', info: INFO } });
     render(<RouteChip requestId="rest-1" />);
-    expect(screen.queryByTestId('send-route-chip')).toBeNull();
+    await vi.waitFor(() => expect(screen.getByTestId('send-route-chip').textContent).toBe('Server'));
     await useExchangesStore.getState().sendRest('rest-1');
-    expect(calls.route).not.toHaveBeenCalled();
     expect(calls.sendRest).toHaveBeenCalledTimes(1);
   });
 
-  it('routes again once paired', async () => {
-    const calls = install(fakeAgent('connected').env);
+  it('answers send-needs-agent with Pair this machine for a localhost target', async () => {
+    const calls = install(fakeAgent('none').env);
     await useExchangesStore.getState().sendRest('rest-1');
     expect(calls.route).toHaveBeenCalledTimes(1);
-    expect(calls.agentSend).toHaveBeenCalledTimes(1);
+    expect(calls.sendRest).not.toHaveBeenCalled();
+    expect(useExchangesStore.getState().restByRequest['rest-1']?.error).toMatchObject({
+      code: 'send-needs-agent',
+      details: { needs: ['loopback-target'] },
+    });
+    const [, action] = vi.mocked(showToast).mock.calls.at(-1) ?? [];
+    expect(action?.label).toBe('Pair this machine…');
   });
 });
 
@@ -422,7 +491,12 @@ describe('Settings → This machine', () => {
     expect(screen.getByTestId('agent-status').textContent).toBe('Connected (agent 7.0.0)');
     expect(screen.getByText(/sends requests from this server’s workspaces on your behalf/)).toBeTruthy();
 
-    await vi.waitFor(() => expect(screen.getAllByTestId('agent-pairing-row')).toHaveLength(1));
+    await vi.waitFor(() => expect(screen.getAllByTestId('agent-pairing-row')).toHaveLength(2));
+    // Two machines told apart by their agent id and when they were paired.
+    const rows = screen.getAllByTestId('agent-pairing-row').map((row) => row.textContent ?? '');
+    expect(rows[0]).toContain('3f9c2a71');
+    expect(rows[1]).toContain('b2e8d4f0');
+    expect(rows[0]).toContain(new Date('2026-10-29T10:00:00Z').toLocaleDateString());
     expect(agent.env.pairings).toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId('agent-pair'));
@@ -432,9 +506,25 @@ describe('Settings → This machine', () => {
     expect(text).toContain('Pair this machine…');
     expect(text).toContain('wirebench agent pair K7QW2P --server https://acme.example.test');
 
-    fireEvent.click(screen.getByTestId('agent-unpair'));
+    fireEvent.click(screen.getAllByTestId('agent-unpair')[0]!);
     await vi.waitFor(() => expect(agent.env.unpair).toHaveBeenCalledWith('pair-1'));
-    await vi.waitFor(() => expect(screen.queryAllByTestId('agent-pairing-row')).toHaveLength(0));
+    await vi.waitFor(() => expect(screen.queryAllByTestId('agent-pairing-row')).toHaveLength(1));
+  });
+});
+
+describe('Settings → This machine, refused', () => {
+  it("says the machine's agent refused the pairing, on the status and on its row", async () => {
+    const agent = fakeAgent('connecting');
+    agent.refuse('pair-1');
+    install(agent.env);
+    stopWatching = watchAgent();
+    render(<ThisMachineSection />);
+    act(() => agent.set('refused'));
+    expect(screen.getByTestId('agent-status').textContent).toBe('Refused by this machine’s agent');
+    await vi.waitFor(() => expect(screen.getAllByTestId('agent-pairing-row')).toHaveLength(2));
+    const rows = screen.getAllByTestId('agent-pairing-row');
+    expect(rows[0]?.textContent).toContain('Refused by this machine’s agent');
+    expect(rows[1]?.textContent).not.toContain('Refused');
   });
 });
 

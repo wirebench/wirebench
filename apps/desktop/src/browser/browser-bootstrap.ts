@@ -67,6 +67,8 @@ export interface BootstrapDeps {
   /** Loads the renderer; called once, after `wirebench` is set. */
   readonly mountRenderer: () => Promise<unknown>;
   readonly createSocket?: (url: string) => SocketLike;
+  /** The page's `localStorage`: which pairing to try first. Optional, and every use is guarded. */
+  readonly storage?: Pick<Storage, 'getItem' | 'setItem'>;
   /** Opens the agent's socket; `createSocket` unless a test passes its own. */
   readonly createAgentSocket?: (url: string) => SocketLike;
   /** The page's `matchMedia`: "System" follows the browser's `prefers-color-scheme`, not the server. */
@@ -145,6 +147,7 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
     fetch: deps.fetch,
     serverOrigin: `${deps.location.protocol}//${deps.location.host}`,
     ...(agentSocket === undefined ? {} : { createSocket: agentSocket }),
+    ...(deps.storage === undefined ? {} : { storage: deps.storage }),
   });
 
   const toSignIn = (): void => {

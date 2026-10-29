@@ -2,8 +2,7 @@
  * The small chip beside a browser tab's Send button (hosted edition spec §18.4): *Server* or *Agent*, for
  * the route the next send takes, and a menu that pins the request, or its whole workspace, to the agent.
  * The route is asked when the chip mounts and again after an edit (debounced by the caller through
- * `scheduleRouteRefresh`). It renders nothing where the tab does not route: on the desktop (no `env.agent`),
- * and in a tab with no pairing, whose sends all go from the server.
+ * `scheduleRouteRefresh`). It renders nothing on the desktop (no `env.agent`), which does not route.
  */
 import { useEffect, useRef } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -31,25 +30,23 @@ export function routeTitle(view: RouteView | undefined): string {
 
 export function RouteChip({ requestId }: { readonly requestId: string }) {
   const view = useSendRouteStore((state) => state.byRequest[requestId]);
-  // Subscribed so a pairing made or dropped shows or hides the chip; the live answer is the agent's own.
-  useSendRouteStore((state) => state.agentStatus);
-  const hasAgent = routingActive();
+  const routing = routingActive();
 
   // The request as the editor holds it: a new object on every edit and every model update.
   const edited = useProjectStore((state) => state.restRequests[requestId] ?? state.requests[requestId]);
   const asked = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!hasAgent) return;
+    if (!routing) return;
     if (asked.current !== requestId) {
       asked.current = requestId;
       void routeOf(requestId).catch(() => undefined);
       return;
     }
     scheduleRouteRefresh(requestId);
-  }, [hasAgent, requestId, edited]);
+  }, [routing, requestId, edited]);
 
-  if (!hasAgent) return null;
+  if (!routing) return null;
 
   const pins = view?.info?.pins;
   const pin = (scope: 'request' | 'workspace', value: 'agent' | null): void => {

@@ -1477,6 +1477,8 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
       ? undefined
       : {
           send: toSendDeps(engineService, requestDeps),
+          // The platform's own egress rule decides whether a private target is the server's to send.
+          ...egressOption,
           pins: new RoutePins(routePinsPath(platform.paths.userData())),
           secretSourceNames: (projectId) => scopeOfProject(projectId)?.secretSources.mappedNames() ?? [],
           // A team secret is one the workspace's vault holds a value for; the server can open none of them.

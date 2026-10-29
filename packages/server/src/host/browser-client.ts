@@ -33,7 +33,7 @@ export const BROWSER_BUILD_DIR = fileURLToPath(new URL('../../dist/browser/', im
 
 /** Spec §17.6, verbatim; the build's meta tag carries the same policy less `frame-ancestors`, which only a header can. */
 export const BROWSER_CONTENT_SECURITY_POLICY =
-  "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+  "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:47615 ws://127.0.0.1:47616 ws://127.0.0.1:47617 ws://127.0.0.1:47618 ws://127.0.0.1:47619 ws://127.0.0.1:47620 ws://127.0.0.1:47621 ws://127.0.0.1:47622 ws://127.0.0.1:47623 ws://127.0.0.1:47624 ws://127.0.0.1:47625 ws://127.0.0.1:47626 ws://127.0.0.1:47627 ws://127.0.0.1:47628 ws://127.0.0.1:47629 ws://127.0.0.1:47630 ws://127.0.0.1:47631 ws://127.0.0.1:47632 ws://127.0.0.1:47633 ws://127.0.0.1:47634; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 /** `name-<hash>.ext`, as the Vite build names every file under `assets/`: an 8-character base64url hash. */
 const HASHED_NAME = /-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$/;

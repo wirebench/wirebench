@@ -4,11 +4,11 @@
  *
  * - Only the browser has `env.agent`. Without it (the desktop) nothing here runs: no `request.route`
  *   call, no chip, and every send goes exactly as before.
- * - Before a REST or SOAP send the tab asks `request.route`, when it routes at all ({@link routingActive}):
- *   once the user has a pairing. A tab with no pairing sends everything from the server, exactly as before
- *   the agent existed (the server's hello never lists `send:private`, so that capability cannot be the test). `agent` with a connected agent sends
- *   `request.bundle` (server) → `agent.send` (agent) → `exchanges.recordAgentSend` (server), so History stays
- *   one list; `agent` without one fails with `send-needs-agent`, naming the needs.
+ * - Before every REST or SOAP send the tab asks `request.route`, paired or not. `agent` with a connected
+ *   agent sends `request.bundle` (server) → `agent.send` (agent) → `exchanges.recordAgentSend` (server), so
+ *   History stays one list; `agent` without one (none paired, or not answering) fails with
+ *   `send-needs-agent`, naming the needs. A private target the server's egress rule lets it reach is
+ *   `server`, so an unpaired tab sends as before to everything but what only a person's machine can mean.
  * - `agent-cookies` is the one need only the tab can see: the cookie domains its agent's jar holds for this
  *   pairing (`agent.cookies.domains`), read when the agent connects and after each agent send. A target whose
  *   host matches one goes to the agent even when the server says `server`, so it carries those cookies.
@@ -75,23 +75,55 @@ export function agentEnv(): AgentEnv | undefined {
   return (globalThis as { wirebench?: { env?: { agent?: AgentEnv } } }).wirebench?.env?.agent;
 }
 
-/**
- * Whether this tab routes sends (spec §18.4): it has an agent transport, that is a pairing, connected or not.
- * Never on the desktop, and never in a tab whose user has paired no machine.
- */
+/** Whether this window routes sends (spec §18.4): every browser tab, paired or not; never the desktop. */
 export function routingActive(): boolean {
-  const agent = agentEnv();
-  return agent !== undefined && agent.status() !== 'none';
+  return agentEnv() !== undefined;
 }
 
 /**
- * Sends on their way to the agent, by send id, from the bundle request on: a cancel of one goes to the agent,
- * and a cancel before the agent has it stops it there (`cancelled`).
+ * A routed send between its click and the host that runs it: while the draft is committed, the route asked
+ * and the bundle built, a cancel only marks it (`cancelled`), and the next step stops it before anything is
+ * sent. Once the agent has it (`atAgent`) a cancel goes to the agent. A send the route gives to the server is
+ * let go first, so its cancel reaches the server as before.
  */
-const agentSends = new Map<string, { cancelled: boolean }>();
+interface RoutedSend {
+  cancelled: boolean;
+  atAgent: boolean;
+}
+const routedSends = new Map<string, RoutedSend>();
 
-export function isAgentSend(sendId: string): boolean {
-  return agentSends.has(sendId);
+/** The answer of a send cancelled before any host had it. */
+export const ABORTED: IpcError = { code: 'aborted', message: 'The request was aborted.' };
+
+/** Starts tracking a routed send, before its first awaited step. */
+export function trackRoutedSend(sendId: string): void {
+  routedSends.set(sendId, { cancelled: false, atAgent: false });
+}
+
+/** Whether a cancel arrived for a tracked send. */
+export function routedSendCancelled(sendId: string): boolean {
+  return routedSends.get(sendId)?.cancelled === true;
+}
+
+/** Stops tracking: the send is the server's now, or done. */
+export function releaseRoutedSend(sendId: string): void {
+  routedSends.delete(sendId);
+}
+
+/**
+ * Cancels a send the routing still holds: marks it at once, and tells the agent when it already has it.
+ * `undefined` when the routing holds no such send (it is the server's to cancel); checked synchronously, so
+ * a server send's cancel goes out without waiting a tick.
+ */
+export function cancelRoutedSend(sendId: string): Promise<void> | undefined {
+  const entry = routedSends.get(sendId);
+  if (entry === undefined) return undefined;
+  entry.cancelled = true;
+  return entry.atAgent
+    ? ipc()
+        .agent?.cancel({ sendId })
+        .then(() => undefined)
+    : Promise.resolve();
 }
 
 /** Whether `host` falls under a cookie domain the agent holds (RFC 6265 domain match). */
@@ -196,16 +228,18 @@ export async function sendThroughAgent<K extends 'rest' | 'soap'>(
   if (projectId === undefined || api.agent === undefined) {
     return { ok: false, error: { code: 'unknown-request', message: `No request with id "${requestId}"` } };
   }
-  const entry = { cancelled: false };
-  agentSends.set(sendId, entry);
+  const entry = routedSends.get(sendId) ?? { cancelled: false, atAgent: false };
+  routedSends.set(sendId, entry);
   let sent: Awaited<ReturnType<NonNullable<typeof api.agent>['send']>>;
   try {
+    if (entry.cancelled) return { ok: false, error: ABORTED };
     const bundle = await api.request.bundle({ projectId, itemId: requestId });
     if (!bundle.ok) return bundle;
-    if (entry.cancelled) return { ok: false, error: { code: 'aborted', message: 'The request was aborted.' } };
+    if (entry.cancelled) return { ok: false, error: ABORTED };
+    entry.atAgent = true;
     sent = await api.agent.send({ sendId, bundle: bundle.value });
   } finally {
-    agentSends.delete(sendId);
+    routedSends.delete(sendId);
   }
   if (!sent.ok) return sent;
   // The jar may hold a new domain now.
@@ -229,13 +263,6 @@ export async function sendThroughAgent<K extends 'rest' | 'soap'>(
     console.error('the agent send could not be recorded in History:', record.error);
   }
   return { ok: true, value: sent.value as AgentSendResult<K> };
-}
-
-/** Cancels a send the agent is running. */
-export async function cancelAgentSend(sendId: string): Promise<void> {
-  const entry = agentSends.get(sendId);
-  if (entry !== undefined) entry.cancelled = true;
-  await ipc().agent?.cancel({ sendId });
 }
 
 /** Follows the agent's status into the store, and reads its cookie domains whenever it connects. */

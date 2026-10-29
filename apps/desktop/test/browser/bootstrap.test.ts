@@ -48,7 +48,7 @@ function answer(status: number, body: unknown = {}): Awaited<ReturnType<Bootstra
 
 /** The server's pairing routes the agent connection calls; every other URL is `/api/v1/me`. */
 interface Server {
-  pairings: { id: string; port: number }[];
+  pairings: { id: string; port: number; agentId?: string; createdAt?: string }[];
   nonces: number;
   failNonce: boolean;
 }
@@ -76,6 +76,7 @@ function start(
   meStatus = 200,
   createSocket: BootstrapDeps['createSocket'] = FakeSocket.create,
   server: Server = { pairings: [], nonces: 0, failNonce: false },
+  storage: Map<string, string> = new Map(),
 ): Harness & { readonly server: Server } {
   const target: { wirebench?: WirebenchApi } = {};
   const assign = vi.fn<(url: string) => void>();
@@ -102,6 +103,12 @@ function start(
     mountRenderer,
     createSocket,
     createAgentSocket: FakeSocket.createAgent,
+    storage: {
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => {
+        storage.set(key, value);
+      },
+    },
     matchMedia,
   };
   return { deps, target, assign, reload, fetch, mountRenderer, server, started: startBrowserClient(deps) };
@@ -479,6 +486,131 @@ describe('the agent socket', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(FakeSocket.agents).toHaveLength(1);
     expect(h.assign).not.toHaveBeenCalled();
+  });
+});
+
+describe('more than one pairing', () => {
+  const two = (): Server => ({
+    pairings: [
+      { id: 'pair-a', port: 47615 },
+      { id: 'pair-b', port: 47616 },
+    ],
+    nonces: 0,
+    failNonce: false,
+  });
+
+  it("moves on to the next pairing when one's agent refuses it, and remembers the one that worked", async () => {
+    const storage = new Map<string, string>();
+    const h = start(200, FakeSocket.create, two(), storage);
+    FakeSocket.last().hello();
+    await h.started;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeSocket.lastAgent().url).toBe('ws://127.0.0.1:47615/host');
+    FakeSocket.lastAgent().open();
+    expect(FakeSocket.lastAgent().sent[0]).toMatchObject({ pairingId: 'pair-a' });
+    // This machine's agent is another pairing's: it refuses pair-a.
+    FakeSocket.lastAgent().drop(4401);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeSocket.lastAgent().url).toBe('ws://127.0.0.1:47616/host');
+    FakeSocket.lastAgent().open();
+    expect(FakeSocket.lastAgent().sent[0]).toMatchObject({ pairingId: 'pair-b' });
+    FakeSocket.lastAgent().agentHello();
+    expect(h.target.wirebench!.env.agent!.status()).toBe('connected');
+    expect(storage.get('wirebench.agent.pairing')).toBe('pair-b');
+  });
+
+  it('tries the remembered pairing first next time', async () => {
+    const storage = new Map([['wirebench.agent.pairing', 'pair-b']]);
+    const h = start(200, FakeSocket.create, two(), storage);
+    FakeSocket.last().hello();
+    await h.started;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeSocket.agents).toHaveLength(1);
+    expect(FakeSocket.lastAgent().url).toBe('ws://127.0.0.1:47616/host');
+  });
+
+  it('works without storage, whose reads and writes may throw', async () => {
+    const h = start(200, FakeSocket.create, two(), {
+      get: () => {
+        throw new Error('blocked');
+      },
+      set: () => {
+        throw new Error('blocked');
+      },
+    } as unknown as Map<string, string>);
+    FakeSocket.last().hello();
+    await h.started;
+    await vi.advanceTimersByTimeAsync(0);
+    FakeSocket.lastAgent().agentHello();
+    expect(h.target.wirebench!.env.agent!.status()).toBe('connected');
+  });
+
+  it('skips a pairing whose port is not one of the agent ports', async () => {
+    const server: Server = {
+      pairings: [
+        { id: 'bad-1', port: 8080 },
+        { id: 'bad-2', port: 47615.5 },
+        { id: 'good', port: 47634 },
+      ],
+      nonces: 0,
+      failNonce: false,
+    };
+    const h = start(200, FakeSocket.create, server);
+    FakeSocket.last().hello();
+    await h.started;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeSocket.agents.map((socket) => socket.url)).toEqual(['ws://127.0.0.1:47634/host']);
+    await expect(h.target.wirebench!.env.agent!.pairings()).resolves.toMatchObject([{ id: 'good' }]);
+  });
+
+  it('shows a pairing refused three times in a row as refused, and retries it only every five minutes', async () => {
+    const h = start(200, FakeSocket.create, {
+      pairings: [{ id: 'pair-a', port: 47615 }],
+      nonces: 0,
+      failNonce: false,
+    });
+    FakeSocket.last().hello();
+    await h.started;
+    await vi.advanceTimersByTimeAsync(0);
+    const env = h.target.wirebench!.env.agent!;
+    for (let refusal = 1; refusal <= 3; refusal += 1) {
+      FakeSocket.lastAgent().drop(4403);
+      await vi.advanceTimersByTimeAsync(refusal === 3 ? 0 : 2 ** (refusal - 1) * 1_000);
+    }
+    expect(env.status()).toBe('refused');
+    expect(env.refused('pair-a')).toBe(true);
+    const opened = FakeSocket.agents.length;
+    await vi.advanceTimersByTimeAsync(4 * 60_000);
+    expect(FakeSocket.agents).toHaveLength(opened);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeSocket.agents).toHaveLength(opened + 1);
+    // A hello clears it.
+    FakeSocket.lastAgent().agentHello();
+    expect(env.status()).toBe('connected');
+    expect(env.refused('pair-a')).toBe(false);
+  });
+
+  it('keeps telling listeners when one of them throws on the version', async () => {
+    const h = start(200, FakeSocket.create, {
+      pairings: [{ id: 'pair-a', port: 47615 }],
+      nonces: 0,
+      failNonce: false,
+    });
+    FakeSocket.last().hello();
+    await h.started;
+    await vi.advanceTimersByTimeAsync(0);
+    const env = h.target.wirebench!.env.agent!;
+    const seen: (string | undefined)[] = [];
+    FakeSocket.lastAgent().agentHello();
+    env.onStatus(() => {
+      throw new Error('a bad listener');
+    });
+    env.onStatus(() => seen.push(env.version()));
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    FakeSocket.lastAgent().receive({ id: 1, ok: true, value: { version: '7.0.0' } });
+    await vi.advanceTimersByTimeAsync(0);
+    errors.mockRestore();
+    expect(seen).toEqual(['7.0.0']);
   });
 });
 

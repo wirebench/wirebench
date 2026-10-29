@@ -4,10 +4,16 @@
  * - The user's pairings are read from the server (`GET /api/v1/agent/pairings`) once after the server's
  *   hello, and again whenever *This machine* pairs or unpairs, or the agent closes for a reason that says the
  *   pairing may be gone (`4401`, `4403`). With no pairing there is no socket: the connection is idle.
- * - For the first pairing it opens `ws://127.0.0.1:<port>/host`. Each attempt first mints a nonce
- *   (`POST /api/v1/agent/nonces`, one per attempt) and sends `{ type: 'auth', pairingId, nonce }` as the
- *   socket's first frame. An agent that is not running leaves the status at `connecting`, retried on the
- *   transport's backoff (up to 30 s).
+ * - It tries the pairings in turn, the one that last connected from this browser first (`localStorage`, read
+ *   and written inside try/catch: it may be blocked). A pairing whose port is not an integer in the agent's
+ *   range (47615–47634) is skipped. For a pairing it opens `ws://127.0.0.1:<port>/host`. Each attempt first
+ *   mints a nonce (`POST /api/v1/agent/nonces`, one per attempt) and sends `{ type: 'auth', pairingId, nonce }`
+ *   as the socket's first frame. An agent that is not running leaves the status at `connecting`, retried on
+ *   the transport's backoff (up to 30 s).
+ * - An agent that refuses a pairing (`4401`, `4403`: this machine's agent holds another pairing, or it was
+ *   unpaired there) moves the tab on to the next pairing, after 1 s, then 2 s, for a pairing refused before.
+ *   A pairing refused three times in a row is `refused` (all of them refused is the status `refused`), and is
+ *   tried again only every five minutes. A hello clears its count.
  * - Its status shows in Settings → *This machine*; it has no reconnect bar of its own. A call made without a
  *   connected agent answers `host-disconnected`, as the server socket's calls do.
  *
@@ -23,6 +29,31 @@ export const AGENT_PAIRING_CODES_PATH = '/api/v1/agent/pairing-codes';
 
 /** The agent's close codes that say the pairing itself may have changed (unpaired, or another origin). */
 const PAIRING_CLOSES: ReadonlySet<number> = new Set([4401, 4403]);
+
+/** The agent's ports (`packages/agent/src/ports.ts`), the only ones the page's CSP lets it connect to. */
+export const AGENT_PORT_RANGE = { first: 47_615, last: 47_634 } as const;
+
+/** Where the pairing that last connected from this browser is remembered. */
+export const PREFERRED_PAIRING_KEY = 'wirebench.agent.pairing';
+
+/** Refusals in a row after which a pairing counts as refused, and how long it then waits between tries. */
+export const REFUSED_AFTER = 3;
+export const REFUSED_RETRY_MS = 5 * 60_000;
+
+/** The delay before trying a pairing refused `refusals` times in a row: none, 1 s, 2 s, then five minutes. */
+function refusalDelay(refusals: number): number {
+  if (refusals <= 0) return 0;
+  return refusals >= REFUSED_AFTER ? REFUSED_RETRY_MS : 1_000 * 2 ** (refusals - 1);
+}
+
+function isAgentPort(port: unknown): port is number {
+  return (
+    typeof port === 'number' &&
+    Number.isInteger(port) &&
+    port >= AGENT_PORT_RANGE.first &&
+    port <= AGENT_PORT_RANGE.last
+  );
+}
 
 /** What a call answers while no agent is connected. */
 export const AGENT_DISCONNECTED = {
@@ -44,6 +75,8 @@ export interface AgentConnectionDeps {
   /** The page's origin: what `wirebench agent pair --server` is told. */
   readonly serverOrigin: string;
   readonly createSocket?: (url: string) => SocketLike;
+  /** The page's `localStorage`, when it has one; every read and write is guarded. */
+  readonly storage?: Pick<Storage, 'getItem' | 'setItem'>;
   /** Something went wrong outside any call (a pairings read, say); the console by default. */
   readonly log?: (message: string, error: unknown) => void;
 }
@@ -75,10 +108,11 @@ async function refusal(answer: FetchAnswer, what: string): Promise<Error> {
 }
 
 function pairingOf(value: unknown): AgentPairingView | undefined {
-  if (!isRecord(value) || typeof value['id'] !== 'string' || typeof value['port'] !== 'number') return undefined;
+  if (!isRecord(value) || typeof value['id'] !== 'string' || !isAgentPort(value['port'])) return undefined;
   return {
     id: value['id'],
     port: value['port'],
+    agentId: typeof value['agentId'] === 'string' ? value['agentId'] : '',
     sshOptIn: value['sshOptIn'] === true,
     createdAt: typeof value['createdAt'] === 'string' ? value['createdAt'] : '',
     lastSeenAt: typeof value['lastSeenAt'] === 'string' ? value['lastSeenAt'] : '',
@@ -97,22 +131,56 @@ export function createAgentConnection(deps: AgentConnectionDeps): AgentConnectio
   const listeners = new Set<(status: AgentStatus) => void>();
   let status: AgentStatus = 'none';
   let version: string | undefined;
-  let current: { readonly id: string; readonly port: number; readonly transport: SocketTransport } | undefined;
+  /** The pairing tried now: its socket once open, or the timer that opens it. */
+  let current:
+    | {
+        readonly id: string;
+        readonly port: number;
+        transport?: SocketTransport;
+        timer?: ReturnType<typeof setTimeout>;
+      }
+    | undefined;
+  /** The usable pairings, in the order they are tried. */
+  let candidates: readonly AgentPairingView[] = [];
+  /** Refusals in a row, by pairing id. */
+  const refusals = new Map<string, number>();
   let closed = false;
   /** One pairings read at a time; a refresh asked meanwhile runs once more after it. */
   let reading: Promise<void> | undefined;
   let again = false;
+  /** Set by a refusal: the next read moves on past this pairing. */
+  let advanceFrom: string | undefined;
+
+  const notify = (): void => {
+    for (const listener of [...listeners]) {
+      try {
+        listener(status);
+      } catch (error) {
+        log('an agent status listener failed:', error);
+      }
+    }
+  };
 
   const setStatus = (next: AgentStatus): void => {
     if (next !== 'connected') version = undefined;
     if (next === status) return;
     status = next;
-    for (const listener of [...listeners]) {
-      try {
-        listener(next);
-      } catch (error) {
-        log('an agent status listener failed:', error);
-      }
+    notify();
+  };
+
+  const preferred = (): string | undefined => {
+    try {
+      return deps.storage?.getItem(PREFERRED_PAIRING_KEY) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const remember = (id: string): void => {
+    try {
+      deps.storage?.setItem(PREFERRED_PAIRING_KEY, id);
+    } catch {
+      // Blocked storage: the order is simply the server's next time.
     }
   };
 
@@ -133,63 +201,113 @@ export function createAgentConnection(deps: AgentConnectionDeps): AgentConnectio
     return { type: 'auth', pairingId, nonce: body['nonce'] };
   };
 
+  const isRefused = (id: string): boolean => (refusals.get(id) ?? 0) >= REFUSED_AFTER;
+
   const drop = (): void => {
     const previous = current;
     current = undefined;
-    previous?.transport.close();
+    if (previous?.timer !== undefined) clearTimeout(previous.timer);
+    previous?.transport?.close();
   };
 
   const open = (pairing: AgentPairingView): void => {
+    const slot: NonNullable<typeof current> = { id: pairing.id, port: pairing.port };
     const transport: SocketTransport = createSocketTransport(`ws://127.0.0.1:${String(pairing.port)}/host`, {
       ...(deps.createSocket === undefined ? {} : { createSocket: deps.createSocket }),
       firstFrame: authFrame(pairing.id),
       disconnected: AGENT_DISCONNECTED,
       onHello() {
-        if (current?.transport !== transport) return;
+        if (current !== slot) return;
+        refusals.delete(pairing.id);
+        remember(pairing.id);
         setStatus('connected');
         // The version is for Settings only; a hello without one still connects.
         void transport.invoke('agent.hello', undefined).then((result) => {
-          if (current?.transport !== transport || !isRecord(result) || result['ok'] !== true) return;
+          if (current !== slot || !isRecord(result) || result['ok'] !== true) return;
           const value = result['value'];
           if (isRecord(value) && typeof value['version'] === 'string') {
             version = value['version'];
             // Listeners read the version through `env.version()`: tell them it is there.
-            for (const listener of [...listeners]) listener(status);
+            notify();
           }
         });
       },
       onOpenFailed() {
-        if (current?.transport === transport) setStatus('connecting');
+        if (current === slot && status !== 'refused') setStatus('connecting');
       },
       onClosed(code) {
-        if (current?.transport !== transport) return;
-        setStatus('connecting');
-        if (PAIRING_CLOSES.has(code)) void refresh();
+        if (current !== slot) return;
+        if (!PAIRING_CLOSES.has(code)) {
+          setStatus('connecting');
+          return;
+        }
+        // Refused: this pairing is not this machine's (or no longer is). The next one is tried.
+        refusals.set(pairing.id, (refusals.get(pairing.id) ?? 0) + 1);
+        drop();
+        advanceFrom = pairing.id;
+        void refresh();
       },
     });
-    current = { id: pairing.id, port: pairing.port, transport };
-    setStatus('connecting');
+    slot.transport = transport;
+    current = slot;
   };
 
+  /** Tries `pairing`, after the wait its refusals call for. */
+  const tryPairing = (pairing: AgentPairingView): void => {
+    drop();
+    setStatus(candidates.every((one) => isRefused(one.id)) ? 'refused' : 'connecting');
+    const delay = refusalDelay(refusals.get(pairing.id) ?? 0);
+    if (delay === 0) {
+      open(pairing);
+      return;
+    }
+    const slot: NonNullable<typeof current> = { id: pairing.id, port: pairing.port };
+    slot.timer = setTimeout(() => {
+      if (current === slot) {
+        current = undefined;
+        open(pairing);
+      }
+    }, delay);
+    current = slot;
+  };
+
+  /** The pairing after `id` in the order, wrapping round; the first when `id` is no longer there. */
+  const after = (id: string): AgentPairingView | undefined =>
+    candidates[(candidates.findIndex((one) => one.id === id) + 1) % candidates.length];
+
   const readOnce = async (): Promise<void> => {
-    let list: readonly AgentPairingView[];
+    const from = advanceFrom;
+    advanceFrom = undefined;
+    let list: readonly AgentPairingView[] | undefined;
     try {
       list = await pairings();
     } catch (error) {
-      // The socket, if any, keeps what it had: a failed read says nothing about the pairing.
+      // A failed read says nothing about the pairings: the socket keeps what it had, and a refusal still
+      // moves on through the pairings last read.
       log('the paired machines could not be read:', error);
-      return;
     }
     if (closed) return;
-    const first = list.find((one) => one.port > 0);
-    if (first === undefined) {
+    if (list !== undefined) {
+      const first = preferred();
+      candidates = [...list.filter((one) => one.id === first), ...list.filter((one) => one.id !== first)];
+      for (const id of [...refusals.keys()]) {
+        if (!candidates.some((one) => one.id === id)) refusals.delete(id);
+      }
+    }
+    if (candidates.length === 0) {
       drop();
       setStatus('none');
       return;
     }
-    if (current?.id === first.id && current.port === first.port) return;
-    drop();
-    open(first);
+    if (from !== undefined) {
+      const next = after(from);
+      if (next !== undefined) tryPairing(next);
+      return;
+    }
+    if (list === undefined) return;
+    const kept = candidates.some((one) => one.id === current?.id && one.port === current.port);
+    const next = candidates[0];
+    if (!kept && next !== undefined) tryPairing(next);
   };
 
   const refresh = async (): Promise<void> => {
@@ -211,12 +329,13 @@ export function createAgentConnection(deps: AgentConnectionDeps): AgentConnectio
   };
 
   const invoke: Invoke = (channel, request) =>
-    current === undefined ? Promise.resolve(AGENT_DISCONNECTED) : current.transport.invoke(channel, request);
+    current?.transport === undefined ? Promise.resolve(AGENT_DISCONNECTED) : current.transport.invoke(channel, request);
 
   const env: AgentEnv = {
     serverOrigin: deps.serverOrigin,
     status: () => status,
     version: () => version,
+    refused: isRefused,
     onStatus(listener) {
       listeners.add(listener);
       return () => {

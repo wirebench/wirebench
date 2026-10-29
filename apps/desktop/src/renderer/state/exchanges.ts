@@ -31,13 +31,16 @@ import { useEditorsStore } from './editors.js';
 import { useSecretsVisibilityStore } from './secrets-visibility.js';
 import { flushScriptEdits, hasScriptEditors } from './script-edits.js';
 import {
+  ABORTED,
   agentEnv,
-  cancelAgentSend,
-  isAgentSend,
+  cancelRoutedSend,
+  releaseRoutedSend,
+  routedSendCancelled,
   routeOf,
   routingActive,
   sendNeedsAgentError,
   sendThroughAgent,
+  trackRoutedSend,
 } from './send-route.js';
 
 /** Newest-last log of every completed exchange, capped so it can't grow unbounded over a session. */
@@ -118,30 +121,48 @@ function offerAgentAction(error: IpcError): void {
 /**
  * Where a browser tab's send goes (hosted edition spec §18.4): `server` as today, `agent` through the paired
  * agent, or a failure to show (no agent connected, or the server refused the route). The desktop has no
- * `env.agent`, and a tab with no pairing does not route ({@link routingActive}): both answer `server`
- * without asking anything. An unsaved edit is committed to the
+ * `env.agent` ({@link routingActive}) and answers `server` without asking anything. An unsaved edit is committed to the
  * model first, since the server routes, and builds the agent's bundle, from the model it holds.
  */
 async function sendRouteFor(
   requestId: string,
+  sendId: string,
   commit: (requestId: string) => Promise<boolean>,
 ): Promise<{ readonly kind: 'server' | 'agent' } | { readonly kind: 'error'; readonly error: IpcError }> {
   const agent = agentEnv();
   if (agent === undefined || !routingActive()) return { kind: 'server' };
-  if (!(await commit(requestId))) {
-    return { kind: 'error', error: { code: 'commit-failed', message: 'The unsaved edit could not be applied' } };
+  // Tracked before the first await: a cancel during the commit, the route or the bundle stops the send.
+  trackRoutedSend(sendId);
+  const settle = (
+    answer: { readonly kind: 'server' | 'agent' } | { readonly kind: 'error'; readonly error: IpcError },
+  ): typeof answer => {
+    // Only an agent send stays tracked: a server send's cancel goes to the server, as before.
+    if (answer.kind !== 'agent') releaseRoutedSend(sendId);
+    return answer;
+  };
+  const committed = await commit(requestId);
+  if (routedSendCancelled(sendId)) return settle({ kind: 'error', error: ABORTED });
+  if (!committed) {
+    return settle({
+      kind: 'error',
+      error: { code: 'commit-failed', message: 'The unsaved edit could not be applied' },
+    });
   }
   const route = await routeOf(requestId);
-  if (route === undefined || (route.ok && route.value.route === 'server')) return { kind: 'server' };
-  if (!route.ok) return { kind: 'error', error: route.error };
-  if (agent.status() !== 'connected') return { kind: 'error', error: sendNeedsAgentError(route.value.needs) };
-  return { kind: 'agent' };
+  if (routedSendCancelled(sendId)) return settle({ kind: 'error', error: ABORTED });
+  if (route === undefined || (route.ok && route.value.route === 'server')) return settle({ kind: 'server' });
+  if (!route.ok) return settle({ kind: 'error', error: route.error });
+  if (agent.status() !== 'connected') {
+    return settle({ kind: 'error', error: sendNeedsAgentError(route.value.needs) });
+  }
+  return settle({ kind: 'agent' });
 }
 
-/** Cancels a send wherever it runs: the agent's, or the server host's. */
+/** Cancels a send wherever it is: still being routed, on the agent, or on the server host. */
 async function cancelSend(sendId: string): Promise<void> {
-  if (isAgentSend(sendId)) {
-    await cancelAgentSend(sendId);
+  const routed = cancelRoutedSend(sendId);
+  if (routed !== undefined) {
+    await routed;
     return;
   }
   await ipc().request.cancel({ sendId });
@@ -1194,7 +1215,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         };
       });
 
-      const route = await sendRouteFor(requestId, (id) => useProjectStore.getState().commitRestRequest(id));
+      const route = await sendRouteFor(requestId, sendId, (id) => useProjectStore.getState().commitRestRequest(id));
 
       // The draft, not a resolved URL: main owns the environment, the model and the keychain, so it
       // is main that decides where this goes and what it carries.
@@ -1421,7 +1442,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         return;
       }
 
-      const route = await sendRouteFor(requestId, (id) => useProjectStore.getState().commitRequest(id));
+      const route = await sendRouteFor(requestId, sendId, (id) => useProjectStore.getState().commitRequest(id));
       // A cancel while the route was asked for has already settled this send.
       if (get().byRequest[requestId]?.sendId !== sendId) {
         return;

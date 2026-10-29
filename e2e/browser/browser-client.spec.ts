@@ -115,13 +115,17 @@ test('a request to the echo service on the server network gets its response', as
   await expect(page.getByTestId('rest-response')).toContainText('/hello');
 });
 
-test('a request to 127.0.0.1 is refused by the egress rule', async () => {
+test('a request to 127.0.0.1 needs this machine: the tab has no agent, so it offers to pair one', async () => {
   await openRequest(seed.loopbackRequest);
+  // The route chip says where the next send goes before it is sent (spec §18.4).
+  await expect(page.getByTestId('send-route-chip')).toHaveText('Agent');
   await page.getByTestId('rest-send').click();
   const panel = page.getByTestId('send-error-panel');
   await expect(panel).toBeVisible();
-  // The code sits in the panel's folded details; its text is there either way.
-  await expect(panel.getByTestId('send-error-code')).toHaveText('egress-refused');
+  // The person's localhost is never the server's: nothing went out from the server, and with no agent
+  // paired the send stops here. The code sits in the panel's folded details; its text is there either way.
+  await expect(panel.getByTestId('send-error-code')).toHaveText('send-needs-agent');
+  await expect(page.getByRole('button', { name: 'Pair this machine…' })).toBeVisible();
 });
 
 test('signing out lands on the sign-in page, and the app is no longer served', async () => {

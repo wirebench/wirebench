@@ -2,9 +2,10 @@
  * The send route rule (hosted edition spec §18.4): on the server host, whether a browser send of one saved
  * request goes out from the server or must go through the person's paired agent, and why.
  *
- * A send needs the agent when its target resolves to an address on the person's own network (loopback,
- * link-local, private or metadata, whatever the server's own egress rule allows: in the browser the
- * person's `localhost` is never the server's), or when it reads something only their machine has: a
+ * A send needs the agent when its target resolves to an address only the person's machine can mean: loopback
+ * (in the browser the person's `localhost` is never the server's), link-local, metadata or a host the server
+ * cannot resolve, always; a private range only when the server's egress rule denies private ranges, since a
+ * server that reaches them sends there itself (the owner's egress decision). Or when it reads something only their machine has: a
  * `${#System#…}` value, a secret source, a team secret, a keystore on a machine path, Kerberos, or NTLM with
  * the machine's logon. A pin to the agent forces it too. A send that needs the agent but reads a secret
  * whose value only the server holds is not split between them (§3.4 rule 4): it fails with `secret-missing`.
@@ -33,7 +34,7 @@ import {
   writeFileAtomic,
   wssConfigsOf,
 } from '@wirebench/engine';
-import type { AuthConfig, Project, PropertyScopes, RestSelected, SoapSelected } from '@wirebench/engine';
+import type { AuthConfig, EgressPolicy, Project, PropertyScopes, RestSelected, SoapSelected } from '@wirebench/engine';
 import { SEND_NEEDS, type RequestRouteResponse, type SendNeed } from '@wirebench/wire/agent-route';
 import { previewRest, previewSoap, type SendThroughEngineDeps } from './send/exchange.js';
 
@@ -195,13 +196,15 @@ export interface AddressNeeds {
 
 /**
  * The address needs of `url`'s host: `loopback-target` for a loopback or unspecified answer, and
- * `private-target` for a private, link-local or metadata one. A host the server cannot resolve needs the
+ * `private-target` for a link-local or metadata one, and for a private one when `egress` denies private
+ * ranges (a server that may reach them sends there itself). A host the server cannot resolve needs the
  * agent too (`private-target`, `unresolved`): it is most likely a name only the person's network knows. A URL
  * with no host needs nothing.
  */
 export async function addressNeeds(
   url: string | undefined,
   resolve: ResolveHost = systemResolve,
+  egress?: EgressPolicy,
 ): Promise<AddressNeeds> {
   const none: AddressNeeds = { needs: [], unresolved: false };
   if (url === undefined) return none;
@@ -224,9 +227,8 @@ export async function addressNeeds(
   for (const address of addresses) {
     const addressClass = classifyAddress(address);
     if (addressClass === 'loopback' || addressClass === 'unspecified') needs.add('loopback-target');
-    if (addressClass === 'private' || addressClass === 'link-local' || addressClass === 'metadata') {
-      needs.add('private-target');
-    }
+    if (addressClass === 'link-local' || addressClass === 'metadata') needs.add('private-target');
+    if (addressClass === 'private' && egress?.denyPrivate === true) needs.add('private-target');
   }
   return { needs: [...needs], unresolved: false };
 }
@@ -257,6 +259,11 @@ export interface SendRouteDeps {
   readonly send: SendThroughEngineDeps;
   /** Resolves a target's host; the system resolver when absent. */
   readonly resolve?: ResolveHost;
+  /**
+   * The server's egress rule (`platform.network.egress`): with `denyPrivate` a private-range target goes
+   * through the agent; without it (or with none) the server sends there itself.
+   */
+  readonly egress?: EgressPolicy;
   /** The secret names the project's workspace maps to a secret source; none when absent. */
   readonly secretSourceNames?: (projectId: string) => readonly string[];
   /** Whether the project's workspace holds a team secret of that name. */
@@ -336,7 +343,7 @@ export async function routeSend(deps: SendRouteDeps, request: RoutedItem): Promi
   const scopes = deps.send.project.scopesFor(request.itemId, request.environment);
   const references = itemReferences(project, item, scopes);
   const target = await targetOf(deps.send, item, request);
-  const address = await addressNeeds(target, deps.resolve);
+  const address = await addressNeeds(target, deps.resolve, deps.egress);
   const needs = new Set<SendNeed>(address.needs);
   if (references.systemNames.length > 0) needs.add('system-values');
   const sources = new Set(deps.secretSourceNames?.(request.projectId) ?? []);
