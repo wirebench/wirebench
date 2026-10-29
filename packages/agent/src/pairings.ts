@@ -13,8 +13,9 @@
  * (identity creation included) holds `agent-pairings.json.lock`, made with `O_EXCL`, across its re-read, its
  * change, the rename and the stamp read. The lock file holds its holder's token (pid and a random id), and a
  * holder removes it only while it still holds that token. A lock older than {@link STALE_LOCK_MS} is a
- * crashed writer's: a taker renames it aside (only one rename of it can succeed), checks it moved the very
- * file it judged stale, and then competes for a new lock like anyone else.
+ * crashed writer's: a taker renames it aside (only one rename of it can succeed), checks by inode, mtime and
+ * token that it moved the very lock it judged stale, and then competes for a new lock like anyone else. A
+ * release, too, renames the lock aside before checking its token, so it never removes a successor's lock.
  */
 import { randomUUID } from 'node:crypto';
 import { link, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
@@ -41,6 +42,18 @@ export interface PairingStoreOptions {
   readonly beforeTakeover?: () => Promise<void>;
   /** Where a failure the store goes on past is reported (an unreadable file while a key is cached). */
   readonly log?: (message: string, error: unknown) => void;
+  /** How lock files are stat'ed and read, for tests to fake what a race leaves (an inode reused by a new lock). */
+  readonly lockIo?: {
+    readonly stat?: (path: string) => Promise<LockStat>;
+    readonly read?: (path: string) => Promise<string>;
+  };
+}
+
+/** What a lock file's stat says about which lock it is. */
+export interface LockStat {
+  readonly dev: number;
+  readonly ino: number;
+  readonly mtimeMs: number;
 }
 
 /** One pairing with a Wirebench Server, as the agent keeps it. */
@@ -138,6 +151,8 @@ export async function openPairingStore(
   const lockPath = `${path}.lock`;
   const lockTimeoutMs = options.lockTimeoutMs ?? LOCK_TIMEOUT_MS;
   const staleLockMs = options.staleLockMs ?? STALE_LOCK_MS;
+  const statLock = options.lockIo?.stat ?? ((at: string) => stat(at));
+  const readLock = options.lockIo?.read ?? ((at: string) => readFile(at, 'utf8'));
   let file: PairingsFile | undefined;
   let identity: AgentIdentity | undefined;
   let stamp: Stamp;
@@ -223,33 +238,61 @@ export async function openPairingStore(
       setTimeout(resolve, ms);
     });
 
-  /** Takes the cross-process lock, waiting with backoff; throws past `lockTimeoutMs`. */
-  const sameFile = (a: { dev: number; ino: number }, b: { dev: number; ino: number }): boolean =>
-    a.dev === b.dev && a.ino === b.ino;
+  /**
+   * A lock as one taker saw it: its inode, its mtime and its token. A token is a fresh random id per lock, so
+   * a new lock that reused a freed inode (ext4 and tmpfs often do) does not pass for the one judged. A lock
+   * whose creator died before writing its token is empty, and matches only an empty file of the same mtime.
+   */
+  interface SeenLock extends LockStat {
+    readonly token: string;
+  }
+
+  const sameLock = (a: LockStat, b: LockStat): boolean => a.dev === b.dev && a.ino === b.ino && a.mtimeMs === b.mtimeMs;
+
+  /** The lock at `at` as it is now; `undefined` when there is none. */
+  const see = async (at: string): Promise<SeenLock | undefined> => {
+    try {
+      const info = await statLock(at);
+      const token = await readLock(at);
+      return { dev: info.dev, ino: info.ino, mtimeMs: info.mtimeMs, token };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw error;
+    }
+  };
 
   /**
-   * Moves the lock judged stale (`judged`) out of the way. Renaming is atomic, so of several takers only one
-   * moves a given file. A taker that judged an older file and moved a fresh one instead puts it back with a
-   * `link`, which never replaces a lock someone made meanwhile.
+   * Moves the lock at `lockPath` to a unique name, so that what is checked is what is then removed. `keep`
+   * says from the moved file whether it is the lock meant; when it is not, it goes back with a `link`, which
+   * never replaces a lock someone made meanwhile. Whether the moved file was the one meant.
    */
-  const takeOver = async (judged: { dev: number; ino: number }): Promise<void> => {
-    const now = await stat(lockPath).catch(() => undefined);
-    if (now === undefined || !sameFile(now, judged)) return;
-    await options.beforeTakeover?.();
-    const aside = `${lockPath}.stale-${randomUUID()}`;
+  const moveAside = async (suffix: string, keep: (moved: SeenLock | undefined) => boolean): Promise<boolean> => {
+    const aside = `${lockPath}.${suffix}-${randomUUID()}`;
     try {
       await rename(lockPath, aside);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
       throw error;
     }
-    const moved = await stat(aside);
-    if (!sameFile(moved, judged)) {
-      await link(aside, lockPath).catch(() => undefined);
-    }
+    const moved = await see(aside).catch(() => undefined);
+    const meant = keep(moved);
+    if (!meant) await link(aside, lockPath).catch(() => undefined);
     await unlink(aside).catch(() => undefined);
+    return meant;
   };
 
+  /**
+   * Moves the lock judged stale (`judged`) out of the way. Renaming is atomic, so of several takers only one
+   * moves a given file; one that judged an older file and moved a live lock instead puts it back.
+   */
+  const takeOver = async (judged: SeenLock): Promise<void> => {
+    const now = await statLock(lockPath).catch(() => undefined);
+    if (now === undefined || !sameLock(now, judged)) return;
+    await options.beforeTakeover?.();
+    await moveAside('stale', (moved) => moved !== undefined && sameLock(moved, judged) && moved.token === judged.token);
+  };
+
+  /** Takes the cross-process lock, waiting with backoff; throws past `lockTimeoutMs`. */
   const lock = async (): Promise<() => Promise<void>> => {
     await mkdir(dir, { recursive: true });
     const deadline = Date.now() + lockTimeoutMs;
@@ -269,15 +312,15 @@ export async function openPairingStore(
           try {
             await handle.close();
           } finally {
-            // Taken over while it ran past the stale age: the lock there now is its successor's.
-            const there = await readFile(lockPath, 'utf8').catch(() => undefined);
-            if (there === token) await unlink(lockPath).catch(() => undefined);
+            // Taken over while it ran past the stale age, the lock there now is its successor's: moved aside
+            // first, it is checked and removed as one file, and put back when it is not this holder's.
+            await moveAside('release', (moved) => moved?.token === token).catch(() => undefined);
           }
         };
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       }
-      const held = await stat(lockPath).catch(() => undefined);
+      const held = await see(lockPath).catch(() => undefined);
       if (held !== undefined && Date.now() - held.mtimeMs > staleLockMs) {
         // Its writer died holding it.
         await takeOver(held);

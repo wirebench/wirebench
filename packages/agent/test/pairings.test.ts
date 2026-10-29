@@ -368,6 +368,107 @@ describe('openPairingStore', () => {
       expect(existsSync(lockFile)).toBe(false);
     });
 
+    it('puts back a live lock that reused the inode of the stale one it judged', async () => {
+      const platform = fakePlatform();
+      const dir = platform.paths.userData();
+      const seed = await openPairingStore(platform);
+      await seed.identity();
+      const lockFile = staleLock(dir);
+      const judged = statSync(lockFile);
+
+      let inside = 0;
+      let most = 0;
+      const enter = async (hold?: () => Promise<void>) => {
+        inside += 1;
+        most = Math.max(most, inside);
+        await hold?.();
+        inside -= 1;
+      };
+      const takeA = gate();
+      const takeB = gate();
+      const holdA = gate();
+      const a = await openPairingStore(fakePlatform(undefined, dir), {
+        beforeTakeover: () => takeA.wait(),
+        whileLocked: () => enter(holdA.wait),
+      });
+      const b = await openPairingStore(fakePlatform(undefined, dir), {
+        beforeTakeover: () => takeB.wait(),
+        whileLocked: () => enter(),
+        lockIo: {
+          // Whatever B moves aside reports the inode and mtime it judged stale, as a reused inode can.
+          stat: async (at) => {
+            await Promise.resolve();
+            return at.includes('.stale-')
+              ? { dev: judged.dev, ino: judged.ino, mtimeMs: judged.mtimeMs }
+              : statSync(at);
+          },
+        },
+      });
+      const one = pairing();
+      const two = pairing();
+      const addA = a.add(one);
+      const addB = b.add(two);
+      await Promise.all([takeA.reached, takeB.reached]);
+      takeA.open();
+      await holdA.reached;
+      const aToken = readFileSync(lockFile, 'utf8');
+      takeB.open();
+      await settle();
+      expect(inside).toBe(1);
+      expect(readFileSync(lockFile, 'utf8')).toBe(aToken);
+      holdA.open();
+      await Promise.all([addA, addB]);
+      expect(most).toBe(1);
+      const reread = await openPairingStore(fakePlatform(undefined, dir));
+      expect(
+        reread
+          .list()
+          .map((row) => row.pairingId)
+          .sort(),
+      ).toEqual([one.pairingId, two.pairingId].sort());
+      expect(readdirSync(dir).filter((name) => name.includes('.lock'))).toEqual([]);
+    });
+
+    it("does not remove a successor's lock that replaced its own while it was releasing", async () => {
+      const platform = fakePlatform();
+      const dir = platform.paths.userData();
+      const lockFile = join(dir, `${PAIRINGS_FILE}.lock`);
+      const seed = await openPairingStore(platform);
+      await seed.identity();
+
+      const holdB = gate();
+      const b = await openPairingStore(fakePlatform(undefined, dir), { whileLocked: () => holdB.wait() });
+      let addB: Promise<void> | undefined;
+      const holdA = gate();
+      const a = await openPairingStore(fakePlatform(undefined, dir), {
+        whileLocked: () => holdA.wait(),
+        lockIo: {
+          // A's release reads the lock; just then, past the stale age, B takes over and holds.
+          read: async (at) => {
+            const text = readFileSync(at, 'utf8');
+            if (addB === undefined) {
+              addB = b.add(pairing());
+              await holdB.reached;
+            }
+            return text;
+          },
+        },
+      });
+
+      const addA = a.add(pairing());
+      await holdA.reached;
+      const old = new Date(Date.now() - 60_000);
+      utimesSync(lockFile, old, old);
+      holdA.open();
+      await addA;
+      expect(addB).toBeDefined();
+      const bToken = readFileSync(lockFile, 'utf8');
+      expect(bToken).toMatch(new RegExp(`^${String(process.pid)}:`));
+      holdB.open();
+      await addB;
+      expect(readdirSync(dir).filter((name) => name.includes('.lock'))).toEqual([]);
+    });
+
     it('keeps the identity it knows when the file turns unreadable, saying so once', async () => {
       const platform = fakePlatform();
       const logs: string[] = [];
