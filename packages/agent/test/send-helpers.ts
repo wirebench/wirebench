@@ -5,8 +5,14 @@
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
-import { createServer, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import {
+  createServer,
+  request as httpRequest,
+  type IncomingHttpHeaders,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'node:http';
+import { connect, type AddressInfo, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { saveProject, type Project } from '@wirebench/engine';
@@ -154,4 +160,72 @@ export async function bundleOf(
   const dir = tempFolder('wb-agent-project-');
   await saveProject(project, dir);
   return { version: 1, kind, workspaceId: 'ws-1', itemId, files: await filesUnder(dir), secretNames: [], ...extra };
+}
+
+export interface ProxyServer {
+  readonly port: number;
+  /** The `Proxy-Authorization` of every request and tunnel, in order. */
+  readonly authorizations: (string | undefined)[];
+}
+
+/**
+ * A forward proxy on 127.0.0.1 that wants a `Proxy-Authorization` (else `407`): it forwards a plain request
+ * and tunnels a `CONNECT`.
+ */
+export async function startProxy(): Promise<ProxyServer> {
+  const authorizations: (string | undefined)[] = [];
+  const sockets = new Set<Socket>();
+  const server = createServer((request, response) => {
+    authorizations.push(request.headers['proxy-authorization']);
+    if (request.headers['proxy-authorization'] === undefined) {
+      response.writeHead(407, { 'proxy-authenticate': 'Basic' });
+      response.end();
+      return;
+    }
+    const target = new URL(request.url ?? '');
+    const headers = { ...request.headers };
+    delete headers['proxy-authorization'];
+    const upstream = httpRequest(
+      {
+        host: target.hostname,
+        port: target.port,
+        path: `${target.pathname}${target.search}`,
+        method: request.method,
+        headers,
+      },
+      (answer) => {
+        response.writeHead(answer.statusCode ?? 502, answer.headers);
+        answer.pipe(response);
+      },
+    );
+    request.pipe(upstream);
+  });
+  server.on('connect', (request: IncomingMessage, client: Socket, head: Buffer) => {
+    authorizations.push(request.headers['proxy-authorization']);
+    sockets.add(client);
+    if (request.headers['proxy-authorization'] === undefined) {
+      client.end('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic\r\n\r\n');
+      return;
+    }
+    const [host, port] = (request.url ?? '').split(':');
+    const upstream = connect(Number(port), host ?? '127.0.0.1', () => {
+      client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+      upstream.write(head);
+      upstream.pipe(client);
+      client.pipe(upstream);
+    });
+    sockets.add(upstream);
+    upstream.on('error', () => client.destroy());
+    client.on('error', () => upstream.destroy());
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  onCleanUp(
+    () =>
+      new Promise<void>((resolve) => {
+        for (const socket of sockets) socket.destroy();
+        server.closeAllConnections();
+        server.close(() => resolve());
+      }),
+  );
+  return { port: (server.address() as AddressInfo).port, authorizations };
 }

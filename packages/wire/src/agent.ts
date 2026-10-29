@@ -11,10 +11,11 @@ import { restExchangeSummarySchema } from './kinds/rest/wire.js';
 import { exchangeSummarySchema } from './kinds/soap/wire.js';
 
 /**
- * A bundle's files together, decoded: the server never sends more, and the agent refuses more. 24 MiB, so
- * a bundle sent all as base64 (a third larger) still fits the socket's 32 MiB frame.
+ * A bundle's files together, decoded: the server never sends more, and the agent refuses more. 23 MiB,
+ * so a bundle sent all as base64 (a third larger, about 30.7 MiB) still fits the socket's 32 MiB frame with
+ * its JSON envelope around it.
  */
-export const AGENT_BUNDLE_MAX_BYTES = 24 * 1024 * 1024;
+export const AGENT_BUNDLE_MAX_BYTES = 23 * 1024 * 1024;
 /** A bundle's files, at most. */
 export const AGENT_BUNDLE_MAX_FILES = 2000;
 

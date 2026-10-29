@@ -17,6 +17,7 @@
 import { createIssuedTokenSource, parseSecretPseudoRef, WirebenchError } from '@wirebench/engine';
 import type { CookieJarHost, EgressPolicy, GetSecret, IssuedTokenSource, PropertyMap } from '@wirebench/engine';
 import type { ExchangeSummary } from '@wirebench/wire/kinds/soap/wire';
+import type { ProxyOptionsWire } from '@wirebench/wire/wire-base';
 import type { RestExchangeSummary } from '@wirebench/wire/kinds/rest/wire';
 import type { EngineService } from '../engine-service.js';
 import type { HostState } from '../host/host-state.js';
@@ -51,11 +52,13 @@ export interface SendSession {
 
 /**
  * A fresh {@link SendSession} for `host`. Its OAuth2 grants run without a browser (the client-credentials,
- * password and refresh-token grants); each token it obtains is recorded in the host's redactor.
+ * password and refresh-token grants), held to `egress`, the host platform's rule (`HostPlatform.network`),
+ * which every caller must pass, `undefined` when the platform has none; each token it obtains is recorded
+ * in the host's redactor.
  */
 export function createSendSession(
   host: { readonly handlers: Pick<HandlerTable, 'redactor'> },
-  options: { readonly egress?: EgressPolicy } = {},
+  options: { readonly egress: EgressPolicy | undefined },
 ): SendSession {
   const { redactor } = host.handlers;
   return {
@@ -102,6 +105,11 @@ export interface DetachedSendDeps {
   /** Asks about a protected environment as the host asks for any send; absent, such a send is refused. */
   readonly confirmProtected?: (environmentNames: readonly string[]) => Promise<boolean>;
   readonly egress?: EgressPolicy;
+  /**
+   * The proxy a send to `url` goes through: this machine's own Settings, its password read for the proxy
+   * alone (the agent sends from this machine's network). Never a getter a bundle's refs reach.
+   */
+  readonly proxyFor: (url: string) => Promise<ProxyOptionsWire | undefined>;
   /** Reads one value of the host's secret store by its label, for the agent's namespace only. */
   readonly agentSecret: (label: string) => Promise<string | undefined>;
   /** Team secrets of a server workspace (Task 10 plugs it in); absent, none resolve. */
@@ -149,7 +157,10 @@ function stopIfAborted(signal: AbortSignal | undefined): void {
  * The `ProjectRouter` surface a send drives, over one open project: every id is that project's. A
  * change through it is refused, since the folder is the caller's.
  */
-export function singleProjectRouter(host: ProjectHost): RequestChannelProject {
+export function singleProjectRouter(
+  host: ProjectHost,
+  proxyFor: (url: string) => Promise<ProxyOptionsWire | undefined> = (url) => host.proxyFor(url),
+): RequestChannelProject {
   const router: Record<string, unknown> = {
     projectId: () => host.open?.project.id,
     projectSnapshot: () => host.snapshot(),
@@ -160,7 +171,7 @@ export function singleProjectRouter(host: ProjectHost): RequestChannelProject {
     tlsFor: (...args: Parameters<ProjectHost['tlsFor']>) => host.tlsFor(...args),
     sendEnvironments: () => host.sendEnvironments(),
     runContextFor: (...args: Parameters<ProjectHost['runContextFor']>) => host.runContextFor(...args),
-    proxyFor: (_projectId: string, url: string) => host.proxyFor(url),
+    proxyFor: (_projectId: string, url: string) => proxyFor(url),
     trustAnchorsFor: () => host.trustAnchors(),
     clientIdentityFor: (_projectId: string, keystoreId: string | undefined) => host.clientIdentityFor(keystoreId),
     keystoreFor: (_projectId: string, keystoreId: string) => host.keystoreFor(keystoreId),
@@ -232,7 +243,7 @@ export async function sendFromDirectory(
     const { oauth2, issuedTokens } = input.session;
     const sendDeps: SendThroughEngineDeps = {
       hostState: deps.hostState,
-      project: singleProjectRouter(host),
+      project: singleProjectRouter(host, deps.proxyFor),
       service: engine,
       registry: deps.registry,
       oauth2: {

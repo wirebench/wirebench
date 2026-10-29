@@ -157,7 +157,7 @@ import { AccountService } from '../account-service.js';
 import { AuditReporter } from '../audit/reporter.js';
 import { normalizeServerUrl, ServerClient } from '../server-client.js';
 import { LiveClients } from '../live/live-clients.js';
-import { mainHttpOptions, type MainHttpDeps } from '../network-options.js';
+import { mainHttpOptions, resolveProxy, type MainHttpDeps } from '../network-options.js';
 import { OpenApiImportService } from '../openapi-import.js';
 import { ProtoImportService } from '../proto-import.js';
 import { registerSearchChannels } from '../ipc/search.js';
@@ -2099,6 +2099,23 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
           return ref === undefined ? undefined : await secretStore.get(ref);
         },
         report: reporting,
+        // This machine's proxy, as its Settings name it. Its password is read for the proxy alone: the ref
+        // the preference names, never anything a bundle's `${secret:…}` refs could reach.
+        proxyFor: async (url) => {
+          const { proxy } = preferencesService.get();
+          return await resolveProxy({
+            url,
+            proxy,
+            getSecret: async (ref) => {
+              if (ref !== proxy.passwordRef) return undefined;
+              const password = await reporting(async (one) => await secretStore.get(one))(ref);
+              // An error naming the proxy's URL must not carry its password.
+              if (password !== undefined) hostState.redactor.recordSecretValue(password);
+              return password;
+            },
+            resolveSystemProxy: async (target) => await platform.proxy.resolve(target).catch(() => undefined),
+          });
+        },
         // A send's own engine: a bundle's definitions never replace the ones a window has loaded.
         engine: (getSecret) => new EngineService(getSecret, (url) => mainHttpOptions(url, mainHttpDeps)),
         // No workspace, globals, current values or picks: a bundle carries the values it is sent with.

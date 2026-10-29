@@ -5,7 +5,8 @@
  * send ends. The handlers are called as the agent's server calls them, and once over a paired socket.
  */
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, readdir, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { chmod, mkdir, readdir, symlink, utimes, writeFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -22,18 +23,41 @@ import {
   type RestFolder,
   type RestRequestDef,
 } from '@wirebench/engine';
-import { agentSecretLabel, createHost, serveCall, type Host, type HostPlatform } from '@wirebench/host';
+import {
+  agentSecretLabel,
+  createHost,
+  createSendSession,
+  serveCall,
+  type Host,
+  type HostPlatform,
+} from '@wirebench/host';
 import { AGENT_BUNDLE_MAX_BYTES, AGENT_BUNDLE_MAX_FILES, type SendBundle } from '@wirebench/wire/agent';
 import { pair, type AgentFetch } from '../src/pair.js';
 import { openPairingStore, type Pairing } from '../src/pairings.js';
-import { AGENT_MAX_SENDS_PER_ORIGIN, AGENT_SENDS_DIR, agentSendHandlers, writeBundle } from '../src/send.js';
+import {
+  AGENT_MAX_SENDS_PER_ORIGIN,
+  AGENT_SENDS_DIR,
+  AGENT_STALE_INSTANCE_MS,
+  agentSendHandlers,
+  PID_FILE,
+  writeBundle,
+} from '../src/send.js';
 import { startAgent, type AgentHandler } from '../src/server.js';
 import { cleanUp, onCleanUp, openSocket, startFakeServer } from './helpers.js';
-import { bundleOf, hostPlatform, quietCaller, startEchoServer, tempFolder, type EchoServer } from './send-helpers.js';
+import {
+  bundleOf,
+  hostPlatform,
+  quietCaller,
+  startEchoServer,
+  startProxy,
+  tempFolder,
+  type EchoServer,
+} from './send-helpers.js';
 
 const SECRET = 'abc123def456ghi789';
 const TEAM = 'https://team.example.test';
 const OTHER = 'https://other.example.test';
+const PROXY_PASSWORD = 'proxy-pass-0123456789';
 
 let platform: HostPlatform;
 let host: Host;
@@ -108,9 +132,15 @@ async function restBundle(request: Partial<Parameters<typeof createRestRequest>[
   return await bundleOf(restProject([createRestRequest('Echo', { id: 'req-1', url: '/echo', ...request })]), 'req-1');
 }
 
+/** The send directories left in every instance folder of the sends folder. */
 async function sendsLeft(): Promise<string[]> {
   const root = join(platform.paths.temp(), AGENT_SENDS_DIR);
-  return existsSync(root) ? await readdir(root) : [];
+  if (!existsSync(root)) return [];
+  const left: string[] = [];
+  for (const instance of await readdir(root)) {
+    left.push(...(await readdir(join(root, instance))).filter((name) => name !== PID_FILE));
+  }
+  return left;
 }
 
 describe('agent.send', () => {
@@ -381,14 +411,123 @@ describe('the sends folder', () => {
     expect(echo.received).toEqual([]);
   });
 
-  it('sweeps what a stopped agent left behind when it starts', async () => {
-    const left = join(platform.paths.temp(), AGENT_SENDS_DIR, 'old-send');
-    await mkdir(left, { recursive: true, mode: 0o700 });
-    await chmod(join(platform.paths.temp(), AGENT_SENDS_DIR), 0o700);
-    await writeFile(join(left, 'wirebench.yaml'), 'x');
+  it("sweeps a dead or stale agent's folder at start, and keeps a live one's", async () => {
+    const root = join(platform.paths.temp(), AGENT_SENDS_DIR);
+    await mkdir(root, { mode: 0o700 });
+    await chmod(root, 0o700);
+    const sibling = async (name: string, pid: string): Promise<string> => {
+      const folder = join(root, name);
+      await mkdir(join(folder, 'send-x'), { recursive: true });
+      await writeFile(join(folder, PID_FILE), pid);
+      return folder;
+    };
+    // A process that has exited: its pid is free.
+    const dead = spawnSync(process.execPath, ['-e', '']).pid;
+    const live = await sibling('live', String(process.pid));
+    await sibling('dead', String(dead));
+    await sibling('no-pid', 'not a pid');
+    const stale = await sibling('stale', String(process.pid));
+    const old = new Date(Date.now() - AGENT_STALE_INSTANCE_MS - 60_000);
+    await utimes(stale, old, old);
+
     handlers = agentSendHandlers({ platform });
     await call('agent.send', { sendId: sendId(), bundle: await restBundle() });
-    expect(await sendsLeft()).toEqual([]);
+    const kept = await readdir(root);
+    expect(kept).toContain('live');
+    expect(kept.filter((name) => ['dead', 'no-pid', 'stale'].includes(name))).toEqual([]);
+    expect(await readdir(live)).toEqual(expect.arrayContaining(['send-x', PID_FILE]));
+    // This process's own folder is the one other entry, and it holds no send.
+    const own = kept.filter((name) => name !== 'live');
+    expect(own).toHaveLength(1);
+    expect(await readdir(join(root, own[0] ?? ''))).toEqual([PID_FILE]);
+  });
+
+  it('runs a send under its own instance folder, so another process using the id does not collide', async () => {
+    const root = join(platform.paths.temp(), AGENT_SENDS_DIR);
+    const id = sendId();
+    await mkdir(join(root, 'live', id), { recursive: true, mode: 0o700 });
+    await chmod(root, 0o700);
+    await writeFile(join(root, 'live', PID_FILE), String(process.pid));
+    handlers = agentSendHandlers({ platform });
+    const result = (await call('agent.send', { sendId: id, bundle: await restBundle() })) as { sentFrom: string };
+    expect(result.sentFrom).toBe('agent');
+    expect(existsSync(join(root, 'live', id))).toBe(true);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'touches nothing when the sends folder is a link, and says so once',
+    async () => {
+      const victim = tempFolder('wb-agent-victim-');
+      await mkdir(join(victim, 'precious'));
+      await writeFile(join(victim, 'precious', 'file'), 'keep me');
+      await writeFile(join(victim, PID_FILE), 'x');
+      await symlink(victim, join(platform.paths.temp(), AGENT_SENDS_DIR));
+      const lines: string[] = [];
+      handlers = agentSendHandlers({ platform, log: (message) => lines.push(message) });
+      expect((await failure({ sendId: sendId(), bundle: await restBundle() })).code).toBe('agent-temp-unsafe');
+      expect((await failure({ sendId: sendId(), bundle: await restBundle() })).code).toBe('agent-temp-unsafe');
+      expect((await readdir(victim)).sort()).toEqual(['pid', 'precious']);
+      expect(await readdir(join(victim, 'precious'))).toEqual(['file']);
+      expect(lines.filter((line) => line.includes('not swept'))).toHaveLength(1);
+    },
+  );
+});
+
+describe('the machine proxy', () => {
+  it("carries this machine's proxy password for an agent send, which a bundle ref cannot read", async () => {
+    const proxy = await startProxy();
+    const caller = quietCaller(11);
+    host.attach(caller);
+    onCleanUp(() => host.detach(caller.id));
+    const stored = (await serveCall(host, caller, {
+      id: 1,
+      channel: 'secrets.set',
+      request: { value: PROXY_PASSWORD, label: 'proxy' },
+    })) as { ok: true; value: { ref: string } };
+    const updated = await serveCall(host, caller, {
+      id: 2,
+      channel: 'preferences.update',
+      request: {
+        patch: {
+          proxy: {
+            mode: 'manual',
+            host: '127.0.0.1',
+            port: proxy.port,
+            username: 'agent',
+            passwordRef: stored.value.ref,
+            excludes: [],
+          },
+        },
+      },
+    });
+    expect(updated).toMatchObject({ ok: true });
+
+    await call('agent.send', { sendId: sendId(), bundle: await restBundle() });
+    expect(echo.received).toHaveLength(1);
+    expect(proxy.authorizations).toEqual([`Basic ${Buffer.from(`agent:${PROXY_PASSWORD}`).toString('base64')}`]);
+
+    // The bundle cannot read that value, by its label or by its ref.
+    for (const name of ['proxy', stored.value.ref.replace(/[^A-Za-z0-9_]/g, '_')]) {
+      const bundle = {
+        ...(await restBundle({ headers: [entry('x-leak', `\${secret:${name}}`)] })),
+        secretNames: [name],
+      };
+      expect((await failure({ sendId: sendId(), bundle })).code, name).toBe('secret-missing');
+    }
+    expect(echo.received).toHaveLength(1);
+  });
+});
+
+describe('createSendSession', () => {
+  it("holds an agent's OAuth2 token requests to the host's egress rule", async () => {
+    const config = { ...DEFAULT_OAUTH2_AUTH, tokenUrl: `${echo.url}/token`, clientId: 'wirebench' };
+    const open = createSendSession(host, { egress: undefined });
+    await expect(open.oauth2.accessToken(config, { credentials: { clientSecret: 'x' } })).resolves.toBe('tok-1');
+    const held = createSendSession(host, { egress: { denyPrivate: true } });
+    await expect(held.oauth2.accessToken(config, { credentials: { clientSecret: 'x' } })).rejects.toMatchObject({
+      code: 'egress-refused',
+    });
+    expect(echo.received.filter((one) => one.url.startsWith('/token'))).toHaveLength(1);
   });
 });
 
