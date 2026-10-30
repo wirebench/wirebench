@@ -163,7 +163,14 @@ export async function identityHarness(
 }
 
 /** The modules moved into a tenant (tenancy plan, Part B): every harness registers them with `scopedContext`. */
-export const MOVED_MODULES: readonly ServerModule['name'][] = ['identity', 'licensing', 'teams-access'];
+export const MOVED_MODULES: readonly ServerModule['name'][] = [
+  'identity',
+  'licensing',
+  'teams-access',
+  'server-sync',
+  'webhook-capture',
+  'ci-tokens',
+];
 
 export interface SignedInUser {
   readonly user: repo.UserRow;

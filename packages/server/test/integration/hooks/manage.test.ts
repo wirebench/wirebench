@@ -125,7 +125,8 @@ describeDb('the management API: catch URLs (§3.5, §3.6)', () => {
     });
     const listed = await call<CatchUrl[]>(c.h, c.viewer, 'GET', hooksPath(c.workspaceId));
     expect(listed.body.map((hook) => hook.name)).toEqual(['Payments', 'Source']);
-    expect(c.heard).toEqual([{ workspaceId: c.workspaceId }, { workspaceId: c.workspaceId }]);
+    const changed = { tenantId: c.h.tdb.scope.tenantId, workspaceId: c.workspaceId };
+    expect(c.heard).toEqual([changed, changed]);
   });
 
   it('refuses a blank or long name, a clash in any case, a bad setting, a large body and one past the cap', async () => {
@@ -279,7 +280,7 @@ describeDb('the management API: captures (§3.5)', () => {
     const base = `${hooksPath(c.workspaceId)}/${hook.id}/captures`;
     expect((await call(c.h, c.editor, 'DELETE', base)).status).toBe(204);
     expect((await call<CaptureSummary[]>(c.h, c.viewer, 'GET', base)).body).toEqual([]);
-    expect(c.heard).toEqual([{ workspaceId: c.workspaceId }]);
+    expect(c.heard).toEqual([{ tenantId: c.h.tdb.scope.tenantId, workspaceId: c.workspaceId }]);
   });
 });
 

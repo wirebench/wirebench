@@ -14,6 +14,10 @@ import { liveHarness, openLive, rawUpgrade, type LiveHarness } from '../../helpe
 import { freePort } from '../../helpers/net.js';
 import { seedTeam, seedWorkspace } from '../../helpers/teams.js';
 import { defaultTenantDb } from '../../helpers/tenancy.js';
+import { directoryOf } from '../../../src/tenancy/tenancy.js';
+
+/** The server's own tenant, which its routes lock in. */
+const scopeOf = (server: RunningServer) => directoryOf(server.ctx.tenancy).defaultScope();
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -196,7 +200,7 @@ async function seedAdmin(server: RunningServer): Promise<{ readonly token: strin
     createdBy: null,
     at,
   });
-  await repos.withLock(workspaceId, () => repos.create(workspaceId));
+  await repos.withLock(scopeOf(server), workspaceId, () => repos.create(workspaceId));
   return { token, workspaceId };
 }
 
@@ -256,7 +260,7 @@ describeDb('live-updates at shutdown (live-updates §5.1, host spec §3.7)', () 
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const holder = repos.withLock(workspaceId, () => gate);
+    const holder = repos.withLock(scopeOf(server), workspaceId, () => gate);
     const queued = vi.spyOn(repos, 'withLock');
     const push = fetch(`http://127.0.0.1:${server.port}/api/v1/workspaces/${workspaceId}/sync/commits`, {
       method: 'POST',

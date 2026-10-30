@@ -66,8 +66,8 @@ const deliver = (c: Cast, body: Buffer, headers: Record<string, string> = {}) =>
 const signedHeaders = (body: Buffer, secret = SECRET): Record<string, string> =>
   Object.fromEntries(signWebhook(HMAC, secret, body));
 const newest = async (c: Cast): Promise<repo.CaptureRow> => {
-  const [summary] = await repo.listCaptures(c.h.db, c.hook.id, {}, 1);
-  return (await repo.captureById(c.h.db, c.hook.id, summary!.id))!;
+  const [summary] = await repo.listCaptures(c.h.tdb, c.hook.id, {}, 1);
+  return (await repo.captureById(c.h.tdb, c.hook.id, summary!.id))!;
 };
 
 let c: Cast | undefined;
@@ -109,7 +109,7 @@ describeDb('the public route: signatures (§3.3)', () => {
       signature: { verdict: 'failed', reason: 'missing-header' },
       rejected: true,
     });
-    await repo.updateCatchUrl(c.h.db, c.hook.id, { response: { delayMs: 0 } });
+    await repo.updateCatchUrl(c.h.tdb, c.hook.id, { response: { delayMs: 0 } });
     const accepted = await deliver(c, BODY, signedHeaders(BODY));
     expect([accepted.statusCode, accepted.body]).toEqual([202, CONFIGURED_BODY]);
     expect(await newest(c)).toMatchObject({ signature: { verdict: 'verified' }, rejected: false });

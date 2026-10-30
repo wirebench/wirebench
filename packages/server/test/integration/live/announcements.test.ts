@@ -201,7 +201,15 @@ describeDb('announcements from server-sync and teams-access (§3.2)', () => {
     await settled(pusher);
     expect(count(pusher, 'head')).toBe(0);
     expect(c.heard.take()).toEqual([
-      { hook: 'headMoved', event: { workspaceId: c.workspaceId, head: res.body.head, tokenId: c.editor.tokenId } },
+      {
+        hook: 'headMoved',
+        event: {
+          tenantId: c.h.tdb.scope.tenantId,
+          workspaceId: c.workspaceId,
+          head: res.body.head,
+          tokenId: c.editor.tokenId,
+        },
+      },
     ]);
   });
 

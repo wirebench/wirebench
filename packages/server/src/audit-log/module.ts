@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
-import { CaptureSweeper } from '../hooks/sweep.js';
+import { CaptureSweeper, rawSweepTarget } from '../hooks/sweep.js';
 import { realTimer } from '../live/module.js';
 import { RetentionStopLog } from './chain/retention-log.js';
 import { AuditSealer } from './chain/sealer.js';
@@ -48,18 +48,19 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       // the anchor (audit-chain spec §3.3). Without one it deletes by `at`, but once a chain exists only
       // unsealed rows, so a missing key never cuts a gap; each batch reads the anchor, which is cheap.
       const sweeper = new CaptureSweeper({
-        db: ctx.db,
         maxAgeDays: ctx.config.auditMaxAgeDays,
         now,
         setTimer,
         log: ctx.log,
-        deleteBefore:
+        target: rawSweepTarget(
+          ctx.db,
           key === undefined
             ? async (db, cutoff, limit) =>
                 (await readAnchor(db)) === undefined
                   ? deleteAuditEventsBefore(db, cutoff, limit)
                   : deleteUnsealedBefore(db, cutoff, limit)
             : (_db, cutoff, limit) => deleteSealedBefore(ctx.db, key, cutoff, limit, stops),
+        ),
         label: 'audit sweep',
       });
       sweeper.start();

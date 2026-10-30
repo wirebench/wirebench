@@ -6,6 +6,10 @@ import { startServer, StartupError } from '../../src/serve.js';
 import { describeDb, testDatabase } from '../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../helpers/git.js';
 import { freePort } from '../helpers/net.js';
+import { scopeOf } from '../../src/tenancy/scope.js';
+
+/** Any tenant: these locks are about one workspace id, not tenants. */
+const LOCK_SCOPE = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' });
 
 /** One module with a route that takes `ms` to answer, to have a request in flight at shutdown. */
 const slowModule = (ms: number): ServerModule => ({
@@ -142,7 +146,7 @@ describeDb('startServer', () => {
       release = resolve;
     });
     // What a push does after its connection is gone: it still holds the lock and still queries.
-    const holder = server.ctx.repos.withLock(workspaceId, async () => {
+    const holder = server.ctx.repos.withLock(LOCK_SCOPE, workspaceId, async () => {
       await gate;
       return (await server.ctx.db.query<{ ok: number }>('select 1 as ok')).rows[0]?.ok;
     });
@@ -152,7 +156,7 @@ describeDb('startServer', () => {
     expect(await holder).toBe(1); // the pool was still open when the holder reached it
     await closing;
     await expect(server.ctx.db.query('select 1')).rejects.toThrow(); // and closed after it
-    await expect(server.ctx.repos.withLock(workspaceId, () => Promise.resolve(1))).rejects.toMatchObject({
+    await expect(server.ctx.repos.withLock(LOCK_SCOPE, workspaceId, () => Promise.resolve(1))).rejects.toMatchObject({
       code: 'server-shutting-down',
     });
   });

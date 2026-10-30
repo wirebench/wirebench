@@ -55,7 +55,7 @@ async function changesKeyRequest(exists: (path: string) => Promise<boolean>, bod
 export const commitRoutes =
   (env: SyncEnv) =>
   (app: FastifyInstance): void => {
-    const { db, repos, hooks } = env.ctx;
+    const { repos, hooks } = env.ctx;
     app.post(
       '/workspaces/:workspaceId/sync/commits',
       {
@@ -77,7 +77,7 @@ export const commitRoutes =
         const user = await findUserById(env.ctx.tenancy.db(request.tenant), request.caller!.id);
         if (user === undefined) throw unauthenticated();
         const author = { name: user.displayName, email: user.email };
-        const result = await repos.withLock(workspaceId, async () => {
+        const result = await repos.withLock(request.tenant, workspaceId, async () => {
           if (!(await repos.exists(workspaceId))) throw workspaceNotFound();
           if (role !== 'admin') {
             const parent = body.parent;
@@ -91,13 +91,6 @@ export const commitRoutes =
         try {
           const source = auditSource(request);
           const target = { kind: 'workspace', id: workspaceId } as const;
-          await recordAudit(hooks, db, {
-            ...source,
-            action: 'workspace.pushed',
-            target,
-            workspaceId,
-            details: { head: result.head, previousHead: body.parent, commits: body.commits.length },
-          });
           const changes = body.commits.flatMap((commit) => commit.changes);
           const valuePaths = new Map<string, string>(); // lower-cased path -> the path as pushed
           for (const change of changes)
@@ -108,14 +101,28 @@ export const commitRoutes =
               if (await env.store.hasFile(workspaceId, body.parent, path)) existed.add(lower);
             }
           }
-          for (const event of secretEvents(changes, (path) => existed.has(path))) {
-            await recordAudit(hooks, db, { ...source, ...event, target, workspaceId });
-          }
+          // The repository reads above run outside the unit; the push and its secret events are written in one.
+          await env.ctx.tenancy.db(request.tenant).transaction(async (tx) => {
+            await recordAudit(hooks, tx, {
+              ...source,
+              action: 'workspace.pushed',
+              target,
+              workspaceId,
+              details: { head: result.head, previousHead: body.parent, commits: body.commits.length },
+            });
+            for (const event of secretEvents(changes, (path) => existed.has(path))) {
+              await recordAudit(hooks, tx, { ...source, ...event, target, workspaceId });
+            }
+          });
         } catch (error) {
           request.log.warn({ err: error, workspaceId }, 'audit: push not recorded');
         }
         // main has moved: a rejected or failed push never reaches this line (live-updates §3.2).
-        announce(hooks.headMoved, { workspaceId, head: result.head, tokenId: request.caller!.tokenId }, request.log);
+        announce(
+          hooks.headMoved,
+          { tenantId: request.tenant.tenantId, workspaceId, head: result.head, tokenId: request.caller!.tokenId },
+          request.log,
+        );
         return reply.code(201).send(result);
       },
     );

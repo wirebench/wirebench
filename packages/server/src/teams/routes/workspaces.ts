@@ -124,14 +124,14 @@ export const workspaceRoutes =
               details: { name, defaultRole: body.defaultRole ?? 'viewer' },
             });
             // §3.7: built before commit, so a failure here rolls the row back.
-            await repos.withLock(id, () => repos.create(id));
+            await repos.withLock(request.tenant, id, () => repos.create(id));
             progress.built = true;
           });
         } catch (error) {
           if (progress.built) {
             // The commit failed after the repository existed: move it away so the id is usable again.
             await repos
-              .withLock(id, () => repos.remove(id))
+              .withLock(request.tenant, id, () => repos.remove(id))
               .catch((cause: unknown) => {
                 request.log.warn(
                   { err: cause, workspaceId: id },
@@ -269,7 +269,7 @@ export const workspaceRoutes =
         // `create`, so a re-create of this id cannot interleave between them — otherwise it could
         // either see a spurious 409 (the old repository still on disk when it tries to build) or
         // have its brand-new repository moved away by this delete's cleanup.
-        await repos.withLock(workspaceId, async () => {
+        await repos.withLock(request.tenant, workspaceId, async () => {
           await tdb(request).transaction(async (tx) => {
             const ws = await repo.workspaceById(tx, workspaceId);
             await repo.deleteWorkspace(tx, workspaceId); // grants go by cascade

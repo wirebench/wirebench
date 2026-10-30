@@ -98,6 +98,14 @@ export type SessionEnded = { readonly tokenId: string } | { readonly userId: str
  */
 export type SessionEndedEvent = SessionEnded & { readonly tenantId: string };
 
+/**
+ * `headMoved`, `captureReceived` and `hooksChanged` as they are announced: with the tenant's id (hosted edition
+ * spec §19.8 guard 5). Their listeners key on it from Task 11; none needs the scope to query.
+ */
+export type HeadMovedEvent = HeadMoved & { readonly tenantId: string };
+export type CaptureReceivedEvent = CaptureReceived & { readonly tenantId: string };
+export type HooksChangedEvent = HooksChanged & { readonly tenantId: string };
+
 /** A catch URL stored a capture (webhook-capture spec §3.6); fired after the insert's transaction committed. */
 export interface CaptureReceived {
   readonly workspaceId: string;
@@ -234,11 +242,11 @@ export const ANONYMOUS_SOURCE: AuditSource = { actor: { kind: 'anonymous' } };
 export interface ServerHooks {
   readonly invitationAccepted: InvitationAcceptedHook[];
   readonly audit: AuditHook[];
-  readonly headMoved: Announcement<HeadMoved>[];
+  readonly headMoved: Announcement<HeadMovedEvent>[];
   readonly accessChanged: Announcement<AccessChangedEvent>[];
   readonly sessionEnded: Announcement<SessionEndedEvent>[];
-  readonly captureReceived: Announcement<CaptureReceived>[];
-  readonly hooksChanged: Announcement<HooksChanged>[];
+  readonly captureReceived: Announcement<CaptureReceivedEvent>[];
+  readonly hooksChanged: Announcement<HooksChangedEvent>[];
   readonly licenseChanged: Announcement<LicenseChangedEvent>[];
   readonly scheduleRunFinished: Announcement<ScheduleRunFinished>[];
   readonly agentUnpaired: Announcement<AgentUnpaired>[];

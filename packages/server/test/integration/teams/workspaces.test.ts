@@ -62,7 +62,7 @@ describeDb('/workspaces (§3.2, §3.6, §3.7)', () => {
       body: { code: 'teams-workspace-name-taken' },
     });
     const orphan = newId();
-    await h.repos.withLock(orphan, () => h.repos.create(orphan));
+    await h.repos.withLock(h.tdb.scope, orphan, () => h.repos.create(orphan));
     expect(await create(bob, { id: orphan, name: 'C' })).toMatchObject({
       status: 409,
       body: { code: 'teams-workspace-exists' },

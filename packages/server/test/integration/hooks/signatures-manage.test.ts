@@ -120,11 +120,15 @@ describeDb('the management API: signatures (§3.4, §6)', () => {
     c = await setUp(KEY_ENV);
     await patch(c, c.editor, { signature: { scheme: HMAC, secret: SECRET } });
     const warn = vi.fn();
-    await warnUnopenableSignatures(c.h.db, { enabled: true }, { warn });
+    await warnUnopenableSignatures(c.h.ctx.tenancy, { enabled: true }, { warn, error: vi.fn() });
     expect(warn).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(warn.mock.calls)).not.toContain(SECRET);
     warn.mockClear();
-    await warnUnopenableSignatures(c.h.db, { enabled: true, secretKey: Buffer.alloc(32, 7) }, { warn });
+    await warnUnopenableSignatures(
+      c.h.ctx.tenancy,
+      { enabled: true, secretKey: Buffer.alloc(32, 7) },
+      { warn, error: vi.fn() },
+    );
     expect(warn).not.toHaveBeenCalled();
   });
 });

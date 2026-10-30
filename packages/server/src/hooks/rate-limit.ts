@@ -15,6 +15,14 @@ interface Bucket {
   updatedAt: number;
 }
 
+/**
+ * A catch URL's bucket key, led by its tenant (hosted edition spec §19.8 guard 5): catch URL ids are per tenant
+ * from `0021`, so one id in two tenants is two buckets.
+ */
+export function catchBucketKey(tenantId: string, hookId: string): string {
+  return `${tenantId}:${hookId}`;
+}
+
 export class CatchBuckets {
   private readonly buckets = new Map<string, Bucket>();
   private readonly perMs: number;

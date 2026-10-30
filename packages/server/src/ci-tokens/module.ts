@@ -25,8 +25,8 @@ export function ciTokensModule(options: CiTokensOptions = {}): ServerModule {
     // eslint-disable-next-line @typescript-eslint/require-await -- ServerModule.register is async
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       ctx.meta.addCapability('ci-tokens');
-      app.bearerFallbacks.push(ciBearer({ db: ctx.db, now }));
-      ciRoutes({ db: ctx.db, tenancy: ctx.tenancy, now, hooks: ctx.hooks })(app);
+      app.bearerFallbacks.push(ciBearer({ tenancy: ctx.tenancy, now }));
+      ciRoutes({ tenancy: ctx.tenancy, now, hooks: ctx.hooks })(app);
     },
   };
 }

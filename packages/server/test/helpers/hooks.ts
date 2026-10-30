@@ -28,7 +28,7 @@ export function seedCatchUrl(
   name: string,
   patch: Partial<Pick<repo.CatchUrlRow, 'enabled' | 'response' | 'secret'>> = {},
 ): Promise<repo.CatchUrlRow> {
-  return repo.insertCatchUrl(h.db, {
+  return repo.insertCatchUrl(h.tdb, {
     id: newId(),
     workspaceId,
     name,
@@ -71,7 +71,7 @@ export async function seedSignature(
     readonly rejectUnverified?: boolean;
   },
 ): Promise<void> {
-  await repo.updateCatchUrl(h.db, hookId, {
+  await repo.updateCatchUrl(h.tdb, hookId, {
     signature: { scheme: input.scheme, sealedSecret: seal(input.key, input.secret), hint: hintOf(input.secret) },
     ...(input.rejectUnverified !== undefined ? { rejectUnverified: input.rejectUnverified } : {}),
   });
@@ -112,6 +112,6 @@ export async function seedCiToken(
 ): Promise<{ readonly id: string; readonly token: string }> {
   const minted = mintToken();
   const id = newId();
-  await ciRepo.insertCiToken(h.db, { id, workspaceId, name, tokenHash: minted.hash, createdBy, at: h.clock.now });
+  await ciRepo.insertCiToken(h.tdb, { id, workspaceId, name, tokenHash: minted.hash, createdBy, at: h.clock.now });
   return { id, token: minted.token };
 }

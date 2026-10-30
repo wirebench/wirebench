@@ -28,7 +28,7 @@ export async function seedSyncWorkspace(
     createdBy: null,
     at: h.clock.now,
   });
-  await h.repos.withLock(id, () => h.repos.create(id));
+  await h.repos.withLock(h.tdb.scope, id, () => h.repos.create(id));
   return id;
 }
 

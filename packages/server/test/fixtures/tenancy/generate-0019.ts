@@ -391,7 +391,7 @@ it.runIf(OUT !== undefined)(
         name: 'Payments callback',
       });
       expect(hook.status, JSON.stringify(hook.body)).toBe(201);
-      await hooksRepo.updateCatchUrl(h.db, hook.body.id, {
+      await hooksRepo.updateCatchUrl(h.db as never, hook.body.id, {
         signature: {
           scheme: { kind: 'hmac', algorithm: 'sha256', encoding: 'hex', header: 'X-Signature', prefix: 'sha256=' },
           sealedSecret: sealHookSecret(Buffer.from(FIXTURE_KEYS.hooksSecretKey, 'base64'), FIXTURE_PLAINTEXTS.hookSignatureSecret),
@@ -409,7 +409,7 @@ it.runIf(OUT !== undefined)(
         expect(captured.statusCode, captured.body).toBeLessThan(300);
       }
       // Then the catch URL rejects unverified requests: an unsigned one is answered 401 and stored as rejected.
-      await hooksRepo.updateCatchUrl(h.db, hook.body.id, { rejectUnverified: true });
+      await hooksRepo.updateCatchUrl(h.db as never, hook.body.id, { rejectUnverified: true });
       const rejected = await h.app.inject({
         method: 'POST',
         url: `/hooks/${secret}/events`,

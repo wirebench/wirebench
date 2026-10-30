@@ -28,7 +28,7 @@ describeDb('ci_tokens (callback-assertion §3)', () => {
     const { h, admin, workspaceId } = await setUp();
     const minted = mintToken();
     const id = newId();
-    await repo.insertCiToken(h.db, {
+    await repo.insertCiToken(h.tdb, {
       id,
       workspaceId,
       name: 'pipeline-main',
@@ -36,7 +36,7 @@ describeDb('ci_tokens (callback-assertion §3)', () => {
       createdBy: admin.user.id,
       at: h.clock.now,
     });
-    const found = await repo.ciTokenByHash(h.db, minted.hash);
+    const found = await repo.ciTokenByHash(h.tdb, minted.hash);
     expect(found).toMatchObject({
       id,
       workspaceId,
@@ -51,20 +51,20 @@ describeDb('ci_tokens (callback-assertion §3)', () => {
     expect(JSON.stringify(stored.rows)).not.toContain(minted.token);
 
     h.clock.advance(5_000);
-    await repo.touchCiToken(h.db, id, h.clock.now);
-    expect((await repo.ciTokenByHash(h.db, minted.hash))?.lastUsedAt).toBe(h.clock.now.toISOString());
+    await repo.touchCiToken(h.tdb, id, h.clock.now);
+    expect((await repo.ciTokenByHash(h.tdb, minted.hash))?.lastUsedAt).toBe(h.clock.now.toISOString());
 
-    expect((await repo.ciTokensOfWorkspace(h.db, workspaceId)).map((t) => t.name)).toEqual(['pipeline-main']);
-    expect(await repo.revokeCiToken(h.db, workspaceId, id, h.clock.now)).toBe('pipeline-main');
-    expect(await repo.revokeCiToken(h.db, workspaceId, id, h.clock.now)).toBeUndefined();
-    expect(await repo.ciTokensOfWorkspace(h.db, workspaceId)).toEqual([]);
-    expect((await repo.ciTokenByHash(h.db, minted.hash))?.revokedAt).toBe(h.clock.now.toISOString());
+    expect((await repo.ciTokensOfWorkspace(h.tdb, workspaceId)).map((t) => t.name)).toEqual(['pipeline-main']);
+    expect(await repo.revokeCiToken(h.tdb, workspaceId, id, h.clock.now)).toBe('pipeline-main');
+    expect(await repo.revokeCiToken(h.tdb, workspaceId, id, h.clock.now)).toBeUndefined();
+    expect(await repo.ciTokensOfWorkspace(h.tdb, workspaceId)).toEqual([]);
+    expect((await repo.ciTokenByHash(h.tdb, minted.hash))?.revokedAt).toBe(h.clock.now.toISOString());
   });
 
   it('refuses a second live token of the same name in any case, and frees the name on revoke', async () => {
     const { h, workspaceId } = await setUp();
     const first = newId();
-    await repo.insertCiToken(h.db, {
+    await repo.insertCiToken(h.tdb, {
       id: first,
       workspaceId,
       name: 'Pipeline',
@@ -72,7 +72,7 @@ describeDb('ci_tokens (callback-assertion §3)', () => {
       createdBy: null,
       at: h.clock.now,
     });
-    const again = repo.insertCiToken(h.db, {
+    const again = repo.insertCiToken(h.tdb, {
       id: newId(),
       workspaceId,
       name: 'pipeline',
@@ -81,8 +81,8 @@ describeDb('ci_tokens (callback-assertion §3)', () => {
       at: h.clock.now,
     });
     await expect(again).rejects.toSatisfy((error) => isUniqueViolation(error, 'ci_tokens_workspace_name_lower'));
-    await repo.revokeCiToken(h.db, workspaceId, first, h.clock.now);
-    await repo.insertCiToken(h.db, {
+    await repo.revokeCiToken(h.tdb, workspaceId, first, h.clock.now);
+    await repo.insertCiToken(h.tdb, {
       id: newId(),
       workspaceId,
       name: 'pipeline',
@@ -90,13 +90,13 @@ describeDb('ci_tokens (callback-assertion §3)', () => {
       createdBy: null,
       at: h.clock.now,
     });
-    expect((await repo.ciTokensOfWorkspace(h.db, workspaceId)).map((t) => t.name)).toEqual(['pipeline']);
+    expect((await repo.ciTokensOfWorkspace(h.tdb, workspaceId)).map((t) => t.name)).toEqual(['pipeline']);
   });
 
   it('goes with its workspace', async () => {
     const { h, workspaceId } = await setUp();
     const minted = mintToken();
-    await repo.insertCiToken(h.db, {
+    await repo.insertCiToken(h.tdb, {
       id: newId(),
       workspaceId,
       name: 'pipeline',
@@ -105,6 +105,6 @@ describeDb('ci_tokens (callback-assertion §3)', () => {
       at: h.clock.now,
     });
     await teamsRepo.deleteWorkspace(h.tdb, workspaceId);
-    expect(await repo.ciTokenByHash(h.db, minted.hash)).toBeUndefined();
+    expect(await repo.ciTokenByHash(h.tdb, minted.hash)).toBeUndefined();
   });
 });

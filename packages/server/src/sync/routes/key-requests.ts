@@ -34,7 +34,7 @@ const KEY_REQUEST_RATE_LIMIT_PROBLEM = {
 export const keyRequestRoutes =
   (env: SyncEnv) =>
   (app: FastifyInstance): void => {
-    const { db, repos, hooks } = env.ctx;
+    const { repos, hooks } = env.ctx;
     app.post(
       '/workspaces/:workspaceId/team-secrets/key-requests',
       {
@@ -60,7 +60,7 @@ export const keyRequestRoutes =
         if (user === undefined) throw unauthenticated();
         const path = keyRequestPath(body.keyId);
         const subject = `Request team secrets access for ${user.displayName.replace(CONTROL_CHARACTERS, ' ')}`;
-        const result = await repos.withLock(workspaceId, async () => {
+        const result = await repos.withLock(request.tenant, workspaceId, async () => {
           if (!(await repos.exists(workspaceId))) throw workspaceNotFound();
           const head = await env.store.head(workspaceId);
           if (head !== null && (await env.store.hasFile(workspaceId, head, path))) throw teamSecretsKeyExists();
@@ -72,17 +72,23 @@ export const keyRequestRoutes =
           );
         });
         try {
-          await recordAudit(hooks, db, {
-            ...auditSource(request),
-            action: 'secret.access_changed',
-            target: { kind: 'workspace', id: workspaceId },
-            workspaceId,
-            details: { entries: 0, keyRequests: 1, keyId: body.keyId, head: result.head },
-          });
+          await env.ctx.tenancy.db(request.tenant).transaction((tx) =>
+            recordAudit(hooks, tx, {
+              ...auditSource(request),
+              action: 'secret.access_changed',
+              target: { kind: 'workspace', id: workspaceId },
+              workspaceId,
+              details: { entries: 0, keyRequests: 1, keyId: body.keyId, head: result.head },
+            }),
+          );
         } catch (error) {
           request.log.warn({ err: error, workspaceId }, 'audit: key request not recorded');
         }
-        announce(hooks.headMoved, { workspaceId, head: result.head, tokenId: request.caller!.tokenId }, request.log);
+        announce(
+          hooks.headMoved,
+          { tenantId: request.tenant.tenantId, workspaceId, head: result.head, tokenId: request.caller!.tokenId },
+          request.log,
+        );
         return reply.code(201).send({ head: result.head });
       },
     );

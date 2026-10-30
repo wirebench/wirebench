@@ -55,24 +55,24 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
     });
     const first = newCapture(payments.id);
     const second = newCapture(payments.id);
-    await repo.insertCapture(h.db, first);
-    await repo.insertCapture(h.db, second);
-    const listed = await repo.catchUrlsOfWorkspace(h.db, workspaceId);
+    await repo.insertCapture(h.tdb, first);
+    await repo.insertCapture(h.tdb, second);
+    const listed = await repo.catchUrlsOfWorkspace(h.tdb, workspaceId);
     expect(listed.map((row) => [row.name, row.captureCount, row.newestCaptureId])).toEqual([
       ['Payments', 2, second.id],
       ['source host', 0, null],
     ]);
-    expect(await repo.catchUrlInWorkspace(h.db, workspaceId, source.id)).toMatchObject({ enabled: false });
-    expect(await repo.catchUrlInWorkspace(h.db, newId(), source.id)).toBeUndefined();
-    expect(await repo.countCatchUrls(h.db, workspaceId)).toBe(2);
-    expect(await repo.catchUrlBySecret(h.db, payments.secret)).toEqual({
+    expect(await repo.catchUrlInWorkspace(h.tdb, workspaceId, source.id)).toMatchObject({ enabled: false });
+    expect(await repo.catchUrlInWorkspace(h.tdb, newId(), source.id)).toBeUndefined();
+    expect(await repo.countCatchUrls(h.tdb, workspaceId)).toBe(2);
+    expect(await repo.catchUrlBySecret(h.tdb, payments.secret)).toEqual({
       id: payments.id,
       workspaceId,
       enabled: true,
       response: CATCH_URL_DEFAULT_RESPONSE,
       rejectUnverified: false,
     });
-    expect(await repo.catchUrlBySecret(h.db, 'X'.repeat(26))).toBeUndefined();
+    expect(await repo.catchUrlBySecret(h.tdb, 'X'.repeat(26))).toBeUndefined();
   });
 
   it('names are unique per workspace regardless of case, under the index the routes map', async () => {
@@ -93,26 +93,26 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
     const row = await seedCatchUrl(h, workspaceId, 'Payments', {
       response: { status: 202, contentType: 'text/plain', body: 'ok', delayMs: 10 },
     });
-    await repo.updateCatchUrl(h.db, row.id, { name: 'Renamed', response: { status: 204 } });
-    expect(await repo.catchUrlInWorkspace(h.db, workspaceId, row.id)).toMatchObject({
+    await repo.updateCatchUrl(h.tdb, row.id, { name: 'Renamed', response: { status: 204 } });
+    expect(await repo.catchUrlInWorkspace(h.tdb, workspaceId, row.id)).toMatchObject({
       name: 'Renamed',
       enabled: true,
       response: { status: 204, contentType: 'text/plain', body: 'ok', delayMs: 10 },
     });
-    await repo.updateCatchUrl(h.db, row.id, { enabled: false, response: { contentType: null, body: null } });
-    expect(await repo.catchUrlInWorkspace(h.db, workspaceId, row.id)).toMatchObject({
+    await repo.updateCatchUrl(h.tdb, row.id, { enabled: false, response: { contentType: null, body: null } });
+    expect(await repo.catchUrlInWorkspace(h.tdb, workspaceId, row.id)).toMatchObject({
       enabled: false,
       response: { status: 204, contentType: null, body: null, delayMs: 10 },
     });
-    await repo.updateCatchUrl(h.db, row.id, {});
-    expect((await repo.catchUrlInWorkspace(h.db, workspaceId, row.id))?.name).toBe('Renamed');
+    await repo.updateCatchUrl(h.tdb, row.id, {});
+    expect((await repo.catchUrlInWorkspace(h.tdb, workspaceId, row.id))?.name).toBe('Renamed');
   });
 
   it('rotates the secret, so the old one finds nothing', async () => {
     const row = await seedCatchUrl(h, workspaceId, 'Payments');
-    await repo.rotateSecret(h.db, row.id, 'Z'.repeat(26));
-    expect(await repo.catchUrlBySecret(h.db, row.secret)).toBeUndefined();
-    expect((await repo.catchUrlBySecret(h.db, 'Z'.repeat(26)))?.id).toBe(row.id);
+    await repo.rotateSecret(h.tdb, row.id, 'Z'.repeat(26));
+    expect(await repo.catchUrlBySecret(h.tdb, row.secret)).toBeUndefined();
+    expect((await repo.catchUrlBySecret(h.tdb, 'Z'.repeat(26)))?.id).toBe(row.id);
   });
 
   it('keeps headers as ordered pairs with repeats, and the body bytes exactly', async () => {
@@ -131,8 +131,8 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
       bodySize: 9,
       truncated: true,
     });
-    await repo.insertCapture(h.db, capture);
-    expect(await repo.captureById(h.db, row.id, capture.id)).toEqual({
+    await repo.insertCapture(h.tdb, capture);
+    expect(await repo.captureById(h.tdb, row.id, capture.id)).toEqual({
       id: capture.id,
       receivedAt: '2026-09-28T10:00:00.000Z',
       method: 'PUT',
@@ -150,17 +150,17 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
       signature: null,
       rejected: false,
     });
-    expect(await repo.captureById(h.db, newId(), capture.id)).toBeUndefined();
+    expect(await repo.captureById(h.tdb, newId(), capture.id)).toBeUndefined();
   });
 
   it('prunes to the newest `keep` in one statement: nothing at keep, the oldest at keep + 1', async () => {
     const row = await seedCatchUrl(h, workspaceId, 'Payments');
     const captures = Array.from({ length: 4 }, () => newCapture(row.id));
-    for (const capture of captures.slice(0, 3)) await repo.insertCapture(h.db, capture);
-    expect(await repo.pruneCaptures(h.db, row.id, 3)).toBe(0);
-    await repo.insertCapture(h.db, captures[3]!);
-    expect(await repo.pruneCaptures(h.db, row.id, 3)).toBe(1);
-    const left = await repo.listCaptures(h.db, row.id, {}, 10);
+    for (const capture of captures.slice(0, 3)) await repo.insertCapture(h.tdb, capture);
+    expect(await repo.pruneCaptures(h.tdb, row.id, 3)).toBe(0);
+    await repo.insertCapture(h.tdb, captures[3]!);
+    expect(await repo.pruneCaptures(h.tdb, row.id, 3)).toBe(1);
+    const left = await repo.listCaptures(h.tdb, row.id, {}, 10);
     expect(left.map((capture) => capture.id)).toEqual(
       captures
         .slice(1)
@@ -175,52 +175,52 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
     for (let i = 0; i < 5; i += 1) {
       const capture = newCapture(row.id);
       ids.push(capture.id);
-      await repo.insertCapture(h.db, capture);
+      await repo.insertCapture(h.tdb, capture);
     }
     const [c0, c1, c2, c3, c4] = ids as [string, string, string, string, string];
     const idsOf = (rows: readonly repo.CaptureSummaryRow[]): string[] => rows.map((r) => r.id);
-    expect(idsOf(await repo.listCaptures(h.db, row.id, {}, 2))).toEqual([c4, c3]);
-    expect(idsOf(await repo.listCaptures(h.db, row.id, { before: c3 }, 2))).toEqual([c2, c1]);
-    expect(idsOf(await repo.listCaptures(h.db, row.id, { after: c0 }, 2))).toEqual([c2, c1]);
-    expect(idsOf(await repo.listCaptures(h.db, row.id, { after: c2 }, 5))).toEqual([c4, c3]);
-    expect(idsOf(await repo.listCaptures(h.db, row.id, { after: c4 }, 5))).toEqual([]);
+    expect(idsOf(await repo.listCaptures(h.tdb, row.id, {}, 2))).toEqual([c4, c3]);
+    expect(idsOf(await repo.listCaptures(h.tdb, row.id, { before: c3 }, 2))).toEqual([c2, c1]);
+    expect(idsOf(await repo.listCaptures(h.tdb, row.id, { after: c0 }, 2))).toEqual([c2, c1]);
+    expect(idsOf(await repo.listCaptures(h.tdb, row.id, { after: c2 }, 5))).toEqual([c4, c3]);
+    expect(idsOf(await repo.listCaptures(h.tdb, row.id, { after: c4 }, 5))).toEqual([]);
   });
 
   it('deletes captures older than a cutoff, strictly, in batches no larger than asked', async () => {
     const row = await seedCatchUrl(h, workspaceId, 'Payments');
     const cutoff = new Date('2026-09-21T10:00:00.000Z');
     for (let i = 0; i < 5; i += 1) {
-      await repo.insertCapture(h.db, newCapture(row.id, { receivedAt: new Date(cutoff.getTime() - 1 - i) }));
+      await repo.insertCapture(h.tdb, newCapture(row.id, { receivedAt: new Date(cutoff.getTime() - 1 - i) }));
     }
     const atCutoff = newCapture(row.id, { receivedAt: cutoff });
-    await repo.insertCapture(h.db, atCutoff);
-    expect(await repo.deleteCapturesBefore(h.db, cutoff, 2)).toBe(2);
-    expect(await repo.deleteCapturesBefore(h.db, cutoff, 2)).toBe(2);
-    expect(await repo.deleteCapturesBefore(h.db, cutoff, 2)).toBe(1);
-    expect(await repo.deleteCapturesBefore(h.db, cutoff, 2)).toBe(0);
-    expect((await repo.listCaptures(h.db, row.id, {}, 10)).map((c) => c.id)).toEqual([atCutoff.id]);
+    await repo.insertCapture(h.tdb, atCutoff);
+    expect(await repo.deleteCapturesBefore(h.tdb, cutoff, 2)).toBe(2);
+    expect(await repo.deleteCapturesBefore(h.tdb, cutoff, 2)).toBe(2);
+    expect(await repo.deleteCapturesBefore(h.tdb, cutoff, 2)).toBe(1);
+    expect(await repo.deleteCapturesBefore(h.tdb, cutoff, 2)).toBe(0);
+    expect((await repo.listCaptures(h.tdb, row.id, {}, 10)).map((c) => c.id)).toEqual([atCutoff.id]);
   });
 
   it('clears, and cascades from the catch URL and from the workspace', async () => {
     const row = await seedCatchUrl(h, workspaceId, 'Payments');
-    await repo.insertCapture(h.db, newCapture(row.id));
-    await repo.insertCapture(h.db, newCapture(row.id));
-    expect(await repo.clearCaptures(h.db, row.id)).toBe(2);
-    await repo.insertCapture(h.db, newCapture(row.id));
-    expect(await repo.deleteCatchUrl(h.db, row.id)).toBe(true);
-    expect(await repo.deleteCatchUrl(h.db, row.id)).toBe(false);
+    await repo.insertCapture(h.tdb, newCapture(row.id));
+    await repo.insertCapture(h.tdb, newCapture(row.id));
+    expect(await repo.clearCaptures(h.tdb, row.id)).toBe(2);
+    await repo.insertCapture(h.tdb, newCapture(row.id));
+    expect(await repo.deleteCatchUrl(h.tdb, row.id)).toBe(true);
+    expect(await repo.deleteCatchUrl(h.tdb, row.id)).toBe(false);
     expect((await h.db.query('select count(*)::int as n from captures')).rows[0]).toEqual({ n: 0 });
     const kept = await seedCatchUrl(h, workspaceId, 'Kept');
-    await repo.insertCapture(h.db, newCapture(kept.id));
+    await repo.insertCapture(h.tdb, newCapture(kept.id));
     await teamsRepo.deleteWorkspace(h.tdb, workspaceId);
-    expect(await repo.catchUrlsOfWorkspace(h.db, workspaceId)).toEqual([]);
+    expect(await repo.catchUrlsOfWorkspace(h.tdb, workspaceId)).toEqual([]);
     expect((await h.db.query('select count(*)::int as n from captures')).rows[0]).toEqual({ n: 0 });
   });
 
   it('names the foreign keys a racing delete trips, and locks only an existing workspace', async () => {
     let caught: unknown;
     try {
-      await repo.insertCapture(h.db, newCapture(newId()));
+      await repo.insertCapture(h.tdb, newCapture(newId()));
     } catch (error) {
       caught = error;
     }
@@ -232,7 +232,7 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
       caught = error;
     }
     expect(isForeignKeyViolation(caught, repo.CATCH_URL_WORKSPACE_FK)).toBe(true);
-    await h.db.transaction(async (tx) => {
+    await h.tdb.transaction(async (tx) => {
       expect(await repo.lockWorkspace(tx, workspaceId)).toBe(true);
       expect(await repo.lockWorkspace(tx, newId())).toBe(false);
     });

@@ -1,9 +1,17 @@
 import { Writable } from 'node:stream';
 import Fastify, { type FastifyBaseLogger } from 'fastify';
 import { describe, expect, it } from 'vitest';
-import { announce, serverHooks, type Announcement, type HeadMoved, type ServerModule } from '../../../src/context.js';
+import {
+  announce,
+  serverHooks,
+  type Announcement,
+  type HeadMoved,
+  type HeadMovedEvent,
+  type ServerModule,
+} from '../../../src/context.js';
 
-const EVENT: HeadMoved = {
+const EVENT: HeadMovedEvent = {
+  tenantId: '00000000-0000-4000-8000-000000000001',
   workspaceId: '01J8ZC5Q0V7R3T9XK2M4N6P8QA',
   head: 'a'.repeat(40),
   tokenId: '01J8ZC5Q0V7R3T9XK2M4N6P8QB',

@@ -353,9 +353,9 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
     await findUserByEmail(asTenantQuerier(explaining), 'admin@example.com');
     await chainHead(explaining);
     await listAuditEvents(explaining, {}, { limit: 50 });
-    await deleteCapturesBefore(explaining, new Date(), 100);
-    await catchUrlBySecret(explaining, 'no-such-secret');
-    await ciTokenByHash(explaining, 'no-such-hash');
+    await deleteCapturesBefore(asTenantQuerier(explaining), new Date(), 100);
+    await catchUrlBySecret(asTenantQuerier(explaining), 'no-such-secret');
+    await ciTokenByHash(asTenantQuerier(explaining), 'no-such-hash');
     await scimTokenByHash(explaining, 'no-such-hash');
     const [token, email, head, listing, retention, secret, ciToken, scimToken] = plans;
     expect(token).toContain('device_tokens_token_hash_key_0019');
