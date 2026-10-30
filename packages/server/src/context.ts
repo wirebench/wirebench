@@ -105,6 +105,11 @@ export type SessionEndedEvent = SessionEnded & { readonly tenantId: string };
 export type HeadMovedEvent = HeadMoved & { readonly tenantId: string };
 export type CaptureReceivedEvent = CaptureReceived & { readonly tenantId: string };
 export type HooksChangedEvent = HooksChanged & { readonly tenantId: string };
+/**
+ * `scheduleRunFinished` with its tenant when the announcer has one: a cancel's request does, the executor not
+ * until Task 13 runs it per tenant.
+ */
+export type ScheduleRunFinishedEvent = ScheduleRunFinished & { readonly tenantId?: string };
 
 /** A catch URL stored a capture (webhook-capture spec §3.6); fired after the insert's transaction committed. */
 export interface CaptureReceived {
@@ -248,7 +253,7 @@ export interface ServerHooks {
   readonly captureReceived: Announcement<CaptureReceivedEvent>[];
   readonly hooksChanged: Announcement<HooksChangedEvent>[];
   readonly licenseChanged: Announcement<LicenseChangedEvent>[];
-  readonly scheduleRunFinished: Announcement<ScheduleRunFinished>[];
+  readonly scheduleRunFinished: Announcement<ScheduleRunFinishedEvent>[];
   readonly agentUnpaired: Announcement<AgentUnpaired>[];
 }
 

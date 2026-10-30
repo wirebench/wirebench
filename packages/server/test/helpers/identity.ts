@@ -170,6 +170,8 @@ export const MOVED_MODULES: readonly ServerModule['name'][] = [
   'server-sync',
   'webhook-capture',
   'ci-tokens',
+  'live-updates',
+  'terminal-shares',
 ];
 
 export interface SignedInUser {

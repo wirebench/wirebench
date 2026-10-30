@@ -18,7 +18,7 @@ import {
   type TerminalSharePresenceEntry,
   type TerminalShareServerMessage,
 } from '@wirebench/engine';
-import type { AuditSource } from '../context.js';
+import type { AuditSource, SessionEndedEvent } from '../context.js';
 import type { TenantScope } from '../tenancy/scope.js';
 
 /** One socket, as the registry sees it. */
@@ -43,6 +43,8 @@ export interface ShareIdentity {
 }
 
 export interface ShareAuditEvent {
+  /** The share's tenant: its rows are written there. */
+  readonly tenant: TenantScope;
   readonly action: AuditAction;
   readonly source: AuditSource;
   readonly workspaceId: string;
@@ -74,6 +76,8 @@ interface Viewer extends Member {
   inputs: number;
   windowStart: number;
 }
+
+const shareKey = (tenantId: string, shareId: string): string => `${tenantId}:${shareId}`;
 
 interface Share {
   readonly id: string;
@@ -133,6 +137,7 @@ export class ReplayBuffer {
 const json = (message: TerminalShareServerMessage): string => JSON.stringify(message);
 
 export class ShareRegistry {
+  /** By `tenantId:shareId` (hosted edition spec §19.8 guard 5): a share is found only in its own tenant. */
   private readonly shares = new Map<string, Share>();
   private readonly byPeer = new Map<SharePeer, Share>();
 
@@ -172,7 +177,7 @@ export class ShareRegistry {
       share.attachTimer = undefined;
       if (share.owner === undefined) this.end(share, 'owner-left', share.ownerSource);
     }, TERMINAL_SHARE_LIMITS.ownerAttachMs);
-    this.shares.set(id, share);
+    this.shares.set(shareKey(share.tenant.tenantId, id), share);
     this.record(share, 'terminal_share.started', input.source, {});
     return id;
   }
@@ -187,7 +192,7 @@ export class ShareRegistry {
     shareId: string,
     userId: string,
   ): { hostName: string; ownerName: string; viewers: number } | undefined {
-    const share = this.shares.get(shareId);
+    const share = this.shares.get(shareKey(tenant.tenantId, shareId));
     if (share === undefined || !this.inTenant(share, tenant, workspaceId) || share.removed.has(userId)) {
       return undefined;
     }
@@ -202,7 +207,7 @@ export class ShareRegistry {
     workspaceId: string,
     shareId: string,
   ): AttachOutcome {
-    const share = this.shares.get(shareId);
+    const share = this.shares.get(shareKey(tenant.tenantId, shareId));
     if (share === undefined || !this.inTenant(share, tenant, workspaceId)) return 'not-found';
     if (who.userId === share.ownerId) {
       if (share.owner !== undefined) return 'owner-taken';
@@ -302,22 +307,24 @@ export class ShareRegistry {
           viewer.peer.ping();
         }
       }
-      if (share.owner !== undefined && this.shares.has(share.id)) {
+      if (share.owner !== undefined && this.shares.has(shareKey(share.tenant.tenantId, share.id))) {
         share.owner.alive = false;
         share.owner.peer.ping();
       }
     }
   }
 
-  /** A device token ended, or every token of a user: their shares end, and their viewer sockets close. */
-  sessionEnded(
-    event: { readonly tokenId: string } | { readonly userId: string; readonly exceptTokenId?: string },
-  ): void {
+  /**
+   * A device token ended, or every token of a user, in the event's tenant: their shares there end, and their
+   * viewer sockets there close. Token and user ids are per tenant, so no other tenant's share is touched.
+   */
+  sessionEnded(event: SessionEndedEvent): void {
     const hit = (who: ShareIdentity): boolean =>
       'tokenId' in event
         ? who.tokenId === event.tokenId
         : who.userId === event.userId && who.tokenId !== event.exceptTokenId;
     for (const share of [...this.shares.values()]) {
+      if (share.tenant.tenantId !== event.tenantId) continue;
       if (share.owner !== undefined && hit(share.owner.who)) {
         this.end(share, 'revoked', share.owner.who.source);
         continue;
@@ -328,12 +335,13 @@ export class ShareRegistry {
     }
   }
 
-  /** Someone's access may have changed: every socket's role is looked up again. */
-  async recheck(): Promise<void> {
+  /** Someone's access may have changed in `tenantId`: every socket of its shares is looked up again. */
+  async recheck(tenantId: string): Promise<void> {
     for (const share of [...this.shares.values()]) {
+      if (share.tenant.tenantId !== tenantId) continue;
       const owner = share.owner;
       if (owner !== undefined && !(await this.deps.canView(owner.who.userId, share.workspaceId, share.tenant))) {
-        if (this.shares.has(share.id)) this.end(share, 'access', owner.who.source);
+        if (this.shares.has(shareKey(share.tenant.tenantId, share.id))) this.end(share, 'access', owner.who.source);
         continue;
       }
       for (const viewer of [...share.viewers.values()]) {
@@ -464,7 +472,7 @@ export class ShareRegistry {
   }
 
   private end(share: Share, reason: TerminalShareEndReason, source: AuditSource): void {
-    if (!this.shares.delete(share.id)) return;
+    if (!this.shares.delete(shareKey(share.tenant.tenantId, share.id))) return;
     share.attachTimer?.cancel();
     const message = json({ type: 'ended', reason });
     const members: Member[] = [...share.viewers.values()];
@@ -515,6 +523,7 @@ export class ShareRegistry {
   private record(share: Share, action: AuditAction, source: AuditSource, details: AuditDetails): void {
     try {
       this.deps.audit({
+        tenant: share.tenant,
         action,
         source,
         workspaceId: share.workspaceId,

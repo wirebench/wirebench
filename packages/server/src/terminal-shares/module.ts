@@ -31,6 +31,7 @@ import { shareNotFound } from './errors.js';
 import { ShareRegistry, type ShareRegistryDeps } from './registry.js';
 import { runShareSocket } from './socket.js';
 import type { TenantScope } from '../tenancy/scope.js';
+import { outsideTenantUnit } from '../tenancy/tenant-db.js';
 
 export interface TerminalSharesOptions {
   readonly now?: () => Date;
@@ -71,22 +72,28 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
   return {
     name: 'terminal-shares',
     register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
-      const { db, hooks } = ctx;
+      const { hooks } = ctx;
       const canView = async (userId: string, workspaceId: string, tenant: TenantScope): Promise<boolean> =>
         (await effectiveRole(ctx.tenancy.db(tenant), userId, workspaceId)).role !== 'none';
       const registry = new ShareRegistry({
         canView,
+        // Never awaited, so outside any unit the caller has open; written in the share's own tenant.
         audit: (event) => {
-          db.transaction((tx) =>
-            recordAudit(hooks, tx, {
-              ...event.source,
-              action: event.action,
-              target: { kind: 'terminal-share', id: event.shareId },
-              workspaceId: event.workspaceId,
-              details: event.details,
-            }),
-          ).catch((error: unknown) => {
-            ctx.log.warn({ err: error }, 'terminal share audit failed');
+          outsideTenantUnit(() => {
+            void ctx.tenancy
+              .db(event.tenant)
+              .transaction((tx) =>
+                recordAudit(hooks, tx, {
+                  ...event.source,
+                  action: event.action,
+                  target: { kind: 'terminal-share', id: event.shareId },
+                  workspaceId: event.workspaceId,
+                  details: event.details,
+                }),
+              )
+              .catch((error: unknown) => {
+                ctx.log.warn({ err: error }, 'terminal share audit failed');
+              });
           });
         },
         newShareId: options.newShareId ?? newShareId,
@@ -180,8 +187,8 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
       };
       heartbeat = setTimer(beat, TERMINAL_SHARE_LIMITS.heartbeatMs);
 
-      ctx.hooks.accessChanged.push(() => {
-        registry.recheck().catch((error: unknown) => {
+      ctx.hooks.accessChanged.push((event) => {
+        registry.recheck(event.tenantId).catch((error: unknown) => {
           ctx.log.warn({ err: error }, 'terminal share access re-check failed');
         });
       });

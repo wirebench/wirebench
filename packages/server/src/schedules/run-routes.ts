@@ -189,7 +189,7 @@ export const scheduleRunRoutes =
         env.runs.cancel(runId);
         announce(
           env.hooks.scheduleRunFinished,
-          { workspaceId, scheduleId: scheduleRowId, runId, status: 'cancelled' },
+          { tenantId: request.tenant.tenantId, workspaceId, scheduleId: scheduleRowId, runId, status: 'cancelled' },
           request.log,
         );
         return reply.code(204).send();
