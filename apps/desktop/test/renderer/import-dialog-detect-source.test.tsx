@@ -36,6 +36,8 @@ describe('Import dialog — a picked source detected in main', () => {
     await openOnFileTab();
     fireEvent.click(screen.getByTestId('import-browse'));
     await waitFor(() => expect(screen.getByTestId('detected-format-badge').textContent).toBe('Insomnia export (v5)'));
+    // Default foreground on the accent-muted chip: the accent itself does not reach 4.5:1 there (#803).
+    expect(screen.getByTestId('detected-format-badge').className).toMatch(/\btext-fg-default\b/);
     expect(detectImportSource).toHaveBeenCalledWith({ path: '/work/export.json', folder: false });
   });
 
