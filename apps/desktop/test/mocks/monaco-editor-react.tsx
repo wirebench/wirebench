@@ -113,12 +113,14 @@ export const mountedModelUris: string[] = [];
 
 export interface MockEditorProps {
   readonly value?: string;
+  /** The registered Monaco theme name, surfaced as `data-theme` so a test can read it. */
+  readonly theme?: string;
   readonly onChange?: (value: string | undefined) => void;
   readonly options?: { readonly readOnly?: boolean; readonly ariaLabel?: string; readonly wordWrap?: string };
   readonly onMount?: (editor: { addCommand: (binding: number, handler: Handler) => void }, monaco: unknown) => void;
 }
 
-export function Editor({ value = '', onChange, options, onMount }: MockEditorProps) {
+export function Editor({ value = '', theme, onChange, options, onMount }: MockEditorProps) {
   const commands = useRef(new Map<number, Handler>());
   // A distinct URI per editor, as real models have: the JSON completion registry is keyed by it.
   const uri = useRef(`inmemory://model/${String(nextModelId++)}`);
@@ -166,6 +168,7 @@ export function Editor({ value = '', onChange, options, onMount }: MockEditorPro
       aria-label={options?.ariaLabel ?? 'editor'}
       readOnly={options?.readOnly ?? false}
       data-word-wrap={options?.wordWrap}
+      data-theme={theme}
       value={value}
       onChange={(event) => onChange?.(event.target.value)}
       onKeyDown={(event) => {
@@ -196,13 +199,14 @@ export function Editor({ value = '', onChange, options, onMount }: MockEditorPro
 export interface MockDiffEditorProps {
   readonly original?: string;
   readonly modified?: string;
+  readonly theme?: string;
   readonly options?: { readonly readOnly?: boolean; readonly renderSideBySide?: boolean };
 }
 
 /** A two-`<textarea>` stand-in for `@monaco-editor/react`'s `DiffEditor`. */
-export function DiffEditor({ original = '', modified = '' }: MockDiffEditorProps) {
+export function DiffEditor({ original = '', modified = '', theme }: MockDiffEditorProps) {
   return (
-    <div>
+    <div data-testid="diff-editor" data-theme={theme}>
       <textarea aria-label="Original" readOnly value={original} />
       <textarea aria-label="Modified" readOnly value={modified} />
     </div>

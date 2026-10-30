@@ -6,14 +6,11 @@
 
 export const XML_LANGUAGE_ID = 'xml';
 
-export const MONACO_THEMES = { dark: 'wirebench-dark', light: 'wirebench-light' } as const;
+// The real names, from the module that only imports Monaco's types.
+export { MONACO_THEMES, monacoThemeName } from '../../src/renderer/editor/themes.js';
 
 export function configureMonaco(): undefined {
   return undefined;
-}
-
-export function monacoThemeName(theme: 'dark' | 'light'): string {
-  return MONACO_THEMES[theme];
 }
 
 /** `monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter`, with Monaco's real numeric values. */

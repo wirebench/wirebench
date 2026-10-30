@@ -9,7 +9,7 @@ import { Editor } from '@monaco-editor/react';
 import type { OnMount } from '@monaco-editor/react';
 import { useMemo } from 'react';
 import type * as Monaco from 'monaco-editor';
-import { useResolvedTheme } from '../lib/theme.js';
+import { usePalette, useResolvedTheme } from '../lib/theme.js';
 import { getMarkerApi, setMarkerApi } from './markers.js';
 import { usePreferencesStore } from '../state/preferences.js';
 import { useUiStore } from '../state/ui.js';
@@ -82,7 +82,7 @@ export function CodeEditor({
   wordWrap,
 }: CodeEditorProps) {
   const preference = useUiStore((state) => state.theme);
-  const theme = monacoThemeName(useResolvedTheme(preference));
+  const theme = monacoThemeName(useResolvedTheme(preference), usePalette());
   const editorPreferences = usePreferencesStore((state) => state.preferences.editor);
 
   const options = useMemo(
