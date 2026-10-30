@@ -13,7 +13,7 @@ import { sessionToken } from './cookies.js';
 import { forbidden, originRefused, unauthenticated, userDisabled } from './errors.js';
 import * as repo from './repo.js';
 import { bearerToken, hashToken } from './tokens.js';
-import type { TenantQuerier } from '../tenancy/tenant-db.js';
+import type { TenantDb } from '../tenancy/tenant-db.js';
 import { tenantUrl } from '../tenancy/urls.js';
 
 export interface Caller {
@@ -74,24 +74,33 @@ export interface TokenCaller {
  * request's tenant: a token is found by its hash within that tenant only.
  */
 export async function callerForToken(
-  env: { readonly db: TenantQuerier; readonly settings: IdentitySettings; readonly now: () => Date },
+  env: { readonly db: TenantDb; readonly settings: IdentitySettings; readonly now: () => Date },
   token: string,
   via: Caller['via'] = 'bearer',
 ): Promise<TokenCaller> {
   if (!DEVICE_TOKEN_PATTERN.test(token)) throw unauthenticated(); // no query for something that is not a token
   const hash = hashToken(token);
-  const found = await repo.tokenByHash(env.db, hash);
-  if (found === undefined || !sameHash(found.token.tokenHash, hash) || found.token.revokedAt !== null)
-    throw unauthenticated();
-  if (via === 'cookie' && found.token.kind !== 'browser') throw unauthenticated();
-  const now = env.now();
-  if (isTokenExpired(found.token, now, env.settings)) {
-    await repo.deleteToken(env.db, found.token.id); // lazy expiry (§3.5); the daily sweep gets the rest
-    throw unauthenticated();
-  }
-  if (found.user.disabledAt !== null) throw userDisabled();
-  if (now.getTime() - Date.parse(found.token.lastUsedAt) >= TOUCH_EVERY_MS)
-    await repo.touchToken(env.db, found.token.id, now);
+  // One unit for the lookup, the lazy delete and the touch (Task 8 review M3): every authenticated request
+  // pays for it. A refusal is answered after the unit, so the lazy delete commits rather than rolling back.
+  const outcome = await env.db.transaction(async (tx) => {
+    const found = await repo.tokenByHash(tx, hash);
+    if (found === undefined || !sameHash(found.token.tokenHash, hash) || found.token.revokedAt !== null)
+      return 'unauthenticated';
+    if (via === 'cookie' && found.token.kind !== 'browser') return 'unauthenticated';
+    // Read after the lookup, as the clock stands when the token is judged.
+    const now = env.now();
+    if (isTokenExpired(found.token, now, env.settings)) {
+      await repo.deleteToken(tx, found.token.id); // lazy expiry (§3.5); the daily sweep gets the rest
+      return 'unauthenticated';
+    }
+    if (found.user.disabledAt !== null) return 'disabled';
+    if (now.getTime() - Date.parse(found.token.lastUsedAt) >= TOUCH_EVERY_MS)
+      await repo.touchToken(tx, found.token.id, now);
+    return found;
+  });
+  if (outcome === 'unauthenticated') throw unauthenticated();
+  if (outcome === 'disabled') throw userDisabled();
+  const found = outcome;
   return {
     caller: {
       id: found.user.id,

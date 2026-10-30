@@ -38,6 +38,7 @@ import { loadHostRuntime, loadHostSocketLoop, type HostSecretEvent } from './hos
 import { injectSend } from './inject-send.js';
 import { HostInstances, type HostSession, type HostSocketHandle, type HostUser } from './instances.js';
 import { liveBridge } from './live-bridge.js';
+import { outsideTenantUnit } from '../tenancy/tenant-db.js';
 import { runHostSocket, type HostSocket } from './socket.js';
 
 export interface HostModuleOptions {
@@ -166,10 +167,16 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
             server: {
               url: user.serverUrl,
               send: injectSend(app, user.serverUrl, session, refused),
+              // Outside any tenant unit (Task 8 review M5): the socket's token lookups are its own, never awaited
+              // by whatever code of the host's opened the connection.
               connectLive: () =>
-                liveBridge((connection) => {
-                  runLive(connection, user.tenant);
-                }),
+                outsideTenantUnit(() =>
+                  liveBridge((connection) => {
+                    outsideTenantUnit(() => {
+                      runLive(connection, user.tenant);
+                    });
+                  }),
+                ),
               credential,
             },
             onSecret: (event) => {

@@ -53,6 +53,24 @@ describeDb('POST /auth/local/sign-in and /auth/sign-out (§3.1)', () => {
     expect(unknown.json<{ code: string }>().code).toBe('identity-invalid-credentials');
   });
 
+  it('costs the same units and statements for an unknown email as for a wrong password (Task 8 review I1)', async () => {
+    await signedInUser(h, { email: 'alice@example.com', password: PASSWORD });
+    /** The statement count of each unit a sign-in opened, in order. */
+    const shape = async (email: string): Promise<number[]> => {
+      h.statements.entries.length = 0;
+      expect((await signIn(email, 'wrong password!')).statusCode).toBe(401);
+      const perUnit = new Map<number, number>();
+      for (const entry of h.statements.entries)
+        if (entry.kind === 'statement') perUnit.set(entry.unit, (perUnit.get(entry.unit) ?? 0) + 1);
+      return [...perUnit.values()];
+    };
+    const known = await shape('alice@example.com');
+    const unknown = await shape('nobody@example.com');
+    expect(unknown).toEqual(known);
+    // The user and the credential are read in the first unit; the refusal's audit has a unit of its own.
+    expect(known[0]).toBe(2);
+  });
+
   it('distinguishes a disabled user only after a correct password', async () => {
     await signedInUser(h, { email: 'alice@example.com', password: PASSWORD, disabled: true });
     expect((await signIn('alice@example.com', 'wrong')).json<{ code: string }>().code).toBe(

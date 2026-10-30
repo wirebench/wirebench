@@ -42,7 +42,11 @@ export const licenseRoutes =
         const changed = await installLicense(env, license, request.caller!.id);
         // The text is never logged; the id is (§6).
         request.log.info({ licenseId: changed.licenseId }, 'license installed');
-        announce(env.hooks.licenseChanged, { ...changed, tenant: request.tenant }, request.log);
+        announce(
+          env.hooks.licenseChanged,
+          { ...changed, tenantId: request.tenant.tenantId, tenant: request.tenant },
+          request.log,
+        );
         return env.service.state();
       },
     );
@@ -51,7 +55,11 @@ export const licenseRoutes =
       const changed = await removeLicense(env, request.caller!.id);
       if (changed !== undefined) {
         request.log.info({ licenseId: changed.licenseId }, 'license removed');
-        announce(env.hooks.licenseChanged, { ...changed, tenant: request.tenant }, request.log);
+        announce(
+          env.hooks.licenseChanged,
+          { ...changed, tenantId: request.tenant.tenantId, tenant: request.tenant },
+          request.log,
+        );
       }
       return reply.code(204).send();
     });

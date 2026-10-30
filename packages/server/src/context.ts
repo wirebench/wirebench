@@ -126,10 +126,11 @@ export interface LicenseChanged {
 }
 
 /**
- * `licenseChanged` as the routes announce it: with the request's tenant, a scope rather than a bare id since
- * the audit module's listener writes its event in that tenant's unit (hosted edition spec §19.8 guard 6).
+ * `licenseChanged` as the routes announce it: with `tenantId`, as every announcement carries (hosted edition
+ * spec §19.8 guard 5), and the request's scope, since the audit module's listener writes its event in that
+ * tenant's unit (guard 6) and cannot brand a scope from an id.
  */
-export type LicenseChangedEvent = LicenseChanged & { readonly tenant: TenantScope };
+export type LicenseChangedEvent = LicenseChanged & { readonly tenantId: string; readonly tenant: TenantScope };
 
 /**
  * The server's license (licensing spec §5.1). Read at request time, never at registration: identity

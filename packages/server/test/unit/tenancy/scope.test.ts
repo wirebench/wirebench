@@ -386,6 +386,32 @@ describe('scopedContext (plan, Global Constraints)', () => {
   });
 });
 
+describe('units of two factories (Task 8 review M2)', () => {
+  it("a unit of one factory opened inside another's never hides the outer one", async () => {
+    const { db } = recordingDatabase();
+    const logA = statementLog();
+    const logB = statementLog();
+    const first = tenantDbFactory(db, { onStatement: logA.onStatement });
+    const second = tenantDbFactory(db, { onStatement: logB.onStatement });
+    await first(A).transaction(async (outer) => {
+      await outer.query('select 1');
+      await second(B).transaction(async (inner) => {
+        await inner.query('select 2');
+        // Through the first factory again: it joins the first factory's unit rather than opening another.
+        await first(A).query('select 3');
+      });
+    });
+    const statementsOf = (log: typeof logA) =>
+      log.entries.filter((entry) => entry.kind === 'statement').map((entry) => [entry.unit, entry.text]);
+    expect(statementsOf(logA)).toEqual([
+      [1, 'select 1'],
+      [1, 'select 3'],
+    ]);
+    expect(statementsOf(logB)).toEqual([[1, 'select 2']]);
+    expect(logA.entries.filter((entry) => entry.kind === 'set-config')).toHaveLength(1);
+  });
+});
+
 describe('announcements run outside the tenant unit (Task 6 re-review R4)', () => {
   /** A database whose `select 1` takes a while, as a real one's does: the unit ends before it answers. */
   const slowDatabase = (): Database => {
@@ -419,6 +445,9 @@ describe('announcements run outside the tenant unit (Task 6 re-review R4)', () =
     expect(warn).not.toHaveBeenCalled();
   });
 
+  // Calls the listener straight from the unit, not through `announce`: this is what `announce` would do without
+  // `outsideTenantUnit`, so the case above failing without the wrap and this one failing as it stands are the
+  // same failure. (Checked by hand: unwrapping `announce` makes the case above fail.)
   it('without that, the same listener joins the unit and rolls it back (the control)', async () => {
     const db = slowDatabase();
     const tenancy = tenantDbFactory(db);

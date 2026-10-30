@@ -82,6 +82,7 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
         licenseId: PAYLOAD.id,
         edition: 'team',
         actorUserId: admin.user.id,
+        tenantId: h.tdb.scope.tenantId,
         tenant: h.tdb.scope,
       },
     ]);
@@ -135,6 +136,7 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
       action: 'removed',
       licenseId: PAYLOAD.id,
       actorUserId: admin.user.id,
+      tenantId: h.tdb.scope.tenantId,
       tenant: h.tdb.scope,
     });
     events.length = 0;

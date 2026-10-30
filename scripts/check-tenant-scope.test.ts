@@ -78,6 +78,23 @@ describe('check:tenant-scope', () => {
     expect(findScopeMints('packages/server/src/identity/cli.ts', 'directoryOf(t).defaultScope()')).toEqual([]);
   });
 
+  it('keeps TenantDirectory and TenantAdmin inside src/tenancy/, however they are named (Task 8 review I2)', async () => {
+    const root = await tree({
+      'packages/server/src/teams/routes/teams.ts': [
+        "import { TenantDirectory as Dir } from '../../tenancy/directory.js';",
+        'const all = await new Dir(ctx.db).list();',
+        'const admin = new tenancy.TenantAdmin(ctx.db, dir);',
+        "type T = import('../../tenancy/directory.js').TenantDirectory;",
+      ].join('\n'),
+      'packages/server/src/tenancy/jobs.ts': "import type { TenantDirectory } from './directory.js';\n",
+    });
+    expect(await checkTenantScope(root)).toMatchObject([
+      { file: 'packages/server/src/teams/routes/teams.ts', line: 1, rule: 'tenant-directory' },
+      { line: 3, rule: 'tenant-directory' },
+      { line: 4, rule: 'tenant-directory' },
+    ]);
+  });
+
   it('refuses a new raw read of the public URL, in any spelling', () => {
     const file = 'packages/server/src/teams/routes/teams.ts';
     const reads = [

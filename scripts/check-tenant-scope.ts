@@ -12,6 +12,9 @@
  * - **No `directoryOf` outside the files {@link SCOPE_MINTS} names** (Task 6 review m2): the directory's
  *   `list()`, `get(id)` and `resolvable()` hand out scopes, so it is kept off `ctx.tenancy`, and only the
  *   start-up, the resolver's registration and the admin command line reach it.
+ * - **No `TenantDirectory` or `TenantAdmin` outside `src/tenancy/`** (Task 8 review I2), in an import, a `new`,
+ *   a type or an alias: `new TenantDirectory(ctx.db).list()` would hand a module every tenant's scope, the hole
+ *   `directoryOf` closes.
  * - **No read of the configured public URL** (§19.5) outside {@link PUBLIC_URL_ALLOWED} (`config.ts` and
  *   `tenancy/urls.ts`, file by file, so a second wrapper in `src/tenancy/` is caught too): no `.publicUrl`,
  *   `['publicUrl']`, `'publicUrl'` (a `Pick` that would carry it), destructuring of it, or its variable
@@ -54,6 +57,10 @@ export const SCOPE_MINTS: Readonly<Record<'defaultScope' | 'scopeOf' | 'director
   ],
 };
 
+/** The tenant directory's classes, which only `src/tenancy/` may name (Task 8 review I2). */
+export const TENANCY_ONLY: readonly string[] = ['TenantDirectory', 'TenantAdmin'];
+export const TENANCY_DIR = 'packages/server/src/tenancy/';
+
 /** Where the configured URL may be read: the config itself, and the tenant URL functions. */
 export const PUBLIC_URL_ALLOWED: readonly string[] = ['packages/server/src/config.ts', URLS_FILE];
 
@@ -84,7 +91,14 @@ export interface ScopeHit {
   readonly line: number;
   readonly text: string;
   /** Which rule it broke. */
-  readonly rule: 'default-scope' | 'scope-of' | 'directory-of' | 'public-url' | 'operator-url' | 'url-without-scope';
+  readonly rule:
+    | 'default-scope'
+    | 'scope-of'
+    | 'directory-of'
+    | 'tenant-directory'
+    | 'public-url'
+    | 'operator-url'
+    | 'url-without-scope';
 }
 
 const PUBLIC_URL = 'publicUrl';
@@ -128,7 +142,10 @@ export function findUrlReads(file: string, content: string): ScopeHit[] {
   return hits;
 }
 
-/** Every identifier or string naming one of {@link SCOPE_MINTS} in `content`, unless `file` may name it. */
+/**
+ * Every identifier or string naming one of {@link SCOPE_MINTS} in `content`, unless `file` may name it, and
+ * every naming of {@link TENANCY_ONLY} outside {@link TENANCY_DIR}.
+ */
 export function findScopeMints(file: string, content: string): ScopeHit[] {
   const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const hits: ScopeHit[] = [];
@@ -136,7 +153,10 @@ export function findScopeMints(file: string, content: string): ScopeHit[] {
   const visit = (node: ts.Node): void => {
     if (ts.isIdentifier(node) || ts.isStringLiteralLike(node) || ts.isPrivateIdentifier(node)) {
       const name = node.text as keyof typeof SCOPE_MINTS;
-      if (Object.hasOwn(SCOPE_MINTS, name) && !SCOPE_MINTS[name].includes(file)) {
+      if (TENANCY_ONLY.includes(node.text) && !file.startsWith(TENANCY_DIR)) {
+        const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line;
+        hits.push({ file, line: line + 1, text: (lines[line] ?? '').trim(), rule: 'tenant-directory' });
+      } else if (Object.hasOwn(SCOPE_MINTS, name) && !SCOPE_MINTS[name].includes(file)) {
         const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line;
         hits.push({
           file,
@@ -179,6 +199,7 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
       'default-scope': 'defaultScope outside the files that may name it',
       'scope-of': 'scopeOf outside the files that may name it',
       'directory-of': 'directoryOf outside the files that may name it',
+      'tenant-directory': 'TenantDirectory or TenantAdmin outside src/tenancy/',
       'public-url': 'a read of the configured public URL; use tenantUrl(config, request)',
       'operator-url': 'operatorPublicUrl outside main.ts and serve.ts',
       'url-without-scope': 'urlWithoutScope outside its allowed callers',

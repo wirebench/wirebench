@@ -158,6 +158,32 @@ describeDb('identity in a tenant (tenancy Task 8)', () => {
     expectAllScoped(h.statements, h.tdb.scope.tenantId);
   });
 
+  it('runs the lookup, the touch and the lazy delete in one unit (Task 8 review M3)', async () => {
+    const alice = await signedInUser(h, { email: 'alice@example.com' });
+    const unitsOf = async (expected: number) => {
+      h.statements.entries.length = 0;
+      expect((await inject('GET', '/api/v1/me', { headers: alice.headers })).statusCode).toBe(expected);
+      const guard = h.statements.entries.filter((entry) => entry.text.includes('device_tokens'));
+      return { texts: guard.map((entry) => entry.text), units: new Set(guard.map((entry) => entry.unit)) };
+    };
+    h.clock.advance(2 * 60_000); // the touch is due
+    const touched = await unitsOf(200);
+    expect(touched.texts).toEqual([
+      expect.stringContaining('from device_tokens t join users u'),
+      expect.stringContaining('update device_tokens set last_used_at'),
+    ]);
+    expect(touched.units.size).toBe(1);
+    h.clock.advance(31 * DAY); // idle past the limit
+    const expired = await unitsOf(401);
+    expect(expired.texts).toEqual([
+      expect.stringContaining('from device_tokens t join users u'),
+      expect.stringContaining('delete from device_tokens'),
+    ]);
+    expect(expired.units.size).toBe(1);
+    // The refusal is answered after the unit, so the lazy delete committed.
+    expect(await repo.tokensOfUser(h.tdb, alice.user.id)).toEqual([]);
+  });
+
   it('sweeps through the job loop: one unit per tenant, each deleting what expired', async () => {
     const second = await new TenantAdmin(h.db, directoryOf(h.ctx.tenancy)).create({ slug: 'second', name: 'Second' });
     const settings = identitySettings(h.ctx.config);

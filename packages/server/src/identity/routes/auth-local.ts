@@ -41,8 +41,12 @@ export async function checkLocalCredentials(
   password: string,
 ): Promise<LocalCheck> {
   const db = env.ctx.tenancy.db(scope);
-  const user = await repo.findUserByEmail(db, emailLower(email));
-  const credential = user === undefined ? undefined : await repo.credentialOf(db, user.id);
+  // One unit and the same two statements whether or not the email has an account, so the round trips, like the
+  // decoy hash below, do not tell the two apart (Task 8 review I1). No user has the empty id.
+  const { user, credential } = await db.transaction(async (tx) => {
+    const found = await repo.findUserByEmail(tx, emailLower(email));
+    return { user: found, credential: await repo.credentialOf(tx, found?.id ?? '') };
+  });
   const verdict = await verifyPassword(password, credential?.passwordHash ?? (await decoyHash()));
   const failed = (reason: string) =>
     db.transaction((tx) =>
