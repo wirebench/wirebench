@@ -324,7 +324,7 @@ describeDb('serve and migrate with one URL or two (hosted spec §19.4)', () => {
     WIREBENCH_SERVER_LOG_LEVEL: 'fatal',
   });
   const start = (urls: Record<string, string>) =>
-    startServer(env(urls), io(env(urls)).io, { signals: new EventEmitter(), exit: vi.fn() });
+    startServer(env(urls), io(env(urls)).io, { signals: new EventEmitter(), exit: vi.fn(), allowNoTenants: true });
   const appMayRead = async (table: string) =>
     (
       await db.owner.query<{ may: boolean }>('select has_table_privilege($1, $2, $3) as may', [
@@ -421,7 +421,7 @@ describeDb('serve and migrate with one URL or two (hosted spec §19.4)', () => {
     const refusal = await start(urls).catch((error: unknown) => error);
     expect(refusal).toMatchObject({
       exitCode: 2,
-      message: expect.stringContaining('alter role ... password') as unknown,
+      message: expect.stringContaining('\\password in psql') as unknown,
     });
     expect(String((refusal as Error).message)).not.toContain('not-the-password');
   });

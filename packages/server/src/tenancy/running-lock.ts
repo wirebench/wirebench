@@ -11,12 +11,18 @@
  * skipped while the last heartbeat is still out, so nothing queues. A drop is therefore seen within
  * {@link HEARTBEAT_MS} + {@link LOCK_QUERY_TIMEOUT_MS}.
  *
- * After a drop the lock is taken again on a new connection, after a delay each time; when that fails (a revert
- * holds it, or the database is gone) `onLost` is called and the server stops. One attempt is one connect and one
- * query: `TRY_SHARED` reads the backend's pid too, and runs as the session's first query (`openSession`'s
- * `first`), so there is no separate pid read. The connect is bounded by its connect timeout and the query by
- * {@link LOCK_QUERY_TIMEOUT_MS}, and the whole attempt is raced against their sum. So the re-take is bounded by
- * retries × (delay + connect timeout + query timeout): 5 × (1 + 10 + 5) s = 80 s by default.
+ * After a drop the lock is taken again on a new connection. Two failures differ (owner ruling, 2026-10-30):
+ * - **A revert holds it** (`TRY_SHARED` answers, and refuses): `onLost` is called at once, and the server stops.
+ * - **The database cannot be reached** (refused, timed out, a name that does not resolve, a restart or a
+ *   failover): the re-take keeps trying, with a delay that starts at 1 s and doubles up to 15 s, for
+ *   {@link RETAKE_WINDOW_MS}. It is let go only when that window has passed with no attempt getting through. A
+ *   database restart therefore costs the server nothing as long as the database is back within two minutes.
+ *
+ * One attempt is one connect and one query: `TRY_SHARED` reads the backend's pid too, and runs as the session's
+ * first query (`openSession`'s `first`), so there is no separate pid read. The connect is bounded by its
+ * connect timeout (10 s) and the query by {@link LOCK_QUERY_TIMEOUT_MS} (5 s), and the attempt is raced against
+ * their sum. An attempt starts only while the window is open, after a delay of at most 15 s, so `onLost` comes
+ * at most {@link RETAKE_WINDOW_MS} + 15 + 15 s = 150 s after the drop, by default.
  */
 import { WirebenchError } from '@wirebench/engine';
 import { APPLICATION_NAME, openSession, type Session } from '../db/pool.js';
@@ -65,10 +71,18 @@ function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
 /** The lock connection's name in `pg_stat_activity`, which revert reads (plan Task 28). */
 export const LOCK_APPLICATION_NAME = `${APPLICATION_NAME}-lock`;
 
+/** How long an unreachable database is tried before the lock counts as lost for good. */
+export const RETAKE_WINDOW_MS = 120_000;
+/** The delay before the first re-take attempt, doubled after each failure up to {@link MAX_RETRY_DELAY_MS}. */
+export const RETRY_DELAY_MS = 1_000;
+export const MAX_RETRY_DELAY_MS = 15_000;
+
 export interface RunningLockOptions {
-  /** How often, and how long apart, a lost lock is tried again before `onLost`. */
-  readonly retries?: number;
+  /** How long an unreachable database is tried again before `onLost`; {@link RETAKE_WINDOW_MS} by default. */
+  readonly retakeWindowMs?: number;
+  /** The first delay, and the most it doubles to; {@link RETRY_DELAY_MS} and {@link MAX_RETRY_DELAY_MS}. */
   readonly retryDelayMs?: number;
+  readonly maxRetryDelayMs?: number;
   /** How often the heartbeat asks; {@link HEARTBEAT_MS} by default. */
   readonly heartbeatMs?: number;
   /** How long one connection attempt may take. */
@@ -183,12 +197,16 @@ export class RunningLock {
   }
 
   private async retake(cause: Error): Promise<void> {
-    const retries = this.options.retries ?? 5;
+    const window = this.options.retakeWindowMs ?? RETAKE_WINDOW_MS;
+    const maxDelay = this.options.maxRetryDelayMs ?? MAX_RETRY_DELAY_MS;
+    let delay = this.options.retryDelayMs ?? RETRY_DELAY_MS;
+    const started = Date.now();
     let last = cause;
-    for (let attempt = 0; attempt < retries && !this.closed; attempt++) {
+    while (!this.closed && Date.now() - started < window) {
       // Before every attempt, the first too: a dropped database gets a moment, and a revert that is about to
       // take the lock is not raced.
-      await new Promise((done) => setTimeout(done, this.options.retryDelayMs ?? 1000));
+      await new Promise((done) => setTimeout(done, delay));
+      delay = Math.min(delay * 2, maxDelay);
       if (this.closed) return;
       try {
         const session = await this.take();
@@ -201,6 +219,7 @@ export class RunningLock {
         return;
       } catch (error) {
         last = error instanceof Error ? error : new Error(String(error));
+        // A revert answered: there is nothing to wait for. Anything else is the database being unreachable.
         if (error instanceof WirebenchError && error.code === 'tenancy-reverting') break;
       }
     }

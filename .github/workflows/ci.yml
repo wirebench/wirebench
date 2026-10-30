@@ -115,6 +115,8 @@ jobs:
       # runs here, where the database is, and only on request elsewhere. Its gate is relative to a reference
       # build timed in the same run, so a slower runner does not fail it.
       - name: The tenancy migration's rates
+        # Loading the scaled fixture has never run on a hosted runner; a hang must not hold the job for hours.
+        timeout-minutes: 45
         run: pnpm vitest run --project server-perf
         env:
           WIREBENCH_PERF_TENANCY: '1'

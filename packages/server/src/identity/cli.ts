@@ -11,7 +11,7 @@ import { auditHook } from '../audit-log/hook.js';
 import { runAuditCommand, runVerifyCommand } from '../audit-log/cli.js';
 import { SYSTEM_SOURCE, serverHooks } from '../context.js';
 import { pendingMigrations } from '../db/migrate.js';
-import { createDatabase } from '../db/pool.js';
+import { ADMIN_APPLICATION_NAME, createDatabase } from '../db/pool.js';
 import { ExitCode, packageVersion, type ServerIo } from '../io.js';
 import { PRODUCTION_PUBLIC_KEYS } from '../licensing/keys.js';
 import { MISSING_SERVER_ID, serverId as readServerId } from '../licensing/repo.js';
@@ -53,7 +53,7 @@ export async function runAdmin(
   try {
     config = loadConfig(io.env, packageVersion());
     forgetDatabaseUrls();
-    db = createDatabase(config.databaseUrl);
+    db = createDatabase(config.databaseUrl, { applicationName: ADMIN_APPLICATION_NAME });
     publicKeys = options.publicKeys ?? PRODUCTION_PUBLIC_KEYS;
     hooks = serverHooks();
     // Events the CLI records are queued like the server's, for the running server to forward.

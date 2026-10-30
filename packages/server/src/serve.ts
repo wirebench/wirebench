@@ -68,8 +68,13 @@ export interface StartOptions {
   readonly exit?: (code: number) => void;
   /** Where the server's log lines go instead of stdout; tests read the start-up warnings from it. */
   readonly logStream?: NodeJS.WritableStream;
+  /**
+   * Test only: start without migration 0020, which a test's partial module list leaves out. Production lists
+   * always reach it, and a server without it has no tenants, so it refuses.
+   */
+  readonly allowNoTenants?: boolean;
   /** How a lost running lock is retried (spec §19.10); tests shorten it. */
-  readonly runningLock?: Pick<RunningLockOptions, 'retries' | 'retryDelayMs' | 'heartbeatMs' | 'open'>;
+  readonly runningLock?: Pick<RunningLockOptions, 'retakeWindowMs' | 'retryDelayMs' | 'heartbeatMs' | 'open'>;
 }
 
 /**
@@ -124,7 +129,7 @@ async function checkAppSignIn(db: Database, appUrl: string): Promise<void> {
     const role = new URL(appUrl).username;
     throw new StartupError(
       ExitCode.Config,
-      `the app role ${decodeURIComponent(role)} refused the password in WIREBENCH_SERVER_DATABASE_URL; it existed already, and its password is not changed at start-up: run alter role ... password as the owner, or fix the URL`,
+      `the app role ${decodeURIComponent(role)} refused the password in WIREBENCH_SERVER_DATABASE_URL; it existed already, and its password is not changed at start-up: set it on the role as the owner (\\password in psql), or fix the URL`,
     );
   }
 }
@@ -214,7 +219,7 @@ export async function runMigrate(
     io.stderr.write(`${error.message}\n`);
     return error.exitCode;
   }
-  const db = createDatabase(migrationUrlOf(config));
+  const db = createDatabase(migrationUrlOf(config), { applicationName: 'wirebench-migrate' });
   try {
     // Before anything pending is read or run: 0020's composite keys need PostgreSQL 15 (spec §19.1).
     try {
@@ -277,8 +282,9 @@ export async function startServer(
     },
   };
   // Held for the life of the process; a revert's exclusive try fails while it is (spec §19.10). Taken before
-  // migrating, so a start during a revert touches nothing: on the migrating connection's URL first (the app role
-  // may not exist yet), then, with two roles, on the app role's, before the owner's is let go.
+  // migrating, so a start during a revert touches nothing, and on the migration URL, which is always a direct
+  // connection: a session-level advisory lock means nothing behind a transaction pooler, which the app URL may
+  // be (owner ruling, 2026-10-30). With one URL it is that URL, as before.
   let runningLock: RunningLock | undefined;
   const fail = async (error: StartupError): Promise<never> => {
     await runningLock?.release();
@@ -290,26 +296,19 @@ export async function startServer(
     // Before 0020, on the connection that migrates: its composite keys need PostgreSQL 15 (spec §19.1).
     if (migrationUrl === config.databaseUrl) {
       await checkPostgresVersion(db);
-      runningLock = await RunningLock.acquire(config.databaseUrl, { ...lockOptions, label: 'the app connection' });
+      runningLock = await RunningLock.acquire(migrationUrl, { ...lockOptions, label: 'the database connection' });
       await migrate(db, migrations);
     } else {
       const owner = createDatabase(migrationUrl);
-      let ownerLock: RunningLock | undefined;
       try {
         await checkPostgresVersion(owner);
-        ownerLock = await RunningLock.acquire(migrationUrl, {
-          ...lockOptions,
-          label: 'the owner connection, while migrating',
-        });
+        runningLock = await RunningLock.acquire(migrationUrl, { ...lockOptions, label: 'the migration connection' });
         if (mode === 'two-roles') await migrateAndGrant(owner, config.databaseUrl, migrations);
         else await migrate(owner, migrations);
-        // Its sign-in first, so a wrong password is named as such rather than as a lock failure.
-        if (mode === 'two-roles') await checkAppSignIn(db, config.databaseUrl);
-        runningLock = await RunningLock.acquire(config.databaseUrl, { ...lockOptions, label: 'the app connection' });
       } finally {
-        await ownerLock?.release();
         await owner.close();
       }
+      if (mode === 'two-roles') await checkAppSignIn(db, config.databaseUrl);
     }
   } catch (error) {
     if (error instanceof StartupError) return fail(error);
@@ -333,7 +332,10 @@ export async function startServer(
   const tenancy = createTenancy(db);
   try {
     await checkAppRole(db, config.mode, (message, details) => warnings.push({ message, details }));
-    await tenancy.directory.load();
+    // A module list that stops short of 0019 leaves 0020 out (`allMigrations`), and with it every tenant.
+    if (!(await tenancy.directory.load()) && options.allowNoTenants !== true) {
+      return fail(new StartupError(ExitCode.Migration, 'migration 0020 is not applied: the server has no tenants'));
+    }
   } catch (error) {
     if (error instanceof WirebenchError)
       return fail(new StartupError(ExitCode.Config, `${error.code}: ${error.message}`));

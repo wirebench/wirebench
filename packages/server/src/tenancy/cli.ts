@@ -8,7 +8,7 @@
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
 import { ConfigError, forgetDatabaseUrls, loadConfig, type ServerConfig } from '../config.js';
-import { createDatabase } from '../db/pool.js';
+import { ADMIN_APPLICATION_NAME, createDatabase } from '../db/pool.js';
 import { ExitCode, packageVersion, type ServerIo } from '../io.js';
 import { appRolePlan, ensureAppRole, roleMode } from './roles.js';
 
@@ -42,7 +42,7 @@ export async function runTenancyRole(command: TenancyRoleCommand, io: ServerIo):
     io.stderr.write(`${NEEDS_TWO_ROLES}\n`);
     return ExitCode.Config;
   }
-  const owner = createDatabase(config.migrationDatabaseUrl);
+  const owner = createDatabase(config.migrationDatabaseUrl, { applicationName: ADMIN_APPLICATION_NAME });
   try {
     if (command.printSql) {
       // Read-only: the plan comes from the catalog, and nothing is run.

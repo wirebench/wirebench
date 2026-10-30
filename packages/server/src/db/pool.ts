@@ -47,8 +47,13 @@ export interface DatabaseOptions {
   readonly pool?: PoolLike;
 }
 
-/** What every server connection is called in `pg_stat_activity`; the lock's own adds `-lock`. */
+/**
+ * What every server connection is called in `pg_stat_activity`; the lock's own adds `-lock`. The command line's
+ * are `wirebench-admin` and `wirebench-migrate`, so a revert, which refuses while a `wirebench-server…` session
+ * remains, is not held up by an admin command.
+ */
 export const APPLICATION_NAME = 'wirebench-server';
+export const ADMIN_APPLICATION_NAME = 'wirebench-admin';
 
 /** A `pg.Pool` behind the `Database` interface; the one place `pg` is imported. */
 export function createDatabase(connectionString: string, options: DatabaseOptions = {}): Database {

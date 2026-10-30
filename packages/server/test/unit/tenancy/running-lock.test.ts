@@ -93,13 +93,14 @@ describe('the running-lock heartbeat', () => {
       open,
       heartbeatMs: 5,
       retryDelayMs: 1,
-      retries: 2,
+      maxRetryDelayMs: 2,
+      retakeWindowMs: 30,
       onLost: lost,
     });
     try {
       await vi.waitFor(() => expect(lost).toHaveBeenCalledOnce());
       expect((lost.mock.calls[0]![0] as Error).message).toBe('the server-running lock was lost: connect ETIMEDOUT');
-      expect(open).toHaveBeenCalledTimes(3);
+      expect(open.mock.calls.length).toBeGreaterThanOrEqual(3);
     } finally {
       await lock.release();
     }
@@ -150,7 +151,7 @@ describe('the running-lock heartbeat', () => {
       connectTimeoutMs: 1,
       queryTimeoutMs: 20,
       retryDelayMs: 1,
-      retries: 1,
+      retakeWindowMs: 1,
       label: 'the app connection',
       onLost: lost,
     });
@@ -162,5 +163,78 @@ describe('the running-lock heartbeat', () => {
     } finally {
       await lock.release();
     }
+  });
+
+  describe('the re-take after a drop (owner ruling, 2026-10-30)', () => {
+    const refused = () => Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5432'), { code: 'ECONNREFUSED' });
+    /** A lock whose first session drops at once, and whose later opens are `next`. */
+    const dropping = async (next: () => Promise<Session>, options: Record<string, unknown>) => {
+      const first = stubSession(1, () => Promise.reject(new Error('the connection ended')));
+      const open = vi.fn().mockResolvedValueOnce(first).mockImplementation(next);
+      const lost = vi.fn();
+      const retaken = vi.fn();
+      const lock = await RunningLock.acquire('postgres://stub', {
+        open,
+        heartbeatMs: 5,
+        retryDelayMs: 5,
+        maxRetryDelayMs: 20,
+        onLost: lost,
+        onRetaken: retaken,
+        ...options,
+      });
+      return { lock, open, lost, retaken };
+    };
+
+    it('keeps trying while the database refuses connections, and takes the lock back when it returns', async () => {
+      let refusals = 0;
+      const back = stubSession(2, () => Promise.resolve(true));
+      const { lock, lost, retaken } = await dropping(
+        vi.fn(() => (++refusals <= 4 ? Promise.reject(refused()) : Promise.resolve(back))),
+        { retakeWindowMs: 2_000 },
+      );
+      try {
+        await vi.waitFor(() => expect(retaken).toHaveBeenCalledWith(2), { timeout: 2_000, interval: 5 });
+        expect(refusals).toBe(5);
+        expect(lost).not.toHaveBeenCalled();
+      } finally {
+        await lock.release();
+      }
+    });
+
+    it('lets go once the window has passed with every attempt refused', async () => {
+      const started = Date.now();
+      const { lock, open, lost } = await dropping(
+        vi.fn(() => Promise.reject(refused())),
+        { retakeWindowMs: 150 },
+      );
+      try {
+        await vi.waitFor(() => expect(lost).toHaveBeenCalledOnce(), { timeout: 2_000, interval: 5 });
+        // Not before the window (backoff 5, 10, 20, 20… ms), and not long after it.
+        expect(Date.now() - started).toBeGreaterThanOrEqual(150);
+        expect(Date.now() - started).toBeLessThan(1_000);
+        expect(open.mock.calls.length).toBeGreaterThan(3);
+        expect((lost.mock.calls[0]![0] as Error).message).toContain('ECONNREFUSED');
+      } finally {
+        await lock.release();
+      }
+    });
+
+    it('lets go at once when a revert holds the lock, however long the window', async () => {
+      const reverting = { ...stubSession(3, () => Promise.resolve(true)), first: { pid: 3, ok: false } };
+      const { lock, open, lost } = await dropping(
+        vi.fn(() => Promise.resolve(reverting)),
+        {
+          retakeWindowMs: 60_000,
+        },
+      );
+      try {
+        await vi.waitFor(() => expect(lost).toHaveBeenCalledOnce(), { timeout: 1_000, interval: 5 });
+        // The first session, then one attempt that a revert answered.
+        expect(open).toHaveBeenCalledTimes(2);
+        expect((lost.mock.calls[0]![0] as Error).message).toContain('admin tenancy revert is running');
+      } finally {
+        await lock.release();
+      }
+    });
   });
 });

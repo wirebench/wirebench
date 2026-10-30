@@ -159,7 +159,7 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
   it('gives up, and calls onLost, when a revert took it in the gap', async () => {
     const lost = vi.fn();
     // The re-take waits before its first attempt too (review M4), long enough for the revert to win the gap.
-    const lock = await RunningLock.acquire(db.url, { onLost: lost, retryDelayMs: 300, retries: 3 });
+    const lock = await RunningLock.acquire(db.url, { onLost: lost, retryDelayMs: 300 });
     try {
       const pid = lock.pid!;
       await admin.query('select pg_terminate_backend($1)', [pid]);
@@ -242,12 +242,12 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
     await expect(
       start(db.url, undefined, {
         modules: [...MIGRATIONS_ONLY, slow],
-        runningLock: { open: recorded.open, retries: 2, retryDelayMs: 200 },
+        runningLock: { open: recorded.open, retryDelayMs: 200 },
       }),
     ).rejects.toMatchObject({
       exitCode: 3,
       message: expect.stringMatching(
-        /lost during start-up.*the server-running lock \(the app connection\) was lost/,
+        /lost during start-up.*the server-running lock \(the database connection\) was lost/,
       ) as unknown,
     });
   });
@@ -257,7 +257,7 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
     const exit = vi.fn();
     const server = await start(db.url, undefined, {
       exit,
-      runningLock: { open: recorded.open, retries: 1, retryDelayMs: 200 },
+      runningLock: { open: recorded.open, retryDelayMs: 200 },
     });
     try {
       await dropAndRevert(recorded.sessions.at(-1)!);
