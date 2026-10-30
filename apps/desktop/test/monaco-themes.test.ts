@@ -38,17 +38,6 @@ const TOKEN: Readonly<Record<keyof EditorColours, string>> = {
   warning: '--wb-status-warning',
 };
 
-/**
- * Default's editor colours that already differed from `tokens.css` before colour themes: the
- * contrast gate moved these tokens and the editor kept its older values. Default does not move in
- * this change, so they are held as they are; every other colour, and every colour of the six
- * palettes, must equal its token.
- */
-const DEFAULT_DRIFT: Readonly<Record<'dark' | 'light', readonly (keyof EditorColours)[]>> = {
-  dark: ['fgSubtle', 'fgFaint'],
-  light: ['fgSubtle', 'fgFaint', 'accent', 'success', 'warning'],
-};
-
 describe('Monaco themes', () => {
   it('names fourteen themes, all distinct, each with a definition', () => {
     const names = PALETTES.flatMap((palette) => MODES.map((mode) => MONACO_THEMES[palette][mode]));
@@ -78,16 +67,11 @@ describe('Monaco themes', () => {
   for (const palette of PALETTES) {
     for (const mode of MODES) {
       it(`mirrors tokens.css for ${palette} ${mode}`, () => {
+        // No drift for any palette, Default included (#803): every colour equals its token.
         const map = resolvePalette(css, palette, mode);
-        const drift: readonly string[] = palette === 'default' ? DEFAULT_DRIFT[mode] : [];
         const colours = EDITOR_COLOURS[palette][mode];
         for (const [key, token] of Object.entries(TOKEN) as [keyof EditorColours, string][]) {
-          const expected = resolveToken(token, map).toLowerCase();
-          if (drift.includes(key)) {
-            expect(colours[key], `${key} (known Default drift)`).not.toBe(expected);
-          } else {
-            expect(colours[key], key).toBe(expected);
-          }
+          expect(colours[key], key).toBe(resolveToken(token, map).toLowerCase());
         }
       });
     }

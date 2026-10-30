@@ -59,6 +59,9 @@ All notable changes to this project are documented here. The format follows
   desktop app for those. It is a separate agent from the desktop app's, with its own pairings and allowlist.
 
 ### Changed
+- **Default's editor colours match the rest of the window (#803).** Monaco's comment, hint and
+  line-number greys, and in light mode its accent, success and warning colours, now equal the
+  Default tokens the app's chrome already uses; they had kept older values.
 - **The open editor tab stands out.** It carries an accent bar along its bottom edge, and the editor
   tab strip is taller, so the tab you are on is easy to pick out at a glance.
 - **Project and API pages use tabs.** The project page (General, Settings, Properties) and every API
