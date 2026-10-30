@@ -1,9 +1,12 @@
 /**
  * WCAG contrast gate for the design tokens.
  *
- * Parses `apps/desktop/src/renderer/styles/tokens.css` for both themes (dark on `:root`, light
- * under `[data-theme='light']`, which inherits every token it does not restate) and checks the
- * foreground/surface pairs the UI actually puts on screen. Text pairs must clear WCAG AA's
+ * Parses `apps/desktop/src/renderer/styles/tokens.css` for every colour theme × mode: Default
+ * dark on `:root`, Default light under `[data-theme='light']`, and each palette's
+ * `[data-palette='x']` (dark) and `[data-palette='x'][data-theme='light']` blocks, resolved the
+ * way the browser cascades them (`resolvePalette`). It checks the foreground/surface pairs the UI
+ * actually puts on screen, and fails a palette whose light block does not restate a token its
+ * dark block sets (`findLeaks`), since that dark value would paint in light mode. Text pairs must clear WCAG AA's
  * 4.5:1; borders, icons and other non-text UI must clear 3:1 (WCAG 2.1 SC 1.4.11).
  *
  * It also checks `site/src/styles/tokens.css`, the landing site's own small palette. That file
@@ -21,6 +24,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { PALETTES, type Palette } from '../packages/wire/src/palettes.ts';
 
 const TOKENS = fileURLToPath(new URL('../apps/desktop/src/renderer/styles/tokens.css', import.meta.url));
 const SITE_TOKENS = fileURLToPath(new URL('../site/src/styles/tokens.css', import.meta.url));
@@ -31,6 +35,7 @@ const TEXT_MINIMUM = 4.5;
 const UI_MINIMUM = 3;
 
 type Theme = 'dark' | 'light';
+const THEMES: readonly Theme[] = ['dark', 'light'];
 type Kind = 'text' | 'ui';
 
 interface Pair {
@@ -330,7 +335,146 @@ export function contrastRatio(a: string, b: string): number {
   return ((lighter ?? 0) + 0.05) / ((darker ?? 0) + 0.05);
 }
 
+/** One top-level rule: its comma-separated selectors (normalised) and the text between its braces. */
+interface Rule {
+  readonly selectors: readonly string[];
+  readonly body: string;
+}
+
+/** `[data-palette="x"]` and `[data-palette='x']` are the same selector; so is any run of spaces. */
+function normaliseSelector(selector: string): string {
+  return selector.trim().replace(/"/g, "'").replace(/\s+/g, ' ');
+}
+
+/**
+ * Every top-level rule in `css`, in source order. Comments are blanked first so a brace inside
+ * one cannot open a block; at-rules (`@media …`) come back as rules whose selector is the at-rule
+ * text, which no theme selector ever equals.
+ */
+function topLevelRules(css: string): readonly Rule[] {
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, (comment) => ' '.repeat(comment.length));
+  const rules: Rule[] = [];
+  let cursor = 0;
+  for (;;) {
+    const open = stripped.indexOf('{', cursor);
+    if (open === -1) {
+      return rules;
+    }
+    const selectorText = stripped.slice(cursor, open);
+    const { body, end } = blockBody(stripped, open, selectorText.trim());
+    rules.push({ selectors: selectorText.split(',').map(normaliseSelector), body });
+    cursor = end;
+  }
+}
+
+/** The attributes the root element carries: `data-theme` always, `data-palette` unless Default. */
+interface RootAttributes {
+  readonly theme: Theme;
+  readonly palette: Palette;
+}
+
+/** A selector made only of `:root` and `[data-theme|data-palette='…']` parts — what tokens.css uses. */
+const ROOT_SELECTOR = /^(:root)?((?:\[data-(?:theme|palette)='[\w-]+'\])*)$/;
+
+/**
+ * The specificity of `selector` if it matches the root element with `attributes`, else
+ * `undefined`. Every part is a pseudo-class or an attribute selector, so specificity is the
+ * number of parts: `:root` and `[data-theme='light']` are both (0,1,0), and
+ * `[data-palette='x'][data-theme='light']` is (0,2,0).
+ */
+function rootSpecificity(selector: string, attributes: RootAttributes): number | undefined {
+  const match = ROOT_SELECTOR.exec(selector);
+  if (match === null || selector === '') {
+    return undefined;
+  }
+  let parts = match[1] === undefined ? 0 : 1;
+  for (const [, name, value] of (match[2] ?? '').matchAll(/\[data-(theme|palette)='([\w-]+)'\]/g)) {
+    // Default puts no data-palette on the document, so no palette selector matches it.
+    const actual =
+      name === 'theme' ? attributes.theme : attributes.palette === 'default' ? undefined : attributes.palette;
+    if (value !== actual) {
+      return undefined;
+    }
+    parts += 1;
+  }
+  return parts;
+}
+
+/**
+ * Every `--wb-*` token as the browser resolves it on `<html data-theme=mode data-palette=palette>`:
+ * each matching rule applies in order of specificity, then source order, the later one winning.
+ * That is the cascade spec §4 relies on — a palette's dark block beats `:root` (and, in light
+ * mode, Default light) by coming later; its light block beats both by specificity.
+ *
+ * A palette with no blocks resolves to Default. Values are literal (`var(--wb-…)` stays as
+ * written); pass the map to {@link resolveToken} for a colour.
+ */
+export function resolvePalette(css: string, palette: Palette, theme: Theme): Declarations {
+  const matching = topLevelRules(css).flatMap((rule, index) => {
+    const specificities = rule.selectors
+      .map((selector) => rootSpecificity(selector, { theme, palette }))
+      .filter((specificity): specificity is number => specificity !== undefined);
+    return specificities.length === 0 ? [] : [{ specificity: Math.max(...specificities), index, rule }];
+  });
+  matching.sort((a, b) => a.specificity - b.specificity || a.index - b.index);
+  const resolved = new Map<string, string>();
+  for (const { rule } of matching) {
+    for (const [token, value] of readDeclarations(rule.body)) {
+      resolved.set(token, value);
+    }
+  }
+  return resolved;
+}
+
+/** A token a palette's dark block sets and its light block does not restate. */
+export interface Leak {
+  readonly palette: Palette;
+  readonly token: string;
+}
+
+/** The declarations of every rule whose selector list holds exactly `selector`, merged in order. */
+function declarationsOf(rules: readonly Rule[], selector: string): Declarations {
+  const merged = new Map<string, string>();
+  for (const rule of rules) {
+    if (rule.selectors.includes(selector)) {
+      for (const [token, value] of readDeclarations(rule.body)) {
+        merged.set(token, value);
+      }
+    }
+  }
+  return merged;
+}
+
+/**
+ * `[data-palette='x']` still matches in light mode, so a token it sets that
+ * `[data-palette='x'][data-theme='light']` does not restate paints its dark value in light mode
+ * (spec §4). Contrast alone may not catch that — a dark value can pass on a light surface by
+ * luck — so the gate names every such token.
+ */
+export function findLeaks(css: string, palettes: readonly Palette[] = PALETTES): readonly Leak[] {
+  const rules = topLevelRules(css);
+  return palettes
+    .filter((palette) => palette !== 'default')
+    .flatMap((palette) => {
+      const dark = declarationsOf(rules, `[data-palette='${palette}']`);
+      const light = declarationsOf(rules, `[data-palette='${palette}'][data-theme='light']`);
+      return [...dark.keys()].filter((token) => !light.has(token)).map((token) => ({ palette, token }));
+    });
+}
+
+/** The palettes that have at least one block of their own in `css`. */
+export function definedPalettes(css: string): readonly Palette[] {
+  const selectors = new Set(topLevelRules(css).flatMap((rule) => rule.selectors));
+  return PALETTES.filter(
+    (palette) =>
+      palette === 'default' ||
+      selectors.has(`[data-palette='${palette}']`) ||
+      selectors.has(`[data-palette='${palette}'][data-theme='light']`),
+  );
+}
+
 export interface CheckResult {
+  readonly palette: Palette;
   readonly theme: Theme;
   readonly pair: Pair;
   readonly fgValue: string;
@@ -345,38 +489,60 @@ export interface CheckOptions {
   readonly pairs?: readonly Pair[];
   /** Where the light theme lives: a `[data-theme='light']` block (default) or a light `@media` query. */
   readonly light?: 'data-theme' | 'media';
+  /** The palettes to check in the `data-theme` variant; defaults to every one of {@link PALETTES}. */
+  readonly palettes?: readonly Palette[];
 }
 
-/** Runs every pair against both themes' resolved palettes. */
+/** Gates every pair against one resolved token map. */
+function checkPairs(
+  palette: Palette,
+  theme: Theme,
+  declarations: Declarations,
+  pairs: readonly Pair[],
+): readonly CheckResult[] {
+  return pairs.map((pair) => {
+    const fgValue = resolveToken(pair.fg, declarations);
+    const bgValue = resolveToken(pair.bg, declarations);
+    const ratio = Math.round(contrastRatio(fgValue, bgValue) * 100) / 100;
+    const minimum = pair.kind === 'text' ? TEXT_MINIMUM : UI_MINIMUM;
+    return { palette, theme, pair, fgValue, bgValue, ratio, minimum, passed: ratio >= minimum };
+  });
+}
+
+/**
+ * Runs every pair against every palette × mode, each resolved the way the browser cascades it
+ * ({@link resolvePalette}). The site's file (`light: 'media'`) has no palettes: it is checked as
+ * Default in its two modes.
+ */
 export function checkTokens(css: string, options: CheckOptions = {}): readonly CheckResult[] {
-  const { pairs = [...PAIRS, ...REPORT_PAIRS], light: lightSource = 'data-theme' } = options;
+  const { pairs = [...PAIRS, ...REPORT_PAIRS], light: lightSource = 'data-theme', palettes = PALETTES } = options;
+  if (lightSource === 'data-theme') {
+    return palettes.flatMap((palette) =>
+      THEMES.flatMap((theme) => checkPairs(palette, theme, resolvePalette(css, palette, theme), pairs)),
+    );
+  }
   // In the media variant the light query also holds a `:root`, so the dark palette is read from
   // the stylesheet with that query cut out rather than from its first `:root` by position.
-  let darkCss = css;
-  if (lightSource === 'media') {
-    const { start, end } = mediaSpan(css, 'prefers-color-scheme: light');
-    darkCss = css.slice(0, start) + css.slice(end);
-  }
-  const dark = parseBlock(darkCss, ':root');
+  const { start, end } = mediaSpan(css, 'prefers-color-scheme: light');
+  const dark = parseBlock(css.slice(0, start) + css.slice(end), ':root');
   // Light restates only what differs, so it layers on top of the dark block's declarations.
-  const lightOverrides =
-    lightSource === 'media'
-      ? parseMediaBlock(css, 'prefers-color-scheme: light')
-      : parseBlock(css, "[data-theme='light']");
-  const light = new Map([...dark, ...lightOverrides]);
-  const palettes: readonly (readonly [Theme, Declarations])[] = [
-    ['dark', dark],
-    ['light', light],
-  ];
+  const light = new Map([...dark, ...parseMediaBlock(css, 'prefers-color-scheme: light')]);
+  return [...checkPairs('default', 'dark', dark, pairs), ...checkPairs('default', 'light', light, pairs)];
+}
 
-  return palettes.flatMap(([theme, declarations]) =>
-    pairs.map((pair) => {
-      const fgValue = resolveToken(pair.fg, declarations);
-      const bgValue = resolveToken(pair.bg, declarations);
-      const ratio = Math.round(contrastRatio(fgValue, bgValue) * 100) / 100;
-      const minimum = pair.kind === 'text' ? TEXT_MINIMUM : UI_MINIMUM;
-      return { theme, pair, fgValue, bgValue, ratio, minimum, passed: ratio >= minimum };
-    }),
+/** How a failing pair reads in the gate's output: `sandstone/light: --wb-fg-subtle (…) on …`. */
+export function describeFailure(result: CheckResult): string {
+  return (
+    `${result.palette}/${result.theme}: ${result.pair.fg} (${result.fgValue}) on ${result.pair.bg} ` +
+    `(${result.bgValue}) ${result.ratio.toFixed(2)}:1 < ${result.minimum.toFixed(1)}:1 — ${result.pair.where}`
+  );
+}
+
+/** How a leak reads in the gate's output. */
+export function describeLeak(leak: Leak): string {
+  return (
+    `${leak.palette}: ${leak.token} is set in [data-palette='${leak.palette}'] but not restated in ` +
+    `[data-palette='${leak.palette}'][data-theme='light'], so it leaks dark value into light`
   );
 }
 
@@ -384,13 +550,13 @@ export function checkTokens(css: string, options: CheckOptions = {}): readonly C
 export function renderTable(results: readonly CheckResult[]): string {
   const rows = results.map(
     (result) =>
-      `| ${result.theme} | \`${result.pair.fg}\` | \`${result.pair.bg}\` | ${result.pair.kind} | ` +
+      `| ${result.palette} | ${result.theme} | \`${result.pair.fg}\` | \`${result.pair.bg}\` | ${result.pair.kind} | ` +
       `${result.ratio.toFixed(2)}:1 | ${result.minimum.toFixed(1)}:1 | ${result.passed ? 'pass' : 'FAIL'} | ` +
       `${result.pair.where} |`,
   );
   return [
-    '| Theme | Foreground | Surface | Kind | Ratio | Minimum | Result | Where |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| Palette | Mode | Foreground | Surface | Kind | Ratio | Minimum | Result | Where |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ...rows,
   ].join('\n');
 }
@@ -410,30 +576,40 @@ const TARGETS: readonly Target[] = [
   { heading: 'landing site', path: SITE_TOKENS, options: { pairs: SITE_PAIRS, light: 'media' } },
 ];
 
-/** Prints one file's failures and verdict under its heading; true when every pair passed. */
-function report(heading: string, results: readonly CheckResult[]): boolean {
+/** Prints one file's failures, leaks and verdict under its heading; true when it all passed. */
+function report(heading: string, results: readonly CheckResult[], leaks: readonly Leak[]): boolean {
   const failures = results.filter((result) => !result.passed);
   process.stdout.write(`${heading}\n`);
   for (const failure of failures) {
-    process.stderr.write(
-      `${failure.theme}: ${failure.pair.fg} (${failure.fgValue}) on ${failure.pair.bg} (${failure.bgValue}) ` +
-        `is ${failure.ratio.toFixed(2)}:1, needs ${failure.minimum.toFixed(1)}:1 — ${failure.pair.where}\n`,
-    );
+    process.stderr.write(`${describeFailure(failure)}\n`);
   }
-  if (failures.length > 0) {
-    process.stderr.write(`contrast: ${String(failures.length)} of ${String(results.length)} pairs fail\n`);
+  for (const leak of leaks) {
+    process.stderr.write(`${describeLeak(leak)}\n`);
+  }
+  if (failures.length > 0 || leaks.length > 0) {
+    process.stderr.write(
+      `contrast: ${String(failures.length)} of ${String(results.length)} pairs fail, ` +
+        `${String(leaks.length)} tokens leak\n`,
+    );
     return false;
   }
-  process.stdout.write(`contrast: all ${String(results.length)} token pairs pass (both themes)\n`);
+  const combinations = new Set(results.map((result) => `${result.palette}/${result.theme}`)).size;
+  process.stdout.write(
+    `contrast: all ${String(results.length)} token pairs pass (${String(combinations)} palette × mode combinations)\n`,
+  );
   return true;
 }
 
 async function main(): Promise<void> {
   const checked = await Promise.all(
-    TARGETS.map(async (target) => ({
-      heading: target.heading,
-      results: checkTokens(await readFile(target.path, 'utf-8'), target.options),
-    })),
+    TARGETS.map(async (target) => {
+      const css = await readFile(target.path, 'utf-8');
+      return {
+        heading: target.heading,
+        results: checkTokens(css, target.options),
+        leaks: target.options.light === 'media' ? [] : findLeaks(css),
+      };
+    }),
   );
 
   if (process.argv.includes('--table')) {
@@ -444,7 +620,7 @@ async function main(): Promise<void> {
   }
 
   // Report every file before exiting, so a failure in one never hides the other's verdict.
-  const passed = checked.map(({ heading, results }) => report(heading, results));
+  const passed = checked.map(({ heading, results, leaks }) => report(heading, results, leaks));
   if (passed.includes(false)) {
     process.exitCode = 1;
   }

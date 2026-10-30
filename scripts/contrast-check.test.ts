@@ -1,13 +1,19 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { PALETTES } from '../packages/wire/src/palettes.ts';
 import {
   SITE_PAIRS,
   checkTokens,
   contrastRatio,
+  definedPalettes,
+  describeFailure,
+  describeLeak,
+  findLeaks,
   parseBlock,
   parseHex,
   parseMediaBlock,
+  resolvePalette,
   resolveToken,
 } from './contrast-check.ts';
 
@@ -47,17 +53,23 @@ describe('contrast maths', () => {
 });
 
 describe('the committed tokens', () => {
-  it('clear WCAG AA on every pair the UI renders, in both themes', async () => {
+  it('clear WCAG AA on every pair the UI renders, in every palette × mode', async () => {
     const results = checkTokens(await readFile(tokens, 'utf-8'));
     const failures = results.filter((result) => !result.passed);
-    expect(failures.map((failure) => `${failure.theme} ${failure.pair.fg} on ${failure.pair.bg}`)).toEqual([]);
-    // Both themes, so every pair is checked twice.
+    expect(failures.map(describeFailure)).toEqual([]);
+    // Every palette in both modes, so every pair is checked fourteen times.
+    const combinations = new Set(results.map((result) => `${result.palette}/${result.theme}`));
+    expect(combinations.size).toBe(PALETTES.length * 2);
     expect(results.filter((result) => result.theme === 'light')).toHaveLength(results.length / 2);
+  });
+
+  it('restate in every palette light block each token its dark block sets', async () => {
+    expect(findLeaks(await readFile(tokens, 'utf-8')).map(describeLeak)).toEqual([]);
   });
 
   it('gates --wb-fg-faint as text on every surface it paints text on', async () => {
     const results = checkTokens(await readFile(tokens, 'utf-8'));
-    const faint = results.filter((result) => result.pair.fg === '--wb-fg-faint');
+    const faint = results.filter((result) => result.palette === 'default' && result.pair.fg === '--wb-fg-faint');
     expect(faint.map((result) => result.pair.bg).sort()).toEqual(
       ['--wb-bg-base', '--wb-bg-raised', '--wb-bg-sunken', '--wb-bg-base', '--wb-bg-raised', '--wb-bg-sunken'].sort(),
     );
@@ -141,5 +153,77 @@ describe('the site tokens', () => {
     // Light layers the media block over dark: white on white, not white on black.
     expect(light?.bgValue).toBe('#ffffff');
     expect(light?.passed).toBe(false);
+  });
+});
+
+describe('the palette cascade', () => {
+  const css = `
+    /* A comment with a { brace } must not open a block. */
+    :root { --wb-bg-base: #000000; --wb-fg-default: #ffffff; --wb-accent-default: #ff0000; }
+    [data-theme='light'] { --wb-bg-base: #ffffff; --wb-fg-default: #000000; }
+    [data-palette="dusk"] { --wb-bg-base: #111122; --wb-accent-default: #00ff00; }
+    [data-palette='dusk'][data-theme='light'] { --wb-bg-base: #eeeeff; --wb-accent-default: #008800; }
+    [data-palette='seed'] { --wb-bg-base: #220000; }
+    @media (prefers-reduced-motion: reduce) { html { --wb-bg-base: #123123; } }
+  `;
+
+  it('resolves Default from :root, and :root under the light block in light mode', () => {
+    expect(resolvePalette(css, 'default', 'dark').get('--wb-bg-base')).toBe('#000000');
+    expect(resolvePalette(css, 'default', 'light').get('--wb-bg-base')).toBe('#ffffff');
+    // A token the light block does not restate inherits the dark one.
+    expect(resolvePalette(css, 'default', 'light').get('--wb-accent-default')).toBe('#ff0000');
+  });
+
+  it('layers a palette dark block over :root, and its light block over Default light', () => {
+    const dark = resolvePalette(css, 'dusk', 'dark');
+    expect(dark.get('--wb-bg-base')).toBe('#111122');
+    expect(dark.get('--wb-accent-default')).toBe('#00ff00');
+    // A token the palette does not list keeps Default's value for that mode (spec §3.7).
+    expect(dark.get('--wb-fg-default')).toBe('#ffffff');
+
+    const light = resolvePalette(css, 'dusk', 'light');
+    expect(light.get('--wb-bg-base')).toBe('#eeeeff');
+    expect(light.get('--wb-accent-default')).toBe('#008800');
+    expect(light.get('--wb-fg-default')).toBe('#000000');
+  });
+
+  it('lets a palette dark block win over Default light by source order, as the browser does', () => {
+    // seed has no light block: its dark value leaks into light mode.
+    expect(resolvePalette(css, 'seed', 'light').get('--wb-bg-base')).toBe('#220000');
+  });
+
+  it('resolves a palette with no blocks to Default', () => {
+    expect(resolvePalette(css, 'pith', 'dark')).toEqual(resolvePalette(css, 'default', 'dark'));
+    expect(resolvePalette(css, 'pith', 'light')).toEqual(resolvePalette(css, 'default', 'light'));
+  });
+
+  it('ignores rules that do not target the root element', () => {
+    expect(resolvePalette(css, 'default', 'dark').get('--wb-bg-base')).not.toBe('#123123');
+  });
+
+  it('names a token a dark block sets and the light block does not restate', () => {
+    const leaks = findLeaks(css);
+    expect(leaks).toEqual([{ palette: 'seed', token: '--wb-bg-base' }]);
+    expect(describeLeak(leaks[0]!)).toBe(
+      "seed: --wb-bg-base is set in [data-palette='seed'] but not restated in " +
+        "[data-palette='seed'][data-theme='light'], so it leaks dark value into light",
+    );
+  });
+
+  it('lists the palettes that have a block of their own', () => {
+    expect(definedPalettes(css)).toEqual(['default', 'dusk', 'seed']);
+  });
+
+  it('checks every palette in both modes and names the palette in a failure', () => {
+    const results = checkTokens(css, {
+      pairs: [{ fg: '--wb-accent-default', bg: '--wb-bg-base', kind: 'text', where: 'fixture link' }],
+    });
+    expect(results).toHaveLength(PALETTES.length * 2);
+    const duskLight = results.find((result) => result.palette === 'dusk' && result.theme === 'light');
+    expect(duskLight?.fgValue).toBe('#008800');
+    expect(duskLight?.passed).toBe(false);
+    expect(describeFailure(duskLight!)).toBe(
+      'dusk/light: --wb-accent-default (#008800) on --wb-bg-base (#eeeeff) 4.05:1 < 4.5:1 — fixture link',
+    );
   });
 });
