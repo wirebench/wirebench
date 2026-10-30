@@ -11,6 +11,9 @@
 import { z } from 'zod';
 import { isEnvironmentColor } from './environment-colors.js';
 import { JWT_ALGORITHM_NAMES } from './jwt-algorithms.js';
+import { PALETTES } from './palettes.js';
+
+export { PALETTES, type Palette } from './palettes.js';
 
 /** The longest URL/path an import source may carry — well past any real one, and bounded. */
 export const MAX_IMPORT_LOCATION_CHARS = 4096;
@@ -2053,6 +2056,7 @@ export const preferencesWireSchema = z.object({
   }),
   ui: z.object({
     theme: z.enum(['dark', 'light', 'system']),
+    palette: z.enum(PALETTES),
     defaultLayout: z.object({
       orientation: z.enum(['side-by-side', 'stacked']),
       mode: z.enum(['split', 'tabs']),
