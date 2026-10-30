@@ -84,7 +84,7 @@ describeDb('SAML sign-in from the browser (hosted spec §17.2)', () => {
         settings: { invitationMs: 7 * 86_400_000 },
         now: () => h.clock.now,
       } as never,
-      { email, serverAdmin: false, createdBy: null, source: SYSTEM_SOURCE },
+      { email, serverAdmin: false, createdBy: null, source: SYSTEM_SOURCE, serverUrl: 'https://wirebench.test' },
     );
   /** `GET /sign-in/saml`, read back as the IdP would see it. */
   const start = async (query = '') => {

@@ -1,20 +1,20 @@
 /**
  * The browser's session cookie (hosted spec §17.2). Its value is a `browser` device token. On an
- * `https:` public URL it is `__Host-wb_session`, which a browser only keeps when `Secure`, `Path=/`
- * and no `Domain`; on an `http:` one (allowed only with the insecure opt-in) it is `wb_session`
- * without `Secure`, since the browser would drop the `__Host-` one. Parsed and set by hand: one
- * cookie does not justify a plugin.
+ * `https:` tenant URL (`tenancy/urls.ts`) it is `__Host-wb_session`, which a browser only keeps when
+ * `Secure`, `Path=/` and no `Domain`; on an `http:` one (allowed only with the insecure opt-in) it is
+ * `wb_session` without `Secure`, since the browser would drop the `__Host-` one. Parsed and set by hand:
+ * one cookie does not justify a plugin.
  */
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
-const isSecure = (publicUrl: string): boolean => publicUrl.startsWith('https:');
+const isSecure = (url: string): boolean => url.startsWith('https:');
 
-export function sessionCookieName(publicUrl: string): '__Host-wb_session' | 'wb_session' {
-  return isSecure(publicUrl) ? '__Host-wb_session' : 'wb_session';
+export function sessionCookieName(url: string): '__Host-wb_session' | 'wb_session' {
+  return isSecure(url) ? '__Host-wb_session' : 'wb_session';
 }
 
-function attributes(publicUrl: string, maxAgeSeconds: number): string {
-  return `Max-Age=${maxAgeSeconds}; Path=/; HttpOnly${isSecure(publicUrl) ? '; Secure' : ''}; SameSite=Lax`;
+function attributes(url: string, maxAgeSeconds: number): string {
+  return `Max-Age=${maxAgeSeconds}; Path=/; HttpOnly${isSecure(url) ? '; Secure' : ''}; SameSite=Lax`;
 }
 
 /**
@@ -26,12 +26,12 @@ function appendSetCookie(reply: FastifyReply, line: string): void {
 }
 
 /** `maxAgeSeconds` is the token's maximum age; idle expiry is the server's to enforce, not the browser's. */
-export function setSessionCookie(reply: FastifyReply, publicUrl: string, token: string, maxAgeSeconds: number): void {
-  appendSetCookie(reply, `${sessionCookieName(publicUrl)}=${token}; ${attributes(publicUrl, maxAgeSeconds)}`);
+export function setSessionCookie(reply: FastifyReply, url: string, token: string, maxAgeSeconds: number): void {
+  appendSetCookie(reply, `${sessionCookieName(url)}=${token}; ${attributes(url, maxAgeSeconds)}`);
 }
 
-export function clearSessionCookie(reply: FastifyReply, publicUrl: string): void {
-  appendSetCookie(reply, `${sessionCookieName(publicUrl)}=; ${attributes(publicUrl, 0)}`);
+export function clearSessionCookie(reply: FastifyReply, url: string): void {
+  appendSetCookie(reply, `${sessionCookieName(url)}=; ${attributes(url, 0)}`);
 }
 
 /** The value of the cookie `name` in `Cookie`: the first pair whose name matches exactly, or `undefined`. */
@@ -48,8 +48,8 @@ function cookieValue(request: FastifyRequest, name: string): string | undefined 
 }
 
 /** The session cookie's value from `Cookie`, or `undefined`. */
-export function sessionToken(request: FastifyRequest, publicUrl: string): string | undefined {
-  return cookieValue(request, sessionCookieName(publicUrl));
+export function sessionToken(request: FastifyRequest, url: string): string | undefined {
+  return cookieValue(request, sessionCookieName(url));
 }
 
 /**
@@ -58,8 +58,8 @@ export function sessionToken(request: FastifyRequest, publicUrl: string): string
  * flow, stop at the callback URL and hand that URL to another person, who would then be signed in as
  * them (login CSRF). It lives as long as the flow, ten minutes.
  */
-export function flowCookieName(publicUrl: string): '__Host-wb_flow' | 'wb_flow' {
-  return isSecure(publicUrl) ? '__Host-wb_flow' : 'wb_flow';
+export function flowCookieName(url: string): '__Host-wb_flow' | 'wb_flow' {
+  return isSecure(url) ? '__Host-wb_flow' : 'wb_flow';
 }
 
 const FLOW_COOKIE_SECONDS = 10 * 60;
@@ -69,19 +69,19 @@ const FLOW_COOKIE_SECONDS = 10 * 60;
  * is not sent on a cross-site POST, so that one is `SameSite=None`, which browsers only keep when
  * `Secure`. OIDC returns by a top-level GET, which `Lax` allows.
  */
-export function setFlowCookie(reply: FastifyReply, publicUrl: string, state: string, crossSite: boolean): void {
-  const secure = isSecure(publicUrl);
+export function setFlowCookie(reply: FastifyReply, url: string, state: string, crossSite: boolean): void {
+  const secure = isSecure(url);
   const sameSite = crossSite && secure ? 'None' : 'Lax';
   appendSetCookie(
     reply,
-    `${flowCookieName(publicUrl)}=${state}; Max-Age=${FLOW_COOKIE_SECONDS}; Path=/; HttpOnly${secure ? '; Secure' : ''}; SameSite=${sameSite}`,
+    `${flowCookieName(url)}=${state}; Max-Age=${FLOW_COOKIE_SECONDS}; Path=/; HttpOnly${secure ? '; Secure' : ''}; SameSite=${sameSite}`,
   );
 }
 
-export function clearFlowCookie(reply: FastifyReply, publicUrl: string): void {
-  appendSetCookie(reply, `${flowCookieName(publicUrl)}=; ${attributes(publicUrl, 0)}`);
+export function clearFlowCookie(reply: FastifyReply, url: string): void {
+  appendSetCookie(reply, `${flowCookieName(url)}=; ${attributes(url, 0)}`);
 }
 
-export function flowCookie(request: FastifyRequest, publicUrl: string): string | undefined {
-  return cookieValue(request, flowCookieName(publicUrl));
+export function flowCookie(request: FastifyRequest, url: string): string | undefined {
+  return cookieValue(request, flowCookieName(url));
 }

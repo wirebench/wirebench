@@ -1,5 +1,6 @@
 /** The scheduled-runs module's configuration (scheduled-runs spec §7), read once at registration. */
 import type { ServerConfig } from '../config.js';
+import { urlWithoutScope } from '../tenancy/urls.js';
 
 const MIB = 1024 * 1024;
 
@@ -15,11 +16,15 @@ export interface SchedulesSettings {
   readonly alertHosts?: readonly string[];
   /** Email alerts; absent, an email target is refused. */
   readonly smtp?: { readonly url: string; readonly from: string };
-  /** The server's public origin, for the run link in an alert. */
-  readonly publicUrl: string;
+  /**
+   * The origin of the run link in an alert. The scheduler runs outside any tenant until Task 13 gives it
+   * `forEachTenant`, so this is `urlWithoutScope`: the public URL self-hosted, absent hosted.
+   */
+  readonly linkUrl?: string;
 }
 
 export function schedulesSettings(config: ServerConfig): SchedulesSettings {
+  const linkUrl = urlWithoutScope(config);
   return {
     enabled: config.schedulesEnabled,
     ...(config.schedulesSecretKey !== undefined ? { secretKey: Buffer.from(config.schedulesSecretKey, 'base64') } : {}),
@@ -30,7 +35,7 @@ export function schedulesSettings(config: ServerConfig): SchedulesSettings {
     ...(config.smtpUrl !== undefined && config.smtpFrom !== undefined
       ? { smtp: { url: config.smtpUrl, from: config.smtpFrom } }
       : {}),
-    publicUrl: config.publicUrl,
+    ...(linkUrl !== undefined ? { linkUrl } : {}),
   };
 }
 

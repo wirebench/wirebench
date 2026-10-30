@@ -16,8 +16,8 @@ export function escapeHtml(text: string): string {
 }
 
 export type InvitePageInput =
-  | { readonly publicUrl: string; readonly state: 'open'; readonly email: string; readonly secret: string }
-  | { readonly publicUrl: string; readonly state: 'closed' };
+  | { readonly serverUrl: string; readonly state: 'open'; readonly email: string; readonly secret: string }
+  | { readonly serverUrl: string; readonly state: 'closed' };
 
 /** Sent with every invitation page: the page needs nothing but its own inline style. */
 export const INVITE_PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'";
@@ -25,14 +25,14 @@ export const INVITE_PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'";
 export function renderInvitePage(input: InvitePageInput): string {
   const body =
     input.state === 'open'
-      ? `<p>You have been invited to Wirebench Server at <code>${escapeHtml(input.publicUrl)}</code> as <strong>${escapeHtml(input.email)}</strong>.</p>
+      ? `<p>You have been invited to Wirebench Server at <code>${escapeHtml(input.serverUrl)}</code> as <strong>${escapeHtml(input.email)}</strong>.</p>
 <ol>
 <li>Install Wirebench.</li>
 <li>Choose <em>Sign in…</em> from the command palette.</li>
-<li>Enter the server URL: <code>${escapeHtml(input.publicUrl)}</code></li>
+<li>Enter the server URL: <code>${escapeHtml(input.serverUrl)}</code></li>
 <li>Enter this invitation code: <code>${escapeHtml(input.secret)}</code></li>
 </ol>`
-      : `<p>You have been invited to Wirebench Server at <code>${escapeHtml(input.publicUrl)}</code>.</p>
+      : `<p>You have been invited to Wirebench Server at <code>${escapeHtml(input.serverUrl)}</code>.</p>
 <p>This invitation has expired or was already used. Ask a server admin for a new one.</p>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Wirebench Server</title>
 <style>body{font:15px/1.5 system-ui,sans-serif;margin:3rem auto;max-width:36rem;padding:0 1rem;color:#222}code{word-break:break-all}</style>

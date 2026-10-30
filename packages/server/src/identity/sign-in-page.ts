@@ -6,6 +6,7 @@
  */
 import type { FastifyReply } from 'fastify';
 import type { ServerContext } from '../context.js';
+import { tenantUrl } from '../tenancy/urls.js';
 import { escapeHtml } from './invite-page.js';
 
 /** The invitation page's policy, plus `form-action 'self'` for the form and no framing (clickjacking). */
@@ -13,7 +14,8 @@ export const SIGN_IN_PAGE_CSP =
   "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'";
 
 export interface SignInPageInput {
-  readonly publicUrl: string;
+  /** The tenant's URL, which the page names. */
+  readonly serverUrl: string;
   readonly local: boolean;
   readonly oidc?: { readonly displayName: string };
   readonly saml?: { readonly displayName: string };
@@ -53,7 +55,7 @@ ${input.redirectTo === '/' ? '' : `<input type="hidden" name="redirect_to" value
     parts.push('<p>This server offers no way to sign in from a browser. Ask a server admin.</p>');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · Wirebench Server</title>
 <style>${STYLE}</style>
-</head><body><h1>Sign in</h1><p>Wirebench Server at <code>${escapeHtml(input.publicUrl)}</code></p>${parts.join('\n')}</body></html>`;
+</head><body><h1>Sign in</h1><p>Wirebench Server at <code>${escapeHtml(input.serverUrl)}</code></p>${parts.join('\n')}</body></html>`;
 }
 
 /**
@@ -68,7 +70,7 @@ export async function sendSignInPage(
   const methods = ctx.meta.signInMethods();
   const samlLicensed = methods.saml === true && (await ctx.license.state()).features.includes('sso-provisioning');
   const html = renderSignInPage({
-    publicUrl: ctx.config.publicUrl,
+    serverUrl: tenantUrl(ctx.config, reply.request),
     local: methods.local,
     ...(methods.oidc ? { oidc: { displayName: methods.oidcDisplayName ?? 'OIDC' } } : {}),
     ...(samlLicensed ? { saml: { displayName: methods.samlDisplayName ?? 'SSO' } } : {}),

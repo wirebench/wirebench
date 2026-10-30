@@ -21,12 +21,23 @@ import { createLicenseService } from '../licensing/service.js';
 import { BUILTIN_MODULES } from '../modules.js';
 import { allMigrations, StartupError } from '../serve.js';
 import { runScimGroupCommand, runScimTokenCommand } from '../sso/cli.js';
+import { urlWithoutScope } from '../tenancy/urls.js';
 import { identitySettings, type InvitationEnv } from './env.js';
 import { createInvitation, invitationSummary, isOpen, revokeOpenInvitation } from './invitations.js';
 import * as repo from './repo.js';
 
 // `admin tenancy role` runs as the owner, not the app role, so it has its own runner (tenancy/cli.ts).
 type AdminCommand = Exclude<Extract<ServerCommand, { command: `admin-${string}` }>, { command: 'admin-tenancy-role' }>;
+
+/**
+ * The tenant URL an invitation link names. The command line serves the default tenant until Task 16 adds
+ * `--tenant`, and `loadConfig` refuses hosted mode, so this is the public URL.
+ */
+function cliUrl(config: Parameters<typeof urlWithoutScope>[0]): string {
+  const url = urlWithoutScope(config);
+  if (url === undefined) throw new WirebenchError('tenancy-unscoped', 'the admin command line needs a tenant');
+  return url;
+}
 
 /** `now` exists for tests; the bin passes nothing. */
 export async function runAdmin(
@@ -96,6 +107,7 @@ export async function runAdmin(
           serverAdmin: command.serverAdmin,
           createdBy: null,
           source: SYSTEM_SOURCE,
+          serverUrl: cliUrl(config),
         });
         io.stdout.write(
           `Invitation for ${created.email} (${command.serverAdmin ? 'server admin' : 'member'})\n${created.url}\nExpires ${created.expiresAt}\n`,

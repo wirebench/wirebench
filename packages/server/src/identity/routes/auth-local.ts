@@ -7,6 +7,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { ANONYMOUS_SOURCE, announce, auditSource, recordAudit, type AuditSource } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
+import { tenantUrl } from '../../tenancy/urls.js';
 import { clearSessionCookie, sessionToken } from '../cookies.js';
 import type { IdentityEnv } from '../env.js';
 import { invalidCredentials, methodDisabled, unauthenticated, userDisabled } from '../errors.js';
@@ -83,11 +84,11 @@ export const authLocalRoutes =
     );
 
     app.post('/auth/sign-out', async (request, reply) => {
+      const url = tenantUrl(env.ctx.config, request);
       if (request.caller === undefined) {
         // A cookie the guard found stale (revoked, expired, unknown) is still dropped, so the browser
         // stops presenting it; the answer stays 401 since no session was ended.
-        if (env.ctx.config.browserClient && sessionToken(request, env.ctx.config.publicUrl) !== undefined)
-          clearSessionCookie(reply, env.ctx.config.publicUrl);
+        if (env.ctx.config.browserClient && sessionToken(request, url) !== undefined) clearSessionCookie(reply, url);
         throw unauthenticated();
       }
       const caller = request.caller;
@@ -102,7 +103,7 @@ export const authLocalRoutes =
       });
       announce(env.ctx.hooks.sessionEnded, { tokenId: caller.tokenId }, request.log);
       // A browser session also loses its cookie (hosted spec §17.2); a desktop's reply carries none.
-      if (caller.via === 'cookie') clearSessionCookie(reply, env.ctx.config.publicUrl);
+      if (caller.via === 'cookie') clearSessionCookie(reply, url);
       return reply.code(204).send();
     });
   };

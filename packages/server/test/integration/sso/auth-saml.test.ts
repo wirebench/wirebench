@@ -94,7 +94,7 @@ describeDb('SAML sign-in (saml-scim spec §3.2, §3.3, §6.1)', () => {
         settings: { invitationMs: 7 * 86_400_000 },
         now: () => h.clock.now,
       } as never,
-      { email, serverAdmin: false, createdBy: null, source: SYSTEM_SOURCE },
+      { email, serverAdmin: false, createdBy: null, source: SYSTEM_SOURCE, serverUrl: 'https://wirebench.test' },
     );
   const start = () =>
     h.app.inject({

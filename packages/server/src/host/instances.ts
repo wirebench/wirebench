@@ -33,6 +33,8 @@ export interface HostSocketHandle {
 export interface HostUser {
   readonly id: string;
   readonly email: string;
+  /** The URL of the user's tenant (spec §19.5): what the host reaches, through the in-process transport. */
+  readonly serverUrl: string;
 }
 
 export interface HostInstancesDeps {

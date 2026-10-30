@@ -68,6 +68,18 @@ export class TenantDirectory {
     return rows.rows.map(scopeOf);
   }
 
+  /**
+   * The tenants a hosted `Host` may name (spec §19.5): active, and never the default tenant, whose slug no
+   * name matches. A suspended or deleting tenant answers `404` in slice 4.
+   */
+  async resolvable(): Promise<TenantScope[]> {
+    const rows = await this.db.query<{ id: string; slug: string }>(
+      `select t.id::text as id, t.slug from tenants t
+       where t.status = 'active' and t.id is distinct from (select default_tenant_id from server_identity)`,
+    );
+    return rows.rows.map(scopeOf);
+  }
+
   async get(id: string): Promise<(TenantRow & { readonly scope: TenantScope }) | undefined> {
     const rows = await this.db.query<TenantRow & Record<string, unknown>>(
       `select ${COLUMNS} from tenants where id = $1::uuid`,

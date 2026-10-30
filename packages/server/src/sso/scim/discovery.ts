@@ -2,7 +2,7 @@
  * The SCIM discovery documents (RFC 7643 §5–§7, saml-scim spec §3.5): static, and what an IdP reads to
  * learn that this server takes PATCH and filters but not bulk, sort, ETags or password changes.
  */
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { SsoEnv } from '../env.js';
 
 export const USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User';
@@ -93,8 +93,9 @@ const list = (resources: readonly unknown[]) => ({
 export const discoveryRoutes =
   (env: SsoEnv) =>
   (scim: FastifyInstance): void => {
-    const base = env.urls.scimBaseUrl;
-    scim.get('/ServiceProviderConfig', () => ({
+    // The SCIM base of the request's tenant (spec §19.5).
+    const base = (request: FastifyRequest): string => env.urlsFor(request).scimBaseUrl;
+    scim.get('/ServiceProviderConfig', (request) => ({
       schemas: ['urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig'],
       patch: { supported: true },
       bulk: { supported: false, maxOperations: 0, maxPayloadSize: 0 },
@@ -110,8 +111,8 @@ export const discoveryRoutes =
           primary: true,
         },
       ],
-      meta: { resourceType: 'ServiceProviderConfig', location: `${base}/ServiceProviderConfig` },
+      meta: { resourceType: 'ServiceProviderConfig', location: `${base(request)}/ServiceProviderConfig` },
     }));
-    scim.get('/ResourceTypes', () => list(resourceTypes(base)));
-    scim.get('/Schemas', () => list(schemas(base)));
+    scim.get('/ResourceTypes', (request) => list(resourceTypes(base(request))));
+    scim.get('/Schemas', (request) => list(schemas(base(request))));
   };

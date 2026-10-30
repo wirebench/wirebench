@@ -89,6 +89,7 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
       serverAdmin: true,
       createdBy: null,
       source: SYSTEM_SOURCE,
+      serverUrl: 'https://wirebench.test',
     });
     idp.nextUser({ sub: 'sub-alice', email: 'alice@EXAMPLE.com', email_verified: true, name: 'Alice Liddell' });
     const { flowId, cb } = await signInUpToGrant();
@@ -120,6 +121,7 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
       serverAdmin: false,
       createdBy: null,
       source: SYSTEM_SOURCE,
+      serverUrl: 'https://wirebench.test',
     });
     idp.nextUser({ sub: 'sub-alice', email: 'alice@example.com', email_verified: true });
     const { flowId, cb } = await signInUpToGrant();
@@ -174,6 +176,7 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
       serverAdmin: false,
       createdBy: null,
       source: SYSTEM_SOURCE,
+      serverUrl: 'https://wirebench.test',
     }).catch(() => undefined);
     idp.nextUser(user);
     const { flowId, cb } = await signInUpToGrant();
@@ -197,6 +200,7 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
       serverAdmin: false,
       createdBy: null,
       source: SYSTEM_SOURCE,
+      serverUrl: 'https://wirebench.test',
     });
     const wrongState = await h.app.inject({
       method: 'GET',
@@ -239,6 +243,7 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
       serverAdmin: false,
       createdBy: null,
       source: SYSTEM_SOURCE,
+      serverUrl: 'https://wirebench.test',
     });
     idp.nextUser({ sub: 'sub-alice', email: 'alice@example.com', email_verified: true });
     const { flowId, cb } = await signInUpToGrant();

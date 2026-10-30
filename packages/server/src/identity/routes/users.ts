@@ -10,6 +10,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { announce, auditSource, recordAudit } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
+import { tenantUrl } from '../../tenancy/urls.js';
 import type { IdentityEnv } from '../env.js';
 import { notFound, selfChange } from '../errors.js';
 import { requireServerAdmin } from '../guard.js';
@@ -94,7 +95,17 @@ export const userRoutes =
         const { id } = request.params as { id: string };
         const user = await repo.findUserById(env.ctx.db, id);
         if (user === undefined) throw notFound('User');
-        return reply.code(201).send(await createPasswordReset(env, user, request.caller!.id, auditSource(request)));
+        return reply
+          .code(201)
+          .send(
+            await createPasswordReset(
+              env,
+              user,
+              request.caller!.id,
+              auditSource(request),
+              tenantUrl(env.ctx.config, request),
+            ),
+          );
       },
     );
   };

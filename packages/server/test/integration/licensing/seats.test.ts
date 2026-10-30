@@ -86,7 +86,13 @@ describeDb('seats on Community (licensing spec §3.4, §13.1)', () => {
     await expect(
       createInvitation(
         env,
-        { email: 'team@example.com', serverAdmin: false, createdBy: admin.user.id, source: SYSTEM_SOURCE },
+        {
+          email: 'team@example.com',
+          serverAdmin: false,
+          createdBy: admin.user.id,
+          source: SYSTEM_SOURCE,
+          serverUrl: 'https://wirebench.test',
+        },
         () => {
           attached = true;
           return Promise.resolve();

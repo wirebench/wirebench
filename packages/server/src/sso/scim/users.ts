@@ -49,7 +49,8 @@ function patchOperations(body: unknown): readonly PatchOperation[] {
 export const userRoutes =
   (env: SsoEnv) =>
   (scim: FastifyInstance): void => {
-    const base = env.urls.scimBaseUrl;
+    // The SCIM base of the request's tenant (spec §19.5).
+    const base = (request: FastifyRequest): string => env.urlsFor(request).scimBaseUrl;
     const db = env.ctx.db;
 
     /**
@@ -100,7 +101,7 @@ export const userRoutes =
         });
       // Sockets first: a disabled user's live connections close before anything reads them again.
       if (result.disabled) announce(env.ctx.hooks.sessionEnded, { userId: id }, request.log);
-      return userResource(result.view, base);
+      return userResource(result.view, base(request));
     }
 
     scim.get('/Users', async (request) => {
@@ -117,14 +118,14 @@ export const userRoutes =
         totalResults: page.total,
         startIndex,
         itemsPerPage: page.users.length,
-        Resources: page.users.map((view) => userResource(view, base)),
+        Resources: page.users.map((view) => userResource(view, base(request))),
       };
     });
 
     scim.get('/Users/:id', async (request) => {
       const view = await repo.scimUserView(db, (request.params as { id: string }).id);
       if (view === undefined) throw notFound();
-      return userResource(view, base);
+      return userResource(view, base(request));
     });
 
     scim.post('/Users', async (request, reply) => {
@@ -169,7 +170,10 @@ export const userRoutes =
           if (isUniqueViolation(error, 'users_email_lower_key')) throw uniqueness();
           throw error;
         });
-      return reply.code(201).header('location', `${base}/Users/${view.id}`).send(userResource(view, base));
+      return reply
+        .code(201)
+        .header('location', `${base(request)}/Users/${view.id}`)
+        .send(userResource(view, base(request)));
     });
 
     scim.put('/Users/:id', async (request) => {

@@ -13,6 +13,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { auditSource } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
+import { tenantUrl } from '../../tenancy/urls.js';
 import type { IdentityEnv } from '../env.js';
 import { notFound } from '../errors.js';
 import { requireServerAdmin } from '../guard.js';
@@ -45,6 +46,7 @@ export const invitationRoutes =
           serverAdmin: body.serverAdmin ?? false,
           createdBy: request.caller!.id,
           source: auditSource(request),
+          serverUrl: tenantUrl(env.ctx.config, request),
         });
         return reply.code(201).send(created);
       },

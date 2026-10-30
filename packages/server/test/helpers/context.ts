@@ -1,5 +1,5 @@
 import { GitCli, detectInText, findGit } from '@wirebench/engine';
-import { loadConfig } from '../../src/config.js';
+import { egressPolicyOf, loadConfig } from '../../src/config.js';
 import {
   MetaRegistry,
   permissiveLicense,
@@ -57,9 +57,7 @@ export async function testContext(
     tenancy: rest.tenancy ?? createTenancy(rest.db ?? fakeDatabase()),
   };
   // Follows the config, as serve.ts builds it, unless the test passed its own.
-  return rest.egress !== undefined
-    ? context
-    : { ...context, egress: { denyPrivate: context.config.egressDenyPrivate } };
+  return rest.egress !== undefined ? context : { ...context, egress: egressPolicyOf(context.config) };
 }
 
 /** Wirebench's own token (`identity/tokens.ts` `TOKEN_PREFIX`) and license shapes, which the credential rules do not know. */

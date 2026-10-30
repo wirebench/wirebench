@@ -3,6 +3,7 @@
  * whether the app role is one row-level security applies to.
  */
 import { WirebenchError } from '@wirebench/engine';
+import type { ServerMode } from '../config.js';
 import type { Querier } from '../context.js';
 
 /** `on delete set null (column)` on a composite foreign key needs PostgreSQL 15. */
@@ -20,7 +21,7 @@ export async function checkPostgresVersion(db: Querier): Promise<void> {
 }
 
 /** `self-hosted` until slice 6 lets an operator choose; tests build `hosted` directly (spec §19.1). */
-export type ServerMode = 'self-hosted' | 'hosted';
+export type { ServerMode };
 
 export interface AppRoleReport {
   readonly role: string;

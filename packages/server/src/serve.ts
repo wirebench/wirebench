@@ -8,7 +8,14 @@ import { access, constants } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { GitCli, WirebenchError, findGit } from '@wirebench/engine';
-import { ConfigError, forgetDatabaseUrls, loadConfig, migrationUrlOf, type ServerConfig } from './config.js';
+import {
+  ConfigError,
+  egressPolicyOf,
+  forgetDatabaseUrls,
+  loadConfig,
+  migrationUrlOf,
+  type ServerConfig,
+} from './config.js';
 import {
   MetaRegistry,
   permissiveLicense,
@@ -19,9 +26,10 @@ import {
 } from './context.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migration } from './db/migrate.js';
 import { createDatabase } from './db/pool.js';
-import { checkAppRole, checkPostgresVersion, type ServerMode } from './tenancy/checks.js';
+import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
 import { TENANCY_MIGRATIONS_DIR } from './tenancy/migrations.js';
 import { RunningLock } from './tenancy/running-lock.js';
+import { operatorPublicUrl } from './tenancy/urls.js';
 import { createTenancy } from './tenancy/tenancy.js';
 import { ensureAppRole, roleMode } from './tenancy/roles.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
@@ -291,15 +299,13 @@ export async function startServer(
     await db.close();
     throw new StartupError(ExitCode.Config, `data directory ${config.dataDir} is not writable`);
   }
-  // Slice 6 lets an operator choose the mode; until then a server started here is self-hosted (spec §19.1).
-  const serverMode: ServerMode = 'self-hosted';
   const warnings: { readonly message: string; readonly details: Record<string, unknown> }[] = [];
   const tenancy = createTenancy(db);
   let runningLock: RunningLock | undefined;
   // Set once the server can stop itself: losing the lock before then fails the start instead.
   const lockLost: { stop?: (error: Error) => void } = {};
   try {
-    await checkAppRole(db, serverMode, (message, details) => warnings.push({ message, details }));
+    await checkAppRole(db, config.mode, (message, details) => warnings.push({ message, details }));
     await tenancy.directory.load();
     // Held for the life of the process; a revert's exclusive try fails while it is (spec §19.10).
     runningLock = await RunningLock.acquire(config.databaseUrl, {
@@ -320,7 +326,7 @@ export async function startServer(
     git,
     log: undefined as unknown as ServerContext['log'], // buildServer replaces it with the app's logger
     meta: new MetaRegistry(),
-    egress: { denyPrivate: config.egressDenyPrivate },
+    egress: egressPolicyOf(config),
     hooks: serverHooks(),
     license: permissiveLicense(),
   };
@@ -356,7 +362,7 @@ export async function startServer(
   }
   const address = app.server.address();
   const port = typeof address === 'object' && address !== null ? address.port : config.port;
-  app.log.info({ publicUrl: config.publicUrl, port, modules: modules.map((m) => m.name) }, 'listening');
+  app.log.info({ publicUrl: operatorPublicUrl(config), port, modules: modules.map((m) => m.name) }, 'listening');
 
   const signals: EventEmitter = options.signals ?? process;
   let closing: Promise<void> | undefined;

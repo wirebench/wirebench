@@ -15,7 +15,18 @@ import type {
 import type { ServerConfig } from './config.js';
 import { requireFeature } from './licensing/gate.js';
 import type { RepoStore } from './repos/repo-store.js';
+import type { TenantScope } from './tenancy/scope.js';
 import type { Tenancy } from './tenancy/tenancy.js';
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    /**
+     * The tenant this request is for (hosted edition spec §19.5; `tenancy/resolve.ts`). Self-hosted, always
+     * the default tenant, read on demand; hosted, resolved by `Host` before every module. `/healthz` has none.
+     */
+    readonly tenant: TenantScope;
+  }
+}
 
 /** The slice of `pg.Pool` the modules use, so tests can pass a fake. */
 export interface Querier {
@@ -349,7 +360,7 @@ export interface ServerContext {
   readonly hooks: ServerHooks;
   /**
    * The egress rule for connections the server opens on a user's or workspace's behalf (hosted edition
-   * spec §17.5): `{ denyPrivate: config.egressDenyPrivate }`.
+   * spec §17.5): `egressPolicyOf(config)`, which hosted mode always makes deny private ranges.
    */
   readonly egress: EgressPolicy;
   /** Replaced by the licensing module in `register()`; the one field a module may assign (licensing spec §5.1). */

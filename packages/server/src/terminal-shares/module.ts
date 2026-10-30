@@ -148,7 +148,7 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
 
       const settings = identitySettings(ctx.config);
       // As on the live socket: a browser page on another site may not open one.
-      app.get(SOCKET_ROUTE, { websocket: true, onRequest: originCheck(ctx.config.publicUrl) }, (socket, request) => {
+      app.get(SOCKET_ROUTE, { websocket: true, onRequest: originCheck(ctx.config) }, (socket, request) => {
         const header = request.headers['user-agent'];
         const ip = auditIp(request.ip);
         runShareSocket(socket, {

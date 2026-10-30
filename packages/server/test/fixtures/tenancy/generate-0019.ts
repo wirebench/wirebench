@@ -463,7 +463,7 @@ it.runIf(OUT !== undefined)(
       };
       await h.db.transaction(async (tx) => {
         expect(await schedulesRepo.finishRun(tx, runId, finished)).toBe(true);
-        await enqueueAlerts(tx, { settings: { publicUrl: PUBLIC_URL }, now: () => at }, scheduleId, {
+        await enqueueAlerts(tx, { settings: { linkUrl: PUBLIC_URL }, now: () => at }, scheduleId, {
           id: runId,
           ...finished,
         });

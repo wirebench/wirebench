@@ -161,7 +161,7 @@ export function testSettings(overrides: Partial<SchedulesSettings> = {}): Schedu
     concurrency: 2,
     maxAgeDays: 90,
     maxSnapshotBytes: 1024 * 1024,
-    publicUrl: 'https://wirebench.example.test',
+    linkUrl: 'https://wirebench.example.test',
     ...overrides,
   };
 }

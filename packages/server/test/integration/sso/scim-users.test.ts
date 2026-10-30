@@ -182,7 +182,13 @@ describeDb('SCIM users (saml-scim spec §3.5, §6.3)', () => {
         settings: { invitationMs: 7 * 86_400_000 },
         now: () => h.clock.now,
       } as never,
-      { email: 'dan@example.com', serverAdmin: false, createdBy: null, source: SYSTEM_SOURCE },
+      {
+        email: 'dan@example.com',
+        serverAdmin: false,
+        createdBy: null,
+        source: SYSTEM_SOURCE,
+        serverUrl: 'https://wirebench.test',
+      },
     );
     const dan = (await create('dan@example.com')).json<ScimUser>();
     expect(accepted).toEqual([{ invitationId: invitation.id, userId: dan.id }]);

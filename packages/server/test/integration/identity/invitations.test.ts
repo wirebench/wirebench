@@ -221,7 +221,13 @@ describeDb('invitations (§3.1, §3.7)', () => {
     await expect(
       createInvitation(
         env,
-        { email: 'erin@example.com', serverAdmin: false, createdBy: null, source: SYSTEM_SOURCE },
+        {
+          email: 'erin@example.com',
+          serverAdmin: false,
+          createdBy: null,
+          source: SYSTEM_SOURCE,
+          serverUrl: 'https://wirebench.test',
+        },
         () => Promise.reject(new Error('attach failed')),
       ),
     ).rejects.toThrow('attach failed');
@@ -229,7 +235,13 @@ describeDb('invitations (§3.1, §3.7)', () => {
     const attached: string[] = [];
     const created = await createInvitation(
       env,
-      { email: 'erin@example.com', serverAdmin: false, createdBy: null, source: SYSTEM_SOURCE },
+      {
+        email: 'erin@example.com',
+        serverAdmin: false,
+        createdBy: null,
+        source: SYSTEM_SOURCE,
+        serverUrl: 'https://wirebench.test',
+      },
       (tx, id) => {
         attached.push(id);
         return tx.query('select 1').then(() => undefined);

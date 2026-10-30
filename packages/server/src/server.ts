@@ -11,6 +11,7 @@ import type { ServerContext, ServerModule } from './context.js';
 import { toProblem } from './problem.js';
 import { healthRoutes } from './routes/health.js';
 import { metaRoutes } from './routes/meta.js';
+import { registerTenantResolution, type TenantResolver } from './tenancy/resolve.js';
 
 export interface BuildServerOptions {
   readonly modules: readonly ServerModule[];
@@ -21,6 +22,8 @@ export interface BuildServerOptions {
    * pass `scopedContext` for it (`test/helpers/tenancy.ts`), whose `db` throws (plan, Global Constraints).
    */
   readonly contextFor?: (module: ServerModule, context: ServerContext) => ServerContext;
+  /** Hands out the hosted tenant map, for tests that change a tenant and reload it; never called self-hosted. */
+  readonly onTenantResolver?: (resolver: TenantResolver) => void;
 }
 
 /**
@@ -85,6 +88,10 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
   });
 
   const context: ServerContext = { ...ctx, log: app.log };
+
+  // First, so it runs ahead of every module's hooks, on the API, the public routes and every upgrade.
+  const resolver = await registerTenantResolution(app, ctx.config, ctx.tenancy.directory);
+  if (resolver !== undefined) options.onTenantResolver?.(resolver);
 
   app.addHook('onSend', async (request, reply) => {
     reply.header('x-request-id', request.id);

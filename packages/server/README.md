@@ -10,6 +10,7 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 <!-- config:start -->
 | Variable | Required | Default | Meaning |
 | --- | --- | --- | --- |
+| `WIREBENCH_SERVER_MODE` | no | `self-hosted` | How the server runs. Only `self-hosted` is accepted: one organisation, reached by whatever names point at it. |
 | `WIREBENCH_SERVER_DATABASE_URL` | yes | — | PostgreSQL connection string. Every query runs as its role. Never logged. |
 | `WIREBENCH_SERVER_MIGRATION_DATABASE_URL` | no | `WIREBENCH_SERVER_DATABASE_URL` | PostgreSQL connection string for the role that owns the schema. Migrations and `admin tenancy role` run as it. When it names a role other than the database URL’s, the server creates that app role if it is missing and the owner may create roles, and grants it its privileges at every start. Never logged. |
 | `WIREBENCH_SERVER_PUBLIC_URL` | yes | — | The `https://…` origin clients use; no path, query or trailing slash. |
