@@ -33,7 +33,7 @@ function fakeTenantsDatabase(): Database {
   const fake = fakeDatabase();
   const query = (text: string) => {
     if (text.includes("to_regclass('tenants')")) return Promise.resolve({ rows: [{ exists: true }], rowCount: 1 });
-    if (text.includes('from server_identity s join tenants t'))
+    if (text.includes('from server_identity s left join tenants t'))
       return Promise.resolve({ rows: [FAKE_DEFAULT_TENANT], rowCount: 1 });
     return fake.query(text);
   };

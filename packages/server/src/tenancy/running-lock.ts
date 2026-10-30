@@ -35,8 +35,9 @@ export const SERVER_RUNNING_CLASS = 0x57425352; // "WBSR"
  * (servers) agree even when their search paths start differently. Before the first migration there is none
  * yet, and the session's schema stands in.
  */
-export const LOCK_SCHEMA_KEY =
-  "hashtext(coalesce((select relnamespace::regnamespace::text from pg_class where oid = to_regclass('server_identity')), current_schema()))";
+export const SERVER_SCHEMA =
+  "coalesce((select relnamespace::regnamespace::text from pg_class where oid = to_regclass('server_identity')), current_schema())";
+export const LOCK_SCHEMA_KEY = `hashtext(${SERVER_SCHEMA})`;
 
 /** The attempt's one query: the lock, and the backend's pid, in one round trip. */
 export const TRY_SHARED = `select pg_backend_pid() as pid, pg_try_advisory_lock_shared($1, ${LOCK_SCHEMA_KEY}) as ok`;

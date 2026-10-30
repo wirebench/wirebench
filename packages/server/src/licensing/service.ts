@@ -6,6 +6,7 @@
  * (hosted edition spec §19.8 guard 5).
  */
 import type { KeyObject } from 'node:crypto';
+import type { FastifyBaseLogger } from 'fastify';
 import { COMMUNITY_SEATS, type LicenseState } from '@wirebench/engine';
 import type { LicenseChanged, LicenseService, Querier } from '../context.js';
 import type { TenantScope } from '../tenancy/scope.js';
@@ -28,7 +29,16 @@ export interface LicenseEnv {
    * is server-wide, so any tenant's unit reads the same row.
    */
   readonly serverId: (db: Querier) => Promise<string>;
+  /** Where `stateWithoutScope` says, once, that it has several tenants to choose from. */
+  readonly log?: Pick<FastifyBaseLogger, 'warn'>;
 }
+
+/**
+ * What `stateWithoutScope` answers with several tenants: Community, saying why, so a job that logs the state does
+ * not send an operator looking for a license.
+ */
+export const SEVERAL_TENANTS_MESSAGE =
+  'several tenants: the jobs that do not run per tenant yet (scheduled runs, alerts, audit forwarding) are off until they do';
 
 /** Reads the server id once, on first use, and keeps it; a failed read is tried again next time. */
 export function cachedServerId(): (db: Querier) => Promise<string> {
@@ -46,7 +56,7 @@ export function cachedServerId(): (db: Querier) => Promise<string> {
 export const STATE_WITHOUT_SCOPE_JOB = 'license-without-scope';
 
 export function createLicenseService(env: LicenseEnv): LicenseService {
-  // The stored license and the seat count in one unit: every feature check pays for it.
+  // The stored license and the seat count in one unit.
   const stateIn = async (tx: TenantQuerier): Promise<LicenseState> =>
     licenseState(
       (await repo.storedLicense(tx))?.text,
@@ -55,12 +65,18 @@ export function createLicenseService(env: LicenseEnv): LicenseService {
       await countEnabledUsers(tx),
       await env.serverId(tx),
     );
+  // What a feature gate needs, and every gated request pays for: the license alone, without the seat count
+  // (Task 9 review M6). Its `seats.used` is 0 and never read.
+  const featuresIn = async (tx: TenantQuerier): Promise<LicenseState> =>
+    licenseState((await repo.storedLicense(tx))?.text, env.publicKeys, env.now(), 0, await env.serverId(tx));
+  let warnedSeveral = false;
   const state = (of: ScopeSource, tx?: TenantQuerier): Promise<LicenseState> =>
     tx !== undefined ? stateIn(tx) : env.tenancy.db('tenantId' in of ? of : of.tenant).transaction(stateIn);
   return {
     state,
     assertSeatAvailable: (tx) => assertSeatAvailable(tx, stateIn),
-    requireFeature: (feature) => requireFeature(feature, (request) => state(request)),
+    requireFeature: (feature) =>
+      requireFeature(feature, (request) => env.tenancy.db(request.tenant).transaction(featuresIn)),
     stateWithoutScope: async () => {
       const states: LicenseState[] = [];
       let failure: Error | undefined;
@@ -79,10 +95,19 @@ export function createLicenseService(env: LicenseEnv): LicenseService {
       );
       if (failure !== undefined) throw failure;
       // One tenant is a self-hosted server, whose license this is. With several, which only hosted-mode
-      // tests make, no one license is the server's, and Community grants no feature.
-      return states.length === 1
-        ? states[0]!
-        : { edition: 'community', status: 'none', seats: { used: 0, limit: COMMUNITY_SEATS }, features: [] };
+      // tests make, no one license is the server's, and Community grants no feature: said once, not per pass.
+      if (states.length === 1) return states[0]!;
+      if (states.length > 1 && !warnedSeveral) {
+        warnedSeveral = true;
+        env.log?.warn({ tenants: states.length }, SEVERAL_TENANTS_MESSAGE);
+      }
+      return {
+        edition: 'community',
+        status: 'none',
+        seats: { used: 0, limit: COMMUNITY_SEATS },
+        features: [],
+        ...(states.length > 1 ? { message: SEVERAL_TENANTS_MESSAGE } : {}),
+      };
     },
   };
 }

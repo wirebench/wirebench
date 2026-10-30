@@ -28,11 +28,11 @@ export function licensingModule(options: LicensingOptions = {}): ServerModule {
   return {
     name: 'licensing',
     migrationsDir: LICENSING_MIGRATIONS_DIR,
-    async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
+    register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       // Read in the first unit that needs it: the module has no tenant, and so no unit, at registration. A
       // server without the row never gets this far: the tenant directory's load needs it at start-up.
       const serverId = cachedServerId();
-      const service = createLicenseService({ tenancy: ctx.tenancy, publicKeys, now, serverId });
+      const service = createLicenseService({ tenancy: ctx.tenancy, publicKeys, now, serverId, log: ctx.log });
       ctx.license = service;
       licenseRoutes({
         tenancy: ctx.tenancy,
@@ -43,7 +43,7 @@ export function licensingModule(options: LicensingOptions = {}): ServerModule {
         hooks: ctx.hooks,
         limiter: new RateLimiter({ capacity: 10, refillPerMs: 10 / 60_000, now: () => now().getTime() }),
       })(app);
-      await Promise.resolve();
+      return Promise.resolve();
     },
   };
 }

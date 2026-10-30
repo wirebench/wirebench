@@ -177,21 +177,33 @@ export class ShareRegistry {
     return id;
   }
 
-  /** What the join dialog shows, or `undefined` when the caller cannot join it. */
+  /**
+   * What the join dialog shows, or `undefined` when the caller cannot join it. A share is found only in the
+   * tenant it was created in (Task 9 review M4): one workspace id may exist in two tenants.
+   */
   info(
+    tenant: TenantScope,
     workspaceId: string,
     shareId: string,
     userId: string,
   ): { hostName: string; ownerName: string; viewers: number } | undefined {
     const share = this.shares.get(shareId);
-    if (share === undefined || share.workspaceId !== workspaceId || share.removed.has(userId)) return undefined;
+    if (share === undefined || !this.inTenant(share, tenant, workspaceId) || share.removed.has(userId)) {
+      return undefined;
+    }
     return { hostName: share.hostName, ownerName: share.ownerName, viewers: share.viewers.size };
   }
 
-  /** Attaches an authenticated socket whose access to the workspace was checked. */
-  attach(peer: SharePeer, who: ShareIdentity, workspaceId: string, shareId: string): AttachOutcome {
+  /** Attaches an authenticated socket whose access to the workspace was checked, in the share's own tenant. */
+  attach(
+    tenant: TenantScope,
+    peer: SharePeer,
+    who: ShareIdentity,
+    workspaceId: string,
+    shareId: string,
+  ): AttachOutcome {
     const share = this.shares.get(shareId);
-    if (share === undefined || share.workspaceId !== workspaceId) return 'not-found';
+    if (share === undefined || !this.inTenant(share, tenant, workspaceId)) return 'not-found';
     if (who.userId === share.ownerId) {
       if (share.owner !== undefined) return 'owner-taken';
       share.attachTimer?.cancel();
@@ -333,6 +345,10 @@ export class ShareRegistry {
         }
       }
     }
+  }
+
+  private inTenant(share: Share, tenant: TenantScope, workspaceId: string): boolean {
+    return share.tenant.tenantId === tenant.tenantId && share.workspaceId === workspaceId;
   }
 
   /** Server shutdown: every share ends. */

@@ -8,6 +8,7 @@
  */
 import { WirebenchError } from '@wirebench/engine';
 import type { Querier } from '../context.js';
+import { MISSING_SERVER_ID } from '../licensing/repo.js';
 import { scopeOf, type TenantScope } from './scope.js';
 
 export type TenantEdition = 'community' | 'team' | 'enterprise';
@@ -48,12 +49,17 @@ export class TenantDirectory {
   async load(): Promise<boolean> {
     const exists = await this.#db.query<{ exists: boolean }>("select to_regclass('tenants') is not null as exists");
     if (exists.rows[0]?.exists !== true) return false;
-    const rows = await this.#db.query<{ id: string; slug: string }>(
-      `select t.id::text as id, t.slug from server_identity s join tenants t on t.id = s.default_tenant_id`,
+    const rows = await this.#db.query<{ id: string | null; slug: string | null }>(
+      `select t.id::text as id, t.slug from server_identity s left join tenants t on t.id = s.default_tenant_id`,
     );
     const row = rows.rows[0];
-    if (row === undefined) throw new WirebenchError('tenancy-no-default', 'the server has no default tenant');
-    this.#defaultTenant = scopeOf(row);
+    // No identity row at all is a lost row, never a fresh one: inserting a new one would mint a new server id,
+    // and every license bound to the old one would stop verifying (Task 9 review M5).
+    if (row === undefined) throw new WirebenchError('server-identity-missing', MISSING_SERVER_ID);
+    if (row.id === null || row.slug === null) {
+      throw new WirebenchError('tenancy-no-default', 'the server has no default tenant');
+    }
+    this.#defaultTenant = scopeOf({ id: row.id, slug: row.slug });
     return true;
   }
 

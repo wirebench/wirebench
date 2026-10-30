@@ -142,7 +142,7 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
         (request): Promise<TerminalShareInfo> => {
           const caller = callerOf(request);
           const { shareId } = request.params as { shareId: string };
-          const info = registry.info(request.workspaceAccess!.workspaceId, shareId, caller.id);
+          const info = registry.info(request.tenant, request.workspaceAccess!.workspaceId, shareId, caller.id);
           if (info === undefined) throw shareNotFound();
           return Promise.resolve(info);
         },
@@ -159,6 +159,7 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
           tokenMaxMs: settings.tokenMaxMs,
           featureOn: async () => (await ctx.license.state(request.tenant)).features.includes('terminal-sharing'),
           canView: (userId, workspaceId) => canView(userId, workspaceId, request.tenant),
+          tenant: request.tenant,
           setTimer,
           log: ctx.log,
           request: {
