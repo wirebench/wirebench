@@ -73,13 +73,18 @@ tags and keys. Light mode is a pale sand canvas that keeps the orange accent.
 | `--wb-bg-selected`    | `#5A2C1C` | `#F6DCD0` |
 | `--wb-fg-default`     | `#F1E6DC` | `#452C24` |
 | `--wb-fg-muted`       | `#CDB6A4` | `#684A36` |
-| `--wb-fg-subtle`      | `#B5947E` | `#7A5C48` |
+| `--wb-fg-subtle`      | `#BD9C8E` | `#7A5C48` |
 | `--wb-border-default` | `#4A3329` | `#E2D2C3` |
-| `--wb-accent-default` | `#D2552F` | `#B53D1D` |
-| `--wb-accent-hover`   | `#E06A44` | `#962F14` |
+| `--wb-accent-default` | `#E8804F` | `#B53D1D` |
+| `--wb-accent-hover`   | `#F0956A` | `#962F14` |
 | `--wb-accent-surface` | `#3A1C12` | `#FBE9E1` |
-| `--wb-fg-on-accent`   | `#FFF4EE` | `#FFFFFF` |
+| `--wb-fg-on-accent`   | `#1F1511` | `#FFFFFF` |
 | `--wb-status-info`    | `#A9A9D6` | `#5A5A8D` |
+| `--wb-status-danger`  | `#F07A8A` | `#B02A3A` |
+| `--wb-fg-faint`       | `#9F9992` | `#6C665F` |
+| `--wb-border-strong`  | `#7D7A77` | `#8F8B85` |
+| `--wb-status-success` | `#6FBF8F` | `#2A734F` |
+| `--wb-status-warning` | `#D9A441` | `#895E10` |
 
 ### 3.2 Sandstone — tan and violet
 
@@ -106,6 +111,10 @@ mode is a warm charcoal with the violet and orange lifted to stay readable.
 | `--wb-fg-on-accent`   | `#14131F` | `#FFFFFF` |
 | `--wb-status-danger`  | `#E58A68` | `#B53D1D` |
 | `--wb-status-warning` | `#D9A86A` | `#8E5A14` |
+| `--wb-fg-faint`       | `#8F8982` | `#6C665F` |
+| `--wb-border-strong`  | `#706D6A` | `#938F89` |
+| `--wb-status-success` | `#6FBF8F` | `#2A734F` |
+| `--wb-status-info`    | `#7FA6DD` | `#3A68A2` |
 
 ### 3.3 Dusk — violet chrome, orange action
 
@@ -134,10 +143,15 @@ values in every palette except Dusk and Rind, so nothing else moves.
 | `--wb-fg-default`         | `#ECE6E0` | `#452C24` |
 | `--wb-fg-muted`           | `#C9BDB2` | `#684A36` |
 | `--wb-border-default`     | `#34303C` | `#E2D9CF` |
-| `--wb-accent-default`     | `#D2552F` | `#B53D1D` |
-| `--wb-accent-hover`       | `#E06A44` | `#962F14` |
+| `--wb-accent-default`     | `#E06A40` | `#B53D1D` |
+| `--wb-accent-hover`       | `#E9825C` | `#962F14` |
 | `--wb-accent-surface`     | `#3A1C12` | `#FBE9E1` |
-| `--wb-fg-on-accent`       | `#FFFFFF` | `#FFFFFF` |
+| `--wb-fg-on-accent`       | `#141218` | `#FFFFFF` |
+| `--wb-status-danger`      | `#EC6F86` | `#B02A3A` |
+| `--wb-fg-subtle`          | `#948E87` | `#6D675F` |
+| `--wb-fg-faint`           | `#8E8881` | `#6E6861` |
+| `--wb-border-strong`      | `#6F6C69` | `#918D87` |
+| `--wb-status-info`        | `#7FA6DD` | `#3C6AA6` |
 
 ### 3.4 Seed — pomegranate red throughout
 
@@ -158,12 +172,15 @@ to crimson in dark). It is the boldest theme. Because red is everywhere, danger 
 | `--wb-fg-muted`       | `#DCC3A9` | `#5B121F` |
 | `--wb-fg-subtle`      | `#C9A99A` | `#7A3A44` |
 | `--wb-border-default` | `#461118` | `#E5D3C4` |
-| `--wb-accent-default` | `#D9304A` | `#8B1128` |
-| `--wb-accent-hover`   | `#E5506A` | `#6E0D20` |
+| `--wb-accent-default` | `#E8506E` | `#8B1128` |
+| `--wb-accent-hover`   | `#EF6D87` | `#6E0D20` |
 | `--wb-accent-surface` | `#3A1219` | `#F6E1E4` |
-| `--wb-fg-on-accent`   | `#FFF5F3` | `#FFFFFF` |
-| `--wb-status-danger`  | `#E8833A` | `#B5541A` |
-| `--wb-status-warning` | `#D9B441` | `#8B6A10` |
+| `--wb-fg-on-accent`   | `#13090B` | `#FFFFFF` |
+| `--wb-status-danger`  | `#E8833A` | `#A94E1A` |
+| `--wb-status-warning` | `#D9B441` | `#836210` |
+| `--wb-fg-faint`       | `#8A847D` | `#6D675F` |
+| `--wb-status-info`    | `#7FA6DD` | `#3C6AA6` |
+| `--wb-border-strong`  | `#696663` | `#928E88` |
 
 ### 3.5 Pith — neutral, red only for action
 
@@ -183,12 +200,13 @@ The calm one: stone and cream surfaces, a plain charcoal in dark, and crimson on
 | `--wb-fg-muted`       | `#C4BAB4` | `#4A4042` |
 | `--wb-fg-subtle`      | `#A39A95` | `#6E6466` |
 | `--wb-border-default` | `#302B2B` | `#E6DFD7` |
-| `--wb-accent-default` | `#D9304A` | `#BB1731` |
-| `--wb-accent-hover`   | `#E5506A` | `#9A1228` |
+| `--wb-accent-default` | `#E8506E` | `#BB1731` |
+| `--wb-accent-hover`   | `#EF6D87` | `#9A1228` |
 | `--wb-accent-surface` | `#34161B` | `#FBEAEC` |
-| `--wb-fg-on-accent`   | `#FFFFFF` | `#FFFFFF` |
-| `--wb-status-danger`  | `#E8833A` | `#B5541A` |
-| `--wb-status-warning` | `#D9B441` | `#8B6A10` |
+| `--wb-fg-on-accent`   | `#121010` | `#FFFFFF` |
+| `--wb-status-danger`  | `#E8833A` | `#A94E1A` |
+| `--wb-status-warning` | `#D9B441` | `#836210` |
+| `--wb-border-strong`  | `#6A6764` | `#938F89` |
 
 The preview showed the selected row as a thin crimson bar; this spec uses a faint crimson tint on
 `--wb-bg-selected` instead, so no component changes for one theme.
@@ -214,12 +232,12 @@ area, with crimson as the accent. Danger moves to amber (§3.8).
 | `--wb-fg-default`         | `#ECE4DD` | `#2B1A1C` |
 | `--wb-fg-muted`           | `#C9BDB5` | `#5B121F` |
 | `--wb-border-default`     | `#2E2829` | `#E8DFD6` |
-| `--wb-accent-default`     | `#D9304A` | `#BB1731` |
-| `--wb-accent-hover`       | `#E5506A` | `#9A1228` |
+| `--wb-accent-default`     | `#E8506E` | `#BB1731` |
+| `--wb-accent-hover`       | `#EF6D87` | `#9A1228` |
 | `--wb-accent-surface`     | `#34161B` | `#FBEAEC` |
-| `--wb-fg-on-accent`       | `#FFFFFF` | `#FFFFFF` |
-| `--wb-status-danger`      | `#E8833A` | `#B5541A` |
-| `--wb-status-warning`     | `#D9B441` | `#8B6A10` |
+| `--wb-fg-on-accent`       | `#110E0F` | `#FFFFFF` |
+| `--wb-status-danger`      | `#E8833A` | `#A94E1A` |
+| `--wb-status-warning`     | `#D9B441` | `#836210` |
 
 ### 3.7 Tokens a palette does not list
 
@@ -228,12 +246,22 @@ method badges, environment colours, success/info where unlisted, `--wb-fg-faint`
 `--wb-border-strong`, `--wb-accent-muted` and the overlay shadow. Implementation may restate any of
 them per palette if the contrast gate or a visual check calls for it.
 
+The contrast gate moved some of the preview's values; the tables above hold the gated ones, and a
+row a palette did not list in the preview is a token the gate made it restate. Two moves recur:
+
+- **Dark-mode `--wb-fg-on-accent` is dark in every palette**, the palette's own `--wb-bg-sunken`,
+  as it is in Default. The same token labels the pastel method chips and the warning badge, which
+  white text cannot clear, and an accent dark enough for white text cannot also clear 4.5:1 as
+  link text on the dark surfaces.
+- **Dark-mode accents are lighter** than the preview's, so they clear 4.5:1 as text on
+  `--wb-bg-raised`; the hover is a step lighter again.
+
 ### 3.8 Accent next to danger
 
 In Field kit and Dusk the accent is an orange-red, close to the danger red. Danger must stay
 recognisable without colour alone: danger states already carry an icon or a word (`500`, "Failed",
 the Problems count). This change checks every danger surface does, and in those two palettes moves
-`--wb-status-danger` towards a pinker red (`#E0685F` dark / `#B02A3A` light) so the two do not read
+`--wb-status-danger` towards a pinker red (dark `#F07A8A` in Field kit and `#EC6F86` in Dusk, `#B02A3A` light) so the two do not read
 as the same colour side by side.
 
 In Seed, Pith and Rind the accent and much of the surface are red, so danger leaves the red family

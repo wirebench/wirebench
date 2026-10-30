@@ -63,6 +63,10 @@ describe('the committed tokens', () => {
     expect(results.filter((result) => result.theme === 'light')).toHaveLength(results.length / 2);
   });
 
+  it('give every colour theme its own blocks', async () => {
+    expect(definedPalettes(await readFile(tokens, 'utf-8'))).toEqual(PALETTES);
+  });
+
   it('restate in every palette light block each token its dark block sets', async () => {
     expect(findLeaks(await readFile(tokens, 'utf-8')).map(describeLeak)).toEqual([]);
   });

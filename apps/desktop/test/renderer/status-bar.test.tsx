@@ -151,6 +151,9 @@ describe('StatusBar', () => {
     const button = screen.getByTestId('status-bar-problems');
     expect(button.className).not.toContain('text-status-danger');
     expect(button.className).toContain('text-status-warning');
+    // Not colour alone: warnings-only carries the warning shape.
+    expect(button.querySelector('[data-testid="status-bar-severity"]')?.getAttribute('data-severity')).toBe('warning');
+    expect(button.textContent).toBe('1 problem');
   });
 
   it('colours the problems button danger when at least one problem is an error', () => {
@@ -175,6 +178,16 @@ describe('StatusBar', () => {
     render(<StatusBar />);
 
     expect(screen.getByTestId('status-bar-problems').className).toContain('text-status-danger');
+    // Not colour alone: an error carries the error shape, on the Console button too.
+    for (const id of ['status-bar-problems', 'status-bar-console']) {
+      const severity = screen.getByTestId(id).querySelector('[data-testid="status-bar-severity"]');
+      expect(severity?.getAttribute('data-severity')).toBe('error');
+    }
+  });
+
+  it('draws no severity shape when there are no problems', () => {
+    render(<StatusBar />);
+    expect(screen.queryByTestId('status-bar-severity')).toBeNull();
   });
 
   it('counts lint findings apart, untinted, and leaves them out of Problems and the Console badge', () => {

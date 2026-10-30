@@ -20,6 +20,7 @@ import {
   Loader2,
   UnfoldVertical,
   Webhook,
+  XCircle,
 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
@@ -504,7 +505,8 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           </span>
         )}
         {node.data.problemCount !== undefined && node.data.problemCount > 0 && (
-          <span className="shrink-0 rounded-full bg-status-danger px-1.5 text-xs text-fg-on-accent">
+          <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-status-danger px-1.5 text-xs text-fg-on-accent">
+            <XCircle size={10} aria-hidden="true" />
             {node.data.problemCount}
           </span>
         )}
@@ -524,8 +526,9 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           <span
             data-testid="schedule-failing"
             title={node.data.kind === 'schedule' ? 'Failing runs in a row' : 'Schedules failing now'}
-            className="shrink-0 rounded-full bg-status-danger px-1.5 text-xs text-fg-on-accent"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-status-danger px-1.5 text-xs text-fg-on-accent"
           >
+            <XCircle size={10} aria-hidden="true" />
             {String(node.data.failing)}
           </span>
         )}

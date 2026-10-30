@@ -8,6 +8,19 @@
  *
  * Dark is the default; `[data-theme="light"]` carries a complete light palette. Task 48
  * polishes both. Nothing outside this file may hard-code a colour.
+ *
+ * Colour themes (`ui.palette`, `<html data-palette>`) follow Default's two blocks: each palette
+ * has a dark block, `[data-palette='x']`, and a light block,
+ * `[data-palette='x'][data-theme='light']`. Default sets no `data-palette`, so these two blocks
+ * above are Default and nothing else. The cascade:
+ *
+ * - A palette's dark block has the specificity of `:root` and of `[data-theme='light']`, and wins
+ *   over both by coming later in this file — keep every palette below Default's blocks.
+ * - Its light block outranks all three by specificity.
+ * - `[data-palette='x']` still matches in light mode, so the light block must restate every token
+ *   the dark block sets, or the dark value paints in light mode. `pnpm contrast:check` resolves
+ *   every palette × mode the way the browser does and fails such a leak.
+ * - A token a palette does not set keeps Default's value for the mode.
  */
 
 :root {
@@ -167,6 +180,281 @@
   --wb-method-other: #4a453f;
 
   --wb-shadow-overlay: 0 16px 48px rgb(40 30 20 / 18%);
+}
+
+/*
+ * Colour themes, in picker order: Field kit, Sandstone, Dusk, Seed, Pith, Rind (see the header for
+ * the cascade, and the spec, docs/specs/2026-10-30-colour-themes.md §3, for each palette's table).
+ */
+
+/* Field kit dark. */
+[data-palette='field-kit'] {
+  --wb-bg-sunken: #1f1511;
+  --wb-bg-base: #2a1c17;
+  --wb-bg-raised: #452c24;
+  --wb-bg-overlay: #4e332a;
+  --wb-bg-hover: #563a2e;
+  --wb-bg-active: #684a36;
+  --wb-bg-selected: #5a2c1c;
+  --wb-fg-default: #f1e6dc;
+  --wb-fg-muted: #cdb6a4;
+  --wb-fg-subtle: #bd9c8e;
+  --wb-border-default: #4a3329;
+  --wb-accent-default: #e8804f;
+  --wb-accent-hover: #f0956a;
+  --wb-accent-surface: #3a1c12;
+  --wb-fg-on-accent: #1f1511;
+  --wb-status-info: #a9a9d6;
+  --wb-status-danger: #f07a8a;
+  --wb-fg-faint: #9f9992;
+  --wb-border-strong: #7d7a77;
+}
+
+/* Field kit light. */
+[data-palette='field-kit'][data-theme='light'] {
+  --wb-bg-sunken: #efe4d9;
+  --wb-bg-base: #f7f0e8;
+  --wb-bg-raised: #fffbf7;
+  --wb-bg-overlay: #ffffff;
+  --wb-bg-hover: #ede1d5;
+  --wb-bg-active: #e2d2c3;
+  --wb-bg-selected: #f6dcd0;
+  --wb-fg-default: #452c24;
+  --wb-fg-muted: #684a36;
+  --wb-fg-subtle: #7a5c48;
+  --wb-border-default: #e2d2c3;
+  --wb-accent-default: #b53d1d;
+  --wb-accent-hover: #962f14;
+  --wb-accent-surface: #fbe9e1;
+  --wb-fg-on-accent: #ffffff;
+  --wb-status-info: #5a5a8d;
+  --wb-status-danger: #b02a3a;
+  --wb-fg-faint: #6c665f;
+  --wb-status-success: #2a734f;
+  --wb-status-warning: #895e10;
+  --wb-border-strong: #8f8b85;
+}
+
+/* Sandstone dark. */
+[data-palette='sandstone'] {
+  --wb-bg-sunken: #161210;
+  --wb-bg-base: #1c1714;
+  --wb-bg-raised: #2a221d;
+  --wb-bg-overlay: #2f2621;
+  --wb-bg-hover: #332a24;
+  --wb-bg-active: #3d322a;
+  --wb-bg-selected: #2e2b45;
+  --wb-fg-default: #efe3d8;
+  --wb-fg-muted: #c9b3a2;
+  --wb-fg-subtle: #b5947e;
+  --wb-border-default: #3d322a;
+  --wb-accent-default: #8a8ac4;
+  --wb-accent-hover: #a0a0d4;
+  --wb-accent-surface: #26253a;
+  --wb-fg-on-accent: #14131f;
+  --wb-status-danger: #e58a68;
+  --wb-status-warning: #d9a86a;
+  --wb-fg-faint: #8f8982;
+  --wb-border-strong: #706d6a;
+}
+
+/* Sandstone light. */
+[data-palette='sandstone'][data-theme='light'] {
+  --wb-bg-sunken: #efe3d8;
+  --wb-bg-base: #fbf7f3;
+  --wb-bg-raised: #ffffff;
+  --wb-bg-overlay: #ffffff;
+  --wb-bg-hover: #f2e8df;
+  --wb-bg-active: #e0ccbb;
+  --wb-bg-selected: #e4e4f2;
+  --wb-fg-default: #452c24;
+  --wb-fg-muted: #684a36;
+  --wb-fg-subtle: #7a5c48;
+  --wb-border-default: #dcc8b8;
+  --wb-accent-default: #5a5a8d;
+  --wb-accent-hover: #47476f;
+  --wb-accent-surface: #ececf6;
+  --wb-fg-on-accent: #ffffff;
+  --wb-status-danger: #b53d1d;
+  --wb-status-warning: #8e5a14;
+  --wb-fg-faint: #6c665f;
+  --wb-status-success: #2a734f;
+  --wb-status-info: #3a68a2;
+  --wb-border-strong: #938f89;
+}
+
+/* Dusk dark. */
+[data-palette='dusk'] {
+  --wb-bg-sunken: #141218;
+  --wb-bg-base: #1a1820;
+  --wb-bg-raised: #24212a;
+  --wb-bg-overlay: #2a2731;
+  --wb-bg-hover: #2c2833;
+  --wb-bg-active: #34303c;
+  --wb-bg-selected: #3a2e26;
+  --wb-fg-default: #ece6e0;
+  --wb-fg-muted: #c9bdb2;
+  --wb-border-default: #34303c;
+  --wb-accent-default: #e06a40;
+  --wb-accent-hover: #e9825c;
+  --wb-accent-surface: #3a1c12;
+  --wb-fg-on-accent: #141218;
+  --wb-status-danger: #ec6f86;
+  --wb-fg-subtle: #948e87;
+  --wb-fg-faint: #8e8881;
+  --wb-border-strong: #6f6c69;
+}
+
+/* Dusk light. */
+[data-palette='dusk'][data-theme='light'] {
+  --wb-bg-sunken: #efe8e0;
+  --wb-bg-base: #f7f4f0;
+  --wb-bg-raised: #ffffff;
+  --wb-bg-overlay: #ffffff;
+  --wb-bg-hover: #efe8e0;
+  --wb-bg-active: #e2d9cf;
+  --wb-bg-selected: #eadfd4;
+  --wb-fg-default: #452c24;
+  --wb-fg-muted: #684a36;
+  --wb-border-default: #e2d9cf;
+  --wb-accent-default: #b53d1d;
+  --wb-accent-hover: #962f14;
+  --wb-accent-surface: #fbe9e1;
+  --wb-fg-on-accent: #ffffff;
+  --wb-status-danger: #b02a3a;
+  --wb-fg-subtle: #6d675f;
+  --wb-fg-faint: #6e6861;
+  --wb-status-info: #3c6aa6;
+  --wb-border-strong: #918d87;
+}
+
+/* Seed dark. */
+[data-palette='seed'] {
+  --wb-bg-sunken: #13090b;
+  --wb-bg-base: #1a0d10;
+  --wb-bg-raised: #2a1418;
+  --wb-bg-overlay: #321a1f;
+  --wb-bg-hover: #3a1c22;
+  --wb-bg-active: #461118;
+  --wb-bg-selected: #5b121f;
+  --wb-fg-default: #f2e6da;
+  --wb-fg-muted: #dcc3a9;
+  --wb-fg-subtle: #c9a99a;
+  --wb-border-default: #461118;
+  --wb-accent-default: #e8506e;
+  --wb-accent-hover: #ef6d87;
+  --wb-accent-surface: #3a1219;
+  --wb-fg-on-accent: #13090b;
+  --wb-status-danger: #e8833a;
+  --wb-status-warning: #d9b441;
+}
+
+/* Seed light. */
+[data-palette='seed'][data-theme='light'] {
+  --wb-bg-sunken: #f2e6da;
+  --wb-bg-base: #fbf6f1;
+  --wb-bg-raised: #ffffff;
+  --wb-bg-overlay: #ffffff;
+  --wb-bg-hover: #f4e9de;
+  --wb-bg-active: #eadbcc;
+  --wb-bg-selected: #ebcfd2;
+  --wb-fg-default: #461118;
+  --wb-fg-muted: #5b121f;
+  --wb-fg-subtle: #7a3a44;
+  --wb-border-default: #e5d3c4;
+  --wb-accent-default: #8b1128;
+  --wb-accent-hover: #6e0d20;
+  --wb-accent-surface: #f6e1e4;
+  --wb-fg-on-accent: #ffffff;
+  --wb-status-danger: #a94e1a;
+  --wb-status-warning: #836210;
+  --wb-fg-faint: #6d675f;
+  --wb-status-info: #3c6aa6;
+  --wb-border-strong: #928e88;
+}
+
+/* Pith dark. */
+[data-palette='pith'] {
+  --wb-bg-sunken: #121010;
+  --wb-bg-base: #171515;
+  --wb-bg-raised: #1f1c1c;
+  --wb-bg-overlay: #252121;
+  --wb-bg-hover: #2b2627;
+  --wb-bg-active: #302b2b;
+  --wb-bg-selected: #3a1e23;
+  --wb-fg-default: #ece6e1;
+  --wb-fg-muted: #c4bab4;
+  --wb-fg-subtle: #a39a95;
+  --wb-border-default: #302b2b;
+  --wb-accent-default: #e8506e;
+  --wb-accent-hover: #ef6d87;
+  --wb-accent-surface: #34161b;
+  --wb-fg-on-accent: #121010;
+  --wb-status-danger: #e8833a;
+  --wb-status-warning: #d9b441;
+  --wb-border-strong: #6a6764;
+}
+
+/* Pith light. */
+[data-palette='pith'][data-theme='light'] {
+  --wb-bg-sunken: #f1ece5;
+  --wb-bg-base: #faf8f5;
+  --wb-bg-raised: #ffffff;
+  --wb-bg-overlay: #ffffff;
+  --wb-bg-hover: #f1ece5;
+  --wb-bg-active: #e6dfd7;
+  --wb-bg-selected: #f7e4e7;
+  --wb-fg-default: #2b2224;
+  --wb-fg-muted: #4a4042;
+  --wb-fg-subtle: #6e6466;
+  --wb-border-default: #e6dfd7;
+  --wb-accent-default: #bb1731;
+  --wb-accent-hover: #9a1228;
+  --wb-accent-surface: #fbeaec;
+  --wb-fg-on-accent: #ffffff;
+  --wb-status-danger: #a94e1a;
+  --wb-status-warning: #836210;
+  --wb-border-strong: #938f89;
+}
+
+/* Rind dark. */
+[data-palette='rind'] {
+  --wb-bg-sunken: #110e0f;
+  --wb-bg-base: #151213;
+  --wb-bg-raised: #1e1a1b;
+  --wb-bg-overlay: #241f20;
+  --wb-bg-hover: #2a2425;
+  --wb-bg-active: #2e2829;
+  --wb-bg-selected: #3a1e23;
+  --wb-fg-default: #ece4dd;
+  --wb-fg-muted: #c9bdb5;
+  --wb-border-default: #2e2829;
+  --wb-accent-default: #e8506e;
+  --wb-accent-hover: #ef6d87;
+  --wb-accent-surface: #34161b;
+  --wb-fg-on-accent: #110e0f;
+  --wb-status-danger: #e8833a;
+  --wb-status-warning: #d9b441;
+}
+
+/* Rind light. */
+[data-palette='rind'][data-theme='light'] {
+  --wb-bg-sunken: #f3eee8;
+  --wb-bg-base: #fbf8f5;
+  --wb-bg-raised: #ffffff;
+  --wb-bg-overlay: #ffffff;
+  --wb-bg-hover: #f3eee8;
+  --wb-bg-active: #e8dfd6;
+  --wb-bg-selected: #f2e6da;
+  --wb-fg-default: #2b1a1c;
+  --wb-fg-muted: #5b121f;
+  --wb-border-default: #e8dfd6;
+  --wb-accent-default: #bb1731;
+  --wb-accent-hover: #9a1228;
+  --wb-accent-surface: #fbeaec;
+  --wb-fg-on-accent: #ffffff;
+  --wb-status-danger: #a94e1a;
+  --wb-status-warning: #836210;
 }
 
 * {

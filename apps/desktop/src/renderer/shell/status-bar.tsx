@@ -1,4 +1,4 @@
-import { Moon, Sun, SunMoon } from 'lucide-react';
+import { AlertTriangle, Moon, Sun, SunMoon, XCircle } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { cycleTheme } from '../lib/theme-actions.js';
 import { THEME_LABEL, useResolvedTheme } from '../lib/theme.js';
@@ -61,6 +61,24 @@ function ThemeIndicator() {
 function formatClock(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString();
+}
+
+/**
+ * The shape beside a problem count: errors and warnings-only must not differ by colour alone,
+ * since some colour themes put the accent and the danger colour side by side. Nothing at zero.
+ */
+function SeverityIcon({ errorCount, problemCount }: { readonly errorCount: number; readonly problemCount: number }) {
+  if (problemCount === 0) return null;
+  const Icon = errorCount > 0 ? XCircle : AlertTriangle;
+  return (
+    <Icon
+      size={11}
+      aria-hidden="true"
+      data-testid="status-bar-severity"
+      data-severity={errorCount > 0 ? 'error' : 'warning'}
+      className="shrink-0"
+    />
+  );
 }
 
 /** The bottom strip: environment and connection state on the left, the last exchange on the right. */
@@ -150,6 +168,8 @@ export function StatusBar() {
               aria-pressed={consoleVisible}
               // One text colour only, so the highest severity is never lost to the open-console colour.
               className={`rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default ${
+                problemCount > 0 ? 'inline-flex items-center gap-1' : ''
+              } ${
                 errorCount > 0
                   ? 'text-status-danger'
                   : problemCount > 0
@@ -162,6 +182,7 @@ export function StatusBar() {
                 toggleConsole();
               }}
             >
+              <SeverityIcon errorCount={errorCount} problemCount={problemCount} />
               Console{problemCount > 0 ? ` (${String(problemCount)})` : ''}
             </button>
           </>
@@ -186,13 +207,14 @@ export function StatusBar() {
               data-testid="status-bar-problems"
               title="Show the Problems panel"
               className={`rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default ${
-                errorCount > 0 ? 'text-status-danger' : problemCount > 0 ? 'text-status-warning' : ''
-              }`}
+                problemCount > 0 ? 'inline-flex items-center gap-1' : ''
+              } ${errorCount > 0 ? 'text-status-danger' : problemCount > 0 ? 'text-status-warning' : ''}`}
               onClick={() => {
                 setProblemsFilter('all');
                 showConsoleTab('problems');
               }}
             >
+              <SeverityIcon errorCount={errorCount} problemCount={problemCount} />
               {problemCount} {problemCount === 1 ? 'problem' : 'problems'}
             </button>
             {lintCount > 0 && (
