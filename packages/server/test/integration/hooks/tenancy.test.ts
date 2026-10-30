@@ -108,6 +108,23 @@ describeDb('server-sync, webhook capture and CI tokens in a tenant (tenancy Task
     for (const event of changed) expect(event.tenantId).toBe(tenantId);
   });
 
+  it('writes a push’s workspace.pushed and its secret events in one transaction (Task 10 review M3)', async () => {
+    // Each audit row reports the transaction it is written in, as the audit module's insert would run in it.
+    const written: { readonly action: string; readonly txid: string }[] = [];
+    h.hooks.audit.push(async (tx, event) => {
+      const row = (await tx.query<{ txid: string }>('select txid_current()::text as txid')).rows[0]!;
+      written.push({ action: event.action, txid: row.txid });
+    });
+    const valuePath = `team-secrets/values/${'DB'.padStart(26, '0')}.yaml`;
+    const pushed = await call(h, admin, 'POST', `/workspaces/${workspaceId}/sync/commits`, {
+      parent: null,
+      commits: [commit('Share a value', [text(valuePath, 'enc')])],
+    });
+    expect(pushed.status).toBe(201);
+    expect(written.map((row) => row.action)).toEqual(['workspace.pushed', 'secret.shared']);
+    expect(new Set(written.map((row) => row.txid)).size).toBe(1);
+  });
+
   it('looks a CI token up and touches it in one unit', async () => {
     const ci = (await call<{ token: string }>(h, admin, 'POST', `/workspaces/${workspaceId}/ci-tokens`, { name: 'CI' }))
       .body;

@@ -9,6 +9,7 @@
  */
 import type { FastifyBaseLogger } from 'fastify';
 import type { Querier } from '../context.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
 import type { SetTimer } from './env.js';
@@ -20,7 +21,7 @@ export const CAPTURE_SWEEP_JOB = 'capture-retention';
 /** Where the sweeper deletes: one tenant at a time through the job loop, or the raw pool (modules not moved yet). */
 export type SweepTarget =
   | {
-      readonly tenancy: Pick<Tenancy, 'forEachTenant'>;
+      readonly tenancy: Pick<Tenancy, 'forEachTenant' | 'db'>;
       readonly job: string;
       readonly deleteBefore: (db: TenantQuerier, cutoff: Date, limit: number) => Promise<number>;
     }
@@ -55,7 +56,7 @@ export function rawSweepTarget(
 }
 
 /** The capture sweep's target: per tenant, through the job loop. */
-export function captureSweepTarget(tenancy: Pick<Tenancy, 'forEachTenant'>): SweepTarget {
+export function captureSweepTarget(tenancy: Pick<Tenancy, 'forEachTenant' | 'db'>): SweepTarget {
   return { tenancy, job: CAPTURE_SWEEP_JOB, deleteBefore: deleteCapturesBefore };
 }
 
@@ -102,26 +103,55 @@ export class CaptureSweeper {
     const cutoff = new Date(this.deps.now().getTime() - this.deps.maxAgeDays * DAY_MS);
     const batch = this.deps.batchSize ?? SWEEP_BATCH;
     const target = this.deps.target;
+    if ('tenancy' in target) return this.sweepTenants(target, cutoff, batch);
     let total = 0;
     while (!this.stopped) {
-      let more = false;
-      if ('tenancy' in target) {
-        // One batch per tenant per pass, each in its own unit; a tenant's failure is logged by the loop.
-        await target.tenancy.forEachTenant(
-          target.job,
-          async (tx) => {
-            const deleted = await target.deleteBefore(tx, cutoff, batch);
-            total += deleted;
-            if (deleted >= batch) more = true;
-          },
-          this.deps.log,
-        );
-      } else {
-        const deleted = await target.deleteBefore(target.db, cutoff, batch);
-        total += deleted;
-        more = deleted >= batch;
+      const deleted = await target.deleteBefore(target.db, cutoff, batch);
+      total += deleted;
+      if (deleted < batch) break;
+    }
+    return total;
+  }
+
+  /**
+   * The first pass goes through the job loop, one batch in each tenant's unit. Later passes visit only the
+   * tenants whose last batch was full and committed (Task 10 review M1, M2): a tenant whose unit failed is
+   * logged by the loop and waits for the next interval, so a commit that keeps failing never spins.
+   */
+  private async sweepTenants(
+    target: Extract<SweepTarget, { readonly tenancy: unknown }>,
+    cutoff: Date,
+    batch: number,
+  ): Promise<number> {
+    let total = 0;
+    const counts = new Map<string, { readonly scope: TenantScope; readonly deleted: number }>();
+    const pass = await target.tenancy.forEachTenant(
+      target.job,
+      async (tx, scope) => {
+        counts.set(scope.tenantId, { scope, deleted: await target.deleteBefore(tx, cutoff, batch) });
+      },
+      this.deps.log,
+    );
+    // Counted only once the unit committed: a failed one deleted nothing.
+    let full: TenantScope[] = [];
+    for (const [tenantId, { scope, deleted }] of counts) {
+      if (pass.failed.includes(tenantId)) continue;
+      total += deleted;
+      if (deleted >= batch) full.push(scope);
+    }
+    while (!this.stopped && full.length > 0) {
+      const next: TenantScope[] = [];
+      for (const scope of full) {
+        if (this.stopped) break;
+        try {
+          const deleted = await target.tenancy.db(scope).transaction((tx) => target.deleteBefore(tx, cutoff, batch));
+          total += deleted;
+          if (deleted >= batch) next.push(scope);
+        } catch (error) {
+          this.deps.log.error({ err: error, job: target.job, tenantId: scope.tenantId }, 'a job failed for one tenant');
+        }
       }
-      if (!more) break;
+      full = next;
     }
     return total;
   }

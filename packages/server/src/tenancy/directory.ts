@@ -8,8 +8,14 @@
  */
 import { WirebenchError } from '@wirebench/engine';
 import type { Querier } from '../context.js';
-import { MISSING_SERVER_ID } from '../licensing/repo.js';
 import { scopeOf, type TenantScope } from './scope.js';
+
+/**
+ * A lost `server_identity` row. It holds the id licenses are bound to, so the advice is to restore it, never to
+ * insert one; the licensing module's reader and the directory's start-up load both say so.
+ */
+export const MISSING_SERVER_ID =
+  'the server_identity table has no row. It holds the id licenses are bound to; restore it from a backup instead of inserting a new one.';
 
 export type TenantEdition = 'community' | 'team' | 'enterprise';
 export type TenantStatus = 'active' | 'suspended' | 'deleting';

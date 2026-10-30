@@ -5,6 +5,7 @@
  * takes a plain querier.
  */
 import type { Querier } from '../context.js';
+import { MISSING_SERVER_ID } from '../tenancy/directory.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 
 export interface StoredLicenseRow {
@@ -52,8 +53,8 @@ export async function deleteLicense(db: TenantQuerier): Promise<boolean> {
   return ((await db.query('delete from license')).rowCount ?? 0) > 0;
 }
 
-export const MISSING_SERVER_ID =
-  'the server_identity table has no row. It holds the id licenses are bound to; restore it from a backup instead of inserting a new one.';
+/** Defined beside the tenant directory, whose start-up load reports it too; re-exported for this module's callers. */
+export { MISSING_SERVER_ID };
 
 /** The id migration 0013 minted (license-binding spec §3.1). Never re-minted: a missing row is an error. */
 export async function serverId(db: Querier): Promise<string> {

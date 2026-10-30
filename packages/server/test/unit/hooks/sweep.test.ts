@@ -212,36 +212,52 @@ describe('CaptureSweeper (webhook-capture §3.4)', () => {
 });
 
 describe('the capture sweep per tenant (spec §19.8 guard 6)', () => {
-  it('deletes one batch in each tenant per pass of the job loop, and passes again while any was full', async () => {
-    // Tenant one has two full batches and a short one; tenant two a short one only.
-    const left: Record<string, number[]> = { one: [SWEEP_BATCH, SWEEP_BATCH, 1], two: [4] };
-    const passes: string[][] = [];
-    const tenancy: Pick<Tenancy, 'forEachTenant'> = {
+  /**
+   * Two tenants: the job loop runs every tenant's first batch, `db(scope)` a later one. `fail` makes a tenant's
+   * first unit fail after its delete, as a commit that drops would.
+   */
+  function twoTenants(batches: Record<string, number[]>, fail: readonly string[] = []) {
+    const visits: string[] = [];
+    const run = async (tenant: string, fn: (tx: never) => Promise<unknown>) => {
+      visits.push(tenant);
+      const f = fakeDb([batches[tenant]!.shift() ?? 0]);
+      return fn(asTenantQuerier(f.db) as never);
+    };
+    const tenancy: Pick<Tenancy, 'forEachTenant' | 'db'> = {
       forEachTenant: async (job, fn) => {
         expect(job).toBe(CAPTURE_SWEEP_JOB);
-        const pass: string[] = [];
+        const failed: string[] = [];
         for (const tenant of ['one', 'two']) {
-          const f = fakeDb([left[tenant]!.shift() ?? 0]);
-          await fn(asTenantQuerier(f.db), { tenantId: tenant } as never);
-          pass.push(tenant);
+          await run(tenant, (tx) => fn(tx, { tenantId: tenant } as never));
+          if (fail.includes(tenant)) failed.push(tenant);
         }
-        passes.push(pass);
-        return { served: 2, failed: [] };
+        visits.push('|');
+        return { served: 2 - failed.length, failed };
       },
+      db: ((scope: { readonly tenantId: string }) => ({
+        transaction: (fn: (tx: never) => Promise<unknown>) => run(scope.tenantId, fn),
+      })) as never,
     };
-    const t = timers();
-    const sweeper = new CaptureSweeper({
+    return { tenancy, visits };
+  }
+  const sweeperOver = (tenancy: Pick<Tenancy, 'forEachTenant' | 'db'>) =>
+    new CaptureSweeper({
       target: captureSweepTarget(tenancy),
       maxAgeDays: 7,
       now: () => NOW,
-      setTimer: t.setTimer,
+      setTimer: timers().setTimer,
       log: log([]),
     });
-    expect(await sweeper.runOnce()).toBe(2 * SWEEP_BATCH + 1 + 4);
-    expect(passes).toEqual([
-      ['one', 'two'],
-      ['one', 'two'],
-      ['one', 'two'],
-    ]);
+
+  it('runs the first batch in every tenant, then visits only the tenants whose batch was full', async () => {
+    const { tenancy, visits } = twoTenants({ one: [SWEEP_BATCH, SWEEP_BATCH, 1], two: [4] });
+    expect(await sweeperOver(tenancy).runOnce()).toBe(2 * SWEEP_BATCH + 1 + 4);
+    expect(visits).toEqual(['one', 'two', '|', 'one', 'one']);
+  });
+
+  it('counts nothing of a tenant whose unit failed, and never retries it in the same sweep', async () => {
+    const { tenancy, visits } = twoTenants({ one: [SWEEP_BATCH, SWEEP_BATCH], two: [4] }, ['one']);
+    expect(await sweeperOver(tenancy).runOnce()).toBe(4);
+    expect(visits).toEqual(['one', 'two', '|']);
   });
 });

@@ -65,10 +65,10 @@ export function createLicenseService(env: LicenseEnv): LicenseService {
       await countEnabledUsers(tx),
       await env.serverId(tx),
     );
-  // What a feature gate needs, and every gated request pays for: the license alone, without the seat count
-  // (Task 9 review M6). Its `seats.used` is 0 and never read.
-  const featuresIn = async (tx: TenantQuerier): Promise<LicenseState> =>
-    licenseState((await repo.storedLicense(tx))?.text, env.publicKeys, env.now(), 0, await env.serverId(tx));
+  // What a feature gate needs, and every gated request pays for: the license's features alone, without the
+  // seat count (Task 9 review M6). Features never depend on the seats used, so 0 stands in for them.
+  const featuresIn = async (tx: TenantQuerier): Promise<readonly string[]> =>
+    licenseState((await repo.storedLicense(tx))?.text, env.publicKeys, env.now(), 0, await env.serverId(tx)).features;
   let warnedSeveral = false;
   const state = (of: ScopeSource, tx?: TenantQuerier): Promise<LicenseState> =>
     tx !== undefined ? stateIn(tx) : env.tenancy.db('tenantId' in of ? of : of.tenant).transaction(stateIn);

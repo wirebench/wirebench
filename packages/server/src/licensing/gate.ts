@@ -5,15 +5,18 @@
  * takes effect on the next request.
  */
 import type { FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
-import type { Feature, LicenseState } from '@wirebench/engine';
+import type { Feature } from '@wirebench/engine';
 import { featureRequired } from './errors.js';
 
-/** `state` is the request's tenant's: a license installed in one tenant unlocks nothing in another. */
+/**
+ * `features` are the request's tenant's: a license installed in one tenant unlocks nothing in another. Only the
+ * features: a gate never needs the rest of the license's state, nor its seat count.
+ */
 export function requireFeature(
   feature: Feature,
-  state: (request: FastifyRequest) => Promise<LicenseState>,
+  features: (request: FastifyRequest) => Promise<readonly string[]>,
 ): preHandlerAsyncHookHandler {
   return async (request) => {
-    if (!(await state(request)).features.includes(feature)) throw featureRequired(feature);
+    if (!(await features(request)).includes(feature)) throw featureRequired(feature);
   };
 }

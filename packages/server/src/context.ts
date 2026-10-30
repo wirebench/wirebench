@@ -195,7 +195,7 @@ export function permissiveLicense(): LicenseService {
   return {
     state,
     assertSeatAvailable: () => Promise.resolve(),
-    requireFeature: (feature) => requireFeature(feature, state),
+    requireFeature: (feature) => requireFeature(feature, async () => (await state()).features),
     stateWithoutScope: state,
   };
 }
