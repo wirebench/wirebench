@@ -195,7 +195,7 @@
 }
 
 /*
- * Colour themes, in picker order: Field kit, Sandstone, Dusk, Seed, Pith, Rind (see the header for
+ * Colour themes, in picker order: Field kit, Sandstone, Dusk, Seed, Pith, Rind, Plume (see the header for
  * the cascade, and the spec, docs/specs/2026-10-30-colour-themes.md §3, for each palette's table).
  */
 
@@ -499,6 +499,52 @@
   --wb-fg-on-accent: #ffffff;
   --wb-status-danger: #a94e1a;
   --wb-status-warning: #836210;
+}
+
+/* Plume dark. */
+[data-palette='plume'] {
+  --wb-bg-sunken: #151418;
+  --wb-bg-base: #1b1a1f;
+  --wb-bg-raised: #232228;
+  --wb-bg-overlay: #2a2930;
+  --wb-bg-hover: #2e2d35;
+  --wb-bg-active: #34333b;
+  --wb-bg-selected: #3a3850;
+  --wb-fg-default: #f1f1f4;
+  --wb-fg-muted: #c9cddc;
+  --wb-fg-subtle: #afb6ce;
+  --wb-border-default: #34333b;
+  --wb-accent-default: #b48bbb;
+  --wb-accent-hover: #c4a0ca;
+  --wb-accent-muted: #6c5370;
+  --wb-accent-surface: #2e2433;
+  --wb-fg-on-accent: #1b1a1f;
+  --wb-status-success: #6fc0a2;
+  --wb-fg-faint: #9196a8;
+  --wb-border-strong: #75778a;
+}
+
+/* Plume light. */
+[data-palette='plume'][data-theme='light'] {
+  --wb-bg-sunken: #ecedf3;
+  --wb-bg-base: #f7f7fa;
+  --wb-bg-raised: #ffffff;
+  --wb-bg-overlay: #ffffff;
+  --wb-bg-hover: #eeeff5;
+  --wb-bg-active: #e3e5ee;
+  --wb-bg-selected: #dde1ee;
+  --wb-fg-default: #2b2425;
+  --wb-fg-muted: #4e4a55;
+  --wb-fg-subtle: #5e5a66;
+  --wb-border-default: #dfe1ea;
+  --wb-accent-default: #7a5482;
+  --wb-accent-hover: #66456d;
+  --wb-accent-muted: #c3b2c7;
+  --wb-accent-surface: #f2eaf3;
+  --wb-fg-on-accent: #ffffff;
+  --wb-status-success: #1f7a5a;
+  --wb-fg-faint: #6a6874;
+  --wb-border-strong: #8a8c9a;
 }
 
 * {
