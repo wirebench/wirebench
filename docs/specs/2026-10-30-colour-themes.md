@@ -78,6 +78,7 @@ tags and keys. Light mode is a pale sand canvas that keeps the orange accent.
 | `--wb-accent-default` | `#E8804F` | `#B53D1D` |
 | `--wb-accent-hover`   | `#F0956A` | `#962F14` |
 | `--wb-accent-surface` | `#3A1C12` | `#FBE9E1` |
+| `--wb-accent-muted`   | `#874A2E` | `#DEA899` |
 | `--wb-fg-on-accent`   | `#1F1511` | `#FFFFFF` |
 | `--wb-status-info`    | `#A9A9D6` | `#5A5A8D` |
 | `--wb-status-danger`  | `#F07A8A` | `#B02A3A` |
@@ -108,6 +109,7 @@ mode is a warm charcoal with the violet and orange lifted to stay readable.
 | `--wb-accent-default` | `#8A8AC4` | `#5A5A8D` |
 | `--wb-accent-hover`   | `#A0A0D4` | `#47476F` |
 | `--wb-accent-surface` | `#26253A` | `#ECECF6` |
+| `--wb-accent-muted`   | `#56567A` | `#B5B5CC` |
 | `--wb-fg-on-accent`   | `#14131F` | `#FFFFFF` |
 | `--wb-status-danger`  | `#E58A68` | `#B53D1D` |
 | `--wb-status-warning` | `#D9A86A` | `#8E5A14` |
@@ -154,6 +156,7 @@ own.
 | `--wb-accent-default`     | `#E06A40` | `#B53D1D` |
 | `--wb-accent-hover`       | `#E9825C` | `#962F14` |
 | `--wb-accent-surface`     | `#3A1C12` | `#FBE9E1` |
+| `--wb-accent-muted`       | `#8B4228` | `#DEA899` |
 | `--wb-fg-on-accent`       | `#141218` | `#FFFFFF` |
 | `--wb-status-danger`      | `#EC6F86` | `#B02A3A` |
 | `--wb-fg-subtle`          | `#948E87` | `#6D675F` |
@@ -183,6 +186,7 @@ to crimson in dark). It is the boldest theme. Because red is everywhere, danger 
 | `--wb-accent-default` | `#E8506E` | `#8B1128` |
 | `--wb-accent-hover`   | `#EF6D87` | `#6E0D20` |
 | `--wb-accent-surface` | `#3A1219` | `#F6E1E4` |
+| `--wb-accent-muted`   | `#903244` | `#D6ACB4` |
 | `--wb-fg-on-accent`   | `#13090B` | `#FFFFFF` |
 | `--wb-status-danger`  | `#E8833A` | `#A94E1A` |
 | `--wb-status-warning` | `#D9B441` | `#836210` |
@@ -211,6 +215,7 @@ The calm one: stone and cream surfaces, a plain charcoal in dark, and crimson on
 | `--wb-accent-default` | `#E8506E` | `#BB1731` |
 | `--wb-accent-hover`   | `#EF6D87` | `#9A1228` |
 | `--wb-accent-surface` | `#34161B` | `#FBEAEC` |
+| `--wb-accent-muted`   | `#903244` | `#E4A5AF` |
 | `--wb-fg-on-accent`   | `#121010` | `#FFFFFF` |
 | `--wb-status-danger`  | `#E8833A` | `#A94E1A` |
 | `--wb-status-warning` | `#D9B441` | `#836210` |
@@ -243,6 +248,7 @@ area, with crimson as the accent. Danger moves to amber (§3.8).
 | `--wb-accent-default`     | `#E8506E` | `#BB1731` |
 | `--wb-accent-hover`       | `#EF6D87` | `#9A1228` |
 | `--wb-accent-surface`     | `#34161B` | `#FBEAEC` |
+| `--wb-accent-muted`       | `#903244` | `#E4A5AF` |
 | `--wb-fg-on-accent`       | `#110E0F` | `#FFFFFF` |
 | `--wb-status-danger`      | `#E8833A` | `#A94E1A` |
 | `--wb-status-warning`     | `#D9B441` | `#836210` |
@@ -251,8 +257,15 @@ area, with crimson as the accent. Danger moves to amber (§3.8).
 
 A token not in a palette's table keeps the value it has for that mode in Default. That covers the
 method badges, environment colours, success/info where unlisted, `--wb-fg-faint`,
-`--wb-border-strong`, `--wb-accent-muted` and the overlay shadow. Implementation may restate any of
-them per palette if the contrast gate or a visual check calls for it.
+`--wb-border-strong` and the overlay shadow. Implementation may restate any of them per palette if
+the contrast gate or a visual check calls for it.
+
+`--wb-accent-muted` (the selected explorer row, highlighted menu items, selected list rows) is
+restated by every palette rather than inherited: Default's terracotta would sit under a violet or
+red accent. Each value is the palette's own accent in the role Default gives it — dark mode about
+0.6 of the accent's channels (Default: `#8A4A34` under `#D97757`), light mode the accent about 55%
+of the way to white (`#E0A891` under `#A94D2B`) — nudged until the method text and
+`--wb-fg-default` on it clear 4.5:1 in the gate.
 
 The contrast gate moved some of the preview's values; the tables above hold the gated ones, and a
 row a palette did not list in the preview is a token the gate made it restate. Two moves recur:

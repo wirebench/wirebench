@@ -210,6 +210,7 @@
   --wb-border-default: #4a3329;
   --wb-accent-default: #e8804f;
   --wb-accent-hover: #f0956a;
+  --wb-accent-muted: #874a2e;
   --wb-accent-surface: #3a1c12;
   --wb-fg-on-accent: #1f1511;
   --wb-status-info: #a9a9d6;
@@ -233,6 +234,7 @@
   --wb-border-default: #e2d2c3;
   --wb-accent-default: #b53d1d;
   --wb-accent-hover: #962f14;
+  --wb-accent-muted: #dea899;
   --wb-accent-surface: #fbe9e1;
   --wb-fg-on-accent: #ffffff;
   --wb-status-info: #5a5a8d;
@@ -258,6 +260,7 @@
   --wb-border-default: #3d322a;
   --wb-accent-default: #8a8ac4;
   --wb-accent-hover: #a0a0d4;
+  --wb-accent-muted: #56567a;
   --wb-accent-surface: #26253a;
   --wb-fg-on-accent: #14131f;
   --wb-status-danger: #e58a68;
@@ -281,6 +284,7 @@
   --wb-border-default: #dcc8b8;
   --wb-accent-default: #5a5a8d;
   --wb-accent-hover: #47476f;
+  --wb-accent-muted: #b5b5cc;
   --wb-accent-surface: #ececf6;
   --wb-fg-on-accent: #ffffff;
   --wb-status-danger: #b53d1d;
@@ -310,6 +314,7 @@
   --wb-border-default: #34303c;
   --wb-accent-default: #e06a40;
   --wb-accent-hover: #e9825c;
+  --wb-accent-muted: #8b4228;
   --wb-accent-surface: #3a1c12;
   --wb-fg-on-accent: #141218;
   --wb-status-danger: #ec6f86;
@@ -337,6 +342,7 @@
   --wb-border-default: #e2d9cf;
   --wb-accent-default: #b53d1d;
   --wb-accent-hover: #962f14;
+  --wb-accent-muted: #dea899;
   --wb-accent-surface: #fbe9e1;
   --wb-fg-on-accent: #ffffff;
   --wb-status-danger: #b02a3a;
@@ -361,6 +367,7 @@
   --wb-border-default: #461118;
   --wb-accent-default: #e8506e;
   --wb-accent-hover: #ef6d87;
+  --wb-accent-muted: #903244;
   --wb-accent-surface: #3a1219;
   --wb-fg-on-accent: #13090b;
   --wb-status-danger: #e8833a;
@@ -382,6 +389,7 @@
   --wb-border-default: #e5d3c4;
   --wb-accent-default: #8b1128;
   --wb-accent-hover: #6e0d20;
+  --wb-accent-muted: #d6acb4;
   --wb-accent-surface: #f6e1e4;
   --wb-fg-on-accent: #ffffff;
   --wb-status-danger: #a94e1a;
@@ -406,6 +414,7 @@
   --wb-border-default: #302b2b;
   --wb-accent-default: #e8506e;
   --wb-accent-hover: #ef6d87;
+  --wb-accent-muted: #903244;
   --wb-accent-surface: #34161b;
   --wb-fg-on-accent: #121010;
   --wb-status-danger: #e8833a;
@@ -428,6 +437,7 @@
   --wb-border-default: #e6dfd7;
   --wb-accent-default: #bb1731;
   --wb-accent-hover: #9a1228;
+  --wb-accent-muted: #e4a5af;
   --wb-accent-surface: #fbeaec;
   --wb-fg-on-accent: #ffffff;
   --wb-status-danger: #a94e1a;
@@ -454,6 +464,7 @@
   --wb-border-default: #2e2829;
   --wb-accent-default: #e8506e;
   --wb-accent-hover: #ef6d87;
+  --wb-accent-muted: #903244;
   --wb-accent-surface: #34161b;
   --wb-fg-on-accent: #110e0f;
   --wb-status-danger: #e8833a;
@@ -479,6 +490,7 @@
   --wb-border-default: #e8dfd6;
   --wb-accent-default: #bb1731;
   --wb-accent-hover: #9a1228;
+  --wb-accent-muted: #e4a5af;
   --wb-accent-surface: #fbeaec;
   --wb-fg-on-accent: #ffffff;
   --wb-status-danger: #a94e1a;
