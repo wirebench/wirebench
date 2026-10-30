@@ -157,7 +157,7 @@ describe('PreferencesService', () => {
     expect(service.get().ui.historyCap).toBe(25);
   });
 
-  it.each(['sandstone', 'seed', 'pith', 'rind'] as const)(
+  it.each(['sandstone', 'seed', 'pith', 'rind', 'plume'] as const)(
     'round-trips the colour theme %s through save and load',
     async (palette) => {
       await new PreferencesService(dir).update({ ui: { palette } });

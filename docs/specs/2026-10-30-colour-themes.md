@@ -12,6 +12,9 @@ Date: 2026-10-30 · Status: approved · Branch: not started.
 - Second source palette: five colours sampled from a pomegranate photo — cream `#DCC3A9`, crimson
   `#BB1731`, wine `#8B1128`, deep maroon `#5B121F`, burgundy `#461118`. Previewed the same day as
   three more directions — Seed, Pith, Rind.
+- Third source palette: five colours sampled from a pigeon photo — feather white `#F1F1F4`, neck
+  mint `#6FC0A2`, mauve `#8F6996`, periwinkle grey `#AFB6CE`, charcoal `#2B2425`. Previewed the same
+  day as one more direction — Plume.
 - Owner rulings (2026-10-30, one popup):
   1. **Default stays the default** for new installs; the three themes are opt-in.
   2. **The palette is stored in the preferences document**, beside the mode.
@@ -24,17 +27,18 @@ Date: 2026-10-30 · Status: approved · Branch: not started.
   7. **Danger signalled by colour alone** in a few places (recording dot, failing-schedule dot,
      invalid-regex border, password-length hint, script-convert diff lines) is a **separate
      follow-up**, not this change.
+  8. **Plume added 2026-10-30 after the pigeon preview** (§3.6a), placed last in the picker.
 
 ## 1. Objective
 
 Wirebench has one look: a warm near-black ramp with a single terracotta accent, in dark or light.
-People who sit in the app all day want to pick a look they like. This change adds **six colour
+People who sit in the app all day want to pick a look they like. This change adds **seven colour
 themes** next to today's, each with a light and a dark mode, chosen in Settings or the command
 palette and applied at once without a restart.
 
 Success means:
 
-- A user can pick Default, Field kit, Sandstone, Dusk, Seed, Pith or Rind, and separately Dark,
+- A user can pick Default, Field kit, Sandstone, Dusk, Seed, Pith, Rind or Plume, and separately Dark,
   Light or System.
 - The whole window follows: chrome, editors (Monaco), terminals, method badges, status colours.
 - The first frame after launch already has the chosen theme (no flash of Default).
@@ -48,14 +52,14 @@ They stay separate so `system` keeps following the OS for every palette.
 | Setting      | Values                                                                  | Default   |
 | ------------ | ----------------------------------------------------------------------- | --------- |
 | `ui.theme`   | `dark`, `light`, `system` (unchanged)                                   | `dark`    |
-| `ui.palette` | `default`, `field-kit`, `sandstone`, `dusk`, `seed`, `pith`, `rind` | `default` |
+| `ui.palette` | `default`, `field-kit`, `sandstone`, `dusk`, `seed`, `pith`, `rind`, `plume` | `default` |
 
 The order of `ui.palette`'s values is the order the picker shows them.
 
 The DOM carries both: `<html data-theme="dark" data-palette="sandstone">`. `default` sets no
 `data-palette` attribute, so today's CSS keeps working untouched.
 
-## 3. The six palettes
+## 3. The seven palettes
 
 Each palette gives every colour token in `tokens.css` a value in both modes. Spacing, radius, type,
 geometry and layers are not palette tokens and never change. The values below are the starting
@@ -258,6 +262,41 @@ area, with crimson as the accent. Danger moves to amber (§3.8).
 | `--wb-status-danger`      | `#E8833A` | `#A94E1A` |
 | `--wb-status-warning`     | `#D9B441` | `#836210` |
 
+### 3.6a Plume — cool grey, mauve accent
+
+From the pigeon palette: cool feather-grey surfaces in light and a charcoal canvas in dark, mauve as
+the accent, periwinkle for the selection tint and the muted text, and the neck's mint as success
+(so strings in the editor and the GET chip's family read mint). It uses no chrome colour of its own:
+the chrome tokens stay aliases, as in Pith. The palette has no red, so danger and warning keep
+Default's values (§3.8).
+
+| Token                 | Dark      | Light     |
+| --------------------- | --------- | --------- |
+| `--wb-bg-sunken`      | `#151418` | `#ECEDF3` |
+| `--wb-bg-base`        | `#1B1A1F` | `#F7F7FA` |
+| `--wb-bg-raised`      | `#232228` | `#FFFFFF` |
+| `--wb-bg-overlay`     | `#2A2930` | `#FFFFFF` |
+| `--wb-bg-hover`       | `#2E2D35` | `#EEEFF5` |
+| `--wb-bg-active`      | `#34333B` | `#E3E5EE` |
+| `--wb-bg-selected`    | `#3A3850` | `#DDE1EE` |
+| `--wb-fg-default`     | `#F1F1F4` | `#2B2425` |
+| `--wb-fg-muted`       | `#C9CDDC` | `#4E4A55` |
+| `--wb-fg-subtle`      | `#AFB6CE` | `#5E5A66` |
+| `--wb-border-default` | `#34333B` | `#DFE1EA` |
+| `--wb-accent-default` | `#B48BBB` | `#7A5482` |
+| `--wb-accent-hover`   | `#C4A0CA` | `#66456D` |
+| `--wb-accent-surface` | `#2E2433` | `#F2EAF3` |
+| `--wb-accent-muted`   | `#6C5370` | `#C3B2C7` |
+| `--wb-fg-on-accent`   | `#1B1A1F` | `#FFFFFF` |
+| `--wb-status-success` | `#6FC0A2` | `#1F7A5A` |
+| `--wb-fg-faint`       | `#9196A8` | `#6A6874` |
+| `--wb-border-strong`  | `#75778A` | `#8A8C9A` |
+
+The gate made it restate the last two: Default's warm `--wb-fg-faint` fell to 4.27:1 on the dark
+raised surface and its `--wb-border-strong` below 3:1 on both modes' surfaces, so both take a cool
+grey from the periwinkle family that clears them (5.36:1 and 3.58:1 on dark raised, 3.12:1 for
+the light border on base).
+
 ### 3.7 Tokens a palette does not list
 
 A token not in a palette's table keeps the value it has for that mode in Default. That covers the
@@ -293,6 +332,9 @@ as the same colour side by side.
 In Seed, Pith and Rind the accent and much of the surface are red, so danger leaves the red family
 altogether: `--wb-status-danger` is amber-orange there, and `--wb-status-warning` moves to a yellow
 so the two stay apart. The icon-or-word rule above matters most in these three.
+
+Plume's accent is mauve and the palette holds no red, so nothing sits near danger: it keeps
+Default's `--wb-status-danger` and `--wb-status-warning` in both modes.
 
 ## 4. CSS structure
 
@@ -332,12 +374,12 @@ The "nothing outside this file may hard-code a colour" rule stays.
 
 **Settings → Appearance → Theme** becomes two settings:
 
-- **Colour theme** — seven cards in a grid, each showing its name and five swatches, drawn in the
+- **Colour theme** — eight cards in a grid, each showing its name and five swatches, drawn in the
   current mode. The selected card has the accent ring. Clicking applies at once.
 - **Mode** — the existing Dark / Light / System control, unchanged.
 
 **Command palette:** a new command `view.choosePalette`, "Theme: choose colour theme…", opens a
-quick pick of the seven; moving through the list previews each, Escape restores the one that was
+quick pick of the eight; moving through the list previews each, Escape restores the one that was
 active, Enter keeps the highlighted one. `view.toggleTheme` keeps cycling the mode.
 
 Both write through `usePreferencesStore().update({ ui: { palette } })`, like `cycleTheme`, so there
@@ -346,10 +388,10 @@ is one code path.
 ## 7. Testing
 
 - **Contrast gate:** `scripts/contrast-check.ts` runs its `PAIRS` list for every palette × mode
-  (14 combinations instead of 2). The chrome tokens get their own pairs (chrome text on chrome
+  (16 combinations instead of 2). The chrome tokens get their own pairs (chrome text on chrome
   surface, chrome text on selected chrome). The gate stays part of `pnpm check`.
 - **Unit:** theme resolution sets both attributes; an old UI blob reads `default`; preferences
-  without `palette` merge to `default`; `monacoThemeName` covers all fourteen names.
+  without `palette` merge to `default`; `monacoThemeName` covers all sixteen names.
 - **Renderer:** the Appearance cards select and write the palette; the palette quick pick previews
   and restores on Escape.
 - **e2e:** pick Sandstone + Light in Settings, relaunch, and check the first frame's
