@@ -1,9 +1,12 @@
 {
-  "rowsPerSecond": 2533483,
-  "heapBytesPerSecond": 7455013057,
-  "migrationSeconds": 6.11,
-  "rows": 3113865,
+  "rowsPerSecond": 2824459,
+  "referenceRowsPerSecond": 2922219,
+  "relativeRate": 0.967,
+  "machine": "14 × Apple M3 Max",
+  "heapBytesPerSecond": 6921450698,
+  "migrationSeconds": 6.43,
+  "rows": 3113859,
   "heapBytes": 2868289536,
-  "minutesPerMillionRows": 0.033,
-  "measuredOn": "2026-10-29"
+  "minutesPerMillionRows": 0.034,
+  "measuredOn": "2026-10-30"
 }

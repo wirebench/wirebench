@@ -208,6 +208,14 @@ export async function runMigrate(
   }
   const db = createDatabase(migrationUrlOf(config));
   try {
+    // Before anything pending is read or run: 0020's composite keys need PostgreSQL 15 (spec §19.1).
+    try {
+      await checkPostgresVersion(db);
+    } catch (error) {
+      if (!(error instanceof WirebenchError) || error.code !== 'server-postgres-too-old') throw error;
+      io.stderr.write(`${error.code}: ${error.message}\n`);
+      return ExitCode.Config;
+    }
     const migrations = await allMigrations(modules);
     if (check) {
       const pending = await pendingMigrations(db, migrations);

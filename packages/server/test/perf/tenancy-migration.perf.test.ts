@@ -9,12 +9,21 @@
  * - `B`, the sequential heap rate, from a timed single-worker sequential scan of the three scaled tables;
  * - `R`, the row rate, from the measured migration time once the heap term (at `B`) is taken out of it.
  *
- * The first run's figures are committed as `baselines/tenancy-migration.json` (run with
- * `WIREBENCH_PERF_WRITE_BASELINE=1` to write them); afterwards the test fails when either rate falls below
- * a quarter of its baseline. `WIREBENCH_PERF_TENANCY_SCALE` (default 1) shrinks the fixture for a quick try,
- * and is refused with the baseline check, which only means anything at full scale.
+ * It loads about 3 GB, so it runs only with `WIREBENCH_PERF_TENANCY=1` (CI's server-integration job sets it)
+ * and a database, and says so when it skips.
+ *
+ * **The gate is relative to the run.** Absolute rates belong to one machine: a 2-vCPU runner is slower than the
+ * laptop the baseline came from without anything regressing. So the run also times a reference build, one plain
+ * index over `captures (id, received_at)` on one worker, as `Rref` rows a second, and gates `R ÷ Rref`: the test
+ * fails when that ratio falls below a quarter of the baseline's. `B` is recorded, never gated: it is a cache rate
+ * as much as a disk rate. The upgrade notes and `admin tenancy check` keep the spec's conservative R (0.5 to 1 M
+ * rows a second) and a cold B; these figures only catch a migration that got several times slower.
+ *
+ * `WIREBENCH_PERF_WRITE_BASELINE=1` writes `baselines/tenancy-migration.json` from the run.
+ * `WIREBENCH_PERF_TENANCY_SCALE` (default 1) shrinks the fixture for a quick try and skips the gate.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
+import { cpus } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { Querier } from '../../src/context.js';
@@ -27,7 +36,12 @@ import { UNSCOPED_TABLES } from '../helpers/catalog.js';
 import { describeDb, testDatabase } from '../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../helpers/git.js';
 
-const SKIP = process.env.WIREBENCH_SKIP_PERF === '1';
+const SKIP = process.env.WIREBENCH_SKIP_PERF === '1' || process.env.WIREBENCH_PERF_TENANCY !== '1';
+if (process.env.WIREBENCH_PERF_TENANCY !== '1') {
+  console.warn(
+    'server-perf skipped: set WIREBENCH_PERF_TENANCY=1, with a test database, to migrate the scaled fixture',
+  );
+}
 const SCALE = Number(process.env.WIREBENCH_PERF_TENANCY_SCALE ?? '1');
 const WRITE_BASELINE = process.env.WIREBENCH_PERF_WRITE_BASELINE === '1';
 const BASELINE = join(import.meta.dirname, 'baselines', 'tenancy-migration.json');
@@ -41,6 +55,12 @@ const CHUNK_HEAP = Math.round(2 * 1024 ** 3 * SCALE);
 interface Baseline {
   /** Rows a second, one pass. */
   readonly rowsPerSecond: number;
+  /** The reference build's rows a second, in the same run. */
+  readonly referenceRowsPerSecond: number;
+  /** `rowsPerSecond ÷ referenceRowsPerSecond`: what the gate compares. */
+  readonly relativeRate: number;
+  /** The machine it was measured on, for a reader; the gate does not read it. */
+  readonly machine: string;
   /** Heap bytes a second, one sequential pass. */
   readonly heapBytesPerSecond: number;
   readonly migrationSeconds: number;
@@ -58,16 +78,21 @@ interface TableCost {
 }
 
 /** Rows and heap size before the migration, and the passes 0020 makes over each scoped table. */
-async function costs(db: Querier, sizes: Map<string, { rows: number; heapBytes: number }>): Promise<TableCost[]> {
+async function costs(
+  db: Querier,
+  sizes: Map<string, { rows: number; heapBytes: number }>,
+  indexesBefore: readonly string[],
+): Promise<TableCost[]> {
+  // An index 0020 built is one it did not find: a renamed `_0019` index keeps its OID and costs nothing.
   const passes = await db.query<{ table: string; indexes: number; keys: number }>(
     `select c.relname as table,
         (select count(*)::int from pg_index x
-          join pg_attribute a on a.attrelid = x.indrelid and a.attnum = x.indkey[0]
-          where x.indrelid = c.oid and a.attname = 'tenant_id') as indexes,
+          where x.indrelid = c.oid and not (x.indexrelid::text = any ($1::text[]))) as indexes,
         (select count(*)::int from pg_constraint k
           where k.conrelid = c.oid and k.contype = 'f' and k.confrelid <> 'tenants'::regclass) as keys
       from pg_class c
       where c.relnamespace = to_regnamespace(current_schema()) and c.relkind = 'r'`,
+    [indexesBefore],
   );
   return passes.rows
     .filter((row) => sizes.has(row.table))
@@ -125,7 +150,7 @@ describeDb('migration 0020 on a scaled fixture (hosted spec §19.10)', () => {
     await removeTempDir(dataDir);
   });
 
-  it.skipIf(SKIP)('records R and B, and holds them to a quarter of the baseline', async () => {
+  it.skipIf(SKIP)('records R and B, and holds R ÷ Rref to a quarter of the baseline', async () => {
     const sizes = new Map<string, { rows: number; heapBytes: number }>();
     const sized = await db.owner.query<{ table: string; rows: string; heap: string }>(
       `select c.relname as table, greatest(c.reltuples, 0)::bigint::text as rows,
@@ -158,7 +183,19 @@ describeDb('migration 0020 on a scaled fixture (hosted spec §19.10)', () => {
     url.searchParams.set('options', `${url.searchParams.get('options') ?? ''} -c max_parallel_maintenance_workers=0`);
     const owner = createDatabase(url.toString());
     let migrationSeconds: number;
+    let referenceRowsPerSecond: number;
+    const indexesBefore = (
+      await db.owner.query<{ oid: string }>(
+        `select x.indexrelid::text as oid from pg_index x join pg_class c on c.oid = x.indrelid
+          where c.relnamespace = to_regnamespace(current_schema())`,
+      )
+    ).rows.map((row) => row.oid);
     try {
+      // Rref: one plain single-worker index build over a million rows, on this machine, now.
+      const referenceStarted = performance.now();
+      await owner.query('create index perf_reference on captures (id, received_at)');
+      referenceRowsPerSecond = sizes.get('captures')!.rows / ((performance.now() - referenceStarted) / 1000);
+      await owner.query('drop index perf_reference');
       const migrations = await allMigrations(BUILTIN_MODULES);
       const started = performance.now();
       expect((await migrate(owner, migrations)).applied).toEqual([20]);
@@ -168,7 +205,7 @@ describeDb('migration 0020 on a scaled fixture (hosted spec §19.10)', () => {
     }
 
     // R: what is left of the measured time once every pass's heap read, at B, is taken out.
-    const tables = await costs(db.owner, sizes);
+    const tables = await costs(db.owner, sizes, indexesBefore);
     const rowPasses = tables.reduce((sum, t) => sum + t.passes * t.rows, 0);
     const heapSeconds = tables.reduce((sum, t) => sum + (t.passes * t.heapBytes) / heapBytesPerSecond, 0);
     // A heap term at or above the whole time leaves no row term: charge the rows at least a tenth of it.
@@ -177,6 +214,9 @@ describeDb('migration 0020 on a scaled fixture (hosted spec §19.10)', () => {
     const rows = tables.reduce((sum, t) => sum + t.rows, 0);
     const measured: Baseline = {
       rowsPerSecond: Math.round(rowsPerSecond),
+      referenceRowsPerSecond: Math.round(referenceRowsPerSecond),
+      relativeRate: Number((rowsPerSecond / referenceRowsPerSecond).toFixed(3)),
+      machine: `${String(cpus().length)} × ${cpus()[0]?.model ?? 'unknown'}`,
       heapBytesPerSecond: Math.round(heapBytesPerSecond),
       migrationSeconds: Number(migrationSeconds.toFixed(2)),
       rows,
@@ -187,7 +227,7 @@ describeDb('migration 0020 on a scaled fixture (hosted spec §19.10)', () => {
     console.info(
       `[perf] tenancy 0020: ${String(measured.migrationSeconds)} s for ${String(rows)} rows ` +
         `(${String(measured.minutesPerMillionRows)} min per million rows); ` +
-        `R ${String(measured.rowsPerSecond)} rows/s, B ${(heapBytesPerSecond / 1024 ** 2).toFixed(0)} MB/s; ` +
+        `R ${String(measured.rowsPerSecond)} rows/s (${String(measured.relativeRate)} × Rref), B ${(heapBytesPerSecond / 1024 ** 2).toFixed(0)} MB/s; ` +
         `passes ${tables
           .filter((t) => t.rows > 1000)
           .map((t) => `${t.table} ${String(t.passes)}`)
@@ -201,7 +241,6 @@ describeDb('migration 0020 on a scaled fixture (hosted spec §19.10)', () => {
     }
     if (SCALE !== 1) return;
     const baseline = JSON.parse(readFileSync(BASELINE, 'utf8')) as Baseline;
-    expect(measured.rowsPerSecond, 'R').toBeGreaterThan(baseline.rowsPerSecond / 4);
-    expect(measured.heapBytesPerSecond, 'B').toBeGreaterThan(baseline.heapBytesPerSecond / 4);
+    expect(measured.relativeRate, 'R ÷ Rref').toBeGreaterThan(baseline.relativeRate / 4);
   });
 });

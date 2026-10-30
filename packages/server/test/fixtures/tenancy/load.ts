@@ -70,13 +70,9 @@ export async function loadFixture0019(owner: Database, dataDir: string): Promise
   if (readdirSync(dataDir).length > 0) throw new Error(`${dataDir} is not empty`);
   const migrations = (await allMigrations(BUILTIN_MODULES)).filter((m) => m.version <= FIXTURE_VERSION);
   // The rows fit the schema the generator wrote them under, so a shipped migration edited since is refused.
-  const today = migrations.map((m) => ({
-    version: m.version,
-    name: m.name,
-    sha256: createHash('sha256').update(m.sql).digest('hex'),
-  }));
-  if (JSON.stringify(today) !== JSON.stringify(Fixture.migrations)) {
-    throw new Error('migrations 0001 to 0019 differ from those the 0019 fixture was generated with');
+  const drift = migrationDrift(migrations, Fixture.migrations);
+  if (drift.length > 0) {
+    throw new Error(`migrations 0001 to 0019 differ from those the 0019 fixture was generated with: ${drift.join(', ')}`);
   }
   await migrate(owner, migrations);
   const seed = await readFile(join(HERE, 'seed-0019.sql'), 'utf8');
@@ -106,4 +102,26 @@ function replaceBytes(bytes: Buffer, from: Buffer, to: Buffer): Buffer {
   }
   parts.push(bytes.subarray(start));
   return Buffer.concat(parts);
+}
+
+/**
+ * The migrations whose version, name or SHA-256 differ from `recorded`, or that only one side has, as
+ * `<version>_<name>`; empty when they match exactly.
+ */
+export function migrationDrift(
+  today: readonly { readonly version: number; readonly name: string; readonly sql: string }[],
+  recorded: Fixture0019['migrations'],
+): string[] {
+  const hashed = today.map((m) => ({
+    version: m.version,
+    name: m.name,
+    sha256: createHash('sha256').update(m.sql).digest('hex'),
+  }));
+  const key = (m: { readonly version: number; readonly name: string; readonly sha256: string }) =>
+    `${String(m.version)}_${m.name}:${m.sha256}`;
+  const mine = new Set(hashed.map(key));
+  const theirs = new Set(recorded.map(key));
+  return [...hashed.filter((m) => !theirs.has(key(m))), ...recorded.filter((m) => !mine.has(key(m)))].map(
+    (m) => `${String(m.version)}_${m.name}`,
+  );
 }

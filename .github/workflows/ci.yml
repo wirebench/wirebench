@@ -111,6 +111,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @wirebench/engine... build
       - run: pnpm --filter @wirebench/server test
+      # The tenancy migration over a scaled fixture (hosted edition spec §19.10): it loads about 3 GB, so it
+      # runs here, where the database is, and only on request elsewhere. Its gate is relative to a reference
+      # build timed in the same run, so a slower runner does not fail it.
+      - name: The tenancy migration's rates
+        run: pnpm vitest run --project server-perf
+        env:
+          WIREBENCH_PERF_TENANCY: '1'
 
   # Kerberos against a real MIT KDC (#40): the real binding and the real GSSAPI, end to end. `check`
   # runs the same file with WIREBENCH_KERBEROS_TESTS unset (it skips, saying so); this job builds a

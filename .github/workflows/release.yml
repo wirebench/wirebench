@@ -30,6 +30,16 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+      # Tenancy (#798) ships in five parts. From Part A's migration 0020 until Part E's `admin tenancy revert`
+      # lands, a release would give self-hosted servers a migration with no way back, so a tag fails here.
+      # Part E (plan Task 28) removes this step with the command.
+      - name: Refuse a release between tenancy Parts A and E
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if [ -f packages/server/migrations/tenancy/0020_tenancy.sql ] && [ ! -f packages/server/src/tenancy/revert.ts ]; then
+            echo "::error::migration 0020 is on this commit but admin tenancy revert (packages/server/src/tenancy/revert.ts) is not; no release until tenancy Part E merges"
+            exit 1
+          fi
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:

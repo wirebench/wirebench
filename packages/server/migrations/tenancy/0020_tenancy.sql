@@ -4,6 +4,15 @@
 -- row changes (0012's rule). No policy yet: 0021 switches the default to the setting and forces row-level
 -- security. Every key, index and foreign key rebuilt here keeps its 0019 name (§19.3, rule 6): routes map
 -- violations by name, and the revert restores them by name.
+--
+-- Until 0021 no query names a tenant, so an index led by tenant_id serves no lookup by token, email or id.
+-- Every 0019 index this file rebuilds therefore stays, as `<name>_0019`, and 0021 drops the copies once its
+-- policy makes tenant_id an equality in every query:
+-- - a non-unique index, and a unique one whose name no route maps, is renamed, which costs nothing (with one
+--   tenant its uniqueness still holds);
+-- - a primary key, and a unique key a route maps by name, gets a non-unique copy built first: a primary key
+--   cannot be kept beside the new one, and a second unique index on the old columns would be checked first
+--   (lower OID) and report a violation under the `_0019` name, turning a 409 into a 500.
 set local maintenance_work_mem = '256MB';
 
 create table tenants (
@@ -112,97 +121,125 @@ alter table agent_nonces drop constraint agent_nonces_pairing_id_fkey, drop cons
 -- Rule 2: primary keys that are not a lone minted id lead with tenant_id. workspaces.id comes from the desktop,
 -- so one workspace may be shared into two tenants. Rule 5: one license and one chain anchor per tenant; their
 -- singleton and only_row columns stay, with their check and default, for the revert.
+create index workspaces_pkey_0019 on workspaces (id);
 alter table workspaces drop constraint workspaces_pkey;
 alter table workspaces add constraint workspaces_pkey primary key (tenant_id, id);
+create index local_credentials_pkey_0019 on local_credentials (user_id);
 alter table local_credentials drop constraint local_credentials_pkey;
 alter table local_credentials add constraint local_credentials_pkey primary key (tenant_id, user_id);
+create index oidc_identities_pkey_0019 on oidc_identities (issuer, subject);
 alter table oidc_identities drop constraint oidc_identities_pkey;
 alter table oidc_identities add constraint oidc_identities_pkey primary key (tenant_id, issuer, subject);
+create index team_members_pkey_0019 on team_members (team_id, user_id);
 alter table team_members drop constraint team_members_pkey;
 alter table team_members add constraint team_members_pkey primary key (tenant_id, team_id, user_id);
+create index team_invitations_pkey_0019 on team_invitations (invitation_id);
 alter table team_invitations drop constraint team_invitations_pkey;
 alter table team_invitations add constraint team_invitations_pkey primary key (tenant_id, invitation_id);
+create index workspace_grants_pkey_0019 on workspace_grants (workspace_id, user_id);
 alter table workspace_grants drop constraint workspace_grants_pkey;
 alter table workspace_grants add constraint workspace_grants_pkey primary key (tenant_id, workspace_id, user_id);
+create index license_pkey_0019 on license (singleton);
 alter table license drop constraint license_pkey;
 alter table license add constraint license_pkey primary key (tenant_id);
+create index schedule_results_pkey_0019 on schedule_results (run_id, ordinal);
 alter table schedule_results drop constraint schedule_results_pkey;
 alter table schedule_results add constraint schedule_results_pkey primary key (tenant_id, run_id, ordinal);
+create index audit_forward_queue_pkey_0019 on audit_forward_queue (event_id);
 alter table audit_forward_queue drop constraint audit_forward_queue_pkey;
 alter table audit_forward_queue add constraint audit_forward_queue_pkey primary key (tenant_id, event_id);
+create index audit_chain_anchor_pkey_0019 on audit_chain_anchor (only_row);
 alter table audit_chain_anchor drop constraint audit_chain_anchor_pkey;
 alter table audit_chain_anchor add constraint audit_chain_anchor_pkey primary key (tenant_id);
+create index saml_identities_pkey_0019 on saml_identities (entity_id, name_id);
 alter table saml_identities drop constraint saml_identities_pkey;
 alter table saml_identities add constraint saml_identities_pkey primary key (tenant_id, entity_id, name_id);
+create index scim_users_pkey_0019 on scim_users (user_id);
 alter table scim_users drop constraint scim_users_pkey;
 alter table scim_users add constraint scim_users_pkey primary key (tenant_id, user_id);
+create index scim_group_members_pkey_0019 on scim_group_members (group_id, user_id);
 alter table scim_group_members drop constraint scim_group_members_pkey;
 alter table scim_group_members add constraint scim_group_members_pkey primary key (tenant_id, group_id, user_id);
+create index provisioned_memberships_pkey_0019 on provisioned_memberships (team_id, user_id, group_id);
 alter table provisioned_memberships drop constraint provisioned_memberships_pkey;
 alter table provisioned_memberships
   add constraint provisioned_memberships_pkey primary key (tenant_id, team_id, user_id, group_id);
+create index session_log_chunks_pkey_0019 on session_log_chunks (log_id, offset_bytes);
 alter table session_log_chunks drop constraint session_log_chunks_pkey;
 alter table session_log_chunks add constraint session_log_chunks_pkey primary key (tenant_id, log_id, offset_bytes);
+create index agent_pairing_codes_pkey_0019 on agent_pairing_codes (code_hash);
 alter table agent_pairing_codes drop constraint agent_pairing_codes_pkey;
 alter table agent_pairing_codes add constraint agent_pairing_codes_pkey primary key (tenant_id, code_hash);
+create index agent_nonces_pkey_0019 on agent_nonces (nonce_hash);
 alter table agent_nonces drop constraint agent_nonces_pkey;
 alter table agent_nonces add constraint agent_nonces_pkey primary key (tenant_id, nonce_hash);
 alter table host_leases add constraint host_leases_pkey primary key (tenant_id, user_id);
 
--- Rule 2: every unique constraint and unique index leads with tenant_id.
+-- Rule 2: every unique constraint and unique index leads with tenant_id. The old ones stay as `_0019` (above).
+-- Mapped by name (scim users), so its copy is not unique.
+create index users_email_lower_key_0019 on users (email_lower);
 alter table users drop constraint users_email_lower_key;
 alter table users add constraint users_email_lower_key unique (tenant_id, email_lower);
-alter table invitations drop constraint invitations_secret_hash_key;
+alter table invitations rename constraint invitations_secret_hash_key to invitations_secret_hash_key_0019;
 alter table invitations add constraint invitations_secret_hash_key unique (tenant_id, secret_hash);
-alter table device_tokens drop constraint device_tokens_token_hash_key;
+alter table device_tokens rename constraint device_tokens_token_hash_key to device_tokens_token_hash_key_0019;
 alter table device_tokens add constraint device_tokens_token_hash_key unique (tenant_id, token_hash);
-alter table oidc_flows drop constraint oidc_flows_state_key, drop constraint oidc_flows_grant_hash_key;
+alter table oidc_flows rename constraint oidc_flows_state_key to oidc_flows_state_key_0019;
+alter table oidc_flows rename constraint oidc_flows_grant_hash_key to oidc_flows_grant_hash_key_0019;
 alter table oidc_flows
   add constraint oidc_flows_state_key unique (tenant_id, state),
   add constraint oidc_flows_grant_hash_key unique (tenant_id, grant_hash);
-alter table browser_flows drop constraint browser_flows_state_hash_key;
+alter table browser_flows rename constraint browser_flows_state_hash_key to browser_flows_state_hash_key_0019;
 alter table browser_flows add constraint browser_flows_state_hash_key unique (tenant_id, state_hash);
-alter table ci_tokens drop constraint ci_tokens_token_hash_key;
+alter table ci_tokens rename constraint ci_tokens_token_hash_key to ci_tokens_token_hash_key_0019;
 alter table ci_tokens add constraint ci_tokens_token_hash_key unique (tenant_id, token_hash);
-alter table saml_flows
-  drop constraint saml_flows_request_id_key,
-  drop constraint saml_flows_relay_state_key,
-  drop constraint saml_flows_grant_hash_key;
+alter table saml_flows rename constraint saml_flows_request_id_key to saml_flows_request_id_key_0019;
+alter table saml_flows rename constraint saml_flows_relay_state_key to saml_flows_relay_state_key_0019;
+alter table saml_flows rename constraint saml_flows_grant_hash_key to saml_flows_grant_hash_key_0019;
 alter table saml_flows
   add constraint saml_flows_request_id_key unique (tenant_id, request_id),
   add constraint saml_flows_relay_state_key unique (tenant_id, relay_state),
   add constraint saml_flows_grant_hash_key unique (tenant_id, grant_hash);
-alter table scim_tokens drop constraint scim_tokens_token_hash_key;
+alter table scim_tokens rename constraint scim_tokens_token_hash_key to scim_tokens_token_hash_key_0019;
 alter table scim_tokens add constraint scim_tokens_token_hash_key unique (tenant_id, token_hash);
-alter table session_logs drop constraint session_logs_workspace_id_user_id_client_log_id_key;
+alter table session_logs rename constraint session_logs_workspace_id_user_id_client_log_id_key to session_logs_workspace_id_user_id_client_log_id_key_0019;
 alter table session_logs
   add constraint session_logs_workspace_id_user_id_client_log_id_key unique (tenant_id, workspace_id, user_id, client_log_id);
-alter table agent_pairings drop constraint agent_pairings_user_id_agent_id_key;
+alter table agent_pairings rename constraint agent_pairings_user_id_agent_id_key to agent_pairings_user_id_agent_id_key_0019;
 alter table agent_pairings add constraint agent_pairings_user_id_agent_id_key unique (tenant_id, user_id, agent_id);
-alter table agent_pairing_codes drop constraint agent_pairing_codes_user_id_key;
+alter table agent_pairing_codes rename constraint agent_pairing_codes_user_id_key to agent_pairing_codes_user_id_key_0019;
 alter table agent_pairing_codes add constraint agent_pairing_codes_user_id_key unique (tenant_id, user_id);
 
+create index invitations_one_open_per_email_0019
+  on invitations (email_lower) where kind = 'invite' and accepted_at is null and revoked_at is null;
 drop index invitations_one_open_per_email;
 create unique index invitations_one_open_per_email
   on invitations (tenant_id, email_lower) where kind = 'invite' and accepted_at is null and revoked_at is null;
+create index teams_name_lower_0019 on teams (lower(name));
 drop index teams_name_lower;
 create unique index teams_name_lower on teams (tenant_id, lower(name));
+create index workspaces_team_name_lower_0019 on workspaces (team_id, lower(name));
 drop index workspaces_team_name_lower;
 create unique index workspaces_team_name_lower on workspaces (tenant_id, team_id, lower(name));
+create index ci_tokens_workspace_name_lower_0019 on ci_tokens (workspace_id, lower(name)) where revoked_at is null;
 drop index ci_tokens_workspace_name_lower;
 create unique index ci_tokens_workspace_name_lower
   on ci_tokens (tenant_id, workspace_id, lower(name)) where revoked_at is null;
-drop index catch_urls_secret;
+alter index catch_urls_secret rename to catch_urls_secret_0019;
 create unique index catch_urls_secret on catch_urls (tenant_id, secret);
+create index catch_urls_workspace_name_lower_0019 on catch_urls (workspace_id, lower(name));
 drop index catch_urls_workspace_name_lower;
 create unique index catch_urls_workspace_name_lower on catch_urls (tenant_id, workspace_id, lower(name));
+create index schedules_workspace_name_lower_0019 on schedules (workspace_id, lower(name));
 drop index schedules_workspace_name_lower;
 create unique index schedules_workspace_name_lower on schedules (tenant_id, workspace_id, lower(name));
 -- One chain per tenant.
-drop index audit_events_chain_seq;
+alter index audit_events_chain_seq rename to audit_events_chain_seq_0019;
 create unique index audit_events_chain_seq on audit_events (tenant_id, chain_seq) where chain_seq is not null;
+create index scim_tokens_name_lower_0019 on scim_tokens (lower(name)) where revoked_at is null;
 drop index scim_tokens_name_lower;
 create unique index scim_tokens_name_lower on scim_tokens (tenant_id, lower(name)) where revoked_at is null;
+create index scim_groups_display_name_lower_0019 on scim_groups (lower(display_name));
 drop index scim_groups_display_name_lower;
 create unique index scim_groups_display_name_lower on scim_groups (tenant_id, lower(display_name));
 
@@ -294,27 +331,27 @@ alter table host_leases
 
 -- Rule 4: a listing index led by a parent id stays; every other non-unique index leads with tenant_id, since
 -- every list and sweep now runs inside one tenant.
-drop index audit_events_at;
+alter index audit_events_at rename to audit_events_at_0019;
 create index audit_events_at on audit_events (tenant_id, at desc, id desc);
-drop index audit_events_action_at;
+alter index audit_events_action_at rename to audit_events_action_at_0019;
 create index audit_events_action_at on audit_events (tenant_id, action, at desc);
-drop index audit_events_unsealed;
+alter index audit_events_unsealed rename to audit_events_unsealed_0019;
 create index audit_events_unsealed on audit_events (tenant_id, at, id) where chain_seq is null;
-drop index captures_received_at;
+alter index captures_received_at rename to captures_received_at_0019;
 create index captures_received_at on captures (tenant_id, received_at);
-drop index schedules_due;
+alter index schedules_due rename to schedules_due_0019;
 create index schedules_due on schedules (tenant_id, next_run_at) where enabled;
-drop index schedule_runs_open;
+alter index schedule_runs_open rename to schedule_runs_open_0019;
 create index schedule_runs_open on schedule_runs (tenant_id, queued_at, id) where status in ('queued', 'running');
-drop index schedule_runs_queued_at;
+alter index schedule_runs_queued_at rename to schedule_runs_queued_at_0019;
 create index schedule_runs_queued_at on schedule_runs (tenant_id, queued_at);
-drop index schedule_alert_outbox_due;
+alter index schedule_alert_outbox_due rename to schedule_alert_outbox_due_0019;
 create index schedule_alert_outbox_due on schedule_alert_outbox (tenant_id, next_at) where state = 'pending';
-drop index schedule_alert_outbox_created;
+alter index schedule_alert_outbox_created rename to schedule_alert_outbox_created_0019;
 create index schedule_alert_outbox_created on schedule_alert_outbox (tenant_id, created_at) where state <> 'pending';
-drop index session_logs_last_write;
+alter index session_logs_last_write rename to session_logs_last_write_0019;
 create index session_logs_last_write on session_logs (tenant_id, last_write_at);
-drop index agent_nonces_expires_at;
+alter index agent_nonces_expires_at rename to agent_nonces_expires_at_0019;
 create index agent_nonces_expires_at on agent_nonces (tenant_id, expires_at);
 
 -- The policy every scoped table gets in 0021 (§19.4). Created now, called by nothing yet.

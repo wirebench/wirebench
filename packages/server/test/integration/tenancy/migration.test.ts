@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { auditLogModule } from '../../../src/audit-log/module.js';
-import { CANONICAL_COLUMNS, insertGenesis, readAnchor } from '../../../src/audit-log/repo.js';
+import { CANONICAL_COLUMNS, chainHead, insertGenesis, readAnchor } from '../../../src/audit-log/repo.js';
 import { replaceCode, upsertPairing } from '../../../src/agent/repo.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../../../src/db/errors.js';
 import { migrate, type Migration } from '../../../src/db/migrate.js';
-import { upsertCredential } from '../../../src/identity/repo.js';
+import { findUserByEmail, tokenByHash, upsertCredential } from '../../../src/identity/repo.js';
 import { putLicense, storedLicense } from '../../../src/licensing/repo.js';
 import { main } from '../../../src/main.js';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
@@ -27,6 +27,12 @@ import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { signedInUser } from '../../helpers/identity.js';
 import { license, licensingHarness, testKeys } from '../../helpers/licensing.js';
+
+/** Where the rollback test cuts 0020: the foreign keys are gone, no key is rebuilt yet. */
+const HALFWAY = '-- Rule 2: primary keys';
+
+/** A 0019 index or key kept until 0021 drops it (`0020`'s header). */
+const KEPT = /_0019$/;
 
 /** What 0020 adds beside the column: the two new tables (spec §19.2, §19.9). */
 const NEW_TABLES = ['host_leases', 'tenants'];
@@ -63,6 +69,18 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
   let afterFailure: Snapshot;
   let tenantId: string;
   let after: Snapshot;
+  let filenodesBefore: Record<string, string>;
+
+  /** Each table's storage file: a rewrite always gives it a new one (M2 of the Task 4 review). */
+  const filenodes = async () =>
+    Object.fromEntries(
+      (
+        await db.owner.query<{ table: string; node: string }>(
+          `select relname as table, relfilenode::text as node from pg_class
+            where relnamespace = to_regnamespace(current_schema()) and relkind = 'r'`,
+        )
+      ).rows.map((row) => [row.table, row.node]),
+    );
 
   const counts = async (tables: readonly string[]) => {
     const out: Record<string, number> = {};
@@ -83,14 +101,25 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
 
     const migrations = await allMigrations(BUILTIN_MODULES);
     migration0020 = migrations.find((m) => m.version === 20)!;
-    // A crash rolls 0020 back whole, and the next start runs it again (§19.10).
+    // A crash rolls 0020 back whole, and the next start runs it again (§19.10). It fails halfway: after the
+    // column and the foreign keys are gone, before any key is rebuilt.
+    const halfway = migration0020.sql.indexOf(HALFWAY);
+    expect(halfway).toBeGreaterThan(0);
     await expect(
       db.owner.transaction(async (tx) => {
-        await tx.query(migration0020.sql);
+        await tx.query(migration0020.sql.slice(0, halfway));
+        expect(
+          (
+            await tx.query(
+              "select 1 from pg_constraint where conname = 'workspaces_team_id_fkey' and connamespace = to_regnamespace(current_schema())",
+            )
+          ).rowCount,
+        ).toBe(0);
         await tx.query('select 1 / 0');
       }),
     ).rejects.toMatchObject({ code: '22012' });
     afterFailure = await snapshot(db.owner);
+    filenodesBefore = await filenodes();
 
     const started = performance.now();
     const { applied } = await migrate(db.owner, migrations);
@@ -110,7 +139,7 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
   const scoped = () => after.tables.filter((table) => !UNSCOPED_TABLES.includes(table));
   const keysOfKind = (kind: KeyInfo['kind']) => after.keys.filter((key) => key.kind === kind);
 
-  it('leaves the 0019 catalog exactly as it was when it fails halfway', () => {
+  it('leaves the 0019 catalog exactly as it was when it fails halfway through', () => {
     expect(afterFailure).toEqual(before);
   });
 
@@ -160,7 +189,10 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
 
   it('leads every unique index and every non-minted primary key with tenant_id', () => {
     const unique = after.keys.filter(
-      (key) => (key.kind === 'p' || key.kind === 'u' || key.kind === 'i') && scoped().includes(key.table),
+      (key) =>
+        (key.kind === 'p' || key.kind === 'u' || key.kind === 'i') &&
+        scoped().includes(key.table) &&
+        !KEPT.test(key.name),
     );
     // A lone `id` the server mints stays the key (rule 2); workspaces' id comes from the desktop.
     const minted = unique.filter((key) => key.kind === 'p' && key.columns.length === 1 && key.columns[0] === 'id');
@@ -196,7 +228,8 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
 
   it('makes every foreign key between scoped tables composite, nulling only its own column', () => {
     const between = keysOfKind('f').filter((key) => key.references?.table !== 'tenants');
-    expect(between.length).toBeGreaterThan(40);
+    // The 41 of 0019, and host_leases'.
+    expect(between).toHaveLength(42);
     for (const key of between) {
       expect(key.columns[0], key.name).toBe('tenant_id');
       expect(key.references!.columns[0], key.name).toBe('tenant_id');
@@ -233,7 +266,9 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
   });
 
   it('leads the listing indexes not led by a parent id with tenant_id (rule 4)', () => {
-    const listing = after.indexes.filter((index) => !index.unique && scoped().includes(index.table));
+    const listing = after.indexes.filter(
+      (index) => !index.unique && scoped().includes(index.table) && !KEPT.test(index.name),
+    );
     const parentLed = [
       'audit_events_actor_at',
       'audit_events_team_at',
@@ -261,6 +296,60 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
       }
     }
     expect(listing.map((index) => index.name)).toEqual(expect.arrayContaining(parentLed));
+  });
+
+  it('keeps every 0019 index it rebuilt as <name>_0019, on the same columns, until 0021', () => {
+    const rebuilt = before.indexes.filter((index) => {
+      const now = after.indexes.find((a) => a.name === index.name);
+      return now === undefined || now.definition !== index.definition;
+    });
+    expect(rebuilt.length).toBeGreaterThan(50);
+    for (const index of rebuilt) {
+      const kept = after.indexes.find((a) => a.name === `${index.name}_0019`);
+      expect(kept, index.name).toBeDefined();
+      // A unique key a route maps, and a primary key, keep a non-unique copy (0020's header).
+      const asBefore = index.definition.replace(` INDEX ${index.name} `, ` INDEX ${index.name}_0019 `);
+      expect([asBefore, asBefore.replace('CREATE UNIQUE INDEX', 'CREATE INDEX')], index.name).toContain(
+        kept!.definition,
+      );
+    }
+    // The unique ones a route maps are never kept unique: their violation must keep the 0019 name.
+    for (const name of ['users_email_lower_key', 'teams_name_lower', 'workspaces_pkey', 'agent_pairing_codes_pkey']) {
+      expect(after.indexes.find((a) => a.name === `${name}_0019`)?.unique, name).toBe(false);
+    }
+  });
+
+  it('serves the hot lookups from an index until 0021', async () => {
+    const plans: string[] = [];
+    const explaining = {
+      query: async <R extends Record<string, unknown>>(text: string, params?: readonly unknown[]) => {
+        await db.owner.transaction(async (tx) => {
+          await tx.query('set local enable_seqscan = off');
+          const rows = await tx.query<{ 'QUERY PLAN': string }>(`explain ${text}`, params);
+          plans.push(rows.rows.map((row) => row['QUERY PLAN']).join('\n'));
+        });
+        return { rows: [] as R[], rowCount: 0 };
+      },
+    };
+    await tokenByHash(explaining, 'no-such-hash');
+    await findUserByEmail(explaining, 'admin@example.com');
+    await chainHead(explaining);
+    const [token, email, head] = plans;
+    expect(token).toContain('device_tokens_token_hash_key_0019');
+    expect(email).toContain('users_email_lower_key_0019');
+    expect(head).toContain('audit_events_chain_seq_0019');
+    for (const plan of plans) expect(plan).not.toMatch(/Seq Scan/);
+  });
+
+  it('rewrites no table: every storage file is the same, and each tenant_id is a missing-value default', async () => {
+    const now = await filenodes();
+    for (const table of before.tables) expect(now[table], table).toBe(filenodesBefore[table]);
+    const missing = await db.owner.query<{ table: string; missing: boolean }>(
+      `select c.relname as table, a.atthasmissing as missing from pg_attribute a join pg_class c on c.oid = a.attrelid
+        where c.relnamespace = to_regnamespace(current_schema()) and c.relkind = 'r' and a.attname = 'tenant_id'
+        order by 1`,
+    );
+    for (const row of missing.rows) expect(row.missing, row.table).toBe(!NEW_TABLES.includes(row.table));
   });
 
   it('puts every row in the default tenant, and loses none', async () => {
