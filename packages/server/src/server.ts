@@ -16,6 +16,11 @@ export interface BuildServerOptions {
   readonly modules: readonly ServerModule[];
   /** Where log lines go instead of stdout; tests pass a stream to read what was logged. */
   readonly logStream?: NodeJS.WritableStream;
+  /**
+   * The context each module registers with; the shared one by default. Tests of a module moved into a tenant
+   * pass `scopedContext` for it (`test/helpers/tenancy.ts`), whose `db` throws (plan, Global Constraints).
+   */
+  readonly contextFor?: (module: ServerModule, context: ServerContext) => ServerContext;
 }
 
 /**
@@ -151,7 +156,8 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
         // fastify-plugin sets): a hook or decorator one module adds, such as identity's
         // `request.caller`, must reach the routes of every module registered after it. /healthz
         // sits outside /api/v1 and never sees them.
-        const mount = (scope: FastifyInstance): Promise<void> => module.register(scope, context);
+        const moduleContext = options.contextFor?.(module, context) ?? context;
+        const mount = (scope: FastifyInstance): Promise<void> => module.register(scope, moduleContext);
         Object.assign(mount, { [SKIP_OVERRIDE]: true, [Symbol.for('fastify.display-name')]: module.name });
         await api.register(mount);
       }
@@ -161,7 +167,7 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
   for (const module of options.modules) {
     if (module.registerPublic !== undefined) {
       await app.register(async (root) => {
-        await module.registerPublic!(root, context);
+        await module.registerPublic!(root, options.contextFor?.(module, context) ?? context);
       });
     }
   }

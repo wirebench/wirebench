@@ -111,6 +111,7 @@ export async function identityHarness(
   // repository store, so no developer gitconfig or hook reaches a server test. `options.git` still
   // overrides only the store, for tests that force RepoStore.create to fail.
   const ctx = await testContext({ dataDir, db, config, repos, git: testGit(join(dataDir, NO_HOOKS_DIR)) });
+  await ctx.tenancy.directory.load();
   const app = await buildServer(ctx, {
     modules,
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),

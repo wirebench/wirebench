@@ -15,6 +15,7 @@ import type {
 import type { ServerConfig } from './config.js';
 import { requireFeature } from './licensing/gate.js';
 import type { RepoStore } from './repos/repo-store.js';
+import type { Tenancy } from './tenancy/tenancy.js';
 
 /** The slice of `pg.Pool` the modules use, so tests can pass a fake. */
 export interface Querier {
@@ -336,6 +337,11 @@ export class MetaRegistry {
 export interface ServerContext {
   readonly config: ServerConfig;
   readonly db: Database;
+  /**
+   * The tenant databases, the tenant directory and the job loop (hosted edition spec §19.8). Beside `db`
+   * until Task 17 removes `db` from what modules see.
+   */
+  readonly tenancy: Tenancy;
   readonly repos: RepoStore;
   readonly git: GitCli;
   readonly log: FastifyBaseLogger;

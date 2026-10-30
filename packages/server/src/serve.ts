@@ -19,7 +19,10 @@ import {
 } from './context.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migration } from './db/migrate.js';
 import { createDatabase } from './db/pool.js';
+import { checkAppRole, checkPostgresVersion, type ServerMode } from './tenancy/checks.js';
 import { TENANCY_MIGRATIONS_DIR } from './tenancy/migrations.js';
+import { RunningLock } from './tenancy/running-lock.js';
+import { createTenancy } from './tenancy/tenancy.js';
 import { ensureAppRole, roleMode } from './tenancy/roles.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { NO_HOOKS_DIR, RepoStore } from './repos/repo-store.js';
@@ -55,6 +58,10 @@ export interface StartOptions {
   readonly drainMs?: number;
   /** How a second signal ends the process: `process.exit` in production, a spy in tests. */
   readonly exit?: (code: number) => void;
+  /** Where the server's log lines go instead of stdout; tests read the start-up warnings from it. */
+  readonly logStream?: NodeJS.WritableStream;
+  /** How a lost running lock is retried (spec §19.10); tests shorten it. */
+  readonly runningLock?: { readonly retries?: number; readonly retryDelayMs?: number };
 }
 
 /**
@@ -244,11 +251,14 @@ export async function startServer(
   const db = createDatabase(config.databaseUrl);
   try {
     const migrations = await allMigrations(modules);
+    // Before 0020, on the connection that migrates: its composite keys need PostgreSQL 15 (spec §19.1).
     if (migrationUrl === config.databaseUrl) {
+      await checkPostgresVersion(db);
       await migrate(db, migrations);
     } else {
       const owner = createDatabase(migrationUrl);
       try {
+        await checkPostgresVersion(owner);
         if (mode === 'two-roles') await migrateAndGrant(owner, config.databaseUrl, migrations);
         else await migrate(owner, migrations);
       } finally {
@@ -259,6 +269,9 @@ export async function startServer(
   } catch (error) {
     await db.close();
     if (error instanceof StartupError) throw error;
+    if (error instanceof WirebenchError && error.code === 'server-postgres-too-old') {
+      throw new StartupError(ExitCode.Config, `${error.code}: ${error.message}`);
+    }
     throw new StartupError(ExitCode.Migration, migrationFailure(error));
   }
   try {
@@ -270,10 +283,31 @@ export async function startServer(
     await db.close();
     throw new StartupError(ExitCode.Config, `data directory ${config.dataDir} is not writable`);
   }
+  // Slice 6 lets an operator choose the mode; until then a server started here is self-hosted (spec §19.1).
+  const serverMode: ServerMode = 'self-hosted';
+  const warnings: { readonly message: string; readonly details: Record<string, unknown> }[] = [];
+  const tenancy = createTenancy(db);
+  let runningLock: RunningLock | undefined;
+  // Set once the server can stop itself: losing the lock before then fails the start instead.
+  const lockLost: { stop?: (error: Error) => void } = {};
+  try {
+    await checkAppRole(db, serverMode, (message, details) => warnings.push({ message, details }));
+    await tenancy.directory.load();
+    // Held for the life of the process; a revert's exclusive try fails while it is (spec §19.10).
+    runningLock = await RunningLock.acquire(config.databaseUrl, {
+      ...options.runningLock,
+      onLost: (error) => lockLost.stop?.(error),
+    });
+  } catch (error) {
+    await db.close();
+    if (error instanceof WirebenchError) throw new StartupError(ExitCode.Config, `${error.code}: ${error.message}`);
+    throw new StartupError(ExitCode.Migration, migrationFailure(error));
+  }
   const repos = new RepoStore({ git, dataDir: config.dataDir });
   const ctx: ServerContext = {
     config,
     db,
+    tenancy,
     repos,
     git,
     log: undefined as unknown as ServerContext['log'], // buildServer replaces it with the app's logger
@@ -284,8 +318,12 @@ export async function startServer(
   };
   let app: FastifyInstance;
   try {
-    app = await buildServer(ctx, { modules });
+    app = await buildServer(ctx, {
+      modules,
+      ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
+    });
   } catch (error) {
+    await runningLock.release();
     await db.close(); // a module that fails to register must not leave the pool holding the process open
     if (error instanceof StartupError) throw error;
     // Discovery against the IdP, a duplicate decorator, a bad route: all configuration-shaped
@@ -295,10 +333,12 @@ export async function startServer(
       `a module failed to register: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+  for (const warning of warnings) app.log.warn(warning.details, warning.message);
   try {
     await app.listen({ host: config.host, port: config.port });
   } catch (error) {
     await app.close();
+    await runningLock.release();
     await db.close();
     const code = (error as { readonly code?: unknown }).code;
     throw new StartupError(
@@ -336,9 +376,15 @@ export async function startServer(
       // work (a push looks up its author and writes commits), so the pool outlives that work. From
       // here on, new repository work is refused with server-shutting-down.
       await repos.drain();
+      await runningLock.release();
       await db.close();
     })();
     return closing;
+  };
+  // Without the lock a revert could start under this server, so it stops (spec §19.10).
+  lockLost.stop = (error) => {
+    app.log.error({ err: error }, 'the server-running lock was lost and could not be taken again; stopping');
+    void close().finally(() => exit(ExitCode.Migration));
   };
   // `on`, not `once`: a second SIGTERM must reach this handler too, or the process would fall
   // back to the default action and die with 143 instead of the documented 130.

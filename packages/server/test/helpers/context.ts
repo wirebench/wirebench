@@ -11,6 +11,7 @@ import {
   type ServerHooks,
 } from '../../src/context.js';
 import type { RepoStore } from '../../src/repos/repo-store.js';
+import { createTenancy } from '../../src/tenancy/tenancy.js';
 
 /** A database whose every query succeeds with no rows; `failing` flips `select 1` to a rejection. */
 export function fakeDatabase(options: { failing?: boolean } = {}): Database {
@@ -53,6 +54,7 @@ export async function testContext(
     hooks: serverHooks(),
     license: permissiveLicense(),
     ...rest,
+    tenancy: rest.tenancy ?? createTenancy(rest.db ?? fakeDatabase()),
   };
   // Follows the config, as serve.ts builds it, unless the test passed its own.
   return rest.egress !== undefined
