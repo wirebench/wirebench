@@ -28,7 +28,8 @@
     "../wire/src/plugins-wire.ts",
     "../wire/src/multi-env-limits.ts",
     "../wire/src/environment-colors.ts",
-    "../wire/src/jwt-algorithms.ts"
+    "../wire/src/jwt-algorithms.ts",
+    "../wire/src/palettes.ts"
   ],
   "references": [{ "path": "./tsconfig.json" }]
 }

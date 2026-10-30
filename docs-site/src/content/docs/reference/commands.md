@@ -37,6 +37,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Show Cookies | — | — |
 | Show Settings | <kbd>⌘,</kbd> | <kbd>Ctrl+,</kbd> |
 | Cycle Theme (Dark, Light, System) | — | — |
+| Theme: choose colour theme… | — | — |
 | Show HTTP Log | — | — |
 | Request: XML View | — | — |
 | Request: Form View | — | — |

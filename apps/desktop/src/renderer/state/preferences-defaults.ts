@@ -49,6 +49,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
   },
   ui: {
     theme: 'dark',
+    palette: 'default',
     defaultLayout: { orientation: 'side-by-side', mode: 'split' },
     confirmOnDelete: true,
     previewTabs: true,

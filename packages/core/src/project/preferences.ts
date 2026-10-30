@@ -177,9 +177,21 @@ export interface LayoutPreference {
   readonly mode: 'split' | 'tabs';
 }
 
+/**
+ * The colour themes, beside the mode. Restated from `@wirebench/wire/palettes` (the engine cannot
+ * depend on the wire package); `preferences-defaults.test.ts` keeps the two lists equal.
+ */
+export const PALETTES = ['default', 'field-kit', 'sandstone', 'dusk', 'seed', 'pith', 'rind'] as const;
+
+/** One of {@link PALETTES}. */
+export type Palette = (typeof PALETTES)[number];
+
 /** Shell/appearance preferences. */
 export interface UiPreferences {
+  /** The mode: dark, light, or whichever the OS uses. */
   readonly theme: 'dark' | 'light' | 'system';
+  /** The colour theme, applied in either mode. */
+  readonly palette: Palette;
   readonly defaultLayout: LayoutPreference;
   readonly confirmOnDelete: boolean;
   /**
@@ -365,6 +377,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   }),
   ui: Object.freeze({
     theme: 'dark',
+    palette: 'default',
     defaultLayout: Object.freeze({ orientation: 'side-by-side', mode: 'split' }),
     confirmOnDelete: true,
     previewTabs: true,
@@ -575,6 +588,7 @@ export const preferencesSchema = z.object({
   ui: z
     .object({
       theme: z.enum(['dark', 'light', 'system']).optional(),
+      palette: z.enum(PALETTES).optional(),
       defaultLayout: z
         .object({
           orientation: z.enum(['side-by-side', 'stacked']).optional(),
@@ -703,6 +717,19 @@ export function preferencesPatchProblems(patch: unknown): string[] {
 }
 
 /**
+ * `raw` without a `palette` this build does not know. A newer build may add a colour theme; its
+ * file must still load here, mode and all, as the default palette — rather than the unknown value
+ * failing (and so losing) the whole `ui` section. A patch is still refused for it.
+ */
+function withoutUnknownPalette(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null || !('palette' in raw)) {
+    return raw;
+  }
+  const { palette, ...rest } = raw as Record<string, unknown>;
+  return (PALETTES as readonly unknown[]).includes(palette) ? raw : rest;
+}
+
+/**
  * Deep-merges `patch` onto `base` (default {@link DEFAULT_PREFERENCES}), one level per
  * section. Unknown keys are ignored (the schema strips them), `undefined` values leave the
  * base value alone, and `trustAll` is pinned to `false` regardless of what a file claims.
@@ -733,7 +760,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     wsi: parseSection('wsi', shape.wsi, root['wsi']),
     rest: parseSection('rest', shape.rest, root['rest']),
     editor: parseSection('editor', shape.editor, root['editor']),
-    ui: parseSection('ui', shape.ui, root['ui']),
+    ui: parseSection('ui', shape.ui, withoutUnknownPalette(root['ui'])),
     updates: parseSection('updates', shape.updates, root['updates']),
     accounts: parseSection('accounts', shape.accounts, root['accounts']),
     secrets: parseSection('secrets', shape.secrets, root['secrets']),

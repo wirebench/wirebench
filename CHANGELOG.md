@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Colour themes.** Six colour themes beside Default — Field kit, Sandstone, Dusk, Seed, Pith and
+  Rind — each in dark and light, chosen in Settings → Appearance or with **Theme: choose colour theme…**,
+  which previews them as you move through the list; the mode (Dark, Light, System) stays a separate choice.
 - **An overview of every REST API.** The API's page opens on General: its name and base URL, its
   description rendered as formatted text and edited in place, a summary of how many requests and folders it holds, its auth,
   where its requests go and where its definition came from, and Recent changes, the commits that

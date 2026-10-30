@@ -156,4 +156,14 @@ describe('PreferencesService', () => {
     await service.update({ ui: { historyCap: 25 } });
     expect(service.get().ui.historyCap).toBe(25);
   });
+
+  it.each(['sandstone', 'seed', 'pith', 'rind'] as const)(
+    'round-trips the colour theme %s through save and load',
+    async (palette) => {
+      await new PreferencesService(dir).update({ ui: { palette } });
+      const written = parseYaml(readFileSync(file(), 'utf8')) as { ui: { palette: string } };
+      expect(written.ui.palette).toBe(palette);
+      expect((await new PreferencesService(dir).ready()).ui.palette).toBe(palette);
+    },
+  );
 });

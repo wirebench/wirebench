@@ -226,6 +226,7 @@ export function AppShell() {
   // Each area keeps its own slide-over width.
   const slideOverWidth = useUiStore(slideOverWidthOf);
   const theme = useUiStore((state) => state.theme);
+  const palette = useUiStore((state) => state.palette);
   const sshEnabled = useUiStore((state) => state.enabledAreas.includes('ssh'));
   const editorLineNumbers = useUiStore((state) => state.editorLineNumbers);
   const editorLayout = useUiStore((state) => state.editorLayout);
@@ -542,15 +543,15 @@ export function AppShell() {
     };
   }, [openPalette, openWorkspaceId]);
 
-  useTheme(theme);
+  useTheme(theme, palette);
 
   const context: CommandContext = useMemo(
     () => ({
       platform,
-      ui: { sidebar, console: consoleState, slideOver, theme, editorLineNumbers, editorLayout },
+      ui: { sidebar, console: consoleState, slideOver, theme, palette, editorLineNumbers, editorLayout },
       selection,
     }),
-    [platform, sidebar, consoleState, slideOver, theme, editorLineNumbers, editorLayout, selection],
+    [platform, sidebar, consoleState, slideOver, theme, palette, editorLineNumbers, editorLayout, selection],
   );
   useKeybindings(context);
 

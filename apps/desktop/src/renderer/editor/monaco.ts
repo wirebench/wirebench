@@ -8,11 +8,11 @@ import { monaco } from './monaco-core.js';
 // from the app's own origin (`default-src 'self'`) instead of the CDN `loader` Monaco defaults
 // to — that default would be blocked by the CSP and is the reason `loader.config` runs here.
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
-import { MONACO_THEMES, THEME_DEFINITIONS } from './themes.js';
+import { THEME_DEFINITIONS } from './themes.js';
 import { registerJsonLanguage } from './json-language.js';
 import { registerDynamicCompletionOnce } from './dynamic-completion.js';
 
-export { MONACO_THEMES } from './themes.js';
+export { MONACO_THEMES, monacoThemeName } from './themes.js';
 
 export { XML_LANGUAGE_ID } from './language-ids.js';
 
@@ -48,11 +48,6 @@ export function configureMonaco(): typeof monaco {
   }
 
   return monaco;
-}
-
-/** The registered Monaco theme name for a resolved app theme. */
-export function monacoThemeName(theme: 'dark' | 'light'): string {
-  return MONACO_THEMES[theme];
 }
 
 /**

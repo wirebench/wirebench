@@ -151,6 +151,9 @@ describe('StatusBar', () => {
     const button = screen.getByTestId('status-bar-problems');
     expect(button.className).not.toContain('text-status-danger');
     expect(button.className).toContain('text-status-warning');
+    // Not colour alone: warnings-only carries the warning shape.
+    expect(button.querySelector('[data-testid="status-bar-severity"]')?.getAttribute('data-severity')).toBe('warning');
+    expect(button.textContent).toBe('1 problem');
   });
 
   it('colours the problems button danger when at least one problem is an error', () => {
@@ -175,6 +178,16 @@ describe('StatusBar', () => {
     render(<StatusBar />);
 
     expect(screen.getByTestId('status-bar-problems').className).toContain('text-status-danger');
+    // Not colour alone: an error carries the error shape, on the Console button too.
+    for (const id of ['status-bar-problems', 'status-bar-console']) {
+      const severity = screen.getByTestId(id).querySelector('[data-testid="status-bar-severity"]');
+      expect(severity?.getAttribute('data-severity')).toBe('error');
+    }
+  });
+
+  it('draws no severity shape when there are no problems', () => {
+    render(<StatusBar />);
+    expect(screen.queryByTestId('status-bar-severity')).toBeNull();
   });
 
   it('counts lint findings apart, untinted, and leaves them out of Problems and the Console badge', () => {
@@ -216,7 +229,22 @@ describe('StatusBar', () => {
     const indicator = screen.getByTestId('status-bar-theme');
     expect(indicator.dataset['themePreference']).toBe('light');
     expect(indicator.textContent).toContain('Light');
-    expect(indicator.getAttribute('aria-label')).toBe('Theme: Light. Cycle theme');
+    expect(indicator.getAttribute('aria-label')).toBe('Theme: Light. Cycle mode');
+    expect(indicator.getAttribute('title')).toBe('Theme: Light. Cycle mode');
+  });
+
+  it('names a chosen colour theme beside the mode', () => {
+    useUiStore.setState({ theme: 'dark', palette: 'sandstone' });
+    try {
+      render(<StatusBar />);
+      const indicator = screen.getByTestId('status-bar-theme');
+      expect(indicator.textContent).toBe('Sandstone · Dark');
+      expect(indicator.getAttribute('aria-label')).toBe('Theme: Sandstone · Dark. Cycle mode');
+      expect(indicator.getAttribute('title')).toBe('Theme: Sandstone · Dark. Cycle mode');
+      expect(indicator.dataset['colourTheme']).toBe('sandstone');
+    } finally {
+      useUiStore.setState({ palette: 'default' });
+    }
   });
 
   it('names what `system` currently resolves to', () => {

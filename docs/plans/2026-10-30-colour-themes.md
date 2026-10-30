@@ -4,7 +4,7 @@
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
 > tracking.
 
-**Goal:** Three selectable colour themes — Field kit, Sandstone, Dusk — beside Default, each in dark and light. The
+**Goal:** Six selectable colour themes — Field kit, Sandstone, Dusk, Seed, Pith, Rind — beside Default, each in dark and light. The
 theme is a second setting (`ui.palette`) next to the mode (`ui.theme`), applied to the whole window at once and on
 the first frame after launch.
 
@@ -12,8 +12,8 @@ the first frame after launch.
 
 - **Tasks 1–3** add the setting and carry it to the DOM: preferences, the UI mirror, `data-palette` before first
   paint.
-- **Tasks 4–6** add the colours: the contrast gate first (so every palette lands gated), then the three palettes in
-  `tokens.css`, then the chrome tokens Dusk needs.
+- **Tasks 4–6** add the colours: the contrast gate first (so every palette lands gated), then the six palettes in
+  `tokens.css`, then the chrome tokens Dusk and Rind need.
 - **Tasks 7–8** make the editors and terminals follow.
 - **Tasks 9–10** let the user choose: Settings → Appearance cards, the command-palette picker, the status bar label.
 - **Task 11** adds the e2e, the user docs and the CHANGELOG entry.
@@ -45,7 +45,8 @@ xterm.js, vitest, Playwright.
 - Cascade order in `tokens.css`: a palette's light block restates every token its dark block sets (spec §4).
 - First paint: `data-palette` is set in `applyInitialTheme`, before `createRoot`.
 - Escape in the picker restores the palette that was active, including after several previews.
-- Accent vs danger in Field kit and Dusk (spec §3.5): every danger surface carries an icon or a word.
+- Accent vs danger (spec §3.8): pinker danger in Field kit and Dusk, amber danger and yellow warning in Seed, Pith
+  and Rind; every danger surface carries an icon or a word.
 
 ---
 
@@ -59,7 +60,7 @@ xterm.js, vitest, Playwright.
 
 **Interfaces:**
 
-- `export const PALETTES = ['default', 'field-kit', 'sandstone', 'dusk'] as const;`
+- `export const PALETTES = ['default', 'field-kit', 'sandstone', 'dusk', 'seed', 'pith', 'rind'] as const;`
   `export type Palette = (typeof PALETTES)[number];` — exported from `@wirebench/wire/wire-base` so core, main and
   renderer share one list.
 - `ui.palette: Palette` in the preferences type, default `'default'`; `z.enum(PALETTES).optional()` on read.
@@ -129,7 +130,7 @@ xterm.js, vitest, Playwright.
 - [ ] Implement. `pnpm contrast:check` still passes on today's `tokens.css` (Default only).
 - [ ] Run `pnpm check`, commit.
 
-### Task 5: the three palettes in `tokens.css`
+### Task 5: the six palettes in `tokens.css`
 
 **Files:**
 
@@ -138,15 +139,17 @@ xterm.js, vitest, Playwright.
 - Test: `scripts/contrast-check.test.ts` (which palettes exist)
 
 - [ ] Add `[data-palette='field-kit']`, `[data-palette='field-kit'][data-theme='light']` and the same for
-      `sandstone` and `dusk`, with spec §3.1–§3.3's values, Dusk without its chrome tokens (Task 6).
-- [ ] Apply spec §3.5: pinker `--wb-status-danger` in Field kit and Dusk. Grep danger surfaces (`status-danger`,
+      `sandstone`, `dusk`, `seed`, `pith` and `rind`, with spec §3.1–§3.6's values, Dusk and Rind without their
+      chrome tokens (Task 6).
+- [ ] Apply spec §3.8: pinker `--wb-status-danger` in Field kit and Dusk; amber danger and yellow warning in Seed,
+      Pith and Rind (already in their tables). Grep danger surfaces (`status-danger`,
       `text-danger`, `bg-danger`) and list any that show colour only; add an icon or word to each, or note in the PR
       that there are none.
 - [ ] Run `pnpm contrast:check`; fix failing values in `tokens.css`, and update the spec tables to match.
 - [ ] Extend the header comment in `tokens.css` to say palettes exist and how the blocks cascade.
 - [ ] Run `pnpm check`, commit.
 
-### Task 6: chrome tokens, and Dusk's violet chrome
+### Task 6: chrome tokens, Dusk's violet chrome and Rind's maroon chrome
 
 **Files:**
 
@@ -161,13 +164,13 @@ xterm.js, vitest, Playwright.
   `[data-theme='light']`, aliased to the tokens those three elements use today (the activity bar is
   `bg-surface-sunken`), so Default renders identically.
 - Tailwind aliases `bg-surface-chrome`, `bg-surface-chrome-selected`, `text-chrome`, `text-chrome-muted`.
-- Dusk's two blocks set real values (spec §3.3).
+- Dusk's and Rind's blocks set real values (spec §3.3, §3.6).
 - Contrast pairs: chrome fg and muted on chrome bg; chrome fg on chrome-selected (text); focus ring on chrome (ui).
 
 - [ ] Write a failing test that the activity bar, sidebar and title bar use the chrome classes.
 - [ ] Record the tokens each of the three elements paints today, and alias the chrome tokens to exactly those, so
       Default is unchanged in dark and light.
-- [ ] Add the Dusk values and the contrast pairs; `pnpm contrast:check` passes.
+- [ ] Add the Dusk and Rind values and the contrast pairs; `pnpm contrast:check` passes.
 - [ ] Run `pnpm check`, commit.
 
 ### Task 7: Monaco follows the palette
@@ -182,10 +185,10 @@ xterm.js, vitest, Playwright.
 
 - `MONACO_THEMES` becomes `Record<Palette, Record<'dark' | 'light', string>>`, names `wirebench-<palette>-<mode>`
   (Default keeps `wirebench-dark` / `wirebench-light`).
-- `THEME_DEFINITIONS` holds all eight, built with the existing `buildTheme` from one palette record each.
+- `THEME_DEFINITIONS` holds all fourteen, built with the existing `buildTheme` from one palette record each.
 - `monacoThemeName(mode, palette)`.
 
-- [ ] Write failing tests: eight names, all distinct; Default's names unchanged; each palette record's `bgBase`,
+- [ ] Write failing tests: fourteen names, all distinct; Default's names unchanged; each palette record's `bgBase`,
       `fgDefault` and `accent` equal the values in `tokens.css` for that palette and mode (parse with the contrast
       script's `parseBlock`).
 - [ ] Implement; both editors pass `usePalette()`.
@@ -214,15 +217,15 @@ xterm.js, vitest, Playwright.
 
 **Interfaces:**
 
-- `PALETTE_LABEL: Record<Palette, string>` — Default, Field kit, Sandstone, Dusk.
-- `PaletteCards({ value, onChange })`: a `radiogroup` of four cards; arrow keys move; each card is a `radio` with the
+- `PALETTE_LABEL: Record<Palette, string>` — Default, Field kit, Sandstone, Dusk, Seed, Pith, Rind.
+- `PaletteCards({ value, onChange })`: a `radiogroup` of seven cards in a wrapping grid; arrow keys move; each card is a `radio` with the
   name and five swatch dots. The swatches are painted by `var(--wb-…)` inside a wrapper carrying that card's
   `data-palette` (and the current `data-theme`), so they come from `tokens.css` and follow the current mode.
   `data-testid="preferences-palette-<id>"`.
 - The section's Theme group: "Colour theme" (`setting="ui.palette"`, the cards) above "Mode" (the existing enum,
   relabelled; `setting="ui.theme"` unchanged).
 
-- [ ] Write failing tests: four radios with the right names; the current one `aria-checked`; clicking Sandstone calls
+- [ ] Write failing tests: seven radios with the right names; the current one `aria-checked`; clicking Sandstone calls
       `update({ ui: { palette: 'sandstone' } })`; arrow keys move selection; the settings search finds "colour
       theme".
 - [ ] Implement with the existing settings-grid styling; no new colours.
@@ -240,7 +243,7 @@ xterm.js, vitest, Playwright.
 **Interfaces:**
 
 - Command `view.choosePalette`, title "Theme: choose colour theme…", no default shortcut.
-- `PaletteMode` gains `'palette'`: four entries, the current one marked. Moving the highlight calls
+- `PaletteMode` gains `'palette'`: seven entries, the current one marked. Moving the highlight calls
   `applyPalette(id)` (preview only, no write); Enter calls `choosePalette(id)` (writes preferences); closing without
   Enter re-applies the stored palette.
 - `choosePalette(palette)` in `theme-actions.ts`, beside `cycleTheme`.
@@ -265,7 +268,7 @@ xterm.js, vitest, Playwright.
       `data-theme="light"`, and `body`'s background is Sandstone light's `--wb-bg-base`; relaunch, and the same
       holds on the first check after the window shows; switch mode from the status bar and Monaco's theme name
       follows; pick Default and `data-palette` is gone.
-- [ ] Docs: a short "Colour themes" section — the four themes, mode is separate, the picker command.
+- [ ] Docs: a short "Colour themes" section — the seven themes, mode is separate, the picker command.
 - [ ] CHANGELOG: one Added line.
 - [ ] `pnpm build && xvfb-run -a pnpm test:e2e -- preferences` headless, or leave to CI.
 - [ ] Run `pnpm check` and `pnpm test:perf`, commit, push, open the PR.

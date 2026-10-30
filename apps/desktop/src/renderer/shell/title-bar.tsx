@@ -33,7 +33,8 @@ export function TitleBar({ platform, workspaceName, dirty = false, onOpenPalette
   return (
     <header
       data-testid="title-bar"
-      className="wb-drag flex h-title-bar shrink-0 items-center gap-3 border-b border-hairline bg-surface-sunken px-3"
+      data-chrome=""
+      className="wb-drag flex h-title-bar shrink-0 items-center gap-3 border-b border-hairline bg-surface-chrome px-3"
     >
       {platform === 'mac' && <div className="w-[68px] shrink-0" aria-hidden="true" />}
       <span className="flex shrink-0 items-center gap-1 text-sm text-fg-muted">

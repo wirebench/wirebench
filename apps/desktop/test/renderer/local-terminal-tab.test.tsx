@@ -181,6 +181,24 @@ describe('the local terminal tab', () => {
     expect(write).not.toHaveBeenCalled();
   });
 
+  it('following the app, restyles when the colour theme alone changes', async () => {
+    await openShell();
+    const term = lastTerminal();
+    const root = document.documentElement;
+    try {
+      // The style attribute is not watched, so only the data-palette flip below can pick this up.
+      root.style.setProperty('--wb-bg-sunken', '#121010');
+      root.dataset['palette'] = 'pith';
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect((term?.options as { theme?: { background?: string } }).theme?.background).toBe('#121010');
+    } finally {
+      root.style.removeProperty('--wb-bg-sunken');
+      delete root.dataset['palette'];
+    }
+  });
+
   it('shows what the shell prints and sends what is typed', async () => {
     await openShell();
     act(() => {

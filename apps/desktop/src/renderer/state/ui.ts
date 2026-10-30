@@ -3,6 +3,7 @@ import { AREAS } from '@shared/area-module.js';
 import { KINDS, type KindId } from '@shared/kinds/kind-module.js';
 import type { AreaId } from '@shared/area-module.js';
 import type { CodeLanguage, CodeSettings, CodeTarget } from '@shared/code-targets.js';
+import type { Palette } from '@shared/palettes.js';
 import { produce } from 'immer';
 import { create } from 'zustand';
 import type {
@@ -304,6 +305,8 @@ export interface UiStore extends UiSnapshot {
   readonly setCodeSettings: (target: CodeTarget, settings: CodeSettings | undefined) => void;
   readonly toggleTheme: () => void;
   readonly setTheme: (theme: ThemePreference) => void;
+  /** Sets the colour theme — how the preferences mirror pushes `ui.palette` in. */
+  readonly setPalette: (palette: Palette) => void;
   readonly toggleEditorLineNumbers: () => void;
   /** Sets the gutter preference directly — how the preferences mirror pushes its value in. */
   readonly setEditorLineNumbers: (lineNumbers: boolean) => void;
@@ -702,6 +705,10 @@ export const useUiStore = create<UiStore>((set, get) => {
       update((draft) => {
         draft.theme = theme;
       }),
+    setPalette: (palette) =>
+      update((draft) => {
+        draft.palette = palette;
+      }),
     toggleEditorLineNumbers: () =>
       update((draft) => {
         draft.editorLineNumbers = !draft.editorLineNumbers;
@@ -734,8 +741,17 @@ export const useUiStore = create<UiStore>((set, get) => {
       }),
 
     snapshot: () => {
-      const { sidebar, console: consoleState, slideOver, theme, editorLineNumbers, editorLayout, workspaces } = get();
-      return { sidebar, console: consoleState, slideOver, theme, editorLineNumbers, editorLayout, workspaces };
+      const {
+        sidebar,
+        console: consoleState,
+        slideOver,
+        theme,
+        palette,
+        editorLineNumbers,
+        editorLayout,
+        workspaces,
+      } = get();
+      return { sidebar, console: consoleState, slideOver, theme, palette, editorLineNumbers, editorLayout, workspaces };
     },
 
     persistTo: (storage) => {

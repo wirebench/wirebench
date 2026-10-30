@@ -30,6 +30,14 @@ describe('TitleBar', () => {
     useUiStore.getState().setPreferencesOpen(false);
   });
 
+  it('paints itself as window chrome, so a colour theme can recolour the frame', () => {
+    renderTitleBar();
+    const bar = screen.getByTestId('title-bar');
+    expect(bar.hasAttribute('data-chrome')).toBe(true);
+    expect(bar.className).toContain('bg-surface-chrome');
+    expect(bar.className).not.toContain('bg-surface-sunken');
+  });
+
   it('shows the environment switcher over the workbench', () => {
     renderTitleBar();
     expect(screen.getByTestId('env-switcher-stub')).toBeTruthy();

@@ -3,20 +3,34 @@ import { act, cleanup, render } from '@testing-library/react';
 import { cycleTheme } from '../../src/renderer/lib/theme-actions.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import type { Palette } from '@shared/palettes.js';
 import {
   applyInitialTheme,
+  applyPalette,
   getOsTheme,
   nextThemePreference,
   resolveTheme,
   setOsTheme,
   startOsThemeBridge,
+  usePalette,
   useTheme,
 } from '../../src/renderer/lib/theme.js';
 
 /** A component whose only job is to run the hook under test. */
-function ThemeHost({ preference }: { preference: 'dark' | 'light' | 'system' }) {
-  useTheme(preference);
+function ThemeHost({
+  preference,
+  palette = 'default',
+}: {
+  preference: 'dark' | 'light' | 'system';
+  palette?: Palette;
+}) {
+  useTheme(preference, palette);
   return null;
+}
+
+/** Shows what {@link usePalette} returns. */
+function PaletteProbe() {
+  return <span data-testid="palette">{usePalette()}</span>;
 }
 
 /** The `theme.changed` listeners a fake preload bridge collected. */
@@ -210,5 +224,68 @@ describe('cycleTheme', () => {
     useUiStore.setState({ theme: 'system' });
     cycleTheme();
     expect(update).toHaveBeenLastCalledWith({ ui: { theme: 'dark' } });
+  });
+});
+
+describe('data-palette', () => {
+  afterEach(() => {
+    cleanup();
+    Reflect.deleteProperty(window, 'wirebench');
+    localStorage.clear();
+    setOsTheme('dark');
+    delete document.documentElement.dataset['palette'];
+    useUiStore.getState().setPalette('default');
+  });
+
+  it('applyPalette sets the attribute, and default removes it', () => {
+    applyPalette('dusk');
+    expect(document.documentElement.dataset['palette']).toBe('dusk');
+    applyPalette('default');
+    expect(document.documentElement.hasAttribute('data-palette')).toBe(false);
+  });
+
+  it('applyInitialTheme paints a stored palette before the first render', () => {
+    stubBridge('light');
+    localStorage.setItem(
+      'wirebench.ui',
+      JSON.stringify({ version: 5, state: { theme: 'system', palette: 'sandstone' } }),
+    );
+    expect(applyInitialTheme()).toBe('light');
+    expect(document.documentElement.dataset['palette']).toBe('sandstone');
+    expect(document.documentElement.dataset['theme']).toBe('light');
+  });
+
+  it('applyInitialTheme leaves no attribute for the default palette', () => {
+    document.documentElement.dataset['palette'] = 'seed';
+    localStorage.setItem('wirebench.ui', JSON.stringify({ version: 4, state: { theme: 'dark' } }));
+    expect(applyInitialTheme()).toBe('dark');
+    expect(document.documentElement.hasAttribute('data-palette')).toBe(false);
+  });
+
+  it('applyInitialTheme takes an explicit palette', () => {
+    applyInitialTheme('light', 'rind');
+    expect(document.documentElement.dataset['palette']).toBe('rind');
+    expect(document.documentElement.dataset['theme']).toBe('light');
+  });
+
+  it('useTheme keeps data-palette in step, removing it when switched back to default', () => {
+    stubBridge('dark');
+    const { rerender } = render(<ThemeHost preference="light" palette="dusk" />);
+    expect(document.documentElement.dataset['palette']).toBe('dusk');
+    expect(document.documentElement.dataset['theme']).toBe('light');
+
+    rerender(<ThemeHost preference="light" palette="default" />);
+    expect(document.documentElement.hasAttribute('data-palette')).toBe(false);
+    // The mode resolves as before.
+    expect(document.documentElement.dataset['theme']).toBe('light');
+  });
+
+  it('usePalette reads the ui store', () => {
+    const { getByTestId } = render(<PaletteProbe />);
+    expect(getByTestId('palette').textContent).toBe('default');
+    act(() => {
+      useUiStore.getState().setPalette('pith');
+    });
+    expect(getByTestId('palette').textContent).toBe('pith');
   });
 });
