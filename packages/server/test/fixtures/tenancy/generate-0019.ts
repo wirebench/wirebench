@@ -13,6 +13,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
@@ -44,6 +45,8 @@ import { syncModule } from '../../../src/sync/module.js';
 import { teamsModule } from '../../../src/teams/module.js';
 import * as teamsRepo from '../../../src/teams/repo.js';
 import { terminalSharesModule } from '../../../src/terminal-shares/module.js';
+import { allMigrations } from '../../../src/serve.js';
+import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { browserBuildFixture } from '../../helpers/browser-build.js';
 import { TEST_DATABASE_URL } from '../../helpers/database.js';
 import { identityHarness, signedInUser, type SignedInUser } from '../../helpers/identity.js';
@@ -104,7 +107,15 @@ function portableDump(dump: string, schema: string): string {
     .trim()}\n`;
 }
 
-/** A target on this machine's LAN address that sets one cookie per request: loopback is refused by egress. */
+/**
+ * The name the fixture's requests send to, and its fixed port. Nothing in the fixture names the generating
+ * machine's address: the host refuses loopback, so the target listens on a LAN address, and the name is resolved
+ * to it in this process only (`resolveCookieHost`). The port is fixed so that a regeneration writes the same URLs.
+ */
+export const COOKIE_HOST = 'cookies.fixture.test';
+export const COOKIE_PORT = 47019;
+
+/** A target that sets one cookie per request, at `http://cookies.fixture.test:47019`. */
 async function cookieTarget(): Promise<{ readonly base: string; close(): Promise<void> }> {
   const lan = Object.values(networkInterfaces())
     .flat()
@@ -117,14 +128,62 @@ async function cookieTarget(): Promise<{ readonly base: string; close(): Promise
     response.writeHead(200, { 'content-type': 'application/json', 'set-cookie': `${cookie}; Path=/; Max-Age=31536000` });
     response.end('{"ok":true}');
   });
-  await new Promise<void>((done) => target.listen(0, lan, done));
+  await new Promise<void>((done, fail) => {
+    target.once('error', fail);
+    target.listen(COOKIE_PORT, lan, done);
+  });
+  const restore = resolveCookieHost(lan);
   return {
-    base: `http://${lan}:${(target.address() as AddressInfo).port}`,
+    base: `http://${COOKIE_HOST}:${String(COOKIE_PORT)}`,
     close: async () => {
+      restore();
       target.closeAllConnections();
       await new Promise<void>((done) => target.close(() => done()));
     },
   };
+}
+
+/**
+ * Resolves `COOKIE_HOST` to `address` for every lookup in this process: `node:dns`'s callback `lookup` (what
+ * sockets and the egress check use) and `node:dns/promises`'s (what the host's send route uses). The builtins'
+ * ES module bindings follow through `syncBuiltinESMExports`. Returns the undo.
+ */
+function resolveCookieHost(address: string): () => void {
+  const require = createRequire(import.meta.url);
+  const dns = require('node:dns') as typeof import('node:dns');
+  const original = dns.lookup;
+  const originalPromise = dns.promises.lookup;
+  const answer = (all: boolean) => (all ? [{ address, family: 4 }] : { address, family: 4 });
+  const patched = ((hostname: string, options: unknown, callback?: unknown) => {
+    const cb = (typeof options === 'function' ? options : callback) as (...args: unknown[]) => void;
+    const all = typeof options === 'object' && options !== null && (options as { all?: boolean }).all === true;
+    if (hostname !== COOKIE_HOST) return (original as (...args: unknown[]) => void)(hostname, options, callback);
+    const found = answer(all);
+    process.nextTick(() => (Array.isArray(found) ? cb(null, found) : cb(null, found.address, found.family)));
+  }) as typeof dns.lookup;
+  dns.lookup = patched;
+  dns.promises.lookup = (async (hostname: string, options?: unknown) =>
+    hostname === COOKIE_HOST
+      ? answer(typeof options === 'object' && options !== null && (options as { all?: boolean }).all === true)
+      : (originalPromise as (...args: unknown[]) => Promise<unknown>)(hostname, options)) as typeof dns.promises.lookup;
+  syncBuiltinESMExports();
+  return () => {
+    dns.lookup = original;
+    dns.promises.lookup = originalPromise;
+    syncBuiltinESMExports();
+  };
+}
+
+/** Replaces every `from` with `to` in `bytes`, at the byte level, so no encoding is assumed for the rest. */
+function replaceBytes(bytes: Buffer, from: Buffer, to: Buffer): Buffer {
+  const parts: Buffer[] = [];
+  let start = 0;
+  for (let at = bytes.indexOf(from); at !== -1; at = bytes.indexOf(from, start)) {
+    parts.push(bytes.subarray(start, at), to);
+    start = at + from.length;
+  }
+  parts.push(bytes.subarray(start));
+  return Buffer.concat(parts);
 }
 
 /** What the loader puts the new data directory's path back in for: git configs name it absolutely. */
@@ -138,11 +197,13 @@ async function placeholderPaths(dataDir: string): Promise<string[]> {
   for (const item of await readdir(dataDir, { recursive: true, withFileTypes: true })) {
     if (!item.isFile()) continue;
     const path = join(item.parentPath, item.name);
-    const text = (await readFile(path)).toString('latin1');
-    if (!prefixes.some((prefix) => text.includes(prefix))) continue;
-    let next = text;
-    for (const prefix of prefixes) next = next.replaceAll(prefix, DATA_DIR_PLACEHOLDER);
-    await writeFile(path, Buffer.from(next, 'latin1'));
+    const bytes = await readFile(path);
+    if (!prefixes.some((prefix) => bytes.includes(Buffer.from(prefix, 'utf8')))) continue;
+    let next: Buffer = bytes;
+    for (const prefix of prefixes) {
+      next = replaceBytes(next, Buffer.from(prefix, 'utf8'), Buffer.from(DATA_DIR_PLACEHOLDER, 'utf8'));
+    }
+    await writeFile(path, next);
     changed.push(path.slice(dataDir.length + 1).split('\\').join('/'));
   }
   return changed.sort();
@@ -198,7 +259,9 @@ it.runIf(OUT !== undefined)(
       const alice = await browserUser(h, 'alice@example.com', { serverAdmin: true });
       const editor = await signedInUser(h, { email: 'editor@example.com', password: 'editor-password-0019' });
       const viewer = await signedInUser(h, { email: 'viewer@example.com', deviceName: 'viewer laptop' });
-      for (const user of [admin, alice, editor, viewer]) note('users', user.user.id);
+      // A disabled user, whose row the partial and unique keys must carry over as it is.
+      const leaver = await signedInUser(h, { email: 'leaver@example.com', password: 'leaver-password-0019', disabled: true });
+      for (const user of [admin, alice, editor, viewer, leaver]) note('users', user.user.id);
       const installed = await call(h, admin, 'PUT', '/license', {
         license: license(keys, { edition: 'enterprise', seats: 100 }),
       });
@@ -208,6 +271,20 @@ it.runIf(OUT !== undefined)(
         serverAdmin: false,
       });
       expect(invited.status, JSON.stringify(invited.body)).toBe(201);
+      // An accepted invitation beside the open one: `invitations_one_open_per_email` covers only open ones.
+      const joined = await call<{ url: string }>(h, admin, 'POST', '/invitations', {
+        email: 'joined@example.com',
+        serverAdmin: false,
+      });
+      expect(joined.status, JSON.stringify(joined.body)).toBe(201);
+      const accepted = await call<{ user: { id: string } }>(h, undefined, 'POST', '/invitations/accept', {
+        secret: new URL(joined.body.url).pathname.split('/').pop()!,
+        displayName: 'Joined',
+        password: 'joined-password-0019',
+        device: { name: 'joined laptop' },
+      });
+      expect(accepted.status, JSON.stringify(accepted.body)).toBeLessThan(300);
+      note('users', accepted.body.user.id);
       await identityRepo.insertOidcIdentity(h.db, {
         issuer: 'https://idp.example.test',
         subject: 'oidc-subject-editor',
@@ -327,10 +404,24 @@ it.runIf(OUT !== undefined)(
         });
         expect(captured.statusCode, captured.body).toBeLessThan(300);
       }
+      // Then the catch URL rejects unverified requests: an unsigned one is answered 401 and stored as rejected.
+      await hooksRepo.updateCatchUrl(h.db, hook.body.id, { rejectUnverified: true });
+      const rejected = await h.app.inject({
+        method: 'POST',
+        url: `/hooks/${secret}/events`,
+        headers: { 'content-type': 'application/json' },
+        payload: '{"event":"invoice.forged"}',
+      });
+      expect(rejected.statusCode, rejected.body).toBe(401);
 
       // ---- CI tokens, through the route.
       const ci = await call(h, alice, 'POST', `/workspaces/${staging}/ci-tokens`, { name: 'nightly pipeline' });
       expect(ci.status, JSON.stringify(ci.body)).toBe(201);
+      // A revoked token, whose name the partial unique index leaves free.
+      const old = await call<{ id: string }>(h, alice, 'POST', `/workspaces/${staging}/ci-tokens`, { name: 'old pipeline' });
+      expect(old.status, JSON.stringify(old.body)).toBe(201);
+      const revoked = await call(h, alice, 'DELETE', `/workspaces/${staging}/ci-tokens/${old.body.id}`);
+      expect(revoked.status, JSON.stringify(revoked.body)).toBeLessThan(300);
 
       // ---- scheduled runs: a schedule with a sealed secret and a Slack alert, a failed run with results.
       const schedulesKey = Buffer.from(FIXTURE_KEYS.schedulesSecretKey, 'base64');
@@ -472,6 +563,11 @@ it.runIf(OUT !== undefined)(
         if ((await h.db.query(`select 1 from ${table} limit 1`)).rowCount === 0) empty.push(table);
       }
       expect(tables.rowCount).toBe(37);
+      // The edge rows the tenancy migrations must carry over (review of Task 3, M4).
+      expect((await h.db.query('select 1 from users where disabled_at is not null')).rowCount).toBe(1);
+      expect((await h.db.query('select 1 from ci_tokens where revoked_at is not null')).rowCount).toBe(1);
+      expect((await h.db.query('select 1 from invitations where accepted_at is not null')).rowCount).toBe(1);
+      expect((await h.db.query('select 1 from captures where rejected')).rowCount).toBe(1);
       expect(empty).toEqual([]);
 
       const chain = (
@@ -507,9 +603,21 @@ it.runIf(OUT !== undefined)(
           {
             commit: process.env.WIREBENCH_FIXTURE_COMMIT ?? 'unknown',
             ids: { ...ids, teams: [teamId], scim_groups: [groupId], schedule_runs: [runId] },
-            users: { admin: admin.user.id, alice: alice.user.id, editor: editor.user.id, viewer: viewer.user.id },
+            users: {
+              admin: admin.user.id,
+              alice: alice.user.id,
+              editor: editor.user.id,
+              viewer: viewer.user.id,
+              leaver: leaver.user.id,
+              joined: accepted.body.user.id,
+            },
             workspaces: { staging, billing, retired },
             dataDirPlaceholder: { token: DATA_DIR_PLACEHOLDER, files: withPlaceholder },
+            migrations: (await allMigrations(BUILTIN_MODULES)).map((m) => ({
+              version: m.version,
+              name: m.name,
+              sha256: sha256(m.sql),
+            })),
             checkout: checkout.slice(h.dataDir.length + 1).split('\\').join('/'),
             chain: { firstSeq: chain.first, lastSeq: chain.last, unsealed: Number(chain.unsealed) },
             keys: FIXTURE_KEYS,

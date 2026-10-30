@@ -17,9 +17,11 @@ import { appRoleGrants } from './grants.js';
 export const SCRAM_ITERATIONS = 4096;
 
 /**
- * SASLprep (RFC 4013) as `pg` applies it before SCRAM (`pg/lib/crypto/sasl.js`), which matches PostgreSQL's
- * own for every password it accepts: non-ASCII spaces become a space, the RFC 3454 B.1 characters are
- * removed, and the result is NFKC-normalised. The prohibition and bidi checks are skipped, as `pg` skips them.
+ * SASLprep (RFC 4013) as `pg` applies it before SCRAM (`pg/lib/crypto/sasl.js`): non-ASCII spaces become a
+ * space, the RFC 3454 B.1 characters are removed, and the result is NFKC-normalised. The prohibition and bidi
+ * checks are skipped, as `pg` skips them. That matches PostgreSQL's own for every password without prohibited
+ * or unassigned code points; for one with them, PostgreSQL and libpq use the raw bytes, and only `pg`, which the
+ * server signs in with, still maps and normalises.
  */
 export function saslprep(password: string): string {
   // RFC 3454 C.1.2, the non-ASCII spaces.
