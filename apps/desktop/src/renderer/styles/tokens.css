@@ -35,6 +35,14 @@
   --wb-bg-active: #302c27;
   --wb-bg-selected: #3a2a22;
 
+  /* The window frame — title bar and activity bar (see tailwind.css, `[data-chrome]`). Aliases
+     of what the frame painted before, so every palette without a chrome of its own (all but
+     Dusk and Rind) follows its own surfaces and Default is unchanged in both modes. */
+  --wb-bg-chrome: var(--wb-bg-sunken);
+  --wb-bg-chrome-selected: var(--wb-bg-active);
+  --wb-fg-chrome: var(--wb-fg-default);
+  --wb-fg-chrome-muted: var(--wb-fg-subtle);
+
   /* Foreground scale, loudest to quietest. */
   --wb-fg-default: #ece9e3;
   --wb-fg-muted: #a49d93;
@@ -285,6 +293,11 @@
 
 /* Dusk dark. */
 [data-palette='dusk'] {
+  --wb-bg-chrome: #26263d;
+  --wb-bg-chrome-selected: #5a5a8d;
+  --wb-fg-chrome: #e1e0f2;
+  --wb-fg-chrome-muted: #a9a8cc;
+
   --wb-bg-sunken: #141218;
   --wb-bg-base: #1a1820;
   --wb-bg-raised: #24212a;
@@ -307,6 +320,11 @@
 
 /* Dusk light. */
 [data-palette='dusk'][data-theme='light'] {
+  --wb-bg-chrome: #3d3d63;
+  --wb-bg-chrome-selected: #5a5a8d;
+  --wb-fg-chrome: #e6e5f3;
+  --wb-fg-chrome-muted: #acabcf;
+
   --wb-bg-sunken: #efe8e0;
   --wb-bg-base: #f7f4f0;
   --wb-bg-raised: #ffffff;
@@ -419,6 +437,11 @@
 
 /* Rind dark. */
 [data-palette='rind'] {
+  --wb-bg-chrome: #3a0e16;
+  --wb-bg-chrome-selected: #6e1424;
+  --wb-fg-chrome: #f2e6da;
+  --wb-fg-chrome-muted: #c9a99a;
+
   --wb-bg-sunken: #110e0f;
   --wb-bg-base: #151213;
   --wb-bg-raised: #1e1a1b;
@@ -439,6 +462,11 @@
 
 /* Rind light. */
 [data-palette='rind'][data-theme='light'] {
+  --wb-bg-chrome: #5b121f;
+  --wb-bg-chrome-selected: #8b1128;
+  --wb-fg-chrome: #f2e6da;
+  --wb-fg-chrome-muted: #dcc3a9;
+
   --wb-bg-sunken: #f3eee8;
   --wb-bg-base: #fbf8f5;
   --wb-bg-raised: #ffffff;

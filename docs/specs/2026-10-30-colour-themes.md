@@ -118,21 +118,29 @@ mode is a warm charcoal with the violet and orange lifted to stay readable.
 
 ### 3.3 Dusk — violet chrome, orange action
 
-The chrome (activity bar, sidebar, title bar) is violet; the work area is a neutral light or dark
+The chrome (title bar, activity bar) is violet; the work area is a neutral light or dark
 canvas; the orange-red is the accent. This is the most branded of the three because violet is
 always on screen.
 
-It needs tokens most others do not (Rind, §3.6, uses them too): a **chrome surface** for the activity bar, sidebar and title
-bar. Today those use `--wb-bg-sunken`/`--wb-bg-raised`. This change adds `--wb-bg-chrome`,
-`--wb-bg-chrome-selected`, `--wb-fg-chrome` and `--wb-fg-chrome-muted`, aliased to the existing
-values in every palette except Dusk and Rind, so nothing else moves.
+It needs tokens most others do not (Rind, §3.6, uses them too): a **chrome surface** for the
+window frame — the title bar and the activity bar, which today paint `--wb-bg-sunken`. This change
+adds `--wb-bg-chrome`, `--wb-bg-chrome-selected`, `--wb-fg-chrome` and `--wb-fg-chrome-muted`,
+aliased to `--wb-bg-sunken`, `--wb-bg-active`, `--wb-fg-default` and `--wb-fg-subtle` in every
+palette except Dusk and Rind, so nothing else moves. The frame carries `data-chrome`; in Dusk and
+Rind its contents' text, icon, hover, accent and focus colours point at the chrome tokens
+(`tailwind.css`), since the band is dark in both modes.
+
+The sidebar stays on the work-area surface. In light mode the chrome is a dark band, and the
+sidebar's contents (tree rows, method colours, selection, inputs) are drawn for a light surface;
+putting them on the band would need a whole dark token set inside it, which is a decision of its
+own.
 
 | Token                     | Dark      | Light     |
 | ------------------------- | --------- | --------- |
 | `--wb-bg-chrome`          | `#26263D` | `#3D3D63` |
 | `--wb-bg-chrome-selected` | `#5A5A8D` | `#5A5A8D` |
 | `--wb-fg-chrome`          | `#E1E0F2` | `#E6E5F3` |
-| `--wb-fg-chrome-muted`    | `#A9A8CC` | `#A9A8CC` |
+| `--wb-fg-chrome-muted`    | `#A9A8CC` | `#ACABCF` |
 | `--wb-bg-sunken`          | `#141218` | `#EFE8E0` |
 | `--wb-bg-base`            | `#1A1820` | `#F7F4F0` |
 | `--wb-bg-raised`          | `#24212A` | `#FFFFFF` |

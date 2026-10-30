@@ -168,6 +168,19 @@ const PAIRS: readonly Pair[] = [
   { fg: '--wb-fg-muted', bg: '--wb-bg-base', kind: 'ui', where: 'WebSocket timeline not-checked marker' },
   { fg: '--wb-fg-default', bg: '--wb-accent-muted', kind: 'ui', where: 'contract markers on a selected timeline row' },
 
+  // The window frame (title bar, activity bar). Default and most palettes alias these to the
+  // sunken surface and its text; Dusk and Rind paint a band of their own, and inside it every
+  // text, icon, hover, accent and focus utility is pointed at the chrome tokens (tailwind.css).
+  { fg: '--wb-fg-chrome', bg: '--wb-bg-chrome', kind: 'text', where: 'workspace name, hovered rail icon' },
+  { fg: '--wb-fg-chrome-muted', bg: '--wb-bg-chrome', kind: 'text', where: 'title bar brand, search hint, rail icons' },
+  {
+    fg: '--wb-fg-chrome',
+    bg: '--wb-bg-chrome-selected',
+    kind: 'text',
+    where: 'active rail item, hovered chrome control',
+  },
+  { fg: '--wb-fg-chrome', bg: '--wb-bg-chrome', kind: 'ui', where: 'focus ring on the chrome' },
+
   // Panel drag handles: sidebar/console sit on the base surface, the slide-over's handle on it too.
   { fg: '--wb-handle-hover', bg: '--wb-bg-base', kind: 'ui', where: 'panel handle, hovered' },
   { fg: '--wb-handle-active', bg: '--wb-bg-base', kind: 'ui', where: 'panel handle, dragging' },

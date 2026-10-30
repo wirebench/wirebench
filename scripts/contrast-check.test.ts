@@ -63,6 +63,32 @@ describe('the committed tokens', () => {
     expect(results.filter((result) => result.theme === 'light')).toHaveLength(results.length / 2);
   });
 
+  it('gate the window chrome in every palette × mode', async () => {
+    const results = checkTokens(await readFile(tokens, 'utf-8'));
+    const chrome = results.filter((result) => result.pair.bg.startsWith('--wb-bg-chrome'));
+    // Four chrome pairs, fourteen palette × mode combinations, all passing.
+    expect(chrome).toHaveLength(4 * PALETTES.length * 2);
+    expect(chrome.filter((result) => !result.passed).map(describeFailure)).toEqual([]);
+  });
+
+  it('alias the chrome to the sunken surface wherever a palette has no chrome of its own', async () => {
+    const css = await readFile(tokens, 'utf-8');
+    for (const palette of PALETTES.filter((id) => id !== 'dusk' && id !== 'rind')) {
+      for (const theme of ['dark', 'light'] as const) {
+        const tokensOf = resolvePalette(css, palette, theme);
+        expect(resolveToken('--wb-bg-chrome', tokensOf)).toBe(resolveToken('--wb-bg-sunken', tokensOf));
+        expect(resolveToken('--wb-bg-chrome-selected', tokensOf)).toBe(resolveToken('--wb-bg-active', tokensOf));
+        expect(resolveToken('--wb-fg-chrome', tokensOf)).toBe(resolveToken('--wb-fg-default', tokensOf));
+        expect(resolveToken('--wb-fg-chrome-muted', tokensOf)).toBe(resolveToken('--wb-fg-subtle', tokensOf));
+      }
+    }
+    for (const palette of ['dusk', 'rind'] as const) {
+      expect(resolveToken('--wb-bg-chrome', resolvePalette(css, palette, 'light'))).not.toBe(
+        resolveToken('--wb-bg-sunken', resolvePalette(css, palette, 'light')),
+      );
+    }
+  });
+
   it('give every colour theme its own blocks', async () => {
     expect(definedPalettes(await readFile(tokens, 'utf-8'))).toEqual(PALETTES);
   });

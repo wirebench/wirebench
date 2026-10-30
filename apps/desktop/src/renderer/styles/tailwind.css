@@ -13,12 +13,17 @@
   --color-surface-hover: var(--wb-bg-hover);
   --color-surface-active: var(--wb-bg-active);
   --color-surface-selected: var(--wb-bg-selected);
+  /* The window frame (title bar, activity bar); see `[data-chrome]` below. */
+  --color-surface-chrome: var(--wb-bg-chrome);
+  --color-surface-chrome-selected: var(--wb-bg-chrome-selected);
 
   --color-fg-default: var(--wb-fg-default);
   --color-fg-muted: var(--wb-fg-muted);
   --color-fg-subtle: var(--wb-fg-subtle);
   --color-fg-faint: var(--wb-fg-faint);
   --color-fg-on-accent: var(--wb-fg-on-accent);
+  --color-chrome: var(--wb-fg-chrome);
+  --color-chrome-muted: var(--wb-fg-chrome-muted);
 
   --color-hairline: var(--wb-border-default);
   --color-hairline-strong: var(--wb-border-strong);
@@ -60,6 +65,32 @@
   --spacing-status-bar: var(--wb-status-bar-height);
   --spacing-activity-bar: var(--wb-activity-bar-width);
   --spacing-right-rail: var(--wb-right-rail-width);
+}
+
+/*
+ * The window frame. The title bar and the activity bar carry `data-chrome` and paint
+ * `bg-surface-chrome`, which is their old `--wb-bg-sunken` in every palette but the two with a
+ * chrome of their own, Dusk (violet) and Rind (maroon). There the frame is a dark band in both
+ * modes, so inside it every utility its contents use is pointed at the chrome tokens: text and
+ * icons at `--wb-fg-chrome`/`-muted`, hover and pressed at `--wb-bg-chrome-selected`, the search
+ * field and env switcher at the chrome itself with a chrome hairline, and the accent and focus ring
+ * at `--wb-fg-chrome` (the orange or crimson accent does not hold on the band). Menus and tooltips
+ * opened from it are portalled to <body>, so they keep the work-area tokens. Default and the
+ * other palettes match none of this, so they render as before. `pnpm contrast:check` gates the
+ * chrome pairs.
+ */
+:is([data-palette='dusk'], [data-palette='rind']) [data-chrome] {
+  --color-fg-default: var(--wb-fg-chrome);
+  --color-fg-muted: var(--wb-fg-chrome-muted);
+  --color-fg-subtle: var(--wb-fg-chrome-muted);
+  --color-fg-faint: var(--wb-fg-chrome-muted);
+  --color-surface-raised: var(--wb-bg-chrome);
+  --color-surface-hover: var(--wb-bg-chrome-selected);
+  --color-surface-active: var(--wb-bg-chrome-selected);
+  --color-hairline: var(--wb-bg-chrome-selected);
+  --color-hairline-strong: var(--wb-fg-chrome-muted);
+  --color-accent: var(--wb-fg-chrome);
+  --wb-border-focus: var(--wb-fg-chrome);
 }
 
 /* The layer scale, one name per layer; the values live in tokens.css. */
